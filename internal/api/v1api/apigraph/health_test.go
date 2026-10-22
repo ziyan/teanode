@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -509,6 +510,45 @@ func TestAHealthShareReachesOnlyItsCategoriesAsSummaries(t *testing.T) {
 	world.refusal(t, world.ben, healthTypesQuery, map[string]any{"ownerUserId": world.ada.ID})
 	if left := world.run(t, world.ada, healthSharesQuery, nil)["ListHealthShares"].([]any); len(left) != 0 {
 		t.Errorf("nothing is shared: %v", left)
+	}
+}
+
+// What somebody shared reaches the person and never their agent: the agent
+// reads the person's own Health only, so a share is read by the person's tap.
+func TestTheAgentReadsNoHealthSharedWithThePerson(t *testing.T) {
+	world := newHealthWorld(t)
+	world.fill(t, world.ada)
+	world.run(t, world.ada, healthShareQuery, map[string]any{"granteeUserId": world.ben.ID, "healthCategories": []any{"activity"}})
+
+	read := func(isAgent bool, ownerUserId string) (types []*HealthTypeView, typesErr error, summary *HealthSummaryView, summaryErr error) {
+		dbtest.RunTransactionOn(t, world.database, func(transaction db.Transaction) {
+			ctx := api.ContextWithTransaction(api.ContextWithPrincipal(t.Context(), &api.Principal{
+				User: world.ben, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionHealthUse}}),
+			}), transaction)
+			if isAgent {
+				ctx = db.ContextWithAuditPrincipal(ctx, db.AuditPrincipal{ActorKind: models.AuditActorAgent, UserID: world.ben.ID})
+			}
+			types, typesErr = world.graph.ListHealthTypes(ctx, ListHealthTypesArguments{OwnerUserID: ownerUserId})
+			summary, summaryErr = world.graph.ReadHealthSummary(ctx, ReadHealthSummaryArguments{
+				HealthType: "stepCount", FromDay: "2026-03-01", ToDay: "2026-03-08", Period: "week", OwnerUserID: ownerUserId,
+			})
+		})
+		return types, typesErr, summary, summaryErr
+	}
+
+	types, typesErr, summary, summaryErr := read(false, world.ada.ID)
+	if typesErr != nil || len(types) == 0 || summaryErr != nil || summary == nil {
+		t.Fatalf("ben reads what ada shared: %v %v %v %v", types, typesErr, summary, summaryErr)
+	}
+	types, typesErr, summary, summaryErr = read(true, world.ada.ID)
+	if !errors.Is(typesErr, api.ErrNotFound) || !errors.Is(summaryErr, api.ErrNotFound) || types != nil || summary != nil {
+		t.Errorf("the agent reads what was shared with ben: %v %v %v %v", types, typesErr, summary, summaryErr)
+	}
+	// Ben's own Health is still the agent's to read, named or not.
+	for _, ownerUserId := range []string{"", world.ben.ID} {
+		if _, typesErr, _, _ := read(true, ownerUserId); typesErr != nil {
+			t.Errorf("the agent reads ben's own kinds with owner %q: %v", ownerUserId, typesErr)
+		}
 	}
 }
 

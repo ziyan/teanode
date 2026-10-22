@@ -125,7 +125,10 @@ of it; new readings of that type still arrive while Health is on.
   what the person's agent reads. It never reads what somebody shares with the
   person (the person sees that on the Health page, under Showing): a person
   shares Health with people, not with their agents' model providers, and only
-  the sharer can agree to their data going to one. The tool only reads, and
+  the sharer can agree to their data going to one. The API holds to this too:
+  `ListHealthTypes` and `ReadHealthSummary` with another person's
+  `ownerUserId` answer "not found" when the agent is the actor, as the person
+  card does. The tool only reads, and
   reads no routes: erasing cannot be undone, sharing and the switch are the
   person's own consent to give, and a route says where somebody runs, which
   the person shows on the map themselves.

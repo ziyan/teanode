@@ -13,6 +13,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/health"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/graphapi"
@@ -623,6 +624,13 @@ func (self *graph) reachHealth(ctx context.Context, principal *api.Principal, ow
 	ownerUserId = strings.TrimSpace(ownerUserId)
 	if ownerUserId == "" || ownerUserId == principal.User.ID {
 		return &healthReach{User: principal.User, IsOwner: true, HealthCategories: categoryNames(health.Categories())}, nil
+	}
+	// What others share is for the person to see: the agent reads the person's
+	// own Health only, as the person card keeps it, since what it reads goes
+	// into a conversation, where a chat or a model provider is not the
+	// person's alone.
+	if db.PrincipalFromContext(ctx).ActorKind == models.AuditActorAgent {
+		return nil, api.ErrNotFound
 	}
 	tx := self.transaction(ctx)
 	categories, err := tx.GetSharedHealthCategories(principal.User.ID, ownerUserId)
