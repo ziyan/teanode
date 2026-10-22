@@ -93,9 +93,19 @@ final class LocationPauseTests: XCTestCase {
         // 23:30 on the 2nd in Tokyo.
         let lateEvening = date("2024-01-02T14:30:00Z")
         XCTAssertEqual(LocationPauseChoice.untilTomorrowMorning.endDate(from: lateEvening, calendar: calendar), date("2024-01-02T23:00:00Z"))
-        // 01:30 on the 2nd in Tokyo is still "tomorrow", the 3rd, at 08:00.
-        let afterMidnight = date("2024-01-01T16:30:00Z")
-        XCTAssertEqual(LocationPauseChoice.untilTomorrowMorning.endDate(from: afterMidnight, calendar: calendar), date("2024-01-02T23:00:00Z"))
+    }
+
+    func testUntilTomorrowMorningBeforeFiveIsThisMorning() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Tokyo"))
+        // 00:30 on the 2nd in Tokyo means 08:00 the same day.
+        let afterMidnight = date("2024-01-01T15:30:00Z")
+        XCTAssertEqual(LocationPauseChoice.untilTomorrowMorning.endDate(from: afterMidnight, calendar: calendar), date("2024-01-01T23:00:00Z"))
+        // 04:59 is still before the line, 05:00 is not.
+        let justBeforeFive = date("2024-01-01T19:59:00Z")
+        XCTAssertEqual(LocationPauseChoice.untilTomorrowMorning.endDate(from: justBeforeFive, calendar: calendar), date("2024-01-01T23:00:00Z"))
+        let atFive = date("2024-01-01T20:00:00Z")
+        XCTAssertEqual(LocationPauseChoice.untilTomorrowMorning.endDate(from: atFive, calendar: calendar), date("2024-01-02T23:00:00Z"))
     }
 
     // MARK: A pause made on the phone
@@ -152,13 +162,41 @@ final class LocationPauseTests: XCTestCase {
         XCTAssertNil(tracker.pause)
     }
 
-    func testResumingAPauseTheServerNeverHeardOfSendsNothing() {
+    func testResumingAPauseNotYetAnsweredForStillSendsTheResume() {
         let now = date("2024-01-02T14:00:00Z")
         var tracker = LocationPauseTracker()
         tracker.startPause(until: nil, at: now)
         tracker.endPause(at: date("2024-01-02T14:05:00Z"))
-        XCTAssertFalse(tracker.hasPendingChange)
+        // The pause may already be on its way, so the resume goes after it.
+        XCTAssertEqual(tracker.pendingChange, .resume(at: date("2024-01-02T14:05:00Z")))
         XCTAssertFalse(tracker.isPaused(at: date("2024-01-02T14:06:00Z")))
+    }
+
+    func testTheAnswerToAPauseDoesNotUndoAResumeMadeBeforeIt() throws {
+        let now = date("2024-01-02T14:00:00Z")
+        var tracker = LocationPauseTracker()
+        tracker.startPause(until: nil, at: now)
+        let sent = try XCTUnwrap(tracker.pendingChange)
+        // Resumed while the call was on its way, and the server began the pause a moment after the tap.
+        tracker.endPause(at: date("2024-01-02T14:00:01Z"))
+        tracker.changeWasTaken(sent, answer: pause(from: "2024-01-02T14:00:02Z", to: nil), at: date("2024-01-02T14:00:03Z"))
+        XCTAssertTrue(tracker.hasPendingChange)
+        XCTAssertFalse(tracker.isPaused(at: date("2024-01-02T14:00:03Z")))
+        // The resume goes next, and the server's answer to it leaves no pause.
+        let resume = try XCTUnwrap(tracker.pendingChange)
+        tracker.changeWasTaken(resume, answer: nil, at: date("2024-01-02T14:00:04Z"))
+        XCTAssertFalse(tracker.hasPendingChange)
+        XCTAssertNil(tracker.pause)
+    }
+
+    func testAPauseNeverSentIsEndedByTheResumeTheServerAnswersWithNothing() throws {
+        let now = date("2024-01-02T14:00:00Z")
+        var tracker = LocationPauseTracker()
+        tracker.startPause(until: nil, at: now)
+        tracker.endPause(at: date("2024-01-02T14:05:00Z"))
+        let resume = try XCTUnwrap(tracker.pendingChange)
+        tracker.changeWasTaken(resume, answer: nil, at: date("2024-01-02T14:05:01Z"))
+        XCTAssertEqual(tracker, LocationPauseTracker())
     }
 
     func testResumingWhenNotPausedDoesNothing() {
@@ -317,11 +355,11 @@ final class LocationPauseTests: XCTestCase {
             answering:
                 #"{"data":{"ListLocationPauses":[{"id":"pause-2","startedAt":"2024-01-02T14:00:00Z","endedAt":"2024-01-02T15:00:00Z"},{"id":"pause-1","startedAt":"2024-01-01T14:00:00Z","endedAt":null}]}}"#
         )
-        let pauses = try await connection.locationPauses(userId: "user-2", from: date("2024-01-01T00:00:00Z"), to: date("2024-01-03T00:00:00Z"))
+        let pauses = try await connection.locationPauses(userId: "user-2", from: date("2024-01-01T00:00:00Z"), until: date("2024-01-03T00:00:00Z"))
         XCTAssertEqual(pauses.map(\.id), ["pause-2", "pause-1"])
         XCTAssertEqual(
             try sentVariables(fake.sent[0]),
-            ["userId": .string("user-2"), "from": .string("2024-01-01T00:00:00Z"), "to": .string("2024-01-03T00:00:00Z")])
+            ["userId": .string("user-2"), "from": .string("2024-01-01T00:00:00Z"), "until": .string("2024-01-03T00:00:00Z")])
     }
 
     func testAReportAnswerCarriesThePauseAndWhatItDropped() async throws {

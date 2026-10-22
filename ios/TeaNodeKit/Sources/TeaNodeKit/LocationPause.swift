@@ -63,17 +63,24 @@ public enum LocationPauseChoice: String, CaseIterable, Identifiable, Sendable {
     /// own zone.
     public static let morningHour = 8
 
+    /// Before this hour, "until tomorrow morning" means this morning: a person
+    /// pausing at half past midnight is not asking for a day and a half.
+    public static let earliestTomorrowHour = 5
+
     /// When the pause ends if it begins at `now`; nil for one that goes on
     /// until the person resumes. The server takes only an end time, so the
-    /// morning is worked out here, in the zone of the calendar given.
+    /// morning is worked out here, in the zone of the calendar given: 08:00 the
+    /// next day, or 08:00 the same day before 05:00.
     public func endDate(from now: Date, calendar: Calendar = .current) -> Date? {
         switch self {
         case .anHour:
             return now.addingTimeInterval(Self.anHourSeconds)
         case .untilTomorrowMorning:
             let fallback = now.addingTimeInterval(24 * 3600)
-            guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) else { return fallback }
-            return calendar.date(bySettingHour: Self.morningHour, minute: 0, second: 0, of: tomorrow) ?? fallback
+            let isBeforeEarliestTomorrow = calendar.component(.hour, from: now) < Self.earliestTomorrowHour
+            let dayOfMorning = isBeforeEarliestTomorrow ? 0 : 1
+            guard let morningDay = calendar.date(byAdding: .day, value: dayOfMorning, to: now) else { return fallback }
+            return calendar.date(bySettingHour: Self.morningHour, minute: 0, second: 0, of: morningDay) ?? fallback
         case .untilResumed:
             return nil
         }
@@ -168,11 +175,14 @@ public struct LocationPauseTracker: Codable, Equatable, Sendable {
         pendingChange = .pause(startedAt: now, endedAt: endedAt)
     }
 
-    /// The person resumed on the phone. Nothing to send when the server never
-    /// heard of the pause.
+    /// The person resumed on the phone. A pause the server has not answered
+    /// for may already be on its way there, so the resume waits to be sent
+    /// after it; nothing is sent when no pause was ever sent.
     public mutating func endPause(at now: Date) {
         guard isPaused(at: now) else { return }
         if let confirmedPause, confirmedPause.isInEffect(at: now) {
+            pendingChange = .resume(at: now)
+        } else if case .pause? = pendingChange {
             pendingChange = .resume(at: now)
         } else {
             pendingChange = nil
@@ -184,6 +194,9 @@ public struct LocationPauseTracker: Codable, Equatable, Sendable {
     /// over it.
     public mutating func learn(_ serverPause: LocationPause?, at now: Date) {
         confirmedPause = serverPause
+        // The server has no pause to end, whatever was kept in case one was on
+        // its way.
+        if serverPause == nil, case .resume? = pendingChange { pendingChange = nil }
         settle(at: now)
     }
 
@@ -191,7 +204,13 @@ public struct LocationPauseTracker: Codable, Equatable, Sendable {
     /// nil after a resume.
     public mutating func changeWasTaken(_ change: Change, answer: LocationPause?, at now: Date) {
         confirmedPause = answer
-        if pendingChange == change { pendingChange = nil }
+        if pendingChange == change {
+            pendingChange = nil
+        } else if case .pause = change, case .resume(let resumedAt)? = pendingChange, let startedDate = answer?.startedDate, resumedAt < startedDate {
+            // Resumed while the pause was on its way: the server began it a
+            // moment after the tap, and the resume is for that pause.
+            pendingChange = .resume(at: startedDate)
+        }
         settle(at: now)
     }
 
@@ -201,13 +220,15 @@ public struct LocationPauseTracker: Codable, Equatable, Sendable {
     }
 
     /// Drops a change that no longer means anything: a pause whose end has
-    /// passed, a resume of a pause the server says is over.
+    /// passed, a resume of a pause the server says is over. A resume while the
+    /// server has no pause at all is kept: the pause it ends may still be on
+    /// its way, and sending it first does no harm.
     public mutating func settle(at now: Date) {
         switch pendingChange {
         case .pause(_, let endedAt)?:
             if let endedAt, endedAt <= now { pendingChange = nil }
         case .resume(let resumedAt)?:
-            if !(confirmedPause?.isInEffect(at: resumedAt) ?? false) { pendingChange = nil }
+            if let confirmedPause, !confirmedPause.isInEffect(at: resumedAt) { pendingChange = nil }
         case nil:
             break
         }

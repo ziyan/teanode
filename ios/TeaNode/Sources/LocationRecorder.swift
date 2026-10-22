@@ -225,12 +225,19 @@ final class LocationRecorder {
     @ObservationIgnored private var pauseEndTask: Task<Void, Never>?
     @ObservationIgnored private var pauseSendTask: Task<Void, Never>?
     @ObservationIgnored private var pauseSendTaskId: UUID?
+    /// Set while the task that sends a change of pause sleeps between two
+    /// tries, so that a tap can wake it instead of waiting out the retry.
+    @ObservationIgnored private var isPauseSendWaiting = false
     private let defaults: UserDefaults
     private let outboxDirectory: URL?
 
     private static let isRecordingOnKey = "locationIsRecordingOn"
     private static let hasAskedForAlwaysKey = "locationHasAskedForAlways"
     private static let hasDeclinedAlwaysKey = "locationHasDeclinedAlways"
+    /// Kept for each account (with the account key after it): set while the
+    /// places watched may be satisfied from before a pause, until they are
+    /// given to iOS again after it.
+    private static let hasPlacesToWatchAgainKeyPrefix = "locationHasPlacesToWatchAgain."
     /// How often the watched places are read again from the server because
     /// the person moved a long way: no more than this.
     private static let placeWatchRefreshSeconds = 60.0
@@ -411,14 +418,14 @@ final class LocationRecorder {
         let now = Date()
         pauseRefusalText = nil
         pauseTracker.startPause(until: choice.endDate(from: now), at: now)
-        pauseDidChange()
+        pauseDidChange(isSendForced: true)
     }
 
     /// The person resumed on the phone.
     func resumeRecording() {
         pauseRefusalText = nil
         pauseTracker.endPause(at: Date())
-        pauseDidChange()
+        pauseDidChange(isSendForced: true)
     }
 
     /// Says the refusal of a pause has been shown.
@@ -482,8 +489,9 @@ final class LocationRecorder {
     /// Everything that follows from the pause having changed: it is kept, the
     /// screens read it again, a pause that begins ends the visits in progress
     /// and stops the live updates, one that ends starts them again, and a
-    /// change made here is sent.
-    private func pauseDidChange() {
+    /// change made here is sent. `isSendForced` sends at once over a wait
+    /// between two tries, for a change the person just made.
+    private func pauseDidChange(isSendForced: Bool = false) {
         pauseTracker.settle(at: Date())
         keepPauseTracker()
         pauseRevision += 1
@@ -495,7 +503,39 @@ final class LocationRecorder {
         }
         startLiveUpdates()
         schedulePauseEnd()
-        sendPendingPauseChange()
+        watchPlacesAgainAfterPause()
+        sendPendingPauseChange(isForced: isSendForced)
+    }
+
+    /// After a pause the places watched are still satisfied for the person
+    /// who stayed inside one, so iOS sends no new enter: they are given to
+    /// iOS again, which says at once which the person is inside. Noted in the
+    /// defaults while a pause is in effect, so that a pause which ended while
+    /// the app was closed is still followed by it.
+    private func watchPlacesAgainAfterPause() {
+        guard let accountKey = outbox.accountKey else { return }
+        let key = Self.hasPlacesToWatchAgainKeyPrefix + accountKey
+        if pauseTracker.isPaused(at: Date()) {
+            if !defaults.bool(forKey: key) { defaults.set(true, forKey: key) }
+            return
+        }
+        guard defaults.bool(forKey: key) else { return }
+        defaults.removeObject(forKey: key)
+        Task { await giveWatchedPlacesToMonitorAgain() }
+    }
+
+    private func giveWatchedPlacesToMonitorAgain() async {
+        guard manager != nil, isMonitoringWanted, !watchedPlaces.isEmpty else { return }
+        let monitor = await ensurePlaceMonitor()
+        for place in watchedPlaces.values {
+            // Not an arrival iOS repeats for a visit in progress: the visits
+            // were ended where the pause began, so this one is a new arrival.
+            placeAddedAt[place.placeId] = nil
+            await monitor.remove(place.placeId)
+            let condition = CLMonitor.CircularGeographicCondition(
+                center: CLLocationCoordinate2D(latitude: place.latitudeDegrees, longitude: place.longitudeDegrees), radius: place.radiusMeters)
+            await monitor.add(condition, identifier: place.placeId, assuming: .unsatisfied)
+        }
     }
 
     /// Reads the pause again at the moment a timed one ends: the live updates
@@ -518,10 +558,13 @@ final class LocationRecorder {
     private func sendPendingPauseChange(isForced: Bool = false) {
         guard pauseTracker.hasPendingChange else { return }
         if pauseSendTask != nil {
-            guard isForced else { return }
+            // A try in flight is let finish, and the next one sends what
+            // changed meanwhile; only a wait between tries is cut short.
+            guard isForced, isPauseSendWaiting else { return }
             pauseSendTask?.cancel()
         }
         let taskId = UUID()
+        isPauseSendWaiting = false
         pauseSendTaskId = taskId
         pauseSendTask = Task { [weak self] in await self?.deliverPauseChanges(taskId: taskId) }
     }
@@ -560,7 +603,9 @@ final class LocationRecorder {
                     pauseDidChange()
                 case .retryLater:
                     failureCount += 1
+                    isPauseSendWaiting = true
                     try? await Task.sleep(for: .seconds(LocationPauseRetry.delaySeconds(afterFailureCount: failureCount)))
+                    if pauseSendTaskId == taskId { isPauseSendWaiting = false }
                 }
             }
         }

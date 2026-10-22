@@ -85350,6 +85350,22 @@
         }
       }
     },
+    "Nothing new is recorded until you resume, and the people you share with see that your location is paused.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開するまでは何も新しく記録されず、共有している相手には位置情報が一時停止中と表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在你恢复之前不会记录任何新内容，与你共享位置的人会看到你的位置已暂停。"
+          }
+        }
+      }
+    },
     "Stops recording for a while, on every device. The people you share with see that your location is paused.": {
       "localizations": {
         "ja": {

@@ -119,8 +119,12 @@ struct LocationSettingsView: View {
             }
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
-                if recorder.isPaused {
-                    Text("Nothing new is recorded until then, and the people you share with see that your location is paused.")
+                if let pause = recorder.activePause {
+                    if pause.isOpenEnded {
+                        Text("Nothing new is recorded until you resume, and the people you share with see that your location is paused.")
+                    } else {
+                        Text("Nothing new is recorded until then, and the people you share with see that your location is paused.")
+                    }
                 } else {
                     Text("Stops recording for a while, on every device. The people you share with see that your location is paused.")
                 }

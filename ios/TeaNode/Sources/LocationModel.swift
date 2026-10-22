@@ -193,14 +193,14 @@ final class LocationModel {
         } else {
             from = Date().addingTimeInterval(-Self.pauseLookbackSeconds)
         }
-        guard let read = try? await connection.locationPauses(from: from, to: Date()) else { return }
+        guard let read = try? await connection.locationPauses(from: from, until: Date()) else { return }
         pauses = read
     }
 
     /// The pauses of a stretch, for a screen that lists them among visits; none
     /// when they cannot be read.
-    func pauses(from: Date, to: Date) async -> [LocationPause] {
-        (try? await connection.locationPauses(from: from, to: to)) ?? []
+    func pauses(from: Date, until: Date) async -> [LocationPause] {
+        (try? await connection.locationPauses(from: from, until: until)) ?? []
     }
 
     private func apply(

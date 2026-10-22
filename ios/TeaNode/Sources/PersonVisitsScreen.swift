@@ -46,7 +46,7 @@ final class PersonVisitsModel {
             let visitPage = try await connection.locationVisits(userId: userId, from: window.from, until: window.until, limitCount: 200)
             let placePage = try await connection.locationPlaces(userId: userId, limitCount: LocationModel.placePageSize)
             // A server that cannot list pauses has none to show.
-            let pauseList = (try? await connection.locationPauses(userId: userId, from: window.from, to: window.until)) ?? []
+            let pauseList = (try? await connection.locationPauses(userId: userId, from: window.from, until: window.until)) ?? []
             // Another day was chosen while this was read.
             guard day == requestedDay else { return }
             visits = visitPage.placeVisits

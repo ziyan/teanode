@@ -598,8 +598,8 @@ extension Documents {
         }
         """
     public static let locationPauses = """
-        query ($userId: String, $from: DateTime!, $to: DateTime!) {
-          ListLocationPauses(userId: $userId, from: $from, to: $to) { \(locationPauseFields) }
+        query ($userId: String, $from: DateTime!, $until: DateTime!) {
+          ListLocationPauses(userId: $userId, from: $from, until: $until) { \(locationPauseFields) }
         }
         """
     public static let pauseLocation = """
@@ -803,9 +803,9 @@ extension Connection {
 
     /// The pauses that overlap a range, newest first: the person's own, or
     /// somebody sharing their history with the caller.
-    public func locationPauses(userId: String? = nil, from: Date, to: Date) async throws -> [LocationPause] {
+    public func locationPauses(userId: String? = nil, from: Date, until: Date) async throws -> [LocationPause] {
         struct Answer: Decodable, Sendable { let ListLocationPauses: [LocationPause] }
-        var variables: [String: JSONValue] = ["from": .string(CalendarDates.text(from)), "to": .string(CalendarDates.text(to))]
+        var variables: [String: JSONValue] = ["from": .string(CalendarDates.text(from)), "until": .string(CalendarDates.text(until))]
         if let userId { variables["userId"] = .string(userId) }
         return try await execute(Documents.locationPauses, variables: variables, as: Answer.self).ListLocationPauses
     }

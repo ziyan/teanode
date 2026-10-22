@@ -700,7 +700,7 @@ struct LocationDayScreen: View {
         do {
             async let readVisits = model.connection.locationVisits(from: window.from, until: window.until, limitCount: 200)
             async let readPoints = model.points(on: day)
-            async let readPauses = model.pauses(from: window.from, to: window.until)
+            async let readPauses = model.pauses(from: window.from, until: window.until)
             let (page, read) = try await (readVisits, readPoints)
             visits = page.placeVisits
             pauses = await readPauses
