@@ -849,7 +849,7 @@ it('shares the album with a person at the level and with the places the person c
       },
     ]),
   )
-  expect(await screen.findByText('Shared with Ben.')).toBeTruthy()
+  expect(await screen.findByText('Shared with Ben')).toBeTruthy()
 })
 
 it('shares the album with a circle, named as everyone in it', async () => {
@@ -885,7 +885,7 @@ it('changes what somebody has by sharing again, starting from what they have now
     shareLevel: 'contribute',
     isLocationIncluded: true,
   })
-  expect(await screen.findByText('Changed what Ben can do.')).toBeTruthy()
+  expect(await screen.findByText('Changed what Ben can do')).toBeTruthy()
 })
 
 it('asks before taking a share back, and says their photos leave the album', async () => {

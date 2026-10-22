@@ -588,7 +588,7 @@ struct PhotoAlbumShareSheet: View {
         do {
             try await connection.removePhotoAlbumShare(share.id)
             shares.removeAll { $0.id == share.id }
-            doneText = String(localized: "No longer shared with \(share.granteeDisplayName)")
+            doneText = String(localized: "Stopped sharing with \(share.granteeDisplayName)")
         } catch {
             problemText = model.describe(error)
         }

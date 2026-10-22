@@ -62082,22 +62082,6 @@
         }
       }
     },
-    "No longer shared with %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@との共有をやめました"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已不再与%@共享"
-          }
-        }
-      }
-    },
     "No photos match your filters": {
       "localizations": {
         "ja": {
@@ -63741,7 +63725,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "共有を停止できませんでした。接続を確認して、もう一度お試しください。"
+            "value": "共有をやめられませんでした。接続を確認して、もう一度お試しください。"
           }
         },
         "zh-Hans": {
@@ -64147,7 +64131,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@里的所有人可以在你选择的范围内看到你的日历。你标为私密的日程只会显示为“忙碌”。"
+            "value": "%@的所有人可以在你选择的范围内看到你的日历。你标为私密的日程只会显示为“忙碌”。"
           }
         }
       }
@@ -66677,7 +66661,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "行をタップすると、見える範囲の変更や共有の停止ができます。"
+            "value": "行をタップすると、見える範囲の変更や共有の中止ができます。"
           }
         },
         "zh-Hans": {
@@ -74644,34 +74628,18 @@
         }
       }
     },
-    "Sharing with %@ saved.": {
+    "Sharing with %@ saved": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@との共有を保存しました。"
+            "value": "%@との共有を保存しました"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已保存与%@的共享。"
-          }
-        }
-      }
-    },
-    "Stopped sharing with %@.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@との共有をやめました。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已停止与%@共享。"
+            "value": "已保存与%@的共享"
           }
         }
       }

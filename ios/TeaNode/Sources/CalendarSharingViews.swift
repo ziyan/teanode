@@ -575,7 +575,7 @@ struct CalendarShareScreen: View {
         Task {
             do {
                 try await model.connection.unshareCalendar(shareId: share.id)
-                doneText = String(localized: "No longer shared with \(name)")
+                doneText = String(localized: "Stopped sharing with \(name)")
                 shares = try await model.connection.calendarShares(calendarId: calendar.id)
             } catch {
                 problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
