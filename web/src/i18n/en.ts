@@ -4042,9 +4042,9 @@ export const en = {
   'knowledge.share.reachesLater': 'A page you add under it later is shared too.',
   'knowledge.share.reachesMore': 'and {count} more',
   'knowledge.share.withheldOne':
-    '{count} fact from finance, recordings or location stays private. Those have their own sharing.',
+    '{count} fact from finance, recordings, location, private events, or records that are gone stays private. Those have their own sharing.',
   'knowledge.share.withheldOther':
-    '{count} facts from finance, recordings or location stay private. Those have their own sharing.',
+    '{count} facts from finance, recordings, location, private events, or records that are gone stay private. Those have their own sharing.',
   'knowledge.share.submit': 'Share',
   'knowledge.share.shares': 'Shared with',
   'knowledge.share.sharesHint': 'Who can read this page, read only. A page shared above this one shares this one too.',
@@ -6278,8 +6278,8 @@ export const en = {
   'sharing.level.current': 'Where they are now',
   'sharing.level.history': 'Where they are and where they have been',
   'sharing.pageDeleted': 'Page deleted',
-  'sharing.stop': 'Stop sharing',
   'sharing.thisPage': 'this page',
+  'sharing.stop': 'Stop sharing',
   'sharing.stopFor': 'Stop sharing with {name}',
   'sharing.stopTitle': 'Stop sharing with {name}?',
   'sharing.stopBody': '{name} can no longer see {what}.',

@@ -391,7 +391,7 @@ it('shows what they will see before the page is shared, with the quotes only whe
   expect(within(dialog).getByText('and 1 more')).toBeTruthy()
   expect(
     within(dialog).getByText(
-      '3 facts from finance, recordings or location stay private. Those have their own sharing.',
+      '3 facts from finance, recordings, location, private events, or records that are gone stay private. Those have their own sharing.',
     ),
   ).toBeTruthy()
   expect(within(dialog).queryByText('see you Tuesday at three')).toBeNull()
