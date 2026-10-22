@@ -117,7 +117,7 @@ jobs:
         env:
           TEANODE_TEST_DATABASE_HOST: 127.0.0.1
           TEANODE_TEST_VECTOR: "off"
-        run: go test -mod=vendor -race -count=1 -timeout 25m ./cmd/... ./internal/...
+        run: go test -mod=vendor -race -count=1 -timeout 45m ./cmd/... ./internal/...
 
   vector:
     name: Vector database

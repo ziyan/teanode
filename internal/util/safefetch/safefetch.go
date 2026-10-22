@@ -72,7 +72,11 @@ func Client() *http.Client {
 	return &http.Client{
 		Timeout: Timeout,
 		Transport: &http.Transport{
-			DialContext:           dialer.DialContext,
+			DialContext: dialer.DialContext,
+			// A transport with its own dialer speaks HTTP/1.1 unless told
+			// otherwise, and some sites behind a bot check refuse a Go client
+			// over HTTP/1.1 that they answer over HTTP/2, as browsers speak.
+			ForceAttemptHTTP2:     true,
 			TLSHandshakeTimeout:   Timeout,
 			ResponseHeaderTimeout: Timeout,
 			DisableKeepAlives:     true,
