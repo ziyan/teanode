@@ -35,6 +35,18 @@ func init() {
 			},
 			{
 				Name: "account_update", Family: tools.FamilyAccount, Risk: tools.RiskWrite,
+				// The notification address is where the agent's mailed
+				// briefings and notices go, so pointing it somewhere else
+				// asks first; the other fields are ordinary writes.
+				RiskOf: func(arguments json.RawMessage) tools.Risk {
+					var asked struct {
+						Email *string `json:"email"`
+					}
+					if err := json.Unmarshal(arguments, &asked); err != nil || asked.Email != nil {
+						return tools.RiskOutward
+					}
+					return tools.RiskWrite
+				},
 				Description: "Change the person's own name, notification address, language, time zone or pronoun. The pronoun (he, she or they, empty to clear it) is how they are described: it words what the people in their circles are to them (a son rather than a child) and how you speak of them. Set it only on their own word, never from their name.",
 				Parameters: tools.Object(map[string]any{
 					"name":          tools.StringProperty("what to call them"),

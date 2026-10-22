@@ -97,3 +97,29 @@ func TestUpdatingThePronounIsAWriteThatTheCardNames(t *testing.T) {
 		t.Errorf("the card %q does not name the pronoun", said)
 	}
 }
+
+// The notification address is where the agent's mailed briefings and notices
+// go, so pointing it somewhere else is judged like speaking for the person
+// and raises a card, in a conversation and, unless they allowed it, in a run
+// nobody is watching. The other fields stay ordinary writes.
+func TestAccountUpdateEmailIsOutward(t *testing.T) {
+	tool := accountTool(t)
+	for arguments, wanted := range map[string]tools.Risk{
+		`{"action":"update","email":"someone@example.org"}`:                tools.RiskOutward,
+		`{"action":"update","name":"Robin","email":"someone@example.org"}`: tools.RiskOutward,
+		`{"action":"update","name":"Robin"}`:                               tools.RiskWrite,
+		`{"action":"update","locale":"ja","timezone":"Asia/Tokyo"}`:        tools.RiskWrite,
+	} {
+		if risk := tool.RiskFor([]byte(arguments)); risk != wanted {
+			t.Errorf("%s is judged %q, wanted %q", arguments, risk, wanted)
+		}
+	}
+	arguments := []byte(`{"action":"update","email":"someone@example.org"}`)
+	if reasons := tools.ConfirmationReasons(tool, arguments, &config.AgentTools{}, &models.Agent{}); len(reasons) != 1 || reasons[0] != models.UnattendedRiskOutward {
+		t.Fatalf("a new notification address asks first: %v", reasons)
+	}
+	arguments = []byte(`{"action":"update","name":"Robin"}`)
+	if reasons := tools.ConfirmationReasons(tool, arguments, &config.AgentTools{}, &models.Agent{}); len(reasons) != 0 {
+		t.Fatalf("a new name asks nothing: %v", reasons)
+	}
+}
