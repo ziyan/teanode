@@ -19,6 +19,9 @@ final class FinanceModel {
     /// Showing (nil for the person's own).
     private(set) var sharedAccounts: [SharedFinanceAccount] = []
     var selectedOwnerUserId: String?
+    /// Whether what other people share has been read once, so a person with
+    /// no finance of their own is not told it is not set up before then.
+    private(set) var hasReadShared = false
     var doneText: String?
     var problemText: String?
 
@@ -44,6 +47,7 @@ final class FinanceModel {
     /// Reads what other people share with the person. A failure leaves what
     /// was shown, since the person's own finance does not wait for it.
     func loadShared() async {
+        defer { hasReadShared = true }
         guard let read = try? await connection.sharedFinanceAccounts() else { return }
         sharedAccounts = read
         // Somebody who stopped sharing is no longer shown.
@@ -162,12 +166,22 @@ struct FinanceScreen: View {
     @State private var searchCount = 0
     @Environment(AppModel.self) private var app
 
+    /// Whose shared accounts are shown instead of the parts: the person chosen
+    /// under Showing, else, for a person with no finance of their own, the
+    /// first who shares with them, as the dashboard does. Banks and currency
+    /// stays reachable for a person who has none of their own yet.
+    private var shownSharer: FinanceSharer? {
+        if let chosen = finance.selectedSharer { return chosen }
+        if finance.isSharedOnly, part != .setup { return finance.sharers.first }
+        return nil
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             Group {
                 // Somebody's shared accounts are not the person's own parts:
                 // they are shown instead of them, until "You" is chosen again.
-                if let sharer = finance.selectedSharer {
+                if let sharer = shownSharer {
                     SharedFinanceView(sharer: sharer)
                 } else {
                     switch part {
@@ -204,7 +218,7 @@ struct FinanceScreen: View {
                 TransactionsView(filter: link.filter)
             }
             .overlay {
-                if finance.isShown == false, part != .setup, finance.selectedSharer == nil {
+                if finance.isShown == false, finance.hasReadShared, part != .setup, shownSharer == nil {
                     ContentUnavailableView("Finance is not set up", systemImage: "building.columns", description: Text("Link a bank from your dashboard: Settings, then Agent, then Finance."))
                 }
             }
