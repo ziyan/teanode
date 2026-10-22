@@ -199,6 +199,7 @@ type Transaction interface {
 	HealthOperation
 	HealthLockOperation
 	HealthShareOperation
+	FinanceShareOperation
 	PasswordsOperation
 	PageShareOperation
 	SkillShareOperation

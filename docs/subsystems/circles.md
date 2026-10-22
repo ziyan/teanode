@@ -114,6 +114,16 @@ and must not read as part of the sentence) and how many people it is. The dashbo
 pickers as "Everyone in Family (4 people)", so two circles called the same can
 be told apart there too.
 
+**A circle that Health or a finance account is shared with.** Whoever joins a
+circle reads what was shared with it, so bringing somebody into such a circle is
+sharing that with them, and is the person's own tap, as sharing it is.
+`InviteToCircle` and `AddCircleMember` refuse a command line token, an
+operator signed in as the person and the agent's own operations while
+`CircleHasSensitiveShare` says a health share or a finance account share
+names the circle (`requireTapForSensitiveSharedCircle`, in
+`apigraph/circle.go`); the dashboard and the iPhone app are taps. Answering an
+invitation is the invited person's own, and is not refused.
+
 An operator with `user:manage` can put an account in a circle without an
 invitation (`AddCircleMember`), for an account made for somebody who will not
 set it up themselves. That is the operator path, and it is offered where the
@@ -275,7 +285,7 @@ hangs on the account.
 
 The card is the person as `ListCirclePeople` shows them (with the relationship
 between the two and `linkedContactId`), the circles in common, the caller's own
-contact for them, and whether a chat can be opened. The rest is six sections,
+contact for them, and whether a chat can be opened. The rest is seven sections,
 each read in a transaction of its own, side by side, under the same access
 check as the part of the app it stands for, so the card never shows more than
 that part would. A section that fails or takes longer than three seconds is
@@ -287,6 +297,7 @@ leaves an `unavailable` section out.
 | --- | --- | --- | --- |
 | Location: where they are, and today's visits at the history level | the account, `reachLocation` | no location share reaches the caller | never |
 | Health: the kinds they share that have a day summary | the account, `reachHealth` | no health category is shared | never |
+| Finance: the accounts they share, each as its level shows it (name, kind, balance, a card's usage) | the account, `ListReachedFinanceAccounts` | no finance account is shared | never |
 | Photos of them | the caller's contact and its face group | never | no contact is linked |
 | Albums they shared with the caller | the account | never | never |
 | Mail with them | the addresses on the caller's contact, across every mailbox | never | no contact is linked |

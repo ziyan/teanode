@@ -104,7 +104,7 @@ func printPersonCard(card *client.PersonCard) error {
 		return err
 	}
 	for _, print := range []func(*client.PersonCard) error{
-		printPersonCardLocation, printPersonCardHealth, printPersonCardPhotos,
+		printPersonCardLocation, printPersonCardHealth, printPersonCardFinance, printPersonCardPhotos,
 		printPersonCardMail, printPersonCardRecordings, printPersonCardMemory,
 	} {
 		if err := print(card); err != nil {
@@ -193,6 +193,26 @@ func printPersonCardHealth(card *client.PersonCard) error {
 		return err
 	}
 	personCardMore(section.HasMore, "kinds; teanode health types --person <username> lists them")
+	return nil
+}
+
+func printPersonCardFinance(card *client.PersonCard) error {
+	section := card.Finance
+	if section == nil || !personCardSectionHeading("finance", section.SectionState) {
+		return nil
+	}
+	rows := make([][]string, 0, len(section.FinanceAccounts))
+	for _, each := range section.FinanceAccounts {
+		used := ""
+		if each.CreditUsage != nil {
+			used = usageShareWords(each.CreditUsage.UsageShare)
+		}
+		rows = append(rows, []string{financeAccountWords(each.AccountName, each.AccountMask), money(each.CurrentBalance, each.CurrencyCode), used, each.FinanceShareLevel})
+	}
+	if err := printTable([]string{"account", "balance", "used", "shared at"}, rows); err != nil {
+		return err
+	}
+	personCardMore(section.HasMore, "accounts; teanode finance accounts --person <username> lists them")
 	return nil
 }
 

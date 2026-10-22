@@ -45,6 +45,24 @@ export type PersonCardHealthSection = {
   hasMore: boolean
 }
 
+// The finance accounts they share, each as the level it was shared at shows
+// it. Never read by the agent.
+export type PersonCardFinanceAccount = {
+  financeAccountId: string
+  financeShareLevel: string
+  accountName: string
+  accountMask?: string | null
+  currencyCode: string
+  currentBalance?: string | null
+  creditUsage: { usageShare?: number | null } | null
+}
+
+export type PersonCardFinanceSection = {
+  sectionState: PersonCardSectionState
+  financeAccounts: PersonCardFinanceAccount[]
+  hasMore: boolean
+}
+
 export type PersonCardPhotosSection = {
   photosState: PersonCardSectionState
   photos: Photo[]
@@ -111,6 +129,7 @@ export type PersonCard = {
   canMessage: boolean
   location: PersonCardLocationSection | null
   health: PersonCardHealthSection | null
+  finance: PersonCardFinanceSection | null
   photos: PersonCardPhotosSection | null
   mail: PersonCardMailSection | null
   recordings: PersonCardRecordingSection | null
@@ -142,6 +161,14 @@ export const READ_PERSON_CARD = `
         healthTypes {
           healthType healthCategory typeName valueKind quantityUnit summaryKind firstDay lastDay sampleCount
           latestDaySummary { ${HEALTH_DAY_FIELDS} }
+        }
+        hasMore
+      }
+      finance {
+        sectionState
+        financeAccounts {
+          financeAccountId financeShareLevel accountName accountMask currencyCode currentBalance
+          creditUsage { usageShare }
         }
         hasMore
       }
@@ -181,6 +208,10 @@ export function personLocationPath(userId: string): string {
 
 export function personHealthPath(userId: string): string {
   return `/health?person=${encodeURIComponent(userId)}`
+}
+
+export function personFinancePath(userId: string): string {
+  return `/finance/spending?person=${encodeURIComponent(userId)}`
 }
 
 // All the signed-in person's mail from an address, in every folder.

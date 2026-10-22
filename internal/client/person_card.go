@@ -39,6 +39,7 @@ type PersonCard struct {
 
 	Location   *PersonCardLocation  `json:"location"`
 	Health     *PersonCardHealth    `json:"health"`
+	Finance    *PersonCardFinance   `json:"finance"`
 	Photos     *PersonCardPhotos    `json:"photos"`
 	Mail       *PersonCardMail      `json:"mail"`
 	Recordings *PersonCardRecording `json:"recordings"`
@@ -65,6 +66,14 @@ type PersonCardHealth struct {
 	SectionState PersonCardSectionState `json:"sectionState"`
 	HealthTypes  []*HealthTypeView      `json:"healthTypes"`
 	HasMore      bool                   `json:"hasMore"`
+}
+
+// PersonCardFinance is the finance accounts they share, each as the level it
+// was shared at shows it. Never read by the agent.
+type PersonCardFinance struct {
+	SectionState    PersonCardSectionState  `json:"sectionState"`
+	FinanceAccounts []*SharedFinanceAccount `json:"financeAccounts"`
+	HasMore         bool                    `json:"hasMore"`
 }
 
 // PersonCardPhotos is photos of them in the library, and the albums they
@@ -158,6 +167,13 @@ const DocumentReadPersonCard = `query ($userId: String, $addressBookId: String, 
       healthTypes {
         healthType healthCategory typeName valueKind quantityUnit summaryKind firstDay lastDay sampleCount
         latestDaySummary { ` + healthDayFields + ` }
+      }
+    }
+    finance {
+      sectionState hasMore
+      financeAccounts {
+        financeAccountId ownerUserId ownerUsername ownerName financeShareLevel accountName accountMask accountKind currencyCode currentBalance balanceAt
+        creditUsage { owedAmount creditLimitAmount creditLimitSource usageShare }
       }
     }
     photos {

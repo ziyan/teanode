@@ -82,6 +82,7 @@
                 {"person":\#(circleMemberJSON("sam", memberRole: "member")),"contact":\#(samContactJSON),"sharedCircles":\#(sharedCirclesJSON),"canMessage":true,
                  "location":{"sectionState":"shown","location":\#(LocationDemo.sharedPersonJSON(userId: "sam")),"todayVisits":[\#(visits)],"hasMoreTodayVisits":false},
                  "health":{"sectionState":"shown","healthTypes":\#(healthTypes),"hasMore":\#(hasMoreHealth)},
+                 "finance":{"sectionState":"shown","financeAccounts":\#(FinanceSharingDemo.cardAccountsJSON),"hasMore":true},
                  "photos":{"photosState":"shown","photos":\#(photos),"hasMorePhotos":true,"albumsState":"shown","albums":[\#(sharedAlbumJSON(ownerUserId: "sam", title: "Riverside weekend", photoCount: 4, coverPhotoId: "demo-01"))],"hasMoreAlbums":false},
                  "mail":{"sectionState":"shown","hasMore":true,"mails":[
                    \#(mailJSON("mail-lunch", subject: "Lunch on Friday?", isFromPerson: true, isUnread: true, daysAgo: 0, hour: 8, minute: 20)),
@@ -104,6 +105,7 @@
                 {"person":\#(circleMemberJSON(userId, memberRole: "member")),"contact":null,"sharedCircles":\#(sharedCirclesJSON),"canMessage":true,
                  "location":{"sectionState":"shown","location":\#(LocationDemo.sharedPersonJSON(userId: userId)),"todayVisits":[],"hasMoreTodayVisits":false},
                  "health":{"sectionState":"notShared","healthTypes":[],"hasMore":false},
+                 "finance":{"sectionState":"notShared","financeAccounts":[],"hasMore":false},
                  "photos":{"photosState":"needsContact","photos":[],"hasMorePhotos":false,"albumsState":"shown","albums":[\#(album)],"hasMoreAlbums":false},
                  "mail":{"sectionState":"needsContact","mails":[],"hasMore":false},
                  "recordings":{"sectionState":"needsContact","recordings":[],"hasMore":false},

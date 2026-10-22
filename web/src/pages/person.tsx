@@ -7,7 +7,7 @@ import { Avatar } from '../components/avatar'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { contactPhotoAddress, useContactEditor } from '../components/contactEditor'
 import { LinkContactDialog } from '../components/contactLinkDialog'
-import { ErrorMessage, Loading } from '../components/common'
+import { ErrorMessage, Loading, formatMoney } from '../components/common'
 import { PencilIcon } from '../components/icons'
 import { dayKeyOf, placeTitle, visitDurationText, type PlaceVisit } from '../components/locationData'
 import { PlaceLabelIcon } from '../components/placeLabelIcon'
@@ -23,6 +23,7 @@ import {
   composeToAddressPath,
   isSectionDrawn,
   mailFromAddressPath,
+  personFinancePath,
   personHealthPath,
   personLocationPath,
   READ_PERSON_CARD,
@@ -139,7 +140,10 @@ function PersonCardView({
 
   // The book the contact is in, which on an account's card is whichever of
   // the person's books holds the contact linked to it.
-  const editor = useContactEditor({ addressBookId: contact?.addressBookId || addressBookId || undefined, onChanged: reload })
+  const editor = useContactEditor({
+    addressBookId: contact?.addressBookId || addressBookId || undefined,
+    onChanged: reload,
+  })
   const { act, isBusy, problem, clearProblem } = useAct(reload)
 
   const timeFormat = useMemo(
@@ -237,10 +241,12 @@ function PersonCardView({
     </div>
   )
 
-  const { location, health, photos, mail, recordings, memory } = card
+  const { location, health, finance, photos, mail, recordings, memory } = card
   // A circle's kind, unless its name already says it ("Family" of kind family).
   const circleKindText = (circle: (typeof card.sharedCircles)[number]) => {
-    const kindText = CIRCLE_KIND_LABELS[circle.circleKind] ? t(CIRCLE_KIND_LABELS[circle.circleKind]) : circle.circleKind
+    const kindText = CIRCLE_KIND_LABELS[circle.circleKind]
+      ? t(CIRCLE_KIND_LABELS[circle.circleKind])
+      : circle.circleKind
     return kindText.trim().toLowerCase() === circle.circleName.trim().toLowerCase() ? '' : kindText
   }
   const todayDay = dayText(new Date())
@@ -335,24 +341,22 @@ function PersonCardView({
               ) : (
                 <>
                   {otherVisits.length > 0 && <h4 className="person-subheading">{t('person.visitsToday')}</h4>}
-                  {otherVisits.length === 0 ? (
-                    // The visit they are in, begun on an earlier day, is today's
-                    // whole story, and is the row above.
-                    !openVisit && <PersonEmpty>{t('person.noVisitsToday')}</PersonEmpty>
-                  ) : (
-                    otherVisits.map((visit) => (
-                      <div className="person-row" key={visit.id}>
-                        <span className="person-row-icon">
-                          <PlaceLabelIcon placeLabel={visit.place.placeLabel} />
-                        </span>
-                        <span className="person-row-text">
-                          <span className="person-row-title">{placeTitle(visit.place, t)}</span>
-                          <span className="person-row-detail muted">{rangeOf(visit)}</span>
-                        </span>
-                        <span className="person-row-meta muted">{visitDurationText(visit, t)}</span>
-                      </div>
-                    ))
-                  )}
+                  {otherVisits.length === 0
+                    ? // The visit they are in, begun on an earlier day, is today's
+                      // whole story, and is the row above.
+                      !openVisit && <PersonEmpty>{t('person.noVisitsToday')}</PersonEmpty>
+                    : otherVisits.map((visit) => (
+                        <div className="person-row" key={visit.id}>
+                          <span className="person-row-icon">
+                            <PlaceLabelIcon placeLabel={visit.place.placeLabel} />
+                          </span>
+                          <span className="person-row-text">
+                            <span className="person-row-title">{placeTitle(visit.place, t)}</span>
+                            <span className="person-row-detail muted">{rangeOf(visit)}</span>
+                          </span>
+                          <span className="person-row-meta muted">{visitDurationText(visit, t)}</span>
+                        </div>
+                      ))}
                 </>
               )}
               {person && showAll(personLocationPath(person.userId))}
@@ -407,6 +411,40 @@ function PersonCardView({
             </>
           ) : (
             stateText(health.sectionState, t('person.healthNotShared', { name: displayName }))
+          )}
+        </section>
+      )}
+
+      {isSectionDrawn(finance) && (
+        <section className="card person-section" aria-label={t('finance.title')}>
+          <h3>{t('finance.title')}</h3>
+          {finance.sectionState === 'shown' ? (
+            <>
+              {finance.financeAccounts.map((account) => {
+                const usageShare = account.creditUsage?.usageShare
+                return (
+                  <div className="person-row" key={account.financeAccountId}>
+                    <span className="person-row-text">
+                      <span className="person-row-title">
+                        {account.accountMask ? `${account.accountName} ··${account.accountMask}` : account.accountName}
+                      </span>
+                      <span className="person-row-detail muted">
+                        {t(`finance.shareLevelName.${account.financeShareLevel}` as Key)}
+                        {usageShare !== undefined && usageShare !== null
+                          ? ` · ${t('person.financeUsed', { percent: `${Math.round(usageShare * 100)}%` })}`
+                          : ''}
+                      </span>
+                    </span>
+                    <span className="person-row-meta">
+                      {account.currentBalance ? formatMoney(Number(account.currentBalance), account.currencyCode) : ''}
+                    </span>
+                  </div>
+                )
+              })}
+              {person && showAll(personFinancePath(person.userId))}
+            </>
+          ) : (
+            stateText(finance.sectionState, t('person.financeNotShared', { name: displayName }))
           )}
         </section>
       )}
@@ -565,7 +603,9 @@ function PersonCardView({
                   <span className="person-row-text">
                     <span className="person-row-title">{page.nodeName}</span>
                     {page.summary && <span className="person-row-detail muted">{page.summary}</span>}
-                    {page.isMatchedByName && <span className="person-row-detail muted">{t('person.matchedByName')}</span>}
+                    {page.isMatchedByName && (
+                      <span className="person-row-detail muted">{t('person.matchedByName')}</span>
+                    )}
                   </span>
                 </Link>
               ))

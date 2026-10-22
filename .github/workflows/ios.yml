@@ -415,6 +415,11 @@ jobs:
           shoot finance-paystub-entry-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-paystub-entry
           shoot finance-tax-form-entry-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-tax-form-entry
           shoot finance-part-switch-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-part-switch
+          # Finance accounts shared with other people: the person's own shares, and what somebody shares with the person.
+          shoot finance-sharing-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-sharing
+          shoot finance-sharing-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-sharing
+          shoot finance-person-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-person
+          shoot finance-person-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-person
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
           # Photos, from invented photos drawn by the demo server: the library as a grid, the viewer on its

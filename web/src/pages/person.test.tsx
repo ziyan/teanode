@@ -146,6 +146,7 @@ function sam(overrides: Partial<PersonCard> = {}): PersonCard {
       ],
       hasMore: false,
     },
+    finance: { sectionState: 'notShared', financeAccounts: [], hasMore: false },
     photos: {
       photosState: 'shown',
       photos: [
@@ -315,6 +316,7 @@ it('asks for the account in the address and draws the head and every section', a
   expect(names).toEqual([
     'Location',
     'Health',
+    'Finance',
     'Photos',
     'Mail',
     'Recordings',
@@ -554,4 +556,45 @@ it('says a person who is not in the circles is not found, and a failure as a fai
   answer(new Error('the server is down'))
   renderAt('/people/person-sam')
   expect(await screen.findByText('Could not read this card.')).toBeTruthy()
+})
+
+// The accounts they share are listed as their levels show them, with how much of
+// a card's limit is used, and a way into the Finance page on them.
+it('lists the finance accounts they share, and a card with how much of its limit is used', async () => {
+  answer(
+    sam({
+      finance: {
+        sectionState: 'shown',
+        hasMore: false,
+        financeAccounts: [
+          {
+            financeAccountId: 'account-one',
+            financeShareLevel: 'transactions',
+            accountName: 'Joint checking',
+            accountMask: '7788',
+            currencyCode: 'USD',
+            currentBalance: '2450.1000',
+            creditUsage: null,
+          },
+          {
+            financeAccountId: 'account-two',
+            financeShareLevel: 'balance',
+            accountName: 'Store card',
+            accountMask: null,
+            currencyCode: 'USD',
+            currentBalance: '-100.0000',
+            creditUsage: { usageShare: 0.25 },
+          },
+        ],
+      },
+    }),
+  )
+  renderAt('/people/person-sam')
+  expect(await screen.findByText('Joint checking ··7788')).toBeTruthy()
+  expect(screen.getByText('$2,450.10')).toBeTruthy()
+  expect(screen.getByText('Store card')).toBeTruthy()
+  expect(screen.getByText(/25% used/)).toBeTruthy()
+  expect(screen.getAllByRole('link', { name: 'Show all' }).map((link) => link.getAttribute('href'))).toContain(
+    '/finance/spending?person=person-sam',
+  )
 })

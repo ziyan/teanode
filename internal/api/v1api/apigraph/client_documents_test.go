@@ -248,6 +248,10 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 	for name, document := range client.FinanceDocuments {
 		documents[name] = document
 	}
+	// Sharing a finance account, which the finance tool has no part in.
+	for name, document := range client.FinanceShareDocuments {
+		documents[name] = document
+	}
 
 	for name, document := range documents {
 		parsed, err := parser.Parse(parser.ParseParams{Source: source.NewSource(&source.Source{Body: []byte(document), Name: name})})

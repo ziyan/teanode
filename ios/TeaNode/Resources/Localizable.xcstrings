@@ -84465,6 +84465,374 @@
           }
         }
       }
+    },
+    "Balance": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "残高"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "余额"
+          }
+        }
+      }
+    },
+    "Owed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未払い"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已欠"
+          }
+        }
+      }
+    },
+    "Credit limit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利用限度額"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "信用额度"
+          }
+        }
+      }
+    },
+    "They see the account's name, kind and balance, and for a credit card how much of its limit is used.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口座の名前、種類、残高が見えます。クレジットカードでは、限度額のうちどれだけ使っているかも見えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方能看到账户的名称、类型和余额；信用卡还能看到已用额度占限额的比例。"
+          }
+        }
+      }
+    },
+    "They also see what you spent and received each month, by spending category. No merchants.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "残高に加えて、毎月の支出と入金が支出カテゴリ別に見えます。店名は見えません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方还能按支出类别看到你每月的支出和收入，看不到商家。"
+          }
+        }
+      }
+    },
+    "They also see each transaction's date, amount, merchant and spending category.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支出の内訳に加えて、各取引の日付、金額、店名、支出カテゴリが見えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方还能看到每笔交易的日期、金额、商家和支出类别。"
+          }
+        }
+      }
+    },
+    "Accounts shared by %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@が共有している口座"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@共享的账户"
+          }
+        }
+      }
+    },
+    "You see each account as much as its owner chose to share. Your agent does not read any of it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各口座は、持ち主が共有すると決めた範囲だけが表示されます。あなたのエージェントがこの内容を読むことはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个账户只显示其所有者选择共享的部分。你的智能体不会读取这些内容。"
+          }
+        }
+      }
+    },
+    "%@ used": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@使用中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已用%@"
+          }
+        }
+      }
+    },
+    "Nothing spent or received yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ支出も入金もありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有支出或收入"
+          }
+        }
+      }
+    },
+    "No category yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カテゴリなし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚无类别"
+          }
+        }
+      }
+    },
+    "%@ in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入金%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收入%@"
+          }
+        }
+      }
+    },
+    "No transactions yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ取引がありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有交易"
+          }
+        }
+      }
+    },
+    "No merchant name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "店名なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有商家名称"
+          }
+        }
+      }
+    },
+    "None of your accounts is shared with anybody.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有している口座はありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的账户都没有共享给任何人。"
+          }
+        }
+      }
+    },
+    "Share an account": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口座を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享账户"
+          }
+        }
+      }
+    },
+    "People you share an account with see only what the level you choose shows. Your agent never reads what others share with you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口座を共有した相手には、選んだレベルで見える内容だけが表示されます。あなたのエージェントが他の人から共有された内容を読むことはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与你共享账户的人只能看到你所选级别包含的内容。你的智能体不会读取别人共享给你的内容。"
+          }
+        }
+      }
+    },
+    "%@, shared with %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@、%@と共有中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@，已共享给%@"
+          }
+        }
+      }
+    },
+    "%@ is shared with %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を%@と共有しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@已共享给%@。"
+          }
+        }
+      }
+    },
+    "%@ is no longer shared with %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@は%@と共有されなくなりました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@不再与%@共享。"
+          }
+        }
+      }
+    },
+    "Choose an account": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口座を選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择账户"
+          }
+        }
+      }
+    },
+    "Shared with %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@と共有しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已共享给%@。"
+          }
+        }
+      }
+    },
+    "%@ shares no finance account with you yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@はまだ金融口座をあなたと共有していません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@还没有与你共享财务账户。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
