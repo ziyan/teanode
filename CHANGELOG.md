@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.193.3] - 2026-10-22
+
+### Fixed
+
+- A long Passwords list on a slow server is no longer cut off before it reaches the reader. (#627)
+- Locking Passwords on the dashboard while it is reading no longer leaves a stale record behind that could mark an item as changed back by the server. (#627)
+
 ## [0.193.2] - 2026-10-22
 
 ### Changed
