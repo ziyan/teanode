@@ -322,45 +322,59 @@ Each kind of thing is shared by its own table and managed on its own page, so
 nothing showed a person everything they had given out or been given.
 `ListSharing` does: for the caller, **what they share** and **what is shared
 with them**, across calendar, location, Health, memory pages, photo albums,
-skills and passwords. A row says the kind, the thing (the calendar's or album's
-name, the page's name, the skill), who it is shared with or by, the level or
-scope (a calendar's `busy` to `edit`, a location's `current` or `history`, an
-album's `view` or `contribute`, the Health categories, the skill's tools, and
-`quotes` or `location` where a page or an album is shared with them), and since
-when. A share of passwords is counted, never named, because an item's title is
+recordings, finance accounts, skills and passwords. A row says the kind, the
+thing (the calendar's or album's name, the page's name, the recording's title,
+the finance account's name and the last digits of its number (`subjectMask`),
+the skill), who it is shared with or by, the level or scope (a calendar's `busy`
+to `edit`, a location's `current` or `history`, an album's `view` or
+`contribute`, a recording's `summary` or `transcript`, a finance account's
+`balance`, `spending` or `transactions`, the Health categories, the skill's
+tools, and `quotes` or `location` or `faceNames` where a page or an album is
+shared with them), and since when. A share of passwords is counted, never named, because an item's title is
 sealed: "3 items", not which. A share through a circle names the circle; one
 made to the person by name says so (`isDirect`).
 
 It decides nothing about who may see what. Each kind is read through its own
 listing and its own reach query (`reachingSharesQuery`,
-`reachingLocationSharesQuery`, `photoAlbumReachQuery`, `passwordReachSQL`, the
-page, skill and Health listings), with the share's identifier added to the
-columns, so the list cannot disagree with the check. A kind the caller may not
-use (no `health:use`, the calendar service off) is left out.
+`reachingLocationSharesQuery`, `photoAlbumReachQuery`, `passwordReachSQL`,
+`reachingRecordingSharesQuery`, `reachingFinanceSharesQuery`, the page, skill
+and Health listings), with the share's identifier added to the columns, so the
+list cannot disagree with the check. A kind the caller may not use (no
+`health:use`, the calendar service off, no `agent:use` for recordings and
+finance) is left out. A finance account reached by name and through a circle is
+one row at the higher level, as the Finance page shows it. What others share of
+finance is not the agent's to read, so the person's agent is never shown a
+finance row, and cannot decline one; its recording rows are listed as the
+person's own are.
 
 **Stopping** a share is the kind's own operation: `UnshareCalendar`,
 `UnshareLocation`, `SetHealthShare` with no categories, `UnshareAgentPage`,
-`UnshareSkill` and `RemovePhotoAlbumShare`. The Sharing page and the iPhone
-screen call those. Passwords are stopped on the Passwords page, item by item.
+`UnshareSkill`, `RemovePhotoAlbumShare`, `UnshareRecording` and
+`UnshareFinanceAccount`. The Sharing page and the iPhone screen call those. Passwords are stopped on the Passwords page, item by item.
 
 **Declining** is the other side: `DeclineShare(shareKind, shareId)` ends a share
 that was made to the caller by name, and only that. The row must have the caller
 as its grantee, so the owner, a stranger and a member of the circle a share went
-to all find it not found. A share to a circle cannot be declined; it ends when
+to all find it not found (the same of a recording or a finance account, through
+`DeclineRecordingShare` and `DeclineFinanceShare`). A share to a circle cannot be declined; it ends when
 the person leaves the circle (the row says so). Passwords shared with a person
 are removed by their owner, who must give the item a new key, so they cannot be
 declined. The owner is not told. Declining an album takes out the photos the
 person added to it, as taking the share back does.
 
 **Being told.** When a share is made, or widened, the people it now reaches
-are told, and the sharer is not. Widened is a higher calendar, location or
-album level, a Health category added, a page's quotes newly shared, an album's
+are told, and the sharer is not. Widened is a higher calendar, location,
+album, recording or finance level, a Health category added, a page's quotes newly shared, an album's
 location newly included, or a skill's tools or limits raised. The person gets a
 note in the main conversation of their agent when it is on (`share_received`,
 written in the same transaction as the share: "Alex shared their calendar with
 you (titles)") and a notification of kind `circle` on their phones, so no new
 kind of notification was needed. A share to a circle tells every member of it
-except the sharer; a person who may not use that kind is not told. The same
+except the sharer; a person who may not use that kind is not told. A recording's
+note names its title ("Alex shared the recording Standup with you (summary and
+transcript)"); a finance account's does not name the account ("Alex shared a
+finance account with you (balance only)"), because the note goes into the
+conversation of the person's agent, which has no part in finance sharing. The same
 share at the same level, by the same sharer, is not told to the same person
 twice within ten minutes, so changing a level back and forth is one notice, not
 one for each tap. That memory is the server's (`shareNoticeCache`), so a restart
@@ -370,8 +384,13 @@ recipient, and the waiting list already shows who is still without one.
 When somebody joins a circle (`AnswerCircleInvitation`, `AddCircleMember`), each
 other member who has shared something with it is told once, in one note
 (`share_reached`): "Sam joined Family and can now see your calendar and
-location". The kinds are the ones the circle's shares hold, less any the new
-member may not use, so Health is not named for somebody without `health:use`.
+location", or "your calendar, location and finance" for three: the kinds are
+joined with commas and an "and" before the last, with no comma in front of it,
+on the server, the dashboard and the iPhone, and in the other languages with
+their own separators. The kinds are the ones the circle's shares hold (including
+recordings and finance accounts), less any the new member may not use, so
+Health is not named for somebody without `health:use`, nor finance for somebody
+without `agent:use`.
 Skills (shared with one person) and passwords (waiting for a key) are not listed.
 
 The command line is `teanode sharing`, with `teanode sharing decline <kind>
@@ -385,7 +404,7 @@ Circles.
 A circle can have an address book of its own, the way it can have a calendar:
 every member reads and edits it, an admin renames or deletes it, any member
 makes it, and it goes when the circle goes (`addressbook.circle_id`, migration
-0257; the circle's page offers "Make a family address book"). A person's own
+0256; the circle's page offers "Make a family address book"). A person's own
 address books are never shared. Access is a join on `circle_member`, so leaving
 the circle ends it at once and nothing has to be cleaned up. How it is stored
 and kept from the owner-only paths is in `contacts.md`.
@@ -415,18 +434,24 @@ so a new kind of share cannot ship without one.
 | Health (`health_share`) | one person, or a circle | chosen categories, as day summaries; more categories only on a person's tap | Settings tab of the Health page; Health in the iPhone app's Settings; `teanode health share` | `endHealthSharesOutsideCircles` |
 | Passwords (`password_share`) | one person, or a circle, item by item | the item, sealed for each person it reaches | Share on an item in Passwords, on the dashboard and in the app; `teanode passwords share` | `endPasswordSharesOutsideCircles` |
 | Pages of the agent's memory (`agent_page_share`) | one person, or a circle | read only, a page and everything under it, with or without the quotes | Share on a page in Knowledge; `teanode agent memory share` | `endPageSharesOutsideCircles` |
-| Photo albums (`photo_album_share`) | one person, or a circle | `view`, `contribute`; whether the location of the photos is included | Share on an album in Photos; `teanode photo album share` | `endPhotoAlbumSharesOutsideCircles` |
+| Photo albums (`photo_album_share`) | one person, or a circle | `view`, `contribute`; whether the location of the photos and the names of the faces in them are included | Share on an album in Photos; `teanode photo album share` | `endPhotoAlbumSharesOutsideCircles` |
+| Recordings (`recording_share`) | one person, or a circle, a recording at a time | `summary` (title, date, length, summary, the speaker names the owner confirmed), `transcript` (and the words, with the owner's corrections); never the audio | Share on a recording in Recordings; `teanode recording share`; the recording tool | `endRecordingSharesOutsideCircles` |
+| Finance accounts (`finance_account_share`) | one person, or a circle, an account at a time | `balance`, `spending`, `transactions`; starting or widening a share only on a person's tap | Sharing panel of the Finance tab of the agent page; Finance in the iPhone app; `teanode finance share`; not the agent | `endFinanceSharesOutsideCircles` |
 | Lent skills (`skill_share`) | one person | named tools of a skill, approved call by call | Skills on the agent page; `teanode agent skill share` | `endSkillSharesOutsideCircles` |
 
-Four things belong to the circle itself and are not shares: its chat, its
-calendar, its albums, and the list of members. The circle's admins manage them,
+Five things belong to the circle itself and are not shares: its chat, its
+calendar, its albums, its address book (every member reads and edits it, an
+admin renames or deletes it, and it has no grantee column, so the cleanup above
+has nothing to end: leaving the circle is what takes it away), and the list of
+members. The circle's admins manage them,
 and they go with the circle. The admins can also rename and delete the circle's
 calendar (`SaveCalendar`, `DeleteCircleCalendar`).
 
 Whether somebody is reached is decided when they read, and requires more than
 the circle: the owner's and the reader's accounts enabled, and, for calendars,
-location, Health and passwords, the permission of the feature
-(`calendar:use`, `location:use`, `health:use`, `passwords:use`) for both. An
+location, Health, passwords, recordings and finance, the permission of the
+feature (`calendar:use`, `location:use`, `health:use`, `passwords:use`,
+`agent:use` for recordings and finance) for both. An
 owner whose role lost the permission can still list and end what they shared.
 
 ## Where the code is
@@ -441,8 +466,8 @@ owner whose role lost the permission can still list and end what they shared.
 | The operations | `internal/api/v1api/apigraph/circle.go`; the helpers `requireCirclePerson`, `requireCircleMember` and `requireCircleAdmin` are in `authorize.go` |
 | The invitation note and phone notification, and the note told to admins when an operator puts an account in | `internal/agent/circle_invitation.go` |
 | Everything shared, declining, and the notes about shares | `internal/api/v1api/apigraph/sharing.go`, `sharing_notice.go`, `internal/db/database_sharing.go`, `internal/models/sharing.go`, `internal/agent/sharing_note.go`; `internal/cmd/sharing.go`, `internal/client/sharing.go` |
-| The cleanup when a circle stops making a share possible | `endSharesOutsideCircles` in `internal/db/database_circle.go`, which calls `endCalendarSharesOutsideCircles` (`database_calendar_share.go`), `endLocationSharesOutsideCircles` (`database_location_share.go`), `endHealthSharesOutsideCircles` (`database_health_share.go`), `endPasswordSharesOutsideCircles` (`database_passwords.go`), `endPageSharesOutsideCircles` (`database_page_share.go`), `endSkillSharesOutsideCircles` (`database_skill_share.go`), `endPhotoAlbumSharesOutsideCircles` (`database_photo_share.go`), and the relationship and contact link cleanups |
-| The share tables | `calendar_share` (`0195`), `agent_page_share` (`0196`), `skill_share` (`0197`), `photo_album_share` (`0224`), `location_share` (`0240`), `health_share` (`0245`), `password_share` (`0251`) in `internal/db/migrations/` |
+| The cleanup when a circle stops making a share possible | `endSharesOutsideCircles` in `internal/db/database_circle.go`, which calls `endCalendarSharesOutsideCircles` (`database_calendar_share.go`), `endLocationSharesOutsideCircles` (`database_location_share.go`), `endHealthSharesOutsideCircles` (`database_health_share.go`), `endPasswordSharesOutsideCircles` (`database_passwords.go`), `endPageSharesOutsideCircles` (`database_page_share.go`), `endSkillSharesOutsideCircles` (`database_skill_share.go`), `endPhotoAlbumSharesOutsideCircles` (`database_photo_share.go`), `endRecordingSharesOutsideCircles` (`database_recording_share.go`), `endFinanceSharesOutsideCircles` (`database_finance_share.go`), and the relationship and contact link cleanups |
+| The share tables | `calendar_share` (`0195`), `agent_page_share` (`0196`), `skill_share` (`0197`), `photo_album_share` (`0224`), `location_share` (`0240`), `health_share` (`0245`), `password_share` (`0251`), `finance_account_share` (`0254`), `recording_share` (`0255`) in `internal/db/migrations/` |
 | The live map told when a circle change ends a location share | `watchLocationReach` in `internal/api/v1api/apigraph/location_share.go`, called from `circle.go` |
 | Command line | `internal/cmd/circle.go`, `internal/client/circle.go`; `--circle` on `teanode user create` is in `internal/cmd/user.go` |
 | The agent's tool | `internal/agent/tools/circle` |
