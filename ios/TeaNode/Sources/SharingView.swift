@@ -195,7 +195,7 @@ private struct SharingReceivedRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(verbatim: SharingWords.what(
-                share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.subjectMask,
+                share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.shownSubjectMask,
                 passwordItemCount: share.passwordItemCount))
             Text(verbatim: SharingWords.receivedDetails(share)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
             if let note = SharingWords.cannotRemoveNote(share) {
@@ -249,7 +249,7 @@ enum SharingWords {
     static func madeWhat(_ share: SharingMade) -> String {
         if share.isPageGone { return String(localized: "sharing.pageDeleted", defaultValue: "Page deleted") }
         return what(
-            share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.subjectMask,
+            share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.shownSubjectMask,
             passwordItemCount: share.passwordItemCount)
     }
 
@@ -367,7 +367,7 @@ enum SharingWords {
 
     static func removeMessage(_ share: SharingReceived) -> String {
         let thing = what(
-            share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.subjectMask,
+            share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.shownSubjectMask,
             passwordItemCount: share.passwordItemCount)
         return String(
             localized: "You will no longer receive \(thing) from \(share.shownOwner). \(share.shownOwner) is not told, and has to share it again for you to have it back.")

@@ -33,8 +33,9 @@ public struct SharingMade: Decodable, Hashable, Sendable, Identifiable {
     public let subjectId: String
     /// A recording's title or a finance account's name, among the rest.
     public let subjectName: String
-    /// The last digits of a finance account's number; empty for every other kind.
-    public let subjectMask: String
+    /// The last digits of a finance account's number; empty for every other kind,
+    /// and absent from a server that does not send it.
+    public let subjectMask: String?
     /// True for a share of a memory page that no longer exists, which the owner
     /// can still stop; its subjectName is then the path. Absent from an older server.
     public let isSubjectDeleted: Bool?
@@ -75,6 +76,9 @@ public struct SharingMade: Decodable, Hashable, Sendable, Identifiable {
         return knownKind != .passwords
     }
 
+    /// The account's last digits, empty when there are none.
+    public var shownSubjectMask: String { subjectMask ?? "" }
+
     /// Whether the page that was shared is gone.
     public var isPageGone: Bool { isSubjectDeleted == true }
 
@@ -113,7 +117,7 @@ public struct SharingReceived: Decodable, Hashable, Sendable, Identifiable {
     public let shareId: String
     public let subjectId: String
     public let subjectName: String
-    public let subjectMask: String
+    public let subjectMask: String?
     public let shareLevel: String
     public let shareScopes: [String]
     public let passwordItemCount: Int
@@ -134,6 +138,9 @@ public struct SharingReceived: Decodable, Hashable, Sendable, Identifiable {
 
     /// Who shared it: their name, or their username when they have none.
     public var shownOwner: String { ownerName.isEmpty ? ownerUsername : ownerName }
+
+    /// The account's last digits, empty when there are none.
+    public var shownSubjectMask: String { subjectMask ?? "" }
 
     public var since: Date? { ServerTime.date(createdAt) }
 
