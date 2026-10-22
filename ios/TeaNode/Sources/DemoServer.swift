@@ -40,6 +40,9 @@
                 answer = personCardAnswer
             } else if query.contains("SearchEverything") {
                 answer = Self.searchEverything(answering: request.httpBody)
+            } else if let financeSharingAnswer = Self.financeSharingAnswer(query: query, body: request.httpBody) {
+                // Before the finance operations below, whose names these contain.
+                answer = financeSharingAnswer
             } else if let financeEntryAnswer = Self.financeEntryAnswer(query: query) {
                 answer = financeEntryAnswer
             } else if let recordingAnswer = Self.recordingAnswer(query: query) {

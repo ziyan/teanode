@@ -177,6 +177,9 @@ final class AppModel {
     /// The finance section a page of the dashboard's Finance names.
     var openedFinancePart: FinancePart?
 
+    /// The person whose shared accounts Finance opens on, from their card.
+    var openedFinanceSharerId: String?
+
     /// The words the Search tab asks a part of the app to search for, in the
     /// part for the area. The part takes the words and clears them.
     var openedPartSearch: PartSearch?

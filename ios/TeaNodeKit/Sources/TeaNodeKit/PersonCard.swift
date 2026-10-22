@@ -124,6 +124,26 @@ public struct PersonCardHealthSection: Decodable, Hashable, Sendable {
     }
 }
 
+/// PersonCardFinanceSection is the finance accounts they share with the
+/// person, each as the level it was shared at shows it. The agent is never
+/// shown it.
+public struct PersonCardFinanceSection: Decodable, Hashable, Sendable {
+    public let sectionState: PersonCardSectionState
+    public let financeAccounts: [SharedFinanceAccount]
+    public let hasMore: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case sectionState, financeAccounts, hasMore
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sectionState = try container.decode(PersonCardSectionState.self, forKey: .sectionState)
+        financeAccounts = try container.decodeIfPresent([SharedFinanceAccount].self, forKey: .financeAccounts) ?? []
+        hasMore = try container.decodeIfPresent(Bool.self, forKey: .hasMore) ?? false
+    }
+}
+
 /// PersonCardPhotosSection is photos of them in the person's library, and the albums
 /// they shared with the person. The two have their own states: photos of a
 /// person are found through the contact, albums through the account.
@@ -276,6 +296,7 @@ public struct PersonCard: Decodable, Hashable, Sendable {
     public let canMessage: Bool
     public let location: PersonCardLocationSection?
     public let health: PersonCardHealthSection?
+    public let finance: PersonCardFinanceSection?
     public let photos: PersonCardPhotosSection?
     public let mail: PersonCardMailSection?
     public let recordings: PersonCardRecordingSection?
@@ -285,7 +306,7 @@ public struct PersonCard: Decodable, Hashable, Sendable {
     public static let itemLimit = 4
 
     private enum CodingKeys: String, CodingKey {
-        case person, contact, sharedCircles, canMessage, location, health, photos, mail, recordings, memory
+        case person, contact, sharedCircles, canMessage, location, health, finance, photos, mail, recordings, memory
     }
 
     public init(from decoder: Decoder) throws {
@@ -296,6 +317,7 @@ public struct PersonCard: Decodable, Hashable, Sendable {
         canMessage = try container.decodeIfPresent(Bool.self, forKey: .canMessage) ?? false
         location = try container.decodeIfPresent(PersonCardLocationSection.self, forKey: .location)
         health = try container.decodeIfPresent(PersonCardHealthSection.self, forKey: .health)
+        finance = try container.decodeIfPresent(PersonCardFinanceSection.self, forKey: .finance)
         photos = try container.decodeIfPresent(PersonCardPhotosSection.self, forKey: .photos)
         mail = try container.decodeIfPresent(PersonCardMailSection.self, forKey: .mail)
         recordings = try container.decodeIfPresent(PersonCardRecordingSection.self, forKey: .recordings)
@@ -367,6 +389,13 @@ extension Documents {
             canMessage
             location { sectionState location { \(personLocationFields) } todayVisits { \(personCardVisitFields) } hasMoreTodayVisits }
             health { sectionState healthTypes { \(healthTypeFields) } hasMore }
+            finance {
+              sectionState hasMore
+              financeAccounts {
+                financeAccountId ownerUserId ownerUsername ownerName financeShareLevel accountName accountMask accountKind currencyCode currentBalance balanceAt
+                creditUsage { owedAmount creditLimitAmount creditLimitSource usageShare }
+              }
+            }
             photos { photosState photos { \(photoFields) } hasMorePhotos albumsState albums { \(photoAlbumFields) } hasMoreAlbums }
             mail { sectionState mails { mailboxItemId mailboxId folderPath subject fromAddress fromName isFromPerson isUnread receivedAt snippet } hasMore }
             recordings { sectionState recordings { recordingId title recordedAt durationMS spokenPassageCount } hasMore }
