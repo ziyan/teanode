@@ -1406,7 +1406,11 @@ grantee. A share belongs to its account and goes when the account does.
 | `spending` | and the account's money out and money in by month and spending category, in each currency, with the owner's own names for the categories and no merchant or description |
 | `transactions` | and each transaction's day, amount, currency, merchant name and spending category |
 
-A level shows what the one below it shows. At no level: receipts and their
+A level shows what the one below it shows. At the spending level a range of
+days (`from`, `to`) is widened to whole months, the first of the month's
+`from` and the last of its `to`, because a reader who could move the ends a day
+at a time would rebuild each transaction's day and amount from the totals. At
+no level: receipts and their
 images, what the person or their agent wrote on a transaction, the provider's
 own data for the account or the transaction, the available balance, paystubs,
 tax forms, finance sources and their credentials, spending rules, budgets,
@@ -1434,7 +1438,9 @@ circle they left (`endFinanceSharesOutsideCircles`, called from
 reached.
 
 **Who may share.** Only the person whose agent holds the account
-(`ShareFinanceAccount`, `UnshareFinanceAccount`), to someone they share a
+(`ShareFinanceAccount`; listing and ending one, `ListFinanceAccountShares` and
+`UnshareFinanceAccount`, need only `agent:use`, so an owner who turned the agent
+off can still see and stop what they share), to someone they share a
 circle with or to a circle they are in. **Starting a share or widening one is
 the person's tap**, the dashboard or the iPhone app, as Health's is: a command
 line token, an operator signed in as the person and the agent's own operations

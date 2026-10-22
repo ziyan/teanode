@@ -452,3 +452,36 @@ func TestJoiningACircleAFinanceAccountIsSharedWithNeedsATap(t *testing.T) {
 		t.Errorf("cora, who a tap brought in, reads what the circle was shared: %v", listed)
 	}
 }
+
+// An owner who has turned the agent off can still see what they share and end
+// it, though what they share reaches nobody meanwhile and they cannot start a
+// new share.
+func TestAnOwnerWithTheAgentOffCanListAndEndFinanceShares(t *testing.T) {
+	world := newFinanceShareWorld(t)
+	share := world.shareAsTap(t, world.checkingID, world.ben.ID, nil, "spending")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		agent, err := tx.GetAgentByUser(world.ada.ID)
+		if err != nil || agent == nil {
+			t.Fatalf("GetAgentByUser: %+v %v", agent, err)
+		}
+		if _, err := tx.UpdateAgent(agent.ID, func(found *models.Agent) error { found.Enabled = false; return nil }); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	if listed := world.run(t, world.ben, sharedAccountsQuery, nil)["ListSharedFinanceAccounts"].([]any); len(listed) != 0 {
+		t.Errorf("an account of an agent that is off reaches nobody: %v", listed)
+	}
+	if shares := world.run(t, world.ada, financeSharesQuery, nil)["ListFinanceAccountShares"].([]any); len(shares) != 1 {
+		t.Fatalf("the owner lists what they share: %v", shares)
+	}
+	if _, failures := world.share(t, models.CredentialSession, world.checkingID, world.dave.ID, nil, "balance"); len(failures) == 0 {
+		t.Error("a new share was started with the agent off")
+	}
+	if data := world.run(t, world.ada, unshareFinanceQuery, map[string]any{"shareId": share["id"]}); data["UnshareFinanceAccount"] != true {
+		t.Fatalf("the owner ends the share: %v", data)
+	}
+	if shares := world.run(t, world.ada, financeSharesQuery, nil)["ListFinanceAccountShares"].([]any); len(shares) != 0 {
+		t.Errorf("after ending it: %v", shares)
+	}
+}
