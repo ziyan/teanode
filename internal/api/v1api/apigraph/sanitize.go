@@ -177,16 +177,27 @@ func sanitizeHtml(input string) (string, bool) {
 	// the head — so a sheet that survived sanitizing would be dropped here
 	// instead, which is the same broken layout by a different route. Move it
 	// where it will be kept.
+	//
+	// The body is found once and the sheets are put in front of it in one go,
+	// in the order they were written. Looking the body up for each sheet
+	// walked the whole tree each time, so a part made of thousands of empty
+	// style elements cost minutes on every open, and putting them in front
+	// one at a time turned the order around.
+	body := document.Find("body")
+	var movedSheets strings.Builder
 	document.Find("head style").Each(func(_ int, selection *goquery.Selection) {
 		html, err := goquery.OuterHtml(selection)
 		if err != nil {
 			return
 		}
-		document.Find("body").PrependHtml(html)
+		movedSheets.WriteString(html)
 		selection.Remove()
 	})
+	if movedSheets.Len() > 0 {
+		body.PrependHtml(movedSheets.String())
+	}
 
-	rendered, err := document.Find("body").Html()
+	rendered, err := body.Html()
 	if err != nil {
 		log.Warningf("failed to render an HTML part, not displaying it: %s", err)
 		return "", hasRemoteContent || hasRemoteStyle
