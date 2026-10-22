@@ -416,9 +416,14 @@ func (self *transaction) ReadSharedRecording(readerUserId, recordingId string, p
 	}
 	// Everything is read with the owner's identifier, since it is the owner's
 	// projection of the words and of who spoke that a reader is shown.
-	speakerNames, err := self.sharedRecordingSpeakerNames(ownerUserId, recordingId)
-	if err != nil {
-		return nil, err
+	// Finding the names reads the whole timeline, so only the first page
+	// pays for it; a reader paging on already has them from the first.
+	speakerNames := []string{}
+	if passageOffset == 0 {
+		speakerNames, err = self.sharedRecordingSpeakerNames(ownerUserId, recordingId)
+		if err != nil {
+			return nil, err
+		}
 	}
 	disclosure := &models.RecordingDisclosure{Recording: recordingFromModel(&row), Owner: owner, SpeakerNames: speakerNames}
 	if shareLevel.AtLeast(models.RecordingShareLevelTranscript) {

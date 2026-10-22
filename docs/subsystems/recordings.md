@@ -63,8 +63,9 @@ named fields, so a field added to a recording later is not shared until it is
 named there. `ReadSharedRecording` and `ListSharedRecordings` on the transaction
 are the only callers. A read gives the speaker names, found by projecting the
 speakers over the whole timeline (who spoke is worked out passage by passage),
-and at `transcript` a page of passages from an offset; a listing leaves both
-out, since it would read every timeline to make a list.
+only on the first page, since a reader paging on has them already, and at
+`transcript` a page of passages from an offset; a listing leaves both out,
+since it would read every timeline to make a list.
 
 When a person leaves a circle, `endRecordingSharesOutsideCircles` (called with
 the other kinds from `endSharesOutsideCircles`) deletes the direct shares the
