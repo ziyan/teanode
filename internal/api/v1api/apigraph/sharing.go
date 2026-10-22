@@ -146,10 +146,13 @@ type SharingReceivedView struct {
 	GranteeCircleID   *string `json:"granteeCircleId"`
 	GranteeCircleName string  `json:"granteeCircleName"`
 
-	// Whether it was made to the caller by name
+	// Whether it was made to the caller by name and alone gives the level
+	// shown: a finance account shared by name at a lower level than a circle
+	// shares it is not
 	IsDirect bool `json:"isDirect"`
 
-	// Whether DeclineShare ends it: a direct share of any kind but passwords
+	// Whether DeclineShare ends it: a share made by name, of any kind but
+	// passwords. The circle's share stays when a finance account has both.
 	CanDecline bool `json:"canDecline"`
 
 	CreatedAt time.Time `json:"createdAt"`
@@ -427,14 +430,18 @@ func describeSharingMade(row *models.ShareRow) *SharingMadeView {
 }
 
 func describeSharingReceived(row *models.ShareRow) *SharingReceivedView {
-	isDirect := row.GranteeUserID != ""
+	// A row made to the person by name that also carries a circle is one a
+	// circle share raises to a higher level: it can be declined, and the circle's
+	// share stays.
+	isDirect := row.GranteeUserID != "" && row.GranteeCircleID == ""
+	canDecline := row.GranteeUserID != "" && row.ShareKind != models.ShareKindPasswords
 	view := &SharingReceivedView{
 		ShareKind: string(row.ShareKind), ShareID: row.ShareID, SubjectID: row.SubjectID, SubjectName: row.SubjectName,
 		SubjectMask: row.SubjectMask, ShareLevel: row.ShareLevel, ShareScopes: nonNilStrings(row.ShareScopes), PasswordItemCount: row.ItemCount,
 		OwnerUserID: row.OwnerUserID, OwnerUsername: row.OwnerUsername, OwnerName: row.OwnerName,
 		OwnerAvatarURL: avatarUrl(row.OwnerUser), OwnerAvatarColorIndex: avatar.InitialColorIndex(row.OwnerUserID),
 		GranteeCircleName: row.GranteeCircleName, IsDirect: isDirect,
-		CanDecline: isDirect && row.ShareKind != models.ShareKindPasswords, CreatedAt: row.CreatedAt,
+		CanDecline: canDecline, CreatedAt: row.CreatedAt,
 	}
 	if row.GranteeCircleID != "" {
 		view.GranteeCircleID = &row.GranteeCircleID

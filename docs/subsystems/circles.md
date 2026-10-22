@@ -368,7 +368,11 @@ that was made to the caller by name, and only that. The row must have the caller
 as its grantee, so the owner, a stranger and a member of the circle a share went
 to all find it not found (the same of a recording or a finance account, through
 `DeclineRecordingShare` and `DeclineFinanceShare`). A share to a circle cannot be declined; it ends when
-the person leaves the circle (the row says so). Passwords shared with a person
+the person leaves the circle (the row says so). A finance account shared both by name
+and through a circle at a higher level is one row at the higher level, still
+declinable: declining ends the share by name and the circle's share stays, so
+the row remains at the circle's level and then ends only when the person leaves
+the circle. Passwords shared with a person
 are removed by their owner, who must give the item a new key, so they cannot be
 declined. The owner is not told. Declining an album takes out the photos the
 person added to it, as taking the share back does.

@@ -415,7 +415,10 @@ func (self *transaction) ListFinanceSharesReaching(userId string) ([]*models.Fin
 	// A share made to the person by name can be declined and one through a
 	// circle cannot, so when both reach, the row is the share by name with the
 	// highest level: a share by name hidden under a higher circle share would
-	// otherwise be out of the person's reach to end.
+	// otherwise be out of the person's reach to end. When the circle's level
+	// is the higher, the row also names that circle, so the list does not say
+	// the share by name alone gives the level, and declining leaves the row
+	// at the circle's level: it ends only when the person leaves the circle.
 	shares := make([]*models.FinanceShare, 0, len(allReaching))
 	for _, best := range highestReachingFinanceShares(allReaching) {
 		share := shareById[best.ShareID]
@@ -424,7 +427,10 @@ func (self *transaction) ListFinanceSharesReaching(userId string) ([]*models.Fin
 		}
 		if direct := directShareByAccount[best.FinanceAccountID]; direct != nil && direct.ID != share.ID {
 			withHighestLevel := *direct
-			withHighestLevel.FinanceShareLevel = share.FinanceShareLevel
+			if direct.FinanceShareLevel != share.FinanceShareLevel {
+				withHighestLevel.FinanceShareLevel = share.FinanceShareLevel
+				withHighestLevel.GranteeCircleID = share.GranteeCircleID
+			}
 			share = &withHighestLevel
 		}
 		shares = append(shares, share)
