@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/PuerkitoBio/goquery"
+
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/storage"
@@ -330,6 +332,35 @@ func renderContent(mailId string, headers []string, body []byte) (*MailContent, 
 	content.HTML = resolveInlineParts(content.HTML, mailId, inlineParts)
 
 	return content, nil
+}
+
+// RemoteImageAddresses are the addresses a message's HTML asks for pictures
+// from, as the dashboard and the phone will ask the image proxy for them: the
+// ones the sanitizer held back in data-blocked-src.
+//
+// The proxy fetches only these. Without the check it fetched any address for
+// any message the reader could open, so a stranger who had a message id
+// (from a reply that quoted a picture) could write the id and a tracking
+// address into their own message and learn when it was opened.
+func RemoteImageAddresses(headers []string, body []byte) ([]string, error) {
+	content, err := renderContent("", headers, body)
+	if err != nil {
+		return nil, err
+	}
+	if content.HTML == "" {
+		return nil, nil
+	}
+	document, err := goquery.NewDocumentFromReader(strings.NewReader(content.HTML))
+	if err != nil {
+		return nil, err
+	}
+	var addresses []string
+	document.Find("[data-blocked-src]").Each(func(_ int, selection *goquery.Selection) {
+		if address, ok := selection.Attr("data-blocked-src"); ok {
+			addresses = append(addresses, address)
+		}
+	})
+	return addresses, nil
 }
 
 // inlineReference matches a cid: URL in an attribute, which is how HTML mail
