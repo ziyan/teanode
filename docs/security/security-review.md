@@ -2128,26 +2128,26 @@ The listeners capped only the total at 1000; each address (an IPv6 /64 counts as
 A review of every place the server connects to an address somebody else
 chose. Each finding was fixed with a test that failed before the fix.
 
-### SEC-123: A webhook alias could reach the operator's network (Medium, fixed)
+### SEC-113: A webhook alias could reach the operator's network (Medium, fixed)
 
 A member who manages one domain could name any URL as a webhook, and delivery
 posted the mail there with the default client, which followed redirects and
 honored proxy settings. Delivery now uses the guarded client, with the
 operator's list of private addresses, and a minute to answer.
 
-### SEC-124: A mail server alias could scan the operator's network (Medium, fixed)
+### SEC-114: A mail server alias could scan the operator's network (Medium, fixed)
 
 Forwarding to a named host and port dialled anything, and the error came back
 to the member through the delivery. It now dials through the same guard, and
 a name is checked on the address it resolves to even behind a SOCKS5 proxy.
 
-### SEC-125: A connected MCP server could redirect the server inward (Low, fixed)
+### SEC-115: A connected MCP server could redirect the server inward (Low, fixed)
 
 The HTTP transport followed a redirect to any host, so a connected server could
 make this one send its request, and read the answer, from another host. A
 redirect to a different host now stops; one on the same host still works.
 
-### SEC-126: Smaller findings (Low, fixed)
+### SEC-116: Smaller findings (Low, fixed)
 
 - A video's size is checked against the picture limits before ffmpeg cuts a
   poster or preview, as a picture's is before it is decoded.
@@ -2163,45 +2163,45 @@ are provisional and are renumbered when the passes are merged.
 
 ## Findings
 
-### SEC-163: Changing the notification address asked nothing (Medium, fixed)
+### SEC-117: Changing the notification address asked nothing (Medium, fixed)
 
 `account_update` and `user_update` with an email were plain writes, though the
 agent's mailed notices go to that address, so a page or mail the agent read
 could redirect them. A call that sets the email is now judged outward and asks
 first; name, language and the other fields stay plain writes.
 
-### SEC-164: A run nobody was present for could add a standing instruction (Medium, fixed)
+### SEC-118: A run nobody was present for could add a standing instruction (Medium, fixed)
 
 `agent_profile` `set` with `add_instruction` appends to the instructions every
 later turn reads as the person's words, with no card and also in a headless
 run. It is now refused when the run cannot ask the person, with an error
 telling the model to say what it would have added.
 
-### SEC-165: The reply drafting run could fetch any address (Medium, fixed)
+### SEC-119: The reply drafting run could fetch any address (Medium, fixed)
 
 It reads a stranger's mail with the person's mail, memory and diary in reach,
 and an address it builds can carry what it read out. Drafting a reply needs
 none of the web pages, so `web_fetch` is out of its tools; `web_search` stays.
 
-### SEC-166: The research run could fetch any address (Medium, fixed)
+### SEC-120: The research run could fetch any address (Medium, fixed)
 
 The same hole, in a run that does need pages. `web_fetch` there now runs only
 for an address a `web_search` in the same turn returned
 (`AskSettings.IsFetchLimitedToSearched`), enforced where the call is made.
 
-### SEC-167: A run nobody was present for could make a no-sign-in link (Medium, fixed)
+### SEC-121: A run nobody was present for could make a no-sign-in link (Medium, fixed)
 
 `share_file` with `link` true makes an address that opens a copy of the file
 for anyone for six hours. It is now refused in a headless run, before the file
 is read.
 
-### SEC-168: A steps call inside steps was judged a read (Medium, fixed)
+### SEC-122: A steps call inside steps was judged a read (Medium, fixed)
 
 The browser tool judged `steps` by the steps it lists, one level down, while
 the runner recursed into an inner `steps` and ran its writes. A steps call
 inside steps is now refused before any step runs.
 
-### SEC-169: The computer program's comments named a boundary that does not exist (Low, fixed)
+### SEC-123: The computer program's comments named a boundary that does not exist (Low, fixed)
 
 Two comments said the program is bounded by directories the person allowed.
 There is no such list: it reaches everything the person can, and only its file
@@ -2220,7 +2220,7 @@ and what an open socket goes on trusting. Each finding was fixed with a test.
 
 ## Findings
 
-### SEC-143: A form from a sibling host could act with the session cookie (Medium, fixed)
+### SEC-124: A form from a sibling host could act with the session cookie (Medium, fixed)
 
 The cookie is SameSite=Lax, which a form posted from another host of the same
 site still carries, and the MCP endpoint and the upload routes checked neither
@@ -2228,30 +2228,30 @@ the content type nor the origin. The authentication middleware now answers 403
 to a cookie-authenticated POST, PUT, PATCH or DELETE that Sec-Fetch-Site or
 Origin says another page started; tokens are not asked.
 
-### SEC-144: A password change and "Sign out everywhere" left API tokens working (Medium, fixed)
+### SEC-125: A password change and "Sign out everywhere" left API tokens working (Medium, fixed)
 
 Only sessions ended, so a lost phone, extension or command line kept its
 access. Both now revoke the account's tokens too, keeping only the token that
 made the call, and the dashboard says other sign-ins have to sign in again.
 
-### SEC-145: Revoking a credential did not end sockets already open (Medium, fixed)
+### SEC-126: Revoking a credential did not end sockets already open (Medium, fixed)
 
 The computer, tab and browser page sockets and GraphQL subscriptions checked
 their caller once and every ping extended them. Each now resolves what signed
 it in again at most once a minute, with the function the hello used, and closes
 when it names another person or none.
 
-### SEC-146: The tab socket trusted a cookie and a csrftoken cookie from any origin (Medium, fixed)
+### SEC-127: The tab socket trusted a cookie and a csrftoken cookie from any origin (Medium, fixed)
 
 Nothing sets a `csrftoken` cookie, so the check proved nothing and any page
 could attach the person's tab. The hello must carry a token.
 
-### SEC-147: The computer socket read 512 MiB per message before the hello (Low, fixed)
+### SEC-128: The computer socket read 512 MiB per message before the hello (Low, fixed)
 
 It starts at the 1 MiB request limit and rises to the answer size once the
 token is accepted.
 
-### SEC-148: Public discovery documents did not vary by host (Low, fixed)
+### SEC-129: Public discovery documents did not vary by host (Low, fixed)
 
 They are built from the Host header and cached publicly, so a shared cache
 could serve one name's addresses for another. They now send `Vary: Host`.
@@ -2267,21 +2267,21 @@ the code can be tested here.
 
 ## Findings
 
-### SEC-183: A mail's picture at a path on this server loaded before the reader chose (Low, fixed)
+### SEC-130: A mail's picture at a path on this server loaded before the reader chose (Low, fixed)
 
 The sanitizer kept an img `src` or a CSS `url()` that was a path on this
 server, such as the remote-picture proxy, so a sender got a read receipt while
 pictures were held back. Only a `cid:` source is kept now, and a CSS
 declaration whose `url()` is not remote, `cid:` or `data:` is dropped.
 
-### SEC-184: The extension's token followed a server address that arrived by Chrome sync (Low, fixed)
+### SEC-131: The extension's token followed a server address that arrived by Chrome sync (Low, fixed)
 
 The address was in `chrome.storage.sync` and the token in
 `chrome.storage.local`, so whoever could write the synced address chose where
 the token went. The address is now in `chrome.storage.local` beside the token,
 and nothing is read from the synced storage.
 
-### SEC-185: Lock Screen and StandBy widgets showed the waiting question's text (Low, fixed)
+### SEC-132: Lock Screen and StandBy widgets showed the waiting question's text (Low, fixed)
 
 The Waiting widget's interaction text is marked `.privacySensitive()`, so iOS
 redacts it on a locked phone. Event titles are left as they are, as in Apple's
@@ -2310,22 +2310,22 @@ findings below are fixed, each with a test that failed before the fix.
 
 ## Findings
 
-### SEC-203: The circle tool's person card put another person's location into a chat (Medium, fixed)
+### SEC-133: The circle tool's person card put another person's location into a chat (Medium, fixed)
 
 In a chat turn the card is now asked for without its location part, as the
 location tool already refuses coordinates there.
 
-### SEC-204: A token could widen a Health share by adding someone to its circle (Medium, fixed)
+### SEC-134: A token could widen a Health share by adding someone to its circle (Medium, fixed)
 
 Inviting to, or adding an account to, a circle that Health is shared with now
 needs a person's tap, as adding a category to the share does.
 
-### SEC-205: An album share's places covered a contributor's photos (Medium, fixed)
+### SEC-135: An album share's places covered a contributor's photos (Medium, fixed)
 
 The share now covers only the album owner's photos, in access, the listing's
 distance filter and search, and the original files offered.
 
-### SEC-206: A disabled account's shared photos and albums kept reaching readers (Medium, fixed)
+### SEC-136: A disabled account's shared photos and albums kept reaching readers (Medium, fixed)
 
 Album shares now stop at a disabled owner or one without `photos:use`, and
 another person's photo is refused while its owner is disabled.
@@ -2340,20 +2340,20 @@ another person's photo is refused while its owner is disabled.
 
 ## Findings
 
-### SEC-223: A downstream mail server password was stored in the clear (Medium, fixed)
+### SEC-137: A downstream mail server password was stored in the clear (Medium, fixed)
 
 An alias that relays to a mail server kept that server's password as plain
 YAML in the `mail_server` column, while the signing and certificate keys
 beside it were sealed. It is now sealed with the same sealer. A row written
 the old way still reads and is sealed by its next save.
 
-### SEC-224: A standard library vulnerability was reachable (Medium, fixed)
+### SEC-138: A standard library vulnerability was reachable (Medium, fixed)
 
 GO-2026-6809 in `crypto/x509` was reached through passkey registration under
 Go 1.26.9. The `go` directive and the build image now require 1.26.10, and
 `govulncheck` reports nothing reachable.
 
-### SEC-225: What the npm audit covers (informational)
+### SEC-139: What the npm audit covers (informational)
 
 `npm audit --omit=dev` skips `react`, `react-dom` and `react-router-dom`
 because they are `devDependencies`, though the build bundles them. An OSV
@@ -2369,48 +2369,48 @@ fixed here and the ones left, with the reason. Each fix has a test.
 
 ## Fixed
 
-- SEC-243 (Medium): submission checked the last From header while mail
+- SEC-140 (Medium): submission checked the last From header while mail
   programs show the first, which undid the per-alias limit on a credential.
   `prepareOutgoing` now refuses a message unless it has exactly one From, as
   the incoming and bounce paths already did.
-- SEC-244 (Medium): IMAP walked a sequence range number by number to the
+- SEC-141 (Medium): IMAP walked a sequence range number by number to the
   client's stop, so `FETCH 1:4294967295` cost seconds of a core with no
   database call to interrupt it. The range is clamped to the folder first.
-- SEC-245 (Medium): the HTML sanitizer found the body once per head style
+- SEC-142 (Medium): the HTML sanitizer found the body once per head style
   block, so a part of thousands of empty blocks took minutes on every open.
   It is found once, and the sheets are moved in one step, in the order they
   were written (they used to come out reversed).
-- SEC-246 (Low): changing a relay alias's host kept its stored password, which
+- SEC-143 (Low): changing a relay alias's host kept its stored password, which
   then went to the new host. A change of host clears it unless a new one is
   given; a change of port alone keeps it.
-- SEC-247 (Low): a mailto unsubscribe sent the subject and body the sender
+- SEC-144 (Low): a mailto unsubscribe sent the subject and body the sender
   chose, in the person's name. The body is now one word, and a subject is kept
   only when it is one short word.
-- SEC-248 (Low): the image proxy fetched any address for any message the
+- SEC-145 (Low): the image proxy fetched any address for any message the
   reader could open, and a message id is not secret. It now fetches only
   addresses the message itself links to.
-- SEC-249 (Low): an invitation from outside was stored with its alarms and
+- SEC-146 (Low): an invitation from outside was stored with its alarms and
   attachments, and synced to the person's devices. Both are dropped on
   arrival, as RFC 5546 asks of a receiver.
-- SEC-250 (Low): reopening a draft put its style block into the dashboard
+- SEC-147 (Low): reopening a draft put its style block into the dashboard
   page. The draft's HTML now goes through `quotableHtml`, as a quoted message
   does. A style block an agent wrote into a draft is therefore gone when the
   draft is reopened.
-- SEC-251 (Low): DKIM signatures named only the headers present, so a Subject
+- SEC-148 (Low): DKIM signatures named only the headers present, so a Subject
   or Reply-To could be added in front of a signed message. From, To, Subject,
   Date, Reply-To and Cc are now named once more than the message has them, and
   Reply-To, Cc and Content-Type are signed when present.
-- SEC-252 (Low): IMAP CREATE of a name of thousands of parts listed the whole
+- SEC-149 (Low): IMAP CREATE of a name of thousands of parts listed the whole
   mailbox once per part. A name may have 32 levels, the depth the tree is read
   to.
-- SEC-253 (Low): one IMAP SEARCH could carry thousands of TEXT or BODY terms,
+- SEC-150 (Low): one IMAP SEARCH could carry thousands of TEXT or BODY terms,
   each reading every message again. More than 64 such terms are refused with
   `NO [TOOBIG]`. Parsing each message once instead would not do: the body is
   a stream that each term consumes.
-- SEC-254 (Low): before sign-in an IMAP connection could make the server
+- SEC-151 (Low): before sign-in an IMAP connection could make the server
   buffer megabytes in literals. The listener's wrapper cuts a connection that
   has sent more than 128 KiB before the session signs in.
-- SEC-255 (Low): compiled alias patterns were cached until restart, and a
+- SEC-152 (Low): compiled alias patterns were cached until restart, and a
   pattern could be as long as the request body. A pattern is limited to 512
   characters and the cache is emptied past 4096 entries.
 
