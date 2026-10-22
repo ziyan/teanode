@@ -378,6 +378,10 @@ jobs:
           shoot coding-hooks-dark dark large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-hooks
           shoot contacts-light light large -TeaNodeDemo -TeaNodeTab contacts
           shoot contacts-dark dark large -TeaNodeDemo -TeaNodeTab contacts
+          # A circle's address book, which everyone in the circle edits.
+          shoot contacts-circle-book-light light large -TeaNodeDemo -TeaNodeTab contacts -TeaNodeScreen contacts-circle-book
+          shoot contacts-circle-book-dark dark large -TeaNodeDemo -TeaNodeTab contacts -TeaNodeScreen contacts-circle-book
+          shoot contacts-circle-book-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab contacts -TeaNodeScreen contacts-circle-book
           shoot knowledge-dark dark large -TeaNodeDemo -TeaNodeTab knowledge
           # A page with the person's own records linked to it, asserted by what it shows.
           shoot knowledge-records-light light large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen knowledge-records

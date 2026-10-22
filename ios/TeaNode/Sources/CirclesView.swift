@@ -258,6 +258,10 @@ struct CircleDetailView: View {
     @State private var removing: CircleMember?
     /// The member whose Relationship sheet is open.
     @State private var relationshipMember: CircleMember?
+    /// The address books the person can use, to know whether the circle has one
+    /// of its own; nil until they are read, and for a person who may not keep
+    /// contacts.
+    @State private var addressBooks: [AddressBook]?
 
     private var circle: PeopleCircle? { directory.circle(circleId) }
 
@@ -290,6 +294,7 @@ struct CircleDetailView: View {
                     }
                 }
                 membersSection(circle)
+                addressBookSection(circle)
                 if circle.isAdmin {
                     inviteSection(circle)
                     if directory.canManageUsers {
@@ -306,7 +311,11 @@ struct CircleDetailView: View {
         }
         .navigationTitle(circle?.name ?? "")
         .disabled(directory.isBusy)
-        .refreshable { await directory.load() }
+        .refreshable {
+            await directory.load()
+            await readAddressBooks()
+        }
+        .task { await readAddressBooks() }
         .sheet(isPresented: $isRenaming) {
             if let circle {
                 CircleForm(directory: directory, editedCircle: circle)
@@ -416,6 +425,55 @@ struct CircleDetailView: View {
             }
         }
         .tint(.indigo)
+    }
+
+    // MARK: Address book
+
+    /// Reads the books the person can use. Quietly: a person who may not keep
+    /// contacts, or a server without them, is shown nothing about address books.
+    private func readAddressBooks() async {
+        guard AppModel.shared.isSectionAvailable(.contacts) else { return }
+        addressBooks = try? await directory.connection.reachableAddressBooks()
+    }
+
+    /// The circle's own address book, which everyone in it reads and changes:
+    /// where it is, or the way to make it, which any member may.
+    @ViewBuilder
+    private func addressBookSection(_ circle: PeopleCircle) -> some View {
+        if let addressBooks {
+            let book = addressBooks.first { $0.isOfACircle && $0.circleId == circle.id }
+            Section {
+                if let book {
+                    LabeledContent("Address book") {
+                        Text(book.contacts ?? 0, format: .number)
+                    }
+                } else {
+                    Button {
+                        Task {
+                            let isMade = await directory.act(saying: String(localized: "Address book made")) {
+                                _ = try await directory.connection.createCircleAddressBook(circleId: circle.id)
+                            }
+                            if isMade { await readAddressBooks() }
+                        }
+                    } label: {
+                        Label(
+                            circle.knownCircleKind == .family
+                                ? String(localized: "Make a family address book")
+                                : String(localized: "Make a shared address book"),
+                            systemImage: "person.crop.rectangle.stack")
+                        .actionColor()
+                    }
+                }
+            } header: {
+                Text("Address book")
+            } footer: {
+                if book != nil {
+                    Text("Everyone in this circle reads and changes it. Choose it under the title in Contacts.")
+                } else {
+                    Text("A list of people that everyone in this circle reads and changes, and that their phones can show as another address book. Your own contacts stay yours.")
+                }
+            }
+        }
     }
 
     // MARK: Invitations

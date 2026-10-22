@@ -82829,6 +82829,310 @@
           }
         }
       }
+    },
+    "Your contacts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分の連絡先"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的联系人"
+          }
+        }
+      }
+    },
+    "Everyone in %@ can read and change this address book. Your own contacts are not shared.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のメンバー全員がこのアドレス帳を見て変更できます。自分の連絡先は共有されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 里的每个人都可以查看和修改这个通讯录。你自己的联系人不会被共享。"
+          }
+        }
+      }
+    },
+    "Anyone in the circle can add one with +.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルの誰でも + で追加できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "圈子里的任何人都可以用 + 添加。"
+          }
+        }
+      }
+    },
+    "Make a family address book for %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@の家族のアドレス帳を作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为%@创建家庭通讯录"
+          }
+        }
+      }
+    },
+    "Make a shared address book for %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@の共有アドレス帳を作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为%@创建共享通讯录"
+          }
+        }
+      }
+    },
+    "Rename address book": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アドレス帳の名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名通讯录"
+          }
+        }
+      }
+    },
+    "Delete address book": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アドレス帳を削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除通讯录"
+          }
+        }
+      }
+    },
+    "Delete this address book?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアドレス帳を削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除这个通讯录？"
+          }
+        }
+      }
+    },
+    "It is deleted with every contact in it for everyone in %@. Devices synchronizing it lose the contacts too.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の全員のために、このアドレス帳とその中のすべての連絡先が削除されます。同期中の端末からも消えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会为 %@ 里的所有人删除它和其中的每个联系人。正在同步的设备也会失去这些联系人。"
+          }
+        }
+      }
+    },
+    "Rename the address book": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アドレス帳の名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名通讯录"
+          }
+        }
+      }
+    },
+    "Remove from the address book?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アドレス帳から削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从通讯录中移除？"
+          }
+        }
+      }
+    },
+    "%@ is removed for everyone in %@, and from the devices that synchronize it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ は %2$@ の全員から削除され、同期中の端末からも消えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 会对 %2$@ 里的所有人移除，同步它的设备上也会移除。"
+          }
+        }
+      }
+    },
+    "Address book made": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アドレス帳を作成しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通讯录已创建"
+          }
+        }
+      }
+    },
+    "Address book renamed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アドレス帳の名前を変更しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通讯录已重命名"
+          }
+        }
+      }
+    },
+    "Address book deleted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アドレス帳を削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通讯录已删除"
+          }
+        }
+      }
+    },
+    "Make a family address book": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家族のアドレス帳を作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建家庭通讯录"
+          }
+        }
+      }
+    },
+    "Make a shared address book": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有アドレス帳を作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建共享通讯录"
+          }
+        }
+      }
+    },
+    "Everyone in this circle reads and changes it. Choose it under the title in Contacts.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサークルのメンバー全員が見て変更できます。連絡先のタイトルの下で選べます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个圈子里的每个人都可以查看和修改。在“联系人”的标题下选择它。"
+          }
+        }
+      }
+    },
+    "A list of people that everyone in this circle reads and changes, and that their phones can show as another address book. Your own contacts stay yours.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサークルのメンバー全員が見て変更できる連絡先の一覧で、各自の端末では別のアドレス帳として表示できます。自分の連絡先は自分だけのものです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个圈子里的每个人都可以查看和修改的联系人列表，他们的手机也可以把它显示为另一个通讯录。你自己的联系人仍然只属于你。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
