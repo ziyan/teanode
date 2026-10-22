@@ -181,10 +181,7 @@ func TestDreamingRunsEveryPhase(t *testing.T) {
 		}
 	})
 
-	if err := worker.Tick(context.Background()); err != nil {
-		t.Fatalf("Tick: %s", err)
-	}
-	worker.Wait()
+	tickUntilDreamed(t, worker, database, found.ID)
 
 	var dream *models.AgentDream
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
@@ -372,10 +369,7 @@ func TestDreamingRevisesWhatAnOlderBuildWrote(t *testing.T) {
 		}
 	})
 
-	if err := worker.Tick(context.Background()); err != nil {
-		t.Fatalf("Tick: %s", err)
-	}
-	worker.Wait()
+	tickUntilDreamed(t, worker, database, found.ID)
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		facts, err := tx.ListAgentFacts(found.ID, page.ID, false, 50)
@@ -413,4 +407,33 @@ func TestDreamingRevisesWhatAnOlderBuildWrote(t *testing.T) {
 			}
 		}
 	})
+}
+
+// tickUntilDreamed ticks until the agent's queued dream has run. A tick
+// also queues what is due at that hour, such as Thursday evening's look
+// around, and that goes ahead of the dream and can take every slot, so a
+// single tick ran the dream only at some hours of the week.
+func tickUntilDreamed(t *testing.T, worker *agent.Agent, database db.Database, agentId string) {
+	t.Helper()
+	for attempt := 0; attempt < 5; attempt++ {
+		if err := worker.Tick(context.Background()); err != nil {
+			t.Fatalf("Tick: %s", err)
+		}
+		worker.Wait()
+		var queuedCount int64
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			count, err := tx.CountAgentJobs(&db.AgentJobFilter{
+				AgentID: agentId, Kinds: []models.AgentJobKind{models.AgentJobDream},
+				Statuses: []models.AgentJobStatus{models.AgentJobQueued},
+			})
+			if err != nil {
+				t.Fatalf("CountAgentJobs: %s", err)
+			}
+			queuedCount = count
+		})
+		if queuedCount == 0 {
+			return
+		}
+	}
+	t.Fatalf("the dream was still queued after five ticks")
 }
