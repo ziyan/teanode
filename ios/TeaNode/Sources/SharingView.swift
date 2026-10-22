@@ -4,10 +4,10 @@ import TeaNodeKit
 
 // The dashboard's Sharing page: everything the person shares and everything
 // shared with them, in one list, across calendar, location, Health, memory
-// pages, photo albums, skills and passwords. A share is stopped with the
-// kind's own operation, and one made to the person by name is removed with
-// DeclineShare. docs/subsystems/circles.md ("Sharing, in one place") says what
-// is listed and what is left out.
+// pages, photo albums, recordings, finance accounts, skills and passwords. A
+// share is stopped with the kind's own operation, and one made to the person by
+// name is removed with DeclineShare. docs/subsystems/circles.md ("Sharing, in
+// one place") says what is listed and what is left out.
 
 /// SharingDirectory is what the Sharing screen reads: the two lists, read
 /// again after every change.
@@ -179,7 +179,9 @@ private struct SharingMadeRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(verbatim: SharingWords.what(share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, passwordItemCount: share.passwordItemCount))
+            Text(verbatim: SharingWords.what(
+                share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.subjectMask,
+                passwordItemCount: share.passwordItemCount))
             Text(verbatim: SharingWords.madeDetails(share)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
         }
         .accessibilityElement(children: .combine)
@@ -194,7 +196,9 @@ private struct SharingReceivedRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(verbatim: SharingWords.what(share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, passwordItemCount: share.passwordItemCount))
+            Text(verbatim: SharingWords.what(
+                share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.subjectMask,
+                passwordItemCount: share.passwordItemCount))
             Text(verbatim: SharingWords.receivedDetails(share)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
             if let note = SharingWords.cannotRemoveNote(share) {
                 Text(verbatim: note).font(.footnote).foregroundStyle(Color(.secondaryLabel))
@@ -220,6 +224,8 @@ enum SharingWords {
         case .health: String(localized: "Health")
         case .memoryPage: String(localized: "sharing.kindMemoryPage", defaultValue: "Memory page")
         case .photoAlbum: String(localized: "sharing.kindPhotoAlbum", defaultValue: "Photo album")
+        case .recording: String(localized: "sharing.kindRecording", defaultValue: "Recording")
+        case .finance: String(localized: "sharing.kindFinance", defaultValue: "Finance account")
         case .skill: String(localized: "Skill")
         case .passwords: String(localized: "Passwords")
         case nil: shareKind
@@ -230,20 +236,25 @@ enum SharingWords {
         count == 1 ? String(localized: "1 item") : String(localized: "\(count) items")
     }
 
-    /// What a share is of: the thing's name, "3 items" for passwords, and the
-    /// kind for location and Health, which are shared whole.
-    static func what(_ kind: SharingKind?, shareKind: String, subjectName: String, passwordItemCount: Int) -> String {
+    /// What a share is of: the thing's name (a finance account with the last
+    /// digits of its number), "3 items" for passwords, and the kind for
+    /// location and Health, which are shared whole.
+    static func what(_ kind: SharingKind?, shareKind: String, subjectName: String, subjectMask: String, passwordItemCount: Int) -> String {
         if kind == .passwords { return passwordItems(passwordItemCount) }
-        return subjectName.isEmpty ? kindTitle(kind, shareKind: shareKind) : subjectName
+        if subjectName.isEmpty { return kindTitle(kind, shareKind: shareKind) }
+        if kind == .finance && !subjectMask.isEmpty { return "\(subjectName) ··\(subjectMask)" }
+        return subjectName
     }
 
-    /// The level of a calendar, location or album share in the words of its
-    /// own screen; a level the app does not know is shown as the server wrote it.
+    /// The level of a calendar, location, album, recording or finance share in
+    /// the words of its own screen; a level the app does not know is shown as the server wrote it.
     static func level(_ kind: SharingKind?, shareLevel: String) -> String {
         switch kind {
         case .calendar: CalendarShareLevel(rawValue: shareLevel)?.title ?? shareLevel
         case .location: LocationShareLevel(rawValue: shareLevel)?.title ?? shareLevel
         case .photoAlbum: PhotoShareLevel(rawValue: shareLevel).map { PhotoWords.title(of: $0) } ?? shareLevel
+        case .recording: RecordingShareLevel(rawValue: shareLevel)?.title ?? shareLevel
+        case .finance: FinanceShareWords.name(ofLevel: shareLevel)
         default: shareLevel
         }
     }
@@ -313,7 +324,9 @@ enum SharingWords {
     }
 
     static func stopMessage(_ share: SharingMade) -> String {
-        let thing = what(share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, passwordItemCount: share.passwordItemCount)
+        let thing = what(
+            share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.subjectMask,
+            passwordItemCount: share.passwordItemCount)
         return String(localized: "\(share.shownGrantee) will no longer see \(thing).")
     }
 
@@ -326,7 +339,9 @@ enum SharingWords {
     }
 
     static func removeMessage(_ share: SharingReceived) -> String {
-        let thing = what(share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, passwordItemCount: share.passwordItemCount)
+        let thing = what(
+            share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.subjectMask,
+            passwordItemCount: share.passwordItemCount)
         return String(
             localized: "You will no longer receive \(thing) from \(share.shownOwner). \(share.shownOwner) is not told, and has to share it again for you to have it back.")
     }
@@ -368,6 +383,11 @@ extension SharingWords {
         case "history": String(localized: "sharing.noteLevelHistory", defaultValue: "where they are and where they have been")
         case "view": String(localized: "sharing.noteLevelView", defaultValue: "you can view it")
         case "contribute": String(localized: "sharing.noteLevelContribute", defaultValue: "you can add photos")
+        case "summary": String(localized: "sharing.noteLevelSummary", defaultValue: "title and summary")
+        case "transcript": String(localized: "sharing.noteLevelTranscript", defaultValue: "summary and transcript")
+        case "balance": String(localized: "sharing.noteLevelBalance", defaultValue: "balance only")
+        case "spending": String(localized: "sharing.noteLevelSpending", defaultValue: "balance and spending")
+        case "transactions": String(localized: "sharing.noteLevelTransactions", defaultValue: "balance, spending and transactions")
         default: shareLevel
         }
     }
@@ -380,6 +400,8 @@ extension SharingWords {
         case .health: String(localized: "sharing.noteKindHealth", defaultValue: "Health")
         case .memoryPage: String(localized: "sharing.noteKindMemoryPages", defaultValue: "memory pages")
         case .photoAlbum: String(localized: "sharing.noteKindPhotoAlbums", defaultValue: "photo albums")
+        case .recording: String(localized: "sharing.noteKindRecordings", defaultValue: "recordings")
+        case .finance: String(localized: "sharing.noteKindFinance", defaultValue: "finance")
         case .skill: String(localized: "sharing.noteKindSkills", defaultValue: "skills")
         case .passwords: String(localized: "sharing.noteKindPasswords", defaultValue: "passwords")
         case nil: shareKind
@@ -401,6 +423,10 @@ extension SharingWords {
         case .memoryPage: return String(localized: "\(note.sharerName) shared the memory page \(subject) with you.")
         case .skill: return String(localized: "\(note.sharerName) shared their \(subject) skill with you.")
         case .photoAlbum: return String(localized: "\(note.sharerName) shared the photo album \(subject) with you (\(level)).")
+        case .recording:
+            if subject.isEmpty { return String(localized: "\(note.sharerName) shared a recording with you (\(level)).") }
+            return String(localized: "\(note.sharerName) shared the recording \(subject) with you (\(level)).")
+        case .finance: return String(localized: "\(note.sharerName) shared a finance account with you (\(level)).")
         case .passwords, nil: return nil
         }
     }
@@ -411,7 +437,16 @@ extension SharingWords {
         guard let data = detail.data(using: .utf8), let note = try? JSONDecoder().decode(ShareReachedNote.self, from: data),
             !note.memberName.isEmpty, !note.circleName.isEmpty, !note.shareKinds.isEmpty
         else { return nil }
-        let kinds = note.shareKinds.map { noteKind($0) }.formatted(.list(type: .and))
+        let kinds = noteKindList(note.shareKinds.map { noteKind($0) })
         return String(localized: "\(note.memberName) joined \(note.circleName) and can now see your \(kinds).")
+    }
+
+    /// The kinds as a sentence lists them, "calendar, location and finance":
+    /// the system's list style would put a comma before the "and" in English,
+    /// which the dashboard and the server's own note do not.
+    private static func noteKindList(_ names: [String]) -> String {
+        guard let last = names.last, names.count > 1 else { return names.first ?? "" }
+        let front = names.dropLast().joined(separator: String(localized: "sharing.noteListSeparator", defaultValue: ", "))
+        return String(localized: "\(front) and \(last)")
     }
 }
