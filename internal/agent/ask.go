@@ -1564,6 +1564,11 @@ func (self *AskRun) turn() error {
 		overlaidAt := time.Now()
 		definitions := make([]llm.ToolDefinition, 0, len(sent))
 		for _, tool := range sent {
+			// A tool this run may only read is offered only its reading
+			// actions, so the model is not handed a verb that is refused.
+			if self.ReadOnly() || self.settings.ReadOnlyTools[tool.Name] {
+				tool = tool.WithReadingActions()
+			}
 			definitions = append(definitions, tool.Definition())
 		}
 		// The last round is told it is the last, so that it answers. A
