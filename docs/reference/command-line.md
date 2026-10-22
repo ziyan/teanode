@@ -222,7 +222,8 @@ agent does the same through `mail_read` with `invitation` and `mail_act` with
 
 The rest of the group is the rest of the mailbox. `mailbox list` names the
 mailboxes you can open, and `--all` every mailbox on the server with its
-owner; `show` and `update` read and change a mailbox's name and signature.
+owner (for the operator or an account manager, not a domain manager);
+`show` and `update` read and change a mailbox's name and signature.
 `folder list|create|rename|move|pin|unpin|delete` is the tree in the rail.
 `rule list|add|remove|enable|disable|test|apply` is the filing.
 `subscription list|show|mail|unsubscribe` the mailing lists it receives,
