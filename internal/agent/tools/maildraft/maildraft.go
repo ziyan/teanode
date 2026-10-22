@@ -20,7 +20,6 @@ func init() {
 				Name: "mail_draft", Family: tools.FamilyMailbox, Core: true, Risk: tools.RiskWrite,
 				Permissions: []models.Permission{models.PermissionMailSend},
 				Description: "Write a draft: a new message, a reply, a reply to all, or a forward. It is saved in Drafts, in its conversation, for the person to send; nothing goes out. Gives back draft_id for mail_send, and for `discard`, which throws the draft away for good as the Discard button does.",
-				Guidance:    "mail_draft: plain text is the ordinary answer to a message and needs no html. Reach for html when the person asked for something made rather than said -- a summary with headings, a table of figures, an announcement. Mail is not the web: no script runs, nothing loads from another server, and no CSS variable survives, so write the colours out; and a picture has to travel with the message, so it must already be a file of this conversation -- one the person handed you, or one share_file fetched off their computer or out of a message -- and named in images. Most clients refuse SVG, so a drawing has to arrive as a PNG or a JPEG. Lay a wide thing out with a table rather than with flex or grid, which older clients ignore; keep to system fonts and to colours that read on white, since many clients paint their own background.",
 				Parameters: tools.Object(map[string]any{
 					"mode":        tools.EnumProperty("what kind of message, or discard to throw a draft away", "new", "reply", "reply_all", "forward", "discard"),
 					"in_reply_to": tools.StringProperty("for reply, reply_all and forward: the item_id of the message"),
@@ -31,7 +30,7 @@ func init() {
 					"bcc":         tools.ArrayProperty("blind copies", tools.StringProperty("an address")),
 					"subject":     tools.StringProperty("the subject; filled in for a reply or a forward"),
 					"text":        tools.StringProperty("the body, plain text, in the person's voice; no placeholders"),
-					"html":        tools.StringProperty("optional: the same message styled, as HTML. Send it with text, never instead of it -- text is what a reader with no HTML gets. Plain text is right for almost everything; use this when the person asked for styling, or when what they asked for wants a heading, a table or a card. Write an ordinary document with a <style> block: the server moves the stylesheet into the elements, which is what makes it survive a mail client"),
+					"html":        tools.StringProperty("optional: the same message styled, as HTML. Send it with text, never instead of it -- text is what a reader with no HTML gets. Plain text is right for almost everything; use this when the person asked for styling, or when what they asked for wants a heading, a table or a card. Write an ordinary document with a <style> block: the server moves the stylesheet into the elements, which is what makes it survive a mail client. Mail is not the web: write colours out, lay out with tables, use system fonts and colours that read on white"),
 					"images":      tools.ArrayProperty("optional: files of this conversation to put in the body -- a picture you were given, or one you made. Refer to each by name in the html: <img src=\"cid:chart.png\">", tools.StringProperty("an attachment id of this conversation")),
 					"draft_id":    tools.StringProperty("a draft to revise instead of making a new one; for discard, the draft to throw away"),
 				}, "mode"),
@@ -77,9 +76,11 @@ type mailDraftArguments struct {
 	DraftID   string   `json:"draft_id"`
 }
 
-// ownFiles refuses anything that is not a file of this conversation.
-func ownFiles(ctx context.Context, run tools.Run, ids []string) error {
-	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+// ownFiles refuses anything that is not a file of this conversation, and
+// answers the names of those that are drawings (SVG), which most mail
+// clients refuse.
+func ownFiles(ctx context.Context, run tools.Run, ids []string) (drawingNames []string, err error) {
+	return drawingNames, run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		for _, id := range ids {
 			attachment, err := tx.GetAgentAttachment(strings.TrimSpace(id))
 			if err != nil {
@@ -91,6 +92,9 @@ func ownFiles(ctx context.Context, run tools.Run, ids []string) error {
 			}
 			if !tools.IsImage(attachment.ContentType) {
 				return fmt.Errorf("%s is %s; only a picture goes in the body", attachment.Name, attachment.ContentType)
+			}
+			if strings.EqualFold(strings.TrimSpace(attachment.ContentType), "image/svg+xml") {
+				drawingNames = append(drawingNames, attachment.Name)
 			}
 		}
 		return nil
@@ -176,6 +180,7 @@ func runMailDraft(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	// Both forms when the model wrote both: the message goes out as
 	// multipart/alternative, and a reader with no HTML still gets the words.
 	message := map[string]any{"from": from, "textContent": arguments.Text}
+	var drawingNames []string
 	if strings.TrimSpace(arguments.HTML) != "" {
 		message["htmlContent"] = arguments.HTML
 	}
@@ -187,7 +192,7 @@ func runMailDraft(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 		// same: the ids of files in other conversations are readable, and
 		// a turn somebody else started in a group chat must not be able to
 		// put a picture from a private conversation into a message.
-		if err := ownFiles(ctx, run, arguments.Images); err != nil {
+		if drawingNames, err = ownFiles(ctx, run, arguments.Images); err != nil {
 			return nil, err
 		}
 		message["inlineImages"] = arguments.Images
@@ -264,12 +269,49 @@ func runMailDraft(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	if len(preview) > 300 {
 		preview = preview[:300] + "…"
 	}
-	answer, err := tools.JSONResult(map[string]any{"draft_id": draftId, "mailbox": view.Mailbox.Name, "from": from, "to": to, "cc": cc, "bcc": bcc, "subject": subject, "preview": preview, "note": "saved in Drafts; the person sends it, or mail_send with their confirmation"})
+	fields := map[string]any{"draft_id": draftId, "mailbox": view.Mailbox.Name, "from": from, "to": to, "cc": cc, "bcc": bcc, "subject": subject, "preview": preview, "note": "saved in Drafts; the person sends it, or mail_send with their confirmation"}
+	if problems := htmlProblems(arguments.HTML, drawingNames); len(problems) > 0 {
+		fields["html_problems"] = problems
+	}
+	answer, err := tools.JSONResult(fields)
 	if err != nil {
 		return nil, err
 	}
 	answer.Note = fmt.Sprintf("drafted %q to %s", subject, strings.Join(to, ", "))
 	return answer, nil
+}
+
+// htmlProblems are what in a message's html a mail client will not keep,
+// each said with what to do instead. They come back with the draft rather
+// than sit in the prompt of every turn: only a message with html in it can
+// have them, and the model is told right after writing the thing that is
+// wrong, with the draft to revise. drawingNames are the pictures given in
+// images that are drawings (SVG), which most clients refuse.
+func htmlProblems(html string, drawingNames []string) []string {
+	var problems []string
+	lowered := strings.ToLower(html)
+	if strings.Contains(lowered, "<script") {
+		problems = append(problems, "no script runs in mail, so what the script draws will be missing; build it from a table, or send a picture")
+	}
+	if strings.Contains(lowered, "var(--") {
+		problems = append(problems, "no CSS variable survives in mail; write the colours out")
+	}
+	for _, layout := range []string{"display:flex", "display: flex", "display:inline-flex", "display: inline-flex", "display:grid", "display: grid"} {
+		if strings.Contains(lowered, layout) {
+			problems = append(problems, "older mail clients ignore flex and grid; lay a wide thing out with a table")
+			break
+		}
+	}
+	for _, remote := range []string{`src="http`, `src='http`, "url(http", `url("http`, "url('http"} {
+		if strings.Contains(lowered, remote) {
+			problems = append(problems, "nothing loads from another server in mail; a picture has to travel with the message, as a file of this conversation named in images and referred to as cid:name")
+			break
+		}
+	}
+	if len(drawingNames) > 0 {
+		problems = append(problems, fmt.Sprintf("most mail clients refuse SVG (%s); a drawing has to arrive as a PNG or a JPEG", strings.Join(drawingNames, ", ")))
+	}
+	return problems
 }
 
 // discard throws a draft away the way the composer's Discard button does:
