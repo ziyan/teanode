@@ -529,6 +529,11 @@ export class PasswordsSession {
     }
     const verified = await verifyAccess(accountKey, item.id, item.itemKind, item.fields)
     if (verified === null) return { ...item, accessProblem: 'notVerified' } as PasswordItem
+    // Locked, or opened again, while the record was being checked: what this
+    // read saw is not kept, neither in the memory of records (where it would
+    // make the next session take its own record for a replayed one) nor in the
+    // sets of the session now open. The caller drops the item.
+    if (this.accountKey !== accountKey) return { ...item, verifiedAccess: verified } as PasswordItem
     const version = verified.recordVersion ?? 0
     const mac = verified.recordMac ?? ''
     if (isReplayedRecord(item.id, version, mac)) {
