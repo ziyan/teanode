@@ -327,9 +327,10 @@ effect: erasing does not resume.
 
 **The agent.** The journal writes a pause in a day as "paused from 14:00 to
 15:00; where they were is not known", in the person's clock and among the visits,
-never as a stay: it is no place and no time away from home. A day with only
-pauses still has a document, with those lines and no places, since where the
-person was is not known. The tool reads of another person's location say
+never as a stay: it is no place and no time away from home. Once the person has a
+visit at all, a day with only pauses still has a document, with those lines and
+no places, since where the person was is not known; a person with no visit yet
+has no journal. The tool reads of another person's location say
 "<name> has paused sharing where they are (until 15:00)" and give no position,
 and the person's own say recording is paused. The `visits` action lists the
 pauses of its range, and `teanode location visits` prints them among the visits

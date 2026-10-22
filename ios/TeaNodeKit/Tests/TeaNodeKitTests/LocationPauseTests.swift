@@ -254,13 +254,27 @@ final class LocationPauseTests: XCTestCase {
         XCTAssertFalse(tracker.isPaused(at: date("2024-01-02T15:00:00Z")))
     }
 
-    func testAResumeIsDroppedWhenTheServerSaysThePauseIsOver() {
+    func testAResumeIsKeptWhenTheServerSaysThereIsNoPause() {
         let now = date("2024-01-02T14:30:00Z")
         var tracker = LocationPauseTracker()
         tracker.learn(pause(from: "2024-01-02T14:00:00Z", to: nil), at: now)
         tracker.endPause(at: now)
         tracker.learn(nil, at: date("2024-01-02T14:31:00Z"))
-        XCTAssertFalse(tracker.hasPendingChange)
+        // Sent anyway: the server does not need it, and it does no harm.
+        XCTAssertTrue(tracker.hasPendingChange)
+        XCTAssertFalse(tracker.isPaused(at: date("2024-01-02T14:31:00Z")))
+    }
+
+    func testAnAnswerFromBeforeThePauseDoesNotUndoAResume() throws {
+        var tracker = LocationPauseTracker()
+        tracker.startPause(until: nil, at: date("2024-01-02T14:00:00Z"))
+        let sent = try XCTUnwrap(tracker.pendingChange)
+        tracker.endPause(at: date("2024-01-02T14:00:01Z"))
+        // A report answer that left the server before the pause reached it.
+        tracker.learn(nil, at: date("2024-01-02T14:00:02Z"))
+        tracker.changeWasTaken(sent, answer: pause(from: "2024-01-02T14:00:03Z", to: nil), at: date("2024-01-02T14:00:04Z"))
+        XCTAssertTrue(tracker.hasPendingChange)
+        XCTAssertFalse(tracker.isPaused(at: date("2024-01-02T14:00:04Z")))
     }
 
     // MARK: What is kept while paused

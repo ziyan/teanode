@@ -190,9 +190,9 @@ func TestThePauseBoundsAndTheAgentPausing(t *testing.T) {
 	}
 	world.call(t, world.ada, fmt.Sprintf(`mutation { PauseLocation(endedAt: %q) { id } }`, time.Now().Add(29*24*time.Hour).UTC().Format(time.RFC3339)))
 
-	data, failures := world.askWithHeaders(t, world.ben, models.CredentialSession, map[string]string{api.AgentCommandHeader: "1"}, `mutation { PauseLocation { id } }`)
-	if len(failures) > 0 || data["PauseLocation"] == nil {
-		t.Errorf("the agent pauses as the person does: %v %v", data, failures)
+	answerData, failures := world.askWithHeaders(t, world.ben, models.CredentialSession, map[string]string{api.AgentCommandHeader: "1"}, `mutation { PauseLocation { id } }`)
+	if len(failures) > 0 || answerData["PauseLocation"] == nil {
+		t.Errorf("the agent pauses as the person does: %v %v", answerData, failures)
 	}
 	// Resuming records more, so a command the agent ran is refused it; the
 	// person's own command resumes.
@@ -200,9 +200,9 @@ func TestThePauseBoundsAndTheAgentPausing(t *testing.T) {
 	if !strings.Contains(strings.Join(failures, "; "), "the person's own") {
 		t.Errorf("the agent's command does not resume: %v", failures)
 	}
-	data, failures = world.askWithHeaders(t, world.ben, models.CredentialToken, nil, `mutation { ResumeLocation }`)
-	if len(failures) > 0 || data["ResumeLocation"] != true {
-		t.Errorf("the person's command resumes: %v %v", data, failures)
+	answerData, failures = world.askWithHeaders(t, world.ben, models.CredentialToken, nil, `mutation { ResumeLocation }`)
+	if len(failures) > 0 || answerData["ResumeLocation"] != true {
+		t.Errorf("the person's command resumes: %v %v", answerData, failures)
 	}
 }
 
@@ -428,8 +428,8 @@ func TestACheckInIsRefusedWhileThePersonIsPaused(t *testing.T) {
 func TestAReportThatWaitedForTheLockSeesThePauseThatBeganMeanwhile(t *testing.T) {
 	world := newLocationWorld(t)
 	type reportOutcome struct {
-		data     map[string]any
-		failures []string
+		answerData     map[string]any
+		answerFailures []string
 	}
 	outcome := make(chan reportOutcome, 1)
 	var pauseStartedAt time.Time
@@ -438,9 +438,9 @@ func TestAReportThatWaitedForTheLockSeesThePauseThatBeganMeanwhile(t *testing.T)
 			t.Fatalf("LockLocation: %s", err)
 		}
 		go func() {
-			data, failures := world.ask(t, world.ada, fmt.Sprintf(`mutation { ReportLocation(points: [], visits: [%s]) {
+			answerData, answerFailures := world.ask(t, world.ada, fmt.Sprintf(`mutation { ReportLocation(points: [], visits: [%s]) {
 				newVisitCount pausedVisitCount pause { `+pauseFieldsForTest+` } } }`, visitInput("waiting", 40, -75, ago(10*time.Minute), "")))
-			outcome <- reportOutcome{data, failures}
+			outcome <- reportOutcome{answerData, answerFailures}
 		}()
 		time.Sleep(300 * time.Millisecond)
 		pauseStartedAt = time.Now()
@@ -455,9 +455,9 @@ func TestAReportThatWaitedForTheLockSeesThePauseThatBeganMeanwhile(t *testing.T)
 	case <-time.After(30 * time.Second):
 		t.Fatal("the report did not finish")
 	}
-	report, _ := answered.data["ReportLocation"].(map[string]any)
-	if len(answered.failures) > 0 || report["pause"] == nil {
-		t.Fatalf("the report did not see the pause: %v %v", answered.data, answered.failures)
+	report, _ := answered.answerData["ReportLocation"].(map[string]any)
+	if len(answered.answerFailures) > 0 || report["pause"] == nil {
+		t.Fatalf("the report did not see the pause: %v %v", answered.answerData, answered.answerFailures)
 	}
 	visits := world.visitsOf(t, world.ada)
 	if len(visits) != 1 || visits[0]["departedAt"] == nil {

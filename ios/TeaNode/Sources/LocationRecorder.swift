@@ -511,7 +511,8 @@ final class LocationRecorder {
     /// who stayed inside one, so iOS sends no new enter: they are given to
     /// iOS again, which says at once which the person is inside. Noted in the
     /// defaults while a pause is in effect, so that a pause which ended while
-    /// the app was closed is still followed by it.
+    /// the app was closed is still followed by it, and the note is taken off
+    /// only once the places were given again.
     private func watchPlacesAgainAfterPause() {
         guard let accountKey = outbox.accountKey else { return }
         let key = Self.hasPlacesToWatchAgainKeyPrefix + accountKey
@@ -520,22 +521,33 @@ final class LocationRecorder {
             return
         }
         guard defaults.bool(forKey: key) else { return }
-        defaults.removeObject(forKey: key)
-        Task { await giveWatchedPlacesToMonitorAgain() }
+        Task {
+            guard await giveWatchedPlacesToMonitorAgain(), outbox.accountKey == accountKey,
+                !pauseTracker.isPaused(at: Date())
+            else { return }
+            defaults.removeObject(forKey: key)
+        }
     }
 
-    private func giveWatchedPlacesToMonitorAgain() async {
-        guard manager != nil, isMonitoringWanted, !watchedPlaces.isEmpty else { return }
+    /// Gives iOS again every place its monitor holds, and says whether it did.
+    /// Read from the monitor, not from `watchedPlaces`: at launch, before the
+    /// places are read from the server, that is still empty.
+    private func giveWatchedPlacesToMonitorAgain() async -> Bool {
+        guard manager != nil, isMonitoringWanted else { return false }
         let monitor = await ensurePlaceMonitor()
-        for place in watchedPlaces.values {
+        let identifiers = await monitor.identifiers
+        guard !identifiers.isEmpty else { return false }
+        for identifier in identifiers {
+            guard let record = await monitor.record(for: identifier),
+                let condition = record.condition as? CLMonitor.CircularGeographicCondition
+            else { continue }
             // Not an arrival iOS repeats for a visit in progress: the visits
             // were ended where the pause began, so this one is a new arrival.
-            placeAddedAt[place.placeId] = nil
-            await monitor.remove(place.placeId)
-            let condition = CLMonitor.CircularGeographicCondition(
-                center: CLLocationCoordinate2D(latitude: place.latitudeDegrees, longitude: place.longitudeDegrees), radius: place.radiusMeters)
-            await monitor.add(condition, identifier: place.placeId, assuming: .unsatisfied)
+            placeAddedAt[identifier] = nil
+            await monitor.remove(identifier)
+            await monitor.add(condition, identifier: identifier, assuming: .unsatisfied)
         }
+        return true
     }
 
     /// Reads the pause again at the moment a timed one ends: the live updates
@@ -602,6 +614,9 @@ final class LocationRecorder {
                     pauseRefusalText = reason
                     pauseDidChange()
                 case .retryLater:
+                    // A tap made while this try was on its way is sent at
+                    // once, not after the wait.
+                    if pauseTracker.pendingChange != change { continue }
                     failureCount += 1
                     isPauseSendWaiting = true
                     try? await Task.sleep(for: .seconds(LocationPauseRetry.delaySeconds(afterFailureCount: failureCount)))

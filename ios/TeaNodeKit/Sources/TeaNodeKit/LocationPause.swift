@@ -194,9 +194,9 @@ public struct LocationPauseTracker: Codable, Equatable, Sendable {
     /// over it.
     public mutating func learn(_ serverPause: LocationPause?, at now: Date) {
         confirmedPause = serverPause
-        // The server has no pause to end, whatever was kept in case one was on
-        // its way.
-        if serverPause == nil, case .resume? = pendingChange { pendingChange = nil }
+        // A resume waiting to be sent is kept even when the server says it has
+        // no pause: the answer may have left before the pause it ends reached
+        // the server, and a resume the server does not need does no harm.
         settle(at: now)
     }
 
