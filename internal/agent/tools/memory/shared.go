@@ -3,10 +3,12 @@ package memory
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -595,6 +597,37 @@ func previewShareAction(ctx context.Context, run tools.Run, item *memoryItem) (*
 		answer["more_facts"] = fmt.Sprintf("%d more facts on the page are shown too", len(preview.Page.Facts)-previewFactsShown)
 	}
 	return tools.JSONResult(answer)
+}
+
+// sharedWithText says with whom the person shares the page at this path,
+// through a share of it or of a page above it: "Ben and the circle "Home"", or
+// empty when nobody.
+func sharedWithText(tx db.Transaction, ownerUserId, pagePath string) (string, error) {
+	shares, err := tx.ListPageSharesBy(ownerUserId)
+	if err != nil {
+		return "", err
+	}
+	var names []string
+	for _, share := range shares {
+		if !share.Covers(pagePath) {
+			continue
+		}
+		name := share.GranteeUsername
+		if share.GranteeCircleName != "" {
+			name = models.DescribeCircleByName(share.GranteeCircleName)
+		}
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	switch len(names) {
+	case 0:
+		return "", nil
+	case 1:
+		return names[0], nil
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1], nil
 }
 
 // sharesAction lists the shares the person made, each with who it is for.

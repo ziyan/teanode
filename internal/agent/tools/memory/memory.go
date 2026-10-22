@@ -1534,13 +1534,30 @@ func moveAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 		return moveFactAction(ctx, run, path, under, arguments.Number)
 	}
 	var moved *models.AgentNode
+	var sharedBefore, sharedAfter string
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		moved, err = tx.MoveAgentNode(run.Agent().ID, path, under)
+		if sharedBefore, err = sharedWithText(tx, run.Owner().ID, path); err != nil {
+			return err
+		}
+		if moved, err = tx.MoveAgentNode(run.Agent().ID, path, under); err != nil {
+			return err
+		}
+		sharedAfter, err = sharedWithText(tx, run.Owner().ID, moved.Path)
 		return err
 	}); err != nil {
 		return nil, err
 	}
-	result := tools.TextResult("%s", path+" is now "+moved.Path)
+	answer := path + " is now " + moved.Path
+	// A share is a path: it moves with the page, and a page moved into or out
+	// of a shared subtree is shared or not with it. Say which, since the
+	// person did not ask about sharing.
+	switch {
+	case sharedAfter != "" && sharedAfter != sharedBefore:
+		answer += ", and it is now shared with " + sharedAfter + ", read only"
+	case sharedAfter == "" && sharedBefore != "":
+		answer += ", and it is no longer shared with " + sharedBefore
+	}
+	result := tools.TextResult("%s", answer)
 	result.Note = "filed " + path + " under " + tools.Named(under, "the top")
 	return result, nil
 }
