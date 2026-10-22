@@ -1,6 +1,6 @@
-import { cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 
 import { APIError, graphql } from '../../api'
 import { BreadcrumbProvider } from '../../components/breadcrumb'
@@ -71,10 +71,6 @@ let agentKeyPair: PersonKeyPair
 let personC: PersonKeyPair
 
 beforeAll(async () => {
-  // Opening an item decrypts and verifies it first, which on a loaded CI
-  // runner took just over the default second to draw (a share notice was not
-  // found at 1033 ms). Every find and waitFor here waits up to 15 seconds.
-  configure({ asyncUtilTimeout: 15_000 })
   fixture = await makeSetUp(PASSPHRASE)
   setupView = {
     isSetUp: true,
@@ -89,10 +85,6 @@ beforeAll(async () => {
   agentKeyPair = await generatePersonKeyPair()
   personC = await generatePersonKeyPair()
 }, 60_000)
-
-afterAll(() => {
-  configure({ asyncUtilTimeout: 1_000 })
-})
 
 beforeEach(() => {
   // The tab title reads whether the window is wide.
