@@ -259,3 +259,68 @@ func TestACircleAddressBookNeedsCircleUse(t *testing.T) {
 	world.refused(t, world.dave, fmt.Sprintf(`query { ListContacts(addressBookId: %q) { id } }`, bookId))
 	world.refused(t, world.dave, fmt.Sprintf(`mutation { SaveContact(addressBookId: %q, name: "Sam") { id } }`, bookId))
 }
+
+// A command the agent ran on the person's computer reads the books the person
+// gave their agent and no others: not a circle's, and not one of their own
+// they kept back, as the agent's address book tool does.
+func TestAMarkedCommandLineRequestReadsOnlyTheBooksGivenToTheAgent(t *testing.T) {
+	world := newCircleWorld(t)
+	world.grantContactsAndPhotos(t, world.alice, world.bob)
+	circleId := world.makeCircle(t, world.alice, "Family", "family")
+	world.join(t, world.alice, circleId, world.bob, "member")
+	circleBookId := world.circleBookOf(t, circleId, "alice")
+	keptBackBookId, keptBackContactId := world.keepContactAs(t, world.alice, "Kim Kept")
+	circleContactId := world.call(t, world.alice, fmt.Sprintf(`mutation { SaveContact(addressBookId: %q, name: "Sam Shared") { id } }`, circleBookId))["SaveContact"].(map[string]any)["id"].(string)
+	var givenBookId string
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		given, err := tx.CreateAddressBook(&models.AddressBook{UserID: world.alice.ID, Name: "Given"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		given.AgentGranted = true
+		if _, err := tx.UpdateAddressBook(given); err != nil {
+			t.Fatal(err)
+		}
+		givenBookId = given.ID
+	})
+	givenContactId := world.call(t, world.alice, fmt.Sprintf(`mutation { SaveContact(addressBookId: %q, name: "Alex Given") { id } }`, givenBookId))["SaveContact"].(map[string]any)["id"].(string)
+	marked := map[string]string{api.AgentCommandHeader: "1"}
+
+	for name, query := range map[string]string{
+		"list, kept back":      fmt.Sprintf(`query { ListContacts(addressBookId: %q) { id } }`, keptBackBookId),
+		"list, circle":         fmt.Sprintf(`query { ListContacts(addressBookId: %q) { id } }`, circleBookId),
+		"get, kept back":       fmt.Sprintf(`query { GetContact(addressBookId: %q, id: %q) { id } }`, keptBackBookId, keptBackContactId),
+		"get, circle":          fmt.Sprintf(`query { GetContact(addressBookId: %q, id: %q) { id } }`, circleBookId, circleContactId),
+		"get, no book, own":    fmt.Sprintf(`query { GetContact(id: %q) { id } }`, keptBackContactId),
+		"get, no book, circle": fmt.Sprintf(`query { GetContact(id: %q) { id } }`, circleContactId),
+	} {
+		_, failures := world.askWithHeaders(t, world.alice, models.CredentialToken, marked, query)
+		if !strings.Contains(strings.ToLower(strings.Join(failures, "; ")), "not found") {
+			t.Errorf("%s, marked as the agent's: %v", name, failures)
+		}
+		if _, failures := world.askWithHeaders(t, world.alice, models.CredentialToken, nil, query); len(failures) > 0 {
+			t.Errorf("%s, not marked: %v", name, failures)
+		}
+	}
+	for name, query := range map[string]string{
+		"list": fmt.Sprintf(`query { ListContacts(addressBookId: %q) { id } }`, givenBookId),
+		"get":  fmt.Sprintf(`query { GetContact(id: %q) { id } }`, givenContactId),
+	} {
+		if _, failures := world.askWithHeaders(t, world.alice, models.CredentialToken, marked, query); len(failures) > 0 {
+			t.Errorf("%s, a book given to the agent: %v", name, failures)
+		}
+	}
+
+	data, failures := world.askWithHeaders(t, world.alice, models.CredentialToken, marked, `query { ListReachableAddressBooks { id } }`)
+	if len(failures) > 0 {
+		t.Fatalf("ListReachableAddressBooks: %v", failures)
+	}
+	books := data["ListReachableAddressBooks"].([]any)
+	if len(books) != 1 || books[0].(map[string]any)["id"] != givenBookId {
+		t.Errorf("the agent lists only the book given to it: %v", books)
+	}
+	data, _ = world.askWithHeaders(t, world.alice, models.CredentialToken, nil, `query { ListReachableAddressBooks { id } }`)
+	if books := data["ListReachableAddressBooks"].([]any); len(books) != 3 {
+		t.Errorf("the person lists their own two and the circle's: %v", books)
+	}
+}
