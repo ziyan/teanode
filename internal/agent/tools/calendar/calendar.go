@@ -24,7 +24,7 @@ func init() {
 				Permissions: []models.Permission{models.PermissionCalendarUse},
 				Description: "What is on between two dates. One entry per time something happens, " +
 					"so an event that repeats weekly appears once for each week in the window. " +
-					"With 'owner', what other people have shared with the person instead: one person's, or everybody's.",
+					"With 'owner', what other people have shared with the person instead: one person's, or everybody's; not in a chat, where it would be read out to everybody there.",
 				Parameters: tools.Object(map[string]any{
 					"from":  tools.StringProperty("the first day, as YYYY-MM-DD; today by default"),
 					"until": tools.StringProperty("the day after the last, as YYYY-MM-DD; a week after 'from' by default"),
