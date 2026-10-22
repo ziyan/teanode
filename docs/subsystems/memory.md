@@ -1129,8 +1129,12 @@ the prompt all go through it, so what is left out is left out once:
   brackets; eight characters for a language written without spaces; a single
   quotation mark opens a span only when it does not follow a letter or a
   digit, so an apostrophe does not). The rest of the sentence would be built
-  around what was copied, so none of it is kept (`sharedSummaryFor`). A search
-  does not find such a page by a word on its summary (`summariesLeftOut`).
+  around what was copied, so none of it is kept (`sharedSummaryFor`). The facts
+  looked at include the dormant and the replaced ones, which are not shown: the
+  summary may have been written while they were on the page. A search does not
+  find such a page by a word on its summary; it decides this for the pages the
+  search finds, and searches again without the ones it left out, so the cost
+  follows the hits and not the size of what is shared (`isSummaryLeftOut`).
 * Evidence that cannot be found counts as evidence that is kept back: a
   document no longer in the archive, a private event deleted since the fact was
   filed, and an event in a circle's calendar, which is not the owner's own. The

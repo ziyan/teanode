@@ -55,11 +55,6 @@ type PageShareOperation interface {
 	// it must not find them. The shared-memory reader is the only caller.
 	SearchAgentGraphWithin(agentId string, roots, hiddenSummaryNodeIds []string, query string, limit int) ([]*models.AgentNode, []*models.AgentFact, error)
 
-	// ListAgentNodesWithQuoteMarksWithin are the pages at these roots or
-	// under them whose summary has a quotation mark in it, which are the only
-	// ones whose summary may be left out of what a reader is shown.
-	ListAgentNodesWithQuoteMarksWithin(agentId string, roots []string) ([]*models.AgentNode, error)
-
 	// ListAgentFactsWithin are the live facts on the pages at these roots or
 	// under them, by identifier, at most limit of those after afterFactId
 	// (empty to start). The shared-memory reader counts what a share would
@@ -445,25 +440,6 @@ func (self *transaction) SearchAgentGraphWithin(agentId string, roots, hiddenSum
 		return nil, nil, err
 	}
 	return orderNodesBy(nodes, nodeIds), orderFactsBy(facts, factIds), nil
-}
-
-func (self *transaction) ListAgentNodesWithQuoteMarksWithin(agentId string, roots []string) ([]*models.AgentNode, error) {
-	if len(roots) == 0 {
-		return nil, nil
-	}
-	var nodeIds []string
-	if err := self.tx.Raw(
-		`SELECT node."id" FROM "agent_node" node
-		 WHERE node."agent_id" = ? AND node."summary" ~ ? AND `+withinRootsCondition+`
-		 ORDER BY node."id" ASC`,
-		agentId, "[\"'“”‘’«»「」『』]", pq.Array(roots)).Scan(&nodeIds).Error; err != nil {
-		return nil, err
-	}
-	nodes, err := self.GetAgentNodes(agentId, nodeIds)
-	if err != nil {
-		return nil, err
-	}
-	return orderNodesBy(nodes, nodeIds), nil
 }
 
 func (self *transaction) ListAgentFactsWithin(agentId string, roots []string, afterFactId string, limit int) ([]*models.AgentFact, error) {

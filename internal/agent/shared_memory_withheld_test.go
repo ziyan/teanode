@@ -269,6 +269,65 @@ func TestASummaryIsLeftOutWhenAFactOnThePageIsWithheld(t *testing.T) {
 	})
 }
 
+// A summary may have been written while a fact now dormant or replaced was on
+// the page, so it can carry that fact's words: the page's summary is left out
+// for a withheld fact that is no longer live, though the fact is not shown.
+func TestASummaryIsLeftOutForADormantOrSupersededWithheldFact(t *testing.T) {
+	world := newSharedWorld(t)
+	world.setSummary(t, "people/a", "Paid the boatyard on the first. Keeps the lighthouse key.")
+	world.setSummary(t, "people/a/doctor", "Watches the quay gate. Keeps the lighthouse lamp.")
+	world.setSummary(t, "projects/garden", "Keeps bees and the lighthouse hive.")
+	world.fact(t, "people/a", &models.AgentFact{
+		Text: "Paid the boatyard on the first.", Dormant: true,
+		Evidence: []models.Evidence{{Kind: models.EvidenceFinanceTransaction, ID: "a-transaction"}},
+	})
+	var replacedId string
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		replacement, err := tx.AddAgentFact(&models.AgentFact{
+			AgentID: world.ownerAgent.ID, NodeID: world.pages["people/a/doctor"].ID, Kind: models.FactPlain, Confidence: 1,
+			Text: "Watches the harbor gate.", Evidence: []models.Evidence{{Kind: models.EvidenceMail, ID: "a-message"}},
+		})
+		if err != nil {
+			t.Fatalf("AddAgentFact: %s", err)
+		}
+		replacedId = replacement.ID
+	})
+	world.fact(t, "people/a/doctor", &models.AgentFact{
+		Text: "Watches the quay gate.", SupersededBy: replacedId,
+		Evidence: []models.Evidence{{Kind: models.EvidenceRecordingPassage, ID: "a-recording"}},
+	})
+	world.fact(t, "projects/garden", &models.AgentFact{
+		Text:     "Keeps bees.",
+		Evidence: []models.Evidence{{Kind: models.EvidenceMail, ID: "a-message"}},
+	})
+	world.share(t, "people/a", true)
+	world.share(t, "projects/garden", true)
+
+	if page := world.read(t, world.reader, "people/a"); page == nil || page.Opening != "" || len(page.Facts) != 0 {
+		t.Errorf("a summary on a page whose withheld fact is dormant: %+v", page)
+	}
+	if doctor := world.read(t, world.reader, "people/a/doctor"); doctor == nil || doctor.Opening != "" || len(doctor.Facts) != 1 {
+		t.Errorf("a summary on a page whose recording fact was replaced: %+v", doctor)
+	}
+	if garden := world.read(t, world.reader, "projects/garden"); garden == nil || garden.Opening != "Keeps bees and the lighthouse hive." {
+		t.Errorf("a summary on a page whose facts are all shown: %+v", garden)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		hits, err := SearchSharedPages(tx, world.reader.ID, "lighthouse", 20)
+		if err != nil {
+			t.Fatalf("SearchSharedPages: %s", err)
+		}
+		if len(hits) != 1 || hits[0].Path != "projects/garden" {
+			t.Errorf("a word on a left-out summary finds %+v", hits)
+		}
+		// Pages are decided as the search finds them, so a short list is
+		// not spent on pages whose summary is left out.
+		if hits, err = SearchSharedPages(tx, world.reader.ID, "lighthouse", 1); err != nil || len(hits) != 1 || hits[0].Path != "projects/garden" {
+			t.Errorf("a list of one finds %+v %v", hits, err)
+		}
+	})
+}
+
 // A fact that cites an event or a document that cannot be found is not shown
 // to a reader, since it may have been a private event or a recording: an
 // event deleted since the fact was filed, a document gone from the archive,

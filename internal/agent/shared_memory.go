@@ -200,26 +200,38 @@ func isSummaryLeftOutForQuotes(summary string, isQuoteShared bool) bool {
 // Cutting the offending part out of the sentence would leave the rest of a
 // sentence built around it, so it is all of the summary or none of it.
 func sharedSummaryFor(tx db.Transaction, agentId string, node *models.AgentNode, isQuoteShared bool) (string, error) {
+	isLeftOut, err := isSummaryLeftOut(tx, agentId, node, isQuoteShared)
+	if err != nil || isLeftOut {
+		return "", err
+	}
+	return node.Summary, nil
+}
+
+// isSummaryLeftOut says the summary of one page is not shown to its reader
+// (see sharedSummaryFor). The facts looked at include the dormant and the
+// superseded ones, since the summary may have been written while a fact now
+// replaced was on the page, and still carry its words.
+func isSummaryLeftOut(tx db.Transaction, agentId string, node *models.AgentNode, isQuoteShared bool) (bool, error) {
 	if strings.TrimSpace(node.Summary) == "" {
-		return node.Summary, nil
+		return false, nil
 	}
 	if isSummaryLeftOutForQuotes(node.Summary, isQuoteShared) {
-		return "", nil
+		return true, nil
 	}
-	facts, err := tx.ListAgentFacts(agentId, node.ID, false, everyFactOnPage)
+	facts, err := tx.ListAgentFacts(agentId, node.ID, true, everyFactOnPage)
 	if err != nil {
-		return "", err
+		return false, err
 	}
 	cited, err := sharedEvidenceOf(tx, agentId, facts)
 	if err != nil {
-		return "", err
+		return false, err
 	}
 	for _, fact := range facts {
 		if cited.isSummaryLeftOutForFact(fact) {
-			return "", nil
+			return true, nil
 		}
 	}
-	return node.Summary, nil
+	return false, nil
 }
 
 // isAnyQuoteShared says at least one of these shares includes the quotes.
@@ -379,7 +391,7 @@ func readSharedPageFrom(tx db.Transaction, shares []*models.AgentPageShare, page
 		page.Aliases = []string{}
 	}
 
-	facts, err := tx.ListAgentFacts(agentId, node.ID, false, everyFactOnPage)
+	facts, err := tx.ListAgentFacts(agentId, node.ID, true, everyFactOnPage)
 	if err != nil {
 		return nil, err
 	}
@@ -753,18 +765,40 @@ func SearchSharedPages(tx db.Transaction, readerUserId, query string, limit int)
 			roots = append(roots, share.Path)
 		}
 		agentId := ownerShares[0].AgentID
-		leftOut, err := summariesLeftOut(tx, agentId, ownerShares, roots)
-		if err != nil {
-			return nil, err
-		}
-		hiddenIds := make([]string, 0, len(leftOut))
-		for nodeId := range leftOut {
-			hiddenIds = append(hiddenIds, nodeId)
-		}
-		sort.Strings(hiddenIds)
-		nodes, facts, err := tx.SearchAgentGraphWithin(agentId, roots, hiddenIds, query, limit)
-		if err != nil {
-			return nil, err
+		// Whether a summary is left out decides whether a word on it finds the
+		// page, so it is decided for the pages the search finds and the search
+		// is run again until every page it finds has been decided: reading the
+		// facts of every shared page on each search would cost what is shared,
+		// not what is found.
+		leftOut := map[string]bool{}
+		decided := map[string]bool{}
+		hiddenIds := []string{}
+		var nodes []*models.AgentNode
+		var facts []*models.AgentFact
+		for {
+			nodes, facts, err = tx.SearchAgentGraphWithin(agentId, roots, hiddenIds, query, limit)
+			if err != nil {
+				return nil, err
+			}
+			isAnyLeftOut := false
+			for _, node := range nodes {
+				if decided[node.ID] {
+					continue
+				}
+				decided[node.ID] = true
+				isLeftOut, err := isSummaryLeftOut(tx, agentId, node, isAnyQuoteShared(coveringShares(ownerShares, node.Path)))
+				if err != nil {
+					return nil, err
+				}
+				if isLeftOut {
+					leftOut[node.ID] = true
+					hiddenIds = append(hiddenIds, node.ID)
+					isAnyLeftOut = true
+				}
+			}
+			if !isAnyLeftOut {
+				break
+			}
 		}
 		owner := ownerShares[0]
 		for _, node := range nodes {
@@ -832,45 +866,6 @@ func InterleaveSharedHits(hits []*models.SharedHit) []*models.SharedHit {
 		}
 	}
 	return interleaved
-}
-
-// summariesLeftOut are the pages, among those at these roots or under them,
-// whose summary a reader is not shown (see sharedSummaryFor), by identifier.
-// A summary is left out for its quotation marks, so only the pages with one
-// are looked at for that, and for a fact on the page that the reader is not
-// shown or that was read in a chat or a recording, so the facts at the roots
-// are read a batch at a time.
-func summariesLeftOut(tx db.Transaction, agentId string, ownerShares []*models.AgentPageShare, roots []string) (map[string]bool, error) {
-	candidates, err := tx.ListAgentNodesWithQuoteMarksWithin(agentId, roots)
-	if err != nil {
-		return nil, err
-	}
-	leftOut := map[string]bool{}
-	for _, node := range candidates {
-		if isSummaryLeftOutForQuotes(node.Summary, isAnyQuoteShared(coveringShares(ownerShares, node.Path))) {
-			leftOut[node.ID] = true
-		}
-	}
-	afterFactId := ""
-	for {
-		facts, err := tx.ListAgentFactsWithin(agentId, roots, afterFactId, countWithheldFactsBatch)
-		if err != nil {
-			return nil, err
-		}
-		cited, err := sharedEvidenceOf(tx, agentId, facts)
-		if err != nil {
-			return nil, err
-		}
-		for _, fact := range facts {
-			if cited.isSummaryLeftOutForFact(fact) {
-				leftOut[fact.NodeID] = true
-			}
-		}
-		if len(facts) < countWithheldFactsBatch {
-			return leftOut, nil
-		}
-		afterFactId = facts[len(facts)-1].ID
-	}
 }
 
 // groupSharesByOwner is the shares in groups of one owner each, the owners in
