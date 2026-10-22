@@ -201,12 +201,15 @@ public struct PhotoAlbumShare: Codable, Identifiable, Hashable, Sendable {
     /// Whether the people reached see where the photos were taken and receive
     /// the original files.
     public let isLocationIncluded: Bool
+    /// Whether the people reached see the names the owner gave the faces in
+    /// the photos.
+    public let isFaceNamesIncluded: Bool
     public let createdAt: String
 
     public init(
         id: String, photoAlbumId: String, granteeUserId: String? = nil, granteeUsername: String = "", granteeName: String = "", granteeAvatarUrl: String? = nil,
         granteeAvatarColorIndex: Int = 0, granteeCircleId: String? = nil, granteeCircleName: String = "", shareLevel: String = "view",
-        isLocationIncluded: Bool = false, createdAt: String = ""
+        isLocationIncluded: Bool = false, isFaceNamesIncluded: Bool = false, createdAt: String = ""
     ) {
         self.id = id
         self.photoAlbumId = photoAlbumId
@@ -219,6 +222,7 @@ public struct PhotoAlbumShare: Codable, Identifiable, Hashable, Sendable {
         self.granteeCircleName = granteeCircleName
         self.shareLevel = shareLevel
         self.isLocationIncluded = isLocationIncluded
+        self.isFaceNamesIncluded = isFaceNamesIncluded
         self.createdAt = createdAt
     }
 
@@ -235,6 +239,7 @@ public struct PhotoAlbumShare: Codable, Identifiable, Hashable, Sendable {
         granteeCircleName = try container.decodeIfPresent(String.self, forKey: .granteeCircleName) ?? ""
         shareLevel = try container.decode(String.self, forKey: .shareLevel)
         isLocationIncluded = try container.decodeIfPresent(Bool.self, forKey: .isLocationIncluded) ?? false
+        isFaceNamesIncluded = try container.decodeIfPresent(Bool.self, forKey: .isFaceNamesIncluded) ?? false
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
     }
 
@@ -261,6 +266,7 @@ public struct PhotoShareDraft: Hashable, Sendable {
     public var target: PhotoShareTarget?
     public var photoShareLevel = PhotoShareLevel.view
     public var isLocationIncluded = false
+    public var isFaceNamesIncluded = false
 
     public init() {}
 
@@ -270,6 +276,7 @@ public struct PhotoShareDraft: Hashable, Sendable {
     func variables(photoAlbumId: String) -> [String: JSONValue] {
         var variables: [String: JSONValue] = [
             "photoAlbumId": .string(photoAlbumId), "shareLevel": .string(photoShareLevel.rawValue), "isLocationIncluded": .bool(isLocationIncluded),
+            "isFaceNamesIncluded": .bool(isFaceNamesIncluded),
         ]
         switch target {
         case .person(let userId)?: variables["granteeUserId"] = .string(userId)
@@ -283,19 +290,19 @@ public struct PhotoShareDraft: Hashable, Sendable {
 extension Documents {
     static let photoAlbumShareFields = """
         id photoAlbumId granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex granteeCircleId granteeCircleName
-        shareLevel isLocationIncluded createdAt
+        shareLevel isLocationIncluded isFaceNamesIncluded createdAt
         """
     public static let listPhotoAlbumShares = """
         query ($photoAlbumId: String!) { ListPhotoAlbumShares(photoAlbumId: $photoAlbumId) { \(photoAlbumShareFields) } }
         """
     public static let sharePhotoAlbum = """
-        mutation ($photoAlbumId: String!, $granteeUserId: String, $granteeCircleId: String, $shareLevel: String!, $isLocationIncluded: Boolean) {
-          SharePhotoAlbum(photoAlbumId: $photoAlbumId, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, shareLevel: $shareLevel, isLocationIncluded: $isLocationIncluded) { \(photoAlbumShareFields) }
+        mutation ($photoAlbumId: String!, $granteeUserId: String, $granteeCircleId: String, $shareLevel: String!, $isLocationIncluded: Boolean, $isFaceNamesIncluded: Boolean) {
+          SharePhotoAlbum(photoAlbumId: $photoAlbumId, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, shareLevel: $shareLevel, isLocationIncluded: $isLocationIncluded, isFaceNamesIncluded: $isFaceNamesIncluded) { \(photoAlbumShareFields) }
         }
         """
     public static let updatePhotoAlbumShare = """
-        mutation ($photoAlbumShareId: String!, $shareLevel: String!, $isLocationIncluded: Boolean) {
-          UpdatePhotoAlbumShare(photoAlbumShareId: $photoAlbumShareId, shareLevel: $shareLevel, isLocationIncluded: $isLocationIncluded) { \(photoAlbumShareFields) }
+        mutation ($photoAlbumShareId: String!, $shareLevel: String!, $isLocationIncluded: Boolean, $isFaceNamesIncluded: Boolean) {
+          UpdatePhotoAlbumShare(photoAlbumShareId: $photoAlbumShareId, shareLevel: $shareLevel, isLocationIncluded: $isLocationIncluded, isFaceNamesIncluded: $isFaceNamesIncluded) { \(photoAlbumShareFields) }
         }
         """
     public static let removePhotoAlbumShare = """
@@ -324,13 +331,16 @@ extension Connection {
     }
 
     /// Changes the level of one share and whether it includes where the
-    /// photos were taken.
-    public func updatePhotoAlbumShare(_ photoAlbumShareId: String, photoShareLevel: PhotoShareLevel, isLocationIncluded: Bool) async throws -> PhotoAlbumShare {
+    /// photos were taken and the names of the faces in them.
+    public func updatePhotoAlbumShare(
+        _ photoAlbumShareId: String, photoShareLevel: PhotoShareLevel, isLocationIncluded: Bool, isFaceNamesIncluded: Bool
+    ) async throws -> PhotoAlbumShare {
         struct Answer: Decodable, Sendable { let UpdatePhotoAlbumShare: PhotoAlbumShare }
         return try await execute(
             Documents.updatePhotoAlbumShare,
             variables: [
                 "photoAlbumShareId": .string(photoAlbumShareId), "shareLevel": .string(photoShareLevel.rawValue), "isLocationIncluded": .bool(isLocationIncluded),
+                "isFaceNamesIncluded": .bool(isFaceNamesIncluded),
             ], as: Answer.self
         ).UpdatePhotoAlbumShare
     }

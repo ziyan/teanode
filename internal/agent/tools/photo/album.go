@@ -257,6 +257,7 @@ func albumCardPreview(ctx context.Context, callArguments json.RawMessage) string
 		With      string `json:"with"`
 		Level     string `json:"share_level"`
 		Location  *bool  `json:"is_location_included"`
+		FaceNames *bool  `json:"is_face_names_included"`
 	}
 	if err := json.Unmarshal(callArguments, &asked); err != nil {
 		return ""
@@ -284,7 +285,7 @@ func albumCardPreview(ctx context.Context, callArguments json.RawMessage) string
 		if err != nil {
 			return ""
 		}
-		after, err := settingsAfter(share, &arguments{ShareLevel: asked.Level, IsLocationIncluded: asked.Location})
+		after, err := settingsAfter(share, &arguments{ShareLevel: asked.Level, IsLocationIncluded: asked.Location, IsFaceNamesIncluded: asked.FaceNames})
 		if err != nil {
 			return ""
 		}
@@ -298,6 +299,9 @@ func albumCardPreview(ctx context.Context, callArguments json.RawMessage) string
 	text := "Share " + named + " with " + with + ", to " + level
 	if asked.Location != nil && *asked.Location {
 		text += ", including where the photos were taken"
+	}
+	if asked.FaceNames != nil && *asked.FaceNames {
+		text += ", including the names of the faces"
 	}
 	return text
 }
@@ -365,12 +369,14 @@ func albumShare(ctx context.Context, current tools.Run, asked *arguments) (*tool
 	}
 	granteeUserId, granteeCircleId, sharedWith := grantee.UserID, grantee.CircleID, grantee.Description
 	isLocationIncluded := asked.IsLocationIncluded != nil && *asked.IsLocationIncluded
-	share, err := client.SharePhotoAlbum(ctx, current.Operations(), albumId, granteeUserId, granteeCircleId, shareLevel, isLocationIncluded)
+	isFaceNamesIncluded := asked.IsFaceNamesIncluded != nil && *asked.IsFaceNamesIncluded
+	share, err := client.SharePhotoAlbum(ctx, current.Operations(), albumId, granteeUserId, granteeCircleId, shareLevel, isLocationIncluded, isFaceNamesIncluded)
 	if err != nil {
 		return nil, err
 	}
 	result, err := tools.JSONResult(map[string]any{
 		"share_id": share.ID, "shared_with": sharedWith, "share_level": share.ShareLevel, "is_location_included": share.IsLocationIncluded,
+		"is_face_names_included": share.IsFaceNamesIncluded,
 	})
 	if err != nil {
 		return nil, err
@@ -381,19 +387,20 @@ func albumShare(ctx context.Context, current tools.Run, asked *arguments) (*tool
 
 // shareSettings is what a share lets the people it names do.
 type shareSettings struct {
-	shareLevel         string
-	isLocationIncluded bool
+	shareLevel          string
+	isLocationIncluded  bool
+	isFaceNamesIncluded bool
 }
 
 // settingsOf is the settings a share has now.
 func settingsOf(share *client.PhotoAlbumShare) shareSettings {
-	return shareSettings{shareLevel: string(share.ShareLevel), isLocationIncluded: share.IsLocationIncluded}
+	return shareSettings{shareLevel: string(share.ShareLevel), isLocationIncluded: share.IsLocationIncluded, isFaceNamesIncluded: share.IsFaceNamesIncluded}
 }
 
 // settingsAfter is the settings a share has once a call is done. A setting the
-// call does not name stays as the share has it: both are written together,
-// so filling in the one that was left out is what keeps "stop them adding
-// photos" from also taking the places away.
+// call does not name stays as the share has it: all three are written
+// together, so filling in the ones that were left out is what keeps "stop them
+// adding photos" from also taking the places away.
 func settingsAfter(share *client.PhotoAlbumShare, asked *arguments) (shareSettings, error) {
 	after := settingsOf(share)
 	if shareLevel := strings.ToLower(strings.TrimSpace(asked.ShareLevel)); shareLevel != "" {
@@ -404,6 +411,9 @@ func settingsAfter(share *client.PhotoAlbumShare, asked *arguments) (shareSettin
 	}
 	if asked.IsLocationIncluded != nil {
 		after.isLocationIncluded = *asked.IsLocationIncluded
+	}
+	if asked.IsFaceNamesIncluded != nil {
+		after.isFaceNamesIncluded = *asked.IsFaceNamesIncluded
 	}
 	return after, nil
 }
@@ -433,7 +443,7 @@ func granteeText(share *client.PhotoAlbumShare) string {
 
 // shareSettingsText is " to ..." and the settings a change names, in the
 // words the cards use. A setting that is not named is left out.
-func shareSettingsText(isLevelNamed bool, shareLevel string, isLocationNamed, isLocationIncluded bool) string {
+func shareSettingsText(isLevelNamed bool, shareLevel string, isLocationNamed, isLocationIncluded, isFaceNamesNamed, isFaceNamesIncluded bool) string {
 	var parts []string
 	if isLevelNamed {
 		if strings.EqualFold(strings.TrimSpace(shareLevel), string(models.PhotoAlbumShareLevelContribute)) {
@@ -447,6 +457,13 @@ func shareSettingsText(isLevelNamed bool, shareLevel string, isLocationNamed, is
 			parts = append(parts, "show where the photos were taken")
 		} else {
 			parts = append(parts, "hide where the photos were taken")
+		}
+	}
+	if isFaceNamesNamed {
+		if isFaceNamesIncluded {
+			parts = append(parts, "show the names of the faces")
+		} else {
+			parts = append(parts, "hide the names of the faces")
 		}
 	}
 	if len(parts) == 0 {
@@ -465,7 +482,8 @@ func shareUpdateCardText(albumText string, share *client.PhotoAlbumShare, after 
 	}
 	isLevelChanged := after.shareLevel != before.shareLevel
 	isLocationChanged := after.isLocationIncluded != before.isLocationIncluded
-	text += shareSettingsText(isLevelChanged, after.shareLevel, isLocationChanged, after.isLocationIncluded)
+	isFaceNamesChanged := after.isFaceNamesIncluded != before.isFaceNamesIncluded
+	text += shareSettingsText(isLevelChanged, after.shareLevel, isLocationChanged, after.isLocationIncluded, isFaceNamesChanged, after.isFaceNamesIncluded)
 	if isLevelChanged && !isLocationChanged && after.isLocationIncluded {
 		text += ", keeping where the photos were taken"
 	}
@@ -473,8 +491,8 @@ func shareUpdateCardText(albumText string, share *client.PhotoAlbumShare, after 
 }
 
 // albumShareUpdate changes one share, by its id and its album: only what the
-// call names. UpdatePhotoAlbumShare writes the level and the places together,
-// as the dashboard's sheet of shares does, so the share is read first and the
+// call names. UpdatePhotoAlbumShare writes the level, the places and the face
+// names together, as the dashboard's sheet of shares does, so the share is read first and the
 // setting left out is sent as it is. A call that would change nothing makes no
 // request.
 //
@@ -491,8 +509,8 @@ func albumShareUpdate(ctx context.Context, executor client.Executor, asked *argu
 	if shareId == "" {
 		return nil, errors.New("album-share-update needs share_id; album-shares gives them")
 	}
-	if strings.TrimSpace(asked.ShareLevel) == "" && asked.IsLocationIncluded == nil {
-		return nil, errors.New("album-share-update needs share_level (view or contribute), is_location_included, or both: it changes only what is named")
+	if strings.TrimSpace(asked.ShareLevel) == "" && asked.IsLocationIncluded == nil && asked.IsFaceNamesIncluded == nil {
+		return nil, errors.New("album-share-update needs share_level (view or contribute), is_location_included, is_face_names_included, or any of them: it changes only what is named")
 	}
 	share, err := shareOf(ctx, executor, albumId, shareId)
 	if err != nil {
@@ -503,15 +521,15 @@ func albumShareUpdate(ctx context.Context, executor client.Executor, asked *argu
 		return nil, fmt.Errorf("album-share-update: %w", err)
 	}
 	if after == settingsOf(share) {
-		result := tools.TextResult("nothing changed: the share with %s already has share_level %s and is_location_included %t", granteeText(share), after.shareLevel, after.isLocationIncluded)
+		result := tools.TextResult("nothing changed: the share with %s already has share_level %s, is_location_included %t and is_face_names_included %t", granteeText(share), after.shareLevel, after.isLocationIncluded, after.isFaceNamesIncluded)
 		result.Untrusted = true
 		return result, nil
 	}
-	share, err = client.UpdatePhotoAlbumShare(ctx, executor, shareId, after.shareLevel, after.isLocationIncluded)
+	share, err = client.UpdatePhotoAlbumShare(ctx, executor, shareId, after.shareLevel, after.isLocationIncluded, after.isFaceNamesIncluded)
 	if err != nil {
 		return nil, err
 	}
-	row := map[string]any{"share_id": share.ID, "share_level": share.ShareLevel, "is_location_included": share.IsLocationIncluded}
+	row := map[string]any{"share_id": share.ID, "share_level": share.ShareLevel, "is_location_included": share.IsLocationIncluded, "is_face_names_included": share.IsFaceNamesIncluded}
 	if share.GranteeCircleID != nil {
 		row["circle_name"] = share.GranteeCircleName
 	} else {
@@ -549,7 +567,7 @@ func albumShares(ctx context.Context, executor client.Executor, asked *arguments
 	}
 	rows := make([]map[string]any, 0, len(shares))
 	for _, share := range shares {
-		row := map[string]any{"share_id": share.ID, "share_level": share.ShareLevel, "is_location_included": share.IsLocationIncluded}
+		row := map[string]any{"share_id": share.ID, "share_level": share.ShareLevel, "is_location_included": share.IsLocationIncluded, "is_face_names_included": share.IsFaceNamesIncluded}
 		if share.GranteeCircleID != nil {
 			row["circle_name"] = share.GranteeCircleName
 		} else {

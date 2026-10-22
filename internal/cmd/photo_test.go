@@ -344,14 +344,14 @@ func newPhotoServer(test *testing.T) *photoServer {
 			case strings.Contains(asked.Query, "SharePhotoAlbum("):
 				granteeCircleId, _ := asked.Variables["granteeCircleId"].(string)
 				if granteeCircleId != "" {
-					_, _ = response.Write([]byte(`{"data":{"SharePhotoAlbum":{"id":"share-circle","photoAlbumId":"album-1","granteeCircleId":"` + granteeCircleId + `","granteeCircleName":"Home","shareLevel":"` + asked.Variables["shareLevel"].(string) + `","isLocationIncluded":` + fmt.Sprint(asked.Variables["isLocationIncluded"]) + `}}}`))
+					_, _ = response.Write([]byte(`{"data":{"SharePhotoAlbum":{"id":"share-circle","photoAlbumId":"album-1","granteeCircleId":"` + granteeCircleId + `","granteeCircleName":"Home","shareLevel":"` + asked.Variables["shareLevel"].(string) + `","isLocationIncluded":` + fmt.Sprint(asked.Variables["isLocationIncluded"]) + `,"isFaceNamesIncluded":` + fmt.Sprint(asked.Variables["isFaceNamesIncluded"]) + `}}}`))
 					return
 				}
-				_, _ = response.Write([]byte(`{"data":{"SharePhotoAlbum":{"id":"share-person","photoAlbumId":"album-1","granteeUserId":"` + asked.Variables["granteeUserId"].(string) + `","granteeUsername":"ben","shareLevel":"` + asked.Variables["shareLevel"].(string) + `","isLocationIncluded":` + fmt.Sprint(asked.Variables["isLocationIncluded"]) + `}}}`))
+				_, _ = response.Write([]byte(`{"data":{"SharePhotoAlbum":{"id":"share-person","photoAlbumId":"album-1","granteeUserId":"` + asked.Variables["granteeUserId"].(string) + `","granteeUsername":"ben","shareLevel":"` + asked.Variables["shareLevel"].(string) + `","isLocationIncluded":` + fmt.Sprint(asked.Variables["isLocationIncluded"]) + `,"isFaceNamesIncluded":` + fmt.Sprint(asked.Variables["isFaceNamesIncluded"]) + `}}}`))
 			case strings.Contains(asked.Query, "ListPhotoAlbumShares("):
-				_, _ = response.Write([]byte(`{"data":{"ListPhotoAlbumShares":[{"id":"share-person","photoAlbumId":"album-1","granteeUserId":"user-ben","granteeUsername":"ben","shareLevel":"view","isLocationIncluded":false},{"id":"share-circle","photoAlbumId":"album-1","granteeCircleId":"circle-home","granteeCircleName":"Home","shareLevel":"contribute","isLocationIncluded":true}]}}`))
+				_, _ = response.Write([]byte(`{"data":{"ListPhotoAlbumShares":[{"id":"share-person","photoAlbumId":"album-1","granteeUserId":"user-ben","granteeUsername":"ben","shareLevel":"view","isLocationIncluded":false,"isFaceNamesIncluded":false},{"id":"share-circle","photoAlbumId":"album-1","granteeCircleId":"circle-home","granteeCircleName":"Home","shareLevel":"contribute","isLocationIncluded":true,"isFaceNamesIncluded":true}]}}`))
 			case strings.Contains(asked.Query, "UpdatePhotoAlbumShare("):
-				_, _ = response.Write([]byte(`{"data":{"UpdatePhotoAlbumShare":{"id":"` + asked.Variables["photoAlbumShareId"].(string) + `","photoAlbumId":"album-1","granteeUserId":"user-ben","granteeUsername":"ben","shareLevel":"` + asked.Variables["shareLevel"].(string) + `","isLocationIncluded":` + fmt.Sprint(asked.Variables["isLocationIncluded"]) + `}}}`))
+				_, _ = response.Write([]byte(`{"data":{"UpdatePhotoAlbumShare":{"id":"` + asked.Variables["photoAlbumShareId"].(string) + `","photoAlbumId":"album-1","granteeUserId":"user-ben","granteeUsername":"ben","shareLevel":"` + asked.Variables["shareLevel"].(string) + `","isLocationIncluded":` + fmt.Sprint(asked.Variables["isLocationIncluded"]) + `,"isFaceNamesIncluded":` + fmt.Sprint(asked.Variables["isFaceNamesIncluded"]) + `}}}`))
 			case strings.Contains(asked.Query, "RemovePhotoAlbumShare("):
 				_, _ = response.Write([]byte(`{"data":{"RemovePhotoAlbumShare":true}}`))
 			case strings.Contains(asked.Query, "SearchPhotoPlaces("):

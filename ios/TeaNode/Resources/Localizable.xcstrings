@@ -5739,22 +5739,6 @@
         }
       }
     },
-    "People in the photos are shown with the names you gave them, with or without places.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "写真に写っている人物は、場所を含めても含めなくても、あなたが付けた名前で表示されます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无论是否包含地点，照片中的人物都会以你为他们起的名称显示。"
-          }
-        }
-      }
-    },
     "Photos taken near here": {
       "localizations": {
         "ja": {
@@ -82826,6 +82810,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "确认之后该项目的共享发生了变化。请重新查看共享对象，然后再次完成。"
+          }
+        }
+      }
+    },
+    "%@, with names": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@、名前を含む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@，含名称"
+          }
+        }
+      }
+    },
+    "%@, with places and names": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@、撮影場所と名前を含む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@，含拍摄地点和名称"
+          }
+        }
+      }
+    },
+    "Include the names of the people in the photos": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真に写っている人物の名前を含める"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包含照片中人物的名称"
+          }
+        }
+      }
+    },
+    "Without it, they see where the faces are in each photo, but not the names you gave them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "含めない場合、各写真の顔の位置は見えますが、あなたが付けた名前は表示されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不包含时，他们能看到每张照片中人脸的位置，但看不到你为他们起的名称。"
           }
         }
       }

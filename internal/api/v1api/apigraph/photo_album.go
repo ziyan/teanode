@@ -39,7 +39,7 @@ type PhotoAlbumMutation interface {
 	SharePhotoAlbum(context.Context, SharePhotoAlbumArguments) (*PhotoAlbumShareView, error)
 
 	// UpdatePhotoAlbumShare changes the level of one share and whether it
-	// includes where photos were taken.
+	// includes where photos were taken and the names of the faces in them.
 	UpdatePhotoAlbumShare(context.Context, UpdatePhotoAlbumShareArguments) (*PhotoAlbumShareView, error)
 
 	// RemovePhotoAlbumShare takes one share back; the photos its grantees put

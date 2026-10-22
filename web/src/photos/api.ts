@@ -159,6 +159,8 @@ export interface PhotoAlbumShare {
   granteeCircleName: string
   shareLevel: 'view' | 'contribute'
   isLocationIncluded: boolean
+  // The people it reaches see the names given to the faces in the photos.
+  isFaceNamesIncluded: boolean
   createdAt: string
 }
 
@@ -213,7 +215,7 @@ export const PHOTO_ALBUM_FIELDS =
   'id albumTitle createdAt updatedAt coverPhotoId photoCount firstTakenAt lastTakenAt coverPreviewUrl ownerUserId circleId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex circleName isOwnedByCaller shareLevel canCallerContribute canCallerManage isLocationIncluded'
 
 const PHOTO_ALBUM_SHARE_FIELDS =
-  'id photoAlbumId granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex granteeCircleId granteeCircleName shareLevel isLocationIncluded createdAt'
+  'id photoAlbumId granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex granteeCircleId granteeCircleName shareLevel isLocationIncluded isFaceNamesIncluded createdAt'
 
 function listPhotosDocument(fields: string): string {
   return `query ($offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $accountUserId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float) { ListPhotos(offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, photoKind: $photoKind, albumId: $albumId, faceGroupId: $faceGroupId, accountUserId: $accountUserId, takenAfter: $takenAfter, takenBefore: $takenBefore, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers) { ${fields} } }`
@@ -252,8 +254,8 @@ export const PHOTO_DOCUMENTS = {
   ReadPhotoAlbum: `query ($photoAlbumId: String!) { ReadPhotoAlbum(photoAlbumId: $photoAlbumId) { ${PHOTO_ALBUM_FIELDS} } }`,
   CreatePhotoAlbum: `mutation ($albumTitle: String!, $photoIds: [String!], $circleId: String) { CreatePhotoAlbum(albumTitle: $albumTitle, photoIds: $photoIds, circleId: $circleId) { ${PHOTO_ALBUM_FIELDS} } }`,
   ListPhotoAlbumShares: `query ($photoAlbumId: String!) { ListPhotoAlbumShares(photoAlbumId: $photoAlbumId) { ${PHOTO_ALBUM_SHARE_FIELDS} } }`,
-  SharePhotoAlbum: `mutation ($photoAlbumId: String!, $granteeUserId: String, $granteeCircleId: String, $shareLevel: String!, $isLocationIncluded: Boolean) { SharePhotoAlbum(photoAlbumId: $photoAlbumId, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, shareLevel: $shareLevel, isLocationIncluded: $isLocationIncluded) { ${PHOTO_ALBUM_SHARE_FIELDS} } }`,
-  UpdatePhotoAlbumShare: `mutation ($photoAlbumShareId: String!, $shareLevel: String!, $isLocationIncluded: Boolean) { UpdatePhotoAlbumShare(photoAlbumShareId: $photoAlbumShareId, shareLevel: $shareLevel, isLocationIncluded: $isLocationIncluded) { ${PHOTO_ALBUM_SHARE_FIELDS} } }`,
+  SharePhotoAlbum: `mutation ($photoAlbumId: String!, $granteeUserId: String, $granteeCircleId: String, $shareLevel: String!, $isLocationIncluded: Boolean, $isFaceNamesIncluded: Boolean) { SharePhotoAlbum(photoAlbumId: $photoAlbumId, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, shareLevel: $shareLevel, isLocationIncluded: $isLocationIncluded, isFaceNamesIncluded: $isFaceNamesIncluded) { ${PHOTO_ALBUM_SHARE_FIELDS} } }`,
+  UpdatePhotoAlbumShare: `mutation ($photoAlbumShareId: String!, $shareLevel: String!, $isLocationIncluded: Boolean, $isFaceNamesIncluded: Boolean) { UpdatePhotoAlbumShare(photoAlbumShareId: $photoAlbumShareId, shareLevel: $shareLevel, isLocationIncluded: $isLocationIncluded, isFaceNamesIncluded: $isFaceNamesIncluded) { ${PHOTO_ALBUM_SHARE_FIELDS} } }`,
   RemovePhotoAlbumShare:
     'mutation ($photoAlbumShareId: String!) { RemovePhotoAlbumShare(photoAlbumShareId: $photoAlbumShareId) }',
   RenamePhotoAlbum: `mutation ($photoAlbumId: String!, $albumTitle: String!) { RenamePhotoAlbum(photoAlbumId: $photoAlbumId, albumTitle: $albumTitle) { ${PHOTO_ALBUM_FIELDS} } }`,
@@ -538,6 +540,7 @@ export async function sharePhotoAlbum(
   grantee: { granteeUserId: string } | { granteeCircleId: string },
   shareLevel: 'view' | 'contribute',
   isLocationIncluded: boolean,
+  isFaceNamesIncluded: boolean,
 ): Promise<PhotoAlbumShare> {
   const answer = await graphql<{ SharePhotoAlbum: PhotoAlbumShare }>(PHOTO_DOCUMENTS.SharePhotoAlbum, {
     photoAlbumId,
@@ -545,6 +548,7 @@ export async function sharePhotoAlbum(
     granteeCircleId: 'granteeCircleId' in grantee ? grantee.granteeCircleId : null,
     shareLevel,
     isLocationIncluded,
+    isFaceNamesIncluded,
   })
   return answer.SharePhotoAlbum
 }
@@ -553,11 +557,13 @@ export async function updatePhotoAlbumShare(
   photoAlbumShareId: string,
   shareLevel: 'view' | 'contribute',
   isLocationIncluded: boolean,
+  isFaceNamesIncluded: boolean,
 ): Promise<PhotoAlbumShare> {
   const answer = await graphql<{ UpdatePhotoAlbumShare: PhotoAlbumShare }>(PHOTO_DOCUMENTS.UpdatePhotoAlbumShare, {
     photoAlbumShareId,
     shareLevel,
     isLocationIncluded,
+    isFaceNamesIncluded,
   })
   return answer.UpdatePhotoAlbumShare
 }

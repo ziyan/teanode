@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"slices"
 	"time"
 
@@ -127,8 +128,10 @@ func photoAlbumFromRow(row *photoAlbumRow) *models.PhotoAlbum {
 // their photos: those not in the trash (a photo being deleted is in the trash
 // as far as this is concerned). The cover is the chosen photo while it can be
 // shown, else the newest photo that can be, and only a photo with a small
-// preview can be shown.
-const photoAlbumsQuery = `
+// preview can be shown. Neither counts a photo the reader cannot open, such as
+// one added by somebody since disabled (photoIsOpenToSQL), or the album would
+// say more than its listing holds. It needs @reader and @permission.
+var photoAlbumsQuery = `
 	SELECT photo_album.id, photo_album.user_id, photo_album.circle_id, photo_album.album_title, photo_album.cover_photo_id, photo_album.created_at, photo_album.updated_at,
 		COALESCE(counts.photo_count, 0) AS photo_count, counts.first_taken_at, counts.last_taken_at,
 		cover.id AS cover_preview_photo_id, cover.updated_at AS cover_preview_photo_updated_at
@@ -140,6 +143,7 @@ const photoAlbumsQuery = `
 		FROM photo_album_item
 		JOIN photo ON photo.id = photo_album_item.photo_id
 		WHERE photo_album_item.photo_album_id = photo_album.id AND photo.trashed_at IS NULL
+		  AND ` + photoIsOpenToSQL("photo.user_id", "@reader") + `
 	) counts ON true
 	LEFT JOIN LATERAL (
 		SELECT photo.id, photo.updated_at
@@ -147,10 +151,11 @@ const photoAlbumsQuery = `
 		JOIN photo ON photo.id = photo_album_item.photo_id
 		JOIN photo_preview ON photo_preview.photo_id = photo.id AND photo_preview.photo_preview_size = 'small'
 		WHERE photo_album_item.photo_album_id = photo_album.id AND photo.trashed_at IS NULL
+		  AND ` + photoIsOpenToSQL("photo.user_id", "@reader") + `
 		ORDER BY COALESCE(photo.id = photo_album.cover_photo_id, false) DESC, ` + photoTimelineExpression + ` DESC, photo.id DESC
 		LIMIT 1
 	) cover ON true
-	WHERE photo_album.id IN ?`
+	WHERE photo_album.id IN @albums`
 
 // listReachablePhotoAlbums reads the albums the person reaches, or the one
 // they name, newest change first, each marked with whose it is and what the
@@ -168,7 +173,8 @@ func (self *transaction) listReachablePhotoAlbums(userId, photoAlbumId string) (
 		return []*models.PhotoAlbum{}, nil
 	}
 	var rows []photoAlbumRow
-	if err := self.tx.Raw(photoAlbumsQuery+` ORDER BY photo_album.updated_at DESC, photo_album.id DESC`, photoAlbumIds).Scan(&rows).Error; err != nil {
+	if err := self.tx.Raw(photoAlbumsQuery+` ORDER BY photo_album.updated_at DESC, photo_album.id DESC`,
+		sql.Named("albums", photoAlbumIds), sql.Named("reader", userId), sql.Named("permission", string(models.PermissionPhotosUse))).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	albums := make([]*models.PhotoAlbum, 0, len(rows))

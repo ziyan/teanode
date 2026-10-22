@@ -20345,11 +20345,6 @@ label.checkbox.is-plain > span > .muted {
   }
 }
 
-.photo-share-names-hint {
-  margin-left: 0;
-  margin-top: var(--space-3);
-}
-
 /* The one thing the details offer to do with a place: look around it. A button
    under the place's name, at the size of a row's own. */
 .photo-near-button {

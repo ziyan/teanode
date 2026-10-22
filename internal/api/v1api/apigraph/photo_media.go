@@ -174,14 +174,16 @@ func (self *graph) photoFileView(response http.ResponseWriter, request *http.Req
 	self.servePhotoBytes(response, request, ctx, content)
 }
 
-// playbackPhotoOwner settles who a signed playback address is for, before any
-// byte is read. The address itself is the credential: it names the owner,
-// the photo, and one preview or file, and expires, and anything that does not
-// check out is the same answer, so that an address cannot be used to learn
-// which photos exist. The owner must still be able to keep a photo library,
-// as when the address was made.
-func (self *graph) playbackPhotoOwner(response http.ResponseWriter, request *http.Request, playbackKind, name string) (*models.User, context.Context, bool) {
-	refuse := func() (*models.User, context.Context, bool) {
+// playbackPhotoAccess settles who a signed playback address is for and what
+// they may still have, before any byte is read. The address names the owner,
+// the reader it was made for, the photo, and one preview or file, and expires;
+// anything that does not check out is the same answer, so that an address
+// cannot be used to learn which photos exist. The address alone is not enough:
+// the reader must still be able to keep a photo library and must still reach
+// the photo, as when the address was made, so that an address stops working
+// when the share that let them in ends, and not hours later.
+func (self *graph) playbackPhotoAccess(response http.ResponseWriter, request *http.Request, playbackKind, name string) (*models.PhotoAccess, context.Context, bool) {
+	refuse := func() (*models.PhotoAccess, context.Context, bool) {
 		http.Error(response, "the link is not good, or no longer", http.StatusNotFound)
 		return nil, nil, false
 	}
@@ -190,28 +192,35 @@ func (self *graph) playbackPhotoOwner(response http.ResponseWriter, request *htt
 		return nil, nil, false
 	}
 	query := request.URL.Query()
-	ownerId, signature := query.Get("owner"), query.Get("signature")
-	if self.config == nil || ownerId == "" || signature == "" || !self.isServiceEnabled(models.ServicePhotos) ||
-		!photo.VerifyPlayback(self.config.Current().Secret(), signature, ownerId, mux.Vars(request)["photoId"], playbackKind, name, time.Now()) {
+	ownerId, readerId, signature := query.Get("owner"), query.Get("reader"), query.Get("signature")
+	photoId := mux.Vars(request)["photoId"]
+	if self.config == nil || ownerId == "" || readerId == "" || signature == "" || !self.isServiceEnabled(models.ServicePhotos) ||
+		!photo.VerifyPlayback(self.config.Current().Secret(), signature, ownerId, readerId, photoId, playbackKind, name, time.Now()) {
 		return refuse()
 	}
-	var owner *models.User
+	var reader *models.User
 	var permissions *models.EffectivePermissions
+	var access *models.PhotoAccess
 	if err := self.database.TransactionContext(request.Context(), func(transaction db.Transaction) (err error) {
-		if owner, err = transaction.GetUser(ownerId); err != nil || owner == nil {
+		if reader, err = transaction.GetUser(readerId); err != nil || reader == nil {
 			return err
 		}
-		permissions, err = transaction.EffectivePermissions(ownerId)
+		if permissions, err = transaction.EffectivePermissions(readerId); err != nil {
+			return err
+		}
+		if access, err = transaction.GetPhotoAccess(readerId, photoId); errors.Is(err, db.ErrNotFound) {
+			access, err = nil, nil
+		}
 		return err
 	}); err != nil {
-		log.Errorf("a photo owner could not be read: %s", err)
+		log.Errorf("a photo reader could not be read: %s", err)
 		http.Error(response, "the photo could not be read", http.StatusInternalServerError)
 		return nil, nil, false
 	}
-	if owner == nil || owner.Disabled() || !permissions.Has(models.PermissionPhotosUse) {
+	if reader == nil || reader.Disabled() || !permissions.Has(models.PermissionPhotosUse) || access == nil || access.OwnerUserID != ownerId {
 		return refuse()
 	}
-	return owner, request.Context(), true
+	return access, request.Context(), true
 }
 
 // photoPlaybackPreviewView serves a preview to whoever holds its signed
@@ -222,11 +231,11 @@ func (self *graph) photoPlaybackPreviewView(response http.ResponseWriter, reques
 		http.Error(response, "the link is not good, or no longer", http.StatusNotFound)
 		return
 	}
-	owner, ctx, isAuthorized := self.playbackPhotoOwner(response, request, photo.PlaybackKindPreview, string(photoPreviewSize))
+	access, ctx, isAuthorized := self.playbackPhotoAccess(response, request, photo.PlaybackKindPreview, string(photoPreviewSize))
 	if !isAuthorized {
 		return
 	}
-	content, err := self.photoPreviewBytes(ctx, owner.ID, mux.Vars(request)["photoId"], photoPreviewSize)
+	content, err := self.photoPreviewBytes(ctx, access.OwnerUserID, access.PhotoID, photoPreviewSize)
 	if err != nil {
 		photoHttpError(response, err)
 		return
@@ -243,11 +252,17 @@ func (self *graph) photoPlaybackFileView(response http.ResponseWriter, request *
 		http.Error(response, "the link is not good, or no longer", http.StatusNotFound)
 		return
 	}
-	owner, ctx, isAuthorized := self.playbackPhotoOwner(response, request, photo.PlaybackKindFile, string(photoFileRole))
+	access, ctx, isAuthorized := self.playbackPhotoAccess(response, request, photo.PlaybackKindFile, string(photoFileRole))
 	if !isAuthorized {
 		return
 	}
-	content, err := self.photoFileBytes(ctx, owner.ID, mux.Vars(request)["photoId"], photoFileRole, "inline")
+	// An address for a file was made for a reader whose share included the
+	// places; it stops opening the file when the share no longer does.
+	if !access.IsOwner && !access.IsLocationIncluded {
+		http.Error(response, "the link is not good, or no longer", http.StatusNotFound)
+		return
+	}
+	content, err := self.photoFileBytes(ctx, access.OwnerUserID, access.PhotoID, photoFileRole, "inline")
 	if err != nil {
 		photoHttpError(response, err)
 		return

@@ -6023,7 +6023,10 @@ export const en = {
   'photos.shareIncludePlaces': 'Include where photos were taken',
   'photos.shareIncludePlacesHint':
     'Without this they see each photo without its place and get a large picture instead of the original file.',
-  'photos.sharePeopleNamesHint': 'People in the photos are shown with the names you gave them, with or without places.',
+  'photos.shareIncludeFaceNames': 'Include the names of the people in the photos',
+  'photos.shareIncludeFaceNamesHint':
+    'Without this they see where the faces are in a photo, but not the names you gave them.',
+  'photos.shareFaceNamesIncluded': 'Names included',
   'photos.sharePlacesIncluded': 'Places included',
   'photos.shareAdd': 'Share',
   'photos.shareSaid': 'Shared with {name}.',
