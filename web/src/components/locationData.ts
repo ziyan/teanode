@@ -223,9 +223,11 @@ export function anHourAfter(now: Date): Date {
 }
 
 // tomorrowMorning is when "Until tomorrow morning" ends: 08:00 the next day on
-// the browser's clock.
+// the browser's clock, except before 05:00, when the morning meant is the one
+// that is coming (somebody pausing at 00:30 means this morning).
 export function tomorrowMorning(now: Date): Date {
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 8, 0, 0, 0)
+  const isBeforeDawn = now.getHours() < 5
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + (isBeforeDawn ? 0 : 1), 8, 0, 0, 0)
 }
 
 // isPauseInEffect says whether a pause is on at an instant: it has begun and

@@ -121,8 +121,8 @@ const SAVE_PLACE = `mutation ($placeId: String, $placeName: String, $placeLabel:
     latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, addressText: $addressText) { id }
 }`
 const FORGET_PLACE = `mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }`
-const LIST_PAUSES = `query ($userId: String, $from: DateTime!, $to: DateTime!) {
-  ListLocationPauses(userId: $userId, from: $from, to: $to) { ${PAUSE_FIELDS} }
+const LIST_PAUSES = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
+  ListLocationPauses(userId: $userId, from: $from, until: $until) { ${PAUSE_FIELDS} }
 }`
 const PAUSE_LOCATION = `mutation ($endedAt: DateTime) { PauseLocation(endedAt: $endedAt) { ${PAUSE_FIELDS} } }`
 const RESUME_LOCATION = `mutation { ResumeLocation }`
@@ -430,8 +430,8 @@ function LocationContent({ userId }: { userId: string }) {
   // span of the page of visits (the first page reaches to the longest a pause
   // can run ahead, the last back to before any position). A pause that falls
   // between two pages shows on neither.
-  const pausesSpan = useMemo((): { from: string; to: string | null } | null => {
-    if (range) return { from: range.from, to: range.until }
+  const pausesSpan = useMemo((): { from: string; until: string | null } | null => {
+    if (range) return { from: range.from, until: range.until }
     if (!visitPage) return null
     const momentsMS = visitRows.flatMap((visit) =>
       [visit.arrivedAt, visit.departedAt].flatMap((moment) => (moment ? [new Date(moment).getTime()] : [])),
@@ -439,7 +439,7 @@ function LocationContent({ userId }: { userId: string }) {
     const hasOlderPage = visitPage.nextOffset != null
     return {
       from: hasOlderPage && momentsMS.length > 0 ? new Date(Math.min(...momentsMS)).toISOString() : PAUSES_FROM,
-      to:
+      until:
         visitsPaging.pageIndex === 0 || momentsMS.length === 0 ? null : new Date(Math.max(...momentsMS)).toISOString(),
     }
   }, [range, visitPage, visitRows, visitsPaging.pageIndex])
@@ -454,8 +454,8 @@ function LocationContent({ userId }: { userId: string }) {
                 await graphql<{ ListLocationPauses: LocationPause[] | null }>(LIST_PAUSES, {
                   userId: viewedUserId,
                   from: pausesSpan.from,
-                  to:
-                    pausesSpan.to ??
+                  until:
+                    pausesSpan.until ??
                     new Date(Date.now() + (MAXIMUM_PAUSE_DAYS + 1) * 24 * 60 * 60 * 1000).toISOString(),
                 })
               ).ListLocationPauses ?? [],
@@ -622,11 +622,13 @@ function LocationContent({ userId }: { userId: string }) {
   const timeOf = (moment: string) => timeFormat.format(new Date(moment))
   // A person's arrival with its day when it was not today, so a visit begun
   // days ago does not read as this evening's: the weekday within the week,
-  // the date alone before it, short enough to stay on one line on a phone.
+  // the date alone beyond it, short enough to stay on one line on a phone.
+  // The week reaches both ways, so the end of a pause set days ahead reads
+  // the same as an arrival that long ago.
   const arrivalOf = (moment: string) => {
     if (dayKeyOf(moment) === dayKeyOf(new Date())) return timeOf(moment)
     const arrivedAt = new Date(moment)
-    const isThisWeek = Date.now() - arrivedAt.getTime() < 6 * 24 * 60 * 60 * 1000
+    const isThisWeek = Math.abs(Date.now() - arrivedAt.getTime()) < 6 * 24 * 60 * 60 * 1000
     return isThisWeek ? weekdayTimeFormat.format(arrivedAt) : shortDayFormat.format(arrivedAt)
   }
 
@@ -752,9 +754,12 @@ function LocationContent({ userId }: { userId: string }) {
       setPauseEndCheck((previous) => previous + 1)
     }, delayMS)
     return () => window.clearTimeout(timer)
-    // pauses.reload is new at every render and only reads the list again.
+    // pauseEndCheck arms the timer again when it ran out before the end
+    // itself (an end further ahead than a timer can wait), though the end is
+    // the same. pauses.reload is new at every render and only reads the list
+    // again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pauseEndMS])
+  }, [pauseEndMS, pauseEndCheck])
 
   // The words for a pause of the person's own.
   function ownPauseText(pause: LocationPause): string {
@@ -849,10 +854,14 @@ function LocationContent({ userId }: { userId: string }) {
       : visitDurationText({ durationSeconds, departedAt: pause.endedAt }, t)
   }
 
-  // When a pause began and ended, or that it began and has no end.
+  // When a pause began and ended, or that it began and has no end. A pause
+  // that ends on another day than it began gives both with their days.
   function pauseRangeText(pause: LocationPause): string {
     if (pause.endedAt) {
-      return t('location.timeRange', { from: timeOf(pause.startedAt), until: timeOf(pause.endedAt) })
+      if (dayKeyOf(pause.startedAt) === dayKeyOf(pause.endedAt)) {
+        return t('location.timeRange', { from: timeOf(pause.startedAt), until: timeOf(pause.endedAt) })
+      }
+      return t('location.timeRange', { from: arrivalOf(pause.startedAt), until: arrivalOf(pause.endedAt) })
     }
     return t('location.timeSince', { from: timeOf(pause.startedAt) })
   }

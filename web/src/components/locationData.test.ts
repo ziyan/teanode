@@ -69,7 +69,13 @@ describe('pauses', () => {
   it('ends tomorrow morning at 08:00 on the local clock, and an hour ahead', () => {
     const evening = new Date(2030, 2, 5, 22, 15)
     expect(tomorrowMorning(evening).getTime()).toBe(new Date(2030, 2, 6, 8, 0).getTime())
-    expect(tomorrowMorning(new Date(2030, 2, 31, 3, 0)).getTime()).toBe(new Date(2030, 3, 1, 8, 0).getTime())
     expect(anHourAfter(evening).getTime() - evening.getTime()).toBe(3600_000)
+  })
+
+  it('ends this morning when it is asked for before 05:00, and tomorrow from 05:00', () => {
+    expect(tomorrowMorning(new Date(2030, 2, 6, 0, 30)).getTime()).toBe(new Date(2030, 2, 6, 8, 0).getTime())
+    expect(tomorrowMorning(new Date(2030, 2, 6, 4, 59)).getTime()).toBe(new Date(2030, 2, 6, 8, 0).getTime())
+    expect(tomorrowMorning(new Date(2030, 2, 6, 5, 0)).getTime()).toBe(new Date(2030, 2, 7, 8, 0).getTime())
+    expect(tomorrowMorning(new Date(2030, 2, 31, 6, 0)).getTime()).toBe(new Date(2030, 3, 1, 8, 0).getTime())
   })
 })

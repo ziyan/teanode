@@ -1326,6 +1326,24 @@ it('pauses until 08:00 the next morning on the browser clock, or until resumed',
   expect(calls('PauseLocation(')[1][1]).toEqual({ endedAt: null })
 })
 
+it('ends the pause this morning when it is asked for before 05:00, and tomorrow from 05:00', async () => {
+  answerWith({})
+  renderAt('/location')
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    for (const [index, asked] of [new Date(2030, 2, 6, 0, 30), new Date(2030, 2, 6, 5, 0)].entries()) {
+      vi.setSystemTime(asked)
+      fireEvent.click(await screen.findByRole('button', { name: 'Pause recording' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Until tomorrow morning' }))
+      await waitFor(() => expect(calls('PauseLocation(')).toHaveLength(index + 1))
+    }
+  } finally {
+    vi.useRealTimers()
+  }
+  expect(calls('PauseLocation(')[0][1]).toEqual({ endedAt: new Date(2030, 2, 6, 8, 0).toISOString() })
+  expect(calls('PauseLocation(')[1][1]).toEqual({ endedAt: new Date(2030, 2, 7, 8, 0).toISOString() })
+})
+
 it('says in a toast when pausing failed, and offers the pause again', async () => {
   answerWith({})
   const answered = vi.mocked(graphql).getMockImplementation()!
@@ -1371,6 +1389,125 @@ it('reads the person again when a timed pause ends while the page is open', asyn
   expect(await screen.findByText(/^Recording paused until/)).toBeTruthy()
   await waitFor(() => expect(screen.queryByText(/^Recording paused until/)).toBeNull(), { timeout: 4000 })
   expect(screen.getByRole('button', { name: 'Pause recording' })).toBeTruthy()
+})
+
+it('reads the person again at the end of a pause further ahead than a timer can wait', async () => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+    shouldAdvanceTime: true,
+  })
+  // The minute refresh does not run in a hidden page, so only the end of the
+  // pause reads the people again here.
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+  try {
+    vi.setSystemTime(new Date('2030-03-05T12:00:00Z'))
+    const endsAt = Date.now() + 30 * 24 * 60 * 60 * 1000
+    answerWith({
+      own: { pause: { id: 'pause-far', startedAt: '2030-03-05T11:00:00Z', endedAt: new Date(endsAt).toISOString() } },
+    })
+    const answered = vi.mocked(graphql).getMockImplementation()!
+    vi.mocked(graphql).mockImplementation(async (document, variables) => {
+      const isOwnLocation = document.includes('GetLocation') && !(variables as { userId?: string } | undefined)?.userId
+      if (isOwnLocation && Date.now() >= endsAt) return { GetLocation: OWN_VIEW } as never
+      return answered(document, variables)
+    })
+    renderAt('/location')
+    expect(await screen.findByText(/^Recording paused until/)).toBeTruthy()
+
+    // The longest a timer waits (about 24.8 days) is over, and the end is not.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2 ** 31)
+    })
+    expect(screen.queryByText(/^Recording paused until/)).toBeTruthy()
+    // The timer was set again for what is left.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6 * 24 * 60 * 60 * 1000)
+    })
+    await waitFor(() => expect(screen.queryByText(/^Recording paused until/)).toBeNull())
+    expect(screen.getByRole('button', { name: 'Pause recording' })).toBeTruthy()
+  } finally {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  }
+})
+
+it('reads the day of the end of a pause that is not today, and the date alone from six days ahead', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    vi.setSystemTime(new Date(2030, 2, 5, 12, 0))
+    answerWith({
+      sharedViews: [
+        {
+          ...PERSON_B_VIEW,
+          latestPoint: null,
+          openVisit: null,
+          pause: {
+            id: 'pause-soon',
+            startedAt: new Date(2030, 2, 5, 9, 0).toISOString(),
+            endedAt: new Date(2030, 2, 7, 15, 0).toISOString(),
+          },
+        },
+        {
+          ...PERSON_B_VIEW,
+          userId: 'person-c',
+          name: 'Person C',
+          latestPoint: null,
+          openVisit: null,
+          pause: {
+            id: 'pause-far',
+            startedAt: new Date(2030, 2, 5, 9, 0).toISOString(),
+            endedAt: new Date(2030, 2, 15, 15, 0).toISOString(),
+          },
+        },
+      ],
+    })
+    renderAt('/location')
+    const weekdayAndTime = new Intl.DateTimeFormat('en', { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+    const dateOnly = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' })
+    expect(
+      await screen.findByText(`Location paused until ${weekdayAndTime.format(new Date(2030, 2, 7, 15, 0))}`),
+    ).toBeTruthy()
+    expect(screen.getByText(`Location paused until ${dateOnly.format(new Date(2030, 2, 15, 15, 0))}`)).toBeTruthy()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('gives the days of a pause that began on one day and ended on another', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    vi.setSystemTime(new Date(2030, 2, 5, 12, 0))
+    answerWith({
+      visits: [visit()],
+      pauses: [
+        {
+          id: 'pause-night',
+          startedAt: new Date(2030, 2, 3, 17, 0).toISOString(),
+          endedAt: new Date(2030, 2, 4, 8, 0).toISOString(),
+        },
+        {
+          id: 'pause-day',
+          startedAt: new Date(2030, 2, 3, 10, 0).toISOString(),
+          endedAt: new Date(2030, 2, 3, 11, 0).toISOString(),
+        },
+      ],
+    })
+    const { container } = renderAt('/location')
+    const weekdayAndTime = new Intl.DateTimeFormat('en', { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+    const timeOnly = new Intl.DateTimeFormat('en', { hour: 'numeric', minute: '2-digit' })
+    await waitFor(() => expect(screen.getAllByText('Paused')).toHaveLength(2))
+    const pauseTexts = [...container.querySelectorAll('.location-row')]
+      .filter((row) => row.textContent?.startsWith('Paused'))
+      .map((row) => row.querySelector('.muted')?.textContent)
+    expect(pauseTexts).toContain(
+      `${weekdayAndTime.format(new Date(2030, 2, 3, 17, 0))} to ${weekdayAndTime.format(new Date(2030, 2, 4, 8, 0))}`,
+    )
+    expect(pauseTexts).toContain(
+      `${timeOnly.format(new Date(2030, 2, 3, 10, 0))} to ${timeOnly.format(new Date(2030, 2, 3, 11, 0))}`,
+    )
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 it('reads Location paused for a person who paused, and draws no pin for them', async () => {
@@ -1430,6 +1567,9 @@ it('lists a pause among the visits, between the visits around it, with how long 
   // Three days, each with its heading.
   expect(screen.getAllByRole('heading', { level: 4 })).toHaveLength(3)
   expect(calls('ListLocationPauses')[0][1]).toMatchObject({ userId: null, from: '2000-01-01T00:00:00Z' })
+  expect(calls('ListLocationPauses')[0][1]).toHaveProperty('until')
+  expect(calls('ListLocationPauses')[0][1]).not.toHaveProperty('to')
+  expect(calls('ListLocationPauses')[0][0]).toContain('$until: DateTime!')
 })
 
 it('shows the pause in effect as the newest row of the timeline, and reads the pauses again for its person', async () => {
