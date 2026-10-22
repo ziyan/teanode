@@ -502,7 +502,12 @@ privacy choice either way, so both ask.
 
 `album-share` is of the risk class granting, as the calendar's share is, so it
 asks the person unless they allowed it, and the card names the album and the
-people. `album-unshare` only takes access away, so it is a write, as
+people. It takes one `with`, a username or a circle's name or id, resolved by
+`tools.ResolveGrantee` as `calendar_share` does and `teanode photo album share
+ID <username|circle>` does through `shareTarget`: a username wins over a circle
+of the same name, and a circle name that two circles have is refused with their
+ids and sizes. `album-create` with `circle` and `teanode photo album create
+--circle` refuse such a name the same way. `album-unshare` only takes access away, so it is a write, as
 `calendar_unshare` is, and does not ask. `album-share-update` changes one share (`teanode
 photo album share-update`, the same `UpdatePhotoAlbumShare` the dashboard and
 the phone use). It takes the album as well as the share, reads the album's

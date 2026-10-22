@@ -49,7 +49,7 @@ func init() {
 				"`save` keeps a picture or video as a photo: from this conversation (source conversation, attachment_id), a message (source mail, item_id and attachment as mail_read lists them) or their computer (source computer, path). " +
 				"Albums are named sets of photos, and a photo can be in several: `album-list` and `album-read` (album_id) show them, `list` with album_id lists an album's photos, and `read` says which albums a photo is in. " +
 				"`album-list` also gives the albums of the person's circles and the albums other people shared with them, each with its owner (owner_name, or circle_name for a circle's album) and level (owner, contribute or view). You read those where they are, except in a chat (everybody there would see them; only the person's own albums and photos are read there): `list` with album_id, `read`, `look` and `show` work on their photos as on the person's own, each photo says whose it is (owner), and a photo that is not the person's comes without its place unless the share includes it, so do not guess where it was taken. Never copy a photo into the person's library unless they ask; `save-shared` (photo_ids) does, and the copy is theirs. " +
-				"`album-share` shares one of the person's own albums (album_id) with a person they share a circle with (person, the username) or with everyone in one of their circles (circle, by name or id), at share_level view (the default: see and save) or contribute (also add photos of their own); is_location_included true also lets them see where the photos were taken and download the originals, which the person must have asked for. Sharing again changes the level. `album-shares` (album_id) says who an album is shared with, and gives the share_id `album-unshare` takes to stop and `album-share-update` takes to change. `album-share-update` (album_id, share_id) changes only the settings you name, share_level (view or contribute) and is_location_included, and leaves the other as the share has it; one that changes nothing makes no change. Sharing, giving a share more (contribute, or places on) and changing one without saying which it does ask the person first unless the person allowed it; a change that only takes access away, stopping a share included, does not ask. `album-create` with circle makes an album that belongs to that circle, which every member adds their own photos to. " +
+				"`album-share` shares one of the person's own albums (album_id) with a person they share a circle with (with, their username) or with everyone in one of their circles (with, the circle's name or id; a name that more than one circle has is refused with their ids), at share_level view (the default: see and save) or contribute (also add photos of their own); is_location_included true also lets them see where the photos were taken and download the originals, which the person must have asked for. Sharing again changes the level. `album-shares` (album_id) says who an album is shared with, and gives the share_id `album-unshare` takes to stop and `album-share-update` takes to change. `album-share-update` (album_id, share_id) changes only the settings you name, share_level (view or contribute) and is_location_included, and leaves the other as the share has it; one that changes nothing makes no change. Sharing, giving a share more (contribute, or places on) and changing one without saying which it does ask the person first unless the person allowed it; a change that only takes access away, stopping a share included, does not ask. `album-create` with circle makes an album that belongs to that circle, which every member adds their own photos to. " +
 				"Organize photos into albums when the person asks: `album-create` (album_title, and photo_ids to put in it), `album-rename`, `album-add` and `album-remove` (album_id, photo_ids; removing leaves the photos in the library). " +
 				"`album-suggest` finds trips and events among the photos that are in no album (runs of at least 12 photos), with their dates, places and a proposed title; offer them to the person and create an album only when they agree, by listing the photos between the suggestion's taken_after and taken_before and giving their ids to `album-create`. " +
 				"`album-cover` (album_id, photo_id) chooses which photo of the album stands for it. `album-delete` deletes an album, never its photos, and always asks the person first. " +
@@ -80,8 +80,9 @@ func init() {
 				"offset":                   tools.IntegerProperty("list, album-list, album-read, people, person-photos and album-shares: how many rows to pass over, the next_offset of the page before, to read the next page; 0 for the first"),
 				"page_size":                tools.IntegerProperty("list, album-list, album-read, people, person-photos and album-shares: rows to a page, 1 to 100; 25 photos or 50 other rows by default"),
 				"album_id":                 tools.StringProperty("list, album-read, album-rename, album-delete, album-add, album-remove, album-cover, album-share, album-shares and album-share-update: which album, by the id album-list gives"),
-				"person":                   tools.StringProperty("album-share: the username of a person the owner shares a circle with, to share with; leave out when sharing with a circle. list and person-photos: the username of a person in the circles the person shares, to list the photos of the contact the person linked to them (see contact_book link-account); the relationship lines in your situation give usernames"),
-				"circle":                   tools.StringProperty("album-share: a circle the owner is in, by name or id, to share with everyone in it. album-create: make the album that circle's, which every member adds photos to"),
+				"person":                   tools.StringProperty("list and person-photos: the username of a person in the circles the person shares, to list the photos of the contact the person linked to them (see contact_book link-account); the relationship lines in your situation give usernames"),
+				"with":                     tools.StringProperty("album-share: who to share with: the username of somebody the person shares a circle with, from circle_people, or a circle they are in by its name or id, from circle list; a name that more than one circle has is refused with their ids"),
+				"circle":                   tools.StringProperty("album-create: a circle the person is in, by name or id, to make the album that circle's, which every member adds photos to; a name that more than one circle has is refused with their ids"),
 				"share_id":                 tools.StringProperty("album-share-update and album-unshare: the share, by the id album-shares gives"),
 				"share_level":              tools.EnumProperty("album-share: what they may do; view when left out. album-share-update: what they may do from now on; leave out to keep the share's level", "view", "contribute"),
 				"is_location_included":     tools.BooleanProperty("album-share: true lets them see where the photos were taken and download the original files; false (the default) shows them a picture that carries no place. album-share-update: the same, from now on; leave out to keep the share's setting"),
@@ -174,6 +175,7 @@ type arguments struct {
 	IsHidden               *bool    `json:"is_hidden"`
 	IsHiddenIncluded       bool     `json:"is_hidden_included"`
 	Person                 string   `json:"person"`
+	With                   string   `json:"with"`
 	Circle                 string   `json:"circle"`
 	ShareID                string   `json:"share_id"`
 	ShareLevel             string   `json:"share_level"`
@@ -279,11 +281,7 @@ func previewOf(asked arguments) string {
 	case "save-shared":
 		return "Keep " + photos() + " of a shared album in the library"
 	case "album-share":
-		with := tools.Named(asked.Person, "")
-		if with == "" {
-			with = "everyone in " + tools.Named(asked.Circle, "one of their circles")
-		}
-		return "Share an album with " + with + ", at " + tools.Named(asked.ShareLevel, "view")
+		return "Share an album with " + tools.Named(asked.With, "someone") + ", at " + tools.Named(asked.ShareLevel, "view")
 	case "album-share-update":
 		// The names of the album and the person are on the card made by
 		// albumCardPreview, which can look them up; this is the line when it
@@ -381,7 +379,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	case "album-read":
 		return albumRead(ctx, current, &asked)
 	case "album-create":
-		return albumCreate(ctx, executor, &asked)
+		return albumCreate(ctx, current, &asked)
 	case "album-rename":
 		return albumRename(ctx, executor, &asked)
 	case "album-delete":
@@ -395,7 +393,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	case "album-suggest":
 		return albumSuggest(ctx, current, &asked)
 	case "album-share":
-		return albumShare(ctx, executor, &asked)
+		return albumShare(ctx, current, &asked)
 	case "album-share-update":
 		return albumShareUpdate(ctx, executor, &asked)
 	case "album-unshare":

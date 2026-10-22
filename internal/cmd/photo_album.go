@@ -46,11 +46,9 @@ func newPhotoAlbumCommand() *cli.Command {
 			{Name: "remove", Usage: "take photos out of an album; they stay in your library", ArgsUsage: "<album id> <photo id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumRemove},
 			{Name: "cover", Usage: "choose which photo of an album stands for it", ArgsUsage: "<album id> <photo id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumCover},
 			{
-				Name: "share", Usage: "share an album with a person or a circle you share, to view it or to add photos to it; sharing again changes what they have", ArgsUsage: "<album id>",
+				Name: "share", Usage: "share an album with a person or a circle you share, to view it or to add photos to it; sharing again changes what they have", ArgsUsage: "<album id> <username|circle>",
 				Flags: []cli.Flag{
 					JSONFlag(),
-					&cli.StringFlag{Name: "person", Usage: "the username of somebody who shares a circle with you (teanode circle people lists them)"},
-					&cli.StringFlag{Name: "circle", Usage: "a circle you are in, by id or name; everyone in it"},
 					&cli.BoolFlag{Name: "contribute", Usage: "let them add photos of their own and take out the ones they added (otherwise they view and save)"},
 					&cli.BoolFlag{Name: "with-location", Usage: "let them see where the photos were taken and download the original files (otherwise they get a picture that carries no place)"},
 				},
@@ -233,18 +231,30 @@ func runPhotoAlbumCreate(ctx context.Context, command *cli.Command) error {
 }
 
 // photoCircleNamed is the circle the person typed: by identifier or by name,
-// among the circles they are in.
+// among the circles they are in. A name that more than one of them has is
+// refused with their ids and sizes, in the words the agent's tools use; an id
+// is never ambiguous.
 func photoCircleNamed(ctx context.Context, connection *client.Client, typed string) (string, string, error) {
 	circles, err := client.ListCircles(ctx, connection)
 	if err != nil {
 		return "", "", err
 	}
+	var named []models.ShareableCircle
 	for _, circle := range circles {
-		if circle.ID == typed || strings.EqualFold(circle.Name, typed) {
+		if circle.ID == typed {
 			return circle.ID, circle.Name, nil
 		}
+		if strings.EqualFold(circle.Name, typed) {
+			named = append(named, models.ShareableCircle{ID: circle.ID, Name: circle.Name, MemberCount: len(circle.Members)})
+		}
 	}
-	return "", "", fmt.Errorf("%q is not a circle you are in; 'teanode circle list' lists them", typed)
+	switch len(named) {
+	case 0:
+		return "", "", fmt.Errorf("%q is not a circle you are in; 'teanode circle list' lists them", typed)
+	case 1:
+		return named[0].ID, named[0].Name, nil
+	}
+	return "", "", models.AmbiguousCircleNameError(typed, named)
 }
 
 // photoPersonNamed is the person the person typed: the username of somebody
@@ -263,25 +273,14 @@ func photoPersonNamed(ctx context.Context, connection *client.Client, typed stri
 }
 
 func runPhotoAlbumShare(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() != 1 {
-		return usage("usage: teanode photo album share <album id> (--person <username> | --circle <circle>) [--contribute] [--with-location]")
-	}
-	personTyped, circleTyped := strings.TrimSpace(command.String("person")), strings.TrimSpace(command.String("circle"))
-	if (personTyped == "") == (circleTyped == "") {
-		return usage("share with one person (--person) or one circle (--circle)")
+	if command.Args().Len() != 2 {
+		return usage("usage: teanode photo album share <album id> <username|circle> [--contribute] [--with-location]")
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
-	var granteeUserId, granteeCircleId, described string
-	if personTyped != "" {
-		granteeUserId, described, err = photoPersonNamed(ctx, connection, personTyped)
-	} else {
-		var circleName string
-		granteeCircleId, circleName, err = photoCircleNamed(ctx, connection, circleTyped)
-		described = "everyone in " + circleName
-	}
+	granteeUserId, granteeCircleId, described, err := shareTarget(ctx, connection, command.Args().Get(1))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -291,7 +290,7 @@ func runPhotoAlbumShare(ctx context.Context, command *cli.Command) error {
 	}
 	share, err := client.SharePhotoAlbum(ctx, connection, command.Args().First(), granteeUserId, granteeCircleId, shareLevel, command.Bool("with-location"))
 	if err != nil {
-		return describeNotFound(command, err, "that album or "+described)
+		return describeNotFound(command, err, "that album or "+command.Args().Get(1))
 	}
 	if command.Bool("json") {
 		return PrintJSON(share)
