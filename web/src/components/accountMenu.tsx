@@ -17,6 +17,7 @@ import {
   LogoutIcon,
   PeopleIcon,
   SettingsIcon,
+  ShareIcon,
   ShieldIcon,
 } from './icons'
 import { MenuButton } from './menuButton'
@@ -210,6 +211,14 @@ export function AccountMenu({
                 <PeopleIcon />
                 {t('circles.title')}
                 {openInvitationCount > 0 && <span className="menu-badge">{openInvitationCount}</span>}
+              </Link>
+            )}
+            {/* Everything this person shares and is shared with, next to the
+                people it is shared among. */}
+            {canUseCircles && (
+              <Link to="/sharing" role="menuitem" onClick={close}>
+                <ShareIcon />
+                {t('sharing.title')}
               </Link>
             )}
             {/* The way into the management side, beside the account's own

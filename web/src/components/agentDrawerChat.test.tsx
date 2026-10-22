@@ -983,6 +983,46 @@ it('words the note that somebody removed how the person is related', async () =>
   expect(await screen.findByText('Sam Lee removed how you are related.')).toBeTruthy()
 })
 
+it('words the note that somebody shared something with the person, by kind', async () => {
+  answerWith({ hasAgents: true })
+  openOnChat()
+  renderDrawer()
+  await screen.findByText('Dinner at seven?')
+  await waitFor(() => expect(feeds['chat-conversation']).toBeTruthy())
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'Sam Lee shared their calendar with you (titles)',
+    noteKind: 'share_received',
+    noteDetail: JSON.stringify({ sharerName: 'Sam Lee', shareKind: 'calendar', shareLevel: 'titles' }),
+  })
+  expect(await screen.findByText('Sam Lee shared their calendar with you (titles).')).toBeTruthy()
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'Sam Lee shared the memory page Kim with you',
+    noteKind: 'share_received',
+    noteDetail: JSON.stringify({ sharerName: 'Sam Lee', shareKind: 'memory_page', shareSubject: 'Kim' }),
+  })
+  expect(await screen.findByText('Sam Lee shared the memory page Kim with you.')).toBeTruthy()
+})
+
+it('words the note that somebody joined a circle the person shares things with', async () => {
+  answerWith({ hasAgents: true })
+  openOnChat()
+  renderDrawer()
+  await screen.findByText('Dinner at seven?')
+  await waitFor(() => expect(feeds['chat-conversation']).toBeTruthy())
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'Kim joined Family and can now see your calendar and location',
+    noteKind: 'share_reached',
+    noteDetail: JSON.stringify({ memberName: 'Kim', circleName: 'Family', shareKinds: ['calendar', 'location'] }),
+  })
+  expect(await screen.findByText('Kim joined Family and can now see your calendar, location.')).toBeTruthy()
+})
+
 it('has the two switches for the person’s own agent in the members, and turns each on with its own call', async () => {
   answerWith({ hasAgents: true })
   openOnChat()

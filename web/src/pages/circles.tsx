@@ -450,6 +450,9 @@ function CirclesList() {
   return (
     <>
       <PageHeadingActions>
+        <Link className="button" to="/sharing">
+          {t('sharing.title')}
+        </Link>
         <button
           type="button"
           className="primary"
