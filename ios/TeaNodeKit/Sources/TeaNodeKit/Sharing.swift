@@ -1,10 +1,11 @@
 import Foundation
 
 // Everything the person shares and everything shared with them, in one list,
-// across calendar, location, Health, memory pages, photo albums, skills and
-// passwords: the same operations the dashboard's Sharing page, the command line
-// and the circle tool use. Stopping a share is the kind's own operation; what
-// is new here is declining a share that was made to the person by name.
+// across calendar, location, Health, memory pages, photo albums, recordings,
+// finance accounts, skills and passwords: the same operations the dashboard's
+// Sharing page, the command line and the circle tool use. Stopping a share is
+// the kind's own operation; what is new here is declining a share that was made
+// to the person by name.
 
 /// SharingKind is what a share is of. The server names them with these words.
 public enum SharingKind: String, CaseIterable, Sendable {
@@ -13,6 +14,8 @@ public enum SharingKind: String, CaseIterable, Sendable {
     case health
     case memoryPage = "memory_page"
     case photoAlbum = "photo_album"
+    case recording
+    case finance
     case skill
     case passwords
 }
@@ -36,12 +39,17 @@ public struct SharingMade: Decodable, Hashable, Sendable, Identifiable {
     public let shareKind: String
     /// Empty for passwords.
     public let shareId: String
-    /// The calendar's or album's identifier, the page's path or the skill's
-    /// name; empty for location, Health and passwords.
+    /// The calendar's, album's, recording's or finance account's identifier,
+    /// the page's path or the skill's name; empty for location, Health and
+    /// passwords.
     public let subjectId: String
+    /// A recording's title or a finance account's name, among the rest.
     public let subjectName: String
-    /// The level of a calendar, location or album share (busy, titles, details,
-    /// edit; current, history; view, contribute), empty for the rest.
+    /// The last digits of a finance account's number; empty for every other kind.
+    public let subjectMask: String
+    /// The level of a calendar, location, album, recording or finance share
+    /// (busy, titles, details, edit; current, history; view, contribute; summary,
+    /// transcript; balance, spending, transactions), empty for the rest.
     public let shareLevel: String
     /// What else it gives: the Health categories, the skill's tools, quotes for
     /// a page and location for an album.
@@ -80,7 +88,7 @@ public struct SharingMade: Decodable, Hashable, Sendable, Identifiable {
     public var since: Date? { SharingTimes.date(createdAt) }
 
     public init(
-        shareKind: String, shareId: String, subjectId: String = "", subjectName: String = "", shareLevel: String = "",
+        shareKind: String, shareId: String, subjectId: String = "", subjectName: String = "", subjectMask: String = "", shareLevel: String = "",
         shareScopes: [String] = [], passwordItemCount: Int = 0, granteeUserId: String? = nil, granteeUsername: String = "",
         granteeName: String = "", granteeCircleId: String? = nil, granteeCircleName: String = "", createdAt: String = ""
     ) {
@@ -88,6 +96,7 @@ public struct SharingMade: Decodable, Hashable, Sendable, Identifiable {
         self.shareId = shareId
         self.subjectId = subjectId
         self.subjectName = subjectName
+        self.subjectMask = subjectMask
         self.shareLevel = shareLevel
         self.shareScopes = shareScopes
         self.passwordItemCount = passwordItemCount
@@ -108,6 +117,7 @@ public struct SharingReceived: Decodable, Hashable, Sendable, Identifiable {
     public let shareId: String
     public let subjectId: String
     public let subjectName: String
+    public let subjectMask: String
     public let shareLevel: String
     public let shareScopes: [String]
     public let passwordItemCount: Int
@@ -132,7 +142,7 @@ public struct SharingReceived: Decodable, Hashable, Sendable, Identifiable {
     public var since: Date? { SharingTimes.date(createdAt) }
 
     public init(
-        shareKind: String, shareId: String, subjectId: String = "", subjectName: String = "", shareLevel: String = "",
+        shareKind: String, shareId: String, subjectId: String = "", subjectName: String = "", subjectMask: String = "", shareLevel: String = "",
         shareScopes: [String] = [], passwordItemCount: Int = 0, ownerUserId: String, ownerUsername: String, ownerName: String = "",
         granteeCircleId: String? = nil, granteeCircleName: String = "", isDirect: Bool, canDecline: Bool, createdAt: String = ""
     ) {
@@ -140,6 +150,7 @@ public struct SharingReceived: Decodable, Hashable, Sendable, Identifiable {
         self.shareId = shareId
         self.subjectId = subjectId
         self.subjectName = subjectName
+        self.subjectMask = subjectMask
         self.shareLevel = shareLevel
         self.shareScopes = shareScopes
         self.passwordItemCount = passwordItemCount
@@ -171,8 +182,8 @@ extension Documents {
     public static let sharing = """
         query {
           ListSharing {
-            sharesMade { shareKind shareId subjectId subjectName shareLevel shareScopes passwordItemCount granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName createdAt }
-            sharesReceived { shareKind shareId subjectId subjectName shareLevel shareScopes passwordItemCount ownerUserId ownerUsername ownerName granteeCircleId granteeCircleName isDirect canDecline createdAt }
+            sharesMade { shareKind shareId subjectId subjectName subjectMask shareLevel shareScopes passwordItemCount granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName createdAt }
+            sharesReceived { shareKind shareId subjectId subjectName subjectMask shareLevel shareScopes passwordItemCount ownerUserId ownerUsername ownerName granteeCircleId granteeCircleName isDirect canDecline createdAt }
           }
         }
         """
@@ -199,6 +210,8 @@ extension Connection {
             try await setHealthShare(granteeUserId: share.granteeUserId, granteeCircleId: share.granteeCircleId, healthCategories: [])
         case .memoryPage: try await unshareKnowledgePage(shareId: share.shareId)
         case .photoAlbum: try await removePhotoAlbumShare(share.shareId)
+        case .recording: try await unshareRecording(shareId: share.shareId)
+        case .finance: try await unshareFinanceAccount(shareId: share.shareId)
         case .skill: try await unshareSkill(shareId: share.shareId)
         case .passwords: throw SharingError.passwordsAreStoppedOnTheirOwnScreen
         }

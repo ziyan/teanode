@@ -366,8 +366,27 @@ func (self *graph) ShareFinanceAccount(ctx context.Context, arguments ShareFinan
 			saved = share
 		}
 	}
+	if isFinanceShareWider(made, saved) {
+		if err := self.tellAboutShare(ctx, principal.User, models.ShareReceivedNote{
+			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindFinance, ShareLevel: string(saved.FinanceShareLevel),
+		}, granteeUserId, granteeCircleId); err != nil {
+			return nil, err
+		}
+	}
 	log.Noticef("%s shared a finance account at %s", principal.User.Username, financeShareLevel)
 	return describeFinanceShare(saved), nil
+}
+
+// isFinanceShareWider says whether the share gives its grantee more of the
+// account than the owner's shares did before it: there was none for them, or a
+// lower level.
+func isFinanceShareWider(earlier []*models.FinanceShare, saved *models.FinanceShare) bool {
+	for _, share := range earlier {
+		if share.FinanceAccountID == saved.FinanceAccountID && share.GranteeUserID == saved.GranteeUserID && share.GranteeCircleID == saved.GranteeCircleID {
+			return saved.FinanceShareLevel.Rank() > share.FinanceShareLevel.Rank()
+		}
+	}
+	return true
 }
 
 func (self *graph) UnshareFinanceAccount(ctx context.Context, arguments UnshareFinanceAccountArguments) (bool, error) {

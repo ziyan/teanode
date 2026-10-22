@@ -13,15 +13,17 @@ type Sharing struct {
 }
 
 // SharingMade is one share the account made. ShareKind is calendar, location,
-// health, memory_page, photo_album, skill or passwords; ShareID is empty for
-// passwords, whose shares are one for each item and are counted
-// (PasswordItemCount), never named. Exactly one of GranteeUserID and
-// GranteeCircleID is set.
+// health, memory_page, photo_album, recording, finance, skill or passwords;
+// ShareID is empty for passwords, whose shares are one for each item and are
+// counted (PasswordItemCount), never named. SubjectMask is the last digits of
+// a finance account's number. Exactly one of GranteeUserID and GranteeCircleID
+// is set.
 type SharingMade struct {
 	ShareKind         string    `json:"shareKind"`
 	ShareID           string    `json:"shareId"`
 	SubjectID         string    `json:"subjectId"`
 	SubjectName       string    `json:"subjectName"`
+	SubjectMask       string    `json:"subjectMask"`
 	ShareLevel        string    `json:"shareLevel"`
 	ShareScopes       []string  `json:"shareScopes"`
 	PasswordItemCount int       `json:"passwordItemCount"`
@@ -41,6 +43,7 @@ type SharingReceived struct {
 	ShareID           string    `json:"shareId"`
 	SubjectID         string    `json:"subjectId"`
 	SubjectName       string    `json:"subjectName"`
+	SubjectMask       string    `json:"subjectMask"`
 	ShareLevel        string    `json:"shareLevel"`
 	ShareScopes       []string  `json:"shareScopes"`
 	PasswordItemCount int       `json:"passwordItemCount"`
@@ -58,8 +61,8 @@ const (
 	// DocumentListSharing is the query behind "teanode sharing" and the
 	// agent's circle tool.
 	DocumentListSharing = `query { ListSharing {
-  sharesMade { shareKind shareId subjectId subjectName shareLevel shareScopes passwordItemCount granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName createdAt }
-  sharesReceived { shareKind shareId subjectId subjectName shareLevel shareScopes passwordItemCount ownerUserId ownerUsername ownerName granteeCircleId granteeCircleName isDirect canDecline createdAt }
+  sharesMade { shareKind shareId subjectId subjectName subjectMask shareLevel shareScopes passwordItemCount granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName createdAt }
+  sharesReceived { shareKind shareId subjectId subjectName subjectMask shareLevel shareScopes passwordItemCount ownerUserId ownerUsername ownerName granteeCircleId granteeCircleName isDirect canDecline createdAt }
 } }`
 
 	// DocumentDeclineShare ends a share made to the account by name.

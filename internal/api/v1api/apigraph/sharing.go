@@ -27,21 +27,22 @@ import (
 // SharingQuery reads what is shared.
 type SharingQuery interface {
 	// Everything the caller shares and everything shared with them, across
-	// calendar, location, Health, memory pages, photo albums, skills and
-	// passwords: the kind, the thing, the person or circle it is shared with
+	// calendar, location, Health, memory pages, photo albums, recordings,
+	// finance accounts, skills and passwords: the kind, the thing, the person or circle it is shared with
 	// or by, the level or scope, and since when. A share of passwords is
 	// counted, never named, since an item's title is sealed. A share to a
 	// circle is listed with the circle it came through; one made to the caller
 	// by name says so, and can be declined. A kind the caller may not use is
-	// left out. Needs circle:use.
+	// left out, and finance accounts are never listed to the person's agent.
+	// Needs circle:use.
 	ListSharing(ctx context.Context) (*SharingView, error)
 }
 
 // SharingMutation ends shares from the side of the person they are for.
 type SharingMutation interface {
 	// Stop receiving a share that was made to the caller by name: a
-	// calendar, location, Health, memory page, photo album or skill. The
-	// owner is not told. A share to a circle cannot be declined; it ends when
+	// calendar, location, Health, memory page, photo album, recording,
+	// finance account or skill. The owner is not told. A share to a circle cannot be declined; it ends when
 	// the caller leaves the circle. Passwords shared with the caller are
 	// removed by their owner. Needs circle:use.
 	DeclineShare(ctx context.Context, arguments DeclineShareArguments) (bool, error)
@@ -59,20 +60,26 @@ type SharingView struct {
 
 // SharingMadeView is one share the caller made.
 type SharingMadeView struct {
-	// calendar, location, health, memory_page, photo_album, skill or passwords
+	// calendar, location, health, memory_page, photo_album, recording, finance,
+	// skill or passwords
 	ShareKind string `json:"shareKind"`
 
 	// The share's identifier, which the kind's own unshare operation takes;
 	// empty for passwords, whose shares are one for each item
 	ShareID string `json:"shareId"`
 
-	// The thing shared: the calendar's or album's identifier, the page's path
-	// or the skill's name; empty for location, Health and passwords
+	// The thing shared: the calendar's, album's, recording's or finance
+	// account's identifier, the page's path or the skill's name; empty for
+	// location, Health and passwords. SubjectName is a recording's title or an
+	// account's name, and SubjectMask the last digits of an account's number.
 	SubjectID   string `json:"subjectId"`
 	SubjectName string `json:"subjectName"`
+	SubjectMask string `json:"subjectMask"`
 
 	// The level for a calendar (busy, titles, details, edit), location
-	// (current, history) or album (view, contribute); empty for the rest
+	// (current, history), album (view, contribute), recording (summary,
+	// transcript) or finance account (balance, spending, transactions); empty
+	// for the rest
 	ShareLevel string `json:"shareLevel"`
 
 	// What else it gives: the Health categories, the skill's tools, quotes for
@@ -100,6 +107,7 @@ type SharingReceivedView struct {
 	ShareID     string   `json:"shareId"`
 	SubjectID   string   `json:"subjectId"`
 	SubjectName string   `json:"subjectName"`
+	SubjectMask string   `json:"subjectMask"`
 	ShareLevel  string   `json:"shareLevel"`
 	ShareScopes []string `json:"shareScopes"`
 
@@ -127,7 +135,8 @@ type SharingReceivedView struct {
 }
 
 type DeclineShareArguments struct {
-	// calendar, location, health, memory_page, photo_album or skill
+	// calendar, location, health, memory_page, photo_album, recording, finance
+	// or skill
 	ShareKind string `json:"shareKind"`
 
 	// The share, from ListSharing
@@ -137,8 +146,11 @@ type DeclineShareArguments struct {
 // canListShareKind says whether the lists include a kind for the caller: a
 // kind they may not use is left out, because they could not open the page it
 // would link to. A memory page and a skill are received through circle:use,
-// which the caller holds already; making one also takes agent:use.
-func (self *graph) canListShareKind(principal *api.Principal, shareKind models.ShareKind, isReceived bool) bool {
+// which the caller holds already; making one also takes agent:use. A recording
+// and a finance account take agent:use on both sides, the permission their own
+// operations ask for. What others share of finance is not the agent's to read
+// (requireFinanceNotAgent), so the person's agent is not shown it either.
+func (self *graph) canListShareKind(ctx context.Context, principal *api.Principal, shareKind models.ShareKind, isReceived bool) bool {
 	switch shareKind {
 	case models.ShareKindCalendar:
 		return self.isServiceEnabled(models.ServiceCalendar) && principal.Permissions.Has(models.PermissionCalendarUse)
@@ -150,6 +162,10 @@ func (self *graph) canListShareKind(principal *api.Principal, shareKind models.S
 		return isReceived || principal.Permissions.Has(models.PermissionAgentUse)
 	case models.ShareKindPhotoAlbum:
 		return self.isServiceEnabled(models.ServicePhotos) && principal.Permissions.Has(models.PermissionPhotosUse)
+	case models.ShareKindRecording:
+		return principal.Permissions.Has(models.PermissionAgentUse)
+	case models.ShareKindFinance:
+		return requireFinanceNotAgent(ctx) == nil && principal.Permissions.Has(models.PermissionAgentUse)
 	case models.ShareKindPasswords:
 		return principal.Permissions.Has(models.PermissionPasswordsUse)
 	}
@@ -237,6 +253,22 @@ func (self *graph) sharesMadeBy(tx db.Transaction, user *models.User, shareKind 
 		}
 	case models.ShareKindPhotoAlbum:
 		return tx.ListPhotoAlbumSharesBy(user.ID)
+	case models.ShareKindRecording:
+		shares, err := tx.ListRecordingSharesBy(user.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, share := range shares {
+			rows = append(rows, recordingShareRow(share))
+		}
+	case models.ShareKindFinance:
+		shares, err := tx.ListFinanceSharesBy(user.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, share := range shares {
+			rows = append(rows, financeShareRow(share))
+		}
 	case models.ShareKindPasswords:
 		return tx.ListPasswordSharesBy(user.ID)
 	}
@@ -297,16 +329,57 @@ func (self *graph) sharesReachingFor(tx db.Transaction, user *models.User, share
 		}
 	case models.ShareKindPhotoAlbum:
 		return tx.ListPhotoAlbumSharesReaching(user.ID)
+	case models.ShareKindRecording:
+		shares, err := tx.ListRecordingSharesReaching(user.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, share := range shares {
+			rows = append(rows, recordingShareRow(share))
+		}
+	case models.ShareKindFinance:
+		shares, err := tx.ListFinanceSharesReaching(user.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, share := range shares {
+			rows = append(rows, financeShareRow(share))
+		}
 	case models.ShareKindPasswords:
 		return tx.ListPasswordSharesReaching(user.ID)
 	}
 	return rows, nil
 }
 
+// recordingShareRow is a share of a recording as a row of the list: the same
+// for the shares a person made and the ones that reach them, since the
+// listings fill in the owner and the grantee both ways.
+func recordingShareRow(share *models.RecordingShare) *models.ShareRow {
+	return &models.ShareRow{
+		ShareKind: models.ShareKindRecording, ShareID: share.ID, SubjectID: share.RecordingID, SubjectName: share.RecordingTitle,
+		OwnerUserID: share.OwnerUserID, OwnerUsername: share.OwnerUsername, OwnerName: share.OwnerName,
+		GranteeUserID: share.GranteeUserID, GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName,
+		GranteeCircleID: share.GranteeCircleID, GranteeCircleName: share.GranteeCircleName,
+		ShareLevel: string(share.RecordingShareLevel), CreatedAt: share.CreatedAt,
+	}
+}
+
+// financeShareRow is a share of a finance account as a row of the list, for
+// the same reason as recordingShareRow.
+func financeShareRow(share *models.FinanceShare) *models.ShareRow {
+	return &models.ShareRow{
+		ShareKind: models.ShareKindFinance, ShareID: share.ID, SubjectID: share.FinanceAccountID, SubjectName: share.AccountName,
+		SubjectMask: share.AccountMask, OwnerUserID: share.OwnerUserID, OwnerUsername: share.OwnerUsername, OwnerName: share.OwnerName,
+		GranteeUserID: share.GranteeUserID, GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName,
+		GranteeCircleID: share.GranteeCircleID, GranteeCircleName: share.GranteeCircleName,
+		ShareLevel: string(share.FinanceShareLevel), CreatedAt: share.CreatedAt,
+	}
+}
+
 func describeSharingMade(row *models.ShareRow) *SharingMadeView {
 	view := &SharingMadeView{
 		ShareKind: string(row.ShareKind), ShareID: row.ShareID, SubjectID: row.SubjectID, SubjectName: row.SubjectName,
-		ShareLevel: row.ShareLevel, ShareScopes: nonNilStrings(row.ShareScopes), PasswordItemCount: row.ItemCount,
+		SubjectMask: row.SubjectMask, ShareLevel: row.ShareLevel, ShareScopes: nonNilStrings(row.ShareScopes), PasswordItemCount: row.ItemCount,
 		GranteeUsername: row.GranteeUsername, GranteeName: row.GranteeName, GranteeCircleName: row.GranteeCircleName,
 		CreatedAt: row.CreatedAt,
 	}
@@ -324,7 +397,7 @@ func describeSharingReceived(row *models.ShareRow) *SharingReceivedView {
 	isDirect := row.GranteeUserID != ""
 	view := &SharingReceivedView{
 		ShareKind: string(row.ShareKind), ShareID: row.ShareID, SubjectID: row.SubjectID, SubjectName: row.SubjectName,
-		ShareLevel: row.ShareLevel, ShareScopes: nonNilStrings(row.ShareScopes), PasswordItemCount: row.ItemCount,
+		SubjectMask: row.SubjectMask, ShareLevel: row.ShareLevel, ShareScopes: nonNilStrings(row.ShareScopes), PasswordItemCount: row.ItemCount,
 		OwnerUserID: row.OwnerUserID, OwnerUsername: row.OwnerUsername, OwnerName: row.OwnerName,
 		OwnerAvatarURL: avatarUrl(row.OwnerUser), OwnerAvatarColorIndex: avatar.InitialColorIndex(row.OwnerUserID),
 		GranteeCircleName: row.GranteeCircleName, IsDirect: isDirect,
@@ -387,14 +460,14 @@ func (self *graph) ListSharing(ctx context.Context) (*SharingView, error) {
 	view := &SharingView{SharesMade: []*SharingMadeView{}, SharesReceived: []*SharingReceivedView{}}
 	madeRows, receivedRows := []*models.ShareRow{}, []*models.ShareRow{}
 	for _, shareKind := range models.ShareKinds {
-		if self.canListShareKind(principal, shareKind, false) {
+		if self.canListShareKind(ctx, principal, shareKind, false) {
 			rows, err := self.sharesMadeBy(tx, principal.User, shareKind)
 			if err != nil {
 				return nil, err
 			}
 			madeRows = append(madeRows, rows...)
 		}
-		if self.canListShareKind(principal, shareKind, true) {
+		if self.canListShareKind(ctx, principal, shareKind, true) {
 			rows, err := self.sharesReachingFor(tx, principal.User, shareKind)
 			if err != nil {
 				return nil, err
@@ -484,10 +557,22 @@ func (self *graph) DeclineShare(ctx context.Context, arguments DeclineShareArgum
 		if err := tx.DeclinePhotoAlbumShare(user.ID, shareId); err != nil {
 			return false, translateError(err)
 		}
+	case models.ShareKindRecording:
+		if err := tx.DeclineRecordingShare(user.ID, shareId); err != nil {
+			return false, translateError(err)
+		}
+	case models.ShareKindFinance:
+		// The agent neither reads nor ends what others share of finance.
+		if err := requireFinanceNotAgent(ctx); err != nil {
+			return false, err
+		}
+		if err := tx.DeclineFinanceShare(user.ID, shareId); err != nil {
+			return false, translateError(err)
+		}
 	case models.ShareKindPasswords:
 		return false, fmt.Errorf("%w: passwords shared with you are removed by the person who shared them, on their Passwords page", api.ErrInvalidArguments)
 	default:
-		return false, fmt.Errorf("%w: the kind is calendar, location, health, memory_page, photo_album or skill", api.ErrInvalidArguments)
+		return false, fmt.Errorf("%w: the kind is calendar, location, health, memory_page, photo_album, recording, finance or skill", api.ErrInvalidArguments)
 	}
 	log.Noticef("%s declined a share of %s", user.Username, shareKind)
 	return true, nil

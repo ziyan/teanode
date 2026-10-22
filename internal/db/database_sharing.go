@@ -52,8 +52,8 @@ type SharingOperation interface {
 
 	// ListCircleShareOwners are the members of the circle who have shared
 	// something with it, with the kinds: calendar, location, Health, memory
-	// pages and photo albums. A skill is shared with one person, and passwords
-	// wait for a key, so neither is listed.
+	// pages, photo albums, recordings and finance accounts. A skill is shared
+	// with one person, and passwords wait for a key, so neither is listed.
 	ListCircleShareOwners(circleId string) ([]*models.CircleShareOwner, error)
 
 	// GetPhotoAlbumShare is one share of an album the person manages, or
@@ -73,6 +73,16 @@ type SharingOperation interface {
 	// person by name, and takes out of the album the photos the person added.
 	// ErrNotFound unless the share is to that person.
 	DeclinePhotoAlbumShare(granteeUserId, shareId string) error
+
+	// DeclineRecordingShare ends a share of somebody's recording that was
+	// made to the person by name. ErrNotFound unless the share is to that
+	// person, which a share to a circle never is.
+	DeclineRecordingShare(granteeUserId, shareId string) error
+
+	// DeclineFinanceShare ends a share of somebody's finance account that was
+	// made to the person by name. ErrNotFound unless the share is to that
+	// person, which a share to a circle never is.
+	DeclineFinanceShare(granteeUserId, shareId string) error
 }
 
 // shareRowNames fills in who owns each row and who it is for, in one read of
@@ -381,6 +391,15 @@ func (self *transaction) ListCircleShareOwners(circleId string) ([]*models.Circl
 		UNION ALL
 		SELECT album.user_id, 'photo_album' FROM "photo_album_share" share JOIN "photo_album" album ON album.id = share.photo_album_id
 		WHERE share.grantee_circle_id = @circle AND album.user_id IS NOT NULL
+		UNION ALL
+		SELECT shared_recording.user_id, 'recording' FROM "recording_share" share
+		JOIN "recording" shared_recording ON shared_recording.id = share.recording_id
+		WHERE share.grantee_circle_id = @circle AND shared_recording.user_id IS NOT NULL AND shared_recording.deleted_at IS NULL
+		UNION ALL
+		SELECT owner_agent.user_id, 'finance' FROM "finance_account_share" share
+		JOIN "agent_finance_account" account ON account.id = share.finance_account_id
+		JOIN "agent" owner_agent ON owner_agent.id = account.agent_id
+		WHERE share.grantee_circle_id = @circle
 	) shared ORDER BY 1, 2`, sql.Named("circle", circleId)).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -461,4 +480,32 @@ func (self *transaction) DeclinePhotoAlbumShare(granteeUserId, shareId string) e
 		return err
 	}
 	return self.removeUnreachablePhotoAlbumItems([]string{found.PhotoAlbumID})
+}
+
+func (self *transaction) DeclineRecordingShare(granteeUserId, shareId string) error {
+	if granteeUserId == "" || shareId == "" {
+		return ErrNotFound
+	}
+	result := self.tx.Where("\"id\" = ? AND \"grantee_user_id\" = ?", shareId, granteeUserId).Delete(&recordingShareModel{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (self *transaction) DeclineFinanceShare(granteeUserId, shareId string) error {
+	if granteeUserId == "" || shareId == "" {
+		return ErrNotFound
+	}
+	result := self.tx.Where("\"id\" = ? AND \"grantee_user_id\" = ?", shareId, granteeUserId).Delete(&financeAccountShareModel{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

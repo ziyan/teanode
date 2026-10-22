@@ -12,7 +12,8 @@ import (
 type ShareKind string
 
 // The kinds. Each is shared by its own table, with its own rules; a skill is
-// shared with one person only, and passwords a whole item at a time.
+// shared with one person only, and passwords a whole item at a time. A finance
+// share is of one account, and is the person's own tap to make.
 const (
 	ShareKindCalendar   ShareKind = "calendar"
 	ShareKindLocation   ShareKind = "location"
@@ -20,13 +21,15 @@ const (
 	ShareKindMemoryPage ShareKind = "memory_page"
 	ShareKindSkill      ShareKind = "skill"
 	ShareKindPhotoAlbum ShareKind = "photo_album"
+	ShareKindRecording  ShareKind = "recording"
+	ShareKindFinance    ShareKind = "finance"
 	ShareKindPasswords  ShareKind = "passwords"
 )
 
 // ShareKinds is every kind, in the order the Sharing page lists them.
 var ShareKinds = []ShareKind{
 	ShareKindCalendar, ShareKindLocation, ShareKindHealth, ShareKindMemoryPage,
-	ShareKindPhotoAlbum, ShareKindSkill, ShareKindPasswords,
+	ShareKindPhotoAlbum, ShareKindRecording, ShareKindFinance, ShareKindSkill, ShareKindPasswords,
 }
 
 // IsValid reports whether this is one of the kinds.
@@ -46,11 +49,15 @@ type ShareRow struct {
 	ShareKind ShareKind
 	ShareID   string
 
-	// SubjectID and SubjectName are the calendar, the album, the page or the
-	// skill shared: its identifier and what it is called. Both are empty for
-	// a person's location and Health, which are shared whole.
+	// SubjectID and SubjectName are the calendar, the album, the page, the
+	// skill, the recording or the finance account shared: its identifier and
+	// what it is called (a recording's title, an account's name). Both are
+	// empty for a person's location and Health, which are shared whole.
+	// SubjectMask is the last digits of a finance account's number, when the
+	// provider gave them, and empty for every other kind.
 	SubjectID   string
 	SubjectName string
+	SubjectMask string
 
 	OwnerUserID   string
 	OwnerUsername string
@@ -65,8 +72,8 @@ type ShareRow struct {
 	GranteeCircleID   string
 	GranteeCircleName string
 
-	// ShareLevel is the level of a calendar, location or album share, and
-	// empty for the other kinds. ShareScopes are the rest of what it gives: the
+	// ShareLevel is the level of a calendar, location, album, recording or
+	// finance share, and empty for the other kinds. ShareScopes are the rest of what it gives: the
 	// Health categories, the skill's tools, "quotes" for a page shared with
 	// the words each fact was read in, "location" for an album shared with
 	// where its photos were taken.
@@ -113,9 +120,13 @@ func PageShareScopes(isQuoteShared bool) []string {
 
 // ShareReceivedNote is the detail of a share_received note: who shared what
 // with the person, as JSON so that each client words it in its own language.
-// ShareLevel is the level of a calendar, location or album share (busy, titles,
-// details, edit; current, history; view, contribute) and empty for the rest.
-// ShareSubject is the page's name, the album's title or the skill's name.
+// ShareLevel is the level of a calendar, location, album, recording or finance
+// share (busy, titles, details, edit; current, history; view, contribute;
+// summary, transcript; balance, spending, transactions) and empty for the rest.
+// ShareSubject is the page's name, the album's title, the skill's name or the
+// recording's title. A finance share names no account: the note goes into the
+// conversation of the person's agent, which has no part in finance sharing, so
+// it says that an account was shared and leaves out which.
 type ShareReceivedNote struct {
 	SharerName   string    `json:"sharerName"`
 	ShareKind    ShareKind `json:"shareKind"`
@@ -178,14 +189,19 @@ func ParseShareReachedNote(detail string) *ShareReachedNote {
 // shareLevelWords is each level of a share in English, for the note and the
 // notification.
 var shareLevelWords = map[string]string{
-	"busy":       "busy times only",
-	"titles":     "titles",
-	"details":    "details",
-	"edit":       "you can edit it",
-	"current":    "where they are now",
-	"history":    "where they are and where they have been",
-	"view":       "you can view it",
-	"contribute": "you can add photos",
+	"busy":         "busy times only",
+	"titles":       "titles",
+	"details":      "details",
+	"edit":         "you can edit it",
+	"current":      "where they are now",
+	"history":      "where they are and where they have been",
+	"view":         "you can view it",
+	"contribute":   "you can add photos",
+	"summary":      "title and summary",
+	"transcript":   "summary and transcript",
+	"balance":      "balance only",
+	"spending":     "balance and spending",
+	"transactions": "balance, spending and transactions",
 }
 
 // shareKindNouns is what each kind is called in a list: "calendar and
@@ -196,6 +212,8 @@ var shareKindNouns = map[ShareKind]string{
 	ShareKindHealth:     "Health",
 	ShareKindMemoryPage: "memory pages",
 	ShareKindPhotoAlbum: "photo albums",
+	ShareKindRecording:  "recordings",
+	ShareKindFinance:    "finance",
 	ShareKindSkill:      "skills",
 	ShareKindPasswords:  "passwords",
 }
@@ -223,6 +241,13 @@ func ShareReceivedText(note *ShareReceivedNote) string {
 		return note.SharerName + " shared their " + note.ShareSubject + " skill with you"
 	case ShareKindPhotoAlbum:
 		return withLevel(note.SharerName + " shared the photo album " + note.ShareSubject + " with you")
+	case ShareKindRecording:
+		if note.ShareSubject == "" {
+			return withLevel(note.SharerName + " shared a recording with you")
+		}
+		return withLevel(note.SharerName + " shared the recording " + note.ShareSubject + " with you")
+	case ShareKindFinance:
+		return withLevel(note.SharerName + " shared a finance account with you")
 	}
 	return note.SharerName + " shared something with you"
 }

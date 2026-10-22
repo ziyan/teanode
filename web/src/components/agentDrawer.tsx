@@ -1409,6 +1409,8 @@ const SHARE_RECEIVED_WORDS: Record<string, Key> = {
   memory_page: 'agentDrawer.note.shareReceivedMemoryPage',
   skill: 'agentDrawer.note.shareReceivedSkill',
   photo_album: 'agentDrawer.note.shareReceivedPhotoAlbum',
+  recording: 'agentDrawer.note.shareReceivedRecording',
+  finance: 'agentDrawer.note.shareReceivedFinance',
 }
 
 // LEGACY_NOTES is the English each kind was written in before notes had
@@ -1478,7 +1480,11 @@ function noteWords(
         shareLevel?: string
         shareSubject?: string
       }
-      const key = SHARE_RECEIVED_WORDS[shared.shareKind ?? '']
+      // A recording with no title is worded without one.
+      const key =
+        shared.shareKind === 'recording' && !shared.shareSubject
+          ? 'agentDrawer.note.shareReceivedRecordingUntitled'
+          : SHARE_RECEIVED_WORDS[shared.shareKind ?? '']
       if (shared.sharerName && key) {
         const level = shared.shareLevel ? t(`agentDrawer.note.shareLevel.${shared.shareLevel}` as Key) : ''
         return t(key, { sharerName: shared.sharerName, subject: shared.shareSubject ?? '', level })
@@ -1492,9 +1498,15 @@ function noteWords(
     try {
       const reached = JSON.parse(noteDetail) as { memberName?: string; circleName?: string; shareKinds?: string[] }
       if (reached.memberName && reached.circleName && reached.shareKinds?.length) {
-        const kinds = reached.shareKinds
-          .map((shareKind) => t(`agentDrawer.note.shareKind.${shareKind}` as Key))
-          .join(t('agentDrawer.note.shareKindSeparator'))
+        // "calendar, location and finance": the last is joined with its own
+        // word, which a language may leave without spaces or a comma.
+        const names = reached.shareKinds.map((shareKind) => t(`agentDrawer.note.shareKind.${shareKind}` as Key))
+        const kinds =
+          names.length > 1
+            ? names.slice(0, -1).join(t('agentDrawer.note.shareKindSeparator')) +
+              t('agentDrawer.note.shareKindLastSeparator') +
+              names[names.length - 1]
+            : names[0]
         return t(words.plain, { memberName: reached.memberName, circleName: reached.circleName, kinds })
       }
     } catch {
@@ -4010,9 +4022,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         if (!event.authorAgentId) return
         {
           // The agent's color is its owner's, told by the members.
-          const owner = loaded?.chat?.members.find(
-            (member) => member.agentId && member.agentId === event.authorAgentId,
-          )
+          const owner = loaded?.chat?.members.find((member) => member.agentId && member.agentId === event.authorAgentId)
           setLines((previous) =>
             linesWithStreamedText(previous, { ...event, authorAvatarColorIndex: owner?.avatarColorIndex }),
           )
@@ -5216,10 +5226,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           </div>
         )}
         {withCards && artifact ? <ArtifactCard artifact={artifact} /> : null}
-        {withCards &&
-          shared.map((file) => (
-            <FileCard key={file.attachment_id} file={file} />
-          ))}
+        {withCards && shared.map((file) => <FileCard key={file.attachment_id} file={file} />)}
       </div>
     )
   }
@@ -5238,12 +5245,24 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       .filter((name, at, all) => all.indexOf(name) === at)
       .join(', ')
     return (
-      <div key={groupKey} className={['agent-line tool work', tools.every((tool) => tool.done) ? 'done' : '', isOpen ? 'open' : ''].filter(Boolean).join(' ')}>
-        <button type="button" className="agent-tool-toggle" aria-expanded={isOpen} onClick={() => toggleExpanded(groupKey)}>
+      <div
+        key={groupKey}
+        className={['agent-line tool work', tools.every((tool) => tool.done) ? 'done' : '', isOpen ? 'open' : '']
+          .filter(Boolean)
+          .join(' ')}
+      >
+        <button
+          type="button"
+          className="agent-tool-toggle"
+          aria-expanded={isOpen}
+          onClick={() => toggleExpanded(groupKey)}
+        >
           {tools.every((tool) => tool.done) ? '✓' : '…'} {t('chat.whatItDid')}
           <span className="muted"> · {names}</span>
         </button>
-        {isOpen && <div className="agent-tool-detail agent-work-detail">{tools.map((tool) => toolLineElement(tool, false))}</div>}
+        {isOpen && (
+          <div className="agent-tool-detail agent-work-detail">{tools.map((tool) => toolLineElement(tool, false))}</div>
+        )}
         {tools.map((tool) => {
           const artifact = artifactOf(tool)
           const shared = sharedFilesOf(tool)
@@ -5651,8 +5670,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const showTodos = todos.length > 0 && (running || todos.some((todo) => !todo.doneAt))
   const canSend = (draft.trim().length > 0 || pending.length > 0) && !uploading
   // Where an agent can be asked, the box says how.
-  const chatPlaceholder =
-    addressable.length > 0 ? t('chat.placeholderWithAgents') : t('chat.placeholder')
+  const chatPlaceholder = addressable.length > 0 ? t('chat.placeholderWithAgents') : t('chat.placeholder')
   // What the agent said it needs, while it is still waiting for it and
   // the person has not yet written back.
   const waitingNote = showingGoalNote && current?.goalState === 'waiting' ? (current.goalNote ?? '').trim() : ''
@@ -6487,7 +6505,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       {deleting ? (
         <ConfirmDialog
           title={t('agentDrawer.delete')}
-          body={t('agentDrawer.deleteConfirm', { title: deleting.title || untitledConversationName(deleting, t, language) })}
+          body={t('agentDrawer.deleteConfirm', {
+            title: deleting.title || untitledConversationName(deleting, t, language),
+          })}
           confirmLabel={t('agentDrawer.delete')}
           destructive
           onClose={() => setDeleting(null)}

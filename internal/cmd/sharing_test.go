@@ -66,12 +66,16 @@ func everythingSharedServer(test *testing.T) (*httptest.Server, func() map[strin
 					{"shareKind":"calendar","shareId":"s-1","subjectId":"c-1","subjectName":"Calendar","shareLevel":"titles","shareScopes":[],"passwordItemCount":0,
 					 "granteeUserId":"u-sam","granteeUsername":"sam","granteeName":"Sam Lee","granteeCircleId":null,"granteeCircleName":"","createdAt":"2030-01-02T00:00:00Z"},
 					{"shareKind":"passwords","shareId":"","subjectId":"","subjectName":"","shareLevel":"","shareScopes":[],"passwordItemCount":3,
-					 "granteeUserId":null,"granteeUsername":"","granteeName":"","granteeCircleId":"g-1","granteeCircleName":"Home","createdAt":"2030-01-03T00:00:00Z"}],
+					 "granteeUserId":null,"granteeUsername":"","granteeName":"","granteeCircleId":"g-1","granteeCircleName":"Home","createdAt":"2030-01-03T00:00:00Z"},
+					{"shareKind":"recording","shareId":"s-4","subjectId":"r-1","subjectName":"Standup","shareLevel":"transcript","shareScopes":[],"passwordItemCount":0,
+					 "granteeUserId":"u-sam","granteeUsername":"sam","granteeName":"Sam Lee","granteeCircleId":null,"granteeCircleName":"","createdAt":"2030-01-06T00:00:00Z"}],
 				"sharesReceived":[
 					{"shareKind":"memory_page","shareId":"s-2","subjectId":"people/kim","subjectName":"Kim","shareLevel":"","shareScopes":["quotes"],"passwordItemCount":0,
 					 "ownerUserId":"u-sam","ownerUsername":"sam","ownerName":"Sam Lee","granteeCircleId":null,"granteeCircleName":"","isDirect":true,"canDecline":true,"createdAt":"2030-01-04T00:00:00Z"},
 					{"shareKind":"location","shareId":"s-3","subjectId":"","subjectName":"","shareLevel":"current","shareScopes":[],"passwordItemCount":0,
-					 "ownerUserId":"u-alex","ownerUsername":"alex","ownerName":"","granteeCircleId":"g-1","granteeCircleName":"Home","isDirect":false,"canDecline":false,"createdAt":"2030-01-05T00:00:00Z"}]}}}`))
+					 "ownerUserId":"u-alex","ownerUsername":"alex","ownerName":"","granteeCircleId":"g-1","granteeCircleName":"Home","isDirect":false,"canDecline":false,"createdAt":"2030-01-05T00:00:00Z"},
+					{"shareKind":"finance","shareId":"s-5","subjectId":"a-1","subjectName":"Everyday Checking","subjectMask":"0001","shareLevel":"spending","shareScopes":[],"passwordItemCount":0,
+					 "ownerUserId":"u-sam","ownerUsername":"sam","ownerName":"Sam Lee","granteeCircleId":null,"granteeCircleName":"","isDirect":true,"canDecline":true,"createdAt":"2030-01-07T00:00:00Z"}]}}}`))
 		default:
 			response.WriteHeader(http.StatusBadRequest)
 		}
@@ -112,6 +116,8 @@ func TestSharingPrintsWhatIsSharedBothWays(test *testing.T) {
 		"passwords", "3 items", "circle Home",
 		"memory page", "Kim", "quotes", "by name",
 		"location", "alex", "current",
+		"recording", "Standup", "transcript",
+		"finance", "Everyday Checking ••0001", "spending",
 	} {
 		if !strings.Contains(output, wanted) {
 			test.Errorf("the output has no %q:\n%s", wanted, output)
@@ -132,7 +138,7 @@ func TestSharingWithJSONPrintsBothLists(test *testing.T) {
 		SharesMade     []map[string]any `json:"sharesMade"`
 		SharesReceived []map[string]any `json:"sharesReceived"`
 	}
-	if err := json.Unmarshal([]byte(output), &sharing); err != nil || len(sharing.SharesMade) != 2 || len(sharing.SharesReceived) != 2 {
+	if err := json.Unmarshal([]byte(output), &sharing); err != nil || len(sharing.SharesMade) != 3 || len(sharing.SharesReceived) != 3 {
 		test.Errorf("it printed %q: %v", output, err)
 	}
 }
@@ -147,6 +153,12 @@ func TestSharingDeclineSendsTheKindAndTheShare(test *testing.T) {
 	}
 	if variables := recordedDecline(); variables["shareKind"] != "memory_page" || variables["shareId"] != "s-2" {
 		test.Errorf("the decline was %v", variables)
+	}
+	if _, err = runEverythingSharedAgainst(test, server, "decline", "--force", "finance", "s-5"); err != nil {
+		test.Fatal(err)
+	}
+	if variables := recordedDecline(); variables["shareKind"] != "finance" || variables["shareId"] != "s-5" {
+		test.Errorf("the decline of a finance share was %v", variables)
 	}
 	if _, err := runEverythingSharedAgainst(test, server, "decline", "--force", "calendar"); err == nil || !strings.Contains(err.Error(), "usage: teanode sharing decline") {
 		test.Errorf("a missing share was not refused with the usage: %v", err)

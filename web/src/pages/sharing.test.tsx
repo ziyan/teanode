@@ -23,6 +23,7 @@ function made(overrides: Partial<SharingMade> = {}): SharingMade {
     shareId: 'share-one',
     subjectId: 'calendar-one',
     subjectName: 'Fixture Calendar',
+    subjectMask: '',
     shareLevel: 'titles',
     shareScopes: [],
     passwordItemCount: 0,
@@ -42,6 +43,7 @@ function received(overrides: Partial<SharingReceived> = {}): SharingReceived {
     shareId: 'share-two',
     subjectId: 'people/kim',
     subjectName: 'Kim',
+    subjectMask: '',
     shareLevel: '',
     shareScopes: ['quotes'],
     passwordItemCount: 0,
@@ -226,6 +228,92 @@ it('removes a share made by name with DeclineShare after asking', async () => {
 
   await waitFor(() => expect(calls('DeclineShare')).toHaveLength(1))
   expect(calls('DeclineShare')[0][1]).toEqual({ shareKind: 'memory_page', shareId: 'share-two' })
+})
+
+it('lists a recording and a finance account the person shares, with their levels, links and own stop operations', async () => {
+  answerWith(
+    [
+      made({
+        shareKind: 'recording',
+        shareId: 'share-recording',
+        subjectId: 'recording one',
+        subjectName: 'Fixture Standup',
+        shareLevel: 'transcript',
+      }),
+      made({
+        shareKind: 'finance',
+        shareId: 'share-finance',
+        subjectId: 'account-one',
+        subjectName: 'Fixture Checking',
+        subjectMask: '0001',
+        shareLevel: 'spending',
+      }),
+    ],
+    [],
+  )
+  renderAt('/sharing')
+
+  const recording = (await screen.findByRole('link', { name: 'Fixture Standup' })) as HTMLAnchorElement
+  expect(recording.getAttribute('href')).toBe('/recordings/recording%20one')
+  expect(within(recording.closest('tr') as HTMLElement).getByText('Transcript')).toBeTruthy()
+  const account = (await screen.findByRole('link', { name: 'Fixture Checking ··0001' })) as HTMLAnchorElement
+  expect(account.getAttribute('href')).toBe('/settings/agent/finance')
+  expect(within(account.closest('tr') as HTMLElement).getByText('Spending')).toBeTruthy()
+
+  for (const operation of ['UnshareRecording', 'UnshareFinanceAccount']) {
+    fireEvent.click(
+      screen.getAllByRole('button', { name: /stop sharing with Person B/i })[operation === 'UnshareRecording' ? 0 : 1],
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Stop sharing' }))
+    await waitFor(() => expect(calls(operation)).toHaveLength(1))
+  }
+  expect(calls('UnshareRecording')[0][1]).toEqual({ recordingShareId: 'share-recording' })
+  expect(calls('UnshareFinanceAccount')[0][1]).toEqual({ shareId: 'share-finance' })
+})
+
+it('lists a recording and a finance account shared with the person, and removes them by name', async () => {
+  answerWith(
+    [],
+    [
+      received({
+        shareKind: 'recording',
+        shareId: 'share-recording',
+        subjectId: 'recording-one',
+        subjectName: 'Fixture Standup',
+        shareLevel: 'summary',
+        shareScopes: [],
+      }),
+      received({
+        shareKind: 'finance',
+        shareId: 'share-finance',
+        subjectId: 'account-one',
+        subjectName: 'Fixture Checking',
+        subjectMask: '0001',
+        shareLevel: 'balance',
+        shareScopes: [],
+        isDirect: false,
+        canDecline: false,
+        granteeCircleId: 'circle-one',
+        granteeCircleName: 'Fixture Home',
+      }),
+    ],
+  )
+  renderAt('/sharing/with-you')
+
+  const recording = (await screen.findByRole('link', { name: 'Fixture Standup' })) as HTMLAnchorElement
+  expect(recording.getAttribute('href')).toBe('/recordings/shared/recording-one')
+  expect(within(recording.closest('tr') as HTMLElement).getByText('Summary')).toBeTruthy()
+  const account = (await screen.findByRole('link', { name: 'Fixture Checking ··0001' })) as HTMLAnchorElement
+  expect(account.getAttribute('href')).toBe('/finance?person=person-b')
+  const accountRow = account.closest('tr') as HTMLElement
+  expect(within(accountRow).getByText('Balance')).toBeTruthy()
+  expect(within(accountRow).queryByRole('button')).toBeNull()
+
+  fireEvent.click(screen.getByRole('button', { name: /remove what Person B shared/i }))
+  const removeButtons = screen.getAllByRole('button', { name: 'Remove' })
+  fireEvent.click(removeButtons[removeButtons.length - 1])
+  await waitFor(() => expect(calls('DeclineShare')).toHaveLength(1))
+  expect(calls('DeclineShare')[0][1]).toEqual({ shareKind: 'recording', shareId: 'share-recording' })
 })
 
 it('says it is not on for an account without circles, and sends an unknown tab to the first', async () => {

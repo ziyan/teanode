@@ -353,7 +353,8 @@ func init() {
 				Name: "circle_sharing", Family: tools.FamilyAccount, Risk: tools.RiskRead,
 				Permissions: []models.Permission{models.PermissionCircleUse},
 				Description: "Everything the person shares and everything shared with them, in one list, across calendar, location, " +
-					"health, memory pages, photo albums, skills and passwords: the kind, the thing, who it is shared with or by, the level " +
+					"health, memory pages, photo albums, recordings, skills and passwords (finance accounts are left out: they " +
+					"are not the agent's to read): the kind, the thing, who it is shared with or by, the level " +
 					"or scope, and since when. Passwords are counted, never named. Each received row says whether it came through a circle " +
 					"(granteeCircleName) or was made to the person by name (isDirect), and whether decline_share can end it (canDecline). " +
 					"Stopping something the person shares is the action of its own tool (calendar, location, health, memory, skill, photo).",
@@ -375,7 +376,7 @@ func init() {
 					"leave the circle, and not passwords, which their owner removes), by its kind and the share_id from sharing. The owner is not " +
 					"told and has to share again for the person to have it back. Only on the person's word.",
 				Parameters: tools.Object(map[string]any{
-					"share_kind": tools.EnumProperty("what the share is of", "calendar", "location", "health", "memory_page", "photo_album", "skill"),
+					"share_kind": tools.EnumProperty("what the share is of", "calendar", "location", "health", "memory_page", "photo_album", "recording", "skill"),
 					"share_id":   tools.StringProperty("the share, from sharing"),
 				}, "share_kind", "share_id"),
 				PreviewIn: declineSharePreview,

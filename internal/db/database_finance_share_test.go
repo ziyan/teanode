@@ -498,3 +498,59 @@ func TestDeletingAFinanceAccountDeletesItsShares(t *testing.T) {
 		}
 	})
 }
+
+// Declining ends a share made to the person by name, and only that: the
+// owner, a stranger and a share to a circle are not found, and the circle's
+// share keeps reaching the person.
+func TestDecliningAFinanceShareEndsOnlyTheShareMadeByName(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newFinanceShareWorld(t, tx)
+		direct := shareFinance(t, tx, world, world.checking, world.ben.ID, "", models.FinanceShareLevelTransactions)
+		circle := shareFinance(t, tx, world, world.checking, "", world.home.ID, models.FinanceShareLevelBalance)
+
+		for _, granteeUserId := range []string{world.ada.ID, world.dave.ID, ""} {
+			if err := tx.DeclineFinanceShare(granteeUserId, direct.ID); !errors.Is(err, db.ErrNotFound) {
+				t.Errorf("declined by %q: %v", granteeUserId, err)
+			}
+		}
+		if err := tx.DeclineFinanceShare(world.ben.ID, circle.ID); !errors.Is(err, db.ErrNotFound) {
+			t.Errorf("a share to a circle declined: %v", err)
+		}
+		if err := tx.DeclineFinanceShare(world.ben.ID, direct.ID); err != nil {
+			t.Fatalf("DeclineFinanceShare: %s", err)
+		}
+		if err := tx.DeclineFinanceShare(world.ben.ID, direct.ID); !errors.Is(err, db.ErrNotFound) {
+			t.Errorf("declined twice: %v", err)
+		}
+		if got := reachedLevel(t, tx, world.ben.ID, world.checking); got != models.FinanceShareLevelBalance {
+			t.Errorf("after declining the share by name ben reaches %q, want what the circle gives", got)
+		}
+		kept, err := tx.ListFinanceSharesBy(world.ada.ID)
+		if err != nil || len(kept) != 1 || kept[0].ID != circle.ID {
+			t.Errorf("ada's shares after the decline: %+v %v", kept, err)
+		}
+	})
+}
+
+// A circle's owners are listed with finance among the kinds, in the order of
+// the Sharing page.
+func TestACircleShareOwnerSharesFinanceAmongItsKinds(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newFinanceShareWorld(t, tx)
+		shareFinance(t, tx, world, world.card, "", world.home.ID, models.FinanceShareLevelBalance)
+		shareFinance(t, tx, world, world.checking, "", world.home.ID, models.FinanceShareLevelSpending)
+		shareFinance(t, tx, world, world.checking, world.ben.ID, "", models.FinanceShareLevelBalance)
+
+		owners, err := tx.ListCircleShareOwners(world.home.ID)
+		if err != nil || len(owners) != 1 || owners[0].OwnerUserID != world.ada.ID ||
+			len(owners[0].ShareKinds) != 1 || owners[0].ShareKinds[0] != models.ShareKindFinance {
+			t.Errorf("the owners of what was shared with home: %+v %v", owners, err)
+		}
+	})
+}
