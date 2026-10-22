@@ -1231,7 +1231,9 @@ A shared recording is stricter, because a paraphrase of it passes a check on
 words. In a turn in which a tool answered with `tools.SharedRecordingMarker`,
 the filing run is shown only what the person wrote, and the lessons run reads
 none of the turn (`withoutSharedRecordingTurnsIn`). A fact from the agent's
-paraphrase of the recording therefore has nothing to rest on. A shared page is
+paraphrase of the recording therefore has nothing to rest on. Only the turn
+that read it is held back: a later turn that answers from what the
+conversation already holds is filed like any other. A shared page is
 still held to the check on words alone.
 
 What the reader's agent learns about the same subject is learned in its own
