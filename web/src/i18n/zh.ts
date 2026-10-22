@@ -6621,6 +6621,8 @@ export const zh: Catalog = {
   'person.locationNotShared': '{name}没有分享所在位置。',
   'person.healthNotShared': '{name}没有分享健康数据。',
   'person.noHealth': '{name}还没有分享任何一天的健康数据。',
+  'person.financeNotShared': '{name}没有共享财务账户。',
+  'person.financeUsed': '已用{percent}',
   'person.notShared': '{name}没有向你分享这些。',
   'person.noPhotos': '还没有{name}的照片。',
   'person.albumsShared': '{name}与你分享的相册',

@@ -6890,6 +6890,8 @@ export const ja: Catalog = {
   'person.locationNotShared': '{name}は現在地を共有していません。',
   'person.healthNotShared': '{name}はヘルスケアを共有していません。',
   'person.noHealth': '{name}が共有したヘルスケアの日はまだありません。',
+  'person.financeNotShared': '{name}は金融口座を共有していません。',
+  'person.financeUsed': '{percent}使用中',
   'person.notShared': '{name}はこれをあなたと共有していません。',
   'person.noPhotos': '{name}の写真はまだありません。',
   'person.albumsShared': '{name}があなたと共有したアルバム',

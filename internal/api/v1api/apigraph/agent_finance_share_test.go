@@ -34,9 +34,19 @@ func newFinanceShareWorld(t *testing.T) *financeShareWorld {
 				t.Fatal(err)
 			}
 		}
-		agent, err := tx.GetAgentByUser(world.ada.ID)
-		if err != nil || agent == nil {
-			t.Fatalf("GetAgentByUser: %+v %v", agent, err)
+	})
+	world.checkingID, world.cardID = seedFinance(t, world.database, world.ada)
+	return world
+}
+
+// seedFinance gives a person an agent that is on, a checking account with two
+// transactions and a credit card, and says the two accounts' identifiers.
+func seedFinance(t *testing.T, database db.Database, owner *models.User) (checkingID, cardID string) {
+	t.Helper()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent, err := tx.EnsureAgent(owner.ID)
+		if err != nil {
+			t.Fatalf("EnsureAgent: %s", err)
 		}
 		if _, err := tx.UpdateAgent(agent.ID, func(found *models.Agent) error { found.Enabled = true; return nil }); err != nil {
 			t.Fatal(err)
@@ -78,13 +88,13 @@ func newFinanceShareWorld(t *testing.T) *financeShareWorld {
 		}
 		for _, account := range accounts {
 			if account.AccountName == "Everyday Checking" {
-				world.checkingID = account.ID
+				checkingID = account.ID
 			} else {
-				world.cardID = account.ID
+				cardID = account.ID
 			}
 		}
 	})
-	return world
+	return checkingID, cardID
 }
 
 const (

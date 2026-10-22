@@ -6946,6 +6946,8 @@ export const en = {
   'person.locationNotShared': '{name} does not share where they are.',
   'person.healthNotShared': '{name} does not share their health.',
   'person.noHealth': '{name} has shared no health days yet.',
+  'person.financeNotShared': '{name} does not share a finance account.',
+  'person.financeUsed': '{percent} used',
   'person.notShared': '{name} does not share this with you.',
   'person.noPhotos': 'No photos of {name} yet.',
   'person.albumsShared': 'Albums {name} shared with you',
