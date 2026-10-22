@@ -2078,3 +2078,43 @@ told apart from one before.
 It did not review circles across servers, which are out of scope, or the
 paying skills' own registry, whose declarations of what a call costs belong to
 each skill.
+
+# Tenth pass: limits, sign-in and timing
+
+## Findings
+
+### SEC-104: A full limiter table stopped limiting (Medium, fixed)
+
+At its key limit the registry handed each new key a fresh bucket, so filling the table allowed every attempt; callers past the table now share one bucket.
+
+### SEC-105: One IPv6 network had a burst for every address (Low, fixed)
+
+Limiter keys were whole addresses, so a /64 multiplied every limit; keys are now the /64 (`ratelimit.AddressKey`), while logs still show the whole address.
+
+### SEC-106: An untagged app password guess hashed every app password (Low, fixed)
+
+Refusal time grew with a mailbox's devices and named mailboxes, and one SMTP AUTH token paid for many hashes; a guess with no tag now costs one hash when no password is untagged.
+
+### SEC-107: The GraphQL socket acknowledged a connection nobody was signed in on (Low, fixed)
+
+An anonymous `connection_init` lifted the pre-authentication deadline and held the socket open for ever; it is now refused once the server has accounts.
+
+### SEC-108: Anonymous GraphQL could run thousands of root fields in one request (Medium, fixed)
+
+Each root field of a mutation runs in its own transaction; a request from nobody signed in may now select at most eight, checked before any transaction.
+
+### SEC-109: Changing a password did not limit guesses at the current one (Medium, fixed)
+
+`ChangePassword` checked the current password with no limit; it now takes from the sign-in limiter under a per-account key and answers too many attempts.
+
+### SEC-110: Single sign-on start and callback had no limiter (Low, fixed)
+
+Both paths are open to anybody and reach the identity provider; both now count against the sign-in limiter and answer 429.
+
+### SEC-111: The in-memory ceremony store had no size cap (Low, fixed)
+
+Anybody could park a ceremony for five minutes with no bound on how many; the store now refuses past 4096.
+
+### SEC-112: One address could take every SMTP and IMAP connection (Medium, fixed)
+
+The listeners capped only the total at 1000; each address (an IPv6 /64 counts as one) may now hold 32 connections per protocol.
