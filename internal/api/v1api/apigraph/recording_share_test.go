@@ -23,7 +23,7 @@ func TestRecordingShareDocumentsMatchTheBuiltSchema(test *testing.T) {
 		`mutation { UnshareRecording(recordingShareId: "a") }`,
 		`query { ListRecordingShares(recordingId: "a") { id granteeUsername granteeCircleName recordingShareLevel } }`,
 		`query { ListSharedRecordings(pageSize: 10) { recordingId ownerUserId ownerUsername ownerName recordingTitle createdAt recordedAt timelineDurationMS recordingSummary recordingShareLevel } }`,
-		`query { ListSharedRecordings(ownerUserId: "a", beforeRecordingId: "b", pageSize: 10) { recordingId } }`,
+		`query { ListSharedRecordings(beforeRecordingId: "b", pageSize: 10) { recordingId } }`,
 		`query { ReadSharedRecording(recordingId: "a", passageOffset: 0, pageSize: 50) { recordingId speakerNames passageCount hasMorePassages passages { segmentStartMS segmentEndMS speakerName transcriptText isFiller } } }`,
 	} {
 		document, err := gqlparser.Parse(gqlparser.ParseParams{Source: source})

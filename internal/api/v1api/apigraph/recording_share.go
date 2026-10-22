@@ -150,10 +150,6 @@ func (self *graph) UnshareRecording(ctx context.Context, arguments UnshareRecord
 }
 
 type ListSharedRecordingsArguments struct {
-	// Only the recordings this person shared with the caller, by account
-	// identifier
-	OwnerUserID string `json:"ownerUserId" graphapi:"nullable"`
-
 	// Continue before this recording
 	BeforeRecordingID string `json:"beforeRecordingId" graphapi:"nullable"`
 
@@ -170,7 +166,7 @@ func (self *graph) ListSharedRecordings(ctx context.Context, arguments ListShare
 	if pageSize == 0 {
 		pageSize = 50
 	}
-	shared, err := self.transaction(ctx).ListSharedRecordings(reader.ID, strings.TrimSpace(arguments.OwnerUserID), strings.TrimSpace(arguments.BeforeRecordingID), pageSize)
+	shared, err := self.transaction(ctx).ListSharedRecordings(reader.ID, "", strings.TrimSpace(arguments.BeforeRecordingID), pageSize)
 	return shared, translateError(err)
 }
 
