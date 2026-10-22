@@ -120,7 +120,8 @@ export const ja: Catalog = {
   'password.newAgain': '新しいパスワード（確認）',
   'password.change': 'パスワードを変更',
   'password.changing': '変更しています…',
-  'password.changed': 'パスワードを変更しました。',
+  'password.changed':
+    'パスワードを変更しました。ほかのブラウザー、スマートフォン、拡張機能、コマンドラインは、もう一度サインインが必要です。',
   'password.failed': 'パスワードを変更できませんでした',
 
   'mail.title': 'メール',
@@ -677,7 +678,7 @@ export const ja: Catalog = {
   'sessions.showRevoked': 'サインアウト済みのセッションを表示',
   'sessions.failed': 'うまくいきませんでした。',
   'sessions.revokeAllExplained':
-    'すべての端末からのサインアウトは、このアカウントのセッションをこの端末も含めてすべて終了します。端末をなくしたときに使ってください。',
+    'すべての端末からのサインアウトは、このアカウントのセッションをこの端末も含めてすべて終了し、スマートフォン、拡張機能、コマンドラインのサインインも終了します。端末をなくしたときに使ってください。',
   'sessions.revokeAll': 'すべての端末からサインアウト',
   'sessions.revokeConfirm':
     'この端末を含むすべてのブラウザーからサインアウトしますか？ もう一度サインインが必要になります。',

@@ -118,7 +118,7 @@ export const zh: Catalog = {
   'password.newAgain': '再次输入新密码',
   'password.change': '修改密码',
   'password.changing': '正在修改…',
-  'password.changed': '密码已修改。',
+  'password.changed': '密码已修改。其他浏览器、手机、扩展程序和命令行需要重新登录。',
   'password.failed': '无法修改密码',
 
   'mail.title': '邮件',
@@ -653,7 +653,8 @@ export const zh: Catalog = {
   'sessions.hideRevoked': '隐藏已退出的会话',
   'sessions.showRevoked': '显示已退出的会话',
   'sessions.failed': '操作未成功。',
-  'sessions.revokeAllExplained': '登出所有设备会结束此账号的全部会话，包括当前这个。设备丢失时可以这样做。',
+  'sessions.revokeAllExplained':
+    '登出所有设备会结束此账号的全部会话，包括当前这个，以及手机、扩展程序和命令行的登录。设备丢失时可以这样做。',
   'sessions.revokeAll': '登出所有设备',
   'sessions.revokeConfirm': '确定要登出所有浏览器（包括当前这个）吗？之后需要重新登录。',
   'sessions.lifetime': '一个会话在 {lifetime} 后需要重新登录。',

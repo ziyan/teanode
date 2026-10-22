@@ -119,7 +119,8 @@ export const en = {
   'password.newAgain': 'New password again',
   'password.change': 'Change password',
   'password.changing': 'changing…',
-  'password.changed': 'Password changed.',
+  'password.changed':
+    'Password changed. Other browsers, phones, the extension and the command line have to sign in again.',
   'password.failed': 'could not change the password',
 
   'mail.title': 'Mail',
@@ -682,7 +683,7 @@ export const en = {
   'sessions.showRevoked': 'Show signed out sessions',
   'sessions.failed': 'That did not work.',
   'sessions.revokeAllExplained':
-    'Signing out everywhere ends every session on this account, including this one. Use it if you have lost a device.',
+    'Signing out everywhere ends every session on this account, including this one, and every phone, extension and command line sign-in. Use it if you have lost a device.',
   'sessions.revokeAll': 'Sign out everywhere',
   'sessions.revokeConfirm': 'Sign out of every browser, including this one? You will have to sign in again.',
   'sessions.lifetime': 'A session lasts {lifetime} before it has to be renewed.',

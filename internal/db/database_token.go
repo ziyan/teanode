@@ -32,7 +32,11 @@ type TokenOperation interface {
 	// did it, so that two callers racing to retire the same token cannot both
 	// go on as though they had.
 	RetireToken(tokenId string, at time.Time) (bool, error)
-	RevokeTokensByUser(userId string, at time.Time) (int64, error)
+
+	// RevokeTokensByUser ends every token an account has and returns how
+	// many it ended, keeping the one named by except when it is not empty:
+	// the token a person is making the call with.
+	RevokeTokensByUser(userId string, at time.Time, except string) (int64, error)
 
 	// RenameClientTokens renames every token one app holds for a person.
 	// A renewal carries the name over, so the name lasts.
@@ -239,10 +243,12 @@ func (self *database) RetireToken(tokenId string, at time.Time) (bool, error) {
 	return result.RowsAffected == 1, result.Error
 }
 
-func (self *database) RevokeTokensByUser(userId string, at time.Time) (int64, error) {
-	result := self.db.Model(&tokenModel{}).
-		Where("\"user_id\" = ? AND \"revoked_at\" IS NULL", userId).
-		Updates(map[string]any{"revoked_at": at.UTC(), "modified_at": at.UTC()})
+func (self *database) RevokeTokensByUser(userId string, at time.Time, except string) (int64, error) {
+	query := self.db.Model(&tokenModel{}).Where("\"user_id\" = ? AND \"revoked_at\" IS NULL", userId)
+	if except != "" {
+		query = query.Where("\"id\" <> ?", except)
+	}
+	result := query.Updates(map[string]any{"revoked_at": at.UTC(), "modified_at": at.UTC()})
 	return result.RowsAffected, result.Error
 }
 

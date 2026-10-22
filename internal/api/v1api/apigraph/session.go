@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/models"
+	"net/http"
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -302,7 +303,29 @@ func (self *graph) ChangePassword(ctx context.Context, arguments ChangePasswordA
 	} else if ended > 0 {
 		log.Noticef("%s changed their password, ending %d other session(s)", username, ended)
 	}
+	self.revokeTokensOf(request, username, "a password change")
 	return self.signedInAs(ctx, username), nil
+}
+
+// revokeTokensOf ends the API tokens of an account that has just ended its
+// sessions, for the phone app, the extension, the command line and the
+// computer daemons, which sign in with tokens and would otherwise go on
+// working for whoever holds them. The token making this very call is kept,
+// so the caller is not cut off before the answer reaches them; a cookie
+// carries none, so every token ends.
+func (self *graph) revokeTokensOf(request *http.Request, username, reason string) {
+	except := ""
+	if request != nil {
+		except = self.authenticator.CurrentTokenID(request)
+	}
+	ended, err := self.authenticator.RevokeTokens(username, except)
+	if err != nil {
+		log.Errorf("failed to revoke the API tokens of %q after %s: %s", username, reason, err)
+		return
+	}
+	if ended > 0 {
+		log.Noticef("revoked %d API token(s) of %q after %s", ended, username, reason)
+	}
 }
 
 // Session is one signed-in browser, as the list shows it.
@@ -433,6 +456,9 @@ func (self *graph) RevokeAllSessions(ctx context.Context) (*SessionState, error)
 	}
 
 	log.Noticef("%s ended %d of their sessions, including this one", username, ended)
+	// Signing out everywhere is what a person reaches for after losing a
+	// device, and a phone or a laptop holds a token rather than a session.
+	self.revokeTokensOf(api.ContextRequest(ctx), username, "signing out everywhere")
 	return &SessionState{AuthenticationRequired: self.authenticator.Required()}, nil
 }
 
