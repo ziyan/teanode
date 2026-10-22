@@ -993,3 +993,11 @@ equal; `docs/subsystems/devices.md` has the whole account).
   `http` address as a problem. It does not re-key or share: it refuses to save over
   an item the server marks `needsNewKey` and says to open Passwords on the
   dashboard or the iPhone first, and it keeps the access record through edits.
+  Its opened keys live in `chrome.storage.session`; a copy sealed the
+  dashboard's way (non-extractable AES-GCM key, the extension's IndexedDB) lets
+  them open again after the browser restarts, within the lock time (the
+  extension honors at most a day) and a day from the unlock, for the signed-in
+  person and the public key the server lists. A copy opened that way does not
+  count as the person verified, so a passkey that asks for it asks for the
+  passphrase. Locking, the lock time, signing out or in as somebody else delete
+  it.

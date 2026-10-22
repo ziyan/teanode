@@ -126,7 +126,12 @@ export class KeptUnlock {
   // writes are chained, so a removal made after a write cannot finish first.
   private writes: Promise<unknown> = Promise.resolve()
 
-  constructor(private store: KeptUnlockStore | null) {}
+  // keptMostMilliseconds is the longest a record is kept from the unlock that
+  // made it.
+  constructor(
+    private store: KeptUnlockStore | null,
+    private keptMostMilliseconds: number = KEPT_MOST_MILLISECONDS,
+  ) {}
 
   setStore(store: KeptUnlockStore | null) {
     this.store = store
@@ -194,6 +199,17 @@ export class KeptUnlock {
     return this.chain((store) => store.remove())
   }
 
+  // hasKept says whether a record is stored, without opening or checking it.
+  async hasKept(): Promise<boolean> {
+    if (this.store === null) return false
+    try {
+      await this.writes
+      return (await this.store.read()) !== null
+    } catch {
+      return false
+    }
+  }
+
   // take opens the record for this person when it is still within the lock
   // time, and deletes it otherwise.
   async take(userId: string, lockAfterMinutes: number, nowMilliseconds: number = Date.now()): Promise<KeptKeys | null> {
@@ -205,7 +221,7 @@ export class KeptUnlock {
       if (record === null) return null
       const isExpired =
         nowMilliseconds - record.lastUsedAtMilliseconds >= lockAfterMinutes * 60_000 ||
-        nowMilliseconds - record.keptAtMilliseconds >= KEPT_MOST_MILLISECONDS ||
+        nowMilliseconds - record.keptAtMilliseconds >= this.keptMostMilliseconds ||
         nowMilliseconds < record.keptAtMilliseconds
       if (record.userId !== userId || isExpired) {
         await this.forget()
