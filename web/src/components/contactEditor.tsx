@@ -28,8 +28,8 @@ const SAVE = `
                 emails: $emails, phones: $phones, note: $note, addresses: $addresses) { id name }
   }`
 
-const GET = `query ($id: String!) {
-  GetContact(id: $id) {
+const GET = `query ($id: String!, $addressBookId: String) {
+  GetContact(id: $id, addressBookId: $addressBookId) {
     id name organization emails phones note hasPhoto
     addresses { street locality region postalCode country }
     accountUserId account { ${CIRCLE_PERSON_FIELDS} }
@@ -45,7 +45,9 @@ export const SET_CONTACT_ACCOUNT = `
     }
   }`
 
-const REMOVE_PICTURE = `mutation ($id: String!) { RemoveContactPicture(id: $id) { id hasPhoto } }`
+const REMOVE_PICTURE = `mutation ($id: String!, $addressBookId: String) {
+  RemoveContactPicture(id: $id, addressBookId: $addressBookId) { id hasPhoto }
+}`
 
 const FIRST_BOOK = `query { ListAddressBooks { id } }`
 
@@ -206,7 +208,10 @@ export function useContactEditor({
       setProblem(null)
       setOpeningContactId(contactId)
       try {
-        const answer = await graphql<{ GetContact: FullContact }>(GET, { id: contactId })
+        const answer = await graphql<{ GetContact: FullContact }>(GET, {
+          id: contactId,
+          addressBookId: addressBookId || null,
+        })
         const full = answer.GetContact
         const kept = full.addresses ?? []
         const first = kept[0] ?? {}
@@ -232,7 +237,7 @@ export function useContactEditor({
         setOpeningContactId('')
       }
     },
-    [toast, t],
+    [toast, t, addressBookId],
   )
 
   const openNew = () => {
@@ -469,7 +474,7 @@ export function useContactEditor({
           error={problem}
           onConfirm={() =>
             void run(
-              () => graphql(REMOVE_PICTURE, { id: draft.id }),
+              () => graphql(REMOVE_PICTURE, { id: draft.id, addressBookId: addressBookId || null }),
               t('addressBook.pictureRemoved', { name: draftName }),
             ).then((done) => {
               if (done) {

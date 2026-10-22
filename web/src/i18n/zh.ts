@@ -2751,6 +2751,8 @@ export const zh: Catalog = {
   'addressBook.more': '另有 {count} 个',
   'addressBook.delete': '删除联系人',
   'addressBook.deleteConfirm': '从通讯录中删除 {name}？正在同步的设备也会失去这个联系人。',
+  'addressBook.deleteCircleConfirm':
+    '从 {circle} 的通讯录中删除 {name}？圈子里的所有人都会失去这个联系人，正在同步的设备也一样。',
   'addressBook.failed': '操作失败。',
   'addressBook.accountIs': '在你的圈子里是 {name}',
   'addressBook.accountLink': '在你的圈子里是…',
@@ -6063,7 +6065,7 @@ export const zh: Catalog = {
   'circles.delete': '删除圈子',
   'circles.deleteTitle': '删除 {name}？',
   'circles.deleteBody':
-    '圈子会对其中所有人删除，其日历、相册和聊天也一并删除。成员与该圈子共享的内容，以及与不再共有任何圈子的人共享的内容都会结束，不会恢复。不会删除任何账号。',
+    '圈子会对其中所有人删除，其日历、相册、聊天，以及通讯录和其中的每个联系人也一并删除。成员与该圈子共享的内容，以及与不再共有任何圈子的人共享的内容都会结束，不会恢复。不会删除任何账号。',
   'circles.deleted': '已删除圈子。',
   'circles.leave': '退出',
   'circles.leaveTitle': '退出 {name}？',
