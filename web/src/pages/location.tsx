@@ -6,16 +6,21 @@ import { Avatar } from '../components/avatar'
 import { PageHeadingActions } from '../components/breadcrumb'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
-import { MapIcon, MoreIcon, PencilIcon } from '../components/icons'
+import { MapIcon, MoreIcon, PauseIcon, PencilIcon } from '../components/icons'
 import { isLocationPermissionGranted, readFreshBrowserLocation } from '../components/browserLocation'
 import { LocationAddressChooser } from '../components/locationAddressChooser'
 import { LocationCheckInDialog } from '../components/locationCheckIn'
 import {
+  anHourAfter,
   dayKeyOf,
   dayRange,
   LABEL_KEYS,
+  LocationPause,
   LocationPoint,
   LocationView,
+  MAXIMUM_PAUSE_DAYS,
+  PAUSE_FIELDS,
+  pauseDurationSeconds,
   PERSON_FIELDS,
   Place,
   PLACE_FIELDS,
@@ -23,6 +28,7 @@ import {
   parseDayKey,
   placeSubtitle,
   placeTitle,
+  tomorrowMorning,
   VISIT_FIELDS,
   visitDurationText,
 } from '../components/locationData'
@@ -62,6 +68,16 @@ const OTHERS_TABS = TABS.filter((each) => each.id !== 'sharing')
 // How often the people on the map are read again when the live feed says
 // nothing: a feed that dropped, or a person who moved while it was down.
 const PEOPLE_FALLBACK_REFRESH_MS = 60_000
+
+// A timer cannot be set further ahead than this; a pause that ends later is
+// waited for in steps. Read again a moment after the end, in case this
+// browser's clock is a little ahead of the server's.
+const LONGEST_TIMER_MS = 2 ** 31 - 1
+const PAUSE_END_GRACE_MS = 1000
+
+// Where the pauses of a list with no day begin: before any position was
+// recorded.
+const PAUSES_FROM = '2000-01-01T00:00:00Z'
 
 // Remembered in this browser once the person has said "Not now" to the setup.
 const SETUP_DISMISSED_KEY = 'teanode.location.setupDismissed'
@@ -105,6 +121,11 @@ const SAVE_PLACE = `mutation ($placeId: String, $placeName: String, $placeLabel:
     latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, addressText: $addressText) { id }
 }`
 const FORGET_PLACE = `mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }`
+const LIST_PAUSES = `query ($userId: String, $from: DateTime!, $to: DateTime!) {
+  ListLocationPauses(userId: $userId, from: $from, to: $to) { ${PAUSE_FIELDS} }
+}`
+const PAUSE_LOCATION = `mutation ($endedAt: DateTime) { PauseLocation(endedAt: $endedAt) { ${PAUSE_FIELDS} } }`
+const RESUME_LOCATION = `mutation { ResumeLocation }`
 const ERASE_LOCATION_HISTORY = `mutation ($from: DateTime, $until: DateTime) {
   EraseLocationHistory(from: $from, until: $until) { pointCount visitCount placeCount }
 }`
@@ -112,6 +133,11 @@ const ERASE_LOCATION_HISTORY = `mutation ($from: DateTime, $until: DateTime) {
 type VisitPage = { placeVisits: PlaceVisit[]; nextOffset: number | null }
 type PlacePage = { places: Place[]; nextOffset: number | null }
 type DayRange = { from: string; until: string }
+
+// A row of the timeline: a visit, or a stretch of time recording was paused.
+type TimelineRow =
+  | { kind: 'visit'; key: string; dayKey: string; momentMS: number; visit: PlaceVisit }
+  | { kind: 'pause'; key: string; dayKey: string; momentMS: number; pause: LocationPause }
 
 // How long after the last keystroke the words typed to find a place are asked
 // about, so the server is not asked for every letter.
@@ -216,6 +242,10 @@ function LocationContent({ userId }: { userId: string }) {
   const [erasing, setErasing] = useState<{ range: DayRange | null } | null>(null)
   const [placesSearchText, setPlacesSearchText] = useState(placesQuery)
   const [isBusy, setIsBusy] = useState(false)
+  // Whether the person's own pause is being set or ended.
+  const [isChangingPause, setIsChangingPause] = useState(false)
+  // Bumped when a timer for the end of a pause ran out before the end itself.
+  const [pauseEndCheck, setPauseEndCheck] = useState(0)
   // Why the open dialog's work failed, shown in the dialog with what was typed
   // still in it.
   const [dialogProblem, setDialogProblem] = useState<string | null>(null)
@@ -396,6 +426,79 @@ function LocationContent({ userId }: { userId: string }) {
   }, [placesSearchText, placesQuery])
 
   const visitRows = useMemo(() => visitPage?.placeVisits ?? [], [visitPage])
+  // The pauses among the visits shown: those that overlap the day, or the
+  // span of the page of visits (the first page reaches to the longest a pause
+  // can run ahead, the last back to before any position). A pause that falls
+  // between two pages shows on neither.
+  const pausesSpan = useMemo((): { from: string; to: string | null } | null => {
+    if (range) return { from: range.from, to: range.until }
+    if (!visitPage) return null
+    const momentsMS = visitRows.flatMap((visit) =>
+      [visit.arrivedAt, visit.departedAt].flatMap((moment) => (moment ? [new Date(moment).getTime()] : [])),
+    )
+    const hasOlderPage = visitPage.nextOffset != null
+    return {
+      from: hasOlderPage && momentsMS.length > 0 ? new Date(Math.min(...momentsMS)).toISOString() : PAUSES_FROM,
+      to:
+        visitsPaging.pageIndex === 0 || momentsMS.length === 0 ? null : new Date(Math.max(...momentsMS)).toISOString(),
+    }
+  }, [range, visitPage, visitRows, visitsPaging.pageIndex])
+  const pausesRequestKey = JSON.stringify([viewedUserId, pausesSpan])
+  const pauses = useQuery(
+    async (): Promise<Answered<LocationPause[]> | null> =>
+      tab === 'visits' && canReadHistory && pausesSpan
+        ? {
+            requestKey: pausesRequestKey,
+            answer:
+              (
+                await graphql<{ ListLocationPauses: LocationPause[] | null }>(LIST_PAUSES, {
+                  userId: viewedUserId,
+                  from: pausesSpan.from,
+                  to:
+                    pausesSpan.to ??
+                    new Date(Date.now() + (MAXIMUM_PAUSE_DAYS + 1) * 24 * 60 * 60 * 1000).toISOString(),
+                })
+              ).ListLocationPauses ?? [],
+          }
+        : null,
+    [tab, pausesRequestKey, userId, canReadHistory],
+    { refresh: false },
+  )
+  const pauseList = answeredFor(pauses.data, pausesRequestKey)
+  // The visits in the server's order, each pause put before the first visit
+  // that began earlier than it. In a day's list a pause that began on an
+  // earlier day stands at the day's start.
+  const timelineRows = useMemo((): TimelineRow[] => {
+    const rows: TimelineRow[] = visitRows.map((visit) => {
+      const moment = visit.arrivedAt ?? visit.departedAt
+      return {
+        kind: 'visit',
+        key: visit.id,
+        dayKey: moment ? dayKeyOf(moment) : '',
+        momentMS: moment ? new Date(moment).getTime() : 0,
+        visit,
+      }
+    })
+    const dayStartMS = range ? new Date(range.from).getTime() : 0
+    // Oldest first, so a newer pause is put in front of the older one at the
+    // same place.
+    const byOldest = [...(pauseList ?? [])].sort(
+      (first, second) => new Date(first.startedAt).getTime() - new Date(second.startedAt).getTime(),
+    )
+    for (const pause of byOldest) {
+      const momentMS = Math.max(new Date(pause.startedAt).getTime(), dayStartMS)
+      const row: TimelineRow = {
+        kind: 'pause',
+        key: `pause-${pause.id}`,
+        dayKey: dayKeyOf(new Date(momentMS)),
+        momentMS,
+        pause,
+      }
+      const index = rows.findIndex((each) => each.kind === 'visit' && each.momentMS < momentMS)
+      rows.splice(index < 0 ? rows.length : index, 0, row)
+    }
+    return rows
+  }, [visitRows, pauseList, range])
   // Where an open visit's window of photos ends: the moment its visits arrived,
   // not each render, so the links of a row do not change while it is shown.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -438,11 +541,16 @@ function LocationContent({ userId }: { userId: string }) {
   // A viewer with no recorded position sees where this browser is, once the
   // person has allowed it or asks for it.
   const hasNoOwnPosition = me.data !== null && !me.data.GetLocation?.latestPoint
+  // The person's own pause in effect: it is what the notice under the map says.
+  const ownPause = me.data?.GetLocation?.pause ?? null
 
   const mapPeople: MapPerson[] = useMemo(
     () => [
       ...(hasNoOwnPosition && browserPosition ? [browserPosition] : []),
       ...views.flatMap((view) => {
+        // Somebody who paused has no pin, whatever the page last read of
+        // them: the person's own is still where their phone last was.
+        if (view.pause && view.shareLevel !== 'owner') return []
         // Where they are: their latest position, or, for somebody who shares
         // the place they are at and not their position, the middle of that
         // place, as the iPhone's map draws them.
@@ -555,6 +663,7 @@ function LocationContent({ userId }: { userId: string }) {
     void me.reload()
     void visits.reload()
     void places.reload()
+    void pauses.reload()
   }
 
   // Everybody on the map is read again: the person and the people sharing with
@@ -573,7 +682,10 @@ function LocationContent({ userId }: { userId: string }) {
   // read everybody again. The day's path is read again when it is the moved
   // person's.
   async function refreshMovedPerson(movedUserId: string) {
-    if (movedUserId === (viewedUserId ?? userId)) void points.reload(true)
+    if (movedUserId === (viewedUserId ?? userId)) {
+      void points.reload(true)
+      void pauses.reload(true)
+    }
     if (movedUserId === userId) {
       await me.reload(true)
       return
@@ -619,6 +731,69 @@ function LocationContent({ userId }: { userId: string }) {
       window.clearInterval(timer)
     }
   }, [userId])
+
+  // A timed pause that ends while the page is open: the people are read again
+  // when it does, so its notice and its "Location paused" go without a reload.
+  const pauseEndMS = useMemo(() => {
+    const nowMS = Date.now()
+    const endsMS = views.flatMap((view) =>
+      view.pause?.endedAt ? [new Date(view.pause.endedAt).getTime()].filter((endMS) => endMS > nowMS) : [],
+    )
+    return endsMS.length > 0 ? Math.min(...endsMS) : null
+    // pauseEndCheck makes the next end be looked for again after a step.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [views, pauseEndCheck])
+  useEffect(() => {
+    if (pauseEndMS === null) return
+    const delayMS = Math.min(Math.max(pauseEndMS - Date.now(), 0) + PAUSE_END_GRACE_MS, LONGEST_TIMER_MS)
+    const timer = window.setTimeout(() => {
+      void feedHandlers.current.refreshPeople()
+      void pauses.reload(true)
+      setPauseEndCheck((previous) => previous + 1)
+    }, delayMS)
+    return () => window.clearTimeout(timer)
+    // pauses.reload is new at every render and only reads the list again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pauseEndMS])
+
+  // The words for a pause of the person's own.
+  function ownPauseText(pause: LocationPause): string {
+    return pause.endedAt
+      ? t('location.pausedOwnUntil', { time: arrivalOf(pause.endedAt) })
+      : t('location.pausedOwnOpen')
+  }
+
+  // Stops recording from now until the given moment, or until the person
+  // resumes. The result is a toast; the page reads the person again.
+  async function pauseRecording(endedAt: Date | null) {
+    setIsChangingPause(true)
+    try {
+      const answer = await graphql<{ PauseLocation: LocationPause }>(PAUSE_LOCATION, {
+        endedAt: endedAt ? endedAt.toISOString() : null,
+      })
+      toast.done(ownPauseText(answer.PauseLocation))
+      void me.reload(true)
+      void pauses.reload(true)
+    } catch (failure) {
+      toast.failed(failure instanceof Error && failure.message ? failure.message : t('location.pauseFailed'))
+    } finally {
+      setIsChangingPause(false)
+    }
+  }
+
+  async function resumeRecording() {
+    setIsChangingPause(true)
+    try {
+      await graphql<{ ResumeLocation: boolean }>(RESUME_LOCATION)
+      toast.done(t('location.resumed'))
+      void me.reload(true)
+      void pauses.reload(true)
+    } catch (failure) {
+      toast.failed(failure instanceof Error && failure.message ? failure.message : t('location.resumeFailed'))
+    } finally {
+      setIsChangingPause(false)
+    }
+  }
 
   // Work done from a dialog. A failure stays in the dialog.
   async function act(work: () => Promise<unknown>, done: string, failed: string): Promise<boolean> {
@@ -666,6 +841,22 @@ function LocationContent({ userId }: { userId: string }) {
     return ''
   }
 
+  // How long a pause lasted, or that it is on.
+  function pauseLengthText(pause: LocationPause): string {
+    const durationSeconds = pauseDurationSeconds(pause, Date.now())
+    return durationSeconds === null
+      ? t('location.pausedNow')
+      : visitDurationText({ durationSeconds, departedAt: pause.endedAt }, t)
+  }
+
+  // When a pause began and ended, or that it began and has no end.
+  function pauseRangeText(pause: LocationPause): string {
+    if (pause.endedAt) {
+      return t('location.timeRange', { from: timeOf(pause.startedAt), until: timeOf(pause.endedAt) })
+    }
+    return t('location.timeSince', { from: timeOf(pause.startedAt) })
+  }
+
   // The pictures taken during a visit, under its row: up to four, and the
   // number of the rest when there are more. They open the Photos library over
   // the visit's own window of time.
@@ -701,11 +892,6 @@ function LocationContent({ userId }: { userId: string }) {
         )}
       </div>
     )
-  }
-
-  const visitDayKey = (visit: PlaceVisit) => {
-    const moment = visit.arrivedAt ?? visit.departedAt
-    return moment ? dayKeyOf(moment) : ''
   }
 
   // The first time, with no position recorded yet, a short setup stands under
@@ -761,6 +947,52 @@ function LocationContent({ userId }: { userId: string }) {
             {t('person.profile')}
           </Link>
         )}
+        {!isViewingOther && !ownPause && (
+          <MenuButton
+            label={t('location.pause')}
+            icon={
+              <>
+                <PauseIcon size={14} />
+                {t('location.pause')}
+              </>
+            }
+            disabled={isChangingPause}
+            render={(close) => (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    close()
+                    void pauseRecording(anHourAfter(new Date()))
+                  }}
+                >
+                  {t('location.pauseForHour')}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    close()
+                    void pauseRecording(tomorrowMorning(new Date()))
+                  }}
+                >
+                  {t('location.pauseUntilTomorrow')}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    close()
+                    void pauseRecording(null)
+                  }}
+                >
+                  {t('location.pauseUntilResumed')}
+                </button>
+              </>
+            )}
+          />
+        )}
         {!isViewingOther && (
           <button type="button" className="primary" onClick={() => setIsCheckingIn(true)}>
             {t('location.checkIn')}
@@ -790,6 +1022,15 @@ function LocationContent({ userId }: { userId: string }) {
             </button>
           </div>
         )}
+        {ownPause && (
+          <div className="location-here">
+            <PauseIcon size={16} />
+            <span>{ownPauseText(ownPause)}</span>
+            <button type="button" disabled={isChangingPause} onClick={() => void resumeRecording()}>
+              {t('location.resume')}
+            </button>
+          </div>
+        )}
         <div className="location-people">
           {views.map((view) => {
             const name = personName(view)
@@ -809,7 +1050,13 @@ function LocationContent({ userId }: { userId: string }) {
                 <span className="location-row-body">
                   <strong>{name}</strong>
                   <span className="muted">
-                    {view.openVisit ? (
+                    {view.pause && !isOwner ? (
+                      view.pause.endedAt ? (
+                        t('location.pausedOtherUntil', { time: arrivalOf(view.pause.endedAt) })
+                      ) : (
+                        t('location.pausedOther')
+                      )
+                    ) : view.openVisit ? (
                       t('location.atSince', {
                         place: placeTitle(view.openVisit.place, t),
                         time: view.openVisit.arrivedAt ? arrivalOf(view.openVisit.arrivedAt) : '',
@@ -911,19 +1158,19 @@ function LocationContent({ userId }: { userId: string }) {
           {isPersonPending &&
             (isPersonUnreadable ? <SettingsEmpty>{t('location.personNotRead')}</SettingsEmpty> : <Loading />)}
           {canReadHistory && !visitPage && visits.loading && <Loading />}
-          {visitPage && visitRows.length === 0 && (
+          <ErrorMessage error={pauses.error} />
+          {visitPage && timelineRows.length === 0 && (pauseList !== null || Boolean(pauses.error)) && (
             <SettingsEmpty>
               {dayKey
                 ? t('location.visitsEmptyDay')
                 : t(isReadOnly ? 'location.personVisitsEmpty' : 'location.visitsEmpty')}
             </SettingsEmpty>
           )}
-          {visitRows.map((visit, index) => {
-            const key = visitDayKey(visit)
-            const isFirstOfDay = index === 0 || visitDayKey(visitRows[index - 1]) !== key
-            const title = placeTitle(visit.place, t)
+          {timelineRows.map((row, index) => {
+            const key = row.dayKey
+            const isFirstOfDay = index === 0 || timelineRows[index - 1].dayKey !== key
             return (
-              <Fragment key={visit.id}>
+              <Fragment key={row.key}>
                 {isFirstOfDay && key && (
                   <div className="location-day-head">
                     <h4>{dayFormat.format(parseDayKey(key) ?? new Date())}</h4>
@@ -940,24 +1187,39 @@ function LocationContent({ userId }: { userId: string }) {
                     )}
                   </div>
                 )}
-                <button
-                  type="button"
-                  className={visit.place.id === selectedPlaceId ? 'location-row is-selected' : 'location-row'}
-                  onClick={() => {
-                    setSelectedPlaceId(visit.place.id)
-                    setSelectedUserId(null)
-                  }}
-                >
-                  <span className="location-row-icon">
-                    <PlaceLabelIcon placeLabel={visit.place.placeLabel} />
-                  </span>
-                  <span className="location-row-body">
-                    <strong>{title}</strong>
-                    <span className="muted">{rangeText(visit)}</span>
-                  </span>
-                  <span className="muted location-row-meta">{visitDurationText(visit, t)}</span>
-                </button>
-                {photoStrip(visit)}
+                {row.kind === 'pause' ? (
+                  <div className="location-row">
+                    <span className="location-row-icon">
+                      <PauseIcon size={16} />
+                    </span>
+                    <span className="location-row-body">
+                      <strong>{t('location.pauseRow')}</strong>
+                      <span className="muted">{pauseRangeText(row.pause)}</span>
+                    </span>
+                    <span className="muted location-row-meta">{pauseLengthText(row.pause)}</span>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className={row.visit.place.id === selectedPlaceId ? 'location-row is-selected' : 'location-row'}
+                      onClick={() => {
+                        setSelectedPlaceId(row.visit.place.id)
+                        setSelectedUserId(null)
+                      }}
+                    >
+                      <span className="location-row-icon">
+                        <PlaceLabelIcon placeLabel={row.visit.place.placeLabel} />
+                      </span>
+                      <span className="location-row-body">
+                        <strong>{placeTitle(row.visit.place, t)}</strong>
+                        <span className="muted">{rangeText(row.visit)}</span>
+                      </span>
+                      <span className="muted location-row-meta">{visitDurationText(row.visit, t)}</span>
+                    </button>
+                    {photoStrip(row.visit)}
+                  </>
+                )}
               </Fragment>
             )
           })}

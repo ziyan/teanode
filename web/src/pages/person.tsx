@@ -316,7 +316,13 @@ function PersonCardView({
                 )}
                 <span className="person-row-text">
                   <span className="person-row-title">
-                    {openVisit ? (
+                    {locationView?.pause && locationView.shareLevel !== 'owner' ? (
+                      locationView.pause.endedAt ? (
+                        t('location.pausedOtherUntil', { time: arrivalOf(locationView.pause.endedAt) })
+                      ) : (
+                        t('location.pausedOther')
+                      )
+                    ) : openVisit ? (
                       t('location.atSince', {
                         place: placeTitle(openVisit.place, t),
                         time: openVisit.arrivedAt ? arrivalOf(openVisit.arrivedAt) : '',

@@ -42,6 +42,14 @@ export type PlaceVisit = {
   photosTakenBefore?: string | null
 }
 
+// A stretch of time the person stopped recording: it ends at endedAt, or when
+// they resume if that is null. The one in effect is LocationView.pause.
+export type LocationPause = {
+  id: string
+  startedAt: string
+  endedAt: string | null
+}
+
 export type LocationView = {
   userId: string
   username: string
@@ -52,6 +60,9 @@ export type LocationView = {
   shareLevel: string
   latestPoint: LocationPoint | null
   openVisit: Pick<PlaceVisit, 'id' | 'place' | 'arrivedAt'> | null
+  // The pause in effect. While it is, somebody else's view has no latestPoint
+  // and no openVisit.
+  pause?: LocationPause | null
 }
 
 export type FoundPlace = {
@@ -74,8 +85,9 @@ export const POINT_FIELDS = 'latitudeDegrees longitudeDegrees accuracyMeters mea
 export const PLACE_FIELDS =
   'id placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmName osmCategory addressText isAddressTyped visitCount lastVisitAt'
 export const VISIT_FIELDS = `id arrivedAt departedAt durationSeconds place { ${PLACE_FIELDS} }`
+export const PAUSE_FIELDS = 'id startedAt endedAt'
 export const PERSON_FIELDS = `userId username name avatarUrl avatarColorIndex shareLevel
-  latestPoint { ${POINT_FIELDS} } openVisit { id arrivedAt place { ${PLACE_FIELDS} } }`
+  latestPoint { ${POINT_FIELDS} } openVisit { id arrivedAt place { ${PLACE_FIELDS} } } pause { ${PAUSE_FIELDS} }`
 
 export const LABEL_KEYS: Record<string, Key> = {
   home: 'location.label.home',
@@ -199,4 +211,34 @@ export function nearestPlaceHolding<
     }
   }
   return nearest
+}
+
+// A pause cannot be set to end more than this far ahead (the server refuses
+// more), so a timer for its end is never set further out than this.
+export const MAXIMUM_PAUSE_DAYS = 30
+
+// anHourAfter is when "For an hour" ends.
+export function anHourAfter(now: Date): Date {
+  return new Date(now.getTime() + 60 * 60 * 1000)
+}
+
+// tomorrowMorning is when "Until tomorrow morning" ends: 08:00 the next day on
+// the browser's clock.
+export function tomorrowMorning(now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 8, 0, 0, 0)
+}
+
+// isPauseInEffect says whether a pause is on at an instant: it has begun and
+// has not ended (a pause with no end lasts until it is resumed).
+export function isPauseInEffect(pause: LocationPause, now: number): boolean {
+  return (
+    new Date(pause.startedAt).getTime() <= now && (pause.endedAt === null || new Date(pause.endedAt).getTime() > now)
+  )
+}
+
+// pauseDurationSeconds is how long a pause lasted, or null while it is in
+// effect (it has no end, or the end has not come).
+export function pauseDurationSeconds(pause: LocationPause, now: number): number | null {
+  if (pause.endedAt === null || isPauseInEffect(pause, now)) return null
+  return Math.round((new Date(pause.endedAt).getTime() - new Date(pause.startedAt).getTime()) / 1000)
 }
