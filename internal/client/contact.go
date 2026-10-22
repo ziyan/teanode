@@ -79,7 +79,11 @@ type Address struct {
 const (
 	addressBookSelection = `{ id name description contacts circleId circleName isCircleBook canManage }`
 
-	DocumentListAddressBooks = `query { ListAddressBooks ` + addressBookSelection + ` }`
+	DocumentListAddressBooks = `query { ListAddressBooks { id name description contacts } }`
+
+	// DocumentListReachableAddressBooks is the caller's own books and then
+	// their circles', with whose each is.
+	DocumentListReachableAddressBooks = `query { ListReachableAddressBooks ` + addressBookSelection + ` }`
 
 	DocumentCreateCircleAddressBook = `mutation ($circleId: String!, $name: String) {
   CreateCircleAddressBook(circleId: $circleId, name: $name) ` + addressBookSelection + `
@@ -181,6 +185,18 @@ func DeleteCircleAddressBook(ctx context.Context, executor Executor, addressBook
 		DeleteCircleAddressBook bool `json:"DeleteCircleAddressBook"`
 	}
 	return executor.Execute(ctx, DocumentDeleteCircleAddressBook, map[string]any{"addressBookId": addressBookId}, &result)
+}
+
+// ListReachableAddressBooks are the caller's own address books and then the
+// books of the circles they are in.
+func ListReachableAddressBooks(ctx context.Context, executor Executor) ([]*AddressBook, error) {
+	var result struct {
+		ListReachableAddressBooks []*AddressBook `json:"ListReachableAddressBooks"`
+	}
+	if err := executor.Execute(ctx, DocumentListReachableAddressBooks, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.ListReachableAddressBooks, nil
 }
 
 // ListContacts are the contacts in one book, narrowed by a query when there

@@ -180,36 +180,22 @@ func TestAnAddressBookThatIsNotGrantedIsRefused(test *testing.T) {
 	}
 }
 
-// A circle's address book is never one the agent is given, whatever its grant
-// says, and an action that names only a contact is refused for a contact that
-// is in no book they gave you.
-func TestACircleAddressBookIsNeverGivenToTheAgent(test *testing.T) {
+// An action that names only a contact is refused for a contact that is in no
+// book they gave you, such as a card in a circle's address book, which the
+// person can reach and the agent is never given.
+func TestAnActionOnAContactOutsideTheGivenBooksIsRefused(test *testing.T) {
 	operations := &fakeBookOperations{answers: map[string]string{
-		"ListAddressBooks": `[{"id":"book-family","name":"Family","contacts":3,"agentGranted":true,"isCircleBook":true}]`,
-	}}
-	if _, err := callContactBook(test, operations, `{"action":"list"}`); err == nil || !strings.Contains(err.Error(), "not given you their address book") {
-		test.Fatalf("a circle's book alone is no book at all: %v", err)
-	}
-
-	operations = &fakeBookOperations{answers: map[string]string{
-		"ListAddressBooks": `[{"id":"book-family","name":"Family","contacts":3,"agentGranted":false,"isCircleBook":true},{"id":"book-one","name":"Contacts","contacts":2,"agentGranted":true,"isCircleBook":false}]`,
+		"ListAddressBooks": `[{"id":"book-family","name":"Family","contacts":3,"agentGranted":false},{"id":"book-one","name":"Contacts","contacts":2,"agentGranted":true}]`,
 		"ListContacts":     `[` + samContact + `]`,
 		"GetContact":       `{"id":"contact-kim","addressBookId":"book-family","name":"Kim Example"}`,
 	}}
-	result, err := callContactBook(test, operations, `{"action":"list"}`)
-	if err != nil || !strings.Contains(result.Content, "Sam Example") {
-		test.Fatalf("the given book is listed: %v", err)
-	}
-	if variables := operations.variables["ListContacts"]; variables["addressBookId"] != "book-one" {
-		test.Fatalf("the circle's book is not the one read: %v", variables)
-	}
 	for _, arguments := range []string{
 		`{"action":"get","id":"contact-kim"}`,
 		`{"action":"remove","id":"contact-kim"}`,
 		`{"action":"remove-picture","id":"contact-kim"}`,
 	} {
 		if _, err := callContactBook(test, operations, arguments); err == nil || !strings.Contains(err.Error(), "not in an address book they have given you") {
-			test.Errorf("%s reached a circle's card: %v", arguments, err)
+			test.Errorf("%s reached a card outside the given books: %v", arguments, err)
 		}
 	}
 

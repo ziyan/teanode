@@ -180,9 +180,10 @@ func TestContactAccountParity(test *testing.T) {
 		// A circle's address book is kept by its members, in the dashboard, on
 		// the phone and from the command line. The agent is not given one: the
 		// text in its cards was typed by anybody in the circle.
-		"CreateCircleAddressBook": {client.DocumentCreateCircleAddressBook, []string{"book"}, nil},
-		"DeleteCircleAddressBook": {client.DocumentDeleteCircleAddressBook, []string{"book"}, nil},
-		"SaveAddressBook":         {client.DocumentSaveAddressBook, []string{"book"}, nil},
+		"ListReachableAddressBooks": {client.DocumentListReachableAddressBooks, []string{"book"}, nil},
+		"CreateCircleAddressBook":   {client.DocumentCreateCircleAddressBook, []string{"book"}, nil},
+		"DeleteCircleAddressBook":   {client.DocumentDeleteCircleAddressBook, []string{"book"}, nil},
+		"SaveAddressBook":           {client.DocumentSaveAddressBook, []string{"book"}, nil},
 	}
 
 	operations := map[string]bool{}

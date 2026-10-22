@@ -24,8 +24,10 @@ func contactBookServer(test *testing.T, asked *[]map[string]any) *httptest.Serve
 		response.Header().Set("Content-Type", "application/json")
 		circleBook := `{"id":"book-family","name":"Family","description":"","contacts":3,"circleId":"circle-home","circleName":"Family","isCircleBook":true,"canManage":true}`
 		switch {
+		case strings.Contains(received.Query, "ListReachableAddressBooks"):
+			_, _ = response.Write([]byte(`{"data":{"ListReachableAddressBooks":[{"id":"book-own","name":"Contacts","description":"mine","contacts":1,"circleId":null,"circleName":"","isCircleBook":false,"canManage":true},` + circleBook + `]}}`))
 		case strings.Contains(received.Query, "ListAddressBooks"):
-			_, _ = response.Write([]byte(`{"data":{"ListAddressBooks":[{"id":"book-own","name":"Contacts","description":"mine","contacts":1,"circleId":null,"circleName":"","isCircleBook":false,"canManage":true},` + circleBook + `]}}`))
+			_, _ = response.Write([]byte(`{"data":{"ListAddressBooks":[{"id":"book-own","name":"Contacts","description":"mine","contacts":1}]}}`))
 		case strings.Contains(received.Query, "ListCircles"):
 			_, _ = response.Write([]byte(`{"data":{"ListCircles":[{"id":"circle-home","name":"Family","circleKind":"family","members":[{"userId":"user-one"},{"userId":"user-two"}]},{"id":"circle-club","name":"Club","circleKind":"friends","members":[{"userId":"user-one"}]}]}}`))
 		case strings.Contains(received.Query, "CreateCircleAddressBook("):

@@ -106,7 +106,7 @@ type contactBookArguments struct {
 }
 
 const (
-	documentBooks = `query { ListAddressBooks { id name contacts agentGranted isCircleBook } }`
+	documentBooks = `query { ListAddressBooks { id name contacts agentGranted } }`
 
 	documentBookContacts = `query ($addressBookId: String!, $query: String, $first: Int) {
   ListContacts(addressBookId: $addressBookId, query: $query, first: $first) {
@@ -147,10 +147,6 @@ type bookView struct {
 	Name         string `json:"name"`
 	Contacts     int    `json:"contacts"`
 	AgentGranted bool   `json:"agentGranted"`
-
-	// IsCircleBook is a circle's address book, which every member of the
-	// circle writes and so is not one person's to give to an agent.
-	IsCircleBook bool `json:"isCircleBook"`
 }
 
 type contactView struct {
@@ -228,11 +224,10 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 	}
 	// Granted, not merely owned: an address book is a source like a
 	// mailbox, and what the person has not handed over is not the agent's
-	// to read. A circle's book is never one of them: the text in its cards was
-	// typed by anybody in the circle.
+	// to read.
 	var book *bookView
 	for _, candidate := range books.ListAddressBooks {
-		if candidate.AgentGranted && !candidate.IsCircleBook && (book == nil || candidate.ID == arguments.AddressBookID) {
+		if candidate.AgentGranted && (book == nil || candidate.ID == arguments.AddressBookID) {
 			book = candidate
 			if candidate.ID == arguments.AddressBookID {
 				break
@@ -245,7 +240,7 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 	// Every book they gave you, for the actions that name only a contact.
 	givenBookIds := map[string]bool{}
 	for _, candidate := range books.ListAddressBooks {
-		if candidate.AgentGranted && !candidate.IsCircleBook {
+		if candidate.AgentGranted {
 			givenBookIds[candidate.ID] = true
 		}
 	}
@@ -470,8 +465,9 @@ var errNotInGivenBook = fmt.Errorf("that contact is not in an address book they 
 // requireContactInBook refuses an action that names only a contact unless the
 // contact is in a book they gave you. A contact is named within its book, so
 // the same id may be in a book of the person's that is not given, or in a
-// circle's, and the operation behind these actions would act on whichever it
-// finds first.
+// circle's (which they can reach and the agent is never given: the text in its
+// cards was typed by anybody in the circle), and the operation behind these
+// actions would act on whichever it finds first.
 func requireContactInBook(ctx context.Context, operations tools.Operations, givenBookIds map[string]bool, contactId string) error {
 	var answer struct {
 		GetContact *contactView `json:"GetContact"`

@@ -156,19 +156,17 @@ func NewContactCommand() *cli.Command {
 	}
 }
 
-// theAddressBook is the caller's own, made by the server if they have never
-// had one. A person has one of their own; the circles' are chosen with --book.
+// theAddressBook is the caller's, made by the server if they have never had
+// one. A person has one of their own; the circles' are chosen with --book.
 func theAddressBook(ctx context.Context, connection *client.Client) (*client.AddressBook, error) {
 	books, err := client.ListAddressBooks(ctx, connection)
 	if err != nil {
 		return nil, err
 	}
-	for _, book := range books {
-		if !book.IsCircleBook {
-			return book, nil
-		}
+	if len(books) == 0 {
+		return nil, fmt.Errorf("this account has no address book")
 	}
-	return nil, fmt.Errorf("this account has no address book")
+	return books[0], nil
 }
 
 // chosenAddressBook is the book --book names, one the caller can use, or their
@@ -178,7 +176,7 @@ func chosenAddressBook(ctx context.Context, command *cli.Command, connection *cl
 	if chosen == "" {
 		return theAddressBook(ctx, connection)
 	}
-	books, err := client.ListAddressBooks(ctx, connection)
+	books, err := client.ListReachableAddressBooks(ctx, connection)
 	if err != nil {
 		return nil, err
 	}
@@ -457,9 +455,7 @@ func setContactAccountInYourBooks(ctx context.Context, command *cli.Command, con
 	chosenAddressBookId := strings.TrimSpace(command.String("address-book"))
 	holdingBooks := []*client.AddressBook{}
 	for _, book := range books {
-		// The link is a private note of the owner's, so a circle's book,
-		// which belongs to nobody, is never looked in.
-		if book.IsCircleBook || (chosenAddressBookId != "" && book.ID != chosenAddressBookId) {
+		if chosenAddressBookId != "" && book.ID != chosenAddressBookId {
 			continue
 		}
 		contacts, err := client.ListContacts(ctx, connection, book.ID, "", 0)
@@ -553,22 +549,18 @@ func runContactBookSuggestions(ctx context.Context, command *cli.Command) error 
 		return describeError(command, err)
 	}
 	bookNames := make(map[string]string, len(books))
-	ownBookCount := 0
 	for _, book := range books {
 		bookNames[book.ID] = book.Name
-		if !book.IsCircleBook {
-			ownBookCount++
-		}
 	}
 	rows := make([][]string, 0, len(suggestions))
 	for _, suggestion := range suggestions {
 		row := []string{forTerminal(displayed(suggestion.Contact)), forTerminal(suggestion.Account.Username)}
-		if ownBookCount > 1 {
+		if len(books) > 1 {
 			row = append(row, forTerminal(bookNames[suggestion.AddressBookID]))
 		}
 		rows = append(rows, append(row, "teanode contact link "+suggestion.Contact.ID+" "+suggestion.Account.Username))
 	}
-	if ownBookCount > 1 {
+	if len(books) > 1 {
 		return printTable([]string{"CONTACT", "IN YOUR CIRCLES AS", "ADDRESS BOOK", "TO CONFIRM"}, rows)
 	}
 	return printTable([]string{"CONTACT", "IN YOUR CIRCLES AS", "TO CONFIRM"}, rows)
@@ -667,7 +659,7 @@ func runContactBookBooks(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	books, err := client.ListAddressBooks(ctx, connection)
+	books, err := client.ListReachableAddressBooks(ctx, connection)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -710,7 +702,7 @@ func runContactBookRename(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	books, err := client.ListAddressBooks(ctx, connection)
+	books, err := client.ListReachableAddressBooks(ctx, connection)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -743,7 +735,7 @@ func runContactBookDelete(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	books, err := client.ListAddressBooks(ctx, connection)
+	books, err := client.ListReachableAddressBooks(ctx, connection)
 	if err != nil {
 		return describeError(command, err)
 	}

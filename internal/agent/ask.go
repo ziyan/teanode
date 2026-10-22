@@ -2777,7 +2777,6 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 			Name         string `json:"name"`
 			Contacts     int    `json:"contacts"`
 			AgentGranted bool   `json:"agentGranted"`
-			IsCircleBook bool   `json:"isCircleBook"`
 		} `json:"ListAddressBooks"`
 	}
 	var collectionError error
@@ -2786,7 +2785,7 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 		collectionError = self.settings.Operations.Execute(ctx, `query { ListCalendars { name calendarKind events agentGranted shareLevel } }`, nil, &answer)
 	}
 	if configuration.Services.IsEnabled(models.ServiceContacts) {
-		if err := self.settings.Operations.Execute(ctx, `query { ListAddressBooks { name contacts agentGranted isCircleBook } }`, nil, &answer); err != nil {
+		if err := self.settings.Operations.Execute(ctx, `query { ListAddressBooks { name contacts agentGranted } }`, nil, &answer); err != nil {
 			collectionError = err
 		}
 	}
@@ -2823,11 +2822,6 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 		}
 	}
 	for _, book := range answer.ListAddressBooks {
-		// A circle's book is not one of theirs to grant or withhold, and is
-		// never given to an agent.
-		if book.IsCircleBook {
-			continue
-		}
 		if !book.AgentGranted {
 			books++
 			continue

@@ -48,7 +48,7 @@ func TestACircleAddressBookIsMadeByAMemberAndUsedByEveryMember(t *testing.T) {
 		if user == "bob" {
 			member = world.bob
 		}
-		books := world.call(t, member, `query { ListAddressBooks { id isCircleBook circleName canManage } }`)["ListAddressBooks"].([]any)
+		books := world.call(t, member, `query { ListReachableAddressBooks { id isCircleBook circleName canManage } }`)["ListReachableAddressBooks"].([]any)
 		if len(books) != 2 || books[0].(map[string]any)["isCircleBook"] != false || books[1].(map[string]any)["id"] != bookId ||
 			books[1].(map[string]any)["circleName"] != "Family" {
 			t.Errorf("%s lists their own book, then the circle's: %v", user, books)
@@ -56,9 +56,13 @@ func TestACircleAddressBookIsMadeByAMemberAndUsedByEveryMember(t *testing.T) {
 		if books[1].(map[string]any)["canManage"] != (user == "alice") {
 			t.Errorf("only the admin manages: %v", books[1])
 		}
+		// What means "my address book" is only their own.
+		if own := world.call(t, member, `query { ListAddressBooks { id isCircleBook } }`)["ListAddressBooks"].([]any); len(own) != 1 || own[0].(map[string]any)["isCircleBook"] != false {
+			t.Errorf("%s's own books leave the circle's out: %v", user, own)
+		}
 	}
 	// Somebody outside lists only their own, and cannot read the circle's.
-	books := world.call(t, world.erin, `query { ListAddressBooks { id } }`)["ListAddressBooks"].([]any)
+	books := world.call(t, world.erin, `query { ListReachableAddressBooks { id } }`)["ListReachableAddressBooks"].([]any)
 	if len(books) != 1 || books[0].(map[string]any)["id"] == bookId {
 		t.Errorf("an outsider lists only their own book: %v", books)
 	}
@@ -89,7 +93,7 @@ func TestACircleAddressBookIsMadeByAMemberAndUsedByEveryMember(t *testing.T) {
 	world.refused(t, world.bob, fmt.Sprintf(`query { ListContacts(addressBookId: %q) { id } }`, bookId))
 	world.refused(t, world.bob, fmt.Sprintf(`mutation { SaveContact(addressBookId: %q, id: %q, name: "Changed") { id } }`, bookId, contactId))
 	world.refused(t, world.bob, fmt.Sprintf(`query { GetContact(id: %q) { name } }`, contactId))
-	if books := world.call(t, world.bob, `query { ListAddressBooks { id } }`)["ListAddressBooks"].([]any); len(books) != 1 {
+	if books := world.call(t, world.bob, `query { ListReachableAddressBooks { id } }`)["ListReachableAddressBooks"].([]any); len(books) != 1 {
 		t.Errorf("bob lists only his own book now: %v", books)
 	}
 	if listed := world.call(t, world.alice, fmt.Sprintf(`query { ListContacts(addressBookId: %q) { id } }`, bookId))["ListContacts"].([]any); len(listed) != 1 {
@@ -117,11 +121,11 @@ func TestOnlyAnAdminRenamesOrDeletesACircleAddressBook(t *testing.T) {
 		t.Errorf("an admin renames it: %v", renamed)
 	}
 
-	own := world.call(t, world.alice, `query { ListAddressBooks { id isCircleBook } }`)["ListAddressBooks"].([]any)[0].(map[string]any)["id"].(string)
+	own := world.call(t, world.alice, `query { ListAddressBooks { id } }`)["ListAddressBooks"].([]any)[0].(map[string]any)["id"].(string)
 	world.refused(t, world.alice, fmt.Sprintf(`mutation { DeleteCircleAddressBook(addressBookId: %q) }`, own))
 
 	world.call(t, world.alice, fmt.Sprintf(`mutation { DeleteCircleAddressBook(addressBookId: %q) }`, bookId))
-	if books := world.call(t, world.alice, `query { ListAddressBooks { id } }`)["ListAddressBooks"].([]any); len(books) != 1 {
+	if books := world.call(t, world.alice, `query { ListReachableAddressBooks { id } }`)["ListReachableAddressBooks"].([]any); len(books) != 1 {
 		t.Errorf("the circle's book is gone: %v", books)
 	}
 	// And can be made again.

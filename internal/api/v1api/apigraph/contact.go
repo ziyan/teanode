@@ -26,12 +26,18 @@ import (
 
 // AddressBookQuery reads a person's own address book.
 type AddressBookQuery interface {
-	// The caller's address books, then the books of the circles they are in,
-	// each with the circle's name. An account that has never had a book of its
-	// own is given one here rather than being asked to make it, so that
-	// nothing has to be set up before a contact can be kept. Needs
-	// contacts:use.
+	// The caller's own address books. An account that has never had one is
+	// given one here rather than being asked to make it, so that nothing
+	// has to be set up before a contact can be kept. A circle's book is not
+	// among them: everything that means "my address book" (the composer, the
+	// ties from photos and recordings, the agent) reads this, and
+	// ListReachableAddressBooks has the circles' as well. Needs contacts:use.
 	ListAddressBooks(ctx context.Context) ([]*AddressBookView, error)
+
+	// The caller's own address books, then the books of the circles they are
+	// in, each with the circle's name and what the caller may do with it.
+	// Needs contacts:use.
+	ListReachableAddressBooks(ctx context.Context) ([]*AddressBookView, error)
 
 	// The contacts in one of them, by name; a book of the caller's own or of
 	// a circle they are in. A query narrows by name,
@@ -324,7 +330,7 @@ func (self *graph) ListAddressBooks(ctx context.Context) ([]*AddressBookView, er
 	if err != nil {
 		return nil, err
 	}
-	var books []*models.ReachableAddressBook
+	var books []*models.AddressBook
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		found, err := tx.ListAddressBooks(principal.User.ID)
 		if err != nil {
@@ -332,8 +338,45 @@ func (self *graph) ListAddressBooks(ctx context.Context) ([]*AddressBookView, er
 		}
 		// Nobody should have to make an address book before they can keep
 		// somebody in it, and the CardDAV layout needs one to exist before
-		// a phone can be pointed at it. A circle's book is not theirs, so it
-		// does not count.
+		// a phone can be pointed at it.
+		if len(found) == 0 {
+			made, err := tx.CreateAddressBook(&models.AddressBook{UserID: principal.User.ID, Name: "Contacts"})
+			if err != nil {
+				return err
+			}
+			found = []*models.AddressBook{made}
+		}
+		books = found
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	views := make([]*AddressBookView, 0, len(books))
+	for _, book := range books {
+		view, err := self.addressBookView(ctx, &models.ReachableAddressBook{
+			Book: book, Access: models.AddressBookAccess{CanEdit: true, CanManage: true, IsOwner: true},
+		})
+		if err != nil {
+			return nil, err
+		}
+		views = append(views, view)
+	}
+	return views, nil
+}
+
+func (self *graph) ListReachableAddressBooks(ctx context.Context) ([]*AddressBookView, error) {
+	principal, err := self.requireAddressBookPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var books []*models.ReachableAddressBook
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		found, err := tx.ListAddressBooks(principal.User.ID)
+		if err != nil {
+			return err
+		}
+		// Their own book is made here as ListAddressBooks makes it, so the
+		// list a screen draws never lacks the one every phone is pointed at.
 		if len(found) == 0 {
 			if _, err := tx.CreateAddressBook(&models.AddressBook{UserID: principal.User.ID, Name: "Contacts"}); err != nil {
 				return err
