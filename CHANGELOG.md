@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.193.1] - 2026-10-22
+
+### Fixed
+
+- iPhone: a coding session's tool calls that wrap onto two lines read from the left. (#623)
+
 ## [0.193.0] - 2026-10-21
 
 ### Added
