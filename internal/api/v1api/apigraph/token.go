@@ -160,6 +160,9 @@ func (self *graph) CreateToken(ctx context.Context, arguments CreateTokenArgumen
 	if _, err := self.requireSignedIn(ctx); err != nil {
 		return nil, err
 	}
+	if err := refuseImpersonation(ctx, "a token"); err != nil {
+		return nil, err
+	}
 
 	username, err := self.owner(ctx, arguments.Username)
 	if err != nil {
@@ -217,6 +220,10 @@ func (self *graph) UpdateToken(ctx context.Context, arguments UpdateTokenArgumen
 	}
 	var lifetime *time.Duration
 	if arguments.Lifetime != nil {
+		// A longer life is a new lasting credential in all but name.
+		if err := refuseImpersonation(ctx, "a token's lifetime"); err != nil {
+			return nil, err
+		}
 		var parsed time.Duration
 		if strings.TrimSpace(*arguments.Lifetime) != tokenLifetimeNever {
 			if parsed, err = parseLifetime(*arguments.Lifetime); err != nil {

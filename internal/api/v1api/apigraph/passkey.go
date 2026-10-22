@@ -115,6 +115,9 @@ func (self *graph) BeginPasskeyRegistration(ctx context.Context) (*PasskeyCeremo
 	if err != nil {
 		return nil, err
 	}
+	if err := refuseImpersonation(ctx, "a passkey"); err != nil {
+		return nil, err
+	}
 	engine, err := self.webAuthn()
 	if err != nil {
 		return nil, err
@@ -163,6 +166,9 @@ type FinishPasskeyRegistrationArguments struct {
 func (self *graph) FinishPasskeyRegistration(ctx context.Context, arguments FinishPasskeyRegistrationArguments) (*models.Passkey, error) {
 	user, err := self.requireAccount(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseImpersonation(ctx, "a passkey"); err != nil {
 		return nil, err
 	}
 	engine, err := self.webAuthn()
