@@ -100,6 +100,10 @@
             if query.contains("ReadSharedAgentPage") {
                 return #"{"data":{"ReadSharedAgentPage":\#(sharedKnowledgePageJSON)}}"#
             }
+            if query.contains("PreviewAgentPageShare") {
+                return
+                    #"{"data":{"PreviewAgentPageShare":{"page":\#(sharedKnowledgePageJSON),"reachedPageCount":3,"isReachedPageCountCut":false,"reachedPagePaths":["recipes/apple-tart","recipes/apple-tart/variations"],"withheldFactCount":2}}}"#
+            }
             if query.contains("ListSkillShares") {
                 return #"{"data":{"ListSkillShares":[\#(lentSkillShareJSON),\#(givenSkillShareJSON)]}}"#
             }

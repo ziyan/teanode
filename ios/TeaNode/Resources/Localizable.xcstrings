@@ -61506,18 +61506,18 @@
         }
       }
     },
-    "Those words are quoted from your mail and documents. Off, they see what a fact says and what kind of thing it was read in, not the words. Words from a chat are never shown, since they are other people's too.": {
+    "Those words are quoted from your mail and documents. Off, they see what a fact says and what kind of thing it was read in, not the words. Words from a chat or a recording are never shown, since they are other people's too.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "この文面はあなたのメールと文書からの引用です。オフのままだと、事実の内容と、何から読み取ったかだけが見え、文面は見えません。チャットの文面は、他の人の言葉でもあるため、常に表示されません。"
+            "value": "この文面はあなたのメールと文書からの引用です。オフのままだと、事実の内容と、何から読み取ったかだけが見え、文面は見えません。チャットと録音の文面は、他の人の言葉でもあるため、常に表示されません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这些原文引自你的邮件和文档。不开启时，对方只能看到事实本身和它出自哪一类内容，看不到原文。聊天里的原文永远不会显示，因为那也是别人的话。"
+            "value": "这些原文引自你的邮件和文档。不开启时，对方只能看到事实本身和它出自哪一类内容，看不到原文。聊天和录音里的原文永远不会显示，因为那也是别人的话。"
           }
         }
       }
@@ -82826,6 +82826,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "确认之后该项目的共享发生了变化。请重新查看共享对象，然后再次完成。"
+          }
+        }
+      }
+    },
+    "A page you add under it later is shared too.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今後このページの下に追加したページも共有されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "之后在它下面新增的页面也会一并共享。"
+          }
+        }
+      }
+    },
+    "and %lld more": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほか%lld件"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另有 %lld 个"
+          }
+        }
+      }
+    },
+    "1 fact from finance, recordings or location stays private. Those have their own sharing.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家計、録音、位置情報から読み取った事実1件は非公開のままです。それぞれ独自の共有設定があります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自财务、录音或位置的 1 条事实仍然保持私密，它们有各自的共享设置。"
+          }
+        }
+      }
+    },
+    "%lld facts from finance, recordings or location stay private. Those have their own sharing.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家計、録音、位置情報から読み取った事実%lld件は非公開のままです。それぞれ独自の共有設定があります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自财务、录音或位置的 %lld 条事实仍然保持私密，它们有各自的共享设置。"
           }
         }
       }

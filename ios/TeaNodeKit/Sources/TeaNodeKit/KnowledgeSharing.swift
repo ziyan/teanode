@@ -172,12 +172,15 @@ public struct KnowledgeShare: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
-/// KnowledgeSharePreview is what a share would show, and how many pages it
-/// would reach.
+/// KnowledgeSharePreview is what a share would show, and which pages it would
+/// reach: the first of their paths, by path, of reachedPageCount in all, and
+/// how many facts on them stay private for their evidence.
 public struct KnowledgeSharePreview: Codable, Hashable, Sendable {
     public let page: SharedKnowledgePage
     public let reachedPageCount: Int
     public let isReachedPageCountCut: Bool
+    public let reachedPagePaths: [String]
+    public let withheldFactCount: Int
 }
 
 extension Documents {
@@ -203,7 +206,7 @@ extension Documents {
         query ($path: String!, $granteeUserId: String, $granteeCircleId: String, $isQuoteShared: Boolean) {
           PreviewAgentPageShare(path: $path, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, isQuoteShared: $isQuoteShared) {
             page { \(sharedKnowledgePageFields) }
-            reachedPageCount isReachedPageCountCut
+            reachedPageCount isReachedPageCountCut reachedPagePaths withheldFactCount
           }
         }
         """
