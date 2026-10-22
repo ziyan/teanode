@@ -70,12 +70,14 @@ func (self *view) resolve(numSet goimap.NumSet) []uint64 {
 			if start > stop {
 				start, stop = stop, start
 			}
+			// A number past the last message names nothing, so stop there:
+			// "1:4294967295" must not be a loop of four billion turns.
+			if stop > max {
+				stop = max
+			}
 			for seq := start; seq <= stop && seq > 0; seq++ {
 				if uid, ok := self.uidAt(seq); ok {
 					uids = append(uids, uid)
-				}
-				if seq == ^uint32(0) {
-					break
 				}
 			}
 		}
