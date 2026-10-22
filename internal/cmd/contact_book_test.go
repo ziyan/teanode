@@ -45,6 +45,15 @@ func contactBookServer(test *testing.T, asked *[]map[string]any) *httptest.Serve
 		case strings.Contains(received.Query, "SaveContact("):
 			*asked = append(*asked, map[string]any{"SaveContact": received.Variables})
 			_, _ = response.Write([]byte(`{"data":{"SaveContact":{"id":"contact-kim","name":"Kim Example","emails":[],"phones":[]}}}`))
+		case strings.Contains(received.Query, "GetContact("):
+			*asked = append(*asked, map[string]any{"GetContact": received.Variables})
+			_, _ = response.Write([]byte(`{"data":{"GetContact":{"id":"contact-kim","name":"Kim Example","emails":[],"phones":[],"hasPhoto":true,"card":"BEGIN:VCARD\r\nEND:VCARD\r\n"}}}`))
+		case strings.Contains(received.Query, "DeleteContact("):
+			*asked = append(*asked, map[string]any{"DeleteContact": received.Variables})
+			_, _ = response.Write([]byte(`{"data":{"DeleteContact":true}}`))
+		case strings.Contains(received.Query, "RemoveContactPicture("):
+			*asked = append(*asked, map[string]any{"RemoveContactPicture": received.Variables})
+			_, _ = response.Write([]byte(`{"data":{"RemoveContactPicture":{"id":"contact-kim","name":"Kim Example","emails":[],"phones":[],"hasPhoto":false}}}`))
 		default:
 			_, _ = response.Write([]byte(`{"data":{}}`))
 		}
@@ -130,5 +139,50 @@ func TestContactBooksOfCircles(test *testing.T) {
 	}
 	if _, err := runContactCommand(test, server, "list", "--book", "book-elsewhere"); err == nil || !strings.Contains(err.Error(), "no address book") {
 		test.Fatalf("a book one cannot use: %v", err)
+	}
+}
+
+// A contact is named only within its book, so show, remove and remove-picture
+// send the book --book names, and send none when it is left out.
+func TestContactCommandsNameTheBookOfTheContact(test *testing.T) {
+	var asked []map[string]any
+	server := contactBookServer(test, &asked)
+	variablesOf := func(operation string) map[string]any {
+		test.Helper()
+		for index := len(asked) - 1; index >= 0; index-- {
+			if variables, isFound := asked[index][operation].(map[string]any); isFound {
+				return variables
+			}
+		}
+		test.Fatalf("no %s was asked: %v", operation, asked)
+		return nil
+	}
+
+	for _, each := range []struct {
+		arguments []string
+		operation string
+	}{
+		{[]string{"show", "contact-kim"}, "GetContact"},
+		{[]string{"remove", "contact-kim", "--force"}, "DeleteContact"},
+		{[]string{"remove-picture", "contact-kim", "--force"}, "RemoveContactPicture"},
+	} {
+		asked = nil
+		if _, err := runContactCommand(test, server, each.arguments...); err != nil {
+			test.Fatalf("%v: %s", each.arguments, err)
+		}
+		if variables := variablesOf(each.operation); variables["id"] != "contact-kim" || variables["addressBookId"] != nil {
+			test.Errorf("%s without --book names no book: %v", each.operation, variables)
+		}
+
+		asked = nil
+		if _, err := runContactCommand(test, server, append(each.arguments, "--book", "book-family")...); err != nil {
+			test.Fatalf("%v: %s", each.arguments, err)
+		}
+		if variables := variablesOf(each.operation); variables["id"] != "contact-kim" || variables["addressBookId"] != "book-family" {
+			test.Errorf("%s with --book names the circle's book: %v", each.operation, variables)
+		}
+		if _, err := runContactCommand(test, server, append(each.arguments, "--book", "book-elsewhere")...); err == nil || !strings.Contains(err.Error(), "no address book") {
+			test.Errorf("%v with a book one cannot use: %v", each.arguments, err)
+		}
 	}
 }

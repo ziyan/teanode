@@ -10,6 +10,9 @@ import (
 	"github.com/gorilla/mux"
 
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // circleBookOf makes the circle's address book as a member and returns its id.
@@ -174,4 +177,85 @@ func TestTheContactPictureOfACircleCardIsServedToMembersOnly(t *testing.T) {
 	if response := fetch(world.carol.Username, ownSaved["id"].(string), ""); response.Code != http.StatusOK {
 		t.Errorf("the owner is served their own: %d", response.Code)
 	}
+}
+
+// A contact is named only within its book, so a contact in the circle's book
+// and one in the person's own book can have the same id. Naming the circle's
+// book reaches the circle's, and deleting it, or taking its picture off, leaves
+// the person's own alone.
+func TestAContactInACircleBookIsReachedByNamingTheBook(t *testing.T) {
+	world := newCircleWorld(t)
+	world.grantContactsAndPhotos(t, world.alice, world.bob)
+	circleId := world.makeCircle(t, world.alice, "Family", "family")
+	world.join(t, world.alice, circleId, world.bob, "member")
+	circleBookId := world.circleBookOf(t, circleId, "alice")
+	ownBookId := world.call(t, world.alice, `query { ListAddressBooks { id } }`)["ListAddressBooks"].([]any)[0].(map[string]any)["id"].(string)
+
+	cardOf := func(name string) string {
+		return "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:urn:uuid:kim\r\nFN:" + name + "\r\nPHOTO:data:image/png;base64,aGVsbG8=\r\nEND:VCARD\r\n"
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		for bookId, name := range map[string]string{circleBookId: "Circle Kim", ownBookId: "Own Kim"} {
+			if _, err := tx.PutContact(&models.Contact{ID: "kim.vcf", AddressBookID: bookId, UID: "urn:uuid:kim", ETag: "e", Card: cardOf(name), Name: name}); err != nil {
+				t.Fatalf("PutContact: %s", err)
+			}
+		}
+	})
+
+	nameOf := func(user *models.User, bookId string) any {
+		query := `query { GetContact(id: "kim.vcf") { name addressBookId } }`
+		if bookId != "" {
+			query = fmt.Sprintf(`query { GetContact(id: "kim.vcf", addressBookId: %q) { name addressBookId } }`, bookId)
+		}
+		return world.call(t, user, query)["GetContact"].(map[string]any)["name"]
+	}
+	if got := nameOf(world.alice, ""); got != "Own Kim" {
+		t.Errorf("without a book the person's own contact is found first: %v", got)
+	}
+	if got := nameOf(world.alice, circleBookId); got != "Circle Kim" {
+		t.Errorf("naming the circle's book reaches the circle's contact: %v", got)
+	}
+	if got := nameOf(world.bob, ""); got != "Circle Kim" {
+		t.Errorf("a member with no book of their own holding it finds the circle's: %v", got)
+	}
+	world.refused(t, world.bob, fmt.Sprintf(`query { GetContact(id: "kim.vcf", addressBookId: %q) { name } }`, ownBookId))
+
+	// Taking the picture off the circle's contact leaves the person's own.
+	world.call(t, world.alice, fmt.Sprintf(`mutation { RemoveContactPicture(id: "kim.vcf", addressBookId: %q) { name hasPhoto } }`, circleBookId))
+	hasPhoto := func(bookId string) any {
+		return world.call(t, world.alice, fmt.Sprintf(`query { GetContact(id: "kim.vcf", addressBookId: %q) { hasPhoto } }`, bookId))["GetContact"].(map[string]any)["hasPhoto"]
+	}
+	if hasPhoto(circleBookId) != false || hasPhoto(ownBookId) != true {
+		t.Errorf("only the circle's picture came off: circle %v own %v", hasPhoto(circleBookId), hasPhoto(ownBookId))
+	}
+
+	// Deleting the circle's contact leaves the person's own.
+	world.call(t, world.alice, fmt.Sprintf(`mutation { DeleteContact(id: "kim.vcf", addressBookId: %q) }`, circleBookId))
+	if got := nameOf(world.alice, ownBookId); got != "Own Kim" {
+		t.Errorf("the person's own contact is kept: %v", got)
+	}
+	world.refused(t, world.alice, fmt.Sprintf(`query { GetContact(id: "kim.vcf", addressBookId: %q) { name } }`, circleBookId))
+	world.refused(t, world.alice, fmt.Sprintf(`mutation { DeleteContact(id: "kim.vcf", addressBookId: %q) }`, circleBookId))
+	if got := nameOf(world.alice, ""); got != "Own Kim" {
+		t.Errorf("and is still the one found without a book: %v", got)
+	}
+}
+
+// A member whose roles lack circle:use does not list the circle's book, and
+// reads nothing in it.
+func TestACircleAddressBookNeedsCircleUse(t *testing.T) {
+	world := newCircleWorld(t)
+	world.grantContactsAndPhotos(t, world.alice, world.dave)
+	circleId := world.makeCircle(t, world.alice, "Family", "family")
+	bookId := world.circleBookOf(t, circleId, "alice")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.AddCircleMember(circleId, world.dave.ID, models.MemberRoleMember, world.alice.ID); err != nil {
+			t.Fatalf("AddCircleMember: %s", err)
+		}
+	})
+	if books := world.call(t, world.dave, `query { ListReachableAddressBooks { id } }`)["ListReachableAddressBooks"].([]any); len(books) != 1 || books[0].(map[string]any)["id"] == bookId {
+		t.Errorf("dave lists only his own book without circle:use: %v", books)
+	}
+	world.refused(t, world.dave, fmt.Sprintf(`query { ListContacts(addressBookId: %q) { id } }`, bookId))
+	world.refused(t, world.dave, fmt.Sprintf(`mutation { SaveContact(addressBookId: %q, name: "Sam") { id } }`, bookId))
 }

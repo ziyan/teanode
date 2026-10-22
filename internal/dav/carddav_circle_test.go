@@ -35,11 +35,21 @@ func (self *world) circleBook(t *testing.T, adminUserID string, memberUserIDs ..
 	return circle, book
 }
 
+// grantCircleUse gives the signed-in person circle:use, which a circle's book
+// needs on top of contacts:use.
+func (self *world) grantCircleUse(t *testing.T) {
+	t.Helper()
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		dbtest.GrantPermission(t, tx, self.userID, models.PermissionCircleUse)
+	})
+}
+
 // A circle's address book is another book in the home set, read and written
 // like the person's own, and cards put in by another member are listed.
 func TestACircleAddressBookIsAnotherBookOnThePhone(t *testing.T) {
 	here, done := newWorld(t)
 	defer done()
+	here.grantCircleUse(t)
 	_, book := here.circleBook(t, here.other, here.userID)
 
 	listed := here.ask(t, "PROPFIND", fmt.Sprintf("%s/%s/contacts/", dav.Prefix, here.userID), propfindETags, "Depth", "1")
@@ -87,6 +97,7 @@ func TestACircleAddressBookIsAnotherBookOnThePhone(t *testing.T) {
 func TestLeavingTheCircleEndsAccessToItsAddressBook(t *testing.T) {
 	here, done := newWorld(t)
 	defer done()
+	here.grantCircleUse(t)
 	circle, book := here.circleBook(t, here.other, here.userID)
 	_, strangers := here.circleBook(t, here.other)
 
@@ -118,6 +129,36 @@ func TestLeavingTheCircleEndsAccessToItsAddressBook(t *testing.T) {
 	body := text(t, listed)
 	if strings.Contains(body, book.ID) || strings.Contains(body, strangers.ID) || !strings.Contains(body, here.bookID) {
 		t.Fatalf("the home set has only the person's own book now:\n%s", body)
+	}
+}
+
+// A member whose roles lack circle:use does not see the circle's book on the
+// phone, and every request into it is a 404, until the permission is granted.
+func TestACircleAddressBookNeedsCircleUseOnThePhone(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+	_, book := here.circleBook(t, here.other, here.userID)
+
+	where := fmt.Sprintf("%s/%s/contacts/%s/ada.vcf", dav.Prefix, here.userID, book.ID)
+	for name, attempt := range map[string]*http.Response{
+		"list":  here.ask(t, "PROPFIND", fmt.Sprintf("%s/%s/contacts/%s/", dav.Prefix, here.userID, book.ID), propfindETags, "Depth", "1"),
+		"write": here.ask(t, http.MethodPut, where, aCard, "Content-Type", "text/vcard"),
+	} {
+		_ = text(t, attempt)
+		if attempt.StatusCode != http.StatusNotFound {
+			t.Errorf("%s without circle:use: %d, wanted 404", name, attempt.StatusCode)
+		}
+	}
+	listed := here.ask(t, "PROPFIND", fmt.Sprintf("%s/%s/contacts/", dav.Prefix, here.userID), propfindETags, "Depth", "1")
+	if body := text(t, listed); strings.Contains(body, book.ID) || !strings.Contains(body, here.bookID) {
+		t.Fatalf("the home set has only the person's own book without circle:use:\n%s", body)
+	}
+
+	here.grantCircleUse(t)
+	put := here.ask(t, http.MethodPut, where, aCard, "Content-Type", "text/vcard")
+	_ = text(t, put)
+	if put.StatusCode >= 400 {
+		t.Fatalf("a member with circle:use puts a card in: %d", put.StatusCode)
 	}
 }
 

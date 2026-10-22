@@ -500,7 +500,7 @@ func init() {
 				// and with them whatever was shared with the circle.
 				Name: "circle_delete", Family: tools.FamilyAccount, Risk: tools.RiskDestructive,
 				Permissions: []models.Permission{models.PermissionCircleUse},
-				Description: "Delete a circle with its members and invitations, and with its calendar, albums and chat. What its members shared with it, " +
+				Description: "Delete a circle with its members and invitations, and with its calendar, albums, chat and address book with every contact in it. What its members shared with it, " +
 					"and with people they then share no other circle with, ends and does not come back. " +
 					"Needs the person to be an admin of it.",
 				Parameters: tools.Object(map[string]any{
@@ -514,7 +514,7 @@ func init() {
 						return ""
 					}
 					circleWords, _ := cardWords(ctx, call.CircleID, "")
-					return "Delete " + circleWords + " with its calendar, albums and chat, which ends for good what its members shared with it and through it"
+					return "Delete " + circleWords + " with its calendar, albums, chat and address book with every contact in it, which ends for good what its members shared with it and through it"
 				},
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {

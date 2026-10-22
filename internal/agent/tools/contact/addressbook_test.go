@@ -204,3 +204,34 @@ func TestAnActionOnAContactOutsideTheGivenBooksIsRefused(test *testing.T) {
 		test.Fatalf("a contact in the given book is read, without its book shown: %v", err)
 	}
 }
+
+// A contact is named only within its book, so get, remove and remove-picture
+// name the book the contact was checked to be in: what is removed is that
+// contact, never another of the same id in a book the agent is not given.
+func TestAnActionOnAContactNamesTheBookItWasCheckedIn(test *testing.T) {
+	operations := &fakeBookOperations{answers: map[string]string{
+		"ListAddressBooks":     `[{"id":"book-one","name":"Contacts","contacts":2,"agentGranted":true}]`,
+		"GetContact":           `{"id":"contact-sam","addressBookId":"book-one","name":"Sam Example"}`,
+		"DeleteContact":        `true`,
+		"RemoveContactPicture": `{"id":"contact-sam","name":"Sam Example"}`,
+	}}
+	for operationName, arguments := range map[string]string{
+		"DeleteContact":        `{"action":"remove","id":"contact-sam"}`,
+		"RemoveContactPicture": `{"action":"remove-picture","id":"contact-sam"}`,
+	} {
+		if _, err := callContactBook(test, operations, arguments); err != nil {
+			test.Fatalf("%s: %v", arguments, err)
+		}
+		if variables := operations.variables[operationName]; variables["id"] != "contact-sam" || variables["addressBookId"] != "book-one" {
+			test.Errorf("%s names the book the contact is in: %v", operationName, variables)
+		}
+	}
+
+	// A book the call names is the book looked in.
+	if _, err := callContactBook(test, operations, `{"action":"get","id":"contact-sam","address_book_id":"book-one"}`); err != nil {
+		test.Fatal(err)
+	}
+	if variables := operations.variables["GetContact"]; variables["addressBookId"] != "book-one" {
+		test.Errorf("get looks in the book named: %v", variables)
+	}
+}

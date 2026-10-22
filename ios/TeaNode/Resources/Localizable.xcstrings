@@ -60066,18 +60066,18 @@
         }
       }
     },
-    "The circle is removed for everyone in it, with its calendar, its albums and its chat. What its members shared with it, and with anyone they then share no other circle with, ends and does not come back. No account is deleted.": {
+    "The circle is removed for everyone in it, with its calendar, its albums, its chat and its address book with every contact in it. What its members shared with it, and with anyone they then share no other circle with, ends and does not come back. No account is deleted.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サークルは全員から削除され、そのカレンダー、アルバム、チャットも削除されます。メンバーがサークルと共有していたもの、およびほかに共通のサークルがなくなる相手と共有していたものは終了し、元には戻りません。アカウントは削除されません。"
+            "value": "サークルは全員から削除され、そのカレンダー、アルバム、チャット、アドレス帳とその中のすべての連絡先も削除されます。メンバーがサークルと共有していたもの、およびほかに共通のサークルがなくなる相手と共有していたものは終了し、元には戻りません。アカウントは削除されません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "圈子会对其中所有人删除，其日历、相册和聊天也一并删除。成员与该圈子共享的内容，以及与不再共有任何圈子的人共享的内容都会结束，不会恢复。不会删除任何账号。"
+            "value": "圈子会对其中所有人删除，其日历、相册、聊天，以及通讯录和其中的每个联系人也一并删除。成员与该圈子共享的内容，以及与不再共有任何圈子的人共享的内容都会结束，不会恢复。不会删除任何账号。"
           }
         }
       }

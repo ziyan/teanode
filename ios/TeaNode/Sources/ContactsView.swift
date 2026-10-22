@@ -220,7 +220,7 @@ final class ContactsModel {
 
     func removePicture(of contactId: String) async -> Bool {
         do {
-            try await connection.removeContactPicture(contactId)
+            try await connection.removeContactPicture(contactId, addressBookId: addressBook?.id)
             doneText = String(localized: "Removed their picture")
             await load()
             return true
@@ -232,7 +232,7 @@ final class ContactsModel {
 
     func delete(_ contactId: String) async -> Bool {
         do {
-            try await connection.deleteContact(contactId)
+            try await connection.deleteContact(contactId, addressBookId: addressBook?.id)
             doneText = String(localized: "Contact removed")
             await load()
             return true
@@ -534,7 +534,7 @@ struct CircleContactEditorSheet: View {
         }
         .task {
             do {
-                contact = try await model.connection.contact(contactId)
+                contact = try await model.connection.contact(contactId, addressBookId: model.addressBook?.id)
             } catch {
                 failureText = error.refusalReason(orSay: String(localized: "Check your connection and try again."))
             }
@@ -676,8 +676,7 @@ struct ContactPicture: View {
         .accessibilityHidden(true)
         .task(id: contactId) {
             guard hasPhoto else { return }
-            let query = (addressBookId ?? "").isEmpty ? "" : "?addressBookId=\(addressBookId ?? "")"
-            photo = await app.picture("/api/v1/contacts/\(contactId)/photo\(query)")
+            photo = await app.picture(ContactSummary.pictureAddress(ofContact: contactId, inAddressBook: addressBookId))
         }
     }
 }

@@ -2853,6 +2853,8 @@ export const ja: Catalog = {
   'addressBook.more': 'ほか {count} 件',
   'addressBook.delete': '連絡先を削除',
   'addressBook.deleteConfirm': '{name} をアドレス帳から削除しますか。同期中の端末からも消えます。',
+  'addressBook.deleteCircleConfirm':
+    '{circle} のアドレス帳から {name} を削除しますか。サークルの全員がこの連絡先を失い、同期中の端末からも消えます。',
   'addressBook.failed': '実行できませんでした。',
   'addressBook.accountIs': 'サークルでは {name}',
   'addressBook.accountLink': 'サークルでは…',
@@ -6327,7 +6329,7 @@ export const ja: Catalog = {
   'circles.delete': 'サークルを削除',
   'circles.deleteTitle': '{name}を削除しますか？',
   'circles.deleteBody':
-    'サークルは全員から削除され、そのカレンダー、アルバム、チャットも削除されます。メンバーがサークルと共有していたもの、およびほかに共通のサークルがなくなる相手と共有していたものは終了し、元には戻りません。アカウントは削除されません。',
+    'サークルは全員から削除され、そのカレンダー、アルバム、チャット、アドレス帳とその中のすべての連絡先も削除されます。メンバーがサークルと共有していたもの、およびほかに共通のサークルがなくなる相手と共有していたものは終了し、元には戻りません。アカウントは削除されません。',
   'circles.deleted': 'サークルを削除しました。',
   'circles.leave': '退出',
   'circles.leaveTitle': '{name}から退出しますか？',

@@ -2861,6 +2861,8 @@ export const en = {
   'addressBook.delete': 'Delete contact',
   'addressBook.deleteConfirm':
     'Delete {name} from your address book? Devices synchronizing it will lose the contact too.',
+  'addressBook.deleteCircleConfirm':
+    'Delete {name} from the {circle} address book? Everyone in the circle loses it, and devices synchronizing it lose the contact too.',
   'addressBook.failed': 'That did not work.',
   'addressBook.accountIs': 'In your circles as {name}',
   'addressBook.accountLink': 'Is in your circles as…',
@@ -6388,7 +6390,7 @@ export const en = {
   'circles.delete': 'Delete circle',
   'circles.deleteTitle': 'Delete {name}?',
   'circles.deleteBody':
-    'The circle is removed for everyone in it, with its calendar, its albums and its chat. What its members shared with it, and with anyone they then share no other circle with, ends and does not come back. No account is deleted.',
+    'The circle is removed for everyone in it, with its calendar, its albums, its chat and its address book with every contact in it. What its members shared with it, and with anyone they then share no other circle with, ends and does not come back. No account is deleted.',
   'circles.deleted': 'Circle deleted.',
   'circles.leave': 'Leave',
   'circles.leaveTitle': 'Leave {name}?',

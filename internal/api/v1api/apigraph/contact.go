@@ -36,7 +36,7 @@ type AddressBookQuery interface {
 
 	// The caller's own address books, then the books of the circles they are
 	// in, each with the circle's name and what the caller may do with it.
-	// Needs contacts:use.
+	// Needs contacts:use, and circle:use for the circles' books.
 	ListReachableAddressBooks(ctx context.Context) ([]*AddressBookView, error)
 
 	// The contacts in one of them, by name; a book of the caller's own or of
@@ -44,7 +44,9 @@ type AddressBookQuery interface {
 	// organization, address or number. Needs contacts:use.
 	ListContacts(ctx context.Context, arguments ListContactsArguments) ([]*ContactView, error)
 
-	// One contact, with its card. Needs contacts:use.
+	// One contact, with its card. Name the book (addressBookId) for a contact
+	// in a circle's book, since a contact is named only within its book.
+	// Needs contacts:use.
 	GetContact(ctx context.Context, arguments ContactArguments) (*ContactView, error)
 
 	// The caller's contacts that have no link and whose email addresses
@@ -65,12 +67,14 @@ type AddressBookMutation interface {
 	// Needs contacts:use.
 	SaveContact(ctx context.Context, arguments SaveContactArguments) (*ContactView, error)
 
-	// Forget one. Needs contacts:use.
+	// Forget one. Name the book (addressBookId) for a contact in a circle's
+	// book, as GetContact does. Needs contacts:use.
 	DeleteContact(ctx context.Context, arguments ContactArguments) (bool, error)
 
 	// Take the picture off a contact, whoever put it there, and leave the
 	// rest of the card as it was. A contact with no picture is answered as
-	// it is. Needs contacts:use.
+	// it is. Name the book (addressBookId) for a contact in a circle's book.
+	// Needs contacts:use.
 	RemoveContactPicture(ctx context.Context, arguments ContactArguments) (*ContactView, error)
 
 	// Link a contact to a person in the caller's circles, or take the link
@@ -188,6 +192,13 @@ type ListContactsArguments struct {
 
 type ContactArguments struct {
 	ID string `json:"id"`
+
+	// The book the contact is in, as the contact's addressBookId says. A
+	// contact is named only within its book, so a contact in a circle's book
+	// is reached by naming that book: without it the caller's own books are
+	// looked in first, and a circle's contact of the same id is never the one
+	// found.
+	AddressBookID string `json:"addressBookId" graphapi:"nullable"`
 }
 
 type SetContactAccountArguments struct {
@@ -425,7 +436,7 @@ func (self *graph) ListContacts(ctx context.Context, arguments ListContactsArgum
 }
 
 func (self *graph) GetContact(ctx context.Context, arguments ContactArguments) (*ContactView, error) {
-	contact, book, err := self.usableContact(ctx, arguments.ID)
+	contact, book, err := self.usableContact(ctx, arguments.AddressBookID, arguments.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -533,9 +544,25 @@ func (self *graph) SetContactAccount(ctx context.Context, arguments SetContactAc
 	return self.contactViewWithAccount(ctx, book.UserID, contact, true)
 }
 
-// usableContact is one contact, if it is in a book the caller may use: their
-// own first, then their circles'.
-func (self *graph) usableContact(ctx context.Context, contactId string) (*models.Contact, *models.AddressBook, error) {
+// usableContact is one contact, if it is in a book the caller may use. A
+// contact is named within its book, so when the caller says which book only
+// that one is looked in; otherwise their own books come first and then their
+// circles'.
+func (self *graph) usableContact(ctx context.Context, addressBookId, contactId string) (*models.Contact, *models.AddressBook, error) {
+	if strings.TrimSpace(addressBookId) != "" {
+		book, _, err := self.requireUsableAddressBook(ctx, addressBookId)
+		if err != nil {
+			return nil, nil, err
+		}
+		contact, err := self.transaction(ctx).GetContact(book.ID, strings.TrimSpace(contactId))
+		if err != nil {
+			return nil, nil, err
+		}
+		if contact == nil {
+			return nil, nil, api.ErrNotFound
+		}
+		return contact, book, nil
+	}
 	principal, err := self.requireAddressBookPerson(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -619,7 +646,7 @@ func (self *graph) DeleteContact(ctx context.Context, arguments ContactArguments
 	if err != nil {
 		return false, err
 	}
-	if err := addressbook.New(self.transaction(ctx)).Delete(ctx, principal, arguments.ID); err != nil {
+	if err := addressbook.New(self.transaction(ctx)).Delete(ctx, principal, arguments.AddressBookID, arguments.ID); err != nil {
 		return false, translateError(err)
 	}
 	return true, nil
@@ -630,7 +657,7 @@ func (self *graph) RemoveContactPicture(ctx context.Context, arguments ContactAr
 	if err != nil {
 		return nil, err
 	}
-	kept, err := addressbook.New(self.transaction(ctx)).RemovePicture(ctx, principal, arguments.ID)
+	kept, err := addressbook.New(self.transaction(ctx)).RemovePicture(ctx, principal, arguments.AddressBookID, arguments.ID)
 	if err != nil {
 		return nil, translateError(err)
 	}

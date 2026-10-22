@@ -3,7 +3,10 @@
 A person's address book: the people they keep, edited in the dashboard and
 kept in step with their phone and their desktop over CardDAV. A person's own
 books are never shared with anybody. A circle has an address book of its own,
-described in "A circle's own address book" below.
+described in "A circle's own address book" below. Only the person's own books
+are looked at by the search across everything, by the composer's completion and
+by the "sender is known" rule condition: a contact that lives only in a circle's
+book is not found by any of them.
 
 It is the only list of people the server keeps. A mailbox used to learn every
 address it saw go past into a `mailbox_contact` row of its own; that is gone,
@@ -297,7 +300,11 @@ book"), and nothing is made for a circle that does not ask.
 **Who may use a book is one answer.** `AddressBookAccess(userId, book)` says
 whether the person may read and edit it, whether they may manage it (rename or
 delete: the owner of their own book, an admin of a circle's) and whether it is
-their own (`IsOwner`). The GraphQL operations (through
+their own (`IsOwner`). For a circle's book it also needs `circle:use`, as every
+other circle surface does, on top of `contacts:use`: `ListReachableAddressBooks`
+leaves the book out and `AddressBookAccess` answers nothing for a member whose
+roles lack it, so the dashboard, the picture route and CardDAV all refuse it.
+The GraphQL operations (through
 `internal/addressbook`'s `usableBook` and `usableContact`, and the resolvers'
 `requireUsableAddressBook`), the picture route (`contact_photo.go`, which takes
 an optional `addressBookId` so that a circle's book is looked in directly),
@@ -305,6 +312,16 @@ CardDAV (`bookAt`, which the home set listing also follows) and the agent's tool
 all start from it. There is no cleanup row: the answer is a join on
 `circle_member`, so a person who leaves a circle loses its book in the same
 transaction, and deleting the circle deletes the book and its cards.
+
+**A contact is named within its book.** The id of a card is unique only inside
+its book (over CardDAV it is the client's file name), so two books can hold a
+contact with the same id. `GetContact`, `DeleteContact` and
+`RemoveContactPicture` therefore take an optional `addressBookId`, as
+`SaveContact` and the picture route do. Named, only that book is looked in.
+Left out, the person's own books are looked in first and the circles' after, so
+a circle's contact of the same id is never the one found: the dashboard, the
+iPhone, `teanode contact show|remove|remove-picture --book` and the agent tool
+send the book whenever they know it, and must for a contact in a circle's book.
 
 **What stays the owner's.** `ListAddressBooks` is the person's own books only,
 and so is everything that asks for "my address books": the known-sender check
@@ -315,8 +332,10 @@ circles and its suggestions (`SetContactAccount` refuses a circle's book, so a
 circle's card never carries `account_user_id`), and the agent's grant
 (`agent_granted` is never true for a circle's book). The circles' books are
 listed by `ListReachableAddressBooks`, which has the person's own first and each
-book's circle name and what the person may do with it. The 10,000 contact
-ceiling and the size ceiling apply to each book, a circle's included.
+book's circle name and what the person may do with it. Plainly: global search,
+compose completion and the known-sender rule look only at the person's own
+books, and never at a circle's. The 10,000 contact ceiling and the size ceiling
+apply to each book, a circle's included.
 
 **The agent does not read it.** A circle's book is not one person's to give to
 an agent: the text in its cards was typed by anybody in the circle. The
@@ -329,7 +348,7 @@ The surfaces say it the same way: `ListReachableAddressBooks`, `AddressBookView`
 (`circleId`, `circleName`, `isCircleBook`, `canManage`), `CreateCircleAddressBook`,
 `SaveAddressBook` (a rename; an admin's for a circle's) and `DeleteCircleAddressBook`;
 `teanode contact book list|create|rename|delete` and `--book` on `contact list`,
-`add` and `edit`; the contacts page's "Showing" picker and the circle page's
+`show`, `add`, `edit`, `remove` and `remove-picture`; the contacts page's "Showing" picker and the circle page's
 address book section on the dashboard; and the iPhone's Contacts screen, which
 chooses the book under its title, and the circle's screen. A circle's contact has
 no card page (that page is the owner's view of their own contact), no "this is

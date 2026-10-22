@@ -312,7 +312,7 @@ func TestDeleteIsDestructiveAndSaysWhatItStops(t *testing.T) {
 		t.Errorf("delete is %v, not destructive", risk)
 	}
 	mustContain(t, cardFor(t, operations, `{"action":"delete","circle_id":"circle-one"}`),
-		"Delete", `the circle "Home" (3 people)`, "calendar, albums and chat", "ends for good what its members shared")
+		"Delete", `the circle "Home" (3 people)`, "calendar, albums, chat and address book with every contact in it", "ends for good what its members shared")
 	mustContain(t, cardFor(t, &circleOperations{grants: aMember}, `{"action":"delete","circle_id":"circle-one"}`),
 		"Delete one of your circles")
 }

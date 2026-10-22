@@ -45,7 +45,7 @@ func NewContactCommand() *cli.Command {
 				Name:      "show",
 				Usage:     "one contact, with the card as it is stored",
 				ArgsUsage: "<id>",
-				Flags:     []cli.Flag{JSONFlag()},
+				Flags:     []cli.Flag{JSONFlag(), bookFlag()},
 				Action:    runContactBookShow,
 			},
 			{
@@ -84,14 +84,14 @@ func NewContactCommand() *cli.Command {
 				Aliases:   []string{"delete"},
 				Usage:     "forget a contact",
 				ArgsUsage: "<id>",
-				Flags:     []cli.Flag{ForceFlag()},
+				Flags:     []cli.Flag{ForceFlag(), bookFlag()},
 				Action:    runContactBookRemove,
 			},
 			{
 				Name:      "remove-picture",
 				Usage:     "take the picture off a contact and leave the rest of it",
 				ArgsUsage: "<id>",
-				Flags:     []cli.Flag{JSONFlag(), ForceFlag()},
+				Flags:     []cli.Flag{JSONFlag(), ForceFlag(), bookFlag()},
 				Action:    runContactBookRemovePicture,
 			},
 			{
@@ -188,6 +188,21 @@ func chosenAddressBook(ctx context.Context, command *cli.Command, connection *cl
 	return nil, fmt.Errorf("no address book %s; 'teanode contact book list' lists yours and your circles'", chosen)
 }
 
+// chosenAddressBookId is the id of the book --book names, or empty when it is
+// left out: a command that names a contact then lets the server look in the
+// caller's own books first. A contact in a circle's book is reached only by
+// naming the book.
+func chosenAddressBookId(ctx context.Context, command *cli.Command, connection *client.Client) (string, error) {
+	if strings.TrimSpace(command.String("book")) == "" {
+		return "", nil
+	}
+	book, err := chosenAddressBook(ctx, command, connection)
+	if err != nil {
+		return "", err
+	}
+	return book.ID, nil
+}
+
 func runContactBookList(ctx context.Context, command *cli.Command) error {
 	connection, err := openClient(command)
 	if err != nil {
@@ -236,7 +251,11 @@ func runContactBookShow(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	contact, err := client.GetContact(ctx, connection, command.Args().First())
+	addressBookId, err := chosenAddressBookId(ctx, command, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	contact, err := client.GetContact(ctx, connection, addressBookId, command.Args().First())
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -384,7 +403,11 @@ func runContactBookRemove(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	id := command.Args().First()
-	contact, err := client.GetContact(ctx, connection, id)
+	addressBookId, err := chosenAddressBookId(ctx, command, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	contact, err := client.GetContact(ctx, connection, addressBookId, id)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -396,7 +419,7 @@ func runContactBookRemove(ctx context.Context, command *cli.Command) error {
 		displayed(contact))); err != nil {
 		return err
 	}
-	if err := client.DeleteContact(ctx, connection, id); err != nil {
+	if err := client.DeleteContact(ctx, connection, addressBookId, id); err != nil {
 		return describeError(command, err)
 	}
 	fmt.Printf("forgot %s\n", displayed(contact))
@@ -412,7 +435,11 @@ func runContactBookRemovePicture(ctx context.Context, command *cli.Command) erro
 		return err
 	}
 	id := command.Args().First()
-	contact, err := client.GetContact(ctx, connection, id)
+	addressBookId, err := chosenAddressBookId(ctx, command, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	contact, err := client.GetContact(ctx, connection, addressBookId, id)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -432,7 +459,7 @@ func runContactBookRemovePicture(ctx context.Context, command *cli.Command) erro
 		displayed(contact))); err != nil {
 		return err
 	}
-	kept, err := client.RemoveContactPicture(ctx, connection, id)
+	kept, err := client.RemoveContactPicture(ctx, connection, addressBookId, id)
 	if err != nil {
 		return describeError(command, err)
 	}

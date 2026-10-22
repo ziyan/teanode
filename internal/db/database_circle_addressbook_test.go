@@ -36,6 +36,11 @@ func TestACircleAddressBookBelongsToItsMembers(t *testing.T) {
 			t.Fatalf("GetCircleAddressBook: %v %v", found, err)
 		}
 
+		// A circle's book is reached with circle:use, as every other circle
+		// door requires; riley is a member and has none until it is granted.
+		dbtest.GrantPermission(t, tx, world.owner.ID, models.PermissionCircleUse)
+		dbtest.GrantPermission(t, tx, world.sam.ID, models.PermissionCircleUse)
+
 		accessOf := func(userId string) models.AddressBookAccess {
 			access, err := tx.AddressBookAccess(userId, family)
 			if err != nil {
@@ -63,6 +68,20 @@ func TestACircleAddressBookBelongsToItsMembers(t *testing.T) {
 		}
 		if access, _ := tx.AddressBookAccess(world.sam.ID, world.book); access.CanEdit {
 			t.Errorf("a person's own book is never shared with a circle mate: %+v", access)
+		}
+
+		if access := accessOf(world.riley.ID); access.CanEdit || access.CanManage || access.IsOwner {
+			t.Errorf("a member without circle:use has nothing: %+v", access)
+		}
+		if reachable, err := tx.ListReachableAddressBooks(world.riley.ID); err != nil || len(reachable) != 0 {
+			t.Errorf("a member without circle:use reaches nothing: %+v %v", reachable, err)
+		}
+		dbtest.GrantPermission(t, tx, world.riley.ID, models.PermissionCircleUse)
+		if access := accessOf(world.riley.ID); !access.CanEdit || access.CanManage {
+			t.Errorf("a member with circle:use edits: %+v", access)
+		}
+		if reachable, err := tx.ListReachableAddressBooks(world.riley.ID); err != nil || len(reachable) != 1 || reachable[0].Book.ID != family.ID {
+			t.Errorf("a member with circle:use reaches the circle's book: %+v %v", reachable, err)
 		}
 
 		// Cards added by anybody sit in the one book.

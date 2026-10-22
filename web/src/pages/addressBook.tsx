@@ -42,7 +42,7 @@ const CONTACTS = `
     }
   }`
 
-const DELETE = `mutation ($id: String!) { DeleteContact(id: $id) }`
+const DELETE = `mutation ($id: String!, $addressBookId: String) { DeleteContact(id: $id, addressBookId: $addressBookId) }`
 
 // Contacts whose address is the address of a person in the circles, offered
 // for the owner to confirm.
@@ -615,15 +615,22 @@ export function AddressBookPage() {
       {deleting && (
         <ConfirmDialog
           title={t('addressBook.delete')}
-          body={t('addressBook.deleteConfirm', {
-            name: deleting.name || deleting.emails?.[0] || '',
-          })}
+          body={
+            isCircleBook
+              ? t('addressBook.deleteCircleConfirm', {
+                  name: deleting.name || deleting.emails?.[0] || '',
+                  circle: book?.circleName ?? '',
+                })
+              : t('addressBook.deleteConfirm', {
+                  name: deleting.name || deleting.emails?.[0] || '',
+                })
+          }
           confirmLabel={t('common.delete')}
           busy={busy}
           error={problem}
           onConfirm={() =>
             void run(
-              () => graphql(DELETE, { id: deleting.id }),
+              () => graphql(DELETE, { id: deleting.id, addressBookId: bookId }),
               t('addressBook.saidDeleted', { name: deleting.name || deleting.emails?.[0] || '' }),
             ).then((done) => done && setDeleting(null))
           }

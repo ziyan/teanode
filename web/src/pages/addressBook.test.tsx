@@ -449,6 +449,9 @@ it("opens a circle's book from the address, without the owner's own things", asy
   fireEvent.click(screen.getByRole('button', { name: 'Family Guest: Edit' }))
   const dialog = await screen.findByRole('dialog')
   expect(within(dialog).queryByRole('button', { name: 'Is in your circles as…' })).toBeNull()
+  // The card is read from the circle's book: an id is named only within its book.
+  const read = vi.mocked(graphql).mock.calls.find(([document]) => document.includes('GetContact'))
+  expect(read?.[1]).toEqual({ id: 'card-family', addressBookId: 'book-family' })
   const saved = () => vi.mocked(graphql).mock.calls.filter(([document]) => document.includes('SaveContact'))
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
   await waitFor(() => expect(saved()).toHaveLength(1))
@@ -490,4 +493,38 @@ it("lets an admin rename and delete a circle's book, and a member neither", asyn
   expect(deleted?.[1]).toEqual({ addressBookId: 'book-family' })
   // And the page goes back to the person\'s own book.
   await waitFor(() => expect(shownSearch).not.toContain('book='))
+})
+
+it("names the circle's book when it deletes one of its contacts, and says the whole circle loses it", async () => {
+  answerWithACircleBook()
+  show('/contacts?book=book-family')
+  await screen.findByText('Family Guest')
+  fireEvent.click(screen.getByRole('button', { name: 'Family Guest: Delete' }))
+  const question = await screen.findByRole('alertdialog')
+  expect(
+    within(question).getByText(
+      /Delete Family Guest from the Fixture Family address book\? Everyone in the circle loses it/,
+    ),
+  ).toBeTruthy()
+  fireEvent.click(within(question).getByRole('button', { name: 'Delete' }))
+  await waitFor(() =>
+    expect(vi.mocked(graphql).mock.calls.some(([document]) => document.includes('DeleteContact'))).toBe(true),
+  )
+  const deleted = vi.mocked(graphql).mock.calls.find(([document]) => document.includes('DeleteContact'))
+  expect(deleted?.[1]).toEqual({ id: 'card-family', addressBookId: 'book-family' })
+})
+
+it("names the person's own book when it deletes one of their contacts", async () => {
+  answer()
+  show('/contacts')
+  await screen.findByText('Fixture Guest')
+  fireEvent.click(screen.getByRole('button', { name: 'Fixture Guest: Delete' }))
+  const question = await screen.findByRole('alertdialog')
+  expect(within(question).getByText(/Delete Fixture Guest from your address book\?/)).toBeTruthy()
+  fireEvent.click(within(question).getByRole('button', { name: 'Delete' }))
+  await waitFor(() =>
+    expect(vi.mocked(graphql).mock.calls.some(([document]) => document.includes('DeleteContact'))).toBe(true),
+  )
+  const deleted = vi.mocked(graphql).mock.calls.find(([document]) => document.includes('DeleteContact'))
+  expect(deleted?.[1]).toEqual({ id: 'card-1', addressBookId: 'book-1' })
 })
