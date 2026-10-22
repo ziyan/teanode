@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -148,6 +149,43 @@ func TestGraphPreparationAllowsClientAndAgentDocuments(test *testing.T) {
 	for _, operation := range operations {
 		if _, rejected := graph.prepareGraphRequest(&graphRequest{Query: operation.text}); rejected != nil {
 			test.Errorf("%s: preparation rejected: %v", operation.where, rejected.Errors)
+		}
+	}
+}
+
+// A request from nobody signed in may select only a few root fields. A
+// mutation runs each in a transaction of its own, so without a limit one
+// stranger's request can start as many as the document has room for.
+func TestAnonymousRequestsAreLimitedInRootFields(test *testing.T) {
+	graph := &graph{schema: buildSchemaForValidation(test), config: config.NewMemoryStore(config.Default())}
+	ask := func(document string) string {
+		body, err := json.Marshal(graphRequest{Query: document})
+		if err != nil {
+			test.Fatal(err)
+		}
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/graphql", strings.NewReader(string(body)))
+		response := httptest.NewRecorder()
+		graph.graphView(response, request)
+		return response.Body.String()
+	}
+	aliases := func(count int) string {
+		var fields []string
+		for index := 0; index < count; index++ {
+			fields = append(fields, fmt.Sprintf("field%d: __typename", index))
+		}
+		return strings.Join(fields, " ")
+	}
+
+	if body := ask("{ " + aliases(maximumAnonymousRootFieldCount) + " }"); strings.Contains(body, "sign in to ask") {
+		test.Errorf("a request at the limit was refused: %s", body)
+	}
+	for name, document := range map[string]string{
+		"aliases":          "{ " + aliases(maximumAnonymousRootFieldCount+1) + " }",
+		"a fragment":       "{ ...Fields } fragment Fields on RootQuery { " + aliases(maximumAnonymousRootFieldCount+1) + " }",
+		"an inline spread": "{ ... on RootQuery { " + aliases(maximumAnonymousRootFieldCount+1) + " } }",
+	} {
+		if body := ask(document); !strings.Contains(body, "sign in to ask") {
+			test.Errorf("%s: a request over the limit was not refused: %s", name, body)
 		}
 	}
 }

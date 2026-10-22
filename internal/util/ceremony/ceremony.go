@@ -43,6 +43,10 @@ var ErrNoCeremonyInProgress = errors.New("ceremony: no ceremony is in progress")
 // open in a tab is not still answerable tomorrow.
 const Lifetime = 5 * time.Minute
 
+// ErrTooManyCeremonies means the store is holding as many as it will. A
+// caller treats it as any other failure to start: nothing was parked.
+var ErrTooManyCeremonies = errors.New("ceremony: too many ceremonies are in progress")
+
 // Ceremony is a challenge waiting to be answered.
 type Ceremony struct {
 	// Username is set when the ceremony is registering a credential for

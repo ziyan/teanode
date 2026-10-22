@@ -63,6 +63,12 @@ type Settings struct {
 	// much memory this process holds. Zero means no bound.
 	MaxConnections int
 
+	// Holds bounds how many of those connections one address may hold at
+	// once, on top of the total: the total alone is taken by whoever
+	// connects first and keeps connecting. Shared between listeners so that
+	// it counts an address once. Nil means no bound.
+	Holds *ratelimit.AddressHolds
+
 	// AuthLimiter bounds how often one address may attempt to authenticate.
 	// Nil disables the limit.
 	//
@@ -103,6 +109,18 @@ func Serve(listener net.Listener, handle HandleFunc, locator geoip.Locator, reso
 				continue
 			}
 		}
+		releaseHold := func() {}
+		if settings.Holds != nil {
+			release, ok := settings.Holds.Acquire(conn.RemoteAddr())
+			if !ok {
+				if connections != nil {
+					<-connections
+				}
+				go refuseConnection(conn)
+				continue
+			}
+			releaseHold = release
+		}
 
 		// TODO: we should wait for the ongoing connections before exit
 		go func(conn net.Conn) {
@@ -111,6 +129,7 @@ func Serve(listener net.Listener, handle HandleFunc, locator geoip.Locator, reso
 			log.Infof("accepted connection from %s", conn.RemoteAddr())
 			defer func() {
 				_ = conn.Close()
+				releaseHold()
 				if connections != nil {
 					<-connections
 				}
@@ -674,7 +693,7 @@ func (self *session) handleAuth(arguments string) error {
 
 	// Before the credential is even parsed, so that a refused address costs
 	// nothing to refuse.
-	if self.settings.AuthLimiter != nil && !self.settings.AuthLimiter.Allow(self.ip.String()) {
+	if self.settings.AuthLimiter != nil && !self.settings.AuthLimiter.Allow(ratelimit.AddressKey(self.ip.String())) {
 		log.Warningf("%s: too many authentication attempts", self)
 		return self.writeLines(454, "4.7.0", "Too many authentication attempts, try again later")
 	}

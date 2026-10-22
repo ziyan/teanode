@@ -173,3 +173,38 @@ func selectGraphOperation(document *ast.Document, operationName string) (*ast.Op
 	}
 	return operation, nil
 }
+
+// countRootFields is how many fields an operation selects at its root,
+// counting the ones that come in through fragments and every repeat of a name
+// or alias, since each is another call into a resolver as far as this limit is
+// concerned. The document has already passed validation, so fragments do not
+// spread into themselves.
+func countRootFields(document *ast.Document, operation *ast.OperationDefinition) int {
+	fragments := make(map[string]*ast.FragmentDefinition)
+	for _, definition := range document.Definitions {
+		if fragment, isFragment := definition.(*ast.FragmentDefinition); isFragment {
+			fragments[fragment.Name.Value] = fragment
+		}
+	}
+	var count func(*ast.SelectionSet) int
+	count = func(selections *ast.SelectionSet) int {
+		if selections == nil {
+			return 0
+		}
+		total := 0
+		for _, selection := range selections.Selections {
+			switch selected := selection.(type) {
+			case *ast.Field:
+				total++
+			case *ast.InlineFragment:
+				total += count(selected.SelectionSet)
+			case *ast.FragmentSpread:
+				if fragment := fragments[selected.Name.Value]; fragment != nil {
+					total += count(fragment.SelectionSet)
+				}
+			}
+		}
+		return total
+	}
+	return count(operation.SelectionSet)
+}

@@ -11,6 +11,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/ratelimit"
 )
 
 // realm is what a client shows somebody when it asks for the password.
@@ -102,7 +103,7 @@ func (self *component) authenticate(response http.ResponseWriter, request *http.
 	// server-wide limit off for an hour. And counting every request rather
 	// than every failure would have throttled the ordinary case, since one
 	// phone synchronizing its contacts makes a request per card.
-	from := api.RemoteAddress(request, configuration.Server.TrustedProxies)
+	from := ratelimit.AddressKey(api.RemoteAddress(request, configuration.Server.TrustedProxies))
 
 	// Looked at before the password is checked, and spent only when the
 	// check fails.

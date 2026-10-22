@@ -286,6 +286,9 @@ func (self *graph) ChangePassword(ctx context.Context, arguments ChangePasswordA
 	}
 
 	if err := self.authenticator.ChangePassword(username, arguments.CurrentPassword, arguments.NewPassword); err != nil {
+		if errors.Is(err, web.ErrTooManyAttempts) {
+			return nil, api.ErrTooManyRequests
+		}
 		if errors.Is(err, web.ErrInvalidCredentials) || errors.Is(err, web.ErrInvalidAccount) {
 			return nil, err
 		}

@@ -303,9 +303,9 @@ func AuthenticateAppPasswordWithID(tx db.Transaction, username, password string)
 // AuthenticateAppPasswordCounting is the same, and says how many password
 // hashes it spent.
 //
-// A refusal tries every app password the mailbox has, and a hash costs about
-// a sixth of a second on purpose. Counted as one attempt, a mailbox with
-// twenty devices therefore sold twenty times as much of this server's time per
+// A refusal tries every app password the mailbox has that was made before
+// tags existed, and a hash costs about a sixth of a second on purpose.
+// Counted as one attempt, a mailbox with twenty such devices therefore sold twenty times as much of this server's time per
 // token as an empty one -- three seconds of a core for one packet, from
 // anybody, on every port that takes an app password. A caller with a rate
 // limiter charges it this many.
@@ -407,6 +407,14 @@ func AuthenticateAppPasswordCounting(tx db.Transaction, username, password strin
 		}
 	}
 
+	// A password with no tag in it can only be one made before tags existed.
+	// Trying it against the tagged ones would cost a hash apiece for nothing,
+	// and would make a refusal take longer for a mailbox with more devices,
+	// which names the mailboxes.
+	if !anyWithoutSelector(appPasswords) {
+		return refuse()
+	}
+
 	// The old way, for a password made before the tag existed. The most
 	// recently used first, so the ordinary sign-in costs one hash rather
 	// than as many as the mailbox has; a wrong one still costs all of them,
@@ -415,6 +423,9 @@ func AuthenticateAppPasswordCounting(tx db.Transaction, username, password strin
 		return lastUsed(appPasswords[first]).After(lastUsed(appPasswords[second]))
 	})
 	for _, appPassword := range appPasswords {
+		if strings.TrimSpace(appPassword.Selector) != "" {
+			continue
+		}
 		tried++
 		ok, err := security.VerifyPassword([]byte(appPassword.PasswordHash), password)
 		if err != nil {
