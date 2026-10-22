@@ -179,9 +179,7 @@ private struct SharingMadeRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(verbatim: SharingWords.what(
-                share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.subjectMask,
-                passwordItemCount: share.passwordItemCount))
+            Text(verbatim: SharingWords.madeWhat(share))
             Text(verbatim: SharingWords.madeDetails(share)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
         }
         .accessibilityElement(children: .combine)
@@ -246,12 +244,21 @@ enum SharingWords {
         return subjectName
     }
 
+    /// What a share the person made is of: as `what`, and "Page deleted" for a
+    /// memory page that is gone, which is listed so that its share can be stopped.
+    static func madeWhat(_ share: SharingMade) -> String {
+        if share.isPageGone { return String(localized: "sharing.pageDeleted", defaultValue: "Page deleted") }
+        return what(
+            share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.subjectMask,
+            passwordItemCount: share.passwordItemCount)
+    }
+
     /// The level of a calendar, location, album, recording or finance share in
     /// the words of its own screen; a level the app does not know is shown as the server wrote it.
-    static func level(_ kind: SharingKind?, shareLevel: String) -> String {
+    static func level(_ kind: SharingKind?, shareLevel: String, isReceived: Bool) -> String {
         switch kind {
         case .calendar: CalendarShareLevel(rawValue: shareLevel)?.title ?? shareLevel
-        case .location: LocationShareLevel(rawValue: shareLevel)?.title ?? shareLevel
+        case .location: locationLevel(shareLevel, isReceived: isReceived)
         case .photoAlbum: PhotoShareLevel(rawValue: shareLevel).map { PhotoWords.title(of: $0) } ?? shareLevel
         case .recording: RecordingShareLevel(rawValue: shareLevel)?.title ?? shareLevel
         case .finance: FinanceShareWords.name(ofLevel: shareLevel)
@@ -259,22 +266,44 @@ enum SharingWords {
         }
     }
 
-    /// What else a share gives: the Health categories, the quotes of a page,
-    /// the places and face names of an album, a skill's tools as the skill names them.
+    /// A location level: the person's own location when they made the share
+    /// ("Where I am now", as the Location screen words it), and the other
+    /// person's when it was made to them.
+    private static func locationLevel(_ shareLevel: String, isReceived: Bool) -> String {
+        if !isReceived { return LocationShareLevel(rawValue: shareLevel)?.title ?? shareLevel }
+        switch shareLevel {
+        case "current": return String(localized: "sharing.levelCurrentTheirs", defaultValue: "Where they are now")
+        case "history": return String(localized: "sharing.levelHistoryTheirs", defaultValue: "Where they are and where they have been")
+        default: return shareLevel
+        }
+    }
+
+    /// What else a share gives, worded by the kind it belongs to: the Health
+    /// categories, the quotes of a page, the places and face names of an album,
+    /// and a skill's tools as the skill names them (a tool may be called "quotes").
     static func scopes(_ kind: SharingKind?, shareScopes: [String]) -> [String] {
         shareScopes.map { (scope: String) -> String in
-            if kind == .health, let category = HealthCategory(rawValue: scope) { return HealthWords.categoryName(category) }
-            if scope == "quotes" { return String(localized: "sharing.scopeQuotes", defaultValue: "With quotes") }
-            if scope == "location" { return String(localized: "sharing.scopePlaces", defaultValue: "With places") }
-            if scope == "faceNames" { return String(localized: "sharing.scopeFaceNames", defaultValue: "With face names") }
-            return scope
+            switch kind {
+            case .health:
+                if let category = HealthCategory(rawValue: scope) { return HealthWords.categoryName(category) }
+                return scope
+            case .memoryPage:
+                if scope == "quotes" { return String(localized: "sharing.scopeQuotes", defaultValue: "With quotes") }
+                return scope
+            case .photoAlbum:
+                if scope == "location" { return String(localized: "sharing.scopePlaces", defaultValue: "With places") }
+                if scope == "faceNames" { return String(localized: "sharing.scopeFaceNames", defaultValue: "With face names") }
+                return scope
+            default:
+                return scope
+            }
         }
     }
 
     /// The level and what else it gives, in one phrase; empty when there is neither.
-    private static func levelAndScopes(_ kind: SharingKind?, shareLevel: String, shareScopes: [String]) -> String {
+    private static func levelAndScopes(_ kind: SharingKind?, shareLevel: String, shareScopes: [String], isReceived: Bool) -> String {
         var parts: [String] = []
-        if !shareLevel.isEmpty { parts.append(level(kind, shareLevel: shareLevel)) }
+        if !shareLevel.isEmpty { parts.append(level(kind, shareLevel: shareLevel, isReceived: isReceived)) }
         parts.append(contentsOf: scopes(kind, shareScopes: shareScopes))
         return parts.joined(separator: ", ")
     }
@@ -293,7 +322,7 @@ enum SharingWords {
         }
         parts.append(
             share.isCircle ? String(localized: "With the circle \(share.shownGrantee)") : String(localized: "With \(share.shownGrantee)"))
-        let words = levelAndScopes(share.knownKind, shareLevel: share.shareLevel, shareScopes: share.shareScopes)
+        let words = levelAndScopes(share.knownKind, shareLevel: share.shareLevel, shareScopes: share.shareScopes, isReceived: false)
         if !words.isEmpty { parts.append(words) }
         if let since = sinceText(share.since) { parts.append(since) }
         return parts.joined(separator: " · ")
@@ -309,7 +338,7 @@ enum SharingWords {
         }
         parts.append(String(localized: "From \(share.shownOwner)"))
         parts.append(share.isDirect ? String(localized: "By name") : String(localized: "Through the circle \(share.granteeCircleName)"))
-        let words = levelAndScopes(share.knownKind, shareLevel: share.shareLevel, shareScopes: share.shareScopes)
+        let words = levelAndScopes(share.knownKind, shareLevel: share.shareLevel, shareScopes: share.shareScopes, isReceived: true)
         if !words.isEmpty { parts.append(words) }
         if let since = sinceText(share.since) { parts.append(since) }
         return parts.joined(separator: " · ")
@@ -324,9 +353,7 @@ enum SharingWords {
     }
 
     static func stopMessage(_ share: SharingMade) -> String {
-        let thing = what(
-            share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.subjectMask,
-            passwordItemCount: share.passwordItemCount)
+        let thing = madeWhat(share)
         return String(localized: "\(share.shownGrantee) will no longer see \(thing).")
     }
 

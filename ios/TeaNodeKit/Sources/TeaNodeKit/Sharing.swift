@@ -20,18 +20,6 @@ public enum SharingKind: String, CaseIterable, Sendable {
     case passwords
 }
 
-/// SharingTimes reads the moment a share was made, which the server writes as
-/// RFC 3339, with or without fractions of a second.
-enum SharingTimes {
-    static func date(_ text: String) -> Date? {
-        let plain = ISO8601DateFormatter()
-        if let date = plain.date(from: text) { return date }
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return fractional.date(from: text)
-    }
-}
-
 /// SharingMade is one share the person made: of what, with whom, at what level.
 /// A share of passwords has no id of its own and is counted, never named,
 /// because an item's title is sealed.
@@ -47,6 +35,9 @@ public struct SharingMade: Decodable, Hashable, Sendable, Identifiable {
     public let subjectName: String
     /// The last digits of a finance account's number; empty for every other kind.
     public let subjectMask: String
+    /// True for a share of a memory page that no longer exists, which the owner
+    /// can still stop; its subjectName is then the path. Absent from an older server.
+    public let isSubjectDeleted: Bool?
     /// The level of a calendar, location, album, recording or finance share
     /// (busy, titles, details, edit; current, history; view, contribute; summary,
     /// transcript; balance, spending, transactions), empty for the rest.
@@ -84,11 +75,15 @@ public struct SharingMade: Decodable, Hashable, Sendable, Identifiable {
         return knownKind != .passwords
     }
 
+    /// Whether the page that was shared is gone.
+    public var isPageGone: Bool { isSubjectDeleted == true }
+
     /// When it was made, or nil when the server's text cannot be read.
-    public var since: Date? { SharingTimes.date(createdAt) }
+    public var since: Date? { ServerTime.date(createdAt) }
 
     public init(
-        shareKind: String, shareId: String, subjectId: String = "", subjectName: String = "", subjectMask: String = "", shareLevel: String = "",
+        shareKind: String, shareId: String, subjectId: String = "", subjectName: String = "", subjectMask: String = "",
+        isSubjectDeleted: Bool? = nil, shareLevel: String = "",
         shareScopes: [String] = [], passwordItemCount: Int = 0, granteeUserId: String? = nil, granteeUsername: String = "",
         granteeName: String = "", granteeCircleId: String? = nil, granteeCircleName: String = "", createdAt: String = ""
     ) {
@@ -97,6 +92,7 @@ public struct SharingMade: Decodable, Hashable, Sendable, Identifiable {
         self.subjectId = subjectId
         self.subjectName = subjectName
         self.subjectMask = subjectMask
+        self.isSubjectDeleted = isSubjectDeleted
         self.shareLevel = shareLevel
         self.shareScopes = shareScopes
         self.passwordItemCount = passwordItemCount
@@ -139,7 +135,7 @@ public struct SharingReceived: Decodable, Hashable, Sendable, Identifiable {
     /// Who shared it: their name, or their username when they have none.
     public var shownOwner: String { ownerName.isEmpty ? ownerUsername : ownerName }
 
-    public var since: Date? { SharingTimes.date(createdAt) }
+    public var since: Date? { ServerTime.date(createdAt) }
 
     public init(
         shareKind: String, shareId: String, subjectId: String = "", subjectName: String = "", subjectMask: String = "", shareLevel: String = "",
@@ -182,7 +178,7 @@ extension Documents {
     public static let sharing = """
         query {
           ListSharing {
-            sharesMade { shareKind shareId subjectId subjectName subjectMask shareLevel shareScopes passwordItemCount granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName createdAt }
+            sharesMade { shareKind shareId subjectId subjectName subjectMask isSubjectDeleted shareLevel shareScopes passwordItemCount granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName createdAt }
             sharesReceived { shareKind shareId subjectId subjectName subjectMask shareLevel shareScopes passwordItemCount ownerUserId ownerUsername ownerName granteeCircleId granteeCircleName isDirect canDecline createdAt }
           }
         }

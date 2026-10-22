@@ -20,7 +20,8 @@
         /// A share the demo person made, with a person (`granteeUserId`) or a
         /// circle (`granteeCircleName`).
         private static func madeShareJSON(
-            kind: String, id: String, subjectId: String = "", subjectName: String = "", subjectMask: String = "", level: String = "", scopes: [String] = [],
+            kind: String, id: String, subjectId: String = "", subjectName: String = "", subjectMask: String = "", isSubjectDeleted: Bool = false,
+            level: String = "", scopes: [String] = [],
             itemCount: Int = 0, granteeUserId: String? = nil, granteeCircleName: String = "", createdAt: String
         ) -> String {
             let scopeList = scopes.map { #""\#($0)""# }.joined(separator: ",")
@@ -30,7 +31,7 @@
             let circle = granteeUserId == nil ? #""circle-home""# : "null"
             let granteeUser = granteeUserId.map { #""\#($0)""# } ?? "null"
             return
-                #"{"shareKind":"\#(kind)","shareId":"\#(id)","subjectId":"\#(subjectId)","subjectName":"\#(subjectName)","subjectMask":"\#(subjectMask)","shareLevel":"\#(level)","shareScopes":[\#(scopeList)],"passwordItemCount":\#(itemCount),"granteeUserId":\#(granteeUser),"granteeUsername":"\#(granteeUsername)","granteeName":"\#(granteeName)","granteeCircleId":\#(circle),"granteeCircleName":"\#(granteeCircleName)","createdAt":"\#(createdAt)"}"#
+                #"{"shareKind":"\#(kind)","shareId":"\#(id)","subjectId":"\#(subjectId)","subjectName":"\#(subjectName)","subjectMask":"\#(subjectMask)","isSubjectDeleted":\#(isSubjectDeleted),"shareLevel":"\#(level)","shareScopes":[\#(scopeList)],"passwordItemCount":\#(itemCount),"granteeUserId":\#(granteeUser),"granteeUsername":"\#(granteeUsername)","granteeName":"\#(granteeName)","granteeCircleId":\#(circle),"granteeCircleName":"\#(granteeCircleName)","createdAt":"\#(createdAt)"}"#
         }
 
         /// A share made to the demo person, by name (`circleName` empty) or

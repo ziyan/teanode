@@ -390,7 +390,10 @@ own command (`teanode calendar share` and `unshare`, `location`, `health`,
     teanode sharing decline calendar <share-id>          # stop receiving a share that was made to you by name; --force to skip the question
 
 A share to a circle names the circle, a share made to you by name says `by
-name`, and a share of passwords is counted ("3 items"), never named. A finance
+name`, and a share of passwords is counted ("3 items"), never named. A share of a
+memory page that has since been deleted shows as `page deleted (<path>)`, and
+`teanode agent memory unshare` removes it. A calendar shared at `busy` shows the
+owner's name where the calendar's title would be. A finance
 account is named with the last digits of its number (`Everyday Checking
 ••0001`). The kinds are `calendar`, `location`, `health`, `memory_page`
 (`memory-page` is read the same), `photo_album`, `recording`, `finance`, `skill`

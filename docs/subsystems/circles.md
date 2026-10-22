@@ -329,8 +329,12 @@ the skill), who it is shared with or by, the level or scope (a calendar's `busy`
 to `edit`, a location's `current` or `history`, an album's `view` or
 `contribute`, a recording's `summary` or `transcript`, a finance account's
 `balance`, `spending` or `transactions`, the Health categories, the skill's
-tools, and `quotes` or `location` or `faceNames` where a page or an album is
-shared with them), and since when. A share of passwords is counted, never named, because an item's title is
+tools, and `quotes` for a page or `location` or `faceNames` for an album: a scope is
+worded by the kind it belongs to, so a skill's tool called `quotes` is shown as it is),
+and since when. A calendar shared at `busy` is listed to the person it is shared with
+by the owner's name, not the calendar's title, as the calendar itself is shown to them.
+A location level is worded for its reader: "Where they are now" on the
+shared-with-you side, "Where I am now" on the side of the person who shares. A share of passwords is counted, never named, because an item's title is
 sealed: "3 items", not which. A share through a circle names the circle; one
 made to the person by name says so (`isDirect`).
 
@@ -341,8 +345,16 @@ listing and its own reach query (`reachingSharesQuery`,
 and Health listings), with the share's identifier added to the columns, so the
 list cannot disagree with the check. A kind the caller may not use (no
 `health:use`, the calendar service off, no `agent:use` for recordings and
-finance) is left out. A finance account reached by name and through a circle is
-one row at the higher level, as the Finance page shows it. What others share of
+finance) is left out of what is shared with them, but not of what they share: a
+person who lost a permission still sees the shares they made, which their
+readers cannot reach while it is gone, and the kind's own unshare operation
+decides whether they can end one. A finance account reached by name and through a circle is
+one row at the higher level, as the Finance page shows it, and the row is the
+share by name, so it can be declined (the circle's share still reaches the
+person afterwards). A share of a memory page that no longer exists (rows left
+by deletes from before a deleted page ended its shares) is not listed to the
+person it was for; its owner sees it as deleted (`isSubjectDeleted`) and can
+stop it. What others share of
 finance is not the agent's to read, so the person's agent is never shown a
 finance row, and cannot decline one; its recording rows are listed as the
 person's own are.
@@ -370,7 +382,9 @@ note in the main conversation of their agent when it is on (`share_received`,
 written in the same transaction as the share: "Alex shared their calendar with
 you (titles)") and a notification of kind `circle` on their phones, so no new
 kind of notification was needed. A share to a circle tells every member of it
-except the sharer; a person who may not use that kind is not told. A recording's
+except the sharer; a person who may not use that kind is not told (a memory
+page and a skill reach only people with `agent:use`), and nor is an account that
+is disabled. A recording's
 note names its title ("Alex shared the recording Standup with you (summary and
 transcript)"); a finance account's does not name the account ("Alex shared a
 finance account with you (balance only)"), because the note goes into the
@@ -378,11 +392,14 @@ conversation of the person's agent, which has no part in finance sharing. The sa
 share at the same level, by the same sharer, is not told to the same person
 twice within ten minutes, so changing a level back and forth is one notice, not
 one for each tap. That memory is the server's (`shareNoticeCache`), so a restart
-forgets it. Passwords are not told: the owner's device seals a key for each
+forgets it. A notice is recorded as sent after the transaction commits, so one
+that failed to write does not silence the next try, and the cache keeps at most
+4096 entries, dropping the oldest when all are fresh. Passwords are not told: the owner's device seals a key for each
 recipient, and the waiting list already shows who is still without one.
 
 When somebody joins a circle (`AnswerCircleInvitation`, `AddCircleMember`), each
-other member who has shared something with it is told once, in one note
+other member who has shared something with it is told once (not again when the
+account was in the circle already), in one note
 (`share_reached`): "Sam joined Family and can now see your calendar and
 location", or "your calendar, location and finance" for three: the kinds are
 joined with commas and an "and" before the last, with no comma in front of it,

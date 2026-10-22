@@ -99,6 +99,29 @@ final class SharingTests: XCTestCase {
         XCTAssertNotNil(plain.since)
         XCTAssertNotNil(fractional.since)
         XCTAssertNil(SharingMade(shareKind: "calendar", shareId: "c", createdAt: "yesterday").since)
+        // Go writes up to nine digits of fractions of a second.
+        let nanoseconds = SharingMade(shareKind: "calendar", shareId: "d", createdAt: "2030-01-02T00:00:00.123456789Z")
+        XCTAssertEqual(nanoseconds.since, plain.since)
+    }
+
+    func testAPageThatIsGoneIsKnownFromTheServersFlag() async throws {
+        let answer = #"""
+            {"data":{"ListSharing":{"sharesMade":[
+              {"shareKind":"memory_page","shareId":"share-7","subjectId":"people/lee","subjectName":"people/lee","subjectMask":"","isSubjectDeleted":true,"shareLevel":"","shareScopes":[],"passwordItemCount":0,
+               "granteeUserId":"user-2","granteeUsername":"sam","granteeName":"","granteeCircleId":null,"granteeCircleName":"","createdAt":"2030-01-02T00:00:00Z"},
+              {"shareKind":"memory_page","shareId":"share-8","subjectId":"people/kim","subjectName":"Kim","subjectMask":"","isSubjectDeleted":false,"shareLevel":"","shareScopes":[],"passwordItemCount":0,
+               "granteeUserId":"user-2","granteeUsername":"sam","granteeName":"","granteeCircleId":null,"granteeCircleName":"","createdAt":"2030-01-02T00:00:00Z"}],
+             "sharesReceived":[]}}}
+            """#
+        let (connection, _) = connection(answering: answer)
+        let list = try await connection.sharing()
+        XCTAssertTrue(list.sharesMade[0].isPageGone)
+        XCTAssertTrue(list.sharesMade[0].canStop)
+        XCTAssertFalse(list.sharesMade[1].isPageGone)
+        // A server that does not send the flag is an older one: the page is there.
+        let (olderConnection, _) = self.connection(answering: listAnswer)
+        let older = try await olderConnection.sharing()
+        XCTAssertFalse(older.sharesMade[0].isPageGone)
     }
 
     func testAKindTheAppDoesNotKnowIsKeptButCannotBeStopped() async throws {

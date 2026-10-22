@@ -24,6 +24,7 @@ function made(overrides: Partial<SharingMade> = {}): SharingMade {
     subjectId: 'calendar-one',
     subjectName: 'Fixture Calendar',
     subjectMask: '',
+    isSubjectDeleted: false,
     shareLevel: 'titles',
     shareScopes: [],
     passwordItemCount: 0,
@@ -324,4 +325,81 @@ it('says it is not on for an account without circles, and sends an unknown tab t
 
   renderAt('/sharing/nonsense')
   await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/sharing'))
+})
+
+it('words a location shared with the person as where the other person is, and the person’s own as where they are', async () => {
+  answerWith(
+    [made({ shareKind: 'location', shareId: 'share-mine', subjectId: '', subjectName: '', shareLevel: 'current' })],
+    [
+      received({
+        shareKind: 'location',
+        shareId: 'share-theirs',
+        subjectId: '',
+        subjectName: '',
+        shareScopes: [],
+        shareLevel: 'history',
+      }),
+    ],
+  )
+  renderAt('/sharing')
+
+  expect(await screen.findByText('Where I am now')).toBeTruthy()
+  fireEvent.click(await screen.findByRole('button', { name: 'Shared with you' }))
+  expect(await screen.findByText('Where they are and where they have been')).toBeTruthy()
+  expect(screen.queryByText('Where I am and where I have been')).toBeNull()
+})
+
+it('words a scope by the kind it belongs to, so a skill’s tool named quotes stays as it is', async () => {
+  answerWith(
+    [
+      made({
+        shareKind: 'skill',
+        shareId: 'share-skill',
+        subjectId: 'fixture-skill',
+        subjectName: 'fixture-skill',
+        shareLevel: '',
+        shareScopes: ['quotes'],
+      }),
+      made({
+        shareKind: 'memory_page',
+        shareId: 'share-page',
+        subjectId: 'people/kim',
+        subjectName: 'Kim',
+        shareLevel: '',
+        shareScopes: ['quotes'],
+      }),
+    ],
+    [],
+  )
+  renderAt('/sharing')
+
+  const skillRow = (await screen.findByRole('link', { name: 'fixture-skill' })).closest('tr') as HTMLElement
+  expect(within(skillRow).getByText('quotes')).toBeTruthy()
+  expect(within(skillRow).queryByText('With quotes')).toBeNull()
+  const pageRow = screen.getByRole('link', { name: 'Kim' }).closest('tr') as HTMLElement
+  expect(within(pageRow).getByText('With quotes')).toBeTruthy()
+})
+
+it('lists a shared page that is gone as deleted, with no link, and still stops it', async () => {
+  answerWith(
+    [
+      made({
+        shareKind: 'memory_page',
+        shareId: 'share-gone',
+        subjectId: 'people/gone',
+        subjectName: 'people/gone',
+        isSubjectDeleted: true,
+        shareLevel: '',
+      }),
+    ],
+    [],
+  )
+  renderAt('/sharing')
+
+  const cell = await screen.findByText('Page deleted')
+  expect(cell.closest('a')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /stop sharing with Person B/i }))
+  fireEvent.click(screen.getByRole('button', { name: 'Stop sharing' }))
+  await waitFor(() => expect(calls('UnshareAgentPage')).toHaveLength(1))
+  expect(calls('UnshareAgentPage')[0][1]).toEqual({ shareId: 'share-gone' })
 })
