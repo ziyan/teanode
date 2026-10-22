@@ -231,3 +231,30 @@ func TestTheTabSocketTakesNoCookie(t *testing.T) {
 		t.Fatalf("a hello carried by a cookie was told %v", said)
 	}
 }
+
+// Before the hello is accepted the computer socket is a stranger's, and takes
+// no more than a request body; a page of a scan comes after.
+func TestTheComputerSocketIsSmallUntilItIsSignedIn(t *testing.T) {
+	world := newSocketWorld(t)
+	server := world.serve(t, world.resolver.computerView)
+
+	conn := dialSocket(t, server, nil)
+	_ = conn.WriteMessage(websocket.TextMessage, []byte(strings.Repeat("x", maximumRequestSize+1)))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("a stranger's oversized message was answered")
+	}
+
+	signedIn := dialSocket(t, server, nil)
+	_ = signedIn.WriteJSON(map[string]any{"type": "hello", "protocol": computer.Protocol, "token": world.token, "name": "fixture"})
+	if said := readSocket(t, signedIn); said["type"] != "welcome" {
+		t.Fatalf("the token was told %v", said)
+	}
+	big := `{"type":"ping","padding":"` + strings.Repeat("x", 2*maximumRequestSize) + `"}`
+	if err := signedIn.WriteMessage(websocket.TextMessage, []byte(big)); err != nil {
+		t.Fatalf("write: %s", err)
+	}
+	if said := readSocket(t, signedIn); said["type"] != "pong" {
+		t.Fatalf("an attached computer's large message was told %v", said)
+	}
+}
