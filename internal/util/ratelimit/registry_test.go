@@ -55,27 +55,29 @@ func TestTheRegistryDoesNotGrowWithoutBound(t *testing.T) {
 	}
 }
 
-// Past the limit a caller is still limited, because the bucket they are handed
-// is fresh rather than absent. A fresh bucket allows a burst and no more.
-func TestPastTheLimitCallersAreStillLimited(t *testing.T) {
+// With the table full, callers whose key is not held share one bucket. A fresh
+// bucket for each call would allow every attempt, so filling the table would
+// switch the limit off for everybody else.
+func TestPastTheLimitCallersShareOneLimitedBucket(t *testing.T) {
 	t.Parallel()
-	registry := ratelimit.NewRegistry(1, 2, 1, time.Minute)
+	const capacity = 3
+	registry := ratelimit.NewRegistry(0.0001, capacity, 2, time.Minute)
 
-	// Fill the one slot with a key that keeps it.
+	// Fill the table with keys that keep their slots.
 	registry.Allow("10.0.0.1")
+	registry.Allow("10.0.0.2")
 
-	// Everybody else gets an unheld bucket, which still refuses beyond its
-	// capacity within the one call sequence it is used for.
-	bucket := registry.For("10.0.0.2")
-	// Each call spends a token, so these are three different questions even
-	// though they read the same.
-	for spent := 1; spent <= 2; spent++ {
-		if !bucket.Allow() {
-			t.Fatalf("the bucket handed out past the limit refused token %d of its capacity of 2", spent)
+	allowed := 0
+	for attempt := 0; attempt < 1000; attempt++ {
+		if registry.Allow(fmt.Sprintf("10.0.1.%d", attempt)) {
+			allowed++
 		}
 	}
-	if bucket.Allow() {
-		t.Error("the bucket handed out past the limit allowed more than its capacity")
+	if allowed > capacity {
+		t.Errorf("%d attempts from keys past the limit were allowed, but the capacity is %d", allowed, capacity)
+	}
+	if held := registry.Len(); held != 2 {
+		t.Errorf("the registry holds %d keys, but its limit is 2", held)
 	}
 }
 
