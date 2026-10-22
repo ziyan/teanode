@@ -6,6 +6,24 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.193.6] - 2026-10-22
+
+### Fixed
+
+- Background runs that may only read memory, knowledge or to-dos are no longer offered their writing actions, so they stop spending rounds on refused calls. (#625)
+
+## [0.193.5] - 2026-10-22
+
+### Fixed
+
+- Passwords: Show reveals a password even when pressed just as the item opens. (#629)
+
+## [0.193.4] - 2026-10-22
+
+### Fixed
+
+- Link previews show for sites that refuse a client speaking only HTTP/1.1. (#624)
+
 ## [0.193.3] - 2026-10-22
 
 ### Fixed

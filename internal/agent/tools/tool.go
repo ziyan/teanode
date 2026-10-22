@@ -359,27 +359,61 @@ func (self *Tool) WithHeldActions(permissions *models.EffectivePermissions) *Too
 	if len(self.ActionRequires) == 0 {
 		return self
 	}
+	return self.withActionsWhere(func(verb string) bool {
+		required, isRestricted := self.ActionRequires[verb]
+		return !isRestricted || HoldsAll(permissions, required)
+	})
+}
+
+// WithReadingActions is the tool as a run that may only read it is offered
+// it: the actions that would change something are taken out of the "action"
+// choices, judged as a call naming only that action is. The run refuses such
+// a call anyway; offered the verb, the model kept making the call and spent
+// a round on the refusal. It is the tool itself when nothing is taken out,
+// or when nothing would be left.
+func (self *Tool) WithReadingActions() *Tool {
+	return self.withActionsWhere(func(verb string) bool {
+		call, err := json.Marshal(map[string]string{"action": verb})
+		return err == nil && self.RiskFor(call) == RiskRead
+	})
+}
+
+// withActionsWhere is the tool with only the "action" choices isKept keeps,
+// the rest of the action's description as it was. It is the tool itself
+// when nothing is taken out or nothing would be left.
+func (self *Tool) withActionsWhere(isKept func(verb string) bool) *Tool {
 	var kept []string
 	isChanged := false
 	for _, verb := range ActionsOf(self) {
-		if required, isRestricted := self.ActionRequires[verb]; isRestricted && !HoldsAll(permissions, required) {
+		if !isKept(verb) {
 			isChanged = true
 			continue
 		}
 		kept = append(kept, verb)
 	}
-	if !isChanged {
+	if !isChanged || len(kept) == 0 {
 		return self
 	}
 	given, isObject := self.Parameters["properties"].(map[string]any)
 	if !isObject {
 		return self
 	}
+	action := map[string]any{}
+	if givenAction, isActionObject := given["action"].(map[string]any); isActionObject {
+		for key, value := range givenAction {
+			action[key] = value
+		}
+	}
+	action["type"] = "string"
+	action["enum"] = kept
+	if _, isDescribed := action["description"]; !isDescribed {
+		action["description"] = "what to do"
+	}
 	properties := map[string]any{}
 	for name, property := range given {
 		properties[name] = property
 	}
-	properties["action"] = EnumProperty("what to do", kept...)
+	properties["action"] = action
 	parameters := map[string]any{}
 	for key, value := range self.Parameters {
 		parameters[key] = value
