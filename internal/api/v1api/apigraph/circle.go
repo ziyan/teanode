@@ -607,6 +607,12 @@ func (self *graph) AnswerCircleInvitation(ctx context.Context, arguments AnswerC
 	}
 	invitationAnswer := models.InvitationAnswerDeclined
 	if arguments.IsAccepted {
+		// The invitation may have been made while nothing was shared with the
+		// circle: whoever joins reads what it is shared now, so joining is
+		// asked of a person's own tap as bringing somebody in is.
+		if err := self.requireTapForHealthSharedCircle(ctx, invitation.CircleID); err != nil {
+			return nil, err
+		}
 		invitationAnswer = models.InvitationAnswerAccepted
 	}
 	joined, err := tx.AnswerCircleInvitation(invitation.ID, invitationAnswer, time.Now())

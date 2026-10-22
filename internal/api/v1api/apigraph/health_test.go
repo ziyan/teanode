@@ -971,3 +971,68 @@ func TestJoiningACircleHealthIsSharedWithNeedsATap(t *testing.T) {
 		t.Error("cora, who a tap brought in, reads nothing of what the circle was shared")
 	}
 }
+
+// An invitation made while nothing was shared with the circle can be answered
+// after Health is shared with it, and whoever joins then reads that Health, so
+// accepting is asked of a tap as inviting is. Declining shares nothing and is
+// open to a token.
+func TestAnInvitationMadeBeforeHealthWasSharedNeedsATapToAccept(t *testing.T) {
+	world := newHealthWorld(t)
+	world.fill(t, world.ada)
+	isTapRequired := func(failures []string) bool {
+		return strings.Contains(strings.Join(failures, "; "), api.TapRequiredPhrase)
+	}
+	invitationTo := func(user *models.User) string {
+		t.Helper()
+		for _, each := range world.run(t, user, `query { ListCircleInvitations { id circleId } }`, nil)["ListCircleInvitations"].([]any) {
+			invitation := each.(map[string]any)
+			if invitation["circleId"] == world.home {
+				return invitation["id"].(string)
+			}
+		}
+		t.Fatalf("%s has no invitation to the circle", user.Username)
+		return ""
+	}
+	memberCount := func() int {
+		t.Helper()
+		circle := world.run(t, world.ada, fmt.Sprintf(`query { ReadCircle(circleId: %q) { members { username } } }`, world.home), nil)["ReadCircle"].(map[string]any)
+		return len(circle["members"].([]any))
+	}
+	answer := func(credentialKind models.CredentialKind, user *models.User, isAccepted bool) []string {
+		_, failures := world.callWithCredential(t, user, credentialKind,
+			fmt.Sprintf(`mutation { AnswerCircleInvitation(invitationId: %q, isAccepted: %t) { id } }`, invitationTo(user), isAccepted), nil)
+		return failures
+	}
+
+	// Nothing is shared with the circle yet, so a token may invite both.
+	for _, invited := range []*models.User{world.cora, world.dave} {
+		if _, failures := world.callWithCredential(t, world.ada, models.CredentialToken,
+			fmt.Sprintf(`mutation { InviteToCircle(circleId: %q, username: %q, memberRole: "member") }`, world.home, invited.Username), nil); len(failures) > 0 {
+			t.Fatalf("an invitation by a token to a circle with nothing shared: %v", failures)
+		}
+	}
+	if data, failures := world.callWithCredential(t, world.ada, models.CredentialApp, healthShareQuery,
+		map[string]any{"granteeCircleId": world.home, "healthCategories": []any{"sleep"}}); len(failures) > 0 {
+		t.Fatalf("the share by a tap: %v %v", data, failures)
+	}
+
+	// Now Health is shared with the circle: a token cannot accept, and
+	// nothing changes.
+	if failures := answer(models.CredentialToken, world.cora, true); !isTapRequired(failures) {
+		t.Errorf("accepting with a token after Health was shared: %v", failures)
+	}
+	if count := memberCount(); count != 2 {
+		t.Fatalf("a refused answer changed who is in the circle: %d people", count)
+	}
+	// Declining is open to a token.
+	if failures := answer(models.CredentialToken, world.dave, false); len(failures) > 0 {
+		t.Errorf("declining with a token: %v", failures)
+	}
+	// A tap may accept.
+	if failures := answer(models.CredentialApp, world.cora, true); len(failures) > 0 {
+		t.Errorf("accepting by a tap: %v", failures)
+	}
+	if count := memberCount(); count != 3 {
+		t.Errorf("cora, who accepted by a tap, is not in the circle: %d people", count)
+	}
+}
