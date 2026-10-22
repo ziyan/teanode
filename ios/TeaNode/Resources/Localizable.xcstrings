@@ -82829,6 +82829,230 @@
           }
         }
       }
+    },
+    "They see the title, date, length, the summary and the names of the speakers you named.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイトル、日付、長さ、要約と、あなたが名前を付けた話者の名前が見えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方可以看到标题、日期、时长、摘要，以及你命名过的发言人的名字。"
+          }
+        }
+      }
+    },
+    "They see the summary and the words, with your corrections. Never the audio.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要約と、あなたの修正を含む発言内容が見えます。音声は共有されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方可以看到摘要和说话内容（包含你的修改），但不能听到录音。"
+          }
+        }
+      }
+    },
+    "The other people who speak in this recording have not agreed to it being shared. Share it only if they would be fine with that.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この録音の中で話している他の人は、共有することに同意していません。その人たちが問題ないと思う場合にだけ共有してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这段录音里的其他发言人没有同意共享它。只有在他们不介意的情况下才共享。"
+          }
+        }
+      }
+    },
+    "This recording is not shared with anybody yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この録音はまだ誰とも共有されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这段录音还没有共享给任何人。"
+          }
+        }
+      }
+    },
+    "%@ will no longer see this recording.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@はこの録音を見られなくなります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@将无法再查看这段录音。"
+          }
+        }
+      }
+    },
+    "You do not share a circle with anybody yet. Make or join a circle to share a recording.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ誰ともサークルを共有していません。サークルを作成するか参加すると、録音を共有できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你还没有和任何人在同一个圈子里。创建或加入一个圈子后，就可以共享录音了。"
+          }
+        }
+      }
+    },
+    "Share this recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この録音を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享这段录音"
+          }
+        }
+      }
+    },
+    "Nothing shared with you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有されたものはありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有与你共享的内容"
+          }
+        }
+      }
+    },
+    "Recordings other people choose to share with you are here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかの人があなたと共有することにした録音がここに表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他人选择与你共享的录音会显示在这里。"
+          }
+        }
+      }
+    },
+    "Shared recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有された録音"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享的录音"
+          }
+        }
+      }
+    },
+    "Speakers: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話者：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发言人：%@"
+          }
+        }
+      }
+    },
+    "The transcript was not shared.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしは共有されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有共享转写文本。"
+          }
+        }
+      }
+    },
+    "Share with people": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人と共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与他人共享"
+          }
+        }
+      }
+    },
+    "Recordings shared with you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたと共有されている録音"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与你共享的录音"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
