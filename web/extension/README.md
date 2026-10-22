@@ -152,9 +152,12 @@ disk, clears when it closes and hides from web pages and content scripts. They
 are dropped after the lock time you set on the dashboard with no use (never
 more than a day, whatever the server says), when the browser closes, and when
 you sign out on the options page. The service worker also closes
-`chrome.storage.local` and `chrome.storage.sync`, which hold the sign-in token
-and the server address, to content scripts each time it starts, so only the
-extension's own pages and worker can read them. The panel's script, which runs
+`chrome.storage.local`, which holds the sign-in token and the server address
+beside it, to content scripts each time it starts, so only the extension's own
+pages and worker can read it. The address is never in `chrome.storage.sync`:
+whatever could write there from another browser would otherwise choose the
+server the token is sent to, so each browser is given the address once, as it
+is signed in once. The panel's script, which runs
 in the page, is given the token only in the seconds after you press the
 extension's button on that tab, and asks the worker for everything else. Nothing decrypted is
 ever stored: the sealed items are fetched from your server, opened in the

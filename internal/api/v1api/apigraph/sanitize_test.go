@@ -331,3 +331,57 @@ func TestSanitizeCSSIsStillTracking(t *testing.T) {
 		t.Errorf("the rule should survive for the reader to opt into: %s", sanitized)
 	}
 }
+
+// TestSanitizeHTMLDropsPicturesAtAPathOnThisServer covers a read receipt that
+// needs no remote address: a path on this server loads at once with the
+// reader's credentials, and can name the server's own remote-picture proxy.
+// Only a cid: source, which the server rewrites to the attachment endpoint
+// afterwards, may stay.
+func TestSanitizeHTMLDropsPicturesAtAPathOnThisServer(t *testing.T) {
+	t.Parallel()
+
+	proxy := "/api/v1/mail/example-mail/remote?url=https%3A%2F%2Ftracker.example%2Fopened"
+	for _, source := range []string{proxy, "api/v1/mail/example-mail/remote", "../remote", "?id=1", ""} {
+		output, _ := sanitizeHtml(`<p>hello</p><img src="` + source + `">`)
+		if strings.Contains(output, "src=") || strings.Contains(output, "/remote") {
+			t.Errorf("the source %q was kept:\n%s", source, output)
+		}
+	}
+
+	output, hasRemote := sanitizeHtml(`<img src=" CID:logo@example.net ">`)
+	if hasRemote || !strings.Contains(output, "logo@example.net") {
+		t.Errorf("an embedded picture was dropped or held back (remote=%v):\n%s", hasRemote, output)
+	}
+}
+
+// TestSanitizeCSSDropsUrlsAtAPathOnThisServer is the same read receipt through
+// a background. The frame's policy allows this server's own pictures, so
+// reporting it as remote would not hold it back: the declaration has to go.
+func TestSanitizeCSSDropsUrlsAtAPathOnThisServer(t *testing.T) {
+	t.Parallel()
+
+	for _, declaration := range []string{
+		"background:url(/api/v1/mail/example-mail/remote?url=https%3A%2F%2Ftracker.example%2Fopened)",
+		"background:url('/api/v1/mail/example-mail/remote')",
+		"background:url( 'relative/picture.png' )",
+		`background:url(\2f api/v1/mail/example-mail/remote)`,
+	} {
+		output, _ := sanitizeHtml(`<div style="color:red;` + declaration + `">x</div><style>.a{` + declaration + `;color:blue}</style>`)
+		if strings.Contains(output, "url(") || strings.Contains(output, "example-mail") {
+			t.Errorf("%q survived:\n%s", declaration, output)
+		}
+		if !strings.Contains(output, "color:red") || !strings.Contains(output, "color:blue") {
+			t.Errorf("the rest of the styling was lost for %q:\n%s", declaration, output)
+		}
+	}
+
+	for _, kept := range []string{`url(data:image/gif;base64,R0lGOD)`, "url('cid:logo@example.net')"} {
+		output, remote := sanitizeHtml(`<div style="background:` + kept + `">x</div>`)
+		if remote || !strings.Contains(output, "url(") {
+			t.Errorf("%s was dropped or reported as remote (remote=%v):\n%s", kept, remote, output)
+		}
+	}
+	if _, remote := sanitizeHtml(`<div style="background:url(//tracker.example/p.png)">x</div>`); !remote {
+		t.Error("a protocol relative background should be reported as remote content")
+	}
+}

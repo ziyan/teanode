@@ -46,9 +46,7 @@ async function start(options: { records?: Awaited<ReturnType<typeof ownRecord>>[
   const server: FakeServer = createFakeServer(fixture, options.records ?? [])
   const session = memoryArea()
   const local = memoryArea()
-  const sync = memoryArea()
-  await sync.set({ server: 'https://tea.example.test' })
-  await local.set({ token: 'token', passwordsIsSetUp: options.isSetUp ?? true })
+  await local.set({ token: 'token', server: 'https://tea.example.test', passwordsIsSetUp: options.isSetUp ?? true })
   const listeners: Record<string, (...args: any[]) => any> = {}
   const registrar = (name: string) => ({
     addListener: (listener: (...args: any[]) => any) => (listeners[name] = listener),
@@ -86,7 +84,7 @@ async function start(options: { records?: Awaited<ReturnType<typeof ownRecord>>[
       sendMessage: vi.fn(async () => ({ isCopied: true })),
       getContexts: vi.fn(async () => []),
     },
-    storage: { session, local, sync, onChanged: registrar('storage.onChanged') },
+    storage: { session, local, onChanged: registrar('storage.onChanged') },
     alarms,
     windows,
     tabs,

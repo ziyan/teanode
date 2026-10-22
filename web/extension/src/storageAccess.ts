@@ -1,5 +1,5 @@
-// The extension keeps the token it signs in with in chrome.storage.local, the
-// server address in chrome.storage.sync and, for Passwords, the public keys it
+// The extension keeps the token it signs in with and the server address it
+// signs in to in chrome.storage.local and, for Passwords, the public keys it
 // has pinned. By default every part of the extension can read those areas,
 // including its content scripts, which run inside web pages. A content script
 // is the part of the extension nearest to a hostile page, so the two areas are
