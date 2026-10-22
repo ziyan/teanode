@@ -1396,7 +1396,7 @@ be muted on its own.
 
 A person shares one finance account (a row of `agent_finance_account`) with
 another person or with a circle at a level. The table is `finance_account_share`
-(migration 0255), shaped like `calendar_share`: the account, one grantee that is
+(migration 0254), shaped like `calendar_share`: the account, one grantee that is
 a person or a circle, the level, who made it, one share per account and
 grantee. A share belongs to its account and goes when the account does.
 

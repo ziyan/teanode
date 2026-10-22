@@ -29,7 +29,7 @@ Why it is shaped like the calendar's is in
 works.
 
 **A recording is shared at a level**, with one person or with a whole circle
-(`recording_share`, migration `0256_recording_share.sql`). Sharing with a person
+(`recording_share`, migration `0255_recording_share.sql`). Sharing with a person
 needs the two to share a circle; sharing with a circle needs the sharer to be in
 it. Both are checked when the share is made, with the circle membership rows
 held, so a person leaving at the same moment takes turns with the share rather

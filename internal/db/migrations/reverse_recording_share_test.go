@@ -56,7 +56,7 @@ func TestTheRecordingShareMigrationRefusesBadRowsAndReverses(t *testing.T) {
 		t.Errorf("a share outlived its recording: %s", got)
 	}
 
-	reverse, err := os.ReadFile("0256_recording_share.reverse.sql")
+	reverse, err := os.ReadFile("0255_recording_share.reverse.sql")
 	if err != nil {
 		t.Fatalf("ReadFile: %s", err)
 	}

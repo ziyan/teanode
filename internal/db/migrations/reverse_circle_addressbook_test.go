@@ -43,7 +43,7 @@ func TestTheCircleAddressBookMigrationReversesOnlyWithoutACircleBook(t *testing.
 	// The circle going takes its book, and the contacts in it, with it.
 	dbtest.Exec(t, database, `INSERT INTO "contact" ("id", "addressbook_id", "created_at", "modified_at", "uid", "etag", "card") VALUES ('reverse-contact', 'reverse-family', now(), now(), 'reverse-uid', 'tag', 'card')`)
 
-	reverse, err := os.ReadFile("0257_circle_addressbook.reverse.sql")
+	reverse, err := os.ReadFile("0256_circle_addressbook.reverse.sql")
 	if err != nil {
 		t.Fatalf("ReadFile: %s", err)
 	}

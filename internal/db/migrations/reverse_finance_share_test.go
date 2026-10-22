@@ -55,7 +55,7 @@ func TestTheFinanceShareMigrationRefusesBadRowsAndReverses(t *testing.T) {
 		t.Errorf("%s shares are left after their account went", got)
 	}
 
-	reverse, err := os.ReadFile("0255_finance_account_share.reverse.sql")
+	reverse, err := os.ReadFile("0254_finance_account_share.reverse.sql")
 	if err != nil {
 		t.Fatalf("ReadFile: %s", err)
 	}

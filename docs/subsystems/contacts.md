@@ -286,7 +286,7 @@ names a group of faces, read with one query for all of them.
 ## A circle's own address book
 
 Personal address books stay private. A circle gets one of its own, as it can
-have a calendar of its own: `addressbook.circle_id` (migration 0257) is a
+have a calendar of its own: `addressbook.circle_id` (migration 0256) is a
 nullable foreign key to the circle that cascades on delete, `addressbook.user_id`
 is nullable, and a check says exactly one of the two is set. A circle has at
 most one (a unique index). Every member of the circle reads it and adds,

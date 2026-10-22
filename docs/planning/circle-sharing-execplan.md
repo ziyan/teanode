@@ -23,12 +23,12 @@ To see it working: on a development server with three accounts in one circle "Fa
 - [x] (2026-10-22) Milestone 1: the agent keeps shared data where it belongs (location runs, chat guards for calendar and photos, Health refused to the agent actor, album-unshare a write, album targets resolved like every other kind).
 - [x] (2026-10-22) Milestone 2: what an album reader learns (face names behind a share setting, migration 0253; no capture time zone or original digest without places; playback addresses re-checked; `photos:use` on every photo read; counts and covers without unreadable photos).
 - [x] (2026-10-22) Milestone 3: shared memory pages show only what was meant (recording words never quoted, facts from kinds with their own sharing withheld, shares follow moves and end with deletes, the preview lists the pages reached, the reach checks permissions, compaction keeps the shared marker).
-- [ ] Milestone 4: circles, calendar, wording and docs.
-- [ ] Milestone 5: the Sharing page, notices, declining a share.
-- [ ] Milestone 6: finance account sharing (migration 0255).
-- [ ] Milestone 7: recording sharing (migration 0256).
-- [ ] Milestone 8: a circle's own address book (migration 0257).
-- [ ] Integration: one branch, every package's tests, the dashboard checks, a development server walk at 1400 and 390 wide in light and dark, the iPhone screenshots from CI.
+- [x] (2026-10-22) Milestone 4: circles, calendar, wording and docs.
+- [x] (2026-10-22) Milestone 5: the Sharing page, notices, declining a share (no new notification kind was needed, so no migration).
+- [x] (2026-10-22) Milestone 6: finance account sharing (migration 0254).
+- [x] (2026-10-22) Milestone 7: recording sharing (migration 0255).
+- [x] (2026-10-22) Milestone 8: a circle's own address book (migration 0256).
+- [ ] (in progress 2026-10-22) Integration: one branch, every package's tests, the dashboard checks, a development server walk at 1400 and 390 wide in light and dark, the iPhone screenshots from CI.
 - [ ] Review rounds until a round finds nothing above low, then deploy and TestFlight.
 
 ## Surprises & Discoveries
@@ -92,7 +92,7 @@ Besides the tests, on a development server with accounts alex, sam and kim in a 
 
 ## Idempotence and Recovery
 
-Migrations 0253, 0255, 0256 and 0257 each have a reverse script. Before deploying, back up the tables they change (`pg_dump -t photo_album_share -t addressbook` and so on) as `docs/coding/database-migrations.md` describes; a deployed migration is never edited again.
+Migrations 0253, 0254, 0255 and 0256 each have a reverse script. Before deploying, back up the tables they change (`pg_dump -t photo_album_share -t addressbook` and so on) as `docs/coding/database-migrations.md` describes; a deployed migration is never edited again.
 
 ## Artifacts and Notes
 
