@@ -54,13 +54,18 @@ var triageTools = map[string]bool{
 }
 
 // replyTools is what a drafting run may reach: everything sorting has, the
-// diary, memory, and the web where the operator allows it. Answering somebody
-// is where looking things up earns its keep -- "are you free Thursday" cannot
-// be answered without the diary.
+// diary, memory, and a web search where the operator allows it. Answering
+// somebody is where looking things up earns its keep -- "are you free
+// Thursday" cannot be answered without the diary.
+//
+// No web_fetch: this run reads a stranger's message with the person's mail,
+// memory and diary in reach and nobody watching, and an address it builds can
+// carry what it read to whoever runs that server. The drafting prompt asks for
+// a reply from the policy, the memories and the diary, none of which is a page.
 var replyTools = map[string]bool{
 	"mail_read": true, "mail_search": true, "contact_book": true,
 	"calendar": true, "memory": true, "datetime": true,
-	"web_fetch": true, "web_search": true,
+	"web_search": true,
 }
 
 // think runs one headless, read-only turn with the given tools and returns

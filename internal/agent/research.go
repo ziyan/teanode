@@ -18,7 +18,8 @@ import (
 // on.
 
 // researchTools is the fixed set a research run may use, beside the
-// read-only headless tools of connected servers.
+// read-only headless tools of connected servers. Its web_fetch reads only an
+// address a web_search in the run returned (AskSettings.IsFetchLimitedToSearched).
 var researchTools = map[string]bool{"web_fetch": true, "web_search": true, "datetime": true, "mail_search": true, "mail_read": true, "contact_book": true, "tool_search": true, "memory": true}
 
 // runResearch is the handler for a research job; its subject is the
@@ -98,7 +99,7 @@ func (self *Agent) runResearch(ctx context.Context, run *Run) error {
 	if maximumRounds <= 0 {
 		maximumRounds = 8
 	}
-	turn, err := self.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: prompt, Surface: "research", ReadOnly: true, Allow: researchTools, Headless: true, MaxRounds: maximumRounds, UsageKind: string(models.AgentJobResearch)})
+	turn, err := self.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: prompt, Surface: "research", ReadOnly: true, Allow: researchTools, IsFetchLimitedToSearched: true, Headless: true, MaxRounds: maximumRounds, UsageKind: string(models.AgentJobResearch)})
 	if err != nil {
 		return err
 	}

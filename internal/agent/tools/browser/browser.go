@@ -221,6 +221,16 @@ func runBrowser(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if len(arguments.Steps) > 50 {
 			return nil, fmt.Errorf("at most fifty steps")
 		}
+		// The risk of a steps call is read from the steps it lists, one
+		// level down, so a steps call inside one is refused before any step
+		// runs rather than run unjudged.
+		for index, step := range arguments.Steps {
+			var inner browserArguments
+			_ = json.Unmarshal(step, &inner)
+			if inner.Action == "steps" {
+				return nil, fmt.Errorf("step %d is a steps call; list the steps in one steps call, they cannot be nested", index+1)
+			}
+		}
 		for index, step := range arguments.Steps {
 			result, err := runBrowser(ctx, &tools.Call{ID: call.ID, Arguments: step, Confirmed: call.Confirmed})
 			if err != nil {

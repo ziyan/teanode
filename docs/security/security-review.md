@@ -2150,3 +2150,60 @@ redirect to a different host now stops; one on the same host still works.
   `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`, so WebRTC cannot
   send UDP around the proxy that guards the browser. A server's own compose
   file needs the same flag.
+# Tenth pass: the agent's tools
+
+A review of what the agent can do on its own, in runs nobody is present for
+and in runs that have just read a stranger's mail or page. The numbers below
+are provisional and are renumbered when the passes are merged.
+
+## Findings
+
+### SEC-163: Changing the notification address asked nothing (Medium, fixed)
+
+`account_update` and `user_update` with an email were plain writes, though the
+agent's mailed notices go to that address, so a page or mail the agent read
+could redirect them. A call that sets the email is now judged outward and asks
+first; name, language and the other fields stay plain writes.
+
+### SEC-164: A run nobody was present for could add a standing instruction (Medium, fixed)
+
+`agent_profile` `set` with `add_instruction` appends to the instructions every
+later turn reads as the person's words, with no card and also in a headless
+run. It is now refused when the run cannot ask the person, with an error
+telling the model to say what it would have added.
+
+### SEC-165: The reply drafting run could fetch any address (Medium, fixed)
+
+It reads a stranger's mail with the person's mail, memory and diary in reach,
+and an address it builds can carry what it read out. Drafting a reply needs
+none of the web pages, so `web_fetch` is out of its tools; `web_search` stays.
+
+### SEC-166: The research run could fetch any address (Medium, fixed)
+
+The same hole, in a run that does need pages. `web_fetch` there now runs only
+for an address a `web_search` in the same turn returned
+(`AskSettings.IsFetchLimitedToSearched`), enforced where the call is made.
+
+### SEC-167: A run nobody was present for could make a no-sign-in link (Medium, fixed)
+
+`share_file` with `link` true makes an address that opens a copy of the file
+for anyone for six hours. It is now refused in a headless run, before the file
+is read.
+
+### SEC-168: A steps call inside steps was judged a read (Medium, fixed)
+
+The browser tool judged `steps` by the steps it lists, one level down, while
+the runner recursed into an inner `steps` and ran its writes. A steps call
+inside steps is now refused before any step runs.
+
+### SEC-169: The computer program's comments named a boundary that does not exist (Low, fixed)
+
+Two comments said the program is bounded by directories the person allowed.
+There is no such list: it reaches everything the person can, and only its file
+tool leaves out the files `teanode passwords` keeps. The comments now say so.
+
+## Open, decided by the person
+
+- The agent's shell can run the `teanode` command line with the person's own
+  token, which can approve cards, change the confirmation settings and make
+  tokens. Not fixed here; the person decides whether and how to close it.
