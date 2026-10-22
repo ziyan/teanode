@@ -2078,3 +2078,51 @@ told apart from one before.
 It did not review circles across servers, which are out of scope, or the
 paying skills' own registry, whose declarations of what a call costs belong to
 each skill.
+
+# Tenth pass: the web layer and device sockets
+
+This pass read how a browser, a phone and a device reach the server: what a
+cookie can be made to do from another page, what survives a password change,
+and what an open socket goes on trusting. Each finding was fixed with a test.
+
+## Findings
+
+### SEC-143: A form from a sibling host could act with the session cookie (Medium, fixed)
+
+The cookie is SameSite=Lax, which a form posted from another host of the same
+site still carries, and the MCP endpoint and the upload routes checked neither
+the content type nor the origin. The authentication middleware now answers 403
+to a cookie-authenticated POST, PUT, PATCH or DELETE that Sec-Fetch-Site or
+Origin says another page started; tokens are not asked.
+
+### SEC-144: A password change and "Sign out everywhere" left API tokens working (Medium, fixed)
+
+Only sessions ended, so a lost phone, extension or command line kept its
+access. Both now revoke the account's tokens too, keeping only the token that
+made the call, and the dashboard says other sign-ins have to sign in again.
+
+### SEC-145: Revoking a credential did not end sockets already open (Medium, fixed)
+
+The computer, tab and browser page sockets and GraphQL subscriptions checked
+their caller once and every ping extended them. Each now resolves what signed
+it in again at most once a minute, with the function the hello used, and closes
+when it names another person or none.
+
+### SEC-146: The tab socket trusted a cookie and a csrftoken cookie from any origin (Medium, fixed)
+
+Nothing sets a `csrftoken` cookie, so the check proved nothing and any page
+could attach the person's tab. The hello must carry a token.
+
+### SEC-147: The computer socket read 512 MiB per message before the hello (Low, fixed)
+
+It starts at the 1 MiB request limit and rises to the answer size once the
+token is accepted.
+
+### SEC-148: Public discovery documents did not vary by host (Low, fixed)
+
+They are built from the Host header and cached publicly, so a shared cache
+could serve one name's addresses for another. They now send `Vary: Host`.
+
+## What this pass did not do
+
+It did not change the cookie to SameSite=Strict, which would break links into the dashboard from mail, and it did not add a per-request CSRF token, because the Sec-Fetch-Site and Origin check covers every browser that sends a cookie with a write.
