@@ -52,8 +52,7 @@ describe('callServer', () => {
   function stub(response: { status: number; ok: boolean; body?: unknown }, server = 'https://tea.example.test/') {
     vi.stubGlobal('chrome', {
       storage: {
-        sync: { get: async () => ({ server }) },
-        local: { get: async () => ({ token: 'token' }) },
+        local: { get: async () => ({ server, token: 'token' }) },
       },
     })
     vi.stubGlobal(
