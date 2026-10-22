@@ -3,11 +3,11 @@
 // read, write, list and search, as the person, anywhere on it. The program
 // on the computer does the work; the server carries the request across.
 //
-// What may be reached is bounded by the directories the person allowed,
-// which the program on their machine enforces. What may be run is not
-// guessed at here: a list of dangerous-looking commands was tried and
-// removed, because it could never name everything dangerous and read as a
-// promise it could not keep.
+// There is no list of directories the person allowed: the program reaches
+// everything the person can, and only its file tool leaves out the files
+// `teanode passwords` keeps. What may be run is not guessed at here: a list
+// of dangerous-looking commands was tried and removed, because it could never
+// name everything dangerous and read as a promise it could not keep.
 package computer
 
 import (
