@@ -2118,3 +2118,35 @@ Anybody could park a ceremony for five minutes with no bound on how many; the st
 ### SEC-112: One address could take every SMTP and IMAP connection (Medium, fixed)
 
 The listeners capped only the total at 1000; each address (an IPv6 /64 counts as one) may now hold 32 connections per protocol.
+# Tenth pass: outbound requests
+
+A review of every place the server connects to an address somebody else
+chose. Each finding was fixed with a test that failed before the fix.
+
+### SEC-123: A webhook alias could reach the operator's network (Medium, fixed)
+
+A member who manages one domain could name any URL as a webhook, and delivery
+posted the mail there with the default client, which followed redirects and
+honored proxy settings. Delivery now uses the guarded client, with the
+operator's list of private addresses, and a minute to answer.
+
+### SEC-124: A mail server alias could scan the operator's network (Medium, fixed)
+
+Forwarding to a named host and port dialled anything, and the error came back
+to the member through the delivery. It now dials through the same guard, and
+a name is checked on the address it resolves to even behind a SOCKS5 proxy.
+
+### SEC-125: A connected MCP server could redirect the server inward (Low, fixed)
+
+The HTTP transport followed a redirect to any host, so a connected server could
+make this one send its request, and read the answer, from another host. A
+redirect to a different host now stops; one on the same host still works.
+
+### SEC-126: Smaller findings (Low, fixed)
+
+- A video's size is checked against the picture limits before ffmpeg cuts a
+  poster or preview, as a picture's is before it is decoded.
+- The Chrome container in `deploy/docker-compose.yml` sets
+  `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`, so WebRTC cannot
+  send UDP around the proxy that guards the browser. A server's own compose
+  file needs the same flag.
