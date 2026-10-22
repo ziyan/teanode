@@ -68,6 +68,12 @@ type Settings struct {
 	// as somebody likes and nothing but the file descriptor limit stopped
 	// them.
 	MaxConnections int
+
+	// Holds bounds how many of those connections one address may hold at
+	// once. The total alone is taken by whoever connects first and keeps
+	// connecting. Shared between the two listeners so that it counts an
+	// address once. Nil means no bound.
+	Holds *ratelimit.AddressHolds
 }
 
 // Delimiter between a folder and its children in a name.
@@ -147,7 +153,7 @@ func Serve(ctx context.Context, listener net.Listener, settings *Settings) error
 	// listener and wrapping that for TLS puts a real *tls.Conn back on top,
 	// where the assertion finds it.
 	if settings.MaxConnections > 0 {
-		listener = &boundedListener{Listener: listener, held: make(chan struct{}, settings.MaxConnections)}
+		listener = &boundedListener{Listener: listener, held: make(chan struct{}, settings.MaxConnections), holds: settings.Holds}
 	}
 	if settings.ImplicitTLS {
 		listener = tls.NewListener(listener, settings.TLSConfig)
@@ -166,6 +172,10 @@ func Serve(ctx context.Context, listener net.Listener, settings *Settings) error
 type boundedListener struct {
 	net.Listener
 	held chan struct{}
+
+	// holds bounds how many of the places one address may take. Nil is no
+	// bound.
+	holds *ratelimit.AddressHolds
 }
 
 func (self *boundedListener) Accept() (net.Conn, error) {
@@ -174,12 +184,24 @@ func (self *boundedListener) Accept() (net.Conn, error) {
 		if err != nil {
 			return nil, err
 		}
+		releaseHold := func() {}
+		if self.holds != nil {
+			release, ok := self.holds.Acquire(conn.RemoteAddr())
+			if !ok {
+				log.Warningf("refusing a connection from %s: its address is already holding as many as it may",
+					conn.RemoteAddr())
+				_ = conn.Close()
+				continue
+			}
+			releaseHold = release
+		}
 		select {
 		case self.held <- struct{}{}:
-			return &boundedConn{Conn: conn, release: self.held}, nil
+			return &boundedConn{Conn: conn, release: self.held, releaseHold: releaseHold}, nil
 		default:
 			log.Warningf("refusing a connection from %s: %d are already being served",
 				conn.RemoteAddr(), cap(self.held))
+			releaseHold()
 			_ = conn.Close()
 		}
 	}
@@ -188,13 +210,17 @@ func (self *boundedListener) Accept() (net.Conn, error) {
 // boundedConn gives its place back once, however many times it is closed.
 type boundedConn struct {
 	net.Conn
-	release chan struct{}
-	once    sync.Once
+	release     chan struct{}
+	releaseHold func()
+	once        sync.Once
 }
 
 func (self *boundedConn) Close() error {
 	err := self.Conn.Close()
-	self.once.Do(func() { <-self.release })
+	self.once.Do(func() {
+		<-self.release
+		self.releaseHold()
+	})
 	return err
 }
 

@@ -1140,6 +1140,13 @@ const mailProgramConnectionsAtOnce = 1000
 
 const smtpConnectionsAtOnce = 1000
 
+// connectionsPerAddressAtOnce is how many of those one address may hold. The
+// ceilings above are taken whole by whoever connects first and keeps
+// connecting, so this is what leaves room for everybody else. A household or
+// an office behind one address has a handful; a mail server sending in
+// parallel has a few more.
+const connectionsPerAddressAtOnce = 32
+
 // authLimiterAddresses caps how many addresses the submission limiter keeps
 // buckets for at once. Bounded because the key is a remote address and there
 // are more of those than there is memory.
@@ -1328,6 +1335,11 @@ func (self *server) serve(ctx context.Context) error {
 		return mailbox.ID, "", true
 	}
 
+	// One count for both SMTP listeners and one for both IMAP listeners, so
+	// that an address is counted once however many ports it connects to.
+	smtpHolds := ratelimit.NewAddressHolds(connectionsPerAddressAtOnce)
+	imapHolds := ratelimit.NewAddressHolds(connectionsPerAddressAtOnce)
+
 	if self.listeners.smtpIncoming != nil {
 		waitGroup.Add(1)
 		go func() {
@@ -1344,6 +1356,7 @@ func (self *server) serve(ctx context.Context) error {
 				TrustedSenders: configuration.SMTP.TrustedSenders,
 				Delay:          configuration.SMTP.GreylistDelay.Duration(),
 				MaxConnections: smtpConnectionsAtOnce,
+				Holds:          smtpHolds,
 
 				RequireReverseDNS: configuration.SMTP.RequireReverseDNS,
 			}); err != nil {
@@ -1369,6 +1382,7 @@ func (self *server) serve(ctx context.Context) error {
 				TLSConfig:      tlsConfig,
 				Secret:         self.secret,
 				MaxConnections: smtpConnectionsAtOnce,
+				Holds:          smtpHolds,
 
 				AuthLimiter:         authLimiter,
 				AuthenticateMailbox: authenticateMailbox,
@@ -1395,6 +1409,7 @@ func (self *server) serve(ctx context.Context) error {
 		// with several devices is a handful; a thousand is everybody's
 		// devices at once and then some.
 		MaxConnections: mailProgramConnectionsAtOnce,
+		Holds:          imapHolds,
 	}
 	if self.listeners.imap != nil {
 		waitGroup.Add(1)

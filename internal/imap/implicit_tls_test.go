@@ -7,11 +7,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"io"
 	"math/big"
 	"net"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ziyan/teanode/internal/util/ratelimit"
 )
 
 // A mail program on the implicit-TLS port can sign in.
@@ -108,6 +111,59 @@ func TestTheCeilingReleasesUnderTLS(t *testing.T) {
 	_ = accepted.Close()
 	if len(held) != 0 {
 		t.Fatalf("closing gives the place back, once however often it is closed: %d", len(held))
+	}
+}
+
+// One address cannot take every place: past its share a connection is closed
+// at once, and it may connect again once one of its own is given back.
+func TestOneAddressCannotTakeEveryPlace(t *testing.T) {
+	t.Parallel()
+
+	raw, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %s", err)
+	}
+	defer func() { _ = raw.Close() }()
+	bounded := &boundedListener{Listener: raw, held: make(chan struct{}, 10), holds: ratelimit.NewAddressHolds(1)}
+
+	accepted := make(chan net.Conn, 2)
+	go func() {
+		for {
+			conn, err := bounded.Accept()
+			if err != nil {
+				return
+			}
+			accepted <- conn
+		}
+	}()
+
+	first, err := net.Dial("tcp", raw.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %s", err)
+	}
+	defer func() { _ = first.Close() }()
+	served := <-accepted
+
+	second, err := net.Dial("tcp", raw.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %s", err)
+	}
+	defer func() { _ = second.Close() }()
+	_ = second.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := second.Read(make([]byte, 1)); err != io.EOF {
+		t.Fatalf("a second connection from the same address was kept: %v", err)
+	}
+
+	_ = served.Close()
+	third, err := net.Dial("tcp", raw.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %s", err)
+	}
+	defer func() { _ = third.Close() }()
+	select {
+	case <-accepted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the address was still refused after one of its connections closed")
 	}
 }
 

@@ -19,6 +19,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/util/geoip"
 	"github.com/ziyan/teanode/internal/util/mailparse"
+	"github.com/ziyan/teanode/internal/util/ratelimit"
 	"github.com/ziyan/teanode/internal/util/security"
 	"github.com/ziyan/teanode/internal/util/smtpc"
 	"github.com/ziyan/teanode/internal/util/smtpd"
@@ -398,5 +399,55 @@ func TestConnectionsPastTheLimitAreRefused(t *testing.T) {
 	}
 	if second := greeting(); !strings.HasPrefix(second, "421 ") {
 		t.Errorf("the second connection was answered %q, want 421", second)
+	}
+}
+
+// One address cannot take every connection: past its own share it is told to
+// come back later, though the total has room.
+func TestConnectionsPastAnAddressesShareAreRefused(t *testing.T) {
+	t.Parallel()
+
+	var waitGroup sync.WaitGroup
+	defer waitGroup.Wait()
+
+	listener, err := net.Listen("tcp", testListenAddr)
+	if err != nil {
+		t.Fatalf("cannot create listener: %s", err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	waitGroup.Add(1)
+	go func() {
+		defer waitGroup.Done()
+		_ = smtpd.Serve(listener, func(ctx context.Context, envelope *mailparse.Envelope) error { return nil }, &testLocator{}, &testResolver{}, &testDropper{}, &smtpd.Settings{
+			Greeting:       "localhost Test/1.2.3",
+			Timeout:        3 * time.Second,
+			MaxSize:        1024,
+			MaxRecipients:  3,
+			Secret:         testSecret,
+			TrustedSenders: []string{"localhost"},
+			MaxConnections: 10,
+			Holds:          ratelimit.NewAddressHolds(1),
+		})
+	}()
+
+	greeting := func() string {
+		conn, err := net.Dial("tcp", listener.Addr().String())
+		if err != nil {
+			t.Fatalf("failed to dial: %s", err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+		reply, err := bufio.NewReader(conn).ReadString('\n')
+		if err != nil {
+			t.Fatalf("no greeting: %s", err)
+		}
+		return reply
+	}
+	if first := greeting(); !strings.HasPrefix(first, "220 ") {
+		t.Fatalf("the first connection was answered %q, want 220", first)
+	}
+	if second := greeting(); !strings.HasPrefix(second, "421 ") {
+		t.Errorf("the second connection from the same address was answered %q, want 421", second)
 	}
 }
