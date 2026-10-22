@@ -187,6 +187,7 @@ struct WaitingWidgetView: View {
                     Text(entry.glance?.newestWaiting.map { PlainText.of($0.interactionText) } ?? String(localized: "Nothing waits for you"))
                         .font(.caption)
                         .lineLimit(2)
+                        .privacySensitive()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -204,7 +205,7 @@ struct WaitingWidgetView: View {
                         Text(newest.interactionKind == "approval" ? String(localized: "Approve?") : String(localized: "Asks you"))
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.orange)
-                        Text(PlainText.of(newest.interactionText)).font(.footnote).lineLimit(3)
+                        Text(PlainText.of(newest.interactionText)).font(.footnote).lineLimit(3).privacySensitive()
                     } else {
                         Text("Nothing waits for you").font(.footnote).foregroundStyle(.secondary)
                     }
