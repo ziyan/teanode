@@ -294,9 +294,21 @@ func (self *graph) requireOwnAddressBook(ctx context.Context, addressBookId stri
 	return book, nil
 }
 
+// isBookOutOfAgentReach is whether the caller is the person's agent and the
+// book is not one it may read: the agent keeps to the person's own books they
+// gave it, as its address book tool does, never a circle's and never a book
+// of theirs they kept back. The person's own request is never out of reach.
+func (self *graph) isBookOutOfAgentReach(ctx context.Context, userId string, book *models.AddressBook) bool {
+	if db.PrincipalFromContext(ctx).ActorKind != models.AuditActorAgent {
+		return false
+	}
+	return book.UserID != userId || !book.AgentGranted
+}
+
 // requireUsableAddressBook is one book, if the caller may use it: their own,
 // or the circle's they are in. Anything else is not found, whose it is is not
-// the caller's business. The answer is the database's AddressBookAccess.
+// the caller's business. The answer is the database's AddressBookAccess. The
+// person's agent is further kept to the books they gave it.
 func (self *graph) requireUsableAddressBook(ctx context.Context, addressBookId string) (*models.AddressBook, models.AddressBookAccess, error) {
 	principal, err := self.requireAddressBookPerson(ctx)
 	if err != nil {
@@ -314,7 +326,7 @@ func (self *graph) requireUsableAddressBook(ctx context.Context, addressBookId s
 	if err != nil {
 		return nil, models.AddressBookAccess{}, err
 	}
-	if !bookAccess.CanEdit {
+	if !bookAccess.CanEdit || self.isBookOutOfAgentReach(ctx, principal.User.ID, book) {
 		return nil, models.AddressBookAccess{}, api.ErrNotFound
 	}
 	return book, bookAccess, nil
@@ -400,6 +412,9 @@ func (self *graph) ListReachableAddressBooks(ctx context.Context) ([]*AddressBoo
 	}
 	views := make([]*AddressBookView, 0, len(books))
 	for _, reachable := range books {
+		if self.isBookOutOfAgentReach(ctx, principal.User.ID, reachable.Book) {
+			continue
+		}
 		view, err := self.addressBookView(ctx, reachable)
 		if err != nil {
 			return nil, err
@@ -573,6 +588,9 @@ func (self *graph) usableContact(ctx context.Context, addressBookId, contactId s
 		return nil, nil, err
 	}
 	for _, each := range reachable {
+		if self.isBookOutOfAgentReach(ctx, principal.User.ID, each.Book) {
+			continue
+		}
 		contact, err := tx.GetContact(each.Book.ID, strings.TrimSpace(contactId))
 		if err != nil {
 			return nil, nil, err

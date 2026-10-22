@@ -96,6 +96,7 @@ type RecordingShare struct {
 	OwnerUserID       string `json:"ownerUserId,omitempty"`
 	OwnerUsername     string `json:"ownerUsername,omitempty"`
 	OwnerName         string `json:"ownerName,omitempty"`
+	OwnerUser         *User  `json:"-"`
 	GranteeUsername   string `json:"granteeUsername,omitempty"`
 	GranteeName       string `json:"granteeName,omitempty"`
 	GranteeCircleName string `json:"granteeCircleName,omitempty"`

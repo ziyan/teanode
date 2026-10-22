@@ -101,7 +101,7 @@ func runAgentMemoryShare(ctx context.Context, command *cli.Command) error {
 			_, _ = fmt.Fprintf(command.Writer, "  (and %d more)\n", more)
 		}
 		if preview.WithheldFactCount > 0 {
-			_, _ = fmt.Fprintf(command.Writer, "\n%s from finance, recordings or location stay private.\n", plural(preview.WithheldFactCount, "fact", "facts"))
+			_, _ = fmt.Fprintf(command.Writer, "\n%s from finance, recordings, location, private events, or records that are gone stay private.\n", plural(preview.WithheldFactCount, "fact", "facts"))
 		}
 		return nil
 	}

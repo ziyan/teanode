@@ -599,7 +599,7 @@ func previewShareAction(ctx context.Context, run tools.Run, item *memoryItem) (*
 	}
 	if preview.WithheldFactCount > 0 {
 		answer["withheld_fact_count"] = preview.WithheldFactCount
-		answer["withheld"] = fmt.Sprintf("%d facts from finance, recordings or location stay private", preview.WithheldFactCount)
+		answer["withheld"] = fmt.Sprintf("%d facts from finance, recordings, location, private events, or records that are gone stay private", preview.WithheldFactCount)
 	}
 	if len(preview.Page.Facts) > previewFactsShown {
 		answer["more_facts"] = fmt.Sprintf("%d more facts on the page are shown too", len(preview.Page.Facts)-previewFactsShown)

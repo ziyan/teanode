@@ -60,11 +60,21 @@ type SharingReceived struct {
 }
 
 const (
+	sharesMadeFields     = `sharesMade { shareKind shareId subjectId subjectName subjectMask isSubjectDeleted shareLevel shareScopes passwordItemCount granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName createdAt }`
+	sharesReceivedFields = `sharesReceived { shareKind shareId subjectId subjectName subjectMask shareLevel shareScopes passwordItemCount ownerUserId ownerUsername ownerName granteeCircleId granteeCircleName isDirect canDecline createdAt }`
+
 	// DocumentListSharing is the query behind "teanode sharing" and the
 	// agent's circle tool.
 	DocumentListSharing = `query { ListSharing {
-  sharesMade { shareKind shareId subjectId subjectName subjectMask isSubjectDeleted shareLevel shareScopes passwordItemCount granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName createdAt }
-  sharesReceived { shareKind shareId subjectId subjectName subjectMask shareLevel shareScopes passwordItemCount ownerUserId ownerUsername ownerName granteeCircleId granteeCircleName isDirect canDecline createdAt }
+  ` + sharesMadeFields + `
+  ` + sharesReceivedFields + `
+} }`
+
+	// DocumentListSharingMade is DocumentListSharing without what others
+	// shared with the account, for the agent in a chat, where everybody in
+	// the room would read it.
+	DocumentListSharingMade = `query { ListSharing {
+  ` + sharesMadeFields + `
 } }`
 
 	// DocumentDeclineShare ends a share made to the account by name.

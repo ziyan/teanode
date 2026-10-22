@@ -108,6 +108,58 @@ func TestListSharingShowsRecordingsAndFinanceAccounts(test *testing.T) {
 	}
 }
 
+// The rows of recordings and finance accounts that reach a person carry the
+// owner's account, so the list can show the owner's picture as the page rows do.
+func TestSharedRecordingAndFinanceRowsCarryTheOwner(test *testing.T) {
+	world := newSharingWorld(test)
+	recordingId, financeAccountId := world.seedRecordingAndFinance(test)
+	world.shareRecording(test, recordingId, userGrantee(world.ben), "summary")
+	world.shareFinance(test, financeAccountId, world.ben.ID, nil, "balance")
+
+	dbtest.RunTransactionOn(test, world.database, func(tx db.Transaction) {
+		for _, shareKind := range []models.ShareKind{models.ShareKindRecording, models.ShareKindFinance} {
+			rows, err := world.graph.sharesReachingFor(tx, world.ben, shareKind)
+			if err != nil || len(rows) != 1 {
+				test.Fatalf("%s rows: %v %v", shareKind, rows, err)
+			}
+			if rows[0].OwnerUser == nil || rows[0].OwnerUser.ID != world.ada.ID {
+				test.Errorf("the %s row does not carry its owner: %+v", shareKind, rows[0])
+			}
+		}
+	})
+}
+
+// Two recordings, or two accounts, shared at the same level in a short time are
+// two shares: each is told, though the note names neither.
+func TestTwoSharesOfOneKindAndLevelAreEachToldToWhoTheyReach(test *testing.T) {
+	world := newSharingWorld(test)
+	recordingIds := []string{}
+	dbtest.RunTransactionOn(test, world.database, func(tx db.Transaction) {
+		for _, title := range []string{"Standup", "Retro"} {
+			recording, err := tx.CreateRecording(&models.Recording{
+				UserID: world.ada.ID, ClientRecordingID: "sharing-" + title, RecordingTitle: title, RecordingOrigin: models.RecordingOriginAudioImport,
+			})
+			if err != nil {
+				test.Fatalf("CreateRecording: %s", err)
+			}
+			recordingIds = append(recordingIds, recording.ID)
+		}
+	})
+	checkingId, cardId := seedFinance(test, world.database, world.ada)
+	benNotes := func() []string { return world.notesOf(test, world.ben, models.NoteShareReceived) }
+
+	world.shareRecording(test, recordingIds[0], userGrantee(world.ben), "summary")
+	world.shareRecording(test, recordingIds[1], userGrantee(world.ben), "summary")
+	if got := benNotes(); len(got) != 2 {
+		test.Errorf("two recordings shared at one level told ben %q", got)
+	}
+	world.shareFinance(test, checkingId, world.ben.ID, nil, "balance")
+	world.shareFinance(test, cardId, world.ben.ID, nil, "balance")
+	if got := benNotes(); len(got) != 4 {
+		test.Errorf("two accounts shared at one level told ben %q", got)
+	}
+}
+
 // What others share of finance is not the agent's to read, so the person's
 // agent is shown neither side of it, and cannot decline it; recordings it can.
 func TestListSharingLeavesFinanceOutForTheAgent(test *testing.T) {
@@ -189,7 +241,8 @@ func TestOnlyTheGranteeCanDeclineARecordingOrFinanceShareMadeByName(test *testin
 }
 
 // A recording or a finance account shared, or shared at a higher level, is
-// told to the person it reaches, without the account's name; narrowing it and
+// told to the person it reaches, without the recording's title or the
+// account's name; narrowing it and
 // sharing it again tell nobody, and neither does the sharer's own share.
 func TestARecordingOrFinanceShareIsToldToWhoItReaches(test *testing.T) {
 	world := newSharingWorld(test)
@@ -197,15 +250,18 @@ func TestARecordingOrFinanceShareIsToldToWhoItReaches(test *testing.T) {
 	benNotes := func() []string { return world.notesOf(test, world.ben, models.NoteShareReceived) }
 
 	world.shareRecording(test, recordingId, userGrantee(world.ben), "summary")
-	if got := benNotes(); fmt.Sprint(got) != "[Share-ada shared the recording Standup with you (title and summary)]" {
+	if got := benNotes(); fmt.Sprint(got) != "[Share-ada shared a recording with you (title and summary)]" {
 		test.Fatalf("a recording share told ben %q", got)
+	}
+	if got := benNotes(); strings.Contains(got[0], "Standup") {
+		test.Errorf("the note names the recording: %q", got[0])
 	}
 	world.shareRecording(test, recordingId, userGrantee(world.ben), "summary")
 	if got := benNotes(); len(got) != 1 {
 		test.Fatalf("the same recording share told ben again: %q", got)
 	}
 	world.shareRecording(test, recordingId, userGrantee(world.ben), "transcript")
-	if got := benNotes(); len(got) != 2 || got[1] != "Share-ada shared the recording Standup with you (summary and transcript)" {
+	if got := benNotes(); len(got) != 2 || got[1] != "Share-ada shared a recording with you (summary and transcript)" {
 		test.Fatalf("widening a recording share told ben %q", got)
 	}
 	world.shareRecording(test, recordingId, userGrantee(world.ben), "summary")
@@ -278,7 +334,8 @@ func TestRecordingsAndFinanceAreListedOnlyToWhoMayUseThem(test *testing.T) {
 
 // An account reached by name at a lower level than a circle gives is one row
 // at the higher level, and the row is the share made by name, so that the
-// person can decline it. Declining it leaves the circle's share.
+// person can decline it, but it names the circle and is not "by name" alone,
+// since the circle gives the level. Declining it leaves the circle's share.
 func TestAFinanceAccountSharedByNameBelowTheCircleCanBeDeclined(test *testing.T) {
 	world := newSharingWorld(test)
 	_, financeAccountId := world.seedRecordingAndFinance(test)
@@ -287,8 +344,9 @@ func TestAFinanceAccountSharedByNameBelowTheCircleCanBeDeclined(test *testing.T)
 
 	_, received := world.sharing(test, world.ben)
 	row := rowOfKind(test, received, "finance")
-	if row["shareLevel"] != "spending" || row["isDirect"] != true || row["canDecline"] != true || row["shareId"] != direct["id"] {
-		test.Fatalf("ben's finance row is %v, want the share by name (%v) at spending", row, direct["id"])
+	if row["shareLevel"] != "spending" || row["isDirect"] != false || row["canDecline"] != true || row["shareId"] != direct["id"] ||
+		row["granteeCircleName"] != "Home" {
+		test.Fatalf("ben's finance row is %v, want the share by name (%v) at spending, from the circle", row, direct["id"])
 	}
 	world.call(test, world.ben, fmt.Sprintf(`mutation { DeclineShare(shareKind: "finance", shareId: %q) }`, row["shareId"]))
 

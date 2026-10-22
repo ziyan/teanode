@@ -376,6 +376,7 @@ func (self *graph) ShareFinanceAccount(ctx context.Context, arguments ShareFinan
 	if isFinanceShareWider(made, saved) {
 		if err := self.tellAboutShare(ctx, principal.User, models.ShareReceivedNote{
 			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindFinance, ShareLevel: string(saved.FinanceShareLevel),
+			ShareSubjectID: saved.FinanceAccountID,
 		}, granteeUserId, granteeCircleId); err != nil {
 			return nil, err
 		}

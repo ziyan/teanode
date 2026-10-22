@@ -1129,8 +1129,12 @@ the prompt all go through it, so what is left out is left out once:
   brackets; eight characters for a language written without spaces; a single
   quotation mark opens a span only when it does not follow a letter or a
   digit, so an apostrophe does not). The rest of the sentence would be built
-  around what was copied, so none of it is kept (`sharedSummaryFor`). A search
-  does not find such a page by a word on its summary (`summariesLeftOut`).
+  around what was copied, so none of it is kept (`sharedSummaryFor`). The facts
+  looked at include the dormant and the replaced ones, which are not shown: the
+  summary may have been written while they were on the page. A search does not
+  find such a page by a word on its summary; it decides this for the pages the
+  search finds, and searches again without the ones it left out, so the cost
+  follows the hits and not the size of what is shared (`isSummaryLeftOut`).
 * Evidence that cannot be found counts as evidence that is kept back: a
   document no longer in the archive, a private event deleted since the fact was
   filed, and an event in a circle's calendar, which is not the owner's own. The
@@ -1227,7 +1231,9 @@ A shared recording is stricter, because a paraphrase of it passes a check on
 words. In a turn in which a tool answered with `tools.SharedRecordingMarker`,
 the filing run is shown only what the person wrote, and the lessons run reads
 none of the turn (`withoutSharedRecordingTurnsIn`). A fact from the agent's
-paraphrase of the recording therefore has nothing to rest on. A shared page is
+paraphrase of the recording therefore has nothing to rest on. Only the turn
+that read it is held back: a later turn that answers from what the
+conversation already holds is filed like any other. A shared page is
 still held to the check on words alone.
 
 What the reader's agent learns about the same subject is learned in its own

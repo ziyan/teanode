@@ -496,7 +496,7 @@ func (self *graph) ShareAgentPage(ctx context.Context, arguments ShareAgentPageA
 			subject = saved.Path
 		}
 		if err := self.tellAboutShare(ctx, principal.User, models.ShareReceivedNote{
-			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindMemoryPage, ShareSubject: subject,
+			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindMemoryPage, ShareSubject: subject, ShareSubjectID: saved.Path,
 			ShareScopes: models.PageShareScopes(saved.IsQuoteShared),
 		}, granteeUserId, granteeCircleId); err != nil {
 			return nil, err

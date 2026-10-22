@@ -151,7 +151,7 @@ func (self *graph) ShareRecording(ctx context.Context, arguments ShareRecordingA
 	if isRecordingShareWider(earlier, saved) {
 		if err := self.tellAboutShare(ctx, owner, models.ShareReceivedNote{
 			SharerName: owner.DisplayName(), ShareKind: models.ShareKindRecording, ShareLevel: string(saved.RecordingShareLevel),
-			ShareSubject: saved.RecordingTitle,
+			ShareSubjectID: saved.RecordingID,
 		}, granteeUserId, granteeCircleId); err != nil {
 			return nil, err
 		}

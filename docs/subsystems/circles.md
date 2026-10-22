@@ -369,7 +369,11 @@ that was made to the caller by name, and only that. The row must have the caller
 as its grantee, so the owner, a stranger and a member of the circle a share went
 to all find it not found (the same of a recording or a finance account, through
 `DeclineRecordingShare` and `DeclineFinanceShare`). A share to a circle cannot be declined; it ends when
-the person leaves the circle (the row says so). Passwords shared with a person
+the person leaves the circle (the row says so). A finance account shared both by name
+and through a circle at a higher level is one row at the higher level, still
+declinable: declining ends the share by name and the circle's share stays, so
+the row remains at the circle's level and then ends only when the person leaves
+the circle. Passwords shared with a person
 are removed by their owner, who must give the item a new key, so they cannot be
 declined. The owner is not told. Declining an album takes out the photos the
 person added to it, as taking the share back does.
@@ -385,11 +389,12 @@ kind of notification was needed. A share to a circle tells every member of it
 except the sharer; a person who may not use that kind is not told (a memory
 page and a skill reach only people with `agent:use`), and nor is an account that
 is disabled. A recording's
-note names its title ("Alex shared the recording Standup with you (summary and
-transcript)"); a finance account's does not name the account ("Alex shared a
+note does not name its title ("Alex shared a recording with you (summary and
+transcript)"), which is the sharer's text and may summarize what other people
+said, and a finance account's does not name the account ("Alex shared a
 finance account with you (balance only)"), because the note goes into the
-conversation of the person's agent, which has no part in finance sharing. The same
-share at the same level, by the same sharer, is not told to the same person
+conversation of the person's agent, which has no part in either. The same
+share of the same thing at the same level, by the same sharer, is not told to the same person
 twice within ten minutes, so changing a level back and forth is one notice, not
 one for each tap. That memory is the server's (`shareNoticeCache`), so a restart
 forgets it. A notice is recorded as sent after the transaction commits, so one

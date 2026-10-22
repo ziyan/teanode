@@ -93,8 +93,9 @@ background run is refused before the server is asked. What they return is
 another person's words: the result is untrusted and begins with
 `tools.SharedRecordingMarker`, which the run that files what a conversation
 taught reads as it reads a shared page, so a fact that only repeats it is
-refused (`docs/subsystems/memory.md`, shared pages). Nothing from a shared
-recording is kept in memory, and the knowledge sources and dreams read only the
+refused (`docs/subsystems/memory.md`, shared pages). Only the turn that read it
+is held back, so a later turn that answers from what the conversation already
+holds is filed like any other. Nothing from a shared recording is kept in memory, and the knowledge sources and dreams read only the
 person's own recordings.
 
 A command the agent runs through the computer program is marked

@@ -128,14 +128,23 @@ func PageShareScopes(isQuoteShared bool) []string {
 // share (busy, titles, details, edit; current, history; view, contribute;
 // summary, transcript; balance, spending, transactions) and empty for the rest.
 // ShareSubject is the page's name, the album's title, the skill's name or the
-// recording's title. A finance share names no account: the note goes into the
-// conversation of the person's agent, which has no part in finance sharing, so
-// it says that an account was shared and leaves out which.
+// recording's title. A recording's title is the sharer's own text and may
+// summarize what other people said, and a finance share names no account: the
+// note goes into the conversation of the person's agent, which has no part in
+// either, so it says that a recording or an account was shared and leaves out
+// which.
 type ShareReceivedNote struct {
 	SharerName   string    `json:"sharerName"`
 	ShareKind    ShareKind `json:"shareKind"`
 	ShareLevel   string    `json:"shareLevel,omitempty"`
 	ShareSubject string    `json:"shareSubject,omitempty"`
+
+	// ShareSubjectID is which thing was shared (the calendar, page path, skill
+	// name, album, recording or finance account), only to tell two shares of
+	// one kind at one level apart when deciding whether a person was just told.
+	// It is not sent to a client: a name or an identifier the person has no
+	// part in does not belong in a conversation.
+	ShareSubjectID string `json:"-"`
 
 	// ShareScopes are what else it gives: the Health categories, quotes for a
 	// page shared with the words each fact was read in, location for an album

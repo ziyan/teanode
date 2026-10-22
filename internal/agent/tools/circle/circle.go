@@ -6,6 +6,7 @@ package circle
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -357,9 +358,16 @@ func init() {
 					"are not the agent's to read): the kind, the thing, who it is shared with or by, the level " +
 					"or scope, and since when. Passwords are counted, never named. Each received row says whether it came through a circle " +
 					"(granteeCircleName) or was made to the person by name (isDirect), and whether decline_share can end it (canDecline). " +
+					"In a chat only what the person shares is listed, not what was shared with them. " +
 					"Stopping something the person shares is the action of its own tool (calendar, location, health, memory, skill, photo).",
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
-					result, err := operator.Execute(ctx, client.DocumentListSharing, nil)
+					// What others shared with the person was shared with
+					// them alone, so a chat is told only what they share.
+					document := client.DocumentListSharing
+					if run, err := tools.RunFrom(ctx); err == nil && tools.IsAnsweringInChat(run) {
+						document = client.DocumentListSharingMade
+					}
+					result, err := operator.Execute(ctx, document, nil)
 					if err != nil {
 						return nil, err
 					}
@@ -387,6 +395,9 @@ func init() {
 					}](call)
 					if err != nil {
 						return nil, err
+					}
+					if run, err := tools.RunFrom(ctx); err == nil && tools.IsAnsweringInChat(run) {
+						return nil, errDeclineInChat
 					}
 					if _, err := operator.Execute(ctx, client.DocumentDeclineShare,
 						map[string]any{"shareKind": strings.TrimSpace(arguments.ShareKind), "shareId": strings.TrimSpace(arguments.ShareID)}); err != nil {
@@ -975,6 +986,12 @@ func cardWords(ctx context.Context, circleID, username string) (circleWords, per
 	return circleWords, personWords
 }
 
+// errDeclineInChat is what decline_share answers in a chat: the share to end
+// is found in the list of what others shared with the person, which a chat is
+// not told, and the card would name who shared what to the room.
+var errDeclineInChat = errors.New("what others shared with the person is not repeated into a chat, because everybody in it would read it: " +
+	"the person can ask in a private conversation with you instead")
+
 // declineSharePreview names who shared what, from the person's own list, so
 // that the card is not a question about an identifier.
 func declineSharePreview(ctx context.Context, arguments json.RawMessage) string {
@@ -987,7 +1004,7 @@ func declineSharePreview(ctx context.Context, arguments json.RawMessage) string 
 	}
 	said := "Stop receiving a share made to you by name"
 	run, err := tools.RunFrom(ctx)
-	if err != nil {
+	if err != nil || tools.IsAnsweringInChat(run) {
 		return said
 	}
 	var result struct {
