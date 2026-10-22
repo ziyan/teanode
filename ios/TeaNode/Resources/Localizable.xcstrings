@@ -58866,6 +58866,22 @@
         }
       }
     },
+    "Choose a person, or a whole circle. A circle reaches everyone in it, including people who join later.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人、またはサークル全体を選択します。サークルと共有すると、そのサークルの全員に届き、あとから参加した人にも届きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一个人，或整个圈子。共享给圈子时，圈子里的所有人都能看到，之后加入的人也能看到。"
+          }
+        }
+      }
+    },
     "Choose a person, or a whole circle. They read this page and everything under it as it is now, and cannot change it.": {
       "localizations": {
         "ja": {
@@ -66896,18 +66912,18 @@
         }
       }
     },
-    "Everyone in %@ could see it. You can change this under Sharing in Location.": {
+    "Everyone in %@ could see it, including people who join later. You can change this under Sharing in Location.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@のメンバー全員に見えます。変更は「位置情報」の「共有」でできます。"
+            "value": "%@の全員に見えます。あとから参加した人にも届きます。変更は「位置情報」の「共有」でできます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@中的所有人都能看到。你可以在“位置”的“共享”中更改。"
+            "value": "%@的所有人都能看到，之后加入的人也能看到。你可以在“位置”的“共享”中更改。"
           }
         }
       }
@@ -67600,34 +67616,34 @@
         }
       }
     },
-    "They also see your visits and the places they were at.": {
+    "They also see your visits and the places you were at, including from before you shared.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "訪問と、訪れた場所も見えます。"
+            "value": "訪問と訪れた場所も、共有を始める前のものを含めて見えます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "对方还能看到您的到访记录和到访的地点。"
+            "value": "对方还能看到您的到访记录和您去过的地点，包括开始共享之前的。"
           }
         }
       }
     },
-    "Choose a person or a circle, and whether they also see your visits and the places they were at.": {
+    "Choose a person or a circle, and whether they also see your visits and the places you were at. A circle reaches everyone in it, including people who join later.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "共有する相手（人またはサークル）と、訪問や訪れた場所も見せるかどうかを選びます。"
+            "value": "共有する相手（人またはサークル）と、訪問や訪れた場所も見せるかどうかを選びます。サークルと共有すると、そのサークルの全員に届き、あとから参加した人にも届きます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "选择一个人或一个圈子，以及对方是否还能看到您的到访记录和到访的地点。"
+            "value": "选择一个人或一个圈子，以及对方是否还能看到您的到访记录和您去过的地点。共享给圈子时，圈子里的所有人都能看到，之后加入的人也能看到。"
           }
         }
       }

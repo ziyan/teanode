@@ -714,7 +714,7 @@ struct CircleCalendarOfferSheet: View {
                     } header: {
                         Text("Where you are")
                     } footer: {
-                        Text("Everyone in \(offer.circleName) could see it. You can change this under Sharing in Location.")
+                        Text("Everyone in \(offer.circleName) could see it, including people who join later. You can change this under Sharing in Location.")
                     }
                 }
             }

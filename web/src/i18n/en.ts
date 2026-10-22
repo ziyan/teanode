@@ -6184,7 +6184,7 @@ export const en = {
   'circles.shareSuggestion.locationNone': 'Not now',
   'circles.shareSuggestion.locationTitle': 'Share where you are with {name}?',
   'circles.shareSuggestion.locationBody':
-    'Everyone in {name} would see it on the Location page. You can change this at any time under Sharing.',
+    'Everyone in {name} would see it on the Location page, including people who join later. You can change this at any time under Sharing.',
   'circles.shareSuggestion.bothSaved': 'Shared your calendar and where you are with {name}',
   'circles.admin': 'Admin',
   'circles.you': 'you',
@@ -6471,7 +6471,8 @@ export const en = {
   'location.forgotten': 'Forgot {place}',
   'location.forgetFailed': 'Could not forget the place.',
   'location.sharingTitle': 'Share your location',
-  'location.shareIntro': 'The people you share with see you on this map.',
+  'location.shareIntro':
+    'The people you share with see you on this map. A circle you share with reaches everyone in it, including people who join later.',
   'location.shareCurrent': 'Shared with',
   'location.shareNobody': 'You are not sharing your location with anybody.',
   'location.shareWith': 'Share with',
@@ -6484,7 +6485,8 @@ export const en = {
   'location.shareLevelName.current': 'Where I am now',
   'location.shareLevelName.history': 'Where I am and where I have been',
   'location.shareLevelHint.current': 'They see where you are now and the place you are at.',
-  'location.shareLevelHint.history': 'They also see your visits and the places they were at.',
+  'location.shareLevelHint.history':
+    'They also see your visits and the places you were at, including from before you shared.',
   'location.shareAdd': 'Share',
   'location.shareSaved': 'Sharing with {name}',
   'location.shareStop': 'Stop sharing with {name}',
@@ -6517,7 +6519,7 @@ export const en = {
   'location.setupToDo': 'To do',
   'location.setupShare': 'Share with {name}',
   'location.setupShareNote':
-    'Choose what they see: where you are now, or also your visits and the places they were at.',
+    'Choose what they see: where you are now, or also your visits and the places you were at.',
   'location.address': 'Address',
   'location.noAddress': 'No address',
   'location.changeAddress': 'Change address',

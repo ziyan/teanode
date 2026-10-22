@@ -207,7 +207,11 @@ both in, or with a circle they are in, at one **share level**:
   and the place they are at. That is the latest position and the visit in
   progress with its place, and nothing before it.
 - `history`, in words **Where I am and where I have been**: the viewer also sees
-  the person's visits and the places they were at, their places, and their paths.
+  the person's visits and the places they were at, their places, and their paths,
+  including those from before the share was made: the share reads what is stored,
+  and does not begin when it is made. A share to a circle reaches everyone in the
+  circle now and everyone who joins it later, and stops reaching a person when
+  they leave.
 
 Sharing again changes the level; unsharing takes it away. The person's own is
 level `owner`.
@@ -233,7 +237,10 @@ fans events out in memory, and decides who may see an event with one
 transaction for all open maps; an account may hold 20 open at once. An event is
 sent when a report changed something (not for a batch the server already had),
 and when a share is made or ended and history is erased, so that a map that was
-following somebody who stopped sharing reads again and drops them.
+following somebody who stopped sharing reads again and drops them. Leaving a
+circle, being taken out of one and deleting one end shares too, so they send the
+same event, in both directions, for each location that stopped reaching
+somebody (`watchLocationReach`).
 
 ## Notifications
 
