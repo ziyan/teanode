@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { failureText, graphql } from '../api'
-import { Tag } from './common'
 import { FormDialog } from './dialog'
 import { CloseIcon } from './icons'
 import { personLabel, personName } from './personLabel'
@@ -44,6 +43,17 @@ const SHARE = `mutation ($calendarId: String!, $granteeUserId: String, $granteeC
   ShareCalendar(calendarId: $calendarId, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, shareLevel: $shareLevel) { id }
 }`
 const UNSHARE = `mutation ($shareId: String!) { UnshareCalendar(shareId: $shareId) }`
+
+// A share is changed to another level by sharing again with the same person or
+// circle: the server keeps one share for each grantee and replaces its level.
+function shareVariables(calendarId: string, share: Share, shareLevel: GrantableLevel) {
+  return {
+    calendarId,
+    granteeUserId: share.granteeUserId,
+    granteeCircleId: share.granteeCircleId,
+    shareLevel,
+  }
+}
 
 function shareName(share: Share, everyoneIn: (name: string) => string): string {
   if (share.granteeCircleId) return everyoneIn(share.granteeCircleName)
@@ -161,7 +171,23 @@ export function CalendarShareDialog({
           return (
             <div key={share.id} className="calendar-share-row">
               <span className="calendar-share-name">{name}</span>
-              <Tag value={t(`calendar.shareLevelName.${share.shareLevel}` as Parameters<typeof t>[0])} />
+              <select
+                aria-label={t('calendar.shareLevelFor', { name })}
+                value={share.shareLevel}
+                disabled={isBusy}
+                onChange={(event) =>
+                  void run(
+                    () => graphql(SHARE, shareVariables(calendar.id, share, event.target.value as GrantableLevel)),
+                    t('calendar.shareLevelChanged', { name }),
+                  )
+                }
+              >
+                {SHARE_LEVELS.map((level) => (
+                  <option key={level} value={level}>
+                    {t(`calendar.shareLevelName.${level}` as Parameters<typeof t>[0])}
+                  </option>
+                ))}
+              </select>
               <Tooltip label={t('calendar.shareStop', { name })}>
                 <button
                   type="button"

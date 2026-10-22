@@ -50,6 +50,17 @@ func newShareWorld(t *testing.T, tx db.Transaction) *shareWorld {
 	return world
 }
 
+// newCalendarShareWorld is that world with calendar:use given to all four, as
+// the ordinary roles give it: a calendar reaches only people who hold it.
+func newCalendarShareWorld(t *testing.T, tx db.Transaction) *shareWorld {
+	t.Helper()
+	world := newShareWorld(t, tx)
+	for _, person := range []*models.User{world.ada, world.ben, world.cora, world.dave} {
+		dbtest.GrantPermission(t, tx, person.ID, models.PermissionCalendarUse)
+	}
+	return world
+}
+
 func accessOf(t *testing.T, tx db.Transaction, userId string, found *models.Calendar) models.ShareLevel {
 	t.Helper()
 	level, isOwner, err := tx.CalendarAccess(userId, found)
@@ -68,7 +79,7 @@ func TestAShareNeedsACircleInCommon(t *testing.T) {
 	defer closeDatabase()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		world := newShareWorld(t, tx)
+		world := newCalendarShareWorld(t, tx)
 
 		// With ben, who shares "home" with ada.
 		share, err := tx.ShareCalendar(world.ada.ID, &models.CalendarShare{
@@ -139,7 +150,7 @@ func TestAReaderGetsTheHighestLevelReachingThem(t *testing.T) {
 	defer closeDatabase()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		world := newShareWorld(t, tx)
+		world := newCalendarShareWorld(t, tx)
 		if level := accessOf(t, tx, world.ben.ID, world.adaCalendar); level != "" {
 			t.Fatalf("nothing is shared yet: %q", level)
 		}
@@ -206,7 +217,7 @@ func TestSharesStopReachingWhenTheCircleIsGone(t *testing.T) {
 	defer closeDatabase()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		world := newShareWorld(t, tx)
+		world := newCalendarShareWorld(t, tx)
 		for _, share := range []*models.CalendarShare{
 			{CalendarID: world.adaCalendar.ID, GranteeUserID: world.ben.ID, ShareLevel: models.ShareLevelTitles},
 			{CalendarID: world.adaCalendar.ID, GranteeCircleID: world.home.ID, ShareLevel: models.ShareLevelDetails},
@@ -250,7 +261,7 @@ func TestLeavingACircleEndsDirectSharesBetweenStrangers(t *testing.T) {
 	defer closeDatabase()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		world := newShareWorld(t, tx)
+		world := newCalendarShareWorld(t, tx)
 		benCalendar, err := tx.EnsureCalendar(world.ben.ID, models.CalendarEvents, nil)
 		if err != nil {
 			t.Fatalf("EnsureCalendar: %s", err)
@@ -323,7 +334,7 @@ func TestACircleCalendarBelongsToItsMembers(t *testing.T) {
 	defer closeDatabase()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		world := newShareWorld(t, tx)
+		world := newCalendarShareWorld(t, tx)
 		family, err := tx.CreateCircleCalendar(world.home.ID, "", "Europe/London")
 		if err != nil {
 			t.Fatalf("CreateCircleCalendar: %s", err)
@@ -403,7 +414,7 @@ func TestAReaderIsGivenWhatTheirLevelAllows(t *testing.T) {
 	defer closeDatabase()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		world := newShareWorld(t, tx)
+		world := newCalendarShareWorld(t, tx)
 		const detailed = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//TeaNode//EN\r\nBEGIN:VEVENT\r\n" +
 			"UID:dentist\r\nDTSTAMP:20260912T120000Z\r\nDTSTART:20260914T100000Z\r\n" +
 			"DTEND:20260914T110000Z\r\nSUMMARY:Dentist\r\nLOCATION:Elm Street\r\nDESCRIPTION:Bring the form\r\n" +
@@ -464,7 +475,7 @@ func TestEnsureCalendarNeverPicksACircleOrSharedCalendar(t *testing.T) {
 	defer closeDatabase()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		world := newShareWorld(t, tx)
+		world := newCalendarShareWorld(t, tx)
 		if _, err := tx.CreateCircleCalendar(world.home.ID, "", ""); err != nil {
 			t.Fatalf("CreateCircleCalendar: %s", err)
 		}
@@ -523,7 +534,7 @@ func TestADisabledOwnersCalendarStopsReachingReaders(t *testing.T) {
 	defer closeDatabase()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		world := newShareWorld(t, tx)
+		world := newCalendarShareWorld(t, tx)
 		if _, err := tx.ShareCalendar(world.ada.ID, &models.CalendarShare{CalendarID: world.adaCalendar.ID, GranteeUserID: world.ben.ID, ShareLevel: models.ShareLevelTitles}); err != nil {
 			t.Fatalf("ShareCalendar: %s", err)
 		}
@@ -565,6 +576,100 @@ func TestADisabledOwnersCalendarStopsReachingReaders(t *testing.T) {
 		set(false)
 		if level := accessOf(t, tx, world.ben.ID, world.adaCalendar); level != models.ShareLevelDetails {
 			t.Errorf("after switching the account back on: %q", level)
+		}
+	})
+}
+
+// A calendar reaches only people who may use calendars, and only from an owner
+// who may: taking calendar:use from a role switches calendars off for those
+// people, and what they kept is no longer read by others. A share is still
+// listed to its owner, so that they can end it.
+func TestACalendarReachesOnlyPeopleWhoMayUseCalendars(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newShareWorld(t, tx)
+		benCalendar, err := tx.EnsureCalendar(world.ben.ID, models.CalendarEvents, nil)
+		if err != nil {
+			t.Fatalf("EnsureCalendar: %s", err)
+		}
+		if _, err := tx.ShareCalendar(world.ada.ID, &models.CalendarShare{CalendarID: world.adaCalendar.ID, GranteeUserID: world.ben.ID, ShareLevel: models.ShareLevelDetails}); err != nil {
+			t.Fatalf("ShareCalendar: %s", err)
+		}
+		if _, err := tx.ShareCalendar(world.ben.ID, &models.CalendarShare{CalendarID: benCalendar.ID, GranteeUserID: world.ada.ID, ShareLevel: models.ShareLevelDetails}); err != nil {
+			t.Fatalf("ShareCalendar: %s", err)
+		}
+		// Only ada may use calendars: ben cannot read hers, and she cannot
+		// read his.
+		dbtest.GrantPermission(t, tx, world.ada.ID, models.PermissionCalendarUse)
+		if level := accessOf(t, tx, world.ben.ID, world.adaCalendar); level != "" {
+			t.Errorf("a reader without calendar:use reaches ada at %q", level)
+		}
+		if level := accessOf(t, tx, world.ada.ID, benCalendar); level != "" {
+			t.Errorf("an owner without calendar:use reaches ada at %q", level)
+		}
+		reachable, err := tx.ListReachableCalendars(world.ada.ID)
+		if err != nil {
+			t.Fatalf("ListReachableCalendars: %s", err)
+		}
+		for _, each := range reachable {
+			if each.Calendar.ID == benCalendar.ID {
+				t.Errorf("the calendar of an owner without calendar:use is listed")
+			}
+		}
+		if shares, err := tx.ListCalendarShares(benCalendar.ID); err != nil || len(shares) != 1 {
+			t.Errorf("the owner's own list of shares: %+v %v", shares, err)
+		}
+		// Once ben may as well, both reach as before.
+		dbtest.GrantPermission(t, tx, world.ben.ID, models.PermissionCalendarUse)
+		if level := accessOf(t, tx, world.ben.ID, world.adaCalendar); level != models.ShareLevelDetails {
+			t.Errorf("both may use calendars, ben reaches ada at %q", level)
+		}
+		if level := accessOf(t, tx, world.ada.ID, benCalendar); level != models.ShareLevelDetails {
+			t.Errorf("both may use calendars, ada reaches ben at %q", level)
+		}
+	})
+}
+
+// Deleting a circle's calendar takes the events with it and leaves the people's
+// own calendars alone, and a circle with none has nothing to delete.
+func TestDeletingACircleCalendarTakesItsEventsAndNothingElse(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newCalendarShareWorld(t, tx)
+		if err := tx.DeleteCircleCalendar(world.home.ID); !errors.Is(err, db.ErrNotFound) {
+			t.Fatalf("a circle with no calendar: %v", err)
+		}
+		if err := tx.DeleteCircleCalendar("nobody"); !errors.Is(err, db.ErrNotFound) {
+			t.Fatalf("no such circle: %v", err)
+		}
+		family, err := tx.CreateCircleCalendar(world.home.ID, "", "")
+		if err != nil {
+			t.Fatalf("CreateCircleCalendar: %s", err)
+		}
+		if _, err := tx.PutCalendarObject(&models.CalendarObject{
+			ID: "play", CalendarID: family.ID, UID: "play", ETag: "e", Data: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", Summary: "School play",
+		}, nil); err != nil {
+			t.Fatalf("PutCalendarObject: %s", err)
+		}
+		if err := tx.DeleteCircleCalendar(world.home.ID); err != nil {
+			t.Fatalf("DeleteCircleCalendar: %s", err)
+		}
+		if found, err := tx.GetCircleCalendar(world.home.ID); err != nil || found != nil {
+			t.Errorf("the calendar is still there: %+v %v", found, err)
+		}
+		if object, err := tx.GetCalendarObject(family.ID, "play"); err != nil || object != nil {
+			t.Errorf("its event is still there: %+v %v", object, err)
+		}
+		if kept, err := tx.GetCalendar(world.adaCalendar.ID); err != nil || kept == nil {
+			t.Errorf("ada's own calendar went with it: %+v %v", kept, err)
+		}
+		// And the circle may have another.
+		if _, err := tx.CreateCircleCalendar(world.home.ID, "", ""); err != nil {
+			t.Errorf("a new one: %s", err)
 		}
 	})
 }

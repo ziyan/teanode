@@ -53,7 +53,7 @@ func NewCircleCommand() *cli.Command {
 			},
 			{
 				Name:      "delete",
-				Usage:     "delete a circle with its members and invitations; needs an admin",
+				Usage:     "delete a circle with its members, invitations, calendar and albums; needs an admin",
 				ArgsUsage: "<circle-id>",
 				Flags:     []cli.Flag{ForceFlag()},
 				Action:    runCircleDelete,
@@ -294,7 +294,7 @@ func runCircleDelete(ctx context.Context, command *cli.Command) error {
 	if circleId == "" {
 		return usage("which circle? usage: teanode circle delete <circle-id>")
 	}
-	if err := confirm(command, "This deletes the circle for everybody in it, with its invitations."); err != nil {
+	if err := confirm(command, "This deletes the circle for everybody in it, with its invitations, calendar, albums and chat. What its members shared with it, and with anyone they then share no other circle with, ends and does not come back."); err != nil {
 		return err
 	}
 	connection, err := openClient(command)
@@ -443,7 +443,7 @@ func runCircleRemove(ctx context.Context, command *cli.Command) error {
 	if len(arguments) != 2 {
 		return usage("usage: teanode circle remove <circle-id> <username>")
 	}
-	if err := confirm(command, fmt.Sprintf("This takes %s out of the circle.", forTerminal(arguments[1]))); err != nil {
+	if err := confirm(command, fmt.Sprintf("This takes %s out of the circle. What they shared with it, and with anyone they then share no other circle with, ends and does not come back if they join again.", forTerminal(arguments[1]))); err != nil {
 		return err
 	}
 	connection, err := openClient(command)
@@ -462,7 +462,7 @@ func runCircleLeave(ctx context.Context, command *cli.Command) error {
 	if circleId == "" {
 		return usage("which circle? usage: teanode circle leave <circle-id>")
 	}
-	if err := confirm(command, "This takes you out of the circle, and the last person to leave deletes it."); err != nil {
+	if err := confirm(command, "This takes you out of the circle, and the last person to leave deletes it. What you shared with it, and with anyone you then share no other circle with, ends and does not come back if you join again."); err != nil {
 		return err
 	}
 	connection, err := openClient(command)

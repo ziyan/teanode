@@ -10555,6 +10555,14 @@ button.with-icon {
   white-space: nowrap;
 }
 
+/* The level of a share, which is changed where it is shown: as wide as its
+   words, and narrower than that on a phone, where the name is cut first. */
+.calendar-share-row select {
+  flex: 0 1 12rem;
+  width: auto;
+  min-width: 0;
+}
+
 /* A day with its free stretches: the day on its own line, the times under it
    and wrapping as they need to. In the row of a share the name takes what the
    rest leaves and is cut, which cut a day to an ellipsis once a day had

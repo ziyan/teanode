@@ -155,6 +155,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ShareCalendar":        client.DocumentShareCalendar,
 		"UnshareCalendar":      client.DocumentUnshareCalendar,
 		"CreateCircleCalendar": client.DocumentCreateCircleCalendar,
+		"DeleteCircleCalendar": client.DocumentDeleteCircleCalendar,
 		"ListCalendarFreeBusy": client.DocumentListCalendarFreeBusy,
 		// Pages of the agent's memory shared with other people, and what
 		// they shared.

@@ -552,6 +552,9 @@ extension Documents {
     public static let createCircleCalendar = """
         mutation ($circleId: String!) { CreateCircleCalendar(circleId: $circleId) { id } }
         """
+    public static let deleteCircleCalendar = """
+        mutation ($circleId: String!) { DeleteCircleCalendar(circleId: $circleId) }
+        """
     public static let reminders = """
         query ($isDone: Boolean) { ListReminders(isDone: $isDone) { id title notes dueAt isDueDate isDone doneAt priority isRepeating } }
         """
@@ -645,7 +648,7 @@ extension Documents {
         "calendarRequest": calendarRequest, "cancelCalendarRequest": cancelCalendarRequest,
         "calendarShares": calendarShares, "shareCalendar": shareCalendar, "unshareCalendar": unshareCalendar,
         "calendarSharePeople": calendarSharePeople, "calendarShareCircles": calendarShareCircles,
-        "createCircleCalendar": createCircleCalendar, "saveCalendar": saveCalendar,
+        "createCircleCalendar": createCircleCalendar, "deleteCircleCalendar": deleteCircleCalendar, "saveCalendar": saveCalendar,
         "reminders": reminders, "saveReminder": saveReminder, "setReminderDone": setReminderDone,
         "deleteReminder": deleteReminder, "addressBooks": addressBooks, "reachableAddressBooks": reachableAddressBooks,
         "createCircleAddressBook": createCircleAddressBook, "saveAddressBook": saveAddressBook,
@@ -720,7 +723,8 @@ extension Connection {
         return try await execute(Documents.calendarShareCircles, as: Answer.self).ListCircles
     }
 
-    /// Renames a calendar of the person's own. The server replaces every field
+    /// Renames a calendar of the person's own, or a circle's they are an admin
+    /// of. The server replaces every field
     /// it is sent, so the ones the app does not change go back as the calendar
     /// holds them: leaving them out would clear its description, its color, the
     /// zone a new event is written in and the day its weeks start on.
@@ -745,6 +749,13 @@ extension Connection {
             let CreateCircleCalendar: Made
         }
         _ = try await execute(Documents.createCircleCalendar, variables: ["circleId": .string(circleId)], as: Answer.self)
+    }
+
+    /// Deletes the calendar a circle keeps for itself, with every event in it,
+    /// for everyone in the circle. Admins only.
+    public func deleteCircleCalendar(circleId: String) async throws {
+        struct Answer: Decodable, Sendable { let DeleteCircleCalendar: Bool? }
+        _ = try await execute(Documents.deleteCircleCalendar, variables: ["circleId": .string(circleId)], as: Answer.self)
     }
 
     public func calendarEvents(calendarId: String, from: Date, until: Date) async throws -> [CalendarEvent] {

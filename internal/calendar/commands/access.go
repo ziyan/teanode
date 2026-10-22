@@ -106,10 +106,12 @@ func refusedGuests(found *models.Calendar) error {
 	return refused("this event has guests, and changing it would send them mail in the owner's name; only the owner of the calendar can do that")
 }
 
-// requireOwnCalendar locks a calendar and checks that it is the person's own.
-// What is about how a calendar is shown, or who it is shared with, is the
-// owner's and nobody else's, whatever level it was shared at.
-func requireOwnCalendar(transaction db.Transaction, principal *access.Principal, calendarId string) (*models.Calendar, error) {
+// requireManagedCalendar locks a calendar and checks that the person manages
+// it: their own, or the calendar of a circle they are an admin of. What is
+// about how a calendar is shown, or who it is shared with, is the manager's and
+// nobody else's, whatever level it was shared at, and a member of a circle who
+// is not an admin reads and writes its events and changes nothing about it.
+func requireManagedCalendar(transaction db.Transaction, principal *access.Principal, calendarId string) (*models.Calendar, error) {
 	locked, err := transaction.LockCalendar(strings.TrimSpace(calendarId))
 	if err != nil {
 		return nil, err
@@ -124,8 +126,23 @@ func requireOwnCalendar(transaction db.Transaction, principal *access.Principal,
 	if shareLevel == "" {
 		return nil, db.ErrNotFound
 	}
+	if locked.CircleID != "" {
+		circle, err := transaction.GetCircle(locked.CircleID)
+		if err != nil {
+			return nil, err
+		}
+		if circle == nil || !isCircleAdmin(circle, principal.User.ID) {
+			return nil, refused("only an admin of this circle can change how its calendar is shown")
+		}
+		return locked, nil
+	}
 	if !isOwner {
 		return nil, refused("only the owner of this calendar can change how it is shown")
 	}
 	return locked, nil
+}
+
+func isCircleAdmin(circle *models.Circle, userId string) bool {
+	member := circle.Member(userId)
+	return member != nil && member.MemberRole == models.MemberRoleAdmin
 }

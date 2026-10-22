@@ -5,7 +5,7 @@ import { FormDialog } from './dialog'
 import { useToast } from './toast'
 import { useTranslation } from '../i18n/i18n'
 
-// Renaming the person's own calendar.
+// Renaming the person's own calendar, or a circle's they are an admin of.
 //
 // The server replaces every field it is sent, so the ones this dialog does not
 // show go back as the calendar holds them; leaving them out would clear the
@@ -29,10 +29,13 @@ export type RenameableCalendar = {
 
 export function CalendarRenameDialog({
   calendar,
+  title,
   onClose,
   onSaved,
 }: {
   calendar: RenameableCalendar
+  // What the dialog is called; renaming the person's own calendar by default.
+  title?: string
   onClose: () => void
   // Called once the new name is kept, so the page can read the calendars again.
   onSaved: () => void | Promise<unknown>
@@ -73,7 +76,7 @@ export function CalendarRenameDialog({
 
   return (
     <FormDialog
-      title={t('calendar.renameTitle')}
+      title={title ?? t('calendar.renameTitle')}
       submitLabel={t('common.save')}
       busy={isBusy}
       error={problem}

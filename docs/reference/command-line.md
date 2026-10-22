@@ -313,6 +313,11 @@ the circle and need you to be one of its admins; a member who is not one is
 told so. `leave` takes you out, and the last person to leave deletes the circle.
 A circle always keeps an admin, so the last admin cannot leave or be made a
 member while others remain; make somebody else an admin first, or delete it.
+Leaving, being taken out with `remove`, and `delete` end what the person (or,
+for `delete`, every member) shared with the circle and with anyone they then
+share no other circle with, and it does not come back if they join again; what
+others shared with the circle stops reaching them. `delete` also deletes the
+circle's calendar, albums and chat. Each asks first, and says so.
 
 `accept` and `decline` of an invitation that was already answered, or has
 expired, say so. `invite` answers the same whether or not the username is an account, and
@@ -323,6 +328,9 @@ An operator with `user:manage` can put an account in a circle without an
 invitation, for somebody who will not set it up themselves:
 
     teanode circle add <circle-id> personb               # --admin for an admin
+
+The circle's admins are told, in the note and phone notification an invitation
+gives, and the audit log (`circle_member`) records who was put in.
 
 For an account that does not exist yet, `teanode user create` takes the circles
 in the same breath, so the person is in them as soon as they have a password
@@ -602,6 +610,7 @@ have made.
 | `teanode calendar free` | when you are free: the stretches of the working day nothing is booked in, day by day. `--earliest 08:00 --latest 18:00` moves the ends of the day; a whole-day entry does not make a day busy, and neither does anything cancelled. Worked out with the same two functions that answer a phone's free-busy request, so what this prints and what a colleague's client is told cannot disagree |
 | `teanode calendar share <username\|circle> --level busy\|titles\|details\|edit [--calendar <id>]`, `shares`, `unshare <share-id>` | who your calendar is shared with, and how much they see. `share ben --level titles` shares with a person you are in a circle with, `share Home --level busy` with everyone in a circle you are in (by name or identifier; a username is that person even when a circle has the same name, and a name two circles have is refused with their identifiers and sizes; the identifier is never ambiguous); sharing again changes the level, `shares` lists them with the identifiers `unshare` takes. `busy` is when you are busy and nothing else, `titles` adds the time, title and place of each event, `details` is everything including guests, `edit` lets them add, change and remove events that have no guests. An event you mark private (`calendar add --private`, written as `CLASS:PRIVATE`) is only ever shown as busy. Someone you share no circle with is refused as if they did not exist |
 | `teanode calendar circle <circle-id> [--name <name>]` | make the calendar a circle keeps for itself, which everyone in the circle reads and writes (admins only; a circle has one). Its events cannot have guests |
+| `teanode calendar circle-delete <circle-id>` | delete the calendar a circle keeps for itself, with every event in it, for everyone in the circle (admins only; asks first, or `--force`). The circle stays and may make a new one. `teanode calendar set --calendar <id>` renames a circle's calendar, for an admin |
 | `teanode calendar list --owner <username\|everyone>` | what other people shared with you, at the level each was shared at, each line saying whose it is: one person's, or `everyone` for all of them and your circles' own calendars. Time shared only as busy prints as `busy` |
 | `teanode calendar free --with ada,ben` | when you and those people are all free: the same day-by-day stretches as `free`, from everybody's busy times, yours included. Each has to have shared their calendar with you at `busy` or more; it says who has not rather than leave them out |
 | `teanode calendar calendars\|set` | the calendars themselves, yours, your circles' and the ones shared with you, the last two with whose they are and the level you reach them at; for your own, what it is called, what a client paints them, the zone a new event is written in, and the day a week is drawn from: `set --timezone Europe/Berlin`, `set --week-start monday`. Weeks start on Sunday unless a calendar says otherwise; the five-day view is Monday to Friday either way, because that is what a working week is |

@@ -1669,21 +1669,21 @@ func runPasswordsShare(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("%s is shared with you by %s, and only its owner shares it", forTableCell(item.Name()), forTableCell(item.View.OwnerName))
 	}
 	typed := strings.TrimSpace(command.Args().Get(1))
-	granteeUserID, granteeCircleID, described, err := shareTarget(ctx, session.connection, typed)
+	granteeUserId, granteeCircleId, described, err := shareTarget(ctx, session.connection, typed)
 	if err != nil {
 		return describeError(command, err)
 	}
-	newRecipients, err := client.ListPasswordRecipients(ctx, session.connection, granteeUserID, granteeCircleID)
+	newRecipients, err := client.ListPasswordRecipients(ctx, session.connection, granteeUserId, granteeCircleId)
 	if err != nil {
 		return describeNotFound(command, err, typed)
 	}
 	typedUserNames := map[string]string{}
-	if granteeUserID != "" {
+	if granteeUserId != "" {
 		// A person asked for must be the person answered with.
-		if len(newRecipients) != 1 || newRecipients[0].UserID != granteeUserID || !strings.EqualFold(newRecipients[0].Username, typed) {
+		if len(newRecipients) != 1 || newRecipients[0].UserID != granteeUserId || !strings.EqualFold(newRecipients[0].Username, typed) {
 			return fmt.Errorf("the server answered with a different person than %q, whom you asked to share with; nothing was shared", typed)
 		}
-		typedUserNames[granteeUserID] = typed
+		typedUserNames[granteeUserId] = typed
 	}
 	// An item whose sharing cannot be believed is set again from nothing, so
 	// the server must not list anybody on it. One whose access narrowed gets
@@ -1701,10 +1701,10 @@ func runPasswordsShare(ctx context.Context, command *cli.Command) error {
 	grantees := existingGrantees(item.View)
 	isAlreadyShared := false
 	for _, grantee := range grantees {
-		isAlreadyShared = isAlreadyShared || sameGrantee(grantee, granteeUserID, granteeCircleID)
+		isAlreadyShared = isAlreadyShared || sameGrantee(grantee, granteeUserId, granteeCircleId)
 	}
 	if !isAlreadyShared {
-		grantees = append(grantees, newGrantee(granteeUserID, granteeCircleID))
+		grantees = append(grantees, newGrantee(granteeUserId, granteeCircleId))
 	}
 	// Who is a member of which circle is the server's word, here for the
 	// circle being shared with too.
@@ -1714,31 +1714,31 @@ func runPasswordsShare(ctx context.Context, command *cli.Command) error {
 	for _, recipient := range newRecipients {
 		targetUserIDs[recipient.UserID] = true
 	}
-	if granteeCircleID != "" {
-		circleNames[granteeCircleID] = described
+	if granteeCircleId != "" {
+		circleNames[granteeCircleId] = described
 		for _, recipient := range newRecipients {
-			circleIDs[recipient.UserID] = append(circleIDs[recipient.UserID], granteeCircleID)
+			circleIDs[recipient.UserID] = append(circleIDs[recipient.UserID], granteeCircleId)
 		}
 	}
-	newAccess := withGrantee(item.VerifiedAccess, granteeUserID, granteeCircleID)
+	newAccess := withGrantee(item.VerifiedAccess, granteeUserId, granteeCircleId)
 	return setItemShares(ctx, command, session, item, newAccess, grantees, append(existingRecipients(item.View), newRecipients...), circleIDs, circleNames, targetUserIDs, typedUserNames,
 		"sharing "+forTerminal(item.Name())+" with "+forTerminal(described))
 }
 
-func newGrantee(granteeUserID, granteeCircleID string) *client.PasswordShareGranteeInput {
+func newGrantee(granteeUserId, granteeCircleId string) *client.PasswordShareGranteeInput {
 	grantee := &client.PasswordShareGranteeInput{}
-	if granteeUserID != "" {
-		grantee.GranteeUserID = &granteeUserID
+	if granteeUserId != "" {
+		grantee.GranteeUserID = &granteeUserId
 	}
-	if granteeCircleID != "" {
-		grantee.GranteeCircleID = &granteeCircleID
+	if granteeCircleId != "" {
+		grantee.GranteeCircleID = &granteeCircleId
 	}
 	return grantee
 }
 
-func sameGrantee(grantee *client.PasswordShareGranteeInput, granteeUserID, granteeCircleID string) bool {
-	return (grantee.GranteeUserID != nil && *grantee.GranteeUserID == granteeUserID) ||
-		(grantee.GranteeCircleID != nil && *grantee.GranteeCircleID == granteeCircleID)
+func sameGrantee(grantee *client.PasswordShareGranteeInput, granteeUserId, granteeCircleId string) bool {
+	return (grantee.GranteeUserID != nil && *grantee.GranteeUserID == granteeUserId) ||
+		(grantee.GranteeCircleID != nil && *grantee.GranteeCircleID == granteeCircleId)
 }
 
 // existingGrantees are who the item is shared with now.
@@ -1878,23 +1878,23 @@ func runPasswordsUnshare(ctx context.Context, command *cli.Command) error {
 	}
 	if command.Args().Len() == 2 {
 		typed := command.Args().Get(1)
-		granteeUserID, granteeCircleID, described, err := shareTarget(ctx, session.connection, typed)
+		granteeUserId, granteeCircleId, described, err := shareTarget(ctx, session.connection, typed)
 		if err != nil {
 			return describeError(command, err)
 		}
 		isShared := false
 		for _, share := range item.View.Shares {
-			if (share.GranteeUserID != nil && *share.GranteeUserID == granteeUserID) || (share.GranteeCircleID != nil && *share.GranteeCircleID == granteeCircleID) {
+			if (share.GranteeUserID != nil && *share.GranteeUserID == granteeUserId) || (share.GranteeCircleID != nil && *share.GranteeCircleID == granteeCircleId) {
 				isShared = true
 				continue
 			}
 			remaining = append(remaining, share)
 		}
 		for _, grantee := range item.sealedGrantees() {
-			isShared = isShared || isSameGrantee(grantee, granteeUserID, granteeCircleID)
+			isShared = isShared || isSameGrantee(grantee, granteeUserId, granteeCircleId)
 		}
 		changeAccess = func(access *passwords.PasswordAccess) *passwords.PasswordAccess {
-			return withoutGrantee(access, granteeUserID, granteeCircleID)
+			return withoutGrantee(access, granteeUserId, granteeCircleId)
 		}
 		if !isShared {
 			// The item may be shared with nobody new here because an earlier

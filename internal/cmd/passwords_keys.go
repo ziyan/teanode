@@ -593,14 +593,14 @@ func runPasswordsTrust(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	granteeUserID, granteeCircleID, _, err := shareTarget(ctx, connection, typed)
+	granteeUserId, granteeCircleId, _, err := shareTarget(ctx, connection, typed)
 	if err != nil {
 		return describeError(command, err)
 	}
-	if granteeCircleID != "" || granteeUserID == "" {
+	if granteeCircleId != "" || granteeUserId == "" {
 		return usage("trust takes the user name of one person, not a circle")
 	}
-	recipients, err := client.ListPasswordRecipients(ctx, connection, granteeUserID, "")
+	recipients, err := client.ListPasswordRecipients(ctx, connection, granteeUserId, "")
 	if err != nil {
 		return describeNotFound(command, err, typed)
 	}
@@ -608,7 +608,7 @@ func runPasswordsTrust(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("the server did not give one person for %q", typed)
 	}
 	recipient := recipients[0]
-	if recipient.UserID != granteeUserID || !strings.EqualFold(recipient.Username, typed) {
+	if recipient.UserID != granteeUserId || !strings.EqualFold(recipient.Username, typed) {
 		return fmt.Errorf("the server answered with a different person than %q, whose key you asked for; nothing was recorded", typed)
 	}
 	if recipient.PublicKey == "" {

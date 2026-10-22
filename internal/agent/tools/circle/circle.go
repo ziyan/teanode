@@ -399,8 +399,9 @@ func init() {
 			{
 				Name: "circle_leave", Family: tools.FamilyAccount, Risk: tools.RiskDestructive,
 				Permissions: []models.Permission{models.PermissionCircleUse},
-				Description: "Take the person out of a circle. Whatever was shared with them through it stops reaching them, and " +
-					"the last person to leave deletes the circle. The last admin cannot leave while others remain.",
+				Description: "Take the person out of a circle. What the person shared with the circle, and with people they then share no other circle with, " +
+					"ends and does not come back if they join again; what others shared with the circle stops reaching them. " +
+					"The last person to leave deletes the circle. The last admin cannot leave while others remain.",
 				Parameters: tools.Object(map[string]any{
 					"circle_id": tools.StringProperty("the circle, from list"),
 				}, "circle_id"),
@@ -498,7 +499,8 @@ func init() {
 				// and with them whatever was shared with the circle.
 				Name: "circle_delete", Family: tools.FamilyAccount, Risk: tools.RiskDestructive,
 				Permissions: []models.Permission{models.PermissionCircleUse},
-				Description: "Delete a circle with its members and invitations. Whatever was shared with it stops reaching everybody in it. " +
+				Description: "Delete a circle with its members and invitations, and with its calendar, albums and chat. What its members shared with it, " +
+					"and with people they then share no other circle with, ends and does not come back. " +
 					"Needs the person to be an admin of it.",
 				Parameters: tools.Object(map[string]any{
 					"circle_id": tools.StringProperty("the circle, from list"),
@@ -511,7 +513,7 @@ func init() {
 						return ""
 					}
 					circleWords, _ := cardWords(ctx, call.CircleID, "")
-					return "Delete " + circleWords + ", which stops everything shared with it"
+					return "Delete " + circleWords + " with its calendar, albums and chat, which ends for good what its members shared with it and through it"
 				},
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
@@ -532,7 +534,8 @@ func init() {
 				// them at once, and only a new invitation brings them back.
 				Name: "circle_remove", Family: tools.FamilyAccount, Risk: tools.RiskDestructive,
 				Permissions: []models.Permission{models.PermissionCircleUse},
-				Description: "Take somebody out of a circle, by username. Whatever was shared with them through it stops reaching them. " +
+				Description: "Take somebody out of a circle, by username. What they shared with the circle, and with people they then share no other circle with, " +
+					"ends and does not come back if they join again; what others shared with the circle stops reaching them. " +
 					"Needs the person to be an admin of the circle.",
 				Parameters: tools.Object(map[string]any{
 					"circle_id": tools.StringProperty("the circle, from list"),
@@ -547,7 +550,7 @@ func init() {
 						return ""
 					}
 					circleWords, personWords := cardWords(ctx, call.CircleID, call.Username)
-					return "Remove " + personWords + " from " + circleWords
+					return "Remove " + personWords + " from " + circleWords + ", which ends for good what they shared with it and through it"
 				},
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
@@ -1034,7 +1037,7 @@ func leavePreview(ctx context.Context, arguments json.RawMessage) string {
 		return said
 	}
 	if result.ReadCircle.Name != "" {
-		return "Leave the circle " + tools.Named(result.ReadCircle.Name, "") + ", which stops whatever it shared with you"
+		return "Leave the circle " + tools.Named(result.ReadCircle.Name, "") + ", which ends for good what you shared with it and through it, and stops what it shared with you"
 	}
 	return said
 }

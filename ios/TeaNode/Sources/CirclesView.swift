@@ -360,7 +360,7 @@ struct CircleDetailView: View {
                             }
                         }
                     } message: { member in
-                        Text("\(member.displayName) will no longer be in \(circle.name). They can be invited again.")
+                        Text("\(member.displayName) will no longer be in \(circle.name). What they shared with it, and with anyone they then share no other circle with, ends and does not come back if they join again. They can be invited again.")
                     }
                     .swipeActions {
                         if !isCurrentUser { photosAction(member) }
@@ -575,7 +575,7 @@ struct CircleDetailView: View {
                             }
                         }
                     } message: {
-                        Text("The circle is removed for everyone in it. No account is deleted.")
+                        Text("The circle is removed for everyone in it, with its calendar, its albums and its chat. What its members shared with it, and with anyone they then share no other circle with, ends and does not come back. No account is deleted.")
                     }
             }
             Button("Leave circle", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { isConfirmingLeave = true }
@@ -591,7 +591,7 @@ struct CircleDetailView: View {
                         }
                     }
                 } message: {
-                    Text("You will no longer be in \(circle.name), and what it shares with you stops reaching you. An admin can invite you again. The circle is deleted when its last member leaves. If you are its only admin, make somebody else an admin first.")
+                    Text("You will no longer be in \(circle.name). What you shared with it, and with anyone you then share no other circle with, ends and does not come back if you join again, and what it shared with you stops reaching you. An admin can invite you again. The circle is deleted when its last member leaves. If you are its only admin, make somebody else an admin first.")
                 }
         }
     }

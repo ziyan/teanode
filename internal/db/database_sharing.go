@@ -131,7 +131,8 @@ func (self *transaction) ListCalendarSharesReaching(readerUserId string) ([]*mod
 	}
 	var reaching []reachingShareRow
 	if err := self.tx.Raw(reachingSharesQuery,
-		sql.Named("reader", readerUserId), sql.Named("calendar", "")).Scan(&reaching).Error; err != nil {
+		sql.Named("reader", readerUserId), sql.Named("calendar", ""),
+		sql.Named("permission", string(models.PermissionCalendarUse))).Scan(&reaching).Error; err != nil {
 		return nil, err
 	}
 	if len(reaching) == 0 {

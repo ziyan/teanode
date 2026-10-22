@@ -67,6 +67,11 @@ var authorizing = map[string]bool{
 	// named within a calendar and the calendar is checked first.
 	"requireCalendarPerson": true,
 	"requireOwnCalendar":    true,
+	// requireSignedIn and the calendar service, without calendar:use: for
+	// listing and ending the shares a person made, which they may do after
+	// the permission was taken from their role. The calendar is then refused
+	// unless it is theirs.
+	"requireCalendarShareEnder": true,
 	// The photo service is on, requirePermission(photos:use), and the
 	// caller's account. Every photo is read through the owner's id.
 	"requirePhotosPerson": true,

@@ -139,9 +139,9 @@ final class HealthSettingsModel {
             try await connection.setHealthShare(
                 granteeUserId: target.granteeUserId, granteeCircleId: target.granteeCircleId, healthCategories: categories)
             if categories.isEmpty {
-                doneText = String(localized: "Stopped sharing with \(name).")
+                doneText = String(localized: "Stopped sharing with \(name)")
             } else {
-                doneText = String(localized: "Sharing with \(name) saved.")
+                doneText = String(localized: "Sharing with \(name) saved")
             }
             if let readShares = try? await connection.healthShares() { shares = readShares }
             return nil

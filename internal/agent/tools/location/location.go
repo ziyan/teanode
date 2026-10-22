@@ -245,7 +245,7 @@ func init() {
 				// from then on, at the level chosen.
 				Name: "location_share", Family: tools.FamilyGeneral, Risk: tools.RiskGranting, Permissions: locationPermissions,
 				Description: "Share where the person is with a person they share a circle with, or with a whole circle, at a level: " +
-					"'current' (where I am now: they see where the person is now and the place they are at) or 'history' (where I am and where I have been: they also see the person's visits and the places they were at). Sharing again changes the level.",
+					"'current' (where I am now: they see where the person is now and the place they are at) or 'history' (where I am and where I have been: they also see the person's visits and the places the person was at, including from before it was shared). Sharing again changes the level.",
 				Parameters: tools.Object(map[string]any{
 					"with":        tools.StringProperty("who to share with: the username of somebody the person shares a circle with, from circle_people, or a circle they are in by its name or id, from circle list; a name that more than one circle has is refused with their ids"),
 					"share_level": tools.EnumProperty("how much to show", "current", "history"),

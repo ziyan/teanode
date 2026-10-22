@@ -70,7 +70,8 @@ type CalendarMutation interface {
 	// Take one away. Needs calendar:use.
 	DeleteCalendarEvent(ctx context.Context, arguments DeleteCalendarEventArguments) (bool, error)
 
-	// Rename a calendar, or change how it is shown. Needs calendar:use.
+	// Rename a calendar, or change how it is shown: the caller's own, or the
+	// calendar of a circle they are an admin of. Needs calendar:use.
 	SaveCalendar(ctx context.Context, arguments SaveCalendarArguments) (*CalendarView, error)
 
 	// Share the caller's own calendar with one person or one circle at a
@@ -79,12 +80,18 @@ type CalendarMutation interface {
 	// Needs calendar:use.
 	ShareCalendar(ctx context.Context, arguments ShareCalendarArguments) (*CalendarShareView, error)
 
-	// Take a share back. Only the calendar's owner can. Needs calendar:use.
+	// Take a share back. Only the calendar's owner can, and without
+	// calendar:use as well, so that somebody who lost the permission can still
+	// end what they shared.
 	UnshareCalendar(ctx context.Context, arguments UnshareCalendarArguments) (bool, error)
 
 	// Make a circle's calendar, which every member reads and writes. A circle
 	// has one. Needs the caller to be an admin of the circle.
 	CreateCircleCalendar(ctx context.Context, arguments CreateCircleCalendarArguments) (*CalendarView, error)
+
+	// Delete a circle's calendar, with every event in it. Needs the caller to
+	// be an admin of the circle.
+	DeleteCircleCalendar(ctx context.Context, arguments DeleteCircleCalendarArguments) (bool, error)
 }
 
 // CalendarView is one calendar and how much is in it.
@@ -303,6 +310,23 @@ func (self *graph) requireCalendarPerson(ctx context.Context) (*api.Principal, e
 	return principal, nil
 }
 
+// requireCalendarShareEnder is the caller, if they may end what they shared.
+// It asks for no calendar:use, so that somebody whose role lost it can still
+// take back a share they made while they had it, and see what they shared.
+func (self *graph) requireCalendarShareEnder(ctx context.Context) (*api.Principal, error) {
+	if !self.isServiceEnabled(models.ServiceCalendar) {
+		return nil, &models.ServiceUnavailableError{Service: models.ServiceCalendar}
+	}
+	principal, err := self.requireSignedIn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if principal.User == nil {
+		return nil, api.ErrNotLoggedIn
+	}
+	return principal, nil
+}
+
 // calendarReach is a calendar and what the caller may do with it.
 type calendarReach struct {
 	Calendar   *models.Calendar
@@ -438,8 +462,9 @@ func spreadCalendarColors(views []*CalendarView) {
 
 // calendarView is a calendar as the caller reaches it. What belongs to the
 // owner alone (the agent's switch) is false for anyone else, and the zone the
-// owner keeps their day in is not told to someone who sees only when they are
-// busy.
+// owner keeps their day in, the description and the title of the calendar are
+// not told to someone who sees only when they are busy: the title is replaced
+// by the owner's name.
 func (self *graph) calendarView(principal *api.Principal, each *models.ReachableCalendar, count int64) *CalendarView {
 	found := each.Calendar
 	view := &CalendarView{
@@ -451,12 +476,18 @@ func (self *graph) calendarView(principal *api.Principal, each *models.Reachable
 		ShareLevel:   string(each.ShareLevel),
 		ColorIndex:   calendarColorIndex(found.ID),
 	}
-	if each.ShareLevel != models.ShareLevelOwner && !each.ShareLevel.CanRead() {
-		view.Timezone, view.Description = "", ""
-	}
 	owner := each.Owner
 	if each.ShareLevel == models.ShareLevelOwner {
 		owner = principal.User
+	}
+	if each.ShareLevel != models.ShareLevelOwner && !each.ShareLevel.CanRead() {
+		view.Timezone, view.Description = "", ""
+		// The title of a calendar can say what is in it, so somebody who is
+		// told only when the owner is busy is told whose it is instead.
+		view.Name = ""
+		if owner != nil {
+			view.Name = owner.DisplayName()
+		}
 	}
 	if found.CircleID != "" {
 		view.IsCircleCalendar = true
@@ -1027,9 +1058,22 @@ func (self *graph) SaveCalendar(ctx context.Context, arguments SaveCalendarArgum
 		return nil, translateCalendarError(err)
 	}
 	kept := outcome.Calendar
-	return self.calendarView(principal, &models.ReachableCalendar{
+	reached := &models.ReachableCalendar{
 		Calendar: kept, ShareLevel: models.ShareLevelOwner, OwnerUserID: principal.User.ID, Owner: principal.User,
-	}, outcome.EventCount), nil
+	}
+	if kept.CircleID != "" {
+		// A circle's calendar is every member's at edit, whichever admin
+		// changed it, and nobody's own.
+		circle, err := self.transaction(ctx).GetCircle(kept.CircleID)
+		if err != nil {
+			return nil, err
+		}
+		reached = &models.ReachableCalendar{Calendar: kept, ShareLevel: models.ShareLevelEdit}
+		if circle != nil {
+			reached.CircleName = circle.Name
+		}
+	}
+	return self.calendarView(principal, reached, outcome.EventCount), nil
 }
 
 // sendCalendarMessage puts an invitation or a cancellation in the post.

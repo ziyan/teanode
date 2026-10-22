@@ -54,3 +54,42 @@ func (self *PhoneNotifier) NotifyCircleInvitation(agentId, invitedByName, circle
 		ThreadID:         "circle-invitations",
 	})
 }
+
+// When an operator puts an account in a circle, with no invitation for the
+// account to answer, the circle's administrators are told the way an
+// invitation is told: a note in the main conversation of their agent when it
+// is on, written in the same transaction, and a notification on their phones
+// after it commits.
+
+// NoteCircleMemberAdded writes the note into an administrator's main
+// conversation when their agent is on, and says whose agent row holds their
+// phones, or "" when they have none.
+func NoteCircleMemberAdded(tx db.Transaction, administratorUserId, addedName, circleName string) (string, error) {
+	person, err := tx.GetAgentByUser(administratorUserId)
+	if err != nil || person == nil {
+		return "", err
+	}
+	if !person.Active() {
+		return person.ID, nil
+	}
+	main, err := tx.MainAgentConversation(person.ID, "drawer")
+	if err != nil {
+		return "", err
+	}
+	if _, err := tx.AppendAgentMessage(models.NewAgentNote(main.ID, models.NoteCircleMemberAdded, models.CircleMemberAddedDetail(addedName, circleName))); err != nil {
+		return "", err
+	}
+	return person.ID, nil
+}
+
+// NotifyCircleMemberAdded tells the phones of an agent's person that an
+// account was put in a circle they administer, in the background, in English
+// for the reason NotifyCircleInvitation gives.
+func (self *PhoneNotifier) NotifyCircleMemberAdded(agentId, addedName, circleName string) {
+	self.NotifyPhones(agentId, models.NotificationCircle, &push.Content{
+		NotificationKind: models.NotificationCircle,
+		Title:            "Circles",
+		Body:             PhoneBody(models.NoteText(models.NoteCircleMemberAdded, models.CircleMemberAddedDetail(addedName, circleName))),
+		ThreadID:         "circle-members",
+	})
+}

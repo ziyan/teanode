@@ -171,7 +171,8 @@ func NewLocationCommand() *cli.Command {
 				Description: "Who can see what is your choice:\n\n" +
 					"  current  Where I am now: they see where you are now and the place you are at.\n" +
 					"  history  Where I am and where I have been: they also see your visits and the\n" +
-					"           places they were at.\n\n" +
+					"           places you were at, including from before you shared.\n\n" +
+					"A circle reaches everyone in it, including people who join later.\n\n" +
 					"Sharing again changes the level; 'teanode location shares' lists them and\n" +
 					"'teanode location unshare' takes one back.",
 				Flags: []cli.Flag{

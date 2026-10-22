@@ -1386,6 +1386,7 @@ const NOTE_WORDS: Record<string, { plain: Key; withDetail?: Key }> = {
   goal_met: { plain: 'agentDrawer.note.goalMet', withDetail: 'agentDrawer.note.goalMet' },
   goal_stalled: { plain: 'agentDrawer.note.goalStalled', withDetail: 'agentDrawer.note.goalStalled' },
   circle_invited: { plain: 'agentDrawer.note.circleInvited' },
+  circle_member_added: { plain: 'agentDrawer.note.circleMemberAdded' },
   relationship_set: { plain: 'agentDrawer.note.relationshipSet' },
   relationship_removed: { plain: 'agentDrawer.note.relationshipRemoved' },
   // Worded by kind below, from a detail that is JSON; plain is the sentence
@@ -1495,6 +1496,18 @@ function noteWords(
           .map((shareKind) => t(`agentDrawer.note.shareKind.${shareKind}` as Key))
           .join(t('agentDrawer.note.shareKindSeparator'))
         return t(words.plain, { memberName: reached.memberName, circleName: reached.circleName, kinds })
+      }
+    } catch {
+      // Not JSON: fall through to the prose.
+    }
+    return prose
+  }
+  if (noteKind === 'circle_member_added') {
+    // The account's name and the circle's, as JSON for the reason above.
+    try {
+      const added = JSON.parse(noteDetail) as { addedName?: string; circleName?: string }
+      if (added.circleName) {
+        return t(words.plain, { addedName: added.addedName ?? '', circleName: added.circleName })
       }
     } catch {
       // Not JSON: fall through to the prose.

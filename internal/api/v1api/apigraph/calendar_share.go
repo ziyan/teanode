@@ -57,7 +57,7 @@ type ListCalendarSharesArguments struct {
 }
 
 func (self *graph) ListCalendarShares(ctx context.Context, arguments ListCalendarSharesArguments) ([]*CalendarShareView, error) {
-	principal, err := self.requireCalendarPerson(ctx)
+	principal, err := self.requireCalendarShareEnder(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +163,7 @@ type UnshareCalendarArguments struct {
 }
 
 func (self *graph) UnshareCalendar(ctx context.Context, arguments UnshareCalendarArguments) (bool, error) {
-	principal, err := self.requireCalendarPerson(ctx)
+	principal, err := self.requireCalendarShareEnder(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -214,6 +214,29 @@ func (self *graph) CreateCircleCalendar(ctx context.Context, arguments CreateCir
 	return self.calendarView(principal, &models.ReachableCalendar{
 		Calendar: made, ShareLevel: models.ShareLevelEdit, CircleName: circle.Name,
 	}, 0), nil
+}
+
+type DeleteCircleCalendarArguments struct {
+	CircleID string `json:"circleId"`
+}
+
+func (self *graph) DeleteCircleCalendar(ctx context.Context, arguments DeleteCircleCalendarArguments) (bool, error) {
+	principal, err := self.requireCalendarPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !self.isServiceEnabled(models.ServiceCalendar) {
+		return false, &models.ServiceUnavailableError{Service: models.ServiceCalendar}
+	}
+	circle, _, err := self.requireCircleAdmin(ctx, arguments.CircleID)
+	if err != nil {
+		return false, err
+	}
+	if err := self.transaction(ctx).DeleteCircleCalendar(circle.ID); err != nil {
+		return false, translateError(err)
+	}
+	log.Noticef("%s deleted the calendar of the circle %q", principal.User.Username, circle.Name)
+	return true, nil
 }
 
 // The most people one free-busy question is about. Each is a window of one

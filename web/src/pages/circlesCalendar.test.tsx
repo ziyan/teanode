@@ -120,6 +120,69 @@ it('tells a member that an admin can make it, and shows the calendar once it is 
   expect(screen.queryByRole('button', { name: /Make a/ })).toBeNull()
 })
 
+it('lets an admin rename the circle calendar, sending back what the dialog does not show', async () => {
+  answer({
+    read: aCircle(),
+    calendars: [
+      {
+        id: 'cal',
+        name: 'Fixture plans',
+        description: 'Dinners',
+        colour: '#445566',
+        timezone: 'Europe/Berlin',
+        weekStart: 'monday',
+        calendarKind: 'events',
+        shareLevel: 'edit',
+        circleId: 'circle-one',
+        isCircleCalendar: true,
+      },
+    ],
+  })
+  renderAt('/circles/circle-one')
+  fireEvent.click(await screen.findByRole('button', { name: 'Rename the calendar' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Rename the calendar of Fixture Home' })
+  fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Fixture household' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(calls('SaveCalendar(')).toHaveLength(1))
+  expect(calls('SaveCalendar(')[0][1]).toEqual({
+    id: 'cal',
+    name: 'Fixture household',
+    description: 'Dinners',
+    colour: '#445566',
+    timezone: 'Europe/Berlin',
+    weekStart: 'monday',
+  })
+})
+
+it('lets an admin delete the circle calendar after being told what goes, and nobody else', async () => {
+  const calendars = [
+    {
+      id: 'cal',
+      name: 'Fixture plans',
+      calendarKind: 'events',
+      shareLevel: 'edit',
+      circleId: 'circle-one',
+      isCircleCalendar: true,
+    },
+  ]
+  answer({ read: aCircle(), calendars })
+  renderAt('/circles/circle-one')
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete the calendar' }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Delete the calendar of Fixture Home?' })
+  expect(within(dialog).getByText(/Every event in it is deleted for everyone in the circle/)).toBeTruthy()
+  expect(calls('DeleteCircleCalendar')).toHaveLength(0)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Delete the calendar' }))
+  await waitFor(() => expect(calls('DeleteCircleCalendar')).toHaveLength(1))
+  expect(calls('DeleteCircleCalendar')[0][1]).toEqual({ circleId: 'circle-one' })
+
+  cleanup()
+  answer({ read: aCircle({ memberRole: 'member' }), calendars })
+  renderAt('/circles/circle-one')
+  await screen.findByRole('link', { name: 'Open the calendar' })
+  expect(screen.queryByRole('button', { name: 'Rename the calendar' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Delete the calendar' })).toBeNull()
+})
+
 it('says nothing of calendars to somebody who cannot use them', async () => {
   answer({ read: aCircle() })
   renderAt('/circles/circle-one', ['circle:use'])

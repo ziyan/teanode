@@ -425,6 +425,48 @@ it('shares the calendar with a person at a level, and takes a share back', async
   expect(last[1]).toMatchObject({ granteeUserId: null, granteeCircleId: 'circle-1', shareLevel: 'details' })
 })
 
+it('changes the level of a share where it is listed, by sharing again with the same person or circle', async () => {
+  show()
+  await screen.findByText('My dentist')
+  fireEvent.click(screen.getByRole('button', { name: 'Share' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share your calendar' })
+  const benLevel = (await within(dialog).findByLabelText('What Ben sees')) as HTMLSelectElement
+  expect(benLevel.value).toBe('titles')
+  const homeLevel = within(dialog).getByLabelText('What Everyone in Home sees') as HTMLSelectElement
+  expect(homeLevel.value).toBe('busy')
+
+  fireEvent.change(benLevel, { target: { value: 'edit' } })
+  await waitFor(() =>
+    expect(
+      vi
+        .mocked(graphql)
+        .mock.calls.filter(([document]) => document.includes('mutation') && document.includes('ShareCalendar')),
+    ).toHaveLength(1),
+  )
+  const person = vi
+    .mocked(graphql)
+    .mock.calls.find(([document]) => document.includes('mutation') && document.includes('ShareCalendar'))
+  expect(person?.[1]).toEqual({ calendarId: 'own', granteeUserId: 'ben-id', granteeCircleId: null, shareLevel: 'edit' })
+
+  fireEvent.change(homeLevel, { target: { value: 'details' } })
+  await waitFor(() =>
+    expect(
+      vi
+        .mocked(graphql)
+        .mock.calls.filter(([document]) => document.includes('mutation') && document.includes('ShareCalendar')),
+    ).toHaveLength(2),
+  )
+  const circle = vi
+    .mocked(graphql)
+    .mock.calls.filter(([document]) => document.includes('mutation') && document.includes('ShareCalendar'))[1]
+  expect(circle[1]).toEqual({
+    calendarId: 'own',
+    granteeUserId: null,
+    granteeCircleId: 'circle-1',
+    shareLevel: 'details',
+  })
+})
+
 it('names each person in the picker with the username in brackets', async () => {
   show()
   await screen.findByText('My dentist')

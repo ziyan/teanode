@@ -135,6 +135,18 @@ is re-keyed automatically at most once in 10 minutes, and a session makes at mos
 ever cuts the record on the server's word. Only the person's own action narrows
 it. The versions kept from before a re-key are still sealed under the old key.
 
+**A disabled account.** What an item reaches is worked out when it is read, not
+when it is shared: a share reaches a recipient only while the owner's and the
+recipient's accounts are both enabled and both hold `passwords:use`
+(`passwordReachSQL`). Disabling an account therefore stops what that person
+shared from being read by anybody else, stops them reading what others shared
+with them, and offers their agent no item (`ListAgentUsablePasswordItems`), but
+deletes nothing: the shares, the sealed keys and the access records stay as they
+were, so enabling the account again restores every read at once, with nobody
+sharing again. The cleanup that runs when somebody leaves a circle looks only at
+who is in which circle (`isStructural` in the same function), so an account that
+is off, or a role that lost the permission for a while, undoes no share.
+
 Every share key names the item key it was sealed from (`itemKey`), and the server
 refuses one whose item key is no longer the item's ("changed on another device").
 A key row a tap stored is never overwritten except by a re-key; a row stored by a

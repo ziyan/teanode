@@ -60,7 +60,8 @@ type CircleOperation interface {
 	// AddCircleMember puts an account in a circle. A person who is already in
 	// it is left as they are. ErrNotFound when the circle or the account is
 	// not there. A waiting invitation to the same circle is closed as
-	// accepted.
+	// accepted. An account put in is recorded in the audit log, naming the
+	// actor of the transaction.
 	AddCircleMember(circleId, userId string, memberRole models.MemberRole, invitedByUserId string) (*models.Circle, error)
 
 	// SetCircleMemberRole changes a member's role. ErrNotFound when the
@@ -143,6 +144,14 @@ type circleMemberModel struct {
 }
 
 func (circleMemberModel) TableName() string { return "circle_member" }
+
+// circleMemberAudit is what the audit log keeps of an account put in a circle.
+type circleMemberAudit struct {
+	CircleID   string `json:"circleId"`
+	UserID     string `json:"userId"`
+	Username   string `json:"username"`
+	MemberRole string `json:"memberRole"`
+}
 
 type circleInvitationModel struct {
 	ID               string     `gorm:"column:id;primaryKey"`
@@ -481,7 +490,7 @@ func endSharesOutsideCircles(tx *gorm.DB, userIds ...string) error {
 		if err := endSkillSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}
-		if err := releasePhotoAlbumsOutsideCircles(tx, userId); err != nil {
+		if err := endPhotoAlbumSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}
 	}
@@ -528,11 +537,11 @@ func (self *transaction) AddCircleMember(circleId, userId string, memberRole mod
 	if err != nil {
 		return nil, err
 	}
-	var count int64
-	if err := self.tx.Model(&userModel{}).Where("\"id\" = ?", userId).Count(&count).Error; err != nil {
+	var usernames []string
+	if err := self.tx.Model(&userModel{}).Where("\"id\" = ?", userId).Pluck("username", &usernames).Error; err != nil {
 		return nil, err
 	}
-	if count == 0 {
+	if len(usernames) == 0 {
 		return nil, ErrNotFound
 	}
 	isMember := false
@@ -542,10 +551,15 @@ func (self *transaction) AddCircleMember(circleId, userId string, memberRole mod
 		}
 	}
 	if !isMember {
-		if err := self.tx.Create(&circleMemberModel{
+		member := &circleMemberModel{
 			CircleID: circleId, UserID: userId, MemberRole: string(memberRole), JoinedAt: time.Now(),
 			InvitedByUserID: nullableUserId(invitedByUserId),
-		}).Error; err != nil {
+		}
+		// The one way into a circle that no invitation precedes, so the log
+		// says who was put in, in which circle and by whom.
+		if err := self.applyMutation(models.AuditResourceCircleMember, circleId+"/"+userId, models.AuditActionCreate, nil,
+			&circleMemberAudit{CircleID: circleId, UserID: userId, Username: usernames[0], MemberRole: string(memberRole)},
+			func(tx *gorm.DB) error { return tx.Create(member).Error }); err != nil {
 			return nil, err
 		}
 		if err := self.touchCircle(circleId); err != nil {

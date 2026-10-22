@@ -58674,6 +58674,134 @@
         }
       }
     },
+    "Rename the calendar of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」のカレンダーの名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名「%@」的日历"
+          }
+        }
+      }
+    },
+    "Delete the calendar of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」のカレンダーを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除「%@」的日历"
+          }
+        }
+      }
+    },
+    "You are an admin of these circles, so you can rename their calendars or delete them. Deleting one deletes every event in it for everyone in the circle.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたはこれらのサークルの管理者なので、カレンダーの名前を変更したり削除したりできます。削除すると、サークルの全員からカレンダー内のすべての予定が削除されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你是这些圈子的管理员，可以重命名或删除它们的日历。删除日历会为圈子里的每个人删除其中的所有日程。"
+          }
+        }
+      }
+    },
+    "Rename the calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーの名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名日历"
+          }
+        }
+      }
+    },
+    "Delete the calendar of %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」のカレンダーを削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除「%@」的日历？"
+          }
+        }
+      }
+    },
+    "Delete the calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除日历"
+          }
+        }
+      }
+    },
+    "Every event in it is deleted for everyone in the circle. The circle stays, and a new calendar can be made for it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダー内のすべての予定が、サークルの全員から削除されます。サークルは残り、カレンダーはあとから作り直せます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历中的所有日程都会为圈子里的每个人删除。圈子保留，之后可以重新创建日历。"
+          }
+        }
+      }
+    },
+    "Calendar deleted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーを削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历已删除"
+          }
+        }
+      }
+    },
     "Calendars": {
       "localizations": {
         "ja": {
@@ -58718,6 +58846,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择一个人，或整个圈子。"
+          }
+        }
+      }
+    },
+    "Choose a person, or a whole circle. A circle reaches everyone in it, including people who join later.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人、またはサークル全体を選択します。サークルと共有すると、そのサークルの全員に届き、あとから参加した人にも届きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一个人，或整个圈子。共享给圈子时，圈子里的所有人都能看到，之后加入的人也能看到。"
           }
         }
       }
@@ -58798,6 +58942,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@的所有人"
+          }
+        }
+      }
+    },
+    "What %@ sees": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に見せる範囲"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 可以看到的内容"
+          }
+        }
+      }
+    },
+    "Changed what %@ sees": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に見せる範囲を変更しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已更改 %@ 可以看到的内容"
           }
         }
       }
@@ -59314,18 +59490,18 @@
         }
       }
     },
-    "%@ will no longer be in %@. They can be invited again.": {
+    "%@ will no longer be in %@. What they shared with it, and with anyone they then share no other circle with, ends and does not come back if they join again. They can be invited again.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@は%2$@から外れます。あとでもう一度招待できます。"
+            "value": "%1$@は%2$@から外れます。その人がサークルと共有していたもの、およびほかに共通のサークルがなくなる相手と共有していたものは終了し、再び参加しても元には戻りません。あとでもう一度招待できます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ 将不再属于 %2$@，之后仍可再次邀请。"
+            "value": "%1$@ 将不再属于 %2$@。其与该圈子共享的内容，以及与不再共有任何圈子的人共享的内容都会结束，重新加入后也不会恢复。之后仍可再次邀请。"
           }
         }
       }
@@ -59890,18 +60066,18 @@
         }
       }
     },
-    "The circle is removed for everyone in it. No account is deleted.": {
+    "The circle is removed for everyone in it, with its calendar, its albums and its chat. What its members shared with it, and with anyone they then share no other circle with, ends and does not come back. No account is deleted.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サークルは全員から削除されます。アカウントは削除されません。"
+            "value": "サークルは全員から削除され、そのカレンダー、アルバム、チャットも削除されます。メンバーがサークルと共有していたもの、およびほかに共通のサークルがなくなる相手と共有していたものは終了し、元には戻りません。アカウントは削除されません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "圈子会对其中所有人删除，不会删除任何账号。"
+            "value": "圈子会对其中所有人删除，其日历、相册和聊天也一并删除。成员与该圈子共享的内容，以及与不再共有任何圈子的人共享的内容都会结束，不会恢复。不会删除任何账号。"
           }
         }
       }
@@ -60082,18 +60258,18 @@
         }
       }
     },
-    "You will no longer be in %@, and what it shares with you stops reaching you. An admin can invite you again. The circle is deleted when its last member leaves. If you are its only admin, make somebody else an admin first.": {
+    "You will no longer be in %@. What you shared with it, and with anyone you then share no other circle with, ends and does not come back if you join again, and what it shared with you stops reaching you. An admin can invite you again. The circle is deleted when its last member leaves. If you are its only admin, make somebody else an admin first.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@から外れ、共有されていたものは届かなくなります。管理者がもう一度招待できます。最後のメンバーが抜けるとサークルは削除されます。唯一の管理者の場合は、先に別の人を管理者にしてください。"
+            "value": "%@から外れます。あなたがサークルと共有していたもの、およびほかに共通のサークルがなくなる相手と共有していたものは終了し、再び参加しても元には戻りません。サークルから共有されていたものは届かなくなります。管理者がもう一度招待できます。最後のメンバーが抜けるとサークルは削除されます。唯一の管理者の場合は、先に別の人を管理者にしてください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "你将不再属于 %@，它与你共享的内容也不会再到达你。管理员可以再次邀请你。圈子在最后一位成员离开时被删除。如果你是唯一的管理员，请先让别人成为管理员。"
+            "value": "你将不再属于 %@。你与它共享的内容，以及与不再共有任何圈子的人共享的内容都会结束，重新加入后也不会恢复；它与你共享的内容也不会再到达你。管理员可以再次邀请你。圈子在最后一位成员离开时被删除。如果你是唯一的管理员，请先让别人成为管理员。"
           }
         }
       }
@@ -60142,6 +60318,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ 邀请你加入「%2$@」。请在设置的圈子中回复。"
+          }
+        }
+      }
+    },
+    "An operator of this server put %@ in %@, which you administer.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーの運用者が %1$@ さんを、あなたが管理する「%2$@」に追加しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器的运维者把 %1$@ 加入了你管理的「%2$@」。"
           }
         }
       }
@@ -61842,22 +62034,6 @@
         }
       }
     },
-    "No longer shared with %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@との共有をやめました"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已不再与%@共享"
-          }
-        }
-      }
-    },
     "No photos match your filters": {
       "localizations": {
         "ja": {
@@ -63501,7 +63677,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "共有を停止できませんでした。接続を確認して、もう一度お試しください。"
+            "value": "共有をやめられませんでした。接続を確認して、もう一度お試しください。"
           }
         },
         "zh-Hans": {
@@ -63907,7 +64083,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@里的所有人可以在你选择的范围内看到你的日历。你标为私密的日程只会显示为“忙碌”。"
+            "value": "%@的所有人可以在你选择的范围内看到你的日历。你标为私密的日程只会显示为“忙碌”。"
           }
         }
       }
@@ -66437,7 +66613,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "行をタップすると、見える範囲の変更や共有の停止ができます。"
+            "value": "行をタップすると、見える範囲の変更や共有の中止ができます。"
           }
         },
         "zh-Hans": {
@@ -66672,18 +66848,18 @@
         }
       }
     },
-    "Everyone in %@ could see it. You can change this under Sharing in Location.": {
+    "Everyone in %@ could see it, including people who join later. You can change this under Sharing in Location.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@のメンバー全員に見えます。変更は「位置情報」の「共有」でできます。"
+            "value": "%@の全員に見えます。あとから参加した人にも届きます。変更は「位置情報」の「共有」でできます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@中的所有人都能看到。你可以在“位置”的“共享”中更改。"
+            "value": "%@的所有人都能看到，之后加入的人也能看到。你可以在“位置”的“共享”中更改。"
           }
         }
       }
@@ -67376,34 +67552,34 @@
         }
       }
     },
-    "They also see your visits and the places they were at.": {
+    "They also see your visits and the places you were at, including from before you shared.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "訪問と、訪れた場所も見えます。"
+            "value": "訪問と訪れた場所も、共有を始める前のものを含めて見えます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "对方还能看到您的到访记录和到访的地点。"
+            "value": "对方还能看到您的到访记录和您去过的地点，包括开始共享之前的。"
           }
         }
       }
     },
-    "Choose a person or a circle, and whether they also see your visits and the places they were at.": {
+    "Choose a person or a circle, and whether they also see your visits and the places you were at. A circle reaches everyone in it, including people who join later.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "共有する相手（人またはサークル）と、訪問や訪れた場所も見せるかどうかを選びます。"
+            "value": "共有する相手（人またはサークル）と、訪問や訪れた場所も見せるかどうかを選びます。サークルと共有すると、そのサークルの全員に届き、あとから参加した人にも届きます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "选择一个人或一个圈子，以及对方是否还能看到您的到访记录和到访的地点。"
+            "value": "选择一个人或一个圈子，以及对方是否还能看到您的到访记录和您去过的地点。共享给圈子时，圈子里的所有人都能看到，之后加入的人也能看到。"
           }
         }
       }
@@ -74404,34 +74580,18 @@
         }
       }
     },
-    "Sharing with %@ saved.": {
+    "Sharing with %@ saved": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@との共有を保存しました。"
+            "value": "%@との共有を保存しました"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已保存与%@的共享。"
-          }
-        }
-      }
-    },
-    "Stopped sharing with %@.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@との共有をやめました。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已停止与%@共享。"
+            "value": "已保存与%@的共享"
           }
         }
       }

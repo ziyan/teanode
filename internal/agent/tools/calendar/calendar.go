@@ -143,22 +143,33 @@ func init() {
 				Permissions: []models.Permission{models.PermissionCalendarUse},
 				Description: "Rename the person's own calendar, or change how it is shown. Only what you give is changed. " +
 					"A person has one calendar of events, so this does not make another; " +
-					"a circle's own calendar is made with circle.",
+					"a circle's own calendar is made with circle. " +
+					"With 'circle', it changes that circle's calendar instead, which only an admin of the circle can.",
 				Parameters: tools.Object(map[string]any{
+					"circle":      tools.StringProperty("to change a circle's calendar, give the circle's name, or its id when two circles have that name"),
 					"name":        tools.StringProperty("what to call it"),
 					"description": tools.StringProperty("what it is for"),
 					"color":       tools.StringProperty("what a client paints it, as #rrggbb"),
 					"timezone":    tools.StringProperty("the zone a new event is written in, as an IANA name"),
 					"week_start":  tools.EnumProperty("the day a week is drawn from", "sunday", "monday"),
 				}),
-				Preview: tools.PreviewOf(func(call struct {
-					Name string `json:"name"`
-				}) string {
-					if strings.TrimSpace(call.Name) != "" {
-						return "Rename your calendar to " + tools.Named(call.Name, "")
+				PreviewIn: func(ctx context.Context, arguments json.RawMessage) string {
+					var call struct {
+						Circle string `json:"circle"`
+						Name   string `json:"name"`
 					}
-					return "Change how your calendar is shown"
-				}),
+					if err := json.Unmarshal(arguments, &call); err != nil {
+						return ""
+					}
+					whose := "your calendar"
+					if strings.TrimSpace(call.Circle) != "" {
+						whose = "the calendar of " + circleWords(ctx, call.Circle)
+					}
+					if strings.TrimSpace(call.Name) != "" {
+						return "Rename " + whose + " to " + tools.Named(call.Name, "")
+					}
+					return "Change how " + whose + " is shown"
+				},
 				Run: runSet,
 			},
 			{
@@ -180,6 +191,27 @@ func init() {
 					return "Make the calendar of " + circleWords(ctx, call.Circle) + ", which everyone in it reads and writes"
 				},
 				Run: runCircle,
+			},
+			{
+				// Destructive: every event in it goes, for everyone in the
+				// circle.
+				Name: "calendar_circle_delete", Family: tools.FamilyAccount, Risk: tools.RiskDestructive,
+				Permissions: []models.Permission{models.PermissionCalendarUse},
+				Description: "Delete the calendar a circle keeps for itself, with every event in it, for everyone in the circle. " +
+					"Only an admin of the circle can.",
+				Parameters: tools.Object(map[string]any{
+					"circle": tools.StringProperty("the circle, by its name or id, from circle list; a name that more than one circle has is refused with their ids"),
+				}, "circle"),
+				PreviewIn: func(ctx context.Context, arguments json.RawMessage) string {
+					var call struct {
+						Circle string `json:"circle"`
+					}
+					if err := json.Unmarshal(arguments, &call); err != nil {
+						return ""
+					}
+					return "Delete the calendar of " + circleWords(ctx, call.Circle) + ", with every event in it, for everyone in it"
+				},
+				Run: runCircleDelete,
 			},
 			{
 				// A write, so the person is asked before anything is put in
@@ -310,6 +342,7 @@ func init() {
 					{Action: "stop", Tool: "calendar_stop"},
 					{Action: "set", Tool: "calendar_set"},
 					{Action: "circle", Tool: "calendar_circle"},
+					{Action: "circle_delete", Tool: "calendar_circle_delete"},
 				},
 			},
 		)
@@ -1304,7 +1337,8 @@ func runStop(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	})
 }
 
-// runSet renames the person's own calendar, or changes how it is shown.
+// runSet renames the person's own calendar, or a circle's, or changes how it is
+// shown.
 //
 // The server replaces every field it is sent, so what the call leaves out is
 // sent back as the calendar holds it, the way the command line's set does.
@@ -1314,6 +1348,7 @@ func runSet(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	arguments, err := tools.DecodeArguments[struct {
+		Circle      string  `json:"circle"`
 		Name        *string `json:"name"`
 		Description *string `json:"description"`
 		Color       *string `json:"color"`
@@ -1330,6 +1365,20 @@ func runSet(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	kept, err := ownCalendar(ctx, run.Operations())
 	if err != nil {
 		return nil, err
+	}
+	// A circle's calendar is changed by an admin of the circle, which the
+	// server decides; the person's own is the one the diary was granted for.
+	if circle := strings.TrimSpace(arguments.Circle); circle != "" {
+		calendars, err := calendarsOf(ctx, run.Operations())
+		if err != nil {
+			return nil, err
+		}
+		if kept, err = circleCalendarNamed(ctx, run.Operations(), calendars, circle); err != nil {
+			return nil, err
+		}
+		if kept == nil {
+			return nil, fmt.Errorf("none of the person's circles called %q has a calendar; a circle admin can make one", circle)
+		}
 	}
 	variables := map[string]any{
 		"id": kept.ID, "name": kept.Name, "description": kept.Description, "colour": kept.Colour,

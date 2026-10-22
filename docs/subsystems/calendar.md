@@ -398,10 +398,10 @@ cancelling it.
 The dashboard, the command line and the agent reach the same API, and the rule
 is that none of them can do something the others cannot. `teanode calendar
 list|show|add|edit|remove|free|calendars|set` is the whole of it from a
-terminal (and `share|shares|unshare|circle`, under Sharing below); for the
+terminal (and `share|shares|unshare|circle|circle-delete`, under Sharing below); for the
 agent it is one tool, `calendar`, whose action is `agenda`, `free`,
 `free_together`, `shares`, `share`, `unshare`, `add`, `edit`, `remove`,
-`request`, `stop`, `set` or `circle`: the same abilities, under one name,
+`request`, `stop`, `set`, `circle` or `circle_delete`: the same abilities, under one name,
 because a catalog with a name per verb is a catalog a model reads less
 carefully.
 
@@ -460,7 +460,14 @@ owner, so a share to a circle stops reaching a reader when the owner leaves that
 circle, and a direct share stops when the two no longer share one, whether or
 not any row has been deleted yet. It joins the owner's account too: the shares
 of a disabled account reach nobody while it is off, and reach them again when it
-is switched back on. Nothing compares a calendar's `UserID` with
+is switched back on. And it needs `calendar:use` for the owner and for the
+reader, as Location and Health do, so that taking the permission from a role
+stops what that person kept from being read by others, and stops them reading
+what others shared; the shares stay, and reach again when the role does. The
+owner can still list the shares they made and end them without the permission
+(`ListCalendarShares`, `UnshareCalendar`). A calendar shared at `busy` is listed
+under its owner's name and not under its own title, which can say what is in it
+(`calendarView`). Nothing compares a calendar's `UserID` with
 the caller: a circle's calendar has none (`user_id` is NULL and `circle_id` set,
 exactly one of them). The dashboard's API (`reachCalendar`), CalDAV
 (`calendarAt`), the commands that write (`writableCalendar`) and the agent
@@ -552,10 +559,10 @@ list, sharing screen, Find a time screen (in the calendars sheet, beside Share m
 calendar) and read-only events, and offers once, as an invitation to a family or
 colleagues is accepted, to share the calendar with them, as the Circles page
 does. The command line: `teanode calendar
-share|shares|unshare|circle`, `list --owner`, `free --with`. The agent's
+share|shares|unshare|circle|circle-delete`, `list --owner`, `free --with`. The agent's
 `calendar` tool has the actions `agenda`, `free`, `free_together`, `shares`,
-`share`, `unshare`, `add`, `edit`, `remove`, `request`, `stop`, `set` and
-`circle`: `agenda` takes `owner` (a
+`share`, `unshare`, `add`, `edit`, `remove`, `request`, `stop`, `set`,
+`circle` and `circle_delete`: `agenda` takes `owner` (a
 username, or `everyone`) to read what others shared, `free_together` takes
 `with` (usernames), `share` takes `with` (a username, which wins over a circle of the same name, or a circle by its id
 or name; a name more than one circle has is refused with the ids and sizes of
@@ -569,16 +576,31 @@ given it their own calendar.
 response, `stop` takes the same and stops one that has not completed (a change
 that has is reported, never undone), `set` renames the person's own calendar or
 changes how it is shown (`name`, `description`, `color`, `timezone`,
-`week_start`; what it leaves out stays as it is), and `circle` takes a circle
-by name or id and makes its calendar, for an admin. All four are writes or
-reads, none is outward or destructive. A person has one calendar of events, so
-there is no action that makes another.
+`week_start`; what it leaves out stays as it is; with `circle` it is a circle's
+calendar, which only an admin of the circle can change), and `circle` takes a
+circle by name or id and makes its calendar, for an admin. Those four are writes
+or reads, none is outward or destructive. `circle_delete` takes a circle by name
+or id and deletes its calendar, with every event in it, for everyone in the
+circle; it is destructive, so the person is asked first. A person has one
+calendar of events, so there is no action that makes another.
 
 The calendar page's Rename button, the iPhone app's Rename action and
 `teanode calendar set --name` all call `SaveCalendar`. A person has one calendar
 of events and one reminders list, both made by the server, so there is no
 operation that makes another calendar, and none of the surfaces offers to; the
 only calendar that is made on request is a circle's own (`CreateCircleCalendar`).
+
+**A circle's calendar is managed by the circle's admins.** `SaveCalendar` on a
+circle's calendar (the Circles page's pencil beside its Calendar panel, the
+calendars sheet in the iPhone app, `teanode calendar set --calendar <id>`, the
+tool's `set` with `circle`) and `DeleteCircleCalendar` (the trash can beside
+it, the sheet's Delete the calendar, `teanode calendar circle-delete
+<circle-id>`, the tool's `circle_delete`) refuse a member who is not an admin in
+words, and a person outside the circle as not found. `requireManagedCalendar`
+in `internal/calendar/commands` is the one place that says who may change how a
+calendar is shown: its owner, or an admin of its circle. Deleting takes the
+events with it by the foreign keys, writes an audit row for the calendar, and
+leaves the circle free to make a new one.
 
 ## The reminders list beside it
 

@@ -53,6 +53,7 @@ func TestCalendarSharingParity(test *testing.T) {
 		"ShareCalendar":         {"share", "share"},
 		"UnshareCalendar":       {"unshare", "unshare"},
 		"CreateCircleCalendar":  {"circle", "circle"},
+		"DeleteCircleCalendar":  {"circle-delete", "circle_delete"},
 		"ListCalendarFreeBusy":  {"free", "free_together"},
 	}
 	for operation := range operations {

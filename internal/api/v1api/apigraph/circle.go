@@ -465,8 +465,15 @@ func (self *graph) DeleteCircle(ctx context.Context, arguments DeleteCircleArgum
 	if err != nil {
 		return false, err
 	}
+	finishLocationReach, err := self.watchLocationReach(ctx, circleMemberIds(circle))
+	if err != nil {
+		return false, err
+	}
 	if err := tx.DeleteCircle(arguments.CircleID); err != nil {
 		return false, translateCircleError(err)
+	}
+	if err := finishLocationReach(); err != nil {
+		return false, err
 	}
 	if err := self.publishMembersChangedSince(ctx, snapshot); err != nil {
 		return false, err
@@ -607,6 +614,12 @@ func (self *graph) AnswerCircleInvitation(ctx context.Context, arguments AnswerC
 	}
 	invitationAnswer := models.InvitationAnswerDeclined
 	if arguments.IsAccepted {
+		// The invitation may have been made while nothing was shared with the
+		// circle: whoever joins reads what it is shared now, so joining is
+		// asked of a person's own tap as bringing somebody in is.
+		if err := self.requireTapForHealthSharedCircle(ctx, invitation.CircleID); err != nil {
+			return nil, err
+		}
 		invitationAnswer = models.InvitationAnswerAccepted
 	}
 	joined, err := tx.AnswerCircleInvitation(invitation.ID, invitationAnswer, time.Now())
@@ -691,7 +704,7 @@ type RemoveCircleMemberArguments struct {
 // RemoveCircleMember answers with the circle as the caller now sees it, or
 // null when they took themselves out of it.
 func (self *graph) RemoveCircleMember(ctx context.Context, arguments RemoveCircleMemberArguments) (*Circle, error) {
-	_, member, err := self.requireCircleAdmin(ctx, arguments.CircleID)
+	circle, member, err := self.requireCircleAdmin(ctx, arguments.CircleID)
 	if err != nil {
 		return nil, err
 	}
@@ -700,9 +713,16 @@ func (self *graph) RemoveCircleMember(ctx context.Context, arguments RemoveCircl
 	if err != nil {
 		return nil, err
 	}
+	finishLocationReach, err := self.watchLocationReach(ctx, circleMemberIds(circle))
+	if err != nil {
+		return nil, err
+	}
 	remaining, err := tx.RemoveCircleMember(arguments.CircleID, arguments.UserID)
 	if err != nil {
 		return nil, translateCircleError(err)
+	}
+	if err := finishLocationReach(); err != nil {
+		return nil, err
 	}
 	if err := self.publishMembersChangedSince(ctx, snapshot); err != nil {
 		return nil, err
@@ -718,7 +738,7 @@ type LeaveCircleArguments struct {
 }
 
 func (self *graph) LeaveCircle(ctx context.Context, arguments LeaveCircleArguments) (bool, error) {
-	_, member, err := self.requireCircleMember(ctx, arguments.CircleID)
+	circle, member, err := self.requireCircleMember(ctx, arguments.CircleID)
 	if err != nil {
 		return false, err
 	}
@@ -727,8 +747,15 @@ func (self *graph) LeaveCircle(ctx context.Context, arguments LeaveCircleArgumen
 	if err != nil {
 		return false, err
 	}
+	finishLocationReach, err := self.watchLocationReach(ctx, circleMemberIds(circle))
+	if err != nil {
+		return false, err
+	}
 	if _, err := tx.RemoveCircleMember(arguments.CircleID, member.UserID); err != nil {
 		return false, translateCircleError(err)
+	}
+	if err := finishLocationReach(); err != nil {
+		return false, err
 	}
 	if err := self.publishMembersChangedSince(ctx, snapshot); err != nil {
 		return false, err
@@ -771,9 +798,19 @@ func (self *graph) AddCircleMember(ctx context.Context, arguments AddCircleMembe
 	if user == nil {
 		return nil, api.ErrNotFound
 	}
+	before, err := tx.GetCircle(arguments.CircleID)
+	if err != nil {
+		return nil, err
+	}
+	isAlreadyMember := before != nil && before.Member(user.ID) != nil
 	added, err := tx.AddCircleMember(arguments.CircleID, user.ID, memberRole, principal.UserID())
 	if err != nil {
 		return nil, translateError(err)
+	}
+	if !isAlreadyMember {
+		if err := self.tellCircleAdministratorsOfMember(ctx, added, user); err != nil {
+			return nil, err
+		}
 	}
 	if err := self.publishCircleChatMembersChanged(ctx, added.ID); err != nil {
 		return nil, err
@@ -783,6 +820,30 @@ func (self *graph) AddCircleMember(ctx context.Context, arguments AddCircleMembe
 	}
 	log.Noticef("%s put the account %q in the circle %q", operatorName(ctx), user.Username, added.Name)
 	return self.circleFor(ctx, added, principal.UserID())
+}
+
+// tellCircleAdministratorsOfMember tells the administrators of a circle that an
+// operator put an account in it, which no invitation announced: a note in
+// their agent's main conversation, written in this transaction, and a
+// notification on their phones once it commits. The account put in is not told
+// about itself.
+func (self *graph) tellCircleAdministratorsOfMember(ctx context.Context, circle *models.Circle, added *models.User) error {
+	tx := self.transaction(ctx)
+	addedName := added.DisplayName()
+	for _, member := range circle.Members {
+		if member.MemberRole != models.MemberRoleAdmin || member.UserID == added.ID {
+			continue
+		}
+		agentId, err := agent.NoteCircleMemberAdded(tx, member.UserID, addedName, circle.Name)
+		if err != nil {
+			return err
+		}
+		if notifier := self.phoneNotifier(); notifier != nil && agentId != "" {
+			circleName := circle.Name
+			tx.AfterCommit(func() { notifier.NotifyCircleMemberAdded(agentId, addedName, circleName) })
+		}
+	}
+	return nil
 }
 
 // circleMemberIds are the accounts in a circle.

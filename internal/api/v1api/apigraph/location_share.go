@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -221,6 +222,64 @@ func (self *graph) UnshareLocation(ctx context.Context, arguments UnshareLocatio
 		}
 	})
 	return true, nil
+}
+
+// watchLocationReach is called before a change of who is in which circle, and
+// the function it returns after it, in the same transaction. Between them they
+// find the people among userIds whose location stopped reaching somebody
+// among them (leaving, being taken out and deleting a circle end the shares
+// that only the circle made possible) and, once the transaction commits, tell
+// each such location's listeners the way UnshareLocation does, so that a map
+// that is open drops the last position instead of keeping it. Only the people
+// of the circle can lose or gain a reach by it, so they are the only ones
+// asked about.
+func (self *graph) watchLocationReach(ctx context.Context, userIds []string) (func() error, error) {
+	tx := self.transaction(ctx)
+	before, err := locationReachAmong(tx, userIds)
+	if err != nil {
+		return nil, err
+	}
+	return func() error {
+		after, err := locationReachAmong(tx, userIds)
+		if err != nil {
+			return err
+		}
+		for _, ownerUserId := range userIds {
+			endedForUserIds := []string{}
+			for viewerUserId := range before[ownerUserId] {
+				if !after[ownerUserId][viewerUserId] {
+					endedForUserIds = append(endedForUserIds, viewerUserId)
+				}
+			}
+			if len(endedForUserIds) == 0 {
+				continue
+			}
+			sort.Strings(endedForUserIds)
+			tx.AfterCommit(func() {
+				if err := self.database.NotifyLocationEvent(ownerUserId, endedForUserIds...); err != nil {
+					log.Warningf("cannot tell the listeners that a location stopped reaching people: %s", err)
+				}
+			})
+		}
+		return nil
+	}, nil
+}
+
+// locationReachAmong is, for each of these people, which of the others their
+// location reaches now.
+func locationReachAmong(tx db.Transaction, userIds []string) (map[string]map[string]bool, error) {
+	reach := make(map[string]map[string]bool, len(userIds))
+	for _, ownerUserId := range userIds {
+		reached, err := tx.FilterLocationGrantees(ownerUserId, userIds)
+		if err != nil {
+			return nil, err
+		}
+		reach[ownerUserId] = make(map[string]bool, len(reached))
+		for _, viewerUserId := range reached {
+			reach[ownerUserId][viewerUserId] = true
+		}
+	}
+	return reach, nil
 }
 
 // LocationEvents tells the viewer each time a person they may see changes
