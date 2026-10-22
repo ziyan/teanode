@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom'
 
 import { failureText, graphql } from '../api'
 import { Tag } from '../components/common'
-import { FormDialog } from '../components/dialog'
-import { CloseIcon } from '../components/icons'
+import { ConfirmDialog, FormDialog } from '../components/dialog'
+import { TrashIcon } from '../components/icons'
 import { personLabel, personName } from '../components/personLabel'
 import { useToast } from '../components/toast'
 import { Tooltip } from '../components/tooltip'
@@ -63,6 +63,8 @@ export function RecordingShareDialog({ recordingId, onClose }: { recordingId: st
   const [recordingShareLevel, setRecordingShareLevel] = useState<RecordingShareLevel>('summary')
   const [isBusy, setIsBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  // The share being ended, asked about first.
+  const [stopping, setStopping] = useState<RecordingShare | null>(null)
 
   const current = shares.data?.ListRecordingShares ?? []
   const people = choices.data?.people ?? []
@@ -121,101 +123,117 @@ export function RecordingShareDialog({ recordingId, onClose }: { recordingId: st
   }
 
   return (
-    <FormDialog
-      title={t('recordings.shareTitle')}
-      submitLabel={t('recordings.shareAdd')}
-      closeLabel={t('common.done')}
-      busy={isBusy}
-      error={problem}
-      canSubmit={choice !== ''}
-      onClose={onClose}
-      onSubmit={add}
-    >
-      <p className="notice warn">{t('recordings.shareConsent')}</p>
+    <>
+      <FormDialog
+        title={t('recordings.shareTitle')}
+        submitLabel={t('recordings.shareAdd')}
+        closeLabel={t('common.done')}
+        busy={isBusy}
+        error={stopping ? null : problem}
+        canSubmit={choice !== ''}
+        onClose={onClose}
+        onSubmit={add}
+      >
+        <p className="notice warn">{t('recordings.shareConsent')}</p>
 
-      <h4 className="recording-shares-heading">{t('recordings.shareCurrent')}</h4>
-      <div className="recording-shares" aria-label={t('recordings.shareCurrent')}>
-        {shares.data && current.length === 0 && <p className="muted">{t('recordings.shareNobody')}</p>}
-        {current.map((share) => {
-          const name = shareName(share, everyoneIn)
-          return (
-            <div key={share.id} className="recording-share-row">
-              <span className="recording-share-name">{name}</span>
-              <Tag value={t(`recordings.shareLevelName.${share.recordingShareLevel}` as Parameters<typeof t>[0])} />
-              <Tooltip label={t('recordings.shareStop', { name })}>
-                <button
-                  type="button"
-                  className="icon-action danger"
-                  aria-label={t('recordings.shareStop', { name })}
-                  disabled={isBusy}
-                  onClick={() =>
-                    void run(
-                      () => graphql(RECORDING_SHARE_DOCUMENTS.UnshareRecording, { recordingShareId: share.id }),
-                      t('recordings.shareStopped', { name }),
-                    )
-                  }
-                >
-                  <CloseIcon size={16} />
-                </button>
-              </Tooltip>
-            </div>
-          )
-        })}
-      </div>
+        <h4 className="recording-shares-heading">{t('recordings.shareCurrent')}</h4>
+        <div className="recording-shares" aria-label={t('recordings.shareCurrent')}>
+          {shares.data && current.length === 0 && <p className="muted">{t('recordings.shareNobody')}</p>}
+          {current.map((share) => {
+            const name = shareName(share, everyoneIn)
+            return (
+              <div key={share.id} className="recording-share-row">
+                <span className="recording-share-name">{name}</span>
+                <Tag value={t(`recordings.shareLevelName.${share.recordingShareLevel}` as Parameters<typeof t>[0])} />
+                <Tooltip label={t('recordings.shareStop', { name })}>
+                  <button
+                    type="button"
+                    className="icon-action danger"
+                    aria-label={t('recordings.shareStop', { name })}
+                    disabled={isBusy}
+                    onClick={() => {
+                      setProblem(null)
+                      setStopping(share)
+                    }}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </Tooltip>
+              </div>
+            )
+          })}
+        </div>
 
-      {choices.data && people.length === 0 && circles.length === 0 ? (
-        <>
-          <p className="muted">{t('recordings.shareNoPeople')}</p>
-          <p>
-            <Link className="button" to="/circles" onClick={onClose}>
-              {t('circles.open')}
-            </Link>
-          </p>
-        </>
-      ) : (
-        <>
-          <label>
-            {t('recordings.shareWith')}
-            <select value={choice} onChange={(event) => setChoice(event.target.value)}>
-              <option value="">{t('recordings.shareChoose')}</option>
-              {people.length > 0 && (
-                <optgroup label={t('recordings.sharePeople')}>
-                  {people.map((person) => (
-                    <option key={person.userId} value={`user:${person.userId}`}>
-                      {personLabel(person)}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {circles.length > 0 && (
-                <optgroup label={t('recordings.shareCircles')}>
-                  {circles.map((circle) => (
-                    <option key={circle.id} value={`circle:${circle.id}`}>
-                      {circleOption(circle)}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-          </label>
-          <label>
-            {t('recordings.shareLevelLabel')}
-            <select
-              value={recordingShareLevel}
-              onChange={(event) => setRecordingShareLevel(event.target.value as RecordingShareLevel)}
-            >
-              {RECORDING_SHARE_LEVELS.map((level) => (
-                <option key={level} value={level}>
-                  {t(`recordings.shareLevelName.${level}` as Parameters<typeof t>[0])}
-                </option>
-              ))}
-            </select>
-            <span className="muted">
-              {t(`recordings.shareLevelHint.${recordingShareLevel}` as Parameters<typeof t>[0])}
-            </span>
-          </label>
-        </>
-      )}
-    </FormDialog>
+        {choices.data && people.length === 0 && circles.length === 0 ? (
+          <>
+            <p className="muted">{t('recordings.shareNoPeople')}</p>
+            <p>
+              <Link className="button" to="/circles" onClick={onClose}>
+                {t('circles.open')}
+              </Link>
+            </p>
+          </>
+        ) : (
+          <>
+            <label>
+              {t('recordings.shareWith')}
+              <select value={choice} onChange={(event) => setChoice(event.target.value)}>
+                <option value="">{t('recordings.shareChoose')}</option>
+                {people.length > 0 && (
+                  <optgroup label={t('recordings.sharePeople')}>
+                    {people.map((person) => (
+                      <option key={person.userId} value={`user:${person.userId}`}>
+                        {personLabel(person)}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {circles.length > 0 && (
+                  <optgroup label={t('recordings.shareCircles')}>
+                    {circles.map((circle) => (
+                      <option key={circle.id} value={`circle:${circle.id}`}>
+                        {circleOption(circle)}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </label>
+            <label>
+              {t('recordings.shareLevelLabel')}
+              <select
+                value={recordingShareLevel}
+                onChange={(event) => setRecordingShareLevel(event.target.value as RecordingShareLevel)}
+              >
+                {RECORDING_SHARE_LEVELS.map((level) => (
+                  <option key={level} value={level}>
+                    {t(`recordings.shareLevelName.${level}` as Parameters<typeof t>[0])}
+                  </option>
+                ))}
+              </select>
+              <span className="muted">
+                {t(`recordings.shareLevelHint.${recordingShareLevel}` as Parameters<typeof t>[0])}
+              </span>
+            </label>
+          </>
+        )}
+      </FormDialog>
+      {stopping ? (
+        <ConfirmDialog
+          title={t('sharing.stopTitle', { name: shareName(stopping, everyoneIn) })}
+          body={t('sharing.stopBody', { name: shareName(stopping, everyoneIn), what: t('recordings.shareStopWhat') })}
+          confirmLabel={t('sharing.stop')}
+          busy={isBusy}
+          error={problem}
+          onConfirm={() =>
+            void run(
+              () => graphql(RECORDING_SHARE_DOCUMENTS.UnshareRecording, { recordingShareId: stopping.id }),
+              t('sharing.stopped', { name: shareName(stopping, everyoneIn) }),
+            ).then((isDone) => isDone && setStopping(null))
+          }
+          onClose={() => setStopping(null)}
+        />
+      ) : null}
+    </>
   )
 }

@@ -185,6 +185,9 @@ func TestAReaderSeesOnlyWhatTheirLevelShows(test *testing.T) {
 		if err != nil || len(rest.Passages) != 1 || rest.HasMorePassages {
 			test.Fatalf("the next page: %+v %v", rest, err)
 		}
+		if len(transcript.SpeakerNames) != 1 || transcript.SpeakerNames[0] != "Alex Example" || len(rest.SpeakerNames) != 0 {
+			test.Fatalf("the speaker names come with the first page only: %+v %+v", transcript.SpeakerNames, rest.SpeakerNames)
+		}
 		all := append(transcript.Passages, rest.Passages...)
 		texts := map[string]string{}
 		for _, passage := range all {

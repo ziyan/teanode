@@ -514,7 +514,7 @@ struct FinanceShareScreen: View {
 
     private func stop(name: String) {
         Task {
-            let isStopped = await finance.act(saying: String(localized: "\(share.shownAccountName) is no longer shared with \(name).")) {
+            let isStopped = await finance.act(saying: String(localized: "Stopped sharing with \(name)")) {
                 try await finance.connection.unshareFinanceAccount(shareId: share.id)
             }
             if isStopped {

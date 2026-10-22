@@ -8,6 +8,7 @@ import (
 	"github.com/graphql-go/graphql"
 	gqlparser "github.com/graphql-go/graphql/language/parser"
 
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
@@ -217,4 +218,32 @@ func TestARecordingShareIsRefusedWhenItCannotBeMade(t *testing.T) {
 	}
 	// A person without the agent cannot share a recording either.
 	world.refused(t, world.lee, fmt.Sprintf(`mutation { ShareRecording(recordingId: %q, granteeUserId: %q, recordingShareLevel: "summary") { id } }`, world.recordingId, world.alex.ID))
+}
+
+// A command the agent ran on the person's computer cannot read what others
+// shared, though the agent's recording tool can in a run the person started:
+// the tool's operations carry no request, and the command line says what it is
+// in a header.
+func TestAMarkedCommandLineRequestCannotReadSharedRecordings(t *testing.T) {
+	world := newRecordingShareWorld(t)
+	world.share(t, world.alex, fmt.Sprintf(`granteeUserId: %q`, world.sam.ID), "transcript")
+	marked := map[string]string{api.AgentCommandHeader: "1"}
+	readQuery := fmt.Sprintf(`query { ReadSharedRecording(recordingId: %q, passageOffset: 0, pageSize: 10) { recordingTitle } }`, world.recordingId)
+	listQuery := `query { ListSharedRecordings(pageSize: 10) { recordingId } }`
+
+	for name, query := range map[string]string{"read": readQuery, "list": listQuery} {
+		_, failures := world.askWithHeaders(t, world.sam, models.CredentialToken, marked, query)
+		if !strings.Contains(strings.ToLower(strings.Join(failures, "; ")), "not found") {
+			t.Errorf("%s, marked as the agent's: %v", name, failures)
+		}
+		if _, failures := world.askWithHeaders(t, world.sam, models.CredentialToken, nil, query); len(failures) > 0 {
+			t.Errorf("%s, not marked: %v", name, failures)
+		}
+	}
+
+	operations := &agentOperations{graph: world.graph, user: world.sam, permissions: &models.EffectivePermissions{Everywhere: []models.Permission{models.PermissionAgentUse}}}
+	var result map[string]any
+	if err := operations.Execute(t.Context(), readQuery, nil, &result); err != nil {
+		t.Errorf("the agent's tool reads it in a run the person started: %v", err)
+	}
 }

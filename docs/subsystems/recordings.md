@@ -63,8 +63,9 @@ named fields, so a field added to a recording later is not shared until it is
 named there. `ReadSharedRecording` and `ListSharedRecordings` on the transaction
 are the only callers. A read gives the speaker names, found by projecting the
 speakers over the whole timeline (who spoke is worked out passage by passage),
-and at `transcript` a page of passages from an offset; a listing leaves both
-out, since it would read every timeline to make a list.
+only on the first page, since a reader paging on has them already, and at
+`transcript` a page of passages from an offset; a listing leaves both out,
+since it would read every timeline to make a list.
 
 When a person leaves a circle, `endRecordingSharesOutsideCircles` (called with
 the other kinds from `endSharesOutsideCircles`) deletes the direct shares the
@@ -95,6 +96,16 @@ taught reads as it reads a shared page, so a fact that only repeats it is
 refused (`docs/subsystems/memory.md`, shared pages). Nothing from a shared
 recording is kept in memory, and the knowledge sources and dreams read only the
 person's own recordings.
+
+A command the agent runs through the computer program is marked
+(`TEANODE_AGENT_COMMAND`, sent by the command line as the
+`X-Teanode-Agent-Command` header), so `teanode recording shared` and
+`read-shared` run by the agent are refused by `ListSharedRecordings` and
+`ReadSharedRecording` (`requireNotAgentCommand`) whatever the run, since a shell
+command has none of the tool's checks on who started it. The tool's own calls
+carry no request and are not affected. That is a guard against mistakes and
+steered runs, not a boundary against code the person runs: anything that leaves
+the header off is the person.
 
 ## Things that will catch you
 

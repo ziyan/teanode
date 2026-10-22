@@ -498,13 +498,29 @@ func (self *transaction) ListSharedFinanceSpending(viewerUserId, financeAccountI
 	if err != nil {
 		return nil, err
 	}
-	if fromDay != "" {
-		conditions += ` AND "summarized"."posted_on" >= CAST(@from AS date)`
-		arguments["from"] = fromDay
-	}
 	toDay, err := parseOptionalDay(to)
 	if err != nil {
 		return nil, err
+	}
+	// Months are all the spending level shows, so a range of single days
+	// would let a reader tell which day and how much each charge was by
+	// moving the ends one day at a time. Below the transactions level the
+	// range is widened to whole months.
+	if !reached.FinanceShareLevel.AtLeast(models.FinanceShareLevelTransactions) {
+		if fromDay != "" {
+			fromDay = fromDay[:len("2006-01")] + "-01"
+		}
+		if toDay != "" {
+			parsed, err := time.Parse(time.DateOnly, toDay)
+			if err != nil {
+				return nil, err
+			}
+			toDay = parsed.AddDate(0, 1, -parsed.Day()).Format(time.DateOnly)
+		}
+	}
+	if fromDay != "" {
+		conditions += ` AND "summarized"."posted_on" >= CAST(@from AS date)`
+		arguments["from"] = fromDay
 	}
 	if toDay != "" {
 		conditions += ` AND "summarized"."posted_on" <= CAST(@to AS date)`

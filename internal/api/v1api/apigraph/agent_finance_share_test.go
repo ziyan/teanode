@@ -2,6 +2,8 @@ package apigraph
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -450,5 +452,79 @@ func TestJoiningACircleAFinanceAccountIsSharedWithNeedsATap(t *testing.T) {
 	}
 	if listed := world.run(t, world.cora, sharedAccountsQuery, nil)["ListSharedFinanceAccounts"].([]any); len(listed) != 1 {
 		t.Errorf("cora, who a tap brought in, reads what the circle was shared: %v", listed)
+	}
+}
+
+// An owner who has turned the agent off can still see what they share and end
+// it, though what they share reaches nobody meanwhile and they cannot start a
+// new share.
+func TestAnOwnerWithTheAgentOffCanListAndEndFinanceShares(t *testing.T) {
+	world := newFinanceShareWorld(t)
+	share := world.shareAsTap(t, world.checkingID, world.ben.ID, nil, "spending")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		agent, err := tx.GetAgentByUser(world.ada.ID)
+		if err != nil || agent == nil {
+			t.Fatalf("GetAgentByUser: %+v %v", agent, err)
+		}
+		if _, err := tx.UpdateAgent(agent.ID, func(found *models.Agent) error { found.Enabled = false; return nil }); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	if listed := world.run(t, world.ben, sharedAccountsQuery, nil)["ListSharedFinanceAccounts"].([]any); len(listed) != 0 {
+		t.Errorf("an account of an agent that is off reaches nobody: %v", listed)
+	}
+	if shares := world.run(t, world.ada, financeSharesQuery, nil)["ListFinanceAccountShares"].([]any); len(shares) != 1 {
+		t.Fatalf("the owner lists what they share: %v", shares)
+	}
+	if _, failures := world.share(t, models.CredentialSession, world.checkingID, world.dave.ID, nil, "balance"); len(failures) == 0 {
+		t.Error("a new share was started with the agent off")
+	}
+	if data := world.run(t, world.ada, unshareFinanceQuery, map[string]any{"shareId": share["id"]}); data["UnshareFinanceAccount"] != true {
+		t.Fatalf("the owner ends the share: %v", data)
+	}
+	if shares := world.run(t, world.ada, financeSharesQuery, nil)["ListFinanceAccountShares"].([]any); len(shares) != 0 {
+		t.Errorf("after ending it: %v", shares)
+	}
+}
+
+// A command the agent ran on the person's computer reaches the API with the
+// person's own token and says so in a header. It is then the agent's request,
+// refused what the agent's tools are refused, and the same command without
+// the mark is the person's.
+func TestAMarkedCommandLineRequestIsTheAgents(t *testing.T) {
+	world := newFinanceShareWorld(t)
+	world.shareAsTap(t, world.checkingID, world.ben.ID, nil, "transactions")
+	marked := map[string]string{api.AgentCommandHeader: "1"}
+
+	for name, call := range map[string]struct {
+		user      *models.User
+		query     string
+		variables map[string]any
+	}{
+		"accounts":     {world.ben, sharedAccountsQuery, nil},
+		"spending":     {world.ben, sharedSpendingQuery, map[string]any{"financeAccountId": world.checkingID}},
+		"transactions": {world.ben, sharedTransactionsQuery, map[string]any{"financeAccountId": world.checkingID}},
+		"shares":       {world.ada, financeSharesQuery, nil},
+	} {
+		_, failures := world.callWithHeaders(t, call.user, models.CredentialToken, marked, call.query, call.variables)
+		if !strings.Contains(strings.ToLower(strings.Join(failures, "; ")), "not found") {
+			t.Errorf("%s, marked as the agent's: %v", name, failures)
+		}
+		if _, failures := world.callWithHeaders(t, call.user, models.CredentialToken, nil, call.query, call.variables); len(failures) > 0 {
+			t.Errorf("%s, not marked: %v", name, failures)
+		}
+	}
+	// The mark names the agent in the audit trail, and only for a person.
+	request := httptest.NewRequest(http.MethodPost, api.PathGraphQL, nil)
+	request.Header.Set(api.AgentCommandHeader, "1")
+	if kind := world.graph.auditPrincipal(request, world.ada, nil).ActorKind; kind != models.AuditActorAgent {
+		t.Errorf("a marked request is audited as %q", kind)
+	}
+	if kind := world.graph.auditPrincipal(request, nil, nil).ActorKind; kind != models.AuditActorUser {
+		t.Errorf("a marked request with no person is audited as %q", kind)
+	}
+	if kind := world.graph.auditPrincipal(httptest.NewRequest(http.MethodPost, api.PathGraphQL, nil), world.ada, nil).ActorKind; kind != models.AuditActorUser {
+		t.Errorf("an unmarked request is audited as %q", kind)
 	}
 }

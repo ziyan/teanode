@@ -45,8 +45,9 @@ type FinanceShareQuery interface {
 	// A shared finance account's money out and in by month and spending
 	// category, newest month first, in each currency, without merchants or
 	// descriptions; for the days from and to ("2006-01-02", either may be
-	// left out). Needs the spending level or the transactions level. Not
-	// available to the agent.
+	// left out; at the spending level they are widened to whole months, so a
+	// range of single days cannot be used to find one charge). Needs the
+	// spending level or the transactions level. Not available to the agent.
 	ListSharedFinanceSpending(ctx context.Context, arguments ListSharedFinanceSpendingArguments) ([]*models.SharedFinanceSpendingRow, error)
 
 	// A page of a shared finance account's transactions, newest first: the
@@ -209,7 +210,9 @@ type ListSharedFinanceAccountsArguments struct {
 type ListSharedFinanceSpendingArguments struct {
 	FinanceAccountID string `json:"financeAccountId"`
 
-	// From and To bound the posted day, both included, "2006-01-02"
+	// From and To bound the posted day, both included, "2006-01-02". At the
+	// spending level From becomes the first of its month and To the last of
+	// its month.
 	From string `json:"from" graphapi:"nullable"`
 	To   string `json:"to" graphapi:"nullable"`
 }
@@ -264,8 +267,10 @@ func requireFinanceNotAgent(ctx context.Context) error {
 	return nil
 }
 
-// requireFinanceSharer is the caller as the owner of finance accounts: a
-// person with an agent they may use, who is not their agent.
+// requireFinanceSharer is the caller as the owner of finance accounts who
+// starts or changes a share: a person with an agent that is on, who is not
+// their agent. Listing and ending shares need only requireFinanceReader, so
+// an owner who has turned the agent off can still see and stop what they share.
 func (self *graph) requireFinanceSharer(ctx context.Context) (*api.Principal, error) {
 	if err := requireFinanceNotAgent(ctx); err != nil {
 		return nil, err
@@ -277,9 +282,10 @@ func (self *graph) requireFinanceSharer(ctx context.Context) (*api.Principal, er
 	return principal, nil
 }
 
-// requireFinanceReader is the caller as a reader of what others share: a
-// person who may use the agent area, which is the permission finance needs,
-// who is not their agent. Their own agent need not be on.
+// requireFinanceReader is the caller as a reader of what others share, and as
+// the owner listing or ending their own shares: a person who may use the agent
+// area, which is the permission finance needs, who is not their agent. Their
+// own agent need not be on.
 func (self *graph) requireFinanceReader(ctx context.Context) (*api.Principal, error) {
 	if err := requireFinanceNotAgent(ctx); err != nil {
 		return nil, err
@@ -295,7 +301,7 @@ func (self *graph) requireFinanceReader(ctx context.Context) (*api.Principal, er
 }
 
 func (self *graph) ListFinanceAccountShares(ctx context.Context, arguments ListFinanceAccountSharesArguments) ([]*FinanceShareView, error) {
-	principal, err := self.requireFinanceSharer(ctx)
+	principal, err := self.requireFinanceReader(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -390,7 +396,7 @@ func isFinanceShareWider(earlier []*models.FinanceShare, saved *models.FinanceSh
 }
 
 func (self *graph) UnshareFinanceAccount(ctx context.Context, arguments UnshareFinanceAccountArguments) (bool, error) {
-	principal, err := self.requireFinanceSharer(ctx)
+	principal, err := self.requireFinanceReader(ctx)
 	if err != nil {
 		return false, err
 	}

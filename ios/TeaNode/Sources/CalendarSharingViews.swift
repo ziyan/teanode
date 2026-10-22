@@ -20,8 +20,8 @@ struct CalendarListSheet: View {
     @State private var adminCircleIds: Set<String> = []
     @State private var renamingCircleCalendar: AgentCalendar?
     @State private var newCircleCalendarName = ""
-    @State private var deletingCircleCalendar: AgentCalendar?
-    @State private var isConfirmingCircleCalendarDelete = false
+    /// The circle calendar whose deletion is being confirmed, if any.
+    @State private var confirmingDeleteCalendarId: String?
     #if DEBUG
         /// Whether the share screen is pushed for a screenshot.
         @State private var isShowingDemoShare = false
@@ -86,14 +86,21 @@ struct CalendarListSheet: View {
                             }
                             .disabled(isWorking)
                             Button {
-                                deletingCircleCalendar = calendar
-                                isConfirmingCircleCalendarDelete = true
+                                confirmingDeleteCalendarId = calendar.id
                             } label: {
                                 Label("Delete the calendar of \(calendar.circleName ?? calendar.name)", systemImage: "trash")
                                     .actionColor(isDestructive: true)
                             }
                             .tint(.red)
                             .disabled(isWorking)
+                            .confirmationDialog(
+                                "Delete the calendar of \(calendar.circleName ?? calendar.name)?",
+                                isPresented: isConfirmingDelete(of: calendar), titleVisibility: .visible
+                            ) {
+                                Button("Delete the calendar", role: .destructive) { deleteCircleCalendar(calendar) }
+                            } message: {
+                                Text("Every event in it is deleted for everyone in the circle. The circle stays, and a new calendar can be made for it.")
+                            }
                         }
                     } footer: {
                         Text("You are an admin of these circles, so you can rename their calendars or delete them. Deleting one deletes every event in it for everyone in the circle.")
@@ -157,14 +164,6 @@ struct CalendarListSheet: View {
                 Button("Cancel", role: .cancel) { renamingCircleCalendar = nil }
                 Button("Save") { renameCircleCalendar() }
             }
-            .confirmationDialog(
-                "Delete the calendar of \(deletingCircleCalendar?.circleName ?? "")?", isPresented: $isConfirmingCircleCalendarDelete,
-                titleVisibility: .visible
-            ) {
-                Button("Delete the calendar", role: .destructive) { deleteCircleCalendar() }
-            } message: {
-                Text("Every event in it is deleted for everyone in the circle. The circle stays, and a new calendar can be made for it.")
-            }
             .toast(done: $doneText, problem: $problemText)
         }
     }
@@ -175,6 +174,14 @@ struct CalendarListSheet: View {
         Binding(
             get: { renamingCircleCalendar != nil },
             set: { isShown in if !isShown { renamingCircleCalendar = nil } })
+    }
+
+    /// Whether the deletion of this circle calendar is being confirmed, so
+    /// that each row's confirmation points at its own button.
+    private func isConfirmingDelete(of calendar: AgentCalendar) -> Binding<Bool> {
+        Binding(
+            get: { confirmingDeleteCalendarId == calendar.id },
+            set: { isShown in if !isShown && confirmingDeleteCalendarId == calendar.id { confirmingDeleteCalendarId = nil } })
     }
 
     /// The calendars of circles the person is an admin of.
@@ -214,9 +221,8 @@ struct CalendarListSheet: View {
     }
 
     /// Deletes the calendar of a circle the person is an admin of.
-    private func deleteCircleCalendar() {
-        guard let calendar = deletingCircleCalendar, let circleId = calendar.circleId else { return }
-        deletingCircleCalendar = nil
+    private func deleteCircleCalendar(_ calendar: AgentCalendar) {
+        guard let circleId = calendar.circleId else { return }
         isWorking = true
         Task {
             do {

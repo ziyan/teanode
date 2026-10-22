@@ -82,9 +82,10 @@ export function FinancePage() {
   const requestedPerson = parameters.get('person')
   const viewedPerson = sharers.find((sharer) => sharer.userId === requestedPerson) ?? null
   // A link to somebody who is not sharing (or stopped) is taken out of the
-  // address once the shares are read, and the person is told.
-  const isSharesFailed = shared.error !== null && shared.data === null
-  const isPersonGone = requestedPerson !== null && (shared.data !== null || isSharesFailed) && viewedPerson === null
+  // address once the shares are read, and the person is told. A read that
+  // failed says nothing about who shares: it is reported, and the address is
+  // kept for when it works.
+  const isPersonGone = requestedPerson !== null && shared.data !== null && viewedPerson === null
   useEffect(() => {
     if (!isPersonGone) return
     toast.failed(t('finance.personNotSharing'))
@@ -102,9 +103,15 @@ export function FinancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPersonGone, requestedPerson])
   if (presence.isShown === null) return <Loading />
-  if (!presence.isShown) {
+  // A person with no finance of their own still has this page when somebody
+  // shares an account with them, so the shares are read before the page says
+  // there is nothing to show.
+  const isSharedOnly = !presence.isShown && sharers.length > 0
+  if (!presence.isShown && !isSharedOnly && shared.loading) return <Loading />
+  if (!presence.isShown && !isSharedOnly) {
     return (
       <div className="card">
+        <ErrorMessage error={shared.error} />
         <h3>{t('finance.title')}</h3>
         <p className="muted">{t('finance.notShown')}</p>
         <div className="page-actions">
@@ -133,8 +140,11 @@ export function FinancePage() {
       written.delete('page')
       return written
     })
+  // Somebody with no finance of their own has no "you" to go back to, and is
+  // shown the first person who shares until they choose another.
+  const shownPerson = viewedPerson ?? (isSharedOnly ? sharers[0] : null)
   const personOptions = [
-    { value: '', label: t('finance.you') },
+    ...(isSharedOnly ? [] : [{ value: '', label: t('finance.you') }]),
     ...sharers.map((sharer) => ({ value: sharer.userId, label: sharer.name })),
   ]
   const picker =
@@ -143,7 +153,7 @@ export function FinancePage() {
         <label>
           <span>{t('finance.person')}</span>
           <Select
-            value={viewedPerson?.userId ?? ''}
+            value={shownPerson?.userId ?? ''}
             label={t('finance.person')}
             options={personOptions}
             onChange={choosePerson}
@@ -153,14 +163,14 @@ export function FinancePage() {
     ) : null
   // Somebody's shared accounts are not the person's own sections: they are
   // drawn instead of the tabs, with the picker to go back to one's own.
-  if (viewedPerson) {
+  if (shownPerson) {
     return (
       <>
         <ErrorMessage error={shared.error} />
         {picker}
         <FinanceShared
-          ownerName={viewedPerson.name}
-          accounts={(shared.data ?? []).filter((account) => account.ownerUserId === viewedPerson.userId)}
+          ownerName={shownPerson.name}
+          accounts={(shared.data ?? []).filter((account) => account.ownerUserId === shownPerson.userId)}
         />
       </>
     )

@@ -235,12 +235,29 @@ func TestAFinanceShareShowsOnlyWhatItsLevelAdds(t *testing.T) {
 		if _, err := tx.ListSharedFinanceTransactions(world.ben.ID, world.checking.ID, nil); !errors.Is(err, db.ErrNotFound) {
 			t.Errorf("transactions at the spending level: %v", err)
 		}
-		// A range narrows the months.
-		if rows, err := tx.ListSharedFinanceSpending(world.ben.ID, world.checking.ID, "2026-09-05", "2026-09-30"); err != nil || len(rows) != 1 || rows[0].SpendingCategoryName != "Groceries" {
-			t.Errorf("a range: %+v %v", rows, err)
+		// A range narrows the months, and at this level it is widened to whole
+		// months: a one-day range around the grocery charge still returns
+		// the salary of the first of the month, so moving the ends a day at a
+		// time cannot find the day or the amount of a charge.
+		if rows, err := tx.ListSharedFinanceSpending(world.ben.ID, world.checking.ID, "2026-09-10", "2026-09-10"); err != nil || len(rows) != 2 {
+			t.Errorf("a one-day range at the spending level is the whole month: %+v %v", rows, err)
+		}
+		if rows, err := tx.ListSharedFinanceSpending(world.ben.ID, world.checking.ID, "2026-08-31", "2026-08-31"); err != nil || len(rows) != 0 {
+			t.Errorf("a range in the month before: %+v %v", rows, err)
+		}
+		if rows, err := tx.ListSharedFinanceSpending(world.ben.ID, world.checking.ID, "2026-08-15", "2026-09-02"); err != nil || len(rows) != 2 {
+			t.Errorf("a range that ends early in a month: %+v %v", rows, err)
+		}
+		if rows, err := tx.ListSharedFinanceSpending(world.ben.ID, world.checking.ID, "2026-10-01", ""); err != nil || len(rows) != 0 {
+			t.Errorf("a range that starts in the month after: %+v %v", rows, err)
 		}
 
 		shareFinance(t, tx, world, world.checking, world.ben.ID, "", models.FinanceShareLevelTransactions)
+		// Days are no secret from a reader of the transactions, so their range
+		// is kept as given.
+		if rows, err := tx.ListSharedFinanceSpending(world.ben.ID, world.checking.ID, "2026-09-05", "2026-09-30"); err != nil || len(rows) != 1 || rows[0].SpendingCategoryName != "Groceries" {
+			t.Errorf("a range at the transactions level: %+v %v", rows, err)
+		}
 		page, err := tx.ListSharedFinanceTransactions(world.ben.ID, world.checking.ID, nil)
 		if err != nil || len(page.FinanceTransactions) != 2 {
 			t.Fatalf("transactions at the transactions level: %+v %v", page, err)

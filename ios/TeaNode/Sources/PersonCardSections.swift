@@ -275,7 +275,9 @@ struct PersonCardFinanceView: View {
             ForEach(section.financeAccounts) { account in
                 SharedFinanceAccountRow(account: account)
             }
-            PersonCardShowAllRow(title: AppSection.finance.title) { open() }
+            if section.hasMore {
+                PersonCardShowAllRow(title: AppSection.finance.title) { open() }
+            }
         } else {
             PersonCardStateRows(
                 sectionState: section.sectionState, notShared: Text("\(card.displayName) shares no finance account with you yet."))

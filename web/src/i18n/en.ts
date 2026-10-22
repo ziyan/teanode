@@ -4170,7 +4170,7 @@ export const en = {
   'finance.tabSavingsTargets': 'Savings targets',
   'finance.title': 'Finance',
   'finance.notShown':
-    'Finance appears here when your agent is on and this server offers a way to link institutions, or when you have linked one already.',
+    'Finance appears here when your agent is on and this server offers a way to link institutions, or when you have linked one already, or when somebody shares an account with you.',
   'finance.openAgentPage': 'Open your agent page',
   'finance.nothingLinkedPointer': 'No institution is linked yet, so there is nothing to show here.',
   'finance.openFinanceSetup': 'Link one on the Finance tab of your agent page',
@@ -4187,7 +4187,6 @@ export const en = {
   'finance.shareWithName': 'Shared with {name}',
   'finance.shareChange': 'Change what {name} sees of {account}',
   'finance.shareStop': 'Stop sharing {account} with {name}',
-  'finance.shareStopped': '{account} is no longer shared with {name}',
   'finance.shareSaved': '{account} is shared with {name}',
   'finance.shareNeedsCircles':
     'Sharing needs the circles feature, which your account does not have, so you can end shares here but not start them.',
@@ -5747,7 +5746,7 @@ export const en = {
   'recordings.shareAdd': 'Share',
   'recordings.shareSaid': 'Shared with {name}',
   'recordings.shareStop': 'Stop sharing with {name}',
-  'recordings.shareStopped': 'No longer shared with {name}',
+  'recordings.shareStopWhat': 'this recording',
   'recordings.shareFailed': 'Could not change who this recording is shared with',
   'recordings.shareNoPeople': 'You do not share a circle with anybody yet. Make or join a circle to share a recording.',
   'recordings.sharedWithYou': 'Shared with you',

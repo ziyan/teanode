@@ -234,6 +234,13 @@ func (self *graph) auditPrincipal(request *http.Request, user, impersonator *mod
 	if impersonator != nil {
 		principal.ImpersonatorUserID = impersonator.ID
 	}
+	// A command the agent ran on the person's computer reaches here with the
+	// person's own token. The command line says so (api.AgentCommandHeader),
+	// and the request is then the agent's, as its tools are: refused what the
+	// agent is refused, and named as the agent in the audit trail.
+	if user != nil && request.Header.Get(api.AgentCommandHeader) != "" {
+		principal.ActorKind = models.AuditActorAgent
+	}
 	return principal
 }
 

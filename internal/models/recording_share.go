@@ -137,7 +137,8 @@ type SharedRecording struct {
 
 	// SpeakerNames are the names the owner confirmed for speakers of the
 	// recording, each once. Empty in a listing, which does not read the
-	// transcript to find them.
+	// transcript to find them, and on a page of passages after the first,
+	// which has them from the first page.
 	SpeakerNames []string `json:"speakerNames"`
 
 	// Passages are a page of the transcript, only at the transcript level,

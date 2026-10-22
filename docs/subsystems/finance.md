@@ -1406,7 +1406,11 @@ grantee. A share belongs to its account and goes when the account does.
 | `spending` | and the account's money out and money in by month and spending category, in each currency, with the owner's own names for the categories and no merchant or description |
 | `transactions` | and each transaction's day, amount, currency, merchant name and spending category |
 
-A level shows what the one below it shows. At no level: receipts and their
+A level shows what the one below it shows. At the spending level a range of
+days (`from`, `to`) is widened to whole months, the first of the month's
+`from` and the last of its `to`, because a reader who could move the ends a day
+at a time would rebuild each transaction's day and amount from the totals. At
+no level: receipts and their
 images, what the person or their agent wrote on a transaction, the provider's
 own data for the account or the transaction, the available balance, paystubs,
 tax forms, finance sources and their credentials, spending rules, budgets,
@@ -1434,7 +1438,9 @@ circle they left (`endFinanceSharesOutsideCircles`, called from
 reached.
 
 **Who may share.** Only the person whose agent holds the account
-(`ShareFinanceAccount`, `UnshareFinanceAccount`), to someone they share a
+(`ShareFinanceAccount`; listing and ending one, `ListFinanceAccountShares` and
+`UnshareFinanceAccount`, need only `agent:use`, so an owner who turned the agent
+off can still see and stop what they share), to someone they share a
 circle with or to a circle they are in. **Starting a share or widening one is
 the person's tap**, the dashboard or the iPhone app, as Health's is: a command
 line token, an operator signed in as the person and the agent's own operations
@@ -1456,9 +1462,14 @@ to show their account to people, did not agree to show it to a model. The
 person's card lists the accounts a person shares with the caller, each as its
 level shows it (`ReadPersonCard`'s `finance` part, read with the same access
 check), and shows the agent none of it. A person's agent that runs
-commands on their computer acts with their own login and can run
-`teanode finance accounts --person`, as with Health; the tap is what it cannot
-supply.
+commands on their computer acts with their own login, but the computer program
+marks every such command (`TEANODE_AGENT_COMMAND`), the command line sends the
+mark as the `X-Teanode-Agent-Command` header, and the server then treats the
+request as the agent's (`graph.auditPrincipal`), so `teanode finance ...
+--person` is refused to it as the tool is, and the tap is something it cannot
+supply. That is a guard against mistakes and steered runs, not a boundary
+against code the person runs: anything that leaves the header off is the
+person.
 
 **Operations.** `ListFinanceAccountShares` (the person's own),
 `ShareFinanceAccount`, `UnshareFinanceAccount`, `ListSharedFinanceAccounts`
@@ -1474,7 +1485,11 @@ balance|spending|transactions`, `shares`, `unshare <share id>`, and `--person
 need an account at the level, named with `--finance-account` when several
 are). The dashboard's Sharing panel is on the agent page's Finance tab, and
 the Finance page offers **Showing** when somebody shares with the person, which
-replaces the tabs with that person's accounts and what their levels add. The
+replaces the tabs with that person's accounts and what their levels add. A
+person with no finance of their own, or with the agent off, still has the page
+and a Finance row in the rail when somebody shares with them, and sees the first
+sharer's accounts there. A failed read of the shares is reported and does not
+take a `?person=` out of the address; ending a share asks first. The
 iPhone's Finance has the same: **Sharing** in the title menu and a **Showing**
 menu in the bar.
 
