@@ -2729,6 +2729,7 @@ export const zh: Catalog = {
   'calendar.shareSaid': '已共享给{name}',
   'calendar.shareStop': '停止与{name}共享',
   'calendar.shareStopped': '已停止与{name}共享',
+  'calendar.shareStopWhat': '这个日历',
   'calendar.shareNoPeople': '你还没有和任何人在同一个圈子里。创建或加入一个圈子后，就可以共享日历了。',
   'calendar.calendarChoice': '日历',
   'calendar.readOnlyNote': '由{name}共享给你。你可以查看，但不能修改。',

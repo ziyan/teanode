@@ -2838,6 +2838,7 @@ export const en = {
   'calendar.shareSaid': 'Shared with {name}',
   'calendar.shareStop': 'Stop sharing with {name}',
   'calendar.shareStopped': 'Stopped sharing with {name}',
+  'calendar.shareStopWhat': 'this calendar',
   'calendar.shareNoPeople': 'You do not share a circle with anybody yet. Make or join a circle to share your calendar.',
   'calendar.calendarChoice': 'Calendar',
   'calendar.readOnlyNote': 'Shared with you by {name}. You can read it but not change it.',

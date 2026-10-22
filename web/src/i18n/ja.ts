@@ -2830,6 +2830,7 @@ export const ja: Catalog = {
   'calendar.shareSaid': '{name}と共有しました',
   'calendar.shareStop': '{name}との共有をやめる',
   'calendar.shareStopped': '{name}との共有をやめました',
+  'calendar.shareStopWhat': 'このカレンダー',
   'calendar.shareNoPeople':
     'まだ誰ともサークルを共有していません。サークルを作成するか参加すると、カレンダーを共有できます。',
   'calendar.calendarChoice': 'カレンダー',

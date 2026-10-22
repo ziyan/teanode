@@ -403,6 +403,11 @@ it('shares the calendar with a person at a level, and takes a share back', async
 
   // Stop sharing with Ben.
   fireEvent.click(within(dialog).getByRole('button', { name: 'Stop sharing with Ben' }))
+  // Nothing is ended until the person confirms.
+  const confirm = await screen.findByRole('alertdialog', { name: 'Stop sharing with Ben?' })
+  expect(within(confirm).getByText('Ben can no longer see this calendar.')).toBeTruthy()
+  expect(vi.mocked(graphql).mock.calls.some(([document]) => document.includes('UnshareCalendar'))).toBe(false)
+  fireEvent.click(within(confirm).getByRole('button', { name: 'Stop sharing' }))
   await waitFor(() =>
     expect(vi.mocked(graphql).mock.calls.some(([document]) => document.includes('UnshareCalendar'))).toBe(true),
   )

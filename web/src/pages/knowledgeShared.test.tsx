@@ -554,7 +554,12 @@ it('lists who a page is shared with, including by a page above it, and stops one
   // A page whose name only starts the same way is not this page.
   expect(screen.queryByText('Cora Example')).toBeNull()
 
+  // Nothing is ended until the person confirms.
   fireEvent.click(screen.getByRole('button', { name: 'Stop sharing with Ben Example' }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Stop sharing with Ben Example?' })
+  expect(within(dialog).getByText('Ben Example can no longer see this page.')).toBeTruthy()
+  expect(vi.mocked(graphql).mock.calls.some(([document]) => document.includes('UnshareAgentPage'))).toBe(false)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Stop sharing' }))
   await waitFor(() =>
     expect(
       vi
