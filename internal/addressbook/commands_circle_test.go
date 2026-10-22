@@ -78,10 +78,10 @@ func TestEveryMemberEditsACircleAddressBook(test *testing.T) {
 	if _, err := New(fixture.database).Save(test.Context(), fixture.member, SaveRequest{AddressBookID: fixture.adminOwnBook.ID, Fields: contacts.Fields{Name: new("Sam")}}); !errors.Is(err, db.ErrNotFound) {
 		test.Fatalf("a circle mate's own book is not theirs to write: %v", err)
 	}
-	if err := New(fixture.database).Delete(test.Context(), fixture.outsider, added.ID); !errors.Is(err, db.ErrNotFound) {
+	if err := New(fixture.database).Delete(test.Context(), fixture.outsider, "", added.ID); !errors.Is(err, db.ErrNotFound) {
 		test.Fatalf("an outsider removes nothing: %v", err)
 	}
-	if err := New(fixture.database).Delete(test.Context(), fixture.member, added.ID); err != nil {
+	if err := New(fixture.database).Delete(test.Context(), fixture.member, "", added.ID); err != nil {
 		test.Fatalf("a member removes a card: %s", err)
 	}
 	if count := dbtest.QueryString(test, fixture.database, `SELECT count(*)::text FROM contact`); count != "0" {
@@ -104,7 +104,7 @@ func TestALeavingMemberCannotEditTheCircleAddressBook(test *testing.T) {
 	if _, err := New(fixture.database).Save(test.Context(), fixture.member, SaveRequest{ID: added.ID, Fields: contacts.Fields{Name: new("Changed")}}); !errors.Is(err, db.ErrNotFound) {
 		test.Fatalf("edit after leaving: %v", err)
 	}
-	if err := New(fixture.database).Delete(test.Context(), fixture.member, added.ID); !errors.Is(err, db.ErrNotFound) {
+	if err := New(fixture.database).Delete(test.Context(), fixture.member, "", added.ID); !errors.Is(err, db.ErrNotFound) {
 		test.Fatalf("remove after leaving: %v", err)
 	}
 	if _, err := New(fixture.database).UpdateBook(test.Context(), fixture.member, UpdateBookRequest{ID: fixture.circleBook.ID, Name: "Mine now"}); !errors.Is(err, db.ErrNotFound) {
@@ -138,6 +138,60 @@ func TestAPictureIsNeverSetOnACircleCard(test *testing.T) {
 	}
 	if _, _, err := New(fixture.database).SetPicture(test.Context(), fixture.member, added.ID, []byte("not read")); !errors.Is(err, db.ErrNotFound) {
 		test.Fatalf("no picture from a face on a circle's card: %v", err)
+	}
+}
+
+// A contact is named only within its book, so a person whose own book holds a
+// contact of the same id as the circle's keeps it when the circle's is
+// deleted, and the circle's is deleted only by naming the circle's book.
+func TestDeletingACircleContactByIDNeverDeletesTheOwnContactOfTheSameID(test *testing.T) {
+	fixture := newCircleBookFixture(test)
+	circleCard := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:urn:uuid:shared-name\r\nFN:Circle Kim\r\nEND:VCARD\r\n"
+	ownCard := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:urn:uuid:shared-name\r\nFN:Own Kim\r\nEND:VCARD\r\n"
+	var circleID, ownID string
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		for _, each := range []struct {
+			bookID, card string
+			identifier   *string
+		}{{fixture.circleBook.ID, circleCard, &circleID}, {fixture.adminOwnBook.ID, ownCard, &ownID}} {
+			parsed, err := contacts.Parse([]byte(each.card))
+			if err != nil {
+				test.Fatal(err)
+			}
+			// Both are filed under the same name, as a client that names a
+			// card after its UID does.
+			kept, err := transaction.PutContact(&models.Contact{ID: "kim.vcf", AddressBookID: each.bookID, UID: parsed.UID, ETag: contacts.ETag(parsed.Card), Card: string(parsed.Card), Name: parsed.Name})
+			if err != nil {
+				test.Fatal(err)
+			}
+			*each.identifier = kept.ID
+		}
+	})
+	if circleID != ownID {
+		test.Fatalf("the two contacts share an id: %q %q", circleID, ownID)
+	}
+
+	// Named by the circle's book, only the circle's is deleted.
+	if err := New(fixture.database).Delete(test.Context(), fixture.admin, fixture.circleBook.ID, circleID); err != nil {
+		test.Fatalf("delete the circle's contact: %s", err)
+	}
+	if count := dbtest.QueryString(test, fixture.database, `SELECT count(*)::text FROM contact WHERE name = 'Own Kim'`); count != "1" {
+		test.Fatalf("the person's own contact is kept: %s", count)
+	}
+	if count := dbtest.QueryString(test, fixture.database, `SELECT count(*)::text FROM contact WHERE name = 'Circle Kim'`); count != "0" {
+		test.Fatalf("the circle's contact is gone: %s", count)
+	}
+
+	// Named by the circle's book, a contact that is not in it is not found,
+	// even though the person has one of that id in their own.
+	if err := New(fixture.database).Delete(test.Context(), fixture.admin, fixture.circleBook.ID, ownID); !errors.Is(err, db.ErrNotFound) {
+		test.Fatalf("the circle's book does not hold it: %v", err)
+	}
+	if _, err := New(fixture.database).RemovePicture(test.Context(), fixture.admin, fixture.circleBook.ID, ownID); !errors.Is(err, db.ErrNotFound) {
+		test.Fatalf("nor does its picture come off: %v", err)
+	}
+	if count := dbtest.QueryString(test, fixture.database, `SELECT count(*)::text FROM contact WHERE name = 'Own Kim'`); count != "1" {
+		test.Fatalf("the person's own contact is still kept: %s", count)
 	}
 }
 

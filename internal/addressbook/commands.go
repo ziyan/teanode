@@ -112,8 +112,11 @@ func (self *Commands) Save(ctx context.Context, principal *access.Principal, req
 }
 
 // Delete removes a contact from a book the current principal may edit: their
-// own, or their circle's.
-func (self *Commands) Delete(ctx context.Context, principal *access.Principal, contactId string) error {
+// own, or their circle's. A contact is named within its book, so a caller that
+// knows the book says which; without one the person's own books are looked in
+// first, and a circle's contact of the same name is reached only by naming the
+// circle's book.
+func (self *Commands) Delete(ctx context.Context, principal *access.Principal, addressBookId, contactId string) error {
 	if err := principal.RequireService(models.ServiceContacts); err != nil {
 		return err
 	}
@@ -121,7 +124,7 @@ func (self *Commands) Delete(ctx context.Context, principal *access.Principal, c
 		return db.ErrNotFound
 	}
 	return self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
-		contact, book, err := usableContact(transaction, principal.User.ID, "", contactId)
+		contact, book, err := usableContact(transaction, principal.User.ID, addressBookId, contactId)
 		if err != nil {
 			return err
 		}
@@ -170,8 +173,8 @@ func (self *Commands) SetPicture(ctx context.Context, principal *access.Principa
 }
 
 // RemovePicture takes the picture off a contact. A contact with none is left as
-// it is, and that is not an error.
-func (self *Commands) RemovePicture(ctx context.Context, principal *access.Principal, contactId string) (*models.Contact, error) {
+// it is, and that is not an error. The book is named as Delete's is.
+func (self *Commands) RemovePicture(ctx context.Context, principal *access.Principal, addressBookId, contactId string) (*models.Contact, error) {
 	if err := principal.RequireService(models.ServiceContacts); err != nil {
 		return nil, err
 	}
@@ -180,7 +183,7 @@ func (self *Commands) RemovePicture(ctx context.Context, principal *access.Princ
 	}
 	var kept *models.Contact
 	err := self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
-		existing, _, err := usableContact(transaction, principal.User.ID, "", contactId)
+		existing, _, err := usableContact(transaction, principal.User.ID, addressBookId, contactId)
 		if err != nil {
 			return err
 		}
