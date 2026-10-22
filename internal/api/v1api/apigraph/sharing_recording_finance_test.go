@@ -256,9 +256,10 @@ func TestOwnersAreToldAJoinerSeesRecordingsAndFinance(test *testing.T) {
 	}
 }
 
-// Recordings and finance accounts are listed to a person who may use the
-// agent, which is the permission their own operations ask for, and to nobody
-// else; finance is also left out for the person's agent.
+// Recordings and finance accounts shared with a person are listed to them when
+// they may use the agent, which is the permission reading them asks for. What a
+// person shared is listed whatever their role holds now, so that they can find
+// it and stop it.
 func TestRecordingsAndFinanceAreListedOnlyToWhoMayUseThem(test *testing.T) {
 	world := newSharingWorld(test)
 	withAgent := &api.Principal{Permissions: &models.EffectivePermissions{Everywhere: []models.Permission{models.PermissionCircleUse, models.PermissionAgentUse}}}
@@ -268,8 +269,8 @@ func TestRecordingsAndFinanceAreListedOnlyToWhoMayUseThem(test *testing.T) {
 			if !world.graph.canListShareKind(test.Context(), withAgent, shareKind, isReceived) {
 				test.Errorf("%s (received %v) is left out for a person who may use the agent", shareKind, isReceived)
 			}
-			if world.graph.canListShareKind(test.Context(), withoutAgent, shareKind, isReceived) {
-				test.Errorf("%s (received %v) is listed to a person who may not use the agent", shareKind, isReceived)
+			if isListed := world.graph.canListShareKind(test.Context(), withoutAgent, shareKind, isReceived); isListed != !isReceived {
+				test.Errorf("%s (received %v) listed to a person who may not use the agent: %v", shareKind, isReceived, isListed)
 			}
 		}
 	}

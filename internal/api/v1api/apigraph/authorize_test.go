@@ -78,6 +78,12 @@ var authorizing = map[string]bool{
 	// they may do after the permission was taken from their role. Each
 	// operation then deletes only rows the caller owns.
 	"requireShareOwner": true,
+	// A person who may use the agent area (agent:use), which finance needs, and
+	// who is not their agent: requireFinanceReader for reading what others
+	// share and listing one's own shares, requireFinanceSharer, with the agent
+	// on as well, for starting or changing a share.
+	"requireFinanceReader": true,
+	"requireFinanceSharer": true,
 	// The photo service is on, requirePermission(photos:use), and the
 	// caller's account. Every photo is read through the owner's id.
 	"requirePhotosPerson": true,
