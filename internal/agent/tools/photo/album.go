@@ -63,7 +63,13 @@ func albumList(ctx context.Context, current tools.Run, asked *arguments) (*tools
 	}
 	location := tools.Location(current.Owner())
 	rows := make([]map[string]any, 0, len(albums))
+	isInChat := tools.IsAnsweringInChat(current)
 	for _, album := range albums {
+		// In a chat only the person's own albums are listed: the others are
+		// what people shared with the person, not with the room.
+		if isInChat && !album.IsOwnedByCaller {
+			continue
+		}
 		rows = append(rows, albumRow(album, location))
 	}
 	answer := map[string]any{"note": "album-read with album_id (or list with album_id) gives an album's photos, in an album shared with the person too; an album with an owner_name or circle_name is not the person's own"}
@@ -88,6 +94,9 @@ func albumRead(ctx context.Context, current tools.Run, asked *arguments) (*tools
 	album, err := client.ReadPhotoAlbum(ctx, current.Operations(), albumId)
 	if err != nil {
 		return nil, err
+	}
+	if tools.IsAnsweringInChat(current) && !album.IsOwnedByCaller {
+		return nil, errOthersPhotosInChat
 	}
 	details := albumRow(album, tools.Location(current.Owner()))
 	details["created_at"] = album.CreatedAt.In(tools.Location(current.Owner())).Format("2006-01-02 15:04")

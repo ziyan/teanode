@@ -48,7 +48,7 @@ func init() {
 				"`retry` (photo_ids, up to 100) makes the thumbnails of photos again (the dashboard and the iPhone call it Make thumbnails again): a photo whose thumbnails failed is tried again from the start, and a photo that is ready is done again to replace thumbnails that look wrong; it answers at once and the thumbnails arrive in a minute or so. " +
 				"`save` keeps a picture or video as a photo: from this conversation (source conversation, attachment_id), a message (source mail, item_id and attachment as mail_read lists them) or their computer (source computer, path). " +
 				"Albums are named sets of photos, and a photo can be in several: `album-list` and `album-read` (album_id) show them, `list` with album_id lists an album's photos, and `read` says which albums a photo is in. " +
-				"`album-list` also gives the albums of the person's circles and the albums other people shared with them, each with its owner (owner_name, or circle_name for a circle's album) and level (owner, contribute or view). You read those where they are: `list` with album_id, `read`, `look` and `show` work on their photos as on the person's own, each photo says whose it is (owner), and a photo that is not the person's comes without its place unless the share includes it, so do not guess where it was taken. Never copy a photo into the person's library unless they ask; `save-shared` (photo_ids) does, and the copy is theirs. " +
+				"`album-list` also gives the albums of the person's circles and the albums other people shared with them, each with its owner (owner_name, or circle_name for a circle's album) and level (owner, contribute or view). You read those where they are, except in a chat (everybody there would see them; only the person's own albums and photos are read there): `list` with album_id, `read`, `look` and `show` work on their photos as on the person's own, each photo says whose it is (owner), and a photo that is not the person's comes without its place unless the share includes it, so do not guess where it was taken. Never copy a photo into the person's library unless they ask; `save-shared` (photo_ids) does, and the copy is theirs. " +
 				"`album-share` shares one of the person's own albums (album_id) with a person they share a circle with (person, the username) or with everyone in one of their circles (circle, by name or id), at share_level view (the default: see and save) or contribute (also add photos of their own); is_location_included true also lets them see where the photos were taken and download the originals, which the person must have asked for. Sharing again changes the level. `album-shares` (album_id) says who an album is shared with, and gives the share_id `album-unshare` takes to stop and `album-share-update` takes to change. `album-share-update` (album_id, share_id) changes only the settings you name, share_level (view or contribute) and is_location_included, and leaves the other as the share has it; one that changes nothing makes no change. Sharing, giving a share more (contribute, or places on) and changing one without saying which it does ask the person first unless the person allowed it; a change that only takes access away, stopping a share included, does not ask. `album-create` with circle makes an album that belongs to that circle, which every member adds their own photos to. " +
 				"Organize photos into albums when the person asks: `album-create` (album_title, and photo_ids to put in it), `album-rename`, `album-add` and `album-remove` (album_id, photo_ids; removing leaves the photos in the library). " +
 				"`album-suggest` finds trips and events among the photos that are in no album (runs of at least 12 photos), with their dates, places and a proposed title; offer them to the person and create an album only when they agree, by listing the photos between the suggestion's taken_after and taken_before and giving their ids to `album-create`. " +
@@ -113,6 +113,28 @@ func init() {
 // coordinate; tools has helpers for whole numbers only.
 func numberProperty(description string) map[string]any {
 	return map[string]any{"type": "number", "description": description}
+}
+
+// errOthersPhotosInChat is what an operation answers when it is asked for a
+// photo or an album that is not the person's own in a chat: the answer, and
+// the picture, would be posted to everybody in the room, and the owner shared
+// it with the person alone.
+var errOthersPhotosInChat = errors.New("photos and albums that other people shared are not repeated into a chat, because everybody in it would see them: " +
+	"the person can ask in a private conversation with you instead")
+
+// checkPhotosAllowedHere is nil when every photo given may be read in this
+// run: any photo, when its words do not go to a chat; the person's own, when
+// they do.
+func checkPhotosAllowedHere(current tools.Run, photos ...*models.Photo) error {
+	if !tools.IsAnsweringInChat(current) {
+		return nil
+	}
+	for _, photo := range photos {
+		if !photo.IsOwnedByCaller {
+			return errOthersPhotosInChat
+		}
+	}
+	return nil
 }
 
 type arguments struct {
@@ -545,6 +567,9 @@ func list(ctx context.Context, current tools.Run, asked *arguments) (*tools.Resu
 	if err != nil {
 		return nil, err
 	}
+	if err := checkPhotosAllowedHere(current, photos...); err != nil {
+		return nil, err
+	}
 	answer := map[string]any{"photos": listedRows(photos)}
 	if filter.AccountUserID != "" && len(photos) == 0 && filter.Offset == 0 {
 		answer["person_note"] = "no photos: the person may not have linked a contact to this person (contact_book link-account), or that contact names no group of faces yet"
@@ -772,6 +797,9 @@ func read(ctx context.Context, current tools.Run, asked *arguments) (*tools.Resu
 	if err != nil {
 		return nil, err
 	}
+	if err := checkPhotosAllowedHere(current, view.Photo); err != nil {
+		return nil, err
+	}
 	location := tools.Location(current.Owner())
 	photo := view.Photo
 	details := map[string]any{
@@ -905,6 +933,9 @@ func look(ctx context.Context, current tools.Run, asked *arguments) (*tools.Resu
 	var images []llm.ContentPart
 	for _, photoId := range photoIds {
 		view, err := client.ReadPhoto(ctx, current.Operations(), photoId)
+		if err == nil {
+			err = checkPhotosAllowedHere(current, view.Photo)
+		}
 		if err != nil {
 			lines = append(lines, photoId+": "+err.Error())
 			continue
@@ -1016,6 +1047,9 @@ func show(ctx context.Context, current tools.Run, asked *arguments) (*tools.Resu
 	notShown := make([]string, 0)
 	for _, photoId := range photoIds {
 		view, err := client.ReadPhoto(ctx, current.Operations(), photoId)
+		if err == nil {
+			err = checkPhotosAllowedHere(current, view.Photo)
+		}
 		if err != nil {
 			notShown = append(notShown, photoId+": "+err.Error())
 			continue

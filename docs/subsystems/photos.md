@@ -466,7 +466,11 @@ memory by each server instance.
 The agent's tool shows the albums that are not the person's with their owner
 and level (`album-list`), and reads them where they are: `list` and `look`
 with the album's `album_id`, each photo marked with its owner. It copies
-nothing into the person's library unless they ask (`save-shared`).
+nothing into the person's library unless they ask (`save-shared`). In a chat
+turn, whose words are posted to everybody in the room, it reads only the
+person's own: `album-list` leaves the others out, and `album-read`, `list`,
+`read`, `look` and `show` refuse a photo or an album that is not the person's
+(`IsOwnedByCaller` is false) and say it is not repeated into a chat.
 Every operation of the tool that answers a list (`list`, `album-list`,
 `album-read`, which gives the album's photos, `people`, `person-photos` and
 `album-shares`) gives a page at a time: `page_size` and `offset` in, and when

@@ -1,6 +1,7 @@
 package photo
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -595,5 +596,77 @@ func TestAlbumCreateWithACircleMakesTheCirclesAlbum(test *testing.T) {
 	}
 	if _, err := current.call(map[string]any{"operation": "album-create", "album_title": "Ours", "circle": "Nowhere"}); err == nil {
 		test.Fatal("an album was made for a circle the person is not in")
+	}
+}
+
+// chattingRun is a run whose words are posted to the people of a chat.
+type chattingRun struct{ *fakeRun }
+
+func (self chattingRun) IsAnsweringInChat() bool { return true }
+
+func (self chattingRun) call(arguments map[string]any) (*tools.Result, error) {
+	encoded, _ := json.Marshal(arguments)
+	return run(tools.WithRun(context.Background(), self), &tools.Call{ID: "fixture-call", Arguments: encoded})
+}
+
+// In a chat only the person's own photos and albums are read: what another
+// person shared with the person is not posted to everybody in the room.
+func TestPhotosAndAlbumsOfOthersAreNotReadIntoAChat(test *testing.T) {
+	ownRow := `{"id":"photo-own","photoKind":"picture","takenAt":"2025-03-04T10:30:00Z","takenAtOffsetMinutes":0,"photoProcessingState":"ready","largePreviewUrl":"/x","isOwnedByCaller":true}`
+	sharedRow := `{"id":"photo-shared","photoKind":"picture","takenAt":"2025-03-04T10:30:00Z","takenAtOffsetMinutes":0,"photoProcessingState":"ready","largePreviewUrl":"/x","ownerName":"Ben Example"}`
+	current := newRun(test, map[string]string{
+		"ListPhotoAlbums": `[` + ownAlbumRowJson + `,` + sharedAlbumRowJson + `,` + circleAlbumRowJson + `]`,
+		"ListPhotos":      `[` + sharedRow + `]`,
+	})
+	current.operations.photos = map[string]string{
+		"photo-own":    `{"photo":` + ownRow + `,"photoFiles":[],"photoPreviews":[{"photoPreviewSize":"large"}]}`,
+		"photo-shared": `{"photo":` + sharedRow + `,"photoFiles":[],"photoPreviews":[{"photoPreviewSize":"large"}]}`,
+	}
+	for _, photoId := range []string{"photo-own", "photo-shared"} {
+		if err := current.store.PutFile(test.Context(), models.PhotoPreviewFileID(photoId, models.PhotoPreviewLarge), []byte{0xFF, 0xD8, 0xFF, 0xD9}); err != nil {
+			test.Fatal(err)
+		}
+	}
+	chat := chattingRun{current}
+
+	// The albums listed are the person's own.
+	result, err := chat.call(map[string]any{"operation": "album-list"})
+	if err != nil || strings.Contains(result.Content, "album-shared") || strings.Contains(result.Content, "album-circle") || !strings.Contains(result.Content, "album-own") {
+		test.Fatalf("only the person's own albums are listed in a chat: %v %v", result, err)
+	}
+
+	// Somebody else's album, and its photos, are refused; so is one photo of
+	// theirs, however it is asked for.
+	current.operations.answers["ReadPhotoAlbum"] = sharedAlbumRowJson
+	for _, arguments := range []map[string]any{
+		{"operation": "album-read", "album_id": "album-shared"},
+		{"operation": "list", "album_id": "album-shared"},
+		{"operation": "read", "photo_id": "photo-shared"},
+	} {
+		if _, err := chat.call(arguments); err == nil || !strings.Contains(err.Error(), "not repeated into a chat") {
+			test.Errorf("%v in a chat: %v", arguments, err)
+		}
+	}
+	for _, operation := range []string{"look", "show"} {
+		result, err := chat.call(map[string]any{"operation": operation, "photo_ids": []string{"photo-shared"}})
+		if err != nil || !strings.Contains(result.Content, "not repeated into a chat") || len(result.Images) != 0 || strings.Contains(result.Content, "attachment_id") {
+			test.Errorf("%s of somebody else's photo in a chat: %v %v", operation, result, err)
+		}
+	}
+
+	// The person's own are read as ever.
+	current.operations.answers["ReadPhotoAlbum"] = ownAlbumRowJson
+	current.operations.answers["ListPhotos"] = `[` + ownRow + `]`
+	for _, arguments := range []map[string]any{
+		{"operation": "album-read", "album_id": "album-own"},
+		{"operation": "list"},
+		{"operation": "read", "photo_id": "photo-own"},
+	} {
+		if _, err := chat.call(arguments); err != nil {
+			test.Errorf("%v of the person's own in a chat: %v", arguments, err)
+		}
+	}
+	if result, err := chat.call(map[string]any{"operation": "look", "photo_ids": []string{"photo-own"}}); err != nil || len(result.Images) != 1 {
+		test.Errorf("the person's own photo is looked at in a chat: %v %v", result, err)
 	}
 }
