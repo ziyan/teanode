@@ -216,3 +216,18 @@ func TestARevokedTokenClosesAGraphSocket(t *testing.T) {
 		}
 	}
 }
+
+// A cookie says nothing about which page opened the extension's socket, so a
+// hello that relies on one, however it is dressed, is refused.
+func TestTheTabSocketTakesNoCookie(t *testing.T) {
+	world := newSocketWorld(t)
+	server := world.serve(t, world.resolver.tabView)
+	header := http.Header{}
+	header.Set("Origin", "https://elsewhere.example")
+	header.Set("Cookie", world.login(t, world.person).String()+"; csrftoken=matching")
+	conn := dialSocket(t, server, header)
+	_ = conn.WriteJSON(map[string]any{"type": "hello", "protocol": tabProtocol, "csrf": "matching", "hasTab": false})
+	if said := readSocket(t, conn); said["type"] != "refused" {
+		t.Fatalf("a hello carried by a cookie was told %v", said)
+	}
+}
