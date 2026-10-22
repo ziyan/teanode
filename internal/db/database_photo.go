@@ -705,6 +705,9 @@ func (self *transaction) photosMatchingInScope(userId string, filter *PhotoFilte
 	query := self.tx.Model(&photoModel{})
 	if scope.isInAlbum {
 		query = query.Where("EXISTS (SELECT 1 FROM photo_album_item WHERE photo_album_item.photo_id = photo.id AND photo_album_item.photo_album_id = ?)", filter.AlbumID)
+		// The photos of a disabled account reach nobody else, as GetPhotoAccess
+		// has it, so they are not listed for a reader who cannot open them.
+		query = query.Where("(photo.user_id = ? OR EXISTS (SELECT 1 FROM \"user\" WHERE \"user\".id = photo.user_id AND \"user\".disabled_at IS NULL))", userId)
 	} else {
 		query = query.Where("photo.user_id = ?", userId)
 	}
