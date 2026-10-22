@@ -3,8 +3,10 @@
 A server often has people on it who know each other: a household, some
 friends, colleagues. A circle is the list of who belongs together. It decides
 nothing by itself; the features that share something between people (chats,
-calendars, memory, payments) are shared with a circle or with one person in
-one, and each of them asks this list who is in it.
+calendars, where a person is, Health, passwords, pages of the agent's memory,
+photo albums and lent skills) are shared with a circle or with one person in
+one, and each of them asks this list who is in it. "What can be shared" below
+lists every kind, to whom, at what levels, and where it is managed.
 
 The reasons for the shape are in
 `docs/decisions/20261016-people-on-one-server-meet-in-circles.md`.
@@ -158,11 +160,38 @@ now share a circle with none of the others; a direct chat stays readable by
 both and takes no new message until they share a circle again.
 
 The same transaction ends what two people said to each other and what one noted
-about the other: relationships, shares of calendars, locations, pages, skills
-and albums, and a contact one linked to the other's account
-(`endContactAccountsOutsideCircles`, see `docs/subsystems/contacts.md`). A
-`CircleMember` carries `linkedContactId`, the caller's own contact linked to
+about the other: relationships, shares of calendars, locations, Health,
+passwords, pages, skills and albums, and a contact one linked to the other's
+account (`endContactAccountsOutsideCircles`, see `docs/subsystems/contacts.md`).
+A `CircleMember` carries `linkedContactId`, the caller's own contact linked to
 that person; it is for the caller alone and is empty in everybody else's view.
+
+What it ends is deleted, not paused. Leaving, being removed and a circle's
+deletion end, for the person who goes (and for every member when the circle is
+deleted), their direct shares with anybody they no longer share any circle with,
+in both directions, and the shares they made to circles they are no longer in.
+None of it comes back when they join again, or when the two meet in another
+circle: they share again if they want to. What other people shared with a circle
+is not deleted, since it is theirs; it stops reaching the person by the join on
+`circle_member` and reaches them again if they rejoin. Deleting a circle also
+deletes its own calendar, its albums and its chat, which belong to it by foreign
+keys. The dialogs on the dashboard and in the iPhone app, the command line's
+questions and the agent's cards say this before it is done.
+
+A map that is open does not keep the last position of somebody it no longer
+reaches: the three operations work out, among the circle's members, whose
+location reached whom before and after (`watchLocationReach`), and send the
+location event naming the people it stopped reaching once the transaction
+commits, as unsharing does.
+
+An operator who puts an account in a circle with `AddCircleMember` (which needs
+only `user:manage`, and brings the account in with no invitation to answer)
+tells the circle's admins: a `circle_member_added` note in the main conversation
+of each admin's agent when it is on, written in the same transaction, and a
+phone notification of the `circle` kind after it commits, and the account is
+recorded in the audit log (`circle_member`). Accepting an invitation to a circle
+that Health is shared with needs a person's own tap, as inviting and putting an
+account in do, since whoever joins reads that Health.
 
 ## Relationships
 
@@ -283,6 +312,36 @@ chats gets its chat the first time one of its members lists their chats. The
 circle's going takes its chat and what was said in it. How a chat is stored
 and read is in `conversations.md`.
 
+## What can be shared
+
+Each kind of share names its grantee in a `grantee_user_id` or a
+`grantee_circle_id` column, and its rows are ended when a circle stops making
+them possible (the last column below). A test lists the tables with such a
+column from `information_schema` and fails when one has no cleanup in
+`endSharesOutsideCircles` (`TestEveryKindOfShareIsEndedWhenACircleStopsMakingItPossible`),
+so a new kind of share cannot ship without one.
+
+| Kind | To whom | Levels | Where it is managed | Ended by |
+| --- | --- | --- | --- | --- |
+| Calendar (`calendar_share`) | one person, or a circle | `busy`, `titles`, `details`, `edit` | Share on the Calendar page; Share my calendar in the iPhone app's calendars sheet; `teanode calendar share`; the calendar tool's `share` | `endCalendarSharesOutsideCircles` |
+| Where a person is (`location_share`) | one person, or a circle | `current`, `history` (the visits and paths, including those from before the share) | Sharing on the Location page and in the iPhone app; `teanode location share`; the location tool | `endLocationSharesOutsideCircles` |
+| Health (`health_share`) | one person, or a circle | chosen categories, as day summaries; more categories only on a person's tap | Settings tab of the Health page; Health in the iPhone app's Settings; `teanode health share` | `endHealthSharesOutsideCircles` |
+| Passwords (`password_share`) | one person, or a circle, item by item | the item, sealed for each person it reaches | Share on an item in Passwords, on the dashboard and in the app; `teanode passwords share` | `endPasswordSharesOutsideCircles` |
+| Pages of the agent's memory (`agent_page_share`) | one person, or a circle | read only, a page and everything under it, with or without the quotes | Share on a page in Knowledge; `teanode agent memory share` | `endPageSharesOutsideCircles` |
+| Photo albums (`photo_album_share`) | one person, or a circle | `view`, `contribute`; whether the location of the photos is included | Share on an album in Photos; `teanode photo album share` | `endPhotoAlbumSharesOutsideCircles` |
+| Lent skills (`skill_share`) | one person | named tools of a skill, approved call by call | Skills on the agent page; `teanode agent skill share` | `endSkillSharesOutsideCircles` |
+
+Four things belong to the circle itself and are not shares: its chat, its
+calendar, its albums, and the list of members. The circle's admins manage them,
+and they go with the circle. The admins can also rename and delete the circle's
+calendar (`SaveCalendar`, `DeleteCircleCalendar`).
+
+Whether somebody is reached is decided when they read, and requires more than
+the circle: the owner's and the reader's accounts enabled, and, for calendars,
+location, Health and passwords, the permission of the feature
+(`calendar:use`, `location:use`, `health:use`, `passwords:use`) for both. An
+owner whose role lost the permission can still list and end what they shared.
+
 ## Where the code is
 
 | What | Where |
@@ -292,7 +351,10 @@ and read is in `conversations.md`.
 | Types, kinds, roles | `internal/models/circle.go` |
 | The permission `circle:use` | `internal/models/permission.go`; held by the Administrator, Operator and Member roles |
 | The operations | `internal/api/v1api/apigraph/circle.go`; the helpers `requireCirclePerson`, `requireCircleMember` and `requireCircleAdmin` are in `authorize.go` |
-| The invitation note and phone notification | `internal/agent/circle_invitation.go` |
+| The invitation note and phone notification, and the note told to admins when an operator puts an account in | `internal/agent/circle_invitation.go` |
+| The cleanup when a circle stops making a share possible | `endSharesOutsideCircles` in `internal/db/database_circle.go`, which calls `endCalendarSharesOutsideCircles` (`database_calendar_share.go`), `endLocationSharesOutsideCircles` (`database_location_share.go`), `endHealthSharesOutsideCircles` (`database_health_share.go`), `endPasswordSharesOutsideCircles` (`database_passwords.go`), `endPageSharesOutsideCircles` (`database_page_share.go`), `endSkillSharesOutsideCircles` (`database_skill_share.go`), `endPhotoAlbumSharesOutsideCircles` (`database_photo_share.go`), and the relationship and contact link cleanups |
+| The share tables | `calendar_share` (`0195`), `agent_page_share` (`0196`), `skill_share` (`0197`), `photo_album_share` (`0224`), `location_share` (`0240`), `health_share` (`0245`), `password_share` (`0251`) in `internal/db/migrations/` |
+| The live map told when a circle change ends a location share | `watchLocationReach` in `internal/api/v1api/apigraph/location_share.go`, called from `circle.go` |
 | Command line | `internal/cmd/circle.go`, `internal/client/circle.go`; `--circle` on `teanode user create` is in `internal/cmd/user.go` |
 | The agent's tool | `internal/agent/tools/circle` |
 | A person's card | `internal/api/v1api/apigraph/person_card.go`, `internal/db/database_person_card.go` (the mail), `internal/client/person_card.go`, `internal/cmd/circle_person.go` |

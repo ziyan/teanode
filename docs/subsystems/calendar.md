@@ -460,7 +460,14 @@ owner, so a share to a circle stops reaching a reader when the owner leaves that
 circle, and a direct share stops when the two no longer share one, whether or
 not any row has been deleted yet. It joins the owner's account too: the shares
 of a disabled account reach nobody while it is off, and reach them again when it
-is switched back on. Nothing compares a calendar's `UserID` with
+is switched back on. And it needs `calendar:use` for the owner and for the
+reader, as Location and Health do, so that taking the permission from a role
+stops what that person kept from being read by others, and stops them reading
+what others shared; the shares stay, and reach again when the role does. The
+owner can still list the shares they made and end them without the permission
+(`ListCalendarShares`, `UnshareCalendar`). A calendar shared at `busy` is listed
+under its owner's name and not under its own title, which can say what is in it
+(`calendarView`). Nothing compares a calendar's `UserID` with
 the caller: a circle's calendar has none (`user_id` is NULL and `circle_id` set,
 exactly one of them). The dashboard's API (`reachCalendar`), CalDAV
 (`calendarAt`), the commands that write (`writableCalendar`) and the agent
