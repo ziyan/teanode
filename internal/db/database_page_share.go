@@ -58,6 +58,12 @@ type PageShareOperation interface {
 	// under them whose summary has a quotation mark in it, which are the only
 	// ones whose summary may be left out of what a reader is shown.
 	ListAgentNodesWithQuoteMarksWithin(agentId string, roots []string) ([]*models.AgentNode, error)
+
+	// ListAgentFactsWithin are the live facts on the pages at these roots or
+	// under them, by identifier, at most limit of those after afterFactId
+	// (empty to start). The shared-memory reader counts what a share would
+	// keep from its reader with it, a batch at a time.
+	ListAgentFactsWithin(agentId string, roots []string, afterFactId string, limit int) ([]*models.AgentFact, error)
 }
 
 type agentPageShareModel struct {
@@ -439,4 +445,28 @@ func (self *transaction) ListAgentNodesWithQuoteMarksWithin(agentId string, root
 		return nil, err
 	}
 	return orderNodesBy(nodes, nodeIds), nil
+}
+
+func (self *transaction) ListAgentFactsWithin(agentId string, roots []string, afterFactId string, limit int) ([]*models.AgentFact, error) {
+	if len(roots) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 500
+	}
+	var factIds []string
+	if err := self.tx.Raw(
+		`SELECT fact."id" FROM "agent_fact" fact
+		 JOIN "agent_node" node ON node."id" = fact."node_id"
+		 WHERE fact."agent_id" = ? AND NOT fact."dormant" AND fact."superseded_by" IS NULL
+		   AND fact."id" > ? AND `+withinRootsCondition+`
+		 ORDER BY fact."id" ASC LIMIT ?`,
+		agentId, afterFactId, pq.Array(roots), limit).Scan(&factIds).Error; err != nil {
+		return nil, err
+	}
+	facts, err := self.GetAgentFacts(agentId, factIds)
+	if err != nil {
+		return nil, err
+	}
+	return orderFactsBy(facts, factIds), nil
 }
