@@ -683,6 +683,12 @@ func (self *authenticator) CreateFirstUser(ctx context.Context, username, passwo
 // current password is what distinguishes the account's owner from whoever
 // walked past their desk.
 func (self *authenticator) ChangePassword(username, current, replacement string) error {
+	// Checking the current password is a guess at it for anybody holding the
+	// session, so it is limited like a sign-in. It shares that limiter under
+	// a key of its own, since the others there are addresses.
+	if !self.loginLimiter.Allow("password:" + username) {
+		return ErrTooManyAttempts
+	}
 	user := self.findUser(username)
 	if user == nil {
 		return ErrInvalidCredentials
