@@ -202,6 +202,7 @@ type Transaction interface {
 	PasswordsOperation
 	PageShareOperation
 	SkillShareOperation
+	RecordingShareOperation
 	ChatOperation
 	ChatAgentOperation
 	AuditOperation
