@@ -388,7 +388,9 @@ func TestATokenSaveRightAfterAnEditKeepsTheEdit(test *testing.T) {
 
 // A document that saves many items and then shares one takes the circle lock
 // first, so a person leaving a circle meanwhile waits for it instead of
-// deadlocking with it.
+// deadlocking with it. Each save is a change of its own, so the leaving may
+// come between two of them: the share is then refused, as one with a person
+// who shares no circle is, and nothing else is.
 func TestADocumentThatSavesThenSharesDoesNotDeadlockWithLeavingACircle(test *testing.T) {
 	world := newPasswordsWorld(test)
 	ada, ben := newPasswordsDevice(test, world.ada), newPasswordsDevice(test, world.ben)
@@ -414,8 +416,14 @@ func TestADocumentThatSavesThenSharesDoesNotDeadlockWithLeavingACircle(test *tes
 		_, failures := world.callWithCredential(test, world.ben, models.CredentialSession, fmt.Sprintf(`mutation { LeaveCircle(circleId: %q) }`, world.home), nil)
 		done <- failures
 	}()
-	_, failures := world.callWithCredential(test, world.ada, models.CredentialSession, document, variables)
-	if len(failures) > 0 {
+	data, failures := world.callWithCredential(test, world.ada, models.CredentialSession, document, variables)
+	for index := 0; index < count; index++ {
+		if data[fmt.Sprintf("a%d", index)] == nil {
+			test.Fatalf("ada's save %d was not made: %v", index, failures)
+		}
+	}
+	isRefusedAfterLeaving := len(failures) == 1 && failures[0] == "api: not found" && data["z"] == nil
+	if len(failures) > 0 && !isRefusedAfterLeaving {
 		test.Fatalf("ada's document: %v", failures)
 	}
 	select {
