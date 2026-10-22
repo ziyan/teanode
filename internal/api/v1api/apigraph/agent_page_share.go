@@ -522,12 +522,9 @@ type UnshareAgentPageArguments struct {
 }
 
 func (self *graph) UnshareAgentPage(ctx context.Context, arguments UnshareAgentPageArguments) (bool, error) {
-	principal, err := self.requirePermission(ctx, models.PermissionAgentUse)
+	principal, err := self.requireShareOwner(ctx)
 	if err != nil {
 		return false, err
-	}
-	if principal.User == nil {
-		return false, api.ErrNotLoggedIn
 	}
 	tx := self.transaction(ctx)
 	share, err := tx.GetPageShare(strings.TrimSpace(arguments.ShareID))

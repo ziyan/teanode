@@ -251,7 +251,10 @@ func (self *graph) tellAboutPhotoAlbumShare(ctx context.Context, sharer *models.
 }
 
 func (self *graph) RemovePhotoAlbumShare(ctx context.Context, arguments PhotoAlbumShareArguments) (bool, error) {
-	principal, err := self.requirePhotosPerson(ctx)
+	if err := self.requireService(models.ServicePhotos); err != nil {
+		return false, err
+	}
+	principal, err := self.requireShareOwner(ctx)
 	if err != nil {
 		return false, err
 	}

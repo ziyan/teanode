@@ -510,12 +510,9 @@ func (self *graph) ownSkillShare(tx db.Transaction, ownerUserId string, terms *m
 }
 
 func (self *graph) UnshareSkill(ctx context.Context, arguments UnshareSkillArguments) (bool, error) {
-	principal, err := self.requirePermission(ctx, models.PermissionAgentUse)
+	principal, err := self.requireShareOwner(ctx)
 	if err != nil {
 		return false, err
-	}
-	if principal.User == nil {
-		return false, api.ErrNotLoggedIn
 	}
 	tx := self.transaction(ctx)
 	share, err := tx.GetSkillShare(strings.TrimSpace(arguments.ShareID))

@@ -347,8 +347,7 @@ list cannot disagree with the check. A kind the caller may not use (no
 `health:use`, the calendar service off, no `agent:use` for recordings and
 finance) is left out of what is shared with them, but not of what they share: a
 person who lost a permission still sees the shares they made, which their
-readers cannot reach while it is gone, and the kind's own unshare operation
-decides whether they can end one. A finance account reached by name and through a circle is
+readers cannot reach while it is gone, and can end each one (Stopping, below). A finance account reached by name and through a circle is
 one row at the higher level, as the Finance page shows it, and the row is the
 share by name, so it can be declined (the circle's share still reaches the
 person afterwards). A share of a memory page that no longer exists (rows left
@@ -362,7 +361,7 @@ person's own are.
 **Stopping** a share is the kind's own operation: `UnshareCalendar`,
 `UnshareLocation`, `SetHealthShare` with no categories, `UnshareAgentPage`,
 `UnshareSkill`, `RemovePhotoAlbumShare`, `UnshareRecording` and
-`UnshareFinanceAccount`. The Sharing page and the iPhone screen call those. Passwords are stopped on the Passwords page, item by item.
+`UnshareFinanceAccount`. The Sharing page and the iPhone screen call those. None of them asks for the kind's permission (`requireShareOwner`, and `requireCalendarShareEnder` for the calendar), so a person whose role lost it can still stop what they shared of any of these, and each deletes only rows the caller owns. Passwords are stopped on the Passwords page, item by item, and need passwords:use.
 
 **Declining** is the other side: `DeclineShare(shareKind, shareId)` ends a share
 that was made to the caller by name, and only that. The row must have the caller

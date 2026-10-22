@@ -72,6 +72,12 @@ var authorizing = map[string]bool{
 	// the permission was taken from their role. The calendar is then refused
 	// unless it is theirs.
 	"requireCalendarShareEnder": true,
+	// requireSignedIn and the caller's account, without the permission of any
+	// kind: for ending the shares a person made of location, Health, photo
+	// albums, memory pages, skills, recordings and finance accounts, which
+	// they may do after the permission was taken from their role. Each
+	// operation then deletes only rows the caller owns.
+	"requireShareOwner": true,
 	// The photo service is on, requirePermission(photos:use), and the
 	// caller's account. Every photo is read through the owner's id.
 	"requirePhotosPerson": true,

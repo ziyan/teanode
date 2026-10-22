@@ -269,8 +269,9 @@ func requireFinanceNotAgent(ctx context.Context) error {
 
 // requireFinanceSharer is the caller as the owner of finance accounts who
 // starts or changes a share: a person with an agent that is on, who is not
-// their agent. Listing and ending shares need only requireFinanceReader, so
-// an owner who has turned the agent off can still see and stop what they share.
+// their agent. Listing shares needs only requireFinanceReader, and ending one
+// needs no permission at all (requireShareOwner), so an owner who has turned the
+// agent off, or whose role lost agent:use, can still stop what they share.
 func (self *graph) requireFinanceSharer(ctx context.Context) (*api.Principal, error) {
 	if err := requireFinanceNotAgent(ctx); err != nil {
 		return nil, err
@@ -283,9 +284,9 @@ func (self *graph) requireFinanceSharer(ctx context.Context) (*api.Principal, er
 }
 
 // requireFinanceReader is the caller as a reader of what others share, and as
-// the owner listing or ending their own shares: a person who may use the agent
-// area, which is the permission finance needs, who is not their agent. Their
-// own agent need not be on.
+// the owner listing their own shares: a person who may use the agent area,
+// which is the permission finance needs, who is not their agent. Their own
+// agent need not be on.
 func (self *graph) requireFinanceReader(ctx context.Context) (*api.Principal, error) {
 	if err := requireFinanceNotAgent(ctx); err != nil {
 		return nil, err
@@ -396,7 +397,10 @@ func isFinanceShareWider(earlier []*models.FinanceShare, saved *models.FinanceSh
 }
 
 func (self *graph) UnshareFinanceAccount(ctx context.Context, arguments UnshareFinanceAccountArguments) (bool, error) {
-	principal, err := self.requireFinanceReader(ctx)
+	if err := requireFinanceNotAgent(ctx); err != nil {
+		return false, err
+	}
+	principal, err := self.requireShareOwner(ctx)
 	if err != nil {
 		return false, err
 	}

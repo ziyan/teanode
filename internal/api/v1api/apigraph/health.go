@@ -1093,7 +1093,16 @@ func (self *graph) ListHealthShares(ctx context.Context) ([]*HealthShareView, er
 }
 
 func (self *graph) SetHealthShare(ctx context.Context, arguments SetHealthShareArguments) (*HealthShareView, error) {
-	principal, err := self.requireHealthPerson(ctx)
+	// Taking a share back, given no categories, asks for no health:use, so
+	// that somebody whose role lost it can still end what they shared.
+	// Sharing any category needs it.
+	var principal *api.Principal
+	var err error
+	if len(arguments.HealthCategories) == 0 {
+		principal, err = self.requireShareOwner(ctx)
+	} else {
+		principal, err = self.requireHealthPerson(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
