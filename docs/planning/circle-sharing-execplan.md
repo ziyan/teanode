@@ -29,13 +29,16 @@ To see it working: on a development server with three accounts in one circle "Fa
 - [x] (2026-10-22) Milestone 7: recording sharing (migration 0255).
 - [x] (2026-10-22) Milestone 8: a circle's own address book (migration 0256).
 - [ ] (in progress 2026-10-22) Integration: one branch, every package's tests, the dashboard checks, a development server walk at 1400 and 390 wide in light and dark, the iPhone screenshots from CI.
-- [ ] Review rounds until a round finds nothing above low, then deploy and TestFlight.
+- [x] (2026-10-22) Review round 1 (four reviewers: finance and recordings, the circle address book, migrations and the Sharing page, the dashboard and iPhone): one high (a calendar shared at busy showed its title on the Sharing page), about fifteen medium, all fixed, among them a contact id that named two books, a summary that carried withheld facts, a spending level that could be read a day at a time, and the agent's own computer commands not counted as the agent's.
+- [ ] Review round 2, then deploy and TestFlight.
 
 ## Surprises & Discoveries
 
 - Observation: photo album shares were covered by the circle cleanup all along, under another name (`releasePhotoAlbumsOutsideCircles`), which made them look forgotten.
   Evidence: `internal/db/database_circle.go`, the last call in `endSharesOutsideCircles`. Milestone 4 renames it `endPhotoAlbumSharesOutsideCircles`.
 - Observation: a test in the photo work expected a card text its own fixture could not produce (the share in the fixture had face names off), so it failed on its branch alone; the fixture was corrected at integration.
+- Observation: the computer program already set `TEANODE_AGENT_COMMAND` on every command the agent runs; only Passwords read it. The command line now sends it as a header and the server counts such a request as the agent's, which closes the route by which the agent's shell could read shared Health, finance or recordings.
+  Evidence: `internal/client/client.go`, `graph.auditPrincipal`.
 - Observation: no photo original on the server was old enough to move to the second server when the transition was shortened to 7 days, because the import began on 2026-10-17. Not part of this plan's code; recorded because it decided the storage timing.
 
 ## Decision Log
