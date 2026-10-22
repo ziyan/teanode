@@ -59,3 +59,41 @@ func TestTheSharedCalendarsLineIsOnlyWithTheGrantOfTheOwnCalendar(t *testing.T) 
 		t.Errorf("without it they are listed as closed: %v", withheld)
 	}
 }
+
+// bookListOperations answers the address book list with the books it is given.
+type bookListOperations struct {
+	books string
+}
+
+func (self *bookListOperations) Execute(_ context.Context, document string, _ map[string]any, result any) error {
+	answer := `{}`
+	if strings.Contains(document, "ListAddressBooks") {
+		answer = `{"ListAddressBooks":` + self.books + `}`
+	}
+	return json.Unmarshal([]byte(answer), result)
+}
+
+func (self *bookListOperations) Permissions() *models.EffectivePermissions {
+	return models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionContactsUse}})
+}
+
+// A circle's address book is neither given to the agent nor counted among the
+// books the person has withheld: it is not one person's to give.
+func TestACircleAddressBookIsNotInThePromptsCollections(t *testing.T) {
+	configuration := config.Default()
+	run := &AskRun{agent: &Agent{settings: &Settings{Configuration: func() *config.Configuration { return configuration }}},
+		settings: &AskSettings{Agent: &models.Agent{ID: "agent01"}, Owner: &models.User{ID: "user01", Username: "robin"}, Operations: &bookListOperations{
+			books: `[{"name":"Family","contacts":9,"agentGranted":false,"isCircleBook":true}]`,
+		}}}
+	granted, withheld := run.collections(context.Background())
+	if strings.Contains(strings.Join(granted, "\n"), "address book") || strings.Contains(strings.Join(withheld, "\n"), "address book") {
+		t.Errorf("a circle's book is neither given nor withheld: %v %v", granted, withheld)
+	}
+
+	run.settings.Operations = &bookListOperations{
+		books: `[{"name":"Contacts","contacts":2,"agentGranted":false,"isCircleBook":false},{"name":"Family","contacts":9,"agentGranted":false,"isCircleBook":true}]`,
+	}
+	if _, withheld = run.collections(context.Background()); !strings.Contains(strings.Join(withheld, "\n"), "their address book") {
+		t.Errorf("their own book is withheld: %v", withheld)
+	}
+}
