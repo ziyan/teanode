@@ -12192,6 +12192,15 @@ main.content:has(> .knowledge-frame) {
   line-height: 1.4;
 }
 
+/* The address book page's picker for which book is shown: the person's own,
+   or a circle's. */
+.book-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
 /* The suggestions at the top of Contacts: one line for each contact, the
    person's picture, what is suggested and the two answers. On a phone the
    answers drop under the words. */

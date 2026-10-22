@@ -5,12 +5,21 @@ import "context"
 // A person's own address book: the contacts they keep, as against the
 // addresses a mailbox learned from traffic, which are in mailbox.go.
 
-// AddressBook is one address book and how much is in it.
+// AddressBook is one address book and how much is in it: the signed-in
+// account's own, or a circle's they are in.
 type AddressBook struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Contacts    int    `json:"contacts"`
+
+	// CircleID, CircleName and IsCircleBook say whose a circle's book is; the
+	// first is null for the account's own. CanManage is that the account may
+	// rename it and, for a circle's, delete it.
+	CircleID     *string `json:"circleId"`
+	CircleName   string  `json:"circleName"`
+	IsCircleBook bool    `json:"isCircleBook"`
+	CanManage    bool    `json:"canManage"`
 }
 
 // Contact is one person kept in an address book. Card is the whole of it and
@@ -68,7 +77,23 @@ type Address struct {
 }
 
 const (
+	addressBookSelection = `{ id name description contacts circleId circleName isCircleBook canManage }`
+
 	DocumentListAddressBooks = `query { ListAddressBooks { id name description contacts } }`
+
+	// DocumentListReachableAddressBooks is the caller's own books and then
+	// their circles', with whose each is.
+	DocumentListReachableAddressBooks = `query { ListReachableAddressBooks ` + addressBookSelection + ` }`
+
+	DocumentCreateCircleAddressBook = `mutation ($circleId: String!, $name: String) {
+  CreateCircleAddressBook(circleId: $circleId, name: $name) ` + addressBookSelection + `
+}`
+
+	DocumentSaveAddressBook = `mutation ($id: String!, $name: String, $description: String) {
+  SaveAddressBook(id: $id, name: $name, description: $description) ` + addressBookSelection + `
+}`
+
+	DocumentDeleteCircleAddressBook = `mutation ($addressBookId: String!) { DeleteCircleAddressBook(addressBookId: $addressBookId) }`
 
 	contactAccountSelection = `{ userId username name avatarUrl avatarColorIndex }`
 
@@ -124,6 +149,54 @@ func ListAddressBooks(ctx context.Context, connection *Client) ([]*AddressBook, 
 		return nil, err
 	}
 	return result.ListAddressBooks, nil
+}
+
+// CreateCircleAddressBook makes the address book a circle keeps for itself.
+func CreateCircleAddressBook(ctx context.Context, executor Executor, circleId, name string) (*AddressBook, error) {
+	arguments := map[string]any{"circleId": circleId, "name": nil}
+	if name != "" {
+		arguments["name"] = name
+	}
+	var result struct {
+		CreateCircleAddressBook *AddressBook `json:"CreateCircleAddressBook"`
+	}
+	if err := executor.Execute(ctx, DocumentCreateCircleAddressBook, arguments, &result); err != nil {
+		return nil, err
+	}
+	return result.CreateCircleAddressBook, nil
+}
+
+// SaveAddressBook renames a book and changes what it says about itself; an
+// empty name keeps the old one.
+func SaveAddressBook(ctx context.Context, executor Executor, id, name, description string) (*AddressBook, error) {
+	var result struct {
+		SaveAddressBook *AddressBook `json:"SaveAddressBook"`
+	}
+	if err := executor.Execute(ctx, DocumentSaveAddressBook, map[string]any{"id": id, "name": name, "description": description}, &result); err != nil {
+		return nil, err
+	}
+	return result.SaveAddressBook, nil
+}
+
+// DeleteCircleAddressBook deletes a circle's address book with every card in
+// it.
+func DeleteCircleAddressBook(ctx context.Context, executor Executor, addressBookId string) error {
+	var result struct {
+		DeleteCircleAddressBook bool `json:"DeleteCircleAddressBook"`
+	}
+	return executor.Execute(ctx, DocumentDeleteCircleAddressBook, map[string]any{"addressBookId": addressBookId}, &result)
+}
+
+// ListReachableAddressBooks are the caller's own address books and then the
+// books of the circles they are in.
+func ListReachableAddressBooks(ctx context.Context, executor Executor) ([]*AddressBook, error) {
+	var result struct {
+		ListReachableAddressBooks []*AddressBook `json:"ListReachableAddressBooks"`
+	}
+	if err := executor.Execute(ctx, DocumentListReachableAddressBooks, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.ListReachableAddressBooks, nil
 }
 
 // ListContacts are the contacts in one book, narrowed by a query when there

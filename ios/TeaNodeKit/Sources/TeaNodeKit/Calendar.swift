@@ -342,11 +342,47 @@ public enum CalendarDates {
     }
 }
 
-/// AddressBook is the person's address book.
+/// AddressBook is an address book the person can use: their own, or one a
+/// circle they are in keeps for itself, which everyone in the circle reads and
+/// edits. The fields after `contacts` come only from the list that has the
+/// circles' books; an older answer has none, and the book is the person's own.
 public struct AddressBook: Codable, Identifiable, Hashable, Sendable {
     public let id: String
     public let name: String
     public let contacts: Int?
+    /// What the book says about itself, kept when it is renamed.
+    public let description: String?
+    /// The circle a circle's book belongs to.
+    public let circleId: String?
+    public let circleName: String?
+    public let isCircleBook: Bool?
+    /// Whether the person may rename it and, for a circle's, delete it: its
+    /// owner, or an admin of its circle.
+    public let canManage: Bool?
+
+    /// Whether this is a circle's book.
+    public var isOfACircle: Bool { isCircleBook == true }
+
+    /// What a list calls the book: "Contacts" for the person's own, and for a
+    /// circle's its name, with the circle's when the two differ.
+    public var shownName: String {
+        guard isOfACircle, let circleName, !circleName.isEmpty, circleName != name else { return name }
+        return "\(name) (\(circleName))"
+    }
+
+    public init(
+        id: String, name: String, contacts: Int? = nil, description: String? = nil, circleId: String? = nil, circleName: String? = nil,
+        isCircleBook: Bool? = nil, canManage: Bool? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.contacts = contacts
+        self.description = description
+        self.circleId = circleId
+        self.circleName = circleName
+        self.isCircleBook = isCircleBook
+        self.canManage = canManage
+    }
 }
 
 /// ContactSummary is a contact as the list shows it.
@@ -369,6 +405,13 @@ public struct ContactSummary: Codable, Identifiable, Hashable, Sendable {
     }
 
     public var photoPath: String { "/api/v1/contacts/\(id)/photo" }
+
+    /// Where a contact in a circle's book has its picture: the book is named,
+    /// since the server looks in the person's own books first.
+    public func pictureAddress(inAddressBook addressBookId: String?) -> String {
+        guard let addressBookId, !addressBookId.isEmpty else { return photoPath }
+        return "\(photoPath)?addressBookId=\(addressBookId)"
+    }
 }
 
 /// ContactAddress is one postal address of a contact.
@@ -526,6 +569,23 @@ extension Documents {
     public static let addressBooks = """
         query { ListAddressBooks { id name contacts } }
         """
+    /// The person's own address books and then their circles'.
+    public static let reachableAddressBooks = """
+        query { ListReachableAddressBooks { id name description contacts circleId circleName isCircleBook canManage } }
+        """
+    public static let createCircleAddressBook = """
+        mutation ($circleId: String!, $name: String) {
+          CreateCircleAddressBook(circleId: $circleId, name: $name) { id name description contacts circleId circleName isCircleBook canManage }
+        }
+        """
+    public static let saveAddressBook = """
+        mutation ($id: String!, $name: String, $description: String) {
+          SaveAddressBook(id: $id, name: $name, description: $description) { id name description contacts circleId circleName isCircleBook canManage }
+        }
+        """
+    public static let deleteCircleAddressBook = """
+        mutation ($addressBookId: String!) { DeleteCircleAddressBook(addressBookId: $addressBookId) }
+        """
     public static let contacts = """
         query ($addressBookId: String!, $query: String, $first: Int) {
           ListContacts(addressBookId: $addressBookId, query: $query, first: $first) {
@@ -587,7 +647,9 @@ extension Documents {
         "calendarSharePeople": calendarSharePeople, "calendarShareCircles": calendarShareCircles,
         "createCircleCalendar": createCircleCalendar, "saveCalendar": saveCalendar,
         "reminders": reminders, "saveReminder": saveReminder, "setReminderDone": setReminderDone,
-        "deleteReminder": deleteReminder, "addressBooks": addressBooks, "contacts": contacts, "contact": contact,
+        "deleteReminder": deleteReminder, "addressBooks": addressBooks, "reachableAddressBooks": reachableAddressBooks,
+        "createCircleAddressBook": createCircleAddressBook, "saveAddressBook": saveAddressBook,
+        "deleteCircleAddressBook": deleteCircleAddressBook, "contacts": contacts, "contact": contact,
         "saveContact": saveContact, "importContact": importContact, "deleteContact": deleteContact, "removeContactPicture": removeContactPicture, "myContact": myContact, "setMyContact": setMyContact,
         "setContactAccount": setContactAccount, "contactAccountSuggestions": contactAccountSuggestions,
     ]
@@ -769,6 +831,38 @@ extension Connection {
     public func addressBooks() async throws -> [AddressBook] {
         struct Answer: Decodable, Sendable { let ListAddressBooks: [AddressBook] }
         return try await execute(Documents.addressBooks, as: Answer.self).ListAddressBooks
+    }
+
+    /// The person's own address books and then the books of the circles they
+    /// are in. `addressBooks()` stays their own alone, which is what the
+    /// photos, the recordings and the person's card tie to.
+    public func reachableAddressBooks() async throws -> [AddressBook] {
+        struct Answer: Decodable, Sendable { let ListReachableAddressBooks: [AddressBook] }
+        return try await execute(Documents.reachableAddressBooks, as: Answer.self).ListReachableAddressBooks
+    }
+
+    /// Makes the address book a circle keeps for itself; any member of the
+    /// circle may. A circle has one.
+    public func createCircleAddressBook(circleId: String, name: String? = nil) async throws -> AddressBook {
+        struct Answer: Decodable, Sendable { let CreateCircleAddressBook: AddressBook }
+        var variables: [String: JSONValue] = ["circleId": .string(circleId)]
+        if let name, !name.isEmpty { variables["name"] = .string(name) }
+        return try await execute(Documents.createCircleAddressBook, variables: variables, as: Answer.self).CreateCircleAddressBook
+    }
+
+    /// Renames an address book, sending back what it says about itself; a
+    /// circle's only by an admin of the circle.
+    public func renameAddressBook(_ book: AddressBook, to name: String) async throws -> AddressBook {
+        struct Answer: Decodable, Sendable { let SaveAddressBook: AddressBook }
+        let variables: [String: JSONValue] = ["id": .string(book.id), "name": .string(name), "description": .string(book.description ?? "")]
+        return try await execute(Documents.saveAddressBook, variables: variables, as: Answer.self).SaveAddressBook
+    }
+
+    /// Deletes a circle's address book with every contact in it; only an admin
+    /// of the circle may.
+    public func deleteCircleAddressBook(_ addressBookId: String) async throws {
+        struct Answer: Decodable, Sendable { let DeleteCircleAddressBook: Bool? }
+        _ = try await execute(Documents.deleteCircleAddressBook, variables: ["addressBookId": .string(addressBookId)], as: Answer.self)
     }
 
     public func contacts(addressBookId: String, matching words: String? = nil, first: Int? = nil) async throws -> [ContactSummary] {

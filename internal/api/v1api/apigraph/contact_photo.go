@@ -57,17 +57,32 @@ func (self *graph) contactPhotoView(response http.ResponseWriter, request *http.
 	}
 	contactId := strings.TrimSpace(mux.Vars(request)["contactId"])
 
-	// Through the address book, which is checked to be this person's: a
-	// contact identifier is the file name a client chose and is unique
-	// only inside one book, so it says nothing about whose it is.
+	// Through the address book, which is checked to be one this person may
+	// use, their own or their circle's: a contact identifier is the file name
+	// a client chose and is unique only inside one book, so it says nothing
+	// about whose it is. A client that knows the book says so, and only that
+	// book is looked in; without it the person's own books come first.
+	addressBookId := strings.TrimSpace(request.URL.Query().Get("addressBookId"))
 	var found *models.Contact
 	if err := self.database.TransactionContext(request.Context(), func(tx db.Transaction) error {
-		books, err := tx.ListAddressBooks(user.ID)
+		if addressBookId != "" {
+			book, err := tx.GetAddressBook(addressBookId)
+			if err != nil || book == nil {
+				return err
+			}
+			bookAccess, err := tx.AddressBookAccess(user.ID, book)
+			if err != nil || !bookAccess.CanEdit {
+				return err
+			}
+			found, err = tx.GetContact(book.ID, contactId)
+			return err
+		}
+		reachable, err := tx.ListReachableAddressBooks(user.ID)
 		if err != nil {
 			return err
 		}
-		for _, book := range books {
-			contact, err := tx.GetContact(book.ID, contactId)
+		for _, each := range reachable {
+			contact, err := tx.GetContact(each.Book.ID, contactId)
 			if err != nil {
 				return err
 			}

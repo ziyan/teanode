@@ -179,3 +179,28 @@ func TestAnAddressBookThatIsNotGrantedIsRefused(test *testing.T) {
 		test.Errorf("a granted book is read: %v", err)
 	}
 }
+
+// An action that names only a contact is refused for a contact that is in no
+// book they gave you, such as a card in a circle's address book, which the
+// person can reach and the agent is never given.
+func TestAnActionOnAContactOutsideTheGivenBooksIsRefused(test *testing.T) {
+	operations := &fakeBookOperations{answers: map[string]string{
+		"ListAddressBooks": `[{"id":"book-family","name":"Family","contacts":3,"agentGranted":false},{"id":"book-one","name":"Contacts","contacts":2,"agentGranted":true}]`,
+		"ListContacts":     `[` + samContact + `]`,
+		"GetContact":       `{"id":"contact-kim","addressBookId":"book-family","name":"Kim Example"}`,
+	}}
+	for _, arguments := range []string{
+		`{"action":"get","id":"contact-kim"}`,
+		`{"action":"remove","id":"contact-kim"}`,
+		`{"action":"remove-picture","id":"contact-kim"}`,
+	} {
+		if _, err := callContactBook(test, operations, arguments); err == nil || !strings.Contains(err.Error(), "not in an address book they have given you") {
+			test.Errorf("%s reached a card outside the given books: %v", arguments, err)
+		}
+	}
+
+	operations.answers["GetContact"] = `{"id":"contact-sam","addressBookId":"book-one","name":"Sam Example"}`
+	if result, err := callContactBook(test, operations, `{"action":"get","id":"contact-sam"}`); err != nil || !strings.Contains(result.Content, "Sam Example") || strings.Contains(result.Content, "book-one") {
+		test.Fatalf("a contact in the given book is read, without its book shown: %v", err)
+	}
+}

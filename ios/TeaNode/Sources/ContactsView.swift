@@ -2,11 +2,20 @@ import SwiftUI
 import TeaNodeKit
 
 /// ContactsModel is the person's address book, as the dashboard's Contacts
-/// page shows it: searched as they type, and which contact is them.
+/// page shows it: searched as they type, and which contact is them. A circle
+/// has an address book of its own too, which everyone in it reads and edits:
+/// `books` has the person's own and then their circles', and `addressBook` is
+/// the one on screen.
 @MainActor
 @Observable
 final class ContactsModel {
     private(set) var addressBook: AddressBook?
+    /// The address books the person can use: their own first, then their
+    /// circles'. One book is the person's own alone, as an older server lists.
+    private(set) var books: [AddressBook] = []
+    /// The circles the person is in that have no address book yet, to offer
+    /// making one.
+    private(set) var circlesWithoutBook: [PeopleCircle] = []
     private(set) var contacts: [ContactSummary] = []
     private(set) var myContactId: String?
     private(set) var isLoaded = false
@@ -76,12 +85,98 @@ final class ContactsModel {
         }
     }
 
+    /// Whether the book on screen is a circle's, which everyone in the circle
+    /// edits. What is the person's own (the card of a person, which contact is
+    /// them, the links to their circles, importing from the phone) is not
+    /// offered there.
+    var isShowingCircleBook: Bool { addressBook?.isOfACircle == true }
+
+    /// What the screen is called: Contacts, or the circle's book.
+    var title: String {
+        if isShowingCircleBook, let addressBook { return addressBook.shownName }
+        return String(localized: "Contacts")
+    }
+
     /// The address book's id, for a contact opened before the list has read
     /// it. Nothing is kept: the list's own read sets the book and which
-    /// contact is the person.
+    /// contact is the person. A contact opened by a link is the person's own,
+    /// so it is their own book's id, whichever book is on screen.
     func readAddressBookId() async -> String? {
-        if let addressBook { return addressBook.id }
+        if let addressBook, !addressBook.isOfACircle { return addressBook.id }
         return (try? await connection.addressBooks())?.first?.id
+    }
+
+    /// The books the person can use. A server that does not list the circles'
+    /// is asked for the person's own.
+    private func readBooks() async throws -> [AddressBook] {
+        if let reachable = try? await connection.reachableAddressBooks(), !reachable.isEmpty { return reachable }
+        return try await connection.addressBooks()
+    }
+
+    /// Shows another of the person's books.
+    func choose(_ book: AddressBook) async {
+        guard book.id != addressBook?.id else { return }
+        addressBook = book
+        contacts = []
+        isLoaded = false
+        await load()
+    }
+
+    /// Goes back to the person's own book, which is where a contact opened by
+    /// a link is.
+    func chooseOwnBook() async {
+        guard let own = books.first(where: { !$0.isOfACircle }) else { return }
+        await choose(own)
+    }
+
+    /// Reads which circles have no address book of their own. Quietly: a
+    /// person in no circle, or a server without them, is offered none.
+    func loadCirclesWithoutBook() async {
+        guard let circles = try? await connection.circles() else { return }
+        let withBook = Set(books.compactMap(\.circleId))
+        circlesWithoutBook = circles.filter { !withBook.contains($0.id) }
+    }
+
+    /// Makes the circle's address book and shows it.
+    func makeBook(for circle: PeopleCircle) async {
+        do {
+            let made = try await connection.createCircleAddressBook(circleId: circle.id)
+            doneText = String(localized: "Address book made")
+            books = try await readBooks()
+            await loadCirclesWithoutBook()
+            await choose(books.first(where: { $0.id == made.id }) ?? made)
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+        }
+    }
+
+    func renameBook(to name: String) async {
+        guard let addressBook, addressBook.isOfACircle else { return }
+        let trimmed = name.trimmed
+        guard !trimmed.isEmpty, trimmed != addressBook.name else { return }
+        do {
+            let renamed = try await connection.renameAddressBook(addressBook, to: trimmed)
+            doneText = String(localized: "Address book renamed")
+            books = books.map { $0.id == renamed.id ? renamed : $0 }
+            self.addressBook = renamed
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+        }
+    }
+
+    /// Deletes the circle's book with every contact in it, and goes back to the
+    /// person's own.
+    func deleteBook() async {
+        guard let addressBook, addressBook.isOfACircle else { return }
+        do {
+            try await connection.deleteCircleAddressBook(addressBook.id)
+            doneText = String(localized: "Address book deleted")
+            books.removeAll { $0.id == addressBook.id }
+            await loadCirclesWithoutBook()
+            await chooseOwnBook()
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+        }
     }
 
     /// Reads the address book and which contact is the person, without the
@@ -96,7 +191,8 @@ final class ContactsModel {
     func load() async {
         do {
             if addressBook == nil {
-                addressBook = try await connection.addressBooks().first
+                books = try await readBooks()
+                addressBook = books.first
                 myContactId = try? await connection.myContactId()
             }
             guard let addressBook else {
@@ -155,6 +251,13 @@ struct ContactsScreen: View {
     @State private var isImportingFromPhone = false
     @State private var path = NavigationPath()
     @Environment(AppModel.self) private var app
+    /// The contact of a circle's book whose form is open, and the one the
+    /// person is asked about removing.
+    @State private var editedCircleContact: ContactSummary?
+    @State private var removingCircleContact: ContactSummary?
+    @State private var isRenamingBook = false
+    @State private var bookNameDraft = ""
+    @State private var isConfirmingBookDeletion = false
 
     init(connection: Connection) {
         _model = State(initialValue: ContactsModel(connection: connection))
@@ -165,7 +268,13 @@ struct ContactsScreen: View {
             // Laid out as the mail and recordings lists are, under a letter
             // instead of a period: no chevrons, no lines, rows close together.
             List {
-                if model.searchText.isEmpty, !model.shownSuggestions.isEmpty {
+                if model.isShowingCircleBook, let circleName = model.addressBook?.circleName {
+                    Text("Everyone in \(circleName) can read and change this address book. Your own contacts are not shared.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .listRowSeparator(.hidden)
+                }
+                if model.searchText.isEmpty, !model.isShowingCircleBook, !model.shownSuggestions.isEmpty {
                     ListPeriodHeader(title: String(localized: "Contacts that may be people in your circles"))
                         .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 2, trailing: 16))
                         .listRowSeparator(.hidden)
@@ -182,17 +291,32 @@ struct ContactsScreen: View {
                         .listRowSeparator(.hidden)
                         .accessibilityAddTraits(.isHeader)
                     ForEach(section.contacts) { contact in
-                        NavigationLink(value: contact.id) {
-                            ContactRow(contact: contact, isMine: contact.id == model.myContactId)
+                        if model.isShowingCircleBook {
+                            circleContactRow(contact)
+                        } else {
+                            NavigationLink(value: contact.id) {
+                                ContactRow(contact: contact, isMine: contact.id == model.myContactId)
+                            }
+                            .navigationLinkIndicatorVisibility(.hidden)
+                            .listRowInsets(ListRowSpacing.insets)
+                            .listRowSeparator(.hidden)
                         }
-                        .navigationLinkIndicatorVisibility(.hidden)
-                        .listRowInsets(ListRowSpacing.insets)
-                        .listRowSeparator(.hidden)
                     }
                 }
             }
             .listStyle(.plain)
-            .navigationTitle("Contacts")
+            .navigationTitle(model.title)
+            // The books the person can use are chosen under the title, as Finance and Photos choose
+            // theirs; with only their own there is nothing to choose.
+            .toolbarTitleMenu {
+                if model.books.count > 1 {
+                    Picker("Address book", selection: bookSelection) {
+                        ForEach(model.books) { book in
+                            Text(verbatim: book.isOfACircle ? book.shownName : String(localized: "Your contacts")).tag(book.id)
+                        }
+                    }
+                }
+            }
             .navigationDestination(for: String.self) { contactId in
                 ContactCardDestination(model: model, contactId: contactId)
             }
@@ -206,6 +330,16 @@ struct ContactsScreen: View {
                 await model.load()
             }
             .task { await model.loadSuggestions() }
+            .task(id: model.books.count) { await model.loadCirclesWithoutBook() }
+            #if DEBUG
+                // `-TeaNodeScreen contacts-circle-book`: the Home circle's address book.
+                .task(id: model.books.count) {
+                    guard DemoServer.isRequested, DemoServer.screen == "contacts-circle-book",
+                        let book = model.books.first(where: { $0.isOfACircle })
+                    else { return }
+                    await model.choose(book)
+                }
+            #endif
             .refreshable {
                 await model.load()
                 await model.loadSuggestions()
@@ -213,7 +347,11 @@ struct ContactsScreen: View {
             .overlay {
                 if model.isLoaded, model.contacts.isEmpty {
                     if model.searchText.isEmpty {
-                        ContentUnavailableView("No contacts yet", systemImage: "person.crop.circle", description: Text("Add one with +, or save a sender from a message."))
+                        if model.isShowingCircleBook {
+                            ContentUnavailableView("No contacts yet", systemImage: "person.crop.circle", description: Text("Anyone in the circle can add one with +."))
+                        } else {
+                            ContentUnavailableView("No contacts yet", systemImage: "person.crop.circle", description: Text("Add one with +, or save a sender from a message."))
+                        }
                     } else {
                         ContentUnavailableView.search(text: model.searchText)
                     }
@@ -233,15 +371,50 @@ struct ContactsScreen: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        Button {
-                            isImportingFromPhone = true
-                        } label: {
-                            Label("Import from iPhone", systemImage: "square.and.arrow.down")
+                        if !model.isShowingCircleBook {
+                            Button {
+                                isImportingFromPhone = true
+                            } label: {
+                                Label("Import from iPhone", systemImage: "square.and.arrow.down")
+                            }
+                        }
+                        ForEach(model.circlesWithoutBook) { circle in
+                            Button {
+                                Task { await model.makeBook(for: circle) }
+                            } label: {
+                                Label(
+                                    circle.knownCircleKind == .family
+                                        ? String(localized: "Make a family address book for \(circle.name)")
+                                        : String(localized: "Make a shared address book for \(circle.name)"),
+                                    systemImage: "person.crop.rectangle.stack")
+                            }
+                        }
+                        if model.isShowingCircleBook, model.addressBook?.canManage == true {
+                            Button {
+                                bookNameDraft = model.addressBook?.name ?? ""
+                                isRenamingBook = true
+                            } label: {
+                                Label("Rename address book", systemImage: "pencil")
+                            }
+                            Button(role: .destructive) {
+                                isConfirmingBookDeletion = true
+                            } label: {
+                                Label("Delete address book", systemImage: "trash")
+                            }
+                            .tint(.red)
                         }
                     } label: {
                         Label("More", systemImage: "ellipsis")
                     }
                     .disabled(model.addressBook == nil)
+                    // Attached to the menu, since the item that asks goes away with it.
+                    .confirmationDialog("Delete this address book?", isPresented: $isConfirmingBookDeletion, titleVisibility: .visible) {
+                        Button("Delete address book", role: .destructive) {
+                            Task { await model.deleteBook() }
+                        }
+                    } message: {
+                        Text("It is deleted with every contact in it for everyone in \(model.addressBook?.circleName ?? ""). Devices synchronizing it lose the contacts too.")
+                    }
                 }
             }
         }
@@ -251,6 +424,8 @@ struct ContactsScreen: View {
             guard let contactId else { return }
             app.openedContactId = nil
             path = NavigationPath()
+            // A link names a contact of the person's own.
+            Task { await model.chooseOwnBook() }
             path.append(contactId)
         }
         // The words the Search tab's Show all in Contacts carries.
@@ -263,12 +438,107 @@ struct ContactsScreen: View {
         .sheet(isPresented: $isAdding) {
             ContactEditor(model: model, contact: nil) { _ in }
         }
+        .sheet(item: $editedCircleContact) { contact in
+            CircleContactEditorSheet(model: model, contactId: contact.id)
+        }
+        .alert("Rename the address book", isPresented: $isRenamingBook) {
+            TextField("Name", text: $bookNameDraft)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") { Task { await model.renameBook(to: bookNameDraft) } }
+        }
         .sheet(isPresented: $isImportingFromPhone) {
             if let addressBook = model.addressBook {
                 ContactImportView(contacts: model, addressBookId: addressBook.id)
             }
         }
         .toast(done: $model.doneText, problem: $model.problemText)
+    }
+}
+
+extension ContactsScreen {
+    /// Chooses which of the person's books is on screen from the title menu.
+    private var bookSelection: Binding<String> {
+        Binding(
+            get: { model.addressBook?.id ?? "" },
+            set: { chosenId in
+                guard let book = model.books.first(where: { $0.id == chosenId }) else { return }
+                Task { await model.choose(book) }
+            })
+    }
+
+    /// A contact of a circle's book. It has no card of its own page, since that
+    /// is the person's view of their own contacts: pressing it opens its form,
+    /// and removing it, which everyone in the circle may, is the swipe and the
+    /// long press.
+    private func circleContactRow(_ contact: ContactSummary) -> some View {
+        Button {
+            editedCircleContact = contact
+        } label: {
+            ContactRow(contact: contact, isMine: false, addressBookId: model.addressBook?.id)
+        }
+        .foregroundStyle(.primary)
+        .listRowInsets(ListRowSpacing.insets)
+        .listRowSeparator(.hidden)
+        .confirmationDialog(
+            "Remove from the address book?", isPresented: Binding(get: { removingCircleContact?.id == contact.id }, set: { if !$0 { removingCircleContact = nil } }),
+            titleVisibility: .visible, presenting: removingCircleContact
+        ) { pending in
+            Button("Remove \(pending.shownName)", role: .destructive) {
+                Task { _ = await model.delete(pending.id) }
+            }
+        } message: { pending in
+            Text("\(pending.shownName) is removed for everyone in \(model.addressBook?.circleName ?? ""), and from the devices that synchronize it.")
+        }
+        .swipeActions {
+            removeCircleContactAction(contact)
+        }
+        .contextMenu {
+            removeCircleContactAction(contact)
+        }
+    }
+
+    @ViewBuilder
+    private func removeCircleContactAction(_ contact: ContactSummary) -> some View {
+        Button("Remove", systemImage: "trash", role: .destructive) { removingCircleContact = contact }
+            .tint(.red)
+    }
+}
+
+/// CircleContactEditorSheet is the form of a contact in a circle's book: the
+/// contact is read whole first, as the card of a person does before it opens
+/// the editor, since the form sends every box and an empty one clears what was
+/// there.
+struct CircleContactEditorSheet: View {
+    let model: ContactsModel
+    let contactId: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var contact: ContactDetail?
+    @State private var failureText: String?
+
+    var body: some View {
+        Group {
+            if let contact {
+                ContactEditor(model: model, contact: contact) { _ in }
+            } else if let failureText {
+                NavigationStack {
+                    ContentUnavailableView("That contact could not be read", systemImage: "person.crop.circle.badge.exclamationmark", description: Text(failureText))
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Cancel") { dismiss() }
+                            }
+                        }
+                }
+            } else {
+                ProgressView()
+            }
+        }
+        .task {
+            do {
+                contact = try await model.connection.contact(contactId)
+            } catch {
+                failureText = error.refusalReason(orSay: String(localized: "Check your connection and try again."))
+            }
+        }
     }
 }
 
@@ -316,10 +586,12 @@ struct ContactSuggestionRows: View {
 struct ContactRow: View {
     let contact: ContactSummary
     let isMine: Bool
+    /// The book a circle's contact is in, which its picture is asked for with.
+    var addressBookId: String?
 
     var body: some View {
         HStack(spacing: 12) {
-            ContactPicture(contactId: contact.id, name: contact.shownName, hasPhoto: contact.hasPhoto == true, size: 40)
+            ContactPicture(contactId: contact.id, name: contact.shownName, hasPhoto: contact.hasPhoto == true, size: 40, addressBookId: addressBookId)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(contact.shownName.isEmpty ? String(localized: "No name") : contact.shownName)
@@ -379,6 +651,9 @@ struct ContactPicture: View {
     let name: String
     let hasPhoto: Bool
     let size: CGFloat
+    /// Set for a contact in a circle's book, whose picture the server looks for
+    /// in the person's own books first.
+    var addressBookId: String?
     @Environment(AppModel.self) private var app
     @State private var photo: UIImage?
 
@@ -401,7 +676,8 @@ struct ContactPicture: View {
         .accessibilityHidden(true)
         .task(id: contactId) {
             guard hasPhoto else { return }
-            photo = await app.picture("/api/v1/contacts/\(contactId)/photo")
+            let query = (addressBookId ?? "").isEmpty ? "" : "?addressBookId=\(addressBookId ?? "")"
+            photo = await app.picture("/api/v1/contacts/\(contactId)/photo\(query)")
         }
     }
 }

@@ -104,32 +104,33 @@ func (self *backend) AddressBookHomeSetPath(ctx context.Context) (string, error)
 	return homeSetPath(self.who(ctx).userID), nil
 }
 
-// ListAddressBooks is every book this person keeps. An account that has never
-// had one is given one here, because a phone asked to synchronize an empty
-// home set has nothing to point at and some clients then stop asking.
+// ListAddressBooks is every book this person keeps, and then the books of the
+// circles they are in, which a phone shows as another address book. An account
+// that has never had a book of its own is given one here, because a phone
+// asked to synchronize an empty home set has nothing to point at and some
+// clients then stop asking. Leaving a circle takes its book out of this
+// listing in the same moment, so a phone drops it at its next poll.
 func (self *backend) ListAddressBooks(ctx context.Context) ([]carddav.AddressBook, error) {
 	signedIn := self.who(ctx)
-	var books []*models.AddressBook
+	var books []*models.ReachableAddressBook
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		found, err := tx.ListAddressBooks(signedIn.userID)
 		if err != nil {
 			return unexpected(err)
 		}
 		if len(found) == 0 {
-			made, err := tx.CreateAddressBook(&models.AddressBook{UserID: signedIn.userID, Name: "Contacts"})
-			if err != nil {
+			if _, err := tx.CreateAddressBook(&models.AddressBook{UserID: signedIn.userID, Name: "Contacts"}); err != nil {
 				return unexpected(err)
 			}
-			found = []*models.AddressBook{made}
 		}
-		books = found
-		return nil
+		books, err = tx.ListReachableAddressBooks(signedIn.userID)
+		return unexpected(err)
 	}); err != nil {
 		return nil, err
 	}
 	listed := make([]carddav.AddressBook, 0, len(books))
-	for _, book := range books {
-		listed = append(listed, self.describe(signedIn, book))
+	for _, reachable := range books {
+		listed = append(listed, self.describe(signedIn, reachable.Book))
 	}
 	return listed, nil
 }
@@ -160,17 +161,18 @@ func (self *backend) GetAddressBook(ctx context.Context, address string) (*cardd
 }
 
 // CreateAddressBook and DeleteAddressBook are refused. A person has one
-// address book here, made for them; a client that offers to add or remove one
-// is offering something this server does not do, and saying so plainly is
-// better than half-doing it.
+// address book here, made for them, and each circle has one that its members
+// make and an admin deletes in the dashboard; a client that offers to add or
+// remove one is offering something this server does not do, and saying so
+// plainly is better than half-doing it.
 func (self *backend) CreateAddressBook(ctx context.Context, book *carddav.AddressBook) error {
 	return webdav.NewHTTPError(http.StatusForbidden,
-		fmt.Errorf("this server keeps one address book per person"))
+		fmt.Errorf("this server keeps one address book per person and one per circle, and makes them itself"))
 }
 
 func (self *backend) DeleteAddressBook(ctx context.Context, address string) error {
 	return webdav.NewHTTPError(http.StatusForbidden,
-		fmt.Errorf("this server keeps one address book per person"))
+		fmt.Errorf("this server keeps one address book per person and one per circle, and makes them itself"))
 }
 
 // GetAddressObject is one contact.
@@ -406,20 +408,26 @@ func (self *backend) object(signedIn *session, contact *models.Contact) (*cardda
 	}, nil
 }
 
-// bookAt is the address book a URL names, refused unless it is this person's.
+// bookAt is the address book a URL names, refused unless this person may use
+// it: their own, or the circle's they are in. Whether they may is the
+// database's AddressBookAccess, the one answer every door asks.
 func (self *backend) bookAt(ctx context.Context, signedIn *session, address string) (*models.AddressBook, error) {
 	segments := segmentsOf(address)
 	if len(segments) < 3 {
 		return nil, refuse(http.StatusNotFound, "no such address book")
 	}
 	var book *models.AddressBook
+	var bookAccess models.AddressBookAccess
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		book, err = tx.GetAddressBook(segments[2])
+		if book, err = tx.GetAddressBook(segments[2]); err != nil || book == nil {
+			return unexpected(err)
+		}
+		bookAccess, err = tx.AddressBookAccess(signedIn.userID, book)
 		return unexpected(err)
 	}); err != nil {
 		return nil, err
 	}
-	if book == nil || book.UserID != signedIn.userID {
+	if book == nil || !bookAccess.CanEdit {
 		return nil, refuse(http.StatusNotFound, "no such address book")
 	}
 	return book, nil

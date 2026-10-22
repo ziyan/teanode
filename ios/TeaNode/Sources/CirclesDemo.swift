@@ -81,6 +81,18 @@
             if query.contains("GetSession"), screen == "circle-detail" {
                 return session.replacingOccurrences(of: #""user:manage","#, with: "")
             }
+            // The person's own address book and the Home circle's, which everyone in the circle edits.
+            if query.contains("ListReachableAddressBooks") {
+                return #"{"data":{"ListReachableAddressBooks":[\#(ownAddressBookJSON),\#(circleAddressBookJSON)]}}"#
+            }
+            if query.contains("ListContacts"), variables["addressBookId"] as? String == "book-home" {
+                return #"{"data":{"ListContacts":[\#(circleContactsJSON)]}}"#
+            }
+            if query.contains("GetContact("), let contactId = variables["id"] as? String, ["neighbor", "school"].contains(contactId) {
+                let name = contactId == "neighbor" ? "Kim, next door" : "Primary school"
+                return
+                    #"{"data":{"GetContact":{"id":"\#(contactId)","name":"\#(name)","organization":null,"emails":["\#(contactId)@example.org"],"phones":[],"note":null,"hasPhoto":false,"addresses":[],"accountUserId":null,"account":null}}}"#
+            }
             if query.contains("ListCalendarFreeBusy") { return calendarFreeBusyAnswer(variables: variables) }
             if let screen, ["calendar-shared", "calendar-sheet", "calendar-share-sheet", "calendar-find-time"].contains(screen) {
                 if query.contains("ListCalendars") { return #"{"data":{"ListCalendars":[\#(sharedCalendarsJSON)]}}"# }
@@ -359,6 +371,19 @@
         }
 
         // MARK: Calendars
+
+        static let ownAddressBookJSON =
+            #"{"id":"book","name":"Contacts","description":"","contacts":5,"circleId":null,"circleName":"","isCircleBook":false,"canManage":true}"#
+
+        /// The Home circle's address book, as its admin sees it.
+        static let circleAddressBookJSON =
+            #"{"id":"book-home","name":"Home","description":"","contacts":2,"circleId":"circle-home","circleName":"Home","isCircleBook":true,"canManage":true}"#
+
+        /// What the Home circle keeps in its address book.
+        static let circleContactsJSON = #"""
+            {"id":"neighbor","name":"Kim, next door","organization":null,"emails":["neighbor@example.org"],"phones":["+1 555 0177"],"hasPhoto":false,"addresses":[]},
+            {"id":"school","name":"Primary school","organization":null,"emails":["office@school.example"],"phones":[],"hasPhoto":false,"addresses":[]}
+            """#
 
         /// The person's own calendar, the family circle's, and two that other
         /// people shared at different levels.

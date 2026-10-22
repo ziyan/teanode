@@ -338,6 +338,16 @@ The command line is `teanode sharing`, with `teanode sharing decline <kind>
 the Circles page and the account menu; the iPhone screen is Sharing, from
 Circles.
 
+## The circle's address book
+
+A circle can have an address book of its own, the way it can have a calendar:
+every member reads and edits it, an admin renames or deletes it, any member
+makes it, and it goes when the circle goes (`addressbook.circle_id`, migration
+0257; the circle's page offers "Make a family address book"). A person's own
+address books are never shared. Access is a join on `circle_member`, so leaving
+the circle ends it at once and nothing has to be cleaned up. How it is stored
+and kept from the owner-only paths is in `contacts.md`.
+
 ## The circle chat
 
 Every circle has one chat (`chat.circle_id`, migration 0194), made with the
@@ -352,6 +362,7 @@ and read is in `conversations.md`.
 | What | Where |
 | --- | --- |
 | Tables and queries | `internal/db/migrations/0193_circle.sql`, `internal/db/database_circle.go` |
+| The circle's address book | `internal/db/database_contact.go` (`AddressBookAccess`, `CreateCircleAddressBook`, `ListReachableAddressBooks`), `internal/addressbook`, `internal/api/v1api/apigraph/contact.go` |
 | The circle chat | `internal/db/database_chat.go` (`ensureCircleChat`, `leaveCircleChats`), called from the circle queries |
 | Types, kinds, roles | `internal/models/circle.go` |
 | The permission `circle:use` | `internal/models/permission.go`; held by the Administrator, Operator and Member roles |

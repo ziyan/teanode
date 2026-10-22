@@ -115,8 +115,11 @@ const (
 }`
 
 	documentBookContact = `query ($id: String!) {
-  GetContact(id: $id) { id name organization emails phones note account { userId username } }
+  GetContact(id: $id) { id addressBookId name organization emails phones note account { userId username } }
 }`
+
+	// Which book a contact is in, for the actions that name only the contact.
+	documentBookContactBook = `query ($id: String!) { GetContact(id: $id) { addressBookId } }`
 
 	documentBookPeople = `query { ListCirclePeople { userId username name } }`
 
@@ -147,7 +150,12 @@ type bookView struct {
 }
 
 type contactView struct {
-	ID           string   `json:"id"`
+	ID string `json:"id"`
+
+	// AddressBookID is read to check the contact is in the book they gave you;
+	// the model is not shown it.
+	AddressBookID string `json:"-"`
+
 	Name         string   `json:"name,omitempty"`
 	Organization string   `json:"organization,omitempty"`
 	Emails       []string `json:"emails,omitempty"`
@@ -172,12 +180,14 @@ func (self *contactView) UnmarshalJSON(data []byte) error {
 	type plain contactView
 	var decoded struct {
 		plain
-		Account *accountView `json:"account"`
+		AddressBookID string       `json:"addressBookId"`
+		Account       *accountView `json:"account"`
 	}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
 	}
 	*self = contactView(decoded.plain)
+	self.AddressBookID = decoded.AddressBookID
 	self.Account = decoded.Account
 	if decoded.Account != nil {
 		self.Person = decoded.Account.Username
@@ -226,6 +236,13 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 	}
 	if book == nil {
 		return nil, fmt.Errorf("they have not given you their address book; it is a switch on their agent's page, beside the mailboxes")
+	}
+	// Every book they gave you, for the actions that name only a contact.
+	givenBookIds := map[string]bool{}
+	for _, candidate := range books.ListAddressBooks {
+		if candidate.AgentGranted {
+			givenBookIds[candidate.ID] = true
+		}
 	}
 	// A named book that is not one they gave you is an error, never the first
 	// book instead: a contact id from another book must not be acted on here.
@@ -299,6 +316,9 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 		}
 		if err := operations.Execute(ctx, documentBookContact, map[string]any{"id": arguments.ID}, &answer); err != nil {
 			return nil, err
+		}
+		if answer.GetContact == nil || !givenBookIds[answer.GetContact.AddressBookID] {
+			return nil, errNotInGivenBook
 		}
 		return tools.JSONResult(answer.GetContact)
 
@@ -407,6 +427,9 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 		if strings.TrimSpace(arguments.ID) == "" {
 			return nil, fmt.Errorf("which contact: list gives their ids")
 		}
+		if err := requireContactInBook(ctx, operations, givenBookIds, arguments.ID); err != nil {
+			return nil, err
+		}
 		var answer struct {
 			DeleteContact bool `json:"DeleteContact"`
 		}
@@ -421,6 +444,9 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 		if strings.TrimSpace(arguments.ID) == "" {
 			return nil, fmt.Errorf("which contact: list gives their ids")
 		}
+		if err := requireContactInBook(ctx, operations, givenBookIds, arguments.ID); err != nil {
+			return nil, err
+		}
 		var answer struct {
 			RemoveContactPicture *contactView `json:"RemoveContactPicture"`
 		}
@@ -432,6 +458,27 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 		return result, nil
 	}
 	return nil, fmt.Errorf("%q is not an action of contact_book", arguments.Action)
+}
+
+var errNotInGivenBook = fmt.Errorf("that contact is not in an address book they have given you; list gives the ids")
+
+// requireContactInBook refuses an action that names only a contact unless the
+// contact is in a book they gave you. A contact is named within its book, so
+// the same id may be in a book of the person's that is not given, or in a
+// circle's (which they can reach and the agent is never given: the text in its
+// cards was typed by anybody in the circle), and the operation behind these
+// actions would act on whichever it finds first.
+func requireContactInBook(ctx context.Context, operations tools.Operations, givenBookIds map[string]bool, contactId string) error {
+	var answer struct {
+		GetContact *contactView `json:"GetContact"`
+	}
+	if err := operations.Execute(ctx, documentBookContactBook, map[string]any{"id": contactId}, &answer); err != nil {
+		return err
+	}
+	if answer.GetContact == nil || !givenBookIds[answer.GetContact.AddressBookID] {
+		return errNotInGivenBook
+	}
+	return nil
 }
 
 // maximumSuggestionsShown bounds the links list offers to the person at once.

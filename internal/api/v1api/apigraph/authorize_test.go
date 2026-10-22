@@ -54,10 +54,13 @@ var authorizing = map[string]bool{
 	// The mailbox holding a draft, refused unless the caller owns it.
 	"requireDraftOwner": true,
 	// requirePermission(contacts:use), plus the caller's account; and the
-	// address book or the contact, each refused unless it is theirs.
+	// address book or the contact, each refused unless it is theirs; and the
+	// same for what they may use, which includes the books of their circles.
 	"requireAddressBookPerson": true,
 	"requireOwnAddressBook":    true,
+	"requireUsableAddressBook": true,
 	"ownContact":               true,
+	"usableContact":            true,
 	// requirePermission(calendar:use), plus the caller's account; and the
 	// calendar, refused unless it is theirs. Everything about an event goes
 	// through its calendar, so there is no third helper here: an event is

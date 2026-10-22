@@ -128,3 +128,84 @@ final class ContactAccountTests: XCTestCase {
         XCTAssertNotNil(filter.variables(calendar: calendar)["takenAfter"])
     }
 }
+
+final class CircleAddressBookTests: XCTestCase {
+    private func connection(answering body: String) throws -> (Connection, FakeServer) {
+        let fake = FakeServer { _ in (200, body) }
+        let account = Account(
+            server: try ServerAddress(parsing: "assistant.example.com"), clientId: "test-client", accessToken: "tnt_test", refreshToken: "",
+            expiresAt: Date().addingTimeInterval(3600), username: "test-owner")
+        return (Connection(account: account, transport: fake), fake)
+    }
+
+    private func sentVariables(_ request: URLRequest) throws -> [String: Any] {
+        let sent = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any])
+        return try XCTUnwrap(sent["variables"] as? [String: Any])
+    }
+
+    func testABookSaysWhoseItIsAndAnOlderServerSaysItIsTheirOwn() throws {
+        let circle = try JSONDecoder().decode(
+            AddressBook.self,
+            from: Data(
+                #"{"id":"b2","name":"Everyone","description":"","contacts":3,"circleId":"c1","circleName":"Home","isCircleBook":true,"canManage":false}"#.utf8))
+        XCTAssertTrue(circle.isOfACircle)
+        XCTAssertEqual(circle.circleName, "Home")
+        XCTAssertEqual(circle.canManage, false)
+        XCTAssertEqual(circle.shownName, "Everyone (Home)")
+
+        let sameName = try JSONDecoder().decode(
+            AddressBook.self, from: Data(#"{"id":"b3","name":"Home","contacts":0,"circleId":"c1","circleName":"Home","isCircleBook":true}"#.utf8))
+        XCTAssertEqual(sameName.shownName, "Home")
+
+        let own = try JSONDecoder().decode(AddressBook.self, from: Data(#"{"id":"b1","name":"Contacts","contacts":5}"#.utf8))
+        XCTAssertFalse(own.isOfACircle)
+        XCTAssertEqual(own.shownName, "Contacts")
+    }
+
+    func testThePicturesOfACircleBooksContactsAreAskedForWithTheBook() {
+        let contact = ContactSummary(
+            id: "c1", name: "Person B", organization: nil, emails: nil, phones: nil, hasPhoto: true, addresses: nil)
+        XCTAssertEqual(contact.pictureAddress(inAddressBook: nil), "/api/v1/contacts/c1/photo")
+        XCTAssertEqual(contact.pictureAddress(inAddressBook: "b2"), "/api/v1/contacts/c1/photo?addressBookId=b2")
+    }
+
+    func testTheReachableListIsTheOneThatHasTheCircles() async throws {
+        let (connection, fake) = try connection(
+            answering:
+                #"{"data":{"ListReachableAddressBooks":[{"id":"b1","name":"Contacts","contacts":5,"circleId":null,"circleName":"","isCircleBook":false,"canManage":true},{"id":"b2","name":"Home","contacts":2,"circleId":"c1","circleName":"Home","isCircleBook":true,"canManage":true}]}}"#
+        )
+        let books = try await connection.reachableAddressBooks()
+        XCTAssertEqual(books.map(\.id), ["b1", "b2"])
+        XCTAssertEqual(books.map(\.isOfACircle), [false, true])
+        let sent = String(decoding: try XCTUnwrap(fake.sent.first?.httpBody), as: UTF8.self)
+        XCTAssertTrue(sent.contains("ListReachableAddressBooks"))
+    }
+
+    func testMakingARenamingAndDeletingACircleBookSendTheirArguments() async throws {
+        let (making, makingFake) = try connection(
+            answering:
+                #"{"data":{"CreateCircleAddressBook":{"id":"b2","name":"Home","contacts":0,"circleId":"c1","circleName":"Home","isCircleBook":true,"canManage":false}}}"#
+        )
+        let made = try await making.createCircleAddressBook(circleId: "c1")
+        XCTAssertEqual(made.id, "b2")
+        let madeVariables = try sentVariables(try XCTUnwrap(makingFake.sent.first))
+        XCTAssertEqual(madeVariables["circleId"] as? String, "c1")
+        XCTAssertNil(madeVariables["name"])
+
+        let (renaming, renamingFake) = try connection(
+            answering:
+                #"{"data":{"SaveAddressBook":{"id":"b2","name":"Everyone","description":"Kept","contacts":2,"circleId":"c1","circleName":"Home","isCircleBook":true,"canManage":true}}}"#
+        )
+        let renamed = try await renaming.renameAddressBook(
+            AddressBook(id: "b2", name: "Home", description: "Kept", circleId: "c1", isCircleBook: true), to: "Everyone")
+        XCTAssertEqual(renamed.name, "Everyone")
+        let renamedVariables = try sentVariables(try XCTUnwrap(renamingFake.sent.first))
+        XCTAssertEqual(renamedVariables["id"] as? String, "b2")
+        XCTAssertEqual(renamedVariables["name"] as? String, "Everyone")
+        XCTAssertEqual(renamedVariables["description"] as? String, "Kept")
+
+        let (deleting, deletingFake) = try connection(answering: #"{"data":{"DeleteCircleAddressBook":true}}"#)
+        try await deleting.deleteCircleAddressBook("b2")
+        XCTAssertEqual(try sentVariables(try XCTUnwrap(deletingFake.sent.first))["addressBookId"] as? String, "b2")
+    }
+}

@@ -3,11 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // The address book: the people somebody keeps, which their phone
@@ -15,7 +17,14 @@ import (
 //
 // Not "mailbox contact", which is the addresses a mailbox has learned from
 // traffic. The address book belongs to the account rather than to a mailbox,
-// which is why it is here and not under mailbox.
+// which is why it is here and not under mailbox. A circle has an address book
+// of its own too, which everyone in it reads and edits: 'contact book' makes
+// and lists them, and --book on the commands that keep contacts chooses one.
+
+// bookFlag chooses the address book to work in: your own when left out.
+func bookFlag() cli.Flag {
+	return &cli.StringFlag{Name: "book", Usage: "the address book, from 'teanode contact book list'; your own by default. A circle's is chosen with its id"}
+}
 
 func NewContactCommand() *cli.Command {
 	return &cli.Command{
@@ -26,7 +35,7 @@ func NewContactCommand() *cli.Command {
 				Name:  "list",
 				Usage: "list your contacts",
 				Flags: []cli.Flag{
-					JSONFlag(),
+					JSONFlag(), bookFlag(),
 					&cli.StringFlag{Name: "search", Usage: "only those whose name, organization, address or number matches"},
 					&cli.IntFlag{Name: "first", Usage: "how many, at most"},
 				},
@@ -43,7 +52,7 @@ func NewContactCommand() *cli.Command {
 				Name:  "add",
 				Usage: "keep a contact; to promote one the mailbox has learned, give its address here",
 				Flags: []cli.Flag{
-					JSONFlag(),
+					JSONFlag(), bookFlag(),
 					&cli.StringFlag{Name: "name", Usage: "what to call them"},
 					&cli.StringFlag{Name: "organization", Usage: "where they work"},
 					&cli.StringFlag{Name: "title", Usage: "what they do there"},
@@ -59,7 +68,7 @@ func NewContactCommand() *cli.Command {
 				Usage:     "change a contact; what you do not give is left alone",
 				ArgsUsage: "<id>",
 				Flags: []cli.Flag{
-					JSONFlag(),
+					JSONFlag(), bookFlag(),
 					&cli.StringFlag{Name: "name", Usage: "what to call them; give it empty to clear it"},
 					&cli.StringFlag{Name: "organization", Usage: "where they work"},
 					&cli.StringFlag{Name: "title", Usage: "what they do there"},
@@ -106,6 +115,38 @@ func NewContactCommand() *cli.Command {
 				Action: runContactBookSuggestions,
 			},
 			{
+				Name:  "book",
+				Usage: "your address books, and the one each circle keeps for itself",
+				Commands: []*cli.Command{
+					{
+						Name:   "list",
+						Usage:  "list the address books you can use: your own, and your circles'",
+						Flags:  []cli.Flag{JSONFlag()},
+						Action: runContactBookBooks,
+					},
+					{
+						Name:   "create",
+						Usage:  "make the address book a circle keeps for itself; anyone in the circle may",
+						Flags:  []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "circle", Usage: "the circle, by id or name", Required: true}, &cli.StringFlag{Name: "name", Usage: "what to call it; the circle's name by default"}},
+						Action: runContactBookCreate,
+					},
+					{
+						Name:      "rename",
+						Usage:     "rename an address book; a circle's only by an admin of the circle",
+						ArgsUsage: "<book id> <name>",
+						Flags:     []cli.Flag{JSONFlag()},
+						Action:    runContactBookRename,
+					},
+					{
+						Name:      "delete",
+						Usage:     "delete a circle's address book with every contact in it; only an admin of the circle may",
+						ArgsUsage: "<book id>",
+						Flags:     []cli.Flag{ForceFlag()},
+						Action:    runContactBookDelete,
+					},
+				},
+			},
+			{
 				Name:      "me",
 				Usage:     "say which contact is you, so your agent knows your own addresses; with no id, say who it thinks you are",
 				ArgsUsage: "[id]",
@@ -116,7 +157,7 @@ func NewContactCommand() *cli.Command {
 }
 
 // theAddressBook is the caller's, made by the server if they have never had
-// one. Everything here works on one book, because a person has one.
+// one. A person has one of their own; the circles' are chosen with --book.
 func theAddressBook(ctx context.Context, connection *client.Client) (*client.AddressBook, error) {
 	books, err := client.ListAddressBooks(ctx, connection)
 	if err != nil {
@@ -128,12 +169,31 @@ func theAddressBook(ctx context.Context, connection *client.Client) (*client.Add
 	return books[0], nil
 }
 
+// chosenAddressBook is the book --book names, one the caller can use, or their
+// own when it is left out.
+func chosenAddressBook(ctx context.Context, command *cli.Command, connection *client.Client) (*client.AddressBook, error) {
+	chosen := strings.TrimSpace(command.String("book"))
+	if chosen == "" {
+		return theAddressBook(ctx, connection)
+	}
+	books, err := client.ListReachableAddressBooks(ctx, connection)
+	if err != nil {
+		return nil, err
+	}
+	for _, book := range books {
+		if book.ID == chosen {
+			return book, nil
+		}
+	}
+	return nil, fmt.Errorf("no address book %s; 'teanode contact book list' lists yours and your circles'", chosen)
+}
+
 func runContactBookList(ctx context.Context, command *cli.Command) error {
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
-	book, err := theAddressBook(ctx, connection)
+	book, err := chosenAddressBook(ctx, command, connection)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -263,7 +323,7 @@ func runContactBookAdd(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	book, err := theAddressBook(ctx, connection)
+	book, err := chosenAddressBook(ctx, command, connection)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -294,7 +354,7 @@ func runContactBookEdit(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	book, err := theAddressBook(ctx, connection)
+	book, err := chosenAddressBook(ctx, command, connection)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -553,5 +613,149 @@ func runContactBookMe(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	_, _ = fmt.Fprintln(command.Writer, "that contact is you now; your agent will read its addresses as your own")
+	return nil
+}
+
+// circleNamed is the circle the caller means by what they typed: its id, or
+// its name when only one circle they are in has it.
+func circleNamed(ctx context.Context, connection *client.Client, typed string) (*client.Circle, error) {
+	typed = strings.TrimSpace(typed)
+	circles, err := client.ListCircles(ctx, connection)
+	if err != nil {
+		return nil, err
+	}
+	var named []*client.Circle
+	for _, circle := range circles {
+		if circle.ID == typed {
+			return circle, nil
+		}
+		if strings.EqualFold(circle.Name, typed) {
+			named = append(named, circle)
+		}
+	}
+	switch len(named) {
+	case 0:
+		return nil, fmt.Errorf("you are in no circle %q; 'teanode circle list' says which", typed)
+	case 1:
+		return named[0], nil
+	}
+	choices := make([]models.ShareableCircle, 0, len(named))
+	for _, circle := range named {
+		choices = append(choices, models.ShareableCircle{ID: circle.ID, Name: circle.Name, MemberCount: len(circle.Members)})
+	}
+	return nil, models.AmbiguousCircleNameError(typed, choices)
+}
+
+// whoseBook says whose an address book is, for a line of output.
+func whoseBook(book *client.AddressBook) string {
+	if book.IsCircleBook {
+		return forTerminal(models.DescribeCircleByName(book.CircleName))
+	}
+	return "you"
+}
+
+func runContactBookBooks(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	books, err := client.ListReachableAddressBooks(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(books)
+	}
+	rows := make([][]string, 0, len(books))
+	for _, book := range books {
+		rows = append(rows, []string{forTerminal(book.Name), whoseBook(book), strconv.Itoa(book.Contacts), book.ID})
+	}
+	return printTable([]string{"name", "whose", "contacts", "id"}, rows)
+}
+
+func runContactBookCreate(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	circle, err := circleNamed(ctx, connection, command.String("circle"))
+	if err != nil {
+		return describeError(command, err)
+	}
+	made, err := client.CreateCircleAddressBook(ctx, connection, circle.ID, strings.TrimSpace(command.String("name")))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(made)
+	}
+	fmt.Printf("made %q, which everyone in %s reads and edits; add to it with 'teanode contact add --book %s'\n",
+		forTerminal(made.Name), forTerminal(models.DescribeCircleByName(made.CircleName)), made.ID)
+	return nil
+}
+
+func runContactBookRename(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 2 {
+		return usage("usage: teanode contact book rename <book id> <name>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	books, err := client.ListReachableAddressBooks(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	var found *client.AddressBook
+	for _, book := range books {
+		if book.ID == command.Args().First() {
+			found = book
+		}
+	}
+	if found == nil {
+		return fmt.Errorf("no address book %s; 'teanode contact book list' lists yours and your circles'", command.Args().First())
+	}
+	// What the book says about itself is kept: only the name changes.
+	renamed, err := client.SaveAddressBook(ctx, connection, found.ID, command.Args().Get(1), found.Description)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(renamed)
+	}
+	fmt.Printf("renamed to %q\n", forTerminal(renamed.Name))
+	return nil
+}
+
+func runContactBookDelete(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return usage("usage: teanode contact book delete <book id>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	books, err := client.ListReachableAddressBooks(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	var found *client.AddressBook
+	for _, book := range books {
+		if book.ID == command.Args().First() {
+			found = book
+		}
+	}
+	if found == nil || !found.IsCircleBook {
+		return fmt.Errorf("no circle address book %s; 'teanode contact book list' lists them", command.Args().First())
+	}
+	if err := confirm(command, fmt.Sprintf(
+		"This deletes %q and its %d contacts for everyone in %s. Their devices synchronizing it will lose them too.",
+		forTerminal(found.Name), found.Contacts, forTerminal(models.DescribeCircleByName(found.CircleName)))); err != nil {
+		return err
+	}
+	if err := client.DeleteCircleAddressBook(ctx, connection, found.ID); err != nil {
+		return describeError(command, err)
+	}
+	fmt.Printf("deleted %q\n", forTerminal(found.Name))
 	return nil
 }

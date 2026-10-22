@@ -82,7 +82,17 @@ type MemoryOperation interface {
 	// The address book: a person's own contacts, kept as vCards. Distinct
 	// from the learned addresses above, which are what a mailbox has seen
 	// go past rather than what somebody chose to keep.
+	//
+	// ListAddressBooks are the person's own books only. A circle has an
+	// address book of its own too, kept by its members: ListReachableAddressBooks
+	// has both, and AddressBookAccess is the one answer to who may use a book.
 	ListAddressBooks(userId string) ([]*models.AddressBook, error)
+	ListReachableAddressBooks(userId string) ([]*models.ReachableAddressBook, error)
+	AddressBookAccess(userId string, book *models.AddressBook) (models.AddressBookAccess, error)
+	GetCircleAddressBook(circleId string) (*models.AddressBook, error)
+	// CreateCircleAddressBook makes the circle's book. ErrNotFound when the
+	// circle is gone, ErrAlreadyExists when it has one.
+	CreateCircleAddressBook(circleId, name string) (*models.AddressBook, error)
 	GetAddressBook(addressBookId string) (*models.AddressBook, error)
 	LockAddressBook(addressBookId string) (*models.AddressBook, error)
 	CreateAddressBook(book *models.AddressBook) (*models.AddressBook, error)

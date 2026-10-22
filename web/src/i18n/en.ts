@@ -2881,6 +2881,20 @@ export const en = {
   'addressBook.removePictureConfirm':
     'Take the picture off {name}? Devices synchronizing your address book will lose it too.',
   'addressBook.pictureRemoved': 'Removed the picture of {name}',
+  'addressBook.showing': 'Showing',
+  'addressBook.groupYours': 'Yours',
+  'addressBook.groupCircles': 'Circles',
+  'addressBook.yourBook': 'Your contacts',
+  'addressBook.circleBookOption': '{name} ({circle})',
+  'addressBook.circleBookIntro':
+    'Everyone in {circle} can read and change this address book, and their phones can show it. Your own contacts are not shared.',
+  'addressBook.renameBook': 'Rename address book',
+  'addressBook.bookName': 'Name',
+  'addressBook.bookRenamed': 'Renamed to {name}',
+  'addressBook.deleteBook': 'Delete address book',
+  'addressBook.deleteBookConfirm':
+    'Delete {name} and every contact in it for everyone in {circle}? Devices synchronizing it will lose the contacts too.',
+  'addressBook.bookDeleted': 'Deleted {name}',
   'contacts.countOne': '{count} contact',
   'contacts.count': '{count} contacts',
   'nav.chooseMailbox': 'Mailbox',
@@ -6215,6 +6229,14 @@ export const en = {
   'circles.calendar.exists': 'This circle has a calendar that everyone in it reads and writes.',
   'circles.calendar.open': 'Open the calendar',
   'circles.calendar.none': 'An admin of this circle can make a calendar for it.',
+  'circles.addressBook.title': 'Address book',
+  'circles.addressBook.intro':
+    'A list of people that everyone in this circle reads and changes, and that their phones can show as another address book. Your own contacts stay yours.',
+  'circles.addressBook.makeFamily': 'Make a family address book',
+  'circles.addressBook.makeShared': 'Make a shared address book',
+  'circles.addressBook.made': 'Address book made',
+  'circles.addressBook.exists': 'This circle has an address book that everyone in it reads and changes.',
+  'circles.addressBook.open': 'Open the address book',
   'circles.shareSuggestion.title': 'Share your calendar with {name}?',
   'circles.shareSuggestion.body':
     'Everyone in {name} could see your calendar, as much as you choose. An event you mark private is only ever shown as busy.',

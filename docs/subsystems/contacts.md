@@ -1,7 +1,9 @@
 # Contacts
 
 A person's address book: the people they keep, edited in the dashboard and
-kept in step with their phone and their desktop over CardDAV.
+kept in step with their phone and their desktop over CardDAV. A person's own
+books are never shared with anybody. A circle has an address book of its own,
+described in "A circle's own address book" below.
 
 It is the only list of people the server keeps. A mailbox used to learn every
 address it saw go past into a `mailbox_contact` row of its own; that is gone,
@@ -215,8 +217,9 @@ to the limit, and a card over it is refused with `507`.
 A contact can say which account on this server it is: `contact.account_user_id`
 (migration 0246), chosen from the people the owner shares a circle with. Only
 the owner sees the link. The person it names is never told and sees nothing of
-it, no photos are shared with them, and address books are never shared, so the
-link is visible only to the owner.
+it, no photos are shared with them, and a person's own address books are never
+shared (a circle's own book is not theirs, and its cards are never linked), so
+the link is visible only to the owner.
 
 The link has one writer, `transaction.SetContactAccount`. `PutContact` names
 the columns it updates and leaves `account_user_id` out, so a vCard sync from a
@@ -279,6 +282,58 @@ without email addresses) already is, since the link would be refused.
 The agent's situation adds "Their photos are found with the photo tool" to a
 relationship line only when the person may use photos and the linked contact
 names a group of faces, read with one query for all of them.
+
+## A circle's own address book
+
+Personal address books stay private. A circle gets one of its own, as it can
+have a calendar of its own: `addressbook.circle_id` (migration 0257) is a
+nullable foreign key to the circle that cascades on delete, `addressbook.user_id`
+is nullable, and a check says exactly one of the two is set. A circle has at
+most one (a unique index). Every member of the circle reads it and adds,
+changes and removes the cards in it, whoever added them; an admin of the circle
+renames or deletes it. Any member makes it, on demand ("Make a family address
+book"), and nothing is made for a circle that does not ask.
+
+**Who may use a book is one answer.** `AddressBookAccess(userId, book)` says
+whether the person may read and edit it, whether they may manage it (rename or
+delete: the owner of their own book, an admin of a circle's) and whether it is
+their own (`IsOwner`). The GraphQL operations (through
+`internal/addressbook`'s `usableBook` and `usableContact`, and the resolvers'
+`requireUsableAddressBook`), the picture route (`contact_photo.go`, which takes
+an optional `addressBookId` so that a circle's book is looked in directly),
+CardDAV (`bookAt`, which the home set listing also follows) and the agent's tool
+all start from it. There is no cleanup row: the answer is a join on
+`circle_member`, so a person who leaves a circle loses its book in the same
+transaction, and deleting the circle deletes the book and its cards.
+
+**What stays the owner's.** `ListAddressBooks` is the person's own books only,
+and so is everything that asks for "my address books": the known-sender check
+(`FindContactByAddress`), compose completion, the ties from a recording's
+speaker names and from a group of faces in photos, setting a picture cut from a
+face (`SetPicture`), the person's card, search, the link to an account in the
+circles and its suggestions (`SetContactAccount` refuses a circle's book, so a
+circle's card never carries `account_user_id`), and the agent's grant
+(`agent_granted` is never true for a circle's book). The circles' books are
+listed by `ListReachableAddressBooks`, which has the person's own first and each
+book's circle name and what the person may do with it. The 10,000 contact
+ceiling and the size ceiling apply to each book, a circle's included.
+
+**The agent does not read it.** A circle's book is not one person's to give to
+an agent: the text in its cards was typed by anybody in the circle. The
+`contact_book` tool therefore never lists, reads or changes a circle's book, and
+an action that names only a contact (`get`, `remove`, `remove-picture`) is
+refused for a contact that is in no book the person gave it. Giving the agent a
+circle's book, per person, is left for later.
+
+The surfaces say it the same way: `ListReachableAddressBooks`, `AddressBookView`
+(`circleId`, `circleName`, `isCircleBook`, `canManage`), `CreateCircleAddressBook`,
+`SaveAddressBook` (a rename; an admin's for a circle's) and `DeleteCircleAddressBook`;
+`teanode contact book list|create|rename|delete` and `--book` on `contact list`,
+`add` and `edit`; the contacts page's "Showing" picker and the circle page's
+address book section on the dashboard; and the iPhone's Contacts screen, which
+chooses the book under its title, and the circle's screen. A circle's contact has
+no card page (that page is the owner's view of their own contact), no "this is
+me" mark and no memory links.
 
 ## Keeping a sender
 
