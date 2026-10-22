@@ -590,6 +590,11 @@ jobs:
             shoot "$circles_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
           done
+          # Everything shared by and with the person, in one list: a share of every kind, one through a
+          # circle that cannot be removed, and a name of the longest length a row holds.
+          shoot sharing-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen sharing
+          shoot sharing-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen sharing
+          shoot sharing-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen sharing
           # A person's card (docs/planning/person-card-execplan.md), each in light, dark and the largest
           # text: Sam's at half height and whole, Alex's with no contact linked, a bookshop's from the
           # Contacts list, and the card over the Location map.

@@ -1982,6 +1982,11 @@ struct NoteLine: View {
                 let note = try? JSONDecoder().decode(RelationshipNote.self, from: data), !note.personName.isEmpty
             else { return detail }
             return String(localized: "\(note.personName) removed how you are related.")
+        // Who shared what with the person, and who joined a circle the person's
+        // shares reach, travel as JSON and are worded in SharingWords; a detail
+        // that is not JSON is shown as the server wrote it.
+        case "share_received": return SharingWords.shareReceivedNote(detail) ?? detail
+        case "share_reached": return SharingWords.shareReachedNote(detail) ?? detail
         default: return detail
         }
     }

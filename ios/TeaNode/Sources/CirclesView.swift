@@ -123,6 +123,15 @@ struct CirclesView: View {
                 } footer: {
                     Text("The people you share this server with, grouped as family, friends or colleagues.")
                 }
+                // Everything shared with these people, and by them, in one list.
+                Section {
+                    NavigationLink {
+                        SharingView(connection: directory.connection)
+                    } label: {
+                        Label("Sharing", systemImage: "square.and.arrow.up")
+                            .foregroundStyle(.primary)
+                    }
+                }
             }
         }
         .navigationTitle("Circles")
