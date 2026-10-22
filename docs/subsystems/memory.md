@@ -1216,11 +1216,19 @@ Both checks read the conversation as stored, where the marked tool results stay
 whole however far it was compacted. The note that stands in for a compacted
 part is a model's reading of it, so it can hold words from a shared page
 without the marker; a note written from a part in which a shared page was read
-ends with the marker and a sentence saying the words are theirs (`sharedPagesNotice`),
-and an earlier note that carries it passes it on when notes are folded. The
-check on words still compares against the stored results and not the note, so a
-paraphrase in the note is a thing the model is told about and not a thing code
-refuses.
+ends with the marker and a sentence saying the words are theirs (`sharedPagesNotice`;
+`sharedRecordingsNotice` and `tools.SharedRecordingMarker` for a shared
+recording), and an earlier note that carries it passes it on when notes are
+folded. The check on words still compares against the stored results and not
+the note, so a paraphrase in the note is a thing the model is told about and not
+a thing code refuses.
+
+A shared recording is stricter, because a paraphrase of it passes a check on
+words. In a turn in which a tool answered with `tools.SharedRecordingMarker`,
+the filing run is shown only what the person wrote, and the lessons run reads
+none of the turn (`withoutSharedRecordingTurnsIn`). A fact from the agent's
+paraphrase of the recording therefore has nothing to rest on. A shared page is
+still held to the check on words alone.
 
 What the reader's agent learns about the same subject is learned in its own
 graph, under its own page, and the two pages can disagree. They are two
