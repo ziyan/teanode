@@ -117,8 +117,15 @@ func (self *graph) ShareRecording(ctx context.Context, arguments ShareRecordingA
 	if (granteeUserId == "") == (granteeCircleId == "") {
 		return nil, fmt.Errorf("%w: share with one person or one circle", api.ErrInvalidArguments)
 	}
-	saved, err := self.transaction(ctx).ShareRecording(owner.ID, &models.RecordingShare{
-		RecordingID: strings.TrimSpace(arguments.RecordingID), GranteeUserID: granteeUserId, GranteeCircleID: granteeCircleId,
+	tx := self.transaction(ctx)
+	recordingId := strings.TrimSpace(arguments.RecordingID)
+	// What the grantee was given before, to tell whether this is more.
+	earlier, err := tx.ListRecordingShares(recordingId)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	saved, err := tx.ShareRecording(owner.ID, &models.RecordingShare{
+		RecordingID: recordingId, GranteeUserID: granteeUserId, GranteeCircleID: granteeCircleId,
 		RecordingShareLevel: recordingShareLevel,
 	})
 	if err != nil {
@@ -128,8 +135,27 @@ func (self *graph) ShareRecording(ctx context.Context, arguments ShareRecordingA
 		// to learn.
 		return nil, translateError(err)
 	}
+	if isRecordingShareWider(earlier, saved) {
+		if err := self.tellAboutShare(ctx, owner, models.ShareReceivedNote{
+			SharerName: owner.DisplayName(), ShareKind: models.ShareKindRecording, ShareLevel: string(saved.RecordingShareLevel),
+			ShareSubject: saved.RecordingTitle,
+		}, granteeUserId, granteeCircleId); err != nil {
+			return nil, err
+		}
+	}
 	log.Noticef("%s shared a recording at %s", owner.Username, recordingShareLevel)
 	return describeRecordingShare(saved), nil
+}
+
+// isRecordingShareWider says whether the share gives its grantee more than the
+// recording's shares did before it: there was none for them, or a lower level.
+func isRecordingShareWider(earlier []*models.RecordingShare, saved *models.RecordingShare) bool {
+	for _, share := range earlier {
+		if share.GranteeUserID == saved.GranteeUserID && share.GranteeCircleID == saved.GranteeCircleID {
+			return saved.RecordingShareLevel.Rank() > share.RecordingShareLevel.Rank()
+		}
+	}
+	return true
 }
 
 type UnshareRecordingArguments struct {

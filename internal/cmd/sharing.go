@@ -13,7 +13,8 @@ import (
 
 // NewSharingCommand builds "teanode sharing", everything you share and
 // everything shared with you, across calendar, location, Health, memory pages,
-// photo albums, skills and passwords, in one place. Each kind is still shared
+// photo albums, recordings, finance accounts, skills and passwords, in one
+// place. Each kind is still shared
 // and stopped with its own command; what is only here is declining a share
 // that was made to you by name.
 func NewSharingCommand() *cli.Command {
@@ -58,15 +59,19 @@ func sharingKindName(shareKind string) string {
 	return strings.ReplaceAll(shareKind, "_", " ")
 }
 
-// sharingWhat is what a share is of: the calendar, page, album or skill by
-// name, how many password items, and nothing for location and Health, which
+// sharingWhat is what a share is of: the calendar, page, album, recording,
+// finance account or skill by name (an account with the last digits of its
+// number), how many password items, and nothing for location and Health, which
 // are shared whole.
-func sharingWhat(shareKind, subjectName string, passwordItemCount int) string {
+func sharingWhat(shareKind, subjectName, subjectMask string, passwordItemCount int) string {
 	if shareKind == string(models.ShareKindPasswords) {
 		if passwordItemCount == 1 {
 			return "1 item"
 		}
 		return fmt.Sprintf("%d items", passwordItemCount)
+	}
+	if shareKind == string(models.ShareKindFinance) {
+		return forTerminal(financeAccountWords(subjectName, subjectMask))
 	}
 	return forTerminal(subjectName)
 }
@@ -119,7 +124,7 @@ func runSharing(ctx context.Context, command *cli.Command) error {
 				with = sharingPerson(share.GranteeUsername, share.GranteeName)
 			}
 			rows = append(rows, []string{
-				sharingKindName(share.ShareKind), sharingWhat(share.ShareKind, share.SubjectName, share.PasswordItemCount), with,
+				sharingKindName(share.ShareKind), sharingWhat(share.ShareKind, share.SubjectName, share.SubjectMask, share.PasswordItemCount), with,
 				sharingLevel(share.ShareLevel, share.ShareScopes), share.CreatedAt.Format("2006-01-02"), forTerminal(share.ShareID),
 			})
 		}
@@ -141,7 +146,7 @@ func runSharing(ctx context.Context, command *cli.Command) error {
 			through = "circle " + forTerminal(share.GranteeCircleName)
 		}
 		rows = append(rows, []string{
-			sharingKindName(share.ShareKind), sharingWhat(share.ShareKind, share.SubjectName, share.PasswordItemCount),
+			sharingKindName(share.ShareKind), sharingWhat(share.ShareKind, share.SubjectName, share.SubjectMask, share.PasswordItemCount),
 			sharingPerson(share.OwnerUsername, share.OwnerName), through, sharingLevel(share.ShareLevel, share.ShareScopes),
 			share.CreatedAt.Format("2006-01-02"), forTerminal(share.ShareID),
 		})

@@ -67,6 +67,8 @@ func permissionToUseShare(shareKind models.ShareKind) models.Permission {
 		return models.PermissionHealthUse
 	case models.ShareKindPhotoAlbum:
 		return models.PermissionPhotosUse
+	case models.ShareKindRecording, models.ShareKindFinance:
+		return models.PermissionAgentUse
 	}
 	return models.PermissionCircleUse
 }

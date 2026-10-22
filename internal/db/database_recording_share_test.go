@@ -452,3 +452,38 @@ func TestTheRecordingShareListings(test *testing.T) {
 		}
 	})
 }
+
+// Declining ends a recording share made to the person by name, and only that;
+// a share to a circle is not found, and the circle's owners are listed with
+// recordings among the kinds.
+func TestDecliningARecordingShareEndsOnlyTheShareMadeByName(test *testing.T) {
+	world := newRecordingShareWorld(test)
+	dbtest.RunTransactionOn(test, world.fixture.database, func(tx db.Transaction) {
+		direct := world.share(test, tx, world.sam.ID, "", models.RecordingShareLevelTranscript)
+		circle := world.share(test, tx, "", world.family.ID, models.RecordingShareLevelSummary)
+
+		for _, granteeUserId := range []string{world.ownerUserId, world.lee.ID, ""} {
+			if err := tx.DeclineRecordingShare(granteeUserId, direct.ID); !errors.Is(err, db.ErrNotFound) {
+				test.Errorf("declined by %q: %v", granteeUserId, err)
+			}
+		}
+		if err := tx.DeclineRecordingShare(world.sam.ID, circle.ID); !errors.Is(err, db.ErrNotFound) {
+			test.Errorf("a share to a circle declined: %v", err)
+		}
+		if err := tx.DeclineRecordingShare(world.sam.ID, direct.ID); err != nil {
+			test.Fatalf("DeclineRecordingShare: %s", err)
+		}
+		if err := tx.DeclineRecordingShare(world.sam.ID, direct.ID); !errors.Is(err, db.ErrNotFound) {
+			test.Errorf("declined twice: %v", err)
+		}
+		if got := levelOf(test, tx, world.sam.ID, world.recordingId); got != models.RecordingShareLevelSummary {
+			test.Errorf("after declining the share by name sam reads %q, want what the circle gives", got)
+		}
+
+		owners, err := tx.ListCircleShareOwners(world.family.ID)
+		if err != nil || len(owners) != 1 || owners[0].OwnerUserID != world.ownerUserId ||
+			len(owners[0].ShareKinds) != 1 || owners[0].ShareKinds[0] != models.ShareKindRecording {
+			test.Errorf("the owners of what was shared with the circle: %+v %v", owners, err)
+		}
+	})
+}
