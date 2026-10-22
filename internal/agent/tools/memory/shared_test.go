@@ -459,7 +459,7 @@ func TestPreviewingAShareSharesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, wanted := range []string{`"reached_page_count":4`, `"Likes tea"`, `"quote":"I like tea"`, `"with":"ben"`,
-		`"reached_page_paths":["people/a","people/a/b"]`, `added under the shared page later is shared too`, `"withheld_fact_count":3`, `3 facts from finance, recordings or location stay private`} {
+		`"reached_page_paths":["people/a","people/a/b"]`, `added under the shared page later is shared too`, `"withheld_fact_count":3`, `3 facts from finance, recordings, location, private events, or records that are gone stay private`} {
 		if !strings.Contains(result.Content, wanted) {
 			t.Errorf("the preview lacks %s:\n%s", wanted, result.Content)
 		}

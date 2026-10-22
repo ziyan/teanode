@@ -223,7 +223,7 @@ func TestPreviewingAShareSharesNothing(test *testing.T) {
 	if variables := called("PreviewAgentPageShare"); variables["granteeUserId"] != "u-ben" || variables["isQuoteShared"] != false {
 		test.Errorf("the preview: %v", variables)
 	}
-	for _, wanted := range []string{"ben would see this of people/a-grandparent", "#3 Next appointment is Tuesday at three.", "from Ada Example's mail", "reaches 4 pages", "added under it later is shared too", "  people/a-grandparent/doctor", "(and 2 more)", "3 facts from finance, recordings or location stay private"} {
+	for _, wanted := range []string{"ben would see this of people/a-grandparent", "#3 Next appointment is Tuesday at three.", "from Ada Example's mail", "reaches 4 pages", "added under it later is shared too", "  people/a-grandparent/doctor", "(and 2 more)", "3 facts from finance, recordings, location, private events, or records that are gone stay private"} {
 		if !strings.Contains(output, wanted) {
 			test.Errorf("the preview lacks %q:\n%s", wanted, output)
 		}
