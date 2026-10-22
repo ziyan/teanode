@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/netip"
 	"sync"
 	"time"
 
@@ -189,20 +188,9 @@ func (self *relayComponent) deliverView(response http.ResponseWriter, request *h
 }
 
 // addressKey is who a request is limited as: its address, or for IPv6 the
-// /64 it is in, which is what one network is usually given. Counting each
-// IPv6 address apart would give a caller holding a /64 more budgets than
-// anybody could count.
+// /64 it is in.
 func (self *relayComponent) addressKey(request *http.Request) string {
-	address := api.RemoteAddress(request, self.configuration.Current().Server.TrustedProxies)
-	parsed, err := netip.ParseAddr(address)
-	if err != nil || parsed.Is4() || parsed.Is4In6() {
-		return address
-	}
-	network, err := parsed.Prefix(64)
-	if err != nil {
-		return address
-	}
-	return network.String()
+	return ratelimit.AddressKey(api.RemoteAddress(request, self.configuration.Current().Server.TrustedProxies))
 }
 
 // relayOrRefuse is the relay, or a 404 written when it is off.

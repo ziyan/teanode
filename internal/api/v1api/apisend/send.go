@@ -16,6 +16,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/mailparse"
+	"github.com/ziyan/teanode/internal/util/ratelimit"
 	"github.com/ziyan/teanode/internal/util/security"
 )
 
@@ -44,7 +45,7 @@ func (self *send) sendView(response http.ResponseWriter, request *http.Request) 
 		}
 		// Counted against the same limiter as a submission on port 587:
 		// this is the same credential, presented at another door.
-		if self.settings.AuthLimiter != nil && !self.settings.AuthLimiter.Allow(api.RemoteAddress(request, self.config.Current().Server.TrustedProxies)) {
+		if self.settings.AuthLimiter != nil && !self.settings.AuthLimiter.Allow(ratelimit.AddressKey(api.RemoteAddress(request, self.config.Current().Server.TrustedProxies))) {
 			return api.ErrTooManyRequests
 		}
 		credentialId, credentialKey, err := security.DecodeCredential(decodedParts[0], decodedParts[1], self.settings.Secret)

@@ -278,7 +278,7 @@ func (self *session) Login(username, password string) error {
 	if err := self.requireMailbox(); err != nil {
 		return err
 	}
-	if self.settings.AuthLimiter != nil && self.remote != "" && !self.settings.AuthLimiter.Allow(self.remote) {
+	if self.settings.AuthLimiter != nil && self.remote != "" && !self.settings.AuthLimiter.Allow(ratelimit.AddressKey(self.remote)) {
 		return &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeLimit, Text: "Too many sign-in attempts; try again later"}
 	}
 	var mailbox *models.Mailbox
@@ -306,7 +306,7 @@ func (self *session) Login(username, password string) error {
 			// was twenty times as much of this server's time per packet
 			// for a mailbox with twenty devices.
 			if self.settings.AuthLimiter != nil && self.remote != "" && spent > 1 {
-				self.settings.AuthLimiter.For(self.remote).Take(int64(spent - 1))
+				self.settings.AuthLimiter.For(ratelimit.AddressKey(self.remote)).Take(int64(spent - 1))
 			}
 			log.Noticef("refused imap sign-in as %q from %s", username, self.remote)
 			return imapserver.ErrAuthFailed

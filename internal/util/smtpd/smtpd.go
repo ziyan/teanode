@@ -674,7 +674,7 @@ func (self *session) handleAuth(arguments string) error {
 
 	// Before the credential is even parsed, so that a refused address costs
 	// nothing to refuse.
-	if self.settings.AuthLimiter != nil && !self.settings.AuthLimiter.Allow(self.ip.String()) {
+	if self.settings.AuthLimiter != nil && !self.settings.AuthLimiter.Allow(ratelimit.AddressKey(self.ip.String())) {
 		log.Warningf("%s: too many authentication attempts", self)
 		return self.writeLines(454, "4.7.0", "Too many authentication attempts, try again later")
 	}
