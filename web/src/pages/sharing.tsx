@@ -34,6 +34,8 @@ export type SharingMade = {
   subjectName: string
   // The last digits of a finance account's number; empty for every other kind.
   subjectMask: string
+  // True for a share of a memory page that no longer exists; subjectName is then its path.
+  isSubjectDeleted: boolean
   shareLevel: string
   shareScopes: string[]
   passwordItemCount: number
@@ -66,7 +68,7 @@ export type SharingReceived = {
 }
 
 export const LIST_SHARING = `query { ListSharing {
-  sharesMade { shareKind shareId subjectId subjectName subjectMask shareLevel shareScopes passwordItemCount
+  sharesMade { shareKind shareId subjectId subjectName subjectMask isSubjectDeleted shareLevel shareScopes passwordItemCount
     granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName createdAt }
   sharesReceived { shareKind shareId subjectId subjectName subjectMask shareLevel shareScopes passwordItemCount
     ownerUserId ownerUsername ownerName granteeCircleId granteeCircleName isDirect canDecline createdAt }
@@ -117,10 +119,19 @@ const LEVEL_NAMES: Record<string, Key> = {
   transactions: 'finance.shareLevelName.transactions',
 }
 
-const SCOPE_NAMES: Record<string, Key> = {
-  quotes: 'sharing.scope.quotes',
-  location: 'photos.sharePlacesIncluded',
-  faceNames: 'photos.shareFaceNamesIncluded',
+// What the person shared of their own location is worded as "where I am"; what
+// is shared with them is where the other person is.
+const RECEIVED_LEVEL_NAMES: Record<string, Key> = {
+  current: 'sharing.level.current',
+  history: 'sharing.level.history',
+}
+
+// What else a share gives, worded by the kind: a scope means something only
+// for its own kind (a skill's tool may be called "quotes"), and Health's are
+// categories.
+const SCOPE_NAMES: Partial<Record<ShareKind, Record<string, Key>>> = {
+  memory_page: { quotes: 'sharing.scope.quotes' },
+  photo_album: { location: 'photos.sharePlacesIncluded', faceNames: 'photos.shareFaceNamesIncluded' },
 }
 
 const HEALTH_CATEGORY_PREFIX = 'health.category.'
@@ -231,8 +242,12 @@ function useShareWords() {
     shareKind: ShareKind
     subjectName: string
     subjectMask: string
+    isSubjectDeleted?: boolean
     passwordItemCount: number
   }): string {
+    if (share.isSubjectDeleted) {
+      return t('sharing.pageDeleted')
+    }
     if (share.shareKind === 'passwords') {
       return plural(
         share.passwordItemCount,
@@ -249,6 +264,7 @@ function useShareWords() {
     shareKind: ShareKind
     subjectName: string
     subjectMask: string
+    isSubjectDeleted?: boolean
     passwordItemCount: number
   }): string {
     return share.shareKind === 'passwords' || !share.subjectName
@@ -256,16 +272,21 @@ function useShareWords() {
       : `${kindName(share.shareKind)}: ${subject(share)}`
   }
   // The level and what else it gives, as the kind's own page words them.
-  function level(share: { shareKind: ShareKind; shareLevel: string; shareScopes: string[] }): string {
+  function level(
+    share: { shareKind: ShareKind; shareLevel: string; shareScopes: string[] },
+    isReceived: boolean,
+  ): string {
     const parts: string[] = []
     if (share.shareLevel) {
-      parts.push(LEVEL_NAMES[share.shareLevel] ? t(LEVEL_NAMES[share.shareLevel]) : share.shareLevel)
+      const levelName = (isReceived && RECEIVED_LEVEL_NAMES[share.shareLevel]) || LEVEL_NAMES[share.shareLevel]
+      parts.push(levelName ? t(levelName) : share.shareLevel)
     }
     for (const scope of share.shareScopes) {
       if (share.shareKind === 'health') {
         parts.push(t(`${HEALTH_CATEGORY_PREFIX}${scope}` as Key))
       } else {
-        parts.push(SCOPE_NAMES[scope] ? t(SCOPE_NAMES[scope]) : scope)
+        const scopeName = SCOPE_NAMES[share.shareKind]?.[scope]
+        parts.push(scopeName ? t(scopeName) : scope)
       }
     }
     return parts.join(', ')
@@ -364,7 +385,13 @@ function SharedByYou({ shares, reload }: { shares: SharingMade[]; reload: () => 
       header: t('sharing.what'),
       filter: 'text',
       value: (share) => words.what(share),
-      render: (share) => <Link to={managerAddress(share.shareKind, share.subjectId)}>{words.subject(share)}</Link>,
+      // A page that is gone has nowhere to open; it is listed so its share can be stopped.
+      render: (share) =>
+        share.isSubjectDeleted ? (
+          words.subject(share)
+        ) : (
+          <Link to={managerAddress(share.shareKind, share.subjectId)}>{words.subject(share)}</Link>
+        ),
     },
     {
       key: 'with',
@@ -382,8 +409,8 @@ function SharedByYou({ shares, reload }: { shares: SharingMade[]; reload: () => 
     {
       key: 'level',
       header: t('sharing.level'),
-      value: (share) => words.level(share),
-      render: (share) => words.level(share),
+      value: (share) => words.level(share, false),
+      render: (share) => words.level(share, false),
     },
     {
       key: 'since',
@@ -506,8 +533,8 @@ function SharedWithYou({ shares, reload }: { shares: SharingReceived[]; reload: 
     {
       key: 'level',
       header: t('sharing.level'),
-      value: (share) => words.level(share),
-      render: (share) => words.level(share),
+      value: (share) => words.level(share, true),
+      render: (share) => words.level(share, true),
     },
     {
       key: 'since',

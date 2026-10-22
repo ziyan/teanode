@@ -274,3 +274,26 @@ func TestRecordingsAndFinanceAreListedOnlyToWhoMayUseThem(test *testing.T) {
 		}
 	}
 }
+
+// An account reached by name at a lower level than a circle gives is one row
+// at the higher level, and the row is the share made by name, so that the
+// person can decline it. Declining it leaves the circle's share.
+func TestAFinanceAccountSharedByNameBelowTheCircleCanBeDeclined(test *testing.T) {
+	world := newSharingWorld(test)
+	_, financeAccountId := world.seedRecordingAndFinance(test)
+	direct := world.shareFinance(test, financeAccountId, world.ben.ID, nil, "balance")
+	world.shareFinance(test, financeAccountId, nil, world.home, "spending")
+
+	_, received := world.sharing(test, world.ben)
+	row := rowOfKind(test, received, "finance")
+	if row["shareLevel"] != "spending" || row["isDirect"] != true || row["canDecline"] != true || row["shareId"] != direct["id"] {
+		test.Fatalf("ben's finance row is %v, want the share by name (%v) at spending", row, direct["id"])
+	}
+	world.call(test, world.ben, fmt.Sprintf(`mutation { DeclineShare(shareKind: "finance", shareId: %q) }`, row["shareId"]))
+
+	_, received = world.sharing(test, world.ben)
+	row = rowOfKind(test, received, "finance")
+	if row["shareLevel"] != "spending" || row["isDirect"] != false || row["canDecline"] != false || row["granteeCircleName"] != "Home" {
+		test.Errorf("after declining, ben's finance row is %v", row)
+	}
+}

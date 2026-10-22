@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -38,10 +39,11 @@ type FinanceShareOperation interface {
 	ListFinanceSharesBy(ownerUserId string) ([]*models.FinanceShare, error)
 
 	// ListFinanceSharesReaching are the shares that reach the person now,
-	// oldest first, one per finance account: the one that gives the highest
-	// level, with whose account it is. A share to a person reaches them only
-	// while the two still share a circle, and a share to a circle only while
-	// both are in it. Not the person's own.
+	// oldest first, one per finance account: at the highest level that reaches
+	// them, with whose account it is. When a share to the person by name
+	// reaches them too, the row is that share, so they can decline it. A share
+	// to a person reaches them only while the two still share a circle, and a
+	// share to a circle only while both are in it. Not the person's own.
 	ListFinanceSharesReaching(userId string) ([]*models.FinanceShare, error)
 
 	// ListReachedFinanceAccounts are the finance accounts of other people that
@@ -338,10 +340,9 @@ type reachingFinanceShareRow struct {
 	OwnerUserID       string `gorm:"column:owner_user_id"`
 }
 
-// reachingFinanceShares are the shares that reach the viewer, the one of the
-// highest level for each finance account, for one owner and one account or,
-// with empty identifiers, for all of them.
-func (self *transaction) reachingFinanceShares(viewerUserId, ownerUserId, financeAccountId string) ([]reachingFinanceShareRow, error) {
+// allReachingFinanceShares are every share that reaches the viewer, for one
+// owner and one account or, with empty identifiers, for all of them.
+func (self *transaction) allReachingFinanceShares(viewerUserId, ownerUserId, financeAccountId string) ([]reachingFinanceShareRow, error) {
 	if viewerUserId == "" {
 		return nil, nil
 	}
@@ -351,6 +352,12 @@ func (self *transaction) reachingFinanceShares(viewerUserId, ownerUserId, financ
 		sql.Named("permission", string(models.PermissionAgentUse))).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
+	return rows, nil
+}
+
+// highestReachingFinanceShares keeps, for each finance account, the share that
+// gives the highest level.
+func highestReachingFinanceShares(rows []reachingFinanceShareRow) []reachingFinanceShareRow {
 	best := map[string]reachingFinanceShareRow{}
 	for _, row := range rows {
 		kept, isKept := best[row.FinanceAccountID]
@@ -363,29 +370,71 @@ func (self *transaction) reachingFinanceShares(viewerUserId, ownerUserId, financ
 	for _, row := range best {
 		reaching = append(reaching, row)
 	}
-	return reaching, nil
+	return reaching
 }
 
-func (self *transaction) ListFinanceSharesReaching(userId string) ([]*models.FinanceShare, error) {
-	reaching, err := self.reachingFinanceShares(userId, "", "")
+// reachingFinanceShares are the shares that reach the viewer, the one of the
+// highest level for each finance account, for one owner and one account or,
+// with empty identifiers, for all of them.
+func (self *transaction) reachingFinanceShares(viewerUserId, ownerUserId, financeAccountId string) ([]reachingFinanceShareRow, error) {
+	rows, err := self.allReachingFinanceShares(viewerUserId, ownerUserId, financeAccountId)
 	if err != nil {
 		return nil, err
 	}
-	if len(reaching) == 0 {
+	return highestReachingFinanceShares(rows), nil
+}
+
+func (self *transaction) ListFinanceSharesReaching(userId string) ([]*models.FinanceShare, error) {
+	allReaching, err := self.allReachingFinanceShares(userId, "", "")
+	if err != nil {
+		return nil, err
+	}
+	if len(allReaching) == 0 {
 		return []*models.FinanceShare{}, nil
 	}
-	shareIds := make([]string, 0, len(reaching))
-	for _, row := range reaching {
+	shareIds := make([]string, 0, len(allReaching))
+	for _, row := range allReaching {
 		shareIds = append(shareIds, row.ShareID)
 	}
 	var rows []financeAccountShareModel
 	if err := self.tx.Where("\"id\" IN ?", shareIds).Order("\"created_at\" ASC, \"id\" ASC").Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	shares := make([]*models.FinanceShare, 0, len(rows))
+	shareById := make(map[string]*models.FinanceShare, len(rows))
+	directShareByAccount := map[string]*models.FinanceShare{}
 	for index := range rows {
-		shares = append(shares, rows[index].toModel())
+		share := rows[index].toModel()
+		shareById[share.ID] = share
+		// The rows are oldest first, so the oldest share by name of an account
+		// is the one kept.
+		if share.GranteeUserID == userId && directShareByAccount[share.FinanceAccountID] == nil {
+			directShareByAccount[share.FinanceAccountID] = share
+		}
 	}
+	// One row for each account, at the highest level that reaches the person.
+	// A share made to the person by name can be declined and one through a
+	// circle cannot, so when both reach, the row is the share by name with the
+	// highest level: a share by name hidden under a higher circle share would
+	// otherwise be out of the person's reach to end.
+	shares := make([]*models.FinanceShare, 0, len(allReaching))
+	for _, best := range highestReachingFinanceShares(allReaching) {
+		share := shareById[best.ShareID]
+		if share == nil {
+			continue
+		}
+		if direct := directShareByAccount[best.FinanceAccountID]; direct != nil && direct.ID != share.ID {
+			withHighestLevel := *direct
+			withHighestLevel.FinanceShareLevel = share.FinanceShareLevel
+			share = &withHighestLevel
+		}
+		shares = append(shares, share)
+	}
+	sort.SliceStable(shares, func(first, second int) bool {
+		if !shares[first].CreatedAt.Equal(shares[second].CreatedAt) {
+			return shares[first].CreatedAt.Before(shares[second].CreatedAt)
+		}
+		return shares[first].ID < shares[second].ID
+	})
 	if err := nameFinanceShares(self.tx, shares); err != nil {
 		return nil, err
 	}

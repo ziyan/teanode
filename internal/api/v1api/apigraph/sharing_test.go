@@ -3,6 +3,7 @@ package apigraph
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -434,5 +435,213 @@ func TestDecliningAnAlbumShareTakesOutThePhotosTheGranteeAdded(test *testing.T) 
 	}
 	if data, failures := world.ask(test, world.ben, fmt.Sprintf(`query { ListPhotos(albumId: %q) { id } }`, world.albumID)); len(failures) == 0 {
 		test.Errorf("ben still reads the album: %v", data)
+	}
+}
+
+// A calendar shared at busy is shown to the person it is shared with by the
+// owner's name, the way the calendar itself is, because its title can say what
+// is in it. From titles up the title is shown.
+func TestListSharingHidesTheTitleOfACalendarSharedAtBusy(test *testing.T) {
+	world := newSharingWorld(test)
+	dbtest.Exec(test, world.database, fmt.Sprintf(`UPDATE "calendar" SET "name" = 'Private appointments' WHERE "id" = '%s'`, world.adaCalendar))
+	world.share(test, world.ada, world.adaCalendar, userGrantee(world.ben), "busy")
+	_, received := world.sharing(test, world.ben)
+	if row := rowOfKind(test, received, "calendar"); row["subjectName"] != "Share-ada" || row["shareLevel"] != "busy" {
+		test.Errorf("a calendar shared at busy is listed as %v", row)
+	}
+	// The owner sees their own title.
+	made, _ := world.sharing(test, world.ada)
+	if row := rowOfKind(test, made, "calendar"); row["subjectName"] != "Private appointments" {
+		test.Errorf("ada's own row is %v", row)
+	}
+	world.share(test, world.ada, world.adaCalendar, userGrantee(world.ben), "titles")
+	_, received = world.sharing(test, world.ben)
+	if row := rowOfKind(test, received, "calendar"); row["subjectName"] != "Private appointments" {
+		test.Errorf("a calendar shared at titles is listed as %v", row)
+	}
+}
+
+// A memory page and a skill reach only people who may use the agent, so a
+// member of the circle who may not is not told of them, and nobody whose
+// account is disabled is told of anything.
+func TestAShareIsNotToldToAMemberWhoCannotUseItOrWhoIsDisabled(test *testing.T) {
+	world := newSharingWorld(test)
+	// Dave may use circles and calendars but not the agent, and his agent is on.
+	dbtest.RunTransactionOn(test, world.database, func(tx db.Transaction) {
+		person, err := tx.EnsureAgent(world.dave.ID)
+		if err != nil {
+			test.Fatalf("EnsureAgent: %s", err)
+		}
+		if _, err := tx.UpdateAgent(person.ID, func(agent *models.Agent) error {
+			agent.Enabled = true
+			return nil
+		}); err != nil {
+			test.Fatalf("UpdateAgent: %s", err)
+		}
+	})
+	world.join(test, world.ada, world.home, world.dave)
+	world.join(test, world.ada, world.home, world.cora)
+	world.call(test, world.ada, fmt.Sprintf(`mutation { ShareAgentPage(path: "people/kim", granteeCircleId: %q) { id } }`, world.home))
+	if got := world.notesOf(test, world.dave, models.NoteShareReceived); len(got) != 0 {
+		test.Errorf("dave, who may not use the agent, was told %q", got)
+	}
+	for _, user := range []*models.User{world.ben, world.cora} {
+		if got := world.notesOf(test, user, models.NoteShareReceived); fmt.Sprint(got) != "[Share-ada shared the memory page Kim with you]" {
+			test.Errorf("%s was told %q", user.Username, got)
+		}
+	}
+
+	// Ben's account is disabled: the next share to the circle tells cora only.
+	dbtest.RunTransactionOn(test, world.database, func(tx db.Transaction) {
+		if _, err := tx.UpdateUser(world.ben.ID, func(current *models.User) error {
+			current.DisabledAt = new(time.Now())
+			return nil
+		}); err != nil {
+			test.Fatalf("UpdateUser: %s", err)
+		}
+	})
+	world.call(test, world.ada, fmt.Sprintf(`mutation { ShareLocation(granteeCircleId: %q, shareLevel: "current") { id } }`, world.home))
+	if got := world.notesOf(test, world.ben, models.NoteShareReceived); len(got) != 1 {
+		test.Errorf("ben, whose account is disabled, was told %q", got)
+	}
+	if got := world.notesOf(test, world.cora, models.NoteShareReceived); len(got) != 2 {
+		test.Errorf("cora was told %q", got)
+	}
+}
+
+// Nobody is told that a member joined when the account was in the circle
+// already: not when an operator puts in an account that is in, and not when an
+// invitation is answered by an account that is in by now.
+func TestOwnersAreNotToldAgainWhenAMemberWasInTheCircleAlready(test *testing.T) {
+	world := newSharingWorld(test)
+	world.share(test, world.ada, world.adaCalendar, fmt.Sprintf(`granteeCircleId: %q`, world.home), "busy")
+	add := func(user *models.User) string {
+		return fmt.Sprintf(`mutation { AddCircleMember(circleId: %q, username: %q, memberRole: "member") { id } }`, world.home, user.Username)
+	}
+	reached := func() int { return len(world.notesOf(test, world.ada, models.NoteShareReached)) }
+
+	world.call(test, world.manager, add(world.cora))
+	if reached() != 1 {
+		test.Fatalf("ada was told %q when cora was put in", world.notesOf(test, world.ada, models.NoteShareReached))
+	}
+	world.call(test, world.manager, add(world.cora))
+	if reached() != 1 {
+		test.Errorf("ada was told %q when cora was put in again", world.notesOf(test, world.ada, models.NoteShareReached))
+	}
+
+	// An invitation that is still open when the account is in the circle,
+	// which an invitation answered at the same moment as another way in leaves.
+	world.call(test, world.ada, fmt.Sprintf(`mutation { InviteToCircle(circleId: %q, username: %q, memberRole: "member") }`, world.home, world.dave.Username))
+	dbtest.Exec(test, world.database, fmt.Sprintf(
+		`INSERT INTO "circle_member" ("circle_id", "user_id", "member_role", "joined_at") VALUES ('%s', '%s', 'member', now())`, world.home, world.dave.ID))
+	invitations := world.call(test, world.dave, `query { ListCircleInvitations { id circleId } }`)["ListCircleInvitations"].([]any)
+	if len(invitations) != 1 {
+		test.Fatalf("dave has the invitations %v", invitations)
+	}
+	world.call(test, world.dave, fmt.Sprintf(`mutation { AnswerCircleInvitation(invitationId: %q, isAccepted: true) { id } }`,
+		invitations[0].(map[string]any)["id"]))
+	if reached() != 1 {
+		test.Errorf("ada was told %q when dave answered an invitation to a circle he was in", world.notesOf(test, world.ada, models.NoteShareReached))
+	}
+}
+
+// A notice is counted as sent once it is committed, not before: one that was
+// not written does not stop the next from telling, and the cache holds a
+// bounded number of shares, dropping the oldest when all are fresh.
+func TestTheShareNoticeCacheCountsANoticeOnlyWhenRecorded(test *testing.T) {
+	var cache shareNoticeCache
+	now := time.Now()
+	if !cache.isDue("share", "reader", now) {
+		test.Fatal("a share nobody was told of was not due")
+	}
+	// Asking does not count the person as told.
+	if !cache.isDue("share", "reader", now) {
+		test.Fatal("asking whether a notice was due counted it as sent")
+	}
+	cache.record("share", "reader", now)
+	if cache.isDue("share", "reader", now.Add(shareNoticeInterval-time.Second)) {
+		test.Error("a person was told again within the interval")
+	}
+	if !cache.isDue("share", "reader", now.Add(shareNoticeInterval)) {
+		test.Error("a person was not told again after the interval")
+	}
+	if !cache.isDue("share", "another", now) || !cache.isDue("other share", "reader", now) {
+		test.Error("a notice of another share or to another person was held back")
+	}
+
+	for index := 0; index < shareNoticeCacheLimit+10; index++ {
+		cache.record(fmt.Sprintf("share %d", index), "reader", now.Add(time.Duration(index)*time.Millisecond))
+	}
+	if len(cache.sentAt) > shareNoticeCacheLimit {
+		test.Errorf("the cache holds %d shares", len(cache.sentAt))
+	}
+	last := shareNoticeCacheLimit + 9
+	if cache.isDue(fmt.Sprintf("share %d", last), "reader", now.Add(time.Second)) {
+		test.Error("the newest notice was forgotten")
+	}
+	if !cache.isDue("share 0", "reader", now.Add(time.Second)) {
+		test.Error("the oldest notice was kept while the newest were dropped")
+	}
+}
+
+// What a person shared is listed after they lose the permission to use that
+// kind: the shares are dormant for their readers, and the owner still sees what
+// is shared in their name.
+func TestListSharingKeepsWhatWasSharedAfterThePermissionIsLost(test *testing.T) {
+	world := newSharingWorld(test)
+	world.call(test, world.ada, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "current") { id } }`, world.ben.ID))
+	dbtest.RunTransactionOn(test, world.database, func(tx db.Transaction) {
+		role, err := tx.GetRoleByName("Sharing role of " + world.ada.Username)
+		if err != nil || role == nil {
+			test.Fatalf("GetRoleByName: %v %v", role, err)
+		}
+		if _, err := tx.UpdateRole(role.ID, func(role *models.Role) error {
+			role.Permissions = []models.Permission{models.PermissionAgentUse, models.PermissionCircleUse}
+			return nil
+		}); err != nil {
+			test.Fatalf("UpdateRole: %s", err)
+		}
+	})
+	made, _ := world.sharing(test, world.ada)
+	if fmt.Sprint(kindsOf(made)) != "[location]" {
+		test.Errorf("ada shares %v", kindsOf(made))
+	}
+	// Ben reads nothing of it while it is dormant, and Ben's own list is
+	// unaffected by what ada may use.
+	dbtest.RunTransactionOn(test, world.database, func(tx db.Transaction) {
+		shares, err := tx.ListLocationSharesReaching(world.ben.ID)
+		if err != nil {
+			test.Fatalf("ListLocationSharesReaching: %s", err)
+		}
+		if len(shares) != 0 {
+			test.Errorf("a dormant share reaches ben: %v", shares)
+		}
+	})
+}
+
+// A share left by a page that was deleted before shares were ended with it is
+// not shown to the person it was for, and its owner is told the page is gone
+// and can stop it.
+func TestListSharingMarksASharedPageThatIsGone(test *testing.T) {
+	world := newSharingWorld(test)
+	world.call(test, world.ada, fmt.Sprintf(`mutation { ShareAgentPage(path: "people/kim", granteeUserId: %q) { id } }`, world.ben.ID))
+	dbtest.Exec(test, world.database, `DELETE FROM "agent_node" WHERE "path" = 'people/kim'`)
+
+	if _, received := world.sharing(test, world.ben); len(received) != 0 {
+		test.Errorf("ben is shown %v", received)
+	}
+	view := world.run(test, world.ada, `query { ListSharing { sharesMade { shareKind shareId subjectId subjectName isSubjectDeleted } } }`,
+		nil)["ListSharing"].(map[string]any)
+	madeRows := view["sharesMade"].([]any)
+	if len(madeRows) != 1 {
+		test.Fatalf("ada shares %v", madeRows)
+	}
+	row := madeRows[0].(map[string]any)
+	if row["isSubjectDeleted"] != true || row["subjectId"] != "people/kim" {
+		test.Fatalf("the row of the page that is gone is %v", row)
+	}
+	world.call(test, world.ada, fmt.Sprintf(`mutation { UnshareAgentPage(shareId: %q) }`, row["shareId"]))
+	if made, _ := world.sharing(test, world.ada); len(made) != 0 {
+		test.Errorf("ada still shares %v", kindsOf(made))
 	}
 }

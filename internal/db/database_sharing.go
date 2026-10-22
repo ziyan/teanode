@@ -178,7 +178,18 @@ func (self *transaction) ListCalendarSharesReaching(readerUserId string) ([]*mod
 		rows = append(rows, shareRow)
 	}
 	sortShareRows(rows)
-	return rows, self.shareRowNames(rows)
+	if err := self.shareRowNames(rows); err != nil {
+		return nil, err
+	}
+	// The title of a calendar can say what is in it, so somebody who is told
+	// only when the owner is busy is told whose it is instead, as the calendar
+	// itself is shown to them.
+	for _, row := range rows {
+		if !models.ShareLevel(row.ShareLevel).CanRead() {
+			row.SubjectName = row.OwnerName
+		}
+	}
+	return rows, nil
 }
 
 func (self *transaction) ListLocationSharesReaching(viewerUserId string) ([]*models.ShareRow, error) {

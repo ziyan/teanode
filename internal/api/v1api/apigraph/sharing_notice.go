@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -24,6 +25,9 @@ import (
 // forth would otherwise be a notification for every tap.
 const shareNoticeInterval = 10 * time.Minute
 
+// shareNoticeCacheLimit is how many shares the cache remembers at most.
+const shareNoticeCacheLimit = 4096
+
 // shareNoticeCache remembers when each person was last told each share. It is
 // kept in memory: a restart forgets it, which costs one extra notice, and
 // another instance of the server does not share it.
@@ -32,31 +36,52 @@ type shareNoticeCache struct {
 	sentAt map[string]time.Time
 }
 
-// take says whether the person may be told about the share now, and if so
-// counts them as told.
-func (self *shareNoticeCache) take(shareKey, toldUserId string, now time.Time) bool {
+func shareNoticeKey(shareKey, toldUserId string) string {
+	return shareKey + "\x00" + toldUserId
+}
+
+// isDue says whether the person may be told about the share now: they were not
+// told it in the last shareNoticeInterval.
+func (self *shareNoticeCache) isDue(shareKey, toldUserId string, now time.Time) bool {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	last, isKept := self.sentAt[shareNoticeKey(shareKey, toldUserId)]
+	return !isKept || now.Sub(last) >= shareNoticeInterval
+}
+
+// record counts the person as told about the share. It is called once the note
+// is committed, so a note that failed to write, or a transaction that rolled
+// back, does not stop the next attempt from telling them.
+func (self *shareNoticeCache) record(shareKey, toldUserId string, now time.Time) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	if self.sentAt == nil {
 		self.sentAt = map[string]time.Time{}
 	}
-	key := shareKey + "\x00" + toldUserId
-	if last, isKept := self.sentAt[key]; isKept && now.Sub(last) < shareNoticeInterval {
-		return false
-	}
-	if len(self.sentAt) >= 4096 {
+	key := shareNoticeKey(shareKey, toldUserId)
+	if _, isKept := self.sentAt[key]; !isKept && len(self.sentAt) >= shareNoticeCacheLimit {
 		for oldKey, last := range self.sentAt {
 			if now.Sub(last) >= shareNoticeInterval {
 				delete(self.sentAt, oldKey)
 			}
 		}
+		// Still full of fresh entries: the oldest goes.
+		if len(self.sentAt) >= shareNoticeCacheLimit {
+			oldestKey, oldestAt := "", now
+			for oldKey, last := range self.sentAt {
+				if oldestKey == "" || last.Before(oldestAt) {
+					oldestKey, oldestAt = oldKey, last
+				}
+			}
+			delete(self.sentAt, oldestKey)
+		}
 	}
 	self.sentAt[key] = now
-	return true
 }
 
 // permissionToUseShare is the permission a person needs to read a kind of
-// share. Somebody who lacks it could not open what they are told about.
+// share. Somebody who lacks it could not open what they are told about. A
+// memory page and a skill reach only people who may use the agent.
 func permissionToUseShare(shareKind models.ShareKind) models.Permission {
 	switch shareKind {
 	case models.ShareKindCalendar:
@@ -67,10 +92,20 @@ func permissionToUseShare(shareKind models.ShareKind) models.Permission {
 		return models.PermissionHealthUse
 	case models.ShareKindPhotoAlbum:
 		return models.PermissionPhotosUse
-	case models.ShareKindRecording, models.ShareKindFinance:
+	case models.ShareKindMemoryPage, models.ShareKindSkill, models.ShareKindRecording, models.ShareKindFinance:
 		return models.PermissionAgentUse
 	}
 	return models.PermissionCircleUse
+}
+
+// isAccountActive says whether the account exists and may sign in. A disabled
+// account is told nothing: nobody reads its notes, and its phones are silent.
+func isAccountActive(tx db.Transaction, userId string) (bool, error) {
+	found, err := tx.GetUser(userId)
+	if err != nil {
+		return false, err
+	}
+	return found != nil && !found.Disabled(), nil
 }
 
 // tellAboutShare tells everybody a share now reaches, except the sharer: the
@@ -98,6 +133,13 @@ func (self *graph) tellAboutShare(ctx context.Context, sharer *models.User, note
 		if toldUserId == sharer.ID {
 			continue
 		}
+		isActive, err := isAccountActive(tx, toldUserId)
+		if err != nil {
+			return err
+		}
+		if !isActive {
+			continue
+		}
 		permissions, err := tx.EffectivePermissions(toldUserId)
 		if err != nil {
 			return err
@@ -105,13 +147,14 @@ func (self *graph) tellAboutShare(ctx context.Context, sharer *models.User, note
 		if permissions == nil || !permissions.Has(permissionToUseShare(note.ShareKind)) {
 			continue
 		}
-		if !self.shareNotices.take(shareKey, toldUserId, now) {
+		if !self.shareNotices.isDue(shareKey, toldUserId, now) {
 			continue
 		}
 		agentId, err := agent.NoteSharing(tx, toldUserId, models.NoteShareReceived, detail)
 		if err != nil {
 			return err
 		}
+		tx.AfterCommit(func() { self.shareNotices.record(shareKey, toldUserId, now) })
 		if notifier != nil && agentId != "" {
 			tx.AfterCommit(func() { notifier.NotifySharing(agentId, models.NoteShareReceived, detail) })
 		}
@@ -142,6 +185,13 @@ func (self *graph) tellOwnersAboutJoin(ctx context.Context, joined *models.User,
 	notifier := self.phoneNotifier()
 	for _, owner := range owners {
 		if owner.OwnerUserID == joined.ID {
+			continue
+		}
+		isActive, err := isAccountActive(tx, owner.OwnerUserID)
+		if err != nil {
+			return err
+		}
+		if !isActive {
 			continue
 		}
 		shareKinds := []models.ShareKind{}
