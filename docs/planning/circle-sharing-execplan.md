@@ -30,7 +30,9 @@ To see it working: on a development server with three accounts in one circle "Fa
 - [x] (2026-10-22) Milestone 8: a circle's own address book (migration 0256).
 - [ ] (in progress 2026-10-22) Integration: one branch, every package's tests, the dashboard checks, a development server walk at 1400 and 390 wide in light and dark, the iPhone screenshots from CI.
 - [x] (2026-10-22) Review round 1 (four reviewers: finance and recordings, the circle address book, migrations and the Sharing page, the dashboard and iPhone): one high (a calendar shared at busy showed its title on the Sharing page), about fifteen medium, all fixed, among them a contact id that named two books, a summary that carried withheld facts, a spending level that could be read a day at a time, and the agent's own computer commands not counted as the agent's.
-- [ ] Review round 2, then deploy and TestFlight.
+- [x] (2026-10-22) Deployed to production from the branch (v0.193.8-104-gcd02f1925, migrations 0253 to 0256 applied after a dump of `photo_album_share` and `addressbook`) and TestFlight dispatched from it.
+- [x] (2026-10-22) Review round 2 (security across every kind; the dashboard, iPhone and docs): no high, four medium (the agent's command line reading address books its tool may not, the circle tool's Sharing list in a chat, shared search reading every fact on each search, the iPhone Finance screen for a person with only shared accounts), all fixed with the lows.
+- [ ] Review round 3 on the merged result; merge on the maintainer's word.
 
 ## Surprises & Discoveries
 
