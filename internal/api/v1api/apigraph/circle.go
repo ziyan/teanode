@@ -628,6 +628,16 @@ func (self *graph) AnswerCircleInvitation(ctx context.Context, arguments AnswerC
 		}
 		invitationAnswer = models.InvitationAnswerAccepted
 	}
+	// An account an operator put in the circle while the invitation was open is
+	// in already: answering it joins nobody, so nobody is told of a join.
+	isAlreadyMember := false
+	if arguments.IsAccepted {
+		before, err := tx.GetCircle(invitation.CircleID)
+		if err != nil {
+			return nil, err
+		}
+		isAlreadyMember = before != nil && before.Member(user.ID) != nil
+	}
 	joined, err := tx.AnswerCircleInvitation(invitation.ID, invitationAnswer, time.Now())
 	if err != nil {
 		return nil, translateError(err)
@@ -640,8 +650,10 @@ func (self *graph) AnswerCircleInvitation(ctx context.Context, arguments AnswerC
 	}
 	// The members who shared things with this circle are told that the
 	// person who just joined can now see them.
-	if err := self.tellOwnersAboutJoin(ctx, user, joined); err != nil {
-		return nil, err
+	if !isAlreadyMember {
+		if err := self.tellOwnersAboutJoin(ctx, user, joined); err != nil {
+			return nil, err
+		}
 	}
 	log.Noticef("%s joined the circle %q", user.Username, joined.Name)
 	return self.circleFor(ctx, joined, user.ID)
@@ -821,8 +833,10 @@ func (self *graph) AddCircleMember(ctx context.Context, arguments AddCircleMembe
 	if err := self.publishCircleChatMembersChanged(ctx, added.ID); err != nil {
 		return nil, err
 	}
-	if err := self.tellOwnersAboutJoin(ctx, user, added); err != nil {
-		return nil, err
+	if !isAlreadyMember {
+		if err := self.tellOwnersAboutJoin(ctx, user, added); err != nil {
+			return nil, err
+		}
 	}
 	log.Noticef("%s put the account %q in the circle %q", operatorName(ctx), user.Username, added.Name)
 	return self.circleFor(ctx, added, principal.UserID())
