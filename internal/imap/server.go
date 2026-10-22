@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	goimap "github.com/emersion/go-imap/v2"
@@ -123,7 +124,7 @@ func Serve(ctx context.Context, listener net.Listener, settings *Settings) error
 			if address, ok := conn.NetConn().RemoteAddr().(*net.TCPAddr); ok {
 				remote = address.IP.String()
 			}
-			return &session{settings: settings, hub: hub, remote: remote}, nil, nil
+			return &session{settings: settings, hub: hub, remote: remote, gate: findBoundedConn(conn.NetConn())}, nil, nil
 		},
 		Caps:         caps,
 		TLSConfig:    settings.TLSConfig,
@@ -146,9 +147,14 @@ func Serve(ctx context.Context, listener net.Listener, settings *Settings) error
 	// session and no mail program could sign in at all. Bounding the raw
 	// listener and wrapping that for TLS puts a real *tls.Conn back on top,
 	// where the assertion finds it.
+	//
+	// The wrapper is there even with no ceiling on connections, because it
+	// is also what bounds a connection that has not signed in.
+	var held chan struct{}
 	if settings.MaxConnections > 0 {
-		listener = &boundedListener{Listener: listener, held: make(chan struct{}, settings.MaxConnections)}
+		held = make(chan struct{}, settings.MaxConnections)
 	}
+	listener = &boundedListener{Listener: listener, held: held}
 	if settings.ImplicitTLS {
 		listener = tls.NewListener(listener, settings.TLSConfig)
 	}
@@ -162,7 +168,7 @@ func Serve(ctx context.Context, listener net.Listener, settings *Settings) error
 // boundedListener serves only so many connections at once. One past the
 // ceiling is closed immediately rather than queued: a client that is refused
 // reconnects, and one that is queued sits on a goroutine and a buffer, which
-// is the thing being bounded.
+// is the thing being bounded. A nil held is no ceiling.
 type boundedListener struct {
 	net.Listener
 	held chan struct{}
@@ -173,6 +179,9 @@ func (self *boundedListener) Accept() (net.Conn, error) {
 		conn, err := self.Listener.Accept()
 		if err != nil {
 			return nil, err
+		}
+		if self.held == nil {
+			return &boundedConn{Conn: conn}, nil
 		}
 		select {
 		case self.held <- struct{}{}:
@@ -185,17 +194,62 @@ func (self *boundedListener) Accept() (net.Conn, error) {
 	}
 }
 
-// boundedConn gives its place back once, however many times it is closed.
+// bytesAllowedBeforeSignIn is how much a connection may send before it has
+// signed in. A sign-in is a few hundred bytes. The library bounds a command
+// at 50 KiB but not the literals inside it, and buffers each one before it
+// asks what state the connection is in, so a stranger could make the server
+// hold some twelve megabytes by sending literals to a command that was going
+// to be refused anyway.
+const bytesAllowedBeforeSignIn = 128 * 1024
+
+var errTooMuchBeforeSignIn = errors.New("too much data before signing in")
+
+// boundedConn gives its place back once, however many times it is closed, and
+// refuses to read more than bytesAllowedBeforeSignIn until the session says
+// the person has signed in.
 type boundedConn struct {
 	net.Conn
 	release chan struct{}
 	once    sync.Once
+
+	isSignedIn        atomic.Bool
+	bytesBeforeSignIn atomic.Int64
+}
+
+func (self *boundedConn) Read(buffer []byte) (int, error) {
+	count, err := self.Conn.Read(buffer)
+	if count > 0 && !self.isSignedIn.Load() && self.bytesBeforeSignIn.Add(int64(count)) > bytesAllowedBeforeSignIn {
+		_ = self.Close()
+		return count, errTooMuchBeforeSignIn
+	}
+	return count, err
 }
 
 func (self *boundedConn) Close() error {
 	err := self.Conn.Close()
-	self.once.Do(func() { <-self.release })
+	self.once.Do(func() {
+		if self.release != nil {
+			<-self.release
+		}
+	})
 	return err
+}
+
+// findBoundedConn finds the wrapper the listener put around a connection,
+// through the TLS layer of an implicit-TLS port. It is called when the
+// connection is new, before STARTTLS can have put anything else in between.
+func findBoundedConn(conn net.Conn) *boundedConn {
+	for conn != nil {
+		if bounded, ok := conn.(*boundedConn); ok {
+			return bounded
+		}
+		wrapper, ok := conn.(interface{ NetConn() net.Conn })
+		if !ok {
+			return nil
+		}
+		conn = wrapper.NetConn()
+	}
+	return nil
 }
 
 // logger routes the library's complaints to the server's log.
@@ -254,6 +308,10 @@ type session struct {
 	settings *Settings
 	hub      *hub
 	remote   string
+
+	// gate is the connection's byte allowance until sign-in; nil where the
+	// connection was not made by the listener, as in tests.
+	gate *boundedConn
 
 	// Set by Login.
 	mailbox     *models.Mailbox
@@ -318,6 +376,9 @@ func (self *session) Login(username, password string) error {
 	self.appPassword = appPassword.ID
 	self.canWrite = canWrite
 	self.checkedAt = time.Now()
+	if self.gate != nil {
+		self.gate.isSignedIn.Store(true)
+	}
 	log.Debugf("imap sign-in as %q into mailbox %q from %s", username, mailbox.ID, self.remote)
 	return nil
 }
