@@ -57,7 +57,7 @@ type ListCalendarSharesArguments struct {
 }
 
 func (self *graph) ListCalendarShares(ctx context.Context, arguments ListCalendarSharesArguments) ([]*CalendarShareView, error) {
-	principal, err := self.requireCalendarPerson(ctx)
+	principal, err := self.requireCalendarShareEnder(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ type UnshareCalendarArguments struct {
 }
 
 func (self *graph) UnshareCalendar(ctx context.Context, arguments UnshareCalendarArguments) (bool, error) {
-	principal, err := self.requireCalendarPerson(ctx)
+	principal, err := self.requireCalendarShareEnder(ctx)
 	if err != nil {
 		return false, err
 	}

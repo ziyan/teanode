@@ -120,8 +120,11 @@ func (self *calendarShareModel) toModel() *models.CalendarShare {
 // the reader and the calendar's owner to be in it. The join on the owner's
 // account is what stops a disabled account's calendar reaching anybody. Only
 // the events calendar of a person is ever reached this way; reminders are
-// never shared.
-const reachingSharesQuery = `
+// never shared. The owner and the reader both need calendar:use
+// (@permission), so that an operator who takes it from a role has switched
+// calendars off for those people and what they kept is no longer read by
+// others; the owner can still end a share, which needs no reach.
+var reachingSharesQuery = `
 SELECT share.calendar_id AS calendar_id, share.share_level AS share_level
 FROM "calendar_share" share
 JOIN "calendar" shared ON shared.id = share.calendar_id
@@ -130,6 +133,8 @@ WHERE shared.user_id IS NOT NULL
   AND shared.user_id <> @reader
   AND shared.calendar_kind = 'events'
   AND (@calendar = '' OR share.calendar_id = @calendar)
+  AND ` + userHasPermissionSQL("shared.user_id") + `
+  AND ` + userHasPermissionSQL("@reader") + `
   AND (
     (share.grantee_user_id = @reader AND EXISTS (
         SELECT 1 FROM "circle_member" mine
@@ -151,7 +156,8 @@ type reachingShareRow struct {
 func (self *transaction) reachingShares(readerUserId, calendarId string) (map[string]models.ShareLevel, error) {
 	var rows []reachingShareRow
 	if err := self.tx.Raw(reachingSharesQuery,
-		sql.Named("reader", readerUserId), sql.Named("calendar", calendarId)).Scan(&rows).Error; err != nil {
+		sql.Named("reader", readerUserId), sql.Named("calendar", calendarId),
+		sql.Named("permission", string(models.PermissionCalendarUse))).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	levels := make(map[string]models.ShareLevel, len(rows))

@@ -282,6 +282,70 @@ func TestACalendarSharedAtBusyShowsOnlyWhenTheOwnerIsBusy(t *testing.T) {
 	}
 }
 
+// The title of a calendar can say what is in it, so a calendar shared at busy
+// is listed under its owner's name, and its own title is told from titles up.
+func TestACalendarSharedAtBusyIsListedUnderItsOwnersName(t *testing.T) {
+	world := newCalendarShareWorld(t)
+	world.call(t, world.ada, fmt.Sprintf(`mutation { SaveCalendar(id: %q, name: "Surprise party plans") { id } }`, world.adaCalendar))
+	world.share(t, world.ada, world.adaCalendar, userGrantee(world.ben), "busy")
+	nameOfAdaCalendar := func() string {
+		t.Helper()
+		for _, each := range listed(t, world.call(t, world.ben, `query { ListCalendars { id name } }`), "ListCalendars") {
+			if each["id"] == world.adaCalendar {
+				return fmt.Sprint(each["name"])
+			}
+		}
+		t.Fatal("ben does not reach the calendar")
+		return ""
+	}
+	if name := nameOfAdaCalendar(); name != "Share-ada" {
+		t.Errorf("a busy share is listed under its owner's name: %q", name)
+	}
+	world.share(t, world.ada, world.adaCalendar, userGrantee(world.ben), "titles")
+	if name := nameOfAdaCalendar(); name != "Surprise party plans" {
+		t.Errorf("at titles the calendar keeps its own title: %q", name)
+	}
+}
+
+// Taking calendar:use from a role stops a calendar reaching anybody, and does
+// not stop the person who shared it from seeing and ending what they shared.
+func TestAnOwnerWithoutCalendarUseCanStillEndAShare(t *testing.T) {
+	world := newCalendarShareWorld(t)
+	first := world.share(t, world.ada, world.adaCalendar, userGrantee(world.ben), "details")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		roles, err := tx.ListRoles()
+		if err != nil {
+			t.Fatalf("ListRoles: %s", err)
+		}
+		for _, role := range roles {
+			if role.Name == "share-ada role" {
+				if _, err := tx.UpdateRole(role.ID, func(current *models.Role) error {
+					current.Permissions = []models.Permission{models.PermissionCircleUse}
+					return nil
+				}); err != nil {
+					t.Fatalf("UpdateRole: %s", err)
+				}
+			}
+		}
+	})
+	// ben no longer reaches it.
+	for _, each := range listed(t, world.call(t, world.ben, `query { ListCalendars { id } }`), "ListCalendars") {
+		if each["id"] == world.adaCalendar {
+			t.Errorf("a calendar of an owner without calendar:use reaches ben: %v", each)
+		}
+	}
+	// ada, who cannot use calendars, still sees what she shared and ends it.
+	data := world.call(t, world.ada, fmt.Sprintf(`query { ListCalendarShares(calendarId: %q) { id } }`, world.adaCalendar))
+	if shares := listed(t, data, "ListCalendarShares"); len(shares) != 1 {
+		t.Errorf("the owner sees what she shared: %v", shares)
+	}
+	world.call(t, world.ada, fmt.Sprintf(`mutation { UnshareCalendar(shareId: %q) }`, first["id"]))
+	// Nobody else can end it, and it cannot be ended twice.
+	world.refused(t, world.ada, fmt.Sprintf(`mutation { UnshareCalendar(shareId: %q) }`, first["id"]))
+	// And sharing more still needs the permission.
+	world.refused(t, world.ada, fmt.Sprintf(`mutation { ShareCalendar(calendarId: %q, granteeUserId: %q, shareLevel: "busy") { id } }`, world.adaCalendar, world.ben.ID))
+}
+
 // Writing needs edit, never touches an event with guests, and says why.
 func TestAWriteToASharedCalendarNeedsEditAndNoGuests(t *testing.T) {
 	world := newCalendarShareWorld(t)

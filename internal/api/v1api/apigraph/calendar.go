@@ -303,6 +303,23 @@ func (self *graph) requireCalendarPerson(ctx context.Context) (*api.Principal, e
 	return principal, nil
 }
 
+// requireCalendarShareEnder is the caller, if they may end what they shared.
+// It asks for no calendar:use, so that somebody whose role lost it can still
+// take back a share they made while they had it, and see what they shared.
+func (self *graph) requireCalendarShareEnder(ctx context.Context) (*api.Principal, error) {
+	if !self.isServiceEnabled(models.ServiceCalendar) {
+		return nil, &models.ServiceUnavailableError{Service: models.ServiceCalendar}
+	}
+	principal, err := self.requireSignedIn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if principal.User == nil {
+		return nil, api.ErrNotLoggedIn
+	}
+	return principal, nil
+}
+
 // calendarReach is a calendar and what the caller may do with it.
 type calendarReach struct {
 	Calendar   *models.Calendar
@@ -438,8 +455,9 @@ func spreadCalendarColors(views []*CalendarView) {
 
 // calendarView is a calendar as the caller reaches it. What belongs to the
 // owner alone (the agent's switch) is false for anyone else, and the zone the
-// owner keeps their day in is not told to someone who sees only when they are
-// busy.
+// owner keeps their day in, the description and the title of the calendar are
+// not told to someone who sees only when they are busy: the title is replaced
+// by the owner's name.
 func (self *graph) calendarView(principal *api.Principal, each *models.ReachableCalendar, count int64) *CalendarView {
 	found := each.Calendar
 	view := &CalendarView{
@@ -451,12 +469,18 @@ func (self *graph) calendarView(principal *api.Principal, each *models.Reachable
 		ShareLevel:   string(each.ShareLevel),
 		ColorIndex:   calendarColorIndex(found.ID),
 	}
-	if each.ShareLevel != models.ShareLevelOwner && !each.ShareLevel.CanRead() {
-		view.Timezone, view.Description = "", ""
-	}
 	owner := each.Owner
 	if each.ShareLevel == models.ShareLevelOwner {
 		owner = principal.User
+	}
+	if each.ShareLevel != models.ShareLevelOwner && !each.ShareLevel.CanRead() {
+		view.Timezone, view.Description = "", ""
+		// The title of a calendar can say what is in it, so somebody who is
+		// told only when the owner is busy is told whose it is instead.
+		view.Name = ""
+		if owner != nil {
+			view.Name = owner.DisplayName()
+		}
 	}
 	if found.CircleID != "" {
 		view.IsCircleCalendar = true

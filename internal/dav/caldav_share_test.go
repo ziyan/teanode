@@ -74,6 +74,8 @@ func newSharedWorld(t *testing.T) (*sharedWorld, func()) {
 	here, done := newWorld(t)
 	shared := &sharedWorld{world: here}
 	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		// A calendar reaches only people who may use calendars, bertie too.
+		dbtest.GrantPermission(t, tx, here.other, models.PermissionCalendarUse)
 		bertieCalendar, err := tx.CreateCalendar(&models.Calendar{UserID: here.other, Name: "Calendar"})
 		if err != nil {
 			t.Fatalf("CreateCalendar: %s", err)
