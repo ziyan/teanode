@@ -170,8 +170,11 @@ export function SecretValue({
   isMultiline?: boolean
 }) {
   const { t } = useTranslation()
-  const [isShown, setIsShown] = useState(false)
-  useEffect(() => setIsShown(false), [value])
+  // The value that Show revealed: another value (the item changed) is hidden
+  // again. Not reset by an effect, which ran after a Show pressed just as the
+  // item opened and hid it again.
+  const [shownValue, setShownValue] = useState<string | null>(null)
+  const isShown = shownValue === value
   return (
     <div className="value-row">
       <span
@@ -189,7 +192,7 @@ export function SecretValue({
           className="icon-button copy-button"
           aria-label={isShown ? t('passwords.hideField', { field: label }) : t('passwords.showField', { field: label })}
           aria-pressed={isShown}
-          onClick={() => setIsShown((previous) => !previous)}
+          onClick={() => setShownValue(isShown ? null : value)}
         >
           {isShown ? <EyeOffIcon size={15} /> : <EyeIcon size={15} />}
         </button>
