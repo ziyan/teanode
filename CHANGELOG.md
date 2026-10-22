@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.193.2] - 2026-10-22
+
+### Changed
+
+- Passwords on the dashboard stays open when you reload the page or open it in another tab, and the Chrome extension stays open when Chrome restarts, until the lock time passes, instead of asking for your passphrase each time. (#626)
+- The Chrome extension's Passwords window says when its fill shortcut is not set, with a button to set one. (#626)
+
 ## [0.193.1] - 2026-10-22
 
 ### Fixed
