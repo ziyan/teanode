@@ -163,6 +163,12 @@ type AskSettings struct {
 	// withToolCallLimits.
 	CallLimits map[string]int
 
+	// IsFetchLimitedToSearched holds web_fetch to the addresses a
+	// web_search in this turn returned. For a turn nobody is present for
+	// that reads what strangers wrote: an address it makes up can carry
+	// what it has read out to whoever runs that server.
+	IsFetchLimitedToSearched bool
+
 	// IsPersonOmitted leaves the person's own page and the index of what
 	// the agent knows out of the prompt; see withPersonOmitted.
 	IsPersonOmitted bool
@@ -429,6 +435,11 @@ type AskRun struct {
 	// together.
 	callCounts      map[string]int
 	callCountsMutex sync.Mutex
+
+	// searchedAddresses is what web_search has returned in this turn, by
+	// searchedAddressKey, when settings.IsFetchLimitedToSearched.
+	searchedAddresses      map[string]bool
+	searchedAddressesMutex sync.Mutex
 
 	mutex        sync.Mutex
 	events       []Event
@@ -2141,6 +2152,11 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 		return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "this run may call %s at most %d times and has used them all; answer with what you have"}`, tool.Name, self.settings.CallLimits[tool.Name]))}
 	}
 	call := &Call{ID: toolCall.ID, Arguments: json.RawMessage(toolCall.Arguments)}
+	if tool.Name == "web_fetch" {
+		if err := self.checkFetchAllowed(call.Arguments); err != nil {
+			return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": %q}`, err.Error()))}
+		}
+	}
 	if self.recordingEvidenceRestricted() && !recordingLookupAllowed(tool) {
 		return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "passive recording evidence permits only memory, knowledge and recording lookups"}`)}
 	}
@@ -2197,6 +2213,9 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	}
 	if result != nil && result.HasRecordingEvidence {
 		self.ObserveRecordingEvidence()
+	}
+	if result != nil {
+		self.noteSearchedAddresses(result.SearchedAddresses)
 	}
 	if err != nil {
 		// A tool's failure often quotes something from outside -- what a

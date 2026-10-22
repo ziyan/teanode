@@ -32,6 +32,10 @@ type Registry struct {
 	// even while an attack is in progress and no bucket has refilled yet.
 	limit int
 
+	// overflow is the one bucket every caller shares once the table is full,
+	// made once so that its tokens are spent across calls.
+	overflow *Bucket
+
 	mutex   sync.Mutex
 	buckets map[string]*entry
 
@@ -54,6 +58,7 @@ func NewRegistry(rate float64, capacity int64, limit int, idle time.Duration) *R
 		capacity: capacity,
 		idle:     idle,
 		limit:    limit,
+		overflow: NewBucketWithRate(rate, capacity),
 		buckets:  make(map[string]*entry),
 		sweptAt:  time.Now(),
 	}
@@ -80,11 +85,14 @@ func (self *Registry) For(key string) *Bucket {
 	}
 
 	// At the limit, and nothing swept: every bucket held is one somebody has
-	// spent tokens from. Hand back a bucket that is not kept, so the caller is
-	// still limited in the only way that remains — a fresh bucket allows a
-	// burst, which is the cost of not letting the map grow.
+	// spent tokens from. Callers past the table share one bucket, so together
+	// they are allowed a burst and no more. A bucket made fresh for each call
+	// would allow every attempt, and filling the table is all it would take to
+	// get there. Sharing means an attack that fills the table also limits the
+	// strangers who arrive during it, which is the cost of not letting the map
+	// grow.
 	if self.limit > 0 && len(self.buckets) >= self.limit {
-		return NewBucketWithRate(self.rate, self.capacity)
+		return self.overflow
 	}
 
 	created := &entry{bucket: NewBucketWithRate(self.rate, self.capacity), seenAt: now}

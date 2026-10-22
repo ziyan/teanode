@@ -93,9 +93,9 @@ func (self *graph) recordingLiveView(response http.ResponseWriter, request *http
 	recordingId := mux.Vars(request)["recordingId"]
 	// The session cookie is taken only from a page of this server, as voice
 	// takes it; a token in the hello is taken from anywhere.
-	isFromThisServer := request.Header.Get("Origin") != "" && fromThisServer(request)
+	isFromThisServer := request.Header.Get("Origin") != "" && api.FromThisServer(request)
 	sessionUsername := api.UsernameFromRequest(request)
-	upgrader := websocket.Upgrader{CheckOrigin: fromThisServer}
+	upgrader := websocket.Upgrader{CheckOrigin: api.FromThisServer}
 	connection, err := upgrader.Upgrade(response, request, nil)
 	if err != nil {
 		return

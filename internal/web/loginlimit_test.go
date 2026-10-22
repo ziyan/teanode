@@ -89,3 +89,36 @@ func TestThePortIsNotPartOfTheKey(t *testing.T) {
 		t.Error("changing the source port evaded the limit")
 	}
 }
+
+// Changing a password asks for the current one, which makes it a place to
+// guess it for anybody holding the session. It is limited like a sign-in, and
+// one account being guessed at does not limit another.
+func TestGuessingTheCurrentPasswordIsRefusedAfterTheBurst(t *testing.T) {
+	t.Parallel()
+	store := newStore(t)
+	authenticator, err := web.NewAuthenticator(store, newMemoryStore(
+		&models.User{Username: "rowan", PasswordHash: testPasswordHash},
+		&models.User{Username: "another", PasswordHash: testPasswordHash},
+	))
+	if err != nil {
+		t.Fatalf("failed to build an authenticator: %s", err)
+	}
+
+	var refused bool
+	for attempt := 1; attempt <= 200; attempt++ {
+		err := authenticator.ChangePassword("rowan", "not-the-password", "a-new-password")
+		if errors.Is(err, web.ErrTooManyAttempts) {
+			refused = true
+			break
+		}
+		if !errors.Is(err, web.ErrInvalidCredentials) {
+			t.Fatalf("attempt %d returned %v, want invalid credentials", attempt, err)
+		}
+	}
+	if !refused {
+		t.Fatal("two hundred wrong current passwords were all answered; nothing is limiting them")
+	}
+	if err := authenticator.ChangePassword("another", "not-the-password", "a-new-password"); !errors.Is(err, web.ErrInvalidCredentials) {
+		t.Errorf("another account was limited because the first was guessed at: %v", err)
+	}
+}

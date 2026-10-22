@@ -318,6 +318,10 @@ came from one of these. Empty is the safe default and the right one for a
 server that faces the internet, where the connection's own address is the
 truth.
 
+Behind a reverse proxy, list it here: otherwise every sign-in limiter sees the
+proxy's address as one caller, and one person's failed attempts lock out
+everybody who comes through it.
+
 
 ### `sso`
 

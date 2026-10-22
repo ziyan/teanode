@@ -260,3 +260,54 @@ func TestVerifyMultipleSignatures(t *testing.T) {
 		}
 	}
 }
+
+// A signed message cannot be sent on with a header added in front of the
+// signed ones. The signature names the headers that decide what a reader
+// sees once more than the message has them, so an added Subject, To, Date,
+// Reply-To or Cc is not covered by the signature's silence.
+func TestVerifyRefusesAHeaderAddedAfterSigning(t *testing.T) {
+	t.Parallel()
+
+	for _, added := range []string{
+		"Subject: Invoice overdue, pay at the link below\r\n",
+		"Reply-To: someone@example.org\r\n",
+		"Cc: someone@example.org\r\n",
+		"To: someone@example.org\r\n",
+		"Date: Mon, 01 Jan 2029 00:00:00 +0000\r\n",
+		"From: someone@example.org\r\n",
+	} {
+		t.Run(strings.SplitN(added, ":", 2)[0], func(t *testing.T) {
+			t.Parallel()
+
+			headers, body, resolver := sign(t, &testmail.Options{Subject: "Your statement is ready"}, "example.net", "selector1")
+			verifications, err := dkim.Verify(context.Background(), append([]string{added}, headers...), body, resolver)
+			if err != nil {
+				t.Fatalf("verify: %s", err)
+			}
+			if len(verifications) != 1 || verifications[0].Result == dkim.ResultPass {
+				t.Fatalf("a message with %q added still passes: %+v", strings.TrimSpace(added), verifications)
+			}
+		})
+	}
+}
+
+// The ordinary message still verifies, with its Content-Type and Reply-To
+// signed too.
+func TestVerifyAcceptsAMessageWithReplyToAndContentType(t *testing.T) {
+	t.Parallel()
+
+	headers, body, resolver := sign(t, &testmail.Options{Multipart: true, ExtraHeaders: []string{"Reply-To: replies@example.net\r\n"}}, "example.net", "selector1")
+	verifications, err := dkim.Verify(context.Background(), headers, body, resolver)
+	if err != nil {
+		t.Fatalf("verify: %s", err)
+	}
+	if len(verifications) != 1 || verifications[0].Result != dkim.ResultPass {
+		t.Fatalf("the message did not pass: %+v", verifications)
+	}
+	signature := headers[0]
+	for _, signed := range []string{"reply-to", "content-type"} {
+		if !strings.Contains(strings.ToLower(signature), signed) {
+			t.Errorf("%s is not named in %s", signed, signature)
+		}
+	}
+}

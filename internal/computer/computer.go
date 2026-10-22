@@ -7,9 +7,10 @@
 // matched a command line against a list of dangerous-looking shapes lived
 // in this package and was removed: it could not name everything dangerous,
 // a wrapper script walked past it, and a control that catches some of the
-// bad cases reads as one that catches them all. What bounds the program is
-// the directories the person allowed, enforced here on their machine, and
-// their yes.
+// bad cases reads as one that catches them all. The program is not confined
+// to a list of directories: it reaches everything the person can, and only
+// its file tool leaves out the files `teanode passwords` keeps. What stands
+// between a request and the machine is their yes.
 package computer
 
 import (

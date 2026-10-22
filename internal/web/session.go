@@ -37,6 +37,9 @@ type Identity struct {
 
 	ImpersonatorUsername string
 
+	// TokenID is the token the request carries, when it carries one.
+	TokenID string
+
 	// CredentialKind is what the request signed in with: the dashboard's
 	// session, the phone app's token, or any other token. Empty for the
 	// console and for a server with no accounts yet.
@@ -128,6 +131,14 @@ type Authenticator interface {
 	// RevokeSessions ends every session an operator has, optionally keeping
 	// the one making the request, and returns how many it ended.
 	RevokeSessions(username string, except string) (int64, error)
+
+	// CurrentTokenID is the token this request carries, or empty when it
+	// is authenticated some other way.
+	CurrentTokenID(request *http.Request) string
+
+	// RevokeTokens ends every API token an operator has, optionally
+	// keeping the one making the request, and returns how many it ended.
+	RevokeTokens(username string, except string) (int64, error)
 
 	// IssueToken mints an API token for an operator, returning the stored
 	// row and the token string, which is the only time it can be read.
@@ -292,7 +303,7 @@ func (self *authenticator) AuthenticateIdentity(request *http.Request) (Identity
 // AllowLoginAttempt is the login limiter, for the sign-in paths that do not
 // go through Login.
 func (self *authenticator) AllowLoginAttempt(request *http.Request) bool {
-	return self.loginLimiter.Allow(api.RemoteAddress(request, self.trustedProxies()))
+	return self.loginLimiter.Allow(ratelimit.AddressKey(api.RemoteAddress(request, self.trustedProxies())))
 }
 
 // CurrentSessionID is the session a request is using, or empty when it is
@@ -300,6 +311,13 @@ func (self *authenticator) AllowLoginAttempt(request *http.Request) bool {
 func (self *authenticator) CurrentSessionID(request *http.Request) string {
 	identity, _ := self.authenticate(request)
 	return identity.SessionID
+}
+
+// CurrentTokenID is the token a request carries, or empty when it is
+// authenticated by a cookie or by nothing at all.
+func (self *authenticator) CurrentTokenID(request *http.Request) string {
+	identity, _ := self.authenticate(request)
+	return identity.TokenID
 }
 
 // authenticate resolves a request to an operator, and to the session it is
@@ -472,7 +490,7 @@ func (self *authenticator) authenticateBearer(header string, request *http.Reque
 	if token.ClientKind == models.ClientKindApp {
 		credentialKind = models.CredentialApp
 	}
-	return Identity{Username: user.Username, CredentialKind: credentialKind}, true
+	return Identity{Username: user.Username, CredentialKind: credentialKind, TokenID: token.ID}, true
 }
 
 // allowsResource says whether a request is for the thing a token was issued
@@ -509,7 +527,7 @@ func (self *authenticator) Login(response http.ResponseWriter, request *http.Req
 	// Counted against the client rather than the proxy in front of it. Behind
 	// a CDN every attempt shares one address, so one person guessing
 	// passwords would use up the allowance for everybody.
-	if !self.loginLimiter.Allow(api.RemoteAddress(request, self.trustedProxies())) {
+	if !self.loginLimiter.Allow(ratelimit.AddressKey(api.RemoteAddress(request, self.trustedProxies()))) {
 		return ErrTooManyAttempts
 	}
 
@@ -683,6 +701,12 @@ func (self *authenticator) CreateFirstUser(ctx context.Context, username, passwo
 // current password is what distinguishes the account's owner from whoever
 // walked past their desk.
 func (self *authenticator) ChangePassword(username, current, replacement string) error {
+	// Checking the current password is a guess at it for anybody holding the
+	// session, so it is limited like a sign-in. It shares that limiter under
+	// a key of its own, since the others there are addresses.
+	if !self.loginLimiter.Allow("password:" + username) {
+		return ErrTooManyAttempts
+	}
 	user := self.findUser(username)
 	if user == nil {
 		return ErrInvalidCredentials
@@ -795,6 +819,15 @@ func (self *authenticator) RevokeSessions(username string, except string) (int64
 		return 0, ErrInvalidCredentials
 	}
 	return self.database.RevokeSessionsByUser(user.ID, time.Now(), except)
+}
+
+// RevokeTokens ends every API token an operator has, except the one named.
+func (self *authenticator) RevokeTokens(username string, except string) (int64, error) {
+	user := self.findUser(username)
+	if user == nil {
+		return 0, ErrInvalidCredentials
+	}
+	return self.database.RevokeTokensByUser(user.ID, time.Now(), except)
 }
 
 // IssueToken mints an API token. The string it returns is the only time the

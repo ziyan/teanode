@@ -19,6 +19,12 @@ func NewMemoryStore() Store {
 	return &memoryStore{parked: make(map[string]parkedCeremony)}
 }
 
+// maximumParked is how many ceremonies this process holds at once. A sign-in
+// ceremony can be started by anybody, and each lives for Lifetime whether or
+// not it is ever answered, so without a cap the map grows with whatever a
+// stranger cares to send in five minutes. Far more than real use needs.
+const maximumParked = 4096
+
 type parkedCeremony struct {
 	ceremony Ceremony
 	expires  time.Time
@@ -41,6 +47,10 @@ func (self *memoryStore) Park(ctx context.Context, ceremony *Ceremony) (string, 
 		if found.expires.Before(now) {
 			delete(self.parked, id)
 		}
+	}
+
+	if len(self.parked) >= maximumParked {
+		return "", ErrTooManyCeremonies
 	}
 
 	ceremonyId := security.NewULID()

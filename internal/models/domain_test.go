@@ -117,6 +117,7 @@ func TestAliasValidation(t *testing.T) {
 		wantPath string
 	}{
 		{"invalid pattern", Alias{Pattern: "^[", Kind: AliasKindNull}, "pattern"},
+		{"pattern past the limit", Alias{Pattern: strings.Repeat("a", MaximumAliasPatternLength+1), Kind: AliasKindNull}, "pattern"},
 		{"email without an address", Alias{Kind: AliasKindEmail}, "email"},
 		{"email that is not an address", Alias{Kind: AliasKindEmail, Email: "nobody"}, "email"},
 		{"webhook without a URL", Alias{Kind: AliasKindWebhook}, "webhook"},
@@ -137,6 +138,11 @@ func TestAliasValidation(t *testing.T) {
 				t.Errorf("expected an error mentioning %q, got: %s", test.wantPath, err)
 			}
 		})
+	}
+
+	atLimit := Alias{Pattern: strings.Repeat("a", MaximumAliasPatternLength), Kind: AliasKindNull}
+	if err := atLimit.Validate(); err != nil {
+		t.Errorf("a pattern at the limit should be valid, got: %s", err)
 	}
 
 	catchAll := Alias{Pattern: "", Kind: AliasKindEmail, Email: "everything@example.net"}

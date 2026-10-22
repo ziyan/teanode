@@ -969,7 +969,7 @@ func (self *graph) attachVisitPhotos(ctx context.Context, principal *api.Princip
 	if len(shown) == 0 {
 		return nil
 	}
-	return translateError(self.withFilesAndPreviews(ctx, principal.User.ID, shown, false))
+	return translateError(self.withFilesAndPreviews(ctx, principal.User.ID, shown, ""))
 }
 
 func (self *graph) ListPlaces(ctx context.Context, arguments ListPlacesArguments) (*PlacePageView, error) {

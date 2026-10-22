@@ -29,7 +29,9 @@ const executeScript = vi.fn(async (_injection?: unknown) => [
   { result: { ok: true, data: 'a result' }, documentId: 'doc-run' } as Record<string, unknown>,
 ])
 const queryTabs = vi.fn(async (_filter?: unknown) => [] as Record<string, unknown>[])
-const storedLocal: Record<string, unknown> = {}
+// The server the agent works for: without its name no request can be told
+// from a request to it, and none is shown.
+const storedLocal: Record<string, unknown> = { server: 'https://mail.example.com' }
 let tabUrl = 'https://shop.example.test/sign-in'
 
 let act: (action: string, args: Record<string, unknown>) => Promise<{ ok: boolean; data?: any; error?: string }>
@@ -39,9 +41,6 @@ beforeAll(async () => {
   vi.stubGlobal('chrome', {
     storage: {
       session: { get: async () => ({ tabId: 7, ownTabId: 7 }), set: async () => {}, remove: async () => {} },
-      // The server the agent works for: without its name no request can be told
-      // from a request to it, and none is shown.
-      sync: { get: async () => ({ server: 'https://mail.example.com' }) },
       local: {
         get: async (key: string) => (key in storedLocal ? { [key]: storedLocal[key] } : {}),
         set: async (values: Record<string, unknown>) => void Object.assign(storedLocal, values),

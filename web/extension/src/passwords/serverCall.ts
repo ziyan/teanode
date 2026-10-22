@@ -51,7 +51,7 @@ export class ServerCallError extends Error {
 }
 
 export async function readServerOrigin(): Promise<string> {
-  const { server } = await chrome.storage.sync.get('server')
+  const { server } = await chrome.storage.local.get('server')
   return typeof server === 'string' ? server.replace(/\/+$/, '') : ''
 }
 

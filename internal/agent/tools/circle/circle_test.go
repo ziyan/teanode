@@ -643,3 +643,42 @@ func TestPersonNeedsTheRightToUseCircles(t *testing.T) {
 		t.Errorf("the API was asked: %v", operations.sent)
 	}
 }
+
+// chatRun is a run whose words are posted to the people of a chat, as the
+// owner's own turn in a group chat is.
+type chatRun struct{ circleRun }
+
+func (self *chatRun) IsAnsweringInChat() bool { return true }
+
+// The location tool does not repeat another person's location into a chat,
+// so the card asked for in one leaves the location part out and keeps the rest.
+func TestPersonCardInAChatDoesNotAskForALocation(t *testing.T) {
+	answers := map[string]string{
+		"ListCirclePeople": `{"ListCirclePeople":[{"userId":"user-two","username":"persony"}]}`,
+		"ReadPersonCard":   `{"ReadPersonCard":{}}`,
+	}
+	for _, test := range []struct {
+		name            string
+		run             func(*circleOperations) tools.Run
+		isLocationAsked bool
+	}{
+		{"in a chat", func(operations *circleOperations) tools.Run { return &chatRun{circleRun{operations: operations}} }, false},
+		{"in a private conversation", func(operations *circleOperations) tools.Run { return &circleRun{operations: operations} }, true},
+	} {
+		operations := &circleOperations{grants: aMember, answers: answers}
+		ctx := tools.WithRun(context.Background(), test.run(operations))
+		if _, err := circleTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"person","username":"persony"}`)}); err != nil {
+			t.Fatalf("%s: %s", test.name, err)
+		}
+		cards := operations.sentWith("ReadPersonCard")
+		if len(cards) != 1 {
+			t.Fatalf("%s: the card was not asked for: %v", test.name, operations.sent)
+		}
+		if asked := strings.Contains(cards[0].document, "latitudeDegrees"); asked != test.isLocationAsked {
+			t.Errorf("%s: the card asks for coordinates is %v: %s", test.name, asked, cards[0].document)
+		}
+		if !strings.Contains(cards[0].document, "health {") || !strings.Contains(cards[0].document, "memory {") {
+			t.Errorf("%s: the rest of the card is missing: %s", test.name, cards[0].document)
+		}
+	}
+}

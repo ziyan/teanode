@@ -93,6 +93,12 @@ func runShare(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A link opens a copy of the file for anyone, with no sign-in, so it is
+	// made only for a person who asked for it: a run nobody is present for
+	// may have been steered by a message it read.
+	if arguments.Link && run.Headless() {
+		return nil, fmt.Errorf("a link that opens with no sign-in is made only in a conversation with the person; hand over the file without link, or say that they can ask for the link")
+	}
 	file, attachment, err := fetchIntoConversation(ctx, run, arguments)
 	if err != nil {
 		return nil, err

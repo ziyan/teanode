@@ -117,6 +117,9 @@ func runWebSearch(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	if err != nil {
 		return nil, err
 	}
+	for _, entry := range decoded.Web.Results {
+		result.SearchedAddresses = append(result.SearchedAddresses, entry.URL)
+	}
 	result.Untrusted = true
 	result.Note = fmt.Sprintf("searched for %q", query)
 	return result, nil

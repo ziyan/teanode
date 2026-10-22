@@ -3,6 +3,7 @@ package picture
 import (
 	"bytes"
 	"context"
+	"errors"
 	"math"
 	"os"
 	"os/exec"
@@ -372,5 +373,25 @@ func TestVideoProgramsRunWithAMinimalEnvironment(t *testing.T) {
 	checkMinimalEnvironment(t, poster)
 	if home := environmentNames(t, poster)["HOME"]; home != work {
 		t.Errorf("HOME = %q, want the private directory %q", home, work)
+	}
+}
+
+// The size ffprobe reports is a claim in the file, so a video that claims more
+// than a picture may have is refused before ffmpeg decodes a frame of it.
+func TestVideoMetadataCheckSize(t *testing.T) {
+	for _, size := range []struct {
+		name                      string
+		widthPixels, heightPixels int
+		isTooLarge                bool
+	}{
+		{"an ordinary video", 1920, 1080, false},
+		{"just under the limit", 8000, 8000, false},
+		{"just over the limit", 8001, 8000, true},
+		{"a strip longer than any picture side", MaximumSidePixels + 1, 1, true},
+	} {
+		err := (&VideoMetadata{WidthPixels: size.widthPixels, HeightPixels: size.heightPixels}).CheckSize()
+		if size.isTooLarge != errors.Is(err, ErrTooLarge) {
+			t.Errorf("%s: got %v, want too large to be %v", size.name, err, size.isTooLarge)
+		}
 	}
 }

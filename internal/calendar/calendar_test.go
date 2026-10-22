@@ -957,3 +957,32 @@ func TestManyUnnameableZonesAreSettledInOneWalk(t *testing.T) {
 		t.Fatalf("four times the file took %s against %s, which is the shape of the bug", large, small)
 	}
 }
+
+// An invitation from somebody else does not bring its alarms or attachments
+// along. The event, its time and its words stay.
+func TestAnArrivingEventLosesItsAlarmsAndAttachments(t *testing.T) {
+	parsed := mustParse(t, wrap(
+		"UID:alarm-1@example.test", "DTSTAMP:20261001T100000Z",
+		"DTSTART:20261101T100000Z", "DTEND:20261101T110000Z", "SUMMARY:Planning",
+		"ATTACH:https://files.example.test/agenda.pdf",
+		"BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER:-PT1M", "DESCRIPTION:Read this out", "END:VALARM",
+		"BEGIN:VALARM", "ACTION:AUDIO", "TRIGGER:-PT2M", "ATTACH:https://files.example.test/ring.wav", "END:VALARM",
+	))
+	if !strings.Contains(string(parsed.Data), "BEGIN:VALARM") {
+		t.Fatalf("the file should carry its alarms before they are dropped:\n%s", parsed.Data)
+	}
+
+	if err := parsed.DropAlarmsAndAttachments(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, gone := range []string{"VALARM", "ATTACH", "Read this out", "files.example.test"} {
+		if strings.Contains(string(parsed.Data), gone) {
+			t.Errorf("%q should be gone from what is stored:\n%s", gone, parsed.Data)
+		}
+	}
+	again := mustParse(t, parsed.Data)
+	if again.UID != "alarm-1@example.test" || again.Summary != "Planning" || again.StartsAt.IsZero() {
+		t.Errorf("the event itself should be kept, got uid %q summary %q start %v", again.UID, again.Summary, again.StartsAt)
+	}
+}

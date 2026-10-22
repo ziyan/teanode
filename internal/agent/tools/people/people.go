@@ -88,13 +88,15 @@ func init() {
 				// Changing the groups an account is in is changing what it
 				// may do, and moving one into the administrators is the
 				// shortest way to everything. Asked about whenever the
-				// call names groups; renaming somebody is an ordinary
-				// write.
+				// call names groups, and about a new notification address,
+				// which is where their mailed notices go; renaming somebody
+				// is an ordinary write.
 				Name: "user_update", Family: tools.FamilyPeople, Risk: tools.RiskWrite, Permissions: []models.Permission{models.PermissionUserManage},
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
 					var asked struct {
 						GroupIDs []string `json:"group_ids"`
 						Disabled *bool    `json:"disabled"`
+						Email    *string  `json:"email"`
 					}
 					if err := json.Unmarshal(arguments, &asked); err == nil {
 						if asked.GroupIDs != nil {
@@ -102,6 +104,10 @@ func init() {
 						}
 						if asked.Disabled != nil {
 							return tools.RiskDestructive
+						}
+						// Their mailed notices go to this address.
+						if asked.Email != nil {
+							return tools.RiskOutward
 						}
 					}
 					return tools.RiskWrite

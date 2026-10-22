@@ -370,7 +370,10 @@ function MailboxComposerForAccount({
           setSubject(draft.subject)
           if (draft.html) {
             setEditor('rich')
-            setHtml(draft.html)
+            // A draft's HTML may have been written by the agent from a
+            // stranger's message, and the editor is part of this page, so
+            // it gets the same cleaning a quoted message does.
+            setHtml(quotableHtml(draft.html))
             // A draft picked up again carries whatever quote it was written
             // with, so it folds away the same as a fresh reply's.
             setQuoted(draft.html.includes('teanode-quote'))

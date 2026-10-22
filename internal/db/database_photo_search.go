@@ -92,7 +92,7 @@ func photoSearchWords(searchText string) ([]string, error) {
 
 // photoSearchPartCondition keeps the photos where every word is part of the
 // place, the file name or the camera (the place and the file name of a photo
-// that is not the reader's only where places are not held back): a document matches whole words only, and
+// only where the reader may learn its place): a document matches whole words only, and
 // "harb" or "IMG_12" are still ways to look for a place or a file. It reads
 // every photo the filters keep, so it is asked only when the document search
 // leaves room.
@@ -103,8 +103,9 @@ func photoSearchPartCondition(words []string, scope photoScope) (string, []any) 
 		pattern := "%" + escapeLike(word) + "%"
 		placeAndNameCondition := "photo.place_name ILIKE ? OR photo.original_filename ILIKE ?"
 		if scope.isPlaceHeldBack {
-			placeAndNameCondition = "(photo.user_id = ? AND (photo.place_name ILIKE ? OR photo.original_filename ILIKE ?))"
-			arguments = append(arguments, scope.readerUserId)
+			condition, conditionArguments := scope.placeShownCondition()
+			placeAndNameCondition = "(" + condition + " AND (photo.place_name ILIKE ? OR photo.original_filename ILIKE ?))"
+			arguments = append(arguments, conditionArguments...)
 		}
 		parts = append(parts, "("+placeAndNameCondition+" OR photo.camera_make ILIKE ? OR photo.camera_model ILIKE ?)")
 		arguments = append(arguments, pattern, pattern, pattern, pattern)
@@ -114,12 +115,13 @@ func photoSearchPartCondition(words []string, scope photoScope) (string, []any) 
 
 // searchDocument is the column a search reads, with the arguments it takes:
 // the stored document, or for a listing that holds places back the document
-// without the place for the photos that are not the reader's.
+// without the place for the photos whose place the reader may not learn.
 func (self photoScope) searchDocument() (string, []any) {
 	if !self.isPlaceHeldBack {
 		return "photo.search_document", nil
 	}
-	return "(CASE WHEN photo.user_id = ? THEN photo.search_document ELSE (" + photoSearchHeldBackDocumentExpression + ") END)", []any{self.readerUserId, self.photoAlbumId}
+	condition, arguments := self.placeShownCondition()
+	return "(CASE WHEN " + condition + " THEN photo.search_document ELSE (" + photoSearchHeldBackDocumentExpression + ") END)", append(arguments, self.photoAlbumId)
 }
 
 // rankPhotos is the identifiers of the photos a search finds, best first, at

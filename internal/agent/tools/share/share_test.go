@@ -274,3 +274,23 @@ func TestShareFileHandsOutALinkWhenAsked(t *testing.T) {
 		t.Fatalf("a program over MCP gets the link in place of the path: %v", program)
 	}
 }
+
+// headlessRun is a run that signs addresses and has nobody present.
+type headlessRun struct {
+	*linkingRun
+}
+
+func (self *headlessRun) Headless() bool { return true }
+func (self *headlessRun) CanAsk() bool   { return false }
+
+// A link that opens a copy of a file with no sign-in is made only in a
+// conversation with the person: a run nobody is present for is refused
+// before it reads the file, whatever the file or its source.
+func TestShareFileLinkIsRefusedWhenNobodyIsPresent(t *testing.T) {
+	run := &headlessRun{linkingRun: &linkingRun{fakeRun: &fakeRun{computer: &fakeComputer{}}}}
+	tool := find(t, "share_file")
+	_, err := tool.Run(tools.WithRun(context.Background(), run), &tools.Call{ID: "c1", Arguments: json.RawMessage(`{"source":"computer","path":"~/Pictures/cat.png","link":true}`)})
+	if err == nil || !strings.Contains(err.Error(), "conversation with the person") {
+		t.Fatalf("a link in a run nobody is present for is refused: %v", err)
+	}
+}

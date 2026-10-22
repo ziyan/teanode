@@ -51,6 +51,18 @@ type VideoMetadata struct {
 	Longitude            *float64
 }
 
+// CheckSize refuses a video whose shown size is more than a picture may be,
+// as ReadSize does for one. The size is a claim in the file's header, and
+// ffmpeg allocates for it when it decodes, so it is checked before any frame
+// is cut.
+func (self *VideoMetadata) CheckSize() error {
+	if self.WidthPixels > MaximumSidePixels || self.HeightPixels > MaximumSidePixels ||
+		int64(self.WidthPixels)*int64(self.HeightPixels) > MaximumPixels {
+		return fmt.Errorf("%w: %d by %d pixels", ErrTooLarge, self.WidthPixels, self.HeightPixels)
+	}
+	return nil
+}
+
 type videoProbe struct {
 	Streams []struct {
 		CodecType   string            `json:"codec_type"`

@@ -3,10 +3,12 @@ package apimail
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/gorilla/mux"
 
+	"github.com/ziyan/teanode/internal/api/v1api/apigraph"
 	"github.com/ziyan/teanode/internal/bimi"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/util/safefetch"
@@ -63,7 +65,8 @@ func (self *mail) remoteView(response http.ResponseWriter, request *http.Request
 	// for anybody with a session is a worse thing to have than one that does
 	// it only from a message they were already reading.
 	variables := mux.Vars(request)
-	if _, _, err := self.load(request, variables["mailId"]); err != nil {
+	headers, body, err := self.load(request, variables["mailId"])
+	if err != nil {
 		self.fail(response, variables["mailId"], err)
 		return
 	}
@@ -71,6 +74,22 @@ func (self *mail) remoteView(response http.ResponseWriter, request *http.Request
 	target, err := safefetch.ParseTarget(request.URL.Query().Get("url"))
 	if err != nil {
 		http.Error(response, "not a fetchable address", http.StatusBadRequest)
+		return
+	}
+
+	// And the address has to be one that message links to. A message id is
+	// not a secret (a reply that quotes a picture carries it), so without
+	// this a stranger could name a message the reader can open and an
+	// address of their own in a message they sent, and be told when it was
+	// opened.
+	linked, err := apigraph.RemoteImageAddresses(headers, body)
+	if err != nil {
+		log.Warningf("failed to read the pictures of mail %q: %s", variables["mailId"], err)
+		http.Error(response, "could not read the message", http.StatusInternalServerError)
+		return
+	}
+	if !slices.Contains(linked, request.URL.Query().Get("url")) {
+		http.Error(response, "that message does not link to it", http.StatusNotFound)
 		return
 	}
 

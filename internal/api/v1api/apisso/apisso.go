@@ -96,7 +96,23 @@ func (self *component) isSecure(request *http.Request) bool {
 	return api.IsSecure(request, self.configuration.Current().Server.TrustedProxies)
 }
 
+// allow counts one attempt against the sign-in limiter, which these two paths
+// share with every other way of signing in: both are reachable by anybody and
+// each reaches out to the identity provider, so they would otherwise cost
+// this server a request to somebody else's for every one made of it.
+func (self *component) allow(response http.ResponseWriter, request *http.Request) bool {
+	if self.authenticator.AllowLoginAttempt(request) {
+		return true
+	}
+	response.Header().Set("Retry-After", "60")
+	http.Error(response, "too many attempts; wait a minute", http.StatusTooManyRequests)
+	return false
+}
+
 func (self *component) start(response http.ResponseWriter, request *http.Request) {
+	if !self.allow(response, request) {
+		return
+	}
 	provider := self.provider(request)
 	if provider == nil {
 		http.Error(response, "no such provider", http.StatusNotFound)
@@ -130,6 +146,9 @@ func (self *component) start(response http.ResponseWriter, request *http.Request
 }
 
 func (self *component) callback(response http.ResponseWriter, request *http.Request) {
+	if !self.allow(response, request) {
+		return
+	}
 	provider := self.provider(request)
 	if provider == nil {
 		http.Error(response, "no such provider", http.StatusNotFound)

@@ -37,6 +37,12 @@ const maximumRequestSize = 1 << 20
 // stranger still gets the small bound.
 const maximumSignedInRequestSize = 12 << 20
 
+// maximumAnonymousRootFieldCount is how many root fields a request may select
+// when nobody is signed in. The sign-in page asks for one at a time, so this
+// leaves room without leaving a stranger a way to start thousands of
+// transactions in one request.
+const maximumAnonymousRootFieldCount = 8
+
 // readableAsJSON refuses a request that is not declared as JSON, when the
 // thing authorizing it is a cookie.
 //
@@ -141,6 +147,15 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 	defer afterResponse.run()
 
 	operation, err := selectGraphOperation(prepared.AST, prepared.OperationName)
+	// A stranger's request is answered before any transaction is opened, and
+	// each root field of a mutation runs in a transaction of its own, so the
+	// number of them is the number of transactions a stranger can start with
+	// one request.
+	if err == nil && username == "" && countRootFields(prepared.AST, operation) > maximumAnonymousRootFieldCount {
+		writeGraphResult(response, &graphql.Result{Errors: gqlerrors.FormatErrors(
+			fmt.Errorf("sign in to ask for more than %d things in one request", maximumAnonymousRootFieldCount))})
+		return
+	}
 	if err == nil && (operation.Operation == "query" || hasOnlyTransactionFreeMutations(operation)) {
 		prepared.Context = context.WithValue(ctx, queryExecutionKey{}, &queryExecution{Username: username, User: user, Impersonator: impersonator, CredentialKind: api.CredentialKindFromRequest(request)})
 		result := graphql.Execute(prepared)

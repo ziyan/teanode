@@ -139,3 +139,32 @@ func TestOneClickWillNotReachInside(t *testing.T) {
 		t.Fatalf("a request to %s was allowed", server.URL)
 	}
 }
+
+// A mailto: address may ask for a subject, because list servers read it: a
+// command, or a token that names the subscriber. It does not get to write the
+// message. Pressing Unsubscribe sends something in the person's name, signed
+// by their domain, and a sentence the sender chose is not what the button said.
+func TestAMailtoUnsubscribeKeepsOnlyAShortWordForASubject(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		requested string
+		want      string
+	}{
+		{"none asked for", "", "unsubscribe"},
+		{"the plain word", "unsubscribe", "unsubscribe"},
+		{"a token for the subscriber", "unsub-4f9a1c", "unsub-4f9a1c"},
+		{"a sentence", "Please send your bank details to the address below", "unsubscribe"},
+		{"a word with a line break after it", "leave\r\nBcc: someone@example.net", "unsubscribe"},
+		{"a very long word", strings.Repeat("a", 101), "unsubscribe"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := unsubscribeSubject(test.requested); got != test.want {
+				t.Errorf("unsubscribeSubject(%q) = %q, want %q", test.requested, got, test.want)
+			}
+		})
+	}
+}

@@ -152,3 +152,24 @@ func TestOurOwnClientDiscoversUs(test *testing.T) {
 		test.Errorf("discovered the registration endpoint %q", metadata.RegistrationEndpoint)
 	}
 }
+
+// The documents are built from the address they were asked at and cached
+// publicly, so a shared cache has to keep one copy per name.
+func TestDiscoveryDocumentsVaryByHost(t *testing.T) {
+	t.Parallel()
+
+	server := serve(t)
+	for _, path := range []string{api.PathOAuthAuthorizationServer, api.PathOAuthProtectedResource, api.PathOAuthProtectedResourceMCP} {
+		response, err := http.Get(server.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %s", path, err)
+		}
+		_ = response.Body.Close()
+		if !strings.Contains(response.Header.Get("Cache-Control"), "public") {
+			t.Fatalf("%s is no longer cached publicly; this test is about the cache key", path)
+		}
+		if vary := response.Header.Values("Vary"); !strings.Contains(strings.Join(vary, ","), "Host") {
+			t.Errorf("%s is cached publicly and built from the Host header, with Vary %q", path, vary)
+		}
+	}
+}

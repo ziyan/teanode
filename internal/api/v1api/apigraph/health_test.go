@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -903,5 +904,70 @@ func TestTheAgentReadsHealthInProcessButCannotConsent(t *testing.T) {
 	}
 	if settings := world.run(t, world.ada, healthSettingsQuery, nil)["ReadHealthSettings"].(map[string]any); settings["canAgentReadHealth"] != false {
 		t.Fatalf("the agent turned its own switch on: %v", settings)
+	}
+}
+
+// Whoever joins a circle reads what was shared with it, so bringing somebody
+// into a circle that Health is shared with is sharing that Health with them,
+// and a command line token, which cannot widen a share, cannot do it either.
+// Inviting and putting an account in are refused the same way, and a circle
+// nothing is shared with stays open to a token.
+func TestJoiningACircleHealthIsSharedWithNeedsATap(t *testing.T) {
+	world := newHealthWorld(t)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		dbtest.GrantPermission(t, tx, world.cora.ID, models.PermissionHealthUse)
+		// GrantPermission names its role after the person, and ada has one.
+		role, err := tx.CreateRole(&models.Role{Name: "Account manager", Permissions: []models.Permission{models.PermissionUserManage}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.CreateGroup(&models.Group{Name: "Account managers", RoleIDs: []string{role.ID}, UserIDs: []string{world.ada.ID}}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	world.fill(t, world.ada)
+	invite := func(credentialKind models.CredentialKind, circleId string) []string {
+		_, failures := world.callWithCredential(t, world.ada, credentialKind,
+			fmt.Sprintf(`mutation { InviteToCircle(circleId: %q, username: %q, memberRole: "member") }`, circleId, world.cora.Username), nil)
+		return failures
+	}
+	add := func(credentialKind models.CredentialKind, circleId string) []string {
+		_, failures := world.callWithCredential(t, world.ada, credentialKind,
+			fmt.Sprintf(`mutation { AddCircleMember(circleId: %q, username: %q, memberRole: "member") { id } }`, circleId, world.cora.Username), nil)
+		return failures
+	}
+	isTapRequired := func(failures []string) bool {
+		return strings.Contains(strings.Join(failures, "; "), api.TapRequiredPhrase)
+	}
+
+	// Nothing is shared with the circle yet, so a token may bring cora in.
+	if failures := invite(models.CredentialToken, world.home); len(failures) > 0 {
+		t.Fatalf("an invitation by a token to a circle with nothing shared: %v", failures)
+	}
+
+	if data, failures := world.callWithCredential(t, world.ada, models.CredentialApp, healthShareQuery,
+		map[string]any{"granteeCircleId": world.home, "healthCategories": []any{"sleep"}}); len(failures) > 0 {
+		t.Fatalf("the share by a tap: %v %v", data, failures)
+	}
+
+	for _, credentialKind := range []models.CredentialKind{models.CredentialToken, ""} {
+		if failures := invite(credentialKind, world.home); !isTapRequired(failures) {
+			t.Errorf("an invitation with credential %q: %v", credentialKind, failures)
+		}
+		if failures := add(credentialKind, world.home); !isTapRequired(failures) {
+			t.Errorf("putting an account in with credential %q: %v", credentialKind, failures)
+		}
+	}
+	world.refusal(t, world.cora, healthTypesQuery, map[string]any{"ownerUserId": world.ada.ID})
+
+	// A tap may do both.
+	if failures := invite(models.CredentialApp, world.home); len(failures) > 0 {
+		t.Errorf("an invitation by a tap: %v", failures)
+	}
+	if failures := add(models.CredentialSession, world.home); len(failures) > 0 {
+		t.Errorf("putting an account in by a tap: %v", failures)
+	}
+	if listed := world.run(t, world.cora, healthTypesQuery, map[string]any{"ownerUserId": world.ada.ID})["ListHealthTypes"].([]any); len(listed) == 0 {
+		t.Error("cora, who a tap brought in, reads nothing of what the circle was shared")
 	}
 }

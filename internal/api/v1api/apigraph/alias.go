@@ -262,6 +262,12 @@ func applyAliasParameters(alias *models.Alias, parameters *AliasParameters) {
 			alias.MailServer = &models.MailServer{}
 		}
 		if parameters.MailServer.Host != "" {
+			// The stored password was given for the old host. Keeping it
+			// across a change of host would send it to a host its owner never
+			// gave it to, so it goes unless a new one comes with the change.
+			if parameters.MailServer.Password == nil && !strings.EqualFold(alias.MailServer.Host, parameters.MailServer.Host) {
+				alias.MailServer.Password = ""
+			}
 			alias.MailServer.Host = parameters.MailServer.Host
 		}
 		if parameters.MailServer.Port != 0 {
@@ -271,7 +277,8 @@ func applyAliasParameters(alias *models.Alias, parameters *AliasParameters) {
 			alias.MailServer.Username = *parameters.MailServer.Username
 		}
 		// An omitted password keeps the existing one, so that editing a
-		// relay's port does not silently clear its password.
+		// relay's port does not silently clear its password. A change of host
+		// clears it above.
 		if parameters.MailServer.Password != nil {
 			alias.MailServer.Password = *parameters.MailServer.Password
 		}

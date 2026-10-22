@@ -31,6 +31,7 @@ func newPhotoShareWorld(test *testing.T, transaction db.Transaction) *photoShare
 			test.Fatalf("CreateUser %s: %s", username, err)
 		}
 		*target = made
+		dbtest.GrantPermission(test, transaction, made.ID, models.PermissionPhotosUse)
 	}
 	var err error
 	if world.home, err = transaction.CreateCircle(&models.Circle{Name: "Home", CircleKind: models.CircleKindFamily}, world.erin.ID); err != nil {
@@ -1008,6 +1009,153 @@ func TestAShareOrAPhotoMadeAsSomebodyLeavesIsNotLeftBehind(test *testing.T) {
 			if share.GranteeUserID == world.ben.ID {
 				test.Fatalf("a share to somebody who shares no circle is left: %+v", share)
 			}
+		}
+	})
+}
+
+// Whether a reader sees where a photo was taken comes from the share of the
+// album's owner, so it covers the owner's photos and not the ones a
+// contributor added, whose place the contributor shared with nobody. The
+// access answer, the distance filter and both kinds of search agree.
+func TestAnAlbumSharesPlacesCoverOnlyTheOwnersPhotos(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		world := newPhotoShareWorld(test, transaction)
+		adaPhoto := sharedTestPhoto(test, transaction, world.ada, "ada-harbor", "Harbor Quay")
+		coraPhoto := sharedTestPhoto(test, transaction, world.cora, "cora-street", "Willow Street")
+		album, err := transaction.CreatePhotoAlbum(world.ada.ID, "Trip", []string{adaPhoto.ID})
+		if err != nil {
+			test.Fatal(err)
+		}
+		// Ben reads with places. Cora contributes and shares no place with anyone.
+		shareAlbum(test, transaction, world.ada, album.ID, world.ben.ID, "", models.PhotoAlbumShareLevelView, true)
+		shareAlbum(test, transaction, world.ada, album.ID, world.cora.ID, "", models.PhotoAlbumShareLevelContribute, false)
+		if _, err := transaction.AddPhotosToAlbum(world.cora.ID, album.ID, []string{coraPhoto.ID}); err != nil {
+			test.Fatal(err)
+		}
+
+		isPlaceShown := func(readerUserId, photoId string) bool {
+			access, err := transaction.GetPhotoAccess(readerUserId, photoId)
+			if err != nil {
+				test.Fatal(err)
+			}
+			return access.IsLocationIncluded
+		}
+		if !isPlaceShown(world.ben.ID, adaPhoto.ID) {
+			test.Error("ben is not given the place of the owner's photo, which the share includes")
+		}
+		if isPlaceShown(world.ben.ID, coraPhoto.ID) {
+			test.Error("ben is given the place of cora's photo through ada's share")
+		}
+		if isPlaceShown(world.ada.ID, coraPhoto.ID) {
+			test.Error("the album's owner is given the place of cora's photo")
+		}
+		if !isPlaceShown(world.cora.ID, coraPhoto.ID) {
+			test.Error("cora is not given the place of her own photo")
+		}
+
+		latitude, longitude, distance := 10.5, 20.5, 5.0
+		near, err := transaction.ListPhotos(world.ben.ID, &db.PhotoFilter{AlbumID: album.ID, PageSize: 100, NearLatitude: &latitude, NearLongitude: &longitude, NearDistanceKilometers: &distance})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if got := photoIdsOf(near); len(got) != 1 || got[0] != adaPhoto.ID {
+			test.Errorf("ben's distance filter found %v, want only the owner's photo", got)
+		}
+		for words, want := range map[string]string{"harbor": adaPhoto.ID, "harb": adaPhoto.ID, "willow": "", "will": ""} {
+			listed, err := transaction.ListPhotos(world.ben.ID, &db.PhotoFilter{AlbumID: album.ID, PageSize: 100, SearchText: words})
+			if err != nil {
+				test.Fatal(err)
+			}
+			got := photoIdsOf(listed)
+			if (want == "" && len(got) != 0) || (want != "" && (len(got) != 1 || got[0] != want)) {
+				test.Errorf("ben searched %q and found %v, want %q", words, got, want)
+			}
+		}
+	})
+}
+
+// A share stops reaching people while its owner is disabled or has lost
+// photos:use, as Location, Health and calendar shares do, and a disabled
+// contributor's photos reach nobody else in an album that is still reachable.
+func TestADisabledOrUnpermittedOwnersAlbumsReachNobody(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		world := newPhotoShareWorld(test, transaction)
+		adaPhoto := sharedTestPhoto(test, transaction, world.ada, "ada-harbor", "")
+		coraPhoto := sharedTestPhoto(test, transaction, world.cora, "cora-street", "")
+		album, err := transaction.CreatePhotoAlbum(world.ada.ID, "Trip", []string{adaPhoto.ID})
+		if err != nil {
+			test.Fatal(err)
+		}
+		shareAlbum(test, transaction, world.ada, album.ID, world.ben.ID, "", models.PhotoAlbumShareLevelView, false)
+		shareAlbum(test, transaction, world.ada, album.ID, world.cora.ID, "", models.PhotoAlbumShareLevelContribute, false)
+		if _, err := transaction.AddPhotosToAlbum(world.cora.ID, album.ID, []string{coraPhoto.ID}); err != nil {
+			test.Fatal(err)
+		}
+		disable := func(user *models.User) {
+			disabledAt := time.Now()
+			if _, err := transaction.UpdateUser(user.ID, func(found *models.User) error {
+				found.DisabledAt = &disabledAt
+				return nil
+			}); err != nil {
+				test.Fatalf("disable %s: %s", user.Username, err)
+			}
+		}
+		listedCount := func() int {
+			listed, err := transaction.ListPhotos(world.ben.ID, &db.PhotoFilter{AlbumID: album.ID, PageSize: 100})
+			if err != nil {
+				return 0
+			}
+			return len(listed)
+		}
+		if _, err := transaction.GetPhotoAccess(world.ben.ID, coraPhoto.ID); err != nil || listedCount() != 2 {
+			test.Fatalf("before: %v, %d listed", err, listedCount())
+		}
+
+		// A disabled contributor's photo is gone for the others, the album is not.
+		disable(world.cora)
+		if _, err := transaction.GetPhotoAccess(world.ben.ID, coraPhoto.ID); !isNotFound(err) {
+			test.Errorf("ben reads a disabled contributor's photo: %v", err)
+		}
+		if _, err := transaction.GetPhotoAccess(world.ben.ID, adaPhoto.ID); err != nil {
+			test.Errorf("the owner's photo is gone with the contributor: %v", err)
+		}
+		if got := listedCount(); got != 1 {
+			test.Errorf("ben lists %d photos, want the owner's only", got)
+		}
+
+		// A disabled owner's album reaches nobody.
+		disable(world.ada)
+		if _, err := transaction.GetPhotoAccess(world.ben.ID, adaPhoto.ID); !isNotFound(err) {
+			test.Errorf("a disabled owner's photo reaches ben: %v", err)
+		}
+		if _, err := transaction.GetPhotoAlbumAccess(world.ben.ID, album.ID); !isNotFound(err) {
+			test.Errorf("a disabled owner's album reaches ben: %v", err)
+		}
+		// The owner's own library is theirs, whatever their state.
+		if _, err := transaction.GetPhotoAccess(world.ada.ID, adaPhoto.ID); err != nil {
+			test.Errorf("a disabled owner's own photo: %v", err)
+		}
+
+		// An owner without photos:use shares nothing either.
+		frank, err := transaction.CreateUser(&models.User{Username: "frank"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.AddCircleMember(world.home.ID, frank.ID, models.MemberRoleMember, world.erin.ID); err != nil {
+			test.Fatal(err)
+		}
+		frankPhoto := sharedTestPhoto(test, transaction, frank, "frank-one", "")
+		frankAlbum, err := transaction.CreatePhotoAlbum(frank.ID, "Walks", []string{frankPhoto.ID})
+		if err != nil {
+			test.Fatal(err)
+		}
+		shareAlbum(test, transaction, frank, frankAlbum.ID, world.ben.ID, "", models.PhotoAlbumShareLevelView, false)
+		if _, err := transaction.GetPhotoAlbumAccess(world.ben.ID, frankAlbum.ID); !isNotFound(err) {
+			test.Errorf("an album of somebody without photos:use reaches ben: %v", err)
 		}
 	})
 }

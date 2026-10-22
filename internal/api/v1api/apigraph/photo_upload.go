@@ -15,6 +15,7 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/photo"
 	"github.com/ziyan/teanode/internal/storage"
+	"github.com/ziyan/teanode/internal/util/ratelimit"
 )
 
 // photoRealm is what a client shows somebody when it asks for the password,
@@ -115,7 +116,7 @@ func (self *graph) photoBasicPerson(response http.ResponseWriter, request *http.
 	// right password never touches it.
 	var from string
 	if self.settings != nil && self.settings.AuthLimiter != nil {
-		from = api.RemoteAddress(request, self.config.Current().Server.TrustedProxies)
+		from = ratelimit.AddressKey(api.RemoteAddress(request, self.config.Current().Server.TrustedProxies))
 		if self.settings.AuthLimiter.For(from).Available() <= 0 {
 			response.Header().Set("Retry-After", "60")
 			http.Error(response, "too many attempts; wait a minute", http.StatusTooManyRequests)

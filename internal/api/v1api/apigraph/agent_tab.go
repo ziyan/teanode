@@ -13,7 +13,6 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/ziyan/teanode/internal/agent"
-	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/browser"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -21,8 +20,8 @@ import (
 
 // The tab relay: the browser extension attaches the person's own tab here,
 // over a websocket. The extension says who it is in its first message, with
-// the token it signed in with; a dashboard session with its CSRF token is
-// taken too. The server carries the agent's requests across and the
+// the token it signed in with, and nothing else is taken: a cookie rides on
+// a socket opened from any page, so it proves nothing here. The server carries the agent's requests across and the
 // extension's answers back; the page stays on the person's screen.
 
 // tabProtocol is the newest version the extension may speak. 2 says who it
@@ -170,11 +169,6 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 	}
 	// Who this is comes with the hello, so the socket is opened first and
 	// refused in words the extension can show.
-	sessionUsername := api.UsernameFromRequest(request)
-	csrfCookie := ""
-	if cookie, _ := request.Cookie("csrftoken"); cookie != nil {
-		csrfCookie = cookie.Value
-	}
 	upgrader := websocket.Upgrader{CheckOrigin: func(request *http.Request) bool { return true }}
 	conn, err := upgrader.Upgrade(response, request, nil)
 	if err != nil {
@@ -193,6 +187,7 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 	var found *models.Agent
 	username := ""
 	attached := false
+	var credential *socketCredential
 	defer func() {
 		if attached {
 			worker.DetachTab(found.ID, socket)
@@ -215,7 +210,6 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 			Type     string          `json:"type"`
 			Protocol int             `json:"protocol"`
 			Token    string          `json:"token"`
-			CSRF     string          `json:"csrf"`
 			ID       int64           `json:"id"`
 			Title    string          `json:"title"`
 			URL      string          `json:"url"`
@@ -241,6 +235,12 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 		if err := json.Unmarshal(data, &message); err != nil {
 			continue
 		}
+		// A token revoked since the hello, or an account since disabled,
+		// ends the socket at the next message after the interval.
+		if attached && !credential.StillHolds() {
+			refuse("the token is not one this server takes any more; sign in again")
+			return
+		}
 		switch message.Type {
 		case "hello":
 			if attached {
@@ -250,17 +250,13 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 				refuse(fmt.Sprintf("this server speaks protocol %d to %d; update the extension", tabProtocolOldest, tabProtocol))
 				return
 			}
-			switch {
-			case message.Token != "":
-				username = self.usernameOfToken(request, message.Token)
-				if username == "" {
-					refuse("the token is not one this server takes; sign in again")
-					return
-				}
-			case csrfCookie != "" && message.CSRF == csrfCookie:
-				username = sessionUsername
-			default:
-				refuse("sign in first: the hello carried no token, and no dashboard session matched")
+			if message.Token == "" {
+				refuse("sign in first: the hello carried no token")
+				return
+			}
+			username = self.usernameOfToken(request, message.Token)
+			if username == "" {
+				refuse("the token is not one this server takes; sign in again")
 				return
 			}
 			var err error
@@ -285,6 +281,7 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 				worker.UpdateTabList(found.ID, tabListingsOf(*message.Tabs))
 			}
 			attached = true
+			credential = self.newSocketCredential(request, message.Token, username)
 			welcome, _ := json.Marshal(map[string]any{"type": "welcome", "protocol": message.Protocol})
 			_ = socket.Send(welcome)
 			if hasTab {

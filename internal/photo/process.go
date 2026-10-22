@@ -1117,6 +1117,9 @@ func (self *Store) processVideo(ctx context.Context, processed *processedPhoto) 
 		processed.metadata.TakenAt, processed.metadata.TakenAtOffsetMinutes = probed.TakenAt, probed.TakenAtOffsetMinutes
 		processed.metadata.Latitude, processed.metadata.Longitude = probed.Latitude, probed.Longitude
 		processed.namePlace()
+		// Before ffmpeg is asked to decode a frame of it: a small file can
+		// claim a picture far larger than memory allows.
+		probeErr = probed.CheckSize()
 	}
 	if err := self.saveMetadata(ctx, processed); err != nil {
 		return err
@@ -1199,6 +1202,9 @@ func (self *Store) makeLiveVideoPreview(ctx context.Context, processed *processe
 	}
 	probed, err := picture.ProbeVideo(ctx, path)
 	if err != nil {
+		return err
+	}
+	if err := probed.CheckSize(); err != nil {
 		return err
 	}
 	if probed.DurationMS > maximumVideoPreviewDuration.Milliseconds() {

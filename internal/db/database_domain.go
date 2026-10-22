@@ -265,7 +265,7 @@ func splitHosts(value string) []string {
 	return hosts
 }
 
-func aliasFromModel(model *aliasModel) (*models.Alias, error) {
+func aliasFromModel(model *aliasModel, sealer *sealer) (*models.Alias, error) {
 	alias := &models.Alias{
 		ID:         model.ID,
 		CreatedAt:  model.CreatedAt.In(time.Local),
@@ -285,11 +285,16 @@ func aliasFromModel(model *aliasModel) (*models.Alias, error) {
 		if err := yaml.Unmarshal([]byte(model.MailServer), alias.MailServer); err != nil {
 			return nil, fmt.Errorf("db: cannot read the mail server of alias %q: %w", model.ID, err)
 		}
+		password, err := sealer.open(sealerKeyBox(sealer), alias.MailServer.Password, fmt.Sprintf("mail server password of alias %q", model.ID))
+		if err != nil {
+			return nil, err
+		}
+		alias.MailServer.Password = password
 	}
 	return alias, nil
 }
 
-func aliasToModel(alias *models.Alias) (*aliasModel, error) {
+func aliasToModel(alias *models.Alias, sealer *sealer) (*aliasModel, error) {
 	model := &aliasModel{
 		ID:         alias.ID,
 		CreatedAt:  alias.CreatedAt,
@@ -305,7 +310,13 @@ func aliasToModel(alias *models.Alias) (*aliasModel, error) {
 		Disabled:   alias.Disabled,
 	}
 	if alias.MailServer != nil {
-		encoded, err := yaml.Marshal(alias.MailServer)
+		mailServer := *alias.MailServer
+		password, err := sealer.seal(sealerKeyBox(sealer), mailServer.Password)
+		if err != nil {
+			return nil, fmt.Errorf("db: cannot seal the mail server password of alias %q: %w", alias.ID, err)
+		}
+		mailServer.Password = password
+		encoded, err := yaml.Marshal(&mailServer)
 		if err != nil {
 			return nil, fmt.Errorf("db: cannot write the mail server of alias %q: %w", alias.ID, err)
 		}
@@ -344,7 +355,7 @@ func credentialToModel(credential *models.Credential) *credentialModel {
 
 // loadDomainChildren reads the aliases and credentials of these domains, in
 // the order the operator arranged them.
-func loadDomainChildren(db *gorm.DB, domainIds []string) (map[string][]*models.Alias, map[string][]*models.Credential, error) {
+func loadDomainChildren(db *gorm.DB, sealer *sealer, domainIds []string) (map[string][]*models.Alias, map[string][]*models.Credential, error) {
 	aliases := map[string][]*models.Alias{}
 	credentials := map[string][]*models.Credential{}
 	if len(domainIds) == 0 {
@@ -355,7 +366,7 @@ func loadDomainChildren(db *gorm.DB, domainIds []string) (map[string][]*models.A
 		return nil, nil, err
 	}
 	for index := range aliasRows {
-		alias, err := aliasFromModel(&aliasRows[index])
+		alias, err := aliasFromModel(&aliasRows[index], sealer)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -381,11 +392,12 @@ func (self *transaction) getDomain(condition string, value string) (*models.Doma
 	if result.RowsAffected == 0 {
 		return nil, nil
 	}
-	aliases, credentials, err := loadDomainChildren(self.tx, []string{model.ID})
+	sealer := self.database.currentSealer()
+	aliases, credentials, err := loadDomainChildren(self.tx, sealer, []string{model.ID})
 	if err != nil {
 		return nil, err
 	}
-	return domainFromModel(&model, self.database.currentSealer(), aliases[model.ID], credentials[model.ID])
+	return domainFromModel(&model, sealer, aliases[model.ID], credentials[model.ID])
 }
 
 func (self *transaction) GetDomain(domainId string) (*models.Domain, error) {
@@ -412,11 +424,11 @@ func (self *transaction) ListDomains() ([]*models.Domain, error) {
 	for _, row := range rows {
 		domainIds = append(domainIds, row.ID)
 	}
-	aliases, credentials, err := loadDomainChildren(self.tx, domainIds)
+	sealer := self.database.currentSealer()
+	aliases, credentials, err := loadDomainChildren(self.tx, sealer, domainIds)
 	if err != nil {
 		return nil, err
 	}
-	sealer := self.database.currentSealer()
 	domains := make([]*models.Domain, 0, len(rows))
 	for index := range rows {
 		domain, err := domainFromModel(&rows[index], sealer, aliases[rows[index].ID], credentials[rows[index].ID])
@@ -551,7 +563,7 @@ func (self *transaction) GetAlias(aliasId string) (*models.Alias, error) {
 	if result.RowsAffected == 0 {
 		return nil, nil
 	}
-	return aliasFromModel(&model)
+	return aliasFromModel(&model, self.database.currentSealer())
 }
 
 func (self *transaction) CreateAlias(alias *models.Alias) (*models.Alias, error) {
@@ -576,7 +588,7 @@ func (self *transaction) CreateAlias(alias *models.Alias) (*models.Alias, error)
 	created.CreatedAt = now
 	created.ModifiedAt = now
 	created.Position = position
-	model, err := aliasToModel(&created)
+	model, err := aliasToModel(&created, self.database.currentSealer())
 	if err != nil {
 		return nil, err
 	}
@@ -615,7 +627,7 @@ func (self *transaction) UpdateAlias(aliasId string, modify func(*models.Alias) 
 	after.CreatedAt = before.CreatedAt
 	after.Position = before.Position
 	after.ModifiedAt = time.Now()
-	model, err := aliasToModel(&after)
+	model, err := aliasToModel(&after, self.database.currentSealer())
 	if err != nil {
 		return nil, err
 	}

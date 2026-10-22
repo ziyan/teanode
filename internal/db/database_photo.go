@@ -636,8 +636,9 @@ const maximumPhotoOffset = 100000
 // photoScope is which photos a listing reads and what it may reveal of them.
 // A listing without an album reads the person's own library. A listing of an
 // album reads the photos in it, whoever added them, and the person who asks
-// sees the place of only those that are theirs, unless the share that reaches
-// them includes places. A listing must not give a place away by other means
+// sees the place of only those that are theirs and, when the share that
+// reaches them includes places, those of the album's owner, whose share it is.
+// A listing must not give a place away by other means
 // either: a filter by distance and a search by the words of a place would each
 // tell a reader where a photo was taken, so for the photos whose place is
 // held back they leave the place out.
@@ -649,13 +650,19 @@ type photoScope struct {
 	photoAlbumId string
 
 	// isPlaceHeldBack says the place of the photos that are not the reader's
-	// own is not the reader's to learn.
+	// own is not the reader's to learn, except those of placeShownOwnerUserId.
 	isPlaceHeldBack bool
+
+	// placeShownOwnerUserId is the owner of the album whose share to the
+	// reader includes places, empty when none does. The share is theirs, so it
+	// covers their photos and not the ones others added to the album.
+	placeShownOwnerUserId string
 }
 
-// ownPhotoCondition keeps the reader's own photos.
-func (self photoScope) ownPhotoCondition() (string, []any) {
-	return "photo.user_id = ?", []any{self.readerUserId}
+// placeShownCondition keeps the photos whose place the reader may learn: their
+// own, and the album owner's when the share includes places.
+func (self photoScope) placeShownCondition() (string, []any) {
+	return "photo.user_id IN (?, ?)", []any{self.readerUserId, self.placeShownOwnerUserId}
 }
 
 // scopeOfPhotoListing works out what a listing reads. An album the person does
@@ -669,7 +676,10 @@ func (self *transaction) scopeOfPhotoListing(userId string, filter *PhotoFilter)
 	if err != nil {
 		return scope, err
 	}
-	scope.isInAlbum, scope.photoAlbumId, scope.isPlaceHeldBack = true, filter.AlbumID, !access.IsLocationIncluded
+	scope.isInAlbum, scope.photoAlbumId, scope.isPlaceHeldBack = true, filter.AlbumID, true
+	if access.IsLocationIncluded {
+		scope.placeShownOwnerUserId = access.OwnerUserID
+	}
 	return scope, nil
 }
 
@@ -695,6 +705,9 @@ func (self *transaction) photosMatchingInScope(userId string, filter *PhotoFilte
 	query := self.tx.Model(&photoModel{})
 	if scope.isInAlbum {
 		query = query.Where("EXISTS (SELECT 1 FROM photo_album_item WHERE photo_album_item.photo_id = photo.id AND photo_album_item.photo_album_id = ?)", filter.AlbumID)
+		// The photos of a disabled account reach nobody else, as GetPhotoAccess
+		// has it, so they are not listed for a reader who cannot open them.
+		query = query.Where("(photo.user_id = ? OR EXISTS (SELECT 1 FROM \"user\" WHERE \"user\".id = photo.user_id AND \"user\".disabled_at IS NULL))", userId)
 	} else {
 		query = query.Where("photo.user_id = ?", userId)
 	}
@@ -749,7 +762,7 @@ func (self *transaction) photosMatchingInScope(userId string, filter *PhotoFilte
 				cos(radians(?)) * cos(radians(photo.latitude)) * power(sin(radians(photo.longitude - ?) / 2), 2)))) <= ?`,
 			*filter.NearLatitude, *filter.NearLatitude, *filter.NearLongitude, *filter.NearDistanceKilometers)
 		if scope.isPlaceHeldBack {
-			condition, arguments := scope.ownPhotoCondition()
+			condition, arguments := scope.placeShownCondition()
 			query = query.Where(condition, arguments...)
 		}
 	}

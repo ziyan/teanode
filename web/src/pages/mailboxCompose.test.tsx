@@ -23,7 +23,7 @@ vi.mock('../components/richText', () => ({
   ),
   htmlToText: (html: string) => html,
   textToHtml: (text: string) => text,
-  quotableHtml: (html: string) => html,
+  quotableHtml: vi.fn((html: string) => html.replace(/<style>.*?<\/style>/g, '')),
 }))
 
 const execute = vi.mocked(graphql)
@@ -158,5 +158,28 @@ describe('composer uncertain sends', () => {
       finishSave({ SaveMailboxDraft: { id: 'saved-draft' } })
     })
     expect(sends()[0][1]).toMatchObject({ message: { draftItemId: 'saved-draft', keepAttachments: [4] } })
+  })
+
+  it('passes a reopened draft through quotableHtml, so its style block stays out of the page', async () => {
+    execute.mockImplementation(async (document) => {
+      if (document.includes('ListAddressBooks')) return { ListAddressBooks: [] }
+      if (document.includes('GetMailboxDraft'))
+        return {
+          GetMailboxDraft: {
+            from: '',
+            to: ['recipient@example.net'],
+            cc: [],
+            bcc: [],
+            subject: 'Fixture subject',
+            html: '<p>Fixture body</p><style>.sidebar{display:none}</style>',
+            attachments: [],
+          },
+        }
+      if (document.includes('GetMailboxItem')) return { GetMailboxItem: { folderId: 'drafts' } }
+      throw new Error('unexpected operation')
+    })
+    compose(vi.fn(), 'fixture-draft')
+    await act(async () => undefined)
+    expect((screen.getByLabelText('Body') as HTMLTextAreaElement).value).toBe('<p>Fixture body</p>')
   })
 })

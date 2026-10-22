@@ -142,8 +142,11 @@ let attempt = 0
 let retry = null
 setBadge('')
 
+// The server address is kept in the local storage beside the token, never in
+// the synced one: an address that another browser (or whoever can write to
+// the person's sync) could change would take the token to a server of theirs.
 async function serverOrigin() {
-  const { server } = await chrome.storage.sync.get('server')
+  const { server } = await chrome.storage.local.get('server')
   return (server || '').replace(/\/+$/, '')
 }
 
@@ -406,9 +409,29 @@ function connect(origin, secret) {
   opening.onerror = () => setBadge('!', '#c33')
 }
 
+// An address the last build kept in the synced storage is brought over once.
+// Until then the address synced and the token did not, so a browser signed in
+// before this build has its token here and its address there. It is copied
+// only while this browser holds a token and no address of its own, and only an
+// address the options page would take; from then on the synced storage is
+// never read, so a change another browser makes there is not followed. It is
+// left in the synced storage, where another browser may still need it once.
+async function carrySyncedServerAddress() {
+  if (!chrome.storage.sync) return
+  const [{ token, server }, { server: synced }] = await Promise.all([
+    chrome.storage.local.get(['token', 'server']),
+    chrome.storage.sync.get('server'),
+  ])
+  if (token && !server && typeof synced === 'string' && synced && !serverAddressProblem(synced)) {
+    await chrome.storage.local.set({ server: synced })
+  }
+}
+
 // Connected whenever signed in: when the worker starts, when the browser
 // starts, and when the person signs in or out.
-void connectIfSignedIn()
+void carrySyncedServerAddress()
+  .catch(() => {})
+  .then(() => connectIfSignedIn())
 chrome.runtime.onStartup.addListener(() => void connectIfSignedIn())
 chrome.runtime.onInstalled.addListener(() => void connectIfSignedIn())
 // The options page may change the list itself (allowing sites again).
@@ -416,7 +439,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes[SCRIPTED_ORIGINS_KEY]) scriptedOrigins.replace(changes[SCRIPTED_ORIGINS_KEY].newValue)
 })
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (!(area === 'local' && changes.token) && !(area === 'sync' && changes.server)) return
+  if (!(area === 'local' && (changes.token || changes.server))) return
   disconnect()
   void connectIfSignedIn()
 })

@@ -47,7 +47,17 @@ function listenerSet() {
 // load starts the worker with these tabs open (by id, with their address),
 // the person's own tab being the first, and the agent's tab the second when
 // there is one.
-async function load(tabs, { current = tabs[0].id, opened = [], panel = { isOpen: false }, runPage = false } = {}) {
+async function load(
+  tabs,
+  {
+    current = tabs[0].id,
+    opened = [],
+    panel = { isOpen: false },
+    runPage = false,
+    storedServer = serverOrigin,
+    syncedServer,
+  } = {},
+) {
   FakeSocket.instances = []
   const byId = new Map(
     tabs.map((tab) => [tab.id, { windowId: 1, active: true, status: 'complete', title: 'A page', ...tab }]),
@@ -71,10 +81,12 @@ async function load(tabs, { current = tabs[0].id, opened = [], panel = { isOpen:
         set: vi.fn(async (values) => void Object.assign(session, values)),
         remove: vi.fn(async () => {}),
       },
-      sync: { get: vi.fn(async () => ({ server: serverOrigin })) },
       local: {
-        get: vi.fn(async () => ({ token: 'a-token', ...local })),
+        get: vi.fn(async () => ({ token: 'a-token', ...(storedServer ? { server: storedServer } : {}), ...local })),
         set: vi.fn(async (values) => void Object.assign(local, values)),
+      },
+      sync: {
+        get: vi.fn(async () => (syncedServer ? { server: syncedServer } : {})),
       },
       onChanged: listenerSet(),
     },
@@ -660,6 +672,49 @@ describe("a fetch with the page's session", () => {
     expect(calls.scripts).toEqual([])
     expect(await ask('fetch', { url: '/statements.pdf' })).toMatchObject({ ok: true })
     expect(calls.scripts).toHaveLength(1)
+  })
+})
+
+describe('the server address the token is sent to', () => {
+  const ordinary = [ownTab('https://shop.example.org/cart')]
+  const attacker = 'https://attacker.example.net'
+
+  // Tells the worker's storage listeners that a key changed in an area.
+  const changed = (chrome, changes, area) => {
+    for (const [listener] of chrome.storage.onChanged.addListener.mock.calls) listener(changes, area)
+  }
+
+  it('is read from the local storage, where the token is', async () => {
+    const { socket } = await load(ordinary)
+    expect(socket.address).toBe('wss://mail.example.com/api/v1/agent/tab')
+  })
+
+  it('does not follow a change of the synced storage, which another browser can write', async () => {
+    const { chrome, socket } = await load(ordinary)
+    changed(chrome, { server: { newValue: attacker } }, 'sync')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(socket.readyState).toBe(1)
+    expect(FakeSocket.instances).toHaveLength(1)
+  })
+
+  it('is brought over once from the synced storage, where the last build kept it', async () => {
+    await load(ordinary, { storedServer: '', syncedServer: 'https://mail.example.com' })
+    await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(1))
+    expect(FakeSocket.instances[0].address).toBe('wss://mail.example.com/api/v1/agent/tab')
+  })
+
+  it('is not brought over from the synced storage when this browser has its own', async () => {
+    const { socket } = await load(ordinary, { syncedServer: attacker })
+    expect(socket.address).toBe('wss://mail.example.com/api/v1/agent/tab')
+  })
+
+  it('follows a change in the local storage, where only the options page writes it', async () => {
+    const { chrome, socket } = await load(ordinary)
+    await chrome.storage.local.set({ server: 'https://other.example.com' })
+    changed(chrome, { server: { newValue: 'https://other.example.com' } }, 'local')
+    await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(2))
+    expect(socket.readyState).toBe(3)
+    expect(FakeSocket.instances[1].address).toBe('wss://other.example.com/api/v1/agent/tab')
   })
 })
 

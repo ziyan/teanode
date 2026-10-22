@@ -8,7 +8,6 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +28,7 @@ func (self *graph) webSocketView(response http.ResponseWriter, request *http.Req
 		// be a page from here. Nothing asks permission across origins the
 		// way a fetch does -- the handshake goes straight through with the
 		// reader's cookie on it.
-		CheckOrigin: fromThisServer,
+		CheckOrigin: api.FromThisServer,
 	}
 	conn, err := upgrader.Upgrade(response, request, nil)
 	if err != nil {
@@ -55,22 +54,6 @@ func (self *graph) webSocketView(response http.ResponseWriter, request *http.Req
 		log.Errorf("failed to handle websocket connection from %q: %s", request.RemoteAddr, err)
 		return
 	}
-}
-
-// fromThisServer reports whether a handshake came from a page this server
-// served. A request with no Origin at all is not a browser, so nothing
-// attached a cookie to it on its own; it is let through here and has to
-// prove who it is with a token in its first message.
-func fromThisServer(request *http.Request) bool {
-	origin := request.Header.Get("Origin")
-	if origin == "" {
-		return true
-	}
-	parsed, err := url.Parse(origin)
-	if err != nil || parsed.Host == "" {
-		return false
-	}
-	return strings.EqualFold(parsed.Host, request.Host)
 }
 
 type webSocketMessage struct {
@@ -187,13 +170,17 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 			for key, value := range headers {
 				httpHeader.Add(key, value)
 			}
+			// What signed the socket in, to ask about again while it stays
+			// open: the token, or none for the cookie the upgrade carried.
+			credentialToken := ""
 			// A token in the first message is the sign-in of a page that
 			// has no session — the dashboard's drawer framed by another
 			// site — verified as an Authorization header would be. A
 			// token is nothing a cookie sent by itself, so the CSRF check
 			// is for sessions alone.
 			if token := httpHeader.Get("Authorization"); token != "" {
-				username := self.graph.usernameOfToken(self.request, strings.TrimPrefix(token, "Bearer "))
+				credentialToken = strings.TrimPrefix(token, "Bearer ")
+				username := self.graph.usernameOfToken(self.request, credentialToken)
 				if username == "" {
 					log.Warningf("the token a websocket at %q opened with is not one this server takes", self.conn.RemoteAddr())
 					return fmt.Errorf("apigraph: the token is not one this server takes")
@@ -203,7 +190,7 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 				// with the upgrade.
 				self.request.Header.Del(api.ImpersonatorUsernameHeader)
 				self.request.Header.Del(api.CredentialKindHeader)
-			} else if self.request.Header.Get("Origin") == "" || !fromThisServer(self.request) {
+			} else if self.request.Header.Get("Origin") == "" || !api.FromThisServer(self.request) {
 				// A session, then, and a session is a cookie: the browser
 				// attached it without being asked, so the page that opened
 				// the socket has to be one of this server's own.
@@ -216,6 +203,15 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 				log.Warningf("a websocket at %q opened from %q, which is not this server", self.conn.RemoteAddr(), self.request.Header.Get("Origin"))
 				return fmt.Errorf("apigraph: the page that opened this socket is not from this server")
 			}
+			// Nobody signed in: every subscription needs a signed-in person,
+			// so there is nothing for this socket to do. Acknowledging it
+			// would lift the deadline above and let a stranger hold it open.
+			// A server with no accounts yet is open to everyone, by design,
+			// until it is claimed.
+			if api.UsernameFromRequest(self.request) == "" && self.graph.authenticator.Required() {
+				log.Warningf("a websocket at %q said connection_init without being signed in", self.conn.RemoteAddr())
+				return fmt.Errorf("apigraph: not signed in")
+			}
 			if err := self.sendMessage("", "connection_ack", nil); err != nil {
 				return err
 			}
@@ -223,6 +219,14 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 			// Said who they are, so the pre-authentication deadline is
 			// lifted: a subscription is meant to sit open and quiet.
 			_ = self.conn.SetReadDeadline(time.Time{})
+			// A subscription resolved its principal once, so a token revoked
+			// or an account disabled afterwards would be streamed to for as
+			// long as the socket stayed open. Nobody signed in has nothing to
+			// revoke.
+			var credential *socketCredential
+			if username := api.UsernameFromRequest(self.request); username != "" && username != localUsername {
+				credential = self.graph.newSocketCredential(self.request, credentialToken, username)
+			}
 			waitGroup.Add(1)
 			go func() {
 				defer deferutil.Recover()
@@ -232,6 +236,13 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 					case <-done:
 						return
 					case <-time.After(time.Second):
+						if credential != nil && !credential.StillHolds() {
+							log.Noticef("closing the websocket at %q: what signed it in no longer holds", self.conn.RemoteAddr())
+							// Closing ends the read in handle, which cancels
+							// every subscription.
+							_ = self.conn.Close()
+							return
+						}
 						if err := self.sendMessage("", "ka", nil); err != nil {
 							return
 						}

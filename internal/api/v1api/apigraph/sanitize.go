@@ -144,7 +144,12 @@ func sanitizeHtml(input string) (string, bool) {
 						attribute{Key: "src", Val: blockedPlaceholder})
 					continue
 				}
-				if !isSafeUrl(value) {
+				// Nothing else is a picture the message brought. A path on
+				// this server would load at once, with the reader's own
+				// credentials, and could name the remote-picture proxy: the
+				// sender would get a read receipt before the reader chose to
+				// show pictures.
+				if !isEmbeddedUrl(value) {
 					continue
 				}
 			case "href":
@@ -177,16 +182,27 @@ func sanitizeHtml(input string) (string, bool) {
 	// the head — so a sheet that survived sanitizing would be dropped here
 	// instead, which is the same broken layout by a different route. Move it
 	// where it will be kept.
+	//
+	// The body is found once and the sheets are put in front of it in one go,
+	// in the order they were written. Looking the body up for each sheet
+	// walked the whole tree each time, so a part made of thousands of empty
+	// style elements cost minutes on every open, and putting them in front
+	// one at a time turned the order around.
+	body := document.Find("body")
+	var movedSheets strings.Builder
 	document.Find("head style").Each(func(_ int, selection *goquery.Selection) {
 		html, err := goquery.OuterHtml(selection)
 		if err != nil {
 			return
 		}
-		document.Find("body").PrependHtml(html)
+		movedSheets.WriteString(html)
 		selection.Remove()
 	})
+	if movedSheets.Len() > 0 {
+		body.PrependHtml(movedSheets.String())
+	}
 
-	rendered, err := document.Find("body").Html()
+	rendered, err := body.Html()
 	if err != nil {
 		log.Warningf("failed to render an HTML part, not displaying it: %s", err)
 		return "", hasRemoteContent || hasRemoteStyle
@@ -215,6 +231,13 @@ func isSafeUrl(value string) bool {
 	return true
 }
 
+// isEmbeddedUrl reports whether a picture source refers to a part of the
+// message itself. The server rewrites these to the attachment endpoint after
+// sanitizing, so this is the only form that may arrive here.
+func isEmbeddedUrl(value string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "cid:")
+}
+
 func isRemoteUrl(value string) bool {
 	trimmed := strings.ToLower(strings.TrimSpace(value))
 	return strings.HasPrefix(trimmed, "http://") ||
@@ -236,12 +259,16 @@ func sanitizeCss(input string) (string, bool) {
 	}
 
 	lower := strings.ToLower(input)
-	remote := strings.Contains(lower, "url(http") || strings.Contains(lower, "url('http") ||
-		strings.Contains(lower, `url("http`)
+	remote := false
+	for _, argument := range cssUrlArguments(lower) {
+		if strings.HasPrefix(argument, "http") || strings.HasPrefix(argument, "//") {
+			remote = true
+		}
+	}
 
 	// Nothing to strip is the common case, and it should not cost a rebuild
 	// of the string.
-	dangerous := false
+	dangerous := hasLocalCssUrl(lower)
 	for _, threat := range cssThreats {
 		if strings.Contains(lower, threat) {
 			dangerous = true
@@ -257,12 +284,44 @@ func sanitizeCss(input string) (string, bool) {
 	// that were removed.
 	var builder strings.Builder
 	for _, piece := range splitKeepingSeparators(input, ";{}") {
-		if containsAny(strings.ToLower(piece), cssThreats) {
+		lowerPiece := strings.ToLower(piece)
+		if containsAny(lowerPiece, cssThreats) || hasLocalCssUrl(lowerPiece) {
 			continue
 		}
 		builder.WriteString(piece)
 	}
 	return builder.String(), remote
+}
+
+// cssUrlArguments returns what each url( in lowercased CSS points at, without
+// the opening quote or the whitespace in front of it.
+func cssUrlArguments(lower string) []string {
+	var arguments []string
+	for rest := lower; ; {
+		index := strings.Index(rest, "url(")
+		if index < 0 {
+			return arguments
+		}
+		rest = rest[index+len("url("):]
+		arguments = append(arguments, strings.TrimLeft(rest, " \t\r\n\f'\""))
+	}
+}
+
+// hasLocalCssUrl reports whether lowercased CSS has a url( that is neither
+// remote, nor embedded in the message (cid:), nor inline (data:). That leaves
+// a path on this server, and an escaped spelling of anything, which a browser
+// would resolve at once with the reader's credentials. The declaration is
+// dropped, because the frame's policy allows this server's own pictures and
+// so would not hold it back the way it holds back a remote one.
+func hasLocalCssUrl(lower string) bool {
+	for _, argument := range cssUrlArguments(lower) {
+		if strings.HasPrefix(argument, "http") || strings.HasPrefix(argument, "//") ||
+			strings.HasPrefix(argument, "cid:") || strings.HasPrefix(argument, "data:") {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func containsAny(value string, needles []string) bool {

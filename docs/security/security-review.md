@@ -143,7 +143,10 @@ and `FROM golang:1.25` already track the latest patch, and the floor in
 quietly. The image was rebuilt to confirm it reports `go1.25.14` rather than
 to assume it.
 
-`npm audit --omit=dev` reports no vulnerabilities in the dashboard.
+`npm audit --omit=dev` reports no vulnerabilities in the packages it checks,
+which are the three listed under `dependencies` in `web/package.json`. The
+dashboard's framework packages are `devDependencies` that the build bundles, so
+it skips them (SEC-225).
 
 ### SEC-4 — Nothing rate limited authentication (Medium, fixed)
 
@@ -869,7 +872,9 @@ Beyond the first review's list, and named so nobody repeats the work:
   socket; workflow permissions least-privilege; no `pull_request_target`;
   untrusted fields passed through `env` rather than interpolated.
 - **Secrets at rest**: `gitleaks` over every commit finds nothing.
-- **Dashboard dependencies**: `npm audit --omit=dev` finds nothing.
+- **Dashboard dependencies**: `npm audit --omit=dev` finds nothing in the
+  packages under `dependencies` only; it skips the bundled `devDependencies`
+  (SEC-225).
 
 ## What this review did not do
 
@@ -2078,3 +2083,358 @@ told apart from one before.
 It did not review circles across servers, which are out of scope, or the
 paying skills' own registry, whose declarations of what a call costs belong to
 each skill.
+
+# Tenth pass: limits, sign-in and timing
+
+## Findings
+
+### SEC-104: A full limiter table stopped limiting (Medium, fixed)
+
+At its key limit the registry handed each new key a fresh bucket, so filling the table allowed every attempt; callers past the table now share one bucket.
+
+### SEC-105: One IPv6 network had a burst for every address (Low, fixed)
+
+Limiter keys were whole addresses, so a /64 multiplied every limit; keys are now the /64 (`ratelimit.AddressKey`), while logs still show the whole address.
+
+### SEC-106: An untagged app password guess hashed every app password (Low, fixed)
+
+Refusal time grew with a mailbox's devices and named mailboxes, and one SMTP AUTH token paid for many hashes; a guess with no tag now costs one hash when no password is untagged.
+
+### SEC-107: The GraphQL socket acknowledged a connection nobody was signed in on (Low, fixed)
+
+An anonymous `connection_init` lifted the pre-authentication deadline and held the socket open for ever; it is now refused once the server has accounts.
+
+### SEC-108: Anonymous GraphQL could run thousands of root fields in one request (Medium, fixed)
+
+Each root field of a mutation runs in its own transaction; a request from nobody signed in may now select at most eight, checked before any transaction.
+
+### SEC-109: Changing a password did not limit guesses at the current one (Medium, fixed)
+
+`ChangePassword` checked the current password with no limit; it now takes from the sign-in limiter under a per-account key and answers too many attempts.
+
+### SEC-110: Single sign-on start and callback had no limiter (Low, fixed)
+
+Both paths are open to anybody and reach the identity provider; both now count against the sign-in limiter and answer 429.
+
+### SEC-111: The in-memory ceremony store had no size cap (Low, fixed)
+
+Anybody could park a ceremony for five minutes with no bound on how many; the store now refuses past 4096.
+
+### SEC-112: One address could take every SMTP and IMAP connection (Medium, fixed)
+
+The listeners capped only the total at 1000; each address (an IPv6 /64 counts as one) may now hold 32 connections per protocol.
+# Tenth pass: outbound requests
+
+A review of every place the server connects to an address somebody else
+chose. Each finding was fixed with a test that failed before the fix.
+
+### SEC-113: A webhook alias could reach the operator's network (Medium, fixed)
+
+A member who manages one domain could name any URL as a webhook, and delivery
+posted the mail there with the default client, which followed redirects and
+honored proxy settings. Delivery now uses the guarded client, with the
+operator's list of private addresses, and a minute to answer.
+
+### SEC-114: A mail server alias could scan the operator's network (Medium, fixed)
+
+Forwarding to a named host and port dialled anything, and the error came back
+to the member through the delivery. It now dials through the same guard, and
+a name is checked on the address it resolves to even behind a SOCKS5 proxy.
+
+### SEC-115: A connected MCP server could redirect the server inward (Low, fixed)
+
+The HTTP transport followed a redirect to any host, so a connected server could
+make this one send its request, and read the answer, from another host. A
+redirect to a different host now stops; one on the same host still works.
+
+### SEC-116: Smaller findings (Low, fixed)
+
+- A video's size is checked against the picture limits before ffmpeg cuts a
+  poster or preview, as a picture's is before it is decoded.
+- The Chrome container in `deploy/docker-compose.yml` sets
+  `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`, so WebRTC cannot
+  send UDP around the proxy that guards the browser. A server's own compose
+  file needs the same flag.
+# Tenth pass: the agent's tools
+
+A review of what the agent can do on its own, in runs nobody is present for
+and in runs that have just read a stranger's mail or page. The numbers below
+are provisional and are renumbered when the passes are merged.
+
+## Findings
+
+### SEC-117: Changing the notification address asked nothing (Medium, fixed)
+
+`account_update` and `user_update` with an email were plain writes, though the
+agent's mailed notices go to that address, so a page or mail the agent read
+could redirect them. A call that sets the email is now judged outward and asks
+first; name, language and the other fields stay plain writes.
+
+### SEC-118: A run nobody was present for could add a standing instruction (Medium, fixed)
+
+`agent_profile` `set` with `add_instruction` appends to the instructions every
+later turn reads as the person's words, with no card and also in a headless
+run. It is now refused when the run cannot ask the person, with an error
+telling the model to say what it would have added.
+
+### SEC-119: The reply drafting run could fetch any address (Medium, fixed)
+
+It reads a stranger's mail with the person's mail, memory and diary in reach,
+and an address it builds can carry what it read out. Drafting a reply needs
+none of the web pages, so `web_fetch` is out of its tools; `web_search` stays.
+
+### SEC-120: The research run could fetch any address (Medium, fixed)
+
+The same hole, in a run that does need pages. `web_fetch` there now runs only
+for an address a `web_search` in the same turn returned
+(`AskSettings.IsFetchLimitedToSearched`), enforced where the call is made.
+
+### SEC-121: A run nobody was present for could make a no-sign-in link (Medium, fixed)
+
+`share_file` with `link` true makes an address that opens a copy of the file
+for anyone for six hours. It is now refused in a headless run, before the file
+is read.
+
+### SEC-122: A steps call inside steps was judged a read (Medium, fixed)
+
+The browser tool judged `steps` by the steps it lists, one level down, while
+the runner recursed into an inner `steps` and ran its writes. A steps call
+inside steps is now refused before any step runs.
+
+### SEC-123: The computer program's comments named a boundary that does not exist (Low, fixed)
+
+Two comments said the program is bounded by directories the person allowed.
+There is no such list: it reaches everything the person can, and only its file
+tool leaves out the files `teanode passwords` keeps. The comments now say so.
+
+## Open, decided by the person
+
+- The agent's shell can run the `teanode` command line with the person's own
+  token, which can approve cards, change the confirmation settings and make
+  tokens. Not fixed here; the person decides whether and how to close it.
+# Tenth pass: the web layer and device sockets
+
+This pass read how a browser, a phone and a device reach the server: what a
+cookie can be made to do from another page, what survives a password change,
+and what an open socket goes on trusting. Each finding was fixed with a test.
+
+## Findings
+
+### SEC-124: A form from a sibling host could act with the session cookie (Medium, fixed)
+
+The cookie is SameSite=Lax, which a form posted from another host of the same
+site still carries, and the MCP endpoint and the upload routes checked neither
+the content type nor the origin. The authentication middleware now answers 403
+to a cookie-authenticated POST, PUT, PATCH or DELETE that Sec-Fetch-Site or
+Origin says another page started; tokens are not asked.
+
+### SEC-125: A password change and "Sign out everywhere" left API tokens working (Medium, fixed)
+
+Only sessions ended, so a lost phone, extension or command line kept its
+access. Both now revoke the account's tokens too, keeping only the token that
+made the call, and the dashboard says other sign-ins have to sign in again.
+
+### SEC-126: Revoking a credential did not end sockets already open (Medium, fixed)
+
+The computer, tab and browser page sockets and GraphQL subscriptions checked
+their caller once and every ping extended them. Each now resolves what signed
+it in again at most once a minute, with the function the hello used, and closes
+when it names another person or none.
+
+### SEC-127: The tab socket trusted a cookie and a csrftoken cookie from any origin (Medium, fixed)
+
+Nothing sets a `csrftoken` cookie, so the check proved nothing and any page
+could attach the person's tab. The hello must carry a token.
+
+### SEC-128: The computer socket read 512 MiB per message before the hello (Low, fixed)
+
+It starts at the 1 MiB request limit and rises to the answer size once the
+token is accepted.
+
+### SEC-129: Public discovery documents did not vary by host (Low, fixed)
+
+They are built from the Host header and cached publicly, so a shared cache
+could serve one name's addresses for another. They now send `Vary: Host`.
+
+## What this pass did not do
+
+It did not change the cookie to SameSite=Strict, which would break links into the dashboard from mail, and it did not add a per-request CSRF token, because the Sec-Fetch-Site and Origin check covers every browser that sends a cookie with a write.
+# Tenth pass: the phone and the extension
+
+A reading review of the iPhone app and the browser extension. Nothing is Medium
+or higher. The three findings below are Low and fixed, each with a test where
+the code can be tested here.
+
+## Findings
+
+### SEC-130: A mail's picture at a path on this server loaded before the reader chose (Low, fixed)
+
+The sanitizer kept an img `src` or a CSS `url()` that was a path on this
+server, such as the remote-picture proxy, so a sender got a read receipt while
+pictures were held back. Only a `cid:` source is kept now, and a CSS
+declaration whose `url()` is not remote, `cid:` or `data:` is dropped.
+
+### SEC-131: The extension's token followed a server address that arrived by Chrome sync (Low, fixed)
+
+The address was in `chrome.storage.sync` and the token in
+`chrome.storage.local`, so whoever could write the synced address chose where
+the token went. The address is now in `chrome.storage.local` beside the token,
+and nothing is read from the synced storage.
+
+### SEC-132: Lock Screen and StandBy widgets showed the waiting question's text (Low, fixed)
+
+The Waiting widget's interaction text is marked `.privacySensitive()`, so iOS
+redacts it on a locked phone. Event titles are left as they are, as in Apple's
+Calendar widget.
+
+## Informational, nothing changed
+
+- CLIENTS-4: a decrypted notification can show on the lock screen when "Show
+  Previews" is Always (the default on Touch ID phones). The system setting
+  decides, as for Messages and Mail, and Approve and Deny still need an unlocked phone.
+- CLIENTS-5: the extension README says the opened Passwords keys are never
+  written to disk, but the kept-open unlock stores a sealed copy in IndexedDB.
+  The behavior is accepted in `docs/subsystems/passwords.md`; only the README
+  wording is behind it.
+- CLIENTS-6: the agent's fill checks field visibility slightly less strictly
+  than the person's own fill. Using the gap needs markup on the matching
+  origin, where a script could read the field anyway, and a form that sends
+  elsewhere is still refused.
+- CLIENTS-7: the extension's two web accessible pages let any page detect that
+  it is installed, and `activeTab` is redundant with `<all_urls>`. The first is
+  a recorded trade-off in `frameChannel.ts` and gives a page nothing else.
+# Tenth pass: who can see what
+
+A reading review of what one person's data reaches in another's hands. The four
+findings below are fixed, each with a test that failed before the fix.
+
+## Findings
+
+### SEC-133: The circle tool's person card put another person's location into a chat (Medium, fixed)
+
+In a chat turn the card is now asked for without its location part, as the
+location tool already refuses coordinates there.
+
+### SEC-134: A token could widen a Health share by adding someone to its circle (Medium, fixed)
+
+Inviting to, or adding an account to, a circle that Health is shared with now
+needs a person's tap, as adding a category to the share does.
+
+### SEC-135: An album share's places covered a contributor's photos (Medium, fixed)
+
+The share now covers only the album owner's photos, in access, the listing's
+distance filter and search, and the original files offered.
+
+### SEC-136: A disabled account's shared photos and albums kept reaching readers (Medium, fixed)
+
+Album shares now stop at a disabled owner or one without `photos:use`, and
+another person's photo is refused while its owner is disabled.
+
+## Open, for the person to decide
+
+- The photo tool's show action and the calendar tool's shared agenda are not
+  held back in a chat the way the location tool is.
+- A circle share reaches whoever joins the circle later, including data from
+  before they joined.
+# Tenth pass: dependencies and stored secrets
+
+## Findings
+
+### SEC-137: A downstream mail server password was stored in the clear (Medium, fixed)
+
+An alias that relays to a mail server kept that server's password as plain
+YAML in the `mail_server` column, while the signing and certificate keys
+beside it were sealed. It is now sealed with the same sealer. A row written
+the old way still reads and is sealed by its next save.
+
+### SEC-138: A standard library vulnerability was reachable (Medium, fixed)
+
+GO-2026-6809 in `crypto/x509` was reached through passkey registration under
+Go 1.26.9. The `go` directive and the build image now require 1.26.10, and
+`govulncheck` reports nothing reachable.
+
+### SEC-139: What the npm audit covers (informational)
+
+`npm audit --omit=dev` skips `react`, `react-dom` and `react-router-dom`
+because they are `devDependencies`, though the build bundles them. An OSV
+check over the whole lockfile found nothing. The earlier lines that said the
+audit finds nothing now say what it covers.
+# Tenth pass: the mail server
+
+A review on 2026-10-21 of the mail server and everything that handles a
+message: SMTP in and submission, IMAP, how a message is rendered on the
+dashboard and the phone, mail-driven automation, and domains. Nineteen
+findings were real (five Medium, fourteen Low). This section records the ones
+fixed here and the ones left, with the reason. Each fix has a test.
+
+## Fixed
+
+- SEC-140 (Medium): submission checked the last From header while mail
+  programs show the first, which undid the per-alias limit on a credential.
+  `prepareOutgoing` now refuses a message unless it has exactly one From, as
+  the incoming and bounce paths already did.
+- SEC-141 (Medium): IMAP walked a sequence range number by number to the
+  client's stop, so `FETCH 1:4294967295` cost seconds of a core with no
+  database call to interrupt it. The range is clamped to the folder first.
+- SEC-142 (Medium): the HTML sanitizer found the body once per head style
+  block, so a part of thousands of empty blocks took minutes on every open.
+  It is found once, and the sheets are moved in one step, in the order they
+  were written (they used to come out reversed).
+- SEC-143 (Low): changing a relay alias's host kept its stored password, which
+  then went to the new host. A change of host clears it unless a new one is
+  given; a change of port alone keeps it.
+- SEC-144 (Low): a mailto unsubscribe sent the subject and body the sender
+  chose, in the person's name. The body is now one word, and a subject is kept
+  only when it is one short word.
+- SEC-145 (Low): the image proxy fetched any address for any message the
+  reader could open, and a message id is not secret. It now fetches only
+  addresses the message itself links to.
+- SEC-146 (Low): an invitation from outside was stored with its alarms and
+  attachments, and synced to the person's devices. Both are dropped on
+  arrival, as RFC 5546 asks of a receiver.
+- SEC-147 (Low): reopening a draft put its style block into the dashboard
+  page. The draft's HTML now goes through `quotableHtml`, as a quoted message
+  does. A style block an agent wrote into a draft is therefore gone when the
+  draft is reopened.
+- SEC-148 (Low): DKIM signatures named only the headers present, so a Subject
+  or Reply-To could be added in front of a signed message. From, To, Subject,
+  Date, Reply-To and Cc are now named once more than the message has them, and
+  Reply-To, Cc and Content-Type are signed when present.
+- SEC-149 (Low): IMAP CREATE of a name of thousands of parts listed the whole
+  mailbox once per part. A name may have 32 levels, the depth the tree is read
+  to.
+- SEC-150 (Low): one IMAP SEARCH could carry thousands of TEXT or BODY terms,
+  each reading every message again. More than 64 such terms are refused with
+  `NO [TOOBIG]`. Parsing each message once instead would not do: the body is
+  a stream that each term consumes.
+- SEC-151 (Low): before sign-in an IMAP connection could make the server
+  buffer megabytes in literals. The listener's wrapper cuts a connection that
+  has sent more than 128 KiB before the session signs in.
+- SEC-152 (Low): compiled alias patterns were cached until restart, and a
+  pattern could be as long as the request body. A pattern is limited to 512
+  characters and the cache is emptied past 4096 entries.
+
+## Fixed on other branches
+
+Five findings are handled in other changes: a stranger's mail starting a run
+that fetches any URL, the sign-in limiter's key table filling up, webhook and
+relay aliases aimed at the server's own network, a relay password stored in
+the clear, and one address holding every IMAP connection slot.
+
+## Left, and why
+
+- List-Id (Low): the header is the sender's to claim, so a stranger who knows a
+  list's id can borrow the reader's "always load pictures" answer and set the
+  unsubscribe target. The fix is to bind the list key to the authenticated
+  sender domain, which changes the key stored on every message, so existing
+  mutes, answers and subscriptions would split or be asked again. That is a
+  data change a person would notice, and wants a decision and a migration.
+
+## Open questions
+
+- Should a manager of one domain be able to attach an address of that
+  domain to someone else's mailbox without the owner's consent? As built, the
+  new address can sort first and become the mailbox's default sender.
+- When a deleted domain's name is created again, its new auditors can
+  read the old stored mail. The code keeps the mail on purpose; is a name
+  changing hands on one server a supported case?

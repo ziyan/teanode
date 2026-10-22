@@ -39,6 +39,9 @@ func Sign(headers []string, body []byte, options *SignOptions) ([]string, error)
 			"From",
 			"Subject",
 			"Date",
+			"Cc",
+			"Reply-To",
+			"Content-Type",
 			"MIME-Version",
 			"Message-ID",
 			"In-Reply-To",
@@ -52,6 +55,14 @@ func Sign(headers []string, body []byte, options *SignOptions) ([]string, error)
 			return nil, err
 		}
 	}
+
+	// Name the headers that decide what a reader sees one more time than the
+	// message has them. A name listed past the headers that exist stands for
+	// an absent one (RFC 6376 section 5.4), so a header of that name added
+	// later, in front of the signed ones, breaks the signature. Without it,
+	// anyone who received one signed message could send it on with a Subject
+	// or a Reply-To of their own and still pass for this domain.
+	headerKeys = append(headerKeys, "from", "to", "subject", "date", "reply-to", "cc")
 
 	identifier := options.Identifier
 	if identifier == "" {
