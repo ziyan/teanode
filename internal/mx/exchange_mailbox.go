@@ -27,6 +27,45 @@ const searchDocumentLimit = 64 * 1024
 // searchDocumentNames bounds how many attachment names join it.
 const searchDocumentNames = 200
 
+// takesMail says whether a mailbox's owner may receive mail. A disabled
+// account takes none: nothing is filed, and its forward rules, away reply
+// and import addresses do not act, so an address that only reaches it is
+// refused like one that reaches nobody.
+func takesMail(tx db.Transaction, mailbox *models.Mailbox) (bool, error) {
+	owner, err := tx.GetUser(mailbox.UserID)
+	if err != nil {
+		return false, err
+	}
+	return owner != nil && !owner.Disabled(), nil
+}
+
+// reachesOnlyDisabledAccounts says whether every address a local part
+// matches delivers into a mailbox of a disabled account. Such a recipient is
+// refused before the message is taken, so the sender is told, instead of the
+// message being taken and filed nowhere.
+func (self *exchange) reachesOnlyDisabledAccounts(tx db.Transaction, domain *models.Domain, localPart string) (bool, error) {
+	aliases := self.matchingAliases(domain, localPart)
+	if len(aliases) == 0 {
+		return false, nil
+	}
+	for _, alias := range aliases {
+		if alias.Kind != models.AliasKindMailbox {
+			return false, nil
+		}
+		mailbox, err := tx.GetMailbox(alias.MailboxID)
+		if err != nil {
+			return false, err
+		}
+		if mailbox == nil {
+			return false, nil
+		}
+		if isTaking, err := takesMail(tx, mailbox); err != nil || isTaking {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
 // deliverToMailbox places a message in a mailbox's Inbox and records the
 // delivery, already delivered: there is nothing to queue.
 func (self *exchange) deliverToMailbox(tx db.Transaction, mailbox *models.Mailbox, alias *models.Alias, recipient string, mail *models.Mail) (*models.Delivery, error) {

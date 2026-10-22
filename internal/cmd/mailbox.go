@@ -28,7 +28,7 @@ func NewMailboxCommand() *cli.Command {
 			{
 				Name:   "list",
 				Usage:  "list the mailboxes you can open",
-				Flags:  []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "all", Usage: "every mailbox on the server, with its owner; needs domain:manage or user:manage"}},
+				Flags:  []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "all", Usage: "every mailbox on the server, with its owner; needs server:manage or user:manage"}},
 				Action: runMailboxList,
 			},
 			{

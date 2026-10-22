@@ -7,17 +7,18 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// Who has a mailbox: for whoever points an address at one. A domain manager
-// choosing where an alias delivers needs the list of mailboxes on this
-// server, with whose each is — and nothing that is in them.
+// Who has a mailbox: every account's mailboxes, with whose each is and
+// nothing that is in them. It names every account on the server, so it is
+// for the operator and for whoever manages accounts; a manager of one domain
+// does not see the other accounts this way.
 
 type MailboxDirectoryQuery interface {
 	// Every mailbox on the server with its owner, for pointing an alias at one
 	ListAllMailboxes(ctx context.Context) ([]*MailboxSummary, error)
 }
 
-// MailboxSummary is a mailbox as a domain manager sees it: whose it is and
-// what it is called.
+// MailboxSummary is a mailbox as the operator sees it in this list: whose it
+// is and what it is called.
 type MailboxSummary struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
@@ -31,7 +32,7 @@ func (self *graph) ListAllMailboxes(ctx context.Context) ([]*MailboxSummary, err
 	if err != nil {
 		return nil, err
 	}
-	if !principal.Permissions.HasAnywhere(models.PermissionDomainManage) && !principal.Permissions.Has(models.PermissionUserManage) {
+	if !principal.Permissions.Has(models.PermissionServerManage) && !principal.Permissions.Has(models.PermissionUserManage) {
 		return nil, api.ErrNotFound
 	}
 	tx := self.transaction(ctx)

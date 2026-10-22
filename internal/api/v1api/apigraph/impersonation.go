@@ -38,6 +38,18 @@ type StartImpersonationArguments struct {
 	UserID string `json:"userId"`
 }
 
+// refuseImpersonation refuses making a lasting credential while an operator
+// is signed in as the person. A token, a passkey or an app password would go
+// on acting as the account after the impersonation ended, and nothing on it
+// would say who made it. credential names it for the message, for example
+// "a token".
+func refuseImpersonation(ctx context.Context, credential string) error {
+	if api.ContextPrincipal(ctx).IsImpersonation() {
+		return fmt.Errorf("%w: %s is made by the person themselves, not while signed in as them", api.ErrPermissionDenied, credential)
+	}
+	return nil
+}
+
 func (self *graph) StartImpersonation(ctx context.Context, arguments StartImpersonationArguments) (*SessionState, error) {
 	principal, err := self.requirePermission(ctx, models.PermissionUserManage)
 	if err != nil {

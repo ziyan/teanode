@@ -51,6 +51,24 @@ func (self *exchange) handleIncoming(ctx context.Context, tx db.Transaction, env
 		return nil, mailparse.ErrMailBoxUnavailable
 	}
 
+	// A disabled account takes no mail. When every recipient reaches only
+	// disabled accounts the message is refused; when others take it, they
+	// get it and the disabled account's mailbox does not (matchAliases).
+	isEveryRecipientDisabled := true
+	for _, recipientAlias := range recipientAliases {
+		isOnlyDisabled, err := self.reachesOnlyDisabledAccounts(tx, domain, recipientAlias)
+		if err != nil {
+			return nil, err
+		}
+		if !isOnlyDisabled {
+			isEveryRecipientDisabled = false
+			break
+		}
+	}
+	if isEveryRecipientDisabled {
+		return nil, mailparse.ErrMailBoxUnavailable
+	}
+
 	// add Received header
 	receivedHeader := self.formatReceivedHeader(envelope)
 

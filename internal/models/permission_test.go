@@ -68,7 +68,8 @@ func TestEffectivePermissionsReach(t *testing.T) {
 }
 
 // The seeded roles: an administrator holds everything, an operator
-// everything but the access model, a member their own mailbox.
+// everything but the access model and other people's conversations, a
+// member their own mailbox.
 func TestSeededRoles(t *testing.T) {
 	t.Parallel()
 
@@ -77,7 +78,7 @@ func TestSeededRoles(t *testing.T) {
 	}
 	for _, permission := range SeededRolePermissions(RoleNameOperator) {
 		switch permission {
-		case PermissionUserManage, PermissionGroupManage, PermissionRoleManage:
+		case PermissionUserManage, PermissionGroupManage, PermissionRoleManage, PermissionAgentAct:
 			t.Errorf("the operator holds %s", permission)
 		}
 	}

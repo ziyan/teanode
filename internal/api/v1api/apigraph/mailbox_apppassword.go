@@ -100,6 +100,9 @@ func (self *graph) CreateMailboxAppPassword(ctx context.Context, arguments Creat
 	if err != nil {
 		return nil, err
 	}
+	if err := refuseImpersonation(ctx, "an app password"); err != nil {
+		return nil, err
+	}
 	name := strings.TrimSpace(arguments.Name)
 	if name == "" {
 		return nil, fmt.Errorf("%w: an app password needs a name", api.ErrInvalidArguments)
