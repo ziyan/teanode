@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.193.4] - 2026-10-22
+
+### Fixed
+
+- Link previews show for sites that refuse a client speaking only HTTP/1.1. (#624)
+
 ## [0.193.3] - 2026-10-22
 
 ### Fixed
