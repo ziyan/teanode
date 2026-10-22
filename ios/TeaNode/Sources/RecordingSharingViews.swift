@@ -173,7 +173,7 @@ struct RecordingShareScreen: View {
         Task {
             do {
                 try await connection.unshareRecording(shareId: share.id)
-                doneText = String(localized: "No longer shared with \(name)")
+                doneText = String(localized: "Stopped sharing with \(name)")
                 shares = try await connection.recordingShares(recordingId: recordingId)
             } catch {
                 problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))

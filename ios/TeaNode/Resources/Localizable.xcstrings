@@ -84770,22 +84770,6 @@
         }
       }
     },
-    "%@ is no longer shared with %@.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@は%@と共有されなくなりました。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@不再与%@共享。"
-          }
-        }
-      }
-    },
     "Choose an account": {
       "localizations": {
         "ja": {
