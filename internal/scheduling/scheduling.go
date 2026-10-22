@@ -581,6 +581,11 @@ func (self *Scheduler) request(ctx context.Context, invitation *models.CalendarI
 	if !asked {
 		return ignored("an invitation that does not ask this person")
 	}
+	// What a stranger asks the person's devices to do on their own is not
+	// stored: no alarm, no attachment. The event itself is.
+	if err := parsed.DropAlarmsAndAttachments(); err != nil {
+		return ignored("an invitation this server cannot write back without its alarms")
+	}
 	result := &outcome{
 		status: models.CalendarInvitationRead, method: parsed.Method,
 		uid: parsed.UID, sequence: parsed.Sequence, organizer: parsed.Organizer,

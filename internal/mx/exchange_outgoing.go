@@ -24,6 +24,14 @@ func (self *exchange) prepareOutgoing(ctx context.Context, tx db.Transaction, en
 	_, senderDomain := mailparse.SplitAddress(envelope.Sender)
 
 	// extract some important headers
+	//
+	// Exactly one From, as on the incoming path. The sender check below reads
+	// the last From, while a mail program reading over IMAP shows the first,
+	// so with two a credential held to one address could be checked as that
+	// address and read as somebody else, in a message this server then signs.
+	if mailparse.CountHeaders(envelope.Headers, "From") != 1 {
+		return nil, mailparse.ErrInvalidFromHeader
+	}
 	from, err := mailparse.ParseAddress(mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(envelope.Headers, "From")))
 	if err != nil {
 		return nil, mailparse.ErrInvalidFromHeader

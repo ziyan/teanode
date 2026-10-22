@@ -350,10 +350,17 @@ func (self *Alias) IsCatchAll() bool {
 	return self.Pattern == ""
 }
 
+// MaximumAliasPatternLength bounds an alias's pattern. It is matched against a
+// local part of at most 64 characters, so a longer one is no use, and each
+// pattern a mail has been matched against stays compiled in memory.
+const MaximumAliasPatternLength = 512
+
 // Validate reports everything wrong with the alias.
 func (self *Alias) Validate() error {
 	var errors ValidationErrors
-	if self.Pattern != "" {
+	if len(self.Pattern) > MaximumAliasPatternLength {
+		errors.add("pattern", "at most %d characters: it matches the part of an address before the @, which is at most 64", MaximumAliasPatternLength)
+	} else if self.Pattern != "" {
 		if _, err := regexp.Compile(self.Pattern); err != nil {
 			errors.add("pattern", "invalid regular expression: %s", RegexpErrorMessage(err))
 		}

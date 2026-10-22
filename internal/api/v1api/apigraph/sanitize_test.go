@@ -3,6 +3,7 @@ package apigraph
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestSanitizeHTMLRemovesActiveContent is the security boundary of the
@@ -251,6 +252,37 @@ func TestSanitizeKeepsStyling(t *testing.T) {
 		if !strings.Contains(sanitized, wanted) {
 			t.Errorf("the styling should survive, but %q is missing from:\n%s", wanted, sanitized)
 		}
+	}
+}
+
+// Sheets in the head are moved in front of the body in the order they were
+// written, so a later rule still wins over an earlier one.
+func TestSanitizeKeepsHeadSheetsInOrder(t *testing.T) {
+	t.Parallel()
+
+	sanitized, _ := sanitizeHtml(`<html><head><style>p{color:red}</style><style>p{color:blue}</style></head><body><p>x</p></body></html>`)
+
+	red, blue := strings.Index(sanitized, "red"), strings.Index(sanitized, "blue")
+	if red < 0 || blue < 0 || red > blue {
+		t.Errorf("the sheets should keep their order, got:\n%s", sanitized)
+	}
+}
+
+// A part made of many style elements in the head costs time in proportion to
+// their number. Looking the body up once per element made it the square, and a
+// part at the size limit took minutes on every open.
+func TestSanitizeManyHeadSheetsIsFast(t *testing.T) {
+	t.Parallel()
+
+	input := "<head>" + strings.Repeat("<style>a{}</style>", 32_000) + "</head><body>x</body>"
+
+	started := time.Now()
+	sanitized, _ := sanitizeHtml(input)
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
+		t.Errorf("sanitizing took %s", elapsed)
+	}
+	if !strings.Contains(sanitized, "x") {
+		t.Errorf("the body should survive")
 	}
 }
 

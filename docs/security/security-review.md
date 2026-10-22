@@ -2359,3 +2359,82 @@ Go 1.26.9. The `go` directive and the build image now require 1.26.10, and
 because they are `devDependencies`, though the build bundles them. An OSV
 check over the whole lockfile found nothing. The earlier lines that said the
 audit finds nothing now say what it covers.
+# Tenth pass: the mail server
+
+A review on 2026-10-21 of the mail server and everything that handles a
+message: SMTP in and submission, IMAP, how a message is rendered on the
+dashboard and the phone, mail-driven automation, and domains. Nineteen
+findings were real (five Medium, fourteen Low). This section records the ones
+fixed here and the ones left, with the reason. Each fix has a test.
+
+## Fixed
+
+- SEC-243 (Medium): submission checked the last From header while mail
+  programs show the first, which undid the per-alias limit on a credential.
+  `prepareOutgoing` now refuses a message unless it has exactly one From, as
+  the incoming and bounce paths already did.
+- SEC-244 (Medium): IMAP walked a sequence range number by number to the
+  client's stop, so `FETCH 1:4294967295` cost seconds of a core with no
+  database call to interrupt it. The range is clamped to the folder first.
+- SEC-245 (Medium): the HTML sanitizer found the body once per head style
+  block, so a part of thousands of empty blocks took minutes on every open.
+  It is found once, and the sheets are moved in one step, in the order they
+  were written (they used to come out reversed).
+- SEC-246 (Low): changing a relay alias's host kept its stored password, which
+  then went to the new host. A change of host clears it unless a new one is
+  given; a change of port alone keeps it.
+- SEC-247 (Low): a mailto unsubscribe sent the subject and body the sender
+  chose, in the person's name. The body is now one word, and a subject is kept
+  only when it is one short word.
+- SEC-248 (Low): the image proxy fetched any address for any message the
+  reader could open, and a message id is not secret. It now fetches only
+  addresses the message itself links to.
+- SEC-249 (Low): an invitation from outside was stored with its alarms and
+  attachments, and synced to the person's devices. Both are dropped on
+  arrival, as RFC 5546 asks of a receiver.
+- SEC-250 (Low): reopening a draft put its style block into the dashboard
+  page. The draft's HTML now goes through `quotableHtml`, as a quoted message
+  does. A style block an agent wrote into a draft is therefore gone when the
+  draft is reopened.
+- SEC-251 (Low): DKIM signatures named only the headers present, so a Subject
+  or Reply-To could be added in front of a signed message. From, To, Subject,
+  Date, Reply-To and Cc are now named once more than the message has them, and
+  Reply-To, Cc and Content-Type are signed when present.
+- SEC-252 (Low): IMAP CREATE of a name of thousands of parts listed the whole
+  mailbox once per part. A name may have 32 levels, the depth the tree is read
+  to.
+- SEC-253 (Low): one IMAP SEARCH could carry thousands of TEXT or BODY terms,
+  each reading every message again. More than 64 such terms are refused with
+  `NO [TOOBIG]`. Parsing each message once instead would not do: the body is
+  a stream that each term consumes.
+- SEC-254 (Low): before sign-in an IMAP connection could make the server
+  buffer megabytes in literals. The listener's wrapper cuts a connection that
+  has sent more than 128 KiB before the session signs in.
+- SEC-255 (Low): compiled alias patterns were cached until restart, and a
+  pattern could be as long as the request body. A pattern is limited to 512
+  characters and the cache is emptied past 4096 entries.
+
+## Fixed on other branches
+
+Five findings are handled in other changes: a stranger's mail starting a run
+that fetches any URL, the sign-in limiter's key table filling up, webhook and
+relay aliases aimed at the server's own network, a relay password stored in
+the clear, and one address holding every IMAP connection slot.
+
+## Left, and why
+
+- List-Id (Low): the header is the sender's to claim, so a stranger who knows a
+  list's id can borrow the reader's "always load pictures" answer and set the
+  unsubscribe target. The fix is to bind the list key to the authenticated
+  sender domain, which changes the key stored on every message, so existing
+  mutes, answers and subscriptions would split or be asked again. That is a
+  data change a person would notice, and wants a decision and a migration.
+
+## Open questions
+
+- Should a manager of one domain be able to attach an address of that
+  domain to someone else's mailbox without the owner's consent? As built, the
+  new address can sort first and become the mailbox's default sender.
+- When a deleted domain's name is created again, its new auditors can
+  read the old stored mail. The code keeps the mail on purpose; is a name
+  changing hands on one server a supported case?
