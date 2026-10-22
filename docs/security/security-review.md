@@ -2078,3 +2078,48 @@ told apart from one before.
 It did not review circles across servers, which are out of scope, or the
 paying skills' own registry, whose declarations of what a call costs belong to
 each skill.
+
+# Tenth pass: the phone and the extension
+
+A reading review of the iPhone app and the browser extension. Nothing is Medium
+or higher. The three findings below are Low and fixed, each with a test where
+the code can be tested here.
+
+## Findings
+
+### SEC-183: A mail's picture at a path on this server loaded before the reader chose (Low, fixed)
+
+The sanitizer kept an img `src` or a CSS `url()` that was a path on this
+server, such as the remote-picture proxy, so a sender got a read receipt while
+pictures were held back. Only a `cid:` source is kept now, and a CSS
+declaration whose `url()` is not remote, `cid:` or `data:` is dropped.
+
+### SEC-184: The extension's token followed a server address that arrived by Chrome sync (Low, fixed)
+
+The address was in `chrome.storage.sync` and the token in
+`chrome.storage.local`, so whoever could write the synced address chose where
+the token went. The address is now in `chrome.storage.local` beside the token,
+and nothing is read from the synced storage.
+
+### SEC-185: Lock Screen and StandBy widgets showed the waiting question's text (Low, fixed)
+
+The Waiting widget's interaction text is marked `.privacySensitive()`, so iOS
+redacts it on a locked phone. Event titles are left as they are, as in Apple's
+Calendar widget.
+
+## Informational, nothing changed
+
+- CLIENTS-4: a decrypted notification can show on the lock screen when "Show
+  Previews" is Always (the default on Touch ID phones). The system setting
+  decides, as for Messages and Mail, and Approve and Deny still need an unlocked phone.
+- CLIENTS-5: the extension README says the opened Passwords keys are never
+  written to disk, but the kept-open unlock stores a sealed copy in IndexedDB.
+  The behavior is accepted in `docs/subsystems/passwords.md`; only the README
+  wording is behind it.
+- CLIENTS-6: the agent's fill checks field visibility slightly less strictly
+  than the person's own fill. Using the gap needs markup on the matching
+  origin, where a script could read the field anyway, and a form that sends
+  elsewhere is still refused.
+- CLIENTS-7: the extension's two web accessible pages let any page detect that
+  it is installed, and `activeTab` is redundant with `<all_urls>`. The first is
+  a recorded trade-off in `frameChannel.ts` and gives a page nothing else.
