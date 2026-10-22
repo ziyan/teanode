@@ -313,6 +313,11 @@ the circle and need you to be one of its admins; a member who is not one is
 told so. `leave` takes you out, and the last person to leave deletes the circle.
 A circle always keeps an admin, so the last admin cannot leave or be made a
 member while others remain; make somebody else an admin first, or delete it.
+Leaving, being taken out with `remove`, and `delete` end what the person (or,
+for `delete`, every member) shared with the circle and with anyone they then
+share no other circle with, and it does not come back if they join again; what
+others shared with the circle stops reaching them. `delete` also deletes the
+circle's calendar, albums and chat. Each asks first, and says so.
 
 `accept` and `decline` of an invitation that was already answered, or has
 expired, say so. `invite` answers the same whether or not the username is an account, and
@@ -323,6 +328,9 @@ An operator with `user:manage` can put an account in a circle without an
 invitation, for somebody who will not set it up themselves:
 
     teanode circle add <circle-id> personb               # --admin for an admin
+
+The circle's admins are told, in the note and phone notification an invitation
+gives, and the audit log (`circle_member`) records who was put in.
 
 For an account that does not exist yet, `teanode user create` takes the circles
 in the same breath, so the person is in them as soon as they have a password

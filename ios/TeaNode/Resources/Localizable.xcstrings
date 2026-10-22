@@ -59490,18 +59490,18 @@
         }
       }
     },
-    "%@ will no longer be in %@. They can be invited again.": {
+    "%@ will no longer be in %@. What they shared with it, and with anyone they then share no other circle with, ends and does not come back if they join again. They can be invited again.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@は%2$@から外れます。あとでもう一度招待できます。"
+            "value": "%1$@は%2$@から外れます。その人がサークルと共有していたもの、およびほかに共通のサークルがなくなる相手と共有していたものは終了し、再び参加しても元には戻りません。あとでもう一度招待できます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ 将不再属于 %2$@，之后仍可再次邀请。"
+            "value": "%1$@ 将不再属于 %2$@。其与该圈子共享的内容，以及与不再共有任何圈子的人共享的内容都会结束，重新加入后也不会恢复。之后仍可再次邀请。"
           }
         }
       }
@@ -60066,18 +60066,18 @@
         }
       }
     },
-    "The circle is removed for everyone in it. No account is deleted.": {
+    "The circle is removed for everyone in it, with its calendar, its albums and its chat. What its members shared with it, and with anyone they then share no other circle with, ends and does not come back. No account is deleted.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サークルは全員から削除されます。アカウントは削除されません。"
+            "value": "サークルは全員から削除され、そのカレンダー、アルバム、チャットも削除されます。メンバーがサークルと共有していたもの、およびほかに共通のサークルがなくなる相手と共有していたものは終了し、元には戻りません。アカウントは削除されません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "圈子会对其中所有人删除，不会删除任何账号。"
+            "value": "圈子会对其中所有人删除，其日历、相册和聊天也一并删除。成员与该圈子共享的内容，以及与不再共有任何圈子的人共享的内容都会结束，不会恢复。不会删除任何账号。"
           }
         }
       }
@@ -60258,18 +60258,18 @@
         }
       }
     },
-    "You will no longer be in %@, and what it shares with you stops reaching you. An admin can invite you again. The circle is deleted when its last member leaves. If you are its only admin, make somebody else an admin first.": {
+    "You will no longer be in %@. What you shared with it, and with anyone you then share no other circle with, ends and does not come back if you join again, and what it shared with you stops reaching you. An admin can invite you again. The circle is deleted when its last member leaves. If you are its only admin, make somebody else an admin first.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@から外れ、共有されていたものは届かなくなります。管理者がもう一度招待できます。最後のメンバーが抜けるとサークルは削除されます。唯一の管理者の場合は、先に別の人を管理者にしてください。"
+            "value": "%@から外れます。あなたがサークルと共有していたもの、およびほかに共通のサークルがなくなる相手と共有していたものは終了し、再び参加しても元には戻りません。サークルから共有されていたものは届かなくなります。管理者がもう一度招待できます。最後のメンバーが抜けるとサークルは削除されます。唯一の管理者の場合は、先に別の人を管理者にしてください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "你将不再属于 %@，它与你共享的内容也不会再到达你。管理员可以再次邀请你。圈子在最后一位成员离开时被删除。如果你是唯一的管理员，请先让别人成为管理员。"
+            "value": "你将不再属于 %@。你与它共享的内容，以及与不再共有任何圈子的人共享的内容都会结束，重新加入后也不会恢复；它与你共享的内容也不会再到达你。管理员可以再次邀请你。圈子在最后一位成员离开时被删除。如果你是唯一的管理员，请先让别人成为管理员。"
           }
         }
       }

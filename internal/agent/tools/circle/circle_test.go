@@ -312,7 +312,7 @@ func TestDeleteIsDestructiveAndSaysWhatItStops(t *testing.T) {
 		t.Errorf("delete is %v, not destructive", risk)
 	}
 	mustContain(t, cardFor(t, operations, `{"action":"delete","circle_id":"circle-one"}`),
-		"Delete", `the circle "Home" (3 people)`, "stops everything shared with it")
+		"Delete", `the circle "Home" (3 people)`, "calendar, albums and chat", "ends for good what its members shared")
 	mustContain(t, cardFor(t, &circleOperations{grants: aMember}, `{"action":"delete","circle_id":"circle-one"}`),
 		"Delete one of your circles")
 }
@@ -336,7 +336,15 @@ func TestRemoveTakesAMemberOutByUsername(t *testing.T) {
 	mustContain(t, cardFor(t, operations, `{"action":"remove","circle_id":"circle-one","username":"personx"}`),
 		"Remove", `"Person X" (personx)`, "from", `the circle "Home" (3 people)`)
 	mustContain(t, cardFor(t, operations, `{"action":"remove","circle_id":"circle-one","username":"persony"}`),
-		`Remove "persony" from`)
+		`Remove "persony" from`, "ends for good what they shared with it")
+}
+
+// Leaving says what ends and what stops, the same two things the dashboard and
+// the iPhone app say.
+func TestLeaveSaysWhatEndsAndWhatStops(t *testing.T) {
+	operations := &circleOperations{grants: aMember, answers: map[string]string{"ReadCircle": homeCircle}}
+	mustContain(t, cardFor(t, operations, `{"action":"leave","circle_id":"circle-one"}`),
+		"Leave the circle", "ends for good what you shared with it", "stops what it shared with you")
 }
 
 // Somebody who is not in the circle is refused before any mutation is sent.

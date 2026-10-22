@@ -5891,7 +5891,8 @@ export const zh: Catalog = {
   'circles.nowMember': '{name} 现在是普通成员。',
   'circles.removeMember': '移出圈子',
   'circles.removeTitle': '移出 {name}？',
-  'circles.removeBody': '{name} 将不再属于 {circle}，之后仍可再次邀请。',
+  'circles.removeBody':
+    '{name} 将不再属于 {circle}。其与该圈子共享的内容，以及与不再共有任何圈子的人共享的内容都会结束，重新加入后也不会恢复。之后仍可再次邀请。',
   'circles.removed': '已移出 {name}。',
   'circles.invite.title': '邀请成员',
   'circles.invite.intro':
@@ -5916,14 +5917,15 @@ export const zh: Catalog = {
   'circles.renamed': '已重命名圈子。',
   'circles.delete': '删除圈子',
   'circles.deleteTitle': '删除 {name}？',
-  'circles.deleteBody': '圈子会对其中所有人删除，不会删除任何账号。',
+  'circles.deleteBody':
+    '圈子会对其中所有人删除，其日历、相册和聊天也一并删除。成员与该圈子共享的内容，以及与不再共有任何圈子的人共享的内容都会结束，不会恢复。不会删除任何账号。',
   'circles.deleted': '已删除圈子。',
   'circles.leave': '退出',
   'circles.leaveTitle': '退出 {name}？',
   'circles.leaveBody':
-    '你将不再属于 {name}，它与你共享的内容也不会再到达你。管理员可以再次邀请你。圈子在最后一位成员离开时被删除。',
+    '你将不再属于 {name}。你与它共享的内容，以及与不再共有任何圈子的人共享的内容都会结束，重新加入后也不会恢复；它与你共享的内容也不会再到达你。管理员可以再次邀请你。圈子在最后一位成员离开时被删除。',
   'circles.leaveBodyOnlyAdmin':
-    '你将不再属于 {name}，它与你共享的内容也不会再到达你。管理员可以再次邀请你。圈子在最后一位成员离开时被删除。如果你是唯一的管理员，请先让别人成为管理员。',
+    '你将不再属于 {name}。你与它共享的内容，以及与不再共有任何圈子的人共享的内容都会结束，重新加入后也不会恢复；它与你共享的内容也不会再到达你。管理员可以再次邀请你。圈子在最后一位成员离开时被删除。如果你是唯一的管理员，请先让别人成为管理员。',
   'circles.left': '你已退出 {name}。',
   'chat.open': '打开聊天',
   'chat.unreadOne': '1 条未读消息',

@@ -6195,7 +6195,8 @@ export const en = {
   'circles.nowMember': '{name} is now a member.',
   'circles.removeMember': 'Remove from the circle',
   'circles.removeTitle': 'Remove {name}?',
-  'circles.removeBody': '{name} will no longer be in {circle}. They can be invited again.',
+  'circles.removeBody':
+    '{name} will no longer be in {circle}. What they shared with it, and with anyone they then share no other circle with, ends and does not come back if they join again. They can be invited again.',
   'circles.removed': '{name} was removed.',
   'circles.invite.title': 'Invite someone',
   'circles.invite.intro':
@@ -6223,14 +6224,15 @@ export const en = {
   'circles.renamed': 'Circle renamed.',
   'circles.delete': 'Delete circle',
   'circles.deleteTitle': 'Delete {name}?',
-  'circles.deleteBody': 'The circle is removed for everyone in it. No account is deleted.',
+  'circles.deleteBody':
+    'The circle is removed for everyone in it, with its calendar, its albums and its chat. What its members shared with it, and with anyone they then share no other circle with, ends and does not come back. No account is deleted.',
   'circles.deleted': 'Circle deleted.',
   'circles.leave': 'Leave',
   'circles.leaveTitle': 'Leave {name}?',
   'circles.leaveBody':
-    'You will no longer be in {name}, and what it shares with you stops reaching you. An admin can invite you again. The circle is deleted when its last member leaves.',
+    'You will no longer be in {name}. What you shared with it, and with anyone you then share no other circle with, ends and does not come back if you join again, and what it shared with you stops reaching you. An admin can invite you again. The circle is deleted when its last member leaves.',
   'circles.leaveBodyOnlyAdmin':
-    'You will no longer be in {name}, and what it shares with you stops reaching you. An admin can invite you again. The circle is deleted when its last member leaves. If you are its only admin, make somebody else an admin first.',
+    'You will no longer be in {name}. What you shared with it, and with anyone you then share no other circle with, ends and does not come back if you join again, and what it shared with you stops reaching you. An admin can invite you again. The circle is deleted when its last member leaves. If you are its only admin, make somebody else an admin first.',
   'circles.left': 'You left {name}.',
   'chat.open': 'Open your chats',
   'chat.unreadOne': '1 unread message',
