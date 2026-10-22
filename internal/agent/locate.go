@@ -19,12 +19,6 @@ var _ tools.Locating = (*AskRun)(nil)
 // where they are, and that question waits on them.
 const locationWait = time.Minute
 
-// locationLine tells a turn written anywhere but the dashboard in a
-// browser or the app that it cannot ask where the person is right now. The
-// location tool still answers from the positions their phone kept, when it
-// kept any, so the agent is pointed at that before it asks them.
-const locationLine = "Their location cannot be asked for here: that works only while they chat with you in the dashboard or the app. The location tool tells you where they were last reported to be, if their phone reports; otherwise ask them where they are when it matters."
-
 // LocationAnswer is what the browser says to a location call: where it
 // is, or, in ErrorMessage, why it cannot say.
 type LocationAnswer struct {

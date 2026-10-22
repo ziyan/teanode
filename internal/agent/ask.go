@@ -2602,6 +2602,13 @@ type turnPromptData struct {
 	chat *chatPromptFacts
 }
 
+// deferredLineCharacters is the longest line the prompt gives a tool that
+// is not loaded. The line is there so the model knows the tool exists and
+// what it is for; tool_search hands over the whole definition when it is
+// wanted. A first sentence that ran to five hundred characters was paid for
+// in every request.
+const deferredLineCharacters = 160
+
 // deferredCatalog is a line for each tool not loaded, and one for each
 // skill: a skill's tools share their prefix and their purpose, and a line
 // apiece repeated the skill forty times over.
@@ -2611,7 +2618,7 @@ func deferredCatalog(deferred []*Tool) []string {
 	for _, tool := range deferred {
 		prefix, toolName, isSkill := skillToolName(tool.Name)
 		if !isSkill {
-			lines = append(lines, tool.Name+" — "+firstSentence(tool.Description))
+			lines = append(lines, cutAtWord(tool.Name+" — "+firstSentence(tool.Description), deferredLineCharacters))
 			continue
 		}
 		if index, seen := skillLine[prefix]; seen {
@@ -2941,11 +2948,7 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 	// replies it draws as buttons above the box, to send with a click.
 	where := surfaceOf(settings.Surface)
 	if where.situationLine != "" {
-		situation := where.situationLine
-		if !where.canLocate && !settings.Headless && !isWokenSurface(settings.Surface) {
-			situation += " " + locationLine
-		}
-		blocks = append(blocks, "<where>\n"+situation+"\n</where>")
+		blocks = append(blocks, "<where>\n"+where.situationLine+"\n</where>")
 	}
 	if where.hasSuggestedReplies {
 		blocks = append(blocks, suggestedRepliesBlock)
