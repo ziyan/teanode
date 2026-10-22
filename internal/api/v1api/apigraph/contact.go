@@ -17,16 +17,24 @@ import (
 // phone keeps in step with over CardDAV.
 //
 // It is the server's only list of people: the composer completes from it, and
-// the "sender is known" rule condition asks it.
+// the "sender is known" rule condition asks it. A person's own books are never
+// shared. A circle has an address book of its own, which every member of the
+// circle reads and edits and an admin renames or deletes; the database's
+// AddressBookAccess is the one answer to who may use a book, and what is owner
+// only (the account link, the agent's grant, the known-sender check, the ties
+// from recordings and photos) never reads a circle's.
 
 // AddressBookQuery reads a person's own address book.
 type AddressBookQuery interface {
-	// The caller's address books. An account that has never had one is
-	// given one here rather than being asked to make it, so that nothing
-	// has to be set up before a contact can be kept. Needs contacts:use.
+	// The caller's address books, then the books of the circles they are in,
+	// each with the circle's name. An account that has never had a book of its
+	// own is given one here rather than being asked to make it, so that
+	// nothing has to be set up before a contact can be kept. Needs
+	// contacts:use.
 	ListAddressBooks(ctx context.Context) ([]*AddressBookView, error)
 
-	// The contacts in one of them, by name. A query narrows by name,
+	// The contacts in one of them, by name; a book of the caller's own or of
+	// a circle they are in. A query narrows by name,
 	// organization, address or number. Needs contacts:use.
 	ListContacts(ctx context.Context, arguments ListContactsArguments) ([]*ContactView, error)
 
@@ -67,9 +75,20 @@ type AddressBookMutation interface {
 	// contacts:use.
 	SetContactAccount(ctx context.Context, arguments SetContactAccountArguments) (*ContactView, error)
 
-	// Rename an address book or change what it says about itself. Needs
+	// Rename an address book or change what it says about itself: the
+	// caller's own, or a circle's when they are an admin of the circle. Needs
 	// contacts:use.
 	SaveAddressBook(ctx context.Context, arguments SaveAddressBookArguments) (*AddressBookView, error)
+
+	// Make the address book a circle keeps for itself, called what the circle
+	// is called when no name is given. Any member of the circle may; a circle
+	// has one, and asking again says so. Needs contacts:use and circle:use.
+	CreateCircleAddressBook(ctx context.Context, arguments CreateCircleAddressBookArguments) (*AddressBookView, error)
+
+	// Delete a circle's address book with every card in it. Only an admin of
+	// the circle may. A person's own book cannot be deleted. Needs
+	// contacts:use and circle:use.
+	DeleteCircleAddressBook(ctx context.Context, arguments DeleteCircleAddressBookArguments) (bool, error)
 }
 
 // AddressBookView is one address book and how much is in it.
@@ -81,7 +100,17 @@ type AddressBookView struct {
 
 	// AgentGranted says the person has given their agent this book. The
 	// agent's own tools read it: what is not granted is not theirs to see.
+	// Always false for a circle's book, which is not one person's to give.
 	AgentGranted bool `json:"agentGranted"`
+
+	// The circle a circle's book belongs to; null for the caller's own.
+	CircleID     *string `json:"circleId"`
+	CircleName   string  `json:"circleName"`
+	IsCircleBook bool    `json:"isCircleBook"`
+
+	// CanManage says the caller may rename the book and, for a circle's,
+	// delete it: always for their own, for an admin of the circle otherwise.
+	CanManage bool `json:"canManage"`
 }
 
 // ContactView is one contact. Card is the whole of it; the fields beside it
@@ -198,6 +227,17 @@ type Address struct {
 	Country    string `json:"country"`
 }
 
+type CreateCircleAddressBookArguments struct {
+	CircleID string `json:"circleId"`
+
+	// What to call it; the circle's name when left out
+	Name string `json:"name" graphapi:"nullable"`
+}
+
+type DeleteCircleAddressBookArguments struct {
+	AddressBookID string `json:"addressBookId"`
+}
+
 type SaveAddressBookArguments struct {
 	ID          string `json:"id"`
 	Name        string `json:"name" graphapi:"nullable"`
@@ -237,12 +277,54 @@ func (self *graph) requireOwnAddressBook(ctx context.Context, addressBookId stri
 	return book, nil
 }
 
+// requireUsableAddressBook is one book, if the caller may use it: their own,
+// or the circle's they are in. Anything else is not found, whose it is is not
+// the caller's business. The answer is the database's AddressBookAccess.
+func (self *graph) requireUsableAddressBook(ctx context.Context, addressBookId string) (*models.AddressBook, models.AddressBookAccess, error) {
+	principal, err := self.requireAddressBookPerson(ctx)
+	if err != nil {
+		return nil, models.AddressBookAccess{}, err
+	}
+	tx := self.transaction(ctx)
+	book, err := tx.GetAddressBook(strings.TrimSpace(addressBookId))
+	if err != nil {
+		return nil, models.AddressBookAccess{}, err
+	}
+	if book == nil {
+		return nil, models.AddressBookAccess{}, api.ErrNotFound
+	}
+	bookAccess, err := tx.AddressBookAccess(principal.User.ID, book)
+	if err != nil {
+		return nil, models.AddressBookAccess{}, err
+	}
+	if !bookAccess.CanEdit {
+		return nil, models.AddressBookAccess{}, api.ErrNotFound
+	}
+	return book, bookAccess, nil
+}
+
+func (self *graph) addressBookView(ctx context.Context, reachable *models.ReachableAddressBook) (*AddressBookView, error) {
+	count, err := self.transaction(ctx).CountContacts(reachable.Book.ID)
+	if err != nil {
+		return nil, err
+	}
+	view := &AddressBookView{
+		ID: reachable.Book.ID, Name: reachable.Book.Name, Description: reachable.Book.Description, Contacts: int(count),
+		AgentGranted: reachable.Book.AgentGranted, CanManage: reachable.Access.CanManage,
+	}
+	if reachable.Book.CircleID != "" {
+		circleId := reachable.Book.CircleID
+		view.CircleID, view.CircleName, view.IsCircleBook = &circleId, reachable.CircleName, true
+	}
+	return view, nil
+}
+
 func (self *graph) ListAddressBooks(ctx context.Context) ([]*AddressBookView, error) {
 	principal, err := self.requireAddressBookPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var books []*models.AddressBook
+	var books []*models.ReachableAddressBook
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		found, err := tx.ListAddressBooks(principal.User.ID)
 		if err != nil {
@@ -250,35 +332,31 @@ func (self *graph) ListAddressBooks(ctx context.Context) ([]*AddressBookView, er
 		}
 		// Nobody should have to make an address book before they can keep
 		// somebody in it, and the CardDAV layout needs one to exist before
-		// a phone can be pointed at it.
+		// a phone can be pointed at it. A circle's book is not theirs, so it
+		// does not count.
 		if len(found) == 0 {
-			made, err := tx.CreateAddressBook(&models.AddressBook{UserID: principal.User.ID, Name: "Contacts"})
-			if err != nil {
+			if _, err := tx.CreateAddressBook(&models.AddressBook{UserID: principal.User.ID, Name: "Contacts"}); err != nil {
 				return err
 			}
-			found = []*models.AddressBook{made}
 		}
-		books = found
-		return nil
+		books, err = tx.ListReachableAddressBooks(principal.User.ID)
+		return err
 	}); err != nil {
 		return nil, err
 	}
 	views := make([]*AddressBookView, 0, len(books))
-	for _, book := range books {
-		count, err := self.transaction(ctx).CountContacts(book.ID)
+	for _, reachable := range books {
+		view, err := self.addressBookView(ctx, reachable)
 		if err != nil {
 			return nil, err
 		}
-		views = append(views, &AddressBookView{
-			ID: book.ID, Name: book.Name, Description: book.Description, Contacts: int(count),
-			AgentGranted: book.AgentGranted,
-		})
+		views = append(views, view)
 	}
 	return views, nil
 }
 
 func (self *graph) ListContacts(ctx context.Context, arguments ListContactsArguments) ([]*ContactView, error) {
-	book, err := self.requireOwnAddressBook(ctx, arguments.AddressBookID)
+	book, _, err := self.requireUsableAddressBook(ctx, arguments.AddressBookID)
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +382,7 @@ func (self *graph) ListContacts(ctx context.Context, arguments ListContactsArgum
 }
 
 func (self *graph) GetContact(ctx context.Context, arguments ContactArguments) (*ContactView, error) {
-	contact, book, err := self.ownContact(ctx, arguments.ID)
+	contact, book, err := self.usableContact(ctx, arguments.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -412,7 +490,33 @@ func (self *graph) SetContactAccount(ctx context.Context, arguments SetContactAc
 	return self.contactViewWithAccount(ctx, book.UserID, contact, true)
 }
 
-// ownContact is one contact, if it is in a book belonging to the caller.
+// usableContact is one contact, if it is in a book the caller may use: their
+// own first, then their circles'.
+func (self *graph) usableContact(ctx context.Context, contactId string) (*models.Contact, *models.AddressBook, error) {
+	principal, err := self.requireAddressBookPerson(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	tx := self.transaction(ctx)
+	reachable, err := tx.ListReachableAddressBooks(principal.User.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, each := range reachable {
+		contact, err := tx.GetContact(each.Book.ID, strings.TrimSpace(contactId))
+		if err != nil {
+			return nil, nil, err
+		}
+		if contact != nil {
+			return contact, each.Book, nil
+		}
+	}
+	return nil, nil, api.ErrNotFound
+}
+
+// ownContact is one contact, if it is in a book belonging to the caller. What
+// is owner only (naming a face group with a contact) asks for this and never
+// reaches a circle's book.
 func (self *graph) ownContact(ctx context.Context, contactId string) (*models.Contact, *models.AddressBook, error) {
 	principal, err := self.requireAddressBookPerson(ctx)
 	if err != nil {
@@ -496,11 +600,70 @@ func (self *graph) SaveAddressBook(ctx context.Context, arguments SaveAddressBoo
 		return nil, err
 	}
 	outcome, err := addressbook.New(self.transaction(ctx)).UpdateBook(ctx, principal, addressbook.UpdateBookRequest{ID: arguments.ID, Name: arguments.Name, Description: arguments.Description})
+	if errors.Is(err, addressbook.ErrRefused) {
+		return nil, fmt.Errorf("%w: only an admin of this circle can do that", api.ErrPermissionDenied)
+	}
 	if err != nil {
 		return nil, translateError(err)
 	}
 	kept := outcome.Book
-	return &AddressBookView{ID: kept.ID, Name: kept.Name, Description: kept.Description, Contacts: int(outcome.ContactCount), AgentGranted: kept.AgentGranted}, nil
+	view := &AddressBookView{ID: kept.ID, Name: kept.Name, Description: kept.Description, Contacts: int(outcome.ContactCount), AgentGranted: kept.AgentGranted, CanManage: true}
+	if kept.CircleID != "" {
+		circle, err := self.transaction(ctx).GetCircle(kept.CircleID)
+		if err != nil {
+			return nil, err
+		}
+		circleId := kept.CircleID
+		view.CircleID, view.IsCircleBook = &circleId, true
+		if circle != nil {
+			view.CircleName = circle.Name
+		}
+	}
+	return view, nil
+}
+
+func (self *graph) CreateCircleAddressBook(ctx context.Context, arguments CreateCircleAddressBookArguments) (*AddressBookView, error) {
+	principal, err := self.requireAddressBookPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	circle, member, err := self.requireCircleMember(ctx, arguments.CircleID)
+	if err != nil {
+		return nil, err
+	}
+	made, err := self.transaction(ctx).CreateCircleAddressBook(circle.ID, strings.TrimSpace(arguments.Name))
+	if err != nil {
+		return nil, translateError(err)
+	}
+	log.Noticef("%s made an address book for the circle %q", principal.User.Username, circle.Name)
+	return self.addressBookView(ctx, &models.ReachableAddressBook{
+		Book: made, CircleName: circle.Name,
+		Access: models.AddressBookAccess{CanEdit: true, CanManage: member.MemberRole == models.MemberRoleAdmin},
+	})
+}
+
+func (self *graph) DeleteCircleAddressBook(ctx context.Context, arguments DeleteCircleAddressBookArguments) (bool, error) {
+	principal, err := self.requireAddressBookPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	book, bookAccess, err := self.requireUsableAddressBook(ctx, arguments.AddressBookID)
+	if err != nil {
+		return false, err
+	}
+	// Only a circle's book can be deleted. A person's own is the one every
+	// phone is pointed at, and is never made or removed by a request.
+	if book.CircleID == "" {
+		return false, api.ErrNotFound
+	}
+	if !bookAccess.CanManage {
+		return false, fmt.Errorf("%w: only an admin of this circle can do that", api.ErrPermissionDenied)
+	}
+	if err := self.transaction(ctx).DeleteAddressBook(book.ID); err != nil {
+		return false, translateError(err)
+	}
+	log.Noticef("%s deleted the address book of a circle", principal.User.Username)
+	return true, nil
 }
 
 func contactView(contact *models.Contact, withCard bool) *ContactView {
