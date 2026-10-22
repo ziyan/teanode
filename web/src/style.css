@@ -11829,6 +11829,13 @@ main.content:has(> .knowledge-frame) {
   margin: 0 0 var(--space-2);
 }
 
+/* The pages a share reaches, one path a line. */
+.share-reach {
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-4);
+  overflow-wrap: anywhere;
+}
+
 .share-preview .settings-section.card {
   border: 0;
   padding: 0;

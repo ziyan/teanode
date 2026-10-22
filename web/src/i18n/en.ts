@@ -4011,13 +4011,19 @@ export const en = {
   'knowledge.share.noPeople': 'You do not share a circle with anybody yet. Make or join a circle to share a page.',
   'knowledge.share.quotes': 'Also show the words each fact was read in',
   'knowledge.share.quotesHint':
-    "Those words are quoted from your mail and documents. Left off, they see what a fact says and what kind of thing it was read in, such as your mail, and not the words. Words from a chat are never shown, since they are other people's too.",
+    "Those words are quoted from your mail and documents. Left off, they see what a fact says and what kind of thing it was read in, such as your mail, and not the words. Words from a chat or a recording are never shown, since they are other people's too.",
   'knowledge.share.preview': 'What {name} will see',
   'knowledge.share.previewing': 'Looking at what they would see…',
   'knowledge.share.reachesOne': 'This shares {count} page: this one and everything under it.',
   'knowledge.share.reachesOther': 'This shares {count} pages: this one and everything under it.',
   'knowledge.share.reachesAtLeastOne': 'This shares at least {count} page: this one and everything under it.',
   'knowledge.share.reachesAtLeastOther': 'This shares at least {count} pages: this one and everything under it.',
+  'knowledge.share.reachesLater': 'A page you add under it later is shared too.',
+  'knowledge.share.reachesMore': 'and {count} more',
+  'knowledge.share.withheldOne':
+    '{count} fact from finance, recordings or location stays private. Those have their own sharing.',
+  'knowledge.share.withheldOther':
+    '{count} facts from finance, recordings or location stay private. Those have their own sharing.',
   'knowledge.share.submit': 'Share',
   'knowledge.share.shares': 'Shared with',
   'knowledge.share.sharesHint': 'Who can read this page, read only. A page shared above this one shares this one too.',

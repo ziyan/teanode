@@ -124,7 +124,7 @@ const UNSHARE = `mutation ($shareId: String!) { UnshareAgentPage(shareId: $share
 const PREVIEW = `query ($path: String!, $granteeUserId: String, $granteeCircleId: String, $isQuoteShared: Boolean) {
   PreviewAgentPageShare(path: $path, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, isQuoteShared: $isQuoteShared) {
     page { ${PAGE_FIELDS} }
-    reachedPageCount isReachedPageCountCut
+    reachedPageCount isReachedPageCountCut reachedPagePaths withheldFactCount
   }
 }`
 
@@ -616,7 +616,15 @@ export function PageShares({ path, refreshKey }: { path: string; refreshKey: num
   )
 }
 
-type Preview = { PreviewAgentPageShare: { page: SharedPage; reachedPageCount: number; isReachedPageCountCut: boolean } }
+type Preview = {
+  PreviewAgentPageShare: {
+    page: SharedPage
+    reachedPageCount: number
+    isReachedPageCountCut: boolean
+    reachedPagePaths: string[]
+    withheldFactCount: number
+  }
+}
 
 // SharePageDialog shares one of the person's pages, and everything under it,
 // with a person they share a circle with or a circle they are in. The choices
@@ -778,8 +786,29 @@ export function SharePageDialog({
                   : plural(previewed.reachedPageCount, {
                       one: 'knowledge.share.reachesOne',
                       other: 'knowledge.share.reachesOther',
-                    })}
+                    })}{' '}
+                {t('knowledge.share.reachesLater')}
               </p>
+              <ul className="share-reach">
+                {previewed.reachedPagePaths.map((reachedPath) => (
+                  <li key={reachedPath}>{reachedPath}</li>
+                ))}
+                {previewed.reachedPageCount > previewed.reachedPagePaths.length ? (
+                  <li className="muted">
+                    {t('knowledge.share.reachesMore', {
+                      count: previewed.reachedPageCount - previewed.reachedPagePaths.length,
+                    })}
+                  </li>
+                ) : null}
+              </ul>
+              {previewed.withheldFactCount > 0 ? (
+                <p className="muted">
+                  {plural(previewed.withheldFactCount, {
+                    one: 'knowledge.share.withheldOne',
+                    other: 'knowledge.share.withheldOther',
+                  })}
+                </p>
+              ) : null}
               <SharedPageBody page={previewed.page} isPreview />
             </>
           ) : null}
