@@ -297,11 +297,11 @@ func (self *graph) requirePhotosPerson(ctx context.Context) (*api.Principal, err
 // let through already: the photos came from a query that reaches only what the
 // caller may read. Whatever is not the caller's own is shown as the caller may
 // have it: no favorite mark, no uploader's name for it, and, unless the share
-// that lets the caller in includes where photos were taken
-// (isPlaceShownOfOthers), no place, no file name, no description and none of
-// the words read in the picture, and the original files stand for by the
-// preview that carries none.
-func (self *graph) withFilesAndPreviews(ctx context.Context, callerUserId string, photos []*models.Photo, isPlaceShownOfOthers bool) error {
+// that lets the caller in includes where photos were taken, and the photo is
+// the album owner's whose share it is (placeShownOfUserId), no place, no file
+// name, no description and none of the words read in the picture, and the
+// original files stand for by the preview that carries none.
+func (self *graph) withFilesAndPreviews(ctx context.Context, callerUserId string, photos []*models.Photo, placeShownOfUserId string) error {
 	photoIdsOfOwner := map[string][]string{}
 	for _, found := range photos {
 		photoIdsOfOwner[found.UserID] = append(photoIdsOfOwner[found.UserID], found.ID)
@@ -344,7 +344,7 @@ func (self *graph) withFilesAndPreviews(ctx context.Context, callerUserId string
 		found.PhotoFileRoles = fileRoles[found.ID]
 		if !found.IsOwnedByCaller {
 			found.OwnerName, found.IsFavorite, found.ClientPhotoID = ownerNames[found.UserID], false, ""
-			if !isPlaceShownOfOthers {
+			if found.UserID != placeShownOfUserId {
 				found.Latitude, found.Longitude, found.PlaceName = nil, nil, ""
 				// Anything else that can name the place goes with it: the file
 				// name, which a camera or a person may have called after it,
@@ -446,29 +446,33 @@ func (self *graph) ListPhotos(ctx context.Context, arguments ListPhotosArguments
 		if err != nil {
 			return translateError(err)
 		}
-		isPlaceShown, err := self.isPlaceShownInAlbum(ctx, principal.User.ID, arguments.AlbumID)
+		placeShownOfUserId, err := self.placeShownOfUserInAlbum(ctx, principal.User.ID, arguments.AlbumID)
 		if err != nil {
 			return translateError(err)
 		}
-		return translateError(self.withFilesAndPreviews(ctx, principal.User.ID, photos, isPlaceShown))
+		return translateError(self.withFilesAndPreviews(ctx, principal.User.ID, photos, placeShownOfUserId))
 	}); err != nil {
 		return nil, err
 	}
 	return photos, nil
 }
 
-// isPlaceShownInAlbum says whether the share that lets the person into the
-// album includes where its photos were taken; false for a listing of no album,
-// which holds only their own photos.
-func (self *graph) isPlaceShownInAlbum(ctx context.Context, userId, photoAlbumId string) (bool, error) {
+// placeShownOfUserInAlbum is the owner of the album whose photos' places the
+// share that lets the person into it includes, and empty for a share that
+// does not and for a listing of no album, which holds only their own photos.
+// The share is the owner's, so it does not cover the photos others added.
+func (self *graph) placeShownOfUserInAlbum(ctx context.Context, userId, photoAlbumId string) (string, error) {
 	if photoAlbumId == "" {
-		return false, nil
+		return "", nil
 	}
 	access, err := self.transaction(ctx).GetPhotoAlbumAccess(userId, photoAlbumId)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	return access.IsLocationIncluded, nil
+	if !access.IsLocationIncluded {
+		return "", nil
+	}
+	return access.OwnerUserID, nil
 }
 
 // readPhotoSearchMeaning is the words of a search as a vector, for finding
@@ -648,7 +652,11 @@ func (self *graph) ReadPhoto(ctx context.Context, arguments PhotoArguments) (*Ph
 	} else {
 		files = sharedCopyFiles(found, previews)
 	}
-	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{found}, access.IsLocationIncluded); err != nil {
+	placeShownOfUserId := ""
+	if access.IsLocationIncluded {
+		placeShownOfUserId = found.UserID
+	}
+	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{found}, placeShownOfUserId); err != nil {
 		return nil, translateError(err)
 	}
 	albums, err := transaction.ListPhotoAlbumsOfPhoto(principal.User.ID, found.ID)
@@ -763,7 +771,7 @@ func (self *graph) FindPhotos(ctx context.Context, arguments FindPhotosArguments
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.withFilesAndPreviews(ctx, principal.User.ID, photos, false); err != nil {
+	if err := self.withFilesAndPreviews(ctx, principal.User.ID, photos, ""); err != nil {
 		return nil, translateError(err)
 	}
 	return photos, nil
@@ -865,7 +873,7 @@ func (self *graph) UpdatePhoto(ctx context.Context, arguments UpdatePhotoArgumen
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{updated}, false); err != nil {
+	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{updated}, ""); err != nil {
 		return nil, translateError(err)
 	}
 	return updated, nil
@@ -1033,7 +1041,7 @@ func (self *graph) DescribePhoto(ctx context.Context, arguments DescribePhotoArg
 			return nil, translateError(err)
 		}
 	}
-	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{found}, false); err != nil {
+	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{found}, ""); err != nil {
 		return nil, translateError(err)
 	}
 	return found, nil

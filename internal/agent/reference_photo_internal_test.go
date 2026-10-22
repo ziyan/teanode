@@ -116,6 +116,7 @@ func TestSharedPhotoReferenceHoldsBackWhatNamesThePlace(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateUser: %s", err)
 		}
+		dbtest.GrantPermission(t, tx, sharer.ID, models.PermissionPhotosUse)
 		circle, err := tx.CreateCircle(&models.Circle{Name: "Example", CircleKind: models.CircleKindFriends}, sharer.ID)
 		if err != nil {
 			t.Fatalf("CreateCircle: %s", err)

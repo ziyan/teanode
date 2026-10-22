@@ -716,7 +716,7 @@ func (self *graph) readPersonCardPhotos(ctx context.Context, subject *personCard
 		}
 		section.HasMorePhotos = len(photos) > itemLimit
 		photos = photos[:min(len(photos), itemLimit)]
-		if err := self.withFilesAndPreviews(ctx, principal.User.ID, photos, false); err != nil {
+		if err := self.withFilesAndPreviews(ctx, principal.User.ID, photos, ""); err != nil {
 			return nil, translateError(err)
 		}
 		section.PhotosState, section.Photos = PersonCardSectionStateShown, photos

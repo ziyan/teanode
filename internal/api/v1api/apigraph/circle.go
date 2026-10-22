@@ -475,6 +475,24 @@ func (self *graph) DeleteCircle(ctx context.Context, arguments DeleteCircleArgum
 	return true, nil
 }
 
+// requireTapForHealthSharedCircle refuses a call that is not a person's own
+// tap when Health is shared with the circle: whoever joins a circle reads what
+// it was shared, so bringing somebody in is sharing that Health with them,
+// which SetHealthShare leaves to a tap as well.
+func (self *graph) requireTapForHealthSharedCircle(ctx context.Context, circleId string) error {
+	if api.ContextPrincipal(ctx).IsPersonsTap() {
+		return nil
+	}
+	isShared, err := self.transaction(ctx).CircleHasHealthShare(circleId)
+	if err != nil {
+		return err
+	}
+	if isShared {
+		return fmt.Errorf("%w: %s", api.ErrPermissionDenied, healthOnATap)
+	}
+	return nil
+}
+
 type InviteToCircleArguments struct {
 	CircleID string `json:"circleId"`
 
@@ -488,6 +506,11 @@ type InviteToCircleArguments struct {
 func (self *graph) InviteToCircle(ctx context.Context, arguments InviteToCircleArguments) (bool, error) {
 	circle, member, err := self.requireCircleAdmin(ctx, arguments.CircleID)
 	if err != nil {
+		return false, err
+	}
+	// Before the username is looked at, so that the refusal says nothing
+	// about whether it is an account.
+	if err := self.requireTapForHealthSharedCircle(ctx, circle.ID); err != nil {
 		return false, err
 	}
 	memberRole := models.MemberRole(strings.TrimSpace(arguments.MemberRole))
@@ -727,6 +750,9 @@ func (self *graph) AddCircleMember(ctx context.Context, arguments AddCircleMembe
 	// an admin of that very circle.
 	if !principal.Permissions.Has(models.PermissionUserManage) {
 		return nil, fmt.Errorf("%w: putting an account in a circle needs the %s permission", api.ErrPermissionDenied, models.PermissionUserManage)
+	}
+	if err := self.requireTapForHealthSharedCircle(ctx, arguments.CircleID); err != nil {
+		return nil, err
 	}
 	memberRole := models.MemberRole(strings.TrimSpace(arguments.MemberRole))
 	if !memberRole.IsValid() {

@@ -48,6 +48,10 @@ type HealthShareOperation interface {
 	// app, and none for anything else. The owner is not asked about: a person
 	// reads their own Health without a share.
 	GetSharedHealthCategories(viewerUserId, ownerUserId string) ([]string, error)
+
+	// CircleHasHealthShare says whether anybody has shared Health with the
+	// circle, so that a new member of it would read that Health.
+	CircleHasHealthShare(circleId string) (bool, error)
 }
 
 type healthShareModel struct {
@@ -311,6 +315,14 @@ func (self *transaction) GetSharedHealthCategories(viewerUserId, ownerUserId str
 	}
 	ordered, _ := orderedHealthCategories(categories)
 	return ordered, nil
+}
+
+func (self *transaction) CircleHasHealthShare(circleId string) (bool, error) {
+	var count int64
+	if err := self.tx.Model(&healthShareModel{}).Where("\"grantee_circle_id\" = ?", circleId).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // endHealthSharesOutsideCircles deletes the Health shares that only a circle

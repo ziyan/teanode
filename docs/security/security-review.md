@@ -2298,3 +2298,36 @@ Calendar widget.
 - CLIENTS-7: the extension's two web accessible pages let any page detect that
   it is installed, and `activeTab` is redundant with `<all_urls>`. The first is
   a recorded trade-off in `frameChannel.ts` and gives a page nothing else.
+# Tenth pass: who can see what
+
+A reading review of what one person's data reaches in another's hands. The four
+findings below are fixed, each with a test that failed before the fix.
+
+## Findings
+
+### SEC-203: The circle tool's person card put another person's location into a chat (Medium, fixed)
+
+In a chat turn the card is now asked for without its location part, as the
+location tool already refuses coordinates there.
+
+### SEC-204: A token could widen a Health share by adding someone to its circle (Medium, fixed)
+
+Inviting to, or adding an account to, a circle that Health is shared with now
+needs a person's tap, as adding a category to the share does.
+
+### SEC-205: An album share's places covered a contributor's photos (Medium, fixed)
+
+The share now covers only the album owner's photos, in access, the listing's
+distance filter and search, and the original files offered.
+
+### SEC-206: A disabled account's shared photos and albums kept reaching readers (Medium, fixed)
+
+Album shares now stop at a disabled owner or one without `photos:use`, and
+another person's photo is refused while its owner is disabled.
+
+## Open, for the person to decide
+
+- The photo tool's show action and the calendar tool's shared agenda are not
+  held back in a chat the way the location tool is.
+- A circle share reaches whoever joins the circle later, including data from
+  before they joined.
