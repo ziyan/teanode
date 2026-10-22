@@ -17,12 +17,13 @@ surface reads and sets the same thing.
 
 ## Progress
 
-- [ ] Plan (this file).
-- [ ] Server: migration 0257, database, GraphQL, report filtering, reach, events,
+- [x] Plan (this file).
+- [x] Server: migration 0257, database, GraphQL, report filtering, reach, events,
       journal, agent tool, CLI, docs.
-- [ ] Dashboard.
-- [ ] iPhone.
-- [ ] Deploy from the branch, TestFlight from the branch, use it for real.
+- [x] Dashboard.
+- [x] iPhone.
+- [x] Deploy from the branch, TestFlight from the branch (deployed 2026-10-22 as
+      v0.193.8-128-gaef4ba353), use it for real.
 - [ ] Review until a round finds nothing; parity check.
 
 ## Decision Log
@@ -48,6 +49,26 @@ surface reads and sets the same thing.
   permissions). A pause is the person's, across devices.
 - The PR is stacked on `fix/circle-sharing` (#633), which changes the location
   tool and the share reach.
+- 2026-10-22, review round 1: `ListLocationPauses` takes `from` and `until`,
+  the names `ListLocationVisits` and `ListLocationPoints` use for a range, not
+  `to`.
+- 2026-10-22, review round 1: resuming is refused to the agent's shell. A
+  command the agent runs on the person's computer reaches the server with the
+  agent command header, and `ResumeLocation` refuses it; resuming records more
+  than pausing did, so the agent resumes only through its own tool, whose card
+  the person taps.
+- 2026-10-22, review round 1: a check-in is refused while paused, since it is a
+  visit measured now. The refusal gives the end of a timed pause in the zone the
+  person last used, with its name.
+- 2026-10-22, review round 1: "Until tomorrow morning" is 08:00 the next day,
+  except before 05:00 local time, when it is 08:00 the same day: a person
+  pausing at 00:30 means this morning. Each client computes it; the server only
+  takes `endedAt`.
+- 2026-10-22, review round 1: a report takes its clock after it has the
+  person's location lock, so a pause that began while it waited is in effect for
+  it. A day with pauses and no visits still gets a journal document, with the
+  pause lines and no places. A person's card carries the pause, so it reads
+  "Location paused" in the command line and to the agent.
 
 ## Context
 
@@ -93,7 +114,7 @@ GraphQL (names exact):
   refused; more than 30 days ahead is refused. Needs `location:use`.
 - `ResumeLocation: Boolean`: ends the pause in effect now; true when there was
   one. Needs `location:use`.
-- `ListLocationPauses(userId: ID = null, from: Time, to: Time): [LocationPauseView]`:
+- `ListLocationPauses(userId: ID = null, from: Time, until: Time): [LocationPauseView]`:
   the pauses overlapping the range, at level `history` for another person, the
   owner's own otherwise. Same reach rules as `ListLocationVisits`.
 - `ReportLocationView` gains `pause: LocationPauseView` (the pause in effect

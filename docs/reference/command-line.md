@@ -346,7 +346,8 @@ that the circle was not found.
 
 `person` prints a person's card, by username or account id, or by one of your
 contacts: your contact details for them, the circles you share, and a few items
-from each part of the app that concerns them. It prints where they are and
+from each part of the app that concerns them. It prints where they are (or
+`Location paused until 15:00` when they paused recording, with no position) and
 their visits today, the health they share, photos of them and albums they
 shared, recent mail with them, recordings they speak in, and memory pages about
 them. A part says why it shows nothing: `not shared with you` when they have not

@@ -782,7 +782,7 @@ func TestVisitsAreListedWithThePausesOfTheRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	sent := operations.sent["ListLocationPauses"]
-	if sent["from"] != "2026-10-17T00:00:00Z" || sent["to"] != "2026-10-18T00:00:00Z" {
+	if sent["from"] != "2026-10-17T00:00:00Z" || sent["until"] != "2026-10-18T00:00:00Z" {
 		t.Errorf("the range of the visits was asked for: %v", sent)
 	}
 	pauses := answer["pauses"].([]any)

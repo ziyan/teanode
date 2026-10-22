@@ -33,8 +33,8 @@ const (
     nextOffset placeVisits { ` + listedVisitFields + ` }
   }
 }`
-	documentListPauses = `query ($userId: String, $from: DateTime!, $to: DateTime!) {
-  ListLocationPauses(userId: $userId, from: $from, to: $to) { ` + pauseFields + ` }
+	documentListPauses = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
+  ListLocationPauses(userId: $userId, from: $from, until: $until) { ` + pauseFields + ` }
 }`
 	documentListPoints = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
   ListLocationPoints(userId: $userId, from: $from, until: $until) { ` + pointFields + ` }
@@ -649,7 +649,7 @@ func (self *scope) pausesAmongVisits(ctx context.Context, userId *string, variab
 	if rangeStart.IsZero() || rangeEnd.IsZero() || !rangeStart.Before(rangeEnd) {
 		return nil, nil
 	}
-	pauseVariables := map[string]any{"from": rangeStart.UTC().Format(time.RFC3339), "to": rangeEnd.UTC().Format(time.RFC3339)}
+	pauseVariables := map[string]any{"from": rangeStart.UTC().Format(time.RFC3339), "until": rangeEnd.UTC().Format(time.RFC3339)}
 	if userId != nil {
 		pauseVariables["userId"] = *userId
 	}

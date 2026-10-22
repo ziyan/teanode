@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -41,9 +42,9 @@ type ListLocationPausesArguments struct {
 	// UserID is whose pauses; empty is the caller's own.
 	UserID string `json:"userId" graphapi:"nullable"`
 
-	// From and To keep the pauses that overlap the range.
-	From time.Time `json:"from"`
-	To   time.Time `json:"to"`
+	// From and Until keep the pauses that overlap the range.
+	From  time.Time `json:"from"`
+	Until time.Time `json:"until"`
 }
 
 // locationPausePageMost bounds the pauses one listing answers. A person
@@ -150,10 +151,10 @@ func (self *graph) ListLocationPauses(ctx context.Context, arguments ListLocatio
 	if err != nil {
 		return nil, err
 	}
-	if !arguments.From.Before(arguments.To) {
+	if !arguments.From.Before(arguments.Until) {
 		return nil, fmt.Errorf("%w: the range must start before it ends", api.ErrInvalidArguments)
 	}
-	pauses, err := self.transaction(ctx).ListLocationPauses(reach.User.ID, arguments.From, arguments.To, locationPausePageMost+1)
+	pauses, err := self.transaction(ctx).ListLocationPauses(reach.User.ID, arguments.From, arguments.Until, locationPausePageMost+1)
 	if err != nil {
 		return nil, locationFailure(err)
 	}
@@ -168,16 +169,18 @@ func (self *graph) ListLocationPauses(ctx context.Context, arguments ListLocatio
 }
 
 // requireNotPaused refuses what would record where the person is while they
-// have paused: a check-in is a visit measured now.
-func requireNotPaused(tx db.Transaction, userId string, now time.Time) error {
-	pause, err := tx.GetLocationPauseInEffect(userId, now)
+// have paused: a check-in is a visit measured now. The refusal gives the end of
+// a timed pause in the person's own zone, with its name, as the zone they last
+// used the dashboard or the phone in.
+func requireNotPaused(tx db.Transaction, user *models.User, now time.Time) error {
+	pause, err := tx.GetLocationPauseInEffect(user.ID, now)
 	if err != nil || pause == nil {
 		return err
 	}
 	if pause.EndedAt == nil {
 		return fmt.Errorf("%w: your location is paused until you resume it", api.ErrInvalidArguments)
 	}
-	return fmt.Errorf("%w: your location is paused until %s", api.ErrInvalidArguments, pause.EndedAt.UTC().Format(time.RFC3339))
+	return fmt.Errorf("%w: your location is paused until %s", api.ErrInvalidArguments, pause.EndedAt.In(agent.Location(user)).Format("2006-01-02 15:04 MST"))
 }
 
 // pauseRangeStart is where to start reading the pauses a report is held
@@ -301,6 +304,11 @@ func (self locationPauseSet) clipVisit(reportedArrivedAt, reportedDepartedAt *ti
 			if startedAt == nil {
 				clipped.IsDropped = true
 				return clipped
+			}
+			// The first pause to begin after the arrival, which is an earlier one
+			// than the pause the departure is inside when two lie between.
+			if first := self.firstStartAfter(*startedAt, reportedDepartedAt); first != nil {
+				pause = first
 			}
 			cutAt := pause.StartedAt
 			clipped.DepartedAt, clipped.IsDepartureCut = &cutAt, true

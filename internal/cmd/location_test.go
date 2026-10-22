@@ -111,11 +111,11 @@ func TestLocationParity(test *testing.T) {
 	// property of its tool action, under the name that surface gives it, or
 	// is exempt with the reason.
 	flagNames := map[string]string{
-		"userId": "person", "from": "from", "until": "until", "to": "until", "placeId": "place", "placeLabel": "label", "query": "query",
+		"userId": "person", "from": "from", "until": "until", "placeId": "place", "placeLabel": "label", "query": "query",
 		"offset": "offset", "limitCount": "first", "latitudeDegrees": "latitude", "longitudeDegrees": "longitude", "radiusMeters": "radius",
 	}
 	propertyNames := map[string]string{
-		"userId": "person", "from": "from", "until": "until", "to": "until", "placeId": "place_id", "placeLabel": "place_label", "query": "query",
+		"userId": "person", "from": "from", "until": "until", "placeId": "place_id", "placeLabel": "place_label", "query": "query",
 		"offset": "offset", "limitCount": "limit", "latitudeDegrees": "latitude_degrees", "longitudeDegrees": "longitude_degrees", "radiusMeters": "radius_meters",
 	}
 	// "<Operation>.<argument>.<surface>" is exempt for the reason given.
@@ -690,7 +690,7 @@ func TestLocationVisitsListsThePausesAmongThem(test *testing.T) {
 		test.Fatal(err)
 	}
 	variables := called("ListLocationPauses")
-	if variables["from"] == nil || variables["to"] == nil || variables["userId"] != nil {
+	if variables["from"] == nil || variables["until"] == nil || variables["userId"] != nil {
 		test.Errorf("the range was sent: %v", variables)
 	}
 	first := time.Date(2026, 10, 17, 10, 0, 0, 0, time.UTC).In(time.Local)

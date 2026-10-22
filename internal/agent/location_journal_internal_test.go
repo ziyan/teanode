@@ -492,14 +492,20 @@ func TestLocationJournalDayTextSaysWhereAPauseLeavesWhereTheyWereUnknown(t *test
 		}
 	}
 
-	// Pauses on other days are not on this one, and a day with a pause and no
-	// visits has no document, as a day with nothing in it has none.
+	// Pauses on other days are not on this one.
 	other := locationPresence{pauses: []*models.LocationPause{pause(journalTime(5, 9, 0), journalTime(5, 10, 0)), pause(journalTime(2, 9, 0), journalTime(2, 10, 0))}}
 	if text := locationDayText(visits, day, other, true); strings.Contains(text, "paused") {
 		t.Errorf("another day's pause is on this day:\n%s", text)
 	}
-	if text := locationDayText(nil, day, locationPresence{pauses: []*models.LocationPause{pause(journalTime(4, 9, 0), journalTime(4, 10, 0))}}, true); text != "" {
-		t.Errorf("a day of only a pause has no document: %q", text)
+
+	// A day with a pause and no visits still says it was paused, and that no
+	// time away from home is known; a day with neither has no document.
+	onlyPause := locationPresence{pauses: []*models.LocationPause{pause(journalTime(4, 9, 0), journalTime(4, 10, 0))}}
+	if text := locationDayText(nil, day, onlyPause, true); text != "Places: 0\n"+fenced("paused from 09:00 to 10:00; where they were is not known") {
+		t.Errorf("a day of only a pause:\n%s", text)
+	}
+	if text := locationDayText(nil, time.Date(2026, 3, 6, 0, 0, 0, 0, time.UTC), onlyPause, true); text != "" {
+		t.Errorf("a day with no visit and no pause has no document: %q", text)
 	}
 }
 
@@ -546,5 +552,27 @@ func TestLocationJournalWritesAPauseIntoItsDay(t *testing.T) {
 	text := locationJournalText(t, database, run, locationJournalDocuments(t, database, run)["location:2026-03-05"])
 	if !strings.HasPrefix(text, "Places: 1\n") || !strings.Contains(text, "09:00 to 10:00 (1 h): Riverside Park\npaused from 12:00 to 13:30; where they were is not known\n17:00 to 18:00 (1 h): Riverside Park") {
 		t.Errorf("the day reads %s", text)
+	}
+
+	// A day with a pause and no visit is written too, and is not deleted by the
+	// next run for having no visits.
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		startedAt, endedAt := *journalTimeIn(zone, 4, 8, 0), *journalTimeIn(zone, 4, 9, 0)
+		if _, _, err := tx.PauseLocation(run.Owner.ID, &endedAt, startedAt); err != nil {
+			t.Fatalf("PauseLocation: %s", err)
+		}
+	})
+	if writtenCount, err := worker.writeLocationJournal(t.Context(), run.Agent, run.Owner, now); err != nil || writtenCount != 1 {
+		t.Fatalf("a day of only a pause is written: %d, %v", writtenCount, err)
+	}
+	documents := locationJournalDocuments(t, database, run)
+	if text := locationJournalText(t, database, run, documents["location:2026-03-04"]); !strings.HasPrefix(text, "Places: 0\n") || !strings.Contains(text, "paused from 08:00 to 09:00; where they were is not known") {
+		t.Errorf("the day of only a pause reads %s", text)
+	}
+	if writtenCount, err := worker.writeLocationJournal(t.Context(), run.Agent, run.Owner, now); err != nil || writtenCount != 0 {
+		t.Fatalf("nothing changed: %d, %v", writtenCount, err)
+	}
+	if _, isKept := locationJournalDocuments(t, database, run)["location:2026-03-04"]; !isKept {
+		t.Error("the next run deleted the day of only a pause")
 	}
 }

@@ -159,6 +159,7 @@ const DocumentReadPersonCard = `query ($userId: String, $addressBookId: String, 
         userId username name shareLevel
         latestPoint { ` + locationPointFields + ` }
         openVisit { ` + placeVisitFields + ` }
+        pause { id startedAt endedAt }
       }
       todayVisits { ` + placeVisitFields + ` }
     }

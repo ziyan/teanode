@@ -165,7 +165,7 @@ func TestPausingEndsTheVisitInProgressAndPausingAgainChangesTheEnd(t *testing.T)
 	if second["id"] != first["id"] || !pauseTimeOf(t, second["endedAt"]).Equal(pauseTimeOf(t, endedAt)) || !pauseTimeOf(t, second["startedAt"]).Equal(pauseTimeOf(t, first["startedAt"])) {
 		t.Errorf("pausing while paused changes the end of the pause in effect: %v then %v", first, second)
 	}
-	pauses := world.call(t, world.ada, fmt.Sprintf(`query { ListLocationPauses(from: %q, to: %q) { `+pauseFieldsForTest+` } }`, ago(time.Hour), time.Now().Add(time.Hour).UTC().Format(time.RFC3339)))["ListLocationPauses"].([]any)
+	pauses := world.call(t, world.ada, fmt.Sprintf(`query { ListLocationPauses(from: %q, until: %q) { `+pauseFieldsForTest+` } }`, ago(time.Hour), time.Now().Add(time.Hour).UTC().Format(time.RFC3339)))["ListLocationPauses"].([]any)
 	if len(pauses) != 1 {
 		t.Errorf("one pause: %v", pauses)
 	}
@@ -337,6 +337,34 @@ func TestALaterDepartureOfAVisitBeforeAPauseEndsItAtThePause(t *testing.T) {
 	}
 }
 
+// A visit that arrived before two pauses and left inside the second ends where
+// the first began, since it is not known where the person was from then on.
+func TestAVisitAcrossTwoPausesThatLeftInTheSecondEndsAtTheFirst(t *testing.T) {
+	at := func(hour, minute int) time.Time { return time.Date(2026, 3, 4, hour, minute, 0, 0, time.UTC) }
+	pauseBetween := func(startedAt, endedAt time.Time) *models.LocationPause {
+		return &models.LocationPause{StartedAt: startedAt, EndedAt: &endedAt}
+	}
+	pauses := locationPauseSet{pauseBetween(at(12, 0), at(12, 30)), pauseBetween(at(11, 0), at(11, 30))}
+	arrivedAt, departedAt := at(10, 0), at(12, 10)
+
+	clipped := pauses.clipVisit(&arrivedAt, &departedAt, nil)
+	if clipped.IsDropped || !clipped.IsDepartureCut || clipped.DepartedAt == nil || !clipped.DepartedAt.Equal(at(11, 0)) {
+		t.Errorf("the visit ends at the start of the first pause: %+v", clipped)
+	}
+
+	// The same for a departure reported alone for a visit stored earlier.
+	known := &models.PlaceVisit{ArrivedAt: &arrivedAt}
+	if clipped = pauses.clipVisit(nil, &departedAt, known); clipped.IsDropped || clipped.DepartedAt == nil || !clipped.DepartedAt.Equal(at(11, 0)) {
+		t.Errorf("a later departure ends at the start of the first pause: %+v", clipped)
+	}
+
+	// With the arrival between the pauses, the second is the first to begin after it.
+	arrivedAt = at(11, 45)
+	if clipped = pauses.clipVisit(&arrivedAt, &departedAt, nil); clipped.DepartedAt == nil || !clipped.DepartedAt.Equal(at(12, 0)) {
+		t.Errorf("the visit ends at the start of the pause after its arrival: %+v", clipped)
+	}
+}
+
 // A departure cut to the start of a pause is not told to anybody, and a visit
 // measured entirely inside one makes no notice.
 func TestADepartureCutAtAPauseIsNotToldAndAVisitInsideItIsNotStored(t *testing.T) {
@@ -375,13 +403,69 @@ func TestACheckInIsRefusedWhileThePersonIsPaused(t *testing.T) {
 	world.call(t, world.ada, `mutation { SavePlace(placeName: "Corner Cafe", latitudeDegrees: 40, longitudeDegrees: -75) { id } }`)
 	places := world.call(t, world.ada, `query { ListPlaces { places { id } } }`)["ListPlaces"].(map[string]any)["places"].([]any)
 	placeId := places[0].(map[string]any)["id"].(string)
-	endedAt := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
-	world.call(t, world.ada, fmt.Sprintf(`mutation { PauseLocation(endedAt: %q) { id } }`, endedAt))
-	if message := world.refused(t, world.ada, fmt.Sprintf(`mutation { CheckIn(placeId: %q) { id } }`, placeId)); !strings.Contains(message, "paused until "+endedAt) {
-		t.Errorf("the refusal says when the pause ends: %s", message)
+	// The refusal gives the end in the zone the person last used, with its name.
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := tx.TouchUserLocation(world.ada.ID, "Asia/Tokyo", "", false, time.Now()); err != nil {
+			t.Fatalf("TouchUserLocation: %s", err)
+		}
+	})
+	endedAt := time.Now().Add(time.Hour).Truncate(time.Second)
+	world.call(t, world.ada, fmt.Sprintf(`mutation { PauseLocation(endedAt: %q) { id } }`, endedAt.UTC().Format(time.RFC3339)))
+	wanted := "paused until " + endedAt.In(time.FixedZone("JST", 9*60*60)).Format("2006-01-02 15:04 MST")
+	if message := world.refused(t, world.ada, fmt.Sprintf(`mutation { CheckIn(placeId: %q) { id } }`, placeId)); !strings.Contains(message, wanted) {
+		t.Errorf("the refusal says when the pause ends, in the person's zone, %q: %s", wanted, message)
 	}
 	world.call(t, world.ada, `mutation { ResumeLocation }`)
 	world.call(t, world.ada, fmt.Sprintf(`mutation { CheckIn(placeId: %q) { id } }`, placeId))
+}
+
+// A report waits for the person's lock behind whatever is changing their
+// location, and a pause that began in the meantime is in effect when it runs:
+// a visit in progress that the report keeps open ends where that pause began.
+// The pause is started 300 ms after the report is sent, while it waits; a
+// report that had not yet been sent by then would see the pause too, so the
+// test cannot fail for a slow start, only pass.
+func TestAReportThatWaitedForTheLockSeesThePauseThatBeganMeanwhile(t *testing.T) {
+	world := newLocationWorld(t)
+	type reportOutcome struct {
+		data     map[string]any
+		failures []string
+	}
+	outcome := make(chan reportOutcome, 1)
+	var pauseStartedAt time.Time
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := tx.LockLocation(world.ada.ID); err != nil {
+			t.Fatalf("LockLocation: %s", err)
+		}
+		go func() {
+			data, failures := world.ask(t, world.ada, fmt.Sprintf(`mutation { ReportLocation(points: [], visits: [%s]) {
+				newVisitCount pausedVisitCount pause { `+pauseFieldsForTest+` } } }`, visitInput("waiting", 40, -75, ago(10*time.Minute), "")))
+			outcome <- reportOutcome{data, failures}
+		}()
+		time.Sleep(300 * time.Millisecond)
+		pauseStartedAt = time.Now()
+		if _, _, err := tx.PauseLocation(world.ada.ID, nil, pauseStartedAt); err != nil {
+			t.Fatalf("PauseLocation: %s", err)
+		}
+		// The lock is let go when this transaction commits, on return.
+	})
+	var answered reportOutcome
+	select {
+	case answered = <-outcome:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the report did not finish")
+	}
+	report, _ := answered.data["ReportLocation"].(map[string]any)
+	if len(answered.failures) > 0 || report["pause"] == nil {
+		t.Fatalf("the report did not see the pause: %v %v", answered.data, answered.failures)
+	}
+	visits := world.visitsOf(t, world.ada)
+	if len(visits) != 1 || visits[0]["departedAt"] == nil {
+		t.Fatalf("the visit was left open across the pause: %v", visits)
+	}
+	if difference := pauseTimeOf(t, visits[0]["departedAt"]).Sub(pauseStartedAt); difference > time.Second || difference < -time.Second {
+		t.Errorf("the visit ended %v from where the pause began: %v", difference, visits[0])
+	}
 }
 
 // The pauses of a range are the person's own, and another person's at level
@@ -391,14 +475,14 @@ func TestPausesAreListedByTheReachRulesOfVisits(t *testing.T) {
 	world.pastPause(t, world.ada, 3*time.Hour, 2*time.Hour)
 	world.pastPause(t, world.ada, 10*time.Hour, 9*time.Hour)
 	listing := func(userId string) string {
-		return fmt.Sprintf(`query { ListLocationPauses(userId: %q, from: %q, to: %q) { `+pauseFieldsForTest+` } }`, userId, ago(24*time.Hour), ago(0))
+		return fmt.Sprintf(`query { ListLocationPauses(userId: %q, from: %q, until: %q) { `+pauseFieldsForTest+` } }`, userId, ago(24*time.Hour), ago(0))
 	}
 
-	own := world.call(t, world.ada, fmt.Sprintf(`query { ListLocationPauses(from: %q, to: %q) { `+pauseFieldsForTest+` } }`, ago(24*time.Hour), ago(0)))["ListLocationPauses"].([]any)
+	own := world.call(t, world.ada, fmt.Sprintf(`query { ListLocationPauses(from: %q, until: %q) { `+pauseFieldsForTest+` } }`, ago(24*time.Hour), ago(0)))["ListLocationPauses"].([]any)
 	if len(own) != 2 || pauseTimeOf(t, own[0].(map[string]any)["startedAt"]).Before(pauseTimeOf(t, own[1].(map[string]any)["startedAt"])) {
 		t.Errorf("their own, newest first: %v", own)
 	}
-	narrow := world.call(t, world.ada, fmt.Sprintf(`query { ListLocationPauses(from: %q, to: %q) { id } }`, ago(4*time.Hour), ago(0)))["ListLocationPauses"].([]any)
+	narrow := world.call(t, world.ada, fmt.Sprintf(`query { ListLocationPauses(from: %q, until: %q) { id } }`, ago(4*time.Hour), ago(0)))["ListLocationPauses"].([]any)
 	if len(narrow) != 1 {
 		t.Errorf("only the pause that overlaps the range: %v", narrow)
 	}
@@ -411,7 +495,7 @@ func TestPausesAreListedByTheReachRulesOfVisits(t *testing.T) {
 		t.Errorf("at history they are shown: %v", seen)
 	}
 	world.refused(t, world.cora, listing(world.ada.ID))
-	world.refused(t, world.ada, fmt.Sprintf(`query { ListLocationPauses(from: %q, to: %q) { id } }`, ago(0), ago(time.Hour)))
+	world.refused(t, world.ada, fmt.Sprintf(`query { ListLocationPauses(from: %q, until: %q) { id } }`, ago(0), ago(time.Hour)))
 }
 
 // Erasing history erases past pauses and leaves the one in effect, so it does
@@ -421,7 +505,7 @@ func TestErasingHistoryLeavesThePauseInEffect(t *testing.T) {
 	world.pastPause(t, world.ada, 3*time.Hour, 2*time.Hour)
 	world.call(t, world.ada, `mutation { PauseLocation { id } }`)
 	world.call(t, world.ada, `mutation { EraseLocationHistory { pointCount } }`)
-	pauses := world.call(t, world.ada, fmt.Sprintf(`query { ListLocationPauses(from: %q, to: %q) { endedAt } }`, ago(24*time.Hour), time.Now().Add(time.Hour).UTC().Format(time.RFC3339)))["ListLocationPauses"].([]any)
+	pauses := world.call(t, world.ada, fmt.Sprintf(`query { ListLocationPauses(from: %q, until: %q) { endedAt } }`, ago(24*time.Hour), time.Now().Add(time.Hour).UTC().Format(time.RFC3339)))["ListLocationPauses"].([]any)
 	if len(pauses) != 1 || pauses[0].(map[string]any)["endedAt"] != nil {
 		t.Errorf("the past pause is erased and the one in effect stays: %v", pauses)
 	}

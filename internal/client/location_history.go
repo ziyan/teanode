@@ -199,8 +199,8 @@ const (
   }
 }`
 
-	DocumentListLocationPauses = `query ($userId: String, $from: DateTime!, $to: DateTime!) {
-  ListLocationPauses(userId: $userId, from: $from, to: $to) { ` + locationPauseFields + ` }
+	DocumentListLocationPauses = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
+  ListLocationPauses(userId: $userId, from: $from, until: $until) { ` + locationPauseFields + ` }
 }`
 
 	DocumentPauseLocation = `mutation ($endedAt: DateTime) {
@@ -299,8 +299,8 @@ func ListLocationVisits(ctx context.Context, connection *Client, query LocationV
 
 // ListLocationPauses is the pauses that overlap the range, newest first, of the
 // caller or, with a userId, of somebody who shares their history with them.
-func ListLocationPauses(ctx context.Context, connection *Client, userId string, from, to time.Time) ([]*LocationPause, error) {
-	variables := map[string]any{"from": from.UTC().Format(time.RFC3339), "to": to.UTC().Format(time.RFC3339)}
+func ListLocationPauses(ctx context.Context, connection *Client, userId string, from, until time.Time) ([]*LocationPause, error) {
+	variables := map[string]any{"from": from.UTC().Format(time.RFC3339), "until": until.UTC().Format(time.RFC3339)}
 	if userId != "" {
 		variables["userId"] = userId
 	}

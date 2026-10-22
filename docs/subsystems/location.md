@@ -317,7 +317,7 @@ effect `latestPoint` and `openVisit` are null in `GetLocation`,
 query) and the person card, and the clients read "Location paused", with "until"
 and the time when it ends by itself. The person still sees their own position.
 At `history` a viewer also reads the pauses among the visits:
-`ListLocationPauses(userId, from, to)` answers the pauses that overlap a range,
+`ListLocationPauses(userId, from, until)` answers the pauses that overlap a range,
 newest first, by the reach rules of `ListLocationVisits`. Pausing, resuming and
 a change of its end send the location event, so that open maps read again; a
 report that stores nothing sends none. An arrival or departure is not notified
@@ -327,8 +327,9 @@ effect: erasing does not resume.
 
 **The agent.** The journal writes a pause in a day as "paused from 14:00 to
 15:00; where they were is not known", in the person's clock and among the visits,
-never as a stay: it is no place and no time away from home. A day with only a
-pause has no document. The tool reads of another person's location say
+never as a stay: it is no place and no time away from home. A day with only
+pauses still has a document, with those lines and no places, since where the
+person was is not known. The tool reads of another person's location say
 "<name> has paused sharing where they are (until 15:00)" and give no position,
 and the person's own say recording is paused. The `visits` action lists the
 pauses of its range, and `teanode location visits` prints them among the visits

@@ -1490,8 +1490,7 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	if err := validateReport(arguments, now); err != nil {
+	if err := validateReport(arguments, time.Now()); err != nil {
 		return nil, err
 	}
 	user := principal.User
@@ -1503,6 +1502,9 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 	if err := tx.LockLocation(user.ID); err != nil {
 		return nil, err
 	}
+	// Taken after the lock, so that a pause that began while this report
+	// waited for it is in effect at now and is seen.
+	now := time.Now()
 
 	// The install that reports must be one of the caller's own.
 	phoneId := strings.TrimSpace(arguments.AgentPhoneID)
@@ -2036,14 +2038,15 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 	}
 	tx := self.transaction(ctx)
 	userId := principal.User.ID
-	now := time.Now()
 
 	// One change of a person's location at a time, as in ReportLocation.
 	if err := tx.LockLocation(userId); err != nil {
 		return nil, err
 	}
+	// Taken after the lock, as in ReportLocation.
+	now := time.Now()
 	// A check-in is a visit measured now, which a pause does not store.
-	if err := requireNotPaused(tx, userId, now); err != nil {
+	if err := requireNotPaused(tx, principal.User, now); err != nil {
 		return nil, err
 	}
 

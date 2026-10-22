@@ -146,6 +146,9 @@ func printPersonCardLocation(card *client.PersonCard) error {
 	fields := [][2]string{}
 	if section.Location != nil {
 		fields = append(fields, [2]string{"shared", section.Location.ShareLevel})
+		if pause := section.Location.Pause; pause != nil {
+			fields = append(fields, [2]string{"recording", "Location paused " + pauseEndWords(pause.EndedAt, time.Now())})
+		}
 		if point := section.Location.LatestPoint; point != nil {
 			fields = append(fields, [2]string{"position", fmt.Sprintf("%.5f, %.5f (within %.0f m), %s ago",
 				point.LatitudeDegrees, point.LongitudeDegrees, point.AccuracyMeters, timeWords(time.Since(point.MeasuredAt)))})

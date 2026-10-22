@@ -257,11 +257,19 @@ func locationClock(moment, dayEnd time.Time) string {
 // locationDayText is the document for one day: the places they were, in
 // order, and, when they have a place labeled home, how long they were at
 // places other than home. dayStart is the first moment of the day in the
-// person's zone. It is empty when no visit touches the day.
+// person's zone. It is empty when no visit and no pause touches the day. A day
+// with pauses and no visits still has its pause lines: where the person was is
+// not known, which is not the same as nothing happening.
 func locationDayText(visits []*models.PlaceVisit, dayStart time.Time, presence locationPresence, hasHomePlace bool) string {
 	dayEnd := dayStart.AddDate(0, 0, 1)
 	spans := locationVisitSpans(visits, dayStart, dayEnd, presence)
-	if len(spans) == 0 {
+	var pauseEntries []locationEntry
+	for _, pause := range presence.pauses {
+		if entry, isInDay := locationPauseEntry(pause, dayStart, dayEnd); isInDay {
+			pauseEntries = append(pauseEntries, entry)
+		}
+	}
+	if len(spans) == 0 && len(pauseEntries) == 0 {
 		return ""
 	}
 	placeIds := map[string]bool{}
@@ -283,11 +291,7 @@ func locationDayText(visits []*models.PlaceVisit, dayStart time.Time, presence l
 		}
 		entries = append(entries, locationEntry{start: span.start, text: locationVisitLine(span, dayEnd)})
 	}
-	for _, pause := range presence.pauses {
-		if entry, isInDay := locationPauseEntry(pause, dayStart, dayEnd); isInDay {
-			entries = append(entries, entry)
-		}
-	}
+	entries = append(entries, pauseEntries...)
 	sort.SliceStable(entries, func(left, right int) bool { return entries[left].start.Before(entries[right].start) })
 	lines := make([]string, 0, len(entries)+1)
 	for _, entry := range entries {
@@ -298,7 +302,7 @@ func locationDayText(visits []*models.PlaceVisit, dayStart time.Time, presence l
 	}
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "Places: %d", len(placeIds))
-	if hasHomePlace {
+	if hasHomePlace && len(spans) > 0 {
 		fmt.Fprintf(&builder, ", time away from home: %s", locationDurationText(awayFromHome))
 	}
 	// The lines carry names that strangers wrote, so they are fenced as other
