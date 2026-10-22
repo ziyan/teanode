@@ -475,20 +475,26 @@ func (self *graph) DeleteCircle(ctx context.Context, arguments DeleteCircleArgum
 	return true, nil
 }
 
-// requireTapForHealthSharedCircle refuses a call that is not a person's own
-// tap when Health is shared with the circle: whoever joins a circle reads what
-// it was shared, so bringing somebody in is sharing that Health with them,
-// which SetHealthShare leaves to a tap as well.
-func (self *graph) requireTapForHealthSharedCircle(ctx context.Context, circleId string) error {
+// sensitiveSharedCircleOnATap is what a call is told when bringing somebody
+// into a circle needs a person's own tap. It begins with
+// api.TapRequiredPhrase, which the command line recognizes.
+const sensitiveSharedCircleOnATap = api.TapRequiredPhrase + ": Health or a finance account is shared with this circle, so bringing somebody in gives them that, and is done on the dashboard or in the iPhone app, not from a command line or an API token"
+
+// requireTapForSensitiveSharedCircle refuses a call that is not a person's own
+// tap when Health or a finance account is shared with the circle: whoever
+// joins a circle reads what it was shared, so bringing somebody in is sharing
+// that with them, which SetHealthShare and ShareFinanceAccount leave to a tap
+// as well.
+func (self *graph) requireTapForSensitiveSharedCircle(ctx context.Context, circleId string) error {
 	if api.ContextPrincipal(ctx).IsPersonsTap() {
 		return nil
 	}
-	isShared, err := self.transaction(ctx).CircleHasHealthShare(circleId)
+	isShared, err := self.transaction(ctx).CircleHasSensitiveShare(circleId)
 	if err != nil {
 		return err
 	}
 	if isShared {
-		return fmt.Errorf("%w: %s", api.ErrPermissionDenied, healthOnATap)
+		return fmt.Errorf("%w: %s", api.ErrPermissionDenied, sensitiveSharedCircleOnATap)
 	}
 	return nil
 }
@@ -510,7 +516,7 @@ func (self *graph) InviteToCircle(ctx context.Context, arguments InviteToCircleA
 	}
 	// Before the username is looked at, so that the refusal says nothing
 	// about whether it is an account.
-	if err := self.requireTapForHealthSharedCircle(ctx, circle.ID); err != nil {
+	if err := self.requireTapForSensitiveSharedCircle(ctx, circle.ID); err != nil {
 		return false, err
 	}
 	memberRole := models.MemberRole(strings.TrimSpace(arguments.MemberRole))
@@ -751,7 +757,7 @@ func (self *graph) AddCircleMember(ctx context.Context, arguments AddCircleMembe
 	if !principal.Permissions.Has(models.PermissionUserManage) {
 		return nil, fmt.Errorf("%w: putting an account in a circle needs the %s permission", api.ErrPermissionDenied, models.PermissionUserManage)
 	}
-	if err := self.requireTapForHealthSharedCircle(ctx, arguments.CircleID); err != nil {
+	if err := self.requireTapForSensitiveSharedCircle(ctx, arguments.CircleID); err != nil {
 		return nil, err
 	}
 	memberRole := models.MemberRole(strings.TrimSpace(arguments.MemberRole))
