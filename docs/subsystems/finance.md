@@ -1462,9 +1462,14 @@ to show their account to people, did not agree to show it to a model. The
 person's card lists the accounts a person shares with the caller, each as its
 level shows it (`ReadPersonCard`'s `finance` part, read with the same access
 check), and shows the agent none of it. A person's agent that runs
-commands on their computer acts with their own login and can run
-`teanode finance accounts --person`, as with Health; the tap is what it cannot
-supply.
+commands on their computer acts with their own login, but the computer program
+marks every such command (`TEANODE_AGENT_COMMAND`), the command line sends the
+mark as the `X-Teanode-Agent-Command` header, and the server then treats the
+request as the agent's (`graph.auditPrincipal`), so `teanode finance ...
+--person` is refused to it as the tool is, and the tap is something it cannot
+supply. That is a guard against mistakes and steered runs, not a boundary
+against code the person runs: anything that leaves the header off is the
+person.
 
 **Operations.** `ListFinanceAccountShares` (the person's own),
 `ShareFinanceAccount`, `UnshareFinanceAccount`, `ListSharedFinanceAccounts`

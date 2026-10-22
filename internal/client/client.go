@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/passwords"
 
 	"github.com/op/go-logging"
 )
@@ -31,6 +32,15 @@ type Client struct {
 	token    string
 	client   *http.Client
 	readOnly bool
+}
+
+// markAgentCommand tells the server that the agent ran this command for the
+// person (see api.AgentCommandHeader), so that it answers as it does the
+// agent's own tools.
+func markAgentCommand(request *http.Request) {
+	if passwords.IsAgentCommand() {
+		request.Header.Set(api.AgentCommandHeader, "1")
+	}
 }
 
 // SetTimeout changes how long a single request may take, for the few that
@@ -194,6 +204,7 @@ func (self *Client) Execute(ctx context.Context, query string, variables map[str
 	if self.token != "" {
 		request.Header.Set("Authorization", "Bearer "+self.token)
 	}
+	markAgentCommand(request)
 	// Where this shell is and what it reads in, the way the dashboard sends
 	// the browser's, so a person who lives in the terminal is placed as well
 	// as one who lives in the browser.
@@ -255,6 +266,7 @@ func (self *Client) executeAllowed(ctx context.Context, query string, variables 
 	if self.token != "" {
 		request.Header.Set("Authorization", "Bearer "+self.token)
 	}
+	markAgentCommand(request)
 	// Where this shell is and what it reads in, the way the dashboard sends
 	// the browser's, so a person who lives in the terminal is placed as well
 	// as one who lives in the browser.
@@ -328,6 +340,7 @@ func (self *Client) Upload(ctx context.Context, path, field, filename string, co
 	if self.token != "" {
 		request.Header.Set("Authorization", "Bearer "+self.token)
 	}
+	markAgentCommand(request)
 	response, err := self.client.Do(request)
 	if err != nil {
 		return nil, &ConnectionError{URL: self.url, Cause: err}
@@ -356,6 +369,7 @@ func (self *Client) PostJSON(ctx context.Context, path string, body []byte) (*ht
 	if self.token != "" {
 		request.Header.Set("Authorization", "Bearer "+self.token)
 	}
+	markAgentCommand(request)
 	response, err := self.client.Do(request)
 	if err != nil {
 		return nil, &ConnectionError{URL: self.url, Cause: err}
@@ -379,6 +393,7 @@ func (self *Client) Download(ctx context.Context, path string) (*http.Response, 
 	if self.token != "" {
 		request.Header.Set("Authorization", "Bearer "+self.token)
 	}
+	markAgentCommand(request)
 	response, err := self.client.Do(request)
 	if err != nil {
 		return nil, &ConnectionError{URL: self.url, Cause: err}

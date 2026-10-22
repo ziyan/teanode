@@ -62,6 +62,19 @@ func describeRecordingShare(share *models.RecordingShare) *RecordingShareView {
 	return view
 }
 
+// requireNotAgentCommand refuses a command the agent ran on the person's
+// computer, which reaches the API with the person's own token and says so in
+// api.AgentCommandHeader. The agent's recording tool reads what others shared
+// only in a run the person started, and checks that itself before it asks;
+// a shell command has no such check, so the reads are refused to it here. The
+// tool's own operations carry no request, so they are not affected.
+func requireNotAgentCommand(ctx context.Context) error {
+	if request := api.ContextRequest(ctx); request != nil && request.Header.Get(api.AgentCommandHeader) != "" {
+		return api.ErrNotFound
+	}
+	return nil
+}
+
 type ListRecordingSharesArguments struct {
 	// One of the caller's own recordings
 	RecordingID string `json:"recordingId"`
@@ -158,6 +171,9 @@ type ListSharedRecordingsArguments struct {
 }
 
 func (self *graph) ListSharedRecordings(ctx context.Context, arguments ListSharedRecordingsArguments) ([]*models.SharedRecording, error) {
+	if err := requireNotAgentCommand(ctx); err != nil {
+		return nil, err
+	}
 	reader, err := self.recordingAccount(ctx)
 	if err != nil {
 		return nil, err
@@ -182,6 +198,9 @@ type ReadSharedRecordingArguments struct {
 }
 
 func (self *graph) ReadSharedRecording(ctx context.Context, arguments ReadSharedRecordingArguments) (*models.SharedRecording, error) {
+	if err := requireNotAgentCommand(ctx); err != nil {
+		return nil, err
+	}
 	reader, err := self.recordingAccount(ctx)
 	if err != nil {
 		return nil, err

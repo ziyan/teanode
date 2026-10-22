@@ -97,6 +97,16 @@ refused (`docs/subsystems/memory.md`, shared pages). Nothing from a shared
 recording is kept in memory, and the knowledge sources and dreams read only the
 person's own recordings.
 
+A command the agent runs through the computer program is marked
+(`TEANODE_AGENT_COMMAND`, sent by the command line as the
+`X-Teanode-Agent-Command` header), so `teanode recording shared` and
+`read-shared` run by the agent are refused by `ListSharedRecordings` and
+`ReadSharedRecording` (`requireNotAgentCommand`) whatever the run, since a shell
+command has none of the tool's checks on who started it. The tool's own calls
+carry no request and are not affected. That is a guard against mistakes and
+steered runs, not a boundary against code the person runs: anything that leaves
+the header off is the person.
+
 ## Things that will catch you
 
 - A shared read and an owner's read are different operations. The owner's go

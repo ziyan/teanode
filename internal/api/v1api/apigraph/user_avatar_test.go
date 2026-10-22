@@ -113,12 +113,21 @@ func (self *avatarWorld) ask(t *testing.T, user *models.User, query string) (map
 // authentication middleware reports it.
 func (self *avatarWorld) askWith(t *testing.T, user *models.User, credentialKind models.CredentialKind, query string) (map[string]any, []string) {
 	t.Helper()
+	return self.askWithHeaders(t, user, credentialKind, nil, query)
+}
+
+// askWithHeaders is askWith with more headers on the request.
+func (self *avatarWorld) askWithHeaders(t *testing.T, user *models.User, credentialKind models.CredentialKind, headers map[string]string, query string) (map[string]any, []string) {
+	t.Helper()
 	body, _ := json.Marshal(graphRequest{Query: query})
 	request := httptest.NewRequest(http.MethodPost, api.PathGraphQL, strings.NewReader(string(body)))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(api.AuthenticatedUsernameHeader, user.Username)
 	if credentialKind != "" {
 		request.Header.Set(api.CredentialKindHeader, string(credentialKind))
+	}
+	for name, value := range headers {
+		request.Header.Set(name, value)
 	}
 	response := httptest.NewRecorder()
 	self.graph.graphView(response, request)

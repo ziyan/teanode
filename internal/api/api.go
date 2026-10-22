@@ -53,6 +53,15 @@ var (
 // recognizes this phrase to explain the refusal in its own words.
 const TapRequiredPhrase = "approve it on the dashboard or in the iPhone app"
 
+// AgentCommandHeader is the request header the command line sends, with the
+// value "1", when the computer program marked the command as one the agent ran
+// for the person (the TEANODE_AGENT_COMMAND environment variable). The server
+// then treats the request as the agent's, so what the agent may not do through
+// its tools it cannot do by running the command line with the person's token
+// either. It is a guard against mistakes and steered runs: anyone can leave the
+// header off, and the person's own token is theirs to use.
+const AgentCommandHeader = "X-Teanode-Agent-Command"
+
 // Settings are the server-wide values the API needs.
 type Settings struct {
 	// RunningServices is the immutable set constructed by this process.

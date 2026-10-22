@@ -48,6 +48,12 @@ func (self *healthWorld) callWith(t *testing.T, user *models.User, query string,
 // credential given.
 func (self *healthWorld) callWithCredential(t *testing.T, user *models.User, credentialKind models.CredentialKind, query string, variables map[string]any) (map[string]any, []string) {
 	t.Helper()
+	return self.callWithHeaders(t, user, credentialKind, nil, query, variables)
+}
+
+// callWithHeaders is callWithCredential with more headers on the request.
+func (self *healthWorld) callWithHeaders(t *testing.T, user *models.User, credentialKind models.CredentialKind, headers map[string]string, query string, variables map[string]any) (map[string]any, []string) {
+	t.Helper()
 	body, err := json.Marshal(graphRequest{Query: query, Variables: variables})
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +62,9 @@ func (self *healthWorld) callWithCredential(t *testing.T, user *models.User, cre
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(api.AuthenticatedUsernameHeader, user.Username)
 	request.Header.Set(api.CredentialKindHeader, string(credentialKind))
+	for name, value := range headers {
+		request.Header.Set(name, value)
+	}
 	response := httptest.NewRecorder()
 	self.graph.graphView(response, request)
 	var outcome struct {
