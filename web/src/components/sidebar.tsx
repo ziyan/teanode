@@ -268,8 +268,9 @@ export function Sidebar({
   // Only the rows the caller may open. What is hidden here is refused by the
   // server anyway; hiding it is the courtesy of not offering a door that
   // does not open. A group with no rows left is not drawn at all.
-  // Finance is a row only for somebody who has finance, asked only while a
-  // rail that can hold it is the one shown.
+  // Finance is a row only for somebody who has finance, or whom somebody
+  // shares finance with, asked only while a rail that can hold it is the one
+  // shown.
   const finance = useAgentFinancePresence(inAccount || inMailbox)
   // Coding is a row only where a computer reports herdr, asked under the
   // same condition.
@@ -286,7 +287,7 @@ export function Sidebar({
   const permitted = (item: Item) =>
     isPathAvailable(item.to, session.services) &&
     (item.to !== '/recordings' || hasPermission(session.permissions, 'agent:use')) &&
-    (item.shownWhen !== 'finance' || finance.isShown === true) &&
+    (item.shownWhen !== 'finance' || finance.isShown === true || finance.isShared) &&
     (item.shownWhen !== 'coding' || (hasCoding === true && hasPermission(session.permissions, 'agent:use'))) &&
     (item.shownWhen !== 'mailbox' || hasMailbox) &&
     (!item.anyOf ||
@@ -654,7 +655,7 @@ export function Sidebar({
                   <span className="sidebar-label">{t('nav.photos')}</span>
                 </NavLink>
               )}
-              {finance.isShown && (
+              {(finance.isShown || finance.isShared) && (
                 <NavLink to="/finance">
                   <WalletIcon />
                   <span className="sidebar-label">{t('finance.title')}</span>

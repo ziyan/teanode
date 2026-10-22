@@ -1485,7 +1485,11 @@ balance|spending|transactions`, `shares`, `unshare <share id>`, and `--person
 need an account at the level, named with `--finance-account` when several
 are). The dashboard's Sharing panel is on the agent page's Finance tab, and
 the Finance page offers **Showing** when somebody shares with the person, which
-replaces the tabs with that person's accounts and what their levels add. The
+replaces the tabs with that person's accounts and what their levels add. A
+person with no finance of their own, or with the agent off, still has the page
+and a Finance row in the rail when somebody shares with them, and sees the first
+sharer's accounts there. A failed read of the shares is reported and does not
+take a `?person=` out of the address; ending a share asks first. The
 iPhone's Finance has the same: **Sharing** in the title menu and a **Showing**
 menu in the bar.
 

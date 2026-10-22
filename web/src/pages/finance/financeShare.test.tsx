@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { graphql } from '../../api'
@@ -17,8 +17,9 @@ vi.mock('../../api', async (importOriginal) => ({
 }))
 // What the Finance page draws for the person's own finance is not what is
 // tested here.
+const presence = vi.hoisted(() => ({ isShown: true }))
 vi.mock('./financePresence', () => ({
-  useAgentFinancePresence: () => ({ isShown: true, hasSources: true }),
+  useAgentFinancePresence: () => ({ isShown: presence.isShown, hasSources: presence.isShown, isShared: false }),
 }))
 vi.mock('./financeSpending', () => ({ FinanceSpendingSection: () => <p>Own spending</p> }))
 vi.mock('./financeTransactions', () => ({ FinanceTransactionsSection: () => null }))
@@ -36,7 +37,13 @@ vi.mock('./financeCommon', async (importOriginal) => ({
 afterEach(() => {
   cleanup()
   vi.resetAllMocks()
+  presence.isShown = true
 })
+
+// The address, for a test that asks whether the page kept it.
+function Address() {
+  return <p data-testid="address">{useLocation().search}</p>
+}
 
 const sharedAccount = (overrides: Partial<SharedFinanceAccount>): SharedFinanceAccount => ({
   financeAccountId: 'account-one',
@@ -204,6 +211,49 @@ it('drops a link to somebody who does not share, and shows the person their own'
   expect(await screen.findByText('That person does not share a finance account with you.')).toBeTruthy()
 })
 
+// Somebody with no finance of their own still has the page when others share
+// with them: the Showing choice, with no "you" in it, and the first person's
+// accounts.
+it('shows the accounts others share to a person who has no finance of their own', async () => {
+  presence.isShown = false
+  answerWith([sharedAccount({})])
+  renderWithin(<FinancePage />, '/finance/spending')
+  expect(await screen.findByText('Example Checking ··0001')).toBeTruthy()
+  expect(screen.queryByRole('link', { name: 'Open your agent page' })).toBeNull()
+  expect(screen.queryByText('Own spending')).toBeNull()
+  fireEvent.click(screen.getByRole('combobox', { name: 'Showing' }))
+  expect(screen.queryByRole('option', { name: 'You' })).toBeNull()
+  expect(screen.getByRole('option', { name: 'Person B' })).toBeTruthy()
+})
+
+it('says there is nothing to show when the person has no finance and nobody shares', async () => {
+  presence.isShown = false
+  answerWith([])
+  renderWithin(<FinancePage />, '/finance/spending')
+  expect(await screen.findByRole('link', { name: 'Open your agent page' })).toBeTruthy()
+  expect(screen.queryByRole('combobox', { name: 'Showing' })).toBeNull()
+})
+
+// A read of the shares that failed does not say the person stopped sharing:
+// the address is kept, and the failure is reported.
+it('keeps the address and reports the failure when the shares cannot be read', async () => {
+  vi.mocked(graphql).mockImplementation(async (document) => {
+    if (document.includes('ListSharedFinanceAccounts')) throw new Error('The server is unreachable.')
+    return {} as never
+  })
+  renderWithin(
+    <>
+      <FinancePage />
+      <Address />
+    </>,
+    '/finance/spending?person=person-b',
+  )
+  expect(await screen.findByText('Own spending')).toBeTruthy()
+  expect(await screen.findByText('The server is unreachable.')).toBeTruthy()
+  expect(screen.queryByText('That person does not share a finance account with you.')).toBeNull()
+  expect(screen.getByTestId('address').textContent).toBe('?person=person-b')
+})
+
 // The Sharing panel lists the shares, ends one, and shares an account with
 // someone at a level.
 it('lists shares, ends one and shares an account at a level', async () => {
@@ -249,7 +299,12 @@ it('lists shares, ends one and shares an account at a level', async () => {
   expect(await screen.findByText('Shared with Person B')).toBeTruthy()
   expect(screen.getByText('Spending')).toBeTruthy()
 
+  // Ending a share asks first, and nothing is sent until it is confirmed.
   fireEvent.click(screen.getByRole('button', { name: 'Stop sharing Example Checking ··0001 with Person B' }))
+  const confirmation = await screen.findByRole('alertdialog')
+  expect(within(confirmation).getByText('Stop sharing with Person B?')).toBeTruthy()
+  expect(calls('UnshareFinanceAccount')).toHaveLength(0)
+  fireEvent.click(within(confirmation).getByRole('button', { name: 'Stop sharing' }))
   await waitFor(() => expect(calls('UnshareFinanceAccount')).toHaveLength(1))
   expect(calls('UnshareFinanceAccount')[0][1]).toEqual({ shareId: 'share-one' })
 

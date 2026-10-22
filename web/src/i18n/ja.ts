@@ -4126,7 +4126,7 @@ export const ja: Catalog = {
   'finance.tabSavingsTargets': '貯蓄目標',
   'finance.title': '金融',
   'finance.notShown':
-    'エージェントがオンで、このサーバーが金融機関の連携手段を提供しているとき、またはすでに連携しているときに、ここに金融が表示されます。',
+    'エージェントがオンで、このサーバーが金融機関の連携手段を提供しているとき、すでに連携しているとき、または誰かが口座を共有してくれたときに、ここに金融が表示されます。',
   'finance.openAgentPage': 'エージェントのページを開く',
   'finance.nothingLinkedPointer': 'まだ金融機関を連携していないため、ここに表示するものはありません。',
   'finance.openFinanceSetup': 'エージェントのページの「金融」タブで連携する',
@@ -4143,7 +4143,6 @@ export const ja: Catalog = {
   'finance.shareWithName': '{name}と共有中',
   'finance.shareChange': '{name}に見える{account}の内容を変更',
   'finance.shareStop': '{account}を{name}と共有しない',
-  'finance.shareStopped': '{account}は{name}と共有されなくなりました',
   'finance.shareSaved': '{account}を{name}と共有しました',
   'finance.shareNeedsCircles':
     '共有にはサークル機能が必要ですが、このアカウントには付与されていないため、ここでは共有を終了することしかできません。',
@@ -5682,7 +5681,7 @@ export const ja: Catalog = {
   'recordings.shareAdd': '共有する',
   'recordings.shareSaid': '{name}と共有しました',
   'recordings.shareStop': '{name}との共有をやめる',
-  'recordings.shareStopped': '{name}との共有をやめました',
+  'recordings.shareStopWhat': 'この録音',
   'recordings.shareFailed': 'この録音の共有先を変更できませんでした',
   'recordings.shareNoPeople':
     'まだ誰ともサークルを共有していません。サークルを作成するか参加すると、録音を共有できます。',

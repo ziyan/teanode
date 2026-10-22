@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom'
 
 import { failureText, graphql } from '../../api'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
-import { FormDialog } from '../../components/dialog'
-import { CloseIcon, PencilIcon } from '../../components/icons'
+import { ConfirmDialog, FormDialog } from '../../components/dialog'
+import { PencilIcon, TrashIcon } from '../../components/icons'
 import { personLabel, personName } from '../../components/personLabel'
 import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
@@ -83,6 +83,9 @@ export function FinanceSharingSection() {
   // level of a share that is there.
   const [dialog, setDialog] = useState<{ share: FinanceShare | null } | null>(null)
   const [isBusy, setIsBusy] = useState(false)
+  // The share being ended, asked about first, and what went wrong ending it.
+  const [stopping, setStopping] = useState<FinanceShare | null>(null)
+  const [stopProblem, setStopProblem] = useState<string | null>(null)
   const everyoneIn = (name: string) => t('finance.shareEveryoneIn', { name })
 
   const current = shares.data ?? []
@@ -91,12 +94,14 @@ export function FinanceSharingSection() {
   async function stop(share: FinanceShare) {
     const name = granteeName(share, everyoneIn)
     setIsBusy(true)
+    setStopProblem(null)
     try {
       await graphql(UNSHARE_FINANCE_ACCOUNT, { shareId: share.id })
-      toast.done(t('finance.shareStopped', { account: accountLabel(share), name }))
+      toast.done(t('sharing.stopped', { name }))
+      setStopping(null)
       await shares.reload()
     } catch (failure) {
-      toast.failure(failure, t('finance.failed'))
+      setStopProblem(failureText(failure, t('finance.failed')))
     } finally {
       setIsBusy(false)
     }
@@ -153,9 +158,12 @@ export function FinanceSharingSection() {
                     className="icon-action danger"
                     aria-label={t('finance.shareStop', { account, name })}
                     disabled={isBusy}
-                    onClick={() => void stop(share)}
+                    onClick={() => {
+                      setStopProblem(null)
+                      setStopping(share)
+                    }}
                   >
-                    <CloseIcon size={16} />
+                    <TrashIcon size={16} />
                   </button>
                 </Tooltip>
               </div>
@@ -176,6 +184,17 @@ export function FinanceSharingSection() {
             </Link>
           </div>
         </>
+      ) : null}
+      {stopping ? (
+        <ConfirmDialog
+          title={t('sharing.stopTitle', { name: granteeName(stopping, everyoneIn) })}
+          body={t('sharing.stopBody', { name: granteeName(stopping, everyoneIn), what: accountLabel(stopping) })}
+          confirmLabel={t('sharing.stop')}
+          busy={isBusy}
+          error={stopProblem}
+          onConfirm={() => void stop(stopping)}
+          onClose={() => setStopping(null)}
+        />
       ) : null}
       {dialog && choices.data ? (
         <FinanceShareDialog

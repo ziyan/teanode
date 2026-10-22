@@ -126,7 +126,11 @@ it('shares with a person at the level chosen, and stops a share', async () => {
   inRouter(<RecordingShareDialog recordingId="recording-1" onClose={() => {}} />)
   expect(await screen.findByText('Sam')).toBeTruthy()
 
+  // Ending a share asks first, and nothing is sent until it is confirmed.
   fireEvent.click(screen.getByRole('button', { name: 'Stop sharing with Sam' }))
+  const confirmation = await screen.findByRole('alertdialog')
+  expect(vi.mocked(graphql)).not.toHaveBeenCalledWith(expect.stringContaining('UnshareRecording'), expect.anything())
+  fireEvent.click(within(confirmation).getByRole('button', { name: 'Stop sharing' }))
   await waitFor(() =>
     expect(vi.mocked(graphql)).toHaveBeenCalledWith(expect.stringContaining('UnshareRecording'), {
       recordingShareId: 'share-1',
