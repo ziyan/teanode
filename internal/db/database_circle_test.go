@@ -498,14 +498,15 @@ func TestEveryKindOfShareIsEndedWhenACircleStopsMakingItPossible(t *testing.T) {
 	// The tables with a grantee column, and the function of
 	// endSharesOutsideCircles that ends their rows.
 	ended := map[string]string{
-		"agent_page_share":  "endPageSharesOutsideCircles",
-		"calendar_share":    "endCalendarSharesOutsideCircles",
-		"health_share":      "endHealthSharesOutsideCircles",
-		"location_share":    "endLocationSharesOutsideCircles",
-		"password_share":    "endPasswordSharesOutsideCircles",
-		"photo_album_share": "endPhotoAlbumSharesOutsideCircles",
-		"recording_share":   "endRecordingSharesOutsideCircles",
-		"skill_share":       "endSkillSharesOutsideCircles",
+		"agent_page_share":      "endPageSharesOutsideCircles",
+		"calendar_share":        "endCalendarSharesOutsideCircles",
+		"finance_account_share": "endFinanceSharesOutsideCircles",
+		"health_share":          "endHealthSharesOutsideCircles",
+		"location_share":        "endLocationSharesOutsideCircles",
+		"password_share":        "endPasswordSharesOutsideCircles",
+		"photo_album_share":     "endPhotoAlbumSharesOutsideCircles",
+		"recording_share":       "endRecordingSharesOutsideCircles",
+		"skill_share":           "endSkillSharesOutsideCircles",
 		// Not a share: the log of the calls made through a skill share, which
 		// keeps the grantee after the share is gone.
 		"skill_share_call": "endSkillSharesOutsideCircles",
