@@ -21,8 +21,25 @@ import (
 //
 // Stopping a share is the kind's own operation (UnshareCalendar,
 // UnshareLocation, SetHealthShare with no categories, UnshareAgentPage,
-// UnshareSkill, RemovePhotoAlbumShare). What is new here is the other side:
-// DeclineShare, which ends a share that was made to the caller by name.
+// UnshareSkill, RemovePhotoAlbumShare, UnshareRecording,
+// UnshareFinanceAccount), and none of them asks for the kind's permission
+// (requireShareOwner). What is new here is the other side: DeclineShare, which
+// ends a share that was made to the caller by name.
+
+// requireShareOwner is the caller, if they may end what they shared. It asks
+// for no permission of the kind, so that somebody whose role lost it can still
+// take back a share they made while they had it, which the Sharing page keeps
+// listing. Each operation that uses it deletes only rows the caller owns.
+func (self *graph) requireShareOwner(ctx context.Context) (*api.Principal, error) {
+	principal, err := self.requireSignedIn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if principal.User == nil {
+		return nil, api.ErrNotLoggedIn
+	}
+	return principal, nil
+}
 
 // SharingQuery reads what is shared.
 type SharingQuery interface {

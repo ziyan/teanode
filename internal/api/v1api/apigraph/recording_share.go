@@ -176,13 +176,13 @@ type UnshareRecordingArguments struct {
 }
 
 func (self *graph) UnshareRecording(ctx context.Context, arguments UnshareRecordingArguments) (bool, error) {
-	owner, err := self.recordingAccount(ctx)
+	principal, err := self.requireShareOwner(ctx)
 	if err != nil {
 		return false, err
 	}
 	// The share is the recording's owner's to take back; anyone else is told
 	// there is no such share.
-	if err := self.transaction(ctx).DeleteRecordingShare(owner.ID, strings.TrimSpace(arguments.RecordingShareID)); err != nil {
+	if err := self.transaction(ctx).DeleteRecordingShare(principal.User.ID, strings.TrimSpace(arguments.RecordingShareID)); err != nil {
 		return false, translateError(err)
 	}
 	return true, nil

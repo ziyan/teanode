@@ -186,7 +186,7 @@ func (self *graph) ShareLocation(ctx context.Context, arguments ShareLocationArg
 }
 
 func (self *graph) UnshareLocation(ctx context.Context, arguments UnshareLocationArguments) (bool, error) {
-	principal, err := self.requireLocationPerson(ctx)
+	principal, err := self.requireShareOwner(ctx)
 	if err != nil {
 		return false, err
 	}
