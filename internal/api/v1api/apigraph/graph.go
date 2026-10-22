@@ -143,7 +143,9 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 	operation, err := selectGraphOperation(prepared.AST, prepared.OperationName)
 	if err == nil && (operation.Operation == "query" || hasOnlyTransactionFreeMutations(operation)) {
 		prepared.Context = context.WithValue(ctx, queryExecutionKey{}, &queryExecution{Username: username, User: user, Impersonator: impersonator, CredentialKind: api.CredentialKindFromRequest(request)})
-		writeGraphResult(response, graphql.Execute(prepared))
+		result := graphql.Execute(prepared)
+		afterResponse.startWriteDeadline(response)
+		writeGraphResult(response, result)
 		return
 	}
 
@@ -169,6 +171,7 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 		http.Error(response, fmt.Sprintf("failed to execute request: %s", err), http.StatusInternalServerError)
 		return
 	}
+	afterResponse.startWriteDeadline(response)
 	writeGraphResult(response, result)
 }
 
