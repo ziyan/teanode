@@ -14,6 +14,7 @@ import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
 import { personPath } from '../lib/circlePeople'
+import { accountLabel } from './finance/financeCommon'
 import { hasPermission, useSession } from '../session'
 
 // Everything the signed-in person shares, and everything shared with them, in
@@ -22,7 +23,8 @@ import { hasPermission, useSession } from '../session'
 // name with the kind's own operation. docs/subsystems/circles.md ("Sharing, in
 // one place") says what is listed and what is left out.
 
-export type ShareKind = 'calendar' | 'location' | 'health' | 'memory_page' | 'photo_album' | 'skill' | 'passwords'
+export type ShareKind =
+  'calendar' | 'location' | 'health' | 'memory_page' | 'photo_album' | 'recording' | 'finance' | 'skill' | 'passwords'
 
 export type SharingMade = {
   shareKind: ShareKind
@@ -30,6 +32,8 @@ export type SharingMade = {
   shareId: string
   subjectId: string
   subjectName: string
+  // The last digits of a finance account's number; empty for every other kind.
+  subjectMask: string
   shareLevel: string
   shareScopes: string[]
   passwordItemCount: number
@@ -46,6 +50,8 @@ export type SharingReceived = {
   shareId: string
   subjectId: string
   subjectName: string
+  // The last digits of a finance account's number; empty for every other kind.
+  subjectMask: string
   shareLevel: string
   shareScopes: string[]
   passwordItemCount: number
@@ -60,9 +66,9 @@ export type SharingReceived = {
 }
 
 export const LIST_SHARING = `query { ListSharing {
-  sharesMade { shareKind shareId subjectId subjectName shareLevel shareScopes passwordItemCount
+  sharesMade { shareKind shareId subjectId subjectName subjectMask shareLevel shareScopes passwordItemCount
     granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName createdAt }
-  sharesReceived { shareKind shareId subjectId subjectName shareLevel shareScopes passwordItemCount
+  sharesReceived { shareKind shareId subjectId subjectName subjectMask shareLevel shareScopes passwordItemCount
     ownerUserId ownerUsername ownerName granteeCircleId granteeCircleName isDirect canDecline createdAt }
 } }`
 
@@ -76,6 +82,8 @@ const REMOVE_PHOTO_ALBUM_SHARE = `mutation ($photoAlbumShareId: String!) { Remov
 const SET_HEALTH_SHARE = `mutation ($granteeUserId: String, $granteeCircleId: String, $healthCategories: [String!]!) {
   SetHealthShare(granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, healthCategories: $healthCategories) { id }
 }`
+const UNSHARE_RECORDING = `mutation ($recordingShareId: String!) { UnshareRecording(recordingShareId: $recordingShareId) }`
+const UNSHARE_FINANCE_ACCOUNT = `mutation ($shareId: String!) { UnshareFinanceAccount(shareId: $shareId) }`
 const DECLINE_SHARE = `mutation ($shareKind: String!, $shareId: String!) { DeclineShare(shareKind: $shareKind, shareId: $shareId) }`
 
 const KIND_NAMES: Record<ShareKind, Key> = {
@@ -84,6 +92,8 @@ const KIND_NAMES: Record<ShareKind, Key> = {
   health: 'sharing.kind.health',
   memory_page: 'sharing.kind.memoryPage',
   photo_album: 'sharing.kind.photoAlbum',
+  recording: 'sharing.kind.recording',
+  finance: 'sharing.kind.finance',
   skill: 'sharing.kind.skill',
   passwords: 'sharing.kind.passwords',
 }
@@ -100,6 +110,11 @@ const LEVEL_NAMES: Record<string, Key> = {
   history: 'location.shareLevelName.history',
   view: 'photos.levelView',
   contribute: 'photos.levelContribute',
+  summary: 'recordings.shareLevelName.summary',
+  transcript: 'recordings.shareLevelName.transcript',
+  balance: 'finance.shareLevelName.balance',
+  spending: 'finance.shareLevelName.spending',
+  transactions: 'finance.shareLevelName.transactions',
 }
 
 const SCOPE_NAMES: Record<string, Key> = {
@@ -114,7 +129,11 @@ type Tab = 'by-you' | 'with-you'
 
 // Where a kind is managed: the page that shares it and can change it. A memory
 // page shared with the person opens as theirs to read, with its owner named.
-function managerAddress(shareKind: ShareKind, subjectId: string, ownerUsername?: string): string {
+function managerAddress(
+  shareKind: ShareKind,
+  subjectId: string,
+  received?: { ownerUserId: string; ownerUsername: string },
+): string {
   switch (shareKind) {
     case 'calendar':
       return '/calendar'
@@ -124,10 +143,21 @@ function managerAddress(shareKind: ShareKind, subjectId: string, ownerUsername?:
       return '/health'
     case 'memory_page': {
       const path = subjectId.split('/').map(encodeURIComponent).join('/')
-      return ownerUsername ? `/knowledge/${path}?owner=${encodeURIComponent(ownerUsername)}` : `/knowledge/${path}`
+      return received ? `/knowledge/${path}?owner=${encodeURIComponent(received.ownerUsername)}` : `/knowledge/${path}`
     }
     case 'photo_album':
       return `/photos/albums/${encodeURIComponent(subjectId)}`
+    // A recording of the person's own opens in their library, one shared with
+    // them in the page for what it shares.
+    case 'recording':
+      return received
+        ? `/recordings/shared/${encodeURIComponent(subjectId)}`
+        : `/recordings/${encodeURIComponent(subjectId)}`
+    // An account is shared from the Sharing panel of the agent page's Finance
+    // tab; what somebody shares with the person is on the Finance page, which
+    // shows that person's accounts.
+    case 'finance':
+      return received ? `/finance?person=${encodeURIComponent(received.ownerUserId)}` : '/settings/agent/finance'
     case 'skill':
       return '/settings/agent/connections'
     case 'passwords':
@@ -197,7 +227,12 @@ function useShareWords() {
   }
   // Location and Health are shared whole and have no name of their own, so
   // they are called by their kind.
-  function subject(share: { shareKind: ShareKind; subjectName: string; passwordItemCount: number }): string {
+  function subject(share: {
+    shareKind: ShareKind
+    subjectName: string
+    subjectMask: string
+    passwordItemCount: number
+  }): string {
     if (share.shareKind === 'passwords') {
       return plural(
         share.passwordItemCount,
@@ -205,12 +240,20 @@ function useShareWords() {
         { count: share.passwordItemCount },
       )
     }
+    if (share.shareKind === 'finance' && share.subjectName) {
+      return accountLabel({ accountName: share.subjectName, accountMask: share.subjectMask })
+    }
     return share.subjectName || kindName(share.shareKind)
   }
-  function what(share: { shareKind: ShareKind; subjectName: string; passwordItemCount: number }): string {
+  function what(share: {
+    shareKind: ShareKind
+    subjectName: string
+    subjectMask: string
+    passwordItemCount: number
+  }): string {
     return share.shareKind === 'passwords' || !share.subjectName
       ? subject(share)
-      : `${kindName(share.shareKind)}: ${share.subjectName}`
+      : `${kindName(share.shareKind)}: ${subject(share)}`
   }
   // The level and what else it gives, as the kind's own page words them.
   function level(share: { shareKind: ShareKind; shareLevel: string; shareScopes: string[] }): string {
@@ -291,6 +334,12 @@ function SharedByYou({ shares, reload }: { shares: SharingMade[]; reload: () => 
         break
       case 'photo_album':
         work = graphql(REMOVE_PHOTO_ALBUM_SHARE, { photoAlbumShareId: share.shareId })
+        break
+      case 'recording':
+        work = graphql(UNSHARE_RECORDING, { recordingShareId: share.shareId })
+        break
+      case 'finance':
+        work = graphql(UNSHARE_FINANCE_ACCOUNT, { shareId: share.shareId })
         break
       default:
         return
@@ -428,7 +477,7 @@ function SharedWithYou({ shares, reload }: { shares: SharingReceived[]; reload: 
       filter: 'text',
       value: (share) => words.what(share),
       render: (share) => (
-        <Link to={managerAddress(share.shareKind, share.subjectId, share.ownerUsername)}>{words.subject(share)}</Link>
+        <Link to={managerAddress(share.shareKind, share.subjectId, share)}>{words.subject(share)}</Link>
       ),
     },
     {
