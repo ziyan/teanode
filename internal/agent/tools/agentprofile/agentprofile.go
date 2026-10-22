@@ -509,6 +509,12 @@ func set(ctx context.Context, current tools.Run, agent *models.Agent, asked argu
 		}
 	}
 	if line := strings.TrimSpace(asked.AddInstruction); line != "" {
+		// Every later turn reads the instructions as the person's own
+		// words, so a run nobody is watching, which may have read a
+		// stranger's mail or page, does not write them.
+		if !current.CanAsk() {
+			return nil, fmt.Errorf("only a conversation with the person adds to your standing instructions; say what you would have added, and they can add it when they are there")
+		}
 		if runes := []rune(line); len(runes) > instructionMostRuneCount {
 			line = string(runes[:instructionMostRuneCount])
 		}

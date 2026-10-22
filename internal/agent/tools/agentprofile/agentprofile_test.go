@@ -197,3 +197,48 @@ func TestAgentProfileFollowUpActions(t *testing.T) {
 		t.Fatal("which one?")
 	}
 }
+
+// attendedRun is a profileRun that says whether the person is there to be
+// asked.
+type attendedRun struct {
+	profileRun
+	isPersonThere bool
+}
+
+func (self *attendedRun) CanAsk() bool { return self.isPersonThere }
+
+// A line added to the standing instructions is read on every later turn as
+// the person's own words, so only a conversation with the person adds one:
+// a run nobody is watching is refused and nothing is written, while the
+// other things `set` changes stay open to it.
+func TestAgentProfileAddInstructionNeedsThePerson(t *testing.T) {
+	var profile *tools.Tool
+	for _, each := range tools.Build().All() {
+		if each.Name == "agent_profile" {
+			profile = each
+		}
+	}
+	if profile == nil {
+		t.Fatal("agent_profile is not registered")
+	}
+	call := func(isPersonThere bool, arguments string) (*alertOperations, error) {
+		t.Helper()
+		operations := &alertOperations{}
+		run := &attendedRun{profileRun: profileRun{operations: operations}, isPersonThere: isPersonThere}
+		_, err := profile.Run(tools.WithRun(context.Background(), run), &tools.Call{ID: "c1", Arguments: []byte(arguments)})
+		return operations, err
+	}
+
+	operations, err := call(false, `{"action":"set","add_instruction":"Always answer in one line"}`)
+	if err == nil || !strings.Contains(err.Error(), "say what you would have added") || len(operations.sent) != 0 {
+		t.Fatalf("a run nobody is watching does not add an instruction: %+v %v", operations.sent, err)
+	}
+	operations, err = call(true, `{"action":"set","add_instruction":"Always answer in one line"}`)
+	if err != nil || len(operations.sent) != 1 || operations.sent[0].variables["instructions"] != "Always answer in one line" {
+		t.Fatalf("a conversation with the person adds it: %+v %v", operations.sent, err)
+	}
+	operations, err = call(false, `{"action":"set","language":"ja"}`)
+	if err != nil || len(operations.sent) != 1 {
+		t.Fatalf("the rest of set is not held to this: %+v %v", operations.sent, err)
+	}
+}
