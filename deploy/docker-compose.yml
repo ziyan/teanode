@@ -307,7 +307,14 @@ services:
     # The image runs Chrome on 9223 and relays 9222 to it; naming a debugging
     # port here moves Chrome onto the relay's and leaves the relay talking to
     # nothing.
-    command: ["--disable-dev-shm-usage", "--hide-scrollbars"]
+    #
+    # WebRTC sends UDP straight out of the container, past the proxy the
+    # browser is made to use, so a page could reach an address the guard
+    # refuses. This keeps it to the proxy.
+    command:
+      - "--disable-dev-shm-usage"
+      - "--hide-scrollbars"
+      - "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"
     shm_size: 512m
 
   teanode:
