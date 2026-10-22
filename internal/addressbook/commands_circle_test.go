@@ -14,6 +14,7 @@ import (
 type circleBookFixture struct {
 	database                 db.Database
 	admin, member, outsider  *access.Principal
+	withoutCircleUse         *access.Principal
 	circleBook, adminOwnBook *models.AddressBook
 }
 
@@ -29,15 +30,22 @@ func newCircleBookFixture(test *testing.T) *circleBookFixture {
 	adminId := dbtest.CreateUser(test, database, "book-admin")
 	memberId := dbtest.CreateUser(test, database, "book-member")
 	outsiderId := dbtest.CreateUser(test, database, "book-outsider")
+	withoutCircleUseId := dbtest.CreateUser(test, database, "book-without-circle-use")
 	fixture.admin, fixture.member, fixture.outsider = circlePrincipal(adminId), circlePrincipal(memberId), circlePrincipal(outsiderId)
+	fixture.withoutCircleUse = circlePrincipal(withoutCircleUseId)
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		circle, err := transaction.CreateCircle(&models.Circle{Name: "Family", CircleKind: models.CircleKindFamily}, adminId)
 		if err != nil {
 			test.Fatal(err)
 		}
-		if _, err := transaction.AddCircleMember(circle.ID, memberId, models.MemberRoleMember, adminId); err != nil {
-			test.Fatal(err)
+		for _, each := range []string{memberId, withoutCircleUseId} {
+			if _, err := transaction.AddCircleMember(circle.ID, each, models.MemberRoleMember, adminId); err != nil {
+				test.Fatal(err)
+			}
 		}
+		// A circle's book is reached with circle:use as well as contacts:use.
+		dbtest.GrantPermission(test, transaction, adminId, models.PermissionCircleUse)
+		dbtest.GrantPermission(test, transaction, memberId, models.PermissionCircleUse)
 		if fixture.circleBook, err = transaction.CreateCircleAddressBook(circle.ID, ""); err != nil {
 			test.Fatal(err)
 		}
@@ -130,5 +138,20 @@ func TestAPictureIsNeverSetOnACircleCard(test *testing.T) {
 	}
 	if _, _, err := New(fixture.database).SetPicture(test.Context(), fixture.member, added.ID, []byte("not read")); !errors.Is(err, db.ErrNotFound) {
 		test.Fatalf("no picture from a face on a circle's card: %v", err)
+	}
+}
+
+// Without circle:use a member does not reach the circle's book, though the
+// membership and contacts:use are both in order.
+func TestACircleAddressBookNeedsCircleUse(test *testing.T) {
+	fixture := newCircleBookFixture(test)
+	if _, err := New(fixture.database).Save(test.Context(), fixture.withoutCircleUse, SaveRequest{AddressBookID: fixture.circleBook.ID, Fields: contacts.Fields{Name: new("Kim")}}); !errors.Is(err, db.ErrNotFound) {
+		test.Fatalf("a member without circle:use adds nothing: %v", err)
+	}
+	if _, err := New(fixture.database).UpdateBook(test.Context(), fixture.withoutCircleUse, UpdateBookRequest{ID: fixture.circleBook.ID, Name: "Mine now"}); !errors.Is(err, db.ErrNotFound) {
+		test.Fatalf("nor renames: %v", err)
+	}
+	if _, err := New(fixture.database).Save(test.Context(), fixture.member, SaveRequest{AddressBookID: fixture.circleBook.ID, Fields: contacts.Fields{Name: new("Kim")}}); err != nil {
+		test.Fatalf("a member with circle:use adds a card: %s", err)
 	}
 }

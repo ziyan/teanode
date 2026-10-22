@@ -106,7 +106,9 @@ func (self *transaction) ListAddressBooks(userId string) ([]*models.AddressBook,
 // ListReachableAddressBooks are the books the person can use: their own, oldest
 // first, then the books of the circles they are in, oldest first. The join on
 // circle_member is the access: a person who leaves a circle stops reaching its
-// book in that transaction, with no row to clean up.
+// book in that transaction, with no row to clean up. A circle's books are
+// listed only for a person who holds circle:use, as every other circle door
+// requires.
 func (self *transaction) ListReachableAddressBooks(userId string) ([]*models.ReachableAddressBook, error) {
 	reachable := []*models.ReachableAddressBook{}
 	if userId == "" {
@@ -132,6 +134,16 @@ func (self *transaction) ListReachableAddressBooks(userId string) ([]*models.Rea
 		ORDER BY addressbook.created_at ASC, addressbook.id ASC`, userId).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
+	if len(rows) == 0 {
+		return reachable, nil
+	}
+	hasCircleUse, err := self.hasCircleUse(userId)
+	if err != nil {
+		return nil, err
+	}
+	if !hasCircleUse {
+		return reachable, nil
+	}
 	for index := range rows {
 		reachable = append(reachable, &models.ReachableAddressBook{
 			Book: rows[index].Book.toModel(), CircleName: rows[index].CircleName,
@@ -144,8 +156,9 @@ func (self *transaction) ListReachableAddressBooks(userId string) ([]*models.Rea
 // AddressBookAccess is what the person may do with the book. Every door into
 // an address book asks it: the dashboard's API, the picture route, CardDAV and
 // the agent's tool. A person's own book is theirs alone; a circle's is edited
-// by each member and renamed or deleted by an admin; anybody else gets nothing,
-// which the door answers as "not found".
+// by each member and renamed or deleted by an admin, each of them needing
+// circle:use as every other circle door does; anybody else gets nothing, which
+// the door answers as "not found".
 func (self *transaction) AddressBookAccess(userId string, book *models.AddressBook) (models.AddressBookAccess, error) {
 	if book == nil || userId == "" {
 		return models.AddressBookAccess{}, nil
@@ -166,7 +179,21 @@ func (self *transaction) AddressBookAccess(userId string, book *models.AddressBo
 	if len(members) == 0 {
 		return models.AddressBookAccess{}, nil
 	}
+	hasCircleUse, err := self.hasCircleUse(userId)
+	if err != nil || !hasCircleUse {
+		return models.AddressBookAccess{}, err
+	}
 	return models.AddressBookAccess{CanEdit: true, CanManage: members[0].MemberRole == string(models.MemberRoleAdmin)}, nil
+}
+
+// hasCircleUse is whether the person's roles grant circle:use, which a circle's
+// address book needs on top of contacts:use.
+func (self *transaction) hasCircleUse(userId string) (bool, error) {
+	permissions, err := self.EffectivePermissions(userId)
+	if err != nil {
+		return false, err
+	}
+	return permissions.Has(models.PermissionCircleUse), nil
 }
 
 // GetCircleAddressBook is the circle's book, or nil.
