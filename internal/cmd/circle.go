@@ -53,7 +53,7 @@ func NewCircleCommand() *cli.Command {
 			},
 			{
 				Name:      "delete",
-				Usage:     "delete a circle with its members, invitations, calendar and albums; needs an admin",
+				Usage:     "delete a circle with its members, invitations, calendar, albums, chat and address book; needs an admin",
 				ArgsUsage: "<circle-id>",
 				Flags:     []cli.Flag{ForceFlag()},
 				Action:    runCircleDelete,
@@ -294,7 +294,7 @@ func runCircleDelete(ctx context.Context, command *cli.Command) error {
 	if circleId == "" {
 		return usage("which circle? usage: teanode circle delete <circle-id>")
 	}
-	if err := confirm(command, "This deletes the circle for everybody in it, with its invitations, calendar, albums and chat. What its members shared with it, and with anyone they then share no other circle with, ends and does not come back."); err != nil {
+	if err := confirm(command, "This deletes the circle for everybody in it, with its invitations, calendar, albums, chat and address book with every contact in it. What its members shared with it, and with anyone they then share no other circle with, ends and does not come back."); err != nil {
 		return err
 	}
 	connection, err := openClient(command)
