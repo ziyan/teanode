@@ -502,12 +502,13 @@ func TestAlbumSharesAndUnshareUseTheSharedOperations(test *testing.T) {
 	}
 }
 
-// Sharing, and taking a share back, change who may see the person's photos:
-// the person is asked unless they allowed it. Saving a photo into the library
-// is an ordinary write, and reading is a read.
+// Sharing changes who may see the person's photos: the person is asked unless
+// they allowed it. Taking a share back only removes access, so it is a write,
+// as calendar_unshare is. Saving a photo into the library is an ordinary
+// write, and reading is a read.
 func TestSharingAnAlbumIsAGrantAndSavingASharedPhotoIsAWrite(test *testing.T) {
 	for operation, want := range map[string]tools.Risk{
-		"album-share": tools.RiskGranting, "album-unshare": tools.RiskGranting, "album-shares": tools.RiskRead,
+		"album-share": tools.RiskGranting, "album-unshare": tools.RiskWrite, "album-shares": tools.RiskRead,
 		"save-shared": tools.RiskWrite, "album-list": tools.RiskRead, "album-create": tools.RiskWrite,
 	} {
 		encoded, _ := json.Marshal(map[string]any{"operation": operation})

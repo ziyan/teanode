@@ -496,9 +496,10 @@ people read` does, and `person-photos` its photos. Turning faces on is of the
 risk class granting and turning them off is destructive: finding faces is a
 privacy choice either way, so both ask.
 
-`album-share` and `album-unshare` are of the risk class granting, as the
-calendar's share is, so they ask the person unless they allowed it, and the card
-names the album and the people. `album-share-update` changes one share (`teanode
+`album-share` is of the risk class granting, as the calendar's share is, so it
+asks the person unless they allowed it, and the card names the album and the
+people. `album-unshare` only takes access away, so it is a write, as
+`calendar_unshare` is, and does not ask. `album-share-update` changes one share (`teanode
 photo album share-update`, the same `UpdatePhotoAlbumShare` the dashboard and
 the phone use). It takes the album as well as the share, reads the album's
 shares, and changes only the settings the call names, `share_level` and
