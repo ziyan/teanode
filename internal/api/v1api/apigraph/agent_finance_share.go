@@ -188,10 +188,12 @@ func describeSharedFinanceAccount(reached *models.ReachedFinanceAccount) (*Share
 }
 
 // SharedFinanceTransactionPageView is one page of a shared account's
-// transactions and the cursor for the next, empty on the last.
+// transactions, the cursor for the next, empty on the last, and how many
+// transactions the account has in the days asked for.
 type SharedFinanceTransactionPageView struct {
 	FinanceTransactions []*models.SharedFinanceTransaction `json:"financeTransactions"`
 	NextCursor          string                             `json:"nextCursor,omitempty" graphapi:"nullable"`
+	TotalCount          int                                `json:"totalCount"`
 }
 
 type ListFinanceAccountSharesArguments struct {
@@ -220,9 +222,11 @@ type ListSharedFinanceTransactionsArguments struct {
 	To   string `json:"to" graphapi:"nullable"`
 
 	// Limit is at most 200; zero is 50. After is the nextCursor of the page
-	// before.
-	Limit *int   `json:"limit" graphapi:"nullable"`
-	After string `json:"after" graphapi:"nullable"`
+	// before; Offset is how many to pass over, for a page by its number,
+	// counted from After when both are given.
+	Limit  *int   `json:"limit" graphapi:"nullable"`
+	After  string `json:"after" graphapi:"nullable"`
+	Offset *int   `json:"offset" graphapi:"nullable"`
 }
 
 type ShareFinanceAccountArguments struct {
@@ -439,9 +443,15 @@ func (self *graph) ListSharedFinanceTransactions(ctx context.Context, arguments 
 		}
 		filter.Limit = *arguments.Limit
 	}
+	if arguments.Offset != nil {
+		if *arguments.Offset < 0 {
+			return nil, fmt.Errorf("%w: offset cannot be negative", api.ErrInvalidArguments)
+		}
+		filter.Offset = *arguments.Offset
+	}
 	page, err := self.transaction(ctx).ListSharedFinanceTransactions(principal.User.ID, strings.TrimSpace(arguments.FinanceAccountID), filter)
 	if err != nil {
 		return nil, financeError(err)
 	}
-	return &SharedFinanceTransactionPageView{FinanceTransactions: page.FinanceTransactions, NextCursor: page.NextCursor}, nil
+	return &SharedFinanceTransactionPageView{FinanceTransactions: page.FinanceTransactions, NextCursor: page.NextCursor, TotalCount: page.TotalCount}, nil
 }

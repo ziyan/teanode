@@ -303,7 +303,8 @@ func runFinanceSharedTransactions(ctx context.Context, command *cli.Command) err
 	if err != nil {
 		return err
 	}
-	page, err := client.ListSharedFinanceTransactions(ctx, connection, chosen[0].FinanceAccountID, from, to, int(command.Int("limit")), strings.TrimSpace(command.String("after")))
+	page, err := client.ListSharedFinanceTransactions(ctx, connection, chosen[0].FinanceAccountID, from, to, int(command.Int("limit")),
+		strings.TrimSpace(command.String("after")), int(command.Int("offset")))
 	if err != nil {
 		return describeNotFound(command, err, "that finance account")
 	}
@@ -323,8 +324,8 @@ func runFinanceSharedTransactions(ctx context.Context, command *cli.Command) err
 	if err := printTable([]string{"posted", "amount", "merchant", "spending category"}, rows); err != nil {
 		return err
 	}
-	if page.NextCursor != "" {
-		fmt.Printf("note: add --after %s for the next page\n", page.NextCursor)
+	if note := pageNote(len(page.FinanceTransactions), int(command.Int("offset")), page.TotalCount, page.NextCursor, command.String("after") != ""); note != "" {
+		fmt.Println(note)
 	}
 	return nil
 }

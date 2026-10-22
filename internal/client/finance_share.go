@@ -77,6 +77,7 @@ type SharedFinanceTransaction struct {
 type SharedFinanceTransactionPage struct {
 	FinanceTransactions []*SharedFinanceTransaction `json:"financeTransactions"`
 	NextCursor          string                      `json:"nextCursor,omitempty"`
+	TotalCount          int                         `json:"totalCount"`
 }
 
 const (
@@ -100,9 +101,9 @@ const (
     spendingMonth spendingCategoryName currencyCode moneyOut moneyIn financeTransactionCount
   }
 }`
-	DocumentListSharedFinanceTransactions = `query ($financeAccountId: String!, $from: String, $to: String, $limit: Int, $after: String) {
-  ListSharedFinanceTransactions(financeAccountId: $financeAccountId, from: $from, to: $to, limit: $limit, after: $after) {
-    nextCursor financeTransactions { id postedOn amount currencyCode merchantName spendingCategoryName }
+	DocumentListSharedFinanceTransactions = `query ($financeAccountId: String!, $from: String, $to: String, $limit: Int, $after: String, $offset: Int) {
+  ListSharedFinanceTransactions(financeAccountId: $financeAccountId, from: $from, to: $to, limit: $limit, after: $after, offset: $offset) {
+    nextCursor totalCount financeTransactions { id postedOn amount currencyCode merchantName spendingCategoryName }
   }
 }`
 )
@@ -197,9 +198,10 @@ func ListSharedFinanceSpending(ctx context.Context, connection *Client, financeA
 }
 
 // ListSharedFinanceTransactions is a page of a shared account's transactions,
-// newest first. A limit of zero is the server's default.
-func ListSharedFinanceTransactions(ctx context.Context, connection *Client, financeAccountId, from, to string, limit int, after string) (*SharedFinanceTransactionPage, error) {
-	variables := map[string]any{"financeAccountId": financeAccountId, "from": nil, "to": nil, "limit": nil, "after": nil}
+// newest first. A limit of zero is the server's default; an offset passes over
+// that many transactions first, from the cursor when one is given.
+func ListSharedFinanceTransactions(ctx context.Context, connection *Client, financeAccountId, from, to string, limit int, after string, offset int) (*SharedFinanceTransactionPage, error) {
+	variables := map[string]any{"financeAccountId": financeAccountId, "from": nil, "to": nil, "limit": nil, "after": nil, "offset": nil}
 	if from != "" {
 		variables["from"] = from
 	}
@@ -211,6 +213,9 @@ func ListSharedFinanceTransactions(ctx context.Context, connection *Client, fina
 	}
 	if after != "" {
 		variables["after"] = after
+	}
+	if offset > 0 {
+		variables["offset"] = offset
 	}
 	var result struct {
 		ListSharedFinanceTransactions *SharedFinanceTransactionPage `json:"ListSharedFinanceTransactions"`

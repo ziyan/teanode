@@ -106,7 +106,7 @@ func financeSharingServer(test *testing.T) (*httptest.Server, func(string) map[s
 			{"financeAccountId":"b1","ownerUserId":"u-ben","ownerUsername":"ben","ownerName":"Ben","financeShareLevel":"transactions","accountName":"Joint Checking","accountMask":"7788","accountKind":"depository","currencyCode":"USD","currentBalance":"250.0000","creditUsage":null},
 			{"financeAccountId":"b2","ownerUserId":"u-ben","ownerUsername":"ben","ownerName":"Ben","financeShareLevel":"balance","accountName":"Store Card","accountKind":"credit","currencyCode":"USD","currentBalance":"-100.0000","creditUsage":{"owedAmount":"100.0000","creditLimitAmount":"400.0000","creditLimitSource":"provider","usageShare":0.25}}]`,
 		"ListSharedFinanceSpending":     `[{"spendingMonth":"2026-09","spendingCategoryName":"Groceries","currencyCode":"USD","moneyOut":"42.1700","moneyIn":"0.0000","financeTransactionCount":1}]`,
-		"ListSharedFinanceTransactions": `{"nextCursor":"next-one","financeTransactions":[{"id":"t1","postedOn":"2026-09-10","amount":"-42.1700","currencyCode":"USD","merchantName":"Corner Grocer","spendingCategoryName":"Groceries"}]}`,
+		"ListSharedFinanceTransactions": `{"nextCursor":"next-one","totalCount":5,"financeTransactions":[{"id":"t1","postedOn":"2026-09-10","amount":"-42.1700","currencyCode":"USD","merchantName":"Corner Grocer","spendingCategoryName":"Groceries"}]}`,
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		var document struct {
@@ -244,7 +244,7 @@ func TestFinanceReadsOfWhatAPersonShares(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, wanted := range []string{"2026-09-10", "-42.17 USD", "Corner Grocer", "Groceries", "--after next-one"} {
+	for _, wanted := range []string{"2026-09-10", "-42.17 USD", "Corner Grocer", "Groceries", "1 to 1 of 5", "--offset 1"} {
 		if !strings.Contains(output, wanted) {
 			test.Errorf("transactions --person lacks %q:\n%s", wanted, output)
 		}

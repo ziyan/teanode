@@ -75,16 +75,20 @@ type SharedFinanceTransactionFilter struct {
 
 	// Limit is at most FinanceTransactionLimitMost; zero is
 	// FinanceTransactionLimitDefault. After is the NextCursor of the page
-	// before.
-	Limit int
-	After string
+	// before, and Offset how many to pass over first, counted from the cursor
+	// when both are given.
+	Limit  int
+	After  string
+	Offset int
 }
 
 // SharedFinanceTransactionPage is one page of a shared account's
-// transactions, and the cursor for the next, empty on the last.
+// transactions, the cursor for the next, empty on the last, and how many
+// transactions the account has in the days asked for, on every page.
 type SharedFinanceTransactionPage struct {
 	FinanceTransactions []*models.SharedFinanceTransaction
 	NextCursor          string
+	TotalCount          int
 }
 
 type financeAccountShareModel struct {
@@ -550,7 +554,7 @@ func (self *transaction) ListSharedFinanceTransactions(viewerUserId, financeAcco
 	// total of the owner's, and so out of this too.
 	page, err := self.ListFinanceTransactions(reached.Account.AgentID, &FinanceTransactionFilter{
 		FinanceAccountID: reached.Account.ID, From: filter.From, To: filter.To, Limit: filter.Limit, After: filter.After,
-		IsDuplicateExcluded: true,
+		Offset: filter.Offset, IsDuplicateExcluded: true, ShouldCountTotal: true,
 	})
 	if err != nil {
 		return nil, err
@@ -570,7 +574,8 @@ func (self *transaction) ListSharedFinanceTransactions(viewerUserId, financeAcco
 		}
 	}
 	shared := &SharedFinanceTransactionPage{
-		FinanceTransactions: make([]*models.SharedFinanceTransaction, 0, len(page.FinanceTransactions)), NextCursor: page.NextCursor,
+		FinanceTransactions: make([]*models.SharedFinanceTransaction, 0, len(page.FinanceTransactions)),
+		NextCursor:          page.NextCursor, TotalCount: page.TotalCount,
 	}
 	for _, found := range page.FinanceTransactions {
 		shared.FinanceTransactions = append(shared.FinanceTransactions, &models.SharedFinanceTransaction{

@@ -102,8 +102,8 @@ const (
 	sharedSpendingQuery = `query ($financeAccountId: String!, $from: String, $to: String) {
   ListSharedFinanceSpending(financeAccountId: $financeAccountId, from: $from, to: $to) { spendingMonth spendingCategoryName currencyCode moneyOut moneyIn financeTransactionCount }
 }`
-	sharedTransactionsQuery = `query ($financeAccountId: String!, $limit: Int, $after: String) {
-  ListSharedFinanceTransactions(financeAccountId: $financeAccountId, limit: $limit, after: $after) { nextCursor financeTransactions { id postedOn amount currencyCode merchantName spendingCategoryName } }
+	sharedTransactionsQuery = `query ($financeAccountId: String!, $limit: Int, $after: String, $offset: Int) {
+  ListSharedFinanceTransactions(financeAccountId: $financeAccountId, limit: $limit, after: $after, offset: $offset) { nextCursor totalCount financeTransactions { id postedOn amount currencyCode merchantName spendingCategoryName } }
 }`
 )
 
@@ -197,8 +197,11 @@ func TestFinanceShareLevelsOverTheAPI(t *testing.T) {
 	world.shareAsTap(t, world.checkingID, world.ben.ID, nil, "transactions")
 	page := world.run(t, world.ben, sharedTransactionsQuery, map[string]any{"financeAccountId": world.checkingID})["ListSharedFinanceTransactions"].(map[string]any)
 	transactions := page["financeTransactions"].([]any)
-	if len(transactions) != 2 {
+	if len(transactions) != 2 || page["totalCount"] != float64(2) {
 		t.Fatalf("the transactions: %v", page)
+	}
+	if second := world.run(t, world.ben, sharedTransactionsQuery, map[string]any{"financeAccountId": world.checkingID, "limit": 1, "offset": 1})["ListSharedFinanceTransactions"].(map[string]any); len(second["financeTransactions"].([]any)) != 1 || second["nextCursor"] != "" {
+		t.Errorf("the second page by its offset: %v", second)
 	}
 	newest := transactions[0].(map[string]any)
 	if newest["postedOn"] != "2026-09-10" || newest["amount"] != "-42.1700" || newest["merchantName"] != "Corner Grocer" || newest["currencyCode"] != "USD" {

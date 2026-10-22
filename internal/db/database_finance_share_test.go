@@ -258,12 +258,16 @@ func TestAFinanceShareShowsOnlyWhatItsLevelAdds(t *testing.T) {
 		}
 		// Paging.
 		first, err := tx.ListSharedFinanceTransactions(world.ben.ID, world.checking.ID, &db.SharedFinanceTransactionFilter{Limit: 1})
-		if err != nil || len(first.FinanceTransactions) != 1 || first.NextCursor == "" {
+		if err != nil || len(first.FinanceTransactions) != 1 || first.NextCursor == "" || first.TotalCount != 2 {
 			t.Fatalf("the first page: %+v %v", first, err)
 		}
 		second, err := tx.ListSharedFinanceTransactions(world.ben.ID, world.checking.ID, &db.SharedFinanceTransactionFilter{Limit: 1, After: first.NextCursor})
 		if err != nil || len(second.FinanceTransactions) != 1 || second.FinanceTransactions[0].ID == first.FinanceTransactions[0].ID || second.NextCursor != "" {
 			t.Fatalf("the second page: %+v %v", second, err)
+		}
+		byOffset, err := tx.ListSharedFinanceTransactions(world.ben.ID, world.checking.ID, &db.SharedFinanceTransactionFilter{Limit: 1, Offset: 1})
+		if err != nil || len(byOffset.FinanceTransactions) != 1 || byOffset.FinanceTransactions[0].ID != second.FinanceTransactions[0].ID || byOffset.TotalCount != 2 {
+			t.Fatalf("a page by its offset: %+v %v", byOffset, err)
 		}
 		// The card's diner is not on the checking account's page, and the
 		// account of another owner is never read through this one.
