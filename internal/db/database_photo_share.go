@@ -119,16 +119,19 @@ func (self *photoAlbumShareModel) toModel() *models.PhotoAlbumShare {
 // photos:use (@permission), as a Location or a Health share does.
 var photoAlbumReachQuery = `
 SELECT album.id AS photo_album_id, 'owner' AS reach_kind, 'contribute' AS share_level, false AS is_circle_admin, false AS is_location_included,
-  COALESCE(album.user_id, '') AS album_owner_user_id
+  COALESCE(album.user_id, '') AS album_owner_user_id, ''::text AS share_id, NULL::text AS grantee_user_id, NULL::text AS grantee_circle_id,
+  album.created_at AS share_created_at
 FROM "photo_album" album
 WHERE album.user_id = @reader AND (@album = '' OR album.id = @album)
 UNION ALL
-SELECT album.id, 'circle', 'contribute', member.member_role = 'admin', false, COALESCE(album.user_id, '')
+SELECT album.id, 'circle', 'contribute', member.member_role = 'admin', false, COALESCE(album.user_id, ''), ''::text, NULL::text, NULL::text,
+  album.created_at
 FROM "photo_album" album
 JOIN "circle_member" member ON member.circle_id = album.circle_id AND member.user_id = @reader
 WHERE @album = '' OR album.id = @album
 UNION ALL
-SELECT share.photo_album_id, 'share', share.share_level, false, share.is_location_included, album.user_id
+SELECT share.photo_album_id, 'share', share.share_level, false, share.is_location_included, album.user_id,
+  share.id, share.grantee_user_id, share.grantee_circle_id, share.created_at
 FROM "photo_album_share" share
 JOIN "photo_album" album ON album.id = share.photo_album_id
 JOIN "user" owner_user ON owner_user.id = album.user_id AND owner_user.disabled_at IS NULL
@@ -151,6 +154,14 @@ type photoAlbumReachRow struct {
 	ShareLevel         string `gorm:"column:share_level"`
 	IsCircleAdmin      bool   `gorm:"column:is_circle_admin"`
 	IsLocationIncluded bool   `gorm:"column:is_location_included"`
+
+	// What names the share, for the rows whose ReachKind is share; ListPhotoAlbumSharesReaching
+	// reads them. AlbumOwnerUserID is the album's owner.
+	AlbumOwnerUserID string    `gorm:"column:album_owner_user_id"`
+	ShareID          string    `gorm:"column:share_id"`
+	GranteeUserID    *string   `gorm:"column:grantee_user_id"`
+	GranteeCircleID  *string   `gorm:"column:grantee_circle_id"`
+	ShareCreatedAt   time.Time `gorm:"column:share_created_at"`
 }
 
 // photoAlbumReach is everything the ways that reach one person to one album

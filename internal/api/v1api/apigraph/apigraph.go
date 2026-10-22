@@ -94,6 +94,11 @@ type graph struct {
 	// were added to an album, so that one person adding photos one after
 	// another is one notification (photo_album_share.go).
 	photoAddNotices photoAddNoticeCache
+
+	// shareNotices remembers when each person was last told that something
+	// was shared with them (sharing_notice.go).
+	shareNotices shareNoticeCache
+
 	// chatLimits are what one person may do in chats a minute on this
 	// instance; made the first time they are wanted (chat.go).
 	chatLimitsOnce  sync.Once

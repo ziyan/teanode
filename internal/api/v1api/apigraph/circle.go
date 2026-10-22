@@ -619,6 +619,11 @@ func (self *graph) AnswerCircleInvitation(ctx context.Context, arguments AnswerC
 	if err := self.publishCircleChatMembersChanged(ctx, joined.ID); err != nil {
 		return nil, err
 	}
+	// The members who shared things with this circle are told that the
+	// person who just joined can now see them.
+	if err := self.tellOwnersAboutJoin(ctx, user, joined); err != nil {
+		return nil, err
+	}
 	log.Noticef("%s joined the circle %q", user.Username, joined.Name)
 	return self.circleFor(ctx, joined, user.ID)
 }
@@ -771,6 +776,9 @@ func (self *graph) AddCircleMember(ctx context.Context, arguments AddCircleMembe
 		return nil, translateError(err)
 	}
 	if err := self.publishCircleChatMembersChanged(ctx, added.ID); err != nil {
+		return nil, err
+	}
+	if err := self.tellOwnersAboutJoin(ctx, user, added); err != nil {
 		return nil, err
 	}
 	log.Noticef("%s put the account %q in the circle %q", operatorName(ctx), user.Username, added.Name)

@@ -248,7 +248,8 @@ func (self *transaction) ListLocationShares(sharerUserId string) ([]*models.Loca
 // location:use too: an operator who takes it from a role has switched Location
 // off for those people, and what they stored is no longer read by others.
 var reachingLocationSharesQuery = `
-SELECT share.user_id AS owner_user_id, share.share_level AS share_level
+SELECT share.id AS share_id, share.user_id AS owner_user_id, share.share_level AS share_level,
+  share.grantee_user_id AS grantee_user_id, share.grantee_circle_id AS grantee_circle_id, share.created_at AS created_at
 FROM "location_share" share
 JOIN "user" owner_user ON owner_user.id = share.user_id AND owner_user.disabled_at IS NULL
 WHERE share.user_id <> @viewer
@@ -276,8 +277,12 @@ func userHasPermissionSQL(userExpression string) string {
 }
 
 type reachingLocationShareRow struct {
-	OwnerUserID string `gorm:"column:owner_user_id"`
-	ShareLevel  string `gorm:"column:share_level"`
+	ShareID         string    `gorm:"column:share_id"`
+	OwnerUserID     string    `gorm:"column:owner_user_id"`
+	ShareLevel      string    `gorm:"column:share_level"`
+	GranteeUserID   *string   `gorm:"column:grantee_user_id"`
+	GranteeCircleID *string   `gorm:"column:grantee_circle_id"`
+	CreatedAt       time.Time `gorm:"column:created_at"`
 }
 
 // reachingLocationLevels is the highest level each owner shares their

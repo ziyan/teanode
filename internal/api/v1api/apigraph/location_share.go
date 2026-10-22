@@ -53,6 +53,18 @@ type ShareLocationArguments struct {
 	ShareLevel string `json:"shareLevel"`
 }
 
+// isLocationShareWider says whether the share gives its grantee more than the
+// person's location shares did before it: there was none for them, or a lower
+// level.
+func isLocationShareWider(earlier []*models.LocationShare, saved *models.LocationShare) bool {
+	for _, share := range earlier {
+		if share.GranteeUserID == saved.GranteeUserID && share.GranteeCircleID == saved.GranteeCircleID {
+			return saved.ShareLevel.Rank() > share.ShareLevel.Rank()
+		}
+	}
+	return true
+}
+
 type UnshareLocationArguments struct {
 	ShareID string `json:"shareId"`
 }
@@ -136,6 +148,11 @@ func (self *graph) ShareLocation(ctx context.Context, arguments ShareLocationArg
 		return nil, fmt.Errorf("%w: share with one person or one circle", api.ErrInvalidArguments)
 	}
 	tx := self.transaction(ctx)
+	// What the grantee was given before, to tell whether this is more.
+	earlier, err := tx.ListLocationShares(principal.User.ID)
+	if err != nil {
+		return nil, err
+	}
 	saved, err := tx.ShareLocation(principal.User.ID, &models.LocationShare{
 		GranteeUserID: granteeUserId, GranteeCircleID: granteeCircleId, ShareLevel: shareLevel,
 		CreatedByUserID: principal.User.ID,
@@ -148,6 +165,13 @@ func (self *graph) ShareLocation(ctx context.Context, arguments ShareLocationArg
 	// The people it is now shared with, or shared with at a different level,
 	// are told that there is something to read.
 	self.afterLocationChange(ctx, tx, principal.User.ID, nil, nil)
+	if isLocationShareWider(earlier, saved) {
+		if err := self.tellAboutShare(ctx, principal.User, models.ShareReceivedNote{
+			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindLocation, ShareLevel: string(saved.ShareLevel),
+		}, granteeUserId, granteeCircleId); err != nil {
+			return nil, err
+		}
+	}
 	shares, err := tx.ListLocationShares(principal.User.ID)
 	if err != nil {
 		return nil, err

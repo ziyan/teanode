@@ -113,6 +113,11 @@ func (self *graph) ShareCalendar(ctx context.Context, arguments ShareCalendarArg
 		return nil, fmt.Errorf("%w: only the calendar of events is shared", api.ErrInvalidArguments)
 	}
 	tx := self.transaction(ctx)
+	// What the grantee was given before, to tell whether this is more.
+	earlier, err := tx.ListCalendarShares(reach.Calendar.ID)
+	if err != nil {
+		return nil, err
+	}
 	saved, err := tx.ShareCalendar(principal.User.ID, &models.CalendarShare{
 		CalendarID: reach.Calendar.ID, GranteeUserID: granteeUserId, GranteeCircleID: granteeCircleId, ShareLevel: shareLevel,
 	})
@@ -131,8 +136,26 @@ func (self *graph) ShareCalendar(ctx context.Context, arguments ShareCalendarArg
 			saved = share
 		}
 	}
+	if isCalendarShareWider(earlier, saved) {
+		if err := self.tellAboutShare(ctx, principal.User, models.ShareReceivedNote{
+			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindCalendar, ShareLevel: string(saved.ShareLevel),
+		}, granteeUserId, granteeCircleId); err != nil {
+			return nil, err
+		}
+	}
 	log.Noticef("%s shared their calendar at %s", principal.User.Username, shareLevel)
 	return describeCalendarShare(saved), nil
+}
+
+// isCalendarShareWider says whether the share gives its grantee more than the
+// calendar's shares did before it: there was none for them, or a lower level.
+func isCalendarShareWider(earlier []*models.CalendarShare, saved *models.CalendarShare) bool {
+	for _, share := range earlier {
+		if share.GranteeUserID == saved.GranteeUserID && share.GranteeCircleID == saved.GranteeCircleID {
+			return saved.ShareLevel.Rank() > share.ShareLevel.Rank()
+		}
+	}
+	return true
 }
 
 type UnshareCalendarArguments struct {

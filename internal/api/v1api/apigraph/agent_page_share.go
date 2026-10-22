@@ -442,6 +442,11 @@ func (self *graph) ShareAgentPage(ctx context.Context, arguments ShareAgentPageA
 		return nil, fmt.Errorf("%w: share with one person or one circle", api.ErrInvalidArguments)
 	}
 	tx := self.transaction(ctx)
+	// What the grantee was given before, to tell whether this is more.
+	earlier, err := tx.ListPageSharesBy(principal.User.ID)
+	if err != nil {
+		return nil, err
+	}
 	saved, err := tx.SharePage(principal.User.ID, &models.AgentPageShare{
 		Path: arguments.Path, GranteeUserID: granteeUserId, GranteeCircleID: granteeCircleId, IsQuoteShared: arguments.IsQuoteShared,
 	})
@@ -459,7 +464,31 @@ func (self *graph) ShareAgentPage(ctx context.Context, arguments ShareAgentPageA
 	} else if node != nil {
 		view.PageName = node.Name
 	}
+	if isPageShareWider(earlier, saved) {
+		subject := view.PageName
+		if subject == "" {
+			subject = saved.Path
+		}
+		if err := self.tellAboutShare(ctx, principal.User, models.ShareReceivedNote{
+			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindMemoryPage, ShareSubject: subject,
+			ShareScopes: models.PageShareScopes(saved.IsQuoteShared),
+		}, granteeUserId, granteeCircleId); err != nil {
+			return nil, err
+		}
+	}
 	return view, nil
+}
+
+// isPageShareWider says whether the share gives its grantee more than the
+// person's shares of the page did before: there was none for them, or the quotes
+// were not shared.
+func isPageShareWider(earlier []*models.AgentPageShare, saved *models.AgentPageShare) bool {
+	for _, share := range earlier {
+		if share.Path == saved.Path && share.GranteeUserID == saved.GranteeUserID && share.GranteeCircleID == saved.GranteeCircleID {
+			return saved.IsQuoteShared && !share.IsQuoteShared
+		}
+	}
+	return true
 }
 
 type UnshareAgentPageArguments struct {

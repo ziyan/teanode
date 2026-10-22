@@ -146,6 +146,11 @@ func (self *graph) SharePhotoAlbum(ctx context.Context, arguments SharePhotoAlbu
 		return nil, fmt.Errorf("%w: a circle's album belongs to every member of the circle already", api.ErrInvalidArguments)
 	}
 	transaction := self.transaction(ctx)
+	// What the grantee was given before, to tell whether this is more.
+	earlier, err := transaction.ListPhotoAlbumShares(principal.User.ID, access.PhotoAlbumID)
+	if err != nil {
+		return nil, translateError(err)
+	}
 	saved, err := transaction.SharePhotoAlbum(principal.User.ID, &models.PhotoAlbumShare{
 		PhotoAlbumID: access.PhotoAlbumID, GranteeUserID: granteeUserId, GranteeCircleID: granteeCircleId,
 		ShareLevel: shareLevel, IsLocationIncluded: arguments.IsLocationIncluded,
@@ -165,6 +170,11 @@ func (self *graph) SharePhotoAlbum(ctx context.Context, arguments SharePhotoAlbu
 			saved = share
 		}
 	}
+	if isPhotoAlbumShareWider(earlier, saved) {
+		if err := self.tellAboutPhotoAlbumShare(ctx, principal.User, saved); err != nil {
+			return nil, err
+		}
+	}
 	log.Noticef("%s shared a photo album at %s", principal.User.Username, shareLevel)
 	return describePhotoAlbumShare(saved), nil
 }
@@ -179,6 +189,10 @@ func (self *graph) UpdatePhotoAlbumShare(ctx context.Context, arguments UpdatePh
 		return nil, err
 	}
 	transaction := self.transaction(ctx)
+	earlier, err := transaction.GetPhotoAlbumShare(principal.User.ID, strings.TrimSpace(arguments.PhotoAlbumShareID))
+	if err != nil {
+		return nil, translateError(err)
+	}
 	updated, err := transaction.UpdatePhotoAlbumShare(principal.User.ID, strings.TrimSpace(arguments.PhotoAlbumShareID), shareLevel, arguments.IsLocationIncluded)
 	if err != nil {
 		return nil, translateError(err)
@@ -192,7 +206,38 @@ func (self *graph) UpdatePhotoAlbumShare(ctx context.Context, arguments UpdatePh
 			updated = share
 		}
 	}
+	if isPhotoAlbumShareWider([]*models.PhotoAlbumShare{earlier}, updated) {
+		if err := self.tellAboutPhotoAlbumShare(ctx, principal.User, updated); err != nil {
+			return nil, err
+		}
+	}
 	return describePhotoAlbumShare(updated), nil
+}
+
+// isPhotoAlbumShareWider says whether the share gives its grantee more than the
+// album's shares did before: there was none for them, or a higher level, or it
+// now includes where the photos were taken.
+func isPhotoAlbumShareWider(earlier []*models.PhotoAlbumShare, saved *models.PhotoAlbumShare) bool {
+	for _, share := range earlier {
+		if share.GranteeUserID == saved.GranteeUserID && share.GranteeCircleID == saved.GranteeCircleID {
+			isLevelHigher := saved.ShareLevel == models.PhotoAlbumShareLevelContribute && share.ShareLevel != models.PhotoAlbumShareLevelContribute
+			return isLevelHigher || (saved.IsLocationIncluded && !share.IsLocationIncluded)
+		}
+	}
+	return true
+}
+
+// tellAboutPhotoAlbumShare tells the people an album share reaches, naming the
+// album.
+func (self *graph) tellAboutPhotoAlbumShare(ctx context.Context, sharer *models.User, share *models.PhotoAlbumShare) error {
+	album, err := self.transaction(ctx).GetPhotoAlbum(sharer.ID, share.PhotoAlbumID)
+	if err != nil {
+		return translateError(err)
+	}
+	return self.tellAboutShare(ctx, sharer, models.ShareReceivedNote{
+		SharerName: sharer.DisplayName(), ShareKind: models.ShareKindPhotoAlbum, ShareLevel: string(share.ShareLevel),
+		ShareSubject: album.AlbumTitle, ShareScopes: models.AlbumShareScopes(share.IsLocationIncluded),
+	}, share.GranteeUserID, share.GranteeCircleID)
 }
 
 func (self *graph) RemovePhotoAlbumShare(ctx context.Context, arguments PhotoAlbumShareArguments) (bool, error) {
