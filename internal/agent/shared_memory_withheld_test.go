@@ -204,3 +204,127 @@ func TestAFactReadOnlyInPrivateKindsIsNotShared(t *testing.T) {
 		}
 	})
 }
+
+// A summary is copied from the facts it was written from, so a page with a
+// fact the reader is not shown, or one read in a chat or a recording, leaves
+// its summary out even when it quotes nobody, and a search does not find the
+// page by a word on it. A page whose facts are all shown keeps its summary.
+func TestASummaryIsLeftOutWhenAFactOnThePageIsWithheld(t *testing.T) {
+	world := newSharedWorld(t)
+	chatDocument := world.document(t, models.SourceArchive, models.DocumentChat, "chat-day")
+	world.setSummary(t, "people/a", "Paid the boatyard on the first. Keeps the lighthouse key.")
+	world.setSummary(t, "people/a/doctor", "Watches the quay gate. Keeps the lighthouse lamp.")
+	world.setSummary(t, "projects/garden", "Keeps bees and the lighthouse hive.")
+	world.fact(t, "people/a", &models.AgentFact{
+		Text:     "Paid the boatyard on the first.",
+		Evidence: []models.Evidence{{Kind: models.EvidenceFinanceTransaction, ID: "a-transaction"}},
+	})
+	world.fact(t, "people/a/doctor", &models.AgentFact{
+		Text:     "Said the pier is closed.",
+		Evidence: []models.Evidence{{Kind: models.EvidenceMail, ID: "a-message"}, {Kind: models.EvidenceDocument, ID: chatDocument.ID}},
+	})
+	world.fact(t, "projects/garden", &models.AgentFact{
+		Text:     "Keeps bees.",
+		Evidence: []models.Evidence{{Kind: models.EvidenceMail, ID: "a-message"}},
+	})
+	world.share(t, "people/a", true)
+	world.share(t, "projects/garden", true)
+
+	if page := world.read(t, world.reader, "people/a"); page == nil || page.Opening != "" {
+		t.Errorf("a summary on a page with a withheld fact: %+v", page)
+	}
+	if doctor := world.read(t, world.reader, "people/a/doctor"); doctor == nil || doctor.Opening != "" {
+		t.Errorf("a summary on a page with a fact read in a chat: %+v", doctor)
+	}
+	if garden := world.read(t, world.reader, "projects/garden"); garden == nil || garden.Opening != "Keeps bees and the lighthouse hive." {
+		t.Errorf("a summary on a page whose facts are all shown: %+v", garden)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		roots, err := SharedPagesFor(tx, world.reader.ID)
+		if err != nil || len(roots) != 2 {
+			t.Fatalf("the roots: %+v %v", roots, err)
+		}
+		for _, root := range roots {
+			expected := ""
+			if root.Path == "projects/garden" {
+				expected = "Keeps bees and the lighthouse hive"
+			}
+			if root.Opening != expected {
+				t.Errorf("the opening of %s: %q", root.Path, root.Opening)
+			}
+		}
+		// The same word is on three summaries and only the shown one finds its page.
+		hits, err := SearchSharedPages(tx, world.reader.ID, "lighthouse", 20)
+		if err != nil {
+			t.Fatalf("SearchSharedPages: %s", err)
+		}
+		if len(hits) != 1 || hits[0].Path != "projects/garden" {
+			t.Errorf("a word on a left-out summary finds %+v", hits)
+		}
+		for _, word := range []string{"boatyard", "quay"} {
+			if hits, err = SearchSharedPages(tx, world.reader.ID, word, 20); err != nil || len(hits) != 0 {
+				t.Errorf("%s finds %+v %v", word, hits, err)
+			}
+		}
+	})
+}
+
+// A fact that cites an event or a document that cannot be found is not shown
+// to a reader, since it may have been a private event or a recording: an
+// event deleted since the fact was filed, a document gone from the archive,
+// and an event in a circle's calendar, which is not the owner's own.
+func TestAFactCitingSomethingThatCannotBeFoundIsNotShared(t *testing.T) {
+	world := newSharedWorld(t)
+	var circleEvent *models.CalendarObject
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		circleCalendar, err := tx.CreateCalendar(&models.Calendar{CircleID: world.circle.ID, Name: "Home", CalendarKind: models.CalendarEvents})
+		if err != nil {
+			t.Fatalf("CreateCalendar: %s", err)
+		}
+		startsAt := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
+		if circleEvent, err = tx.PutCalendarObject(&models.CalendarObject{
+			CalendarID: circleCalendar.ID, UID: "circle-event@example.test", ETag: "e", Summary: "A visit", StartsAt: startsAt, EndsAt: startsAt.Add(time.Hour),
+			Data: "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//example//test//EN\r\nBEGIN:VEVENT\r\nUID:circle-event@example.test\r\n" +
+				"DTSTAMP:20260901T090000Z\r\nDTSTART:20260901T090000Z\r\nDTEND:20260901T100000Z\r\nSUMMARY:A visit\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+		}, nil); err != nil {
+			t.Fatalf("PutCalendarObject: %s", err)
+		}
+	})
+	publicEvent := world.calendarEvent(t, false)
+	privateEvent := world.calendarEvent(t, true)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := tx.DeleteCalendarObject(privateEvent.CalendarID, privateEvent.ID); err != nil {
+			t.Fatalf("DeleteCalendarObject: %s", err)
+		}
+	})
+	otherDocument := world.document(t, models.SourceArchive, models.DocumentJournal, "plain-document")
+	for _, fact := range []*models.AgentFact{
+		{Text: "Had a private visit.", Evidence: []models.Evidence{{Kind: models.EvidenceCalendarEvent, ID: privateEvent.ID}}},
+		{Text: "Has a visit in the circle calendar.", Evidence: []models.Evidence{{Kind: models.EvidenceCalendarEvent, ID: circleEvent.ID}}},
+		{Text: "Read a document that is gone.", Evidence: []models.Evidence{{Kind: models.EvidenceDocument, ID: "a-document-that-is-gone"}}},
+		{Text: "Has a dentist on the first.", Evidence: []models.Evidence{{Kind: models.EvidenceCalendarEvent, ID: publicEvent.ID}}},
+		{Text: "Read a plain document.", Evidence: []models.Evidence{{Kind: models.EvidenceDocument, ID: otherDocument.ID}}},
+	} {
+		world.fact(t, "people/a", fact)
+	}
+	world.share(t, "people/a", true)
+
+	page := world.read(t, world.reader, "people/a")
+	if page == nil {
+		t.Fatal("the page is not shared")
+	}
+	var texts []string
+	for _, fact := range page.Facts {
+		texts = append(texts, fact.Text)
+	}
+	expected := []string{"Has a dentist on the first.", "Read a plain document."}
+	if strings.Join(texts, "|") != strings.Join(expected, "|") {
+		t.Errorf("the facts shown: %q, expected %q", texts, expected)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		count, err := CountWithheldFacts(tx, world.owner.ID, "people/a")
+		if err != nil || count != 3 {
+			t.Errorf("the facts withheld: %d %v", count, err)
+		}
+	})
+}

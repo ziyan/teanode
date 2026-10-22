@@ -40,11 +40,11 @@ the note the owner's agent wrote on them, which is written from pages and
 sources that are not shared. The
 quotes behind facts are left out unless the owner chose to include them, and
 never for a fact read in a chat, which holds other people's words; the source is
-named only as the owner's ("from their mail", "from their chats"). A summary that
-quotes somebody (four words or more between quotation marks, single or double)
-is left out too, unless the owner shares quotes, and even then when the page has
-a fact read in a chat. A search finds a page only by what the reader is shown of
-it.
+named only as the owner's ("from their mail", "from their chats"). A summary is
+left out too when the page has a fact that is kept back or one read in a chat or
+a recording, and when it quotes somebody (four words or more between quotation
+marks, single or double) and the owner does not share quotes. A search finds a
+page only by what the reader is shown of it.
 
 Nothing from a shared page is written into the reader's graph. The
 reader's dream does not read shared pages, and a fact whose only evidence

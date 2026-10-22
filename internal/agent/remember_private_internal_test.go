@@ -4,6 +4,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -91,5 +92,43 @@ func TestAConversationIsNotDescribedFromATurnThatReadANote(t *testing.T) {
 	other := []*models.AgentMessage{read[0], {ID: "a1", Role: string(llm.RoleAssistant), ToolCalls: []models.AgentToolCall{{ID: "c1", Name: "weather", Arguments: `{"action":"today"}`}}}, read[2], read[3]}
 	if isPrivateRead(other, 3) {
 		t.Error("a turn that used another tool is not private")
+	}
+}
+
+// A turn in which a tool answered with a recording another person shared is
+// kept out of the filing run as far as the agent's words go: what it said
+// there may paraphrase the recording, which no check on words finds. What the
+// person said stays, in that turn and in the others. A window that starts
+// after the tool's answer is cut the same way.
+func TestAFilingRunSkipsWhatWasSaidInATurnThatReadASharedRecording(t *testing.T) {
+	messages := []*models.AgentMessage{
+		{ID: "u1", Role: string(llm.RoleUser), Content: "What did Sam decide in the standup?"},
+		{ID: "a1", Role: string(llm.RoleAssistant), ToolCalls: []models.AgentToolCall{{ID: "c1", Name: "recording", Arguments: `{"action":"get"}`}}},
+		{ID: "t1", Role: string(llm.RoleTool), Content: tools.SharedRecordingMarker + "\n{\"passages\":[]}"},
+		{ID: "a2", Role: string(llm.RoleAssistant), Content: "Sam decided to move the launch to spring."},
+		{ID: "u2", Role: string(llm.RoleUser), Content: "I will move my own launch to spring too."},
+		{ID: "a3", Role: string(llm.RoleAssistant), Content: "Noted."},
+		{ID: "u3", Role: string(llm.RoleUser), Content: "And what about the garden?"},
+		{ID: "a4", Role: string(llm.RoleAssistant), ToolCalls: []models.AgentToolCall{{ID: "c4", Name: "memory", Arguments: `{"action":"get"}`}}},
+		{ID: "t4", Role: string(llm.RoleTool), Content: "projects/garden\n#1 The bees are kept there."},
+		{ID: "a5", Role: string(llm.RoleAssistant), Content: "The bees are kept in the garden."},
+	}
+	idsOf := func(found []*models.AgentMessage) []string {
+		var ids []string
+		for _, each := range found {
+			ids = append(ids, each.ID)
+		}
+		return ids
+	}
+	if got, want := idsOf(worthReading(messages)), []string{"u1", "u2", "a3", "u3", "a5"}; !slices.Equal(got, want) {
+		t.Errorf("worthReading kept %v, want %v", got, want)
+	}
+	// The mark fell between the tool's answer and the agent's reply.
+	if got, want := idsOf(worthReadingIn(messages, messages[3:])), []string{"u2", "a3", "u3", "a5"}; !slices.Equal(got, want) {
+		t.Errorf("worthReadingIn a window after the answer kept %v, want %v", got, want)
+	}
+	// The commands run in a turn are cut from the lessons window the same way.
+	if got, want := idsOf(withoutSharedRecordingTurnsIn(messages, messages)), []string{"u1", "u2", "a3", "u3", "a4", "t4", "a5"}; !slices.Equal(got, want) {
+		t.Errorf("withoutSharedRecordingTurnsIn kept %v, want %v", got, want)
 	}
 }

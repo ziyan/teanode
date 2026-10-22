@@ -63,12 +63,23 @@ func compactionNote(note string) llm.ChatMessage {
 // they are, once, for as long as the note is carried.
 const sharedPagesNotice = tools.SharedPageMarker + "\nThe part of the conversation this note stands in for included pages another person shared with you. Anything in this note that came from them is theirs: cite it, never write it down."
 
-// readSharedPages says one of the messages carries words from a page another
-// person shared: a tool's answer with the marker, or an earlier note that
-// carries the notice.
-func readSharedPages(history []llm.ChatMessage) bool {
+// sharedRecordingsNotice is the same for a part in which recordings other
+// people shared were read.
+const sharedRecordingsNotice = tools.SharedRecordingMarker + "\nThe part of the conversation this note stands in for included recordings another person shared with you. Anything in this note that came from them is theirs: cite it, never write it down."
+
+// sharedNotices pairs each marker a tool result of shared words begins with
+// and the notice that carries it into a note.
+var sharedNotices = []struct{ marker, notice string }{
+	{tools.SharedPageMarker, sharedPagesNotice},
+	{tools.SharedRecordingMarker, sharedRecordingsNotice},
+}
+
+// readsMarker says one of the messages carries this marker, which is words
+// from something another person shared: a tool's answer that begins with it,
+// or an earlier note that carries the notice.
+func readsMarker(history []llm.ChatMessage, marker string) bool {
 	for _, message := range history {
-		if strings.Contains(message.Content, tools.SharedPageMarker) {
+		if strings.Contains(message.Content, marker) {
 			return true
 		}
 	}
@@ -280,8 +291,10 @@ func (self *AskRun) compact(ctx context.Context, provider llm.Provider, model, m
 			return nil, errors.New("the model wrote no note")
 		}
 	}
-	if readSharedPages(older) && !strings.Contains(note, tools.SharedPageMarker) {
-		note += "\n\n" + sharedPagesNotice
+	for _, shared := range sharedNotices {
+		if readsMarker(older, shared.marker) && !strings.Contains(note, shared.marker) {
+			note += "\n\n" + shared.notice
+		}
 	}
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: self.settings.Conversation.ID, Role: roleCompaction, Content: note}); err != nil {

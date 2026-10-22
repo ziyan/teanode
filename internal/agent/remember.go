@@ -252,7 +252,7 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 // meaning as those filed and are not filed twice.
 func (self *Agent) readLessonsOf(ctx context.Context, run *Run, conversation *models.AgentConversation, messages, unread []*models.AgentMessage, backlog int) ([]*models.AgentMessage, *models.AgentMessage, int, error) {
 	read := unread[len(unread)-1]
-	window := withoutPrivateTurnsIn(messages, lessonWindowOf(messages, conversation.RememberedThrough, read))
+	window := withoutSharedRecordingTurnsIn(messages, withoutPrivateTurnsIn(messages, lessonWindowOf(messages, conversation.RememberedThrough, read)))
 	filedCount, readCount, err := self.readLessons(ctx, run, conversation, window)
 	if filedCount > 0 {
 		log.Debugf("filed %d lesson(s) from conversation %s", filedCount, conversation.ID)
@@ -369,7 +369,7 @@ func worthReading(messages []*models.AgentMessage) []*models.AgentMessage {
 // private turns being found in all of it (see withoutPrivateTurnsIn).
 func worthReadingIn(whole, window []*models.AgentMessage) []*models.AgentMessage {
 	kept := make([]*models.AgentMessage, 0, len(window))
-	for _, message := range withoutPrivateTurnsIn(whole, window) {
+	for _, message := range withoutSharedRecordingTurnsIn(whole, withoutPrivateTurnsIn(whole, window)) {
 		switch message.Role {
 		case string(llm.RoleUser), string(llm.RoleAssistant):
 			if strings.TrimSpace(message.Content) != "" {
@@ -420,6 +420,43 @@ func withoutPrivateTurnsIn(whole, window []*models.AgentMessage) []*models.Agent
 	kept := make([]*models.AgentMessage, 0, len(window))
 	for _, message := range window {
 		if !isPrivate[message] || message.Role == string(llm.RoleUser) {
+			kept = append(kept, message)
+		}
+	}
+	return kept
+}
+
+// withoutSharedRecordingTurnsIn is the window without what the agent said, and
+// what its tools answered, in any turn in which a tool answered with words
+// from a recording another person shared (tools.SharedRecordingMarker). What
+// the agent said there may be a paraphrase of the recording, which a check on
+// words does not find, so the run files nothing from that turn but what the
+// person wrote. The turns are found in all of the conversation, as
+// withoutPrivateTurnsIn finds them.
+func withoutSharedRecordingTurnsIn(whole, window []*models.AgentMessage) []*models.AgentMessage {
+	isReadingRecording := map[*models.AgentMessage]bool{}
+	for start := 0; start < len(whole); {
+		end := start + 1
+		for end < len(whole) && !isTurnStart(whole, end) {
+			end++
+		}
+		hasSharedRecording := false
+		for _, message := range whole[start:end] {
+			if message.Role == string(llm.RoleTool) && strings.Contains(message.Content, tools.SharedRecordingMarker) {
+				hasSharedRecording = true
+				break
+			}
+		}
+		if hasSharedRecording {
+			for _, message := range whole[start:end] {
+				isReadingRecording[message] = true
+			}
+		}
+		start = end
+	}
+	kept := make([]*models.AgentMessage, 0, len(window))
+	for _, message := range window {
+		if !isReadingRecording[message] || message.Role == string(llm.RoleUser) {
 			kept = append(kept, message)
 		}
 	}

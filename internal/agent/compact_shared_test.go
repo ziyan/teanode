@@ -20,10 +20,15 @@ import (
 // A note that stands in for a part of the conversation in which pages other
 // people shared were read carries the shared-page marker, because the model
 // that wrote it may have put their words in it, and the model that reads the
-// note afterwards must not take them for the person's own. A note written
-// from a part that read none does not.
+// note afterwards must not take them for the person's own. The same goes for
+// a recording another person shared. A note written from a part that read
+// none carries neither marker.
 func TestCompactionNoteCarriesTheSharedPageMarker(t *testing.T) {
-	for name, readsSharedPage := range map[string]bool{"with a shared page read": true, "without one": false} {
+	for name, readMarker := range map[string]string{
+		"with a shared page read":      tools.SharedPageMarker,
+		"with a shared recording read": tools.SharedRecordingMarker,
+		"without one":                  "",
+	} {
 		t.Run(name, func(t *testing.T) {
 			database, closeDatabase := dbtest.AcquireDatabase(t)
 			defer closeDatabase()
@@ -63,8 +68,8 @@ func TestCompactionNoteCarriesTheSharedPageMarker(t *testing.T) {
 				add("user", "what did Sam say about the garden?", "", "")
 				add("assistant", "", "", "", models.AgentToolCall{ID: "c1", Name: "memory", Arguments: `{"action":"get","path":"projects/garden","owner":"sam"}`})
 				answer := "the garden is where the bees are kept"
-				if readsSharedPage {
-					answer = tools.SharedPageMarker + "\n" + answer
+				if readMarker != "" {
+					answer = readMarker + "\n" + answer
 				}
 				add("tool", answer, "memory", "c1")
 				add("assistant", "Sam keeps the bees in the garden.", "", "")
@@ -98,8 +103,10 @@ func TestCompactionNoteCarriesTheSharedPageMarker(t *testing.T) {
 			if len(notes) == 0 {
 				t.Fatal("the conversation was not compacted, so nothing was proved")
 			}
-			if carries := strings.Contains(notes[len(notes)-1], tools.SharedPageMarker); carries != readsSharedPage {
-				t.Errorf("the note carries the marker: %v, expected %v:\n%s", carries, readsSharedPage, notes[len(notes)-1])
+			for _, marker := range []string{tools.SharedPageMarker, tools.SharedRecordingMarker} {
+				if carries := strings.Contains(notes[len(notes)-1], marker); carries != (marker == readMarker) {
+					t.Errorf("the note carries %q: %v, expected %v:\n%s", marker, carries, marker == readMarker, notes[len(notes)-1])
+				}
 			}
 		})
 	}

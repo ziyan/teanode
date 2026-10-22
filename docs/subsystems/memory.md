@@ -1119,17 +1119,22 @@ the prompt all go through it, so what is left out is left out once:
   and their openings and the quotes, so it can name a page that is not shared or
   repeat a quote the owner did not share. The view says "The owner's longer
   overview of this page is not shared." (`models.SharedOverviewNotice`).
-* A summary that quotes somebody, unless the owner shared the quotes: the page's
-  opening is left out of the view, of a listing and of a search hit when it has
-  a span between quotation marks of four words or more (`quotesSomebody`, in
+* A summary that the model may have copied from something the reader is not
+  shown: the page's opening is left out of the view, of a listing and of a
+  search hit when the page has a fact that is itself kept back (`isWithheld`,
+  above) or a fact read in a chat or a recording (`isOthersWords`), and when it
+  quotes somebody and the owner did not share the quotes. Quoting somebody is a
+  span between quotation marks of four words or more (`quotesSomebody`, in
   straight and curly double and single quotation marks, angle and corner
   brackets; eight characters for a language written without spaces; a single
   quotation mark opens a span only when it does not follow a letter or a
   digit, so an apostrophe does not). The rest of the sentence would be built
-  around the quote, so none of it is kept. And even when the owner shared the
-  quotes, one that quotes somebody is left out of a page that has a fact read in
-  a chat or a recording (`sharedSummaryFor`): the model that wrote it copied
-  words it was given, which there may be the others'.
+  around what was copied, so none of it is kept (`sharedSummaryFor`). A search
+  does not find such a page by a word on its summary (`summariesLeftOut`).
+* Evidence that cannot be found counts as evidence that is kept back: a
+  document no longer in the archive, a private event deleted since the fact was
+  filed, and an event in a circle's calendar, which is not the owner's own. The
+  fact is not shown and its summary is left out (`sharedEvidenceOf`).
 * A link, unless the page at its other end is shared with the reader too, so
   a link never names a page the reader was not given. The owner's other pages
   are not named anywhere. And never the note on a link: the owner's agent wrote
@@ -1211,11 +1216,19 @@ Both checks read the conversation as stored, where the marked tool results stay
 whole however far it was compacted. The note that stands in for a compacted
 part is a model's reading of it, so it can hold words from a shared page
 without the marker; a note written from a part in which a shared page was read
-ends with the marker and a sentence saying the words are theirs (`sharedPagesNotice`),
-and an earlier note that carries it passes it on when notes are folded. The
-check on words still compares against the stored results and not the note, so a
-paraphrase in the note is a thing the model is told about and not a thing code
-refuses.
+ends with the marker and a sentence saying the words are theirs (`sharedPagesNotice`;
+`sharedRecordingsNotice` and `tools.SharedRecordingMarker` for a shared
+recording), and an earlier note that carries it passes it on when notes are
+folded. The check on words still compares against the stored results and not
+the note, so a paraphrase in the note is a thing the model is told about and not
+a thing code refuses.
+
+A shared recording is stricter, because a paraphrase of it passes a check on
+words. In a turn in which a tool answered with `tools.SharedRecordingMarker`,
+the filing run is shown only what the person wrote, and the lessons run reads
+none of the turn (`withoutSharedRecordingTurnsIn`). A fact from the agent's
+paraphrase of the recording therefore has nothing to rest on. A shared page is
+still held to the check on words alone.
 
 What the reader's agent learns about the same subject is learned in its own
 graph, under its own page, and the two pages can disagree. They are two
