@@ -298,13 +298,13 @@ func (self *memoryStore) ScavengePasswordItems(before time.Time) (int64, error) 
 	return 0, nil
 }
 
-func (self *memoryStore) RevokeTokensByUser(userId string, at time.Time) (int64, error) {
+func (self *memoryStore) RevokeTokensByUser(userId string, at time.Time, except string) (int64, error) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
 	var ended int64
 	for _, found := range self.tokens {
-		if found.token.UserID == userId && found.token.RevokedAt.IsZero() {
+		if found.token.UserID == userId && found.token.ID != except && found.token.RevokedAt.IsZero() {
 			found.token.RevokedAt = at
 			ended++
 		}

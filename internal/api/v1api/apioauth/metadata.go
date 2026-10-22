@@ -115,9 +115,14 @@ func (self *oauth) authorizationServerView(response http.ResponseWriter, request
 // Both are public, unchanging for a given address, and read by programs that
 // will ask again on the next connection; letting them be cached briefly saves
 // a round trip without making a change take long to appear.
+//
+// Unchanging for a given address, not for all of them: the document names the
+// address it was asked at, so a shared cache that kept one copy would hand a
+// client the addresses of whoever asked first. Vary: Host keeps one per name.
 func writeMetadata(response http.ResponseWriter, document any) {
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.Header().Set("Cache-Control", "public, max-age=3600")
+	response.Header().Add("Vary", "Host")
 	if err := json.NewEncoder(response).Encode(document); err != nil {
 		log.Errorf("failed to write a discovery document: %s", err)
 	}

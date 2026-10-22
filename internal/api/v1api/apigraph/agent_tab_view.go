@@ -201,6 +201,7 @@ func (self *graph) tabViewerView(response http.ResponseWriter, request *http.Req
 	refuse := socket.refuse
 	var found *models.Agent
 	username := ""
+	var credential *socketCredential
 	defer func() {
 		if found != nil {
 			worker.RemoveTabViewer(found.ID, socket)
@@ -225,6 +226,9 @@ func (self *graph) tabViewerView(response http.ResponseWriter, request *http.Req
 				refuse("say hello first")
 				return
 			}
+			// What signed the socket in, kept to ask about again: the token,
+			// or none for the cookie the upgrade carried.
+			credentialToken := message.Token
 			switch {
 			case message.Token != "":
 				username = self.usernameOfToken(request, message.Token)
@@ -232,7 +236,7 @@ func (self *graph) tabViewerView(response http.ResponseWriter, request *http.Req
 					refuse("the token is not one this server takes; sign in again")
 					return
 				}
-			case sessionUsername != "" && request.Header.Get("Origin") != "" && fromThisServer(request):
+			case sessionUsername != "" && request.Header.Get("Origin") != "" && api.FromThisServer(request):
 				// A cookie the browser attached by itself: only a page of
 				// this server may open the view with it. An operator signed
 				// in as somebody does not watch or work their browser.
@@ -250,8 +254,15 @@ func (self *graph) tabViewerView(response http.ResponseWriter, request *http.Req
 				refuse(err.Error())
 				return
 			}
+			credential = self.newSocketCredential(request, credentialToken, username)
 			worker.AddTabViewer(found.ID, socket)
 			continue
+		}
+		// A token revoked or a session ended since the hello, or an account
+		// since disabled, ends the view at the next message after the interval.
+		if !credential.StillHolds() {
+			refuse("you are not signed in any more; sign in again")
+			return
 		}
 		switch message.Type {
 		case "watch":

@@ -441,7 +441,7 @@ func (self *graph) SetUserPassword(ctx context.Context, arguments SetUserPasswor
 			log.Errorf("failed to end the sessions of %q after a password reset: %s", updated.Username, err)
 		}
 	}
-	if revoked, err := self.database.RevokeTokensByUser(updated.ID, time.Now()); err != nil {
+	if revoked, err := self.database.RevokeTokensByUser(updated.ID, time.Now(), ""); err != nil {
 		log.Errorf("failed to revoke the API tokens of %q after a password reset: %s", updated.Username, err)
 	} else if revoked > 0 {
 		log.Noticef("revoked %d API token(s) of %q with the password reset", revoked, updated.Username)
