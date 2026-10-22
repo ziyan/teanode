@@ -143,7 +143,10 @@ and `FROM golang:1.25` already track the latest patch, and the floor in
 quietly. The image was rebuilt to confirm it reports `go1.25.14` rather than
 to assume it.
 
-`npm audit --omit=dev` reports no vulnerabilities in the dashboard.
+`npm audit --omit=dev` reports no vulnerabilities in the packages it checks,
+which are the three listed under `dependencies` in `web/package.json`. The
+dashboard's framework packages are `devDependencies` that the build bundles, so
+it skips them (SEC-225).
 
 ### SEC-4 — Nothing rate limited authentication (Medium, fixed)
 
@@ -869,7 +872,9 @@ Beyond the first review's list, and named so nobody repeats the work:
   socket; workflow permissions least-privilege; no `pull_request_target`;
   untrusted fields passed through `env` rather than interpolated.
 - **Secrets at rest**: `gitleaks` over every commit finds nothing.
-- **Dashboard dependencies**: `npm audit --omit=dev` finds nothing.
+- **Dashboard dependencies**: `npm audit --omit=dev` finds nothing in the
+  packages under `dependencies` only; it skips the bundled `devDependencies`
+  (SEC-225).
 
 ## What this review did not do
 
@@ -2331,3 +2336,26 @@ another person's photo is refused while its owner is disabled.
   held back in a chat the way the location tool is.
 - A circle share reaches whoever joins the circle later, including data from
   before they joined.
+# Tenth pass: dependencies and stored secrets
+
+## Findings
+
+### SEC-223: A downstream mail server password was stored in the clear (Medium, fixed)
+
+An alias that relays to a mail server kept that server's password as plain
+YAML in the `mail_server` column, while the signing and certificate keys
+beside it were sealed. It is now sealed with the same sealer. A row written
+the old way still reads and is sealed by its next save.
+
+### SEC-224: A standard library vulnerability was reachable (Medium, fixed)
+
+GO-2026-6809 in `crypto/x509` was reached through passkey registration under
+Go 1.26.9. The `go` directive and the build image now require 1.26.10, and
+`govulncheck` reports nothing reachable.
+
+### SEC-225: What the npm audit covers (informational)
+
+`npm audit --omit=dev` skips `react`, `react-dom` and `react-router-dom`
+because they are `devDependencies`, though the build bundles them. An OSV
+check over the whole lockfile found nothing. The earlier lines that said the
+audit finds nothing now say what it covers.
