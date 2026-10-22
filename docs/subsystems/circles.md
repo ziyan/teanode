@@ -3,8 +3,8 @@
 A server often has people on it who know each other: a household, some
 friends, colleagues. A circle is the list of who belongs together. It decides
 nothing by itself; the features that share something between people (chats,
-calendars, memory, payments) are shared with a circle or with one person in
-one, and each of them asks this list who is in it.
+calendars, memory, recordings, payments) are shared with a circle or with one
+person in one, and each of them asks this list who is in it.
 
 The reasons for the shape are in
 `docs/decisions/20261016-people-on-one-server-meet-in-circles.md`.
@@ -158,8 +158,8 @@ now share a circle with none of the others; a direct chat stays readable by
 both and takes no new message until they share a circle again.
 
 The same transaction ends what two people said to each other and what one noted
-about the other: relationships, shares of calendars, locations, pages, skills
-and albums, and a contact one linked to the other's account
+about the other: relationships, shares of calendars, locations, pages, skills,
+recordings and albums, and a contact one linked to the other's account
 (`endContactAccountsOutsideCircles`, see `docs/subsystems/contacts.md`). A
 `CircleMember` carries `linkedContactId`, the caller's own contact linked to
 that person; it is for the caller alone and is empty in everybody else's view.

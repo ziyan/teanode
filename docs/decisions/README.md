@@ -228,3 +228,9 @@ two people in a circle are to each other is one fact either of them can
 change, seen only by the two of them, and why each person says how they are
 described instead of the server guessing. It is proposed; its plan is
 `docs/planning/relationships-execplan.md`.
+
+`20261022-a-recording-is-shared-at-a-level.md` says why a recording is shared
+at a summary or a transcript level and never the audio, a voice sample or a
+contact, why every surface warns that the other people who speak did not
+agree, and why the agent reads a recording shared with its person only in a
+conversation the person started. It is proposed.
