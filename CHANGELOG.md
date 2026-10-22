@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.193.7] - 2026-10-22
+
+### Security
+
+- Sign-in and request limits hold under load: a full limiter table, a whole IPv6 network, app-password guesses, anonymous GraphQL, password-change guesses, single sign-on and mail connections are all bounded. (#630)
+- A cookie-authenticated write started by another site's page is refused, and revoking a credential closes the sockets it opened. (#630)
+- Changing your password or signing out everywhere also signs out the phone app, the browser extension and the command line. (#630)
+- The agent asks before changing your notification address, and runs nobody is present for cannot add standing instructions, make share links or fetch addresses a search did not return. (#630)
+- Location stays out of group chats, album place sharing covers only the owner's photos, and a disabled account's albums reach nobody. (#630)
+- Mail submission refuses two From headers; IMAP and mail rendering are bounded against slow requests; invitations from outside lose their alarms and attachments. (#630)
+- Webhook and relay aliases cannot reach the server's own network, and relay passwords are sealed at rest. (#630)
+
 ## [0.193.6] - 2026-10-22
 
 ### Fixed
