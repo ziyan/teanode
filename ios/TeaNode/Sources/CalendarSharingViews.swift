@@ -423,13 +423,18 @@ struct CalendarShareScreen: View {
                 }
                 ForEach(shares) { share in
                     HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(share.isWithCircle ? String(localized: "Everyone in \(share.granteeDisplayName)") : share.granteeDisplayName)
-                            Text(share.level?.title ?? share.shareLevel)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
+                        Text(Self.name(of: share))
                         Spacer(minLength: 0)
+                        // The level is changed where it is shown, by sharing
+                        // again with the same person or circle.
+                        Picker("What \(Self.name(of: share)) sees", selection: levelBinding(for: share)) {
+                            ForEach(CalendarShareLevel.grantable, id: \.self) { each in
+                                Text(each.title).tag(each)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .disabled(isWorking)
                     }
                     .confirmationDialog(
                         "Stop sharing", isPresented: Binding(get: { stopping?.id == share.id }, set: { if !$0 { stopping = nil } }),
@@ -498,6 +503,32 @@ struct CalendarShareScreen: View {
         .refreshable { await load() }
         .task { await load() }
         .toast(done: $doneText, problem: $problemText)
+    }
+
+    /// The level of a share as the row's menu shows it. A level this app does
+    /// not know is shown as the least, as everywhere else.
+    private func levelBinding(for share: CalendarShare) -> Binding<CalendarShareLevel> {
+        Binding(
+            get: { share.level ?? .busy },
+            set: { newLevel in changeLevel(of: share, to: newLevel) })
+    }
+
+    private func changeLevel(of share: CalendarShare, to newLevel: CalendarShareLevel) {
+        guard newLevel != share.level else { return }
+        let name = Self.name(of: share)
+        isWorking = true
+        Task {
+            do {
+                try await model.connection.shareCalendar(
+                    calendarId: calendar.id, granteeUserId: share.granteeUserId, granteeCircleId: share.granteeCircleId, level: newLevel)
+                doneText = String(localized: "Changed what \(name) sees")
+            } catch {
+                problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+            }
+            // Read again either way, so that the menu shows what the server holds.
+            if let current = try? await model.connection.calendarShares(calendarId: calendar.id) { shares = current }
+            isWorking = false
+        }
     }
 
     private static func name(of share: CalendarShare) -> String {

@@ -58946,6 +58946,38 @@
         }
       }
     },
+    "What %@ sees": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に見せる範囲"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 可以看到的内容"
+          }
+        }
+      }
+    },
+    "Changed what %@ sees": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に見せる範囲を変更しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已更改 %@ 可以看到的内容"
+          }
+        }
+      }
+    },
     "How much": {
       "localizations": {
         "ja": {

@@ -2824,6 +2824,8 @@ export const ja: Catalog = {
   'calendar.shareLevelHint.titles': '各予定の時間、タイトル、場所が見えます。',
   'calendar.shareLevelHint.details': 'メモや参加者を含め、予定の内容がすべて見えます。',
   'calendar.shareLevelHint.edit': 'すべて見え、参加者のいない予定を追加、変更、削除できます。',
+  'calendar.shareLevelFor': '{name}に見せる範囲',
+  'calendar.shareLevelChanged': '{name}に見せる範囲を変更しました',
   'calendar.shareAdd': '共有する',
   'calendar.shareSaid': '{name}と共有しました',
   'calendar.shareStop': '{name}との共有をやめる',
