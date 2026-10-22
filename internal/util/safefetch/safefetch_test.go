@@ -1,6 +1,7 @@
 package safefetch_test
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/util/safefetch"
@@ -99,3 +100,20 @@ func TestOnlyFetchableAddressesAreParsed(t *testing.T) {
 // A message links to what it links to; the proxy serves an image or nothing.
 // Without this the endpoint would relay an internal service's reply to
 // whoever wrote the message, which is the same hole one step later.
+
+// Browsers speak HTTP/2, and some sites behind a bot check refuse a client
+// that only speaks HTTP/1.1.
+func TestClientsOfferHTTP2(t *testing.T) {
+	t.Parallel()
+
+	clients := map[string]*http.Client{
+		"client":          safefetch.Client(),
+		"client allowing": safefetch.ClientAllowing(nil),
+	}
+	for name, client := range clients {
+		transport, isTransport := client.Transport.(*http.Transport)
+		if !isTransport || !transport.ForceAttemptHTTP2 {
+			t.Errorf("the %s does not offer HTTP/2", name)
+		}
+	}
+}
