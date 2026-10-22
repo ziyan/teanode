@@ -12,6 +12,8 @@ final class LocationModel {
     nonisolated static let visitPageSize = 50
     nonisolated static let placePageSize = 50
     nonisolated static let searchPageSize = 20
+    /// How far back the pauses are read when every visit has been read.
+    nonisolated static let pauseLookbackSeconds = 365.0 * 86400
     /// How many address matches one search lists.
     nonisolated static let addressSearchLimit = 8
 
@@ -20,6 +22,9 @@ final class LocationModel {
     private(set) var location: PersonLocation?
     private(set) var visits: [PlaceVisit] = []
     private(set) var nextVisitOffset: Int?
+    /// The person's pauses over the stretch the visits cover, newest first,
+    /// which the timeline shows among the visits.
+    private(set) var pauses: [LocationPause] = []
     private(set) var places: [LocationPlace] = []
     private(set) var nextPlaceOffset: Int?
     /// Whether the first read has finished, one way or the other.
@@ -98,8 +103,8 @@ final class LocationModel {
     /// The person's own user identifier, once their location is read.
     var ownUserId: String? { location?.userId }
 
-    /// The visits grouped by day, newest first.
-    var days: [LocationVisitDay] { LocationDays.group(visits) }
+    /// The visits and pauses grouped by day, newest first.
+    var days: [LocationVisitDay] { LocationDays.group(visits, pauses: pauses) }
 
     /// Whether the places shown are narrowed by a label or by words.
     var isFilteringPlaces: Bool { placeLabelFilter != nil || !trimmedPlaceSearchText.isEmpty }
@@ -144,7 +149,9 @@ final class LocationModel {
         apply(people: peopleResult, shares: sharesResult, circles: circlesResult, homes: homesResult)
         var failure: Error?
         switch locationResult {
-        case .success(let read): location = read
+        case .success(let read):
+            location = read
+            LocationRecorder.shared.learnPause(read.pause)
         case .failure(let error): failure = error
         }
         switch visitsResult {
@@ -172,6 +179,28 @@ final class LocationModel {
             loadFailedText = nil
         }
         finishSetupIfDone()
+        Task { await readPauses() }
+    }
+
+    /// Reads the pauses over the stretch the visits shown cover: back to the
+    /// oldest visit while there are more to read, else a year. A server that
+    /// cannot list pauses has none to show, and that is not a failure.
+    private func readPauses() async {
+        let oldest = visits.compactMap(\.anchorDate).min()
+        let from: Date
+        if nextVisitOffset != nil, let oldest {
+            from = oldest
+        } else {
+            from = Date().addingTimeInterval(-Self.pauseLookbackSeconds)
+        }
+        guard let read = try? await connection.locationPauses(from: from, to: Date()) else { return }
+        pauses = read
+    }
+
+    /// The pauses of a stretch, for a screen that lists them among visits; none
+    /// when they cannot be read.
+    func pauses(from: Date, to: Date) async -> [LocationPause] {
+        (try? await connection.locationPauses(from: from, to: to)) ?? []
     }
 
     private func apply(
@@ -206,6 +235,7 @@ final class LocationModel {
             let known = Set(visits.map(\.id))
             visits += page.placeVisits.filter { !known.contains($0.id) }
             nextVisitOffset = page.nextOffset
+            await readPauses()
         } catch {
             problemText = error.localizedDescription
         }
@@ -312,7 +342,8 @@ final class LocationModel {
                 openVisit: PlaceVisit(
                     id: open.id, place: saved, arrivedAt: open.arrivedAt, departedAt: open.departedAt, durationSeconds: open.durationSeconds,
                     latitudeDegrees: open.latitudeDegrees, longitudeDegrees: open.longitudeDegrees, accuracyMeters: open.accuracyMeters,
-                    visitSource: open.visitSource))
+                    visitSource: open.visitSource),
+                pause: current.pause)
         }
     }
 
@@ -408,6 +439,7 @@ final class LocationModel {
         if from == nil, until == nil {
             location = nil
             visits = []
+            pauses = []
             places = []
             nextVisitOffset = nil
             nextPlaceOffset = nil
@@ -492,13 +524,17 @@ final class LocationModel {
         async let readLocation = attempt { try await connection.location() }
         async let readVisits = attempt { try await connection.locationVisits(limitCount: LocationModel.visitPageSize) }
         let (locationResult, visitsResult) = await (readLocation, readVisits)
-        if case .success(let read) = locationResult { location = read }
+        if case .success(let read) = locationResult {
+            location = read
+            LocationRecorder.shared.learnPause(read.pause)
+        }
         if case .success(let page) = visitsResult {
             // The newest page in front of what was scrolled to, each visit once.
             let freshIds = Set(page.placeVisits.map(\.id))
             if visits.isEmpty { nextVisitOffset = page.nextOffset }
             visits = page.placeVisits + visits.filter { !freshIds.contains($0.id) }
         }
+        await readPauses()
     }
 
     private func refreshPeople() async {

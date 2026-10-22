@@ -91,8 +91,23 @@ extension LocationShareLevel {
 
 extension PersonLocation {
     /// Where to draw them: their latest position, else the place of the visit
-    /// in progress.
-    var coordinate: CLLocationCoordinate2D? { latestPoint?.coordinate ?? openVisit?.coordinate }
+    /// in progress. Nowhere while somebody else has paused, whatever the
+    /// phone last read: the person's own position is theirs to see.
+    var coordinate: CLLocationCoordinate2D? {
+        if level != .owner, isPaused() { return nil }
+        return latestPoint?.coordinate ?? openVisit?.coordinate
+    }
+}
+
+extension LocationPauseChoice {
+    /// What the pause menu calls it.
+    var title: String {
+        switch self {
+        case .anHour: String(localized: "For an hour")
+        case .untilTomorrowMorning: String(localized: "Until tomorrow morning")
+        case .untilResumed: String(localized: "Until I resume")
+        }
+    }
 }
 
 extension PlaceVisit {
@@ -137,6 +152,35 @@ enum LocationText {
         }
     }
 
+    /// When a pause ends, as the clock shows it: just the time when that is
+    /// today, else with the day.
+    static func pauseEnd(_ endDate: Date) -> String {
+        if Calendar.current.isDateInToday(endDate) { return time(endDate) }
+        return endDate.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    /// The person's own pause: "Paused until 15:00", or until they resume.
+    static func pausedUntil(_ pause: LocationPause) -> String {
+        guard let endDate = pause.endedDate else { return String(localized: "Paused until you resume") }
+        return String(localized: "Paused until \(pauseEnd(endDate))")
+    }
+
+    /// What somebody who paused reads as to the people who share with them.
+    static func locationPaused(_ pause: LocationPause) -> String {
+        guard let endDate = pause.endedDate else { return String(localized: "Location paused") }
+        return String(localized: "Location paused until \(pauseEnd(endDate))")
+    }
+
+    /// When a pause began and ended, such as "14:00 to 15:00"; "Since 14:00"
+    /// while it has no end.
+    static func times(of pause: LocationPause) -> String {
+        switch (pause.startedDate, pause.endedDate) {
+        case (let startedDate?, let endDate?): String(localized: "\(time(startedDate)) to \(pauseEnd(endDate))")
+        case (let startedDate?, nil): String(localized: "Since \(time(startedDate))")
+        case (nil, _): ""
+        }
+    }
+
     /// The times of a visit and, when it is over, how long it was.
     static func summary(of visit: PlaceVisit) -> String {
         let timesText = times(of: visit)
@@ -150,6 +194,7 @@ enum LocationText {
     /// there is no position yet ("No position recorded yet" on the person's
     /// own row).
     static func whereText(of person: PersonLocation, isOwn: Bool = false) -> String {
+        if !isOwn, let pause = person.pause, pause.isInEffect(at: Date()) { return locationPaused(pause) }
         let placeName = person.openVisit?.place.shownName
         // A reading at or a moment ahead of this iPhone's clock reads as "1
         // sec. ago": the formatter calls a difference of zero "in 0 sec.".

@@ -321,6 +321,13 @@ jobs:
           shoot location-address-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-address
           shoot location-address-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-address
           shoot location-settings-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-settings
+          # Pausing: the settings while the person's pause is in effect, and the screen with their pause,
+          # somebody sharing who has paused, and an earlier pause among the visits.
+          shoot location-settings-paused-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-settings-paused
+          shoot location-settings-paused-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-settings-paused
+          shoot location-paused-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-paused
+          shoot location-paused-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-paused
+          shoot location-paused-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-paused
           # Sharing, a person chosen on the map, many people sharing, the check-in sheet, and setting Location up.
           for location_screen in location-sharing location-person location-people location-checkin location-setup; do
             shoot "$location_screen-light" light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"

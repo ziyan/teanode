@@ -209,6 +209,9 @@ public struct PersonLocation: Codable, Identifiable, Hashable, Sendable {
     public let shareLevel: String
     public let latestPoint: LocationPoint?
     public let openVisit: PlaceVisit?
+    /// The pause in effect, when the person has paused. For somebody else
+    /// the server then sends no `latestPoint` and no `openVisit`.
+    public let pause: LocationPause?
 
     public var id: String { userId }
     public var level: LocationShareLevel { LocationShareLevel(rawValue: shareLevel) ?? .current }
@@ -219,7 +222,7 @@ public struct PersonLocation: Codable, Identifiable, Hashable, Sendable {
 
     public init(
         userId: String, username: String, name: String? = nil, avatarUrl: String? = nil, avatarColorIndex: Int? = nil,
-        shareLevel: String = "owner", latestPoint: LocationPoint? = nil, openVisit: PlaceVisit? = nil
+        shareLevel: String = "owner", latestPoint: LocationPoint? = nil, openVisit: PlaceVisit? = nil, pause: LocationPause? = nil
     ) {
         self.userId = userId
         self.username = username
@@ -229,6 +232,7 @@ public struct PersonLocation: Codable, Identifiable, Hashable, Sendable {
         self.shareLevel = shareLevel
         self.latestPoint = latestPoint
         self.openVisit = openVisit
+        self.pause = pause
     }
 }
 
@@ -315,6 +319,37 @@ public struct ReportLocationResult: Codable, Hashable, Sendable {
     public let newPointCount: Int
     public let newVisitCount: Int
     public let updatedVisitCount: Int
+    /// The pause in effect after the report, so the phone learns of one set
+    /// elsewhere.
+    public let pause: LocationPause?
+    /// How many positions and visits the server dropped because they fell in
+    /// a pause.
+    public let pausedPointCount: Int
+    public let pausedVisitCount: Int
+
+    public init(
+        newPointCount: Int, newVisitCount: Int, updatedVisitCount: Int, pause: LocationPause? = nil, pausedPointCount: Int = 0,
+        pausedVisitCount: Int = 0
+    ) {
+        self.newPointCount = newPointCount
+        self.newVisitCount = newVisitCount
+        self.updatedVisitCount = updatedVisitCount
+        self.pause = pause
+        self.pausedPointCount = pausedPointCount
+        self.pausedVisitCount = pausedVisitCount
+    }
+
+    /// The three fields a server that cannot pause does not send decode to
+    /// their defaults.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        newPointCount = try container.decode(Int.self, forKey: .newPointCount)
+        newVisitCount = try container.decode(Int.self, forKey: .newVisitCount)
+        updatedVisitCount = try container.decode(Int.self, forKey: .updatedVisitCount)
+        pause = try container.decodeIfPresent(LocationPause.self, forKey: .pause)
+        pausedPointCount = try container.decodeIfPresent(Int.self, forKey: .pausedPointCount) ?? 0
+        pausedVisitCount = try container.decodeIfPresent(Int.self, forKey: .pausedVisitCount) ?? 0
+    }
 }
 
 /// EraseLocationHistoryResult is what an erase removed.
@@ -493,8 +528,12 @@ extension Documents {
           visitCount lastVisitAt namingErrorMessage createdAt updatedAt
         }
         """
+    static let locationPauseFields = """
+        id startedAt endedAt
+        """
     static let personLocationFields = """
         userId username name avatarUrl avatarColorIndex shareLevel
+        pause { id startedAt endedAt }
         latestPoint { latitudeDegrees longitudeDegrees accuracyMeters altitudeMeters speedMetersPerSecond courseDegrees measuredAt locationSource }
         openVisit {
           id arrivedAt departedAt durationSeconds latitudeDegrees longitudeDegrees accuracyMeters visitSource
@@ -552,8 +591,22 @@ extension Documents {
         """
     public static let reportLocation = """
         mutation ($agentPhoneId: String, $points: [ReportedPointInput!]!, $visits: [ReportedVisitInput!]!) {
-          ReportLocation(agentPhoneId: $agentPhoneId, points: $points, visits: $visits) { newPointCount newVisitCount updatedVisitCount }
+          ReportLocation(agentPhoneId: $agentPhoneId, points: $points, visits: $visits) {
+            newPointCount newVisitCount updatedVisitCount pausedPointCount pausedVisitCount
+            pause { id startedAt endedAt }
+          }
         }
+        """
+    public static let locationPauses = """
+        query ($userId: String, $from: DateTime!, $to: DateTime!) {
+          ListLocationPauses(userId: $userId, from: $from, to: $to) { \(locationPauseFields) }
+        }
+        """
+    public static let pauseLocation = """
+        mutation ($endedAt: DateTime) { PauseLocation(endedAt: $endedAt) { \(locationPauseFields) } }
+        """
+    public static let resumeLocation = """
+        mutation { ResumeLocation }
         """
     public static let savePlace = """
         mutation ($placeId: String, $placeName: String, $placeLabel: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $radiusMeters: Float, $addressText: String) {
@@ -606,7 +659,8 @@ extension Documents {
     public static let locationDocuments: [String: String] = [
         "location": location, "locationVisits": locationVisits, "locationPlaces": locationPlaces, "nearbyPlaces": nearbyPlaces,
         "searchPlaces": searchPlaces, "searchAddresses": searchAddresses, "locationPoints": locationPoints, "reportLocation": reportLocation, "savePlace": savePlace,
-        "forgetPlace": forgetPlace, "checkIn": checkIn, "eraseLocationHistory": eraseLocationHistory,
+        "forgetPlace": forgetPlace, "checkIn": checkIn, "eraseLocationHistory": eraseLocationHistory, "locationPauses": locationPauses,
+        "pauseLocation": pauseLocation, "resumeLocation": resumeLocation,
         "sharedLocations": sharedLocations, "locationShares": locationShares, "shareLocation": shareLocation,
         "unshareLocation": unshareLocation, "locationEvents": locationEvents,
     ]
@@ -743,6 +797,34 @@ extension Connection {
         if let from { variables["from"] = .string(CalendarDates.text(from)) }
         if let until { variables["until"] = .string(CalendarDates.text(until)) }
         return try await execute(Documents.eraseLocationHistory, variables: variables, as: Answer.self).EraseLocationHistory
+    }
+
+    // MARK: Pausing
+
+    /// The pauses that overlap a range, newest first: the person's own, or
+    /// somebody sharing their history with the caller.
+    public func locationPauses(userId: String? = nil, from: Date, to: Date) async throws -> [LocationPause] {
+        struct Answer: Decodable, Sendable { let ListLocationPauses: [LocationPause] }
+        var variables: [String: JSONValue] = ["from": .string(CalendarDates.text(from)), "to": .string(CalendarDates.text(to))]
+        if let userId { variables["userId"] = .string(userId) }
+        return try await execute(Documents.locationPauses, variables: variables, as: Answer.self).ListLocationPauses
+    }
+
+    /// Pauses recording now, until the end given or (with none) until the
+    /// person resumes. With a pause already in effect, changes its end.
+    @discardableResult
+    public func pauseLocation(until endedAt: Date? = nil) async throws -> LocationPause {
+        struct Answer: Decodable, Sendable { let PauseLocation: LocationPause }
+        var variables: [String: JSONValue] = [:]
+        if let endedAt { variables["endedAt"] = .string(CalendarDates.text(endedAt)) }
+        return try await execute(Documents.pauseLocation, variables: variables, as: Answer.self).PauseLocation
+    }
+
+    /// Ends the pause in effect now. True when there was one.
+    @discardableResult
+    public func resumeLocation() async throws -> Bool {
+        struct Answer: Decodable, Sendable { let ResumeLocation: Bool? }
+        return try await execute(Documents.resumeLocation, as: Answer.self).ResumeLocation ?? false
     }
 
     // MARK: Sharing

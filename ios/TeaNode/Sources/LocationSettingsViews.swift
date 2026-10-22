@@ -2,8 +2,8 @@ import SwiftUI
 import TeaNodeKit
 
 /// LocationSettingsView is what the person decides about being recorded:
-/// the switch, what is missing for it to work while the app is closed, and
-/// erasing what was recorded.
+/// the switch, pausing it for a while, what is missing for it to work while
+/// the app is closed, and erasing what was recorded.
 struct LocationSettingsView: View {
     let model: LocationModel
     @State private var isConfirmingErase = false
@@ -47,6 +47,7 @@ struct LocationSettingsView: View {
                 Text(
                     "TeaNode notes where you stop and when you leave, even when the app is closed. Turned off, it records nothing new. What is already recorded stays until you erase it.")
             }
+            pauseSection
             Section {
                 Button(role: .destructive) {
                     isConfirmingErase = true
@@ -76,6 +77,58 @@ struct LocationSettingsView: View {
         }
         .navigationTitle("Location settings")
         .navigationBarTitleDisplayMode(.inline)
+        // The server refused a pause or a resume made here, which the phone
+        // had already applied and has now taken back.
+        .onChange(of: recorder.pauseRefusalText, initial: true) { _, refusalText in
+            guard let refusalText else { return }
+            model.problemText = refusalText
+            recorder.clearPauseRefusal()
+        }
+    }
+
+    /// Pausing recording for a while without turning the switch off: for an
+    /// hour, until tomorrow morning, or until the person resumes. A pause is
+    /// the person's, so it stops every device and the people they share with
+    /// read "Location paused".
+    @ViewBuilder
+    private var pauseSection: some View {
+        Section {
+            if let pause = recorder.activePause {
+                Label {
+                    Text(verbatim: LocationText.pausedUntil(pause))
+                } icon: {
+                    Image(systemName: "pause.circle").foregroundStyle(.primary)
+                }
+                Button(String(localized: "location-resume-recording", defaultValue: "Resume recording"), systemImage: "play.circle") {
+                    recorder.resumeRecording()
+                    model.doneText = String(localized: "Recording resumed")
+                }
+                .actionColor()
+            } else {
+                Menu {
+                    ForEach(LocationPauseChoice.allCases) { choice in
+                        Button(choice.title) {
+                            recorder.pauseRecording(choice)
+                            model.doneText = String(localized: "Recording paused")
+                        }
+                    }
+                } label: {
+                    Label(String(localized: "location-pause-recording", defaultValue: "Pause recording"), systemImage: "pause.circle")
+                        .actionColor()
+                }
+            }
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                if recorder.isPaused {
+                    Text("Nothing new is recorded until then, and the people you share with see that your location is paused.")
+                } else {
+                    Text("Stops recording for a while, on every device. The people you share with see that your location is paused.")
+                }
+                if recorder.hasPendingPauseChange {
+                    Text("The server has not been told yet. TeaNode keeps trying.")
+                }
+            }
+        }
     }
 
     /// What is missing for recording to work as the person expects, once.
