@@ -1,9 +1,12 @@
 package mx
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/mailparse"
 )
 
 // A credential restricted to one local part was confined only in the
@@ -65,5 +68,28 @@ func TestAnUnrestrictedCredentialIsStillHeldToItsDomain(t *testing.T) {
 		if !credentialMaySendAs(unrestricted, domain, "bounce@example.com", from) {
 			t.Errorf("From %q is at its own domain and must be allowed", from)
 		}
+	}
+}
+
+// A message with two From headers is refused before anything else is looked
+// at. The sender check reads the last From and an IMAP mail program shows the
+// first, so a credential held to newsletter@ could pass as itself and be read
+// as somebody else, in a message this server signs.
+func TestSubmissionWithTwoFromHeadersIsRefused(t *testing.T) {
+	t.Parallel()
+
+	exchange := &exchange{}
+	envelope := &mailparse.Envelope{
+		Sender: "newsletter@example.com",
+		Headers: []string{
+			"From: Chief <ceo@example.com>\r\n",
+			"To: someone@example.net\r\n",
+			"From: newsletter@example.com\r\n",
+		},
+	}
+	// The refusal comes before the transaction is touched, so none is needed.
+	_, err := exchange.prepareOutgoing(context.Background(), nil, envelope, false)
+	if !errors.Is(err, mailparse.ErrInvalidFromHeader) {
+		t.Fatalf("expected ErrInvalidFromHeader, got %v", err)
 	}
 }
