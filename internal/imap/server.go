@@ -477,7 +477,7 @@ func (self *session) folders(tx db.Transaction) ([]*named, error) {
 		if folder.Kind == models.MailboxFolderKindInbox {
 			return inboxName
 		}
-		if folder.ParentID != "" && depth < 32 {
+		if folder.ParentID != "" && depth < maximumFolderDepth {
 			if parent := byId[folder.ParentID]; parent != nil {
 				return nameOf(parent, depth+1) + string(delimiter) + folder.Name
 			}
@@ -496,6 +496,16 @@ func (self *session) folders(tx db.Transaction) ([]*named, error) {
 	}
 	sort.Slice(result, func(left, right int) bool { return result[left].name < result[right].name })
 	return result, nil
+}
+
+// maximumFolderDepth is how many levels a name may have: the depth the tree
+// is read to in folders, past which a folder is named as if it had no parent.
+// Creating "a/a/a/..." with thousands of parts made the server list the whole
+// mailbox once for each part.
+const maximumFolderDepth = 32
+
+func isTooDeep(name string) bool {
+	return strings.Count(name, string(delimiter))+1 > maximumFolderDepth
 }
 
 // folderNamed finds one folder by the name a client used.
@@ -640,7 +650,7 @@ func (self *session) Create(name string, options *goimap.CreateOptions) error {
 		return err
 	}
 	name = strings.Trim(name, string(delimiter))
-	if name == "" || strings.EqualFold(name, inboxName) {
+	if name == "" || strings.EqualFold(name, inboxName) || isTooDeep(name) {
 		return &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeCannot, Text: "Cannot create that folder"}
 	}
 	return self.transaction(func(tx db.Transaction) error {
@@ -702,7 +712,7 @@ func (self *session) Rename(oldName, newName string, options *goimap.RenameOptio
 		return err
 	}
 	newName = strings.Trim(newName, string(delimiter))
-	if newName == "" || strings.EqualFold(newName, inboxName) {
+	if newName == "" || strings.EqualFold(newName, inboxName) || isTooDeep(newName) {
 		return &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeCannot, Text: "Cannot use that name"}
 	}
 	return self.transaction(func(tx db.Transaction) error {
