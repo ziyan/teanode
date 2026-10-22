@@ -60,8 +60,9 @@ type User struct {
 	// picture's address and its ETag.
 	AvatarUpdatedAt *time.Time `json:"avatarUpdatedAt,omitempty"`
 
-	// DisabledAt, when set, means this person cannot sign in. Their mail and
-	// their memberships are kept, so enabling them again restores everything.
+	// DisabledAt, when set, means this person cannot sign in and their
+	// mailboxes take no new mail. The mail they have and their memberships
+	// are kept, so enabling them again restores everything.
 	DisabledAt *time.Time `json:"disabledAt,omitempty"`
 
 	// Locale is the language the web UI greets them in, when they chose one.

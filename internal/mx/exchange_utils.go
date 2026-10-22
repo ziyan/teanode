@@ -792,6 +792,12 @@ func (self *exchange) matchAliases(tx db.Transaction, domain *models.Domain, rec
 				log.Warningf("alias %q delivers into mailbox %q, which no longer exists", alias.ID, alias.MailboxID)
 				continue
 			}
+			if isTaking, err := takesMail(tx, mailbox); err != nil {
+				return nil, err
+			} else if !isTaking {
+				log.Noticef("not delivering message %q to %q: the account that owns mailbox %q is disabled", mail.ID, recipient, mailbox.ID)
+				continue
+			}
 			delivery, err := self.deliverToMailbox(tx, mailbox, alias, recipient, mail)
 			if err != nil {
 				return nil, err

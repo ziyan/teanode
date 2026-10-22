@@ -126,7 +126,12 @@ func (self *exchange) matchImportAddress(tx db.Transaction, domain *models.Domai
 		if err != nil {
 			return nil, false, err
 		}
-		if mailbox != nil {
+		if mailbox == nil {
+			continue
+		}
+		if isTaking, err := takesMail(tx, mailbox); err != nil {
+			return nil, false, err
+		} else if isTaking {
 			owners = append(owners, owner{alias: alias, mailbox: mailbox})
 		}
 	}
