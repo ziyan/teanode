@@ -4,8 +4,8 @@ A server often has people on it who know each other: a household, some
 friends, colleagues. A circle is the list of who belongs together. It decides
 nothing by itself; the features that share something between people (chats,
 calendars, where a person is, Health, passwords, pages of the agent's memory,
-photo albums, recordings and lent skills) are shared with a circle or with one
-person in one, and each of them asks this list who is in it. "What can be
+photo albums, recordings, finance accounts and lent skills) are shared with a
+circle or with one person in one, and each of them asks this list who is in it. "What can be
 shared" below lists every kind, to whom, at what levels, and where it is
 managed.
 
@@ -186,9 +186,9 @@ None of it comes back when they join again, or when the two meet in another
 circle: they share again if they want to. What other people shared with a circle
 is not deleted, since it is theirs; it stops reaching the person by the join on
 `circle_member` and reaches them again if they rejoin. Deleting a circle also
-deletes its own calendar, its albums and its chat, which belong to it by foreign
-keys. The dialogs on the dashboard and in the iPhone app, the command line's
-questions and the agent's cards say this before it is done.
+deletes its own calendar, its albums, its address book and its chat, which belong
+to it by foreign keys. The dialogs on the dashboard and in the iPhone app, the
+command line's questions and the agent's cards say this before it is done.
 
 A map that is open does not keep the last position of somebody it no longer
 reaches: the three operations work out, among the circle's members, whose
@@ -344,9 +344,10 @@ listing and its own reach query (`reachingSharesQuery`,
 `reachingRecordingSharesQuery`, `reachingFinanceSharesQuery`, the page, skill
 and Health listings), with the share's identifier added to the columns, so the
 list cannot disagree with the check. A kind the caller may not use (no
-`health:use`, the calendar service off, no `agent:use` for recordings and
-finance) is left out of what is shared with them, but not of what they share: a
-person who lost a permission still sees the shares they made, which their
+`health:use`, no `agent:use` for recordings and finance) is left out of what is
+shared with them, but not of what they share. A kind whose service is off (the
+calendar service or the photos service) is left out of both lists. A person who
+lost a permission still sees the shares they made, which their
 readers cannot reach while it is gone, and can end each one (Stopping, below). A finance account reached by name and through a circle is
 one row at the higher level, as the Finance page shows it, and the row is the
 share by name, so it can be declined (the circle's share still reaches the

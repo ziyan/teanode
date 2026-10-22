@@ -1112,9 +1112,9 @@ the prompt all go through it, so what is left out is left out once:
   too. Health readings need no rule here: a turn that read Health is never
   filed (`withoutPrivateTurns`), so no fact rests on it. The owner is told how
   many a share keeps back in its preview (`withheldFactCount`,
-  `CountWithheldFacts`): "3 facts from finance, recordings or location stay
-  private", on the dashboard, the app, the command line and the memory tool's
-  `preview`; the reader is never told.
+  `CountWithheldFacts`): "3 facts from finance, recordings, location, private
+  events, or records that are gone stay private", on the dashboard, the app, the
+  command line and the memory tool's `preview`; the reader is never told.
 * The page's overview. A model writes it from the page's links, its children
   and their openings and the quotes, so it can name a page that is not shared or
   repeat a quote the owner did not share. The view says "The owner's longer

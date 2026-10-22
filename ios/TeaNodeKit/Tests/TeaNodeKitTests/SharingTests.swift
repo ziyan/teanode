@@ -104,6 +104,21 @@ final class SharingTests: XCTestCase {
         XCTAssertEqual(nanoseconds.since, plain.since)
     }
 
+    func testAServerThatDoesNotSendTheAccountMaskStillDecodes() async throws {
+        let answer = #"""
+            {"data":{"ListSharing":{"sharesMade":[
+              {"shareKind":"calendar","shareId":"share-9","subjectId":"calendar-1","subjectName":"Calendar","shareLevel":"titles","shareScopes":[],"passwordItemCount":0,
+               "granteeUserId":"user-2","granteeUsername":"sam","granteeName":"","granteeCircleId":null,"granteeCircleName":"","createdAt":"2030-01-02T00:00:00Z"}],
+             "sharesReceived":[
+              {"shareKind":"calendar","shareId":"share-10","subjectId":"calendar-2","subjectName":"Calendar","shareLevel":"titles","shareScopes":[],"passwordItemCount":0,
+               "ownerUserId":"user-3","ownerUsername":"kim","ownerName":"","granteeCircleId":null,"granteeCircleName":"","isDirect":true,"canDecline":true,"createdAt":"2030-01-02T00:00:00Z"}]}}}
+            """#
+        let (connection, _) = connection(answering: answer)
+        let list = try await connection.sharing()
+        XCTAssertEqual(list.sharesMade[0].shownSubjectMask, "")
+        XCTAssertEqual(list.sharesReceived[0].shownSubjectMask, "")
+    }
+
     func testAPageThatIsGoneIsKnownFromTheServersFlag() async throws {
         let answer = #"""
             {"data":{"ListSharing":{"sharesMade":[

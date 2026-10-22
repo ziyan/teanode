@@ -441,7 +441,7 @@ function PersonCardView({
                   </div>
                 )
               })}
-              {person && showAll(personFinancePath(person.userId))}
+              {person && finance.hasMore && showAll(personFinancePath(person.userId))}
             </>
           ) : (
             stateText(finance.sectionState, t('person.financeNotShared', { name: displayName }))

@@ -365,6 +365,33 @@ it('opens each part from its Show all and each item where it lives', async () =>
   expect(screen.getByRole('link', { name: 'Open fixture.jpg' }).getAttribute('href')).toBe('/photos/photo-one')
 })
 
+it('shows the finance Show all only when more accounts are shared than the card lists', async () => {
+  const account = {
+    financeAccountId: 'account-one',
+    financeShareLevel: 'balance',
+    accountName: 'Fixture Checking',
+    accountMask: '1234',
+    currencyCode: 'USD',
+    currentBalance: '10.00',
+    creditUsage: null,
+  }
+  const financeLinks = () =>
+    screen
+      .queryAllByRole('link', { name: 'Show all' })
+      .map((link) => link.getAttribute('href'))
+      .filter((href) => href?.startsWith('/finance'))
+  answer(sam({ finance: { sectionState: 'shown', financeAccounts: [account], hasMore: false } }))
+  renderAt('/people/person-sam')
+  await screen.findByText('Fixture Checking ··1234')
+  expect(financeLinks()).toEqual([])
+  cleanup()
+
+  answer(sam({ finance: { sectionState: 'shown', financeAccounts: [account], hasMore: true } }))
+  renderAt('/people/person-sam')
+  await screen.findByText('Fixture Checking ··1234')
+  expect(financeLinks()).toEqual(['/finance/spending?person=person-sam'])
+})
+
 it('opens a mail in the folder it is in', async () => {
   answer(sam())
   renderAt('/people/person-sam')
@@ -565,7 +592,7 @@ it('lists the finance accounts they share, and a card with how much of its limit
     sam({
       finance: {
         sectionState: 'shown',
-        hasMore: false,
+        hasMore: true,
         financeAccounts: [
           {
             financeAccountId: 'account-one',

@@ -83054,34 +83054,34 @@
         }
       }
     },
-    "1 fact from finance, recordings or location stays private. Those have their own sharing.": {
+    "1 fact from finance, recordings, location, private events, or records that are gone stays private. Those have their own sharing.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "家計、録音、位置情報から読み取った事実1件は非公開のままです。それぞれ独自の共有設定があります。"
+            "value": "家計、録音、位置情報、非公開の予定、または既に存在しない記録から読み取った事実1件は非公開のままです。それぞれ独自の共有設定があります。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "来自财务、录音或位置的 1 条事实仍然保持私密，它们有各自的共享设置。"
+            "value": "来自财务、录音、位置、私人事件或已不存在的记录的 1 条事实仍然保持私密，它们有各自的共享设置。"
           }
         }
       }
     },
-    "%lld facts from finance, recordings or location stay private. Those have their own sharing.": {
+    "%lld facts from finance, recordings, location, private events, or records that are gone stay private. Those have their own sharing.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "家計、録音、位置情報から読み取った事実%lld件は非公開のままです。それぞれ独自の共有設定があります。"
+            "value": "家計、録音、位置情報、非公開の予定、または既に存在しない記録から読み取った事実%lld件は非公開のままです。それぞれ独自の共有設定があります。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "来自财务、录音或位置的 %lld 条事实仍然保持私密，它们有各自的共享设置。"
+            "value": "来自财务、录音、位置、私人事件或已不存在的记录的 %lld 条事实仍然保持私密，它们有各自的共享设置。"
           }
         }
       }
@@ -83670,6 +83670,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "页面已删除"
+          }
+        }
+      }
+    },
+    "sharing.thisPage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "this page"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个页面"
           }
         }
       }

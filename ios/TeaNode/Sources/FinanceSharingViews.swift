@@ -24,6 +24,12 @@ extension FinanceModel {
         return found.values.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
 
+    /// Whether the person has no finance of their own but somebody shares
+    /// an account with them, so there is no "You" to show.
+    var isSharedOnly: Bool {
+        isShown == false && !sharers.isEmpty
+    }
+
     /// The person chosen under Showing, when they still share.
     var selectedSharer: FinanceSharer? {
         sharers.first { $0.userId == selectedOwnerUserId }
@@ -90,15 +96,35 @@ enum FinanceShareWords {
 struct FinancePersonMenu: View {
     @Environment(FinanceModel.self) private var finance
 
+    /// Whose finance is shown: the person chosen, else the first who shares
+    /// with a person who has none of their own, else nobody, which is "You".
+    private var shownSharer: FinanceSharer? {
+        if let chosen = finance.selectedSharer { return chosen }
+        if finance.isSharedOnly { return finance.sharers.first }
+        return nil
+    }
+
+    private var shownUserId: String {
+        guard let sharer = shownSharer else { return "" }
+        return sharer.userId
+    }
+
+    private var shownName: String {
+        guard let sharer = shownSharer else { return String(localized: "You") }
+        return sharer.displayName
+    }
+
     var body: some View {
         Menu {
             Picker(
                 "Showing",
                 selection: Binding(
-                    get: { finance.selectedOwnerUserId ?? "" },
+                    get: { shownUserId },
                     set: { chosen in finance.selectedOwnerUserId = chosen.isEmpty ? nil : chosen })
             ) {
-                Text("You").tag("")
+                if !finance.isSharedOnly {
+                    Text("You").tag("")
+                }
                 ForEach(finance.sharers) { sharer in
                     Text(verbatim: sharer.displayName).tag(sharer.userId)
                 }
@@ -106,7 +132,7 @@ struct FinancePersonMenu: View {
         } label: {
             Label("Showing", systemImage: "person.2")
         }
-        .accessibilityValue(Text(verbatim: finance.selectedSharer?.displayName ?? String(localized: "You")))
+        .accessibilityValue(Text(verbatim: shownName))
     }
 }
 

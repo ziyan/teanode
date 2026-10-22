@@ -2838,6 +2838,7 @@ export const en = {
   'calendar.shareSaid': 'Shared with {name}',
   'calendar.shareStop': 'Stop sharing with {name}',
   'calendar.shareStopped': 'Stopped sharing with {name}',
+  'calendar.shareStopWhat': 'this calendar',
   'calendar.shareNoPeople': 'You do not share a circle with anybody yet. Make or join a circle to share your calendar.',
   'calendar.calendarChoice': 'Calendar',
   'calendar.readOnlyNote': 'Shared with you by {name}. You can read it but not change it.',
@@ -4041,9 +4042,9 @@ export const en = {
   'knowledge.share.reachesLater': 'A page you add under it later is shared too.',
   'knowledge.share.reachesMore': 'and {count} more',
   'knowledge.share.withheldOne':
-    '{count} fact from finance, recordings or location stays private. Those have their own sharing.',
+    '{count} fact from finance, recordings, location, private events, or records that are gone stays private. Those have their own sharing.',
   'knowledge.share.withheldOther':
-    '{count} facts from finance, recordings or location stay private. Those have their own sharing.',
+    '{count} facts from finance, recordings, location, private events, or records that are gone stay private. Those have their own sharing.',
   'knowledge.share.submit': 'Share',
   'knowledge.share.shares': 'Shared with',
   'knowledge.share.sharesHint': 'Who can read this page, read only. A page shared above this one shares this one too.',
@@ -6277,6 +6278,7 @@ export const en = {
   'sharing.level.current': 'Where they are now',
   'sharing.level.history': 'Where they are and where they have been',
   'sharing.pageDeleted': 'Page deleted',
+  'sharing.thisPage': 'this page',
   'sharing.stop': 'Stop sharing',
   'sharing.stopFor': 'Stop sharing with {name}',
   'sharing.stopTitle': 'Stop sharing with {name}?',

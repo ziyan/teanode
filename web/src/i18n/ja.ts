@@ -2830,6 +2830,7 @@ export const ja: Catalog = {
   'calendar.shareSaid': '{name}と共有しました',
   'calendar.shareStop': '{name}との共有をやめる',
   'calendar.shareStopped': '{name}との共有をやめました',
+  'calendar.shareStopWhat': 'このカレンダー',
   'calendar.shareNoPeople':
     'まだ誰ともサークルを共有していません。サークルを作成するか参加すると、カレンダーを共有できます。',
   'calendar.calendarChoice': 'カレンダー',
@@ -3999,9 +4000,9 @@ export const ja: Catalog = {
   'knowledge.share.reachesLater': '今後このページの下に追加したページも共有されます。',
   'knowledge.share.reachesMore': 'ほか{count}件',
   'knowledge.share.withheldOne':
-    '家計、録音、位置情報から読み取った事実{count}件は非公開のままです。それぞれ独自の共有設定があります。',
+    '家計、録音、位置情報、非公開の予定、または既に存在しない記録から読み取った事実{count}件は非公開のままです。それぞれ独自の共有設定があります。',
   'knowledge.share.withheldOther':
-    '家計、録音、位置情報から読み取った事実{count}件は非公開のままです。それぞれ独自の共有設定があります。',
+    '家計、録音、位置情報、非公開の予定、または既に存在しない記録から読み取った事実{count}件は非公開のままです。それぞれ独自の共有設定があります。',
   'knowledge.share.submit': '共有する',
   'knowledge.share.shares': '共有先',
   'knowledge.share.sharesHint':
@@ -6216,6 +6217,7 @@ export const ja: Catalog = {
   'sharing.level.current': '相手の今いる場所',
   'sharing.level.history': '相手の今いる場所と行った場所',
   'sharing.pageDeleted': 'ページは削除されました',
+  'sharing.thisPage': 'このページ',
   'sharing.stop': '共有をやめる',
   'sharing.stopFor': '{name}との共有をやめる',
   'sharing.stopTitle': '{name}との共有をやめますか？',

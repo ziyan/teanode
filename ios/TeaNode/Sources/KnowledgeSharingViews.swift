@@ -488,9 +488,9 @@ struct KnowledgeSharePreviewScreen: View {
         let withheldFactCount = preview.withheldFactCount
         guard withheldFactCount > 0 else { return nil }
         if withheldFactCount == 1 {
-            return String(localized: "1 fact from finance, recordings or location stays private. Those have their own sharing.")
+            return String(localized: "1 fact from finance, recordings, location, private events, or records that are gone stays private. Those have their own sharing.")
         }
-        return String(localized: "\(withheldFactCount) facts from finance, recordings or location stay private. Those have their own sharing.")
+        return String(localized: "\(withheldFactCount) facts from finance, recordings, location, private events, or records that are gone stay private. Those have their own sharing.")
     }
 
     private func load() async {

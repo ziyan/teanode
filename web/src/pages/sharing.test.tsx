@@ -399,6 +399,8 @@ it('lists a shared page that is gone as deleted, with no link, and still stops i
   const cell = await screen.findByText('Page deleted')
   expect(cell.closest('a')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: /stop sharing with Person B/i }))
+  // The question names the page as this page, not as "Page deleted".
+  expect(screen.getByText('Person B can no longer see this page.')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Stop sharing' }))
   await waitFor(() => expect(calls('UnshareAgentPage')).toHaveLength(1))
   expect(calls('UnshareAgentPage')[0][1]).toEqual({ shareId: 'share-gone' })

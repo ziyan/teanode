@@ -391,7 +391,7 @@ it('shows what they will see before the page is shared, with the quotes only whe
   expect(within(dialog).getByText('and 1 more')).toBeTruthy()
   expect(
     within(dialog).getByText(
-      '3 facts from finance, recordings or location stay private. Those have their own sharing.',
+      '3 facts from finance, recordings, location, private events, or records that are gone stay private. Those have their own sharing.',
     ),
   ).toBeTruthy()
   expect(within(dialog).queryByText('see you Tuesday at three')).toBeNull()
@@ -554,7 +554,12 @@ it('lists who a page is shared with, including by a page above it, and stops one
   // A page whose name only starts the same way is not this page.
   expect(screen.queryByText('Cora Example')).toBeNull()
 
+  // Nothing is ended until the person confirms.
   fireEvent.click(screen.getByRole('button', { name: 'Stop sharing with Ben Example' }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Stop sharing with Ben Example?' })
+  expect(within(dialog).getByText('Ben Example can no longer see this page.')).toBeTruthy()
+  expect(vi.mocked(graphql).mock.calls.some(([document]) => document.includes('UnshareAgentPage'))).toBe(false)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Stop sharing' }))
   await waitFor(() =>
     expect(
       vi

@@ -2729,6 +2729,7 @@ export const zh: Catalog = {
   'calendar.shareSaid': '已共享给{name}',
   'calendar.shareStop': '停止与{name}共享',
   'calendar.shareStopped': '已停止与{name}共享',
+  'calendar.shareStopWhat': '这个日历',
   'calendar.shareNoPeople': '你还没有和任何人在同一个圈子里。创建或加入一个圈子后，就可以共享日历了。',
   'calendar.calendarChoice': '日历',
   'calendar.readOnlyNote': '由{name}共享给你。你可以查看，但不能修改。',
@@ -3846,8 +3847,10 @@ export const zh: Catalog = {
   'knowledge.share.reachesAtLeastOther': '将共享至少 {count} 个页面：这个页面以及它下面的所有页面。',
   'knowledge.share.reachesLater': '之后在它下面新增的页面也会一并共享。',
   'knowledge.share.reachesMore': '另有 {count} 个',
-  'knowledge.share.withheldOne': '来自财务、录音或位置的 {count} 条事实仍然保持私密，它们有各自的共享设置。',
-  'knowledge.share.withheldOther': '来自财务、录音或位置的 {count} 条事实仍然保持私密，它们有各自的共享设置。',
+  'knowledge.share.withheldOne':
+    '来自财务、录音、位置、私人事件或已不存在的记录的 {count} 条事实仍然保持私密，它们有各自的共享设置。',
+  'knowledge.share.withheldOther':
+    '来自财务、录音、位置、私人事件或已不存在的记录的 {count} 条事实仍然保持私密，它们有各自的共享设置。',
   'knowledge.share.submit': '共享',
   'knowledge.share.shares': '共享给谁',
   'knowledge.share.sharesHint': '谁可以读这个页面（只读）。共享了上一级页面，这个页面也就共享了。',
@@ -5965,6 +5968,7 @@ export const zh: Catalog = {
   'sharing.level.current': '对方现在的位置',
   'sharing.level.history': '对方现在的位置和去过的地方',
   'sharing.pageDeleted': '页面已删除',
+  'sharing.thisPage': '这个页面',
   'sharing.stop': '停止共享',
   'sharing.stopFor': '停止与{name}共享',
   'sharing.stopTitle': '停止与{name}共享？',
