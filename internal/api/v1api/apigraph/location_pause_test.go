@@ -30,9 +30,9 @@ func (self *locationWorld) pastPause(t *testing.T, user *models.User, startedAgo
 
 func (self *locationWorld) reportPaused(t *testing.T, user *models.User, points, visits string) map[string]any {
 	t.Helper()
-	data := self.call(t, user, fmt.Sprintf(`mutation { ReportLocation(points: [%s], visits: [%s]) {
+	reportAnswerData := self.call(t, user, fmt.Sprintf(`mutation { ReportLocation(points: [%s], visits: [%s]) {
 		newPointCount newVisitCount updatedVisitCount pausedPointCount pausedVisitCount pause { `+pauseFieldsForTest+` } } }`, points, visits))
-	return data["ReportLocation"].(map[string]any)
+	return reportAnswerData["ReportLocation"].(map[string]any)
 }
 
 func (self *locationWorld) visitsOf(t *testing.T, user *models.User) []map[string]any {
@@ -45,11 +45,11 @@ func (self *locationWorld) visitsOf(t *testing.T, user *models.User) []map[strin
 	return visits
 }
 
-func pauseTimeOf(t *testing.T, value any) time.Time {
+func pauseTimeOf(t *testing.T, timeValue any) time.Time {
 	t.Helper()
-	parsed, err := time.Parse(time.RFC3339Nano, fmt.Sprint(value))
+	parsed, err := time.Parse(time.RFC3339Nano, fmt.Sprint(timeValue))
 	if err != nil {
-		t.Fatalf("%v is not a time: %s", value, err)
+		t.Fatalf("%v is not a time: %s", timeValue, err)
 	}
 	return parsed
 }
@@ -72,14 +72,14 @@ func viewerSeesThePause(t *testing.T, level string) {
 	const viewed = `{ userId latestPoint { latitudeDegrees } openVisit { id } pause { ` + pauseFieldsForTest + ` } }`
 	location := func(query, key string) map[string]any {
 		t.Helper()
-		data := world.call(t, world.ben, query)[key]
-		if list, isList := data.([]any); isList {
+		viewedData := world.call(t, world.ben, query)[key]
+		if list, isList := viewedData.([]any); isList {
 			if len(list) != 1 {
 				t.Fatalf("%s: %v", key, list)
 			}
 			return list[0].(map[string]any)
 		}
-		return data.(map[string]any)
+		return viewedData.(map[string]any)
 	}
 	read := func() map[string]map[string]any {
 		return map[string]map[string]any{
@@ -180,9 +180,9 @@ func TestThePauseBoundsAndTheAgentPausing(t *testing.T) {
 		"now":              time.Now(),
 		"past thirty days": time.Now().Add(31 * 24 * time.Hour),
 	} {
-		message := world.refused(t, world.ada, fmt.Sprintf(`mutation { PauseLocation(endedAt: %q) { id } }`, endedAt.UTC().Format(time.RFC3339)))
-		if !strings.Contains(message, "pause") {
-			t.Errorf("%s: the refusal says why: %s", name, message)
+		refusalMessage := world.refused(t, world.ada, fmt.Sprintf(`mutation { PauseLocation(endedAt: %q) { id } }`, endedAt.UTC().Format(time.RFC3339)))
+		if !strings.Contains(refusalMessage, "pause") {
+			t.Errorf("%s: the refusal says why: %s", name, refusalMessage)
 		}
 	}
 	if pause := world.call(t, world.ada, `query { GetLocation { pause { id } } }`)["GetLocation"].(map[string]any); pause["pause"] != nil {
@@ -412,8 +412,8 @@ func TestACheckInIsRefusedWhileThePersonIsPaused(t *testing.T) {
 	endedAt := time.Now().Add(time.Hour).Truncate(time.Second)
 	world.call(t, world.ada, fmt.Sprintf(`mutation { PauseLocation(endedAt: %q) { id } }`, endedAt.UTC().Format(time.RFC3339)))
 	wanted := "paused until " + endedAt.In(time.FixedZone("JST", 9*60*60)).Format("2006-01-02 15:04 MST")
-	if message := world.refused(t, world.ada, fmt.Sprintf(`mutation { CheckIn(placeId: %q) { id } }`, placeId)); !strings.Contains(message, wanted) {
-		t.Errorf("the refusal says when the pause ends, in the person's zone, %q: %s", wanted, message)
+	if refusalMessage := world.refused(t, world.ada, fmt.Sprintf(`mutation { CheckIn(placeId: %q) { id } }`, placeId)); !strings.Contains(refusalMessage, wanted) {
+		t.Errorf("the refusal says when the pause ends, in the person's zone, %q: %s", wanted, refusalMessage)
 	}
 	world.call(t, world.ada, `mutation { ResumeLocation }`)
 	world.call(t, world.ada, fmt.Sprintf(`mutation { CheckIn(placeId: %q) { id } }`, placeId))

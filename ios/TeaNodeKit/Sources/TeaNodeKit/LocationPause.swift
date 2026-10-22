@@ -196,7 +196,9 @@ public struct LocationPauseTracker: Codable, Equatable, Sendable {
         confirmedPause = serverPause
         // A resume waiting to be sent is kept even when the server says it has
         // no pause: the answer may have left before the pause it ends reached
-        // the server, and a resume the server does not need does no harm.
+        // the server. A resume the server does not need changes nothing, unless
+        // a newer pause was made on another device and is not yet learned here,
+        // which it ends: a short window, and the person resumed anyway.
         settle(at: now)
     }
 

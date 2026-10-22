@@ -228,6 +228,9 @@ final class LocationRecorder {
     /// Set while the task that sends a change of pause sleeps between two
     /// tries, so that a tap can wake it instead of waiting out the retry.
     @ObservationIgnored private var isPauseSendWaiting = false
+    /// Whether the places are being given to iOS again after a pause, so
+    /// that two changes in a row do not do it twice at once.
+    @ObservationIgnored private var isWatchingPlacesAgain = false
     private let defaults: UserDefaults
     private let outboxDirectory: URL?
 
@@ -520,8 +523,16 @@ final class LocationRecorder {
             if !defaults.bool(forKey: key) { defaults.set(true, forKey: key) }
             return
         }
-        guard defaults.bool(forKey: key) else { return }
+        guard defaults.bool(forKey: key), !isWatchingPlacesAgain else { return }
+        // Places watched from now on are new to iOS and need nothing: a note
+        // left while nothing is watched would later split a visit in progress.
+        guard isMonitoringWanted else {
+            defaults.removeObject(forKey: key)
+            return
+        }
+        isWatchingPlacesAgain = true
         Task {
+            defer { isWatchingPlacesAgain = false }
             guard await giveWatchedPlacesToMonitorAgain(), outbox.accountKey == accountKey,
                 !pauseTracker.isPaused(at: Date())
             else { return }
@@ -529,15 +540,14 @@ final class LocationRecorder {
         }
     }
 
-    /// Gives iOS again every place its monitor holds, and says whether it did.
-    /// Read from the monitor, not from `watchedPlaces`: at launch, before the
-    /// places are read from the server, that is still empty.
+    /// Gives iOS again every place its monitor holds, and says whether it is
+    /// done: false only when the monitor cannot be used yet. Read from the
+    /// monitor, not from `watchedPlaces`: at launch, before the places are read
+    /// from the server, that is still empty. A monitor with no place is done.
     private func giveWatchedPlacesToMonitorAgain() async -> Bool {
         guard manager != nil, isMonitoringWanted else { return false }
         let monitor = await ensurePlaceMonitor()
-        let identifiers = await monitor.identifiers
-        guard !identifiers.isEmpty else { return false }
-        for identifier in identifiers {
+        for identifier in await monitor.identifiers {
             guard let record = await monitor.record(for: identifier),
                 let condition = record.condition as? CLMonitor.CircularGeographicCondition
             else { continue }
