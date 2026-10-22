@@ -80,6 +80,7 @@ type FinanceShare struct {
 	OwnerUserID       string `json:"ownerUserId,omitempty"`
 	OwnerUsername     string `json:"ownerUsername,omitempty"`
 	OwnerName         string `json:"ownerName,omitempty"`
+	OwnerUser         *User  `json:"-"`
 	AccountName       string `json:"accountName,omitempty"`
 	AccountMask       string `json:"accountMask,omitempty"`
 	GranteeUsername   string `json:"granteeUsername,omitempty"`

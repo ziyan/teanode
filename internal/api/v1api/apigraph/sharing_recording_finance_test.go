@@ -108,6 +108,27 @@ func TestListSharingShowsRecordingsAndFinanceAccounts(test *testing.T) {
 	}
 }
 
+// The rows of recordings and finance accounts that reach a person carry the
+// owner's account, so the list can show the owner's picture as the page rows do.
+func TestSharedRecordingAndFinanceRowsCarryTheOwner(test *testing.T) {
+	world := newSharingWorld(test)
+	recordingId, financeAccountId := world.seedRecordingAndFinance(test)
+	world.shareRecording(test, recordingId, userGrantee(world.ben), "summary")
+	world.shareFinance(test, financeAccountId, world.ben.ID, nil, "balance")
+
+	dbtest.RunTransactionOn(test, world.database, func(tx db.Transaction) {
+		for _, shareKind := range []models.ShareKind{models.ShareKindRecording, models.ShareKindFinance} {
+			rows, err := world.graph.sharesReachingFor(tx, world.ben, shareKind)
+			if err != nil || len(rows) != 1 {
+				test.Fatalf("%s rows: %v %v", shareKind, rows, err)
+			}
+			if rows[0].OwnerUser == nil || rows[0].OwnerUser.ID != world.ada.ID {
+				test.Errorf("the %s row does not carry its owner: %+v", shareKind, rows[0])
+			}
+		}
+	})
+}
+
 // What others share of finance is not the agent's to read, so the person's
 // agent is shown neither side of it, and cannot decline it; recordings it can.
 func TestListSharingLeavesFinanceOutForTheAgent(test *testing.T) {

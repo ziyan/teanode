@@ -389,7 +389,7 @@ func (self *graph) sharesReachingFor(tx db.Transaction, user *models.User, share
 func recordingShareRow(share *models.RecordingShare) *models.ShareRow {
 	return &models.ShareRow{
 		ShareKind: models.ShareKindRecording, ShareID: share.ID, SubjectID: share.RecordingID, SubjectName: share.RecordingTitle,
-		OwnerUserID: share.OwnerUserID, OwnerUsername: share.OwnerUsername, OwnerName: share.OwnerName,
+		OwnerUserID: share.OwnerUserID, OwnerUsername: share.OwnerUsername, OwnerName: share.OwnerName, OwnerUser: share.OwnerUser,
 		GranteeUserID: share.GranteeUserID, GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName,
 		GranteeCircleID: share.GranteeCircleID, GranteeCircleName: share.GranteeCircleName,
 		ShareLevel: string(share.RecordingShareLevel), CreatedAt: share.CreatedAt,
@@ -401,7 +401,7 @@ func recordingShareRow(share *models.RecordingShare) *models.ShareRow {
 func financeShareRow(share *models.FinanceShare) *models.ShareRow {
 	return &models.ShareRow{
 		ShareKind: models.ShareKindFinance, ShareID: share.ID, SubjectID: share.FinanceAccountID, SubjectName: share.AccountName,
-		SubjectMask: share.AccountMask, OwnerUserID: share.OwnerUserID, OwnerUsername: share.OwnerUsername, OwnerName: share.OwnerName,
+		SubjectMask: share.AccountMask, OwnerUserID: share.OwnerUserID, OwnerUsername: share.OwnerUsername, OwnerName: share.OwnerName, OwnerUser: share.OwnerUser,
 		GranteeUserID: share.GranteeUserID, GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName,
 		GranteeCircleID: share.GranteeCircleID, GranteeCircleName: share.GranteeCircleName,
 		ShareLevel: string(share.FinanceShareLevel), CreatedAt: share.CreatedAt,

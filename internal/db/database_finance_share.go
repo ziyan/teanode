@@ -268,7 +268,7 @@ func nameFinanceShares(tx *gorm.DB, shares []*models.FinanceShare) error {
 		account := accounts[share.FinanceAccountID]
 		share.AccountName, share.AccountMask, share.OwnerUserID = account.AccountName, account.AccountMask, account.OwnerUserID
 		if user := users[account.OwnerUserID]; user != nil {
-			share.OwnerUsername, share.OwnerName = user.Username, user.DisplayName()
+			share.OwnerUsername, share.OwnerName, share.OwnerUser = user.Username, user.DisplayName(), user
 		}
 		if user := users[share.GranteeUserID]; user != nil {
 			share.GranteeUsername, share.GranteeName = user.Username, user.DisplayName()

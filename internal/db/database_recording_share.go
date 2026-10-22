@@ -295,7 +295,7 @@ func nameRecordingShares(tx *gorm.DB, shares []*models.RecordingShare) error {
 			}
 		}
 		if user := users[share.OwnerUserID]; user != nil {
-			share.OwnerUsername, share.OwnerName = user.Username, user.DisplayName()
+			share.OwnerUsername, share.OwnerName, share.OwnerUser = user.Username, user.DisplayName(), user
 		}
 		if user := users[share.GranteeUserID]; user != nil {
 			share.GranteeUsername, share.GranteeName = user.Username, user.DisplayName()
