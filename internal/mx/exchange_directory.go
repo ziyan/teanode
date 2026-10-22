@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -22,10 +23,17 @@ import (
 // misses at once, without anybody invalidating anything; a stale entry is
 // merely one nobody asks for again.
 
+// maximumCachedPatterns is far more aliases than a server has, so in practice
+// it is never reached.
+const maximumCachedPatterns = 4096
+
 // directory holds the per-process caches, and where the domains come from.
 type directory struct {
 	patterns sync.Map // pattern -> *regexp.Regexp
-	signers  sync.Map // sha256 of the private key -> crypto.Signer
+	// patternCount is roughly how many are in patterns, so that it can be
+	// emptied before it holds more than maximumCachedPatterns.
+	patternCount atomic.Int64
+	signers      sync.Map // sha256 of the private key -> crypto.Signer
 
 	domainsMutex     sync.Mutex
 	domains          []*models.Domain
@@ -144,6 +152,13 @@ func (self *exchange) pattern(alias *models.Alias) *regexp.Regexp {
 	if err != nil {
 		log.Errorf("alias %q has an invalid pattern %q and will match nothing: %s", alias.ID, alias.Pattern, err)
 		return nil
+	}
+	// Every pattern a domain manager ever saved would otherwise stay compiled
+	// until the process ended. Emptying the cache costs the next messages one
+	// compile each, which is what a message after a restart pays.
+	if self.directory.patternCount.Add(1) > maximumCachedPatterns {
+		self.directory.patterns.Clear()
+		self.directory.patternCount.Store(1)
 	}
 	self.directory.patterns.Store(alias.Pattern, compiled)
 	return compiled
