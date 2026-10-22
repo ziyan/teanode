@@ -12,7 +12,18 @@ export function registerLock(handler: () => void) {
 }
 
 // lockPasswords closes Passwords if it is open: on signing out, and when the
-// signed-in person changes.
+// signed-in person changes. Before the page's code is loaded (signing out
+// right after a reload), the copy of the keys kept for a reload is deleted
+// here, by its database's name, which must stay the one in
+// passwordsKeptUnlock.ts.
 export function lockPasswords() {
-  lockHandler?.()
+  if (lockHandler !== null) {
+    lockHandler()
+    return
+  }
+  try {
+    if (typeof indexedDB !== 'undefined') indexedDB.deleteDatabase('teanode-passwords')
+  } catch {
+    // Storage the browser refuses holds nothing to delete.
+  }
 }

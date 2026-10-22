@@ -65,7 +65,10 @@ on the dashboard, so it cannot set up, share or hand an item to the agent).
   choose *Fill from TeaNode Passwords* from the context menu on a field, or press
   *Open Passwords* on the options page. A small window opens. It asks for the
   passphrase (or the recovery key) once; the server proves it right without ever
-  seeing it. The window lists the logins for the page first, then all of them,
+  seeing it. It stays open until the lock time passes without use (at most a
+  day), also across a restart of Chrome, and Lock closes it. If the shortcut does
+  nothing, another extension had it when this one was installed: the window then
+  says so, with a button to the page where shortcuts are set. The window lists the logins for the page first, then all of them,
   with *Fill*, *Copy password*, *Copy user name*, the one-time code, a password
   generator, *Lock* and a link to Passwords on the dashboard. A copied password
   or code is cleared from the clipboard after 30 seconds if nothing else was

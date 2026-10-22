@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
@@ -102,6 +102,24 @@ function PasswordsContent({ userId }: { userId: string }) {
     if (setup.data) passwordsSession.setLockAfterMinutes(setup.data.lockAfterMinutes)
   }, [setup.data])
 
+  // After a reload, or in another tab, Passwords opens again from the copy
+  // this browser kept, until the lock time passes. Tried once per visit to the
+  // page; the unlock form waits for it, so it does not flash first.
+  const [isResuming, setIsResuming] = useState(true)
+  const hasTriedResume = useRef(false)
+  useEffect(() => {
+    const setupData = setup.data
+    if (setupData === null || hasTriedResume.current) return
+    hasTriedResume.current = true
+    if (!setupData.isSetUp || isUnlocked) {
+      setIsResuming(false)
+      return
+    }
+    void passwordsSession.resume(userId, setupData).finally(() => setIsResuming(false))
+    // Once, when the setup is first read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setup.data])
+
   useEffect(() => {
     if (!isUnlocked) rekeyReportedItemIds.current = new Set()
   }, [isUnlocked])
@@ -191,6 +209,8 @@ function PasswordsContent({ userId }: { userId: string }) {
               <PasswordsKeyNotices />
               <PasswordsItems parameters={parameters} changeParameters={changeParameters} />
             </>
+          ) : isResuming ? (
+            <Loading />
           ) : (
             <PasswordsUnlock userId={userId} />
           )}

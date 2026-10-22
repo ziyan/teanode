@@ -32,7 +32,14 @@ import { MenuButton } from '../components/menuButton'
 import { Markdown } from '../components/markdown'
 import { Tooltip } from '../components/tooltip'
 import { KnowledgeGraph } from './knowledgeExplore'
-import { PageShares, SharePageDialog, SharedKnowledge, SharedWithYou, useHasSharedPages, useRefreshKey } from './knowledgeShared'
+import {
+  PageShares,
+  SharePageDialog,
+  SharedKnowledge,
+  SharedWithYou,
+  useHasSharedPages,
+  useRefreshKey,
+} from './knowledgeShared'
 import { LinkedRecords } from './knowledgeRecords'
 import { RECORD_LINK_FIELDS, RecordKindIcon, useRecordKindLabel, type RecordLink } from '../memoryLinks'
 // The set of things to tick, the one the access pages tick roles and
@@ -629,7 +636,9 @@ function OwnKnowledge() {
       // A page of the folder being listed is read beside the page of the
       // list it was found on; anywhere else starts at the first.
       const isInShownFolder = !into && parentOf(next) === shownFolderNow.current && folderPageIndexNow.current > 0
-      navigate('/knowledge' + (next ? '/' + next : '') + (isInShownFolder ? `?page=${folderPageIndexNow.current + 1}` : ''))
+      navigate(
+        '/knowledge' + (next ? '/' + next : '') + (isInShownFolder ? `?page=${folderPageIndexNow.current + 1}` : ''),
+      )
     },
     [navigate],
   )
@@ -1478,7 +1487,10 @@ function RecallDialog({ onSelect, onClose }: { onSelect: (path: string) => void;
           const place: Record<string, unknown> = { directory: wantedDirectory }
           if (computerName.trim() !== '') place.computerName = computerName.trim()
           if (wanted !== '') {
-            const answer = await graphql<{ RecallAgentCodingMemory: { text: string } }>(CODING_RECALL, { ...place, prompt: wanted })
+            const answer = await graphql<{ RecallAgentCodingMemory: { text: string } }>(CODING_RECALL, {
+              ...place,
+              prompt: wanted,
+            })
             setCodingText(answer.RecallAgentCodingMemory.text)
           } else {
             const answer = await graphql<{ ReadAgentCodingContext: { text: string } }>(CODING_START, place)
@@ -1555,7 +1567,11 @@ function RecallDialog({ onSelect, onClose }: { onSelect: (path: string) => void;
           <ul className="recall-pages">
             {pages.map((page) => (
               <li key={page.path}>
-                <button /* link-button: goes to a knowledge page */ type="button" className="link" onClick={() => onSelect(page.path)}>
+                <button
+                  /* link-button: goes to a knowledge page */ type="button"
+                  className="link"
+                  onClick={() => onSelect(page.path)}
+                >
                   {page.path}
                 </button>
                 <ul className="recall-facts">
@@ -1913,7 +1929,7 @@ export function DocumentsDialog({ onClose, initialQuery = '' }: { onClose: () =>
       closeLabel={t('common.close')}
       otherAction={
         reading === null ? undefined : (
-          <button type="button" className="button-quiet" onClick={() => setReading(null)}>
+          <button type="button" onClick={() => setReading(null)}>
             {t('knowledge.documents.back')}
           </button>
         )
@@ -2416,7 +2432,11 @@ function PageView({
             <SettingsRow
               key={child.id}
               title={
-                <button /* link-button: goes to a knowledge page, as a row's title */ type="button" className="link" onClick={() => onSelect(child.path)}>
+                <button
+                  /* link-button: goes to a knowledge page, as a row's title */ type="button"
+                  className="link"
+                  onClick={() => onSelect(child.path)}
+                >
                   {child.name || child.path}
                 </button>
               }
@@ -2656,16 +2676,17 @@ export function Provenance({
       {/* Where the evidence is one of the person's own records, the record
           itself opens, at the passage for a recording. */}
       {records.map((record) => (
-        <span key={`${record.evidenceIndex}-${record.recordId}-${record.passageStartMS}`} className="knowledge-record-evidence">
+        <span
+          key={`${record.evidenceIndex}-${record.recordId}-${record.passageStartMS}`}
+          className="knowledge-record-evidence"
+        >
           <RecordKindIcon recordKind={record.recordKind} size={14} />
           {record.isUnavailable || !record.dashboardPath.startsWith('/') ? (
             <span className="muted">
               {recordKindLabel(record.recordKind)}: {t('memoryLinks.unavailable')}
             </span>
           ) : (
-            <Link to={record.dashboardPath}>
-              {record.recordTitle || recordKindLabel(record.recordKind)}
-            </Link>
+            <Link to={record.dashboardPath}>{record.recordTitle || recordKindLabel(record.recordKind)}</Link>
           )}
         </span>
       ))}
