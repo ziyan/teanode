@@ -197,6 +197,10 @@ type Result struct {
 	// Note is a line for the drawer, saying what was done.
 	Note string
 
+	// SearchedAddresses are the web addresses a search returned, for a run
+	// held to fetching only those.
+	SearchedAddresses []string
+
 	// Images are pictures the model asked to look at, given to it as a
 	// turn of its own after this round's results; not kept.
 	Images []llm.ContentPart
