@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lib/pq"
 	"gorm.io/gorm"
@@ -849,11 +850,12 @@ func (self *transaction) MoveAgentNode(agentId, path, newParentPath string) (*mo
 	}
 
 	// The subtree's paths, rewritten in one statement: everything at or
-	// below the old path gets the new prefix.
+	// below the old path gets the new prefix. substring counts characters,
+	// so the old path is counted in characters too and not in bytes.
 	if err := self.tx.Exec(
 		`UPDATE "agent_node" SET "path" = ? || substring("path" from ?::int), "modified_at" = ?
 		 WHERE "agent_id" = ? AND ("path" = ? OR "path" LIKE ?)`,
-		target, len(path)+1, time.Now(), agentId, path, likeEscaped(path)+"/%").Error; err != nil {
+		target, utf8.RuneCountInString(path)+1, time.Now(), agentId, path, likeEscaped(path)+"/%").Error; err != nil {
 		return nil, err
 	}
 	if err := self.tx.Model(&agentNodeModel{}).Where(`"id" = ?`, node.ID).
