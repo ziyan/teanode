@@ -281,6 +281,9 @@ type photoServer struct {
 	// albumsWithOthers makes the album listing hold an album shared with the
 	// person and one that belongs to a circle.
 	albumsWithOthers bool
+	// twoCirclesNamedFamily makes the circle listing hold two circles with
+	// one name.
+	twoCirclesNamedFamily bool
 
 	// documents are the GraphQL documents received.
 	documents []string
@@ -334,6 +337,8 @@ func newPhotoServer(test *testing.T) *photoServer {
 				_, _ = response.Write([]byte(`{"data":{"RetryPhotoProcessing":1}}`))
 			case strings.Contains(asked.Query, "ListCirclePeople"):
 				_, _ = response.Write([]byte(`{"data":{"ListCirclePeople":[{"userId":"user-ben","username":"ben","name":"Ben Example"}]}}`))
+			case strings.Contains(asked.Query, "ListCircles") && self.twoCirclesNamedFamily:
+				_, _ = response.Write([]byte(`{"data":{"ListCircles":[{"id":"circle-one","name":"Family","circleKind":"family","members":[{"userId":"user-ben"}]},{"id":"circle-two","name":"family","circleKind":"family","members":[{"userId":"user-ben"},{"userId":"user-cora"}]}]}}`))
 			case strings.Contains(asked.Query, "ListCircles"):
 				_, _ = response.Write([]byte(`{"data":{"ListCircles":[{"id":"circle-home","name":"Home","circleKind":"family","members":[]}]}}`))
 			case strings.Contains(asked.Query, "SharePhotoAlbum("):

@@ -466,7 +466,11 @@ memory by each server instance.
 The agent's tool shows the albums that are not the person's with their owner
 and level (`album-list`), and reads them where they are: `list` and `look`
 with the album's `album_id`, each photo marked with its owner. It copies
-nothing into the person's library unless they ask (`save-shared`).
+nothing into the person's library unless they ask (`save-shared`). In a chat
+turn, whose words are posted to everybody in the room, it reads only the
+person's own: `album-list` leaves the others out, and `album-read`, `list`,
+`read`, `look` and `show` refuse a photo or an album that is not the person's
+(`IsOwnedByCaller` is false) and say it is not repeated into a chat.
 Every operation of the tool that answers a list (`list`, `album-list`,
 `album-read`, which gives the album's photos, `people`, `person-photos` and
 `album-shares`) gives a page at a time: `page_size` and `offset` in, and when
@@ -496,9 +500,15 @@ people read` does, and `person-photos` its photos. Turning faces on is of the
 risk class granting and turning them off is destructive: finding faces is a
 privacy choice either way, so both ask.
 
-`album-share` and `album-unshare` are of the risk class granting, as the
-calendar's share is, so they ask the person unless they allowed it, and the card
-names the album and the people. `album-share-update` changes one share (`teanode
+`album-share` is of the risk class granting, as the calendar's share is, so it
+asks the person unless they allowed it, and the card names the album and the
+people. It takes one `with`, a username or a circle's name or id, resolved by
+`tools.ResolveGrantee` as `calendar_share` does and `teanode photo album share
+ID <username|circle>` does through `shareTarget`: a username wins over a circle
+of the same name, and a circle name that two circles have is refused with their
+ids and sizes. `album-create` with `circle` and `teanode photo album create
+--circle` refuse such a name the same way. `album-unshare` only takes access away, so it is a write, as
+`calendar_unshare` is, and does not ask. `album-share-update` changes one share (`teanode
 photo album share-update`, the same `UpdatePhotoAlbumShare` the dashboard and
 the phone use). It takes the album as well as the share, reads the album's
 shares, and changes only the settings the call names, `share_level` and

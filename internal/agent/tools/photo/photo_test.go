@@ -444,7 +444,7 @@ func TestEachOperationHasItsRisk(test *testing.T) {
 	for operation, want := range map[string]tools.Risk{
 		"library": tools.RiskRead, "list": tools.RiskRead, "read": tools.RiskRead, "look": tools.RiskRead, "show": tools.RiskRead,
 		"favorite": tools.RiskWrite, "set-date": tools.RiskWrite, "set-location": tools.RiskWrite, "remove-location": tools.RiskDestructive, "search-places": tools.RiskRead, "restore": tools.RiskWrite, "retry": tools.RiskWrite, "save": tools.RiskWrite, "trash": tools.RiskDestructive, "delete": tools.RiskDestructive, "empty-trash": tools.RiskDestructive, "person-read": tools.RiskRead,
-		"album-cover": tools.RiskWrite, "save-shared": tools.RiskWrite, "album-share": tools.RiskGranting, "album-unshare": tools.RiskGranting, "album-shares": tools.RiskRead, "person-unname": tools.RiskWrite, "person-hide": tools.RiskWrite, "person-remove-face": tools.RiskWrite,
+		"album-cover": tools.RiskWrite, "save-shared": tools.RiskWrite, "album-share": tools.RiskGranting, "album-unshare": tools.RiskWrite, "album-shares": tools.RiskRead, "person-unname": tools.RiskWrite, "person-hide": tools.RiskWrite, "person-remove-face": tools.RiskWrite,
 	} {
 		arguments, _ := json.Marshal(map[string]any{"operation": operation})
 		if got := photoTool.RiskFor(arguments); got != want {

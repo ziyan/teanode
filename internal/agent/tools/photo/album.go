@@ -63,7 +63,13 @@ func albumList(ctx context.Context, current tools.Run, asked *arguments) (*tools
 	}
 	location := tools.Location(current.Owner())
 	rows := make([]map[string]any, 0, len(albums))
+	isInChat := tools.IsAnsweringInChat(current)
 	for _, album := range albums {
+		// In a chat only the person's own albums are listed: the others are
+		// what people shared with the person, not with the room.
+		if isInChat && !album.IsOwnedByCaller {
+			continue
+		}
 		rows = append(rows, albumRow(album, location))
 	}
 	answer := map[string]any{"note": "album-read with album_id (or list with album_id) gives an album's photos, in an album shared with the person too; an album with an owner_name or circle_name is not the person's own"}
@@ -88,6 +94,9 @@ func albumRead(ctx context.Context, current tools.Run, asked *arguments) (*tools
 	album, err := client.ReadPhotoAlbum(ctx, current.Operations(), albumId)
 	if err != nil {
 		return nil, err
+	}
+	if tools.IsAnsweringInChat(current) && !album.IsOwnedByCaller {
+		return nil, errOthersPhotosInChat
 	}
 	details := albumRow(album, tools.Location(current.Owner()))
 	details["created_at"] = album.CreatedAt.In(tools.Location(current.Owner())).Format("2006-01-02 15:04")
@@ -114,7 +123,7 @@ func albumRead(ctx context.Context, current tools.Run, asked *arguments) (*tools
 	return result, nil
 }
 
-func albumCreate(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+func albumCreate(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
 	albumTitle := strings.TrimSpace(asked.AlbumTitle)
 	if albumTitle == "" {
 		return nil, errors.New("album-create needs album_title")
@@ -129,11 +138,11 @@ func albumCreate(ctx context.Context, executor client.Executor, asked *arguments
 	circleId := ""
 	if circleTyped := strings.TrimSpace(asked.Circle); circleTyped != "" {
 		var err error
-		if circleId, _, err = circleNamed(ctx, executor, circleTyped); err != nil {
+		if circleId, _, err = circleNamed(ctx, current.Operations(), circleTyped); err != nil {
 			return nil, err
 		}
 	}
-	album, err := client.CreateCirclePhotoAlbum(ctx, executor, circleId, albumTitle, photoIds)
+	album, err := client.CreateCirclePhotoAlbum(ctx, current.Operations(), circleId, albumTitle, photoIds)
 	if err != nil {
 		return nil, err
 	}
@@ -245,8 +254,7 @@ func albumCardPreview(ctx context.Context, callArguments json.RawMessage) string
 		Operation string `json:"operation"`
 		AlbumID   string `json:"album_id"`
 		ShareID   string `json:"share_id"`
-		Person    string `json:"person"`
-		Circle    string `json:"circle"`
+		With      string `json:"with"`
 		Level     string `json:"share_level"`
 		Location  *bool  `json:"is_location_included"`
 	}
@@ -282,10 +290,7 @@ func albumCardPreview(ctx context.Context, callArguments json.RawMessage) string
 		}
 		return shareUpdateCardText(named, share, after)
 	}
-	with := tools.Named(asked.Person, "")
-	if with == "" {
-		with = "everyone in " + tools.Named(asked.Circle, "one of their circles")
-	}
+	with := tools.GranteeWords(ctx, asked.With)
 	level := "view"
 	if strings.ToLower(strings.TrimSpace(asked.Level)) == string(models.PhotoAlbumShareLevelContribute) {
 		level = "view and add photos"
@@ -298,18 +303,30 @@ func albumCardPreview(ctx context.Context, callArguments json.RawMessage) string
 }
 
 // circleNamed is the circle the person's agent was told of: by identifier or
-// by name, among the circles the person is in.
-func circleNamed(ctx context.Context, executor client.Executor, typed string) (string, string, error) {
-	circles, err := client.ListCircles(ctx, executor)
+// by name, among the circles the person is in. A name that more than one of
+// them has is refused with their ids and sizes, in the words every other
+// surface uses; an id is never ambiguous.
+func circleNamed(ctx context.Context, executor tools.Operations, typed string) (string, string, error) {
+	circles, err := tools.ShareableCircles(ctx, executor)
 	if err != nil {
 		return "", "", err
 	}
+	var named []models.ShareableCircle
 	for _, circle := range circles {
-		if circle.ID == typed || strings.EqualFold(circle.Name, typed) {
+		if circle.ID == typed {
 			return circle.ID, circle.Name, nil
 		}
+		if strings.EqualFold(circle.Name, typed) {
+			named = append(named, circle)
+		}
 	}
-	return "", "", fmt.Errorf("%q is not a circle the person is in; circle list gives them", typed)
+	switch len(named) {
+	case 0:
+		return "", "", fmt.Errorf("%q is not a circle the person is in; circle list gives them", typed)
+	case 1:
+		return named[0].ID, named[0].Name, nil
+	}
+	return "", "", models.AmbiguousCircleNameError(typed, named)
 }
 
 // personNamed is the person the agent was told to share with: by username,
@@ -330,14 +347,10 @@ func personNamed(ctx context.Context, executor client.Executor, typed string) (s
 // albumShare shares one of the person's albums. The card that asked first says
 // whom with and how far, because this decides who may look at the person's
 // photos.
-func albumShare(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+func albumShare(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
 	albumId, err := albumIdOf(asked, "album-share")
 	if err != nil {
 		return nil, err
-	}
-	person, circle := strings.TrimSpace(asked.Person), strings.TrimSpace(asked.Circle)
-	if (person == "") == (circle == "") {
-		return nil, errors.New("album-share needs person (a username) or circle (a name or id), not both and not neither")
 	}
 	shareLevel := strings.ToLower(strings.TrimSpace(asked.ShareLevel))
 	if shareLevel == "" {
@@ -346,19 +359,13 @@ func albumShare(ctx context.Context, executor client.Executor, asked *arguments)
 	if !models.PhotoAlbumShareLevel(shareLevel).IsValid() {
 		return nil, fmt.Errorf("share_level is view or contribute, not %q", asked.ShareLevel)
 	}
-	var granteeUserId, granteeCircleId, sharedWith string
-	if person != "" {
-		granteeUserId, sharedWith, err = personNamed(ctx, executor, person)
-	} else {
-		var circleName string
-		granteeCircleId, circleName, err = circleNamed(ctx, executor, circle)
-		sharedWith = "everyone in " + circleName
-	}
+	grantee, err := tools.ResolveGrantee(ctx, current.Operations(), asked.With)
 	if err != nil {
 		return nil, err
 	}
+	granteeUserId, granteeCircleId, sharedWith := grantee.UserID, grantee.CircleID, grantee.Description
 	isLocationIncluded := asked.IsLocationIncluded != nil && *asked.IsLocationIncluded
-	share, err := client.SharePhotoAlbum(ctx, executor, albumId, granteeUserId, granteeCircleId, shareLevel, isLocationIncluded)
+	share, err := client.SharePhotoAlbum(ctx, current.Operations(), albumId, granteeUserId, granteeCircleId, shareLevel, isLocationIncluded)
 	if err != nil {
 		return nil, err
 	}

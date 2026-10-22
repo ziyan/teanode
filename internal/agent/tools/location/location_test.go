@@ -63,6 +63,10 @@ func (self *fakeRun) Operations() tools.Operations         { return self.operati
 func (self *fakeRun) Configuration() *config.Configuration { return config.Default() }
 func (self *fakeRun) Owner() *models.User                  { return &models.User{Username: "ada", Timezone: "UTC"} }
 
+// IsStartedByPerson makes this a run the person typed; unattendedRun is the
+// one that something else started.
+func (self *fakeRun) IsStartedByPerson() bool { return true }
+
 type locatingRun struct{ *fakeRun }
 
 func (self locatingRun) CanLocate() bool { return true }
@@ -425,6 +429,37 @@ func TestAnotherPersonsLocationIsNotRepeatedIntoAChat(t *testing.T) {
 	}
 	if _, _, err := act(t, run, "visits", `{}`, false); err != nil {
 		t.Errorf("the person's own visits are read in a chat: %v", err)
+	}
+}
+
+// unattendedRun is a run that an inbound mail, a webhook or a schedule of the
+// agent's began, not the person.
+type unattendedRun struct{ *fakeRun }
+
+func (self unattendedRun) IsStartedByPerson() bool { return false }
+
+// A run the person did not start reads only the person's own location:
+// content that began it could have somebody else's read out to its writer.
+func TestAnotherPersonsLocationIsNotReadInARunThePersonDidNotStart(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListSharedLocations": `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"history","latestPoint":null,"openVisit":null}]`,
+		"ListLocationVisits":  `{"placeVisits":[]}`,
+		"GetLocation":         storedLocation(time.Now().Add(-4 * time.Minute)),
+	}}
+	run := unattendedRun{runOf(operations)}
+	if _, _, err := act(t, run, "people", `{}`, false); err == nil || !strings.Contains(err.Error(), "started themselves") {
+		t.Errorf("people in a run nobody started: %v", err)
+	}
+	for _, action := range []string{"now", "visits", "path", "places"} {
+		if _, _, err := act(t, run, action, `{"person":"ben"}`, false); err == nil || !strings.Contains(err.Error(), "started themselves") {
+			t.Errorf("%s about somebody else in a run nobody started: %v", action, err)
+		}
+	}
+	if _, _, err := act(t, run, "now", `{}`, false); err != nil {
+		t.Errorf("the person's own location is read: %v", err)
+	}
+	if _, _, err := act(t, run, "visits", `{}`, false); err != nil {
+		t.Errorf("the person's own visits are read: %v", err)
 	}
 }
 

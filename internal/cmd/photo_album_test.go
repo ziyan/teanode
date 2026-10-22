@@ -194,7 +194,7 @@ func TestAlbumListSaysWhoseEachAlbumIsAndWhatYouMayDoWithIt(test *testing.T) {
 
 func TestAlbumShareSharesWithAPersonOrACircleAtALevel(test *testing.T) {
 	server := newPhotoServer(test)
-	output, _, err := server.run(test, "album", "share", "album-1", "--person", "Ben", "--contribute", "--with-location")
+	output, _, err := server.run(test, "album", "share", "album-1", "Ben", "--contribute", "--with-location")
 	if err != nil || !strings.Contains(output, "shared with ben at contribute, with where the photos were taken (share share-person)") {
 		test.Fatalf("%v: %s", err, output)
 	}
@@ -203,25 +203,26 @@ func TestAlbumShareSharesWithAPersonOrACircleAtALevel(test *testing.T) {
 		test.Fatalf("%v", variables)
 	}
 	// A circle by its name or its identifier, to view, without places.
-	output, _, err = server.run(test, "album", "share", "album-1", "--circle", "home")
-	if err != nil || !strings.Contains(output, "shared with everyone in Home at view, without where the photos were taken") {
+	output, _, err = server.run(test, "album", "share", "album-1", "home")
+	if err != nil || !strings.Contains(output, `shared with the circle "Home" (0 people) at view, without where the photos were taken`) {
 		test.Fatalf("%v: %s", err, output)
 	}
 	variables = server.variables[len(server.variables)-1]
 	if variables["granteeCircleId"] != "circle-home" || variables["granteeUserId"] != nil || variables["shareLevel"] != "view" || variables["isLocationIncluded"] != false {
 		test.Fatalf("%v", variables)
 	}
-	if _, output, err := server.run(test, "album", "share", "album-1", "--circle", "circle-home", "--json"); err != nil || !strings.Contains(output, `"id": "share-circle"`) && !strings.Contains(output, `"id":"share-circle"`) {
+	if _, output, err := server.run(test, "album", "share", "album-1", "circle-home", "--json"); err != nil || !strings.Contains(output, `"id": "share-circle"`) && !strings.Contains(output, `"id":"share-circle"`) {
 		test.Fatalf("%v: %s", err, output)
 	}
 
 	before := len(server.documents)
 	for name, arguments := range map[string][]string{
-		"no album":         {"album", "share", "--person", "ben"},
-		"neither":          {"album", "share", "album-1"},
-		"both":             {"album", "share", "album-1", "--person", "ben", "--circle", "home"},
-		"somebody unknown": {"album", "share", "album-1", "--person", "nobody"},
-		"a circle unknown": {"album", "share", "album-1", "--circle", "Nowhere"},
+		"no album":         {"album", "share"},
+		"nobody":           {"album", "share", "album-1"},
+		"two of them":      {"album", "share", "album-1", "ben", "home"},
+		"the old flag":     {"album", "share", "album-1", "--person", "ben"},
+		"somebody unknown": {"album", "share", "album-1", "nobody"},
+		"a circle unknown": {"album", "share", "album-1", "Nowhere"},
 	} {
 		if _, _, err := server.run(test, arguments...); err == nil {
 			test.Errorf("sharing with %s was accepted", name)
@@ -231,6 +232,32 @@ func TestAlbumShareSharesWithAPersonOrACircleAtALevel(test *testing.T) {
 		if strings.Contains(document, "SharePhotoAlbum(") {
 			test.Fatal("a share that was refused was sent")
 		}
+	}
+}
+
+// A circle name that two circles have is refused with the ids to choose from,
+// for a share and for an album made for a circle, instead of taking the first.
+func TestACircleNameTwoCirclesHaveIsRefusedByAlbumShareAndCreate(test *testing.T) {
+	server := newPhotoServer(test)
+	server.twoCirclesNamedFamily = true
+	for _, arguments := range [][]string{
+		{"album", "share", "album-1", "Family"},
+		{"album", "create", "Ours", "--circle", "Family"},
+	} {
+		if _, _, err := server.run(test, arguments...); err == nil || !strings.Contains(err.Error(), "more than one circle") || !strings.Contains(err.Error(), "circle-one") || !strings.Contains(err.Error(), "circle-two") {
+			test.Errorf("%v was not refused with the ids: %v", arguments, err)
+		}
+	}
+	for _, document := range server.documents {
+		if strings.Contains(document, "SharePhotoAlbum(") || strings.Contains(document, "CreatePhotoAlbum(") {
+			test.Fatal("an ambiguous circle name reached the server")
+		}
+	}
+	if _, _, err := server.run(test, "album", "share", "album-1", "circle-two"); err != nil {
+		test.Fatal(err)
+	}
+	if variables := server.variables[len(server.variables)-1]; variables["granteeCircleId"] != "circle-two" {
+		test.Fatalf("%v", variables)
 	}
 }
 

@@ -191,17 +191,36 @@ func (self *scope) timeText(value *time.Time) string {
 var errOthersInChat = errors.New("another person's location is not repeated into a chat, because everybody in it would read it: " +
 	"the person can ask in a private conversation with you instead")
 
+// errOthersNotByPerson is what an action answers when it is asked for
+// somebody else's location in a run the person did not start: an inbound
+// mail, a webhook or a schedule the agent wrote is steered by content the
+// person did not write, and could have it read out to whoever wrote it.
+var errOthersNotByPerson = errors.New("another person's location is read only in a conversation the person started themselves, " +
+	"not in a run that a mail, a webhook or a schedule of yours began: the person can ask you directly instead")
+
+// checkOthersAllowed is nil when this run may read somebody else's location:
+// the person started it, and its words do not go to a chat.
+func (self *scope) checkOthersAllowed() error {
+	if tools.IsAnsweringInChat(self.run) {
+		return errOthersInChat
+	}
+	if !tools.IsStartedByPerson(self.run) {
+		return errOthersNotByPerson
+	}
+	return nil
+}
+
 // personId is the account of somebody who shares their location with the
 // person, by username; empty is the person's own. With doesNeedHistory, somebody
 // who shares only where they are now is refused in those words. In a chat
-// turn nobody else's location is read.
+// turn, or a run the person did not start, nobody else's location is read.
 func (self *scope) personId(ctx context.Context, username string, doesNeedHistory bool) (*string, error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return nil, nil
 	}
-	if tools.IsAnsweringInChat(self.run) {
-		return nil, errOthersInChat
+	if err := self.checkOthersAllowed(); err != nil {
+		return nil, err
 	}
 	var result struct {
 		ListSharedLocations []locationData `json:"ListSharedLocations"`
@@ -1100,8 +1119,8 @@ func runPeople(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if tools.IsAnsweringInChat(here.run) {
-		return nil, errOthersInChat
+	if err := here.checkOthersAllowed(); err != nil {
+		return nil, err
 	}
 	var result struct {
 		ListSharedLocations []locationData `json:"ListSharedLocations"`
