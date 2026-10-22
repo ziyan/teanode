@@ -394,6 +394,28 @@ func TestOnlyTheGranteeCanDeclineAShareMadeByName(test *testing.T) {
 	}
 	// Declined once, it is gone for a second try.
 	world.refused(test, world.ben, declineQuery(calendarRow))
+
+	// A location shared with ben by name, beside the one to the circle, is
+	// declined alone: the circle's share still reaches him.
+	world.call(test, world.ada, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "history") { id } }`, world.ben.ID))
+	var directLocation map[string]any
+	_, received = world.sharing(test, world.ben)
+	for _, row := range received {
+		if row["shareKind"] == "location" && row["isDirect"] == true {
+			directLocation = row
+		}
+	}
+	if directLocation == nil {
+		test.Fatalf("ben receives no location by name: %v", received)
+	}
+	world.call(test, world.ben, declineQuery(directLocation))
+	_, received = world.sharing(test, world.ben)
+	if fmt.Sprint(kindsOf(received)) != "[location passwords]" || received[0]["isDirect"] != false {
+		test.Errorf("after declining the location by name ben receives %v", received)
+	}
+	if made, _ := world.sharing(test, world.ada); fmt.Sprint(kindsOf(made)) != "[location passwords]" {
+		test.Errorf("ada shares %v", kindsOf(made))
+	}
 	// Ben can still see what the circle gives him, and cannot read the
 	// calendar that was declined.
 	if data, failures := world.ask(test, world.ben, fmt.Sprintf(`query { ListCalendarShares(calendarId: %q) { id } }`, world.adaCalendar)); len(failures) == 0 {
