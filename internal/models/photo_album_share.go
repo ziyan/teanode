@@ -36,6 +36,10 @@ type PhotoAlbumShare struct {
 	// were taken and receive the original files, which carry it.
 	IsLocationIncluded bool `json:"isLocationIncluded"`
 
+	// IsFaceNamesIncluded says the people reached see the names the owner gave
+	// the faces in the album's photos.
+	IsFaceNamesIncluded bool `json:"isFaceNamesIncluded"`
+
 	CreatedAt time.Time `json:"createdAt"`
 
 	// CreatedByUserID is empty once that account is gone.
@@ -78,6 +82,10 @@ type PhotoAlbumAccess struct {
 	// where photos were taken. A circle album has no share, so its members see
 	// only their own photos' places.
 	IsLocationIncluded bool
+
+	// IsFaceNamesIncluded says a share that reaches the person lets them see
+	// the names the owner gave the faces in the album's photos.
+	IsFaceNamesIncluded bool
 }
 
 // CanContribute says the person may add their own photos to the album.
@@ -97,4 +105,8 @@ type PhotoAccess struct {
 	// IsLocationIncluded says an album that reaches the person lets them see
 	// where this photo was taken and receive its original files.
 	IsLocationIncluded bool
+
+	// IsFaceNamesIncluded says an album that reaches the person lets them see
+	// the names the owner gave the faces in this photo.
+	IsFaceNamesIncluded bool
 }

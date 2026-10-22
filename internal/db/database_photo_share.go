@@ -49,9 +49,10 @@ type PhotoAlbumShareOperation interface {
 	SharePhotoAlbum(sharerUserId string, share *models.PhotoAlbumShare) (*models.PhotoAlbumShare, error)
 
 	// UpdatePhotoAlbumShare changes the level of a share and whether it
-	// includes where photos were taken. ErrNotFound unless the person manages
+	// includes where photos were taken and the names of the faces in them.
+	// ErrNotFound unless the person manages
 	// the album it is for.
-	UpdatePhotoAlbumShare(userId, photoAlbumShareId string, shareLevel models.PhotoAlbumShareLevel, isLocationIncluded bool) (*models.PhotoAlbumShare, error)
+	UpdatePhotoAlbumShare(userId, photoAlbumShareId string, shareLevel models.PhotoAlbumShareLevel, isLocationIncluded, isFaceNamesIncluded bool) (*models.PhotoAlbumShare, error)
 
 	// DeletePhotoAlbumShare takes a share back, and with it the photos of the
 	// people it reached that are no longer theirs to have in the album.
@@ -62,20 +63,23 @@ type PhotoAlbumShareOperation interface {
 	// when they were made. ErrNotFound unless the person manages the album.
 	ListPhotoAlbumShares(userId, photoAlbumId string) ([]*models.PhotoAlbumShare, error)
 
-	// ListPhotoAlbumReaderUserIDs are everybody who reads the album now, its
-	// owner and the members of the circle that owns it included, once each.
+	// ListPhotoAlbumReaderUserIDs are everybody who can open the album now, its
+	// owner and the members of the circle that owns it included, once each:
+	// the people photoAlbumReachQuery lets in, so a share from an owner who is
+	// disabled or no longer has photos:use reaches nobody here either.
 	ListPhotoAlbumReaderUserIDs(photoAlbumId string) ([]string, error)
 }
 
 type photoAlbumShareModel struct {
-	ID                 string    `gorm:"column:id;primaryKey"`
-	PhotoAlbumID       string    `gorm:"column:photo_album_id"`
-	GranteeUserID      *string   `gorm:"column:grantee_user_id"`
-	GranteeCircleID    *string   `gorm:"column:grantee_circle_id"`
-	ShareLevel         string    `gorm:"column:share_level"`
-	IsLocationIncluded bool      `gorm:"column:is_location_included"`
-	CreatedByUserID    *string   `gorm:"column:created_by_user_id"`
-	CreatedAt          time.Time `gorm:"column:created_at"`
+	ID                  string    `gorm:"column:id;primaryKey"`
+	PhotoAlbumID        string    `gorm:"column:photo_album_id"`
+	GranteeUserID       *string   `gorm:"column:grantee_user_id"`
+	GranteeCircleID     *string   `gorm:"column:grantee_circle_id"`
+	ShareLevel          string    `gorm:"column:share_level"`
+	IsLocationIncluded  bool      `gorm:"column:is_location_included"`
+	IsFaceNamesIncluded bool      `gorm:"column:is_face_names_included"`
+	CreatedByUserID     *string   `gorm:"column:created_by_user_id"`
+	CreatedAt           time.Time `gorm:"column:created_at"`
 }
 
 func (photoAlbumShareModel) TableName() string { return "photo_album_share" }
@@ -83,7 +87,7 @@ func (photoAlbumShareModel) TableName() string { return "photo_album_share" }
 func (self *photoAlbumShareModel) toModel() *models.PhotoAlbumShare {
 	share := &models.PhotoAlbumShare{
 		ID: self.ID, PhotoAlbumID: self.PhotoAlbumID, ShareLevel: models.PhotoAlbumShareLevel(self.ShareLevel),
-		IsLocationIncluded: self.IsLocationIncluded, CreatedAt: self.CreatedAt.UTC(),
+		IsLocationIncluded: self.IsLocationIncluded, IsFaceNamesIncluded: self.IsFaceNamesIncluded, CreatedAt: self.CreatedAt.UTC(),
 	}
 	if self.GranteeUserID != nil {
 		share.GranteeUserID = *self.GranteeUserID
@@ -115,20 +119,26 @@ func (self *photoAlbumShareModel) toModel() *models.PhotoAlbumShare {
 // whoever added it to what, and nobody sees the place of a photo somebody else
 // added to their album unless it was shared with that.
 //
+// The names the owner gave the faces in a photo are shown the same way, by
+// is_face_names_included and for the album owner's own photos only: a name
+// is an entry in the owner's address book, which a share of their photos does
+// not hand over unless it says so. A circle's album has no share, so a member
+// sees the names on the photos they added themselves, which are theirs.
+//
 // A share stops reaching people while its owner is disabled or no longer has
 // photos:use (@permission), as a Location or a Health share does.
 var photoAlbumReachQuery = `
 SELECT album.id AS photo_album_id, 'owner' AS reach_kind, 'contribute' AS share_level, false AS is_circle_admin, false AS is_location_included,
-  COALESCE(album.user_id, '') AS album_owner_user_id
+  false AS is_face_names_included, COALESCE(album.user_id, '') AS album_owner_user_id
 FROM "photo_album" album
 WHERE album.user_id = @reader AND (@album = '' OR album.id = @album)
 UNION ALL
-SELECT album.id, 'circle', 'contribute', member.member_role = 'admin', false, COALESCE(album.user_id, '')
+SELECT album.id, 'circle', 'contribute', member.member_role = 'admin', false, false, COALESCE(album.user_id, '')
 FROM "photo_album" album
 JOIN "circle_member" member ON member.circle_id = album.circle_id AND member.user_id = @reader
 WHERE @album = '' OR album.id = @album
 UNION ALL
-SELECT share.photo_album_id, 'share', share.share_level, false, share.is_location_included, album.user_id
+SELECT share.photo_album_id, 'share', share.share_level, false, share.is_location_included, share.is_face_names_included, album.user_id
 FROM "photo_album_share" share
 JOIN "photo_album" album ON album.id = share.photo_album_id
 JOIN "user" owner_user ON owner_user.id = album.user_id AND owner_user.disabled_at IS NULL
@@ -145,28 +155,40 @@ WHERE album.user_id IS NOT NULL AND album.user_id <> @reader AND (@album = '' OR
      AND EXISTS (SELECT 1 FROM "circle_member" WHERE circle_id = share.grantee_circle_id AND user_id = album.user_id))
   )`
 
+// photoIsOpenToSQL is the condition that the photo the expression names can be
+// opened by the reader the expression names: it is theirs, or its owner is
+// enabled and has photos:use, which GetPhotoAccess asks of a photo that is
+// somebody else's. It needs @permission bound, as userHasPermissionSQL does.
+func photoIsOpenToSQL(photoUserExpression, readerExpression string) string {
+	return `(` + photoUserExpression + ` = ` + readerExpression + ` OR (
+		EXISTS (SELECT 1 FROM "user" photo_owner WHERE photo_owner.id = ` + photoUserExpression + ` AND photo_owner.disabled_at IS NULL)
+		AND ` + userHasPermissionSQL(photoUserExpression) + `))`
+}
+
 type photoAlbumReachRow struct {
-	PhotoAlbumID       string `gorm:"column:photo_album_id"`
-	ReachKind          string `gorm:"column:reach_kind"`
-	ShareLevel         string `gorm:"column:share_level"`
-	IsCircleAdmin      bool   `gorm:"column:is_circle_admin"`
-	IsLocationIncluded bool   `gorm:"column:is_location_included"`
+	PhotoAlbumID        string `gorm:"column:photo_album_id"`
+	ReachKind           string `gorm:"column:reach_kind"`
+	ShareLevel          string `gorm:"column:share_level"`
+	IsCircleAdmin       bool   `gorm:"column:is_circle_admin"`
+	IsLocationIncluded  bool   `gorm:"column:is_location_included"`
+	IsFaceNamesIncluded bool   `gorm:"column:is_face_names_included"`
 }
 
 // photoAlbumReach is everything the ways that reach one person to one album
 // add up to.
 type photoAlbumReach struct {
-	isOwner            bool
-	isCircleMember     bool
-	isCircleAdmin      bool
-	shareLevel         models.PhotoAlbumShareLevel
-	isLocationIncluded bool
+	isOwner             bool
+	isCircleMember      bool
+	isCircleAdmin       bool
+	shareLevel          models.PhotoAlbumShareLevel
+	isLocationIncluded  bool
+	isFaceNamesIncluded bool
 }
 
 // access is the reach as the access answer: the person's level and powers
 // over the album, whose columns the album's row gave.
 func (self *photoAlbumReach) access(photoAlbumId string, ownerUserId, circleId *string) *models.PhotoAlbumAccess {
-	access := &models.PhotoAlbumAccess{PhotoAlbumID: photoAlbumId, IsOwner: self.isOwner, IsLocationIncluded: self.isLocationIncluded}
+	access := &models.PhotoAlbumAccess{PhotoAlbumID: photoAlbumId, IsOwner: self.isOwner, IsLocationIncluded: self.isLocationIncluded, IsFaceNamesIncluded: self.isFaceNamesIncluded}
 	if ownerUserId != nil {
 		access.OwnerUserID = *ownerUserId
 	}
@@ -212,6 +234,7 @@ func (self *transaction) photoAlbumReach(userId, photoAlbumId string) (map[strin
 				found.shareLevel = level
 			}
 			found.isLocationIncluded = found.isLocationIncluded || row.IsLocationIncluded
+			found.isFaceNamesIncluded = found.isFaceNamesIncluded || row.IsFaceNamesIncluded
 		}
 	}
 	return reach, nil
@@ -254,7 +277,7 @@ func (self *transaction) GetPhotoAccess(userId, photoId string) (*models.PhotoAc
 		return nil, ErrNotFound
 	}
 	if row.UserID == userId {
-		return &models.PhotoAccess{PhotoID: row.ID, OwnerUserID: row.UserID, IsOwner: true, IsLocationIncluded: true}, nil
+		return &models.PhotoAccess{PhotoID: row.ID, OwnerUserID: row.UserID, IsOwner: true, IsLocationIncluded: true, IsFaceNamesIncluded: true}, nil
 	}
 	// The trash is the owner's alone: a photo in it is gone from every album
 	// as far as anybody else can tell, until it is restored.
@@ -262,19 +285,23 @@ func (self *transaction) GetPhotoAccess(userId, photoId string) (*models.PhotoAc
 		return nil, ErrNotFound
 	}
 	// A disabled account's photos reach nobody else, in an album of another
-	// person as in its own.
+	// person as in its own, and neither do those of an account that no longer
+	// has photos:use, as the reach query has it for a share's owner.
 	var enabledCount int64
-	if err := self.tx.Model(&userModel{}).Where("\"id\" = ? AND \"disabled_at\" IS NULL", row.UserID).Count(&enabledCount).Error; err != nil {
+	if err := self.tx.Raw(`SELECT count(*) FROM "user" owner_user WHERE owner_user.id = @owner AND owner_user.disabled_at IS NULL AND `+userHasPermissionSQL("owner_user.id"),
+		sql.Named("owner", row.UserID), sql.Named("permission", string(models.PermissionPhotosUse))).Scan(&enabledCount).Error; err != nil {
 		return nil, err
 	}
 	if enabledCount == 0 {
 		return nil, ErrNotFound
 	}
 	var reaching []struct {
-		IsLocationIncluded bool   `gorm:"column:is_location_included"`
-		AlbumOwnerUserID   string `gorm:"column:album_owner_user_id"`
+		IsLocationIncluded  bool   `gorm:"column:is_location_included"`
+		IsFaceNamesIncluded bool   `gorm:"column:is_face_names_included"`
+		AlbumOwnerUserID    string `gorm:"column:album_owner_user_id"`
 	}
-	if err := self.tx.Raw(`SELECT reach.is_location_included AS is_location_included, reach.album_owner_user_id AS album_owner_user_id
+	if err := self.tx.Raw(`SELECT reach.is_location_included AS is_location_included, reach.is_face_names_included AS is_face_names_included,
+		reach.album_owner_user_id AS album_owner_user_id
 		FROM "photo_album_item" item
 		JOIN (`+photoAlbumReachQuery+`) reach ON reach.photo_album_id = item.photo_album_id
 		WHERE item.photo_id = @photo`,
@@ -287,9 +314,10 @@ func (self *transaction) GetPhotoAccess(userId, photoId string) (*models.PhotoAc
 	}
 	access := &models.PhotoAccess{PhotoID: row.ID, OwnerUserID: row.UserID}
 	for _, found := range reaching {
-		// The share that includes places is the album owner's, so it covers
-		// the album owner's photos and not the ones others added to it.
+		// The share that includes places or face names is the album owner's, so
+		// it covers the album owner's photos and not the ones others added to it.
 		access.IsLocationIncluded = access.IsLocationIncluded || (found.IsLocationIncluded && found.AlbumOwnerUserID == row.UserID)
+		access.IsFaceNamesIncluded = access.IsFaceNamesIncluded || (found.IsFaceNamesIncluded && found.AlbumOwnerUserID == row.UserID)
 	}
 	return access, nil
 }
@@ -367,16 +395,17 @@ func (self *transaction) SharePhotoAlbum(sharerUserId string, share *models.Phot
 	}
 
 	row := &photoAlbumShareModel{
-		ID:                 newID(),
-		PhotoAlbumID:       album.ID,
-		GranteeUserID:      nullableText(share.GranteeUserID),
-		GranteeCircleID:    nullableText(share.GranteeCircleID),
-		ShareLevel:         string(share.ShareLevel),
-		IsLocationIncluded: share.IsLocationIncluded,
-		CreatedByUserID:    &sharerUserId,
-		CreatedAt:          photoNow(),
+		ID:                  newID(),
+		PhotoAlbumID:        album.ID,
+		GranteeUserID:       nullableText(share.GranteeUserID),
+		GranteeCircleID:     nullableText(share.GranteeCircleID),
+		ShareLevel:          string(share.ShareLevel),
+		IsLocationIncluded:  share.IsLocationIncluded,
+		IsFaceNamesIncluded: share.IsFaceNamesIncluded,
+		CreatedByUserID:     &sharerUserId,
+		CreatedAt:           photoNow(),
 	}
-	conflict := clause.OnConflict{DoUpdates: clause.AssignmentColumns([]string{"share_level", "is_location_included"})}
+	conflict := clause.OnConflict{DoUpdates: clause.AssignmentColumns([]string{"share_level", "is_location_included", "is_face_names_included"})}
 	if share.GranteeUserID != "" {
 		conflict.Columns = []clause.Column{{Name: "photo_album_id"}, {Name: "grantee_user_id"}}
 	} else {
@@ -433,7 +462,7 @@ func (self *transaction) shareToManage(userId, photoAlbumShareId string) (*photo
 	return &found, nil
 }
 
-func (self *transaction) UpdatePhotoAlbumShare(userId, photoAlbumShareId string, shareLevel models.PhotoAlbumShareLevel, isLocationIncluded bool) (*models.PhotoAlbumShare, error) {
+func (self *transaction) UpdatePhotoAlbumShare(userId, photoAlbumShareId string, shareLevel models.PhotoAlbumShareLevel, isLocationIncluded, isFaceNamesIncluded bool) (*models.PhotoAlbumShare, error) {
 	if !shareLevel.IsValid() {
 		return nil, ErrInvalidArguments
 	}
@@ -442,10 +471,10 @@ func (self *transaction) UpdatePhotoAlbumShare(userId, photoAlbumShareId string,
 		return nil, err
 	}
 	if err := self.tx.Model(&photoAlbumShareModel{}).Where("id = ?", found.ID).
-		Updates(map[string]any{"share_level": string(shareLevel), "is_location_included": isLocationIncluded}).Error; err != nil {
+		Updates(map[string]any{"share_level": string(shareLevel), "is_location_included": isLocationIncluded, "is_face_names_included": isFaceNamesIncluded}).Error; err != nil {
 		return nil, err
 	}
-	found.ShareLevel, found.IsLocationIncluded = string(shareLevel), isLocationIncluded
+	found.ShareLevel, found.IsLocationIncluded, found.IsFaceNamesIncluded = string(shareLevel), isLocationIncluded, isFaceNamesIncluded
 	return found.toModel(), nil
 }
 
@@ -511,7 +540,7 @@ func (self *transaction) ListPhotoAlbumReaderUserIDs(photoAlbumId string) ([]str
 	if photoAlbumId == "" {
 		return []string{}, nil
 	}
-	var userIds []string
+	var candidateUserIds []string
 	if err := self.tx.Raw(`
 		SELECT album.user_id FROM "photo_album" album WHERE album.id = @album AND album.user_id IS NOT NULL
 		UNION
@@ -532,11 +561,21 @@ func (self *transaction) ListPhotoAlbumReaderUserIDs(photoAlbumId string) ([]str
 		JOIN "circle_member" member ON member.circle_id = share.grantee_circle_id
 		WHERE share.photo_album_id = @album AND album.user_id IS NOT NULL
 		  AND EXISTS (SELECT 1 FROM "circle_member" owner WHERE owner.circle_id = share.grantee_circle_id AND owner.user_id = album.user_id)
-		ORDER BY 1`, sql.Named("album", photoAlbumId)).Scan(&userIds).Error; err != nil {
+		ORDER BY 1`, sql.Named("album", photoAlbumId)).Scan(&candidateUserIds).Error; err != nil {
 		return nil, err
 	}
-	if userIds == nil {
-		userIds = []string{}
+	// The statement above names who a share or a circle points at. Whether the
+	// album opens for each of them is the reach query's to say, which also
+	// stops a share whose owner is disabled or has lost photos:use.
+	userIds := make([]string, 0, len(candidateUserIds))
+	for _, candidateUserId := range candidateUserIds {
+		reach, err := self.photoAlbumReach(candidateUserId, photoAlbumId)
+		if err != nil {
+			return nil, err
+		}
+		if reach[photoAlbumId] != nil {
+			userIds = append(userIds, candidateUserId)
+		}
 	}
 	return userIds, nil
 }

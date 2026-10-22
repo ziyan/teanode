@@ -5965,8 +5965,9 @@ export const ja: Catalog = {
   'photos.shareIncludePlaces': '撮影場所を含める',
   'photos.shareIncludePlacesHint':
     '含めない場合、場所のない写真が表示され、元のファイルではなく大きな画像が渡されます。',
-  'photos.sharePeopleNamesHint':
-    '写真に写っている人物は、場所を含めても含めなくても、あなたが付けた名前で表示されます。',
+  'photos.shareIncludeFaceNames': '写真に写っている人物の名前を含める',
+  'photos.shareIncludeFaceNamesHint': '含めない場合、写真の中の顔の位置は見えますが、あなたが付けた名前は表示されません。',
+  'photos.shareFaceNamesIncluded': '名前を含む',
   'photos.sharePlacesIncluded': '場所を含む',
   'photos.shareAdd': '共有する',
   'photos.shareSaid': '{name}と共有しました。',

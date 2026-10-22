@@ -603,6 +603,7 @@ func TestAGroupNamedByTheCallersOwnContactIsTheCaller(test *testing.T) {
 	world.circleOf("Home", adaId, benId)
 	large := map[models.PhotoPreviewSize][]byte{models.PhotoPreviewLarge: facePictureJpeg(test)}
 	var photoIds, faceIds []string
+	var sharedAlbumShareId string
 	var ownGroup, otherGroup, unnamedGroup string
 	for index := range 7 {
 		stored := world.storePhoto(adaId, fmt.Sprintf("own-%d", index), fmt.Sprintf("own-%d.jpg", index), []byte(fmt.Sprintf("original %d", index)), large)
@@ -689,17 +690,44 @@ func TestAGroupNamedByTheCallersOwnContactIsTheCaller(test *testing.T) {
 		if err != nil {
 			test.Fatal(err)
 		}
-		if _, err := world.graph.SharePhotoAlbum(ctx, SharePhotoAlbumArguments{PhotoAlbumID: album.ID, GranteeUserID: benId, ShareLevel: "view"}); err != nil {
+		share, err := world.graph.SharePhotoAlbum(ctx, SharePhotoAlbumArguments{PhotoAlbumID: album.ID, GranteeUserID: benId, ShareLevel: "view"})
+		if err != nil {
 			test.Fatal(err)
+		}
+		sharedAlbumShareId = share.ID
+	})
+
+	// In a photo somebody shared, the names are the owner's address book: a
+	// share that does not include them gives the reader the box round the face
+	// and nothing that names it, or points into the owner's contacts and
+	// groups.
+	world.ask(benId, permissions, func(ctx context.Context) {
+		view, err := world.graph.ReadPhoto(ctx, PhotoArguments{PhotoID: photoIds[1]})
+		if err != nil || len(view.Faces) != 1 {
+			test.Fatalf("%+v %v", view, err)
+		}
+		face := view.Faces[0]
+		if face.ContactName != "" || face.ContactID != "" || face.PhotoFaceGroupID != "" || face.UserID != "" || face.IsGroupConfirmed || face.IsOwnContact || face.BoxWidthFraction <= 0 || face.FacePictureURL == "" {
+			test.Fatalf("a share without face names gave away more than the box: %+v", face)
 		}
 	})
 
-	// In a photo somebody shared, the names are the owner's: even a reader
-	// whose own contact has the same identifier is not the face.
+	// With the names in the share the reader has the name, even a reader whose
+	// own contact has the same identifier is not the face, and the contact and
+	// the group stay the owner's.
+	world.ask(adaId, permissions, func(ctx context.Context) {
+		updated, err := world.graph.UpdatePhotoAlbumShare(ctx, UpdatePhotoAlbumShareArguments{PhotoAlbumShareID: sharedAlbumShareId, ShareLevel: "view", IsFaceNamesIncluded: true})
+		if err != nil || !updated.IsFaceNamesIncluded || updated.IsLocationIncluded {
+			test.Fatalf("%+v %v", updated, err)
+		}
+	})
 	world.ask(benId, permissions, func(ctx context.Context) {
 		view, err := world.graph.ReadPhoto(ctx, PhotoArguments{PhotoID: photoIds[1]})
 		if err != nil || len(view.Faces) != 1 || view.Faces[0].ContactName != "Ada Example" || view.Faces[0].IsOwnContact {
 			test.Fatalf("a face in somebody else's photo is not the reader: %+v %v", view, err)
+		}
+		if face := view.Faces[0]; face.ContactID != "" || face.PhotoFaceGroupID != "" || face.UserID != "" || face.IsGroupConfirmed {
+			test.Fatalf("a name came with the owner's contact or group: %+v", face)
 		}
 	})
 }

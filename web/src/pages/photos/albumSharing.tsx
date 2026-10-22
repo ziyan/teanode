@@ -87,6 +87,7 @@ export function ShareAlbumDialog({
   const [choice, setChoice] = useState('')
   const [shareLevel, setShareLevel] = useState<ShareLevel>('view')
   const [isLocationIncluded, setIsLocationIncluded] = useState(false)
+  const [isFaceNamesIncluded, setIsFaceNamesIncluded] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [stopping, setStopping] = useState<PhotoAlbumShare | null>(null)
@@ -111,6 +112,7 @@ export function ShareAlbumDialog({
     const found = current.find((share) => choiceOfShare(share) === key)
     setShareLevel(found?.shareLevel ?? 'view')
     setIsLocationIncluded(found?.isLocationIncluded ?? false)
+    setIsFaceNamesIncluded(found?.isFaceNamesIncluded ?? false)
   }
 
   async function run(work: () => Promise<unknown>, done: string): Promise<boolean> {
@@ -142,6 +144,7 @@ export function ShareAlbumDialog({
           kind === 'circle' ? { granteeCircleId: id } : { granteeUserId: id },
           shareLevel,
           isLocationIncluded,
+          isFaceNamesIncluded,
         ),
       existing ? t('photos.shareChanged', { name }) : t('photos.shareSaid', { name }),
     )
@@ -218,6 +221,7 @@ export function ShareAlbumDialog({
                         value={t(share.shareLevel === 'contribute' ? 'photos.levelContribute' : 'photos.levelView')}
                       />
                       {share.isLocationIncluded && <Tag value={t('photos.sharePlacesIncluded')} />}
+                      {share.isFaceNamesIncluded && <Tag value={t('photos.shareFaceNamesIncluded')} />}
                     </span>
                     <span className="row-actions">
                       <Tooltip label={t('photos.shareChange', { name })}>
@@ -335,7 +339,18 @@ export function ShareAlbumDialog({
             </label>
             <p className="muted photo-share-option-hint">{t('photos.shareIncludePlacesHint')}</p>
           </div>
-          <p className="muted photo-share-option-hint photo-share-names-hint">{t('photos.sharePeopleNamesHint')}</p>
+
+          <div className="photo-share-option">
+            <label className="checkbox is-plain">
+              <input
+                type="checkbox"
+                checked={isFaceNamesIncluded}
+                onChange={(event) => setIsFaceNamesIncluded(event.target.checked)}
+              />
+              <span>{t('photos.shareIncludeFaceNames')}</span>
+            </label>
+            <p className="muted photo-share-option-hint">{t('photos.shareIncludeFaceNamesHint')}</p>
+          </div>
         </>
       )}
     </FormDialog>

@@ -120,6 +120,8 @@ final class PhotoSharingTests: XCTestCase {
         XCTAssertEqual(person.granteeDisplayName, "Sam Example")
         XCTAssertEqual(person.knownShareLevel, .contribute)
         XCTAssertTrue(person.isLocationIncluded)
+        // A share from a server that does not say has no face names in it.
+        XCTAssertFalse(person.isFaceNamesIncluded)
         let circle = try JSONDecoder().decode(
             PhotoAlbumShare.self,
             from: Data(
@@ -136,6 +138,7 @@ final class PhotoSharingTests: XCTestCase {
         draft.target = .person(userId: "u2")
         draft.photoShareLevel = .contribute
         draft.isLocationIncluded = true
+        draft.isFaceNamesIncluded = true
         XCTAssertTrue(draft.canSubmit)
         let share = #"{"id":"s1","photoAlbumId":"a1","granteeUserId":"u2","granteeUsername":"sam","granteeName":"","granteeAvatarUrl":null,"granteeAvatarColorIndex":0,"granteeCircleId":null,"granteeCircleName":"","shareLevel":"contribute","isLocationIncluded":true,"createdAt":""}"#
         let (connection, fake) = try connection { _ in (200, #"{"data":{"SharePhotoAlbum":"# + share + "}}") }
@@ -145,6 +148,7 @@ final class PhotoSharingTests: XCTestCase {
         XCTAssertNil(person["granteeCircleId"])
         XCTAssertEqual(person["shareLevel"] as? String, "contribute")
         XCTAssertEqual(person["isLocationIncluded"] as? Bool, true)
+        XCTAssertEqual(person["isFaceNamesIncluded"] as? Bool, true)
         draft.target = .circle(circleId: "c1")
         _ = try await connection.sharePhotoAlbum("a1", draft: draft)
         let circle = try variables(of: try XCTUnwrap(fake.sent.last))
@@ -163,8 +167,10 @@ final class PhotoSharingTests: XCTestCase {
         let shares = try await connection.photoAlbumShares("a1")
         XCTAssertEqual(shares.map(\.id), ["s1"])
         XCTAssertEqual(try variables(of: try XCTUnwrap(fake.sent.last))["photoAlbumId"] as? String, "a1")
-        _ = try await connection.updatePhotoAlbumShare("s1", photoShareLevel: .view, isLocationIncluded: false)
+        _ = try await connection.updatePhotoAlbumShare("s1", photoShareLevel: .view, isLocationIncluded: false, isFaceNamesIncluded: true)
         let updated = try variables(of: try XCTUnwrap(fake.sent.last))
+        XCTAssertEqual(updated["isLocationIncluded"] as? Bool, false)
+        XCTAssertEqual(updated["isFaceNamesIncluded"] as? Bool, true)
         XCTAssertEqual(updated["photoAlbumShareId"] as? String, "s1")
         XCTAssertEqual(updated["shareLevel"] as? String, "view")
         try await connection.removePhotoAlbumShare("s1")

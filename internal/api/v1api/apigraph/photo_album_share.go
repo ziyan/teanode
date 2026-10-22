@@ -47,13 +47,17 @@ type PhotoAlbumShareView struct {
 	// were taken and receive the original files.
 	IsLocationIncluded bool `json:"isLocationIncluded"`
 
+	// IsFaceNamesIncluded says the people reached see the names the owner gave
+	// the faces in the album's photos.
+	IsFaceNamesIncluded bool `json:"isFaceNamesIncluded"`
+
 	CreatedAt time.Time `json:"createdAt"`
 }
 
 func describePhotoAlbumShare(share *models.PhotoAlbumShare) *PhotoAlbumShareView {
 	view := &PhotoAlbumShareView{
 		ID: share.ID, PhotoAlbumID: share.PhotoAlbumID, ShareLevel: string(share.ShareLevel),
-		IsLocationIncluded: share.IsLocationIncluded, CreatedAt: share.CreatedAt,
+		IsLocationIncluded: share.IsLocationIncluded, IsFaceNamesIncluded: share.IsFaceNamesIncluded, CreatedAt: share.CreatedAt,
 		GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName, GranteeCircleName: share.GranteeCircleName,
 	}
 	if share.GranteeUserID != "" {
@@ -88,6 +92,10 @@ type SharePhotoAlbumArguments struct {
 	// Let them see where the photos were taken and receive the original
 	// files; without it they see a picture made afresh, which carries no place
 	IsLocationIncluded bool `json:"isLocationIncluded" graphapi:"nullable"`
+
+	// Let them see the names the owner gave the faces in the photos; without
+	// it they see the boxes round the faces and no name
+	IsFaceNamesIncluded bool `json:"isFaceNamesIncluded" graphapi:"nullable"`
 }
 
 // UpdatePhotoAlbumShareArguments changes one share.
@@ -98,6 +106,8 @@ type UpdatePhotoAlbumShareArguments struct {
 	ShareLevel string `json:"shareLevel"`
 
 	IsLocationIncluded bool `json:"isLocationIncluded" graphapi:"nullable"`
+
+	IsFaceNamesIncluded bool `json:"isFaceNamesIncluded" graphapi:"nullable"`
 }
 
 // PhotoAlbumShareArguments names one share.
@@ -148,7 +158,7 @@ func (self *graph) SharePhotoAlbum(ctx context.Context, arguments SharePhotoAlbu
 	transaction := self.transaction(ctx)
 	saved, err := transaction.SharePhotoAlbum(principal.User.ID, &models.PhotoAlbumShare{
 		PhotoAlbumID: access.PhotoAlbumID, GranteeUserID: granteeUserId, GranteeCircleID: granteeCircleId,
-		ShareLevel: shareLevel, IsLocationIncluded: arguments.IsLocationIncluded,
+		ShareLevel: shareLevel, IsLocationIncluded: arguments.IsLocationIncluded, IsFaceNamesIncluded: arguments.IsFaceNamesIncluded,
 	})
 	if err != nil {
 		// Not a circle in common, a person who does not exist, a circle the
@@ -179,7 +189,7 @@ func (self *graph) UpdatePhotoAlbumShare(ctx context.Context, arguments UpdatePh
 		return nil, err
 	}
 	transaction := self.transaction(ctx)
-	updated, err := transaction.UpdatePhotoAlbumShare(principal.User.ID, strings.TrimSpace(arguments.PhotoAlbumShareID), shareLevel, arguments.IsLocationIncluded)
+	updated, err := transaction.UpdatePhotoAlbumShare(principal.User.ID, strings.TrimSpace(arguments.PhotoAlbumShareID), shareLevel, arguments.IsLocationIncluded, arguments.IsFaceNamesIncluded)
 	if err != nil {
 		return nil, translateError(err)
 	}

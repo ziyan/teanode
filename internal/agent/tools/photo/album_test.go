@@ -377,6 +377,49 @@ func TestAlbumShareUpdateChangesOnlyWhatIsNamed(test *testing.T) {
 	}
 }
 
+// The names of the faces are a setting of a share like the places: sharing sends
+// it, an update names it alone and keeps the level and the places, and an
+// update that leaves it out keeps it.
+func TestAlbumShareCarriesTheNamesOfTheFaces(test *testing.T) {
+	current := newRun(test, map[string]string{
+		"ListCirclePeople":      `[{"userId":"user-ben","username":"ben"}]`,
+		"SharePhotoAlbum":       `{"id":"share-one","photoAlbumId":"album-own","shareLevel":"view","isLocationIncluded":false,"isFaceNamesIncluded":true}`,
+		"ListPhotoAlbumShares":  `[{"id":"share-one","photoAlbumId":"album-own","granteeUserId":"user-ben","granteeUsername":"ben","shareLevel":"contribute","isLocationIncluded":true,"isFaceNamesIncluded":true}]`,
+		"UpdatePhotoAlbumShare": `{"id":"share-one","photoAlbumId":"album-own","granteeUserId":"user-ben","granteeUsername":"ben","shareLevel":"contribute","isLocationIncluded":true,"isFaceNamesIncluded":false}`,
+	})
+	result, err := current.call(map[string]any{"operation": "album-share", "album_id": "album-own", "person": "ben", "is_face_names_included": true})
+	if err != nil || !strings.Contains(result.Content, `"is_face_names_included":true`) {
+		test.Fatalf("%v %v", result, err)
+	}
+	if asked := current.operations.asked("SharePhotoAlbum"); len(asked) != 1 || asked[0]["isFaceNamesIncluded"] != true || asked[0]["isLocationIncluded"] != false {
+		test.Fatalf("%v", asked)
+	}
+	// Taking the names away keeps the level and the places.
+	result, err = current.call(map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-one", "is_face_names_included": false})
+	if err != nil || !strings.Contains(result.Content, `"is_face_names_included":false`) {
+		test.Fatalf("%v %v", result, err)
+	}
+	asked := current.operations.asked("UpdatePhotoAlbumShare")
+	if len(asked) != 1 || asked[0]["shareLevel"] != "contribute" || asked[0]["isLocationIncluded"] != true || asked[0]["isFaceNamesIncluded"] != false {
+		test.Fatalf("%v", asked)
+	}
+	// Changing the level keeps the names.
+	if _, err := current.call(map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-one", "share_level": "view"}); err != nil {
+		test.Fatal(err)
+	}
+	asked = current.operations.asked("UpdatePhotoAlbumShare")
+	if len(asked) != 2 || asked[1]["shareLevel"] != "view" || asked[1]["isFaceNamesIncluded"] != true {
+		test.Fatalf("narrowing the level took the names away: %v", asked)
+	}
+	// What the share has already changes nothing.
+	if result, err := current.call(map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-one", "is_face_names_included": true}); err != nil || !strings.Contains(result.Content, "nothing changed") {
+		test.Fatalf("%v %v", result, err)
+	}
+	if asked := current.operations.asked("UpdatePhotoAlbumShare"); len(asked) != 2 {
+		test.Fatalf("%v", asked)
+	}
+}
+
 // A call that names what the share already has changes nothing, and says so
 // without asking the server to write.
 func TestAlbumShareUpdateThatChangesNothingMakesNoCall(test *testing.T) {
@@ -437,6 +480,14 @@ func TestAlbumShareUpdateAsksWhenItCouldWidenAndTheCardNamesWhatChanges(test *te
 		{
 			map[string]any{"share_id": "share-three", "is_location_included": true}, tools.RiskGranting,
 			`Change the share of "Picnic" with "Cai Example" to show where the photos were taken`, "Change an album share to show where the photos were taken",
+		},
+		{
+			map[string]any{"share_id": "share-three", "is_face_names_included": true}, tools.RiskGranting,
+			`Change the share of "Picnic" with "Cai Example" to show the names of the faces`, "Change an album share to show the names of the faces",
+		},
+		{
+			map[string]any{"share_id": "share-two", "is_face_names_included": false}, tools.RiskWrite,
+			`Change the share of "Picnic" with everyone in "Home" to hide the names of the faces`, "Change an album share to hide the names of the faces",
 		},
 		{
 			map[string]any{"share_id": "share-two", "share_level": "view"}, tools.RiskWrite,

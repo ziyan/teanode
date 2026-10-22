@@ -194,21 +194,21 @@ func TestAlbumListSaysWhoseEachAlbumIsAndWhatYouMayDoWithIt(test *testing.T) {
 
 func TestAlbumShareSharesWithAPersonOrACircleAtALevel(test *testing.T) {
 	server := newPhotoServer(test)
-	output, _, err := server.run(test, "album", "share", "album-1", "--person", "Ben", "--contribute", "--with-location")
-	if err != nil || !strings.Contains(output, "shared with ben at contribute, with where the photos were taken (share share-person)") {
+	output, _, err := server.run(test, "album", "share", "album-1", "--person", "Ben", "--contribute", "--with-location", "--with-face-names")
+	if err != nil || !strings.Contains(output, "shared with ben at contribute, with where the photos were taken, with the names of the faces (share share-person)") {
 		test.Fatalf("%v: %s", err, output)
 	}
 	variables := server.variables[len(server.variables)-1]
-	if variables["photoAlbumId"] != "album-1" || variables["granteeUserId"] != "user-ben" || variables["granteeCircleId"] != nil || variables["shareLevel"] != "contribute" || variables["isLocationIncluded"] != true {
+	if variables["photoAlbumId"] != "album-1" || variables["granteeUserId"] != "user-ben" || variables["granteeCircleId"] != nil || variables["shareLevel"] != "contribute" || variables["isLocationIncluded"] != true || variables["isFaceNamesIncluded"] != true {
 		test.Fatalf("%v", variables)
 	}
 	// A circle by its name or its identifier, to view, without places.
 	output, _, err = server.run(test, "album", "share", "album-1", "--circle", "home")
-	if err != nil || !strings.Contains(output, "shared with everyone in Home at view, without where the photos were taken") {
+	if err != nil || !strings.Contains(output, "shared with everyone in Home at view, without where the photos were taken, without the names of the faces") {
 		test.Fatalf("%v: %s", err, output)
 	}
 	variables = server.variables[len(server.variables)-1]
-	if variables["granteeCircleId"] != "circle-home" || variables["granteeUserId"] != nil || variables["shareLevel"] != "view" || variables["isLocationIncluded"] != false {
+	if variables["granteeCircleId"] != "circle-home" || variables["granteeUserId"] != nil || variables["shareLevel"] != "view" || variables["isLocationIncluded"] != false || variables["isFaceNamesIncluded"] != false {
 		test.Fatalf("%v", variables)
 	}
 	if _, output, err := server.run(test, "album", "share", "album-1", "--circle", "circle-home", "--json"); err != nil || !strings.Contains(output, `"id": "share-circle"`) && !strings.Contains(output, `"id":"share-circle"`) {
@@ -237,7 +237,7 @@ func TestAlbumShareSharesWithAPersonOrACircleAtALevel(test *testing.T) {
 // share-update changes only what its flags name. The server writes the level
 // and the places together, so the share is read first and what the flags leave
 // out is sent as the share has it. In the test server share-person is view
-// without places, and share-circle is contribute with places.
+// without places or face names, and share-circle is contribute with both.
 func TestAlbumShareUpdateChangesOnlyWhatTheFlagsName(test *testing.T) {
 	server := newPhotoServer(test)
 	updates := func() []map[string]any {
@@ -251,7 +251,7 @@ func TestAlbumShareUpdateChangesOnlyWhatTheFlagsName(test *testing.T) {
 	}
 	// Places on, and the level the share has stays.
 	output, _, err := server.run(test, "album", "share-update", "album-1", "share-person", "--with-location")
-	if err != nil || !strings.Contains(output, "shared with ben at view, with where the photos were taken (share share-person)") {
+	if err != nil || !strings.Contains(output, "shared with ben at view, with where the photos were taken, without the names of the faces (share share-person)") {
 		test.Fatalf("%v: %s", err, output)
 	}
 	if found := updates(); len(found) != 1 || found[0]["photoAlbumShareId"] != "share-person" || found[0]["shareLevel"] != "view" || found[0]["isLocationIncluded"] != true {
@@ -271,16 +271,30 @@ func TestAlbumShareUpdateChangesOnlyWhatTheFlagsName(test *testing.T) {
 	if found := updates(); len(found) != 3 || found[2]["shareLevel"] != "contribute" || found[2]["isLocationIncluded"] != false {
 		test.Fatalf("%v", found)
 	}
+	// Face names alone: the level and the places stay.
+	if _, _, err := server.run(test, "album", "share-update", "album-1", "share-person", "--with-face-names"); err != nil {
+		test.Fatal(err)
+	}
+	if found := updates(); len(found) != 4 || found[3]["shareLevel"] != "view" || found[3]["isLocationIncluded"] != false || found[3]["isFaceNamesIncluded"] != true {
+		test.Fatalf("%v", found)
+	}
+	// Taking the places away keeps the face names, and the other way round.
+	if _, _, err := server.run(test, "album", "share-update", "album-1", "share-circle", "--without-face-names"); err != nil {
+		test.Fatal(err)
+	}
+	if found := updates(); len(found) != 5 || found[4]["shareLevel"] != "contribute" || found[4]["isLocationIncluded"] != true || found[4]["isFaceNamesIncluded"] != false {
+		test.Fatalf("%v", found)
+	}
 	// Both named at once.
 	if _, _, err := server.run(test, "album", "share-update", "album-1", "share-person", "--level", "Contribute", "--with-location"); err != nil {
 		test.Fatal(err)
 	}
-	if found := updates(); len(found) != 4 || found[3]["shareLevel"] != "contribute" || found[3]["isLocationIncluded"] != true {
+	if found := updates(); len(found) != 6 || found[5]["shareLevel"] != "contribute" || found[5]["isLocationIncluded"] != true {
 		test.Fatalf("%v", found)
 	}
 	// What the share has already is not sent.
-	output, _, err = server.run(test, "album", "share-update", "album-1", "share-circle", "--level", "contribute", "--with-location")
-	if err != nil || !strings.Contains(output, "nothing changed") || len(updates()) != 4 {
+	output, _, err = server.run(test, "album", "share-update", "album-1", "share-circle", "--level", "contribute", "--with-location", "--with-face-names")
+	if err != nil || !strings.Contains(output, "nothing changed") || len(updates()) != 6 {
 		test.Fatalf("%v: %s", err, output)
 	}
 	before := len(server.documents)
@@ -291,6 +305,7 @@ func TestAlbumShareUpdateChangesOnlyWhatTheFlagsName(test *testing.T) {
 		"nothing named":           {"album", "share-update", "album-1", "share-person"},
 		"a level not one":         {"album", "share-update", "album-1", "share-person", "--level", "owner"},
 		"places both ways":        {"album", "share-update", "album-1", "share-person", "--with-location", "--without-location"},
+		"face names both ways":    {"album", "share-update", "album-1", "share-person", "--with-face-names", "--without-face-names"},
 		"a share the album lacks": {"album", "share-update", "album-1", "share-elsewhere", "--level", "view"},
 	} {
 		if _, _, err := server.run(test, arguments...); err == nil {

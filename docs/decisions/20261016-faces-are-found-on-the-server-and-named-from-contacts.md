@@ -44,3 +44,7 @@ respectively.
 
 Faces in a photo shared with somebody else are the owner's: a reader sees
 the names the owner gave, and never has the reader's own faces found in it.
+Since migration 0253 the names reach a reader only through a share that
+includes them (`photo_album_share.is_face_names_included`), because they are
+entries in the owner's address book; without it the reader sees the boxes
+round the faces and nothing that names them.

@@ -625,7 +625,9 @@ func (self *graph) CountUndescribedPhotos(ctx context.Context, arguments ListPho
 // caller may have it: no place and no original file unless the share includes
 // them, and in the place of the original a file that is the large preview, so
 // that what the caller is offered to download is what they are allowed to
-// keep. The faces are the owner's, with the names the owner gave them.
+// keep. The faces are the owner's: the boxes round them go to every reader,
+// and the names the owner gave them only to a reader whose share includes
+// them (see withheldFaceNames).
 func (self *graph) ReadPhoto(ctx context.Context, arguments PhotoArguments) (*PhotoView, error) {
 	principal, access, err := self.requirePhotoReader(ctx, arguments.PhotoID)
 	if err != nil {
@@ -674,9 +676,24 @@ func (self *graph) ReadPhoto(ctx context.Context, arguments PhotoArguments) (*Ph
 	ownContactId := ""
 	if access.IsOwner {
 		ownContactId = principal.User.ContactID
+	} else {
+		withheldFaceNames(access.IsFaceNamesIncluded, faces...)
 	}
 	withFacePictureAddresses(ownContactId, faces...)
 	return &PhotoView{Photo: found, PhotoFiles: files, PhotoPreviews: previews, Albums: albums, Faces: faces}, nil
+}
+
+// withheldFaceNames takes from the faces of somebody else's photo what points
+// into the owner's own records: the contact and the group, and the owner's
+// grouping, which the reader has no use for. The name is left on only when the
+// share that lets the reader in includes the names (isFaceNamesIncluded).
+func withheldFaceNames(isFaceNamesIncluded bool, faces ...*models.PhotoFace) {
+	for _, face := range faces {
+		face.UserID, face.ContactID, face.PhotoFaceGroupID, face.IsGroupConfirmed = "", "", "", false
+		if !isFaceNamesIncluded {
+			face.ContactName = ""
+		}
+	}
 }
 
 // sharedCopyFiles is the one file a reader who may not have the originals is
