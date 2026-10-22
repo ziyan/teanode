@@ -6,6 +6,19 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.193.8] - 2026-10-22
+
+### Changed
+
+- The agent's prompt is shorter: tool guidance that repeated a tool's own description or refusals is gone, and a mail draft with HTML now says in its answer what mail clients will not keep. (#631)
+
+### Security
+
+- An operator signed in as a person can no longer create tokens, passkeys or app passwords for them. (#632)
+- Only the operator or an account manager can list every mailbox on the server. (#632)
+- Mail to a disabled account is refused, and its forward rules and away reply no longer run. (#632)
+- The Operator role no longer holds `agent:act`. On upgrade it is removed from an existing Operator role; give it back to a role of your own if you rely on it. (#632)
+
 ## [0.193.7] - 2026-10-22
 
 ### Security
