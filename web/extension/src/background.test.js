@@ -47,7 +47,10 @@ function listenerSet() {
 // load starts the worker with these tabs open (by id, with their address),
 // the person's own tab being the first, and the agent's tab the second when
 // there is one.
-async function load(tabs, { current = tabs[0].id, opened = [], panel = { isOpen: false }, runPage = false } = {}) {
+async function load(
+  tabs,
+  { current = tabs[0].id, opened = [], panel = { isOpen: false }, runPage = false, storedServer = serverOrigin, syncedServer } = {},
+) {
   FakeSocket.instances = []
   const byId = new Map(
     tabs.map((tab) => [tab.id, { windowId: 1, active: true, status: 'complete', title: 'A page', ...tab }]),
@@ -72,8 +75,11 @@ async function load(tabs, { current = tabs[0].id, opened = [], panel = { isOpen:
         remove: vi.fn(async () => {}),
       },
       local: {
-        get: vi.fn(async () => ({ token: 'a-token', server: serverOrigin, ...local })),
+        get: vi.fn(async () => ({ token: 'a-token', ...(storedServer ? { server: storedServer } : {}), ...local })),
         set: vi.fn(async (values) => void Object.assign(local, values)),
+      },
+      sync: {
+        get: vi.fn(async () => (syncedServer ? { server: syncedServer } : {})),
       },
       onChanged: listenerSet(),
     },
@@ -682,6 +688,17 @@ describe('the server address the token is sent to', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(socket.readyState).toBe(1)
     expect(FakeSocket.instances).toHaveLength(1)
+  })
+
+  it('is brought over once from the synced storage, where the last build kept it', async () => {
+    await load(ordinary, { storedServer: '', syncedServer: 'https://mail.example.com' })
+    await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(1))
+    expect(FakeSocket.instances[0].address).toBe('wss://mail.example.com/api/v1/agent/tab')
+  })
+
+  it('is not brought over from the synced storage when this browser has its own', async () => {
+    const { socket } = await load(ordinary, { syncedServer: attacker })
+    expect(socket.address).toBe('wss://mail.example.com/api/v1/agent/tab')
   })
 
   it('follows a change in the local storage, where only the options page writes it', async () => {
