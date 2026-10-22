@@ -1438,9 +1438,10 @@ circle they left (`endFinanceSharesOutsideCircles`, called from
 reached.
 
 **Who may share.** Only the person whose agent holds the account
-(`ShareFinanceAccount`; listing and ending one, `ListFinanceAccountShares` and
-`UnshareFinanceAccount`, need only `agent:use`, so an owner who turned the agent
-off can still see and stop what they share), to someone they share a
+(`ShareFinanceAccount`; listing one, `ListFinanceAccountShares`, needs only
+`agent:use`, and ending one, `UnshareFinanceAccount`, needs no permission at all
+(`requireShareOwner`), so an owner who turned the agent off can still stop what
+they share), to someone they share a
 circle with or to a circle they are in. **Starting a share or widening one is
 the person's tap**, the dashboard or the iPhone app, as Health's is: a command
 line token, an operator signed in as the person and the agent's own operations
