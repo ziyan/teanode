@@ -3969,13 +3969,17 @@ export const ja: Catalog = {
     'まだ誰ともサークルを共有していません。サークルを作成するか参加すると、ページを共有できます。',
   'knowledge.share.quotes': '各事実の出典となった文面も表示する',
   'knowledge.share.quotesHint':
-    'この文面はあなたのメールと文書からの引用です。オフのままだと、事実の内容と、何から読み取ったか（たとえばあなたのメール）だけが見え、文面は見えません。チャットの文面は、他の人の言葉でもあるため、常に表示されません。',
+    'この文面はあなたのメールと文書からの引用です。オフのままだと、事実の内容と、何から読み取ったか（たとえばあなたのメール）だけが見え、文面は見えません。チャットと録音の文面は、他の人の言葉でもあるため、常に表示されません。',
   'knowledge.share.preview': '{name}に見える内容',
   'knowledge.share.previewing': '相手に見える内容を確認しています…',
   'knowledge.share.reachesOne': 'このページと、その下のすべてを含め、{count}ページを共有します。',
   'knowledge.share.reachesOther': 'このページと、その下のすべてを含め、{count}ページを共有します。',
   'knowledge.share.reachesAtLeastOne': 'このページと、その下のすべてを含め、少なくとも{count}ページを共有します。',
   'knowledge.share.reachesAtLeastOther': 'このページと、その下のすべてを含め、少なくとも{count}ページを共有します。',
+  'knowledge.share.reachesLater': '今後このページの下に追加したページも共有されます。',
+  'knowledge.share.reachesMore': 'ほか{count}件',
+  'knowledge.share.withheldOne': '家計、録音、位置情報から読み取った事実{count}件は非公開のままです。それぞれ独自の共有設定があります。',
+  'knowledge.share.withheldOther': '家計、録音、位置情報から読み取った事実{count}件は非公開のままです。それぞれ独自の共有設定があります。',
   'knowledge.share.submit': '共有する',
   'knowledge.share.shares': '共有先',
   'knowledge.share.sharesHint':

@@ -307,7 +307,7 @@ At the end of this milestone a person can share a page and everything under it w
 Migration `0196_agent_page_share.sql`:
 
     agent_page_share: id, agent_id references agent on delete cascade,  -- the owner's
-          path varchar(255) not null,        -- the root of the shared subtree
+          path varchar(500) not null,        -- the root of the shared subtree
           grantee_user_id null, grantee_circle_id null, check exactly one,
           is_quote_shared boolean not null default false,
           created_at, created_by_user_id

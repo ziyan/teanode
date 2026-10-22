@@ -116,12 +116,15 @@ type SharedAgentPage struct {
 	Children      []*SharedAgentChild `json:"children"`
 }
 
-// AgentPageSharePreview is what a share would show, and how many pages it
-// would reach.
+// AgentPageSharePreview is what a share would show, and which pages it would
+// reach: the first of their paths, by path, of ReachedPageCount in all, and
+// how many facts on them are kept back for their evidence.
 type AgentPageSharePreview struct {
 	Page                  *SharedAgentPage `json:"page"`
 	ReachedPageCount      int              `json:"reachedPageCount"`
 	IsReachedPageCountCut bool             `json:"isReachedPageCountCut"`
+	ReachedPagePaths      []string         `json:"reachedPagePaths"`
+	WithheldFactCount     int              `json:"withheldFactCount"`
 }
 
 const (
@@ -150,7 +153,7 @@ const (
 	DocumentPreviewAgentPageShare = `query ($path: String!, $granteeUserId: String, $granteeCircleId: String, $isQuoteShared: Boolean) {
   PreviewAgentPageShare(path: $path, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, isQuoteShared: $isQuoteShared) {
     page { ` + sharedAgentPageFields + ` }
-    reachedPageCount isReachedPageCountCut
+    reachedPageCount isReachedPageCountCut reachedPagePaths withheldFactCount
   }
 }`
 

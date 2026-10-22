@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lib/pq"
 	"gorm.io/gorm"
@@ -58,6 +59,12 @@ type PageShareOperation interface {
 	// under them whose summary has a quotation mark in it, which are the only
 	// ones whose summary may be left out of what a reader is shown.
 	ListAgentNodesWithQuoteMarksWithin(agentId string, roots []string) ([]*models.AgentNode, error)
+
+	// ListAgentFactsWithin are the live facts on the pages at these roots or
+	// under them, by identifier, at most limit of those after afterFactId
+	// (empty to start). The shared-memory reader counts what a share would
+	// keep from its reader with it, a batch at a time.
+	ListAgentFactsWithin(agentId string, roots []string, afterFactId string, limit int) ([]*models.AgentFact, error)
 }
 
 type agentPageShareModel struct {
@@ -290,13 +297,23 @@ func (self *transaction) DeletePageShare(shareId string) error {
 // to share a circle, and a share to a circle needs both the reader and the
 // owner to be in it. The join on the owner's account is what stops a disabled
 // account's pages reaching anybody: it cannot sign in, and what it shared is
-// not read in its name while it is off.
-const reachingPageSharesQuery = `
+// not read in its name while it is off. It is reachingLocationSharesQuery for
+// pages in the rest: the reader's account must not be disabled either, and
+// the owner and the reader both need agent:use (@agentPermission) and
+// circle:use (@circlePermission), so that an operator who takes either from a
+// role has switched sharing pages off for those people and what they shared
+// is no longer read by others.
+var reachingPageSharesQuery = `
 SELECT share.*
 FROM "agent_page_share" share
 JOIN "agent" owner ON owner.id = share.agent_id
 JOIN "user" owner_user ON owner_user.id = owner.user_id AND owner_user.disabled_at IS NULL
 WHERE owner.user_id <> @reader
+  AND ` + userHasNamedPermissionSQL("owner.user_id", "agentPermission") + `
+  AND ` + userHasNamedPermissionSQL("owner.user_id", "circlePermission") + `
+  AND EXISTS (SELECT 1 FROM "user" reader_user WHERE reader_user.id = @reader AND reader_user.disabled_at IS NULL)
+  AND ` + userHasNamedPermissionSQL("@reader", "agentPermission") + `
+  AND ` + userHasNamedPermissionSQL("@reader", "circlePermission") + `
   AND (
     (share.grantee_user_id = @reader AND EXISTS (
         SELECT 1 FROM "circle_member" mine
@@ -313,7 +330,9 @@ func (self *transaction) ListPageSharesReaching(readerUserId string) ([]*models.
 		return []*models.AgentPageShare{}, nil
 	}
 	var rows []agentPageShareModel
-	if err := self.tx.Raw(reachingPageSharesQuery, sql.Named("reader", readerUserId)).Scan(&rows).Error; err != nil {
+	if err := self.tx.Raw(reachingPageSharesQuery, sql.Named("reader", readerUserId),
+		sql.Named("agentPermission", string(models.PermissionAgentUse)),
+		sql.Named("circlePermission", string(models.PermissionCircleUse))).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	shares, err := self.describePageShares(rows)
@@ -439,4 +458,51 @@ func (self *transaction) ListAgentNodesWithQuoteMarksWithin(agentId string, root
 		return nil, err
 	}
 	return orderNodesBy(nodes, nodeIds), nil
+}
+
+func (self *transaction) ListAgentFactsWithin(agentId string, roots []string, afterFactId string, limit int) ([]*models.AgentFact, error) {
+	if len(roots) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 500
+	}
+	var factIds []string
+	if err := self.tx.Raw(
+		`SELECT fact."id" FROM "agent_fact" fact
+		 JOIN "agent_node" node ON node."id" = fact."node_id"
+		 WHERE fact."agent_id" = ? AND NOT fact."dormant" AND fact."superseded_by" IS NULL
+		   AND fact."id" > ? AND `+withinRootsCondition+`
+		 ORDER BY fact."id" ASC LIMIT ?`,
+		agentId, afterFactId, pq.Array(roots), limit).Scan(&factIds).Error; err != nil {
+		return nil, err
+	}
+	facts, err := self.GetAgentFacts(agentId, factIds)
+	if err != nil {
+		return nil, err
+	}
+	return orderFactsBy(facts, factIds), nil
+}
+
+// endPageSharesUnder ends the shares of the agent's pages at this path and
+// under it. A share is a path and not a reference to a page, so the code that
+// removes pages calls this: a share left behind would reach whatever page is
+// made at that path next.
+func (self *transaction) endPageSharesUnder(agentId, path string) error {
+	return self.tx.Exec(`DELETE FROM "agent_page_share" WHERE "agent_id" = ? AND ("path" = ? OR "path" LIKE ?)`,
+		agentId, path, likeEscaped(path)+"/%").Error
+}
+
+// movePageShares moves the shares of the page at path, and of the pages under
+// it, to where the page and they have been moved to, so that a share follows
+// the page it was made of. Whatever was shared at the target before is ended
+// first: it belonged to a page that is gone.
+func (self *transaction) movePageShares(agentId, path, target string) error {
+	if err := self.endPageSharesUnder(agentId, target); err != nil {
+		return err
+	}
+	return self.tx.Exec(
+		`UPDATE "agent_page_share" SET "path" = ? || substring("path" from ?::int)
+		 WHERE "agent_id" = ? AND ("path" = ? OR "path" LIKE ?)`,
+		target, utf8.RuneCountInString(path)+1, agentId, path, likeEscaped(path)+"/%").Error
 }

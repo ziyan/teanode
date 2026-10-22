@@ -3,10 +3,12 @@ package memory
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -558,15 +560,17 @@ func previewShareAction(ctx context.Context, run tools.Run, item *memoryItem) (*
 					Path string `json:"path"`
 				} `json:"children"`
 			} `json:"page"`
-			ReachedPageCount      int  `json:"reachedPageCount"`
-			IsReachedPageCountCut bool `json:"isReachedPageCountCut"`
+			ReachedPageCount      int      `json:"reachedPageCount"`
+			IsReachedPageCountCut bool     `json:"isReachedPageCountCut"`
+			ReachedPagePaths      []string `json:"reachedPagePaths"`
+			WithheldFactCount     int      `json:"withheldFactCount"`
 		} `json:"PreviewAgentPageShare"`
 	}
 	if err := run.Operations().Execute(ctx,
 		`query ($path: String!, $granteeUserId: String, $granteeCircleId: String, $isQuoteShared: Boolean) {
 		   PreviewAgentPageShare(path: $path, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, isQuoteShared: $isQuoteShared) {
 		     page { path name nodeKind opening facts { number text evidenceQuote } edges { relation } children { path } }
-		     reachedPageCount isReachedPageCountCut
+		     reachedPageCount isReachedPageCountCut reachedPagePaths withheldFactCount
 		   }
 		 }`, variables, &result); err != nil {
 		return nil, err
@@ -586,15 +590,52 @@ func previewShareAction(ctx context.Context, run tools.Run, item *memoryItem) (*
 	answer := map[string]any{
 		"path": path, "with": grantee.Description, "is_quote_shared": item.IsQuoteShared,
 		"reached_page_count": preview.ReachedPageCount, "is_reached_page_count_cut": preview.IsReachedPageCountCut,
+		"reached_page_paths": preview.ReachedPagePaths,
+		"reach":              "a page added under the shared page later is shared too",
 		"page": map[string]any{
 			"name": preview.Page.Name, "opening": preview.Page.Opening, "fact_count": len(preview.Page.Facts), "facts": facts,
 			"link_count": len(preview.Page.Edges), "pages_directly_under_it": len(preview.Page.Children),
 		},
 	}
+	if preview.WithheldFactCount > 0 {
+		answer["withheld_fact_count"] = preview.WithheldFactCount
+		answer["withheld"] = fmt.Sprintf("%d facts from finance, recordings or location stay private", preview.WithheldFactCount)
+	}
 	if len(preview.Page.Facts) > previewFactsShown {
 		answer["more_facts"] = fmt.Sprintf("%d more facts on the page are shown too", len(preview.Page.Facts)-previewFactsShown)
 	}
 	return tools.JSONResult(answer)
+}
+
+// sharedWithText says with whom the person shares the page at this path,
+// through a share of it or of a page above it: "Ben and the circle "Home"", or
+// empty when nobody.
+func sharedWithText(tx db.Transaction, ownerUserId, pagePath string) (string, error) {
+	shares, err := tx.ListPageSharesBy(ownerUserId)
+	if err != nil {
+		return "", err
+	}
+	var names []string
+	for _, share := range shares {
+		if !share.Covers(pagePath) {
+			continue
+		}
+		name := share.GranteeUsername
+		if share.GranteeCircleName != "" {
+			name = models.DescribeCircleByName(share.GranteeCircleName)
+		}
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	switch len(names) {
+	case 0:
+		return "", nil
+	case 1:
+		return names[0], nil
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1], nil
 }
 
 // sharesAction lists the shares the person made, each with who it is for.

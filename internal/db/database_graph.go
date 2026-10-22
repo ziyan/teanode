@@ -662,6 +662,13 @@ func (self *transaction) PutAgentNode(node *models.AgentNode) (*models.AgentNode
 		if result.Error != nil {
 			return nil, result.Error
 		}
+		if result.RowsAffected > 0 {
+			// A share is a path. One left at this path by a page that was
+			// deleted before shares ended with it would reach this page.
+			if err := self.tx.Exec(`DELETE FROM "agent_page_share" WHERE "agent_id" = ? AND "path" = ?`, written.AgentID, written.Path).Error; err != nil {
+				return nil, err
+			}
+		}
 		if result.RowsAffected == 0 {
 			existing, err = self.lockAgentNode(node.AgentID, node.Path)
 			if err != nil {
@@ -853,6 +860,10 @@ func (self *transaction) MoveAgentNode(agentId, path, newParentPath string) (*mo
 		Update("parent_id", parentId).Error; err != nil {
 		return nil, err
 	}
+	// A share is a path, so it moves with the page it was made of.
+	if err := self.movePageShares(agentId, path, target); err != nil {
+		return nil, err
+	}
 	moved, err := self.GetAgentNode(agentId, target)
 	if err != nil || moved == nil {
 		return nil, err
@@ -872,7 +883,15 @@ func (self *transaction) DeleteAgentNode(agentId, path string) (int64, error) {
 	}
 	result := self.tx.Where(`"agent_id" = ? AND ("path" = ? OR "path" LIKE ?)`, agentId, path, likeEscaped(path)+"/%").
 		Delete(&agentNodeModel{})
-	return result.RowsAffected, result.Error
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	// What was shared of the pages that are gone is no longer shared, and
+	// must not be again of a page made at the same path.
+	if err := self.endPageSharesUnder(agentId, path); err != nil {
+		return 0, err
+	}
+	return result.RowsAffected, nil
 }
 
 func (self *transaction) ListAgentNodeChildrenPage(agentId, nodeId string, limit, offset int) ([]*models.AgentNode, int64, error) {
