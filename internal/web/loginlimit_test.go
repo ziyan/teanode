@@ -97,7 +97,7 @@ func TestGuessingTheCurrentPasswordIsRefusedAfterTheBurst(t *testing.T) {
 	t.Parallel()
 	store := newStore(t)
 	authenticator, err := web.NewAuthenticator(store, newMemoryStore(
-		&models.User{Username: "ziyan", PasswordHash: testPasswordHash},
+		&models.User{Username: "rowan", PasswordHash: testPasswordHash},
 		&models.User{Username: "another", PasswordHash: testPasswordHash},
 	))
 	if err != nil {
@@ -106,7 +106,7 @@ func TestGuessingTheCurrentPasswordIsRefusedAfterTheBurst(t *testing.T) {
 
 	var refused bool
 	for attempt := 1; attempt <= 200; attempt++ {
-		err := authenticator.ChangePassword("ziyan", "not-the-password", "a-new-password")
+		err := authenticator.ChangePassword("rowan", "not-the-password", "a-new-password")
 		if errors.Is(err, web.ErrTooManyAttempts) {
 			refused = true
 			break
