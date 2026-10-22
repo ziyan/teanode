@@ -59,3 +59,29 @@ func TestTextFromSharedPagesIsWhatFollowsTheMarker(t *testing.T) {
 		t.Errorf("everything after the marker: %q", got)
 	}
 }
+
+// Words read from a recording another person shared are shared words too: a
+// fact that only repeats them is refused, as one from a shared page is, and
+// the person's own words beside them are theirs.
+func TestTheWriterTellsSharedRecordingWordsFromTheirOwn(t *testing.T) {
+	t.Parallel()
+
+	shared := sharedWordsIn([]*models.AgentMessage{
+		{ID: "m1", Role: "user", Content: "What did they decide about the release?"},
+		{ID: "m2", Role: "tool", Content: tools.SharedRecordingMarker + "\n" + `{"recording":{"passages":[{"speakerName":"Alex","transcriptText":"We should ship the release on Friday after the review."}]}}`},
+	})
+	if len(shared.texts) != 1 {
+		t.Fatalf("a marked result: %q", shared.texts)
+	}
+	shown := map[string]string{"m1": "What did they decide about the release?"}
+	theirWords := map[string]bool{"m1": true}
+	if !shared.holds(RememberedFact{Quote: "We should ship the release on Friday after the review"}, shown, theirWords) {
+		t.Error("a quote of a shared recording is refused")
+	}
+	if shared.holds(RememberedFact{Quote: "What did they decide about the release"}, shown, theirWords) {
+		t.Error("words the person said are theirs to have written down")
+	}
+	if got := tools.TextFromSharedPages("own\n" + tools.SharedRecordingMarker + "\ntheirs"); got != "\ntheirs" {
+		t.Errorf("everything after the marker: %q", got)
+	}
+}
