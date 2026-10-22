@@ -451,13 +451,15 @@ func TestPreviewingAShareSharesNothing(t *testing.T) {
 		"ListCircles":      `[]`,
 		"PreviewAgentPageShare": `{"page":{"path":"people/a","name":"A","nodeKind":"person","opening":"Lives by the sea.",
 			"facts":[{"number":1,"text":"Likes tea","evidenceQuote":"I like tea"}],"edges":[{"relation":"knows"}],"children":[{"path":"people/a/b"}]},
-			"reachedPageCount":4,"isReachedPageCountCut":false}`,
+			"reachedPageCount":4,"isReachedPageCountCut":false,
+			"reachedPagePaths":["people/a","people/a/b"],"withheldFactCount":3}`,
 	}
 	result, err := callMemory(t, run, `{"action":"preview","path":"/People/A/","with":"ben","is_quote_shared":true}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, wanted := range []string{`"reached_page_count":4`, `"Likes tea"`, `"quote":"I like tea"`, `"with":"ben"`} {
+	for _, wanted := range []string{`"reached_page_count":4`, `"Likes tea"`, `"quote":"I like tea"`, `"with":"ben"`,
+		`"reached_page_paths":["people/a","people/a/b"]`, `added under the shared page later is shared too`, `"withheld_fact_count":3`, `3 facts from finance, recordings or location stay private`} {
 		if !strings.Contains(result.Content, wanted) {
 			t.Errorf("the preview lacks %s:\n%s", wanted, result.Content)
 		}

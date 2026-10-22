@@ -91,7 +91,16 @@ func runAgentMemoryShare(ctx context.Context, command *cli.Command) error {
 		if preview.IsReachedPageCountCut {
 			reached = "at least " + reached
 		}
-		_, _ = fmt.Fprintf(command.Writer, "\nThe share reaches %s pages: this one and everything under it.\n", reached)
+		_, _ = fmt.Fprintf(command.Writer, "\nThe share reaches %s pages: this one and everything under it, and a page added under it later is shared too.\n", reached)
+		for _, reachedPath := range preview.ReachedPagePaths {
+			_, _ = fmt.Fprintf(command.Writer, "  %s\n", reachedPath)
+		}
+		if more := preview.ReachedPageCount - len(preview.ReachedPagePaths); more > 0 {
+			_, _ = fmt.Fprintf(command.Writer, "  (and %d more)\n", more)
+		}
+		if preview.WithheldFactCount > 0 {
+			_, _ = fmt.Fprintf(command.Writer, "\n%s from finance, recordings or location stay private.\n", plural(preview.WithheldFactCount, "fact", "facts"))
+		}
 		return nil
 	}
 	share, err := client.ShareAgentPage(ctx, connection, path, granteeUserId, granteeCircleId, isQuoteShared)

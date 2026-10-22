@@ -242,11 +242,14 @@ func TestACircleShareEndsWhenTheReaderLeaves(t *testing.T) {
 // with, and nothing for anybody else.
 func TestThePreviewIsExactlyWhatTheShareShows(t *testing.T) {
 	world := newPageShareWorld(t)
-	selection := `page { path name opening isQuoteShared facts { number text evidenceSource evidenceQuote } edges { fromPath toPath } children { path } } reachedPageCount isReachedPageCountCut`
+	selection := `page { path name opening isQuoteShared facts { number text evidenceSource evidenceQuote } edges { fromPath toPath } children { path } } reachedPageCount isReachedPageCountCut reachedPagePaths withheldFactCount`
 	previewed := world.call(t, world.ada, fmt.Sprintf(`query { PreviewAgentPageShare(path: "people/a", granteeUserId: %q) { %s } }`, world.ben.ID, selection))
 	preview := previewed["PreviewAgentPageShare"].(map[string]any)
 	if preview["reachedPageCount"].(float64) != 2 || preview["isReachedPageCountCut"] != false {
 		t.Errorf("the share reaches people/a and the page under it: %v", preview)
+	}
+	if paths := fmt.Sprint(preview["reachedPagePaths"]); paths != "[people/a people/a/doctor]" || preview["withheldFactCount"].(float64) != 0 {
+		t.Errorf("the pages the share reaches, and the facts it keeps back: %v", preview)
 	}
 	if fact := preview["page"].(map[string]any)["facts"].([]any)[0].(map[string]any); fact["evidenceQuote"] != "" {
 		t.Errorf("no quote in a preview without quotes: %v", fact)
@@ -276,6 +279,42 @@ func TestThePreviewIsExactlyWhatTheShareShows(t *testing.T) {
 	world.refused(t, world.ada, `query { PreviewAgentPageShare(path: "people/a", granteeCircleId: "nobody-has-this-id") { reachedPageCount } }`)
 	// Ben has no pages of his own to preview.
 	world.refused(t, world.ben, fmt.Sprintf(`query { PreviewAgentPageShare(path: "people/a", granteeUserId: %q) { reachedPageCount } }`, world.ada.ID))
+}
+
+// The owner is told how many facts a share keeps back for their evidence, and
+// the reader is shown none of them.
+func TestThePreviewCountsTheFactsAShareKeepsBack(t *testing.T) {
+	world := newPageShareWorld(t)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		ownerAgent, err := tx.GetAgentByUser(world.ada.ID)
+		if err != nil || ownerAgent == nil {
+			t.Fatalf("GetAgentByUser: %v %v", ownerAgent, err)
+		}
+		for path, text := range map[string]string{"people/a": "Paid the boatyard.", "people/a/doctor": "Said the harbor opens early.", "projects/private": "Paid the florist."} {
+			node, err := tx.GetAgentNode(ownerAgent.ID, path)
+			if err != nil || node == nil {
+				t.Fatalf("GetAgentNode %s: %v %v", path, node, err)
+			}
+			kind := models.EvidenceFinanceTransaction
+			if path == "people/a/doctor" {
+				kind = models.EvidenceRecordingPassage
+			}
+			if _, err := tx.AddAgentFact(&models.AgentFact{
+				AgentID: ownerAgent.ID, NodeID: node.ID, Kind: models.FactPlain, Text: text, Confidence: 1,
+				Evidence: []models.Evidence{{Kind: kind, ID: "a-private-record", Quote: "words from a private record"}},
+			}); err != nil {
+				t.Fatalf("AddAgentFact: %s", err)
+			}
+		}
+	})
+	previewed := world.call(t, world.ada, fmt.Sprintf(`query { PreviewAgentPageShare(path: "people/a", granteeUserId: %q) { withheldFactCount page { facts { text } } } }`, world.ben.ID))
+	preview := previewed["PreviewAgentPageShare"].(map[string]any)
+	if preview["withheldFactCount"].(float64) != 2 {
+		t.Errorf("the page's own fact and the one under it, and not the one outside the share: %v", preview)
+	}
+	if facts := preview["page"].(map[string]any)["facts"].([]any); len(facts) != 1 {
+		t.Errorf("the preview shows what the reader would be shown: %v", facts)
+	}
 }
 
 // The reader lists the roots shared with them, grouped by who shared them.

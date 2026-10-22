@@ -157,20 +157,35 @@ type SharedAgentPageView struct {
 	Children []*models.SharedChild `json:"children"`
 }
 
-// AgentPageSharePreviewView is what a share would show, and how many pages it
+// AgentPageSharePreviewView is what a share would show, and which pages it
 // would reach.
 type AgentPageSharePreviewView struct {
 	Page *SharedAgentPageView `json:"page"`
 
 	// How many pages the share reaches: the page and everything under it. At
-	// least that many where the count was cut.
+	// least that many where the count was cut. A page added under it later is
+	// reached too.
 	ReachedPageCount      int  `json:"reachedPageCount"`
 	IsReachedPageCountCut bool `json:"isReachedPageCountCut"`
+
+	// The paths of the first pages it reaches, by path and at most
+	// reachedPagePathsMost of them; ReachedPageCount is the total.
+	ReachedPagePaths []string `json:"reachedPagePaths"`
+
+	// How many facts on the pages it reaches are kept from the reader whatever
+	// the share, because all of their evidence is finance, recordings, the
+	// location journal or a private calendar event, which have a sharing of
+	// their own.
+	WithheldFactCount int `json:"withheldFactCount"`
 }
 
 // reachedPageCountMost is how many pages a preview counts before it says
 // "at least".
 const reachedPageCountMost = 1000
+
+// reachedPagePathsMost is how many of the pages a share reaches a preview
+// lists.
+const reachedPagePathsMost = 50
 
 func describeSharedPage(page *models.SharedPage) *SharedAgentPageView {
 	view := &SharedAgentPageView{
@@ -303,12 +318,23 @@ func (self *graph) PreviewAgentPageShare(ctx context.Context, arguments PreviewA
 		return nil, err
 	}
 	reached := 0
+	reachedPaths := []string{}
 	for _, node := range under {
 		if models.PathIsWithin(node.Path, path) {
 			reached++
+			if len(reachedPaths) < reachedPagePathsMost {
+				reachedPaths = append(reachedPaths, node.Path)
+			}
 		}
 	}
-	preview := &AgentPageSharePreviewView{Page: describeSharedPage(page), ReachedPageCount: min(reached, reachedPageCountMost)}
+	withheldFactCount, err := agent.CountWithheldFacts(tx, principal.User.ID, path)
+	if err != nil {
+		return nil, err
+	}
+	preview := &AgentPageSharePreviewView{
+		Page: describeSharedPage(page), ReachedPageCount: min(reached, reachedPageCountMost),
+		ReachedPagePaths: reachedPaths, WithheldFactCount: withheldFactCount,
+	}
 	preview.IsReachedPageCountCut = reached > reachedPageCountMost
 	return preview, nil
 }

@@ -560,15 +560,17 @@ func previewShareAction(ctx context.Context, run tools.Run, item *memoryItem) (*
 					Path string `json:"path"`
 				} `json:"children"`
 			} `json:"page"`
-			ReachedPageCount      int  `json:"reachedPageCount"`
-			IsReachedPageCountCut bool `json:"isReachedPageCountCut"`
+			ReachedPageCount      int      `json:"reachedPageCount"`
+			IsReachedPageCountCut bool     `json:"isReachedPageCountCut"`
+			ReachedPagePaths      []string `json:"reachedPagePaths"`
+			WithheldFactCount     int      `json:"withheldFactCount"`
 		} `json:"PreviewAgentPageShare"`
 	}
 	if err := run.Operations().Execute(ctx,
 		`query ($path: String!, $granteeUserId: String, $granteeCircleId: String, $isQuoteShared: Boolean) {
 		   PreviewAgentPageShare(path: $path, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, isQuoteShared: $isQuoteShared) {
 		     page { path name nodeKind opening facts { number text evidenceQuote } edges { relation } children { path } }
-		     reachedPageCount isReachedPageCountCut
+		     reachedPageCount isReachedPageCountCut reachedPagePaths withheldFactCount
 		   }
 		 }`, variables, &result); err != nil {
 		return nil, err
@@ -588,10 +590,16 @@ func previewShareAction(ctx context.Context, run tools.Run, item *memoryItem) (*
 	answer := map[string]any{
 		"path": path, "with": grantee.Description, "is_quote_shared": item.IsQuoteShared,
 		"reached_page_count": preview.ReachedPageCount, "is_reached_page_count_cut": preview.IsReachedPageCountCut,
+		"reached_page_paths": preview.ReachedPagePaths,
+		"reach":              "a page added under the shared page later is shared too",
 		"page": map[string]any{
 			"name": preview.Page.Name, "opening": preview.Page.Opening, "fact_count": len(preview.Page.Facts), "facts": facts,
 			"link_count": len(preview.Page.Edges), "pages_directly_under_it": len(preview.Page.Children),
 		},
+	}
+	if preview.WithheldFactCount > 0 {
+		answer["withheld_fact_count"] = preview.WithheldFactCount
+		answer["withheld"] = fmt.Sprintf("%d facts from finance, recordings or location stay private", preview.WithheldFactCount)
 	}
 	if len(preview.Page.Facts) > previewFactsShown {
 		answer["more_facts"] = fmt.Sprintf("%d more facts on the page are shown too", len(preview.Page.Facts)-previewFactsShown)
