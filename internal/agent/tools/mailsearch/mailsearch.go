@@ -43,7 +43,7 @@ func init() {
 					"limit":          tools.IntegerProperty("how many rows, 20 by default, 100 at most"),
 					"offset":         tools.IntegerProperty("skip this many rows, for the next page"),
 				}),
-				Guidance: "mail_search rows carry item_id and thread_id; mail_read and mail_act take item_id. Leave folder out unless the person names one: rules file messages into other folders, so a search of the inbox alone misses them.",
+				Guidance: "mail_search: leave folder out unless the person names one: rules file messages into other folders, so a search of the inbox alone misses them.",
 				Run:      runMailSearch,
 			},
 		}

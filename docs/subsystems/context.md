@@ -45,8 +45,17 @@ the conduct.
 5. **Memories** — the top of what the agent remembers, said to be the top, with
    each id so the model can change one (`memory.md`).
 6. **Guidance**, contributed by the tools actually sent, de-duplicated. A
-   merged tool carries its own and each of its actions'.
-7. **More tools** — the deferred catalog, one line each, for `tool_search`.
+   merged tool carries its own and each of its actions'. It says what the
+   tool's description and parameters do not: a sentence they already say, or
+   a refusal the code already makes in words of its own, is not repeated
+   here. A rule that applies only when an argument has a certain value is
+   checked where the call is made and said in its answer (`mail_draft`
+   answers `html_problems` for markup a mail client will not keep), and one
+   about pages shared with the person is said by the "Shared with you" block
+   that exists only when something is shared.
+7. **More tools**: the deferred catalog, one line each of at most
+   `deferredLineCharacters`, for `tool_search`, which gives the whole
+   definition.
 
 The situation deliberately carries the time *zone*, not the time: the clock
 would make the cacheable prefix change every minute. For the same reason the
