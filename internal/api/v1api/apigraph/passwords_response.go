@@ -29,6 +29,35 @@ type afterResponseKey struct{}
 type afterResponse struct {
 	mutex     sync.Mutex
 	functions []func()
+	// writeTimeout, when not zero, is how long the answer may take to be
+	// written, counted from when the writing begins: building a large answer
+	// can take seconds, which must not be taken from the time to write it.
+	writeTimeout time.Duration
+}
+
+// limitWrite asks for the answer to be written within timeout of when its
+// writing begins; the shortest asked for holds.
+func (self *afterResponse) limitWrite(timeout time.Duration) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if self.writeTimeout == 0 || timeout < self.writeTimeout {
+		self.writeTimeout = timeout
+	}
+}
+
+// startWriteDeadline is called just before the answer is written, and sets the
+// deadline limitWrite asked for. A response writer that cannot take a deadline
+// is left as it is.
+func (self *afterResponse) startWriteDeadline(response http.ResponseWriter) {
+	self.mutex.Lock()
+	writeTimeout := self.writeTimeout
+	self.mutex.Unlock()
+	if writeTimeout == 0 {
+		return
+	}
+	if err := http.NewResponseController(response).SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		log.Debugf("a write deadline could not be set on a Passwords list: %s", err)
+	}
 }
 
 func (self *afterResponse) add(function func()) {
@@ -68,9 +97,14 @@ func holdUntilResponseIsWritten(ctx context.Context, release func()) bool {
 }
 
 // limitPasswordsListWrite gives the answer being built a deadline for being
-// written to the reader. A response writer that cannot take a deadline is left
-// as it is.
+// written to the reader, which starts when the writing does. A request without
+// a place to hold it (a resolver called directly) has it set now. A response
+// writer that cannot take a deadline is left as it is.
 func limitPasswordsListWrite(ctx context.Context) {
+	if holder, isHeld := ctx.Value(afterResponseKey{}).(*afterResponse); isHeld {
+		holder.limitWrite(passwordsListWriteTimeout)
+		return
+	}
 	response := api.ContextResponse(ctx)
 	if response == nil {
 		return

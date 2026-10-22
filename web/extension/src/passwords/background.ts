@@ -8,6 +8,7 @@
 
 import { generatePassword } from '../../../src/passwords/generator'
 import { PasswordsError, PasswordsErrorCode } from '../../../src/passwords/passwordsError'
+import { IndexedDBKeptUnlockStore, KeptUnlock } from '../../../src/pages/passwords/passwordsKeptUnlock'
 import { LoginItem } from '../../../src/pages/passwords/passwordsProtocol'
 import { agentActivity } from '../agentActivity'
 import { CapturedLogins } from './capturedLogins'
@@ -55,6 +56,7 @@ import {
   PasswordsEnvironment,
   whatToDoWithCapturedLogin,
   withOpenedKeys,
+  MAXIMUM_LOCK_AFTER_MINUTES,
 } from './openedKeys'
 import {
   credentialIdOf,
@@ -67,6 +69,7 @@ import {
 
 const environment: PasswordsEnvironment = {
   session: chrome.storage.session,
+  kept: new KeptUnlock(new IndexedDBKeptUnlockStore(), MAXIMUM_LOCK_AFTER_MINUTES * 60_000),
   local: chrome.storage.local,
   call: callServer,
   now: () => Date.now(),
@@ -79,6 +82,7 @@ const environment: PasswordsEnvironment = {
     suggestionCache.clear()
     await chrome.alarms.clear(LOCK_ALARM)
   },
+  onRestore: () => startLockAlarm(),
 }
 
 const LOCK_ALARM = 'passwords-lock'
@@ -201,8 +205,10 @@ async function startLockAlarm() {
 }
 
 // lockEverything drops the keys; environment.onLock clears the rest.
-async function lockEverything() {
-  await lockPasswords(environment)
+// shouldKeepKeptCopy keeps the copy kept while the browser was closed (at
+// browser start, when the session area is empty anyway).
+async function lockEverything(options: { shouldKeepKeptCopy: boolean } = { shouldKeepKeptCopy: false }) {
+  await lockPasswords(environment, options)
 }
 
 // ---------------------------------------------------------------------------
@@ -1179,10 +1185,11 @@ chrome.alarms.onAlarm.addListener((alarm: { name: string }) => {
   }
 })
 
-// The keys end with the browser (the session storage does), and with signing
-// out or signing in as somebody else.
+// The keys in the session area end with the browser; the kept copy opens them
+// again within the lock time. Signing out or signing in as somebody else ends
+// both.
 chrome.runtime.onStartup.addListener(() => {
-  void lockEverything()
+  void lockEverything({ shouldKeepKeptCopy: true })
   void learnIfSetUp()
 })
 chrome.storage.onChanged.addListener((changes: Record<string, unknown>, area: string) => {

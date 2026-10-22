@@ -1008,9 +1008,12 @@ struct CodingToolTurnView: View {
     }
 
     private var line: some View {
+        // A disclosure's label centers the lines of its text, and a tool
+        // call is read from the left like the session around it.
         Text(verbatim: turn.turnText)
             .font(.caption.monospaced())
             .foregroundStyle(.secondary)
+            .multilineTextAlignment(.leading)
             .lineLimit(isOpen ? nil : 2)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
