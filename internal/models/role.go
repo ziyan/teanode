@@ -30,11 +30,12 @@ func SeededRolePermissions(name string) []Permission {
 		return Permissions()
 	case RoleNameOperator:
 		// Everything except managing who may do what, which is what every
-		// user was before there were roles.
+		// user was before there were roles, and except agent:act, which is
+		// other people's conversations and the Administrator's alone.
 		var permissions []Permission
 		for _, permission := range Permissions() {
 			switch permission {
-			case PermissionUserManage, PermissionGroupManage, PermissionRoleManage:
+			case PermissionUserManage, PermissionGroupManage, PermissionRoleManage, PermissionAgentAct:
 				continue
 			}
 			permissions = append(permissions, permission)
