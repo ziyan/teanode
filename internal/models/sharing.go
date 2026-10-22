@@ -59,6 +59,10 @@ type ShareRow struct {
 	SubjectName string
 	SubjectMask string
 
+	// IsSubjectDeleted is true for a share of a memory page that no longer
+	// exists, which its owner can still stop. SubjectName is then the path.
+	IsSubjectDeleted bool
+
 	OwnerUserID   string
 	OwnerUsername string
 	OwnerName     string

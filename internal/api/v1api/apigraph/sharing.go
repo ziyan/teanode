@@ -76,6 +76,10 @@ type SharingMadeView struct {
 	SubjectName string `json:"subjectName"`
 	SubjectMask string `json:"subjectMask"`
 
+	// Whether the thing shared is gone: a memory page that was deleted, whose
+	// SubjectName is then its path. The owner can still stop the share.
+	IsSubjectDeleted bool `json:"isSubjectDeleted"`
+
 	// The level for a calendar (busy, titles, details, edit), location
 	// (current, history), album (view, contribute), recording (summary,
 	// transcript) or finance account (balance, spending, transactions); empty
@@ -143,31 +147,37 @@ type DeclineShareArguments struct {
 	ShareID string `json:"shareId"`
 }
 
-// canListShareKind says whether the lists include a kind for the caller: a
-// kind they may not use is left out, because they could not open the page it
-// would link to. A memory page and a skill are received through circle:use,
-// which the caller holds already; making one also takes agent:use. A recording
-// and a finance account take agent:use on both sides, the permission their own
-// operations ask for. What others share of finance is not the agent's to read
-// (requireFinanceNotAgent), so the person's agent is not shown it either.
+// canListShareKind says whether the lists include a kind for the caller. What
+// is shared with them is left out for a kind they may not use, because they
+// could not open the page it would link to. What they shared is always listed,
+// whatever they may use now: a person who lost a permission can still end the
+// shares they made, and the queries of what reaches people already keep a
+// dormant share from its readers. A memory page and a skill are received
+// through circle:use, which the caller holds already. What others share of
+// finance is not the agent's to read (requireFinanceNotAgent), so the person's
+// agent is not shown it either, on either side. A kind whose service is off is
+// left out on both.
 func (self *graph) canListShareKind(ctx context.Context, principal *api.Principal, shareKind models.ShareKind, isReceived bool) bool {
+	canUse := func(permission models.Permission) bool {
+		return !isReceived || principal.Permissions.Has(permission)
+	}
 	switch shareKind {
 	case models.ShareKindCalendar:
-		return self.isServiceEnabled(models.ServiceCalendar) && principal.Permissions.Has(models.PermissionCalendarUse)
+		return self.isServiceEnabled(models.ServiceCalendar) && canUse(models.PermissionCalendarUse)
 	case models.ShareKindLocation:
-		return principal.Permissions.Has(models.PermissionLocationUse)
+		return canUse(models.PermissionLocationUse)
 	case models.ShareKindHealth:
-		return principal.Permissions.Has(models.PermissionHealthUse)
+		return canUse(models.PermissionHealthUse)
 	case models.ShareKindMemoryPage, models.ShareKindSkill:
-		return isReceived || principal.Permissions.Has(models.PermissionAgentUse)
+		return true
 	case models.ShareKindPhotoAlbum:
-		return self.isServiceEnabled(models.ServicePhotos) && principal.Permissions.Has(models.PermissionPhotosUse)
+		return self.isServiceEnabled(models.ServicePhotos) && canUse(models.PermissionPhotosUse)
 	case models.ShareKindRecording:
-		return principal.Permissions.Has(models.PermissionAgentUse)
+		return canUse(models.PermissionAgentUse)
 	case models.ShareKindFinance:
-		return requireFinanceNotAgent(ctx) == nil && principal.Permissions.Has(models.PermissionAgentUse)
+		return requireFinanceNotAgent(ctx) == nil && canUse(models.PermissionAgentUse)
 	case models.ShareKindPasswords:
-		return principal.Permissions.Has(models.PermissionPasswordsUse)
+		return canUse(models.PermissionPasswordsUse)
 	}
 	return false
 }
@@ -227,13 +237,15 @@ func (self *graph) sharesMadeBy(tx db.Transaction, user *models.User, shareKind 
 		}
 		for _, share := range shares {
 			subjectName := share.Path
-			if node, err := tx.GetAgentNode(share.AgentID, share.Path); err != nil {
+			node, err := tx.GetAgentNode(share.AgentID, share.Path)
+			if err != nil {
 				return nil, err
-			} else if node != nil {
+			}
+			if node != nil {
 				subjectName = node.Name
 			}
 			rows = append(rows, &models.ShareRow{
-				ShareKind: shareKind, ShareID: share.ID, SubjectID: share.Path, SubjectName: subjectName, OwnerUserID: user.ID,
+				ShareKind: shareKind, ShareID: share.ID, SubjectID: share.Path, SubjectName: subjectName, IsSubjectDeleted: node == nil, OwnerUserID: user.ID,
 				GranteeUserID: share.GranteeUserID, GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName,
 				GranteeCircleID: share.GranteeCircleID, GranteeCircleName: share.GranteeCircleName,
 				ShareScopes: models.PageShareScopes(share.IsQuoteShared), CreatedAt: share.CreatedAt,
@@ -302,14 +314,17 @@ func (self *graph) sharesReachingFor(tx db.Transaction, user *models.User, share
 			return nil, err
 		}
 		for _, share := range shares {
-			subjectName := share.Path
-			if node, err := tx.GetAgentNode(share.AgentID, share.Path); err != nil {
+			node, err := tx.GetAgentNode(share.AgentID, share.Path)
+			if err != nil {
 				return nil, err
-			} else if node != nil {
-				subjectName = node.Name
+			}
+			// A share left by a page that was deleted reaches nothing to read,
+			// so the person is not shown it. Its owner sees it, to clean up.
+			if node == nil {
+				continue
 			}
 			rows = append(rows, &models.ShareRow{
-				ShareKind: shareKind, ShareID: share.ID, SubjectID: share.Path, SubjectName: subjectName,
+				ShareKind: shareKind, ShareID: share.ID, SubjectID: share.Path, SubjectName: node.Name,
 				OwnerUserID: share.OwnerUserID, OwnerUsername: share.OwnerUsername, OwnerName: share.OwnerName, OwnerUser: share.OwnerUser,
 				GranteeUserID: share.GranteeUserID, GranteeCircleID: share.GranteeCircleID, GranteeCircleName: share.GranteeCircleName,
 				ShareScopes: models.PageShareScopes(share.IsQuoteShared), CreatedAt: share.CreatedAt,
@@ -379,7 +394,8 @@ func financeShareRow(share *models.FinanceShare) *models.ShareRow {
 func describeSharingMade(row *models.ShareRow) *SharingMadeView {
 	view := &SharingMadeView{
 		ShareKind: string(row.ShareKind), ShareID: row.ShareID, SubjectID: row.SubjectID, SubjectName: row.SubjectName,
-		SubjectMask: row.SubjectMask, ShareLevel: row.ShareLevel, ShareScopes: nonNilStrings(row.ShareScopes), PasswordItemCount: row.ItemCount,
+		SubjectMask: row.SubjectMask, IsSubjectDeleted: row.IsSubjectDeleted, ShareLevel: row.ShareLevel,
+		ShareScopes: nonNilStrings(row.ShareScopes), PasswordItemCount: row.ItemCount,
 		GranteeUsername: row.GranteeUsername, GranteeName: row.GranteeName, GranteeCircleName: row.GranteeCircleName,
 		CreatedAt: row.CreatedAt,
 	}

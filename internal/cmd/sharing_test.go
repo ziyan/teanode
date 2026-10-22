@@ -68,7 +68,9 @@ func everythingSharedServer(test *testing.T) (*httptest.Server, func() map[strin
 					{"shareKind":"passwords","shareId":"","subjectId":"","subjectName":"","shareLevel":"","shareScopes":[],"passwordItemCount":3,
 					 "granteeUserId":null,"granteeUsername":"","granteeName":"","granteeCircleId":"g-1","granteeCircleName":"Home","createdAt":"2030-01-03T00:00:00Z"},
 					{"shareKind":"recording","shareId":"s-4","subjectId":"r-1","subjectName":"Standup","shareLevel":"transcript","shareScopes":[],"passwordItemCount":0,
-					 "granteeUserId":"u-sam","granteeUsername":"sam","granteeName":"Sam Lee","granteeCircleId":null,"granteeCircleName":"","createdAt":"2030-01-06T00:00:00Z"}],
+					 "granteeUserId":"u-sam","granteeUsername":"sam","granteeName":"Sam Lee","granteeCircleId":null,"granteeCircleName":"","createdAt":"2030-01-06T00:00:00Z"},
+					{"shareKind":"memory_page","shareId":"s-6","subjectId":"people/lee","subjectName":"people/lee","isSubjectDeleted":true,"shareLevel":"","shareScopes":[],"passwordItemCount":0,
+					 "granteeUserId":"u-sam","granteeUsername":"sam","granteeName":"Sam Lee","granteeCircleId":null,"granteeCircleName":"","createdAt":"2030-01-08T00:00:00Z"}],
 				"sharesReceived":[
 					{"shareKind":"memory_page","shareId":"s-2","subjectId":"people/kim","subjectName":"Kim","shareLevel":"","shareScopes":["quotes"],"passwordItemCount":0,
 					 "ownerUserId":"u-sam","ownerUsername":"sam","ownerName":"Sam Lee","granteeCircleId":null,"granteeCircleName":"","isDirect":true,"canDecline":true,"createdAt":"2030-01-04T00:00:00Z"},
@@ -118,6 +120,7 @@ func TestSharingPrintsWhatIsSharedBothWays(test *testing.T) {
 		"location", "alex", "current",
 		"recording", "Standup", "transcript",
 		"finance", "Everyday Checking ••0001", "spending",
+		"page deleted (people/lee)",
 	} {
 		if !strings.Contains(output, wanted) {
 			test.Errorf("the output has no %q:\n%s", wanted, output)
@@ -138,7 +141,7 @@ func TestSharingWithJSONPrintsBothLists(test *testing.T) {
 		SharesMade     []map[string]any `json:"sharesMade"`
 		SharesReceived []map[string]any `json:"sharesReceived"`
 	}
-	if err := json.Unmarshal([]byte(output), &sharing); err != nil || len(sharing.SharesMade) != 3 || len(sharing.SharesReceived) != 3 {
+	if err := json.Unmarshal([]byte(output), &sharing); err != nil || len(sharing.SharesMade) != 4 || len(sharing.SharesReceived) != 3 {
 		test.Errorf("it printed %q: %v", output, err)
 	}
 }

@@ -16,14 +16,16 @@ type Sharing struct {
 // health, memory_page, photo_album, recording, finance, skill or passwords;
 // ShareID is empty for passwords, whose shares are one for each item and are
 // counted (PasswordItemCount), never named. SubjectMask is the last digits of
-// a finance account's number. Exactly one of GranteeUserID and GranteeCircleID
-// is set.
+// a finance account's number. IsSubjectDeleted is true for a share of a memory
+// page that no longer exists, which can still be stopped. Exactly one of
+// GranteeUserID and GranteeCircleID is set.
 type SharingMade struct {
 	ShareKind         string    `json:"shareKind"`
 	ShareID           string    `json:"shareId"`
 	SubjectID         string    `json:"subjectId"`
 	SubjectName       string    `json:"subjectName"`
 	SubjectMask       string    `json:"subjectMask"`
+	IsSubjectDeleted  bool      `json:"isSubjectDeleted"`
 	ShareLevel        string    `json:"shareLevel"`
 	ShareScopes       []string  `json:"shareScopes"`
 	PasswordItemCount int       `json:"passwordItemCount"`
@@ -61,7 +63,7 @@ const (
 	// DocumentListSharing is the query behind "teanode sharing" and the
 	// agent's circle tool.
 	DocumentListSharing = `query { ListSharing {
-  sharesMade { shareKind shareId subjectId subjectName subjectMask shareLevel shareScopes passwordItemCount granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName createdAt }
+  sharesMade { shareKind shareId subjectId subjectName subjectMask isSubjectDeleted shareLevel shareScopes passwordItemCount granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName createdAt }
   sharesReceived { shareKind shareId subjectId subjectName subjectMask shareLevel shareScopes passwordItemCount ownerUserId ownerUsername ownerName granteeCircleId granteeCircleName isDirect canDecline createdAt }
 } }`
 
