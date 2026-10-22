@@ -6775,7 +6775,7 @@ export const zh: Catalog = {
   'passwords.settingsLocked': '解锁密码功能后才能更改口令、导入或导出。',
   'passwords.settingsFailed': '无法保存该设置。',
   'passwords.lockAfterTitle': '锁定',
-  'passwords.lockAfterBody': '闲置这么久后，或重新加载页面时，密码功能会自动锁定。',
+  'passwords.lockAfterBody': '闲置这么久后，密码功能会在这个浏览器和你的其他设备上自动锁定。在此之前，重新加载页面或在另一个标签页中打开都会保持打开。',
   'passwords.lockAfterLabel': '闲置多久后锁定',
   'passwords.lockAfter1': '1 分钟',
   'passwords.lockAfter5': '5 分钟',

@@ -307,10 +307,13 @@ export function App() {
 
   // Passwords is closed whenever the signed-in person changes or signs out, so
   // what one person had open is never there for the next one on this browser.
+  // Nobody to somebody (the page loading, a sign-in) closes nothing: the copy
+  // kept for a reload must outlive the reload, and it opens only for the
+  // person who kept it.
   const signedInUserId = session?.authenticated ? (session.userId ?? '') : ''
   const lastSignedInUserId = useRef(signedInUserId)
   useEffect(() => {
-    if (lastSignedInUserId.current !== signedInUserId) lockPasswords()
+    if (lastSignedInUserId.current !== '' && lastSignedInUserId.current !== signedInUserId) lockPasswords()
     lastSignedInUserId.current = signedInUserId
   }, [signedInUserId])
 

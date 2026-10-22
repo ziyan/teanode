@@ -72,6 +72,7 @@ import {
   rememberSealedFor,
 } from './passwordsAccessMemory'
 import { PasswordsAccessError, PasswordsError } from './passwordsErrors'
+import { keptUnlock } from './passwordsKeptUnlock'
 import { registerLock } from './passwordsLock'
 import {
   dismissKeyChangeNotice,
@@ -98,12 +99,15 @@ import {
 } from './passwordsProtocol'
 
 // What a device holds while Passwords is open: the account key, the person's
-// key pair and the decrypted items. All of it lives in this object's memory
-// and nowhere else (not localStorage, not sessionStorage, not IndexedDB), so a
-// reload, the lock time and locking by hand all leave nothing behind.
+// key pair and the decrypted items, in this object's memory. The object
+// outlives the page, so going to another part of the dashboard and back does
+// not ask for the passphrase again; the lock time does.
 //
-// The object outlives the page, so going to another part of the dashboard and
-// back does not ask for the passphrase again; the lock time does.
+// So that a reload or another tab does not ask either, the account key and the
+// private key are also kept sealed in this browser until the lock time passes
+// (see passwordsKeptUnlock.ts). The decrypted items never are: a reload reads
+// them from the server again. The lock time and locking by hand delete the
+// kept copy.
 
 export type SessionSnapshot = {
   isUnlocked: boolean
@@ -347,9 +351,11 @@ export class PasswordsSession {
     if (lockAfterMinutes >= 1) this.lockAfterMinutes = lockAfterMinutes
   }
 
-  // touch says the person is using Passwords, which puts the lock off.
+  // touch says the person is using Passwords, which puts the lock off, here
+  // and for the copy kept for a reload.
   touch(nowMilliseconds: number = Date.now()) {
     this.lastUsedAtMilliseconds = nowMilliseconds
+    if (this.accountKey !== null) keptUnlock.touch(nowMilliseconds)
   }
 
   // lockIfIdle locks when the lock time has passed since the last use, and
@@ -357,7 +363,8 @@ export class PasswordsSession {
   lockIfIdle(nowMilliseconds: number = Date.now()): boolean {
     if (this.accountKey === null) return false
     if (nowMilliseconds - this.lastUsedAtMilliseconds < this.lockAfterMinutes * 60_000) return false
-    this.lock()
+    this.clear()
+    void keptUnlock.forgetIfIdle(this.lockAfterMinutes, nowMilliseconds)
     return true
   }
 
@@ -367,7 +374,15 @@ export class PasswordsSession {
     if (this.accountKey !== null && this.userId !== userId) this.lock()
   }
 
+  // lock closes Passwords on this browser: what is open here, and the copy
+  // kept for a reload.
   lock() {
+    this.clear()
+    void keptUnlock.forget()
+  }
+
+  // clear closes what is open in this page and leaves the kept copy alone.
+  private clear() {
     // The bytes are overwritten, not only forgotten, so they do not wait in
     // memory for the garbage collector.
     this.accountKey?.fill(0)
@@ -403,12 +418,28 @@ export class PasswordsSession {
     if (document.visibilityState === 'visible') this.lockIfIdle()
   }
 
-  private adopt(userId: string, accountKey: Uint8Array, keyPair: PersonKeyPair) {
-    this.lock()
+  // adopt opens the keys in this page and keeps them for a reload.
+  // keptAtMilliseconds is when they were first kept: now for an unlock, the
+  // earlier unlock's for a reload, so reloading does not stretch the longest
+  // they are kept.
+  private adopt(
+    userId: string,
+    accountKey: Uint8Array,
+    keyPair: PersonKeyPair,
+    keptAtMilliseconds: number = Date.now(),
+  ) {
+    this.clear()
     this.userId = userId
     this.accountKey = accountKey
     this.keyPair = keyPair
-    this.touch()
+    this.lastUsedAtMilliseconds = Date.now()
+    void keptUnlock.keep({
+      userId,
+      accountKey,
+      privateKey: keyPair.privateKey,
+      publicKey: keyPair.publicKey,
+      keptAtMilliseconds,
+    })
     this.idleTimer = setInterval(() => this.lockIfIdle(), IDLE_CHECK_MILLISECONDS)
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.checkIdleWhenShown)
     this.publish()
@@ -642,6 +673,41 @@ export class PasswordsSession {
       this.lock()
       throw failure
     }
+  }
+
+  // resume opens Passwords from the copy kept in this browser, after a reload
+  // or in another tab, and says whether it did. It opens nothing when the copy
+  // is past the lock time, is somebody else's, or holds a key the server no
+  // longer lists for the person (Passwords was erased and set up again).
+  async resume(userId: string, setup: PasswordsSetup): Promise<boolean> {
+    if (this.accountKey !== null || !setup.isSetUp || setup.publicKey === null) return false
+    const kept = await keptUnlock.take(userId, setup.lockAfterMinutes)
+    if (kept === null) return false
+    const keyPair = { privateKey: kept.privateKey, publicKey: kept.publicKey }
+    const forgetKept = () => {
+      kept.accountKey.fill(0)
+      kept.privateKey.fill(0)
+    }
+    if (encodeBase64(kept.publicKey) !== setup.publicKey || !(await isKeyPairConsistent(keyPair))) {
+      forgetKept()
+      void keptUnlock.forget()
+      return false
+    }
+    // The person unlocked by hand while the copy was being opened.
+    if (this.accountKey !== null) {
+      forgetKept()
+      return false
+    }
+    this.adopt(userId, kept.accountKey, keyPair, kept.keptAtMilliseconds)
+    try {
+      await this.refresh()
+    } catch {
+      // As with unlocking, open with no items read would look like an empty
+      // account. The kept copy stays, so the next reload tries again.
+      if (this.accountKey === kept.accountKey) this.clear()
+      return false
+    }
+    return true
   }
 
   // checkSecret asks the server whether this passphrase is right without

@@ -7046,7 +7046,7 @@ export const ja: Catalog = {
   'passwords.settingsLocked': 'パスフレーズの変更、インポート、エクスポートはロックを解除してから行えます。',
   'passwords.settingsFailed': '設定を保存できませんでした。',
   'passwords.lockAfterTitle': 'ロック',
-  'passwords.lockAfterBody': 'この時間使わないと、またはページを再読み込みすると、パスワードは自動的にロックされます。',
+  'passwords.lockAfterBody': 'この時間使わないと、このブラウザでもほかのデバイスでもパスワードは自動的にロックされます。それまでは、ページを再読み込みしても別のタブで開いてもロックされません。',
   'passwords.lockAfterLabel': 'ロックまでの時間',
   'passwords.lockAfter1': '1 分',
   'passwords.lockAfter5': '5 分',

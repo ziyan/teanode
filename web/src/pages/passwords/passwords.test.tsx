@@ -48,6 +48,7 @@ import { filterItems, ItemFilter, NO_FOLDER } from './passwordsList'
 import { sitesToShow } from './passwordsItemView'
 import { exportText } from './passwordsSettings'
 import { passwordsSession } from './passwordsSession'
+import { KEPT_MOST_MILLISECONDS, keptUnlock, MemoryKeptUnlockStore } from './passwordsKeptUnlock'
 import { lockPasswords } from './passwordsLock'
 import { PasswordsAccessError, PasswordsError, failureText } from './passwordsErrors'
 import { clearClipboardLater, RecoveryKeyPanel, SafetyCode, SecretValue } from './passwordsParts'
@@ -101,6 +102,7 @@ afterEach(() => {
   cleanup()
   passwordsSession.lock()
   passwordsSession.setLockAfterMinutes(15)
+  keptUnlock.setStore(null)
   vi.resetAllMocks()
 })
 
@@ -765,6 +767,94 @@ it('locks after the lock time without use', async () => {
   expect(passwordsSession.isUnlocked).toBe(false)
   expect(passwordsSession.getSnapshot().items).toEqual([])
 })
+
+// --- staying open across a reload ---------------------------------------------
+
+// reloadPage closes what the page holds in memory, as a reload does, and
+// leaves what the browser kept.
+function reloadPage() {
+  passwordsSession['clear']()
+}
+
+it('stays open after a reload until the lock time, and locking ends that', async () => {
+  const store = new MemoryKeptUnlockStore()
+  keptUnlock.setStore(store)
+  serve({ records: await recordsToList() })
+  await openSession()
+  await waitFor(() => expect(store.record).not.toBeNull())
+  // The browser keeps sealed bytes and a key it will not hand out, never the
+  // account key itself.
+  const sealingKey = store.record!.sealingKey
+  expect(sealingKey.extractable).toBe(false)
+  await expect(crypto.subtle.exportKey('raw', sealingKey)).rejects.toThrow()
+
+  reloadPage()
+  expect(passwordsSession.isUnlocked).toBe(false)
+  renderAt('/passwords')
+  expect(await screen.findByRole('link', { name: 'Example login' }, { timeout: 15_000 })).toBeTruthy()
+  expect(screen.queryByLabelText('Passphrase')).toBeNull()
+  expect(calls('UnlockPasswords')).toHaveLength(1)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Lock' }))
+  await waitFor(() => expect(store.record).toBeNull())
+  cleanup()
+  renderAt('/passwords')
+  expect(await screen.findByLabelText('Passphrase')).toBeTruthy()
+}, 60_000)
+
+it('asks for the passphrase after a reload past the lock time, for another person, or after setting up again', async () => {
+  const store = new MemoryKeptUnlockStore()
+  keptUnlock.setStore(store)
+  serve({ records: await recordsToList() })
+
+  await openSession()
+  await waitFor(() => expect(store.record).not.toBeNull())
+  reloadPage()
+  const lastUsed = store.record!.lastUsedAtMilliseconds
+  expect(await keptUnlock.take(USER_ID, 15, lastUsed + 15 * 60_000)).toBeNull()
+  expect(store.record).toBeNull()
+
+  await openSession()
+  await waitFor(() => expect(store.record).not.toBeNull())
+  reloadPage()
+  expect(await keptUnlock.take(USER_ID, 24 * 60, store.record!.keptAtMilliseconds + KEPT_MOST_MILLISECONDS)).toBeNull()
+  expect(store.record).toBeNull()
+
+  await openSession()
+  await waitFor(() => expect(store.record).not.toBeNull())
+  reloadPage()
+  expect(await keptUnlock.take('somebody-else', 15)).toBeNull()
+  expect(store.record).toBeNull()
+
+  // Erased and set up again elsewhere: the server lists another key.
+  await openSession()
+  await waitFor(() => expect(store.record).not.toBeNull())
+  reloadPage()
+  expect(await passwordsSession.resume(USER_ID, { ...setupView, publicKey: encodeBase64(personB.publicKey) })).toBe(
+    false,
+  )
+  expect(passwordsSession.isUnlocked).toBe(false)
+  await waitFor(() => expect(store.record).toBeNull())
+}, 60_000)
+
+it('keeps the copy another tab is using when an idle tab locks', async () => {
+  const store = new MemoryKeptUnlockStore()
+  keptUnlock.setStore(store)
+  serve({ records: await recordsToList() })
+  await openSession()
+  await waitFor(() => expect(store.record).not.toBeNull())
+  passwordsSession.setLockAfterMinutes(1)
+  const now = Date.now()
+  passwordsSession.touch(now - 61_000)
+  // Another tab used it a moment ago.
+  store.record = { ...store.record!, lastUsedAtMilliseconds: now }
+  expect(passwordsSession.lockIfIdle(now)).toBe(true)
+  expect(passwordsSession.isUnlocked).toBe(false)
+  await keptUnlock.forgetIfIdle(1, now)
+  expect(store.record).not.toBeNull()
+  await keptUnlock.forgetIfIdle(1, now + 60_000)
+  expect(store.record).toBeNull()
+}, 60_000)
 
 // --- the list ----------------------------------------------------------------
 
