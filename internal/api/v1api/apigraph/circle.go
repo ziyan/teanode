@@ -465,8 +465,15 @@ func (self *graph) DeleteCircle(ctx context.Context, arguments DeleteCircleArgum
 	if err != nil {
 		return false, err
 	}
+	finishLocationReach, err := self.watchLocationReach(ctx, circleMemberIds(circle))
+	if err != nil {
+		return false, err
+	}
 	if err := tx.DeleteCircle(arguments.CircleID); err != nil {
 		return false, translateCircleError(err)
+	}
+	if err := finishLocationReach(); err != nil {
+		return false, err
 	}
 	if err := self.publishMembersChangedSince(ctx, snapshot); err != nil {
 		return false, err
@@ -692,7 +699,7 @@ type RemoveCircleMemberArguments struct {
 // RemoveCircleMember answers with the circle as the caller now sees it, or
 // null when they took themselves out of it.
 func (self *graph) RemoveCircleMember(ctx context.Context, arguments RemoveCircleMemberArguments) (*Circle, error) {
-	_, member, err := self.requireCircleAdmin(ctx, arguments.CircleID)
+	circle, member, err := self.requireCircleAdmin(ctx, arguments.CircleID)
 	if err != nil {
 		return nil, err
 	}
@@ -701,9 +708,16 @@ func (self *graph) RemoveCircleMember(ctx context.Context, arguments RemoveCircl
 	if err != nil {
 		return nil, err
 	}
+	finishLocationReach, err := self.watchLocationReach(ctx, circleMemberIds(circle))
+	if err != nil {
+		return nil, err
+	}
 	remaining, err := tx.RemoveCircleMember(arguments.CircleID, arguments.UserID)
 	if err != nil {
 		return nil, translateCircleError(err)
+	}
+	if err := finishLocationReach(); err != nil {
+		return nil, err
 	}
 	if err := self.publishMembersChangedSince(ctx, snapshot); err != nil {
 		return nil, err
@@ -719,7 +733,7 @@ type LeaveCircleArguments struct {
 }
 
 func (self *graph) LeaveCircle(ctx context.Context, arguments LeaveCircleArguments) (bool, error) {
-	_, member, err := self.requireCircleMember(ctx, arguments.CircleID)
+	circle, member, err := self.requireCircleMember(ctx, arguments.CircleID)
 	if err != nil {
 		return false, err
 	}
@@ -728,8 +742,15 @@ func (self *graph) LeaveCircle(ctx context.Context, arguments LeaveCircleArgumen
 	if err != nil {
 		return false, err
 	}
+	finishLocationReach, err := self.watchLocationReach(ctx, circleMemberIds(circle))
+	if err != nil {
+		return false, err
+	}
 	if _, err := tx.RemoveCircleMember(arguments.CircleID, member.UserID); err != nil {
 		return false, translateCircleError(err)
+	}
+	if err := finishLocationReach(); err != nil {
+		return false, err
 	}
 	if err := self.publishMembersChangedSince(ctx, snapshot); err != nil {
 		return false, err

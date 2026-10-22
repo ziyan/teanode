@@ -103,6 +103,65 @@ func TestAMapFollowsOnlyThoseSharingWithIt(t *testing.T) {
 	}
 }
 
+// Leaving a circle, being taken out of it and deleting it end the shares that
+// only the circle made possible, and a map that is open is told for each
+// location that stopped reaching it, in both directions, so that it drops the
+// last position it holds.
+func TestAMapDropsWhoseLocationACircleChangeEnded(t *testing.T) {
+	changes := map[string]func(world *locationWorld){
+		"leaving": func(world *locationWorld) {
+			world.call(t, world.ben, fmt.Sprintf(`mutation { LeaveCircle(circleId: %q) }`, world.home))
+		},
+		"being taken out": func(world *locationWorld) {
+			world.call(t, world.ada, fmt.Sprintf(`mutation { RemoveCircleMember(circleId: %q, userId: %q) { id } }`, world.home, world.ben.ID))
+		},
+		"deleting the circle": func(world *locationWorld) {
+			world.call(t, world.ada, fmt.Sprintf(`mutation { DeleteCircle(circleId: %q) }`, world.home))
+		},
+	}
+	for name, change := range changes {
+		t.Run(name, func(t *testing.T) {
+			world := newLocationWorld(t)
+			hub := &world.graph.locationEvents
+			adaEvents, releaseAda, err := hub.subscribe(world.database, world.ada.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer releaseAda()
+			benEvents, releaseBen, err := hub.subscribe(world.database, world.ben.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer releaseBen()
+			coraEvents, releaseCora, err := hub.subscribe(world.database, world.cora.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer releaseCora()
+
+			// Each shares with the other, which only the circle they are in
+			// together makes possible.
+			world.call(t, world.ada, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "current") { id } }`, world.ben.ID))
+			world.call(t, world.ben, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "current") { id } }`, world.ada.ID))
+			// What sharing announced is not what is asked about.
+			received(adaEvents, "nobody", 300*time.Millisecond)
+			received(benEvents, "nobody", 300*time.Millisecond)
+
+			change(world)
+			if !received(benEvents, world.ada.ID, 5*time.Second) {
+				t.Error("ben's map is not told that ada's location stopped reaching it")
+			}
+			if !received(adaEvents, world.ben.ID, 5*time.Second) {
+				t.Error("ada's map is not told that ben's location stopped reaching it")
+			}
+			// Cora was in none of it.
+			if received(coraEvents, world.ada.ID, 300*time.Millisecond) || received(coraEvents, world.ben.ID, 10*time.Millisecond) {
+				t.Error("cora, who shares no circle with either, is told")
+			}
+		})
+	}
+}
+
 // One account follows the map in a limited number of places, and the listener
 // goes away with the last one.
 func TestAnAccountFollowsTheMapInAFewPlaces(t *testing.T) {
