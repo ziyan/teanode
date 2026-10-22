@@ -163,6 +163,40 @@ type Parsed struct {
 	calendar *ical.Calendar
 }
 
+// DropAlarmsAndAttachments takes the alarms and the attachments out of every
+// event in the file, and rewrites Data without them.
+//
+// For a file that came from somebody else. An alarm in an invitation is the
+// sender's to set only in their own calendar: stored, it goes to the person's
+// devices over CalDAV, and the phone shows the sender's text as a
+// notification at a time the sender chose. RFC 5546 says a receiver ignores
+// both in a request. An attachment is the same thing with an address the
+// phone may fetch.
+func (self *Parsed) DropAlarmsAndAttachments() error {
+	if self.calendar == nil {
+		return nil
+	}
+	for _, component := range self.calendar.Children {
+		if component == nil || component.Name != ical.CompEvent {
+			continue
+		}
+		delete(component.Props, ical.PropAttach)
+		kept := component.Children[:0]
+		for _, child := range component.Children {
+			if child != nil && child.Name != ical.CompAlarm {
+				kept = append(kept, child)
+			}
+		}
+		component.Children = kept
+	}
+	encoded, err := Encode(self.calendar)
+	if err != nil {
+		return err
+	}
+	self.Data = encoded
+	return nil
+}
+
 // Parse reads one iCalendar file and returns what to keep beside it.
 //
 // The file is re-encoded before it is stored, because the library normalizes
