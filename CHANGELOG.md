@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.193.6] - 2026-10-22
+
+### Fixed
+
+- Background runs that may only read memory, knowledge or to-dos are no longer offered their writing actions, so they stop spending rounds on refused calls. (#625)
+
 ## [0.193.5] - 2026-10-22
 
 ### Fixed
