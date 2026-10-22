@@ -575,7 +575,7 @@ struct CircleDetailView: View {
                             }
                         }
                     } message: {
-                        Text("The circle is removed for everyone in it, with its calendar, its albums and its chat. What its members shared with it, and with anyone they then share no other circle with, ends and does not come back. No account is deleted.")
+                        Text("The circle is removed for everyone in it, with its calendar, its albums, its chat and its address book with every contact in it. What its members shared with it, and with anyone they then share no other circle with, ends and does not come back. No account is deleted.")
                     }
             }
             Button("Leave circle", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { isConfirmingLeave = true }

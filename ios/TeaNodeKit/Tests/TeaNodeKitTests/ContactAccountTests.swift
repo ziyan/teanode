@@ -169,6 +169,45 @@ final class CircleAddressBookTests: XCTestCase {
         XCTAssertEqual(contact.pictureAddress(inAddressBook: "b2"), "/api/v1/contacts/c1/photo?addressBookId=b2")
     }
 
+    func testAContactIsReadDeletedAndHasItsPictureRemovedInTheBookNamed() async throws {
+        let fake = FakeServer { request in
+            let body = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
+            if body.contains("DeleteContact") { return (200, #"{"data":{"DeleteContact":true}}"#) }
+            if body.contains("RemoveContactPicture") { return (200, #"{"data":{"RemoveContactPicture":{"id":"c1","hasPhoto":false}}}"#) }
+            return (200, #"{"data":{"GetContact":{"id":"c1","name":"Person B"}}}"#)
+        }
+        let account = Account(
+            server: try ServerAddress(parsing: "assistant.example.com"), clientId: "test-client", accessToken: "tnt_test", refreshToken: "",
+            expiresAt: Date().addingTimeInterval(3600), username: "test-owner")
+        let connection = Connection(account: account, transport: fake)
+        _ = try await connection.contact("c1", addressBookId: "b2")
+        try await connection.deleteContact("c1", addressBookId: "b2")
+        try await connection.removeContactPicture("c1", addressBookId: "b2")
+        for request in fake.sent {
+            let variables = try sentVariables(request)
+            XCTAssertEqual(variables["id"] as? String, "c1")
+            XCTAssertEqual(variables["addressBookId"] as? String, "b2")
+        }
+        XCTAssertEqual(fake.sent.count, 3)
+
+        // Without a book none is sent, and the server looks in the person's own first.
+        _ = try await connection.contact("c1")
+        try await connection.deleteContact("c1", addressBookId: "")
+        try await connection.removeContactPicture("c1")
+        for request in fake.sent.suffix(3) {
+            XCTAssertNil(try sentVariables(request)["addressBookId"])
+        }
+        for document in [Documents.contact, Documents.deleteContact, Documents.removeContactPicture] {
+            XCTAssertTrue(document.contains("$addressBookId: String"))
+        }
+    }
+
+    func testThePictureAddressOfAContactKnownOnlyByItsID() {
+        XCTAssertEqual(ContactSummary.pictureAddress(ofContact: "c1", inAddressBook: nil), "/api/v1/contacts/c1/photo")
+        XCTAssertEqual(ContactSummary.pictureAddress(ofContact: "c1", inAddressBook: ""), "/api/v1/contacts/c1/photo")
+        XCTAssertEqual(ContactSummary.pictureAddress(ofContact: "c1", inAddressBook: "b2"), "/api/v1/contacts/c1/photo?addressBookId=b2")
+    }
+
     func testTheReachableListIsTheOneThatHasTheCircles() async throws {
         let (connection, fake) = try connection(
             answering:

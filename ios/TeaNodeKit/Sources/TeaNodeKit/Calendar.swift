@@ -404,13 +404,19 @@ public struct ContactSummary: Codable, Identifiable, Hashable, Sendable {
         return emails?.first ?? ""
     }
 
-    public var photoPath: String { "/api/v1/contacts/\(id)/photo" }
+    public var photoPath: String { Self.pictureAddress(ofContact: id, inAddressBook: nil) }
 
     /// Where a contact in a circle's book has its picture: the book is named,
     /// since the server looks in the person's own books first.
     public func pictureAddress(inAddressBook addressBookId: String?) -> String {
-        guard let addressBookId, !addressBookId.isEmpty else { return photoPath }
-        return "\(photoPath)?addressBookId=\(addressBookId)"
+        Self.pictureAddress(ofContact: id, inAddressBook: addressBookId)
+    }
+
+    /// The same for a view that knows only the contact's id.
+    public static func pictureAddress(ofContact id: String, inAddressBook addressBookId: String?) -> String {
+        let path = "/api/v1/contacts/\(id)/photo"
+        guard let addressBookId, !addressBookId.isEmpty else { return path }
+        return "\(path)?addressBookId=\(addressBookId)"
     }
 }
 
@@ -597,8 +603,8 @@ extension Documents {
         }
         """
     public static let contact = """
-        query ($id: String!) {
-          GetContact(id: $id) {
+        query ($id: String!, $addressBookId: String) {
+          GetContact(id: $id, addressBookId: $addressBookId) {
             id name organization emails phones note hasPhoto
             addresses { street locality region postalCode country }
             accountUserId account { userId username name avatarUrl avatarColorIndex }
@@ -613,10 +619,12 @@ extension Documents {
         }
         """
     public static let deleteContact = """
-        mutation ($id: String!) { DeleteContact(id: $id) }
+        mutation ($id: String!, $addressBookId: String) { DeleteContact(id: $id, addressBookId: $addressBookId) }
         """
     public static let removeContactPicture = """
-        mutation ($id: String!) { RemoveContactPicture(id: $id) { id hasPhoto } }
+        mutation ($id: String!, $addressBookId: String) {
+          RemoveContactPicture(id: $id, addressBookId: $addressBookId) { id hasPhoto }
+        }
         """
     public static let myContact = """
         query { AgentGraphPage(path: "self") { contact { id } } }
@@ -884,9 +892,19 @@ extension Connection {
         return try await execute(Documents.contacts, variables: variables, as: Answer.self).ListContacts
     }
 
-    public func contact(_ id: String) async throws -> ContactDetail {
+    /// One contact, whole. A contact is named only within its book, so a contact
+    /// in a circle's book is read by naming the book; left out, the server looks
+    /// in the person's own books first.
+    public func contact(_ id: String, addressBookId: String? = nil) async throws -> ContactDetail {
         struct Answer: Decodable, Sendable { let GetContact: ContactDetail }
-        return try await execute(Documents.contact, variables: ["id": .string(id)], as: Answer.self).GetContact
+        return try await execute(Documents.contact, variables: Self.contactVariables(id, addressBookId: addressBookId), as: Answer.self).GetContact
+    }
+
+    /// The id of a contact and, when it is known, the book it is in.
+    static func contactVariables(_ id: String, addressBookId: String?) -> [String: JSONValue] {
+        var variables: [String: JSONValue] = ["id": .string(id)]
+        if let addressBookId, !addressBookId.isEmpty { variables["addressBookId"] = .string(addressBookId) }
+        return variables
     }
 
     /// Saves a contact, every field sent: an empty one clears what is there.
@@ -907,18 +925,20 @@ extension Connection {
         _ = try await execute(Documents.saveContact, variables: variables, as: Answer.self)
     }
 
-    public func deleteContact(_ id: String) async throws {
+    /// Deletes a contact, in the book named as `contact(_:addressBookId:)` does.
+    public func deleteContact(_ id: String, addressBookId: String? = nil) async throws {
         struct Answer: Decodable, Sendable { let DeleteContact: Bool? }
-        _ = try await execute(Documents.deleteContact, variables: ["id": .string(id)], as: Answer.self)
+        _ = try await execute(Documents.deleteContact, variables: Self.contactVariables(id, addressBookId: addressBookId), as: Answer.self)
     }
 
-    /// Takes the picture off a contact and leaves the rest of the card.
-    public func removeContactPicture(_ id: String) async throws {
+    /// Takes the picture off a contact and leaves the rest of the card, in the
+    /// book named as `contact(_:addressBookId:)` does.
+    public func removeContactPicture(_ id: String, addressBookId: String? = nil) async throws {
         struct Answer: Decodable, Sendable {
             struct Contact: Decodable, Sendable { let id: String }
             let RemoveContactPicture: Contact
         }
-        _ = try await execute(Documents.removeContactPicture, variables: ["id": .string(id)], as: Answer.self)
+        _ = try await execute(Documents.removeContactPicture, variables: Self.contactVariables(id, addressBookId: addressBookId), as: Answer.self)
     }
 
     /// The contact that is the person themselves, if one is marked.
