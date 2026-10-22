@@ -282,3 +282,66 @@ func TestAdministrativeChangesAreAudited(t *testing.T) {
 		}
 	})
 }
+
+// An alias's relay password is sealed at rest like the signing key, and a row
+// written before it was sealed still reads and is sealed by its next save.
+func TestTheAliasMailServerPasswordIsSealedAtRest(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	const password = "relay-password-for-the-test"
+
+	// No server secret yet, so this row is stored the way older ones were.
+	if err := database.SetSecret(nil); err != nil {
+		t.Fatalf("SetSecret: %s", err)
+	}
+	var aliasId string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		domain, err := tx.CreateDomain(&models.Domain{Domain: "relay.example"})
+		if err != nil {
+			t.Fatalf("CreateDomain: %s", err)
+		}
+		alias, err := tx.CreateAlias(&models.Alias{
+			DomainID:   domain.ID,
+			Pattern:    "^relay$",
+			Kind:       models.AliasKindMailServer,
+			MailServer: &models.MailServer{Host: "relay.example.net", Port: 587, Username: "someone", Password: password},
+		})
+		if err != nil {
+			t.Fatalf("CreateAlias: %s", err)
+		}
+		aliasId = alias.ID
+	})
+	if stored := dbtest.QueryString(t, database, `SELECT "mail_server" FROM "alias"`); !strings.Contains(stored, password) {
+		t.Fatalf("the row stored the old way does not hold the password: %q", stored)
+	}
+
+	if err := database.SetSecret([]byte("a-secret-long-enough-to-seal-with")); err != nil {
+		t.Fatalf("SetSecret: %s", err)
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		alias, err := tx.GetAlias(aliasId)
+		if err != nil || alias == nil || alias.MailServer == nil || alias.MailServer.Password != password {
+			t.Fatalf("the row stored the old way did not read: %v", err)
+		}
+		if _, err := tx.UpdateAlias(aliasId, func(alias *models.Alias) error {
+			alias.Comment = "saved again"
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateAlias: %s", err)
+		}
+	})
+
+	if stored := dbtest.QueryString(t, database, `SELECT "mail_server" FROM "alias"`); strings.Contains(stored, password) {
+		t.Errorf("the relay password is stored in the clear after a save: %q", stored)
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		alias, err := tx.GetAlias(aliasId)
+		if err != nil || alias == nil || alias.MailServer == nil || alias.MailServer.Password != password {
+			t.Errorf("the sealed password did not open: %v", err)
+		}
+		domain, err := tx.GetDomainByName("relay.example")
+		if err != nil || domain == nil || len(domain.Aliases) != 1 || domain.Aliases[0].MailServer.Password != password {
+			t.Errorf("the sealed password did not open through the domain: %v", err)
+		}
+	})
+}
