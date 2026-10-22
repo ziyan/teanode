@@ -97,6 +97,7 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 	var found *models.Agent
 	username, name := "", ""
 	attached := false
+	var credential *socketCredential
 	defer func() {
 		if attached {
 			worker.DetachComputer(found.ID, socket)
@@ -140,6 +141,12 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 		if err := json.Unmarshal(data, &message); err != nil {
 			continue
 		}
+		// A token revoked since the hello, or an account since disabled,
+		// ends the socket at the next message after the interval.
+		if attached && !credential.StillHolds() {
+			refuse("the token is not one this server takes any more; sign in again with teanode auth login")
+			return
+		}
 		switch message.Type {
 		case "hello":
 			if attached {
@@ -166,6 +173,7 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 				Features: message.Features,
 			})
 			attached = true
+			credential = self.newSocketCredential(request, message.Token, username)
 			welcome, _ := json.Marshal(map[string]any{"type": "welcome", "protocol": computerProtocol, "username": username})
 			_ = socket.Send(welcome)
 			log.Noticef("%s attached their computer %q (%s)", username, message.Name, message.System)

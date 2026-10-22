@@ -193,6 +193,7 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 	var found *models.Agent
 	username := ""
 	attached := false
+	var credential *socketCredential
 	defer func() {
 		if attached {
 			worker.DetachTab(found.ID, socket)
@@ -241,6 +242,12 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 		if err := json.Unmarshal(data, &message); err != nil {
 			continue
 		}
+		// A token revoked since the hello, or an account since disabled,
+		// ends the socket at the next message after the interval.
+		if attached && !credential.StillHolds() {
+			refuse("the token is not one this server takes any more; sign in again")
+			return
+		}
 		switch message.Type {
 		case "hello":
 			if attached {
@@ -285,6 +292,7 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 				worker.UpdateTabList(found.ID, tabListingsOf(*message.Tabs))
 			}
 			attached = true
+			credential = self.newSocketCredential(request, message.Token, username)
 			welcome, _ := json.Marshal(map[string]any{"type": "welcome", "protocol": message.Protocol})
 			_ = socket.Send(welcome)
 			if hasTab {

@@ -170,13 +170,17 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 			for key, value := range headers {
 				httpHeader.Add(key, value)
 			}
+			// What signed the socket in, to ask about again while it stays
+			// open: the token, or none for the cookie the upgrade carried.
+			credentialToken := ""
 			// A token in the first message is the sign-in of a page that
 			// has no session — the dashboard's drawer framed by another
 			// site — verified as an Authorization header would be. A
 			// token is nothing a cookie sent by itself, so the CSRF check
 			// is for sessions alone.
 			if token := httpHeader.Get("Authorization"); token != "" {
-				username := self.graph.usernameOfToken(self.request, strings.TrimPrefix(token, "Bearer "))
+				credentialToken = strings.TrimPrefix(token, "Bearer ")
+				username := self.graph.usernameOfToken(self.request, credentialToken)
 				if username == "" {
 					log.Warningf("the token a websocket at %q opened with is not one this server takes", self.conn.RemoteAddr())
 					return fmt.Errorf("apigraph: the token is not one this server takes")
@@ -206,6 +210,14 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 			// Said who they are, so the pre-authentication deadline is
 			// lifted: a subscription is meant to sit open and quiet.
 			_ = self.conn.SetReadDeadline(time.Time{})
+			// A subscription resolved its principal once, so a token revoked
+			// or an account disabled afterwards would be streamed to for as
+			// long as the socket stayed open. Nobody signed in has nothing to
+			// revoke.
+			var credential *socketCredential
+			if username := api.UsernameFromRequest(self.request); username != "" && username != localUsername {
+				credential = self.graph.newSocketCredential(self.request, credentialToken, username)
+			}
 			waitGroup.Add(1)
 			go func() {
 				defer deferutil.Recover()
@@ -215,6 +227,13 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 					case <-done:
 						return
 					case <-time.After(time.Second):
+						if credential != nil && !credential.StillHolds() {
+							log.Noticef("closing the websocket at %q: what signed it in no longer holds", self.conn.RemoteAddr())
+							// Closing ends the read in handle, which cancels
+							// every subscription.
+							_ = self.conn.Close()
+							return
+						}
 						if err := self.sendMessage("", "ka", nil); err != nil {
 							return
 						}
