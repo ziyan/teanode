@@ -150,6 +150,8 @@ const (
   }
 }`
 
+	DocumentDeleteCircleCalendar = `mutation ($circleId: String!) { DeleteCircleCalendar(circleId: $circleId) }`
+
 	DocumentListCalendarFreeBusy = `query ($userIds: [String!]!, $from: String!, $until: String!) {
   ListCalendarFreeBusy(userIds: $userIds, from: $from, until: $until) {
     userId username name isShared shareLevel periods { startsAt endsAt }
@@ -422,6 +424,15 @@ func CreateCircleCalendar(ctx context.Context, connection *Client, circleId, nam
 		return nil, err
 	}
 	return result.CreateCircleCalendar, nil
+}
+
+// DeleteCircleCalendar takes away the calendar a circle keeps for itself, with
+// every event in it.
+func DeleteCircleCalendar(ctx context.Context, connection *Client, circleId string) error {
+	var result struct {
+		DeleteCircleCalendar bool `json:"DeleteCircleCalendar"`
+	}
+	return connection.Execute(ctx, DocumentDeleteCircleCalendar, map[string]any{"circleId": circleId}, &result)
 }
 
 // CalendarBusyPeriod is a stretch of time somebody is busy, as RFC 3339

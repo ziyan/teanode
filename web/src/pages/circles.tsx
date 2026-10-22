@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { graphql, isNotFound } from '../api'
 import { Avatar } from '../components/avatar'
 import { PageHeadingActions, useBreadcrumbDetail } from '../components/breadcrumb'
+import { CalendarRenameDialog } from '../components/calendarRename'
 import { announceCirclesChanged } from '../components/circleInvitations'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
@@ -165,9 +166,11 @@ const SHARE_LOCATION = `
 
 // The calendars the person reaches, to know whether a circle has one of its
 // own and which is the person's calendar to share.
-const LIST_CALENDARS = `query { ListCalendars { id calendarKind shareLevel circleId isCircleCalendar } }`
+const LIST_CALENDARS = `query { ListCalendars { id name description colour timezone weekStart calendarKind shareLevel circleId isCircleCalendar } }`
 const CREATE_CIRCLE_CALENDAR = `
   mutation ($circleId: String!) { CreateCircleCalendar(circleId: $circleId) { id } }`
+const DELETE_CIRCLE_CALENDAR = `
+  mutation ($circleId: String!) { DeleteCircleCalendar(circleId: $circleId) }`
 const SHARE_CALENDAR = `
   mutation ($calendarId: String!, $granteeCircleId: String!, $shareLevel: String!) {
     ShareCalendar(calendarId: $calendarId, granteeCircleId: $granteeCircleId, shareLevel: $shareLevel) { id }
@@ -175,6 +178,11 @@ const SHARE_CALENDAR = `
 
 type CalendarOfCircle = {
   id: string
+  name: string
+  description?: string
+  colour?: string
+  timezone?: string
+  weekStart?: string
   calendarKind: string
   shareLevel?: string
   circleId?: string | null
@@ -732,6 +740,8 @@ function CircleDetail() {
   const [isRenaming, setRenaming] = useState(false)
   const [renameDraft, setRenameDraft] = useState('')
   const [isDeleting, setDeleting] = useState(false)
+  const [isRenamingCalendar, setRenamingCalendar] = useState(false)
+  const [isDeletingCalendar, setDeletingCalendar] = useState(false)
   const [isLeaving, setLeaving] = useState(false)
   const [removingMember, setRemovingMember] = useState<CircleMember | null>(null)
   const [relatingMember, setRelatingMember] = useState<CircleMember | null>(null)
@@ -745,6 +755,7 @@ function CircleDetail() {
 
   const circle = data
   useBreadcrumbDetail(circle?.name)
+  const circleCalendar = calendars.data?.find((found) => found.isCircleCalendar && found.circleId === circle?.id)
 
   if (loading && !circle) {
     return <Loading />
@@ -915,8 +926,44 @@ function CircleDetail() {
       </SettingsSection>
 
       {canUseCalendar && calendars.data && (
-        <SettingsSection card title={t('circles.calendar.title')} description={t('circles.calendar.intro')}>
-          {calendars.data.some((found) => found.isCircleCalendar && found.circleId === circle.id) ? (
+        <SettingsSection
+          card
+          title={t('circles.calendar.title')}
+          description={t('circles.calendar.intro')}
+          action={
+            isAdmin && circleCalendar ? (
+              <div className="row-actions head-icons">
+                <Tooltip label={t('circles.calendar.rename')}>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    aria-label={t('circles.calendar.rename')}
+                    onClick={() => {
+                      clearProblem()
+                      setRenamingCalendar(true)
+                    }}
+                  >
+                    <PencilIcon size={16} />
+                  </button>
+                </Tooltip>
+                <Tooltip label={t('circles.calendar.delete')}>
+                  <button
+                    type="button"
+                    className="icon-action danger"
+                    aria-label={t('circles.calendar.delete')}
+                    onClick={() => {
+                      clearProblem()
+                      setDeletingCalendar(true)
+                    }}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </Tooltip>
+              </div>
+            ) : undefined
+          }
+        >
+          {circleCalendar ? (
             <>
               <p>{t('circles.calendar.exists')}</p>
               <p>
@@ -1194,6 +1241,38 @@ function CircleDetail() {
             />
           </label>
         </FormDialog>
+      )}
+
+      {isRenamingCalendar && circleCalendar && (
+        <CalendarRenameDialog
+          calendar={circleCalendar}
+          title={t('circles.calendar.renameTitle', { name: circle.name })}
+          onClose={() => setRenamingCalendar(false)}
+          onSaved={() => calendars.reload()}
+        />
+      )}
+
+      {isDeletingCalendar && (
+        <ConfirmDialog
+          title={t('circles.calendar.deleteTitle', { name: circle.name })}
+          body={t('circles.calendar.deleteBody')}
+          confirmLabel={t('circles.calendar.delete')}
+          busy={isBusy}
+          error={problem}
+          onConfirm={async () => {
+            if (
+              await act(
+                () => graphql(DELETE_CIRCLE_CALENDAR, { circleId: circle.id }),
+                t('circles.calendar.deleted'),
+                true,
+              )
+            ) {
+              setDeletingCalendar(false)
+              void calendars.reload()
+            }
+          }}
+          onClose={() => setDeletingCalendar(false)}
+        />
       )}
 
       {isDeleting && (

@@ -193,6 +193,29 @@ func (self *graph) CreateCircleCalendar(ctx context.Context, arguments CreateCir
 	}, 0), nil
 }
 
+type DeleteCircleCalendarArguments struct {
+	CircleID string `json:"circleId"`
+}
+
+func (self *graph) DeleteCircleCalendar(ctx context.Context, arguments DeleteCircleCalendarArguments) (bool, error) {
+	principal, err := self.requireCalendarPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !self.isServiceEnabled(models.ServiceCalendar) {
+		return false, &models.ServiceUnavailableError{Service: models.ServiceCalendar}
+	}
+	circle, _, err := self.requireCircleAdmin(ctx, arguments.CircleID)
+	if err != nil {
+		return false, err
+	}
+	if err := self.transaction(ctx).DeleteCircleCalendar(circle.ID); err != nil {
+		return false, translateError(err)
+	}
+	log.Noticef("%s deleted the calendar of the circle %q", principal.User.Username, circle.Name)
+	return true, nil
+}
+
 // The most people one free-busy question is about. Each is a window of one
 // person's calendar read, so the number is a cost; far past the people a
 // meeting is arranged among.

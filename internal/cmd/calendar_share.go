@@ -32,7 +32,8 @@ func calendarFlag() cli.Flag {
 }
 
 // ownCalendarNamed is the calendar of events the caller owns, or the one they
-// named with --calendar.
+// named with --calendar. Whether they may do what they ask of the one they
+// named is the server's to say.
 func ownCalendarNamed(ctx context.Context, command *cli.Command, connection *client.Client) (*client.Calendar, error) {
 	named := strings.TrimSpace(command.String("calendar"))
 	if named == "" {
@@ -179,6 +180,24 @@ func runCalendarCircle(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(made)
 	}
 	fmt.Printf("made %q, which everyone in %s reads and writes\n", forTerminal(made.Name), forTerminal(models.DescribeCircleByName(made.CircleName)))
+	return nil
+}
+
+func runCalendarCircleDelete(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return usage("usage: teanode calendar circle-delete <circle-id>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if err := confirm(command, "This deletes the calendar of the circle and every event in it, for everyone in the circle."); err != nil {
+		return err
+	}
+	if err := client.DeleteCircleCalendar(ctx, connection, command.Args().First()); err != nil {
+		return describeNotFound(command, err, "circle "+command.Args().First())
+	}
+	fmt.Println("deleted")
 	return nil
 }
 

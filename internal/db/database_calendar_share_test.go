@@ -631,3 +631,45 @@ func TestACalendarReachesOnlyPeopleWhoMayUseCalendars(t *testing.T) {
 		}
 	})
 }
+
+// Deleting a circle's calendar takes the events with it and leaves the people's
+// own calendars alone, and a circle with none has nothing to delete.
+func TestDeletingACircleCalendarTakesItsEventsAndNothingElse(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newCalendarShareWorld(t, tx)
+		if err := tx.DeleteCircleCalendar(world.home.ID); !errors.Is(err, db.ErrNotFound) {
+			t.Fatalf("a circle with no calendar: %v", err)
+		}
+		if err := tx.DeleteCircleCalendar("nobody"); !errors.Is(err, db.ErrNotFound) {
+			t.Fatalf("no such circle: %v", err)
+		}
+		family, err := tx.CreateCircleCalendar(world.home.ID, "", "")
+		if err != nil {
+			t.Fatalf("CreateCircleCalendar: %s", err)
+		}
+		if _, err := tx.PutCalendarObject(&models.CalendarObject{
+			ID: "play", CalendarID: family.ID, UID: "play", ETag: "e", Data: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", Summary: "School play",
+		}, nil); err != nil {
+			t.Fatalf("PutCalendarObject: %s", err)
+		}
+		if err := tx.DeleteCircleCalendar(world.home.ID); err != nil {
+			t.Fatalf("DeleteCircleCalendar: %s", err)
+		}
+		if found, err := tx.GetCircleCalendar(world.home.ID); err != nil || found != nil {
+			t.Errorf("the calendar is still there: %+v %v", found, err)
+		}
+		if object, err := tx.GetCalendarObject(family.ID, "play"); err != nil || object != nil {
+			t.Errorf("its event is still there: %+v %v", object, err)
+		}
+		if kept, err := tx.GetCalendar(world.adaCalendar.ID); err != nil || kept == nil {
+			t.Errorf("ada's own calendar went with it: %+v %v", kept, err)
+		}
+		// And the circle may have another.
+		if _, err := tx.CreateCircleCalendar(world.home.ID, "", ""); err != nil {
+			t.Errorf("a new one: %s", err)
+		}
+	})
+}

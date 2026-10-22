@@ -6109,6 +6109,13 @@ export const ja: Catalog = {
   'circles.calendar.exists': 'このサークルには、メンバー全員が見て書き込めるカレンダーがあります。',
   'circles.calendar.open': 'カレンダーを開く',
   'circles.calendar.none': 'このサークルの管理者がカレンダーを作成できます。',
+  'circles.calendar.rename': 'カレンダーの名前を変更',
+  'circles.calendar.renameTitle': '「{name}」のカレンダーの名前を変更',
+  'circles.calendar.delete': 'カレンダーを削除',
+  'circles.calendar.deleteTitle': '「{name}」のカレンダーを削除しますか？',
+  'circles.calendar.deleteBody':
+    'カレンダー内のすべての予定が、サークルの全員から削除されます。サークルは残り、カレンダーはあとから作り直せます。',
+  'circles.calendar.deleted': 'カレンダーを削除しました。',
   'circles.shareSuggestion.title': '{name}とカレンダーを共有しますか？',
   'circles.shareSuggestion.body':
     '{name}の全員が、あなたが選んだ範囲であなたのカレンダーを見られるようになります。非公開にした予定は「予定あり」としてしか表示されません。',

@@ -58690,6 +58690,134 @@
         }
       }
     },
+    "Rename the calendar of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」のカレンダーの名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名「%@」的日历"
+          }
+        }
+      }
+    },
+    "Delete the calendar of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」のカレンダーを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除「%@」的日历"
+          }
+        }
+      }
+    },
+    "You are an admin of these circles, so you can rename their calendars or delete them. Deleting one deletes every event in it for everyone in the circle.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたはこれらのサークルの管理者なので、カレンダーの名前を変更したり削除したりできます。削除すると、サークルの全員からカレンダー内のすべての予定が削除されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你是这些圈子的管理员，可以重命名或删除它们的日历。删除日历会为圈子里的每个人删除其中的所有日程。"
+          }
+        }
+      }
+    },
+    "Rename the calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーの名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名日历"
+          }
+        }
+      }
+    },
+    "Delete the calendar of %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」のカレンダーを削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除「%@」的日历？"
+          }
+        }
+      }
+    },
+    "Delete the calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除日历"
+          }
+        }
+      }
+    },
+    "Every event in it is deleted for everyone in the circle. The circle stays, and a new calendar can be made for it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダー内のすべての予定が、サークルの全員から削除されます。サークルは残り、カレンダーはあとから作り直せます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历中的所有日程都会为圈子里的每个人删除。圈子保留，之后可以重新创建日历。"
+          }
+        }
+      }
+    },
+    "Calendar deleted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーを削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历已删除"
+          }
+        }
+      }
+    },
     "Calendars": {
       "localizations": {
         "ja": {

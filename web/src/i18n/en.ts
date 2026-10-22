@@ -6166,6 +6166,13 @@ export const en = {
   'circles.calendar.exists': 'This circle has a calendar that everyone in it reads and writes.',
   'circles.calendar.open': 'Open the calendar',
   'circles.calendar.none': 'An admin of this circle can make a calendar for it.',
+  'circles.calendar.rename': 'Rename the calendar',
+  'circles.calendar.renameTitle': 'Rename the calendar of {name}',
+  'circles.calendar.delete': 'Delete the calendar',
+  'circles.calendar.deleteTitle': 'Delete the calendar of {name}?',
+  'circles.calendar.deleteBody':
+    'Every event in it is deleted for everyone in the circle. The circle stays, and a new calendar can be made for it.',
+  'circles.calendar.deleted': 'Calendar deleted.',
   'circles.shareSuggestion.title': 'Share your calendar with {name}?',
   'circles.shareSuggestion.body':
     'Everyone in {name} could see your calendar, as much as you choose. An event you mark private is only ever shown as busy.',

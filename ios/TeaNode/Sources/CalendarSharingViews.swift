@@ -15,6 +15,13 @@ struct CalendarListSheet: View {
     @State private var isWorking = false
     @State private var isRenaming = false
     @State private var newName = ""
+    /// The circles the person is an admin of, whose calendars they may rename
+    /// and delete.
+    @State private var adminCircleIds: Set<String> = []
+    @State private var renamingCircleCalendar: AgentCalendar?
+    @State private var newCircleCalendarName = ""
+    @State private var deletingCircleCalendar: AgentCalendar?
+    @State private var isConfirmingCircleCalendarDelete = false
     #if DEBUG
         /// Whether the share screen is pushed for a screenshot.
         @State private var isShowingDemoShare = false
@@ -65,6 +72,31 @@ struct CalendarListSheet: View {
                         }
                     } footer: {
                         Text("Choose who can see your calendar, and how much. An event you mark private is only ever shown to others as busy.")
+                    }
+                }
+                if !managedCircleCalendars.isEmpty {
+                    Section {
+                        ForEach(managedCircleCalendars) { calendar in
+                            Button {
+                                newCircleCalendarName = calendar.name
+                                renamingCircleCalendar = calendar
+                            } label: {
+                                Label("Rename the calendar of \(calendar.circleName ?? calendar.name)", systemImage: "pencil")
+                                    .actionColor()
+                            }
+                            .disabled(isWorking)
+                            Button {
+                                deletingCircleCalendar = calendar
+                                isConfirmingCircleCalendarDelete = true
+                            } label: {
+                                Label("Delete the calendar of \(calendar.circleName ?? calendar.name)", systemImage: "trash")
+                                    .actionColor(isDestructive: true)
+                            }
+                            .tint(.red)
+                            .disabled(isWorking)
+                        }
+                    } footer: {
+                        Text("You are an admin of these circles, so you can rename their calendars or delete them. Deleting one deletes every event in it for everyone in the circle.")
                     }
                 }
                 if !circlesWithoutCalendar.isEmpty {
@@ -120,7 +152,36 @@ struct CalendarListSheet: View {
                     isShowingDemoFindTime = true
                 }
             #endif
+            .alert("Rename the calendar", isPresented: isRenamingCircleCalendar) {
+                TextField("Calendar name", text: $newCircleCalendarName)
+                Button("Cancel", role: .cancel) { renamingCircleCalendar = nil }
+                Button("Save") { renameCircleCalendar() }
+            }
+            .confirmationDialog(
+                "Delete the calendar of \(deletingCircleCalendar?.circleName ?? "")?", isPresented: $isConfirmingCircleCalendarDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete the calendar", role: .destructive) { deleteCircleCalendar() }
+            } message: {
+                Text("Every event in it is deleted for everyone in the circle. The circle stays, and a new calendar can be made for it.")
+            }
             .toast(done: $doneText, problem: $problemText)
+        }
+    }
+
+    /// Whether the circle calendar rename alert is showing, which is while one
+    /// is chosen.
+    private var isRenamingCircleCalendar: Binding<Bool> {
+        Binding(
+            get: { renamingCircleCalendar != nil },
+            set: { isShown in if !isShown { renamingCircleCalendar = nil } })
+    }
+
+    /// The calendars of circles the person is an admin of.
+    private var managedCircleCalendars: [AgentCalendar] {
+        model.calendars.filter { calendar in
+            guard calendar.isCircleCalendar == true, let circleId = calendar.circleId else { return false }
+            return adminCircleIds.contains(circleId)
         }
     }
 
@@ -129,6 +190,45 @@ struct CalendarListSheet: View {
         guard let circles = try? await model.connection.circles() else { return }
         let withCalendar = Set(model.calendars.compactMap(\.circleId))
         circlesWithoutCalendar = circles.filter { $0.isAdmin && !withCalendar.contains($0.id) }
+        adminCircleIds = Set(circles.filter(\.isAdmin).map(\.id))
+    }
+
+    /// Renames the calendar of a circle the person is an admin of. Nothing is
+    /// sent for an empty name or the name it already has.
+    private func renameCircleCalendar() {
+        guard let calendar = renamingCircleCalendar else { return }
+        renamingCircleCalendar = nil
+        let name = newCircleCalendarName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != calendar.name else { return }
+        isWorking = true
+        Task {
+            do {
+                try await model.connection.saveCalendar(calendar, name: name)
+                doneText = String(localized: "Calendar renamed")
+                await model.reloadCalendars()
+            } catch {
+                problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+            }
+            isWorking = false
+        }
+    }
+
+    /// Deletes the calendar of a circle the person is an admin of.
+    private func deleteCircleCalendar() {
+        guard let calendar = deletingCircleCalendar, let circleId = calendar.circleId else { return }
+        deletingCircleCalendar = nil
+        isWorking = true
+        Task {
+            do {
+                try await model.connection.deleteCircleCalendar(circleId: circleId)
+                doneText = String(localized: "Calendar deleted")
+                await model.reloadCalendars()
+                await findCirclesWithoutCalendar()
+            } catch {
+                problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+            }
+            isWorking = false
+        }
     }
 
     /// Renames the person's own calendar. Nothing is sent for an empty name or

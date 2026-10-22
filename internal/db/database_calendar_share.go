@@ -44,6 +44,11 @@ type CalendarShareOperation interface {
 	// has one.
 	CreateCircleCalendar(circleId, name, timezone string) (*models.Calendar, error)
 
+	// DeleteCircleCalendar takes away the calendar a circle keeps for itself,
+	// with every event in it. ErrNotFound when there is no such circle or it
+	// has none. The caller has checked that the person may.
+	DeleteCircleCalendar(circleId string) error
+
 	// GetCircleCalendar is the circle's calendar, or nil.
 	GetCircleCalendar(circleId string) (*models.Calendar, error)
 
@@ -317,6 +322,28 @@ func (self *transaction) CreateCircleCalendar(circleId, name, timezone string) (
 	return self.CreateCalendar(&models.Calendar{
 		CircleID: circleId, Name: name, Timezone: timezone, CalendarKind: models.CalendarEvents,
 	})
+}
+
+func (self *transaction) DeleteCircleCalendar(circleId string) error {
+	// In the order of every change to circles (see circleMembershipLockKey).
+	if err := lockCircleMembership(self.tx); err != nil {
+		return err
+	}
+	var locked circleModel
+	if err := lockRow(self.tx, &locked, circleId); err != nil {
+		return err
+	}
+	before, err := self.GetCircleCalendar(circleId)
+	if err != nil {
+		return err
+	}
+	if before == nil {
+		return ErrNotFound
+	}
+	return self.applyMutation(models.AuditResourceCalendar, before.ID, models.AuditActionDelete,
+		before, nil, func(tx *gorm.DB) error {
+			return tx.Where("\"id\" = ?", before.ID).Delete(&calendarModel{}).Error
+		})
 }
 
 // holdMutualCircle holds the circle membership rows two people's sharing
