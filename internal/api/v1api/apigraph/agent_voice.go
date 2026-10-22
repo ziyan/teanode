@@ -189,9 +189,9 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 	// The session cookie is taken only from a page of this server, which
 	// the browser says in the Origin; a token in the hello is taken from
 	// anywhere, as the GraphQL socket takes one.
-	isFromThisServer := request.Header.Get("Origin") != "" && fromThisServer(request)
+	isFromThisServer := request.Header.Get("Origin") != "" && api.FromThisServer(request)
 	sessionUsername := api.UsernameFromRequest(request)
-	upgrader := websocket.Upgrader{CheckOrigin: fromThisServer}
+	upgrader := websocket.Upgrader{CheckOrigin: api.FromThisServer}
 	conn, err := upgrader.Upgrade(response, request, nil)
 	if err != nil {
 		return

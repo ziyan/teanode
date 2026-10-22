@@ -8,7 +8,6 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +28,7 @@ func (self *graph) webSocketView(response http.ResponseWriter, request *http.Req
 		// be a page from here. Nothing asks permission across origins the
 		// way a fetch does -- the handshake goes straight through with the
 		// reader's cookie on it.
-		CheckOrigin: fromThisServer,
+		CheckOrigin: api.FromThisServer,
 	}
 	conn, err := upgrader.Upgrade(response, request, nil)
 	if err != nil {
@@ -55,22 +54,6 @@ func (self *graph) webSocketView(response http.ResponseWriter, request *http.Req
 		log.Errorf("failed to handle websocket connection from %q: %s", request.RemoteAddr, err)
 		return
 	}
-}
-
-// fromThisServer reports whether a handshake came from a page this server
-// served. A request with no Origin at all is not a browser, so nothing
-// attached a cookie to it on its own; it is let through here and has to
-// prove who it is with a token in its first message.
-func fromThisServer(request *http.Request) bool {
-	origin := request.Header.Get("Origin")
-	if origin == "" {
-		return true
-	}
-	parsed, err := url.Parse(origin)
-	if err != nil || parsed.Host == "" {
-		return false
-	}
-	return strings.EqualFold(parsed.Host, request.Host)
 }
 
 type webSocketMessage struct {
@@ -203,7 +186,7 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 				// with the upgrade.
 				self.request.Header.Del(api.ImpersonatorUsernameHeader)
 				self.request.Header.Del(api.CredentialKindHeader)
-			} else if self.request.Header.Get("Origin") == "" || !fromThisServer(self.request) {
+			} else if self.request.Header.Get("Origin") == "" || !api.FromThisServer(self.request) {
 				// A session, then, and a session is a cookie: the browser
 				// attached it without being asked, so the page that opened
 				// the socket has to be one of this server's own.

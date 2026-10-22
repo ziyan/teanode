@@ -232,7 +232,7 @@ func (self *graph) tabViewerView(response http.ResponseWriter, request *http.Req
 					refuse("the token is not one this server takes; sign in again")
 					return
 				}
-			case sessionUsername != "" && request.Header.Get("Origin") != "" && fromThisServer(request):
+			case sessionUsername != "" && request.Header.Get("Origin") != "" && api.FromThisServer(request):
 				// A cookie the browser attached by itself: only a page of
 				// this server may open the view with it. An operator signed
 				// in as somebody does not watch or work their browser.

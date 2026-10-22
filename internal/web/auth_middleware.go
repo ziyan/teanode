@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // writeJson sends a JSON body with a status code.
@@ -65,6 +66,19 @@ func MakeAuthenticationMiddleware(authenticator Authenticator, challengePath str
 			// authentication as well as the refusal, so every resolver behind
 			// the GraphQL endpoint was told nobody was there.
 			identity, ok := authenticator.AuthenticateIdentity(request)
+
+			// A cookie is the one credential a browser attaches by itself,
+			// and SameSite=Lax still sends it on a form posted from a
+			// sibling host of the same site. A write that arrives that way
+			// was not the person's doing, whatever the address or the body
+			// look like, so it is refused here once rather than by every
+			// handler that takes a body. A token is attached on purpose and
+			// is not asked about.
+			if ok && identity.CredentialKind == models.CredentialSession && api.IsCrossSiteWrite(request) {
+				writeJson(response, http.StatusForbidden, map[string]string{"error": "this request was not started from this server's own page"})
+				return
+			}
+
 			username := identity.Username
 			if ok && username != "" {
 				request.Header.Set(api.AuthenticatedUsernameHeader, username)

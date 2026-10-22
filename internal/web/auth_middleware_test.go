@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/models"
@@ -291,5 +292,103 @@ func TestTheDashboardRefusalCarriesNoBearerChallenge(t *testing.T) {
 		if header := response.Header().Get("WWW-Authenticate"); header != "" {
 			t.Errorf("%s carried %q", path, header)
 		}
+	}
+}
+
+// TestACookieWriteStartedElsewhereIsRefused covers a page on a sibling host of
+// the same site posting a form with the person's cookie on it. SameSite=Lax
+// lets that cookie through, so the middleware is what refuses it.
+func TestACookieWriteStartedElsewhereIsRefused(t *testing.T) {
+	t.Parallel()
+
+	authenticator, err := web.NewAuthenticator(newStore(t), newMemoryStore(newUser(t, "admin", "hunter2")))
+	if err != nil {
+		t.Fatalf("failed to create the authenticator: %s", err)
+	}
+	_, token, err := authenticator.IssueToken("admin", "laptop", time.Hour)
+	if err != nil {
+		t.Fatalf("failed to issue a token: %s", err)
+	}
+	cookie := login(t, authenticator, "admin", "hunter2")
+
+	handler := web.MakeAuthenticationMiddleware(authenticator, "", nil)(
+		http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+			response.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	tests := []struct {
+		name           string
+		method         string
+		path           string
+		headers        map[string]string
+		withCookie     bool
+		wantStatusCode int
+	}{
+		{
+			name: "a form from a sibling host is refused", method: http.MethodPost, path: api.PathAgentMCP,
+			headers: map[string]string{"Sec-Fetch-Site": "same-site", "Origin": "https://other.example.com"}, withCookie: true,
+			wantStatusCode: http.StatusForbidden,
+		},
+		{
+			name: "a form from an unrelated site is refused", method: http.MethodPost, path: api.PathGraphQL,
+			headers: map[string]string{"Sec-Fetch-Site": "cross-site"}, withCookie: true,
+			wantStatusCode: http.StatusForbidden,
+		},
+		{
+			name: "an old browser is judged by its origin", method: http.MethodPut, path: api.Prefix + "/nonsense",
+			headers: map[string]string{"Origin": "https://other.example.com"}, withCookie: true,
+			wantStatusCode: http.StatusForbidden,
+		},
+		{
+			name: "an opaque origin is refused", method: http.MethodDelete, path: api.Prefix + "/nonsense",
+			headers: map[string]string{"Origin": "null"}, withCookie: true,
+			wantStatusCode: http.StatusForbidden,
+		},
+		{
+			name: "the dashboard's own post passes", method: http.MethodPost, path: api.PathAgentMCP,
+			headers: map[string]string{"Sec-Fetch-Site": "same-origin", "Origin": "http://mail.example.com"}, withCookie: true,
+			wantStatusCode: http.StatusOK,
+		},
+		{
+			name: "a post from the address bar's own navigation passes", method: http.MethodPost, path: api.PathAgentMCP,
+			headers: map[string]string{"Sec-Fetch-Site": "none"}, withCookie: true,
+			wantStatusCode: http.StatusOK,
+		},
+		{
+			name: "a script with a cookie and no browser headers passes", method: http.MethodPost, path: api.PathAgentMCP,
+			withCookie: true, wantStatusCode: http.StatusOK,
+		},
+		{
+			name: "a read from a sibling host is not a write", method: http.MethodGet, path: api.Prefix + "/nonsense",
+			headers: map[string]string{"Sec-Fetch-Site": "same-site", "Origin": "https://other.example.com"}, withCookie: true,
+			wantStatusCode: http.StatusOK,
+		},
+		{
+			name: "a token passes whatever page started the request", method: http.MethodPost, path: api.PathAgentMCP,
+			headers:        map[string]string{"Sec-Fetch-Site": "cross-site", "Origin": "chrome-extension://abcdef", "Authorization": "Bearer " + token},
+			wantStatusCode: http.StatusOK,
+		},
+		{
+			name: "a stranger's post is left to the handler", method: http.MethodPost, path: api.PathGraphQL,
+			headers: map[string]string{"Sec-Fetch-Site": "cross-site"}, wantStatusCode: http.StatusOK,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(test.method, "http://mail.example.com"+test.path, nil)
+			for name, value := range test.headers {
+				request.Header.Set(name, value)
+			}
+			if test.withCookie {
+				request.AddCookie(cookie)
+			}
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+			if recorder.Code != test.wantStatusCode {
+				t.Errorf("status is %d, want %d", recorder.Code, test.wantStatusCode)
+			}
+		})
 	}
 }
