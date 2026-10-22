@@ -122,6 +122,9 @@ const SearchPage = lazyPage(async () => ({
 const RecordingsPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "recordings" */ './pages/recordings')).RecordingsPage,
 }))
+const SharedRecordingPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "recordings" */ './recording/sharedPage')).SharedRecordingPage,
+}))
 const CodingPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "coding" */ './pages/coding')).CodingPage,
 }))
@@ -665,6 +668,7 @@ export function App() {
                         <Route path="/photos/:photoId" element={<PhotosPage />} />
                       </Route>
                       <Route path="/recordings" element={<RecordingsPage />} />
+                      <Route path="/recordings/shared/:recordingId" element={<SharedRecordingPage />} />
                       <Route path="/recordings/:recordingId" element={<RecordingsPage />} />
                       <Route path="/coding" element={<CodingPage />} />
                       {/* The person's browser tab live, reached from the

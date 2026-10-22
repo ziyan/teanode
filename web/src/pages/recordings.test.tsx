@@ -152,3 +152,95 @@ it('says a deleted recording is not found', async () => {
   expect(await screen.findByText('Not found.')).toBeTruthy()
   expect(screen.queryByText(/recording was deleted/)).toBeNull()
 })
+
+// Sharing is in the recording's own menu, and opens the dialog that says the
+// others who speak did not agree.
+it('offers Share in the recording menu', async () => {
+  const view = {
+    recording: {
+      id: 'fixture-recording',
+      userId: 'fixture-owner',
+      recordingTitle: 'Quarterly planning',
+      captureGaps: [],
+    },
+    mediaFiles: [],
+    uploadParts: [],
+  } as unknown as RecordingView
+  vi.mocked(graphql).mockImplementation(async (document: string) => {
+    if (document.includes('ListRecordingShares')) return { ListRecordingShares: [] } as never
+    return { ListRecordings: [], ListCirclePeople: [], ListCircles: [] } as never
+  })
+  vi.mocked(readRecording).mockResolvedValue(view)
+  render(
+    <TranslationProvider>
+      <SessionProvider
+        value={{
+          userId: 'fixture-owner',
+          authenticated: true,
+          authenticationRequired: true,
+          username: 'fixture',
+          passkeysEnabled: false,
+        }}
+      >
+        <ToastProvider>
+          <MemoryRouter initialEntries={['/recordings/fixture-recording']}>
+            <Routes>
+              <Route path="/recordings/:recordingId" element={<RecordingsPage />} />
+            </Routes>
+          </MemoryRouter>
+        </ToastProvider>
+      </SessionProvider>
+    </TranslationProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: 'Recording actions' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Share' }))
+  expect(await screen.findByText(/have not agreed to it being shared/)).toBeTruthy()
+})
+
+// What other people shared is listed under the library, and there is nothing
+// to list when nobody did.
+it('lists the recordings shared with the person under the library', async () => {
+  vi.mocked(graphql).mockImplementation(async (document: string) => {
+    if (document.includes('ListSharedRecordings'))
+      return {
+        ListSharedRecordings: [
+          {
+            recordingId: 'shared-1',
+            ownerUserId: 'alex-id',
+            ownerUsername: 'alex',
+            ownerName: 'Alex',
+            recordingTitle: 'Standup',
+            createdAt: '2030-01-02T10:00:00Z',
+            recordedAt: null,
+            timelineDurationMS: 60000,
+            recordingSummary: '',
+            recordingShareLevel: 'summary',
+          },
+        ],
+      } as never
+    return { ListRecordings: [] } as never
+  })
+  render(
+    <TranslationProvider>
+      <SessionProvider
+        value={{
+          userId: 'fixture-owner',
+          authenticated: true,
+          authenticationRequired: true,
+          username: 'fixture',
+          passkeysEnabled: false,
+        }}
+      >
+        <ToastProvider>
+          <MemoryRouter initialEntries={['/recordings']}>
+            <Routes>
+              <Route path="/recordings" element={<RecordingsPage />} />
+            </Routes>
+          </MemoryRouter>
+        </ToastProvider>
+      </SessionProvider>
+    </TranslationProvider>,
+  )
+  expect(await screen.findByText('Shared with you')).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'Standup' }).getAttribute('href')).toBe('/recordings/shared/shared-1')
+})

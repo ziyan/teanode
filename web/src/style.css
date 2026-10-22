@@ -10530,24 +10530,28 @@ button.with-icon {
   background: color-mix(in srgb, var(--leaf) 18%, var(--surface));
 }
 
-.calendar-shares-heading {
+.calendar-shares-heading,
+.recording-shares-heading {
   margin: var(--space-3) 0 0;
 }
 
-.calendar-shares {
+.calendar-shares,
+.recording-shares {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
   margin: 0.5rem 0 var(--space-4);
 }
 
-.calendar-share-row {
+.calendar-share-row,
+.recording-share-row {
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-.calendar-share-name {
+.calendar-share-name,
+.recording-share-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
