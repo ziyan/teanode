@@ -9,6 +9,7 @@ import (
 	"net/textproto"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/net/proxy"
@@ -19,6 +20,7 @@ import (
 	"github.com/ziyan/teanode/internal/util/bufferpool"
 	"github.com/ziyan/teanode/internal/util/deferutil"
 	"github.com/ziyan/teanode/internal/util/mailparse"
+	"github.com/ziyan/teanode/internal/util/safefetch"
 	"github.com/ziyan/teanode/internal/util/smtpc"
 )
 
@@ -476,7 +478,7 @@ func (self *exchange) forwardMail(ctx context.Context, sender, recipient string,
 		port = 25
 	}
 	endpoint := fmt.Sprintf("%s:%d", host, port)
-	conn, err := self.dialContext(ctx, "tcp", endpoint)
+	conn, err := self.dialGuarded(ctx, "tcp", endpoint)
 	if err != nil {
 		log.Errorf("failed to dial %q: %s", endpoint, err)
 		return 0, err
@@ -515,6 +517,62 @@ func (self *exchange) forwardMail(ctx context.Context, sender, recipient string,
 	return uint64(len(data)), nil
 }
 
+// webhookTimeout is how long one webhook post may take, a large mail included.
+const webhookTimeout = time.Minute
+
+// privateAddressAllowance is what the operator has said this server may reach
+// inside their own network. A webhook or mail server is named by whoever
+// manages a domain, who is not necessarily the operator, so it is refused a
+// private address unless the operator listed it.
+func (self *exchange) privateAddressAllowance() *safefetch.Allowance {
+	if self.config == nil {
+		return nil
+	}
+	configuration := self.config.Current()
+	if configuration == nil {
+		return nil
+	}
+	return safefetch.ParseAllowance(configuration.Agent.PrivateAddressesAllowed())
+}
+
+// dialGuarded is dialContext for an address a domain manager chose: a private
+// address is refused unless the operator allowed it.
+//
+// Without a proxy the check runs in the dialer's Control function, on the
+// address actually connected to. A SOCKS5 proxy resolves the name itself where
+// this server cannot see it, so the name is resolved and checked here and the
+// connection is made to the address that was checked.
+func (self *exchange) dialGuarded(ctx context.Context, network, address string) (net.Conn, error) {
+	allowance := self.privateAddressAllowance()
+	if self.settings.SOCKS5Proxy == "" {
+		dialer := &net.Dialer{
+			Control: func(_, dialed string, _ syscall.RawConn) error {
+				return safefetch.AllowAddressWith(allowance, dialed)
+			},
+		}
+		return dialer.DialContext(ctx, network, address)
+	}
+
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	if len(resolved) == 0 {
+		return nil, fmt.Errorf("mx: no address for %q", host)
+	}
+	checked := net.JoinHostPort(resolved[0].IP.String(), port)
+	for _, candidate := range resolved {
+		if err := safefetch.AllowAddressWith(allowance, net.JoinHostPort(candidate.IP.String(), port)); err != nil {
+			return nil, err
+		}
+	}
+	return self.dialContext(ctx, network, checked)
+}
+
 // deliver by webhook
 func (self *exchange) sendWebhook(ctx context.Context, url, sender, recipient string, headers []string, body []byte) (uint64, error) {
 	// get a buffer from pool
@@ -534,7 +592,14 @@ func (self *exchange) sendWebhook(ctx context.Context, url, sender, recipient st
 	request.Header.Set("Content-Type", "application/octet-stream")
 
 	// send request
-	response, err := http.DefaultClient.Do(request)
+	client := safefetch.ClientAllowing(self.privateAddressAllowance())
+	// A whole mail is posted and the receiver may take a while to answer,
+	// which the guarded client's ten seconds would cut short.
+	client.Timeout = webhookTimeout
+	if transport, ok := client.Transport.(*http.Transport); ok {
+		transport.ResponseHeaderTimeout = webhookTimeout
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return 0, err
 	}
