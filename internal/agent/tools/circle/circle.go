@@ -40,6 +40,29 @@ const (
 	  memory { sectionState hasMore pages { nodePath nodeName nodeKind summary updatedAt } }
 	}`
 
+	// cardFieldsInChat is cardFields without the location part. The location
+	// tool does not repeat another person's coordinates into a chat, because
+	// everybody in the room would read them, so the card does not ask for
+	// them there. It is written out, not cut from cardFields, so that the
+	// schema test can read it.
+	cardFieldsInChat = `{
+	  person { userId username name relationshipKind relationshipWord }
+	  contact { id name organization emails phones note addresses { written } }
+	  sharedCircles { circleName circleKind }
+	  canMessage
+	  health { sectionState hasMore healthTypes { healthType typeName quantityUnit latestDaySummary { summaryDay sumValue averageValue minimumValue maximumValue } } }
+	  photos { photosState hasMorePhotos albumsState hasMoreAlbums photos { id takenAt placeName } albums { id albumTitle photoCount } }
+	  mail { sectionState hasMore mails { subject fromAddress fromName isFromPerson isUnread receivedAt folderPath snippet } }
+	  recordings { sectionState hasMore recordings { recordingId title recordedAt durationMS spokenPassageCount } }
+	  memory { sectionState hasMore pages { nodePath nodeName nodeKind summary updatedAt } }
+	}`
+
+	personCardDocument = `query ($userId: String, $addressBookId: String, $contactId: String, $itemLimit: Int) {
+		ReadPersonCard(userId: $userId, addressBookId: $addressBookId, contactId: $contactId, itemLimit: $itemLimit) ` + cardFields + ` }`
+
+	personCardInChatDocument = `query ($userId: String, $addressBookId: String, $contactId: String, $itemLimit: Int) {
+		ReadPersonCard(userId: $userId, addressBookId: $addressBookId, contactId: $contactId, itemLimit: $itemLimit) ` + cardFieldsInChat + ` }`
+
 	invitationFields = `{ id circleId circleName circleKind invitedByName invitedUsername memberRole createdAt expiresAt }`
 
 	circleFields = `{ id name circleKind createdAt memberRole members ` + memberFields + ` pendingInvitations ` + invitationFields + ` }`
@@ -142,8 +165,11 @@ func init() {
 					if arguments.ItemLimit > 0 {
 						variables["itemLimit"] = arguments.ItemLimit
 					}
-					result, err := operator.Execute(ctx, `query ($userId: String, $addressBookId: String, $contactId: String, $itemLimit: Int) {
-						ReadPersonCard(userId: $userId, addressBookId: $addressBookId, contactId: $contactId, itemLimit: $itemLimit) `+cardFields+` }`, variables)
+					document := personCardDocument
+					if run, err := tools.RunFrom(ctx); err == nil && tools.IsAnsweringInChat(run) {
+						document = personCardInChatDocument
+					}
+					result, err := operator.Execute(ctx, document, variables)
 					if err != nil {
 						return nil, err
 					}
