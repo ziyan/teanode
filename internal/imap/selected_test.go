@@ -57,3 +57,32 @@ func TestResolveSequenceRangeIsBoundedByTheFolder(t *testing.T) {
 		t.Errorf("an empty folder resolved %v", got)
 	}
 }
+
+// Every header, TEXT and BODY term reads each message again, and a command
+// carries thousands of them, so a search past the limit is refused before any
+// message is read.
+func TestCountSearchTermsSeesThroughNotAndOr(t *testing.T) {
+	t.Parallel()
+
+	word := goimap.SearchCriteria{Text: []string{"word"}}
+	criteria := &goimap.SearchCriteria{
+		Header: []goimap.SearchCriteriaHeaderField{{Key: "Subject", Value: "word"}},
+		Body:   []string{"one", "two"},
+		Not:    []goimap.SearchCriteria{word},
+		Or:     [][2]goimap.SearchCriteria{{word, {Body: []string{"three"}}}},
+	}
+	if got := countSearchTerms(criteria); got != 6 {
+		t.Errorf("countSearchTerms = %d, want 6", got)
+	}
+	if got := countSearchTerms(nil); got != 0 {
+		t.Errorf("countSearchTerms(nil) = %d, want 0", got)
+	}
+
+	many := &goimap.SearchCriteria{}
+	for range 7000 {
+		many.Text = append(many.Text, "x")
+	}
+	if countSearchTerms(many) <= maximumSearchTerms {
+		t.Errorf("seven thousand terms are within the limit")
+	}
+}

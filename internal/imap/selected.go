@@ -720,6 +720,9 @@ func (self *session) Search(kind imapserver.NumKind, criteria *goimap.SearchCrit
 	if err != nil {
 		return nil, err
 	}
+	if countSearchTerms(criteria) > maximumSearchTerms {
+		return nil, &goimap.Error{Type: goimap.StatusResponseTypeNo, Code: goimap.ResponseCodeTooBig, Text: "That search has too many terms"}
+	}
 	var items []*models.MailboxItem
 	if err := self.transaction(func(tx db.Transaction) error {
 		var err error
@@ -775,6 +778,27 @@ func (self *session) Search(kind imapserver.NumKind, criteria *goimap.SearchCrit
 		data.All = uidSet
 	}
 	return data, nil
+}
+
+// maximumSearchTerms is how many header, TEXT and BODY terms one SEARCH may
+// carry. Each one reads every message again, and a command's 50 KiB holds
+// thousands. A mail program searching for what a person typed sends a handful.
+const maximumSearchTerms = 64
+
+// countSearchTerms counts the terms that read a message's bytes, through NOT
+// and OR.
+func countSearchTerms(criteria *goimap.SearchCriteria) int {
+	if criteria == nil {
+		return 0
+	}
+	count := len(criteria.Header) + len(criteria.Body) + len(criteria.Text)
+	for _, not := range criteria.Not {
+		count += countSearchTerms(&not)
+	}
+	for _, or := range criteria.Or {
+		count += countSearchTerms(&or[0]) + countSearchTerms(&or[1])
+	}
+	return count
 }
 
 func criteriaNeedBytes(criteria *goimap.SearchCriteria) bool {
