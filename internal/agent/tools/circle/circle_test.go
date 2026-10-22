@@ -682,3 +682,53 @@ func TestPersonCardInAChatDoesNotAskForALocation(t *testing.T) {
 		}
 	}
 }
+
+// Sharing reads everything shared in both directions with ListSharing, as
+// words other people chose, and is a read.
+func TestSharingReadsEverythingSharedAndIsARead(t *testing.T) {
+	operations := &circleOperations{grants: aMember, answers: map[string]string{
+		"ListSharing": `{"ListSharing":{"sharesMade":[],"sharesReceived":[{"shareKind":"calendar","shareId":"share-one","ownerName":"Person X","isDirect":true,"canDecline":true}]}}`,
+	}}
+
+	result, err := callAs(t, operations, `{"action":"sharing"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Untrusted || !strings.Contains(result.Content, "share-one") {
+		t.Errorf("the list is untrusted words: %+v", result)
+	}
+	if sent := operations.sentWith("ListSharing"); len(sent) != 1 || !strings.Contains(sent[0].document, "sharesReceived") {
+		t.Errorf("the list was asked for with %v", operations.sent)
+	}
+	if risk := circleTool(t).RiskFor([]byte(`{"action":"sharing"}`)); risk != tools.RiskRead {
+		t.Errorf("sharing is %v, not a read", risk)
+	}
+	if _, err := callAs(t, &circleOperations{grants: nil}, `{"action":"sharing"}`); err == nil || !strings.Contains(err.Error(), "not something they may do") {
+		t.Errorf("sharing should be refused without circle:use: %v", err)
+	}
+}
+
+// Declining a share sends the kind and the share, is destructive, and the card
+// names who shared what from the person's own list.
+func TestDeclineShareEndsAShareMadeByNameAndNamesIt(t *testing.T) {
+	operations := &circleOperations{grants: aMember, answers: map[string]string{
+		"sharesReceived": `{"ListSharing":{"sharesMade":[],"sharesReceived":[{"shareKind":"memory_page","shareId":"share-one","subjectName":"Kim","ownerName":"Person X"}]}}`,
+	}}
+
+	if _, err := callAs(t, operations, `{"action":"decline_share","share_kind":" memory_page ","share_id":" share-one "}`); err != nil {
+		t.Fatal(err)
+	}
+	declined := operations.sentWith("DeclineShare")
+	if len(declined) != 1 || declined[0].variables["shareKind"] != "memory_page" || declined[0].variables["shareId"] != "share-one" {
+		t.Errorf("the decline was %v", operations.sent)
+	}
+	arguments := `{"action":"decline_share","share_kind":"memory_page","share_id":"share-one"}`
+	if risk := circleTool(t).RiskFor([]byte(arguments)); risk != tools.RiskDestructive {
+		t.Errorf("decline_share is %v, not destructive", risk)
+	}
+	mustContain(t, cardFor(t, operations, arguments), "Stop receiving the memory page", `"Kim"`, `"Person X"`, "share again")
+	mustContain(t, cardFor(t, &circleOperations{grants: aMember}, arguments), "Stop receiving a share made to you by name")
+	if _, err := callAs(t, &circleOperations{grants: nil}, arguments); err == nil || !strings.Contains(err.Error(), "not something they may do") {
+		t.Errorf("decline_share should be refused without circle:use: %v", err)
+	}
+}

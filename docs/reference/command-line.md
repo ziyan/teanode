@@ -368,6 +368,27 @@ guessed at from a name. `circle relate` and `circle
 unrelate` need a circle in common with the person, and say that nobody by that
 name shares one otherwise.
 
+### Everything shared
+
+`teanode sharing` prints what you share and what is shared with you, across
+calendar, location, Health, memory pages, photo albums, skills and passwords.
+Each kind is still shared and stopped with its own command (`teanode calendar
+share` and `unshare`, `location`, `health`, `agent memory share`, `photo album
+share`, `agent skill share`); this is the one list.
+
+    teanode sharing                                      # two tables: shared by you, shared with you, each with the id of the share
+    teanode sharing --json                               # { sharesMade, sharesReceived }
+    teanode sharing decline calendar <share-id>          # stop receiving a share that was made to you by name; --force to skip the question
+
+A share to a circle names the circle, a share made to you by name says `by
+name`, and a share of passwords is counted ("3 items"), never named. The kinds
+are `calendar`, `location`, `health`, `memory_page` (`memory-page` is read the
+same), `photo_album`, `skill` and `passwords`. `decline` only ends a share that
+was made to you by name: one through a circle ends when you leave the circle,
+and passwords are removed by whoever shared them. The owner is not told, and
+has to share again for you to have it back. The agent does the same with the
+circle tool's `sharing` and `decline_share` actions.
+
 Who sees whom, and what a circle is for, is in `docs/subsystems/circles.md`.
 The agent does the same through its `circle` tool, with an action for each
 subcommand under the same word: `list`, `show`, `people`, `person`, `relate`, `unrelate`,
