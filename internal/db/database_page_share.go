@@ -65,6 +65,12 @@ type PageShareOperation interface {
 	// (empty to start). The shared-memory reader counts what a share would
 	// keep from its reader with it, a batch at a time.
 	ListAgentFactsWithin(agentId string, roots []string, afterFactId string, limit int) ([]*models.AgentFact, error)
+
+	// ListOwnCalendarObjectsByID are the objects with these identifiers in
+	// the calendars the person owns, in one read. An object of a circle's
+	// calendar, or one that is gone, is not among them. The shared-memory
+	// reader classifies the events a fact cites with it.
+	ListOwnCalendarObjectsByID(userId string, objectIds []string) ([]*models.CalendarObject, error)
 }
 
 type agentPageShareModel struct {
@@ -482,6 +488,22 @@ func (self *transaction) ListAgentFactsWithin(agentId string, roots []string, af
 		return nil, err
 	}
 	return orderFactsBy(facts, factIds), nil
+}
+
+func (self *transaction) ListOwnCalendarObjectsByID(userId string, objectIds []string) ([]*models.CalendarObject, error) {
+	if len(objectIds) == 0 {
+		return nil, nil
+	}
+	var found []calendarObjectModel
+	if err := self.tx.Where(`"calendar_id" IN (SELECT "id" FROM "calendar" WHERE "user_id" = ?) AND "id" IN ?`, userId, objectIds).
+		Order(`"calendar_id" ASC, "id" ASC`).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	objects := make([]*models.CalendarObject, 0, len(found))
+	for index := range found {
+		objects = append(objects, found[index].toModel())
+	}
+	return objects, nil
 }
 
 // endPageSharesUnder ends the shares of the agent's pages at this path and

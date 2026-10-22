@@ -156,7 +156,9 @@ type SharedPage struct {
 	Aliases  []string      `json:"aliases"`
 
 	// Opening is what the page is about, the owner's summary of it. Empty
-	// when the owner did not share quotes and the summary quotes somebody.
+	// when the page has a fact the reader is not shown or one read in a chat
+	// or a recording, and when the owner did not share quotes and the
+	// summary quotes somebody.
 	Opening string `json:"opening"`
 
 	// IsQuoteShared says at least one share reaching the reader for this
