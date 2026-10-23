@@ -226,3 +226,66 @@ func TestATerminalIsReadAsAScreen(t *testing.T) {
 		t.Fatalf("closed is gone")
 	}
 }
+
+// Everything a program writes is told before its end is, however quickly it
+// exits after writing.
+func TestASessionTellsAllItsOutputBeforeItsEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts a process")
+	}
+	const outputByteCount = 1 << 20
+	for attempt := range 20 {
+		var mutex sync.Mutex
+		heardByteCount := 0
+		finished := make(chan int, 1)
+		held := newSessions()
+		if _, err := held.start(context.Background(), withDefaults(&Options{Home: t.TempDir()}), &SessionStartArguments{
+			Session: "quick", Kind: "stdio", Command: "head", Arguments: []string{"-c", "1048576", "/dev/zero"},
+		}, func(_, _, data string) {
+			decoded, _ := base64.StdEncoding.DecodeString(data)
+			mutex.Lock()
+			heardByteCount += len(decoded)
+			mutex.Unlock()
+		}, func(_ string, code int) {
+			mutex.Lock()
+			finished <- heardByteCount
+			mutex.Unlock()
+		}); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case byteCount := <-finished:
+			if byteCount != outputByteCount {
+				t.Fatalf("attempt %d: the end was told after %d of %d bytes", attempt, byteCount, outputByteCount)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("the session never ended")
+		}
+		held.closeAll()
+	}
+}
+
+// A child the program left running in the background with its output does not
+// hold back the program's end.
+func TestASessionEndsThoughABackgroundChildHoldsItsOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts a process")
+	}
+	finished := make(chan int, 1)
+	held := newSessions()
+	defer held.closeAll()
+	began := time.Now()
+	if _, err := held.start(context.Background(), withDefaults(&Options{Home: t.TempDir()}), &SessionStartArguments{
+		Session: "parent", Kind: "stdio", Command: "sh", Arguments: []string{"-c", "sleep 30 & echo started"},
+	}, func(_, _, _ string) {}, func(_ string, code int) { finished <- code }); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case code := <-finished:
+		if code != 0 {
+			t.Errorf("the program ended with %d", code)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("the end waited on the background child (%v)", time.Since(began))
+	}
+}
