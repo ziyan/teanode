@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.195.3] - 2026-10-23
+
+### Fixed
+
+- The prompt box of a coding session on the dashboard sends on Enter, takes a new line on Shift with Enter, and fills its row like the agent drawer's. (#637)
+
 ## [0.195.2] - 2026-10-23
 
 ### Fixed
