@@ -17093,6 +17093,12 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   body:has(.coding-composer:not([hidden])) .agent-drawer-toggle {
     bottom: 96px;
   }
+
+  /* Raised there, the button reaches over the pane's right edge just above
+     the box, where a person's lines end; the transcript keeps clear of it. */
+  .coding-session:has(.coding-composer:not([hidden])) .coding-scroll {
+    padding-right: calc(var(--space-3) + 24px);
+  }
 }
 
 .herdr-tab-label {

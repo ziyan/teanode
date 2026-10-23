@@ -622,6 +622,12 @@ export function HerdrSendForm({
           // would; pasted text is typed as usual. Each is named afresh, as a
           // clipboard calls every picture image.png.
           onPaste={(event) => {
+            // Read-only while sending: a picture pasted then would be added
+            // and wiped when the box clears after the send.
+            if (isSending) {
+              event.preventDefault()
+              return
+            }
             const pictures = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'))
             if (pictures.length === 0) return
             event.preventDefault()

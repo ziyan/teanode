@@ -248,3 +248,19 @@ it('attaches a pasted picture, and leaves pasted text to the box', () => {
   fireEvent.paste(box, { clipboardData: { files: [], getData: () => 'some text' } })
   expect(screen.getAllByText(/^pasted-/)).toHaveLength(1)
 })
+
+it('is read-only while a send is under way: a second Enter or a pasted picture does nothing', async () => {
+  const idle: HerdrSession = { ...session, herdrSessionState: 'idle' }
+  execute.mockImplementation(() => new Promise(() => {}))
+  render(<HerdrSendForm session={idle} onSent={vi.fn()} />)
+  const box = screen.getByLabelText('herdr.sendPlaceholder') as HTMLTextAreaElement
+  fireEvent.change(box, { target: { value: 'run the tests' } })
+  fireEvent.keyDown(box, { key: 'Enter' })
+  await waitFor(() => expect(box.readOnly).toBe(true))
+  fireEvent.keyDown(box, { key: 'Enter' })
+  const picture = new File(['png bytes'], 'image.png', { type: 'image/png' })
+  fireEvent.paste(box, { clipboardData: { files: [picture], getData: () => '' } })
+  expect(execute).toHaveBeenCalledTimes(1)
+  expect(screen.queryByText(/^pasted-/)).toBeNull()
+  expect(box.disabled).toBe(false)
+})
