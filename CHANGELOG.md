@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.195.6] - 2026-10-23
+
+### Fixed
+
+- On the iPhone, a chat no longer jumps while scrolling past a message with a link preview. (#640)
+
 ## [0.195.5] - 2026-10-23
 
 ### Fixed
