@@ -1,6 +1,8 @@
 // The agent's actions inside a page of the person's browser: a snapshot of it
 // as a tree with a [ref=N] on everything that can be acted on, and click,
-// type, select, press, scroll, wait, evaluate, fetch and storage. background.js
+// type, select, press, scroll, wait, fetch and storage (evaluate runs
+// through the debugger, in background.js: a content script may not compile
+// text into code). background.js
 // runs inPage in the tab with chrome.scripting.executeScript, which sends the
 // function's source and runs it in the page's isolated world.
 //
@@ -20,6 +22,8 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
     return box.left <= panel.right && box.right >= panel.left && box.top <= panel.bottom && box.bottom >= panel.top
   }
   const refs = (window.__teanodeRefs = window.__teanodeRefs || new Map())
+  // How many of a select's options a snapshot lists.
+  const OPTIONS_SHOWN = 25
   let next = window.__teanodeNextRef || 1
   const interactive = new Set(['a', 'button', 'input', 'select', 'textarea', 'summary', 'option', 'label'])
   // isFilledDocument: the tab shows a document the agent filled a password or
@@ -29,10 +33,27 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
   // known to be a secret.
   const isFilledDocument = args.isFilledDocument === true
   const isTextField = (node) => node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement
+  // A label stands for the field it labels: typing into or choosing in a
+  // label acts on its field. A click stays on the label, as the person's
+  // would.
+  const fieldOf = (node) => (node instanceof HTMLLabelElement && node.control ? node.control : node)
+  // Whether an element is drawn: a selector that also matches a hidden
+  // element (a closed menu's button) means the one the person can see.
+  const isDrawn = (node) => {
+    const style = window.getComputedStyle(node)
+    if (style.visibility === 'hidden' || style.display === 'none' || node.hidden) return false
+    const box = node.getBoundingClientRect()
+    return box.width > 0 || box.height > 0
+  }
   const find = () => {
     // A ref comes back through a tool call, where it may be a string.
-    if (args.ref) return refs.get(Number(args.ref)) || refs.get(args.ref) || null
-    if (args.selector && !isFilledDocument) return document.querySelector(args.selector)
+    if (args.ref) {
+      return refs.get(Number(args.ref)) || refs.get(args.ref) || null
+    }
+    if (args.selector && !isFilledDocument) {
+      const matches = Array.from(document.querySelectorAll(args.selector))
+      return matches.find(isDrawn) || matches[0] || null
+    }
     return null
   }
   // Which fields hold a secret. It decides what a snapshot says, not what
@@ -71,8 +92,21 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
     }
     return (node.type || '').toLowerCase() === 'password' || /(^|\s)(current-password|new-password|one-time-code)(\s|$)/i.test(node.getAttribute('autocomplete') || '') || isMasked(node)
   }
+  // The words of a field's labels, without the words of the field itself: a
+  // label around a select holds every option's text too.
+  const labelWordsOf = (node) => {
+    if (!node.labels || node.labels.length === 0) return ''
+    const words = []
+    const collect = (part) => {
+      if (part === node) return
+      if (part.nodeType === Node.TEXT_NODE) words.push(part.textContent)
+      else if (part.nodeType === Node.ELEMENT_NODE && !['select', 'textarea', 'input', 'script', 'style'].includes(part.tagName.toLowerCase())) for (const child of part.childNodes) collect(child)
+    }
+    for (const label of node.labels) collect(label)
+    return words.join(' ').trim().replace(/\s+/g, ' ').slice(0, 120)
+  }
   const nameOf = (node) => {
-    const label = node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('title') || node.getAttribute('placeholder') || node.getAttribute('name'))
+    const label = node.getAttribute && (node.getAttribute('aria-label') || labelWordsOf(node) || node.getAttribute('title') || node.getAttribute('placeholder') || node.getAttribute('name'))
     if (label) return label.trim()
     if (isFilledDocument && isTextField(node)) return ''
     const value = isSecretField(node) || sensitive(node) ? '' : node.value
@@ -87,6 +121,30 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
   }
   switch (action) {
     case 'snapshot': {
+      // A page that draws itself after it loads (most of them) is read
+      // once it has: loaded, and its document quiet for a moment. Without
+      // this a snapshot straight after navigate or click read a page with
+      // half its content, and the agent had to wait and ask again.
+      const startedAt = Date.now()
+      while (document.readyState !== 'complete' && Date.now() - startedAt < 5000) await new Promise((resolve) => setTimeout(resolve, 100))
+      await new Promise((resolve) => {
+        let quiet = null
+        let longest = null
+        let observer = null
+        const finish = () => {
+          if (observer) observer.disconnect()
+          clearTimeout(quiet)
+          clearTimeout(longest)
+          resolve()
+        }
+        observer = new MutationObserver(() => {
+          clearTimeout(quiet)
+          quiet = setTimeout(finish, 200)
+        })
+        observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true })
+        quiet = setTimeout(finish, 200)
+        longest = setTimeout(finish, 1500)
+      })
       const maximum = args.max_characters || 20000
       if (args.mode === 'text') {
         const text = document.body ? document.body.innerText : ''
@@ -109,7 +167,12 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
         if (['script', 'style', 'noscript', 'svg', 'template', 'head'].includes(tag)) return
         const style = window.getComputedStyle(node)
         if (style.display === 'none' || style.visibility === 'hidden') return
-        if (interactive.has(tag) || (node.getAttribute('role') && /button|link|checkbox|radio|textbox|combobox|tab|menuitem/.test(node.getAttribute('role')))) {
+        // A label of a field is not a thing to act on of its own: the field
+        // has the ref, named by the label, and the label's words are read
+        // as it walks on. A label whose field is not drawn (a checkbox the
+        // page draws itself) is what the person clicks, so it keeps one.
+        const isFieldLabel = tag === 'label' && node.control && isDrawn(node.control)
+        if (!isFieldLabel && (interactive.has(tag) || (node.getAttribute('role') && /button|link|checkbox|radio|textbox|combobox|tab|menuitem/.test(node.getAttribute('role'))))) {
           const ref = refFor(node)
           let description = node.getAttribute('role') || tag
           if (tag === 'input') description = 'input(' + (node.type || 'text') + ')'
@@ -124,7 +187,12 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
           lines.push('  '.repeat(depth) + '[ref=' + ref + '] ' + description + ' "' + nameOf(node) + '"' + extra)
           total += 40
           if (tag === 'select') {
-            for (const option of node.options) lines.push('  '.repeat(depth + 1) + '- option ' + JSON.stringify(option.text) + (option.selected ? ' (selected)' : ''))
+            // A long list (every country's calling code) is cut short: select
+            // takes an option's text or value whether it was shown or not.
+            const shown = Array.from(node.options).filter((option, index) => index < OPTIONS_SHOWN || option.selected)
+            for (const option of shown) lines.push('  '.repeat(depth + 1) + '- option ' + JSON.stringify(option.text) + (option.selected ? ' (selected)' : ''))
+            if (node.options.length > shown.length) lines.push('  '.repeat(depth + 1) + '- and ' + (node.options.length - shown.length) + ' more options')
+            total += 30 * shown.length
           }
           if (['a', 'button', 'label', 'option', 'select'].includes(tag)) return
         } else if (/^h[1-6]$/.test(tag)) {
@@ -153,11 +221,14 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
       return { ok: true, data: { hovered: nameOf(node) } }
     }
     case 'type': {
-      const node = find()
+      const found = find()
+      const node = found && fieldOf(found)
       if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
       if (isUnderPanel(node)) return { ok: false, error: panelWords }
+      const isField = isTextField(node) || node.isContentEditable
+      if (!isField) return { ok: false, error: 'that is not a field to type into; take a snapshot and use the ref of the field itself' }
       node.focus()
-      if (args.clear_first) node.value = ''
+      if (args.clear_first && 'value' in node) node.value = ''
       if ('value' in node) {
         node.value = (node.value || '') + (args.text || '')
         node.dispatchEvent(new Event('input', { bubbles: true }))
@@ -171,7 +242,8 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
       return { ok: true, data: { typed: (args.text || '').length } }
     }
     case 'select': {
-      const node = find()
+      const found = find()
+      const node = found && fieldOf(found)
       if (!node || node.tagName.toLowerCase() !== 'select') return { ok: false, error: 'not a select' }
       if (isUnderPanel(node)) return { ok: false, error: panelWords }
       let picked = null
@@ -208,14 +280,6 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
         await new Promise((resolve) => setTimeout(resolve, 250))
       }
       return { ok: true, data: { ended_by: 'timeout' } }
-    }
-    case 'evaluate': {
-      try {
-        const value = await Promise.resolve(new Function('return (' + args.expression + ')')())
-        return { ok: true, data: JSON.parse(JSON.stringify(value === undefined ? null : value)) }
-      } catch (error) {
-        return { ok: false, error: String(error) }
-      }
     }
     case 'fetch': {
       // With the tab's own session: the primitive for "download my

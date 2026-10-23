@@ -513,11 +513,24 @@ func (self *Context) Screenshot(ctx context.Context, fullPage bool) ([]byte, err
 }
 
 // element is the script that finds an element by ref or selector.
+// A selector that also matches hidden elements (a closed menu's button) means
+// the first one that is drawn.
 const element = `(function (ref, selector) {
   let node = null;
   if (ref) { node = (window.__teanodeRefs || new Map()).get(ref) || null; }
-  else if (selector) { node = document.querySelector(selector); }
+  else if (selector) {
+    const matches = Array.from(document.querySelectorAll(selector));
+    const isDrawn = (candidate) => { const style = getComputedStyle(candidate); if (style.visibility === 'hidden' || style.display === 'none' || candidate.hidden) return false; const box = candidate.getBoundingClientRect(); return box.width > 0 || box.height > 0; };
+    node = matches.find(isDrawn) || matches[0] || null;
+  }
   return node;
+})`
+
+// field is element for typing and choosing: a label stands for the field it
+// labels.
+const field = `(function (ref, selector) {
+  const node = ` + element + `(ref, selector);
+  return node instanceof HTMLLabelElement && node.control ? node.control : node;
 })`
 
 // Target describes how an action names its element: a ref from the last
@@ -605,17 +618,22 @@ func (self *Context) Hover(ctx context.Context, where Target) (string, error) {
 func (self *Context) Type(ctx context.Context, where Target, text string, clearFirst, submit bool) error {
 	self.touch()
 	var prepared struct {
-		OK bool `json:"ok"`
+		OK          bool `json:"ok"`
+		IsNotAField bool `json:"isNotAField"`
 	}
 	script := fmt.Sprintf(`(function () {
   const node = %s(%d, %q);
   if (!node) return {ok: false};
+  if (!(node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement || node.isContentEditable)) return {ok: false, isNotAField: true};
   node.focus();
   if (%t && 'value' in node) { node.value = ''; node.dispatchEvent(new Event('input', {bubbles: true})); }
   return {ok: true};
-})()`, element, where.Ref, where.Selector, clearFirst)
+})()`, field, where.Ref, where.Selector, clearFirst)
 	if err := self.evaluate(ctx, script, &prepared); err != nil {
 		return err
+	}
+	if prepared.IsNotAField {
+		return fmt.Errorf("browser: that is not a field to type into; take a snapshot and use the ref of the field itself")
 	}
 	if !prepared.OK {
 		return fmt.Errorf("browser: nothing matches ref %d / selector %q; take a snapshot first", where.Ref, where.Selector)
@@ -648,7 +666,7 @@ func (self *Context) Select(ctx context.Context, where Target, value string, ind
   node.dispatchEvent(new Event('input', {bubbles: true}));
   node.dispatchEvent(new Event('change', {bubbles: true}));
   return {ok: true, value: picked.text};
-})()`, element, where.Ref, where.Selector, value, index)
+})()`, field, where.Ref, where.Selector, value, index)
 	if err := self.evaluate(ctx, script, &chosen); err != nil {
 		return "", err
 	}

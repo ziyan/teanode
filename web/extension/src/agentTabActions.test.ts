@@ -124,7 +124,30 @@ describe('a call the server checked for one tab', () => {
     expect((await act('evaluate', { expression: '1', expectedTab: '7' })).ok).toBe(true)
     expect((await act('evaluate', { expression: '1', expectedTab: 7 })).ok).toBe(true)
     expect((await act('evaluate', { expression: '1' })).ok).toBe(true)
-    expect(executeScript).toHaveBeenCalledTimes(3)
+    // Through the debugger: a content script may not compile text into code.
+    expect(sendCommand.mock.calls.filter(([, method]) => method === 'Runtime.evaluate')).toHaveLength(3)
+    expect(executeScript).not.toHaveBeenCalled()
+  })
+
+  it('evaluates through the debugger, waits for a promise and says what it threw', async () => {
+    sendCommand.mockImplementationOnce(async () => ({ result: { type: 'string', value: 'a title' } }))
+    expect(await act('evaluate', { expression: 'document.title' })).toMatchObject({
+      ok: true,
+      data: { value: 'a title' },
+    })
+    expect(sendCommand).toHaveBeenLastCalledWith({ tabId: 7 }, 'Runtime.evaluate', {
+      expression: 'document.title',
+      returnByValue: true,
+      awaitPromise: true,
+    })
+    sendCommand.mockImplementationOnce(async () => ({
+      result: { type: 'object' },
+      exceptionDetails: { text: 'Uncaught', exception: { description: 'ReferenceError: nothing is not defined' } },
+    }))
+    expect(await act('evaluate', { expression: 'nothing' })).toEqual({
+      ok: false,
+      error: 'ReferenceError: nothing is not defined',
+    })
   })
 })
 
@@ -285,6 +308,7 @@ describe('a tab showing a document the agent filled', () => {
   it('is not read back, whatever the server has been told', async () => {
     await commit('doc-20')
     expect((await act('evaluate', { expression: '1' })).ok).toBe(true)
+    sendCommand.mockClear()
     // A script on the site keeps it from being filled (see below); this test is
     // about what is read after a fill.
     await clearScriptedOrigins()
@@ -407,8 +431,12 @@ describe('a site the agent ran a script on', () => {
     fillLogin.mockResolvedValue({ ok: true, data: { isFilled: true, documentId: 'doc-1' } })
     expect((await fill()).ok).toBe(true)
     await commitOn('doc-after-sign-in', 'https://shop.example.test/account')
+    sendCommand.mockImplementationOnce(async () => ({ result: { type: 'string', value: 'a result' } }))
     const answer = await act('evaluate', { expression: '1' })
-    expect(answer).toEqual({ ok: true, data: { scriptRun: { documentId: 'doc-run' }, value: 'a result' } })
+    // The debugger does not say which document it ran in; the one the tab
+    // shows when it is done is named (frameState), and here the browser does
+    // not say either.
+    expect(answer).toEqual({ ok: true, data: { scriptRun: { documentId: '' }, value: 'a result' } })
     expect(storedLocal.scriptedOrigins).toEqual(['https://shop.example.test'])
     fillLogin.mockClear()
     // Another page of the site, and the same site written with www.
@@ -455,10 +483,10 @@ describe('a site the agent ran a script on', () => {
   it('follows the page when it moves to another document while the script runs', async () => {
     // The script is sent to the sign-in page's predecessor; the page is replaced
     // by a page of another site, the script runs there and that page moves on.
-    executeScript.mockImplementationOnce(async () => {
+    sendCommand.mockImplementationOnce(async () => {
       await commitOn('doc-30', 'https://login.example.test/sign-in')
       await commitOn('doc-31', 'https://news.example.test/')
-      return [{ result: { ok: true, data: 1 }, documentId: 'doc-30' }]
+      return { result: { type: 'number', value: 1 } }
     })
     await act('evaluate', { expression: 'new Promise(() => {})' })
     expect(storedLocal.scriptedOrigins).toEqual([
@@ -467,7 +495,7 @@ describe('a site the agent ran a script on', () => {
       'https://shop.example.test',
     ])
     // Even when the script is refused or throws.
-    executeScript.mockRejectedValueOnce(new Error('no'))
+    sendCommand.mockRejectedValueOnce(new Error('no'))
     await clearScriptedOrigins()
     expect((await act('evaluate', { expression: '1' })).ok).toBe(false)
     expect(storedLocal.scriptedOrigins).toEqual(['https://shop.example.test'])

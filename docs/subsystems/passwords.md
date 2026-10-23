@@ -903,11 +903,14 @@ site's.
   and the window can show both codes for comparing. The question before filling a
   login into another site names the whole origin of the page and of each saved site, so a
   different scheme or port is seen.
-- **Seen, not fixed here.** The `evaluate` action fails in a tab with an
-  `EvalError`: `inPage` builds a function from the expression with
-  `new Function`, and the extension's content security policy refuses
-  `unsafe-eval` in the isolated world it runs in. It belongs to the take-over
-  work.
+- **Evaluate runs through the debugger.** `inPage` once built a function from
+  the expression with `new Function`, which the extension's content security
+  policy refuses in the isolated world, so `evaluate` failed in every tab with
+  an `EvalError`. It now sends `Runtime.evaluate` through the debugger, as the
+  `cdp` action does, under the same marks: refused on a tab showing a filled
+  document, and the site counted as one the agent ran a script on. The
+  debugger does not say which document it ran in, so the one the tab shows
+  when it is done is named, as for `cdp`.
 
 ## The attached tab's reach
 

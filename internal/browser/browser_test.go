@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -414,5 +416,80 @@ func TestARealChromeReachesTheWebOnlyThroughTheProxy(t *testing.T) {
 	// half of this test would pass for the wrong reason.
 	if got := read(t, []string{"localhost"}); !strings.Contains(got, secret) {
 		t.Fatalf("a host the operator allowed should be reached: %q", got)
+	}
+}
+
+// A field inside its label: the snapshot gives the field the ref, named by the
+// label; typing and choosing reach the field, even through a label; and a
+// selector that also matches a hidden element acts on the drawn one. Skipped
+// unless a Chrome is named, as above.
+func TestARealChromeTypesIntoTheFieldsOfLabels(t *testing.T) {
+	endpoint := os.Getenv("TEANODE_TEST_CHROME")
+	if endpoint == "" {
+		t.Skip("set TEANODE_TEST_CHROME to a DevTools endpoint to run this")
+	}
+	form := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(response, `<html><body><form>
+<label>App name: <input id="app" type="text" name="Q101"></label>
+<label>Platform: <select id="platform" name="Q102"><option>Choose</option><option>Phone</option><option>Tablet</option></select></label>
+<button type="button" hidden onclick="document.title='hidden'">Go</button>
+<button type="button" onclick="document.title='shown'">Go</button>
+</form></body></html>`)
+	}))
+	defer form.Close()
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(form.URL, "http://"))
+	if err != nil {
+		t.Fatalf("the server's address: %s", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	browser, err := Connect(ctx, &Settings{Endpoint: endpoint, AllowPrivate: []string{"localhost"}, ProxyListen: "127.0.0.1:0"})
+	if err != nil {
+		t.Fatalf("Connect: %s", err)
+	}
+	defer func() { _ = browser.Close() }()
+	browser.guard = func(string) error { return nil }
+	page, err := browser.NewContext(ctx)
+	if err != nil {
+		t.Fatalf("NewContext: %s", err)
+	}
+	defer func() { _ = page.Close() }()
+	if _, err := page.Navigate(ctx, "http://localhost:"+port+"/"); err != nil {
+		t.Fatalf("Navigate: %s", err)
+	}
+	snapshot, err := page.Snapshot(ctx, "interactive", 20000)
+	if err != nil {
+		t.Fatalf("Snapshot: %s", err)
+	}
+	refOf := func(pattern string) int {
+		found := regexp.MustCompile(pattern).FindStringSubmatch(snapshot.Text)
+		if found == nil {
+			t.Fatalf("no %s in the snapshot:\n%s", pattern, snapshot.Text)
+		}
+		ref, _ := strconv.Atoi(found[1])
+		return ref
+	}
+	if err := page.Type(ctx, Target{Ref: refOf(`\[ref=(\d+)\] input\(text\) "App name:"`)}, "Lantern", true, false); err != nil {
+		t.Fatalf("Type: %s", err)
+	}
+	if _, err := page.Select(ctx, Target{Ref: refOf(`\[ref=(\d+)\] select "Platform:"`)}, "Tablet", -1); err != nil {
+		t.Fatalf("Select: %s", err)
+	}
+	if err := page.Type(ctx, Target{Selector: "label"}, " Mobile", false, false); err != nil {
+		t.Fatalf("Type through a label: %s", err)
+	}
+	if err := page.Type(ctx, Target{Selector: "form"}, "nowhere", false, false); err == nil || !strings.Contains(err.Error(), "not a field") {
+		t.Fatalf("typing into a form was not refused: %v", err)
+	}
+	if _, _, err := page.Click(ctx, Target{Selector: "button"}); err != nil {
+		t.Fatalf("Click: %s", err)
+	}
+	values, err := page.Evaluate(ctx, "[document.getElementById('app').value, document.getElementById('platform').value, document.title].join('|')", 1000)
+	if err != nil {
+		t.Fatalf("Evaluate: %s", err)
+	}
+	if !strings.Contains(values, "Lantern Mobile|Tablet|shown") {
+		t.Fatalf("the form holds %s", values)
 	}
 }

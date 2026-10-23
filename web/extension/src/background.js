@@ -1265,11 +1265,40 @@ async function act(action, args) {
       })
       return { answer: result?.result || { ok: false, error: 'the page did not answer' }, documentId: result?.documentId || '' }
     }
-    if (action === 'evaluate') return await runAsScript(tab, runInPage)
+    if (action === 'evaluate') return await runAsScript(tab, async () => ({ answer: await evaluateInTab(tab, args.expression, origin), documentId: '' }))
     return (await runInPage()).answer
   } catch (error) {
-    return { ok: false, error: String(error && error.message ? error.message : error) }
+    const message = String(error && error.message ? error.message : error)
+    // Chrome runs nothing in its own error page, and says so in its terms.
+    if (/showing error page/i.test(message)) return { ok: false, error: ERROR_PAGE_REFUSAL }
+    return { ok: false, error: message }
   }
+}
+
+// What an action on the browser's own error page is answered with.
+const ERROR_PAGE_REFUSAL = 'the page did not load: the tab shows the browser\'s own error page, where nothing can be read or done; go back or navigate somewhere else'
+
+// evaluateInTab runs an expression in the page through the debugger, as the
+// cdp action's Runtime.evaluate does. A content script cannot do it: the
+// extension's own content security policy forbids compiling text into code
+// there, so evaluating in one failed on every page.
+async function evaluateInTab(tab, expression, origin) {
+  agentUsing.add(tab.id)
+  await debuggerFor(tab.id)
+  // Attaching takes a moment, in which the page may have gone to TeaNode.
+  const unreachableNow = pageRefusal('evaluate', await chrome.tabs.get(tab.id), origin)
+  if (unreachableNow) return { ok: false, error: unreachableNow }
+  const answer = await chrome.debugger.sendCommand({ tabId: tab.id }, 'Runtime.evaluate', {
+    expression: String(expression || ''),
+    returnByValue: true,
+    awaitPromise: true,
+  })
+  if (answer && answer.exceptionDetails) {
+    const details = answer.exceptionDetails
+    return { ok: false, error: (details.exception && details.exception.description) || details.text || 'the expression threw' }
+  }
+  const result = answer && answer.result
+  return { ok: true, data: result && 'value' in result ? result.value : null }
 }
 
 function waitForLoad(tabId) {

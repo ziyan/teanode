@@ -7,6 +7,8 @@
   const interactive = new Set(['a', 'button', 'input', 'select', 'textarea', 'summary', 'option', 'label']);
   const roles = new Set(['button', 'link', 'checkbox', 'radio', 'textbox', 'combobox', 'listbox', 'menuitem', 'tab', 'switch', 'option', 'searchbox', 'slider', 'spinbutton']);
   const skip = new Set(['script', 'style', 'noscript', 'svg', 'path', 'template', 'head', 'meta', 'link']);
+  // How many of a select's options a snapshot lists.
+  const optionsShown = 25;
   window.__teanodeRefs = window.__teanodeRefs || new Map();
   let next = window.__teanodeNextRef || 1;
   function visible(element) {
@@ -60,13 +62,23 @@
     if (isMasked(element)) return true;
     return (element.type || '').toLowerCase() === 'password' || /(^|\s)(current-password|new-password|one-time-code)(\s|$)/i.test(element.getAttribute('autocomplete') || '');
   }
-  function nameOf(element) {
-    const label = element.getAttribute && (element.getAttribute('aria-label') || element.getAttribute('title') || element.getAttribute('placeholder') || element.getAttribute('alt') || element.getAttribute('name'));
-    if (label) return label.trim();
-    if (element.id) {
-      const forLabel = document.querySelector('label[for="' + CSS.escape(element.id) + '"]');
-      if (forLabel) return forLabel.innerText.trim();
+  // The words of a field's labels, without the words of the field itself: a
+  // label around a select holds every option's text too.
+  function labelWordsOf(element) {
+    if (!element.labels || element.labels.length === 0) return '';
+    const words = [];
+    function collect(part) {
+      if (part === element) return;
+      if (part.nodeType === Node.TEXT_NODE) { words.push(part.textContent); return; }
+      if (part.nodeType !== Node.ELEMENT_NODE || ['select', 'textarea', 'input', 'script', 'style'].includes(part.tagName.toLowerCase())) return;
+      for (const child of part.childNodes) collect(child);
     }
+    for (const label of element.labels) collect(label);
+    return words.join(' ').trim().replace(/\s+/g, ' ').slice(0, 120);
+  }
+  function nameOf(element) {
+    const label = element.getAttribute && (element.getAttribute('aria-label') || labelWordsOf(element) || element.getAttribute('title') || element.getAttribute('placeholder') || element.getAttribute('alt') || element.getAttribute('name'));
+    if (label) return label.trim();
     if (hideValues && holdsTypedText(element)) return '';
     const text = (element.innerText || (isSecretField(element) ? '' : element.value) || element.textContent || '').trim().replace(/\s+/g, ' ');
     return text.slice(0, 120);
@@ -79,6 +91,11 @@
   }
   function isInteractive(element) {
     const tag = element.tagName.toLowerCase();
+    // A label of a field is not a thing to act on of its own: the field has
+    // the ref, named by the label, and the label's words are read as the walk
+    // goes on. A label whose field is not drawn (a checkbox the page draws
+    // itself) is what the person clicks, so it keeps one.
+    if (tag === 'label' && element.control && visible(element.control)) return false;
     if (interactive.has(tag)) return true;
     const role = element.getAttribute('role');
     if (role && roles.has(role)) return true;
@@ -143,7 +160,12 @@
         return;
       }
       if (tag === 'select') {
-        for (const option of node.options) { lines.push('  '.repeat(depth + 1) + '- option ' + JSON.stringify(option.text) + (option.selected ? ' (selected)' : '')); }
+        // A long list (every country's calling code) is cut short: select
+        // takes an option's text or value whether it was shown or not.
+        const shown = Array.from(node.options).filter((option, index) => index < optionsShown || option.selected);
+        for (const option of shown) { lines.push('  '.repeat(depth + 1) + '- option ' + JSON.stringify(option.text) + (option.selected ? ' (selected)' : '')); }
+        if (node.options.length > shown.length) lines.push('  '.repeat(depth + 1) + '- and ' + (node.options.length - shown.length) + ' more options');
+        total += 30 * shown.length;
         return;
       }
       if (tag === 'a' || tag === 'button' || tag === 'label' || tag === 'option') return;
