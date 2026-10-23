@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.195.4] - 2026-10-23
+
+### Fixed
+
+- Your agent can type into and choose in form fields that sit inside their labels in your browser, and `evaluate` works in your own tab. (#638)
+- A screenshot your agent takes reaches a program using TeaNode's tools over MCP as a picture. (#638)
+
 ## [0.195.3] - 2026-10-23
 
 ### Fixed
