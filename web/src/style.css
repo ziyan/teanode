@@ -1661,11 +1661,14 @@ td.shrink {
 /* Except the ones that are paragraphs by tag and panels by drawing: an empty
    state standing in for a row, a notice with a background behind it. The
    measure that keeps a sentence readable makes those a narrow box beside
-   full-width rows, which reads as a mistake rather than as a margin. Same
-   specificity as the cap above and written after it, so it wins. */
+   full-width rows, which reads as a mistake rather than as a margin. A
+   centered one, the coding page's empty states, would be centered in the
+   narrow box and stand left of the pane's middle. Same specificity as the cap
+   above and written after it, so it wins. */
 p.settings-empty,
 p.notice,
-p.table-empty {
+p.table-empty,
+p.coding-empty {
   max-width: none;
 }
 

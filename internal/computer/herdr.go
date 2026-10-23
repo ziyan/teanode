@@ -291,11 +291,14 @@ type Herdr struct {
 	answering map[string]*sync.Mutex
 	// screens are the panes' screens as last read by a look, by pane, held
 	// with refreshes.
-	screens  map[string]*herdrKeptScreen
-	watches  map[string][]*herdrWatch
-	events   []*HerdrEvent
-	notify   func(*HerdrEvent)
-	listener int64
+	screens map[string]*herdrKeptScreen
+	// foundSessions are the Codex sessions found for panes herdr knows no
+	// session for, by pane, held with refreshes.
+	foundSessions map[string]*herdrFoundSession
+	watches       map[string][]*herdrWatch
+	events        []*HerdrEvent
+	notify        func(*HerdrEvent)
+	listener      int64
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -386,7 +389,8 @@ func (self *Herdr) saveWatchesLocked() {
 func NewHerdr(home string) *Herdr {
 	return &Herdr{client: newHerdrClient(home), home: home, sessions: map[string]*HerdrSession{},
 		appearances: loadAppearances(home), watches: loadWatches(home), answers: map[string]string{},
-		answering: map[string]*sync.Mutex{}, screens: map[string]*herdrKeptScreen{}}
+		answering: map[string]*sync.Mutex{}, screens: map[string]*herdrKeptScreen{},
+		foundSessions: map[string]*herdrFoundSession{}}
 }
 
 // Start looks at every pane from now until Close.
@@ -507,6 +511,7 @@ func (self *Herdr) refresh(ctx context.Context) ([]*HerdrSession, error) {
 	if err != nil {
 		return nil, err
 	}
+	self.findCodexSessions(ctx, agents)
 	reports := readHookReports(self.home)
 	names, placements := self.paneNames(ctx, agents)
 	observed := make([]*HerdrSession, 0, len(agents))
