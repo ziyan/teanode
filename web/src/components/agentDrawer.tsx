@@ -84,6 +84,7 @@ import { ZoomablePicture } from './lightbox'
 import { isReplyReference, ReferenceChips, ReplyQuote } from './agentReferenceChips'
 import { isAskedOfThisDrawer, newDrawerId, readBrowserLocation } from './browserLocation'
 import { SwipeableLine } from './swipeableLine'
+import { isComposingText } from './composerKeys'
 import {
   personReaction,
   ReactionBadges,
@@ -5358,7 +5359,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     aria-label={t('chat.editMessageFrom', { name: line.authorName })}
                     onChange={(event) => setEditing({ messageId: editing.messageId, text: event.target.value })}
                     onKeyDown={(event) => {
-                      if (event.nativeEvent.isComposing || event.keyCode === 229) return
+                      if (isComposingText(event)) return
                       if (event.key === 'Escape') {
                         event.preventDefault()
                         setEditing(null)
@@ -6432,7 +6433,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 onKeyDown={(event) => {
                   // Enter while an input method is composing picks a
                   // character, not a message to send.
-                  if (event.nativeEvent.isComposing || event.keyCode === 229) return
+                  if (isComposingText(event)) return
                   // While an @ is offering agents, the arrows pick one, Enter
                   // and Tab choose it and Escape puts the offer away.
                   if (mention && mentionAgents.length > 0) {

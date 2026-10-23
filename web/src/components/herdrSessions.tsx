@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 
 import { graphql } from '../api'
 import { Loading, Tag, formatBytes } from './common'
+import { isSendKey } from './composerKeys'
 import { ArrowUpIcon, CheckIcon, CloseIcon, PaperclipIcon } from './icons'
 import { ConfirmDialog, FormDialog } from './dialog'
 import { Markdown } from './markdown'
@@ -486,9 +487,12 @@ export interface HerdrDraft {
 
 // HerdrSendForm types into a session: text, and files to hand it, which are
 // written on its computer with their paths typed after the text. The box
-// grows with what is typed, and Cmd or Ctrl with Enter sends. onSent is told
-// the session as it stands after. The draft is kept here unless the caller
-// passes draft and onDraftChange, to keep it somewhere that outlives this form.
+// grows with what is typed and is drawn with the agent drawer's classes; it
+// sends on Enter and takes a new line on Shift with Enter, as the drawer's
+// does. onSent is told the session as it stands after. The draft is kept here
+// unless the caller passes draft and onDraftChange, to keep it somewhere that
+// outlives this form. While a send is under way the box is read-only, not
+// disabled, so it keeps the cursor.
 export function HerdrSendForm({
   session,
   onSent,
@@ -557,25 +561,27 @@ export function HerdrSendForm({
   return (
     <>
       {pending.length > 0 && (
-        <div className="agent-attachments">
-          {pending.map((file, index) => (
-            <span key={`${file.name}-${index}`} className="agent-attachment-chip">
-              <PaperclipIcon size={12} /> {file.name} <span className="muted">{formatBytes(file.size)}</span>
-              <button
-                type="button"
-                className="icon-action"
-                title={t('agentDrawer.remove')}
-                aria-label={`${file.name}: ${t('agentDrawer.remove')}`}
-                onClick={() => setPending((previous) => previous.filter((_, at) => at !== index))}
-              >
-                <CloseIcon size={12} />
-              </button>
-            </span>
-          ))}
+        <div className="agent-drawer-pending">
+          <div className="agent-attachments">
+            {pending.map((file, index) => (
+              <span key={`${file.name}-${index}`} className="agent-attachment-chip">
+                <PaperclipIcon size={12} /> {file.name} <span className="muted">{formatBytes(file.size)}</span>
+                <button
+                  type="button"
+                  className="icon-action"
+                  title={t('agentDrawer.remove')}
+                  aria-label={`${file.name}: ${t('agentDrawer.remove')}`}
+                  onClick={() => setPending((previous) => previous.filter((_, at) => at !== index))}
+                >
+                  <CloseIcon size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
         </div>
       )}
       <form
-        className="herdr-send"
+        className="agent-drawer-input herdr-send"
         onSubmit={(event) => {
           event.preventDefault()
           if (isSendable && !isSending && isSendReady) void send()
@@ -607,7 +613,8 @@ export function HerdrSendForm({
           ref={box}
           rows={1}
           value={text}
-          disabled={!isSendable || isSending}
+          disabled={!isSendable}
+          readOnly={isSending}
           placeholder={isSendable ? t('herdr.sendPlaceholder') : t('herdr.sendDisabled')}
           aria-label={t('herdr.sendPlaceholder')}
           onChange={(event) => setText(event.target.value)}
@@ -630,7 +637,7 @@ export function HerdrSendForm({
             ])
           }}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+            if (isSendKey(event)) {
               event.preventDefault()
               if (isSendable && !isSending && isSendReady) void send()
             }
@@ -639,7 +646,7 @@ export function HerdrSendForm({
         <Tooltip label={t('herdr.send')}>
           <button
             type="submit"
-            className="icon-button herdr-send-button"
+            className="icon-button agent-send"
             aria-label={t('herdr.send')}
             disabled={!isSendable || isSending || !isSendReady}
           >

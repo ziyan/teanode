@@ -16059,49 +16059,17 @@ button.idea-history-title {
   margin-bottom: 0;
 }
 
-/* As the drawer's box is: one row, everything in it 36px tall, the
-   paperclip, the box on one line and a round send mark. The box grows with
-   the words from the bottom, and scrolls only past its tallest, so an empty
-   one never shows a scrollbar for a rounding pixel. */
-.herdr-send {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-}
-
+/* The send form is drawn with the drawer's classes (agent-drawer-input,
+   agent-send, agent-drawer-pending), so the two boxes cannot drift apart.
+   What differs is the growth: this box grows with the words, from JS, and
+   scrolls only past its tallest, so an empty one never shows a scrollbar for
+   a rounding pixel. */
 .herdr-send textarea {
-  flex: 1;
-  min-width: 0;
-  box-sizing: border-box;
-  height: 36px;
-  min-height: 36px;
-  max-height: 160px;
-  padding: 7px 10px;
-  font-size: 14px;
-  line-height: 20px;
-  resize: none;
   overflow-y: hidden;
 }
 
 .herdr-send textarea.is-overflowing {
   overflow-y: auto;
-}
-
-.herdr-send .icon-button {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-}
-
-.herdr-send .herdr-send-button {
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-text);
-}
-
-.herdr-send .herdr-send-button:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 
 /* One line a session, the pane first and how it stands beside it: on a
@@ -17105,11 +17073,8 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   margin-bottom: var(--space-2);
 }
 
-.coding-composer {
-  padding: var(--space-2) var(--space-3);
-  border-top: 1px solid var(--border);
-}
-
+/* The box inside is the drawer's own (agent-drawer-input), padding and rule
+   included, and it runs the whole width of the pane. */
 .coding-composer[hidden] {
   display: none;
 }
@@ -17119,15 +17084,14 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   margin-top: var(--space-3);
 }
 
-.coding-composer .agent-attachments {
-  margin-bottom: var(--space-2);
-}
-
-/* The assistant's round button sits over the page's bottom right corner,
-   where Send would be, when the page is wide enough to reach it. */
-@media (min-width: 721px) {
-  .coding-composer {
-    padding-right: calc(var(--space-3) + 52px);
+/* The assistant's round button floats over the window's bottom right corner,
+   which on a wide window is where this box's send mark is. The box used to
+   keep that corner empty with padding on its right, which left a band of
+   white beside the send mark; the button rides above the box instead. Up to
+   900px the page's own bottom padding already leaves it room. */
+@media (min-width: 901px) {
+  body:has(.coding-composer:not([hidden])) .agent-drawer-toggle {
+    bottom: 96px;
   }
 }
 
