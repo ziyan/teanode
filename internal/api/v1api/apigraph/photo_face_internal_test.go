@@ -291,6 +291,14 @@ func TestNamingAFaceGroupNeedsContactsAndTheCallersOwnContact(test *testing.T) {
 			test.Fatalf("%v", err)
 		}
 	})
+	// The agent names a group only with a contact in a book given to it: naming
+	// one sets the contact's picture.
+	world.ask(ownerId, both, func(ctx context.Context) {
+		ctx = db.ContextWithAuditPrincipal(ctx, db.AuditPrincipal{ActorKind: models.AuditActorAgent, UserID: ownerId})
+		if _, err := world.graph.NamePhotoFaceGroup(ctx, NamePhotoFaceGroupArguments{PhotoFaceGroupID: groupId, ContactID: ownContactId}); !errors.Is(err, api.ErrNotFound) {
+			test.Fatalf("the agent named a group with a contact in a book kept back from it: %v", err)
+		}
+	})
 	// Another person's group is not found.
 	world.ask(otherId, both, func(ctx context.Context) {
 		if _, err := world.graph.NamePhotoFaceGroup(ctx, NamePhotoFaceGroupArguments{PhotoFaceGroupID: groupId, ContactID: foreignContactId}); !errors.Is(err, api.ErrNotFound) {

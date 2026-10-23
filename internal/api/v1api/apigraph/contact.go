@@ -610,9 +610,9 @@ func (self *graph) usableContact(ctx context.Context, addressBookId, contactId s
 	return nil, nil, api.ErrNotFound
 }
 
-// ownContact is one contact, if it is in a book belonging to the caller. What
-// is owner only (naming a face group with a contact) asks for this and never
-// reaches a circle's book.
+// ownContact is one contact, if it is in a book belonging to the caller (for
+// the agent, one given to it). What is owner only (naming a face group with a
+// contact) asks for this and never reaches a circle's book.
 func (self *graph) ownContact(ctx context.Context, contactId string) (*models.Contact, *models.AddressBook, error) {
 	principal, err := self.requireAddressBookPerson(ctx)
 	if err != nil {
@@ -626,6 +626,9 @@ func (self *graph) ownContact(ctx context.Context, contactId string) (*models.Co
 		return nil, nil, err
 	}
 	for _, book := range books {
+		if self.isBookOutOfAgentReach(ctx, principal.User.ID, book) {
+			continue
+		}
 		contact, err := tx.GetContact(book.ID, strings.TrimSpace(contactId))
 		if err != nil {
 			return nil, nil, err
