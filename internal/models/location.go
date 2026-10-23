@@ -268,3 +268,23 @@ type LocationShare struct {
 	GranteeName       string `json:"granteeName,omitempty"`
 	GranteeCircleName string `json:"granteeCircleName,omitempty"`
 }
+
+// LocationPause is a time during which a person's location is not recorded.
+// It is in effect at an instant when StartedAt is at or before it and EndedAt
+// is nil or after it; EndedAt is nil for a pause that lasts until the person
+// resumes. Resuming sets it to that moment.
+type LocationPause struct {
+	ID     string `json:"id"`
+	UserID string `json:"userId"`
+
+	StartedAt time.Time  `json:"startedAt"`
+	EndedAt   *time.Time `json:"endedAt,omitempty"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// IsInEffectAt reports whether the pause covers the instant.
+func (self *LocationPause) IsInEffectAt(instant time.Time) bool {
+	return !self.StartedAt.After(instant) && (self.EndedAt == nil || self.EndedAt.After(instant))
+}

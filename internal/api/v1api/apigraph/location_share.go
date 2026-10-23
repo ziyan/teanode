@@ -94,8 +94,8 @@ func (self *graph) ListSharedLocations(ctx context.Context) ([]*LocationView, er
 	if err != nil {
 		return nil, err
 	}
-	// The positions and the visits in progress of every sharer are read in
-	// one query each, not three queries for every sharer.
+	// The positions, the visits in progress and the pauses of every sharer are
+	// read in one query each, not three queries for every sharer.
 	userIds := make([]string, 0, len(sharers))
 	for _, sharer := range sharers {
 		userIds = append(userIds, sharer.UserID)
@@ -108,13 +108,17 @@ func (self *graph) ListSharedLocations(ctx context.Context) ([]*LocationView, er
 	if err != nil {
 		return nil, err
 	}
+	pauses, err := tx.GetLocationPausesInEffect(userIds, time.Now())
+	if err != nil {
+		return nil, err
+	}
 	views := make([]*LocationView, 0, len(sharers))
 	for _, sharer := range sharers {
 		user := sharer.User
 		if user == nil {
 			continue
 		}
-		views = append(views, locationViewOf(&locationReach{User: user, ShareLevel: sharer.ShareLevel}, latestPoints[user.ID], openVisits[user.ID]))
+		views = append(views, locationViewOf(&locationReach{User: user, ShareLevel: sharer.ShareLevel}, latestPoints[user.ID], openVisits[user.ID], pauses[user.ID]))
 	}
 	return views, nil
 }

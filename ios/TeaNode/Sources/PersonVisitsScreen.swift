@@ -12,6 +12,8 @@ final class PersonVisitsModel {
     /// The day of the visits shown.
     private(set) var day = Calendar.current.startOfDay(for: Date())
     private(set) var visits: [PlaceVisit] = []
+    /// The pauses that overlap the day, which show among the visits.
+    private(set) var pauses: [LocationPause] = []
     private(set) var places: [LocationPlace] = []
     private(set) var isLoading = false
     private(set) var problemText: String?
@@ -20,6 +22,9 @@ final class PersonVisitsModel {
         self.connection = connection
         self.userId = userId
     }
+
+    /// The day's visits and pauses together, newest first.
+    var entries: [LocationTimelineEntry] { LocationDays.entries(visits: visits, pauses: pauses) }
 
     /// Whether the day can move later: not past today.
     var canMoveLater: Bool { day < Calendar.current.startOfDay(for: Date()) }
@@ -40,9 +45,12 @@ final class PersonVisitsModel {
         do {
             let visitPage = try await connection.locationVisits(userId: userId, from: window.from, until: window.until, limitCount: 200)
             let placePage = try await connection.locationPlaces(userId: userId, limitCount: LocationModel.placePageSize)
+            // A server that cannot list pauses has none to show.
+            let pauseList = (try? await connection.locationPauses(userId: userId, from: window.from, until: window.until)) ?? []
             // Another day was chosen while this was read.
             guard day == requestedDay else { return }
             visits = visitPage.placeVisits
+            pauses = pauseList
             places = placePage.places
             problemText = nil
         } catch {
@@ -112,15 +120,18 @@ struct PersonVisitsList: View {
                 }
                 if let problemText = model.problemText {
                     Text(verbatim: problemText).foregroundStyle(.secondary)
-                } else if model.visits.isEmpty {
+                } else if model.entries.isEmpty {
                     if model.isLoading {
                         ProgressView().frame(maxWidth: .infinity)
                     } else {
                         Text("No visits this day").foregroundStyle(.secondary)
                     }
                 }
-                ForEach(model.visits) { visit in
-                    LocationVisitRow(visit: visit)
+                ForEach(model.entries) { entry in
+                    switch entry {
+                    case .visit(let visit): LocationVisitRow(visit: visit)
+                    case .pause(let pause): LocationPauseRow(pause: pause)
+                    }
                 }
             } header: {
                 Text(verbatim: LocationText.dayTitle(model.day)).font(.headline).textCase(nil)

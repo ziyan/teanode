@@ -154,6 +154,15 @@ func (self *PhoneNotifier) NotifyPlaceVisitAt(ctx context.Context, ownerUserId s
 	var owner *models.User
 	var grantees []*db.LocationGrantee
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		// Nobody is told of an arrival or a departure inside a pause, or while
+		// the person is paused: a notice of where they just were, a few
+		// minutes late, says where they are.
+		for _, at := range []time.Time{happenedAt, now} {
+			pause, err := tx.GetLocationPauseInEffect(ownerUserId, at)
+			if err != nil || pause != nil {
+				return err
+			}
+		}
 		if place == nil {
 			if place, err = tx.GetPlace(ownerUserId, visit.PlaceID); err != nil {
 				return err

@@ -1204,17 +1204,29 @@ func (self *graph) keepBrowserLocation(ctx context.Context, principal *api.Princ
 	if !principal.Permissions.Has(models.PermissionLocationUse) {
 		return
 	}
-	measuredAt := answer.MeasuredAt
-	if now := time.Now(); measuredAt.IsZero() || measuredAt.After(now) {
-		// A browser's clock a little ahead of this one's is the same moment.
-		measuredAt = now
-	}
 	newPointCount := 0
-	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		newPointCount, err = tx.InsertLocationPoints(principal.User.ID, []*models.LocationPoint{{
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		// Behind the person's location lock, like a phone's report, so a
+		// pause that began while it waited is in effect for it.
+		if err := tx.LockLocation(principal.User.ID); err != nil {
+			return err
+		}
+		now := time.Now()
+		measuredAt := answer.MeasuredAt
+		if measuredAt.IsZero() || measuredAt.After(now) {
+			// A browser's clock a little ahead of this one's is the same moment.
+			measuredAt = now
+		}
+		// Not kept while the person has paused, like a phone's position.
+		pauses, err := readLocationPauseSet(tx, principal.User.ID, measuredAt, measuredAt, now)
+		if err != nil {
+			return err
+		}
+		kept, _ := pauses.keptPoints([]*models.LocationPoint{{
 			LatitudeDegrees: answer.LatitudeDegrees, LongitudeDegrees: answer.LongitudeDegrees, AccuracyMeters: answer.AccuracyMeters,
 			MeasuredAt: measuredAt, LocationSource: models.LocationSourceBrowser,
 		}})
+		newPointCount, err = tx.InsertLocationPoints(principal.User.ID, kept)
 		return err
 	}); err != nil {
 		log.Warningf("cannot keep the location the browser gave: %s", err)

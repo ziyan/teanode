@@ -521,28 +521,56 @@ public enum LocationPlaceWatch {
     }
 }
 
-/// LocationVisitDay is the visits that began on one day, newest first.
+/// LocationVisitDay is the visits that began on one day, newest first, and
+/// the pauses that began on it.
 public struct LocationVisitDay: Identifiable, Hashable, Sendable {
     /// Midnight of the day, in the zone it was grouped in.
     public let startOfDay: Date
     public let visits: [PlaceVisit]
+    /// The visits and the pauses together, newest first: what the day's
+    /// timeline lists.
+    public let entries: [LocationTimelineEntry]
 
     public var id: Date { startOfDay }
+
+    init(startOfDay: Date, visits: [PlaceVisit], entries: [LocationTimelineEntry]? = nil) {
+        self.startOfDay = startOfDay
+        self.visits = visits
+        self.entries = entries ?? visits.map { .visit($0) }
+    }
 }
 
 public enum LocationDays {
     /// Groups visits by the day they began (or ended, when the arrival was
     /// not seen), newest day first and newest visit first within it. A visit
-    /// with no time at all is left out: it cannot be placed.
-    public static func group(_ visits: [PlaceVisit], calendar: Calendar = .current) -> [LocationVisitDay] {
-        var byDay: [Date: [PlaceVisit]] = [:]
+    /// with no time at all is left out: it cannot be placed. A pause is
+    /// placed on the day it began, among the visits of that day.
+    public static func group(_ visits: [PlaceVisit], pauses: [LocationPause] = [], calendar: Calendar = .current) -> [LocationVisitDay] {
+        var visitsByDay: [Date: [PlaceVisit]] = [:]
+        var pausesByDay: [Date: [LocationPause]] = [:]
         for visit in visits {
             guard let anchor = visit.anchorDate else { continue }
-            byDay[calendar.startOfDay(for: anchor), default: []].append(visit)
+            visitsByDay[calendar.startOfDay(for: anchor), default: []].append(visit)
         }
-        return byDay.keys.sorted(by: >).map { day in
-            LocationVisitDay(startOfDay: day, visits: byDay[day, default: []].sorted { ($0.anchorDate ?? .distantPast) > ($1.anchorDate ?? .distantPast) })
+        for pause in pauses {
+            guard let startedDate = pause.startedDate else { continue }
+            pausesByDay[calendar.startOfDay(for: startedDate), default: []].append(pause)
         }
+        let days = Set(visitsByDay.keys).union(pausesByDay.keys)
+        return days.sorted(by: >).map { day in
+            let sortedVisits = visitsByDay[day, default: []].sorted { ($0.anchorDate ?? .distantPast) > ($1.anchorDate ?? .distantPast) }
+            let entries = (sortedVisits.map { LocationTimelineEntry.visit($0) } + pausesByDay[day, default: []].map { .pause($0) })
+                .sorted { ($0.anchorDate ?? .distantPast) > ($1.anchorDate ?? .distantPast) }
+            return LocationVisitDay(startOfDay: day, visits: sortedVisits, entries: entries)
+        }
+    }
+
+    /// The visits and pauses of one stretch as a single timeline, newest
+    /// first.
+    public static func entries(visits: [PlaceVisit], pauses: [LocationPause]) -> [LocationTimelineEntry] {
+        (visits.map { LocationTimelineEntry.visit($0) } + pauses.map { .pause($0) })
+            .filter { $0.anchorDate != nil }
+            .sorted { ($0.anchorDate ?? .distantPast) > ($1.anchorDate ?? .distantPast) }
     }
 
     /// The span of one day, from its midnight to the next.

@@ -208,6 +208,27 @@ func init() {
 				Run: runCheckIn,
 			},
 			{
+				Name: "location_pause", Family: tools.FamilyGeneral, Risk: tools.RiskWrite, Permissions: locationPermissions,
+				Description: "Stop recording where the person is, from now, for a while or until they resume: while paused nothing new is recorded, and the people the location is shared with see that it is paused instead of where the person is. " +
+					"'ended_at' is when it ends by itself (RFC 3339, or YYYY-MM-DDTHH:MM in the person's zone, at most 30 days ahead); leave it out to pause until the person resumes. " +
+					"Pausing while paused changes when it ends. It answers when the pause ends.",
+				Parameters: tools.Object(map[string]any{
+					"ended_at": tools.StringProperty("when the pause ends by itself, as RFC 3339 or YYYY-MM-DDTHH:MM in the person's own time zone; leave out to pause until the person resumes"),
+				}),
+				Run: runPause,
+			},
+			{
+				// Granting: resuming widens what is recorded and what the
+				// people the location is shared with are shown, so the
+				// person is asked, as they are for forgetting a place.
+				Name: "location_resume", Family: tools.FamilyGeneral, Risk: tools.RiskGranting, Permissions: locationPermissions,
+				Description: "End the pause now, so that where the person goes is recorded again and shown to the people it is shared with. Needs the person's confirmation.",
+				Preview: func(json.RawMessage) string {
+					return "Start recording where the person goes again, now"
+				},
+				Run: runResume,
+			},
+			{
 				Name: "location_erase", Family: tools.FamilyGeneral, Risk: tools.RiskDestructive, Permissions: locationPermissions,
 				Description: "Erases the person's positions and visits (in the range, or all of them when no range is given), and the places left with no visit that they did not name or label. " +
 					"Places they named or labeled stay. Anything the person's agent already learned from those days stays in its memory until they remove it. This cannot be undone.",
@@ -279,9 +300,10 @@ func init() {
 		},
 			// One location tool, whose actions are the members below. The
 			// risk of each is the action's own: reading is a read, saving a
-			// place or checking in changes only the person's own records,
-			// forgetting a place or erasing history cannot be undone, and
-			// sharing lets somebody else follow the person.
+			// place, checking in or pausing changes only the person's own
+			// records, forgetting a place or erasing history cannot be undone,
+			// and sharing, or resuming after a pause, lets somebody else
+			// follow the person.
 			//
 			// Behind tool_search rather than in every request: its
 			// definition is the largest of the tools that were, about a
@@ -289,7 +311,7 @@ func init() {
 			tools.Group{
 				Name: "location", Family: tools.FamilyGeneral,
 				Description: "Where the person is and where they have been: their position now, their visits to places and how long each lasted, the path of a day, the places they named or labeled, " +
-					"places OpenStreetMap knows near them, and sharing where they are with their circles. Place names come from OpenStreetMap unless the person named the place.",
+					"places OpenStreetMap knows near them, sharing where they are with their circles, and pausing it for a while. Place names come from OpenStreetMap unless the person named the place.",
 				Guidance: "Location is the person's own and private; use it when the answer depends on where they are or have been, and say plainly what you used. " +
 					"In a chat with other people only the person's own location is read: another person's is never repeated into a chat.",
 				Members: []tools.Member{
@@ -303,6 +325,8 @@ func init() {
 					{Action: "save_place", Tool: "location_save_place"},
 					{Action: "forget_place", Tool: "location_forget_place"},
 					{Action: "check_in", Tool: "location_check_in"},
+					{Action: "pause", Tool: "location_pause"},
+					{Action: "resume", Tool: "location_resume"},
 					{Action: "erase", Tool: "location_erase"},
 					{Action: "people", Tool: "location_people"},
 					{Action: "shares", Tool: "location_shares"},

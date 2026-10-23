@@ -345,6 +345,27 @@ it('asks for the account in the address and draws the head and every section', a
   expect(screen.getByText('1 Example Street, Exampletown')).toBeTruthy()
 })
 
+it('says Location paused, with no visit or position, while the person has paused', async () => {
+  const base = sam()
+  const endedAt = new Date(Date.now() + 3600_000).toISOString()
+  answer({
+    ...base,
+    location: {
+      ...base.location!,
+      location: {
+        ...base.location!.location!,
+        latestPoint: null,
+        openVisit: null,
+        pause: { id: 'pause-one', startedAt: new Date(Date.now() - 600_000).toISOString(), endedAt },
+      },
+    },
+  })
+  renderAt('/people/person-sam')
+  expect(await screen.findByText(/^Location paused until/)).toBeTruthy()
+  expect(screen.queryByText(/At Fixture Park since/)).toBeNull()
+  expect(screen.queryByText('No position yet.')).toBeNull()
+})
+
 it('opens each part from its Show all and each item where it lives', async () => {
   answer(sam())
   renderAt('/people/person-sam')

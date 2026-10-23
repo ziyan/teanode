@@ -613,6 +613,9 @@ func TestPersonReadsACardByUsernameAccountOrContact(t *testing.T) {
 	if cards[0].variables["userId"] != "user-two" || cards[0].variables["itemLimit"] != 5 || len(cards[0].variables) != 2 {
 		t.Errorf("by username sent %v", cards[0].variables)
 	}
+	if !strings.Contains(cards[0].document, "pause { id startedAt endedAt }") {
+		t.Errorf("the card did not ask whether they paused recording: %s", cards[0].document)
+	}
 	if cards[1].variables["userId"] != "user-one" || len(cards[1].variables) != 1 {
 		t.Errorf("by account sent %v", cards[1].variables)
 	}

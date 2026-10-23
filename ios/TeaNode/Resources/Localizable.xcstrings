@@ -85189,6 +85189,258 @@
           }
         }
       }
+    },
+    "For an hour": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1時間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一小时"
+          }
+        }
+      }
+    },
+    "Until tomorrow morning": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明日の朝まで"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到明天早上"
+          }
+        }
+      }
+    },
+    "Until I resume": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開するまで"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直到我恢复"
+          }
+        }
+      }
+    },
+    "Paused until %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@まで一時停止中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停至 %@"
+          }
+        }
+      }
+    },
+    "Paused until you resume": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開するまで一時停止中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停中，直到你恢复"
+          }
+        }
+      }
+    },
+    "Location paused": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報を一時停止中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置已暂停"
+          }
+        }
+      }
+    },
+    "Location paused until %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@まで位置情報を一時停止中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置已暂停至 %@"
+          }
+        }
+      }
+    },
+    "Recording paused": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記録を一時停止しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已暂停记录"
+          }
+        }
+      }
+    },
+    "Recording resumed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記録を再開しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已恢复记录"
+          }
+        }
+      }
+    },
+    "Nothing new is recorded until then, and the people you share with see that your location is paused.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "それまでは何も新しく記録されず、共有している相手には位置情報が一時停止中と表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在此之前不会记录任何新内容，与你共享位置的人会看到你的位置已暂停。"
+          }
+        }
+      }
+    },
+    "Nothing new is recorded until you resume, and the people you share with see that your location is paused.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開するまでは何も新しく記録されず、共有している相手には位置情報が一時停止中と表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在你恢复之前不会记录任何新内容，与你共享位置的人会看到你的位置已暂停。"
+          }
+        }
+      }
+    },
+    "Stops recording for a while, on every device. The people you share with see that your location is paused.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "しばらく記録を止めます。すべてのデバイスで止まります。共有している相手には位置情報が一時停止中と表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时停止记录，所有设备都会停止。与你共享位置的人会看到你的位置已暂停。"
+          }
+        }
+      }
+    },
+    "The server has not been told yet. TeaNode keeps trying.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーにはまだ伝わっていません。TeaNode は再試行を続けます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器尚未收到通知，TeaNode 会继续尝试。"
+          }
+        }
+      }
+    },
+    "location-pause-recording": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause recording"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記録を一時停止"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停记录"
+          }
+        }
+      }
+    },
+    "location-resume-recording": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume recording"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記録を再開"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复记录"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

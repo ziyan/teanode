@@ -96,9 +96,50 @@
             ]
         }
 
+        // `-TeaNodeScreen location-paused`: the person has paused too, with one
+        // earlier pause among yesterday's visits, and the second person shared
+        // with has paused. `location-settings-paused` is the settings while the
+        // person's own pause is in effect.
+        static var isPauseScreen: Bool { DemoServer.screen == "location-paused" }
+        static var isOwnPauseInEffect: Bool { DemoServer.screen == "location-paused" || DemoServer.screen == "location-settings-paused" }
+
+        static func pauseJSON(id: String, startedAt: Date, endedAt: Date?) -> String {
+            let ended = endedAt.map { #""\#(CalendarDates.text($0))""# } ?? "null"
+            return #"{"id":"\#(id)","startedAt":"\#(CalendarDates.text(startedAt))","endedAt":\#(ended)}"#
+        }
+
+        /// When the person's own pause in effect began: twenty minutes before
+        /// the demo first asked, the same instant for every answer.
+        static let ownPauseStartedAt = Date().addingTimeInterval(-20 * 60)
+
+        /// The person's own pause in effect, to end in forty minutes.
+        static var ownPauseJSON: String {
+            pauseJSON(id: "pause-now", startedAt: ownPauseStartedAt, endedAt: ownPauseStartedAt.addingTimeInterval(60 * 60))
+        }
+
+        /// The second person's pause, which has no end.
+        static var sharedPauseJSON: String {
+            pauseJSON(id: "pause-alex", startedAt: Date().addingTimeInterval(-90 * 60), endedAt: nil)
+        }
+
+        /// The person's pauses: the one in effect, and one yesterday evening
+        /// between the office and home.
+        static var ownPausesJSON: [String] {
+            guard isOwnPauseInEffect else { return [] }
+            func at(_ hour: Int, _ minute: Int) -> Date {
+                ServerTime.date(DemoServer.demoTime(daysAgo: 1, hour: hour, minute: minute)) ?? Date()
+            }
+            return [ownPauseJSON, pauseJSON(id: "pause-yesterday", startedAt: at(17, 55), endedAt: at(18, 40))]
+        }
+
         /// A person as `GetLocation` and `ListSharedLocations` give them.
         static func sharedPersonJSON(userId: String) -> String {
             let person = DemoServer.demoPerson(userId)
+            if isPauseScreen, userId == currentPersonId {
+                return #"""
+                    {"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"shareLevel":"current","latestPoint":null,"openVisit":null,"pause":\#(sharedPauseJSON)}
+                    """#
+            }
             let isHistory = userId == historyPersonId
             let latitude = isHistory ? 10.5080 : 10.5110
             let longitude = isHistory ? 20.4950 : 20.5210
@@ -143,14 +184,17 @@
         }
 
         /// Two days of visits: today's, ending with the one in progress, and
-        /// yesterday's.
+        /// yesterday's. While the person's own pause is in effect, the visit in
+        /// progress ended where the pause began, as the server ends it.
         static var visits: [Visit] {
             let now = Date()
             func at(_ daysAgo: Int, _ hour: Int, _ minute: Int) -> Date {
                 ServerTime.date(DemoServer.demoTime(daysAgo: daysAgo, hour: hour, minute: minute)) ?? now
             }
             return [
-                Visit(id: "visit-1", placeId: parkPlaceId, arrivedAt: now.addingTimeInterval(-35 * 60), departedAt: nil),
+                Visit(
+                    id: "visit-1", placeId: parkPlaceId, arrivedAt: now.addingTimeInterval(-35 * 60),
+                    departedAt: isOwnPauseInEffect ? ownPauseStartedAt : nil),
                 Visit(
                     id: "visit-2", placeId: officePlaceId, arrivedAt: at(0, 9, 5), departedAt: at(0, 12, 30),
                     photoIds: ["demo-v1", "demo-v2", "demo-v3", "demo-v4"], photoCount: 7),
@@ -198,6 +242,13 @@
                 let people = sharingIds.map(LocationDemo.sharedPersonJSON)
                 return #"{"data":{"ListSharedLocations":[\#(people.joined(separator: ","))]}}"#
             }
+            if query.contains("ListLocationPauses(") {
+                // Another person's pauses: none to list.
+                let pauses: [String] = variables["userId"] is String ? [] : LocationDemo.ownPausesJSON
+                return #"{"data":{"ListLocationPauses":[\#(pauses.joined(separator: ","))]}}"#
+            }
+            if query.contains("PauseLocation(") { return #"{"data":{"PauseLocation":\#(LocationDemo.ownPauseJSON)}}"# }
+            if query.contains("ResumeLocation") { return #"{"data":{"ResumeLocation":true}}"# }
             if query.contains("ListLocationShares") {
                 return #"{"data":{"ListLocationShares":\#(isSetupScreen ? "[]" : LocationDemo.sharesJSON)}}"#
             }
@@ -211,12 +262,16 @@
                     #"{"data":{"GetLocation":{"userId":"robin","username":"robin","name":"Robin","avatarUrl":null,"avatarColorIndex":7,"shareLevel":"owner","latestPoint":null,"openVisit":null}}}"#
             }
             if query.contains("GetLocation(") {
-                let open = LocationDemo.visits[0]
+                // While paused nothing newer than the pause's start is recorded,
+                // and no visit is in progress.
+                let isPaused = LocationDemo.isOwnPauseInEffect
+                let open = isPaused ? "null" : LocationDemo.visits[0].json
                 let park = LocationDemo.place(LocationDemo.parkPlaceId)
+                let measuredAt = isPaused ? LocationDemo.ownPauseStartedAt.addingTimeInterval(-60) : Date()
                 let point =
-                    #"{"latitudeDegrees":\#(park.latitudeDegrees),"longitudeDegrees":\#(park.longitudeDegrees),"accuracyMeters":10,"altitudeMeters":null,"speedMetersPerSecond":null,"courseDegrees":null,"measuredAt":"\#(CalendarDates.text(Date()))","locationSource":"phone"}"#
+                    #"{"latitudeDegrees":\#(park.latitudeDegrees),"longitudeDegrees":\#(park.longitudeDegrees),"accuracyMeters":10,"altitudeMeters":null,"speedMetersPerSecond":null,"courseDegrees":null,"measuredAt":"\#(CalendarDates.text(measuredAt))","locationSource":"phone"}"#
                 return
-                    #"{"data":{"GetLocation":{"userId":"robin","username":"robin","name":"Robin","avatarUrl":null,"avatarColorIndex":7,"shareLevel":"owner","latestPoint":\#(point),"openVisit":\#(open.json)}}}"#
+                    #"{"data":{"GetLocation":{"userId":"robin","username":"robin","name":"Robin","avatarUrl":null,"avatarColorIndex":7,"shareLevel":"owner","latestPoint":\#(point),"openVisit":\#(open),"pause":\#(isPaused ? LocationDemo.ownPauseJSON : "null")}}}"#
             }
             if query.contains("ListLocationVisits("), variables["userId"] as? String == LocationDemo.historyPersonId {
                 var visits = LocationDemo.historyPersonVisits
@@ -280,7 +335,8 @@
             if query.contains("ForgetPlace(") { return #"{"data":{"ForgetPlace":true}}"# }
             if query.contains("EraseLocationHistory(") { return #"{"data":{"EraseLocationHistory":{"pointCount":0,"visitCount":0,"placeCount":0}}}"# }
             if query.contains("ReportLocation(") {
-                return #"{"data":{"ReportLocation":{"newPointCount":0,"newVisitCount":0,"updatedVisitCount":0}}}"#
+                return
+                    #"{"data":{"ReportLocation":{"newPointCount":0,"newVisitCount":0,"updatedVisitCount":0,"pausedPointCount":0,"pausedVisitCount":0,"pause":null}}}"#
             }
             return nil
         }

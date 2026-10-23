@@ -259,15 +259,15 @@ func TestWritesAndTheirRisks(t *testing.T) {
 	risks := map[string]tools.Risk{
 		"now": tools.RiskRead, "visits": tools.RiskRead, "path": tools.RiskRead, "places": tools.RiskRead, "nearby": tools.RiskRead, "search": tools.RiskRead, "find_address": tools.RiskRead,
 		"people": tools.RiskRead, "shares": tools.RiskRead, "set_up": tools.RiskRead,
-		"save_place": tools.RiskWrite, "check_in": tools.RiskWrite, "unshare": tools.RiskWrite,
-		"forget_place": tools.RiskDestructive, "erase": tools.RiskDestructive, "share": tools.RiskGranting,
+		"save_place": tools.RiskWrite, "check_in": tools.RiskWrite, "unshare": tools.RiskWrite, "pause": tools.RiskWrite,
+		"forget_place": tools.RiskDestructive, "erase": tools.RiskDestructive, "share": tools.RiskGranting, "resume": tools.RiskGranting,
 	}
 	for action, want := range risks {
 		if got := merged.RiskFor(json.RawMessage(`{"action":"` + action + `"}`)); got != want {
 			t.Errorf("%s is %s, want %s", action, got, want)
 		}
 	}
-	for _, action := range []string{"save_place", "forget_place", "check_in", "erase", "share", "unshare"} {
+	for _, action := range []string{"save_place", "forget_place", "check_in", "erase", "share", "unshare", "resume"} {
 		if line := merged.PreviewLine(context.Background(), json.RawMessage(`{"action":"`+action+`"}`)); strings.TrimSpace(line) == "" || strings.Contains(line, `":`) {
 			t.Errorf("%s: the card says %q", action, line)
 		}
@@ -681,5 +681,118 @@ func TestPlaceIsReadByItsID(t *testing.T) {
 	}
 	if operations.sent["ReadPlace"]["placeId"] != "p7" {
 		t.Errorf("what was sent: %v", operations.sent["ReadPlace"])
+	}
+}
+
+// Pausing needs no card and sends the end it was given in the person's zone;
+// with none it pauses until the person resumes. It says when the pause ends.
+func TestPauseSendsTheEndAndAnswersWhenItEnds(t *testing.T) {
+	operations := &routing{answers: map[string]string{"PauseLocation": `{"startedAt":"2026-10-17T12:00:00Z","endedAt":"2026-10-17T13:30:00Z"}`}}
+	answer, _, err := act(t, runOf(operations), "pause", `{"ended_at":"2026-10-17T15:30"}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent := operations.sent["PauseLocation"]; sent["endedAt"] != "2026-10-17T15:30:00Z" {
+		t.Errorf("the end in the person's zone (UTC here) was sent: %v", sent)
+	}
+	if answer["is_paused"] != true || answer["paused_until"] != "2026-10-17 13:30" || answer["paused_since"] != "2026-10-17 12:00" {
+		t.Errorf("the answer says when it ends: %v", answer)
+	}
+
+	untilResumed := &routing{answers: map[string]string{"PauseLocation": `{"startedAt":"2026-10-17T12:00:00Z","endedAt":null}`}}
+	answer, _, err = act(t, runOf(untilResumed), "pause", `{}`, false)
+	if err != nil || untilResumed.sent["PauseLocation"]["endedAt"] != nil || answer["paused_until"] != "the person resumes" {
+		t.Errorf("no end given, none sent: %v %v %v", answer, untilResumed.sent["PauseLocation"], err)
+	}
+	if _, _, err := act(t, runOf(operations), "pause", `{"ended_at":"whenever"}`, false); err == nil {
+		t.Error("an end that is not a time is refused before anything is sent")
+	}
+}
+
+// Resuming widens what is recorded and shown, so it waits on the person, as
+// forgetting a place does; confirmed, it ends the pause.
+func TestResumeWaitsOnThePersonAndEndsThePause(t *testing.T) {
+	operations := &routing{answers: map[string]string{"ResumeLocation": `true`}}
+	if _, _, err := act(t, runOf(operations), "resume", `{}`, false); err == nil || !strings.Contains(err.Error(), "confirmation") {
+		t.Errorf("resume unconfirmed: %v", err)
+	}
+	if operations.sent["ResumeLocation"] != nil {
+		t.Error("nothing was sent without the person's confirmation")
+	}
+	answer, _, err := act(t, runOf(operations), "resume", `{}`, true)
+	if err != nil || answer["is_recording"] != true || answer["was_paused"] != true {
+		t.Errorf("resume confirmed: %v %v", answer, err)
+	}
+	merged := tools.Build().Get("location")
+	if line := merged.PreviewLine(context.Background(), json.RawMessage(`{"action":"resume"}`)); !strings.Contains(line, "again") {
+		t.Errorf("the card says recording starts again now: %q", line)
+	}
+}
+
+// Somebody else who paused is said to have paused, until when, with no
+// position; the person's own location says recording is paused and keeps the
+// position it has.
+func TestReadsOfAPersonWhoPausedSayTheyPausedAndGiveNoPosition(t *testing.T) {
+	now := time.Now().UTC()
+	endedAt := now.Add(time.Hour).Format(time.RFC3339)
+	others := &routing{answers: map[string]string{
+		"ListSharedLocations": `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"current","latestPoint":null,"openVisit":null,"pause":{"startedAt":"` + now.Add(-time.Hour).Format(time.RFC3339) + `","endedAt":"` + endedAt + `"}},
+			{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"history","latestPoint":null,"openVisit":null,"pause":{"startedAt":"` + now.Add(-time.Hour).Format(time.RFC3339) + `","endedAt":null}}]`,
+		"GetLocation": `{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"current","latestPoint":null,"openVisit":null,"pause":{"startedAt":"` + now.Add(-time.Hour).Format(time.RFC3339) + `","endedAt":"` + endedAt + `"}}`,
+	}}
+	answer, _, err := act(t, runOf(others), "now", `{"person":"ben"}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantUntil := "until " + now.Add(time.Hour).Format("15:04")
+	if now.Add(time.Hour).YearDay() != now.YearDay() {
+		wantUntil = "until " + now.Add(time.Hour).Format("2006-01-02 15:04")
+	}
+	if answer["is_paused"] != true || answer["position"] != nil || answer["at"] != nil || answer["paused_text"] != "Ben has paused sharing where they are ("+wantUntil+")" {
+		t.Errorf("another person's now: %v", answer)
+	}
+
+	answer, _, err = act(t, runOf(others), "people", `{}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	people := answer["people"].([]any)
+	cleo := people[1].(map[string]any)
+	if len(people) != 2 || cleo["paused_text"] != "Cleo has paused sharing where they are (until they resume)" || cleo["position"] != nil || cleo["at"] != nil {
+		t.Errorf("people: %v", people)
+	}
+
+	own := &routing{answers: map[string]string{"GetLocation": strings.Replace(storedLocation(now.Add(-4*time.Minute)), `"shareLevel":"owner",`,
+		`"shareLevel":"owner","pause":{"startedAt":"`+now.Add(-time.Hour).Format(time.RFC3339)+`","endedAt":null},`, 1)}}
+	answer, _, err = act(t, runOf(own), "now", `{}`, false)
+	if err != nil || answer["position"] == nil || !strings.Contains(fmt.Sprint(answer["recording_paused"]), "recording is paused (until they resume)") {
+		t.Errorf("their own: %v %v", answer, err)
+	}
+}
+
+// The visits of a range come with the pauses of it, and a listing of one
+// place's visits has none.
+func TestVisitsAreListedWithThePausesOfTheRange(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListLocationVisits": `{"nextOffset":null,"placeVisits":[{"arrivedAt":"2026-10-17T15:00:00Z","departedAt":"2026-10-17T16:00:00Z","durationSeconds":3600,"place":{"id":"p1","placeName":"Maple Park"}}]}`,
+		"ListLocationPauses": `[{"startedAt":"2026-10-17T13:00:00Z","endedAt":"2026-10-17T14:30:00Z"},{"startedAt":"2026-10-17T08:00:00Z","endedAt":null}]`,
+	}}
+	answer, _, err := act(t, runOf(operations), "visits", `{"from":"2026-10-17","until":"2026-10-18"}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := operations.sent["ListLocationPauses"]
+	if sent["from"] != "2026-10-17T00:00:00Z" || sent["until"] != "2026-10-18T00:00:00Z" {
+		t.Errorf("the range of the visits was asked for: %v", sent)
+	}
+	pauses := answer["pauses"].([]any)
+	if len(pauses) != 2 || pauses[0].(map[string]any)["paused_from"] != "2026-10-17 13:00" || pauses[0].(map[string]any)["paused_until"] != "2026-10-17 14:30" ||
+		pauses[1].(map[string]any)["paused_until"] != "they resume" {
+		t.Errorf("the pauses: %v", pauses)
+	}
+
+	forAPlace := &routing{answers: operations.answers}
+	if answer, _, err = act(t, runOf(forAPlace), "visits", `{"place_id":"p1"}`, false); err != nil || answer["pauses"] != nil || forAPlace.sent["ListLocationPauses"] != nil {
+		t.Errorf("a pause belongs to no place: %v %v", answer, err)
 	}
 }

@@ -122,7 +122,7 @@ struct PersonCardWhereRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: location.openVisit?.place.symbolName ?? "location")
+            Image(systemName: symbolName)
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.secondary)
                 .frame(width: 28)
@@ -140,14 +140,27 @@ struct PersonCardWhereRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// The place they are at, else how long ago their position came.
+    /// The pause they are in, which the server shows instead of a position.
+    private var pause: LocationPause? {
+        guard let pause = location.pause, pause.isInEffect(at: Date()) else { return nil }
+        return pause
+    }
+
+    private var symbolName: String {
+        if pause != nil { return "pause.circle" }
+        return location.openVisit?.place.symbolName ?? "location"
+    }
+
+    /// The place they are at, else how long ago their position came; that
+    /// their location is paused while it is.
     private var titleText: String {
-        location.openVisit?.place.shownName ?? freshText
+        if let pause { return LocationText.locationPaused(pause) }
+        return location.openVisit?.place.shownName ?? freshText
     }
 
     /// "Since 9:00 AM · 1 minute ago" while they are at a place.
     private var detailText: String? {
-        guard let visit = location.openVisit else { return nil }
+        guard pause == nil, let visit = location.openVisit else { return nil }
         let sinceText = LocationText.times(of: visit)
         return sinceText.isEmpty ? freshText : String(localized: "\(sinceText) · \(freshText)")
     }

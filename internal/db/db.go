@@ -194,6 +194,7 @@ type Transaction interface {
 	CalendarShareOperation
 	LocationOperation
 	LocationLockOperation
+	LocationPauseOperation
 	LocationKnowledgeOperation
 	LocationShareOperation
 	HealthOperation

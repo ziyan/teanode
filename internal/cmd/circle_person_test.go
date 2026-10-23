@@ -16,6 +16,14 @@ import (
 // needing a contact, mail with more, recordings failed, memory shown.
 func personCardServer(test *testing.T) (*httptest.Server, func() map[string]any) {
 	test.Helper()
+	return personCardServerLocatedBy(test, `{"userId":"user-sam","shareLevel":"current",
+				"latestPoint":{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":10,"measuredAt":"2030-03-01T09:30:00Z","locationSource":"phone"},"openVisit":null,"pause":null}`)
+}
+
+// personCardServerLocatedBy is personCardServer with the location of the card
+// given as the JSON of a location.
+func personCardServerLocatedBy(test *testing.T, locationJSON string) (*httptest.Server, func() map[string]any) {
+	test.Helper()
 	var lock sync.Mutex
 	var variables map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -40,8 +48,7 @@ func personCardServer(test *testing.T) (*httptest.Server, func() map[string]any)
 			"contact":{"id":"contact-1","name":"Sam Example","organization":"","emails":["sam@example.org"],"phones":[],"addresses":[],"note":""},
 			"sharedCircles":[{"circleId":"circle-1","circleName":"Home","circleKind":"family"}],
 			"canMessage":true,
-			"location":{"sectionState":"shown","hasMoreTodayVisits":false,"location":{"userId":"user-sam","shareLevel":"current",
-				"latestPoint":{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":10,"measuredAt":"2030-03-01T09:30:00Z","locationSource":"phone"},"openVisit":null},"todayVisits":[]},
+			"location":{"sectionState":"shown","hasMoreTodayVisits":false,"location":` + locationJSON + `,"todayVisits":[]},
 			"health":{"sectionState":"notShared","hasMore":false,"healthTypes":[]},
 			"finance":{"sectionState":"shown","hasMore":true,"financeAccounts":[
 				{"financeAccountId":"account-1","ownerUserId":"user-sam","ownerUsername":"sam","ownerName":"Sam Example","financeShareLevel":"balance","accountName":"Store Card","accountMask":"5566","accountKind":"credit","currencyCode":"USD","currentBalance":"-100.0000","creditUsage":{"owedAmount":"100.0000","creditLimitAmount":"400.0000","creditLimitSource":"provider","usageShare":0.25}}]},
@@ -104,6 +111,28 @@ func TestCirclePersonPrintsEachPartOfTheCard(test *testing.T) {
 	}
 	if strings.Contains(output, "albums they shared") {
 		test.Errorf("a part the account may not use was printed:\n%s", output)
+	}
+}
+
+// A person who paused recording has no position on the card: it says the
+// location is paused, until when if that is known.
+func TestCirclePersonSaysThePersonPausedRecording(test *testing.T) {
+	for _, each := range []struct {
+		name, pause, wanted string
+	}{
+		{"open", `{"id":"pause-1","startedAt":"2030-03-01T09:00:00Z","endedAt":null}`, "Location paused until you resume"},
+		{"timed", `{"id":"pause-1","startedAt":"2030-03-01T09:00:00Z","endedAt":"2030-03-01T10:00:00Z"}`, "Location paused until 2030-03-01"},
+	} {
+		test.Run(each.name, func(test *testing.T) {
+			server, _ := personCardServerLocatedBy(test, `{"userId":"user-sam","shareLevel":"current","latestPoint":null,"openVisit":null,"pause":`+each.pause+`}`)
+			output, err := runCirclePersonAgainst(test, server, "sam")
+			if err != nil {
+				test.Fatal(err)
+			}
+			if !strings.Contains(output, each.wanted) || strings.Contains(output, "position") {
+				test.Errorf("the card does not say they paused:\n%s", output)
+			}
+		})
 	}
 }
 

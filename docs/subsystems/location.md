@@ -260,11 +260,89 @@ before then is told a second after the arrival, so the two come in order. A
 notice that waits lives in the server's memory, so a restart in those three
 minutes loses it.
 
+## Pausing
+
+A person can stop their location being recorded for a while: for an hour, until
+tomorrow morning, or until they resume. A pause is theirs across the phone, the
+dashboard, the command line and their agent, so it lives on the server (table
+`location_pause`, migration `0257_location_pause.sql`, a row for each pause, so
+that the timeline can show the gap afterwards) and every surface reads and sets
+the same thing. The phone's "Record where I go" stays as well: it is the phone's
+own switch, for battery and permissions.
+
+`PauseLocation` pauses from now, until `endedAt` or, with none, until
+`ResumeLocation`. The end must be after now and at most 30 days ahead. "Until
+tomorrow morning" is 08:00 the next day in the person's zone, worked out by each
+client: the server takes only a time. A pause is in effect at an instant when it
+began at or before it and has not ended, and one that ends by itself needs no
+event at its end: clients read again at that moment. There is at most one in
+effect, and pausing while paused changes the end of that one. Resuming ends it
+now, and a pause that lasted no time is deleted. Both need `location:use`, and
+the agent may pause. In a conversation the agent's `resume` waits for the
+person, as `forget_place` does, since it widens what is recorded and shown, and
+`ResumeLocation` refuses a command the agent ran on the person's computer (one
+carrying the agent's command mark), so the shell is not a way around the card.
+That is a guard against mistakes and steered runs, not a boundary against a
+program the person runs themselves.
+
+**What is not stored.** While a pause is in effect, and for the time of a pause
+that has ended, `ReportLocation` stores no position and no visit measured
+inside it, whatever sends them: a phone that was offline sends its day when it
+is back, and cannot fill the gap. The pauses that overlap a report are read
+with one query. The answer counts what was left out (`pausedPointCount`,
+`pausedVisitCount`) and carries `pause`, the one in effect after the report, so
+that a phone learns of a pause set somewhere else. A position the browser gave
+the agent is dropped the same way. Visits are cut at the edges of a pause:
+
+- A visit that arrived inside a pause is not stored. If it left after the pause
+  it is kept as a visit known only by its departure.
+- A visit that arrived before a pause and left inside it, or was not over when
+  it began, or left after it, keeps its arrival and ends at the start of the
+  pause. A departure reported alone for a visit stored earlier is cut the same
+  way. No visit runs across a time nobody knows where the person was, and the
+  cut departure is not told to anybody. Visits to one place less than ten
+  minutes apart are not joined when a pause began between them.
+- A visit measured entirely inside a pause makes no place either.
+
+A check-in is a visit measured now, so it is refused while paused, saying when
+the pause ends. Pausing ends the visit in progress at the start of the pause (at
+the latest position, when the positions say the person had left earlier), so a
+viewer is never left seeing "at home" for the length of it, and tells nobody that
+the person left.
+
+**What others see.** `LocationView.pause` is the pause in effect. For anybody but
+the person themselves, at `current` and at `history` alike, while a pause is in
+effect `latestPoint` and `openVisit` are null in `GetLocation`,
+`ListSharedLocations` (the pauses of everybody who shares are read with one
+query) and the person card, and the clients read "Location paused", with "until"
+and the time when it ends by itself. The person still sees their own position.
+At `history` a viewer also reads the pauses among the visits:
+`ListLocationPauses(userId, from, until)` answers the pauses that overlap a range,
+newest first, by the reach rules of `ListLocationVisits`. Pausing, resuming and
+a change of its end send the location event, so that open maps read again; a
+report that stores nothing sends none. An arrival or departure is not notified
+when it happened inside a pause, or while the person is paused. `EraseLocationHistory`
+erases the pauses that began in its range and are over, and leaves the pause in
+effect: erasing does not resume.
+
+**The agent.** The journal writes a pause in a day as "paused from 14:00 to
+15:00; where they were is not known", in the person's clock and among the visits,
+never as a stay: it is no place and no time away from home. Once the person has a
+visit at all, a day with only pauses still has a document, with those lines and
+no places, since where the person was is not known; a person with no visit yet
+has no journal. The tool reads of another person's location say
+"<name> has paused sharing where they are (until 15:00)" and give no position,
+and the person's own say recording is paused. The `visits` action lists the
+pauses of its range, and `teanode location visits` prints them among the visits
+(`paused 14:00 to 15:00`); `teanode location pause [--for D | --until T]` and
+`resume` set them.
+
 ## What erasing deletes
 
 `EraseLocationHistory` (`teanode location erase`, the tool's `erase`, the
 screens) erases the person's positions and visits (in the range, or all of
-them), and the places left with no visit that the person did not name or label.
+them), the pauses that began in it and are over, and the places left with no visit
+that the person did not name or label.
 Places they named or labeled stay. In the same transaction it deletes the
 location journal documents for those days, with their chunks. `ForgetPlace`
 removes one place and its visits and rewrites the journal for those days.
@@ -346,6 +424,7 @@ then lists exactly the photos counted.
 - `internal/api/v1api/apigraph/location_history.go` (operations),
   `location_share.go` (shares), `location_events.go` (the live map),
   `location_map.go` (the map proxy), `location_naming.go` (naming right after a
+  report), `location_pause.go` (pausing, and dropping what a pause hides from a
   report).
 - `internal/agent/place_job.go`, `location_journal.go`, `location_notify.go`,
   `digest_places.go`, `nearby.go`: the agent's side.

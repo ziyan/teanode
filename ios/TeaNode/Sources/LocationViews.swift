@@ -236,14 +236,20 @@ struct LocationScreen: View {
         if isShowingPeople, let person = model.selectedPerson {
             LocationChosenPersonHeader(person: person) { model.focusOnOwn() }
         } else {
-            Picker("Location", selection: $segment) {
-                ForEach(LocationSegment.allCases) { choice in
-                    Text(choice.title).tag(choice)
+            VStack(spacing: 0) {
+                // The person's own pause, where it is seen with the lists.
+                if let pause = recorder.activePause {
+                    LocationPausedNote(pause: pause)
                 }
+                Picker("Location", selection: $segment) {
+                    ForEach(LocationSegment.allCases) { choice in
+                        Text(choice.title).tag(choice)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.bottom, 10)
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.bottom, 10)
         }
     }
 
@@ -283,7 +289,8 @@ struct LocationScreen: View {
     #if DEBUG
         /// The screens a screenshot names: `-TeaNodeScreen location-day`,
         /// `location-places`, `location-place`, `location-settings`,
-        /// `location-sharing`, `location-person`, `location-person-card` (the
+        /// `location-sharing`, `location-paused` (the person and somebody sharing have paused),
+        /// `location-settings-paused`, `location-person`, `location-person-card` (the
         /// same with the person's card over the map, which the app shell
         /// brings up), `location-people` (more
         /// people than fit under the map), `location-checkin` (the check-in
@@ -302,8 +309,8 @@ struct LocationScreen: View {
             case "location-checkin": isCheckingIn = true
             case "location-place", "location-address":
                 if let place = model.places.first(where: { $0.id == LocationDemo.parkPlaceId }) { path = [.place(place)] }
-            case "location-settings": path = [.settings]
-            case "location-full": drawerDetent = .full
+            case "location-settings", "location-settings-paused": path = [.settings]
+            case "location-full", "location-paused": drawerDetent = .full
             case "location-collapsed": drawerDetent = .collapsed
             default: break
             }
@@ -455,13 +462,13 @@ struct LocationVisitsList: View {
             }
             ForEach(model.days) { day in
                 Section {
-                    ForEach(day.visits) { visit in
-                        NavigationLink(value: LocationRoute.place(visit.place)) {
-                            LocationVisitRow(visit: visit)
-                        }
-                        .onAppear {
-                            if visit.id == model.visits.last?.id { Task { await model.loadMoreVisits() } }
-                        }
+                    ForEach(day.entries) { entry in
+                        LocationTimelineRow(entry: entry)
+                            .onAppear {
+                                if case .visit(let visit) = entry, visit.id == model.visits.last?.id {
+                                    Task { await model.loadMoreVisits() }
+                                }
+                            }
                     }
                 } header: {
                     NavigationLink(value: LocationRoute.day(day.startOfDay)) {
@@ -501,6 +508,9 @@ struct LocationVisitsList: View {
 
 struct LocationVisitRow: View {
     let visit: PlaceVisit
+    /// The symbol's column grows with the text, so a wide symbol at a large
+    /// text size does not run into the name.
+    @ScaledMetric(relativeTo: .body) private var symbolColumnWidth: CGFloat = 28
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -508,7 +518,7 @@ struct LocationVisitRow: View {
                 Image(systemName: visit.place.symbolName)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.secondary)
-                    .frame(width: 28)
+                    .frame(width: symbolColumnWidth)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: visit.place.shownName)
@@ -519,6 +529,8 @@ struct LocationVisitRow: View {
             }
             .accessibilityElement(children: .combine)
             if let photos = visit.photos, !photos.isEmpty {
+                // The photos keep their size at every text size, so their
+                // indent does too: five still fit across.
                 VisitPhotoStrip(visit: visit, photos: photos)
                     .padding(.leading, 40)
             }
@@ -611,6 +623,7 @@ struct LocationDayScreen: View {
     let day: Date
     @State private var points: [LocationPoint] = []
     @State private var visits: [PlaceVisit] = []
+    @State private var pauses: [LocationPause] = []
     @State private var position = MapCameraPosition.automatic
     @State private var isLoading = true
     @State private var loadFailedText: String?
@@ -636,10 +649,8 @@ struct LocationDayScreen: View {
                 } else {
                     List {
                         Section {
-                            ForEach(visits) { visit in
-                                NavigationLink(value: LocationRoute.place(visit.place)) {
-                                    LocationVisitRow(visit: visit)
-                                }
+                            ForEach(LocationDays.entries(visits: visits, pauses: pauses)) { entry in
+                                LocationTimelineRow(entry: entry)
                             }
                         } footer: {
                             OpenStreetMapCredit()
@@ -668,7 +679,7 @@ struct LocationDayScreen: View {
                     .overlay {
                         if isLoading {
                             ProgressView()
-                        } else if visits.isEmpty {
+                        } else if visits.isEmpty && pauses.isEmpty {
                             ContentUnavailableView("No visits this day", systemImage: "mappin.and.ellipse")
                         }
                     }
@@ -694,8 +705,10 @@ struct LocationDayScreen: View {
         do {
             async let readVisits = model.connection.locationVisits(from: window.from, until: window.until, limitCount: 200)
             async let readPoints = model.points(on: day)
+            async let readPauses = model.pauses(from: window.from, until: window.until)
             let (page, read) = try await (readVisits, readPoints)
             visits = page.placeVisits
+            pauses = await readPauses
             points = read
             loadFailedText = nil
             let coordinates = read.map(\.coordinate) + page.placeVisits.map(\.coordinate)

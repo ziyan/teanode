@@ -33,7 +33,7 @@ const (
 	  sharedCircles { circleName circleKind }
 	  canMessage
 	  location { sectionState hasMoreTodayVisits
-	    location { shareLevel latestPoint { latitudeDegrees longitudeDegrees measuredAt } openVisit { arrivedAt place { placeName addressText } } }
+	    location { shareLevel latestPoint { latitudeDegrees longitudeDegrees measuredAt } openVisit { arrivedAt place { placeName addressText } } pause { id startedAt endedAt } }
 	    todayVisits { arrivedAt departedAt place { placeName addressText } } }
 	  health { sectionState hasMore healthTypes { healthType typeName quantityUnit latestDaySummary { summaryDay sumValue averageValue minimumValue maximumValue } } }
 	  photos { photosState hasMorePhotos albumsState hasMoreAlbums photos { id takenAt placeName } albums { id albumTitle photoCount } }
@@ -127,7 +127,7 @@ func init() {
 				Permissions: []models.Permission{models.PermissionCircleUse},
 				Description: "One person's card: who they are to the person (name, what they are to them), the circles they share, " +
 					"the person's own contact details for them, and a few items from each part of the app that concerns them: where they are " +
-					"and their visits today, the health they share, photos of them and albums they shared, recent mail with them, recordings " +
+					"and their visits today (a person who paused recording has a pause, with endedAt null when it lasts until they resume, and no position or visit in progress: say they paused), the health they share, photos of them and albums they shared, recent mail with them, recordings " +
 					"they speak in, and memory pages about them. Give their username (from people) or user_id, or a contact of the person's " +
 					"as address_book_id and contact_id. Each part says sectionState: shown, notShared (they have not shared it), " +
 					"needsContact (the person has no contact linked to them; the contact tool links one), unavailable (the person may not " +
