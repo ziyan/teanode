@@ -295,7 +295,12 @@ that a phone learns of a pause set somewhere else. A position the browser gave
 the agent is dropped the same way. Visits are cut at the edges of a pause:
 
 - A visit that arrived inside a pause is not stored. If it left after the pause
-  it is kept as a visit known only by its departure.
+  it is kept as a visit known only by its departure. One that arrived in the
+  last five seconds of a pause that has an end counts from that end: at a
+  resume the phone gives its places to iOS again, which answers at once with
+  the place the person is inside, stamped to the second by the phone's clock.
+  The phone does that only once the server has the resume, since the server
+  ends the pause when the resume reaches it.
 - A visit that arrived before a pause and left inside it, or was not over when
   it began, or left after it, keeps its arrival and ends at the start of the
   pause. A departure reported alone for a visit stored earlier is cut the same

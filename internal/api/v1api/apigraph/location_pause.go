@@ -57,6 +57,13 @@ const locationPausePageMost = 500
 // found inside it: a pause is in effect from its start.
 const locationPauseReadMargin = time.Millisecond
 
+// locationResumeArrivalSlack is how long before a pause ended an arrival may
+// be measured and still count, from the end. At a resume the phone gives its
+// places to iOS again, which answers at once with the place the person is
+// inside; that answer is stamped to the second, by the phone's clock, and can
+// come out a moment before the server took the resume.
+const locationResumeArrivalSlack = 5 * time.Second
+
 func describeLocationPause(pause *models.LocationPause) *LocationPauseView {
 	if pause == nil {
 		return nil
@@ -275,7 +282,8 @@ type clippedVisit struct {
 // stored under the same key, which the report completes, or nil.
 //
 //   - An arrival inside a pause is not kept. With no departure after the pause
-//     either, nothing is left of the visit.
+//     either, nothing is left of the visit. One measured in the last moments of
+//     a pause (locationResumeArrivalSlack) counts from its end instead.
 //   - A departure inside a pause, of a visit that arrived before it, becomes the
 //     start of the pause: the visit keeps its arrival and ends there. A
 //     departure inside a pause with no arrival known is not kept, since the
@@ -287,6 +295,15 @@ func (self locationPauseSet) clipVisit(reportedArrivedAt, reportedDepartedAt *ti
 	clipped := clippedVisit{ArrivedAt: reportedArrivedAt, DepartedAt: reportedDepartedAt}
 	if len(self) == 0 {
 		return clipped
+	}
+	if reportedArrivedAt != nil {
+		if pause := self.covering(*reportedArrivedAt); pause != nil && pause.EndedAt != nil &&
+			pause.EndedAt.Sub(*reportedArrivedAt) <= locationResumeArrivalSlack &&
+			(reportedDepartedAt == nil || reportedDepartedAt.After(*pause.EndedAt)) && self.covering(*pause.EndedAt) == nil {
+			endedAt := *pause.EndedAt
+			reportedArrivedAt = &endedAt
+			clipped.ArrivedAt = reportedArrivedAt
+		}
 	}
 	if reportedArrivedAt != nil && self.covering(*reportedArrivedAt) != nil {
 		clipped.ArrivedAt = nil

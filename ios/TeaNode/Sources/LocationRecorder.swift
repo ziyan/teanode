@@ -515,7 +515,9 @@ final class LocationRecorder {
     /// iOS again, which says at once which the person is inside. Noted in the
     /// defaults while a pause is in effect, so that a pause which ended while
     /// the app was closed is still followed by it, and the note is taken off
-    /// only once the places were given again.
+    /// only once the places were given again. A resume made here waits until
+    /// the server has it: the server ends the pause when the resume reaches
+    /// it, and an arrival iOS gives before then is inside the pause and lost.
     private func watchPlacesAgainAfterPause() {
         guard let accountKey = outbox.accountKey else { return }
         let key = Self.hasPlacesToWatchAgainKeyPrefix + accountKey
@@ -523,6 +525,7 @@ final class LocationRecorder {
             if !defaults.bool(forKey: key) { defaults.set(true, forKey: key) }
             return
         }
+        if case .resume? = pauseTracker.pendingChange { return }
         guard defaults.bool(forKey: key), !isWatchingPlacesAgain else { return }
         // Places watched from now on are new to iOS and need nothing: a note
         // left while nothing is watched would later split a visit in progress.
