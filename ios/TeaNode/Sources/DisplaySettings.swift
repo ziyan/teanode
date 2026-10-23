@@ -36,6 +36,15 @@ enum Appearance: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The appearance on screen now, as a choice: the one chosen, or for
+    /// System the one the system shows at this moment.
+    @MainActor
+    var shownNow: Appearance {
+        guard self == .system else { return self }
+        let style = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.traitCollection.userInterfaceStyle }.first
+        return style == .dark ? .dark : .light
+    }
+
     /// Sets every window of the app and every sheet open in it. The app's
     /// root is also given `colorScheme` as its preferredColorScheme, for the
     /// pictures the app switcher keeps, which the windows' style appeared not
