@@ -2,6 +2,7 @@ package mcpserve
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -34,6 +35,9 @@ func (self *catalog) Call(ctx context.Context, name string, arguments json.RawMe
 	self.called, self.arguments = name, string(arguments)
 	if name == "broken" {
 		return Answer{}, errors.New("the roof fell in")
+	}
+	if name == "camera" {
+		return Answer{Text: "the picture follows", Images: []AnswerImage{{MediaType: "image/png", Data: []byte("not really a png")}}}, nil
 	}
 	return Answer{Text: "raining in " + name}, nil
 }
@@ -191,5 +195,24 @@ func TestTheHandshakeSaysWhichVersionIsSpoken(t *testing.T) {
 	}
 	if _, offered := result.Capabilities["tools"]; !offered {
 		t.Fatalf("the server did not offer tools: %+v", result.Capabilities)
+	}
+}
+
+// A picture a tool gave, such as a screenshot, reaches the client as an image
+// part beside the text, not only as the text that says it follows.
+func TestAPictureAToolGaveIsSentAsAnImage(t *testing.T) {
+	client := mcp.NewClient(&pipe{server: New("teanode", "v1", &catalog{})})
+	if _, err := client.Initialize(context.Background(), "test", "0"); err != nil {
+		t.Fatalf("initialize: %s", err)
+	}
+	result, err := client.CallTool(context.Background(), "camera", nil)
+	if err != nil {
+		t.Fatalf("tools/call: %s", err)
+	}
+	if len(result.Content) != 2 || result.Content[0].Type != "text" || result.Content[1].Type != "image" {
+		t.Fatalf("the answer came back as %+v", result.Content)
+	}
+	if picture := result.Content[1]; picture.MimeType != "image/png" || picture.Data != base64.StdEncoding.EncodeToString([]byte("not really a png")) {
+		t.Fatalf("the picture came back as %+v", picture)
 	}
 }

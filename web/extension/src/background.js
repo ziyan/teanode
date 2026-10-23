@@ -1265,10 +1265,61 @@ async function act(action, args) {
       })
       return { answer: result?.result || { ok: false, error: 'the page did not answer' }, documentId: result?.documentId || '' }
     }
-    if (action === 'evaluate') return await runAsScript(tab, runInPage)
+    if (action === 'evaluate') return await runAsScript(tab, () => evaluateInTab(tab, args.expression, origin))
     return (await runInPage()).answer
   } catch (error) {
-    return { ok: false, error: String(error && error.message ? error.message : error) }
+    const message = String(error && error.message ? error.message : error)
+    // Chrome runs nothing in its own error page, and says so in its terms.
+    if (/showing error page/i.test(message)) return { ok: false, error: ERROR_PAGE_REFUSAL }
+    return { ok: false, error: message }
+  }
+}
+
+// What an action on the browser's own error page is answered with.
+const ERROR_PAGE_REFUSAL = 'the page did not load: the tab shows the browser\'s own error page, where nothing can be read or done; go back or navigate somewhere else'
+
+// evaluateInTab runs an expression in the page through the debugger, as the
+// cdp action's Runtime.evaluate does. A content script cannot do it: the
+// extension's own content security policy forbids compiling text into code
+// there, so evaluating in one failed on every page. The debugger is let go
+// afterwards, and Chrome's bar with it, unless the agent's cdp work or a
+// stream of the tab holds it.
+const EVALUATE_TIMEOUT_MILLISECONDS = 30000
+
+async function evaluateInTab(tab, expression, origin) {
+  await debuggerFor(tab.id)
+  try {
+    // Attaching takes a moment, in which the page may have gone to TeaNode.
+    const unreachableNow = pageRefusal('evaluate', await chrome.tabs.get(tab.id), origin)
+    if (unreachableNow) return { answer: { ok: false, error: unreachableNow }, documentId: '' }
+    // The document it runs in is the one the tab shows as it starts.
+    const { documentId } = await frameState(tab.id)
+    let timer = null
+    const timedOut = new Promise((resolve) => {
+      timer = setTimeout(() => resolve({ timedOut: true }), EVALUATE_TIMEOUT_MILLISECONDS)
+    })
+    const answer = await Promise.race([
+      chrome.debugger.sendCommand({ tabId: tab.id }, 'Runtime.evaluate', {
+        expression: String(expression || ''),
+        returnByValue: true,
+        awaitPromise: true,
+        // As a console reads it: an object literal is an object, a
+        // declaration can be made again, and await works at the top.
+        replMode: true,
+      }),
+      timedOut,
+    ]).finally(() => clearTimeout(timer))
+    if (answer && answer.timedOut) {
+      return { answer: { ok: false, error: 'the expression did not finish within 30 seconds' }, documentId }
+    }
+    if (answer && answer.exceptionDetails) {
+      const details = answer.exceptionDetails
+      return { answer: { ok: false, error: (details.exception && details.exception.description) || details.text || 'the expression threw' }, documentId }
+    }
+    const result = answer && answer.result
+    return { answer: { ok: true, data: result && 'value' in result ? result.value : null }, documentId }
+  } finally {
+    await releaseIfUnused(tab.id)
   }
 }
 
