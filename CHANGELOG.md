@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.195.0] - 2026-10-23
+
+### Added
+
+- Pause location recording for an hour, until tomorrow morning, or until you resume, from the iPhone, the dashboard, `teanode location pause` or your agent; the people you share with see that it is paused, and the timeline shows the gap. (#634)
+
 ## [0.194.0] - 2026-10-23
 
 ### Added
