@@ -153,17 +153,52 @@ it('uploads the files chosen and sends them with the text', async () => {
   expect(screen.queryByText('error.png')).toBeNull()
 })
 
-it('sends on Ctrl with Enter, and not while the session asks', async () => {
+it('sends on Enter, and not while the session asks', async () => {
   const idle: HerdrSession = { ...session, herdrSessionState: 'idle' }
   execute.mockResolvedValue({ SendAgentHerdrSession: idle })
   const { rerender } = render(<HerdrSendForm session={idle} onSent={vi.fn()} />)
+  const box = screen.getByLabelText('herdr.sendPlaceholder') as HTMLTextAreaElement
+  box.focus()
+  fireEvent.change(box, { target: { value: 'run the tests' } })
+  fireEvent.keyDown(box, { key: 'Enter' })
+  await waitFor(() => expect(execute).toHaveBeenCalled())
+  expect(execute.mock.calls[0][1]).toMatchObject({ text: 'run the tests' })
+  // The box is emptied, and still the one with the cursor in it.
+  await waitFor(() => expect(box.value).toBe(''))
+  expect(document.activeElement).toBe(box)
+  rerender(<HerdrSendForm session={session} onSent={vi.fn()} />)
+  expect((screen.getByLabelText('herdr.sendPlaceholder') as HTMLTextAreaElement).disabled).toBe(true)
+})
+
+it('still sends on Ctrl with Enter', async () => {
+  const idle: HerdrSession = { ...session, herdrSessionState: 'idle' }
+  execute.mockResolvedValue({ SendAgentHerdrSession: idle })
+  render(<HerdrSendForm session={idle} onSent={vi.fn()} />)
   const box = screen.getByLabelText('herdr.sendPlaceholder')
   fireEvent.change(box, { target: { value: 'run the tests' } })
   fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true })
   await waitFor(() => expect(execute).toHaveBeenCalled())
-  expect(execute.mock.calls[0][1]).toMatchObject({ text: 'run the tests' })
-  rerender(<HerdrSendForm session={session} onSent={vi.fn()} />)
-  expect((screen.getByLabelText('herdr.sendPlaceholder') as HTMLTextAreaElement).disabled).toBe(true)
+})
+
+it('takes a new line on Shift with Enter, and does not send while text is being composed', () => {
+  const idle: HerdrSession = { ...session, herdrSessionState: 'idle' }
+  render(<HerdrSendForm session={idle} onSent={vi.fn()} />)
+  const box = screen.getByLabelText('herdr.sendPlaceholder')
+  fireEvent.change(box, { target: { value: 'run the tests' } })
+  // Shift with Enter is left to the box, which makes the new line.
+  expect(fireEvent.keyDown(box, { key: 'Enter', shiftKey: true })).toBe(true)
+  // Enter that picks a candidate in an input method, in either of the two
+  // ways a browser reports it, is not a send.
+  fireEvent.keyDown(box, { key: 'Enter', isComposing: true })
+  fireEvent.keyDown(box, { key: 'Enter', keyCode: 229 })
+  expect(execute).not.toHaveBeenCalled()
+})
+
+it('does not send an empty box on Enter', () => {
+  const idle: HerdrSession = { ...session, herdrSessionState: 'idle' }
+  render(<HerdrSendForm session={idle} onSent={vi.fn()} />)
+  fireEvent.keyDown(screen.getByLabelText('herdr.sendPlaceholder'), { key: 'Enter' })
+  expect(execute).not.toHaveBeenCalled()
 })
 
 it('draws person turns as bubbles, agent turns as text and tool turns as one line', () => {
@@ -212,4 +247,20 @@ it('attaches a pasted picture, and leaves pasted text to the box', () => {
   expect(screen.getByText(/^pasted-\d+-1\.png$/)).toBeTruthy()
   fireEvent.paste(box, { clipboardData: { files: [], getData: () => 'some text' } })
   expect(screen.getAllByText(/^pasted-/)).toHaveLength(1)
+})
+
+it('is read-only while a send is under way: a second Enter or a pasted picture does nothing', async () => {
+  const idle: HerdrSession = { ...session, herdrSessionState: 'idle' }
+  execute.mockImplementation(() => new Promise(() => {}))
+  render(<HerdrSendForm session={idle} onSent={vi.fn()} />)
+  const box = screen.getByLabelText('herdr.sendPlaceholder') as HTMLTextAreaElement
+  fireEvent.change(box, { target: { value: 'run the tests' } })
+  fireEvent.keyDown(box, { key: 'Enter' })
+  await waitFor(() => expect(box.readOnly).toBe(true))
+  fireEvent.keyDown(box, { key: 'Enter' })
+  const picture = new File(['png bytes'], 'image.png', { type: 'image/png' })
+  fireEvent.paste(box, { clipboardData: { files: [picture], getData: () => '' } })
+  expect(execute).toHaveBeenCalledTimes(1)
+  expect(screen.queryByText(/^pasted-/)).toBeNull()
+  expect(box.disabled).toBe(false)
 })
