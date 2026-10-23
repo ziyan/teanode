@@ -675,8 +675,9 @@ func TestLocationShowsAPauseOnTheirOwnAndOnAnotherPersons(test *testing.T) {
 	if output, err = runLocationCommand(test, open, "now", "--person", "ben"); err != nil || strings.TrimSpace(output) != "Location paused until you resume" {
 		test.Errorf("another person's: %q %v", output, err)
 	}
+	// The end an hour ahead carries its date as well when it falls tomorrow.
 	if output, err = runLocationCommand(test, open, "people"); err != nil || !strings.Contains(output, "Location paused until you resume") ||
-		!strings.Contains(output, "Location paused until "+until.In(time.Local).Format("15:04")) {
+		!regexp.MustCompile(`cleo +current +Location paused until (\d{4}-\d{2}-\d{2} )?`+until.In(time.Local).Format("15:04")).MatchString(output) {
 		test.Errorf("the people who share: %q %v", output, err)
 	}
 }

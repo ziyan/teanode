@@ -1392,13 +1392,10 @@ it('reads the person again when a timed pause ends while the page is open', asyn
 })
 
 it('reads the person again at the end of a pause further ahead than a timer can wait', async () => {
-  vi.useFakeTimers({
-    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
-    shouldAdvanceTime: true,
-  })
-  // The minute refresh does not run in a hidden page, so only the end of the
-  // pause reads the people again here.
-  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+  // The minute refresh stays on the real clock, so only the end of the pause
+  // reads the people again here, and the month is not stepped through a
+  // minute at a time.
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true })
   try {
     vi.setSystemTime(new Date('2030-03-05T12:00:00Z'))
     const endsAt = Date.now() + 30 * 24 * 60 * 60 * 1000
@@ -1427,7 +1424,6 @@ it('reads the person again at the end of a pause further ahead than a timer can 
     expect(screen.getByRole('button', { name: 'Pause recording' })).toBeTruthy()
   } finally {
     vi.useRealTimers()
-    vi.restoreAllMocks()
   }
 })
 
