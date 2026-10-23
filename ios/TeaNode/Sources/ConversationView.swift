@@ -204,6 +204,11 @@ struct ConversationView: View {
             .onAppear {
                 if model.isLoaded { scrollPosition.scrollTo(edge: .bottom) }
             }
+            // The cards of the messages read so far, asked for before the lazy
+            // list draws them (LinkPreviewBelow).
+            .task(id: LinkPreviewsAhead(conversationId: model.conversationId, lineCount: model.transcript.lines.count)) {
+                await readLinkPreviewsAhead()
+            }
             #if DEBUG
                 .task(id: model.isLoaded) {
                     // `-TeaNodeScreen conversation-long-message`: scrolled back to the top, where the long message starts;
@@ -225,6 +230,30 @@ struct ConversationView: View {
                 }
             #endif
         }
+    }
+
+    /// Asks for the cards of the messages read so far, the newest first, so
+    /// that each is there when its message is first drawn.
+    private func readLinkPreviewsAhead() async {
+        guard let conversationId = model.conversationId else { return }
+        let links = LinkPreview.linksAhead(of: model.transcript.lines)
+        guard !links.isEmpty else { return }
+        let askedAt = Date.now
+        let wasAtEnd = isAtEnd
+        let app = app
+        await withTaskGroup(of: Void.self) { group in
+            for link in links {
+                group.addTask { _ = await app.linkPreview(for: link, inConversation: conversationId) }
+            }
+        }
+        // The cards of the newest messages, drawn now, made the list taller
+        // under a conversation just opened at its end: the end is found again
+        // once they are laid out, as after a card folds. Not when the person
+        // has scrolled since.
+        guard wasAtEnd, !Task.isCancelled else { return }
+        try? await Task.sleep(for: .milliseconds(150))
+        guard !Task.isCancelled, lastScrolledAt < askedAt else { return }
+        scrollPosition.scrollTo(edge: .bottom)
     }
 
     private func messages(_ scroller: ScrollViewProxy) -> some View {
@@ -2529,4 +2558,11 @@ extension View {
             textSelection(.disabled)
         }
     }
+}
+
+/// LinkPreviewsAhead is what the cards are asked for again on: another
+/// conversation, or more of its lines read.
+private struct LinkPreviewsAhead: Equatable {
+    let conversationId: String?
+    let lineCount: Int
 }

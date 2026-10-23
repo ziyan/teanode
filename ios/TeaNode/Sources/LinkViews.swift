@@ -57,10 +57,12 @@ struct InAppBrowserPresenter: ViewModifier {
 }
 
 /// LinkPreviewBelow puts the card of the first link of a message under it,
-/// when the page behind it has one. The card is asked for when the message
-/// appears, which in a lazy list is when it comes near the screen, and nothing
-/// is drawn until it is there, so the message does not make room for a card
-/// that does not come.
+/// when the page behind it has one. The conversation asks for the cards of its
+/// messages ahead of drawing them, and one already answered is drawn from the
+/// message's first frame: a card that came a moment later made the message
+/// taller under the person's finger, and the list jumped. One not answered yet
+/// is asked for when the message appears, and nothing is drawn until it is
+/// there, so the message does not make room for a card that does not come.
 struct LinkPreviewBelow: ViewModifier {
     /// The conversation the message is in, nil until it has been read: the
     /// server previews only a link written there by somebody other than the
@@ -82,11 +84,19 @@ struct LinkPreviewBelow: ViewModifier {
         conversationId != nil && isReady ? LinkText.firstLink(in: text, isMarkdown: isMarkdown) : nil
     }
 
+    /// The card to draw: the one this view was answered, or the one already
+    /// answered for its link when the view was built again.
+    private var shown: LinkPreview? {
+        if let preview { return preview }
+        guard let link, let conversationId else { return nil }
+        return app?.answeredLinkPreview(for: link, inConversation: conversationId)
+    }
+
     func body(content: Content) -> some View {
         VStack(alignment: alignment, spacing: 6) {
             content
-            if let preview, preview.hasCard {
-                LinkPreviewCard(preview: preview)
+            if let shown, shown.hasCard {
+                LinkPreviewCard(preview: shown)
             }
         }
         .task(id: link) {
@@ -185,14 +195,17 @@ struct LinkPreviewCard: View {
 
 /// LinkPreviewImage is the page's picture as the server kept it, read with the
 /// app's sign-in, so the page's own site is never asked. It keeps the picture's
-/// shape while it loads, and is left out when it cannot be read.
+/// shape while it loads, and is left out when it cannot be read: from the first
+/// frame when the last read of it found nothing, so a card built again as the
+/// chat scrolls back does not make room for it and take the room away.
 private struct LinkPreviewImage: View {
     let path: String
     let widthPixels: Int?
     let heightPixels: Int?
     @Environment(AppModel.self) private var app: AppModel?
     @State private var picture: UIImage?
-    @State private var isMissing = false
+    /// What this view's read found, nil until it answers.
+    @State private var isMissing: Bool?
 
     /// The picture's shape: its own when the server said, else a wide card
     /// picture.
@@ -201,24 +214,38 @@ private struct LinkPreviewImage: View {
         return CGFloat(widthPixels) / CGFloat(heightPixels)
     }
 
+    /// Whether to leave the picture out: as this view's read found, or until
+    /// it answers, as the last read of the picture did.
+    private var isLeftOut: Bool {
+        if let isMissing { return isMissing }
+        return app?.isPictureMissing(path) ?? false
+    }
+
     var body: some View {
-        if !isMissing {
-            Color(.tertiarySystemFill)
-                .aspectRatio(aspectRatio, contentMode: .fit)
-                .frame(maxHeight: 200)
-                .overlay {
-                    if let picture {
-                        Image(uiImage: picture)
-                            .resizable()
-                            .scaledToFill()
+        Group {
+            if isLeftOut {
+                // Nothing drawn, but here so that the picture is still asked
+                // for: a read that failed for want of a connection may not
+                // fail again.
+                Color.clear.frame(height: 0)
+            } else {
+                Color(.tertiarySystemFill)
+                    .aspectRatio(aspectRatio, contentMode: .fit)
+                    .frame(maxHeight: 200)
+                    .overlay {
+                        if let picture {
+                            Image(uiImage: picture)
+                                .resizable()
+                                .scaledToFill()
+                        }
                     }
-                }
-                .clipped()
-                .accessibilityHidden(true)
-                .task(id: path) {
-                    picture = await app?.picture(path)
-                    isMissing = picture == nil
-                }
+                    .clipped()
+            }
+        }
+        .accessibilityHidden(true)
+        .task(id: path) {
+            picture = await app?.picture(path)
+            isMissing = picture == nil
         }
     }
 }

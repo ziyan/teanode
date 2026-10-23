@@ -413,7 +413,31 @@ final class AppModel {
         let key = ObjectIdentifier(connection)
         let loader = linkPreviewLoaders[key] ?? LinkPreviewLoader { conversationId, urls in try await connection.linkPreviews(conversationId: conversationId, urls: urls) }
         linkPreviewLoaders[key] = loader
-        return await loader.preview(conversationId: conversationId, for: link)
+        let preview = await loader.preview(conversationId: conversationId, for: link)
+        if let preview {
+            answeredLinkPreviews[AnsweredLinkPreviewKey(connection: key, conversationId: conversationId, link: link)] = preview
+        }
+        return preview
+    }
+
+    /// The previews already answered, read while a message is drawn: a
+    /// message the lazy list builds again, scrolled back to, has its card
+    /// from its first frame rather than growing by it a moment later under
+    /// the person's finger. Not watched: the view that asked is told by its
+    /// own answer.
+    @ObservationIgnored private var answeredLinkPreviews: [AnsweredLinkPreviewKey: LinkPreview] = [:]
+
+    private struct AnsweredLinkPreviewKey: Hashable {
+        let connection: ObjectIdentifier
+        let conversationId: String
+        let link: String
+    }
+
+    /// The preview of a link already answered through the connection in use,
+    /// without waiting; nil when it has not been, or there is none.
+    func answeredLinkPreview(for link: String, inConversation conversationId: String) -> LinkPreview? {
+        guard let connection else { return nil }
+        return answeredLinkPreviews[AnsweredLinkPreviewKey(connection: ObjectIdentifier(connection), conversationId: conversationId, link: link)]
     }
 
     /// A file being shown in Quick Look: pictures with pinch to zoom, and
@@ -430,7 +454,19 @@ final class AppModel {
     /// would each download it; the second waits for the first read instead.
     private var pictureReads: [String: Task<UIImage?, Never>] = [:]
 
+    /// Pictures whose last read found nothing, by the same key, read while a
+    /// link card is drawn (LinkPreviewImage). Not watched, like
+    /// answeredLinkPreviews: the view that asked is told by its own answer.
+    @ObservationIgnored private var missingPictures: Set<String> = []
+
     private static func pictureKey(accountKey: String, path: String) -> String { accountKey + " " + path }
+
+    /// Whether the last read of a picture the server keeps found nothing,
+    /// without reading it again.
+    func isPictureMissing(_ path: String) -> Bool {
+        guard let account else { return false }
+        return missingPictures.contains(Self.pictureKey(accountKey: account.accountKey, path: path))
+    }
 
     /// Reads a picture the server keeps, once.
     func picture(_ path: String) async -> UIImage? {
@@ -462,7 +498,12 @@ final class AppModel {
         let reading = Task<UIImage?, Never> {
             let picture = await self.readPicture(path, of: chosen)
             self.pictureReads[key] = nil
-            if let picture { self.pictures[key] = picture }
+            if let picture {
+                self.pictures[key] = picture
+                self.missingPictures.remove(key)
+            } else {
+                self.missingPictures.insert(key)
+            }
             return picture
         }
         pictureReads[key] = reading
