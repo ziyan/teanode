@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.195.5] - 2026-10-23
+
+### Fixed
+
+- Reading a Codex session's history through herdr works when Codex's hook reported it for another pane. (#639)
+- The coding page's "no agents" and "no turns" sentences are centered in a wide pane. (#639)
+
 ## [0.195.4] - 2026-10-23
 
 ### Fixed
