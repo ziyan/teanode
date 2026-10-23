@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.195.1] - 2026-10-23
+
+### Fixed
+
+- The iPhone app's picture in the app switcher no longer shows lists with words in the other appearance's colors. (#636)
+
 ## [0.195.0] - 2026-10-23
 
 ### Added
