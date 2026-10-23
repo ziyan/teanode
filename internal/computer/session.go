@@ -88,9 +88,18 @@ type SessionResult struct {
 const sessionEndWait = 3 * time.Second
 
 // sessionOutputWait is how long an ended session's last output is given to
-// arrive before the end is told. Output a program left to a child it started
-// in the background arrives when the child writes it, after the end.
+// arrive before the end is told. A child the program left in the background
+// can hold the output open for as long as it runs; what it writes after this
+// is not told, since the session it would be told as has ended.
 const sessionOutputWait = 2 * time.Second
+
+// waitForOutput waits until done is closed, at most sessionOutputWait.
+func waitForOutput(done <-chan struct{}) {
+	select {
+	case <-done:
+	case <-time.After(sessionOutputWait):
+	}
+}
 
 // pushOutput is how a session says something arrived, and pushEnded that it
 // finished. Both are unsolicited, which is what the session layer exists for.
@@ -218,7 +227,6 @@ func (self *sessions) start(ctx context.Context, options *Options, arguments *Se
 		go func() {
 			defer pumping.Done()
 			self.pump(arguments.Session, stream, reader, output)
-			_ = reader.Close()
 		}()
 	}
 	go func() {
@@ -238,10 +246,8 @@ func (self *sessions) start(ctx context.Context, options *Options, arguments *Se
 			pumping.Wait()
 			close(pumped)
 		}()
-		select {
-		case <-pumped:
-		case <-time.After(sessionOutputWait):
-		}
+		waitForOutput(pumped)
+		_, _ = stdout.Close(), stderr.Close()
 		self.finish(reserved, code)
 		ended(arguments.Session, code)
 	}()

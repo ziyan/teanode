@@ -124,7 +124,9 @@ func (self *sessions) startTerminalWith(reserved *session, release func(), comma
 	// Everything the program writes goes to the screen, where it is read
 	// on request; it is not streamed. A terminal is read as a screen. When
 	// somebody is sitting in it, what the program writes goes to them too.
+	parsed := make(chan struct{})
 	go func() {
+		defer close(parsed)
 		var source io.Reader = file
 		if tee != nil {
 			source = io.TeeReader(file, tee)
@@ -147,6 +149,8 @@ func (self *sessions) startTerminalWith(reserved *session, release func(), comma
 				code = -1
 			}
 		}
+		// The screen has what the program drew last before its end is told.
+		waitForOutput(parsed)
 		self.finish(reserved, code)
 		ended(arguments.Session, code)
 	}()
