@@ -3,6 +3,7 @@ package computer
 import (
 	"context"
 	"encoding/base64"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -224,5 +225,112 @@ func TestATerminalIsReadAsAScreen(t *testing.T) {
 	}
 	if _, err := held.readScreen(&SessionReadArguments{Session: "term"}); err == nil {
 		t.Fatalf("closed is gone")
+	}
+}
+
+// Everything a program writes is told before its end is, however quickly it
+// exits after writing.
+func TestASessionTellsAllItsOutputBeforeItsEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts a process")
+	}
+	const outputByteCount = 1 << 20
+	for attempt := range 20 {
+		var mutex sync.Mutex
+		heardByteCount := 0
+		finished := make(chan int, 1)
+		held := newSessions()
+		if _, err := held.start(context.Background(), withDefaults(&Options{Home: t.TempDir()}), &SessionStartArguments{
+			Session: "quick", Kind: "stdio", Command: "head", Arguments: []string{"-c", strconv.Itoa(outputByteCount), "/dev/zero"},
+		}, func(_, _, data string) {
+			decoded, _ := base64.StdEncoding.DecodeString(data)
+			mutex.Lock()
+			heardByteCount += len(decoded)
+			mutex.Unlock()
+		}, func(_ string, code int) {
+			mutex.Lock()
+			finished <- heardByteCount
+			mutex.Unlock()
+		}); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case byteCount := <-finished:
+			if byteCount != outputByteCount {
+				t.Fatalf("attempt %d: the end was told after %d of %d bytes", attempt, byteCount, outputByteCount)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("the session never ended")
+		}
+		held.closeAll()
+	}
+}
+
+// A child the program left running in the background with its output does not
+// hold back the program's end, and what it writes after the end is not told.
+func TestASessionEndsThoughABackgroundChildHoldsItsOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts a process")
+	}
+	var mutex sync.Mutex
+	var said strings.Builder
+	finished := make(chan int, 1)
+	held := newSessions()
+	defer held.closeAll()
+	if _, err := held.start(context.Background(), withDefaults(&Options{Home: t.TempDir()}), &SessionStartArguments{
+		Session: "parent", Kind: "stdio", Command: "sh", Arguments: []string{"-c", "(sleep 4; echo late) & echo started"},
+	}, func(_, _, data string) {
+		decoded, _ := base64.StdEncoding.DecodeString(data)
+		mutex.Lock()
+		said.Write(decoded)
+		mutex.Unlock()
+	}, func(_ string, code int) { finished <- code }); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case code := <-finished:
+		if code != 0 {
+			t.Errorf("the program ended with %d", code)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("the end waited on the background child")
+	}
+	time.Sleep(3 * time.Second)
+	mutex.Lock()
+	defer mutex.Unlock()
+	if said.String() != "started\n" {
+		t.Errorf("the session told %q", said.String())
+	}
+}
+
+// A terminal's screen has what its program drew last when the end is told.
+func TestATerminalShowsWhatItsProgramDrewLastWhenItEnds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts a process")
+	}
+	for attempt := range 20 {
+		screens := make(chan string, 1)
+		held := newSessions()
+		if _, err := held.start(context.Background(), withDefaults(&Options{Home: t.TempDir()}), &SessionStartArguments{
+			Session: "drawn", Kind: "pty", Command: "/bin/sh", Arguments: []string{"-c", "printf drawn-last"}, Columns: 60, Rows: 12,
+		}, func(string, string, string) {}, func(_ string, _ int) {
+			screen, err := held.readScreen(&SessionReadArguments{Session: "drawn"})
+			if err != nil {
+				screens <- err.Error()
+				return
+			}
+			screens <- screen.Text
+		}); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case text := <-screens:
+			if !strings.Contains(text, "drawn-last") {
+				t.Fatalf("attempt %d: the screen at the end was %q", attempt, text)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("the terminal never ended")
+		}
+		held.closeAll()
 	}
 }

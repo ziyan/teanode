@@ -87,6 +87,20 @@ type SessionResult struct {
 // killed.
 const sessionEndWait = 3 * time.Second
 
+// sessionOutputWait is how long an ended session's last output is given to
+// arrive before the end is told. A child the program left in the background
+// can hold the output open for as long as it runs; what it writes after this
+// is not told, since the session it would be told as has ended.
+const sessionOutputWait = 2 * time.Second
+
+// waitForOutput waits until done is closed, at most sessionOutputWait.
+func waitForOutput(done <-chan struct{}) {
+	select {
+	case <-done:
+	case <-time.After(sessionOutputWait):
+	}
+}
+
 // pushOutput is how a session says something arrived, and pushEnded that it
 // finished. Both are unsolicited, which is what the session layer exists for.
 type pushOutput func(session, stream, data string)
@@ -177,17 +191,27 @@ func (self *sessions) start(ctx context.Context, options *Options, arguments *Se
 		release()
 		return nil, fmt.Errorf("cannot write to %s: %w", arguments.Command, err)
 	}
-	stdout, err := command.StdoutPipe()
+	// The output pipes are made here rather than by StdoutPipe, whose
+	// reading end Wait closes as soon as the program exits: what the
+	// program wrote last could still be in the pipe and be lost.
+	stdout, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		release()
 		return nil, fmt.Errorf("cannot read %s: %w", arguments.Command, err)
 	}
-	stderr, err := command.StderrPipe()
+	stderr, stderrWriter, err := os.Pipe()
 	if err != nil {
+		_, _ = stdout.Close(), stdoutWriter.Close()
 		release()
 		return nil, fmt.Errorf("cannot read %s: %w", arguments.Command, err)
 	}
-	if err := command.Start(); err != nil {
+	command.Stdout, command.Stderr = stdoutWriter, stderrWriter
+	err = command.Start()
+	// The program has its own copies of the writing ends; with these closed,
+	// the readers end when it and anything it started have closed theirs.
+	_, _ = stdoutWriter.Close(), stderrWriter.Close()
+	if err != nil {
+		_, _ = stdout.Close(), stderr.Close()
 		release()
 		return nil, fmt.Errorf("cannot start %s: %w", arguments.Command, err)
 	}
@@ -197,8 +221,14 @@ func (self *sessions) start(ctx context.Context, options *Options, arguments *Se
 	reserved.command, reserved.stdin = command, stdin
 	self.mutex.Unlock()
 
-	go self.pump(arguments.Session, "stdout", stdout, output)
-	go self.pump(arguments.Session, "stderr", stderr, output)
+	var pumping sync.WaitGroup
+	pumping.Add(2)
+	for stream, reader := range map[string]*os.File{"stdout": stdout, "stderr": stderr} {
+		go func() {
+			defer pumping.Done()
+			self.pump(arguments.Session, stream, reader, output)
+		}()
+	}
 	go func() {
 		err := command.Wait()
 		code := 0
@@ -210,6 +240,14 @@ func (self *sessions) start(ctx context.Context, options *Options, arguments *Se
 				code = -1
 			}
 		}
+		// Everything the program wrote is told before its end is.
+		pumped := make(chan struct{})
+		go func() {
+			pumping.Wait()
+			close(pumped)
+		}()
+		waitForOutput(pumped)
+		_, _ = stdout.Close(), stderr.Close()
 		self.finish(reserved, code)
 		ended(arguments.Session, code)
 	}()
