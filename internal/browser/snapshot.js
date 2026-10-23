@@ -70,7 +70,7 @@
     function collect(part) {
       if (part === element) return;
       if (part.nodeType === Node.TEXT_NODE) { words.push(part.textContent); return; }
-      if (part.nodeType !== Node.ELEMENT_NODE || ['select', 'textarea', 'input', 'script', 'style'].includes(part.tagName.toLowerCase())) return;
+      if (part.nodeType !== Node.ELEMENT_NODE || part.isContentEditable || ['select', 'textarea', 'input', 'output', 'script', 'style'].includes(part.tagName.toLowerCase())) return;
       for (const child of part.childNodes) collect(child);
     }
     for (const label of element.labels) collect(label);
@@ -91,11 +91,12 @@
   }
   function isInteractive(element) {
     const tag = element.tagName.toLowerCase();
-    // A label of a field is not a thing to act on of its own: the field has
-    // the ref, named by the label, and the label's words are read as the walk
-    // goes on. A label whose field is not drawn (a checkbox the page draws
-    // itself) is what the person clicks, so it keeps one.
-    if (tag === 'label' && element.control && visible(element.control)) return false;
+    // A label of a text field or a select is not a thing to act on of its
+    // own: the field has the ref, named by the label, and the label's words
+    // are read as the walk goes on. A checkbox or a radio is often moved off
+    // the page or clipped to a pixel, with its label drawn as the box, and a
+    // field that is not drawn cannot be clicked: those labels keep their ref.
+    if (tag === 'label' && element.control && (holdsTypedText(element.control) || element.control instanceof HTMLSelectElement) && visible(element.control)) return false;
     if (interactive.has(tag)) return true;
     const role = element.getAttribute('role');
     if (role && roles.has(role)) return true;

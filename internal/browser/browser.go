@@ -624,8 +624,18 @@ func (self *Context) Type(ctx context.Context, where Target, text string, clearF
 	script := fmt.Sprintf(`(function () {
   const node = %s(%d, %q);
   if (!node) return {ok: false};
-  if (!(node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement || node.isContentEditable)) return {ok: false, isNotAField: true};
+  // A checkbox, a button or a file takes no typed text. Anything else takes
+  // it if it takes the focus: a field, an editable region, or a frame or a
+  // component that hands the focus on to the editor inside it.
+  const untyped = ['checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'file', 'hidden', 'range', 'color'];
+  if (node instanceof HTMLInputElement && untyped.includes((node.type || 'text').toLowerCase())) return {ok: false, isNotAField: true};
+  const isField = node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement || node.isContentEditable;
+  // Whether anything else takes the focus is told only with the focus let
+  // go first: a form that cannot take it would leave it on a field inside.
+  if (!isField && document.activeElement && document.activeElement.blur) document.activeElement.blur();
   node.focus();
+  const focused = document.activeElement;
+  if (!isField && !(focused && focused !== document.body && (focused === node || node.contains(focused)))) return {ok: false, isNotAField: true};
   if (%t && 'value' in node) { node.value = ''; node.dispatchEvent(new Event('input', {bubbles: true})); }
   return {ok: true};
 })()`, field, where.Ref, where.Selector, clearFirst)

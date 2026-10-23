@@ -306,6 +306,9 @@ keyboard do, and it is the only way to see what a page asks the network for.
 since, and `cdp_stop` lets go. While it is attached Chrome shows its own bar
 saying so, which is the person's sign that it is happening; it is let go when
 the tab closes, when the person detaches, and when the connection drops.
+`evaluate` runs through the protocol too (`Runtime.evaluate`; a content script
+may not compile text into code), so the bar shows while it runs, and the
+debugger is let go after it unless `cdp` work or a stream of the tab holds it.
 
 Only methods on a list of exact names are sent (`reach.go` on the server,
 `reach.js` in the extension, and a test keeps the two equal), not because the

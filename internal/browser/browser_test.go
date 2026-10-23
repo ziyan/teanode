@@ -433,6 +433,8 @@ func TestARealChromeTypesIntoTheFieldsOfLabels(t *testing.T) {
 		_, _ = io.WriteString(response, `<html><body><form>
 <label>App name: <input id="app" type="text" name="Q101"></label>
 <label>Platform: <select id="platform" name="Q102"><option>Choose</option><option>Phone</option><option>Tablet</option></select></label>
+<label><input id="agree" type="checkbox" style="position:absolute;left:-9999px"> I agree</label>
+<div id="note" contenteditable="true"></div>
 <button type="button" hidden onclick="document.title='hidden'">Go</button>
 <button type="button" onclick="document.title='shown'">Go</button>
 </form></body></html>`)
@@ -479,17 +481,27 @@ func TestARealChromeTypesIntoTheFieldsOfLabels(t *testing.T) {
 	if err := page.Type(ctx, Target{Selector: "label"}, " Mobile", false, false); err != nil {
 		t.Fatalf("Type through a label: %s", err)
 	}
-	if err := page.Type(ctx, Target{Selector: "form"}, "nowhere", false, false); err == nil || !strings.Contains(err.Error(), "not a field") {
-		t.Fatalf("typing into a form was not refused: %v", err)
+	for _, selector := range []string{"form", "#agree"} {
+		if err := page.Type(ctx, Target{Selector: selector}, "nowhere", false, false); err == nil || !strings.Contains(err.Error(), "not a field") {
+			t.Fatalf("typing into %s was not refused: %v", selector, err)
+		}
+	}
+	if err := page.Type(ctx, Target{Selector: "#note"}, "a note", false, false); err != nil {
+		t.Fatalf("Type into an editable region: %s", err)
+	}
+	// A checkbox moved off the page is clicked by its label, which keeps
+	// its ref for that.
+	if _, _, err := page.Click(ctx, Target{Ref: refOf(`\[ref=(\d+)\] label "I agree"`)}); err != nil {
+		t.Fatalf("Click the label: %s", err)
 	}
 	if _, _, err := page.Click(ctx, Target{Selector: "button"}); err != nil {
 		t.Fatalf("Click: %s", err)
 	}
-	values, err := page.Evaluate(ctx, "[document.getElementById('app').value, document.getElementById('platform').value, document.title].join('|')", 1000)
+	values, err := page.Evaluate(ctx, "[document.getElementById('app').value, document.getElementById('platform').value, document.title, document.getElementById('agree').checked, document.getElementById('note').textContent].join('|')", 1000)
 	if err != nil {
 		t.Fatalf("Evaluate: %s", err)
 	}
-	if !strings.Contains(values, "Lantern Mobile|Tablet|shown") {
+	if !strings.Contains(values, "Lantern Mobile|Tablet|shown|true|a note") {
 		t.Fatalf("the form holds %s", values)
 	}
 }

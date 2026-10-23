@@ -71,7 +71,7 @@ beforeAll(async () => {
     },
     debugger: {
       attach: async () => {},
-      detach: async () => {},
+      detach: vi.fn(async () => {}),
       sendCommand,
       onEvent: event('debugger.onEvent'),
       onDetach: event('debugger.onDetach'),
@@ -129,6 +129,25 @@ describe('a call the server checked for one tab', () => {
     expect(executeScript).not.toHaveBeenCalled()
   })
 
+  it("lets the debugger go after evaluating, unless the agent's cdp work holds it", async () => {
+    const detach = (globalThis as any).chrome.debugger.detach as ReturnType<typeof vi.fn>
+    detach.mockClear()
+    expect((await act('evaluate', { expression: '1' })).ok).toBe(true)
+    expect(detach).toHaveBeenCalledTimes(1)
+    detach.mockClear()
+    expect((await act('cdp', { method: 'Network.enable', params: {}, isScript: false })).ok).toBe(true)
+    expect((await act('evaluate', { expression: '1' })).ok).toBe(true)
+    expect(detach).not.toHaveBeenCalled()
+    await act('cdp_stop', {})
+  })
+
+  it('answers an action on the browser error page in plain words', async () => {
+    executeScript.mockRejectedValueOnce(new Error('Frame with ID 0 is showing error page'))
+    const answer = await act('snapshot', {})
+    expect(answer.ok).toBe(false)
+    expect(answer.error).toContain('the page did not load')
+  })
+
   it('evaluates through the debugger, waits for a promise and says what it threw', async () => {
     sendCommand.mockImplementationOnce(async () => ({ result: { type: 'string', value: 'a title' } }))
     expect(await act('evaluate', { expression: 'document.title' })).toMatchObject({
@@ -139,6 +158,7 @@ describe('a call the server checked for one tab', () => {
       expression: 'document.title',
       returnByValue: true,
       awaitPromise: true,
+      replMode: true,
     })
     sendCommand.mockImplementationOnce(async () => ({
       result: { type: 'object' },

@@ -33,6 +33,12 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
   // known to be a secret.
   const isFilledDocument = args.isFilledDocument === true
   const isTextField = (node) => node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement
+  // The inputs that take typed text: not a checkbox, a button or a file.
+  const UNTYPED_INPUTS = ['checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'file', 'hidden', 'range', 'color']
+  const takesTypedText = (node) =>
+    node instanceof HTMLTextAreaElement ||
+    node.isContentEditable ||
+    (node instanceof HTMLInputElement && !UNTYPED_INPUTS.includes((node.type || 'text').toLowerCase()))
   // A label stands for the field it labels: typing into or choosing in a
   // label acts on its field. A click stays on the label, as the person's
   // would.
@@ -100,7 +106,7 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
     const collect = (part) => {
       if (part === node) return
       if (part.nodeType === Node.TEXT_NODE) words.push(part.textContent)
-      else if (part.nodeType === Node.ELEMENT_NODE && !['select', 'textarea', 'input', 'script', 'style'].includes(part.tagName.toLowerCase())) for (const child of part.childNodes) collect(child)
+      else if (part.nodeType === Node.ELEMENT_NODE && !part.isContentEditable && !['select', 'textarea', 'input', 'output', 'script', 'style'].includes(part.tagName.toLowerCase())) for (const child of part.childNodes) collect(child)
     }
     for (const label of node.labels) collect(label)
     return words.join(' ').trim().replace(/\s+/g, ' ').slice(0, 120)
@@ -171,7 +177,9 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
         // has the ref, named by the label, and the label's words are read
         // as it walks on. A label whose field is not drawn (a checkbox the
         // page draws itself) is what the person clicks, so it keeps one.
-        const isFieldLabel = tag === 'label' && node.control && isDrawn(node.control)
+        // A checkbox or a radio is often moved off the page or clipped to a
+        // pixel, with its label drawn as the box: that label keeps its ref.
+        const isFieldLabel = tag === 'label' && node.control && (takesTypedText(node.control) || node.control instanceof HTMLSelectElement) && isDrawn(node.control)
         if (!isFieldLabel && (interactive.has(tag) || (node.getAttribute('role') && /button|link|checkbox|radio|textbox|combobox|tab|menuitem/.test(node.getAttribute('role'))))) {
           const ref = refFor(node)
           let description = node.getAttribute('role') || tag
@@ -225,8 +233,7 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
       const node = found && fieldOf(found)
       if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
       if (isUnderPanel(node)) return { ok: false, error: panelWords }
-      const isField = isTextField(node) || node.isContentEditable
-      if (!isField) return { ok: false, error: 'that is not a field to type into; take a snapshot and use the ref of the field itself' }
+      if (!takesTypedText(node)) return { ok: false, error: 'that is not a field to type into; take a snapshot and use the ref of the field itself' }
       node.focus()
       if (args.clear_first && 'value' in node) node.value = ''
       if ('value' in node) {

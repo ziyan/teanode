@@ -42,8 +42,11 @@ beforeEach(() => {
     <label>Country code <select id="code" name="Q103">${callingCodes}</select></label>
     <label><input id="agree" type="checkbox"> I agree</label>
     <label id="drawn">Remember me <input id="remember" type="checkbox"></label>
+    <label>Send me news <input id="news" type="checkbox"></label>
   </form>`
   setLayout(document.getElementById('remember')!, { width: 0, height: 0 })
+  // Drawn, but as a pixel: how a page hides a checkbox it draws itself.
+  setLayout(document.getElementById('news')!, { width: 1, height: 1 })
 })
 afterEach(() => {
   delete (window as any).__teanodeRefs
@@ -59,8 +62,10 @@ describe.each(snapshots)('%s', (_, snapshot) => {
     expect(text).not.toMatch(/\[ref=\d+\] label "App name/)
   })
 
-  it('keeps the ref on a label whose field is not drawn', async () => {
-    expect(await snapshot()).toMatch(/\[ref=\d+\] label "Remember me/)
+  it('keeps the ref on a label whose field is not drawn, or is a checkbox', async () => {
+    const text = await snapshot()
+    expect(text).toMatch(/\[ref=\d+\] label "Remember me/)
+    expect(text).toMatch(/\[ref=\d+\] label "Send me news/)
   })
 
   it('lists the first options of a long select and says how many more there are', async () => {
@@ -89,9 +94,11 @@ describe('the person’s tab', () => {
   it('types into the field a label stands for, and refuses what is not a field', async () => {
     expect((await inPage('type', { selector: 'label', text: 'Lantern' })).ok).toBe(true)
     expect((document.getElementById('app') as HTMLInputElement).value).toBe('Lantern')
-    const refused = await inPage('type', { selector: 'form', text: 'nowhere' })
-    expect(refused.ok).toBe(false)
-    expect(refused.error).toContain('not a field')
+    for (const selector of ['form', '#agree']) {
+      const refused = await inPage('type', { selector, text: 'nowhere' })
+      expect(refused.ok, selector).toBe(false)
+      expect(refused.error, selector).toContain('not a field')
+    }
   })
 
   it('takes the drawn element a selector matches before a hidden one', async () => {

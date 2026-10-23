@@ -1,6 +1,7 @@
 package apigraph
 
 import (
+	"strings"
 	"testing"
 
 	agenttools "github.com/ziyan/teanode/internal/agent/tools"
@@ -24,5 +25,16 @@ func TestAToolsPictureIsInItsMCPAnswer(t *testing.T) {
 	}
 	if len(answer.Images) != 1 || answer.Images[0].MediaType != "image/png" || string(answer.Images[0].Data) != "a picture" {
 		t.Fatalf("the pictures came back as %+v", answer.Images)
+	}
+}
+
+// A picture bigger than a model takes is left out, and the answer says so.
+func TestATooLargePictureIsLeftOutOfItsMCPAnswer(t *testing.T) {
+	answer := mcpAnswerOf(&agenttools.Result{
+		Content: "a whole page",
+		Images:  []llm.ContentPart{{Type: "image", MediaType: "image/png", Data: make([]byte, mcpImageBytes+1)}},
+	})
+	if len(answer.Images) != 0 || !strings.Contains(answer.Text, "was left out") {
+		t.Fatalf("the answer was %q with %d pictures", answer.Text, len(answer.Images))
 	}
 }
