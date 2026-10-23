@@ -468,6 +468,37 @@ func TestAReportThatWaitedForTheLockSeesThePauseThatBeganMeanwhile(t *testing.T)
 	}
 }
 
+// A position the browser gave with no time of its own waits for the person's
+// lock like a report, and takes its time after it: a pause that began while it
+// waited is in effect for it, so it is not kept.
+func TestAPositionTheBrowserGaveWaitsForTheLock(t *testing.T) {
+	world := newLocationWorld(t)
+	principal := &api.Principal{User: world.ada, Permissions: &models.EffectivePermissions{Everywhere: []models.Permission{models.PermissionLocationUse}}}
+	isKept := make(chan bool, 1)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := tx.LockLocation(world.ada.ID); err != nil {
+			t.Fatalf("LockLocation: %s", err)
+		}
+		go func() {
+			world.graph.keepBrowserLocation(context.Background(), principal, &agent.LocationAnswer{LatitudeDegrees: 40, LongitudeDegrees: -75, AccuracyMeters: 30})
+			points := world.call(t, world.ada, fmt.Sprintf(`query { ListLocationPoints(from: %q, until: %q) { latitudeDegrees } }`, ago(time.Hour), time.Now().Add(time.Hour).UTC().Format(time.RFC3339)))["ListLocationPoints"].([]any)
+			isKept <- len(points) > 0
+		}()
+		time.Sleep(300 * time.Millisecond)
+		if _, _, err := tx.PauseLocation(world.ada.ID, nil, time.Now()); err != nil {
+			t.Fatalf("PauseLocation: %s", err)
+		}
+	})
+	select {
+	case wasKept := <-isKept:
+		if wasKept {
+			t.Error("a position taken while the pause had begun was kept")
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("keeping the browser's position did not finish")
+	}
+}
+
 // The pauses of a range are the person's own, and another person's at level
 // history only, by the reach rules of the visits.
 func TestPausesAreListedByTheReachRulesOfVisits(t *testing.T) {

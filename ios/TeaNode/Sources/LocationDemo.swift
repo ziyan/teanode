@@ -108,8 +108,9 @@
             return #"{"id":"\#(id)","startedAt":"\#(CalendarDates.text(startedAt))","endedAt":\#(ended)}"#
         }
 
-        /// When the person's own pause in effect began: twenty minutes ago.
-        static var ownPauseStartedAt: Date { Date().addingTimeInterval(-20 * 60) }
+        /// When the person's own pause in effect began: twenty minutes before
+        /// the demo first asked, the same instant for every answer.
+        static let ownPauseStartedAt = Date().addingTimeInterval(-20 * 60)
 
         /// The person's own pause in effect, to end in forty minutes.
         static var ownPauseJSON: String {

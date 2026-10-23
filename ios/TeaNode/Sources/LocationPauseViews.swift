@@ -35,7 +35,7 @@ struct LocationPauseRow: View {
     let pause: LocationPause
     /// The symbol's column grows with the text, so a wide symbol at a large
     /// text size does not run into the name.
-    @ScaledMetric(relativeTo: .body) private var symbolColumnWidth = 28.0
+    @ScaledMetric(relativeTo: .body) private var symbolColumnWidth: CGFloat = 28
 
     var body: some View {
         HStack(spacing: 12) {

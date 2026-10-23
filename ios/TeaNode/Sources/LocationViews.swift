@@ -510,7 +510,7 @@ struct LocationVisitRow: View {
     let visit: PlaceVisit
     /// The symbol's column grows with the text, so a wide symbol at a large
     /// text size does not run into the name.
-    @ScaledMetric(relativeTo: .body) private var symbolColumnWidth = 28.0
+    @ScaledMetric(relativeTo: .body) private var symbolColumnWidth: CGFloat = 28
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -529,8 +529,10 @@ struct LocationVisitRow: View {
             }
             .accessibilityElement(children: .combine)
             if let photos = visit.photos, !photos.isEmpty {
+                // The photos keep their size at every text size, so their
+                // indent does too: five still fit across.
                 VisitPhotoStrip(visit: visit, photos: photos)
-                    .padding(.leading, symbolColumnWidth + 12)
+                    .padding(.leading, 40)
             }
         }
         // The whole width, so the times are not wrapped to the strip's width under them.
