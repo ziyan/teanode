@@ -6,6 +6,21 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.194.0] - 2026-10-23
+
+### Added
+
+- Share a finance account at a level (balance, spending, transactions), a recording (summary or transcript), and keep a circle address book every member edits. (#633)
+- A Sharing page, `teanode sharing`, and the circle tool's `sharing`: everything you share and everything shared with you, with stop and decline, and a note when something is shared with you. (#633)
+- Album shares can include the names of the faces, off by default. (#633)
+
+### Fixed
+
+- The agent no longer repeats other people's calendars or photos into a chat, reads another person's location in a run a mail or webhook started, or reads Health shared with the person. (#633)
+- Shared memory pages no longer quote recordings or show facts drawn only from finance, recordings, location or private events, and their shares follow a moved page. (#633)
+- An album reader no longer gets the names of faces, the capture time zone or the original's digest unless the share includes them, and a playback address stops working when the share ends. (#633)
+- A calendar shared at busy no longer shows its title, and shares stop reaching people without calendar access. (#633)
+
 ## [0.193.8] - 2026-10-22
 
 ### Changed
