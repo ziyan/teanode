@@ -66,10 +66,14 @@ struct TeaNodeApp: App {
                 PhotoBackupEngine.shared.sceneBecameActive()
             }
             .onChange(of: scenePhase, initial: true) { _, phase in
+                // Held to light or dark only: while what is shown cannot be
+                // read it is tried again at the next phase.
                 if phase != .active, heldAppearance == nil {
-                    let shown = appearance.shownNow
-                    heldAppearance = shown
-                    shown.apply()
+                    let shownAppearance = appearance.shownNow
+                    if shownAppearance != .system {
+                        heldAppearance = shownAppearance
+                        shownAppearance.apply()
+                    }
                 }
                 if phase == .active {
                     heldAppearance = nil
