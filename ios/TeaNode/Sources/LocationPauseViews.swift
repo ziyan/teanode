@@ -33,13 +33,16 @@ struct LocationPausedNote: View {
 /// stay. It opens nothing.
 struct LocationPauseRow: View {
     let pause: LocationPause
+    /// The symbol's column grows with the text, so a wide symbol at a large
+    /// text size does not run into the name.
+    @ScaledMetric(relativeTo: .body) private var symbolColumnWidth = 28.0
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "pause.circle")
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.secondary)
-                .frame(width: 28)
+                .frame(width: symbolColumnWidth)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Location paused")

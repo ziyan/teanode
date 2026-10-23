@@ -508,6 +508,9 @@ struct LocationVisitsList: View {
 
 struct LocationVisitRow: View {
     let visit: PlaceVisit
+    /// The symbol's column grows with the text, so a wide symbol at a large
+    /// text size does not run into the name.
+    @ScaledMetric(relativeTo: .body) private var symbolColumnWidth = 28.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -515,7 +518,7 @@ struct LocationVisitRow: View {
                 Image(systemName: visit.place.symbolName)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.secondary)
-                    .frame(width: 28)
+                    .frame(width: symbolColumnWidth)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: visit.place.shownName)
@@ -527,7 +530,7 @@ struct LocationVisitRow: View {
             .accessibilityElement(children: .combine)
             if let photos = visit.photos, !photos.isEmpty {
                 VisitPhotoStrip(visit: visit, photos: photos)
-                    .padding(.leading, 40)
+                    .padding(.leading, symbolColumnWidth + 12)
             }
         }
         // The whole width, so the times are not wrapped to the strip's width under them.

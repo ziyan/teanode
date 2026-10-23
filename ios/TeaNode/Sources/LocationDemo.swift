@@ -108,10 +108,12 @@
             return #"{"id":"\#(id)","startedAt":"\#(CalendarDates.text(startedAt))","endedAt":\#(ended)}"#
         }
 
-        /// The person's own pause in effect: begun twenty minutes ago, to end in forty.
+        /// When the person's own pause in effect began: twenty minutes ago.
+        static var ownPauseStartedAt: Date { Date().addingTimeInterval(-20 * 60) }
+
+        /// The person's own pause in effect, to end in forty minutes.
         static var ownPauseJSON: String {
-            let now = Date()
-            return pauseJSON(id: "pause-now", startedAt: now.addingTimeInterval(-20 * 60), endedAt: now.addingTimeInterval(40 * 60))
+            pauseJSON(id: "pause-now", startedAt: ownPauseStartedAt, endedAt: ownPauseStartedAt.addingTimeInterval(60 * 60))
         }
 
         /// The second person's pause, which has no end.
@@ -181,14 +183,17 @@
         }
 
         /// Two days of visits: today's, ending with the one in progress, and
-        /// yesterday's.
+        /// yesterday's. While the person's own pause is in effect, the visit in
+        /// progress ended where the pause began, as the server ends it.
         static var visits: [Visit] {
             let now = Date()
             func at(_ daysAgo: Int, _ hour: Int, _ minute: Int) -> Date {
                 ServerTime.date(DemoServer.demoTime(daysAgo: daysAgo, hour: hour, minute: minute)) ?? now
             }
             return [
-                Visit(id: "visit-1", placeId: parkPlaceId, arrivedAt: now.addingTimeInterval(-35 * 60), departedAt: nil),
+                Visit(
+                    id: "visit-1", placeId: parkPlaceId, arrivedAt: now.addingTimeInterval(-35 * 60),
+                    departedAt: isOwnPauseInEffect ? ownPauseStartedAt : nil),
                 Visit(
                     id: "visit-2", placeId: officePlaceId, arrivedAt: at(0, 9, 5), departedAt: at(0, 12, 30),
                     photoIds: ["demo-v1", "demo-v2", "demo-v3", "demo-v4"], photoCount: 7),
@@ -256,12 +261,16 @@
                     #"{"data":{"GetLocation":{"userId":"robin","username":"robin","name":"Robin","avatarUrl":null,"avatarColorIndex":7,"shareLevel":"owner","latestPoint":null,"openVisit":null}}}"#
             }
             if query.contains("GetLocation(") {
-                let open = LocationDemo.visits[0]
+                // While paused nothing newer than the pause's start is recorded,
+                // and no visit is in progress.
+                let isPaused = LocationDemo.isOwnPauseInEffect
+                let open = isPaused ? "null" : LocationDemo.visits[0].json
                 let park = LocationDemo.place(LocationDemo.parkPlaceId)
+                let measuredAt = isPaused ? LocationDemo.ownPauseStartedAt.addingTimeInterval(-60) : Date()
                 let point =
-                    #"{"latitudeDegrees":\#(park.latitudeDegrees),"longitudeDegrees":\#(park.longitudeDegrees),"accuracyMeters":10,"altitudeMeters":null,"speedMetersPerSecond":null,"courseDegrees":null,"measuredAt":"\#(CalendarDates.text(Date()))","locationSource":"phone"}"#
+                    #"{"latitudeDegrees":\#(park.latitudeDegrees),"longitudeDegrees":\#(park.longitudeDegrees),"accuracyMeters":10,"altitudeMeters":null,"speedMetersPerSecond":null,"courseDegrees":null,"measuredAt":"\#(CalendarDates.text(measuredAt))","locationSource":"phone"}"#
                 return
-                    #"{"data":{"GetLocation":{"userId":"robin","username":"robin","name":"Robin","avatarUrl":null,"avatarColorIndex":7,"shareLevel":"owner","latestPoint":\#(point),"openVisit":\#(open.json),"pause":\#(LocationDemo.isOwnPauseInEffect ? LocationDemo.ownPauseJSON : "null")}}}"#
+                    #"{"data":{"GetLocation":{"userId":"robin","username":"robin","name":"Robin","avatarUrl":null,"avatarColorIndex":7,"shareLevel":"owner","latestPoint":\#(point),"openVisit":\#(open),"pause":\#(isPaused ? LocationDemo.ownPauseJSON : "null")}}}"#
             }
             if query.contains("ListLocationVisits("), variables["userId"] as? String == LocationDemo.historyPersonId {
                 var visits = LocationDemo.historyPersonVisits
