@@ -469,14 +469,12 @@ func (self *graph) ShareSkill(ctx context.Context, arguments ShareSkillArguments
 	// Lending money is the person's tap. A share that opens nothing beyond
 	// what was already open is not lending more, and is let through from
 	// anywhere: asking every time, and lowering what a share allows.
-	if !principal.IsPersonsTap() {
-		replaced, err := self.ownSkillShare(tx, principal.User.ID, terms)
-		if err != nil {
-			return nil, err
-		}
-		if !terms.OpensNothingBeyond(replaced) {
-			return nil, fmt.Errorf("%w: %s", api.ErrPermissionDenied, shareOnTheDashboard)
-		}
+	replaced, err := self.ownSkillShare(tx, principal.User.ID, terms)
+	if err != nil {
+		return nil, err
+	}
+	if !principal.IsPersonsTap() && !terms.OpensNothingBeyond(replaced) {
+		return nil, fmt.Errorf("%w: %s", api.ErrPermissionDenied, shareOnTheDashboard)
 	}
 	saved, err := tx.ShareSkill(principal.User.ID, terms)
 	if err != nil {
@@ -484,6 +482,13 @@ func (self *graph) ShareSkill(ctx context.Context, arguments ShareSkillArguments
 		// exist: both answer as nothing found, because which it was is not
 		// the caller's to learn.
 		return nil, translateError(err)
+	}
+	if replaced == nil || !terms.OpensNothingBeyond(replaced) {
+		if err := self.tellAboutShare(ctx, principal.User, models.ShareReceivedNote{
+			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindSkill, ShareSubject: skill.Name, ShareSubjectID: skill.Name,
+		}, saved.GranteeUserID, ""); err != nil {
+			return nil, err
+		}
 	}
 	log.Noticef("%s shared the %s skill with someone", principal.User.Username, skill.Name)
 	return describeSkillShare(saved, principal.User.ID), nil
@@ -505,12 +510,9 @@ func (self *graph) ownSkillShare(tx db.Transaction, ownerUserId string, terms *m
 }
 
 func (self *graph) UnshareSkill(ctx context.Context, arguments UnshareSkillArguments) (bool, error) {
-	principal, err := self.requirePermission(ctx, models.PermissionAgentUse)
+	principal, err := self.requireShareOwner(ctx)
 	if err != nil {
 		return false, err
-	}
-	if principal.User == nil {
-		return false, api.ErrNotLoggedIn
 	}
 	tx := self.transaction(ctx)
 	share, err := tx.GetSkillShare(strings.TrimSpace(arguments.ShareID))

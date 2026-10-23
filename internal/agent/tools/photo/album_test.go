@@ -1,6 +1,7 @@
 package photo
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -281,13 +282,13 @@ func TestAlbumListMarksTheAlbumsThatAreNotThePersonsOwn(test *testing.T) {
 	}
 }
 
-func TestAlbumShareAsksTheNameOfThePersonOrCircleAndSharesAtALevel(test *testing.T) {
+func TestAlbumShareTakesOneWithAndSharesAtALevel(test *testing.T) {
 	current := newRun(test, map[string]string{
 		"ListCirclePeople": `[{"userId":"user-ben","username":"ben"},{"userId":"user-cora","username":"cora"}]`,
-		"ListCircles":      `[{"id":"circle-home","name":"Home"}]`,
+		"ListCircles":      `[{"id":"circle-home","name":"Home","members":[{"userId":"user-ben"},{"userId":"user-cora"},{"userId":"user-alice"}]}]`,
 		"SharePhotoAlbum":  `{"id":"share-one","photoAlbumId":"album-own","shareLevel":"contribute","isLocationIncluded":true}`,
 	})
-	result, err := current.call(map[string]any{"operation": "album-share", "album_id": "album-own", "person": "Ben", "share_level": "contribute", "is_location_included": true})
+	result, err := current.call(map[string]any{"operation": "album-share", "album_id": "album-own", "with": "Ben", "share_level": "contribute", "is_location_included": true})
 	if err != nil || !strings.Contains(result.Content, `"share_id":"share-one"`) || !strings.Contains(result.Content, `"shared_with":"ben"`) {
 		test.Fatalf("%v %v", result, err)
 	}
@@ -296,28 +297,87 @@ func TestAlbumShareAsksTheNameOfThePersonOrCircleAndSharesAtALevel(test *testing
 		asked[0]["shareLevel"] != "contribute" || asked[0]["isLocationIncluded"] != true {
 		test.Fatalf("%v", asked)
 	}
-	// A circle by its name, and the level when none is said.
-	if result, err := current.call(map[string]any{"operation": "album-share", "album_id": "album-own", "circle": "home"}); err != nil || !strings.Contains(result.Content, "everyone in Home") {
-		test.Fatalf("%v %v", result, err)
+	// A circle by its name or its id, and the level when none is said.
+	for _, with := range []string{"home", "circle-home"} {
+		if result, err := current.call(map[string]any{"operation": "album-share", "album_id": "album-own", "with": with}); err != nil || !strings.Contains(result.Content, `the circle \"Home\" (3 people)`) {
+			test.Fatalf("%v %v", result, err)
+		}
 	}
 	asked = current.operations.asked("SharePhotoAlbum")
-	if len(asked) != 2 || asked[1]["granteeCircleId"] != "circle-home" || asked[1]["granteeUserId"] != nil || asked[1]["shareLevel"] != "view" || asked[1]["isLocationIncluded"] != false {
+	if len(asked) != 3 || asked[1]["granteeCircleId"] != "circle-home" || asked[1]["granteeUserId"] != nil || asked[1]["shareLevel"] != "view" || asked[1]["isLocationIncluded"] != false || asked[2]["granteeCircleId"] != "circle-home" {
 		test.Fatalf("%v", asked)
 	}
 	for name, arguments := range map[string]map[string]any{
-		"no album":           {"operation": "album-share", "person": "ben"},
-		"neither":            {"operation": "album-share", "album_id": "album-own"},
-		"both":               {"operation": "album-share", "album_id": "album-own", "person": "ben", "circle": "Home"},
-		"a person not known": {"operation": "album-share", "album_id": "album-own", "person": "nobody"},
-		"a circle not known": {"operation": "album-share", "album_id": "album-own", "circle": "Nowhere"},
-		"a level not one":    {"operation": "album-share", "album_id": "album-own", "person": "ben", "share_level": "owner"},
+		"no album":         {"operation": "album-share", "with": "ben"},
+		"nobody":           {"operation": "album-share", "album_id": "album-own"},
+		"the old person":   {"operation": "album-share", "album_id": "album-own", "person": "ben"},
+		"the old circle":   {"operation": "album-share", "album_id": "album-own", "circle": "Home"},
+		"somebody unknown": {"operation": "album-share", "album_id": "album-own", "with": "nobody"},
+		"a circle unknown": {"operation": "album-share", "album_id": "album-own", "with": "Nowhere"},
+		"a level not one":  {"operation": "album-share", "album_id": "album-own", "with": "ben", "share_level": "owner"},
 	} {
 		if _, err := current.call(arguments); err == nil {
 			test.Errorf("sharing with %s was not refused", name)
 		}
 	}
-	if asked := current.operations.asked("SharePhotoAlbum"); len(asked) != 2 {
+	if asked := current.operations.asked("SharePhotoAlbum"); len(asked) != 3 {
 		test.Fatalf("a share that was refused reached the server: %v", asked)
+	}
+}
+
+// Two circles can have the same name. Sharing with that name, or making an
+// album for it, is refused with the ids to choose from instead of taking the
+// first, and the id of either is accepted.
+func TestACircleNameTwoCirclesHaveIsRefusedByAlbumShareAndAlbumCreate(test *testing.T) {
+	current := newRun(test, map[string]string{
+		"ListCirclePeople": `[{"userId":"user-ben","username":"ben"}]`,
+		"ListCircles":      `[{"id":"circle-one","name":"Family","members":[{"userId":"user-ben"}]},{"id":"circle-two","name":"family","members":[{"userId":"user-ben"},{"userId":"user-cora"}]}]`,
+		"SharePhotoAlbum":  `{"id":"share-one","photoAlbumId":"album-own","shareLevel":"view","isLocationIncluded":false}`,
+		"CreatePhotoAlbum": `{"id":"album-new","albumTitle":"Ours","photoCount":0}`,
+	})
+	for _, arguments := range []map[string]any{
+		{"operation": "album-share", "album_id": "album-own", "with": "Family"},
+		{"operation": "album-create", "album_title": "Ours", "circle": "Family"},
+	} {
+		if _, err := current.call(arguments); err == nil || !strings.Contains(err.Error(), "more than one circle") || !strings.Contains(err.Error(), "circle-one") || !strings.Contains(err.Error(), "circle-two") {
+			test.Errorf("%v was not refused with the ids: %v", arguments, err)
+		}
+	}
+	if len(current.operations.asked("SharePhotoAlbum")) != 0 || len(current.operations.asked("CreatePhotoAlbum")) != 0 {
+		test.Fatal("an ambiguous circle name reached the server")
+	}
+	if _, err := current.call(map[string]any{"operation": "album-share", "album_id": "album-own", "with": "circle-two"}); err != nil {
+		test.Fatal(err)
+	}
+	if _, err := current.call(map[string]any{"operation": "album-create", "album_title": "Ours", "circle": "circle-two"}); err != nil {
+		test.Fatal(err)
+	}
+	if shared, created := current.operations.asked("SharePhotoAlbum"), current.operations.asked("CreatePhotoAlbum"); len(shared) != 1 || shared[0]["granteeCircleId"] != "circle-two" || len(created) != 1 || created[0]["circleId"] != "circle-two" {
+		test.Fatalf("%v %v", shared, created)
+	}
+}
+
+// The card for sharing names who it is for the way the calendar's does: the
+// username, or the circle in quotes with how many people it is.
+func TestTheCardForSharingAnAlbumNamesWhoItIsFor(test *testing.T) {
+	current := newRun(test, map[string]string{
+		"ReadPhotoAlbum":   albumRowJson,
+		"ListCirclePeople": `[{"userId":"user-ben","username":"ben"}]`,
+		"ListCircles":      `[{"id":"circle-home","name":"Home","members":[{"userId":"user-ben"},{"userId":"user-alice"}]}]`,
+	})
+	photoTool := tools.Build().Get("photo")
+	for with, want := range map[string]string{
+		"ben":  `Share "Picnic" with ben, to view`,
+		"Home": `Share "Picnic" with the circle "Home" (2 people), to view`,
+	} {
+		encoded, _ := json.Marshal(map[string]any{"operation": "album-share", "album_id": "album-own", "with": with})
+		if line := photoTool.PreviewLine(tools.WithRun(test.Context(), current), encoded); line != want {
+			test.Errorf("the card for %q says %q, want %q", with, line, want)
+		}
+		// Without a run to look them up in, the card quotes what the call names.
+		if line := photoTool.PreviewLine(test.Context(), encoded); line != `Share an album with "`+with+`", to view` {
+			test.Errorf("the plain card for %q says %q", with, line)
+		}
 	}
 }
 
@@ -327,7 +387,7 @@ func TestAlbumShareAsksTheNameOfThePersonOrCircleAndSharesAtALevel(test *testing
 const (
 	updateShareRows = `[` +
 		`{"id":"share-one","photoAlbumId":"album-own","granteeUserId":"user-ben","granteeUsername":"ben","granteeName":"Ben Example","shareLevel":"view","isLocationIncluded":true},` +
-		`{"id":"share-two","photoAlbumId":"album-own","granteeCircleId":"circle-home","granteeCircleName":"Home","shareLevel":"contribute","isLocationIncluded":true},` +
+		`{"id":"share-two","photoAlbumId":"album-own","granteeCircleId":"circle-home","granteeCircleName":"Home","shareLevel":"contribute","isLocationIncluded":true,"isFaceNamesIncluded":true},` +
 		`{"id":"share-three","photoAlbumId":"album-own","granteeUserId":"user-cai","granteeUsername":"cai","granteeName":"Cai Example","shareLevel":"view","isLocationIncluded":false}]`
 	updatedShareRow = `{"id":"share-one","photoAlbumId":"album-own","granteeUserId":"user-ben","granteeUsername":"ben","granteeName":"Ben Example","shareLevel":"contribute","isLocationIncluded":true}`
 )
@@ -373,6 +433,49 @@ func TestAlbumShareUpdateChangesOnlyWhatIsNamed(test *testing.T) {
 	}
 	asked = current.operations.asked("UpdatePhotoAlbumShare")
 	if len(asked) != 4 || asked[3]["shareLevel"] != "view" || asked[3]["isLocationIncluded"] != true {
+		test.Fatalf("%v", asked)
+	}
+}
+
+// The names of the faces are a setting of a share like the places: sharing sends
+// it, an update names it alone and keeps the level and the places, and an
+// update that leaves it out keeps it.
+func TestAlbumShareCarriesTheNamesOfTheFaces(test *testing.T) {
+	current := newRun(test, map[string]string{
+		"ListCirclePeople":      `[{"userId":"user-ben","username":"ben"}]`,
+		"SharePhotoAlbum":       `{"id":"share-one","photoAlbumId":"album-own","shareLevel":"view","isLocationIncluded":false,"isFaceNamesIncluded":true}`,
+		"ListPhotoAlbumShares":  `[{"id":"share-one","photoAlbumId":"album-own","granteeUserId":"user-ben","granteeUsername":"ben","shareLevel":"contribute","isLocationIncluded":true,"isFaceNamesIncluded":true}]`,
+		"UpdatePhotoAlbumShare": `{"id":"share-one","photoAlbumId":"album-own","granteeUserId":"user-ben","granteeUsername":"ben","shareLevel":"contribute","isLocationIncluded":true,"isFaceNamesIncluded":false}`,
+	})
+	result, err := current.call(map[string]any{"operation": "album-share", "album_id": "album-own", "with": "ben", "is_face_names_included": true})
+	if err != nil || !strings.Contains(result.Content, `"is_face_names_included":true`) {
+		test.Fatalf("%v %v", result, err)
+	}
+	if asked := current.operations.asked("SharePhotoAlbum"); len(asked) != 1 || asked[0]["isFaceNamesIncluded"] != true || asked[0]["isLocationIncluded"] != false {
+		test.Fatalf("%v", asked)
+	}
+	// Taking the names away keeps the level and the places.
+	result, err = current.call(map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-one", "is_face_names_included": false})
+	if err != nil || !strings.Contains(result.Content, `"is_face_names_included":false`) {
+		test.Fatalf("%v %v", result, err)
+	}
+	asked := current.operations.asked("UpdatePhotoAlbumShare")
+	if len(asked) != 1 || asked[0]["shareLevel"] != "contribute" || asked[0]["isLocationIncluded"] != true || asked[0]["isFaceNamesIncluded"] != false {
+		test.Fatalf("%v", asked)
+	}
+	// Changing the level keeps the names.
+	if _, err := current.call(map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-one", "share_level": "view"}); err != nil {
+		test.Fatal(err)
+	}
+	asked = current.operations.asked("UpdatePhotoAlbumShare")
+	if len(asked) != 2 || asked[1]["shareLevel"] != "view" || asked[1]["isFaceNamesIncluded"] != true {
+		test.Fatalf("narrowing the level took the names away: %v", asked)
+	}
+	// What the share has already changes nothing.
+	if result, err := current.call(map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-one", "is_face_names_included": true}); err != nil || !strings.Contains(result.Content, "nothing changed") {
+		test.Fatalf("%v %v", result, err)
+	}
+	if asked := current.operations.asked("UpdatePhotoAlbumShare"); len(asked) != 2 {
 		test.Fatalf("%v", asked)
 	}
 }
@@ -439,6 +542,14 @@ func TestAlbumShareUpdateAsksWhenItCouldWidenAndTheCardNamesWhatChanges(test *te
 			`Change the share of "Picnic" with "Cai Example" to show where the photos were taken`, "Change an album share to show where the photos were taken",
 		},
 		{
+			map[string]any{"share_id": "share-three", "is_face_names_included": true}, tools.RiskGranting,
+			`Change the share of "Picnic" with "Cai Example" to show the names of the faces`, "Change an album share to show the names of the faces",
+		},
+		{
+			map[string]any{"share_id": "share-two", "is_face_names_included": false}, tools.RiskWrite,
+			`Change the share of "Picnic" with everyone in "Home" to hide the names of the faces`, "Change an album share to hide the names of the faces",
+		},
+		{
 			map[string]any{"share_id": "share-two", "share_level": "view"}, tools.RiskWrite,
 			`Change the share of "Picnic" with everyone in "Home" to view only, keeping where the photos were taken`, "Change an album share to view only",
 		},
@@ -502,12 +613,13 @@ func TestAlbumSharesAndUnshareUseTheSharedOperations(test *testing.T) {
 	}
 }
 
-// Sharing, and taking a share back, change who may see the person's photos:
-// the person is asked unless they allowed it. Saving a photo into the library
-// is an ordinary write, and reading is a read.
+// Sharing changes who may see the person's photos: the person is asked unless
+// they allowed it. Taking a share back only removes access, so it is a write,
+// as calendar_unshare is. Saving a photo into the library is an ordinary
+// write, and reading is a read.
 func TestSharingAnAlbumIsAGrantAndSavingASharedPhotoIsAWrite(test *testing.T) {
 	for operation, want := range map[string]tools.Risk{
-		"album-share": tools.RiskGranting, "album-unshare": tools.RiskGranting, "album-shares": tools.RiskRead,
+		"album-share": tools.RiskGranting, "album-unshare": tools.RiskWrite, "album-shares": tools.RiskRead,
 		"save-shared": tools.RiskWrite, "album-list": tools.RiskRead, "album-create": tools.RiskWrite,
 	} {
 		encoded, _ := json.Marshal(map[string]any{"operation": operation})
@@ -594,5 +706,77 @@ func TestAlbumCreateWithACircleMakesTheCirclesAlbum(test *testing.T) {
 	}
 	if _, err := current.call(map[string]any{"operation": "album-create", "album_title": "Ours", "circle": "Nowhere"}); err == nil {
 		test.Fatal("an album was made for a circle the person is not in")
+	}
+}
+
+// chattingRun is a run whose words are posted to the people of a chat.
+type chattingRun struct{ *fakeRun }
+
+func (self chattingRun) IsAnsweringInChat() bool { return true }
+
+func (self chattingRun) call(arguments map[string]any) (*tools.Result, error) {
+	encoded, _ := json.Marshal(arguments)
+	return run(tools.WithRun(context.Background(), self), &tools.Call{ID: "fixture-call", Arguments: encoded})
+}
+
+// In a chat only the person's own photos and albums are read: what another
+// person shared with the person is not posted to everybody in the room.
+func TestPhotosAndAlbumsOfOthersAreNotReadIntoAChat(test *testing.T) {
+	ownRow := `{"id":"photo-own","photoKind":"picture","takenAt":"2025-03-04T10:30:00Z","takenAtOffsetMinutes":0,"photoProcessingState":"ready","largePreviewUrl":"/x","isOwnedByCaller":true}`
+	sharedRow := `{"id":"photo-shared","photoKind":"picture","takenAt":"2025-03-04T10:30:00Z","takenAtOffsetMinutes":0,"photoProcessingState":"ready","largePreviewUrl":"/x","ownerName":"Ben Example"}`
+	current := newRun(test, map[string]string{
+		"ListPhotoAlbums": `[` + ownAlbumRowJson + `,` + sharedAlbumRowJson + `,` + circleAlbumRowJson + `]`,
+		"ListPhotos":      `[` + sharedRow + `]`,
+	})
+	current.operations.photos = map[string]string{
+		"photo-own":    `{"photo":` + ownRow + `,"photoFiles":[],"photoPreviews":[{"photoPreviewSize":"large"}]}`,
+		"photo-shared": `{"photo":` + sharedRow + `,"photoFiles":[],"photoPreviews":[{"photoPreviewSize":"large"}]}`,
+	}
+	for _, photoId := range []string{"photo-own", "photo-shared"} {
+		if err := current.store.PutFile(test.Context(), models.PhotoPreviewFileID(photoId, models.PhotoPreviewLarge), []byte{0xFF, 0xD8, 0xFF, 0xD9}); err != nil {
+			test.Fatal(err)
+		}
+	}
+	chat := chattingRun{current}
+
+	// The albums listed are the person's own.
+	result, err := chat.call(map[string]any{"operation": "album-list"})
+	if err != nil || strings.Contains(result.Content, "album-shared") || strings.Contains(result.Content, "album-circle") || !strings.Contains(result.Content, "album-own") {
+		test.Fatalf("only the person's own albums are listed in a chat: %v %v", result, err)
+	}
+
+	// Somebody else's album, and its photos, are refused; so is one photo of
+	// theirs, however it is asked for.
+	current.operations.answers["ReadPhotoAlbum"] = sharedAlbumRowJson
+	for _, arguments := range []map[string]any{
+		{"operation": "album-read", "album_id": "album-shared"},
+		{"operation": "list", "album_id": "album-shared"},
+		{"operation": "read", "photo_id": "photo-shared"},
+	} {
+		if _, err := chat.call(arguments); err == nil || !strings.Contains(err.Error(), "not repeated into a chat") {
+			test.Errorf("%v in a chat: %v", arguments, err)
+		}
+	}
+	for _, operation := range []string{"look", "show"} {
+		result, err := chat.call(map[string]any{"operation": operation, "photo_ids": []string{"photo-shared"}})
+		if err != nil || !strings.Contains(result.Content, "not repeated into a chat") || len(result.Images) != 0 || strings.Contains(result.Content, "attachment_id") {
+			test.Errorf("%s of somebody else's photo in a chat: %v %v", operation, result, err)
+		}
+	}
+
+	// The person's own are read as ever.
+	current.operations.answers["ReadPhotoAlbum"] = ownAlbumRowJson
+	current.operations.answers["ListPhotos"] = `[` + ownRow + `]`
+	for _, arguments := range []map[string]any{
+		{"operation": "album-read", "album_id": "album-own"},
+		{"operation": "list"},
+		{"operation": "read", "photo_id": "photo-own"},
+	} {
+		if _, err := chat.call(arguments); err != nil {
+			test.Errorf("%v of the person's own in a chat: %v", arguments, err)
+		}
+	}
+	if result, err := chat.call(map[string]any{"operation": "look", "photo_ids": []string{"photo-own"}}); err != nil || len(result.Images) != 1 {
+		test.Errorf("the person's own photo is looked at in a chat: %v %v", result, err)
 	}
 }

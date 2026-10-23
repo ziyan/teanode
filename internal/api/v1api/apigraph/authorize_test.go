@@ -54,16 +54,36 @@ var authorizing = map[string]bool{
 	// The mailbox holding a draft, refused unless the caller owns it.
 	"requireDraftOwner": true,
 	// requirePermission(contacts:use), plus the caller's account; and the
-	// address book or the contact, each refused unless it is theirs.
+	// address book or the contact, each refused unless it is theirs; and the
+	// same for what they may use, which includes the books of their circles.
 	"requireAddressBookPerson": true,
 	"requireOwnAddressBook":    true,
+	"requireUsableAddressBook": true,
 	"ownContact":               true,
+	"usableContact":            true,
 	// requirePermission(calendar:use), plus the caller's account; and the
 	// calendar, refused unless it is theirs. Everything about an event goes
 	// through its calendar, so there is no third helper here: an event is
 	// named within a calendar and the calendar is checked first.
 	"requireCalendarPerson": true,
 	"requireOwnCalendar":    true,
+	// requireSignedIn and the calendar service, without calendar:use: for
+	// listing and ending the shares a person made, which they may do after
+	// the permission was taken from their role. The calendar is then refused
+	// unless it is theirs.
+	"requireCalendarShareEnder": true,
+	// requireSignedIn and the caller's account, without the permission of any
+	// kind: for ending the shares a person made of location, Health, photo
+	// albums, memory pages, skills, recordings and finance accounts, which
+	// they may do after the permission was taken from their role. Each
+	// operation then deletes only rows the caller owns.
+	"requireShareOwner": true,
+	// A person who may use the agent area (agent:use), which finance needs, and
+	// who is not their agent: requireFinanceReader for reading what others
+	// share and listing one's own shares, requireFinanceSharer, with the agent
+	// on as well, for starting or changing a share.
+	"requireFinanceReader": true,
+	"requireFinanceSharer": true,
 	// The photo service is on, requirePermission(photos:use), and the
 	// caller's account. Every photo is read through the owner's id.
 	"requirePhotosPerson": true,

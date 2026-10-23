@@ -4,9 +4,10 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { graphql } from '../api'
 import { Avatar } from '../components/avatar'
 import { PageHeadingActions } from '../components/breadcrumb'
+import { Select } from '../components/select'
 import { contactPhotoAddress, SET_CONTACT_ACCOUNT, useContactEditor } from '../components/contactEditor'
 import { Column, DataTable } from '../components/dataTable'
-import { ConfirmDialog } from '../components/dialog'
+import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { PencilIcon, TrashIcon, UserIcon, KeptPersonIcon } from '../components/icons'
 import { Tooltip } from '../components/tooltip'
 import { SenderLogo } from '../components/senderLogo'
@@ -24,7 +25,14 @@ import { personName } from '../components/personLabel'
 // the list opens the person's card; the form that changes a contact is the
 // one in components/contactEditor.tsx, opened by the pencil.
 
-const BOOKS = `query { ListAddressBooks { id name description contacts } }`
+// The person's own books and then their circles', which every member of a
+// circle reads and edits.
+const BOOKS = `query { ListReachableAddressBooks { id name description contacts circleId circleName isCircleBook canManage } }`
+
+const RENAME_BOOK = `mutation ($id: String!, $name: String, $description: String) {
+  SaveAddressBook(id: $id, name: $name, description: $description) { id name }
+}`
+const DELETE_BOOK = `mutation ($addressBookId: String!) { DeleteCircleAddressBook(addressBookId: $addressBookId) }`
 
 const CONTACTS = `
   query ($addressBookId: String!, $query: String, $first: Int) {
@@ -34,7 +42,7 @@ const CONTACTS = `
     }
   }`
 
-const DELETE = `mutation ($id: String!) { DeleteContact(id: $id) }`
+const DELETE = `mutation ($id: String!, $addressBookId: String) { DeleteContact(id: $id, addressBookId: $addressBookId) }`
 
 // Contacts whose address is the address of a person in the circles, offered
 // for the owner to confirm.
@@ -46,7 +54,18 @@ const SUGGESTIONS = `query {
   }
 }`
 
-type AddressBook = { id: string; name: string; description?: string; contacts: number }
+type AddressBook = {
+  id: string
+  name: string
+  description?: string
+  contacts: number
+  // The circle a circle's book belongs to; the person's own have none.
+  circleId?: string | null
+  circleName?: string
+  isCircleBook?: boolean
+  // Whether the person may rename it and, for a circle's, delete it.
+  canManage?: boolean
+}
 type Address = {
   label?: string
   street?: string
@@ -111,15 +130,19 @@ const SET_ME = `mutation ($contactId: String) { SetMyContact(contactId: $contact
 export function AddressBookPage() {
   const { t, plural } = useTranslation()
   const toast = useToast()
-  const books = useQuery(() => graphql<{ ListAddressBooks: AddressBook[] }>(BOOKS), [], { refresh: false })
-  const book = books.data?.ListAddressBooks?.[0] ?? null
+  const books = useQuery(() => graphql<{ ListReachableAddressBooks: AddressBook[] }>(BOOKS), [], { refresh: false })
+  // Which book is shown is in the address ("?book="), the person's own when it
+  // names none, which is the first the server lists.
+  const [parameters, setParameters] = useSearchParams()
+  const bookList = books.data?.ListReachableAddressBooks ?? []
+  const book = bookList.find((each) => each.id === parameters.get('book')) ?? bookList[0] ?? null
   const bookId = book?.id ?? ''
+  const isCircleBook = book?.isCircleBook === true
   // The address can name a card ("?contact=") or words to look for
   // ("?search="), as the search across everything does: the words are asked of
   // the server, and a chip over the table says so and takes them off. A card
   // is opened as a person's card, which is where the memory, the search and
   // the photos send somebody who only knows the contact's id.
-  const [parameters, setParameters] = useSearchParams()
   const navigate = useNavigate()
   const searchWords = (parameters.get('search') ?? '').trim()
   const contacts = useQuery(
@@ -148,6 +171,9 @@ export function AddressBookPage() {
   const [dismissedContactIds, setDismissedContactIds] = useState<string[]>(readDismissedSuggestions)
 
   const [deleting, setDeleting] = useState<Contact | null>(null)
+  const [isRenamingBook, setRenamingBook] = useState(false)
+  const [bookNameDraft, setBookNameDraft] = useState('')
+  const [isDeletingBook, setDeletingBook] = useState(false)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
@@ -160,6 +186,7 @@ export function AddressBookPage() {
   )
   const editor = useContactEditor({
     addressBookId: bookId,
+    isCircleBook,
     takenAccountIds,
     onChanged: () => Promise.all([contacts.reload(), books.reload(), suggestions.reload()]),
   })
@@ -168,9 +195,11 @@ export function AddressBookPage() {
   // the address: the card's page opens in its place.
   const linkedContactId = parameters.get('contact') ?? ''
   useEffect(() => {
-    if (!linkedContactId || !bookId) return
+    // A person's card is the owner's page about the contact, so a circle's
+    // book has none.
+    if (!linkedContactId || !bookId || isCircleBook) return
     void navigate(contactPersonPath(bookId, linkedContactId), { replace: true })
-  }, [linkedContactId, bookId, navigate])
+  }, [linkedContactId, bookId, isCircleBook, navigate])
 
   // Whether it worked, so a dialog closes only on success. What happened is
   // said in a toast either way; the dialog also shows the reason, because
@@ -238,13 +267,19 @@ export function AddressBookPage() {
           <span className="sender-row">
             <SenderLogo
               name={contact.name || contact.emails?.[0] || ''}
-              src={contact.hasPhoto ? contactPhotoAddress(contact.id) : undefined}
+              src={contact.hasPhoto ? contactPhotoAddress(contact.id, isCircleBook ? bookId : undefined) : undefined}
               size={24}
             />
             <span className="contact-name">
-              <Link to={contactPersonPath(bookId, contact.id)}>
-                {contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>}
-              </Link>
+              {/* A circle's book has no card page: that page is the owner's
+                  own view of a contact, and a circle's contact has no owner. */}
+              {isCircleBook ? (
+                <span>{contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>}</span>
+              ) : (
+                <Link to={contactPersonPath(bookId, contact.id)}>
+                  {contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>}
+                </Link>
+              )}
               {/* The Email and Phone columns are dropped on a phone, so the
                   address and the number go under the name there. */}
               {(contact.emails ?? [])[0] || (contact.phones ?? [])[0] ? (
@@ -308,20 +343,24 @@ export function AddressBookPage() {
         width: '9rem',
         render: (contact) => (
           <div className="row-actions">
-            <Tooltip label={contact.id === myContactId ? t('agent.myContactClear') : t('agent.myContactSet')}>
-              {/* The card that is the person shows a person with a tick,
-                  in the accent: the same outline in both states left "not
-                  me" and "that is you" telling apart by tooltip alone. */}
-              <button
-                type="button"
-                className={contact.id === myContactId ? 'icon-action marked' : 'icon-action'}
-                disabled={busy}
-                aria-label={`${contact.name}: ${contact.id === myContactId ? t('agent.myContactClear') : t('agent.myContactSet')}`}
-                onClick={() => void markAsMe(contact.id === myContactId ? null : contact)}
-              >
-                {contact.id === myContactId ? <KeptPersonIcon size={16} /> : <UserIcon size={16} />}
-              </button>
-            </Tooltip>
+            {/* Which contact is the person is their own note about their own
+                book; a circle's card is nobody's to mark. */}
+            {isCircleBook ? null : (
+              <Tooltip label={contact.id === myContactId ? t('agent.myContactClear') : t('agent.myContactSet')}>
+                {/* The card that is the person shows a person with a tick,
+                    in the accent: the same outline in both states left "not
+                    me" and "that is you" telling apart by tooltip alone. */}
+                <button
+                  type="button"
+                  className={contact.id === myContactId ? 'icon-action marked' : 'icon-action'}
+                  disabled={busy}
+                  aria-label={`${contact.name}: ${contact.id === myContactId ? t('agent.myContactClear') : t('agent.myContactSet')}`}
+                  onClick={() => void markAsMe(contact.id === myContactId ? null : contact)}
+                >
+                  {contact.id === myContactId ? <KeptPersonIcon size={16} /> : <UserIcon size={16} />}
+                </button>
+              </Tooltip>
+            )}
             <Tooltip label={t('common.edit')}>
               <button
                 type="button"
@@ -348,7 +387,7 @@ export function AddressBookPage() {
         ),
       },
     ],
-    [t, busy, editor, bookId, myContactId, markAsMe, hasAddress],
+    [t, busy, editor, bookId, isCircleBook, myContactId, markAsMe, hasAddress],
   )
 
   // A suggestion is answered one contact at a time. The editor makes the other
@@ -373,16 +412,97 @@ export function AddressBookPage() {
   }
   // Suggestions come from every address book, each with the book its contact
   // is in. One the owner already answered "Not now" is not offered again.
-  const offeredSuggestions = (suggestions.data?.ListContactAccountSuggestions ?? []).filter(
-    (suggestion) => !dismissedContactIds.includes(suggestion.contact.id),
-  )
+  const offeredSuggestions = isCircleBook
+    ? []
+    : (suggestions.data?.ListContactAccountSuggestions ?? []).filter(
+        (suggestion) => !dismissedContactIds.includes(suggestion.contact.id),
+      )
+
+  const chooseBook = (value: string) =>
+    setParameters(
+      (previous) => {
+        const next = new URLSearchParams(previous)
+        // The first book is the person's own, which is what no book means.
+        if (value === bookList[0]?.id) next.delete('book')
+        else next.set('book', value)
+        next.delete('contact')
+        next.delete('search')
+        return next
+      },
+      { replace: true },
+    )
+  // The book is left before the list is read again, so the page never asks the
+  // server for the contacts of a book it has just deleted.
+  const deleteBook = async (deleted: AddressBook) => {
+    setBusy(true)
+    try {
+      await graphql(DELETE_BOOK, { addressBookId: deleted.id })
+      setProblem(null)
+      setDeletingBook(false)
+      chooseBook(bookList[0]?.id ?? '')
+      await books.reload()
+      toast.done(t('addressBook.bookDeleted', { name: deleted.name }))
+    } catch (failure) {
+      setProblem(failure instanceof Error ? failure.message : String(failure))
+      toast.failure(failure, t('addressBook.failed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const bookOptions = bookList.map((each) => ({
+    value: each.id,
+    label: each.isCircleBook
+      ? each.name === each.circleName
+        ? each.name
+        : t('addressBook.circleBookOption', { name: each.name, circle: each.circleName ?? '' })
+      : t('addressBook.yourBook'),
+    group: each.isCircleBook ? t('addressBook.groupCircles') : t('addressBook.groupYours'),
+  }))
   return (
     <>
       <PageHeadingActions>
+        {isCircleBook && book?.canManage ? (
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setProblem(null)
+                setBookNameDraft(book.name)
+                setRenamingBook(true)
+              }}
+            >
+              {t('addressBook.renameBook')}
+            </button>
+            <button
+              type="button"
+              className="danger"
+              disabled={busy}
+              onClick={() => {
+                setProblem(null)
+                setDeletingBook(true)
+              }}
+            >
+              {t('addressBook.deleteBook')}
+            </button>
+          </>
+        ) : null}
         <button className="primary" type="button" disabled={!bookId} onClick={editor.openNew}>
           {t('addressBook.new')}
         </button>
       </PageHeadingActions>
+
+      {bookList.length > 1 && (
+        <div className="book-toolbar">
+          <label>
+            <span>{t('addressBook.showing')}</span>
+            <Select value={bookId} label={t('addressBook.showing')} options={bookOptions} onChange={chooseBook} />
+          </label>
+        </div>
+      )}
+      {isCircleBook && book && (
+        <p className="muted">{t('addressBook.circleBookIntro', { circle: book.circleName ?? '' })}</p>
+      )}
 
       {offeredSuggestions.length > 0 && (
         <div className="card account-suggestions" role="region" aria-label={t('addressBook.suggestionsLabel')}>
@@ -454,18 +574,63 @@ export function AddressBookPage() {
 
       {editor.dialogs}
 
+      {isRenamingBook && book && (
+        <FormDialog
+          title={t('addressBook.renameBook')}
+          submitLabel={t('common.save')}
+          busy={busy}
+          error={problem}
+          canSubmit={bookNameDraft.trim().length > 0}
+          onClose={() => setRenamingBook(false)}
+          onSubmit={() =>
+            void run(
+              // The description is sent back as it is: only the name changes.
+              () =>
+                graphql(RENAME_BOOK, { id: book.id, name: bookNameDraft.trim(), description: book.description ?? '' }),
+              t('addressBook.bookRenamed', { name: bookNameDraft.trim() }),
+            ).then((done) => {
+              if (done) setRenamingBook(false)
+            })
+          }
+        >
+          <label>
+            {t('addressBook.bookName')}
+            <input value={bookNameDraft} onChange={(event) => setBookNameDraft(event.target.value)} />
+          </label>
+        </FormDialog>
+      )}
+
+      {isDeletingBook && book && (
+        <ConfirmDialog
+          title={t('addressBook.deleteBook')}
+          body={t('addressBook.deleteBookConfirm', { name: book.name, circle: book.circleName ?? '' })}
+          confirmLabel={t('common.delete')}
+          busy={busy}
+          error={problem}
+          onConfirm={() => void deleteBook(book)}
+          onClose={() => setDeletingBook(false)}
+        />
+      )}
+
       {deleting && (
         <ConfirmDialog
           title={t('addressBook.delete')}
-          body={t('addressBook.deleteConfirm', {
-            name: deleting.name || deleting.emails?.[0] || '',
-          })}
+          body={
+            isCircleBook
+              ? t('addressBook.deleteCircleConfirm', {
+                  name: deleting.name || deleting.emails?.[0] || '',
+                  circle: book?.circleName ?? '',
+                })
+              : t('addressBook.deleteConfirm', {
+                  name: deleting.name || deleting.emails?.[0] || '',
+                })
+          }
           confirmLabel={t('common.delete')}
           busy={busy}
           error={problem}
           onConfirm={() =>
             void run(
-              () => graphql(DELETE, { id: deleting.id }),
+              () => graphql(DELETE, { id: deleting.id, addressBookId: bookId }),
               t('addressBook.saidDeleted', { name: deleting.name || deleting.emails?.[0] || '' }),
             ).then((done) => done && setDeleting(null))
           }

@@ -62,6 +62,28 @@ final class CalendarRenameTests: XCTestCase {
         XCTAssertEqual(variables["colour"], .string(""))
     }
 
+    func testRenamingACircleCalendarSendsTheSameDocument() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"SaveCalendar":{"id":"family","name":"Household"}}}"#)
+        let family = AgentCalendar(
+            id: "family", name: "Home plans", description: "Dinners", colour: "#445566", timezone: "Europe/Berlin", weekStart: "monday",
+            calendarKind: "events", shareLevel: "edit", circleId: "circle", circleName: "Home", isCircleCalendar: true)
+        try await connection.saveCalendar(family, name: "Household")
+        guard case .object(let variables) = try sentBody(fake)["variables"] else { return XCTFail("no variables") }
+        XCTAssertEqual(variables["id"], .string("family"))
+        XCTAssertEqual(variables["name"], .string("Household"))
+        XCTAssertEqual(variables["description"], .string("Dinners"))
+    }
+
+    func testDeletingACircleCalendarNamesTheCircle() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"DeleteCircleCalendar":true}}"#)
+        try await connection.deleteCircleCalendar(circleId: "circle")
+        XCTAssertEqual(fake.sent.count, 1)
+        guard case .object(let variables) = try sentBody(fake)["variables"] else { return XCTFail("no variables") }
+        XCTAssertEqual(variables, ["circleId": .string("circle")])
+        guard case .string(let document) = try sentBody(fake)["query"] else { return XCTFail("no query") }
+        XCTAssertTrue(document.contains("DeleteCircleCalendar(circleId: $circleId)"))
+    }
+
     func testTheRenameIsInTheSchemaCheck() {
         XCTAssertNotNil(Documents.calendarAndContacts["saveCalendar"])
     }

@@ -10530,29 +10530,41 @@ button.with-icon {
   background: color-mix(in srgb, var(--leaf) 18%, var(--surface));
 }
 
-.calendar-shares-heading {
+.calendar-shares-heading,
+.recording-shares-heading {
   margin: var(--space-3) 0 0;
 }
 
-.calendar-shares {
+.calendar-shares,
+.recording-shares {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
   margin: 0.5rem 0 var(--space-4);
 }
 
-.calendar-share-row {
+.calendar-share-row,
+.recording-share-row {
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-.calendar-share-name {
+.calendar-share-name,
+.recording-share-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The level of a share, which is changed where it is shown: as wide as its
+   words, and narrower than that on a phone, where the name is cut first. */
+.calendar-share-row select {
+  flex: 0 1 12rem;
+  width: auto;
+  min-width: 0;
 }
 
 /* A day with its free stretches: the day on its own line, the times under it
@@ -11829,6 +11841,13 @@ main.content:has(> .knowledge-frame) {
   margin: 0 0 var(--space-2);
 }
 
+/* The pages a share reaches, one path a line. */
+.share-reach {
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-4);
+  overflow-wrap: anywhere;
+}
+
 .share-preview .settings-section.card {
   border: 0;
   padding: 0;
@@ -12183,6 +12202,15 @@ main.content:has(> .knowledge-frame) {
 .photo-person-grid.has-circle-people .photo-person-details {
   min-height: calc(2 * 1.4em);
   line-height: 1.4;
+}
+
+/* The address book page's picker for which book is shown: the person's own,
+   or a circle's. */
+.book-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 /* The suggestions at the top of Contacts: one line for each contact, the
@@ -14284,6 +14312,15 @@ button.idea-history-title {
 /* The pointer's own margin is the space below; the actions row adds none. */
 .finance-pointer .page-actions {
   margin-bottom: 0;
+}
+
+/* The choice of whose finance the Finance page shows, above its tabs or
+   above somebody's shared accounts: like the Health page's. */
+.finance-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 /* An amount column in the shared table reads down by its decimal places,
@@ -20343,11 +20380,6 @@ label.checkbox.is-plain > span > .muted {
   .photo-share-option-hint {
     margin-top: -8px;
   }
-}
-
-.photo-share-names-hint {
-  margin-left: 0;
-  margin-top: var(--space-3);
 }
 
 /* The one thing the details offer to do with a place: look around it. A button

@@ -15,6 +15,13 @@ final class FinanceModel {
     private(set) var accounts: [FinanceAccount] = []
     private(set) var reportingCurrency = ""
     private(set) var isShown: Bool?
+    /// What other people share with the person, and whose is shown under
+    /// Showing (nil for the person's own).
+    private(set) var sharedAccounts: [SharedFinanceAccount] = []
+    var selectedOwnerUserId: String?
+    /// Whether what other people share has been read once, so a person with
+    /// no finance of their own is not told it is not set up before then.
+    private(set) var hasReadShared = false
     var doneText: String?
     var problemText: String?
 
@@ -33,6 +40,19 @@ final class FinanceModel {
             reportingCurrency = (try? await connection.reportingCurrency().code) ?? ""
         } catch {
             problemText = error.localizedDescription
+        }
+        await loadShared()
+    }
+
+    /// Reads what other people share with the person. A failure leaves what
+    /// was shown, since the person's own finance does not wait for it.
+    func loadShared() async {
+        defer { hasReadShared = true }
+        guard let read = try? await connection.sharedFinanceAccounts() else { return }
+        sharedAccounts = read
+        // Somebody who stopped sharing is no longer shown.
+        if let selectedOwnerUserId, !read.contains(where: { $0.ownerUserId == selectedOwnerUserId }) {
+            self.selectedOwnerUserId = nil
         }
     }
 
@@ -97,7 +117,7 @@ final class FinanceModel {
 /// FinancePart is one section of the dashboard's Finance page. The menu under
 /// the screen's title lists them, so each is one tap away.
 enum FinancePart: String, CaseIterable, Identifiable, Hashable {
-    case spending, transactions, accounts, budgets, netWorth, savingsTargets, receipts, taxes, setup
+    case spending, transactions, accounts, budgets, netWorth, savingsTargets, receipts, taxes, sharing, setup
     var id: String { rawValue }
 
     var title: String {
@@ -110,6 +130,7 @@ enum FinancePart: String, CaseIterable, Identifiable, Hashable {
         case .savingsTargets: String(localized: "Savings targets")
         case .receipts: String(localized: "Receipts")
         case .taxes: String(localized: "Taxes")
+        case .sharing: String(localized: "Sharing")
         case .setup: String(localized: "Banks and currency")
         }
     }
@@ -124,6 +145,7 @@ enum FinancePart: String, CaseIterable, Identifiable, Hashable {
         case .savingsTargets: "target"
         case .receipts: "receipt"
         case .taxes: "doc.text"
+        case .sharing: "person.2"
         case .setup: "link"
         }
     }
@@ -144,23 +166,47 @@ struct FinanceScreen: View {
     @State private var searchCount = 0
     @Environment(AppModel.self) private var app
 
+    /// Whose shared accounts are shown instead of the parts: the person chosen
+    /// under Showing, else, for a person with no finance of their own, the
+    /// first who shares with them, as the dashboard does. Banks and currency
+    /// stays reachable for a person who has none of their own yet.
+    private var shownSharer: FinanceSharer? {
+        if let chosen = finance.selectedSharer { return chosen }
+        if finance.isSharedOnly, part != .setup { return finance.sharers.first }
+        return nil
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             Group {
-                switch part {
-                case .spending: SpendingView()
-                case .transactions: TransactionsView(filter: transactionFilter)
-                case .accounts: AccountsView()
-                case .budgets: BudgetsView()
-                case .netWorth: NetWorthView()
-                case .savingsTargets: SavingsTargetsView()
-                case .receipts: ReceiptsView()
-                case .taxes: TaxesView()
-                case .setup: FinanceSetupView()
+                // Somebody's shared accounts are not the person's own parts:
+                // they are shown instead of them, until "You" is chosen again.
+                if let sharer = shownSharer {
+                    SharedFinanceView(sharer: sharer)
+                } else {
+                    switch part {
+                    case .spending: SpendingView()
+                    case .transactions: TransactionsView(filter: transactionFilter)
+                    case .accounts: AccountsView()
+                    case .budgets: BudgetsView()
+                    case .netWorth: NetWorthView()
+                    case .savingsTargets: SavingsTargetsView()
+                    case .receipts: ReceiptsView()
+                    case .taxes: TaxesView()
+                    case .sharing: FinanceSharingView()
+                    case .setup: FinanceSetupView()
+                    }
                 }
             }
-            .id("\(part.rawValue)-\(searchCount)")
-            .toolbar { MoreBackButton() }
+            .id("\(part.rawValue)-\(searchCount)-\(finance.selectedOwnerUserId ?? "")")
+            .toolbar {
+                MoreBackButton()
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if !finance.sharers.isEmpty {
+                        FinancePersonMenu()
+                    }
+                }
+            }
             .toolbarTitleMenu {
                 Picker("Finance", selection: $part) {
                     ForEach(FinancePart.allCases) { choice in
@@ -172,13 +218,15 @@ struct FinanceScreen: View {
                 TransactionsView(filter: link.filter)
             }
             .overlay {
-                if finance.isShown == false, part != .setup {
+                if finance.isShown == false, finance.hasReadShared, part != .setup, shownSharer == nil {
                     ContentUnavailableView("Finance is not set up", systemImage: "building.columns", description: Text("Link a bank from your dashboard: Settings, then Agent, then Finance."))
                 }
             }
         }
         .environment(finance)
         .onChange(of: part) {
+            // Choosing a part of the person's own ends looking at somebody's.
+            finance.selectedOwnerUserId = nil
             path = NavigationPath()
             // The words a search carried in are for that look at the
             // transactions; choosing another part ends it.
@@ -197,6 +245,12 @@ struct FinanceScreen: View {
         }
         .task { if finance.isShown == nil { await finance.load() } }
         #if DEBUG
+            .task {
+                // `-TeaNodeScreen finance-person`: the accounts somebody shares with the person.
+                guard DemoServer.screen == "finance-person" else { return }
+                await finance.load()
+                finance.selectedOwnerUserId = FinanceSharingDemo.sharerId
+            }
             .task {
                 // `-TeaNodeScreen finance-part-switch`: a transaction list is
                 // opened on Accounts, then Net worth is chosen in the title menu.

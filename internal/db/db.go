@@ -199,9 +199,11 @@ type Transaction interface {
 	HealthOperation
 	HealthLockOperation
 	HealthShareOperation
+	FinanceShareOperation
 	PasswordsOperation
 	PageShareOperation
 	SkillShareOperation
+	RecordingShareOperation
 	ChatOperation
 	ChatAgentOperation
 	AuditOperation
@@ -229,6 +231,7 @@ type Transaction interface {
 	PhotoOperation
 	PhotoAlbumOperation
 	PhotoAlbumShareOperation
+	SharingOperation
 	PhotoFaceOperation
 	PhotoUploadOperation
 	RecordingRetryOperation

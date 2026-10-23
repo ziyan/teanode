@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/passwords"
 )
 
 // passwordsServer answers every document with the data it is given and keeps
@@ -311,5 +312,31 @@ func TestListingAndRestoringAnItemsEarlierVersions(test *testing.T) {
 	}
 	if _, err := RestorePasswordItemVersion(test.Context(), tapConnection, "item-1", "9", 3); !IsTapRequired(err) {
 		test.Errorf("a restore refused for want of a tap: %v", err)
+	}
+}
+
+// A command the computer program marked as the agent's says so to the server,
+// and one the person runs does not.
+func TestARequestSaysWhenTheAgentRanTheCommand(test *testing.T) {
+	var headers []string
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		headers = append(headers, request.Header.Get(api.AgentCommandHeader))
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"data":{"Ping":true}}`))
+	}))
+	test.Cleanup(server.Close)
+	connection, err := New(Options{URL: server.URL, Token: "fixture-token"})
+	if err != nil {
+		test.Fatal(err)
+	}
+	for _, mark := range []string{"", "1"} {
+		test.Setenv(passwords.AgentCommandEnvironmentName, mark)
+		var result map[string]any
+		if err := connection.Execute(test.Context(), `query { Ping }`, nil, &result); err != nil {
+			test.Fatal(err)
+		}
+	}
+	if len(headers) != 2 || headers[0] != "" || headers[1] != "1" {
+		test.Errorf("the header on an unmarked and a marked command: %q", headers)
 	}
 }

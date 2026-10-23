@@ -299,8 +299,9 @@ func (self *graph) requirePhotosPerson(ctx context.Context) (*api.Principal, err
 // have it: no favorite mark, no uploader's name for it, and, unless the share
 // that lets the caller in includes where photos were taken, and the photo is
 // the album owner's whose share it is (placeShownOfUserId), no place, no file
-// name, no description and none of the words read in the picture, and the
-// original files stand for by the preview that carries none.
+// name, no description, none of the words read in the picture and no offset
+// from UTC (which, with the date, says which part of the world it was taken
+// in), and the original files stand for by the preview that carries none.
 func (self *graph) withFilesAndPreviews(ctx context.Context, callerUserId string, photos []*models.Photo, placeShownOfUserId string) error {
 	photoIdsOfOwner := map[string][]string{}
 	for _, found := range photos {
@@ -353,6 +354,7 @@ func (self *graph) withFilesAndPreviews(ctx context.Context, callerUserId string
 				// street). The reader's own assistant reads these too, so they
 				// are held back from it as well.
 				found.OriginalFilename = ""
+				found.TakenAtOffsetMinutes = nil
 				found.PhotoDescription, found.DescriptionVisibleText, found.DescribedAt, found.IsDescriptionRequested = "", "", nil, false
 				found.PhotoFileRoles = nil
 				hasPreview := func(photoPreviewSize models.PhotoPreviewSize) bool { return madeSizes[found.ID][photoPreviewSize] }
@@ -623,7 +625,9 @@ func (self *graph) CountUndescribedPhotos(ctx context.Context, arguments ListPho
 // caller may have it: no place and no original file unless the share includes
 // them, and in the place of the original a file that is the large preview, so
 // that what the caller is offered to download is what they are allowed to
-// keep. The faces are the owner's, with the names the owner gave them.
+// keep. The faces are the owner's: the boxes round them go to every reader,
+// and the names the owner gave them only to a reader whose share includes
+// them (see withheldFaceNames).
 func (self *graph) ReadPhoto(ctx context.Context, arguments PhotoArguments) (*PhotoView, error) {
 	principal, access, err := self.requirePhotoReader(ctx, arguments.PhotoID)
 	if err != nil {
@@ -672,9 +676,24 @@ func (self *graph) ReadPhoto(ctx context.Context, arguments PhotoArguments) (*Ph
 	ownContactId := ""
 	if access.IsOwner {
 		ownContactId = principal.User.ContactID
+	} else {
+		withheldFaceNames(access.IsFaceNamesIncluded, faces...)
 	}
 	withFacePictureAddresses(ownContactId, faces...)
 	return &PhotoView{Photo: found, PhotoFiles: files, PhotoPreviews: previews, Albums: albums, Faces: faces}, nil
+}
+
+// withheldFaceNames takes from the faces of somebody else's photo what points
+// into the owner's own records: the contact and the group, and the owner's
+// grouping, which the reader has no use for. The name is left on only when the
+// share that lets the reader in includes the names (isFaceNamesIncluded).
+func withheldFaceNames(isFaceNamesIncluded bool, faces ...*models.PhotoFace) {
+	for _, face := range faces {
+		face.UserID, face.ContactID, face.PhotoFaceGroupID, face.IsGroupConfirmed = "", "", "", false
+		if !isFaceNamesIncluded {
+			face.ContactName = ""
+		}
+	}
 }
 
 // sharedCopyFiles is the one file a reader who may not have the originals is
@@ -778,7 +797,7 @@ func (self *graph) FindPhotos(ctx context.Context, arguments FindPhotosArguments
 }
 
 func (self *graph) PhotoPlaybackAddress(ctx context.Context, arguments PhotoPlaybackAddressArguments) (string, error) {
-	_, access, err := self.requirePhotoReader(ctx, arguments.PhotoID)
+	principal, access, err := self.requirePhotoReader(ctx, arguments.PhotoID)
 	if err != nil {
 		return "", err
 	}
@@ -794,8 +813,9 @@ func (self *graph) PhotoPlaybackAddress(ctx context.Context, arguments PhotoPlay
 	}
 	transaction := self.transaction(ctx)
 	// A photo is read through its owner's rows, so the address is signed with
-	// the owner: it opens that one preview or file of that one photo for
-	// whoever holds it, and the caller's reach was checked here, once.
+	// the owner and the caller: it opens that one preview or file of that one
+	// photo for whoever holds it, for as long as the caller still reaches the
+	// photo, which the route checks again each time it is fetched.
 	ownerUserId := access.OwnerUserID
 	var path, playbackKind, name string
 	until := time.Now().Add(photo.PlaybackFor)
@@ -826,8 +846,8 @@ func (self *graph) PhotoPlaybackAddress(ctx context.Context, arguments PhotoPlay
 			path, playbackKind, name = api.PhotoPlaybackPreviewPath(access.PhotoID, string(photoPreviewSize)), photo.PlaybackKindPreview, string(photoPreviewSize)
 		}
 	}
-	signature := photo.SignPlayback(secret, ownerUserId, access.PhotoID, playbackKind, name, until)
-	return path + "?owner=" + url.QueryEscape(ownerUserId) + "&signature=" + url.QueryEscape(signature), nil
+	signature := photo.SignPlayback(secret, ownerUserId, principal.User.ID, access.PhotoID, playbackKind, name, until)
+	return path + "?owner=" + url.QueryEscape(ownerUserId) + "&reader=" + url.QueryEscape(principal.User.ID) + "&signature=" + url.QueryEscape(signature), nil
 }
 
 // sharedCopyPreviewSize is the preview a reader who may not have a photo's

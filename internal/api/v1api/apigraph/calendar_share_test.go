@@ -282,6 +282,70 @@ func TestACalendarSharedAtBusyShowsOnlyWhenTheOwnerIsBusy(t *testing.T) {
 	}
 }
 
+// The title of a calendar can say what is in it, so a calendar shared at busy
+// is listed under its owner's name, and its own title is told from titles up.
+func TestACalendarSharedAtBusyIsListedUnderItsOwnersName(t *testing.T) {
+	world := newCalendarShareWorld(t)
+	world.call(t, world.ada, fmt.Sprintf(`mutation { SaveCalendar(id: %q, name: "Surprise party plans") { id } }`, world.adaCalendar))
+	world.share(t, world.ada, world.adaCalendar, userGrantee(world.ben), "busy")
+	nameOfAdaCalendar := func() string {
+		t.Helper()
+		for _, each := range listed(t, world.call(t, world.ben, `query { ListCalendars { id name } }`), "ListCalendars") {
+			if each["id"] == world.adaCalendar {
+				return fmt.Sprint(each["name"])
+			}
+		}
+		t.Fatal("ben does not reach the calendar")
+		return ""
+	}
+	if name := nameOfAdaCalendar(); name != "Share-ada" {
+		t.Errorf("a busy share is listed under its owner's name: %q", name)
+	}
+	world.share(t, world.ada, world.adaCalendar, userGrantee(world.ben), "titles")
+	if name := nameOfAdaCalendar(); name != "Surprise party plans" {
+		t.Errorf("at titles the calendar keeps its own title: %q", name)
+	}
+}
+
+// Taking calendar:use from a role stops a calendar reaching anybody, and does
+// not stop the person who shared it from seeing and ending what they shared.
+func TestAnOwnerWithoutCalendarUseCanStillEndAShare(t *testing.T) {
+	world := newCalendarShareWorld(t)
+	first := world.share(t, world.ada, world.adaCalendar, userGrantee(world.ben), "details")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		roles, err := tx.ListRoles()
+		if err != nil {
+			t.Fatalf("ListRoles: %s", err)
+		}
+		for _, role := range roles {
+			if role.Name == "share-ada role" {
+				if _, err := tx.UpdateRole(role.ID, func(current *models.Role) error {
+					current.Permissions = []models.Permission{models.PermissionCircleUse}
+					return nil
+				}); err != nil {
+					t.Fatalf("UpdateRole: %s", err)
+				}
+			}
+		}
+	})
+	// ben no longer reaches it.
+	for _, each := range listed(t, world.call(t, world.ben, `query { ListCalendars { id } }`), "ListCalendars") {
+		if each["id"] == world.adaCalendar {
+			t.Errorf("a calendar of an owner without calendar:use reaches ben: %v", each)
+		}
+	}
+	// ada, who cannot use calendars, still sees what she shared and ends it.
+	data := world.call(t, world.ada, fmt.Sprintf(`query { ListCalendarShares(calendarId: %q) { id } }`, world.adaCalendar))
+	if shares := listed(t, data, "ListCalendarShares"); len(shares) != 1 {
+		t.Errorf("the owner sees what she shared: %v", shares)
+	}
+	world.call(t, world.ada, fmt.Sprintf(`mutation { UnshareCalendar(shareId: %q) }`, first["id"]))
+	// Nobody else can end it, and it cannot be ended twice.
+	world.refused(t, world.ada, fmt.Sprintf(`mutation { UnshareCalendar(shareId: %q) }`, first["id"]))
+	// And sharing more still needs the permission.
+	world.refused(t, world.ada, fmt.Sprintf(`mutation { ShareCalendar(calendarId: %q, granteeUserId: %q, shareLevel: "busy") { id } }`, world.adaCalendar, world.ben.ID))
+}
+
 // Writing needs edit, never touches an event with guests, and says why.
 func TestAWriteToASharedCalendarNeedsEditAndNoGuests(t *testing.T) {
 	world := newCalendarShareWorld(t)
@@ -476,9 +540,66 @@ func TestACircleCalendarIsEveryMembersAndNobodyElses(t *testing.T) {
 	// A member who leaves stops reaching it.
 	world.call(t, world.ben, fmt.Sprintf(`mutation { LeaveCircle(circleId: %q) }`, world.home))
 	world.refused(t, world.ben, fmt.Sprintf(`query { ListCalendarEvents(calendarId: %q, from: "2030-01-01T00:00:00Z", until: "2030-01-31T00:00:00Z") { id } }`, familyId))
-	// It cannot be shared, being everybody's already, and nobody but its
-	// members can rename or share it.
+	// It cannot be shared, being everybody's already.
 	world.refused(t, world.ada, fmt.Sprintf(`mutation { ShareCalendar(calendarId: %q, granteeUserId: %q, shareLevel: "busy") { id } }`, familyId, world.ben.ID))
+}
+
+// An admin of the circle renames and deletes its calendar, which no member
+// who is not an admin and nobody outside can, and which nobody could before.
+func TestAnAdminOfTheCircleRenamesAndDeletesItsCalendar(t *testing.T) {
+	world := newCalendarShareWorld(t)
+	made := world.call(t, world.ada, fmt.Sprintf(`mutation { CreateCircleCalendar(circleId: %q, name: "The household") { id } }`, world.home))
+	familyId := made["CreateCircleCalendar"].(map[string]any)["id"].(string)
+	world.call(t, world.ben, fmt.Sprintf(`mutation { SaveCalendarEvent(calendarId: %q, summary: "School play", startsAt: "2030-01-05T18:00:00Z", endsAt: "2030-01-05T19:00:00Z") { id } }`, familyId))
+	rename := func(name string) string {
+		return fmt.Sprintf(`mutation { SaveCalendar(id: %q, name: %q) { id name shareLevel isCircleCalendar circleId circleName ownerUserId agentGranted } }`, familyId, name)
+	}
+	remove := fmt.Sprintf(`mutation { DeleteCircleCalendar(circleId: %q) }`, world.home)
+
+	// A member who is not an admin is told why, and somebody outside is told
+	// nothing about it.
+	if said := world.refused(t, world.ben, rename("Ben's plans")); !strings.Contains(said, "admin of this circle") {
+		t.Errorf("a member who is not an admin was told %q", said)
+	}
+	world.refused(t, world.cora, rename("Cora's plans"))
+	world.refused(t, world.ben, remove)
+	world.refused(t, world.cora, remove)
+
+	renamed := world.call(t, world.ada, rename("Family plans"))["SaveCalendar"].(map[string]any)
+	if renamed["name"] != "Family plans" || renamed["shareLevel"] != "edit" || renamed["isCircleCalendar"] != true ||
+		renamed["circleId"] != world.home || renamed["circleName"] != "Home" || renamed["ownerUserId"] != nil || renamed["agentGranted"] != false {
+		t.Errorf("the renamed circle calendar: %v", renamed)
+	}
+	nameSeenBy := func(user *models.User) string {
+		t.Helper()
+		for _, each := range listed(t, world.call(t, user, `query { ListCalendars { id name } }`), "ListCalendars") {
+			if each["id"] == familyId {
+				return fmt.Sprint(each["name"])
+			}
+		}
+		return ""
+	}
+	if name := nameSeenBy(world.ben); name != "Family plans" {
+		t.Errorf("ben sees the calendar as %q", name)
+	}
+
+	// An admin made by the first one may as well.
+	world.call(t, world.ada, fmt.Sprintf(`mutation { SetCircleMemberRole(circleId: %q, userId: %q, memberRole: "admin") { id } }`, world.home, world.ben.ID))
+	world.call(t, world.ben, rename("Household"))
+
+	if deleted := world.call(t, world.ben, remove)["DeleteCircleCalendar"]; deleted != true {
+		t.Fatalf("the admin's delete answered %v", deleted)
+	}
+	for _, member := range []*models.User{world.ada, world.ben} {
+		if name := nameSeenBy(member); name != "" {
+			t.Errorf("%s still lists the deleted calendar as %q", member.Username, name)
+		}
+	}
+	world.refused(t, world.ada, fmt.Sprintf(`query { ListCalendarEvents(calendarId: %q, from: "2030-01-01T00:00:00Z", until: "2030-01-31T00:00:00Z") { id } }`, familyId))
+	// The circle has none now, so there is nothing more to delete, and it can
+	// have a new one.
+	world.refused(t, world.ada, remove)
+	world.call(t, world.ada, fmt.Sprintf(`mutation { CreateCircleCalendar(circleId: %q) { id } }`, world.home))
 }
 
 // Free-busy answers for the people who shared with the caller and their own,

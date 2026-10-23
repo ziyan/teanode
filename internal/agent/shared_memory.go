@@ -8,6 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/ziyan/teanode/internal/calendar"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -24,8 +25,13 @@ import (
 //
 //   - a fact's quote, unless the owner chose to share the quotes, and where
 //     it was read only in the owner's terms ("from Ada's mail"), never which
-//     mail or which document; and never the quote of a fact read in a chat,
-//     which is the words of the others in it ("from Ada's chats");
+//     mail or which document; and never the quote of a fact read in a chat or
+//     a recording, which is the words of the others in it ("from Ada's
+//     chats");
+//   - a fact read only in finance, recordings, the location journal or an
+//     event marked private. Those have a sharing of their own, with levels,
+//     and a page share must not go around it. A fact with any other evidence,
+//     or one the person stated themselves, is shown;
 //   - a link to a page that is not itself shared with the reader, and so the
 //     name of every page of the owner's that is not;
 //   - the dream's reflections and lessons, which cite the owner's other pages
@@ -35,13 +41,14 @@ import (
 //   - everything that is not about the page's words: its importance, its
 //     contact card, its history, the identifiers of its rows.
 //
-// The summary is shown as the owner wrote it, except that one which quotes
-// somebody is left out when the owner did not share quotes (the model that
-// writes a summary copies the words it was given), and left out even then when
-// the page has a fact read in a chat, since the words it copied may be the
-// others' in that chat. A search finds a page by what the reader is shown of
-// it, so a page whose summary is left out is not found by a word on it. The
-// overview is not shown
+// The summary is shown as the owner wrote it, except that it is left out when
+// the page has a fact the reader is not shown (one read only in finance,
+// recordings, the location journal or a private event) or a fact read in a chat
+// or a recording, since the model that wrote it copied from the facts it was
+// given and the words may be the others' there. It is also left out when it
+// quotes somebody and the owner did not share quotes. A search finds a page by
+// what the reader is shown of it, so a page whose summary is left out is not
+// found by a word on it. The overview is not shown
 // at all: a model writes it from the page's links, its children and their
 // openings and the quotes, so it can name pages that are not shared and
 // repeat quotes that are not.
@@ -178,37 +185,53 @@ func quotesSomebody(text string) bool {
 	return false
 }
 
-// sharedSummaryFor is the summary of one page as its reader may see it. A
-// summary that quotes somebody is left out when the owner did not share
-// quotes, and also when the page has a fact read in a chat: the model that
-// wrote the summary copied words it was given, and in a chat they may be the
-// others' there, which the owner was never able to share. A summary that
-// quotes nobody is the owner's own and is shown. Cutting the quote out of the
-// sentence would leave the rest of a sentence built around it, so it is all of
-// the summary or none of it.
+// isSummaryLeftOutForQuotes says a summary is left out because it quotes
+// somebody and the owner did not share quotes.
+func isSummaryLeftOutForQuotes(summary string, isQuoteShared bool) bool {
+	return !isQuoteShared && quotesSomebody(summary)
+}
+
+// sharedSummaryFor is the summary of one page as its reader may see it. The
+// model that wrote a summary copied from the facts it was given, so a page
+// with a fact the reader is not shown (see isWithheld) or one read in a chat
+// or a recording (see isOthersWords) has its summary left out: what the
+// withheld fact says, or the words of the others, may be in it. A summary that
+// quotes somebody is also left out when the owner did not share quotes.
+// Cutting the offending part out of the sentence would leave the rest of a
+// sentence built around it, so it is all of the summary or none of it.
 func sharedSummaryFor(tx db.Transaction, agentId string, node *models.AgentNode, isQuoteShared bool) (string, error) {
-	if !quotesSomebody(node.Summary) {
-		return node.Summary, nil
-	}
-	if !isQuoteShared {
-		return "", nil
-	}
-	facts, err := tx.ListAgentFacts(agentId, node.ID, false, everyFactOnPage)
-	if err != nil {
+	isLeftOut, err := isSummaryLeftOut(tx, agentId, node, isQuoteShared)
+	if err != nil || isLeftOut {
 		return "", err
-	}
-	chatDocumentIds, err := chatDocumentIdsOf(tx, agentId, facts)
-	if err != nil {
-		return "", err
-	}
-	for _, fact := range facts {
-		for _, evidence := range fact.Evidence {
-			if isChatEvidence(evidence, chatDocumentIds) {
-				return "", nil
-			}
-		}
 	}
 	return node.Summary, nil
+}
+
+// isSummaryLeftOut says the summary of one page is not shown to its reader
+// (see sharedSummaryFor). The facts looked at include the dormant and the
+// superseded ones, since the summary may have been written while a fact now
+// replaced was on the page, and still carry its words.
+func isSummaryLeftOut(tx db.Transaction, agentId string, node *models.AgentNode, isQuoteShared bool) (bool, error) {
+	if strings.TrimSpace(node.Summary) == "" {
+		return false, nil
+	}
+	if isSummaryLeftOutForQuotes(node.Summary, isQuoteShared) {
+		return true, nil
+	}
+	facts, err := tx.ListAgentFacts(agentId, node.ID, true, everyFactOnPage)
+	if err != nil {
+		return false, err
+	}
+	cited, err := sharedEvidenceOf(tx, agentId, facts)
+	if err != nil {
+		return false, err
+	}
+	for _, fact := range facts {
+		if cited.isSummaryLeftOutForFact(fact) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // isAnyQuoteShared says at least one of these shares includes the quotes.
@@ -368,19 +391,22 @@ func readSharedPageFrom(tx db.Transaction, shares []*models.AgentPageShare, page
 		page.Aliases = []string{}
 	}
 
+	// Only the live facts are shown: a dormant or replaced one is what the
+	// owner's agent no longer holds true. (Whether the summary is left out
+	// looks at those too, in sharedSummaryFor.)
 	facts, err := tx.ListAgentFacts(agentId, node.ID, false, everyFactOnPage)
 	if err != nil {
 		return nil, err
 	}
-	chatDocumentIds, err := chatDocumentIdsOf(tx, agentId, facts)
+	cited, err := sharedEvidenceOf(tx, agentId, facts)
 	if err != nil {
 		return nil, err
 	}
 	for _, fact := range facts {
-		if fact.Kind.FromItsOwnReasoning() {
+		if fact.Kind.FromItsOwnReasoning() || cited.isWithheld(fact) {
 			continue
 		}
-		page.Facts = append(page.Facts, sharedFactOf(fact, ownerName, isQuoteShared, chatDocumentIds))
+		page.Facts = append(page.Facts, sharedFactOf(fact, ownerName, isQuoteShared, cited))
 	}
 
 	edges, err := tx.ListAgentEdges(agentId, node.ID)
@@ -438,58 +464,223 @@ func readSharedPageFrom(tx db.Transaction, shares []*models.AgentPageShare, page
 	return page, nil
 }
 
-// chatDocumentIdsOf are the documents among the evidence of these facts that
-// are a chat: what the owner's agent filed from a chat with other people, or
-// from a chat archive or a coding session.
-func chatDocumentIdsOf(tx db.Transaction, agentId string, facts []*models.AgentFact) (map[string]bool, error) {
-	var documentIds []string
+// sharedEvidence is what a set of facts cite, sorted into the kinds a reader
+// is treated differently for: the documents among it that are a chat, a
+// recording or the location journal, and the calendar events that are marked
+// private. A document or an event is known only by its identifier in
+// Evidence, so what it is is read once for all the facts at hand. A document
+// or an event that cannot be found among the owner's own is not known to be
+// harmless, so it is treated as one that is not shown (unresolvedDocumentIds,
+// unresolvedCalendarEventIds): a private event deleted since the fact was
+// filed, a recording gone from the archive, or an event in a circle's
+// calendar, which is not the owner's to share.
+type sharedEvidence struct {
+	chatDocumentIds            map[string]bool
+	recordingDocumentIds       map[string]bool
+	locationDocumentIds        map[string]bool
+	unresolvedDocumentIds      map[string]bool
+	privateCalendarEventIds    map[string]bool
+	unresolvedCalendarEventIds map[string]bool
+}
+
+// sharedEvidenceOf reads what the evidence of these facts is. The documents
+// are the owner agent's: what the owner's agent filed from a chat with other
+// people, from a recording, from where the person went, or from a chat
+// archive or a coding session.
+func sharedEvidenceOf(tx db.Transaction, agentId string, facts []*models.AgentFact) (*sharedEvidence, error) {
+	cited := &sharedEvidence{
+		chatDocumentIds: map[string]bool{}, recordingDocumentIds: map[string]bool{},
+		locationDocumentIds: map[string]bool{}, unresolvedDocumentIds: map[string]bool{},
+		privateCalendarEventIds: map[string]bool{}, unresolvedCalendarEventIds: map[string]bool{},
+	}
+	var documentIds, calendarEventIds []string
 	for _, fact := range facts {
 		for _, evidence := range fact.Evidence {
-			if evidence.Kind == models.EvidenceDocument && evidence.ID != "" {
+			switch evidence.Kind {
+			case models.EvidenceDocument:
 				documentIds = append(documentIds, evidence.ID)
+			case models.EvidenceCalendarEvent:
+				calendarEventIds = append(calendarEventIds, evidence.ID)
 			}
 		}
 	}
-	chatDocumentIds := map[string]bool{}
-	if len(documentIds) == 0 {
-		return chatDocumentIds, nil
-	}
-	documents, err := tx.GetAgentDocuments(agentId, documentIds)
-	if err != nil {
-		return nil, err
-	}
-	for _, document := range documents {
-		if document.Kind == models.DocumentChat {
-			chatDocumentIds[document.ID] = true
+	if len(documentIds) > 0 {
+		documents, err := tx.GetAgentDocuments(agentId, documentIds)
+		if err != nil {
+			return nil, err
+		}
+		sources, err := tx.ListAgentSources(agentId)
+		if err != nil {
+			return nil, err
+		}
+		sourceKindOf := map[string]models.AgentKnowledgeKind{}
+		for _, source := range sources {
+			sourceKindOf[source.ID] = source.Kind
+		}
+		found := map[string]bool{}
+		for _, document := range documents {
+			found[document.ID] = true
+			switch {
+			case document.Kind == models.DocumentChat || sourceKindOf[document.SourceID] == models.SourceChat:
+				cited.chatDocumentIds[document.ID] = true
+			case sourceKindOf[document.SourceID] == models.SourceRecording:
+				cited.recordingDocumentIds[document.ID] = true
+			case sourceKindOf[document.SourceID] == models.SourceLocation:
+				cited.locationDocumentIds[document.ID] = true
+			}
+		}
+		for _, documentId := range documentIds {
+			if !found[documentId] {
+				cited.unresolvedDocumentIds[documentId] = true
+			}
 		}
 	}
-	return chatDocumentIds, nil
+	if len(calendarEventIds) > 0 {
+		ownerAgent, err := tx.GetAgent(agentId)
+		if err != nil || ownerAgent == nil {
+			return nil, err
+		}
+		objects, err := tx.ListOwnCalendarObjectsByID(ownerAgent.UserID, calendarEventIds)
+		if err != nil {
+			return nil, err
+		}
+		found := map[string]bool{}
+		for _, object := range objects {
+			found[object.ID] = true
+			if calendar.IsPrivateFile(object.Data) {
+				cited.privateCalendarEventIds[object.ID] = true
+			}
+		}
+		for _, eventId := range calendarEventIds {
+			if !found[eventId] {
+				cited.unresolvedCalendarEventIds[eventId] = true
+			}
+		}
+	}
+	return cited, nil
 }
 
-// isChatEvidence says the evidence is a chat: the words of everybody who was
-// in it, not only the owner's.
-func isChatEvidence(evidence models.Evidence, chatDocumentIds map[string]bool) bool {
-	return evidence.Kind == models.EvidenceChat || (evidence.Kind == models.EvidenceDocument && chatDocumentIds[evidence.ID])
+// isChat says the evidence is a chat: the words of everybody who was in it,
+// not only the owner's.
+func (self *sharedEvidence) isChat(evidence models.Evidence) bool {
+	return evidence.Kind == models.EvidenceChat || (evidence.Kind == models.EvidenceDocument && self.chatDocumentIds[evidence.ID])
+}
+
+// isRecording says the evidence is a recording: a passage of it, or the
+// document the owner's agent filed it as.
+func (self *sharedEvidence) isRecording(evidence models.Evidence) bool {
+	return evidence.Kind == models.EvidenceRecordingPassage || (evidence.Kind == models.EvidenceDocument && self.recordingDocumentIds[evidence.ID])
+}
+
+// isOthersWords says the evidence is the words of somebody besides the owner:
+// a chat or a recording, or a document that cannot be found to say it is not.
+func (self *sharedEvidence) isOthersWords(evidence models.Evidence) bool {
+	return self.isChat(evidence) || self.isRecording(evidence) ||
+		(evidence.Kind == models.EvidenceDocument && self.unresolvedDocumentIds[evidence.ID])
+}
+
+// isWithheldKind says the evidence is of a kind that has a sharing of its
+// own, with levels, so that a page share must not go around it: a finance
+// transaction or receipt, a recording, the location journal, and a calendar
+// event marked private. A document or an event that cannot be found is taken
+// for one of these.
+func (self *sharedEvidence) isWithheldKind(evidence models.Evidence) bool {
+	switch evidence.Kind {
+	case models.EvidenceFinanceTransaction, models.EvidenceFinanceReceipt:
+		return true
+	case models.EvidenceCalendarEvent:
+		return self.privateCalendarEventIds[evidence.ID] || self.unresolvedCalendarEventIds[evidence.ID]
+	case models.EvidenceDocument:
+		return self.recordingDocumentIds[evidence.ID] || self.locationDocumentIds[evidence.ID] || self.unresolvedDocumentIds[evidence.ID]
+	}
+	return self.isRecording(evidence)
+}
+
+// isWithheld says a fact is kept from a reader whatever the share: it has
+// evidence, and all of it is of a kind with a sharing of its own. A fact with
+// any other evidence, or none, or one the person stated themselves, is shown.
+func (self *sharedEvidence) isWithheld(fact *models.AgentFact) bool {
+	if len(fact.Evidence) == 0 {
+		return false
+	}
+	for _, evidence := range fact.Evidence {
+		if !self.isWithheldKind(evidence) {
+			return false
+		}
+	}
+	return true
+}
+
+// isSummaryLeftOutForFact says a page's summary is left out of what a reader
+// is shown because of this fact on the page: the fact is itself kept from the
+// reader, or cites somebody else's words, and the model that wrote the summary
+// may have copied either.
+func (self *sharedEvidence) isSummaryLeftOutForFact(fact *models.AgentFact) bool {
+	if self.isWithheld(fact) {
+		return true
+	}
+	for _, evidence := range fact.Evidence {
+		if self.isOthersWords(evidence) {
+			return true
+		}
+	}
+	return false
+}
+
+// countWithheldFactsBatch is how many facts one read of a share's facts
+// brings in.
+const countWithheldFactsBatch = 500
+
+// CountWithheldFacts is how many of the facts on the owner's pages at this
+// path and under it a share would keep from its reader, because all of their
+// evidence is of a kind with a sharing of its own (see isWithheld). The owner
+// sees it in the preview of a share.
+func CountWithheldFacts(tx db.Transaction, ownerUserId, pagePath string) (int, error) {
+	ownerAgent, err := tx.GetAgentByUser(ownerUserId)
+	if err != nil || ownerAgent == nil {
+		return 0, err
+	}
+	withheldCount, afterFactId := 0, ""
+	for {
+		facts, err := tx.ListAgentFactsWithin(ownerAgent.ID, []string{models.NormalizePath(pagePath)}, afterFactId, countWithheldFactsBatch)
+		if err != nil {
+			return 0, err
+		}
+		cited, err := sharedEvidenceOf(tx, ownerAgent.ID, facts)
+		if err != nil {
+			return 0, err
+		}
+		for _, fact := range facts {
+			if !fact.Kind.FromItsOwnReasoning() && cited.isWithheld(fact) {
+				withheldCount++
+			}
+		}
+		if len(facts) < countWithheldFactsBatch {
+			return withheldCount, nil
+		}
+		afterFactId = facts[len(facts)-1].ID
+	}
 }
 
 // sharedFactOf is one fact as a reader is shown it. Its quote is shown only
 // when the owner shared quotes, and never when any of the fact's evidence is
-// a chat, even then: the owner chose to share their own words, and the words
-// of the others in the chat were not theirs to share.
-func sharedFactOf(fact *models.AgentFact, ownerName string, isQuoteShared bool, chatDocumentIds map[string]bool) *models.SharedFact {
+// a chat or a recording, even then: the owner chose to share their own words,
+// and the words of the others there were not theirs to share. Nor is the
+// quote of evidence with a sharing of its own ever the one shown.
+func sharedFactOf(fact *models.AgentFact, ownerName string, isQuoteShared bool, cited *sharedEvidence) *models.SharedFact {
 	shown := &models.SharedFact{
 		Number: fact.Number, FactKind: fact.Kind, Text: strings.TrimSpace(fact.Text),
 		HappenedAt: fact.HappenedAt, HappenedPrecision: fact.HappenedPrecision,
 		SaidAt: fact.SaidAt(), IsInferred: fact.Inferred,
-		EvidenceSource: sharedSourceLine(ownerName, fact.Evidence, chatDocumentIds),
+		EvidenceSource: sharedSourceLine(ownerName, fact.Evidence, cited),
 	}
-	isFromChat := false
+	hasOthersWords := false
 	for _, evidence := range fact.Evidence {
-		isFromChat = isFromChat || isChatEvidence(evidence, chatDocumentIds)
+		hasOthersWords = hasOthersWords || cited.isOthersWords(evidence)
 	}
-	if isQuoteShared && !isFromChat {
+	if isQuoteShared && !hasOthersWords {
 		for _, evidence := range fact.Evidence {
-			if strings.TrimSpace(evidence.Quote) != "" && isReadableEvidence(evidence.Kind) {
+			if strings.TrimSpace(evidence.Quote) != "" && isReadableEvidence(evidence.Kind) && !cited.isWithheldKind(evidence) {
 				shown.EvidenceQuote = strings.TrimSpace(evidence.Quote)
 				break
 			}
@@ -527,13 +718,16 @@ var sharedSourceWords = map[models.EvidenceKind]string{
 // Ada's mail" or "from Ada's mail and conversation", and never which mail:
 // the reader is told what kind of thing the owner's agent read, not given the
 // thing. Empty when the fact has none of a kind that can be named.
-func sharedSourceLine(ownerName string, evidence []models.Evidence, chatDocumentIds map[string]bool) string {
+func sharedSourceLine(ownerName string, evidence []models.Evidence, cited *sharedEvidence) string {
 	var words []string
 	seen := map[string]bool{}
 	for _, each := range evidence {
 		word := sharedSourceWords[each.Kind]
-		if isChatEvidence(each, chatDocumentIds) {
+		switch {
+		case cited.isChat(each):
 			word = sharedSourceWords[models.EvidenceChat]
+		case cited.isRecording(each):
+			word = sharedSourceWords[models.EvidenceRecordingPassage]
 		}
 		if word == "" || seen[word] {
 			continue
@@ -574,18 +768,40 @@ func SearchSharedPages(tx db.Transaction, readerUserId, query string, limit int)
 			roots = append(roots, share.Path)
 		}
 		agentId := ownerShares[0].AgentID
-		leftOut, err := summariesLeftOut(tx, agentId, ownerShares, roots)
-		if err != nil {
-			return nil, err
-		}
-		hiddenIds := make([]string, 0, len(leftOut))
-		for nodeId := range leftOut {
-			hiddenIds = append(hiddenIds, nodeId)
-		}
-		sort.Strings(hiddenIds)
-		nodes, facts, err := tx.SearchAgentGraphWithin(agentId, roots, hiddenIds, query, limit)
-		if err != nil {
-			return nil, err
+		// Whether a summary is left out decides whether a word on it finds the
+		// page, so it is decided for the pages the search finds and the search
+		// is run again until every page it finds has been decided: reading the
+		// facts of every shared page on each search would cost what is shared,
+		// not what is found.
+		leftOut := map[string]bool{}
+		decided := map[string]bool{}
+		hiddenIds := []string{}
+		var nodes []*models.AgentNode
+		var facts []*models.AgentFact
+		for {
+			nodes, facts, err = tx.SearchAgentGraphWithin(agentId, roots, hiddenIds, query, limit)
+			if err != nil {
+				return nil, err
+			}
+			isAnyLeftOut := false
+			for _, node := range nodes {
+				if decided[node.ID] {
+					continue
+				}
+				decided[node.ID] = true
+				isLeftOut, err := isSummaryLeftOut(tx, agentId, node, isAnyQuoteShared(coveringShares(ownerShares, node.Path)))
+				if err != nil {
+					return nil, err
+				}
+				if isLeftOut {
+					leftOut[node.ID] = true
+					hiddenIds = append(hiddenIds, node.ID)
+					isAnyLeftOut = true
+				}
+			}
+			if !isAnyLeftOut {
+				break
+			}
 		}
 		owner := ownerShares[0]
 		for _, node := range nodes {
@@ -613,9 +829,13 @@ func SearchSharedPages(tx db.Transaction, readerUserId, query string, limit int)
 		for _, node := range onPages {
 			pathOf[node.ID] = node
 		}
+		cited, err := sharedEvidenceOf(tx, agentId, facts)
+		if err != nil {
+			return nil, err
+		}
 		for _, fact := range facts {
 			node := pathOf[fact.NodeID]
-			if node == nil || fact.Kind.FromItsOwnReasoning() {
+			if node == nil || fact.Kind.FromItsOwnReasoning() || cited.isWithheld(fact) {
 				continue
 			}
 			hits = append(hits, &models.SharedHit{
@@ -649,28 +869,6 @@ func InterleaveSharedHits(hits []*models.SharedHit) []*models.SharedHit {
 		}
 	}
 	return interleaved
-}
-
-// summariesLeftOut are the pages, among those at these roots or under them,
-// whose summary a reader is not shown (see sharedSummaryFor), by identifier.
-// Only a summary with a quotation mark in it can be left out, so only those
-// are looked at.
-func summariesLeftOut(tx db.Transaction, agentId string, ownerShares []*models.AgentPageShare, roots []string) (map[string]bool, error) {
-	candidates, err := tx.ListAgentNodesWithQuoteMarksWithin(agentId, roots)
-	if err != nil {
-		return nil, err
-	}
-	leftOut := map[string]bool{}
-	for _, node := range candidates {
-		shown, err := sharedSummaryFor(tx, agentId, node, isAnyQuoteShared(coveringShares(ownerShares, node.Path)))
-		if err != nil {
-			return nil, err
-		}
-		if shown == "" && strings.TrimSpace(node.Summary) != "" {
-			leftOut[node.ID] = true
-		}
-	}
-	return leftOut, nil
 }
 
 // groupSharesByOwner is the shares in groups of one owner each, the owners in

@@ -124,10 +124,11 @@ func pageSharingServer(test *testing.T) (*httptest.Server, func(string) map[stri
 		"ShareAgentPage":   `{"id":"s1","path":"people/a","pageName":"A","granteeUserId":"u-ben","granteeUsername":"ben","isQuoteShared":true}`,
 		"ListAgentPageShares": `[{"id":"s1","path":"people/a","pageName":"A","granteeUserId":"u-ben","granteeUsername":"ben","isQuoteShared":true},
 			{"id":"s2","path":"people/b","pageName":"B","granteeCircleId":"c1","granteeCircleName":"Home","isQuoteShared":false}]`,
-		"UnshareAgentPage":      `true`,
-		"PreviewAgentPageShare": `{"page":` + sharedPage + `,"reachedPageCount":4,"isReachedPageCountCut":false}`,
-		"ListSharedAgentPages":  `[{"ownerUserId":"u-ada","ownerUsername":"ada","ownerName":"Ada Example","path":"people/a-grandparent","name":"A Grandparent","opening":"Lives by the sea."}]`,
-		"ReadSharedAgentPage":   sharedPage,
+		"UnshareAgentPage": `true`,
+		"PreviewAgentPageShare": `{"page":` + sharedPage + `,"reachedPageCount":4,"isReachedPageCountCut":false,
+			"reachedPagePaths":["people/a-grandparent","people/a-grandparent/doctor"],"withheldFactCount":3}`,
+		"ListSharedAgentPages": `[{"ownerUserId":"u-ada","ownerUsername":"ada","ownerName":"Ada Example","path":"people/a-grandparent","name":"A Grandparent","opening":"Lives by the sea."}]`,
+		"ReadSharedAgentPage":  sharedPage,
 		"SearchSharedAgentPages": `{"hasMoreHits":true,"hits":[{"ownerUserId":"u-ada","ownerUsername":"ada","ownerName":"Ada Example","path":"people/a-grandparent","name":"A Grandparent","opening":"Lives by the sea.","factNumber":0,"text":""},
 			{"ownerUserId":"u-ada","ownerUsername":"ada","ownerName":"Ada Example","path":"people/a-grandparent","name":"A Grandparent","opening":"","factNumber":3,"text":"Next appointment is Tuesday at three."}]}`,
 	}
@@ -222,7 +223,7 @@ func TestPreviewingAShareSharesNothing(test *testing.T) {
 	if variables := called("PreviewAgentPageShare"); variables["granteeUserId"] != "u-ben" || variables["isQuoteShared"] != false {
 		test.Errorf("the preview: %v", variables)
 	}
-	for _, wanted := range []string{"ben would see this of people/a-grandparent", "#3 Next appointment is Tuesday at three.", "from Ada Example's mail", "reaches 4 pages"} {
+	for _, wanted := range []string{"ben would see this of people/a-grandparent", "#3 Next appointment is Tuesday at three.", "from Ada Example's mail", "reaches 4 pages", "added under it later is shared too", "  people/a-grandparent/doctor", "(and 2 more)", "3 facts from finance, recordings, location, private events, or records that are gone stay private"} {
 		if !strings.Contains(output, wanted) {
 			test.Errorf("the preview lacks %q:\n%s", wanted, output)
 		}

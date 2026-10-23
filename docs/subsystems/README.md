@@ -32,6 +32,7 @@ change with it.
 | `health.md` | Apple Health from the iPhone: what is kept, how the phone sends it and works out day summaries, who sees what (shares by category, the agent's switch), and what erasing deletes |
 | `passwords.md` | Passwords, encrypted on the person's devices: the encryption in short, the server's agent key, what the agent may use and read, and the rules its tool keeps |
 | `notes.md` | Notes from a phone's Notes app, kept in the mailbox over IMAP |
+| `recordings.md` | Meeting recordings: how a transcript is read, and who a recording is shared with and at what level |
 | `photos.md` | The photo library: uploads, processing, descriptions, faces, albums, the iPhone's backup |
 | `finance.md` | Linked institutions, transactions, exchange rates, net worth, budgets and savings targets |
 | `search.md` | One search of a person's words across chats, mail, contacts, photos, memory, documents, recordings, places and finance: the areas, who may search what, time and failure |

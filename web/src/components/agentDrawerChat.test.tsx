@@ -983,6 +983,113 @@ it('words the note that somebody removed how the person is related', async () =>
   expect(await screen.findByText('Sam Lee removed how you are related.')).toBeTruthy()
 })
 
+it('words the note that somebody shared something with the person, by kind', async () => {
+  answerWith({ hasAgents: true })
+  openOnChat()
+  renderDrawer()
+  await screen.findByText('Dinner at seven?')
+  await waitFor(() => expect(feeds['chat-conversation']).toBeTruthy())
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'Sam Lee shared their calendar with you (titles)',
+    noteKind: 'share_received',
+    noteDetail: JSON.stringify({ sharerName: 'Sam Lee', shareKind: 'calendar', shareLevel: 'titles' }),
+  })
+  expect(await screen.findByText('Sam Lee shared their calendar with you (titles).')).toBeTruthy()
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'Sam Lee shared the memory page Kim with you',
+    noteKind: 'share_received',
+    noteDetail: JSON.stringify({ sharerName: 'Sam Lee', shareKind: 'memory_page', shareSubject: 'Kim' }),
+  })
+  expect(await screen.findByText('Sam Lee shared the memory page Kim with you.')).toBeTruthy()
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'Sam Lee shared the recording Standup with you (summary and transcript)',
+    noteKind: 'share_received',
+    noteDetail: JSON.stringify({
+      sharerName: 'Sam Lee',
+      shareKind: 'recording',
+      shareLevel: 'transcript',
+      shareSubject: 'Standup',
+    }),
+  })
+  expect(
+    await screen.findByText('Sam Lee shared the recording Standup with you (summary and transcript).'),
+  ).toBeTruthy()
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'Sam Lee shared a recording with you (title and summary)',
+    noteKind: 'share_received',
+    noteDetail: JSON.stringify({ sharerName: 'Sam Lee', shareKind: 'recording', shareLevel: 'summary' }),
+  })
+  expect(await screen.findByText('Sam Lee shared a recording with you (title and summary).')).toBeTruthy()
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'Sam Lee shared a finance account with you (balance only)',
+    noteKind: 'share_received',
+    noteDetail: JSON.stringify({ sharerName: 'Sam Lee', shareKind: 'finance', shareLevel: 'balance' }),
+  })
+  expect(await screen.findByText('Sam Lee shared a finance account with you (balance only).')).toBeTruthy()
+})
+
+it('words the note that somebody joined a circle the person shares things with', async () => {
+  answerWith({ hasAgents: true })
+  openOnChat()
+  renderDrawer()
+  await screen.findByText('Dinner at seven?')
+  await waitFor(() => expect(feeds['chat-conversation']).toBeTruthy())
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'Kim joined Family and can now see your calendar and location',
+    noteKind: 'share_reached',
+    noteDetail: JSON.stringify({ memberName: 'Kim', circleName: 'Family', shareKinds: ['calendar', 'location'] }),
+  })
+  expect(await screen.findByText('Kim joined Family and can now see your calendar and location.')).toBeTruthy()
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'Kim joined Family and can now see your calendar, location and finance',
+    noteKind: 'share_reached',
+    noteDetail: JSON.stringify({
+      memberName: 'Kim',
+      circleName: 'Family',
+      shareKinds: ['calendar', 'location', 'finance'],
+    }),
+  })
+  expect(await screen.findByText('Kim joined Family and can now see your calendar, location and finance.')).toBeTruthy()
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'Kim joined Family and can now see your recordings',
+    noteKind: 'share_reached',
+    noteDetail: JSON.stringify({ memberName: 'Kim', circleName: 'Family', shareKinds: ['recording'] }),
+  })
+  expect(await screen.findByText('Kim joined Family and can now see your recordings.')).toBeTruthy()
+})
+
+it('words the note that an operator put an account in a circle the person administers', async () => {
+  answerWith({ hasAgents: true })
+  openOnChat()
+  renderDrawer()
+  await screen.findByText('Dinner at seven?')
+  await waitFor(() => expect(feeds['chat-conversation']).toBeTruthy())
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'An operator of this server put Kim in Home, which you administer.',
+    noteKind: 'circle_member_added',
+    noteDetail: JSON.stringify({ addedName: 'Kim', circleName: 'Home' }),
+  })
+  expect(await screen.findByText('An operator of this server put Kim in Home, which you administer.')).toBeTruthy()
+})
+
 it('has the two switches for the person’s own agent in the members, and turns each on with its own call', async () => {
   answerWith({ hasAgents: true })
   openOnChat()
@@ -1044,12 +1151,14 @@ it('puts the chat away from its row in the list, for a person whose agent is off
   fireEvent.click(await screen.findByRole('button', { name: 'Person B: Archive' }))
   await waitFor(() =>
     expect(
-      vi.mocked(graphql).mock.calls.some(
-        ([document, variables]) =>
-          document.includes('UpdateAgentConversation') &&
-          (variables as { conversationId: string; archived: boolean }).archived === true &&
-          (variables as { conversationId: string }).conversationId === 'chat-conversation',
-      ),
+      vi
+        .mocked(graphql)
+        .mock.calls.some(
+          ([document, variables]) =>
+            document.includes('UpdateAgentConversation') &&
+            (variables as { conversationId: string; archived: boolean }).archived === true &&
+            (variables as { conversationId: string }).conversationId === 'chat-conversation',
+        ),
     ).toBe(true),
   )
 })

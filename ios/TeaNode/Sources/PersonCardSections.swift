@@ -249,6 +249,50 @@ struct PersonCardHealthRow: View {
     }
 }
 
+// MARK: - Finance
+
+/// PersonCardFinanceView is the finance accounts they share, each as the level
+/// it was shared at shows it. Show all opens Finance on them. The agent is
+/// never shown this.
+struct PersonCardFinanceView: View {
+    let card: PersonCard
+    let isInSheet: Bool
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        if let section = card.finance, section.sectionState.isListed {
+            Section {
+                rows(of: section)
+            } header: {
+                Text(verbatim: AppSection.finance.title)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func rows(of section: PersonCardFinanceSection) -> some View {
+        if section.sectionState == .shown {
+            ForEach(section.financeAccounts) { account in
+                SharedFinanceAccountRow(account: account)
+            }
+            if section.hasMore {
+                PersonCardShowAllRow(title: AppSection.finance.title) { open() }
+            }
+        } else {
+            PersonCardStateRows(
+                sectionState: section.sectionState, notShared: Text("\(card.displayName) shares no finance account with you yet."))
+        }
+    }
+
+    /// Opens Finance on what they share.
+    private func open() {
+        app.leavePersonCard(isInSheet: isInSheet) {
+            app.openedFinanceSharerId = card.person?.userId
+            app.openedSection = .finance
+        }
+    }
+}
+
 // MARK: - Photos
 
 /// PersonCardPhotosView is photos of them in the person's library, as a row of

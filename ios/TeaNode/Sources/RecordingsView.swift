@@ -18,6 +18,8 @@ final class RecordingsModel {
     var isLoaded = false
     var isImporting = false
     var hasMoreRecordings = false
+    /// Whether anybody has shared a recording with the person, which is what puts the Recordings shared with you row on the list.
+    var hasSharedRecordings = false
     var isLoadingPage = false
     var searchText = ""
     /// What the server found for the search, or nil while nothing is searched.
@@ -70,6 +72,7 @@ final class RecordingsModel {
             await loadLocalRecordings()
             recordings = try await connection.recordings()
             hasMoreRecordings = recordings.count == 50
+            hasSharedRecordings = !((try? await connection.sharedRecordings(pageSize: 1)) ?? []).isEmpty
             isLoaded = true
             problemText = nil
             loadFailureText = nil
@@ -267,6 +270,17 @@ struct RecordingsScreen: View {
     var body: some View {
         NavigationStack {
             List {
+                // What others shared is a screen of its own behind a row, which is there only once somebody has shared.
+                if model.hasSharedRecordings, model.searchResults == nil {
+                    Section {
+                        NavigationLink {
+                            SharedRecordingsScreen(connection: model.connection)
+                        } label: {
+                            Label("Recordings shared with you", systemImage: "person.2")
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                }
                 // Sections by period, as the mail list has them.
                 ForEach(ListPeriod.periods(of: shownRows, at: \.recordedAt)) { period in
                     Section {

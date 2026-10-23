@@ -58,12 +58,12 @@ func TestContactCommandsRespectCallerRollbackAndPermissions(test *testing.T) {
 		if _, err := New(database).Save(test.Context(), denied, SaveRequest{ID: created.ID, Fields: contacts.Fields{Name: new("Changed")}}); !errors.Is(err, db.ErrNotFound) {
 			test.Fatalf("edit permission=%v", err)
 		}
-		if err := New(database).Delete(test.Context(), denied, created.ID); !errors.Is(err, db.ErrNotFound) {
+		if err := New(database).Delete(test.Context(), denied, "", created.ID); !errors.Is(err, db.ErrNotFound) {
 			test.Fatalf("delete permission=%v", err)
 		}
 	}
 	if err := database.TransactionContext(test.Context(), func(transaction db.Transaction) error {
-		if err := New(transaction).Delete(test.Context(), principal, created.ID); err != nil {
+		if err := New(transaction).Delete(test.Context(), principal, "", created.ID); err != nil {
 			return err
 		}
 		return interrupted

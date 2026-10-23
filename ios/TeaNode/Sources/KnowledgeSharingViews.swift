@@ -259,7 +259,7 @@ struct KnowledgeShareSheet: View {
                     Section {
                         Toggle("Also show the words each fact was read in", isOn: $isQuoteShared)
                     } footer: {
-                        Text("Those words are quoted from your mail and documents. Off, they see what a fact says and what kind of thing it was read in, not the words. Words from a chat are never shown, since they are other people's too.")
+                        Text("Those words are quoted from your mail and documents. Off, they see what a fact says and what kind of thing it was read in, not the words. Words from a chat or a recording are never shown, since they are other people's too.")
                     }
                     Section {
                         NavigationLink {
@@ -420,6 +420,22 @@ struct KnowledgeSharePreviewScreen: View {
             if let preview {
                 Section {
                     Text(verbatim: Self.pagesText(of: preview))
+                    Text("A page you add under it later is shared too.").foregroundStyle(.secondary)
+                }
+                if !preview.reachedPagePaths.isEmpty {
+                    Section {
+                        ForEach(preview.reachedPagePaths, id: \.self) { reachedPath in
+                            Text(verbatim: reachedPath)
+                        }
+                        if let morePagesText = Self.morePagesText(of: preview) {
+                            Text(verbatim: morePagesText).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if let withheldText = Self.withheldText(of: preview) {
+                    Section {
+                        Text(verbatim: withheldText)
+                    }
                 }
                 SharedKnowledgeSections(page: preview.page, openingOwnerUserId: nil)
             }
@@ -457,6 +473,24 @@ struct KnowledgeSharePreviewScreen: View {
         case (true, true): return String(localized: "This shares at least 1 page: this one and everything under it.")
         case (true, false): return String(localized: "This shares at least \(reachedPageCount) pages: this one and everything under it.")
         }
+    }
+
+    /// How many of the pages it reaches are not in the list.
+    private static func morePagesText(of preview: KnowledgeSharePreview) -> String? {
+        let morePageCount = preview.reachedPageCount - preview.reachedPagePaths.count
+        guard morePageCount > 0 else { return nil }
+        return String(localized: "and \(morePageCount) more")
+    }
+
+    /// How many facts stay private because all their evidence is finance,
+    /// recordings, location or a private event.
+    private static func withheldText(of preview: KnowledgeSharePreview) -> String? {
+        let withheldFactCount = preview.withheldFactCount
+        guard withheldFactCount > 0 else { return nil }
+        if withheldFactCount == 1 {
+            return String(localized: "1 fact from finance, recordings, location, private events, or records that are gone stays private. Those have their own sharing.")
+        }
+        return String(localized: "\(withheldFactCount) facts from finance, recordings, location, private events, or records that are gone stay private. Those have their own sharing.")
     }
 
     private func load() async {

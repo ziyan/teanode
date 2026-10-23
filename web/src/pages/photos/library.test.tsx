@@ -823,10 +823,11 @@ const benShare = {
   granteeCircleName: '',
   shareLevel: 'view',
   isLocationIncluded: false,
+  isFaceNamesIncluded: false,
   createdAt: '2030-07-12T09:00:00Z',
 }
 
-it('shares the album with a person at the level and with the places the person chose', async () => {
+it('shares the album with a person at the level, with the places and with the names the person chose', async () => {
   sharingAnswers()
   show('/photos/albums/album-1')
   fireEvent.click(await screen.findByRole('button', { name: 'Share' }))
@@ -837,6 +838,15 @@ it('shares the album with a person at the level and with the places the person c
   fireEvent.click(await within(dialog).findByRole('radio', { name: 'Ben' }))
   fireEvent.click(within(dialog).getByRole('radio', { name: /Contribute/ }))
   fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include where photos were taken' }))
+  // The names of the people in the photos are a choice of their own, off until made.
+  expect(
+    (
+      within(dialog).getByRole('checkbox', {
+        name: 'Include the names of the people in the photos',
+      }) as HTMLInputElement
+    ).checked,
+  ).toBe(false)
+  fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include the names of the people in the photos' }))
   fireEvent.click(within(dialog).getByRole('button', { name: 'Share' }))
   await waitFor(() =>
     expect(callsTo('SharePhotoAlbum')).toEqual([
@@ -846,10 +856,11 @@ it('shares the album with a person at the level and with the places the person c
         granteeCircleId: null,
         shareLevel: 'contribute',
         isLocationIncluded: true,
+        isFaceNamesIncluded: true,
       },
     ]),
   )
-  expect(await screen.findByText('Shared with Ben.')).toBeTruthy()
+  expect(await screen.findByText('Shared with Ben')).toBeTruthy()
 })
 
 it('shares the album with a circle, named as everyone in it', async () => {
@@ -868,14 +879,22 @@ it('shares the album with a circle, named as everyone in it', async () => {
 })
 
 it('changes what somebody has by sharing again, starting from what they have now', async () => {
-  sharingAnswers([{ ...benShare, shareLevel: 'view', isLocationIncluded: true }])
+  sharingAnswers([{ ...benShare, shareLevel: 'view', isLocationIncluded: true, isFaceNamesIncluded: true }])
   show('/photos/albums/album-1')
   fireEvent.click(await screen.findByRole('button', { name: 'Share' }))
   const dialog = await screen.findByRole('dialog', { name: 'Share “Picnic”' })
   expect(await within(dialog).findByText('Places included')).toBeTruthy()
+  expect(within(dialog).getByText('Names included')).toBeTruthy()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Change what Ben can do' }))
   expect(
     (within(dialog).getByRole('checkbox', { name: 'Include where photos were taken' }) as HTMLInputElement).checked,
+  ).toBe(true)
+  expect(
+    (
+      within(dialog).getByRole('checkbox', {
+        name: 'Include the names of the people in the photos',
+      }) as HTMLInputElement
+    ).checked,
   ).toBe(true)
   fireEvent.click(within(dialog).getByRole('radio', { name: /Contribute/ }))
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
@@ -884,8 +903,9 @@ it('changes what somebody has by sharing again, starting from what they have now
     granteeUserId: 'person-2',
     shareLevel: 'contribute',
     isLocationIncluded: true,
+    isFaceNamesIncluded: true,
   })
-  expect(await screen.findByText('Changed what Ben can do.')).toBeTruthy()
+  expect(await screen.findByText('Changed what Ben can do')).toBeTruthy()
 })
 
 it('asks before taking a share back, and says their photos leave the album', async () => {

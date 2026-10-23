@@ -23,6 +23,8 @@ func TestTheRequestAndCalendarActionsAreClassedAndWorded(t *testing.T) {
 		`{"action":"stop","request_id":"r1"}`:                     tools.RiskWrite,
 		`{"action":"set","name":"Work"}`:                          tools.RiskWrite,
 		`{"action":"circle","circle":"Home","name":"Home plans"}`: tools.RiskWrite,
+		`{"action":"set","circle":"Home","name":"Home plans"}`:    tools.RiskWrite,
+		`{"action":"circle_delete","circle":"Home"}`:              tools.RiskDestructive,
 	} {
 		if got := calendar.RiskFor([]byte(arguments)); got != want {
 			t.Errorf("%s is %q, not %q", arguments, got, want)
@@ -34,10 +36,12 @@ func TestTheRequestAndCalendarActionsAreClassedAndWorded(t *testing.T) {
 	}}
 	ctx := runWith(operations)
 	for arguments, want := range map[string]string{
-		`{"action":"stop","request_id":"r1"}`:    `Stop the calendar change "r1" from executing`,
-		`{"action":"set","name":"Work"}`:         `Rename your calendar to "Work"`,
-		`{"action":"set","week_start":"monday"}`: `Change how your calendar is shown`,
-		`{"action":"circle","circle":"c1"}`:      `Make the calendar of the circle "Home" (2 people), which everyone in it reads and writes`,
+		`{"action":"stop","request_id":"r1"}`:           `Stop the calendar change "r1" from executing`,
+		`{"action":"set","name":"Work"}`:                `Rename your calendar to "Work"`,
+		`{"action":"set","week_start":"monday"}`:        `Change how your calendar is shown`,
+		`{"action":"circle","circle":"c1"}`:             `Make the calendar of the circle "Home" (2 people), which everyone in it reads and writes`,
+		`{"action":"set","circle":"c1","name":"Plans"}`: `Rename the calendar of the circle "Home" (2 people) to "Plans"`,
+		`{"action":"circle_delete","circle":"c1"}`:      `Delete the calendar of the circle "Home" (2 people), with every event in it, for everyone in it`,
 	} {
 		if line := calendar.PreviewLine(ctx, []byte(arguments)); line != want {
 			t.Errorf("%s is previewed as %q, want %q", arguments, line, want)
@@ -198,5 +202,55 @@ func TestACircleCalendarIsMadeForTheCircleNamed(t *testing.T) {
 	}
 	if operations.sent["CreateCircleCalendar"] != nil {
 		t.Errorf("nothing was made: %v", operations.sent)
+	}
+}
+
+// A circle's calendar is renamed through set with the circle named, keeping
+// what the call leaves out as the circle's calendar holds it, and it is deleted
+// through circle_delete for the circle named. A circle with no calendar is
+// said so, and nothing is sent.
+func TestACircleCalendarIsRenamedAndDeletedForTheCircleNamed(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListCalendars": `[{"id":"own","name":"Calendar","agentGranted":true,"calendarKind":"events","shareLevel":"owner"},
+			{"id":"family","name":"Home plans","description":"Dinners","colour":"#445566","timezone":"Europe/Berlin","weekStart":"monday",
+			"calendarKind":"events","shareLevel":"edit","circleId":"c1","circleName":"Home","isCircleCalendar":true}]`,
+		"ListCircles":          `[{"id":"c1","name":"Home","members":[{"userId":"u-ada"}]},{"id":"c2","name":"Club","members":[{"userId":"u-ada"}]}]`,
+		"SaveCalendar":         `{"id":"family","name":"Family","timezone":"Europe/Berlin","weekStart":"monday"}`,
+		"DeleteCircleCalendar": `true`,
+	}}
+	ctx := runWith(operations)
+	if _, err := call(t, "calendar_set", ctx, `{"circle":"home","name":"Family"}`); err != nil {
+		t.Fatal(err)
+	}
+	sent := operations.sent["SaveCalendar"]
+	for name, value := range map[string]any{"id": "family", "name": "Family", "description": "Dinners", "colour": "#445566", "weekStart": "monday"} {
+		if sent[name] != value {
+			t.Errorf("%s is sent as %v, want %v: %v", name, sent[name], value, sent)
+		}
+	}
+
+	answer, err := call(t, "calendar_circle_delete", ctx, `{"circle":"Home"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent := operations.sent["DeleteCircleCalendar"]; sent["circleId"] != "c1" {
+		t.Errorf("the circle by its name: %v", sent)
+	}
+	if answer["deleted"] != `the circle "Home"` {
+		t.Errorf("what is said: %v", answer)
+	}
+
+	operations.sent = nil
+	if _, err := call(t, "calendar_set", ctx, `{"circle":"Club","name":"Plans"}`); err == nil || !strings.Contains(err.Error(), "has a calendar") {
+		t.Errorf("a circle with no calendar: %v", err)
+	}
+	if _, err := call(t, "calendar_circle_delete", ctx, `{"circle":"Nobody"}`); err == nil || !strings.Contains(err.Error(), "neither the name nor the id") {
+		t.Errorf("a circle the person is not in: %v", err)
+	}
+	if _, err := call(t, "calendar_circle_delete", ctx, `{}`); err == nil {
+		t.Error("a call that names no circle")
+	}
+	if operations.sent["SaveCalendar"] != nil || operations.sent["DeleteCircleCalendar"] != nil {
+		t.Errorf("nothing was sent: %v", operations.sent)
 	}
 }

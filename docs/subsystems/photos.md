@@ -390,7 +390,8 @@ An album belongs to a person (`photo_album.user_id`) or to a circle
 with one person they share a circle with, or with a circle they are in, at a
 **share level** (`view`, to see and save its photos, or `contribute`, to also
 add photos of their own and take out the ones they added), and says whether the
-share includes where the photos were taken (`is_location_included`). A circle's
+share includes where the photos were taken (`is_location_included`) and the
+names given to the faces in them (`is_face_names_included`). A circle's
 album is read and added to by every member and managed (renamed, covered,
 deleted) by the circle's admins; it is not shared further, since every member
 has it. A photo in somebody else's album is still the photo of whoever added
@@ -405,12 +406,18 @@ dashboard, the phone, the command line and the agent all go through
 and `requirePhotoAlbumManager` in `apigraph/photo_authorize.go`, and every
 refusal is "not found". A shared photo is read through its owner's rows: its
 files, previews and faces are fetched with the owner's identifier once the
-caller was let in.
+caller was let in. A photo whose owner is disabled or has lost `photos:use` is
+not open to anybody else, in an album of another person as in their own, and
+the album's count, cover and listing leave it out for the same reason
+(`photoIsOpenToSQL`), so an album never promises a photo that answers not found.
 
 What a reader who is not the photo's owner is given:
 
-- no latitude, longitude or place name, no favorite mark and no uploader name
-  for it, unless the share includes places (a circle's album has no share, so
+- no latitude, longitude or place name, no offset from UTC (which, with the
+  date, says what part of the world it was taken in; the instant stays), no
+  favorite mark and no uploader name for it, unless the share includes places
+  (the reference chip of a photo the reader points the agent at is read the same
+  way; a circle's album has no share, so
   its members see only their own photos' places, and the owner of an album
   never sees the places of others' photos in it, since no share points back at
   the owner);
@@ -422,9 +429,15 @@ What a reader who is not the photo's owner is given:
 - the same listing, search and count as the owner, but a listing of an album
   gives a place away by no other means either: the distance filter and the
   words of a place find only the reader's own photos in it;
-- the faces as the owner's, with the names the owner gave them; a share dialog
-  says so, since the names are the owner's words and are given with the photo
-  whether or not places are;
+- the faces as the owner's: the boxes round them, and the names the owner gave
+  them only through a share that includes them (`is_face_names_included`),
+  and then only on the album owner's own photos, as places are. The names are
+  entries in the owner's address book, so a reader is never given the contact
+  or the group (`contactId`, `photoFaceGroupId`, the owner's `userId` and
+  `isGroupConfirmed` come back empty); in a circle's album a member has the
+  names of the photos they added themselves and no others. `PhotoAccess.
+  IsFaceNamesIncluded` is the answer, and `ReadPhoto` applies it
+  (`withheldFaceNames`);
 - no description and no text in the picture, no file name (the photo's own, and
   its files': a file is named `photo-` and the photo's id, and so is the copy the
   reader keeps), and no `describedAt`, so the reader's own assistant, which reads
@@ -442,11 +455,13 @@ are copied to a new `photo` of the reader's with source `shared` and client
 photo id `shared:` and the original's SHA-256, so saving twice is saving once),
 nothing new is stored, and the quota counts the files. Without places it stores
 the preview the reader could see as the new photo's original, one new blob,
-because the original's bytes would hand the place over. Either way the new
+because the original's bytes would hand the place over, with client photo id
+`shared-preview:` and the photo's id (not the original's digest, which names
+the file the reader was kept from) and no offset from UTC. Either way the new
 photo is processed like any other.
 
 Leaving a circle ends what the circle made possible. The circles code calls
-`releasePhotoAlbumsOutsideCircles` (in `endSharesOutsideCircles`, inside the
+`endPhotoAlbumSharesOutsideCircles` (in `endSharesOutsideCircles`, inside the
 membership lock) for each person who left, deleting direct shares between
 people who no longer share any circle and the person's shares to circles they
 left, and then taking out of every album the person owns or added to the
@@ -466,7 +481,11 @@ memory by each server instance.
 The agent's tool shows the albums that are not the person's with their owner
 and level (`album-list`), and reads them where they are: `list` and `look`
 with the album's `album_id`, each photo marked with its owner. It copies
-nothing into the person's library unless they ask (`save-shared`).
+nothing into the person's library unless they ask (`save-shared`). In a chat
+turn, whose words are posted to everybody in the room, it reads only the
+person's own: `album-list` leaves the others out, and `album-read`, `list`,
+`read`, `look` and `show` refuse a photo or an album that is not the person's
+(`IsOwnedByCaller` is false) and say it is not repeated into a chat.
 Every operation of the tool that answers a list (`list`, `album-list`,
 `album-read`, which gives the album's photos, `people`, `person-photos` and
 `album-shares`) gives a page at a time: `page_size` and `offset` in, and when
@@ -496,18 +515,24 @@ people read` does, and `person-photos` its photos. Turning faces on is of the
 risk class granting and turning them off is destructive: finding faces is a
 privacy choice either way, so both ask.
 
-`album-share` and `album-unshare` are of the risk class granting, as the
-calendar's share is, so they ask the person unless they allowed it, and the card
-names the album and the people. `album-share-update` changes one share (`teanode
+`album-share` is of the risk class granting, as the calendar's share is, so it
+asks the person unless they allowed it, and the card names the album and the
+people. It takes one `with`, a username or a circle's name or id, resolved by
+`tools.ResolveGrantee` as `calendar_share` does and `teanode photo album share
+ID <username|circle>` does through `shareTarget`: a username wins over a circle
+of the same name, and a circle name that two circles have is refused with their
+ids and sizes. `album-create` with `circle` and `teanode photo album create
+--circle` refuse such a name the same way. `album-unshare` only takes access away, so it is a write, as
+`calendar_unshare` is, and does not ask. `album-share-update` changes one share (`teanode
 photo album share-update`, the same `UpdatePhotoAlbumShare` the dashboard and
 the phone use). It takes the album as well as the share, reads the album's
-shares, and changes only the settings the call names, `share_level` and
-`is_location_included`: the operation writes both, so the one left out is sent
-as the share has it, and stopping somebody adding photos does not take the
-places away. A call that names what the share already has makes no request and
+shares, and changes only the settings the call names, `share_level`,
+`is_location_included` and `is_face_names_included`: the operation writes all
+three, so the ones left out are sent as the share has them, and stopping
+somebody adding photos does not take the places away. A call that names what the share already has makes no request and
 says that nothing changed. The risk class is judged from the arguments alone,
-since the share is not known at that point: a call that names `contribute` or
-places on is granting, even when the share has that setting already, and any
+since the share is not known at that point: a call that names `contribute`, places on or
+face names on is granting, even when the share has that setting already, and any
 other call can only keep or take away access, so it is an ordinary write with no
 card. The card for a granting call reads the album and the share, names the
 album and the person or circle, and says what changes and what stays, or that
@@ -717,7 +742,13 @@ the app's presence report: `AppShell.refreshPresence` repeats every 30 seconds
 on every screen (services, access session, chats, presence).
 
 Players cannot send a sign-in, so `PhotoPlaybackAddress` answers a signed
-address, valid for six hours, that streams one preview or file with ranges.
+address, valid for six hours, that streams one preview or file with ranges. The
+signature covers the owner, the reader it was made for, the photo, which
+preview or file and the expiry, and each fetch asks `GetPhotoAccess` again for
+that reader (and that they are enabled and have `photos:use`), so an address
+stops with the share that let the reader in, and a file address stops when the
+share stops including places. The query carries `owner`, `reader` and
+`signature`.
 
 ## Cleanup
 

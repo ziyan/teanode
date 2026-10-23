@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -481,4 +482,59 @@ func TestACircleNameHasNoLineBreaks(t *testing.T) {
 			t.Errorf("a renamed circle is called %q", renamed.Name)
 		}
 	})
+}
+
+// Leaving a circle must end every share that only the circle made possible, so
+// that two people who meet again in another circle are not reached by a share
+// neither chose a second time. Every kind of share names its grantee in a
+// grantee_user_id or grantee_circle_id column, so a new table with one is a new
+// kind of share, and this fails until endSharesOutsideCircles
+// (database_circle.go) ends it too and the table is listed here with what
+// ends it.
+func TestEveryKindOfShareIsEndedWhenACircleStopsMakingItPossible(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+
+	// The tables with a grantee column, and the function of
+	// endSharesOutsideCircles that ends their rows.
+	ended := map[string]string{
+		"agent_page_share":      "endPageSharesOutsideCircles",
+		"calendar_share":        "endCalendarSharesOutsideCircles",
+		"finance_account_share": "endFinanceSharesOutsideCircles",
+		"health_share":          "endHealthSharesOutsideCircles",
+		"location_share":        "endLocationSharesOutsideCircles",
+		"password_share":        "endPasswordSharesOutsideCircles",
+		"photo_album_share":     "endPhotoAlbumSharesOutsideCircles",
+		"recording_share":       "endRecordingSharesOutsideCircles",
+		"skill_share":           "endSkillSharesOutsideCircles",
+		// Not a share: the log of the calls made through a skill share, which
+		// keeps the grantee after the share is gone.
+		"skill_share_call": "endSkillSharesOutsideCircles",
+	}
+	found := dbtest.QueryString(t, database, `SELECT COALESCE(string_agg(DISTINCT table_name, ',' ORDER BY table_name), '')
+		FROM information_schema.columns
+		WHERE table_schema = current_schema() AND column_name IN ('grantee_user_id', 'grantee_circle_id')`)
+	for _, table := range strings.Split(found, ",") {
+		if _, isCovered := ended[table]; !isCovered {
+			t.Errorf("the table %s names a grantee but no function ends its rows when a circle stops making them possible: "+
+				"add one to endSharesOutsideCircles and list the table here", table)
+		}
+	}
+	source, err := os.ReadFile("database_circle.go")
+	if err != nil {
+		t.Fatalf("ReadFile: %s", err)
+	}
+	_, afterSignature, isFound := strings.Cut(string(source), "func endSharesOutsideCircles(")
+	if !isFound {
+		t.Fatal("endSharesOutsideCircles is not in database_circle.go")
+	}
+	body, _, _ := strings.Cut(afterSignature, "\nfunc ")
+	for table, function := range ended {
+		if !strings.Contains(","+found+",", ","+table+",") {
+			t.Errorf("%s is listed as ended by %s but has no grantee column; remove it from the list", table, function)
+		}
+		if !strings.Contains(body, function+"(") {
+			t.Errorf("%s is listed as ended by %s, which endSharesOutsideCircles does not call", table, function)
+		}
+	}
 }

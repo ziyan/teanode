@@ -288,8 +288,9 @@ func TestSearchRefusesWhatItCannotRun(test *testing.T) {
 }
 
 // The agent's tools run the same document as the person, held to the agent's
-// limits: narrowed to photos, the areas that need anything else are left out
-// though the person may use them.
+// limits: it searches only the address books given to it, and narrowed to
+// photos, the areas that need anything else are left out though the person
+// may use them.
 func TestTheAgentSearchesOnlyWhatItsLimitsAllow(test *testing.T) {
 	world := newSearchWorld(test)
 	userId := world.person("search-by-agent", searchEverything...)
@@ -303,20 +304,51 @@ func TestTheAgentSearchesOnlyWhatItsLimitsAllow(test *testing.T) {
 	})
 	operations := &agentOperations{graph: world.graph, user: owner, permissions: &models.EffectivePermissions{Everywhere: searchEverything}}
 
-	ask := func(operations *agentOperations) []string {
+	// The book fill made is not given to the agent; a second one is.
+	dbtest.RunTransactionOn(test, world.database, func(tx db.Transaction) {
+		book, err := tx.CreateAddressBook(&models.AddressBook{UserID: userId, Name: "Given"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		book.AgentGranted = true
+		if _, err := tx.UpdateAddressBook(book); err != nil {
+			test.Fatal(err)
+		}
+		if _, err := tx.PutContact(&models.Contact{
+			AddressBookID: book.ID, UID: "uid-given", ETag: "etag", Name: "lanternfish Given",
+			Card: "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:lanternfish Given\r\nEND:VCARD\r\n",
+		}); err != nil {
+			test.Fatal(err)
+		}
+	})
+
+	ask := func(operations *agentOperations) *client.SearchResults {
 		var found struct {
 			SearchEverything *client.SearchResults `json:"SearchEverything"`
 		}
 		if err := operations.Execute(test.Context(), client.DocumentSearchEverything, map[string]any{"words": "lanternfish"}, &found); err != nil {
 			test.Fatal(err)
 		}
-		return searchAreaNames(found.SearchEverything)
+		return found.SearchEverything
 	}
-	if want, got := []string{"chats", "contacts", "photos", "memory", "recordings", "places"}, ask(operations); !slices.Equal(got, want) {
+	results := ask(operations)
+	if want, got := []string{"chats", "contacts", "photos", "memory", "recordings", "places"}, searchAreaNames(results); !slices.Equal(got, want) {
 		test.Errorf("the agent found %v, want %v", got, want)
 	}
+	for _, area := range results.Areas {
+		if area.SearchArea != "contacts" {
+			continue
+		}
+		var names []string
+		for _, result := range area.Results {
+			names = append(names, result.TitleText)
+		}
+		if !slices.Equal(names, []string{"lanternfish Given"}) {
+			test.Errorf("the agent found the contacts %v, want only the one in the book given to it", names)
+		}
+	}
 	narrowed := operations.NarrowedTo(&models.EffectivePermissions{Everywhere: []models.Permission{models.PermissionPhotosUse}}).(*agentOperations)
-	if want, got := []string{"photos"}, ask(narrowed); !slices.Equal(got, want) {
+	if want, got := []string{"photos"}, searchAreaNames(ask(narrowed)); !slices.Equal(got, want) {
 		test.Errorf("a turn limited to photos found %v, want %v", got, want)
 	}
 }

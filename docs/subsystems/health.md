@@ -104,7 +104,14 @@ of it; new readings of that type still arrive while Health is on.
   agent can run commands that act with the person's own login, and so can read
   what that login can read on that computer, Health included. That is why the
   two consents are not given to a login. Turning the switch off, narrowing or
-  ending a share, and every read and erase, work from anywhere.
+  ending a share, and every read and erase, work from anywhere. A command the
+  agent runs through the computer program carries a mark (the
+  `TEANODE_AGENT_COMMAND` variable, which the command line sends as the
+  `X-Teanode-Agent-Command` header), and the server then treats the request as
+  the agent's, so what others share with the person is refused to it as it is
+  to the tool. That is a guard against mistakes and steered runs, not a
+  boundary against code the person runs: anything that leaves the header off
+  is the person.
 - **People they share with.** A person shares chosen Health categories with a
   circle, or with one person in a circle they share. Those people see the day
   summaries of the types in those categories, as charts, and nothing else: no
@@ -125,7 +132,10 @@ of it; new readings of that type still arrive while Health is on.
   what the person's agent reads. It never reads what somebody shares with the
   person (the person sees that on the Health page, under Showing): a person
   shares Health with people, not with their agents' model providers, and only
-  the sharer can agree to their data going to one. The tool only reads, and
+  the sharer can agree to their data going to one. The API holds to this too:
+  `ListHealthTypes` and `ReadHealthSummary` with another person's
+  `ownerUserId` answer "not found" when the agent is the actor, as the person
+  card does. The tool only reads, and
   reads no routes: erasing cannot be undone, sharing and the switch are the
   person's own consent to give, and a route says where somebody runs, which
   the person shows on the map themselves.

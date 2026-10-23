@@ -66,7 +66,7 @@ struct LocationSharingList: View {
                 Button("Share", systemImage: "person.badge.plus") { isSharing = true }
                     .actionColor()
             } footer: {
-                Text("Choose a person or a circle, and whether they also see your visits and the places they were at.")
+                Text("Choose a person or a circle, and whether they also see your visits and the places you were at. A circle reaches everyone in it, including people who join later.")
             }
             if let problem = model.sharingProblemText {
                 Section { Text(verbatim: problem).foregroundStyle(.secondary) }
@@ -106,7 +106,7 @@ struct LocationShareSheet: View {
                     Section {
                         ShareTargetPicker(people: people, circles: circles, chosen: $chosen)
                     } footer: {
-                        Text("Choose a person, or a whole circle.")
+                        Text("Choose a person, or a whole circle. A circle reaches everyone in it, including people who join later.")
                     }
                     Section {
                         Picker("How much", selection: $level) {

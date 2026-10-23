@@ -248,7 +248,8 @@ func (self *transaction) ListLocationShares(sharerUserId string) ([]*models.Loca
 // location:use too: an operator who takes it from a role has switched Location
 // off for those people, and what they stored is no longer read by others.
 var reachingLocationSharesQuery = `
-SELECT share.user_id AS owner_user_id, share.share_level AS share_level
+SELECT share.id AS share_id, share.user_id AS owner_user_id, share.share_level AS share_level,
+  share.grantee_user_id AS grantee_user_id, share.grantee_circle_id AS grantee_circle_id, share.created_at AS created_at
 FROM "location_share" share
 JOIN "user" owner_user ON owner_user.id = share.user_id AND owner_user.disabled_at IS NULL
 WHERE share.user_id <> @viewer
@@ -270,14 +271,24 @@ WHERE share.user_id <> @viewer
 // userHasPermissionSQL is a condition that is true when the user, an SQL
 // expression, has the permission @permission through a group's role.
 func userHasPermissionSQL(userExpression string) string {
+	return userHasNamedPermissionSQL(userExpression, "permission")
+}
+
+// userHasNamedPermissionSQL is userHasPermissionSQL for the permission in the
+// named parameter, for a query that needs more than one permission.
+func userHasNamedPermissionSQL(userExpression, parameterName string) string {
 	return `EXISTS (SELECT 1 FROM "user_group" JOIN "group_role" ON group_role.group_id = user_group.group_id
 		JOIN "role_permission" ON role_permission.role_id = group_role.role_id
-		WHERE user_group.user_id = ` + userExpression + ` AND role_permission.permission_key = @permission)`
+		WHERE user_group.user_id = ` + userExpression + ` AND role_permission.permission_key = @` + parameterName + `)`
 }
 
 type reachingLocationShareRow struct {
-	OwnerUserID string `gorm:"column:owner_user_id"`
-	ShareLevel  string `gorm:"column:share_level"`
+	ShareID         string    `gorm:"column:share_id"`
+	OwnerUserID     string    `gorm:"column:owner_user_id"`
+	ShareLevel      string    `gorm:"column:share_level"`
+	GranteeUserID   *string   `gorm:"column:grantee_user_id"`
+	GranteeCircleID *string   `gorm:"column:grantee_circle_id"`
+	CreatedAt       time.Time `gorm:"column:created_at"`
 }
 
 // reachingLocationLevels is the highest level each owner shares their

@@ -30,7 +30,7 @@ func init() {
 					"query":           tools.StringProperty("for list: narrow to contacts whose name, organization, address or number matches"),
 					"id":              tools.StringProperty("for get, remove, remove-picture, and for changing one that is kept: the contact's id, as list gives it"),
 					"contact_id":      tools.StringProperty("for link-account and unlink-account: the contact's id, as list gives it"),
-					"address_book_id": tools.StringProperty("for link-account and unlink-account: the address book the contact is in, as list gives it; the one you were given when left out"),
+					"address_book_id": tools.StringProperty("for get, remove, remove-picture, link-account and unlink-account: the address book the contact is in, as list gives it; a contact is named only within its book, so name it when you have more than one. The one you were given when left out"),
 					"person":          tools.StringProperty("for link-account: the username of the person in their circles the contact is, as the person tools give it"),
 					"account_user_id": tools.StringProperty("for link-account: the same person by account id, instead of person"),
 					"name":            tools.StringProperty("for save: what to call them"),
@@ -114,9 +114,12 @@ const (
   }
 }`
 
-	documentBookContact = `query ($id: String!) {
-  GetContact(id: $id) { id name organization emails phones note account { userId username } }
+	documentBookContact = `query ($id: String!, $addressBookId: String) {
+  GetContact(id: $id, addressBookId: $addressBookId) { id addressBookId name organization emails phones note account { userId username } }
 }`
+
+	// Which book a contact is in, for the actions that name only the contact.
+	documentBookContactBook = `query ($id: String!, $addressBookId: String) { GetContact(id: $id, addressBookId: $addressBookId) { addressBookId } }`
 
 	documentBookPeople = `query { ListCirclePeople { userId username name } }`
 
@@ -134,9 +137,9 @@ const (
     title: $title, emails: $emails, phones: $phones, note: $note) { id name emails phones }
 }`
 
-	documentBookRemove = `mutation ($id: String!) { DeleteContact(id: $id) }`
+	documentBookRemove = `mutation ($id: String!, $addressBookId: String) { DeleteContact(id: $id, addressBookId: $addressBookId) }`
 
-	documentBookRemovePicture = `mutation ($id: String!) { RemoveContactPicture(id: $id) { id name } }`
+	documentBookRemovePicture = `mutation ($id: String!, $addressBookId: String) { RemoveContactPicture(id: $id, addressBookId: $addressBookId) { id name } }`
 )
 
 type bookView struct {
@@ -147,7 +150,12 @@ type bookView struct {
 }
 
 type contactView struct {
-	ID           string   `json:"id"`
+	ID string `json:"id"`
+
+	// AddressBookID is read to check the contact is in the book they gave you;
+	// the model is not shown it.
+	AddressBookID string `json:"-"`
+
 	Name         string   `json:"name,omitempty"`
 	Organization string   `json:"organization,omitempty"`
 	Emails       []string `json:"emails,omitempty"`
@@ -172,12 +180,14 @@ func (self *contactView) UnmarshalJSON(data []byte) error {
 	type plain contactView
 	var decoded struct {
 		plain
-		Account *accountView `json:"account"`
+		AddressBookID string       `json:"addressBookId"`
+		Account       *accountView `json:"account"`
 	}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
 	}
 	*self = contactView(decoded.plain)
+	self.AddressBookID = decoded.AddressBookID
 	self.Account = decoded.Account
 	if decoded.Account != nil {
 		self.Person = decoded.Account.Username
@@ -226,6 +236,13 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 	}
 	if book == nil {
 		return nil, fmt.Errorf("they have not given you their address book; it is a switch on their agent's page, beside the mailboxes")
+	}
+	// Every book they gave you, for the actions that name only a contact.
+	givenBookIds := map[string]bool{}
+	for _, candidate := range books.ListAddressBooks {
+		if candidate.AgentGranted {
+			givenBookIds[candidate.ID] = true
+		}
 	}
 	// A named book that is not one they gave you is an error, never the first
 	// book instead: a contact id from another book must not be acted on here.
@@ -297,8 +314,11 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 		var answer struct {
 			GetContact *contactView `json:"GetContact"`
 		}
-		if err := operations.Execute(ctx, documentBookContact, map[string]any{"id": arguments.ID}, &answer); err != nil {
+		if err := operations.Execute(ctx, documentBookContact, map[string]any{"id": arguments.ID, "addressBookId": emptyToNil(arguments.AddressBookID)}, &answer); err != nil {
 			return nil, err
+		}
+		if answer.GetContact == nil || !givenBookIds[answer.GetContact.AddressBookID] {
+			return nil, errNotInGivenBook
 		}
 		return tools.JSONResult(answer.GetContact)
 
@@ -407,10 +427,14 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 		if strings.TrimSpace(arguments.ID) == "" {
 			return nil, fmt.Errorf("which contact: list gives their ids")
 		}
+		contactBookId, err := requireContactInBook(ctx, operations, givenBookIds, arguments.AddressBookID, arguments.ID)
+		if err != nil {
+			return nil, err
+		}
 		var answer struct {
 			DeleteContact bool `json:"DeleteContact"`
 		}
-		if err := operations.Execute(ctx, documentBookRemove, map[string]any{"id": arguments.ID}, &answer); err != nil {
+		if err := operations.Execute(ctx, documentBookRemove, map[string]any{"id": arguments.ID, "addressBookId": contactBookId}, &answer); err != nil {
 			return nil, err
 		}
 		result := tools.TextResult("forgot that contact, here and on the person's devices")
@@ -421,10 +445,14 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 		if strings.TrimSpace(arguments.ID) == "" {
 			return nil, fmt.Errorf("which contact: list gives their ids")
 		}
+		contactBookId, err := requireContactInBook(ctx, operations, givenBookIds, arguments.AddressBookID, arguments.ID)
+		if err != nil {
+			return nil, err
+		}
 		var answer struct {
 			RemoveContactPicture *contactView `json:"RemoveContactPicture"`
 		}
-		if err := operations.Execute(ctx, documentBookRemovePicture, map[string]any{"id": arguments.ID}, &answer); err != nil {
+		if err := operations.Execute(ctx, documentBookRemovePicture, map[string]any{"id": arguments.ID, "addressBookId": contactBookId}, &answer); err != nil {
 			return nil, err
 		}
 		result := tools.TextResult("took the picture off that contact; the rest of the contact is as it was")
@@ -432,6 +460,29 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 		return result, nil
 	}
 	return nil, fmt.Errorf("%q is not an action of contact_book", arguments.Action)
+}
+
+var errNotInGivenBook = fmt.Errorf("that contact is not in an address book they have given you; list gives the ids")
+
+// requireContactInBook refuses an action that names only a contact unless the
+// contact is in a book they gave you. A contact is named within its book, so
+// the same id may be in a book of the person's that is not given, or in a
+// circle's (which they can reach and the agent is never given: the text in its
+// cards was typed by anybody in the circle), and the operation behind these
+// actions would act on whichever it finds first. It answers the book the
+// contact is in, which the action then names, so that what is removed is the
+// contact that was checked and not another of the same id.
+func requireContactInBook(ctx context.Context, operations tools.Operations, givenBookIds map[string]bool, addressBookId, contactId string) (string, error) {
+	var answer struct {
+		GetContact *contactView `json:"GetContact"`
+	}
+	if err := operations.Execute(ctx, documentBookContactBook, map[string]any{"id": contactId, "addressBookId": emptyToNil(addressBookId)}, &answer); err != nil {
+		return "", err
+	}
+	if answer.GetContact == nil || !givenBookIds[answer.GetContact.AddressBookID] {
+		return "", errNotInGivenBook
+	}
+	return answer.GetContact.AddressBookID, nil
 }
 
 // maximumSuggestionsShown bounds the links list offers to the person at once.

@@ -38,6 +38,9 @@ func newSharedWorld(t *testing.T) *sharedWorld {
 			if err != nil {
 				t.Fatalf("CreateUser: %s", err)
 			}
+			// The ordinary roles give people the permissions that sharing a
+			// page needs.
+			dbtest.GrantPermission(t, tx, user.ID, models.PermissionAgentUse, models.PermissionCircleUse)
 			return user
 		}
 		world.owner, world.reader, world.stranger = create("ada", "Ada Example"), create("ben", "Ben Example"), create("cora", "Cora Example")

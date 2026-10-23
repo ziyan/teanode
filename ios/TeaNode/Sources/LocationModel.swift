@@ -576,7 +576,7 @@ final class LocationModel {
     func stop(_ share: LocationShare) async {
         do {
             try await connection.unshareLocation(shareId: share.id)
-            doneText = String(localized: "No longer shared with \(Self.shareName(of: share))")
+            doneText = String(localized: "Stopped sharing with \(Self.shareName(of: share))")
             await reloadShares()
         } catch {
             problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))

@@ -4,8 +4,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { failureText, graphql, isNotFound } from '../api'
 import { Avatar } from '../components/avatar'
 import { ErrorMessage, Loading, Tag } from '../components/common'
-import { FormDialog } from '../components/dialog'
-import { ChevronLeftIcon, CloseIcon, PeopleIcon } from '../components/icons'
+import { ConfirmDialog, FormDialog } from '../components/dialog'
+import { ChevronLeftIcon, PeopleIcon, TrashIcon } from '../components/icons'
 import { Markdown } from '../components/markdown'
 import { personLabel, personName } from '../components/personLabel'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
@@ -124,7 +124,7 @@ const UNSHARE = `mutation ($shareId: String!) { UnshareAgentPage(shareId: $share
 const PREVIEW = `query ($path: String!, $granteeUserId: String, $granteeCircleId: String, $isQuoteShared: Boolean) {
   PreviewAgentPageShare(path: $path, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, isQuoteShared: $isQuoteShared) {
     page { ${PAGE_FIELDS} }
-    reachedPageCount isReachedPageCountCut
+    reachedPageCount isReachedPageCountCut reachedPagePaths withheldFactCount
   }
 }`
 
@@ -564,6 +564,9 @@ export function PageShares({ path, refreshKey }: { path: string; refreshKey: num
     refresh: false,
   })
   const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  // The share being ended, asked about first.
+  const [stopping, setStopping] = useState<Share | null>(null)
   const covering = (shares.data?.ListAgentPageShares ?? []).filter((share) => isCovering(share.path, path))
   if (covering.length === 0) return null
   const everyoneIn = (name: string) => t('knowledge.share.everyoneIn', { name })
@@ -571,12 +574,14 @@ export function PageShares({ path, refreshKey }: { path: string; refreshKey: num
   async function stop(share: Share) {
     const name = shareName(share, everyoneIn)
     setBusy(true)
+    setProblem(null)
     try {
       await graphql(UNSHARE, { shareId: share.id })
       toast.done(t('knowledge.share.stopped', { name }))
       await shares.reload()
+      setStopping(null)
     } catch (caught) {
-      toast.failure(caught, t('knowledge.share.failed'))
+      setProblem(failureText(caught, t('knowledge.share.failed')))
     } finally {
       setBusy(false)
     }
@@ -603,20 +608,42 @@ export function PageShares({ path, refreshKey }: { path: string; refreshKey: num
                   className="icon-action danger"
                   aria-label={t('knowledge.share.stop', { name })}
                   disabled={busy}
-                  onClick={() => void stop(share)}
+                  onClick={() => {
+                    setProblem(null)
+                    setStopping(share)
+                  }}
                 >
-                  <CloseIcon size={16} />
+                  <TrashIcon size={16} />
                 </button>
               </Tooltip>
             }
           />
         )
       })}
+      {stopping ? (
+        <ConfirmDialog
+          title={t('sharing.stopTitle', { name: shareName(stopping, everyoneIn) })}
+          body={t('sharing.stopBody', { name: shareName(stopping, everyoneIn), what: t('sharing.thisPage') })}
+          confirmLabel={t('sharing.stop')}
+          busy={busy}
+          error={problem}
+          onConfirm={() => void stop(stopping)}
+          onClose={() => setStopping(null)}
+        />
+      ) : null}
     </SettingsSection>
   )
 }
 
-type Preview = { PreviewAgentPageShare: { page: SharedPage; reachedPageCount: number; isReachedPageCountCut: boolean } }
+type Preview = {
+  PreviewAgentPageShare: {
+    page: SharedPage
+    reachedPageCount: number
+    isReachedPageCountCut: boolean
+    reachedPagePaths: string[]
+    withheldFactCount: number
+  }
+}
 
 // SharePageDialog shares one of the person's pages, and everything under it,
 // with a person they share a circle with or a circle they are in. The choices
@@ -778,8 +805,29 @@ export function SharePageDialog({
                   : plural(previewed.reachedPageCount, {
                       one: 'knowledge.share.reachesOne',
                       other: 'knowledge.share.reachesOther',
-                    })}
+                    })}{' '}
+                {t('knowledge.share.reachesLater')}
               </p>
+              <ul className="share-reach">
+                {previewed.reachedPagePaths.map((reachedPath) => (
+                  <li key={reachedPath}>{reachedPath}</li>
+                ))}
+                {previewed.reachedPageCount > previewed.reachedPagePaths.length ? (
+                  <li className="muted">
+                    {t('knowledge.share.reachesMore', {
+                      count: previewed.reachedPageCount - previewed.reachedPagePaths.length,
+                    })}
+                  </li>
+                ) : null}
+              </ul>
+              {previewed.withheldFactCount > 0 ? (
+                <p className="muted">
+                  {plural(previewed.withheldFactCount, {
+                    one: 'knowledge.share.withheldOne',
+                    other: 'knowledge.share.withheldOther',
+                  })}
+                </p>
+              ) : null}
               <SharedPageBody page={previewed.page} isPreview />
             </>
           ) : null}

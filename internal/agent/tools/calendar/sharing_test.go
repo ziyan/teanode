@@ -106,6 +106,44 @@ func TestTheOwnCalendarIsNeverAnotherOnesShared(t *testing.T) {
 	}
 }
 
+// chatRun is a run whose words are posted to the people of a chat.
+type chatRun struct{ sharedRun }
+
+func (self *chatRun) IsAnsweringInChat() bool { return true }
+
+// In a chat the agenda is the person's own: what others shared with the person
+// is not read out to everybody there. Free times carry no titles, so they stay.
+func TestWhatOthersSharedIsNotReadIntoAChat(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListCalendars":      sharedCalendars,
+		"ListCalendarEvents": `[{"id":"e1","summary":"Dentist","startsAt":"2030-01-02T10:00:00Z","endsAt":"2030-01-02T11:00:00Z"}]`,
+		"ListCirclePeople":   `[{"userId":"u-ben","username":"ben","name":"Ben"}]`,
+		"ListCalendarFreeBusy": `[
+			{"userId":"u-ada","username":"ada","name":"Ada","isShared":true,"periods":[]},
+			{"userId":"u-ben","username":"ben","name":"Ben","isShared":true,"periods":[{"startsAt":"2030-01-02T10:00:00Z","endsAt":"2030-01-02T11:00:00Z"}]}]`,
+	}}
+	ctx := tools.WithRun(context.Background(), &chatRun{sharedRun{operations: operations}})
+	for _, owner := range []string{"ben", "everyone"} {
+		if _, err := call(t, "calendar_agenda", ctx, `{"owner":"`+owner+`","from":"2030-01-02","until":"2030-01-03"}`); err == nil || !strings.Contains(err.Error(), "not repeated into a chat") {
+			t.Errorf("the agenda of %s in a chat: %v", owner, err)
+		}
+	}
+	if operations.sent["ListCalendarEvents"] != nil {
+		t.Errorf("nothing of theirs was read: %v", operations.sent["ListCalendarEvents"])
+	}
+	answer, err := call(t, "calendar_agenda", ctx, `{"from":"2030-01-02","until":"2030-01-03"}`)
+	if err != nil || answer["events"] == nil {
+		t.Errorf("the person's own agenda is read in a chat: %v %v", answer, err)
+	}
+	answer, err = call(t, "calendar_free_together", ctx, `{"with":["ben"],"from":"2030-01-02","until":"2030-01-03"}`)
+	if err != nil {
+		t.Fatalf("free times are answered in a chat: %v", err)
+	}
+	if encoded, _ := json.Marshal(answer); strings.Contains(string(encoded), "Dentist") {
+		t.Errorf("free times carry no titles: %s", encoded)
+	}
+}
+
 // The agenda of what others shared says whose each entry is, at what level,
 // and shows busy time as busy; it is read only through the person's own grant.
 func TestTheAgendaOfWhatOthersSharedSaysWhoseItIs(t *testing.T) {

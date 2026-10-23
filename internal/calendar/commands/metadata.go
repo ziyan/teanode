@@ -47,7 +47,7 @@ func (self *Commands) Update(ctx context.Context, principal *access.Principal, r
 	}
 	var outcome *UpdateOutcome
 	err := self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
-		calendar, err := requireOwnCalendar(transaction, principal, request.ID)
+		calendar, err := requireManagedCalendar(transaction, principal, request.ID)
 		if err != nil {
 			return err
 		}

@@ -43,6 +43,8 @@ func personCardServer(test *testing.T) (*httptest.Server, func() map[string]any)
 			"location":{"sectionState":"shown","hasMoreTodayVisits":false,"location":{"userId":"user-sam","shareLevel":"current",
 				"latestPoint":{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":10,"measuredAt":"2030-03-01T09:30:00Z","locationSource":"phone"},"openVisit":null},"todayVisits":[]},
 			"health":{"sectionState":"notShared","hasMore":false,"healthTypes":[]},
+			"finance":{"sectionState":"shown","hasMore":true,"financeAccounts":[
+				{"financeAccountId":"account-1","ownerUserId":"user-sam","ownerUsername":"sam","ownerName":"Sam Example","financeShareLevel":"balance","accountName":"Store Card","accountMask":"5566","accountKind":"credit","currencyCode":"USD","currentBalance":"-100.0000","creditUsage":{"owedAmount":"100.0000","creditLimitAmount":"400.0000","creditLimitSource":"provider","usageShare":0.25}}]},
 			"photos":{"photosState":"needsContact","hasMorePhotos":false,"albumsState":"unavailable","hasMoreAlbums":false,"photos":[],"albums":[]},
 			"mail":{"sectionState":"shown","hasMore":true,"mails":[
 				{"mailboxItemId":"item-1","mailboxId":"mailbox-1","folderPath":"Inbox","subject":"Harbor schedule","fromAddress":"sam@example.org","fromName":"Sam","isFromPerson":true,"isUnread":true,"receivedAt":"2030-03-01T09:30:00Z","snippet":""}]},
@@ -90,6 +92,7 @@ func TestCirclePersonPrintsEachPartOfTheCard(test *testing.T) {
 		"Sam Example (sam), your brother", "Home (family)", "can message", "sam@example.org",
 		"location\n", "40.00050, -75.00030", "current",
 		"health: not shared with you",
+		"finance\n", "Store Card ••5566", "-100.00 USD", "25%", "and more accounts",
 		"photos of them: no contact of yours is linked to them",
 		"mail with them\n", "Harbor schedule", "from them", "(unread)", "and more mail",
 		"recordings they speak in: could not be read just now",

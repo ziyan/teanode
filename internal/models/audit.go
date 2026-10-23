@@ -122,6 +122,7 @@ const (
 	AuditResourceTaxYearSetting     AuditResourceType = "tax_year_setting"    // a year's estimate inputs
 	AuditResourcePasswords          AuditResourceType = "passwords"           // a person's setup, never a key or a hash
 	AuditResourcePasswordItem       AuditResourceType = "password_item"       // what happened to an item and who it is shared with, never a sealed value
+	AuditResourceCircleMember       AuditResourceType = "circle_member"       // an account an operator put in a circle, with no invitation to answer
 )
 
 // AuditRedactor is implemented by a model that carries a secret, so the secret

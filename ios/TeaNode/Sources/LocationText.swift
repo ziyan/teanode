@@ -83,7 +83,7 @@ extension LocationShareLevel {
     var explanation: String {
         switch self {
         case .current: String(localized: "They see where you are now and the place you are at.")
-        case .history: String(localized: "They also see your visits and the places they were at.")
+        case .history: String(localized: "They also see your visits and the places you were at, including from before you shared.")
         case .owner: ""
         }
     }

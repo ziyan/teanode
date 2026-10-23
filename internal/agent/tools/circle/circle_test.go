@@ -312,7 +312,7 @@ func TestDeleteIsDestructiveAndSaysWhatItStops(t *testing.T) {
 		t.Errorf("delete is %v, not destructive", risk)
 	}
 	mustContain(t, cardFor(t, operations, `{"action":"delete","circle_id":"circle-one"}`),
-		"Delete", `the circle "Home" (3 people)`, "stops everything shared with it")
+		"Delete", `the circle "Home" (3 people)`, "calendar, albums, chat and address book with every contact in it", "ends for good what its members shared")
 	mustContain(t, cardFor(t, &circleOperations{grants: aMember}, `{"action":"delete","circle_id":"circle-one"}`),
 		"Delete one of your circles")
 }
@@ -336,7 +336,15 @@ func TestRemoveTakesAMemberOutByUsername(t *testing.T) {
 	mustContain(t, cardFor(t, operations, `{"action":"remove","circle_id":"circle-one","username":"personx"}`),
 		"Remove", `"Person X" (personx)`, "from", `the circle "Home" (3 people)`)
 	mustContain(t, cardFor(t, operations, `{"action":"remove","circle_id":"circle-one","username":"persony"}`),
-		`Remove "persony" from`)
+		`Remove "persony" from`, "ends for good what they shared with it")
+}
+
+// Leaving says what ends and what stops, the same two things the dashboard and
+// the iPhone app say.
+func TestLeaveSaysWhatEndsAndWhatStops(t *testing.T) {
+	operations := &circleOperations{grants: aMember, answers: map[string]string{"ReadCircle": homeCircle}}
+	mustContain(t, cardFor(t, operations, `{"action":"leave","circle_id":"circle-one"}`),
+		"Leave the circle", "ends for good what you shared with it", "stops what it shared with you")
 }
 
 // Somebody who is not in the circle is refused before any mutation is sent.
@@ -680,5 +688,82 @@ func TestPersonCardInAChatDoesNotAskForALocation(t *testing.T) {
 		if !strings.Contains(cards[0].document, "health {") || !strings.Contains(cards[0].document, "memory {") {
 			t.Errorf("%s: the rest of the card is missing: %s", test.name, cards[0].document)
 		}
+	}
+}
+
+// Sharing reads everything shared in both directions with ListSharing, as
+// words other people chose, and is a read.
+func TestSharingReadsEverythingSharedAndIsARead(t *testing.T) {
+	operations := &circleOperations{grants: aMember, answers: map[string]string{
+		"ListSharing": `{"ListSharing":{"sharesMade":[],"sharesReceived":[{"shareKind":"calendar","shareId":"share-one","ownerName":"Person X","isDirect":true,"canDecline":true}]}}`,
+	}}
+
+	result, err := callAs(t, operations, `{"action":"sharing"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Untrusted || !strings.Contains(result.Content, "share-one") {
+		t.Errorf("the list is untrusted words: %+v", result)
+	}
+	if sent := operations.sentWith("ListSharing"); len(sent) != 1 || !strings.Contains(sent[0].document, "sharesReceived") {
+		t.Errorf("the list was asked for with %v", operations.sent)
+	}
+	if risk := circleTool(t).RiskFor([]byte(`{"action":"sharing"}`)); risk != tools.RiskRead {
+		t.Errorf("sharing is %v, not a read", risk)
+	}
+	if _, err := callAs(t, &circleOperations{grants: nil}, `{"action":"sharing"}`); err == nil || !strings.Contains(err.Error(), "not something they may do") {
+		t.Errorf("sharing should be refused without circle:use: %v", err)
+	}
+}
+
+// What others shared with the person was shared with them alone: in a chat the
+// list asks only for what the person shares, and declining is refused.
+func TestSharingInAChatLeavesOutWhatOthersSharedAndDeclineIsRefused(t *testing.T) {
+	answers := map[string]string{
+		"ListSharing": `{"ListSharing":{"sharesMade":[],"sharesReceived":[]}}`,
+	}
+	operations := &circleOperations{grants: aMember, answers: answers}
+	ctx := tools.WithRun(context.Background(), &chatRun{circleRun{operations: operations}})
+	if _, err := circleTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"sharing"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	sent := operations.sentWith("ListSharing")
+	if len(sent) != 1 || !strings.Contains(sent[0].document, "sharesMade") || strings.Contains(sent[0].document, "sharesReceived") {
+		t.Errorf("a chat asks only for what the person shares: %v", operations.sent)
+	}
+
+	operations = &circleOperations{grants: aMember, answers: answers}
+	ctx = tools.WithRun(context.Background(), &chatRun{circleRun{operations: operations}})
+	_, err := circleTool(t).Run(ctx, &tools.Call{ID: "c2", Arguments: []byte(`{"action":"decline_share","share_kind":"memory_page","share_id":"share-one"}`)})
+	if err == nil || !strings.Contains(err.Error(), "not repeated into a chat") {
+		t.Errorf("decline_share in a chat is refused in words: %v", err)
+	}
+	if len(operations.sent) != 0 {
+		t.Errorf("the API was asked: %v", operations.sent)
+	}
+}
+
+// Declining a share sends the kind and the share, is destructive, and the card
+// names who shared what from the person's own list.
+func TestDeclineShareEndsAShareMadeByNameAndNamesIt(t *testing.T) {
+	operations := &circleOperations{grants: aMember, answers: map[string]string{
+		"sharesReceived": `{"ListSharing":{"sharesMade":[],"sharesReceived":[{"shareKind":"memory_page","shareId":"share-one","subjectName":"Kim","ownerName":"Person X"}]}}`,
+	}}
+
+	if _, err := callAs(t, operations, `{"action":"decline_share","share_kind":" memory_page ","share_id":" share-one "}`); err != nil {
+		t.Fatal(err)
+	}
+	declined := operations.sentWith("DeclineShare")
+	if len(declined) != 1 || declined[0].variables["shareKind"] != "memory_page" || declined[0].variables["shareId"] != "share-one" {
+		t.Errorf("the decline was %v", operations.sent)
+	}
+	arguments := `{"action":"decline_share","share_kind":"memory_page","share_id":"share-one"}`
+	if risk := circleTool(t).RiskFor([]byte(arguments)); risk != tools.RiskDestructive {
+		t.Errorf("decline_share is %v, not destructive", risk)
+	}
+	mustContain(t, cardFor(t, operations, arguments), "Stop receiving the memory page", `"Kim"`, `"Person X"`, "share again")
+	mustContain(t, cardFor(t, &circleOperations{grants: aMember}, arguments), "Stop receiving a share made to you by name")
+	if _, err := callAs(t, &circleOperations{grants: nil}, arguments); err == nil || !strings.Contains(err.Error(), "not something they may do") {
+		t.Errorf("decline_share should be refused without circle:use: %v", err)
 	}
 }

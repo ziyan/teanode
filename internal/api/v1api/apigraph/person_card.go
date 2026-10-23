@@ -34,9 +34,9 @@ type PersonCardQuery interface {
 	// Reads one person's card: their name and picture, what they are to the
 	// caller, the circles the two share, the caller's contact details for
 	// them, and a few items from each part of the app that concerns them:
-	// where they are and their visits today, the health they share, photos
-	// of them and albums they shared, mail with them, recordings they speak
-	// in, and memory pages about them. Give either userId, an account that
+	// where they are and their visits today, the health and the finance
+	// accounts they share, photos of them and albums they shared, mail with
+	// them, recordings they speak in, and memory pages about them. Give either userId, an account that
 	// shares a circle with the caller, or addressBookId and contactId, one of
 	// the caller's contacts. Anybody else is not found. Each section is read
 	// as its own part of the app reads it, and one that fails or takes longer
@@ -101,6 +101,7 @@ type PersonCardView struct {
 
 	Location   *PersonCardLocationSection  `json:"location"`
 	Health     *PersonCardHealthSection    `json:"health"`
+	Finance    *PersonCardFinanceSection   `json:"finance"`
 	Photos     *PersonCardPhotosSection    `json:"photos"`
 	Mail       *PersonCardMailSection      `json:"mail"`
 	Recordings *PersonCardRecordingSection `json:"recordings"`
@@ -140,6 +141,18 @@ type PersonCardHealthSection struct {
 	// A client says "today" only when LatestDaySummary.SummaryDay is today.
 	HealthTypes []*HealthTypeView `json:"healthTypes"`
 	HasMore     bool              `json:"hasMore"`
+}
+
+// PersonCardFinanceSection is the finance accounts they share with the caller,
+// each as the level it was shared at shows it: its name, kind and balance, and
+// for a credit card what it owes against its limit. What an account's months
+// and transactions say is on the Finance page, for the levels that reach them.
+type PersonCardFinanceSection struct {
+	SectionState PersonCardSectionState `json:"sectionState"`
+
+	// FinanceAccounts are the accounts they share, oldest first.
+	FinanceAccounts []*SharedFinanceAccountView `json:"financeAccounts"`
+	HasMore         bool                        `json:"hasMore"`
 }
 
 // PersonCardPhotosSection is photos of them in the caller's library, and the
@@ -336,6 +349,11 @@ func (self *graph) ReadPersonCard(ctx context.Context, arguments ReadPersonCardA
 			}, newPersonCardHealthSection(PersonCardSectionStateFailed))
 		},
 		func() {
+			card.Finance = personCardSection(self, ctx, "finance", func(phaseContext context.Context) (*PersonCardFinanceSection, error) {
+				return self.readPersonCardFinance(phaseContext, subject, itemLimit)
+			}, newPersonCardFinanceSection(PersonCardSectionStateFailed))
+		},
+		func() {
 			card.Photos = personCardSection(self, ctx, "photos", func(phaseContext context.Context) (*PersonCardPhotosSection, error) {
 				return self.readPersonCardPhotos(phaseContext, subject, itemLimit)
 			}, newPersonCardPhotosSection(PersonCardSectionStateFailed))
@@ -431,6 +449,10 @@ func newPersonCardLocationSection(sectionState PersonCardSectionState) *PersonCa
 
 func newPersonCardHealthSection(sectionState PersonCardSectionState) *PersonCardHealthSection {
 	return &PersonCardHealthSection{SectionState: sectionState, HealthTypes: []*HealthTypeView{}}
+}
+
+func newPersonCardFinanceSection(sectionState PersonCardSectionState) *PersonCardFinanceSection {
+	return &PersonCardFinanceSection{SectionState: sectionState, FinanceAccounts: []*SharedFinanceAccountView{}}
 }
 
 func newPersonCardPhotosSection(sectionState PersonCardSectionState) *PersonCardPhotosSection {
@@ -690,6 +712,37 @@ func (self *graph) readPersonCardHealth(ctx context.Context, subject *personCard
 	limit := max(itemLimit, personCardHealthItemLimitLeast)
 	section.SectionState, section.HasMore = PersonCardSectionStateShown, len(kept) > limit
 	section.HealthTypes = kept[:min(len(kept), limit)]
+	return section, nil
+}
+
+// readPersonCardFinance is the finance accounts they share with the caller, as
+// their levels show them. Never for the person's agent: what others share is
+// for the person to see, and a merchant's name is text an outsider wrote.
+func (self *graph) readPersonCardFinance(ctx context.Context, subject *personCardSubject, itemLimit int) (*PersonCardFinanceSection, error) {
+	section := newPersonCardFinanceSection(PersonCardSectionStateUnavailable)
+	if subject.accountUserID == "" || subject.isAgent {
+		return section, nil
+	}
+	principal, err := self.requireFinanceReader(ctx)
+	if err != nil {
+		return refusedPersonCardSection(section, err)
+	}
+	reached, err := self.transaction(ctx).ListReachedFinanceAccounts(principal.User.ID, subject.accountUserID)
+	if err != nil {
+		return nil, err
+	}
+	if len(reached) == 0 {
+		section.SectionState = PersonCardSectionStateNotShared
+		return section, nil
+	}
+	section.SectionState, section.HasMore = PersonCardSectionStateShown, len(reached) > itemLimit
+	for _, each := range reached[:min(len(reached), itemLimit)] {
+		view, err := describeSharedFinanceAccount(each)
+		if err != nil {
+			return nil, financeError(err)
+		}
+		section.FinanceAccounts = append(section.FinanceAccounts, view)
+	}
 	return section, nil
 }
 

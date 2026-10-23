@@ -623,9 +623,12 @@ const (
 	NoteHerdrAsked            AgentNoteKind = "herdr_asked"              // a coding session's question, for the drawer to draw: JSON
 	NoteHerdrAnswered         AgentNoteKind = "herdr_answered"           // it went, and what it was answered with: JSON
 	NoteCircleInvited         AgentNoteKind = "circle_invited"           // somebody invited the person to a circle: JSON of the inviter's name and the circle's
+	NoteCircleMemberAdded     AgentNoteKind = "circle_member_added"      // an operator put an account in a circle the person administers: JSON of the account's name and the circle's
 	NoteSkillShareCallWaiting AgentNoteKind = "skill_share_call_waiting" // a call of a shared skill waits for the person's approval: JSON naming the call
 	NoteRelationshipSet       AgentNoteKind = "relationship_set"         // somebody said what they are to the person: JSON (RelationshipNote)
 	NoteRelationshipRemoved   AgentNoteKind = "relationship_removed"     // somebody took that away: JSON (RelationshipNote)
+	NoteShareReceived         AgentNoteKind = "share_received"           // somebody shared something with the person: JSON (ShareReceivedNote)
+	NoteShareReached          AgentNoteKind = "share_reached"            // somebody joined a circle the person shares things with: JSON (ShareReachedNote)
 
 	// What only the person who addressed an agent in a chat is told, when
 	// no turn of it started: the detail is the agent's name, and for the
@@ -661,9 +664,12 @@ var noteEnglish = map[AgentNoteKind]string{
 	NoteHerdrAsked:            "a coding session asked a question",
 	NoteHerdrAnswered:         "a coding session's question was answered",
 	NoteCircleInvited:         "invited you to a circle",
+	NoteCircleMemberAdded:     "an account was put in a circle you administer",
 	NoteSkillShareCallWaiting: "a call of a skill you shared is waiting for your approval",
 	NoteRelationshipSet:       "somebody said how you are related",
 	NoteRelationshipRemoved:   "somebody removed how you are related",
+	NoteShareReceived:         "somebody shared something with you",
+	NoteShareReached:          "somebody joined a circle you share things with",
 	NoteChatAgentOwnerOnly:    "only its owner can ask that agent in this chat",
 	NoteChatAgentOff:          "that agent is switched off",
 	NoteChatAgentAbsent:       "that agent's owner is not in this chat",
@@ -690,6 +696,11 @@ func NoteText(kind AgentNoteKind, detail string) string {
 			return invitation.InvitedByName + " invited you to " + invitation.CircleName
 		}
 		return english
+	case kind == NoteCircleMemberAdded:
+		if added := ParseCircleMemberAddedNote(detail); added != nil {
+			return "An operator of this server put " + added.AddedName + " in " + added.CircleName + ", which you administer."
+		}
+		return english
 	case kind == NoteRelationshipSet:
 		if relationship := ParseRelationshipNote(detail); relationship != nil {
 			return relationship.PersonName + " set how you are related: " + relationship.PersonName + " is your " +
@@ -699,6 +710,16 @@ func NoteText(kind AgentNoteKind, detail string) string {
 	case kind == NoteRelationshipRemoved:
 		if relationship := ParseRelationshipNote(detail); relationship != nil {
 			return relationship.PersonName + " removed how you are related."
+		}
+		return english
+	case kind == NoteShareReceived:
+		if received := ParseShareReceivedNote(detail); received != nil {
+			return ShareReceivedText(received)
+		}
+		return english
+	case kind == NoteShareReached:
+		if reached := ParseShareReachedNote(detail); reached != nil {
+			return ShareReachedText(reached)
 		}
 		return english
 	case kind == NoteSkillShareCallWaiting:
@@ -748,6 +769,33 @@ func CircleInvitedDetail(invitedByName, circleName string) string {
 // returns nil when it is not one.
 func ParseCircleInvitedNote(detail string) *CircleInvitedNote {
 	var note CircleInvitedNote
+	if err := json.Unmarshal([]byte(detail), &note); err != nil || note.CircleName == "" {
+		return nil
+	}
+	return &note
+}
+
+// CircleMemberAddedNote is the detail of a circle_member_added note: whose
+// account an operator put in, and in which circle. As for CircleInvitedNote,
+// two names travel as JSON and each client words them.
+type CircleMemberAddedNote struct {
+	AddedName  string `json:"addedName"`
+	CircleName string `json:"circleName"`
+}
+
+// CircleMemberAddedDetail is the detail of a circle_member_added note.
+func CircleMemberAddedDetail(addedName, circleName string) string {
+	encoded, err := json.Marshal(CircleMemberAddedNote{AddedName: addedName, CircleName: circleName})
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+// ParseCircleMemberAddedNote reads the detail of a circle_member_added note,
+// or returns nil when it is not one.
+func ParseCircleMemberAddedNote(detail string) *CircleMemberAddedNote {
+	var note CircleMemberAddedNote
 	if err := json.Unmarshal([]byte(detail), &note); err != nil || note.CircleName == "" {
 		return nil
 	}

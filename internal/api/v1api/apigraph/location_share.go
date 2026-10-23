@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -51,6 +52,18 @@ type ShareLocationArguments struct {
 
 	// current or history
 	ShareLevel string `json:"shareLevel"`
+}
+
+// isLocationShareWider says whether the share gives its grantee more than the
+// person's location shares did before it: there was none for them, or a lower
+// level.
+func isLocationShareWider(earlier []*models.LocationShare, saved *models.LocationShare) bool {
+	for _, share := range earlier {
+		if share.GranteeUserID == saved.GranteeUserID && share.GranteeCircleID == saved.GranteeCircleID {
+			return saved.ShareLevel.Rank() > share.ShareLevel.Rank()
+		}
+	}
+	return true
 }
 
 type UnshareLocationArguments struct {
@@ -136,6 +149,11 @@ func (self *graph) ShareLocation(ctx context.Context, arguments ShareLocationArg
 		return nil, fmt.Errorf("%w: share with one person or one circle", api.ErrInvalidArguments)
 	}
 	tx := self.transaction(ctx)
+	// What the grantee was given before, to tell whether this is more.
+	earlier, err := tx.ListLocationShares(principal.User.ID)
+	if err != nil {
+		return nil, err
+	}
 	saved, err := tx.ShareLocation(principal.User.ID, &models.LocationShare{
 		GranteeUserID: granteeUserId, GranteeCircleID: granteeCircleId, ShareLevel: shareLevel,
 		CreatedByUserID: principal.User.ID,
@@ -148,6 +166,13 @@ func (self *graph) ShareLocation(ctx context.Context, arguments ShareLocationArg
 	// The people it is now shared with, or shared with at a different level,
 	// are told that there is something to read.
 	self.afterLocationChange(ctx, tx, principal.User.ID, nil, nil)
+	if isLocationShareWider(earlier, saved) {
+		if err := self.tellAboutShare(ctx, principal.User, models.ShareReceivedNote{
+			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindLocation, ShareLevel: string(saved.ShareLevel),
+		}, granteeUserId, granteeCircleId); err != nil {
+			return nil, err
+		}
+	}
 	shares, err := tx.ListLocationShares(principal.User.ID)
 	if err != nil {
 		return nil, err
@@ -161,7 +186,7 @@ func (self *graph) ShareLocation(ctx context.Context, arguments ShareLocationArg
 }
 
 func (self *graph) UnshareLocation(ctx context.Context, arguments UnshareLocationArguments) (bool, error) {
-	principal, err := self.requireLocationPerson(ctx)
+	principal, err := self.requireShareOwner(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -197,6 +222,64 @@ func (self *graph) UnshareLocation(ctx context.Context, arguments UnshareLocatio
 		}
 	})
 	return true, nil
+}
+
+// watchLocationReach is called before a change of who is in which circle, and
+// the function it returns after it, in the same transaction. Between them they
+// find the people among userIds whose location stopped reaching somebody
+// among them (leaving, being taken out and deleting a circle end the shares
+// that only the circle made possible) and, once the transaction commits, tell
+// each such location's listeners the way UnshareLocation does, so that a map
+// that is open drops the last position instead of keeping it. Only the people
+// of the circle can lose or gain a reach by it, so they are the only ones
+// asked about.
+func (self *graph) watchLocationReach(ctx context.Context, userIds []string) (func() error, error) {
+	tx := self.transaction(ctx)
+	before, err := locationReachAmong(tx, userIds)
+	if err != nil {
+		return nil, err
+	}
+	return func() error {
+		after, err := locationReachAmong(tx, userIds)
+		if err != nil {
+			return err
+		}
+		for _, ownerUserId := range userIds {
+			endedForUserIds := []string{}
+			for viewerUserId := range before[ownerUserId] {
+				if !after[ownerUserId][viewerUserId] {
+					endedForUserIds = append(endedForUserIds, viewerUserId)
+				}
+			}
+			if len(endedForUserIds) == 0 {
+				continue
+			}
+			sort.Strings(endedForUserIds)
+			tx.AfterCommit(func() {
+				if err := self.database.NotifyLocationEvent(ownerUserId, endedForUserIds...); err != nil {
+					log.Warningf("cannot tell the listeners that a location stopped reaching people: %s", err)
+				}
+			})
+		}
+		return nil
+	}, nil
+}
+
+// locationReachAmong is, for each of these people, which of the others their
+// location reaches now.
+func locationReachAmong(tx db.Transaction, userIds []string) (map[string]map[string]bool, error) {
+	reach := make(map[string]map[string]bool, len(userIds))
+	for _, ownerUserId := range userIds {
+		reached, err := tx.FilterLocationGrantees(ownerUserId, userIds)
+		if err != nil {
+			return nil, err
+		}
+		reach[ownerUserId] = make(map[string]bool, len(reached))
+		for _, viewerUserId := range reached {
+			reach[ownerUserId][viewerUserId] = true
+		}
+	}
+	return reach, nil
 }
 
 // LocationEvents tells the viewer each time a person they may see changes

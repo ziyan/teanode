@@ -158,6 +158,7 @@ struct RecordingDetailScreen: View {
     @State private var isConfirmingTranscription = false
     @State private var isDeleting = false
     @State private var isRenaming = false
+    @State private var isSharing = false
     @State private var sharedMedia: RecordingMedia?
     @State private var isTitleScrolledAway = false
 
@@ -252,6 +253,7 @@ struct RecordingDetailScreen: View {
         }
         .sheet(isPresented: $isRenaming) { RecordingRenameSheet(model: model) }
         .sheet(item: $sharedMedia) { media in RecordingPlaybackScreen(connection: connection, media: media) }
+        .navigationDestination(isPresented: $isSharing) { RecordingShareScreen(connection: connection, recordingId: model.recording.id) }
     }
 
     /// Where the transcript is, until it is done: the person should not wonder why the conversation is empty.
@@ -301,6 +303,12 @@ struct RecordingDetailScreen: View {
                 openRename()
             } label: {
                 Label("Rename", systemImage: "pencil")
+            }
+            // With people in a circle: the summary, or the words too, never the audio. "Share original" below is the file.
+            Button {
+                isSharing = true
+            } label: {
+                Label("Share with people", systemImage: "person.2")
             }
             if model.completeMediaFiles.count == 1, let media = model.completeMediaFiles.first {
                 Button {

@@ -129,6 +129,13 @@ func NewCalendarCommand() *cli.Command {
 				Action:    runCalendarCircle,
 			},
 			{
+				Name:      "circle-delete",
+				Usage:     "delete the calendar a circle keeps for itself, with every event in it",
+				ArgsUsage: "<circle-id>",
+				Flags:     []cli.Flag{ForceFlag()},
+				Action:    runCalendarCircleDelete,
+			},
+			{
 				Name:   "calendars",
 				Usage:  "the calendars you reach: your own, your circles', and the ones shared with you",
 				Flags:  []cli.Flag{JSONFlag()},
@@ -136,9 +143,10 @@ func NewCalendarCommand() *cli.Command {
 			},
 			{
 				Name:  "set",
-				Usage: "rename the calendar, or change how it is shown",
+				Usage: "rename the calendar, or change how it is shown; --calendar names a circle's, if you are an admin of the circle",
 				Flags: []cli.Flag{
 					JSONFlag(),
+					calendarFlag(),
 					&cli.StringFlag{Name: "name", Usage: "what to call it"},
 					&cli.StringFlag{Name: "description", Usage: "what it is for"},
 					&cli.StringFlag{Name: "color", Aliases: []string{"colour"}, Usage: "what a client paints it, as #rrggbb"},
@@ -671,7 +679,7 @@ func runCalendarSet(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	kept, err := theCalendar(ctx, connection)
+	kept, err := ownCalendarNamed(ctx, command, connection)
 	if err != nil {
 		return describeError(command, err)
 	}

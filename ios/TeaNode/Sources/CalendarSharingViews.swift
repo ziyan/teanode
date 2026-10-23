@@ -15,6 +15,13 @@ struct CalendarListSheet: View {
     @State private var isWorking = false
     @State private var isRenaming = false
     @State private var newName = ""
+    /// The circles the person is an admin of, whose calendars they may rename
+    /// and delete.
+    @State private var adminCircleIds: Set<String> = []
+    @State private var renamingCircleCalendar: AgentCalendar?
+    @State private var newCircleCalendarName = ""
+    /// The circle calendar whose deletion is being confirmed, if any.
+    @State private var confirmingDeleteCalendarId: String?
     #if DEBUG
         /// Whether the share screen is pushed for a screenshot.
         @State private var isShowingDemoShare = false
@@ -65,6 +72,38 @@ struct CalendarListSheet: View {
                         }
                     } footer: {
                         Text("Choose who can see your calendar, and how much. An event you mark private is only ever shown to others as busy.")
+                    }
+                }
+                if !managedCircleCalendars.isEmpty {
+                    Section {
+                        ForEach(managedCircleCalendars) { calendar in
+                            Button {
+                                newCircleCalendarName = calendar.name
+                                renamingCircleCalendar = calendar
+                            } label: {
+                                Label("Rename the calendar of \(calendar.circleName ?? calendar.name)", systemImage: "pencil")
+                                    .actionColor()
+                            }
+                            .disabled(isWorking)
+                            Button {
+                                confirmingDeleteCalendarId = calendar.id
+                            } label: {
+                                Label("Delete the calendar of \(calendar.circleName ?? calendar.name)", systemImage: "trash")
+                                    .actionColor(isDestructive: true)
+                            }
+                            .tint(.red)
+                            .disabled(isWorking)
+                            .confirmationDialog(
+                                "Delete the calendar of \(calendar.circleName ?? calendar.name)?",
+                                isPresented: isConfirmingDelete(of: calendar), titleVisibility: .visible
+                            ) {
+                                Button("Delete the calendar", role: .destructive) { deleteCircleCalendar(calendar) }
+                            } message: {
+                                Text("Every event in it is deleted for everyone in the circle. The circle stays, and a new calendar can be made for it.")
+                            }
+                        }
+                    } footer: {
+                        Text("You are an admin of these circles, so you can rename their calendars or delete them. Deleting one deletes every event in it for everyone in the circle.")
                     }
                 }
                 if !circlesWithoutCalendar.isEmpty {
@@ -120,7 +159,36 @@ struct CalendarListSheet: View {
                     isShowingDemoFindTime = true
                 }
             #endif
+            .alert("Rename the calendar", isPresented: isRenamingCircleCalendar) {
+                TextField("Calendar name", text: $newCircleCalendarName)
+                Button("Cancel", role: .cancel) { renamingCircleCalendar = nil }
+                Button("Save") { renameCircleCalendar() }
+            }
             .toast(done: $doneText, problem: $problemText)
+        }
+    }
+
+    /// Whether the circle calendar rename alert is showing, which is while one
+    /// is chosen.
+    private var isRenamingCircleCalendar: Binding<Bool> {
+        Binding(
+            get: { renamingCircleCalendar != nil },
+            set: { isShown in if !isShown { renamingCircleCalendar = nil } })
+    }
+
+    /// Whether the deletion of this circle calendar is being confirmed, so
+    /// that each row's confirmation points at its own button.
+    private func isConfirmingDelete(of calendar: AgentCalendar) -> Binding<Bool> {
+        Binding(
+            get: { confirmingDeleteCalendarId == calendar.id },
+            set: { isShown in if !isShown && confirmingDeleteCalendarId == calendar.id { confirmingDeleteCalendarId = nil } })
+    }
+
+    /// The calendars of circles the person is an admin of.
+    private var managedCircleCalendars: [AgentCalendar] {
+        model.calendars.filter { calendar in
+            guard calendar.isCircleCalendar == true, let circleId = calendar.circleId else { return false }
+            return adminCircleIds.contains(circleId)
         }
     }
 
@@ -129,6 +197,44 @@ struct CalendarListSheet: View {
         guard let circles = try? await model.connection.circles() else { return }
         let withCalendar = Set(model.calendars.compactMap(\.circleId))
         circlesWithoutCalendar = circles.filter { $0.isAdmin && !withCalendar.contains($0.id) }
+        adminCircleIds = Set(circles.filter(\.isAdmin).map(\.id))
+    }
+
+    /// Renames the calendar of a circle the person is an admin of. Nothing is
+    /// sent for an empty name or the name it already has.
+    private func renameCircleCalendar() {
+        guard let calendar = renamingCircleCalendar else { return }
+        renamingCircleCalendar = nil
+        let name = newCircleCalendarName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != calendar.name else { return }
+        isWorking = true
+        Task {
+            do {
+                try await model.connection.saveCalendar(calendar, name: name)
+                doneText = String(localized: "Calendar renamed")
+                await model.reloadCalendars()
+            } catch {
+                problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+            }
+            isWorking = false
+        }
+    }
+
+    /// Deletes the calendar of a circle the person is an admin of.
+    private func deleteCircleCalendar(_ calendar: AgentCalendar) {
+        guard let circleId = calendar.circleId else { return }
+        isWorking = true
+        Task {
+            do {
+                try await model.connection.deleteCircleCalendar(circleId: circleId)
+                doneText = String(localized: "Calendar deleted")
+                await model.reloadCalendars()
+                await findCirclesWithoutCalendar()
+            } catch {
+                problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+            }
+            isWorking = false
+        }
     }
 
     /// Renames the person's own calendar. Nothing is sent for an empty name or
@@ -323,13 +429,18 @@ struct CalendarShareScreen: View {
                 }
                 ForEach(shares) { share in
                     HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(share.isWithCircle ? String(localized: "Everyone in \(share.granteeDisplayName)") : share.granteeDisplayName)
-                            Text(share.level?.title ?? share.shareLevel)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
+                        Text(Self.name(of: share))
                         Spacer(minLength: 0)
+                        // The level is changed where it is shown, by sharing
+                        // again with the same person or circle.
+                        Picker("What \(Self.name(of: share)) sees", selection: levelBinding(for: share)) {
+                            ForEach(CalendarShareLevel.grantable, id: \.self) { each in
+                                Text(each.title).tag(each)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .disabled(isWorking)
                     }
                     .confirmationDialog(
                         "Stop sharing", isPresented: Binding(get: { stopping?.id == share.id }, set: { if !$0 { stopping = nil } }),
@@ -400,6 +511,32 @@ struct CalendarShareScreen: View {
         .toast(done: $doneText, problem: $problemText)
     }
 
+    /// The level of a share as the row's menu shows it. A level this app does
+    /// not know is shown as the least, as everywhere else.
+    private func levelBinding(for share: CalendarShare) -> Binding<CalendarShareLevel> {
+        Binding(
+            get: { share.level ?? .busy },
+            set: { newLevel in changeLevel(of: share, to: newLevel) })
+    }
+
+    private func changeLevel(of share: CalendarShare, to newLevel: CalendarShareLevel) {
+        guard newLevel != share.level else { return }
+        let name = Self.name(of: share)
+        isWorking = true
+        Task {
+            do {
+                try await model.connection.shareCalendar(
+                    calendarId: calendar.id, granteeUserId: share.granteeUserId, granteeCircleId: share.granteeCircleId, level: newLevel)
+                doneText = String(localized: "Changed what \(name) sees")
+            } catch {
+                problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+            }
+            // Read again either way, so that the menu shows what the server holds.
+            if let current = try? await model.connection.calendarShares(calendarId: calendar.id) { shares = current }
+            isWorking = false
+        }
+    }
+
     private static func name(of share: CalendarShare) -> String {
         share.isWithCircle ? String(localized: "Everyone in \(share.granteeDisplayName)") : share.granteeDisplayName
     }
@@ -444,7 +581,7 @@ struct CalendarShareScreen: View {
         Task {
             do {
                 try await model.connection.unshareCalendar(shareId: share.id)
-                doneText = String(localized: "No longer shared with \(name)")
+                doneText = String(localized: "Stopped sharing with \(name)")
                 shares = try await model.connection.calendarShares(calendarId: calendar.id)
             } catch {
                 problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
@@ -583,7 +720,7 @@ struct CircleCalendarOfferSheet: View {
                     } header: {
                         Text("Where you are")
                     } footer: {
-                        Text("Everyone in \(offer.circleName) could see it. You can change this under Sharing in Location.")
+                        Text("Everyone in \(offer.circleName) could see it, including people who join later. You can change this under Sharing in Location.")
                     }
                 }
             }

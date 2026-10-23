@@ -1392,6 +1392,108 @@ repeat rule and mutes. Each crossing (80 percent of a budget, at risk, over, a
 savings target behind) is written once per month, and a spending category can
 be muted on its own.
 
+## Sharing
+
+A person shares one finance account (a row of `agent_finance_account`) with
+another person or with a circle at a level. The table is `finance_account_share`
+(migration 0254), shaped like `calendar_share`: the account, one grantee that is
+a person or a circle, the level, who made it, one share per account and
+grantee. A share belongs to its account and goes when the account does.
+
+| Level | What the reader sees |
+| --- | --- |
+| `balance` | the account's name, mask, kind and currency, its current balance and the day of it, and for a credit card what it owes against its limit (the card's usage is `creditCardUsageOf`, as the owner's own) |
+| `spending` | and the account's money out and money in by month and spending category, in each currency, with the owner's own names for the categories and no merchant or description |
+| `transactions` | and each transaction's day, amount, currency, merchant name and spending category |
+
+A level shows what the one below it shows. At the spending level a range of
+days (`from`, `to`) is widened to whole months, the first of the month's
+`from` and the last of its `to`, because a reader who could move the ends a day
+at a time would rebuild each transaction's day and amount from the totals. At
+no level: receipts and their
+images, what the person or their agent wrote on a transaction, the provider's
+own data for the account or the transaction, the available balance, paystubs,
+tax forms, finance sources and their credentials, spending rules, budgets,
+savings targets, assets, and whether an institution waits for a sign-in. The
+reads return types that have no field for those (`models.SharedFinanceSpendingRow`,
+`models.SharedFinanceTransaction`, and `describeSharedFinanceAccount`, the one
+place a reader's view of an account is made), so a level is not something a
+caller applies; an older level is not widened by a new column.
+
+**Who may read what.** One question, `ReachFinanceAccount` in
+`internal/db/database_finance_share.go`, answers for every door: the owner and
+the reader are enabled accounts and hold `agent:use`, the permission every
+finance operation needs, the owner's agent is on and not disabled by the
+operator, and the share reaches the reader. A share to a person reaches them
+only while the two still share a circle (`holdMutualCircle` when it is made,
+`circle_member` joins when it is read); a share to a circle reaches a member
+only while the owner is still in it. The highest level of the shares that reach
+the reader wins. Anything else is "not found", which is what a person who does
+not exist also gets. `ListSharedFinanceSpending` and
+`ListSharedFinanceTransactions` ask it themselves and refuse a level too low,
+so no caller can read past it. Leaving a circle takes with it the direct
+shares between two people who no longer share one and the owner's shares to a
+circle they left (`endFinanceSharesOutsideCircles`, called from
+`endSharesOutsideCircles`); a member who leaves a circle simply stops being
+reached.
+
+**Who may share.** Only the person whose agent holds the account
+(`ShareFinanceAccount`; listing one, `ListFinanceAccountShares`, needs only
+`agent:use`, and ending one, `UnshareFinanceAccount`, needs no permission at all
+(`requireShareOwner`), so an owner who turned the agent off can still stop what
+they share), to someone they share a
+circle with or to a circle they are in. **Starting a share or widening one is
+the person's tap**, the dashboard or the iPhone app, as Health's is: a command
+line token, an operator signed in as the person and the agent's own operations
+may keep a share, narrow it and end it, and are refused anything that shows
+more (`financeShareOnATap`, which the command line recognizes by
+`api.TapRequiredPhrase`). The same goes for bringing somebody into a circle an
+account is shared with (`docs/subsystems/circles.md`, "Joining"): whoever joins
+reads what the circle was shared.
+
+**The agent has no part in it.** The `finance` tool has no operation to share,
+to end a share or to read what is shared with the person, and none of those
+GraphQL operations is in `FinanceQuery` or `FinanceMutation`, which the tool's
+parity tests mirror; they are in `FinanceShareQuery` and `FinanceShareMutation`
+(`apigraph/agent_finance_share.go`). The operations also refuse a caller whose
+audit actor is the agent, whichever way it reached them. What leaves for a
+model provider is what a tool answers, and a merchant name is text an outsider
+wrote, so nothing shared with the person is sent there; the sharer, who agreed
+to show their account to people, did not agree to show it to a model. The
+person's card lists the accounts a person shares with the caller, each as its
+level shows it (`ReadPersonCard`'s `finance` part, read with the same access
+check), and shows the agent none of it. A person's agent that runs
+commands on their computer acts with their own login, but the computer program
+marks every such command (`TEANODE_AGENT_COMMAND`), the command line sends the
+mark as the `X-Teanode-Agent-Command` header, and the server then treats the
+request as the agent's (`graph.auditPrincipal`), so `teanode finance ...
+--person` is refused to it as the tool is, and the tap is something it cannot
+supply. That is a guard against mistakes and steered runs, not a boundary
+against code the person runs: anything that leaves the header off is the
+person.
+
+**Operations.** `ListFinanceAccountShares` (the person's own),
+`ShareFinanceAccount`, `UnshareFinanceAccount`, `ListSharedFinanceAccounts`
+(with `ownerUserId` for one person), `ListSharedFinanceSpending` and
+`ListSharedFinanceTransactions` (a page by `limit` and `offset`, or by cursor,
+with `totalCount`). The database layer also has `ListFinanceSharesBy` and
+`ListFinanceSharesReaching` for an overview of shares and notices of what was
+shared.
+
+**Surfaces.** `teanode finance share <account> <username|circle> --level
+balance|spending|transactions`, `shares`, `unshare <share id>`, and `--person
+<username>` on `accounts`, `transactions` and `spending-summary` (the last two
+need an account at the level, named with `--finance-account` when several
+are). The dashboard's Sharing panel is on the agent page's Finance tab, and
+the Finance page offers **Showing** when somebody shares with the person, which
+replaces the tabs with that person's accounts and what their levels add. A
+person with no finance of their own, or with the agent off, still has the page
+and a Finance row in the rail when somebody shares with them, and sees the first
+sharer's accounts there. A failed read of the shares is reported and does not
+take a `?person=` out of the address; ending a share asks first. The
+iPhone's Finance has the same: **Sharing** in the title menu and a **Showing**
+menu in the bar.
+
 ## The three ways in
 
 Every operation is a GraphQL operation in `FinanceQuery` or `FinanceMutation`

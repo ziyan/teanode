@@ -3,6 +3,10 @@ import XCTest
 
 @testable import TeaNodeKit
 
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
+
 final class CalendarSharingTests: XCTestCase {
     private func calendar(_ json: String) throws -> AgentCalendar {
         try JSONDecoder().decode(AgentCalendar.self, from: Data(json.utf8))
@@ -135,8 +139,32 @@ final class CalendarSharingTests: XCTestCase {
         XCTAssertTrue(Documents.calendarShareCircles.contains("members"))
     }
 
+    /// A share is changed to another level by sharing again with the same
+    /// person or circle, which the server keeps one share for.
+    func testChangingTheLevelOfAShareSharesAgainWithTheSameGrantee() async throws {
+        let fake = FakeServer { _ in (200, #"{"data":{"ShareCalendar":{"id":"s1"}}}"#) }
+        let account = Account(
+            server: try! ServerAddress(parsing: "mail.example.com"), clientId: "a-client", accessToken: "tnt_a", refreshToken: "",
+            expiresAt: Date().addingTimeInterval(30 * 86400), username: "robin")
+        let connection = Connection(account: account, transport: fake)
+        let share = try JSONDecoder().decode(
+            CalendarShare.self,
+            from: Data(#"{"id":"s1","calendarId":"c","granteeCircleId":"k","granteeCircleName":"Home","shareLevel":"busy"}"#.utf8))
+        try await connection.shareCalendar(
+            calendarId: share.calendarId, granteeUserId: share.granteeUserId, granteeCircleId: share.granteeCircleId, level: .edit)
+
+        let body = try JSONDecoder().decode([String: JSONValue].self, from: fake.sent.first?.httpBody ?? Data())
+        guard case .object(let variables) = body["variables"] else { return XCTFail("no variables") }
+        XCTAssertEqual(
+            variables,
+            ["calendarId": .string("c"), "granteeUserId": .null, "granteeCircleId": .string("k"), "shareLevel": .string("edit")])
+    }
+
     func testTheDocumentsAreInTheSchemaCheck() {
-        for name in ["calendarShares", "shareCalendar", "unshareCalendar", "calendarSharePeople", "calendarShareCircles", "createCircleCalendar"] {
+        for name in [
+            "calendarShares", "shareCalendar", "unshareCalendar", "calendarSharePeople", "calendarShareCircles", "createCircleCalendar",
+            "deleteCircleCalendar",
+        ] {
             XCTAssertNotNil(Documents.calendarAndContacts[name], name)
         }
         XCTAssertTrue(Documents.calendars.contains("shareLevel"))

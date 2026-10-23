@@ -51,9 +51,19 @@ func SharedCopyFilename(photoId string, photoPreviewSize models.PhotoPreviewSize
 
 // SharedClientPhotoID is the name a saved copy has for its owner's uploads: the
 // digest of the file it was made from, so that saving the same photo twice is
-// saving it once.
+// saving it once. It is for a copy made over the owner's files, which the
+// reader has the right to, and so to their digest.
 func SharedClientPhotoID(sourceBlobSha256 string) string {
 	return "shared:" + sourceBlobSha256
+}
+
+// SharedPreviewClientPhotoID is the same for a copy made from a preview, which
+// is what a reader who may not have the original gets. The digest of the
+// original is not theirs to know, as it names the very file they were kept
+// from and anyone holding the file could match it, so the copy is named by the
+// photo it was made from instead.
+func SharedPreviewClientPhotoID(photoId string) string {
+	return "shared-preview:" + photoId
 }
 
 // SharedPhoto is a photo somebody else owns, as the saving of it needs it.
@@ -95,18 +105,17 @@ var ErrNothingToSave = errors.New("photo: the photo has no preview yet; try agai
 // photo is processed like any new photo, getting previews of its own and, if
 // the reader has faces on, faces of its own. Without that the copy is the
 // preview the reader could see, stored as a file of its own, because the
-// original's bytes carry the place. Either way the copy is named by the
-// digest of the original, so saving a photo twice is saving it once.
+// original's bytes carry the place. Either way the copy has a name that is
+// the same each time, so saving a photo twice is saving it once.
 func (self *Store) SaveSharedPhoto(ctx context.Context, readerUserId string, shared *SharedPhoto) (*models.Photo, error) {
 	source := sourceFileOf(shared.Files)
 	if source == nil {
 		return nil, ErrNothingToSave
 	}
-	clientPhotoId := SharedClientPhotoID(source.BlobSHA256)
 	if shared.IsLocationIncluded {
-		return self.saveSharedFiles(ctx, readerUserId, clientPhotoId, shared)
+		return self.saveSharedFiles(ctx, readerUserId, SharedClientPhotoID(source.BlobSHA256), shared)
 	}
-	return self.saveSharedPreview(ctx, readerUserId, clientPhotoId, shared)
+	return self.saveSharedPreview(ctx, readerUserId, SharedPreviewClientPhotoID(shared.Photo.ID), shared)
 }
 
 // saveSharedFiles records the owner's files as files of a new photo of the
@@ -190,7 +199,8 @@ func (self *Store) saveSharedPreview(ctx context.Context, readerUserId, clientPh
 		ClientPhotoID: clientPhotoId, PhotoFileRole: models.PhotoFileRoleOriginal, PhotoKind: photoKind, PhotoSource: models.PhotoSourceShared,
 		OriginalFilename: SharedCopyFilename(shared.Photo.ID, photoPreviewSize),
 		ContentType:      preview.ContentType,
-		TakenAt:          shared.Photo.TakenAt, TakenAtOffsetMinutes: shared.Photo.TakenAtOffsetMinutes,
+		// The offset from UTC is withheld with the place, which it says a part of.
+		TakenAt:      shared.Photo.TakenAt,
 		IsScreenshot: shared.Photo.IsScreenshot,
 	}
 	return self.keepFile(ctx, readerUserId, headers, newSegmentReader(ctx, self.files, []segment{entry}), hex.EncodeToString(digest.Sum(nil)), preview.PreviewSizeBytes, "")

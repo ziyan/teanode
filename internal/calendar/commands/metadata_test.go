@@ -25,6 +25,8 @@ func calendarCommandFixture(test *testing.T) (db.Database, *access.Principal, *m
 		if err != nil {
 			test.Fatal(err)
 		}
+		// A calendar reaches only people who may use calendars.
+		dbtest.GrantPermission(test, transaction, userId, models.PermissionCalendarUse)
 	})
 	return database, principal, storedCalendar
 }

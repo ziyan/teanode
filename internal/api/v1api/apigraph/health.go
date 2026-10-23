@@ -13,6 +13,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/health"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/graphapi"
@@ -624,6 +625,13 @@ func (self *graph) reachHealth(ctx context.Context, principal *api.Principal, ow
 	if ownerUserId == "" || ownerUserId == principal.User.ID {
 		return &healthReach{User: principal.User, IsOwner: true, HealthCategories: categoryNames(health.Categories())}, nil
 	}
+	// What others share is for the person to see: the agent reads the person's
+	// own Health only, as the person card keeps it, since what it reads goes
+	// into a conversation, where a chat or a model provider is not the
+	// person's alone.
+	if db.PrincipalFromContext(ctx).ActorKind == models.AuditActorAgent {
+		return nil, api.ErrNotFound
+	}
 	tx := self.transaction(ctx)
 	categories, err := tx.GetSharedHealthCategories(principal.User.ID, ownerUserId)
 	if err != nil {
@@ -1085,7 +1093,16 @@ func (self *graph) ListHealthShares(ctx context.Context) ([]*HealthShareView, er
 }
 
 func (self *graph) SetHealthShare(ctx context.Context, arguments SetHealthShareArguments) (*HealthShareView, error) {
-	principal, err := self.requireHealthPerson(ctx)
+	// Taking a share back, given no categories, asks for no health:use, so
+	// that somebody whose role lost it can still end what they shared.
+	// Sharing any category needs it.
+	var principal *api.Principal
+	var err error
+	if len(arguments.HealthCategories) == 0 {
+		principal, err = self.requireShareOwner(ctx)
+	} else {
+		principal, err = self.requireHealthPerson(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1123,6 +1140,11 @@ func (self *graph) SetHealthShare(ctx context.Context, arguments SetHealthShareA
 			}
 		}
 	}
+	// What the grantee was given before, to tell whether this is more.
+	earlier, err := tx.ListHealthShares(principal.User.ID)
+	if err != nil {
+		return nil, err
+	}
 	saved, err := tx.SetHealthShare(principal.User.ID, &models.HealthShare{
 		GranteeUserID: granteeUserId, GranteeCircleID: granteeCircleId, HealthCategories: categories,
 		CreatedByUserID: principal.User.ID,
@@ -1135,6 +1157,13 @@ func (self *graph) SetHealthShare(ctx context.Context, arguments SetHealthShareA
 	if saved == nil {
 		return nil, nil
 	}
+	if isHealthShareWider(earlier, saved) {
+		if err := self.tellAboutShare(ctx, principal.User, models.ShareReceivedNote{
+			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindHealth, ShareScopes: saved.HealthCategories,
+		}, granteeUserId, granteeCircleId); err != nil {
+			return nil, err
+		}
+	}
 	shares, err := tx.ListHealthShares(principal.User.ID)
 	if err != nil {
 		return nil, err
@@ -1145,6 +1174,23 @@ func (self *graph) SetHealthShare(ctx context.Context, arguments SetHealthShareA
 		}
 	}
 	return describeHealthShare(saved), nil
+}
+
+// isHealthShareWider says whether the share gives its grantee a category that
+// the person's Health shares did not give them before.
+func isHealthShareWider(earlier []*models.HealthShare, saved *models.HealthShare) bool {
+	var alreadyShared []string
+	for _, share := range earlier {
+		if share.GranteeUserID == saved.GranteeUserID && share.GranteeCircleID == saved.GranteeCircleID {
+			alreadyShared = share.HealthCategories
+		}
+	}
+	for _, category := range saved.HealthCategories {
+		if !slices.Contains(alreadyShared, category) {
+			return true
+		}
+	}
+	return false
 }
 
 // isHealthIdentifierText reports whether the text can be an identifier from a phone: one

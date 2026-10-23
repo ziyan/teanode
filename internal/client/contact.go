@@ -5,12 +5,21 @@ import "context"
 // A person's own address book: the contacts they keep, as against the
 // addresses a mailbox learned from traffic, which are in mailbox.go.
 
-// AddressBook is one address book and how much is in it.
+// AddressBook is one address book and how much is in it: the signed-in
+// account's own, or a circle's they are in.
 type AddressBook struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Contacts    int    `json:"contacts"`
+
+	// CircleID, CircleName and IsCircleBook say whose a circle's book is; the
+	// first is null for the account's own. CanManage is that the account may
+	// rename it and, for a circle's, delete it.
+	CircleID     *string `json:"circleId"`
+	CircleName   string  `json:"circleName"`
+	IsCircleBook bool    `json:"isCircleBook"`
+	CanManage    bool    `json:"canManage"`
 }
 
 // Contact is one person kept in an address book. Card is the whole of it and
@@ -68,7 +77,23 @@ type Address struct {
 }
 
 const (
+	addressBookSelection = `{ id name description contacts circleId circleName isCircleBook canManage }`
+
 	DocumentListAddressBooks = `query { ListAddressBooks { id name description contacts } }`
+
+	// DocumentListReachableAddressBooks is the caller's own books and then
+	// their circles', with whose each is.
+	DocumentListReachableAddressBooks = `query { ListReachableAddressBooks ` + addressBookSelection + ` }`
+
+	DocumentCreateCircleAddressBook = `mutation ($circleId: String!, $name: String) {
+  CreateCircleAddressBook(circleId: $circleId, name: $name) ` + addressBookSelection + `
+}`
+
+	DocumentSaveAddressBook = `mutation ($id: String!, $name: String, $description: String) {
+  SaveAddressBook(id: $id, name: $name, description: $description) ` + addressBookSelection + `
+}`
+
+	DocumentDeleteCircleAddressBook = `mutation ($addressBookId: String!) { DeleteCircleAddressBook(addressBookId: $addressBookId) }`
 
 	contactAccountSelection = `{ userId username name avatarUrl avatarColorIndex }`
 
@@ -79,8 +104,8 @@ const (
   }
 }`
 
-	DocumentGetContact = `query ($id: String!) {
-  GetContact(id: $id) {
+	DocumentGetContact = `query ($id: String!, $addressBookId: String) {
+  GetContact(id: $id, addressBookId: $addressBookId) {
     id uid etag name organization emails phones note hasPhoto card
     addresses { label street locality region postalCode country written }
     accountUserId account ` + contactAccountSelection + `
@@ -109,9 +134,11 @@ const (
     emails: $emails, phones: $phones, note: $note) { id uid name emails phones }
 }`
 
-	DocumentDeleteContact = `mutation ($id: String!) { DeleteContact(id: $id) }`
+	DocumentDeleteContact = `mutation ($id: String!, $addressBookId: String) { DeleteContact(id: $id, addressBookId: $addressBookId) }`
 
-	DocumentRemoveContactPicture = `mutation ($id: String!) { RemoveContactPicture(id: $id) { id uid name emails phones hasPhoto } }`
+	DocumentRemoveContactPicture = `mutation ($id: String!, $addressBookId: String) {
+  RemoveContactPicture(id: $id, addressBookId: $addressBookId) { id uid name emails phones hasPhoto }
+}`
 )
 
 // ListAddressBooks are the caller's. An account that has never had one is
@@ -124,6 +151,54 @@ func ListAddressBooks(ctx context.Context, connection *Client) ([]*AddressBook, 
 		return nil, err
 	}
 	return result.ListAddressBooks, nil
+}
+
+// CreateCircleAddressBook makes the address book a circle keeps for itself.
+func CreateCircleAddressBook(ctx context.Context, executor Executor, circleId, name string) (*AddressBook, error) {
+	arguments := map[string]any{"circleId": circleId, "name": nil}
+	if name != "" {
+		arguments["name"] = name
+	}
+	var result struct {
+		CreateCircleAddressBook *AddressBook `json:"CreateCircleAddressBook"`
+	}
+	if err := executor.Execute(ctx, DocumentCreateCircleAddressBook, arguments, &result); err != nil {
+		return nil, err
+	}
+	return result.CreateCircleAddressBook, nil
+}
+
+// SaveAddressBook renames a book and changes what it says about itself; an
+// empty name keeps the old one.
+func SaveAddressBook(ctx context.Context, executor Executor, id, name, description string) (*AddressBook, error) {
+	var result struct {
+		SaveAddressBook *AddressBook `json:"SaveAddressBook"`
+	}
+	if err := executor.Execute(ctx, DocumentSaveAddressBook, map[string]any{"id": id, "name": name, "description": description}, &result); err != nil {
+		return nil, err
+	}
+	return result.SaveAddressBook, nil
+}
+
+// DeleteCircleAddressBook deletes a circle's address book with every card in
+// it.
+func DeleteCircleAddressBook(ctx context.Context, executor Executor, addressBookId string) error {
+	var result struct {
+		DeleteCircleAddressBook bool `json:"DeleteCircleAddressBook"`
+	}
+	return executor.Execute(ctx, DocumentDeleteCircleAddressBook, map[string]any{"addressBookId": addressBookId}, &result)
+}
+
+// ListReachableAddressBooks are the caller's own address books and then the
+// books of the circles they are in.
+func ListReachableAddressBooks(ctx context.Context, executor Executor) ([]*AddressBook, error) {
+	var result struct {
+		ListReachableAddressBooks []*AddressBook `json:"ListReachableAddressBooks"`
+	}
+	if err := executor.Execute(ctx, DocumentListReachableAddressBooks, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.ListReachableAddressBooks, nil
 }
 
 // ListContacts are the contacts in one book, narrowed by a query when there
@@ -145,12 +220,25 @@ func ListContacts(ctx context.Context, connection *Client, addressBookId, query 
 	return result.ListContacts, nil
 }
 
-// GetContact is one contact, with its card.
-func GetContact(ctx context.Context, connection *Client, id string) (*Contact, error) {
+// contactArguments names a contact, and the book it is in when that is known:
+// a contact is named only within its book, so one in a circle's book is reached
+// by naming the book. Left empty, the server looks in the caller's own books
+// first.
+func contactArguments(addressBookId, id string) map[string]any {
+	arguments := map[string]any{"id": id, "addressBookId": nil}
+	if addressBookId != "" {
+		arguments["addressBookId"] = addressBookId
+	}
+	return arguments
+}
+
+// GetContact is one contact, with its card, in the address book named or, when
+// addressBookId is empty, in the first of the caller's books that holds it.
+func GetContact(ctx context.Context, connection *Client, addressBookId, id string) (*Contact, error) {
 	var result struct {
 		GetContact *Contact `json:"GetContact"`
 	}
-	if err := connection.Execute(ctx, DocumentGetContact, map[string]any{"id": id}, &result); err != nil {
+	if err := connection.Execute(ctx, DocumentGetContact, contactArguments(addressBookId, id), &result); err != nil {
 		return nil, err
 	}
 	return result.GetContact, nil
@@ -210,21 +298,21 @@ func SaveContact(ctx context.Context, connection *Client, fields *SaveContactFie
 	return result.SaveContact, nil
 }
 
-// DeleteContact forgets one.
-func DeleteContact(ctx context.Context, connection *Client, id string) error {
+// DeleteContact forgets one, in the address book named as GetContact's is.
+func DeleteContact(ctx context.Context, connection *Client, addressBookId, id string) error {
 	var result struct {
 		DeleteContact bool `json:"DeleteContact"`
 	}
-	return connection.Execute(ctx, DocumentDeleteContact, map[string]any{"id": id}, &result)
+	return connection.Execute(ctx, DocumentDeleteContact, contactArguments(addressBookId, id), &result)
 }
 
 // RemoveContactPicture takes the picture off a contact and leaves the rest of
-// the card as it was.
-func RemoveContactPicture(ctx context.Context, executor Executor, id string) (*Contact, error) {
+// the card as it was, in the address book named as GetContact's is.
+func RemoveContactPicture(ctx context.Context, executor Executor, addressBookId, id string) (*Contact, error) {
 	var result struct {
 		RemoveContactPicture *Contact `json:"RemoveContactPicture"`
 	}
-	if err := executor.Execute(ctx, DocumentRemoveContactPicture, map[string]any{"id": id}, &result); err != nil {
+	if err := executor.Execute(ctx, DocumentRemoveContactPicture, contactArguments(addressBookId, id), &result); err != nil {
 		return nil, err
 	}
 	return result.RemoveContactPicture, nil

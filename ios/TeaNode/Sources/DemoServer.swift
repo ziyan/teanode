@@ -40,6 +40,9 @@
                 answer = personCardAnswer
             } else if query.contains("SearchEverything") {
                 answer = Self.searchEverything(answering: request.httpBody)
+            } else if let financeSharingAnswer = Self.financeSharingAnswer(query: query, body: request.httpBody) {
+                // Before the finance operations below, whose names these contain.
+                answer = financeSharingAnswer
             } else if let financeEntryAnswer = Self.financeEntryAnswer(query: query) {
                 answer = financeEntryAnswer
             } else if let recordingAnswer = Self.recordingAnswer(query: query) {
@@ -50,6 +53,8 @@
             } else if let codingSetupAnswer = Self.codingSetupAnswer(query: query, body: request.httpBody) {
                 // Before "ReadAgent" and "RecallAgent", which these operation names start with.
                 answer = codingSetupAnswer
+            } else if let sharingAnswer = Self.sharingAnswer(query: query) {
+                answer = sharingAnswer
             } else if let circlesAnswer = Self.circlesAnswer(query: query, body: request.httpBody) {
                 answer = circlesAnswer
             } else if let locationAnswer = Self.locationAnswer(query: query, body: request.httpBody) {

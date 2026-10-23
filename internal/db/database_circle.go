@@ -60,7 +60,8 @@ type CircleOperation interface {
 	// AddCircleMember puts an account in a circle. A person who is already in
 	// it is left as they are. ErrNotFound when the circle or the account is
 	// not there. A waiting invitation to the same circle is closed as
-	// accepted.
+	// accepted. An account put in is recorded in the audit log, naming the
+	// actor of the transaction.
 	AddCircleMember(circleId, userId string, memberRole models.MemberRole, invitedByUserId string) (*models.Circle, error)
 
 	// SetCircleMemberRole changes a member's role. ErrNotFound when the
@@ -78,6 +79,12 @@ type CircleOperation interface {
 	// SharesCircle says whether two different people are in a circle
 	// together.
 	SharesCircle(userId, otherUserId string) (bool, error)
+
+	// CircleHasSensitiveShare says whether anybody has shared Health or a
+	// finance account with the circle, so that a new member of it would read
+	// that. Sharing either with somebody new is the sharer's own tap, and so
+	// is bringing somebody into a circle that has such a share.
+	CircleHasSensitiveShare(circleId string) (bool, error)
 
 	// CircleUserIDs returns everybody who shares a circle with the person,
 	// once each and not the person.
@@ -143,6 +150,14 @@ type circleMemberModel struct {
 }
 
 func (circleMemberModel) TableName() string { return "circle_member" }
+
+// circleMemberAudit is what the audit log keeps of an account put in a circle.
+type circleMemberAudit struct {
+	CircleID   string `json:"circleId"`
+	UserID     string `json:"userId"`
+	Username   string `json:"username"`
+	MemberRole string `json:"memberRole"`
+}
 
 type circleInvitationModel struct {
 	ID               string     `gorm:"column:id;primaryKey"`
@@ -466,10 +481,16 @@ func endSharesOutsideCircles(tx *gorm.DB, userIds ...string) error {
 		if err := endCalendarSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}
+		if err := endRecordingSharesOutsideCircles(tx, userId); err != nil {
+			return err
+		}
 		if err := endLocationSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}
 		if err := endHealthSharesOutsideCircles(tx, userId); err != nil {
+			return err
+		}
+		if err := endFinanceSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}
 		if err := endPasswordSharesOutsideCircles(tx, userId); err != nil {
@@ -481,7 +502,7 @@ func endSharesOutsideCircles(tx *gorm.DB, userIds ...string) error {
 		if err := endSkillSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}
-		if err := releasePhotoAlbumsOutsideCircles(tx, userId); err != nil {
+		if err := endPhotoAlbumSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}
 	}
@@ -528,11 +549,11 @@ func (self *transaction) AddCircleMember(circleId, userId string, memberRole mod
 	if err != nil {
 		return nil, err
 	}
-	var count int64
-	if err := self.tx.Model(&userModel{}).Where("\"id\" = ?", userId).Count(&count).Error; err != nil {
+	var usernames []string
+	if err := self.tx.Model(&userModel{}).Where("\"id\" = ?", userId).Pluck("username", &usernames).Error; err != nil {
 		return nil, err
 	}
-	if count == 0 {
+	if len(usernames) == 0 {
 		return nil, ErrNotFound
 	}
 	isMember := false
@@ -542,10 +563,15 @@ func (self *transaction) AddCircleMember(circleId, userId string, memberRole mod
 		}
 	}
 	if !isMember {
-		if err := self.tx.Create(&circleMemberModel{
+		member := &circleMemberModel{
 			CircleID: circleId, UserID: userId, MemberRole: string(memberRole), JoinedAt: time.Now(),
 			InvitedByUserID: nullableUserId(invitedByUserId),
-		}).Error; err != nil {
+		}
+		// The one way into a circle that no invitation precedes, so the log
+		// says who was put in, in which circle and by whom.
+		if err := self.applyMutation(models.AuditResourceCircleMember, circleId+"/"+userId, models.AuditActionCreate, nil,
+			&circleMemberAudit{CircleID: circleId, UserID: userId, Username: usernames[0], MemberRole: string(memberRole)},
+			func(tx *gorm.DB) error { return tx.Create(member).Error }); err != nil {
 			return nil, err
 		}
 		if err := self.touchCircle(circleId); err != nil {
@@ -708,6 +734,20 @@ func releaseCircles(tx *gorm.DB, userId string) error {
 		}
 	}
 	return nil
+}
+
+func (self *transaction) CircleHasSensitiveShare(circleId string) (bool, error) {
+	var count int64
+	if err := self.tx.Model(&healthShareModel{}).Where("\"grantee_circle_id\" = ?", circleId).Count(&count).Error; err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+	if err := self.tx.Model(&financeAccountShareModel{}).Where("\"grantee_circle_id\" = ?", circleId).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (self *transaction) SharesCircle(userId, otherUserId string) (bool, error) {

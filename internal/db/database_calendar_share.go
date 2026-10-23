@@ -44,6 +44,11 @@ type CalendarShareOperation interface {
 	// has one.
 	CreateCircleCalendar(circleId, name, timezone string) (*models.Calendar, error)
 
+	// DeleteCircleCalendar takes away the calendar a circle keeps for itself,
+	// with every event in it. ErrNotFound when there is no such circle or it
+	// has none. The caller has checked that the person may.
+	DeleteCircleCalendar(circleId string) error
+
 	// GetCircleCalendar is the circle's calendar, or nil.
 	GetCircleCalendar(circleId string) (*models.Calendar, error)
 
@@ -120,9 +125,13 @@ func (self *calendarShareModel) toModel() *models.CalendarShare {
 // the reader and the calendar's owner to be in it. The join on the owner's
 // account is what stops a disabled account's calendar reaching anybody. Only
 // the events calendar of a person is ever reached this way; reminders are
-// never shared.
-const reachingSharesQuery = `
-SELECT share.calendar_id AS calendar_id, share.share_level AS share_level
+// never shared. The owner and the reader both need calendar:use
+// (@permission), so that an operator who takes it from a role has switched
+// calendars off for those people and what they kept is no longer read by
+// others; the owner can still end a share, which needs no reach.
+var reachingSharesQuery = `
+SELECT share.id AS share_id, share.calendar_id AS calendar_id, share.share_level AS share_level,
+  share.grantee_user_id AS grantee_user_id, share.grantee_circle_id AS grantee_circle_id, share.created_at AS created_at
 FROM "calendar_share" share
 JOIN "calendar" shared ON shared.id = share.calendar_id
 JOIN "user" owner_user ON owner_user.id = shared.user_id AND owner_user.disabled_at IS NULL
@@ -130,6 +139,8 @@ WHERE shared.user_id IS NOT NULL
   AND shared.user_id <> @reader
   AND shared.calendar_kind = 'events'
   AND (@calendar = '' OR share.calendar_id = @calendar)
+  AND ` + userHasPermissionSQL("shared.user_id") + `
+  AND ` + userHasPermissionSQL("@reader") + `
   AND (
     (share.grantee_user_id = @reader AND EXISTS (
         SELECT 1 FROM "circle_member" mine
@@ -142,8 +153,12 @@ WHERE shared.user_id IS NOT NULL
   )`
 
 type reachingShareRow struct {
-	CalendarID string `gorm:"column:calendar_id"`
-	ShareLevel string `gorm:"column:share_level"`
+	ShareID         string    `gorm:"column:share_id"`
+	CalendarID      string    `gorm:"column:calendar_id"`
+	ShareLevel      string    `gorm:"column:share_level"`
+	GranteeUserID   *string   `gorm:"column:grantee_user_id"`
+	GranteeCircleID *string   `gorm:"column:grantee_circle_id"`
+	CreatedAt       time.Time `gorm:"column:created_at"`
 }
 
 // reachingShares is the highest level each calendar is shared with the person
@@ -151,7 +166,8 @@ type reachingShareRow struct {
 func (self *transaction) reachingShares(readerUserId, calendarId string) (map[string]models.ShareLevel, error) {
 	var rows []reachingShareRow
 	if err := self.tx.Raw(reachingSharesQuery,
-		sql.Named("reader", readerUserId), sql.Named("calendar", calendarId)).Scan(&rows).Error; err != nil {
+		sql.Named("reader", readerUserId), sql.Named("calendar", calendarId),
+		sql.Named("permission", string(models.PermissionCalendarUse))).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	levels := make(map[string]models.ShareLevel, len(rows))
@@ -311,6 +327,28 @@ func (self *transaction) CreateCircleCalendar(circleId, name, timezone string) (
 	return self.CreateCalendar(&models.Calendar{
 		CircleID: circleId, Name: name, Timezone: timezone, CalendarKind: models.CalendarEvents,
 	})
+}
+
+func (self *transaction) DeleteCircleCalendar(circleId string) error {
+	// In the order of every change to circles (see circleMembershipLockKey).
+	if err := lockCircleMembership(self.tx); err != nil {
+		return err
+	}
+	var locked circleModel
+	if err := lockRow(self.tx, &locked, circleId); err != nil {
+		return err
+	}
+	before, err := self.GetCircleCalendar(circleId)
+	if err != nil {
+		return err
+	}
+	if before == nil {
+		return ErrNotFound
+	}
+	return self.applyMutation(models.AuditResourceCalendar, before.ID, models.AuditActionDelete,
+		before, nil, func(tx *gorm.DB) error {
+			return tx.Where("\"id\" = ?", before.ID).Delete(&calendarModel{}).Error
+		})
 }
 
 // holdMutualCircle holds the circle membership rows two people's sharing

@@ -350,6 +350,8 @@ function preview(isQuoteShared: boolean) {
       }),
       reachedPageCount: 2,
       isReachedPageCountCut: false,
+      reachedPagePaths: ['people/a-grandparent'],
+      withheldFactCount: 3,
     },
   }
 }
@@ -379,7 +381,19 @@ it('shows what they will see before the page is shared, with the quotes only whe
   fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'user:ben-id' } })
   expect(await within(dialog).findByText('What Ben Example will see')).toBeTruthy()
   expect(await within(dialog).findByText('#3 Next appointment is Tuesday at three.')).toBeTruthy()
-  expect(within(dialog).getByText('This shares 2 pages: this one and everything under it.')).toBeTruthy()
+  expect(
+    within(dialog).getByText(
+      'This shares 2 pages: this one and everything under it. A page you add under it later is shared too.',
+    ),
+  ).toBeTruthy()
+  // The pages it reaches, the rest counted, and the facts it keeps back.
+  expect(within(dialog).getByText('people/a-grandparent')).toBeTruthy()
+  expect(within(dialog).getByText('and 1 more')).toBeTruthy()
+  expect(
+    within(dialog).getByText(
+      '3 facts from finance, recordings, location, private events, or records that are gone stay private. Those have their own sharing.',
+    ),
+  ).toBeTruthy()
   expect(within(dialog).queryByText('see you Tuesday at three')).toBeNull()
 
   fireEvent.click(within(dialog).getByRole('checkbox'))
@@ -540,7 +554,12 @@ it('lists who a page is shared with, including by a page above it, and stops one
   // A page whose name only starts the same way is not this page.
   expect(screen.queryByText('Cora Example')).toBeNull()
 
+  // Nothing is ended until the person confirms.
   fireEvent.click(screen.getByRole('button', { name: 'Stop sharing with Ben Example' }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Stop sharing with Ben Example?' })
+  expect(within(dialog).getByText('Ben Example can no longer see this page.')).toBeTruthy()
+  expect(vi.mocked(graphql).mock.calls.some(([document]) => document.includes('UnshareAgentPage'))).toBe(false)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Stop sharing' }))
   await waitFor(() =>
     expect(
       vi

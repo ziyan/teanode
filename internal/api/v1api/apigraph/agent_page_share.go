@@ -157,20 +157,35 @@ type SharedAgentPageView struct {
 	Children []*models.SharedChild `json:"children"`
 }
 
-// AgentPageSharePreviewView is what a share would show, and how many pages it
+// AgentPageSharePreviewView is what a share would show, and which pages it
 // would reach.
 type AgentPageSharePreviewView struct {
 	Page *SharedAgentPageView `json:"page"`
 
 	// How many pages the share reaches: the page and everything under it. At
-	// least that many where the count was cut.
+	// least that many where the count was cut. A page added under it later is
+	// reached too.
 	ReachedPageCount      int  `json:"reachedPageCount"`
 	IsReachedPageCountCut bool `json:"isReachedPageCountCut"`
+
+	// The paths of the first pages it reaches, by path and at most
+	// reachedPagePathsMost of them; ReachedPageCount is the total.
+	ReachedPagePaths []string `json:"reachedPagePaths"`
+
+	// How many facts on the pages it reaches are kept from the reader whatever
+	// the share, because all of their evidence is finance, recordings, the
+	// location journal or a private calendar event, which have a sharing of
+	// their own.
+	WithheldFactCount int `json:"withheldFactCount"`
 }
 
 // reachedPageCountMost is how many pages a preview counts before it says
 // "at least".
 const reachedPageCountMost = 1000
+
+// reachedPagePathsMost is how many of the pages a share reaches a preview
+// lists.
+const reachedPagePathsMost = 50
 
 func describeSharedPage(page *models.SharedPage) *SharedAgentPageView {
 	view := &SharedAgentPageView{
@@ -303,12 +318,23 @@ func (self *graph) PreviewAgentPageShare(ctx context.Context, arguments PreviewA
 		return nil, err
 	}
 	reached := 0
+	reachedPaths := []string{}
 	for _, node := range under {
 		if models.PathIsWithin(node.Path, path) {
 			reached++
+			if len(reachedPaths) < reachedPagePathsMost {
+				reachedPaths = append(reachedPaths, node.Path)
+			}
 		}
 	}
-	preview := &AgentPageSharePreviewView{Page: describeSharedPage(page), ReachedPageCount: min(reached, reachedPageCountMost)}
+	withheldFactCount, err := agent.CountWithheldFacts(tx, principal.User.ID, path)
+	if err != nil {
+		return nil, err
+	}
+	preview := &AgentPageSharePreviewView{
+		Page: describeSharedPage(page), ReachedPageCount: min(reached, reachedPageCountMost),
+		ReachedPagePaths: reachedPaths, WithheldFactCount: withheldFactCount,
+	}
 	preview.IsReachedPageCountCut = reached > reachedPageCountMost
 	return preview, nil
 }
@@ -442,6 +468,11 @@ func (self *graph) ShareAgentPage(ctx context.Context, arguments ShareAgentPageA
 		return nil, fmt.Errorf("%w: share with one person or one circle", api.ErrInvalidArguments)
 	}
 	tx := self.transaction(ctx)
+	// What the grantee was given before, to tell whether this is more.
+	earlier, err := tx.ListPageSharesBy(principal.User.ID)
+	if err != nil {
+		return nil, err
+	}
 	saved, err := tx.SharePage(principal.User.ID, &models.AgentPageShare{
 		Path: arguments.Path, GranteeUserID: granteeUserId, GranteeCircleID: granteeCircleId, IsQuoteShared: arguments.IsQuoteShared,
 	})
@@ -459,7 +490,31 @@ func (self *graph) ShareAgentPage(ctx context.Context, arguments ShareAgentPageA
 	} else if node != nil {
 		view.PageName = node.Name
 	}
+	if isPageShareWider(earlier, saved) {
+		subject := view.PageName
+		if subject == "" {
+			subject = saved.Path
+		}
+		if err := self.tellAboutShare(ctx, principal.User, models.ShareReceivedNote{
+			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindMemoryPage, ShareSubject: subject, ShareSubjectID: saved.Path,
+			ShareScopes: models.PageShareScopes(saved.IsQuoteShared),
+		}, granteeUserId, granteeCircleId); err != nil {
+			return nil, err
+		}
+	}
 	return view, nil
+}
+
+// isPageShareWider says whether the share gives its grantee more than the
+// person's shares of the page did before: there was none for them, or the quotes
+// were not shared.
+func isPageShareWider(earlier []*models.AgentPageShare, saved *models.AgentPageShare) bool {
+	for _, share := range earlier {
+		if share.Path == saved.Path && share.GranteeUserID == saved.GranteeUserID && share.GranteeCircleID == saved.GranteeCircleID {
+			return saved.IsQuoteShared && !share.IsQuoteShared
+		}
+	}
+	return true
 }
 
 type UnshareAgentPageArguments struct {
@@ -467,12 +522,9 @@ type UnshareAgentPageArguments struct {
 }
 
 func (self *graph) UnshareAgentPage(ctx context.Context, arguments UnshareAgentPageArguments) (bool, error) {
-	principal, err := self.requirePermission(ctx, models.PermissionAgentUse)
+	principal, err := self.requireShareOwner(ctx)
 	if err != nil {
 		return false, err
-	}
-	if principal.User == nil {
-		return false, api.ErrNotLoggedIn
 	}
 	tx := self.transaction(ctx)
 	share, err := tx.GetPageShare(strings.TrimSpace(arguments.ShareID))

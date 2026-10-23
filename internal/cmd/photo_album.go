@@ -46,23 +46,24 @@ func newPhotoAlbumCommand() *cli.Command {
 			{Name: "remove", Usage: "take photos out of an album; they stay in your library", ArgsUsage: "<album id> <photo id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumRemove},
 			{Name: "cover", Usage: "choose which photo of an album stands for it", ArgsUsage: "<album id> <photo id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumCover},
 			{
-				Name: "share", Usage: "share an album with a person or a circle you share, to view it or to add photos to it; sharing again changes what they have", ArgsUsage: "<album id>",
+				Name: "share", Usage: "share an album with a person or a circle you share, to view it or to add photos to it; sharing again changes what they have", ArgsUsage: "<album id> <username|circle>",
 				Flags: []cli.Flag{
 					JSONFlag(),
-					&cli.StringFlag{Name: "person", Usage: "the username of somebody who shares a circle with you (teanode circle people lists them)"},
-					&cli.StringFlag{Name: "circle", Usage: "a circle you are in, by id or name; everyone in it"},
 					&cli.BoolFlag{Name: "contribute", Usage: "let them add photos of their own and take out the ones they added (otherwise they view and save)"},
 					&cli.BoolFlag{Name: "with-location", Usage: "let them see where the photos were taken and download the original files (otherwise they get a picture that carries no place)"},
+					&cli.BoolFlag{Name: "with-face-names", Usage: "let them see the names you gave the faces in the photos (otherwise they see the boxes round the faces and no name)"},
 				},
 				Action: runPhotoAlbumShare,
 			},
 			{
-				Name: "share-update", Usage: "change one share of an album: what its people may do, and whether they see where the photos were taken; only what you name changes, the rest stays as the share has it", ArgsUsage: "<album id> <share id>",
+				Name: "share-update", Usage: "change one share of an album: what its people may do, and whether they see where the photos were taken and the names of the faces; only what you name changes, the rest stays as the share has it", ArgsUsage: "<album id> <share id>",
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "level", Usage: "view (they view and save) or contribute (they also add photos of their own and take out the ones they added)"},
 					&cli.BoolFlag{Name: "with-location", Usage: "let them see where the photos were taken and download the original files"},
 					&cli.BoolFlag{Name: "without-location", Usage: "show them a picture that carries no place, and no original files"},
+					&cli.BoolFlag{Name: "with-face-names", Usage: "let them see the names you gave the faces in the photos"},
+					&cli.BoolFlag{Name: "without-face-names", Usage: "show them the boxes round the faces and no name"},
 				},
 				Action: runPhotoAlbumShareUpdate,
 			},
@@ -233,18 +234,30 @@ func runPhotoAlbumCreate(ctx context.Context, command *cli.Command) error {
 }
 
 // photoCircleNamed is the circle the person typed: by identifier or by name,
-// among the circles they are in.
+// among the circles they are in. A name that more than one of them has is
+// refused with their ids and sizes, in the words the agent's tools use; an id
+// is never ambiguous.
 func photoCircleNamed(ctx context.Context, connection *client.Client, typed string) (string, string, error) {
 	circles, err := client.ListCircles(ctx, connection)
 	if err != nil {
 		return "", "", err
 	}
+	var named []models.ShareableCircle
 	for _, circle := range circles {
-		if circle.ID == typed || strings.EqualFold(circle.Name, typed) {
+		if circle.ID == typed {
 			return circle.ID, circle.Name, nil
 		}
+		if strings.EqualFold(circle.Name, typed) {
+			named = append(named, models.ShareableCircle{ID: circle.ID, Name: circle.Name, MemberCount: len(circle.Members)})
+		}
 	}
-	return "", "", fmt.Errorf("%q is not a circle you are in; 'teanode circle list' lists them", typed)
+	switch len(named) {
+	case 0:
+		return "", "", fmt.Errorf("%q is not a circle you are in; 'teanode circle list' lists them", typed)
+	case 1:
+		return named[0].ID, named[0].Name, nil
+	}
+	return "", "", models.AmbiguousCircleNameError(typed, named)
 }
 
 // photoPersonNamed is the person the person typed: the username of somebody
@@ -263,25 +276,14 @@ func photoPersonNamed(ctx context.Context, connection *client.Client, typed stri
 }
 
 func runPhotoAlbumShare(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() != 1 {
-		return usage("usage: teanode photo album share <album id> (--person <username> | --circle <circle>) [--contribute] [--with-location]")
-	}
-	personTyped, circleTyped := strings.TrimSpace(command.String("person")), strings.TrimSpace(command.String("circle"))
-	if (personTyped == "") == (circleTyped == "") {
-		return usage("share with one person (--person) or one circle (--circle)")
+	if command.Args().Len() != 2 {
+		return usage("usage: teanode photo album share <album id> <username|circle> [--contribute] [--with-location] [--with-face-names]")
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
-	var granteeUserId, granteeCircleId, described string
-	if personTyped != "" {
-		granteeUserId, described, err = photoPersonNamed(ctx, connection, personTyped)
-	} else {
-		var circleName string
-		granteeCircleId, circleName, err = photoCircleNamed(ctx, connection, circleTyped)
-		described = "everyone in " + circleName
-	}
+	granteeUserId, granteeCircleId, described, err := shareTarget(ctx, connection, command.Args().Get(1))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -289,14 +291,14 @@ func runPhotoAlbumShare(ctx context.Context, command *cli.Command) error {
 	if command.Bool("contribute") {
 		shareLevel = string(models.PhotoAlbumShareLevelContribute)
 	}
-	share, err := client.SharePhotoAlbum(ctx, connection, command.Args().First(), granteeUserId, granteeCircleId, shareLevel, command.Bool("with-location"))
+	share, err := client.SharePhotoAlbum(ctx, connection, command.Args().First(), granteeUserId, granteeCircleId, shareLevel, command.Bool("with-location"), command.Bool("with-face-names"))
 	if err != nil {
-		return describeNotFound(command, err, "that album or "+described)
+		return describeNotFound(command, err, "that album or "+command.Args().Get(1))
 	}
 	if command.Bool("json") {
 		return PrintJSON(share)
 	}
-	_, _ = fmt.Fprintf(command.Writer, "shared with %s at %s%s (share %s)\n", forTerminal(described), share.ShareLevel, photoShareLocationText(share), share.ID)
+	_, _ = fmt.Fprintf(command.Writer, "shared with %s at %s%s%s (share %s)\n", forTerminal(described), share.ShareLevel, photoShareLocationText(share), photoShareFaceNamesText(share), share.ID)
 	return nil
 }
 
@@ -309,13 +311,22 @@ func photoShareLocationText(share *client.PhotoAlbumShare) string {
 	return ", without where the photos were taken"
 }
 
+// photoShareFaceNamesText says what a share does about the names of the faces.
+func photoShareFaceNamesText(share *client.PhotoAlbumShare) string {
+	if share.IsFaceNamesIncluded {
+		return ", with the names of the faces"
+	}
+	return ", without the names of the faces"
+}
+
 // runPhotoAlbumShareUpdate changes one share of an album, and only what the
-// flags name. The server writes the level and the places together, so the share
-// is read first and a setting the flags leave out is sent as the share has it:
-// stopping somebody adding photos must not take the places away. A change that
+// flags name. The server writes the level, the places and the face names
+// together, so the share is read first and a setting the flags leave out is
+// sent as the share has it: stopping somebody adding photos must not take the
+// places away. A change that
 // would leave the share as it is sends nothing.
 func runPhotoAlbumShareUpdate(ctx context.Context, command *cli.Command) error {
-	const usageText = "usage: teanode photo album share-update <album id> <share id> [--level view|contribute] [--with-location | --without-location]; 'teanode photo album shares' lists the ids"
+	const usageText = "usage: teanode photo album share-update <album id> <share id> [--level view|contribute] [--with-location | --without-location] [--with-face-names | --without-face-names]; 'teanode photo album shares' lists the ids"
 	if command.Args().Len() != 2 {
 		return usage(usageText)
 	}
@@ -326,8 +337,12 @@ func runPhotoAlbumShareUpdate(ctx context.Context, command *cli.Command) error {
 	if command.Bool("with-location") && command.Bool("without-location") {
 		return usage("--with-location and --without-location say opposite things; give one")
 	}
-	if shareLevel == "" && !command.Bool("with-location") && !command.Bool("without-location") {
-		return usage("name what to change: --level, --with-location or --without-location. " + usageText)
+	if command.Bool("with-face-names") && command.Bool("without-face-names") {
+		return usage("--with-face-names and --without-face-names say opposite things; give one")
+	}
+	isLocationNamed, isFaceNamesNamed := command.Bool("with-location") || command.Bool("without-location"), command.Bool("with-face-names") || command.Bool("without-face-names")
+	if shareLevel == "" && !isLocationNamed && !isFaceNamesNamed {
+		return usage("name what to change: --level, --with-location, --without-location, --with-face-names or --without-face-names. " + usageText)
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -354,14 +369,21 @@ func runPhotoAlbumShareUpdate(ctx context.Context, command *cli.Command) error {
 		shareLevel = string(share.ShareLevel)
 	}
 	isLocationIncluded := share.IsLocationIncluded
-	if command.Bool("with-location") || command.Bool("without-location") {
+	if isLocationNamed {
 		if command.Bool("with-location") != isLocationIncluded {
 			isChanged = true
 		}
 		isLocationIncluded = command.Bool("with-location")
 	}
+	isFaceNamesIncluded := share.IsFaceNamesIncluded
+	if isFaceNamesNamed {
+		if command.Bool("with-face-names") != isFaceNamesIncluded {
+			isChanged = true
+		}
+		isFaceNamesIncluded = command.Bool("with-face-names")
+	}
 	if isChanged {
-		if share, err = client.UpdatePhotoAlbumShare(ctx, connection, shareId, shareLevel, isLocationIncluded); err != nil {
+		if share, err = client.UpdatePhotoAlbumShare(ctx, connection, shareId, shareLevel, isLocationIncluded, isFaceNamesIncluded); err != nil {
 			return describeNotFound(command, err, "the share "+shareId)
 		}
 	}
@@ -373,10 +395,10 @@ func runPhotoAlbumShareUpdate(ctx context.Context, command *cli.Command) error {
 		with = "everyone in " + share.GranteeCircleName
 	}
 	if !isChanged {
-		_, _ = fmt.Fprintf(command.Writer, "nothing changed: shared with %s at %s%s (share %s)\n", forTerminal(with), share.ShareLevel, photoShareLocationText(share), share.ID)
+		_, _ = fmt.Fprintf(command.Writer, "nothing changed: shared with %s at %s%s%s (share %s)\n", forTerminal(with), share.ShareLevel, photoShareLocationText(share), photoShareFaceNamesText(share), share.ID)
 		return nil
 	}
-	_, _ = fmt.Fprintf(command.Writer, "shared with %s at %s%s (share %s)\n", forTerminal(with), share.ShareLevel, photoShareLocationText(share), share.ID)
+	_, _ = fmt.Fprintf(command.Writer, "shared with %s at %s%s%s (share %s)\n", forTerminal(with), share.ShareLevel, photoShareLocationText(share), photoShareFaceNamesText(share), share.ID)
 	return nil
 }
 
@@ -409,9 +431,13 @@ func runPhotoAlbumShares(ctx context.Context, command *cli.Command) error {
 		if share.IsLocationIncluded {
 			location = "yes"
 		}
-		rows = append(rows, []string{forTerminal(with), share.ShareLevel, location, share.ID})
+		faceNames := "no"
+		if share.IsFaceNamesIncluded {
+			faceNames = "yes"
+		}
+		rows = append(rows, []string{forTerminal(with), share.ShareLevel, location, faceNames, share.ID})
 	}
-	return printTable([]string{"with", "level", "places", "id"}, rows)
+	return printTable([]string{"with", "level", "places", "face names", "id"}, rows)
 }
 
 func runPhotoAlbumUnshare(ctx context.Context, command *cli.Command) error {

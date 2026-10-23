@@ -15,16 +15,27 @@ import (
 // knowledge is read where it lives and never copied.
 const SharedPageMarker = "[from a page another person shared with you: cite it, never write it down]"
 
+// SharedRecordingMarker begins a tool result that carries words from a
+// recording another person shared, which are read where they live and never
+// copied, like a shared page. The run that files what a conversation taught
+// treats what follows it as it treats what follows SharedPageMarker.
+const SharedRecordingMarker = "[from a recording another person shared with you: cite it, never write it down]"
+
 // TextFromSharedPages is the part of a stored tool result that came from
-// shared pages: everything from the marker on, or empty when the result has
-// none. A result that mixes the person's own pages with shared ones puts the
-// shared ones last, after the marker.
+// shared pages or shared recordings: everything from the first marker on, or
+// empty when the result has none. A result that mixes the person's own pages
+// with shared ones puts the shared ones last, after the marker.
 func TextFromSharedPages(content string) string {
-	_, shared, found := strings.Cut(content, SharedPageMarker)
-	if !found {
+	start := -1
+	for _, marker := range []string{SharedPageMarker, SharedRecordingMarker} {
+		if at := strings.Index(content, marker); at >= 0 && (start < 0 || at+len(marker) < start) {
+			start = at + len(marker)
+		}
+	}
+	if start < 0 {
 		return ""
 	}
-	return shared
+	return content[start:]
 }
 
 // SharedMemory is what a run offers the memory tool to read the pages other

@@ -57,7 +57,7 @@ type ListCalendarSharesArguments struct {
 }
 
 func (self *graph) ListCalendarShares(ctx context.Context, arguments ListCalendarSharesArguments) ([]*CalendarShareView, error) {
-	principal, err := self.requireCalendarPerson(ctx)
+	principal, err := self.requireCalendarShareEnder(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +113,11 @@ func (self *graph) ShareCalendar(ctx context.Context, arguments ShareCalendarArg
 		return nil, fmt.Errorf("%w: only the calendar of events is shared", api.ErrInvalidArguments)
 	}
 	tx := self.transaction(ctx)
+	// What the grantee was given before, to tell whether this is more.
+	earlier, err := tx.ListCalendarShares(reach.Calendar.ID)
+	if err != nil {
+		return nil, err
+	}
 	saved, err := tx.ShareCalendar(principal.User.ID, &models.CalendarShare{
 		CalendarID: reach.Calendar.ID, GranteeUserID: granteeUserId, GranteeCircleID: granteeCircleId, ShareLevel: shareLevel,
 	})
@@ -131,8 +136,27 @@ func (self *graph) ShareCalendar(ctx context.Context, arguments ShareCalendarArg
 			saved = share
 		}
 	}
+	if isCalendarShareWider(earlier, saved) {
+		if err := self.tellAboutShare(ctx, principal.User, models.ShareReceivedNote{
+			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindCalendar, ShareLevel: string(saved.ShareLevel),
+			ShareSubjectID: reach.Calendar.ID,
+		}, granteeUserId, granteeCircleId); err != nil {
+			return nil, err
+		}
+	}
 	log.Noticef("%s shared their calendar at %s", principal.User.Username, shareLevel)
 	return describeCalendarShare(saved), nil
+}
+
+// isCalendarShareWider says whether the share gives its grantee more than the
+// calendar's shares did before it: there was none for them, or a lower level.
+func isCalendarShareWider(earlier []*models.CalendarShare, saved *models.CalendarShare) bool {
+	for _, share := range earlier {
+		if share.GranteeUserID == saved.GranteeUserID && share.GranteeCircleID == saved.GranteeCircleID {
+			return saved.ShareLevel.Rank() > share.ShareLevel.Rank()
+		}
+	}
+	return true
 }
 
 type UnshareCalendarArguments struct {
@@ -140,7 +164,7 @@ type UnshareCalendarArguments struct {
 }
 
 func (self *graph) UnshareCalendar(ctx context.Context, arguments UnshareCalendarArguments) (bool, error) {
-	principal, err := self.requireCalendarPerson(ctx)
+	principal, err := self.requireCalendarShareEnder(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -191,6 +215,29 @@ func (self *graph) CreateCircleCalendar(ctx context.Context, arguments CreateCir
 	return self.calendarView(principal, &models.ReachableCalendar{
 		Calendar: made, ShareLevel: models.ShareLevelEdit, CircleName: circle.Name,
 	}, 0), nil
+}
+
+type DeleteCircleCalendarArguments struct {
+	CircleID string `json:"circleId"`
+}
+
+func (self *graph) DeleteCircleCalendar(ctx context.Context, arguments DeleteCircleCalendarArguments) (bool, error) {
+	principal, err := self.requireCalendarPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !self.isServiceEnabled(models.ServiceCalendar) {
+		return false, &models.ServiceUnavailableError{Service: models.ServiceCalendar}
+	}
+	circle, _, err := self.requireCircleAdmin(ctx, arguments.CircleID)
+	if err != nil {
+		return false, err
+	}
+	if err := self.transaction(ctx).DeleteCircleCalendar(circle.ID); err != nil {
+		return false, translateError(err)
+	}
+	log.Noticef("%s deleted the calendar of the circle %q", principal.User.Username, circle.Name)
+	return true, nil
 }
 
 // The most people one free-busy question is about. Each is a window of one

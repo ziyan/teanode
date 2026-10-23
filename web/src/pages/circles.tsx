@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { graphql, isNotFound } from '../api'
 import { Avatar } from '../components/avatar'
 import { PageHeadingActions, useBreadcrumbDetail } from '../components/breadcrumb'
+import { CalendarRenameDialog } from '../components/calendarRename'
 import { announceCirclesChanged } from '../components/circleInvitations'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
@@ -165,16 +166,31 @@ const SHARE_LOCATION = `
 
 // The calendars the person reaches, to know whether a circle has one of its
 // own and which is the person's calendar to share.
-const LIST_CALENDARS = `query { ListCalendars { id calendarKind shareLevel circleId isCircleCalendar } }`
+const LIST_CALENDARS = `query { ListCalendars { id name description colour timezone weekStart calendarKind shareLevel circleId isCircleCalendar } }`
 const CREATE_CIRCLE_CALENDAR = `
   mutation ($circleId: String!) { CreateCircleCalendar(circleId: $circleId) { id } }`
+const DELETE_CIRCLE_CALENDAR = `
+  mutation ($circleId: String!) { DeleteCircleCalendar(circleId: $circleId) }`
 const SHARE_CALENDAR = `
   mutation ($calendarId: String!, $granteeCircleId: String!, $shareLevel: String!) {
     ShareCalendar(calendarId: $calendarId, granteeCircleId: $granteeCircleId, shareLevel: $shareLevel) { id }
   }`
 
+// The address books the person reaches, to know whether a circle has one of
+// its own. Any member of the circle may make it.
+const LIST_ADDRESS_BOOKS = `query { ListReachableAddressBooks { id circleId isCircleBook } }`
+const CREATE_CIRCLE_ADDRESS_BOOK = `
+  mutation ($circleId: String!) { CreateCircleAddressBook(circleId: $circleId) { id } }`
+
+type AddressBookOfCircle = { id: string; circleId?: string | null; isCircleBook?: boolean }
+
 type CalendarOfCircle = {
   id: string
+  name: string
+  description?: string
+  colour?: string
+  timezone?: string
+  weekStart?: string
   calendarKind: string
   shareLevel?: string
   circleId?: string | null
@@ -450,6 +466,9 @@ function CirclesList() {
   return (
     <>
       <PageHeadingActions>
+        <Link className="button" to="/sharing">
+          {t('sharing.title')}
+        </Link>
         <button
           type="button"
           className="primary"
@@ -717,6 +736,20 @@ function CircleDetail() {
     { refresh: false },
   )
 
+  // The circle's own address book, if it has one. Asked only of somebody who
+  // can keep contacts at all.
+  const canUseContacts =
+    hasPermission(session.permissions, 'contacts:use') && session.services?.isContactsEnabled !== false
+  const addressBooks = useQuery(
+    async () =>
+      canUseContacts
+        ? (await graphql<{ ListReachableAddressBooks: AddressBookOfCircle[] }>(LIST_ADDRESS_BOOKS))
+            .ListReachableAddressBooks
+        : [],
+    [canUseContacts, circleId],
+    { refresh: false },
+  )
+
   // How the person is described, which the relationship dialog asks about only
   // when it is not said yet. Null when it could not be read, which asks nothing.
   const ownPerson = useQuery(
@@ -732,6 +765,8 @@ function CircleDetail() {
   const [isRenaming, setRenaming] = useState(false)
   const [renameDraft, setRenameDraft] = useState('')
   const [isDeleting, setDeleting] = useState(false)
+  const [isRenamingCalendar, setRenamingCalendar] = useState(false)
+  const [isDeletingCalendar, setDeletingCalendar] = useState(false)
   const [isLeaving, setLeaving] = useState(false)
   const [removingMember, setRemovingMember] = useState<CircleMember | null>(null)
   const [relatingMember, setRelatingMember] = useState<CircleMember | null>(null)
@@ -745,6 +780,7 @@ function CircleDetail() {
 
   const circle = data
   useBreadcrumbDetail(circle?.name)
+  const circleCalendar = calendars.data?.find((found) => found.isCircleCalendar && found.circleId === circle?.id)
 
   if (loading && !circle) {
     return <Loading />
@@ -915,8 +951,44 @@ function CircleDetail() {
       </SettingsSection>
 
       {canUseCalendar && calendars.data && (
-        <SettingsSection card title={t('circles.calendar.title')} description={t('circles.calendar.intro')}>
-          {calendars.data.some((found) => found.isCircleCalendar && found.circleId === circle.id) ? (
+        <SettingsSection
+          card
+          title={t('circles.calendar.title')}
+          description={t('circles.calendar.intro')}
+          action={
+            isAdmin && circleCalendar ? (
+              <div className="row-actions head-icons">
+                <Tooltip label={t('circles.calendar.rename')}>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    aria-label={t('circles.calendar.rename')}
+                    onClick={() => {
+                      clearProblem()
+                      setRenamingCalendar(true)
+                    }}
+                  >
+                    <PencilIcon size={16} />
+                  </button>
+                </Tooltip>
+                <Tooltip label={t('circles.calendar.delete')}>
+                  <button
+                    type="button"
+                    className="icon-action danger"
+                    aria-label={t('circles.calendar.delete')}
+                    onClick={() => {
+                      clearProblem()
+                      setDeletingCalendar(true)
+                    }}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </Tooltip>
+              </div>
+            ) : undefined
+          }
+        >
+          {circleCalendar ? (
             <>
               <p>{t('circles.calendar.exists')}</p>
               <p>
@@ -943,6 +1015,42 @@ function CircleDetail() {
             </button>
           ) : (
             <SettingsEmpty>{t('circles.calendar.none')}</SettingsEmpty>
+          )}
+        </SettingsSection>
+      )}
+
+      {canUseContacts && addressBooks.data && (
+        <SettingsSection card title={t('circles.addressBook.title')} description={t('circles.addressBook.intro')}>
+          {addressBooks.data.some((found) => found.isCircleBook && found.circleId === circle.id) ? (
+            <>
+              <p>{t('circles.addressBook.exists')}</p>
+              <p>
+                <Link
+                  className="button"
+                  to={`/contacts?book=${encodeURIComponent(
+                    addressBooks.data.find((found) => found.isCircleBook && found.circleId === circle.id)?.id ?? '',
+                  )}`}
+                >
+                  {t('circles.addressBook.open')}
+                </Link>
+              </p>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="primary"
+              disabled={isBusy}
+              onClick={() =>
+                void act(
+                  () => graphql(CREATE_CIRCLE_ADDRESS_BOOK, { circleId: circle.id }),
+                  t('circles.addressBook.made'),
+                ).then((isMade) => {
+                  if (isMade) void addressBooks.reload()
+                })
+              }
+            >
+              {t(circle.circleKind === 'family' ? 'circles.addressBook.makeFamily' : 'circles.addressBook.makeShared')}
+            </button>
           )}
         </SettingsSection>
       )}
@@ -1194,6 +1302,38 @@ function CircleDetail() {
             />
           </label>
         </FormDialog>
+      )}
+
+      {isRenamingCalendar && circleCalendar && (
+        <CalendarRenameDialog
+          calendar={circleCalendar}
+          title={t('circles.calendar.renameTitle', { name: circle.name })}
+          onClose={() => setRenamingCalendar(false)}
+          onSaved={() => calendars.reload()}
+        />
+      )}
+
+      {isDeletingCalendar && (
+        <ConfirmDialog
+          title={t('circles.calendar.deleteTitle', { name: circle.name })}
+          body={t('circles.calendar.deleteBody')}
+          confirmLabel={t('circles.calendar.delete')}
+          busy={isBusy}
+          error={problem}
+          onConfirm={async () => {
+            if (
+              await act(
+                () => graphql(DELETE_CIRCLE_CALENDAR, { circleId: circle.id }),
+                t('circles.calendar.deleted'),
+                true,
+              )
+            ) {
+              setDeletingCalendar(false)
+              void calendars.reload()
+            }
+          }}
+          onClose={() => setDeletingCalendar(false)}
+        />
       )}
 
       {isDeleting && (

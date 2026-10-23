@@ -175,6 +175,34 @@ func TestGraphMoveRewritesTheSubtree(t *testing.T) {
 	})
 }
 
+// The paths below a moved page keep their letters when the old path has
+// letters that take more than one byte.
+func TestGraphMoveKeepsTheLettersOfAnAccentedPath(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		for _, path := range []string{"notes/café", "notes/café/menü", "notes/café/menü/日本語"} {
+			if _, err := tx.PutAgentNode(&models.AgentNode{AgentID: agent.ID, Path: path, Kind: models.NodeTopic}); err != nil {
+				t.Fatalf("PutAgentNode(%q): %s", path, err)
+			}
+		}
+		if _, err := tx.MoveAgentNode(agent.ID, "notes/café", "projects"); err != nil {
+			t.Fatalf("MoveAgentNode: %s", err)
+		}
+		for _, path := range []string{"projects/café", "projects/café/menü", "projects/café/menü/日本語"} {
+			found, err := tx.GetAgentNode(agent.ID, path)
+			if err != nil || found == nil {
+				t.Fatalf("%q came with it: %v %s", path, found, err)
+			}
+		}
+		if gone, err := tx.GetAgentNode(agent.ID, "notes/café"); err != nil || gone != nil {
+			t.Fatalf("and left where it was: %v %s", gone, err)
+		}
+	})
+}
+
 // Words find pages and facts. Not every word: the search is what somebody
 // typed, and every word of it has to be there.
 func TestGraphSearchFindsPagesAndFacts(t *testing.T) {

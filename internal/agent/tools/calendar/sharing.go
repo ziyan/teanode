@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -54,9 +55,18 @@ func personNamed(people []*personEntry, username string) (*personEntry, error) {
 	return nil, fmt.Errorf("%q is not somebody the person shares a circle with; circle_people says who they can share with", username)
 }
 
+// errOthersInChat is what the agenda answers when it is asked for what other
+// people shared in a chat: the answer would be posted to everybody in the
+// room, and they shared it with the owner of the agent alone.
+var errOthersInChat = errors.New("what other people shared on their calendars is not repeated into a chat, because everybody in it would read it: " +
+	"the person can ask in a private conversation with you instead")
+
 // runSharedAgenda is the agenda of what other people shared with the person,
 // one person's or everybody's, each entry saying whose it is.
 func runSharedAgenda(ctx context.Context, run tools.Run, arguments windowArguments, from, until time.Time, where *time.Location) (*tools.Result, error) {
+	if tools.IsAnsweringInChat(run) {
+		return nil, errOthersInChat
+	}
 	calendars, err := calendarsOf(ctx, run.Operations())
 	if err != nil {
 		return nil, err
@@ -480,5 +490,37 @@ func runCircle(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		"circle":   models.DescribeCircleByName(made.CircleName),
 		"calendar": made.ID,
 		"note":     "everyone in the circle reads and writes it, and its events cannot have guests",
+	})
+}
+
+// runCircleDelete deletes the calendar a circle keeps for itself. The server
+// refuses anybody who is not an admin of the circle and a circle that has no
+// calendar, so neither is guessed at here.
+func runCircleDelete(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	run, err := tools.RunFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	arguments, err := tools.DecodeArguments[struct {
+		Circle string `json:"circle"`
+	}](call)
+	if err != nil {
+		return nil, err
+	}
+	// The diary has to have been given for any of it, as everywhere here.
+	if _, _, err := theCalendar(ctx, run.Operations()); err != nil {
+		return nil, err
+	}
+	circle, err := circleNamed(ctx, run.Operations(), arguments.Circle)
+	if err != nil {
+		return nil, err
+	}
+	if err := run.Operations().Execute(ctx, client.DocumentDeleteCircleCalendar,
+		map[string]any{"circleId": circle.ID}, &struct{}{}); err != nil {
+		return nil, err
+	}
+	return tools.JSONResult(map[string]any{
+		"deleted": models.DescribeCircleByName(circle.Name),
+		"note":    "its events are gone for everyone in the circle",
 	})
 }

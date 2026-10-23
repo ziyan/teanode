@@ -63,7 +63,13 @@ func albumList(ctx context.Context, current tools.Run, asked *arguments) (*tools
 	}
 	location := tools.Location(current.Owner())
 	rows := make([]map[string]any, 0, len(albums))
+	isInChat := tools.IsAnsweringInChat(current)
 	for _, album := range albums {
+		// In a chat only the person's own albums are listed: the others are
+		// what people shared with the person, not with the room.
+		if isInChat && !album.IsOwnedByCaller {
+			continue
+		}
 		rows = append(rows, albumRow(album, location))
 	}
 	answer := map[string]any{"note": "album-read with album_id (or list with album_id) gives an album's photos, in an album shared with the person too; an album with an owner_name or circle_name is not the person's own"}
@@ -88,6 +94,9 @@ func albumRead(ctx context.Context, current tools.Run, asked *arguments) (*tools
 	album, err := client.ReadPhotoAlbum(ctx, current.Operations(), albumId)
 	if err != nil {
 		return nil, err
+	}
+	if tools.IsAnsweringInChat(current) && !album.IsOwnedByCaller {
+		return nil, errOthersPhotosInChat
 	}
 	details := albumRow(album, tools.Location(current.Owner()))
 	details["created_at"] = album.CreatedAt.In(tools.Location(current.Owner())).Format("2006-01-02 15:04")
@@ -114,7 +123,7 @@ func albumRead(ctx context.Context, current tools.Run, asked *arguments) (*tools
 	return result, nil
 }
 
-func albumCreate(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+func albumCreate(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
 	albumTitle := strings.TrimSpace(asked.AlbumTitle)
 	if albumTitle == "" {
 		return nil, errors.New("album-create needs album_title")
@@ -129,11 +138,11 @@ func albumCreate(ctx context.Context, executor client.Executor, asked *arguments
 	circleId := ""
 	if circleTyped := strings.TrimSpace(asked.Circle); circleTyped != "" {
 		var err error
-		if circleId, _, err = circleNamed(ctx, executor, circleTyped); err != nil {
+		if circleId, _, err = circleNamed(ctx, current.Operations(), circleTyped); err != nil {
 			return nil, err
 		}
 	}
-	album, err := client.CreateCirclePhotoAlbum(ctx, executor, circleId, albumTitle, photoIds)
+	album, err := client.CreateCirclePhotoAlbum(ctx, current.Operations(), circleId, albumTitle, photoIds)
 	if err != nil {
 		return nil, err
 	}
@@ -245,10 +254,10 @@ func albumCardPreview(ctx context.Context, callArguments json.RawMessage) string
 		Operation string `json:"operation"`
 		AlbumID   string `json:"album_id"`
 		ShareID   string `json:"share_id"`
-		Person    string `json:"person"`
-		Circle    string `json:"circle"`
+		With      string `json:"with"`
 		Level     string `json:"share_level"`
 		Location  *bool  `json:"is_location_included"`
+		FaceNames *bool  `json:"is_face_names_included"`
 	}
 	if err := json.Unmarshal(callArguments, &asked); err != nil {
 		return ""
@@ -276,16 +285,13 @@ func albumCardPreview(ctx context.Context, callArguments json.RawMessage) string
 		if err != nil {
 			return ""
 		}
-		after, err := settingsAfter(share, &arguments{ShareLevel: asked.Level, IsLocationIncluded: asked.Location})
+		after, err := settingsAfter(share, &arguments{ShareLevel: asked.Level, IsLocationIncluded: asked.Location, IsFaceNamesIncluded: asked.FaceNames})
 		if err != nil {
 			return ""
 		}
 		return shareUpdateCardText(named, share, after)
 	}
-	with := tools.Named(asked.Person, "")
-	if with == "" {
-		with = "everyone in " + tools.Named(asked.Circle, "one of their circles")
-	}
+	with := tools.GranteeWords(ctx, asked.With)
 	level := "view"
 	if strings.ToLower(strings.TrimSpace(asked.Level)) == string(models.PhotoAlbumShareLevelContribute) {
 		level = "view and add photos"
@@ -294,22 +300,37 @@ func albumCardPreview(ctx context.Context, callArguments json.RawMessage) string
 	if asked.Location != nil && *asked.Location {
 		text += ", including where the photos were taken"
 	}
+	if asked.FaceNames != nil && *asked.FaceNames {
+		text += ", including the names of the faces"
+	}
 	return text
 }
 
 // circleNamed is the circle the person's agent was told of: by identifier or
-// by name, among the circles the person is in.
-func circleNamed(ctx context.Context, executor client.Executor, typed string) (string, string, error) {
-	circles, err := client.ListCircles(ctx, executor)
+// by name, among the circles the person is in. A name that more than one of
+// them has is refused with their ids and sizes, in the words every other
+// surface uses; an id is never ambiguous.
+func circleNamed(ctx context.Context, executor tools.Operations, typed string) (string, string, error) {
+	circles, err := tools.ShareableCircles(ctx, executor)
 	if err != nil {
 		return "", "", err
 	}
+	var named []models.ShareableCircle
 	for _, circle := range circles {
-		if circle.ID == typed || strings.EqualFold(circle.Name, typed) {
+		if circle.ID == typed {
 			return circle.ID, circle.Name, nil
 		}
+		if strings.EqualFold(circle.Name, typed) {
+			named = append(named, circle)
+		}
 	}
-	return "", "", fmt.Errorf("%q is not a circle the person is in; circle list gives them", typed)
+	switch len(named) {
+	case 0:
+		return "", "", fmt.Errorf("%q is not a circle the person is in; circle list gives them", typed)
+	case 1:
+		return named[0].ID, named[0].Name, nil
+	}
+	return "", "", models.AmbiguousCircleNameError(typed, named)
 }
 
 // personNamed is the person the agent was told to share with: by username,
@@ -330,14 +351,10 @@ func personNamed(ctx context.Context, executor client.Executor, typed string) (s
 // albumShare shares one of the person's albums. The card that asked first says
 // whom with and how far, because this decides who may look at the person's
 // photos.
-func albumShare(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+func albumShare(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
 	albumId, err := albumIdOf(asked, "album-share")
 	if err != nil {
 		return nil, err
-	}
-	person, circle := strings.TrimSpace(asked.Person), strings.TrimSpace(asked.Circle)
-	if (person == "") == (circle == "") {
-		return nil, errors.New("album-share needs person (a username) or circle (a name or id), not both and not neither")
 	}
 	shareLevel := strings.ToLower(strings.TrimSpace(asked.ShareLevel))
 	if shareLevel == "" {
@@ -346,24 +363,20 @@ func albumShare(ctx context.Context, executor client.Executor, asked *arguments)
 	if !models.PhotoAlbumShareLevel(shareLevel).IsValid() {
 		return nil, fmt.Errorf("share_level is view or contribute, not %q", asked.ShareLevel)
 	}
-	var granteeUserId, granteeCircleId, sharedWith string
-	if person != "" {
-		granteeUserId, sharedWith, err = personNamed(ctx, executor, person)
-	} else {
-		var circleName string
-		granteeCircleId, circleName, err = circleNamed(ctx, executor, circle)
-		sharedWith = "everyone in " + circleName
-	}
+	grantee, err := tools.ResolveGrantee(ctx, current.Operations(), asked.With)
 	if err != nil {
 		return nil, err
 	}
+	granteeUserId, granteeCircleId, sharedWith := grantee.UserID, grantee.CircleID, grantee.Description
 	isLocationIncluded := asked.IsLocationIncluded != nil && *asked.IsLocationIncluded
-	share, err := client.SharePhotoAlbum(ctx, executor, albumId, granteeUserId, granteeCircleId, shareLevel, isLocationIncluded)
+	isFaceNamesIncluded := asked.IsFaceNamesIncluded != nil && *asked.IsFaceNamesIncluded
+	share, err := client.SharePhotoAlbum(ctx, current.Operations(), albumId, granteeUserId, granteeCircleId, shareLevel, isLocationIncluded, isFaceNamesIncluded)
 	if err != nil {
 		return nil, err
 	}
 	result, err := tools.JSONResult(map[string]any{
 		"share_id": share.ID, "shared_with": sharedWith, "share_level": share.ShareLevel, "is_location_included": share.IsLocationIncluded,
+		"is_face_names_included": share.IsFaceNamesIncluded,
 	})
 	if err != nil {
 		return nil, err
@@ -374,19 +387,20 @@ func albumShare(ctx context.Context, executor client.Executor, asked *arguments)
 
 // shareSettings is what a share lets the people it names do.
 type shareSettings struct {
-	shareLevel         string
-	isLocationIncluded bool
+	shareLevel          string
+	isLocationIncluded  bool
+	isFaceNamesIncluded bool
 }
 
 // settingsOf is the settings a share has now.
 func settingsOf(share *client.PhotoAlbumShare) shareSettings {
-	return shareSettings{shareLevel: string(share.ShareLevel), isLocationIncluded: share.IsLocationIncluded}
+	return shareSettings{shareLevel: string(share.ShareLevel), isLocationIncluded: share.IsLocationIncluded, isFaceNamesIncluded: share.IsFaceNamesIncluded}
 }
 
 // settingsAfter is the settings a share has once a call is done. A setting the
-// call does not name stays as the share has it: both are written together,
-// so filling in the one that was left out is what keeps "stop them adding
-// photos" from also taking the places away.
+// call does not name stays as the share has it: all three are written
+// together, so filling in the ones that were left out is what keeps "stop them
+// adding photos" from also taking the places away.
 func settingsAfter(share *client.PhotoAlbumShare, asked *arguments) (shareSettings, error) {
 	after := settingsOf(share)
 	if shareLevel := strings.ToLower(strings.TrimSpace(asked.ShareLevel)); shareLevel != "" {
@@ -397,6 +411,9 @@ func settingsAfter(share *client.PhotoAlbumShare, asked *arguments) (shareSettin
 	}
 	if asked.IsLocationIncluded != nil {
 		after.isLocationIncluded = *asked.IsLocationIncluded
+	}
+	if asked.IsFaceNamesIncluded != nil {
+		after.isFaceNamesIncluded = *asked.IsFaceNamesIncluded
 	}
 	return after, nil
 }
@@ -426,7 +443,7 @@ func granteeText(share *client.PhotoAlbumShare) string {
 
 // shareSettingsText is " to ..." and the settings a change names, in the
 // words the cards use. A setting that is not named is left out.
-func shareSettingsText(isLevelNamed bool, shareLevel string, isLocationNamed, isLocationIncluded bool) string {
+func shareSettingsText(isLevelNamed bool, shareLevel string, isLocationNamed, isLocationIncluded, isFaceNamesNamed, isFaceNamesIncluded bool) string {
 	var parts []string
 	if isLevelNamed {
 		if strings.EqualFold(strings.TrimSpace(shareLevel), string(models.PhotoAlbumShareLevelContribute)) {
@@ -440,6 +457,13 @@ func shareSettingsText(isLevelNamed bool, shareLevel string, isLocationNamed, is
 			parts = append(parts, "show where the photos were taken")
 		} else {
 			parts = append(parts, "hide where the photos were taken")
+		}
+	}
+	if isFaceNamesNamed {
+		if isFaceNamesIncluded {
+			parts = append(parts, "show the names of the faces")
+		} else {
+			parts = append(parts, "hide the names of the faces")
 		}
 	}
 	if len(parts) == 0 {
@@ -458,7 +482,8 @@ func shareUpdateCardText(albumText string, share *client.PhotoAlbumShare, after 
 	}
 	isLevelChanged := after.shareLevel != before.shareLevel
 	isLocationChanged := after.isLocationIncluded != before.isLocationIncluded
-	text += shareSettingsText(isLevelChanged, after.shareLevel, isLocationChanged, after.isLocationIncluded)
+	isFaceNamesChanged := after.isFaceNamesIncluded != before.isFaceNamesIncluded
+	text += shareSettingsText(isLevelChanged, after.shareLevel, isLocationChanged, after.isLocationIncluded, isFaceNamesChanged, after.isFaceNamesIncluded)
 	if isLevelChanged && !isLocationChanged && after.isLocationIncluded {
 		text += ", keeping where the photos were taken"
 	}
@@ -466,8 +491,8 @@ func shareUpdateCardText(albumText string, share *client.PhotoAlbumShare, after 
 }
 
 // albumShareUpdate changes one share, by its id and its album: only what the
-// call names. UpdatePhotoAlbumShare writes the level and the places together,
-// as the dashboard's sheet of shares does, so the share is read first and the
+// call names. UpdatePhotoAlbumShare writes the level, the places and the face
+// names together, as the dashboard's sheet of shares does, so the share is read first and the
 // setting left out is sent as it is. A call that would change nothing makes no
 // request.
 //
@@ -484,8 +509,8 @@ func albumShareUpdate(ctx context.Context, executor client.Executor, asked *argu
 	if shareId == "" {
 		return nil, errors.New("album-share-update needs share_id; album-shares gives them")
 	}
-	if strings.TrimSpace(asked.ShareLevel) == "" && asked.IsLocationIncluded == nil {
-		return nil, errors.New("album-share-update needs share_level (view or contribute), is_location_included, or both: it changes only what is named")
+	if strings.TrimSpace(asked.ShareLevel) == "" && asked.IsLocationIncluded == nil && asked.IsFaceNamesIncluded == nil {
+		return nil, errors.New("album-share-update needs share_level (view or contribute), is_location_included, is_face_names_included, or any of them: it changes only what is named")
 	}
 	share, err := shareOf(ctx, executor, albumId, shareId)
 	if err != nil {
@@ -496,15 +521,15 @@ func albumShareUpdate(ctx context.Context, executor client.Executor, asked *argu
 		return nil, fmt.Errorf("album-share-update: %w", err)
 	}
 	if after == settingsOf(share) {
-		result := tools.TextResult("nothing changed: the share with %s already has share_level %s and is_location_included %t", granteeText(share), after.shareLevel, after.isLocationIncluded)
+		result := tools.TextResult("nothing changed: the share with %s already has share_level %s, is_location_included %t and is_face_names_included %t", granteeText(share), after.shareLevel, after.isLocationIncluded, after.isFaceNamesIncluded)
 		result.Untrusted = true
 		return result, nil
 	}
-	share, err = client.UpdatePhotoAlbumShare(ctx, executor, shareId, after.shareLevel, after.isLocationIncluded)
+	share, err = client.UpdatePhotoAlbumShare(ctx, executor, shareId, after.shareLevel, after.isLocationIncluded, after.isFaceNamesIncluded)
 	if err != nil {
 		return nil, err
 	}
-	row := map[string]any{"share_id": share.ID, "share_level": share.ShareLevel, "is_location_included": share.IsLocationIncluded}
+	row := map[string]any{"share_id": share.ID, "share_level": share.ShareLevel, "is_location_included": share.IsLocationIncluded, "is_face_names_included": share.IsFaceNamesIncluded}
 	if share.GranteeCircleID != nil {
 		row["circle_name"] = share.GranteeCircleName
 	} else {
@@ -542,7 +567,7 @@ func albumShares(ctx context.Context, executor client.Executor, asked *arguments
 	}
 	rows := make([]map[string]any, 0, len(shares))
 	for _, share := range shares {
-		row := map[string]any{"share_id": share.ID, "share_level": share.ShareLevel, "is_location_included": share.IsLocationIncluded}
+		row := map[string]any{"share_id": share.ID, "share_level": share.ShareLevel, "is_location_included": share.IsLocationIncluded, "is_face_names_included": share.IsFaceNamesIncluded}
 		if share.GranteeCircleID != nil {
 			row["circle_name"] = share.GranteeCircleName
 		} else {

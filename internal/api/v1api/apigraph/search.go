@@ -326,8 +326,8 @@ func (self *graph) searchMail(ctx context.Context, words string, limit int) ([]*
 	return results, nil
 }
 
-// searchContacts is every address book of the caller's, by name, organization,
-// address or number.
+// searchContacts is every address book of the caller's (of the agent's, the
+// ones given to it), by name, organization, address or number.
 func (self *graph) searchContacts(ctx context.Context, words string, limit int) ([]*search.Result, error) {
 	principal, err := self.requireAddressBookPerson(ctx)
 	if err != nil {
@@ -339,6 +339,11 @@ func (self *graph) searchContacts(ctx context.Context, words string, limit int) 
 	}
 	var contacts []*models.Contact
 	for _, listed := range books {
+		// The agent searches only the books the person gave it; the others
+		// are left out, not the whole area.
+		if self.isBookOutOfAgentReach(ctx, principal.User.ID, listed) {
+			continue
+		}
 		book, err := self.requireOwnAddressBook(ctx, listed.ID)
 		if err != nil {
 			return nil, refusedAsUnavailable(err)

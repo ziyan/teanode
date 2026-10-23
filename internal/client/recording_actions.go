@@ -50,6 +50,17 @@ type RecordingActionArguments struct {
 	// IsUnnamedOnly narrows the timeline to the passages whose speaker
 	// nobody has named yet.
 	IsUnnamedOnly bool `json:"is_unnamed_only"`
+	// BeforeRecordingID continues a list of recordings after the last one of
+	// the page before.
+	BeforeRecordingID string `json:"before_recording_id"`
+	// GranteeUserID or GranteeCircleID is who share gives the recording to,
+	// as the surface resolved it from a username or a circle's name, and
+	// RecordingShareLevel is summary or transcript. RecordingShareID is the
+	// share unshare takes back, as shares lists it.
+	GranteeUserID       string `json:"grantee_user_id"`
+	GranteeCircleID     string `json:"grantee_circle_id"`
+	RecordingShareLevel string `json:"recording_share_level"`
+	RecordingShareID    string `json:"recording_share_id"`
 }
 
 // RecordingAction resolves one reviewed operation and refuses incomplete edits.
@@ -60,6 +71,9 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 			return fmt.Errorf("give %s explicitly", fieldName)
 		}
 		return nil
+	}
+	if operationName, shareVariables, isShareOperation, err := recordingShareAction(arguments); isShareOperation {
+		return operationName, shareVariables, err
 	}
 	operationName := ""
 	// A contact is named by its address book and its own ID together.

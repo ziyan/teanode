@@ -22,6 +22,7 @@ func TestAnEditorCannotChangeOrRemoveAPrivateEvent(test *testing.T) {
 	editorId := dbtest.CreateUser(test, database, "calendar-editor")
 	editorPrincipal := &access.Principal{User: &models.User{ID: editorId}, Permissions: ownerPrincipal.Permissions}
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		dbtest.GrantPermission(test, transaction, editorId, models.PermissionCalendarUse)
 		circle, err := transaction.CreateCircle(&models.Circle{Name: "Home", CircleKind: models.CircleKindFamily}, ownerPrincipal.User.ID)
 		if err != nil {
 			test.Fatal(err)

@@ -15,7 +15,7 @@ import (
 const (
 	photoAlbumSelection = `{ id ownerUserId circleId albumTitle coverPhotoId createdAt updatedAt photoCount firstTakenAt lastTakenAt coverPreviewUrl ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex circleName isOwnedByCaller shareLevel canCallerContribute canCallerManage isLocationIncluded }`
 
-	photoAlbumShareSelection = `{ id photoAlbumId granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex granteeCircleId granteeCircleName shareLevel isLocationIncluded createdAt }`
+	photoAlbumShareSelection = `{ id photoAlbumId granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex granteeCircleId granteeCircleName shareLevel isLocationIncluded isFaceNamesIncluded createdAt }`
 
 	photoAlbumSuggestionSelection = `{ takenAfter takenBefore placeNames albumTitle photoCount samplePhotoIds }`
 )
@@ -39,9 +39,9 @@ const (
 
 	DocumentListPhotoAlbumShares = `query ($photoAlbumId: String!) { ListPhotoAlbumShares(photoAlbumId: $photoAlbumId) ` + photoAlbumShareSelection + ` }`
 
-	DocumentSharePhotoAlbum = `mutation ($photoAlbumId: String!, $granteeUserId: String, $granteeCircleId: String, $shareLevel: String!, $isLocationIncluded: Boolean) { SharePhotoAlbum(photoAlbumId: $photoAlbumId, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, shareLevel: $shareLevel, isLocationIncluded: $isLocationIncluded) ` + photoAlbumShareSelection + ` }`
+	DocumentSharePhotoAlbum = `mutation ($photoAlbumId: String!, $granteeUserId: String, $granteeCircleId: String, $shareLevel: String!, $isLocationIncluded: Boolean, $isFaceNamesIncluded: Boolean) { SharePhotoAlbum(photoAlbumId: $photoAlbumId, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, shareLevel: $shareLevel, isLocationIncluded: $isLocationIncluded, isFaceNamesIncluded: $isFaceNamesIncluded) ` + photoAlbumShareSelection + ` }`
 
-	DocumentUpdatePhotoAlbumShare = `mutation ($photoAlbumShareId: String!, $shareLevel: String!, $isLocationIncluded: Boolean) { UpdatePhotoAlbumShare(photoAlbumShareId: $photoAlbumShareId, shareLevel: $shareLevel, isLocationIncluded: $isLocationIncluded) ` + photoAlbumShareSelection + ` }`
+	DocumentUpdatePhotoAlbumShare = `mutation ($photoAlbumShareId: String!, $shareLevel: String!, $isLocationIncluded: Boolean, $isFaceNamesIncluded: Boolean) { UpdatePhotoAlbumShare(photoAlbumShareId: $photoAlbumShareId, shareLevel: $shareLevel, isLocationIncluded: $isLocationIncluded, isFaceNamesIncluded: $isFaceNamesIncluded) ` + photoAlbumShareSelection + ` }`
 
 	DocumentRemovePhotoAlbumShare = `mutation ($photoAlbumShareId: String!) { RemovePhotoAlbumShare(photoAlbumShareId: $photoAlbumShareId) }`
 
@@ -184,9 +184,10 @@ type PhotoAlbumShare struct {
 	GranteeCircleName       string  `json:"granteeCircleName"`
 
 	// ShareLevel is view or contribute.
-	ShareLevel         string    `json:"shareLevel"`
-	IsLocationIncluded bool      `json:"isLocationIncluded"`
-	CreatedAt          time.Time `json:"createdAt"`
+	ShareLevel          string    `json:"shareLevel"`
+	IsLocationIncluded  bool      `json:"isLocationIncluded"`
+	IsFaceNamesIncluded bool      `json:"isFaceNamesIncluded"`
+	CreatedAt           time.Time `json:"createdAt"`
 }
 
 // ListPhotoAlbumShares are who an album is shared with, for its manager.
@@ -202,8 +203,8 @@ func ListPhotoAlbumShares(ctx context.Context, executor Executor, photoAlbumId s
 
 // SharePhotoAlbum gives a person or a circle (exactly one of the two
 // identifiers) a level of access to an album, or changes the level they have.
-func SharePhotoAlbum(ctx context.Context, executor Executor, photoAlbumId, granteeUserId, granteeCircleId, shareLevel string, isLocationIncluded bool) (*PhotoAlbumShare, error) {
-	variables := map[string]any{"photoAlbumId": photoAlbumId, "shareLevel": shareLevel, "isLocationIncluded": isLocationIncluded}
+func SharePhotoAlbum(ctx context.Context, executor Executor, photoAlbumId, granteeUserId, granteeCircleId, shareLevel string, isLocationIncluded, isFaceNamesIncluded bool) (*PhotoAlbumShare, error) {
+	variables := map[string]any{"photoAlbumId": photoAlbumId, "shareLevel": shareLevel, "isLocationIncluded": isLocationIncluded, "isFaceNamesIncluded": isFaceNamesIncluded}
 	if granteeUserId != "" {
 		variables["granteeUserId"] = granteeUserId
 	}
@@ -220,12 +221,12 @@ func SharePhotoAlbum(ctx context.Context, executor Executor, photoAlbumId, grant
 }
 
 // UpdatePhotoAlbumShare changes the level of one share and whether it includes
-// where photos were taken.
-func UpdatePhotoAlbumShare(ctx context.Context, executor Executor, photoAlbumShareId, shareLevel string, isLocationIncluded bool) (*PhotoAlbumShare, error) {
+// where photos were taken and the names of the faces in them.
+func UpdatePhotoAlbumShare(ctx context.Context, executor Executor, photoAlbumShareId, shareLevel string, isLocationIncluded, isFaceNamesIncluded bool) (*PhotoAlbumShare, error) {
 	var result struct {
 		UpdatePhotoAlbumShare *PhotoAlbumShare `json:"UpdatePhotoAlbumShare"`
 	}
-	if err := executor.Execute(ctx, DocumentUpdatePhotoAlbumShare, map[string]any{"photoAlbumShareId": photoAlbumShareId, "shareLevel": shareLevel, "isLocationIncluded": isLocationIncluded}, &result); err != nil {
+	if err := executor.Execute(ctx, DocumentUpdatePhotoAlbumShare, map[string]any{"photoAlbumShareId": photoAlbumShareId, "shareLevel": shareLevel, "isLocationIncluded": isLocationIncluded, "isFaceNamesIncluded": isFaceNamesIncluded}, &result); err != nil {
 		return nil, err
 	}
 	return result.UpdatePhotoAlbumShare, nil

@@ -443,6 +443,58 @@ func TestAddCircleMemberNeedsUserManage(t *testing.T) {
 	world.refused(t, world.operator, fmt.Sprintf(`mutation { AddCircleMember(circleId: %q, username: "circle-nobody", memberRole: "member") { id } }`, circleId))
 }
 
+// An account put in a circle by an operator has no invitation announcing it,
+// so the circle's administrators are told in the way an invitation is told,
+// and the audit log keeps who was put in. Putting in somebody who is in
+// already says nothing again.
+func TestAnOperatorPuttingAnAccountInACircleTellsItsAdministrators(t *testing.T) {
+	world := newCircleWorld(t)
+	circleId := world.makeCircle(t, world.alice, "Home", "family")
+	world.join(t, world.alice, circleId, world.carol, "admin")
+	add := fmt.Sprintf(`mutation { AddCircleMember(circleId: %q, username: %q, memberRole: "member") { id } }`, circleId, world.bob.Username)
+	world.call(t, world.operator, add)
+	world.call(t, world.operator, add)
+
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		main, err := tx.MainAgentConversation(world.carolAgent.ID, "drawer")
+		if err != nil {
+			t.Fatal(err)
+		}
+		messages, err := tx.ListAgentMessages(main.ID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var added []*models.AgentMessage
+		for _, message := range messages {
+			if message.Name == string(models.NoteCircleMemberAdded) {
+				added = append(added, message)
+			}
+		}
+		if len(added) != 1 {
+			t.Fatalf("carol, an administrator whose agent is on, was told %d times: %+v", len(added), messages)
+		}
+		if got := models.NoteText(models.NoteCircleMemberAdded, added[0].Content); got != "An operator of this server put Circle-bob in Home, which you administer." {
+			t.Errorf("the note says %q", got)
+		}
+		events, err := tx.ListAuditEvents(&db.AuditOptions{ResourceType: string(models.AuditResourceCircleMember)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(events) != 1 {
+			t.Fatalf("the audit log holds %d circle members: only the account put in, once", len(events))
+		}
+		var isBobRecorded bool
+		for _, event := range events {
+			if strings.Contains(string(event.After), world.bob.Username) && event.Action == models.AuditActionCreate {
+				isBobRecorded = true
+			}
+		}
+		if !isBobRecorded {
+			t.Errorf("the audit log does not name the account put in: %+v", events)
+		}
+	})
+}
+
 func TestCirclePeopleAreListedOnceEach(t *testing.T) {
 	world := newCircleWorld(t)
 	home := world.makeCircle(t, world.alice, "Home", "family")

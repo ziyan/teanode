@@ -81,6 +81,11 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"RemoveContactPicture":   client.DocumentRemoveContactPicture,
 		"SetContactAccount":      client.DocumentSetContactAccount,
 
+		"ListReachableAddressBooks": client.DocumentListReachableAddressBooks,
+		"CreateCircleAddressBook":   client.DocumentCreateCircleAddressBook,
+		"SaveAddressBook":           client.DocumentSaveAddressBook,
+		"DeleteCircleAddressBook":   client.DocumentDeleteCircleAddressBook,
+
 		"ListContactAccountSuggestions": client.DocumentListContactAccountSuggestions,
 		"ListMailboxAppPasswords":       client.DocumentListMailboxAppPasswords,
 		"CreateMailboxAppPassword":      client.DocumentCreateMailboxAppPassword,
@@ -150,6 +155,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ShareCalendar":        client.DocumentShareCalendar,
 		"UnshareCalendar":      client.DocumentUnshareCalendar,
 		"CreateCircleCalendar": client.DocumentCreateCircleCalendar,
+		"DeleteCircleCalendar": client.DocumentDeleteCircleCalendar,
 		"ListCalendarFreeBusy": client.DocumentListCalendarFreeBusy,
 		// Pages of the agent's memory shared with other people, and what
 		// they shared.
@@ -240,6 +246,10 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 	// The finance area, one document per operation, which teanode finance
 	// and the finance tool both send.
 	for name, document := range client.FinanceDocuments {
+		documents[name] = document
+	}
+	// Sharing a finance account, which the finance tool has no part in.
+	for name, document := range client.FinanceShareDocuments {
 		documents[name] = document
 	}
 

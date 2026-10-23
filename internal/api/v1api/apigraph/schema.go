@@ -30,6 +30,7 @@ type Query interface {
 	AddressBookQuery
 	CalendarQuery
 	CircleQuery
+	SharingQuery
 	LocationQuery
 	HealthQuery
 	PasswordsQuery
@@ -68,6 +69,7 @@ type Query interface {
 	RecordingTextCorrectionQuery
 	RecordingSpeakerQuery
 	RecordingQuery
+	RecordingShareQuery
 	PhotoQuery
 	PhotoAlbumQuery
 	PhotoFaceQuery
@@ -84,6 +86,7 @@ type Query interface {
 	AgentBackgroundWorkQuery
 	AgentGoalQuery
 	FinanceQuery
+	FinanceShareQuery
 	ServerQuery
 	UpgradeQuery
 	CredentialQuery
@@ -116,6 +119,7 @@ type Mutation interface {
 	AddressBookMutation
 	CalendarMutation
 	CircleMutation
+	SharingMutation
 	LocationMutation
 	HealthMutation
 	PasswordsMutation
@@ -133,6 +137,7 @@ type Mutation interface {
 	RecordingTextCorrectionMutation
 	RecordingSpeakerMutation
 	RecordingMutation
+	RecordingShareMutation
 	PhotoMutation
 	PhotoAlbumMutation
 	PhotoFaceMutation
@@ -168,6 +173,7 @@ type Mutation interface {
 	AgentBackgroundWorkMutation
 	AgentGoalMutation
 	FinanceMutation
+	FinanceShareMutation
 	ServerMutation
 	UpgradeMutation
 	CredentialMutation

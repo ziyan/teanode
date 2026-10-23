@@ -533,6 +533,11 @@ func (self *transaction) DeleteRecording(userId, recordingId string) error {
 	if err := self.deleteRecordingRunConversations(recordingId); err != nil {
 		return err
 	}
+	// A deleted recording is shared with nobody; the reach query would not
+	// find it, and a share row left behind would only be a name nobody can use.
+	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingShareModel{}).Error; err != nil {
+		return err
+	}
 	return self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Updates(map[string]any{"deleted_at": time.Now().UTC().Truncate(time.Microsecond), "source_generation": recording.SourceGeneration + 1}).Error
 }
 

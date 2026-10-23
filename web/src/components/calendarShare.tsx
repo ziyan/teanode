@@ -2,9 +2,8 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { failureText, graphql } from '../api'
-import { Tag } from './common'
-import { FormDialog } from './dialog'
-import { CloseIcon } from './icons'
+import { ConfirmDialog, FormDialog } from './dialog'
+import { TrashIcon } from './icons'
 import { personLabel, personName } from './personLabel'
 import { useToast } from './toast'
 import { Tooltip } from './tooltip'
@@ -45,6 +44,17 @@ const SHARE = `mutation ($calendarId: String!, $granteeUserId: String, $granteeC
 }`
 const UNSHARE = `mutation ($shareId: String!) { UnshareCalendar(shareId: $shareId) }`
 
+// A share is changed to another level by sharing again with the same person or
+// circle: the server keeps one share for each grantee and replaces its level.
+function shareVariables(calendarId: string, share: Share, shareLevel: GrantableLevel) {
+  return {
+    calendarId,
+    granteeUserId: share.granteeUserId,
+    granteeCircleId: share.granteeCircleId,
+    shareLevel,
+  }
+}
+
 function shareName(share: Share, everyoneIn: (name: string) => string): string {
   if (share.granteeCircleId) return everyoneIn(share.granteeCircleName)
   return share.granteeName || share.granteeUsername
@@ -83,6 +93,8 @@ export function CalendarShareDialog({
   const [shareLevel, setShareLevel] = useState<GrantableLevel>(initialLevel)
   const [isBusy, setIsBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  // The share being ended, asked about first.
+  const [stopping, setStopping] = useState<Share | null>(null)
 
   const current = shares.data?.ListCalendarShares ?? []
   const people = choices.data?.people ?? []
@@ -141,93 +153,128 @@ export function CalendarShareDialog({
   }
 
   return (
-    <FormDialog
-      title={t('calendar.shareTitle')}
-      submitLabel={t('calendar.shareAdd')}
-      closeLabel={t('common.done')}
-      busy={isBusy}
-      error={problem}
-      canSubmit={choice !== ''}
-      onClose={onClose}
-      onSubmit={add}
-    >
-      <p className="muted">{t('calendar.shareIntro')}</p>
+    <>
+      <FormDialog
+        title={t('calendar.shareTitle')}
+        submitLabel={t('calendar.shareAdd')}
+        closeLabel={t('common.done')}
+        busy={isBusy}
+        error={stopping ? null : problem}
+        canSubmit={choice !== ''}
+        onClose={onClose}
+        onSubmit={add}
+      >
+        <p className="muted">{t('calendar.shareIntro')}</p>
 
-      <h4 className="calendar-shares-heading">{t('calendar.shareCurrent')}</h4>
-      <div className="calendar-shares" aria-label={t('calendar.shareCurrent')}>
-        {shares.data && current.length === 0 && <p className="muted">{t('calendar.shareNobody')}</p>}
-        {current.map((share) => {
-          const name = shareName(share, everyoneIn)
-          return (
-            <div key={share.id} className="calendar-share-row">
-              <span className="calendar-share-name">{name}</span>
-              <Tag value={t(`calendar.shareLevelName.${share.shareLevel}` as Parameters<typeof t>[0])} />
-              <Tooltip label={t('calendar.shareStop', { name })}>
-                <button
-                  type="button"
-                  className="icon-action danger"
-                  aria-label={t('calendar.shareStop', { name })}
+        <h4 className="calendar-shares-heading">{t('calendar.shareCurrent')}</h4>
+        <div className="calendar-shares" aria-label={t('calendar.shareCurrent')}>
+          {shares.data && current.length === 0 && <p className="muted">{t('calendar.shareNobody')}</p>}
+          {current.map((share) => {
+            const name = shareName(share, everyoneIn)
+            return (
+              <div key={share.id} className="calendar-share-row">
+                <span className="calendar-share-name">{name}</span>
+                <select
+                  aria-label={t('calendar.shareLevelFor', { name })}
+                  value={share.shareLevel}
                   disabled={isBusy}
-                  onClick={() =>
-                    void run(() => graphql(UNSHARE, { shareId: share.id }), t('calendar.shareStopped', { name }))
+                  onChange={(event) =>
+                    void run(
+                      () => graphql(SHARE, shareVariables(calendar.id, share, event.target.value as GrantableLevel)),
+                      t('calendar.shareLevelChanged', { name }),
+                    )
                   }
                 >
-                  <CloseIcon size={16} />
-                </button>
-              </Tooltip>
-            </div>
-          )
-        })}
-      </div>
+                  {SHARE_LEVELS.map((level) => (
+                    <option key={level} value={level}>
+                      {t(`calendar.shareLevelName.${level}` as Parameters<typeof t>[0])}
+                    </option>
+                  ))}
+                </select>
+                <Tooltip label={t('calendar.shareStop', { name })}>
+                  <button
+                    type="button"
+                    className="icon-action danger"
+                    aria-label={t('calendar.shareStop', { name })}
+                    disabled={isBusy}
+                    onClick={() => {
+                      setProblem(null)
+                      setStopping(share)
+                    }}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </Tooltip>
+              </div>
+            )
+          })}
+        </div>
 
-      {choices.data && people.length === 0 && circles.length === 0 ? (
-        <>
-          <p className="muted">{t('calendar.shareNoPeople')}</p>
-          <p>
-            <Link className="button" to="/circles" onClick={onClose}>
-              {t('circles.open')}
-            </Link>
-          </p>
-        </>
-      ) : (
-        <>
-          <label>
-            {t('calendar.shareWith')}
-            <select value={choice} onChange={(event) => setChoice(event.target.value)}>
-              <option value="">{t('calendar.shareChoose')}</option>
-              {people.length > 0 && (
-                <optgroup label={t('calendar.sharePeople')}>
-                  {people.map((person) => (
-                    <option key={person.userId} value={`user:${person.userId}`}>
-                      {personLabel(person)}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {circles.length > 0 && (
-                <optgroup label={t('calendar.shareCircles')}>
-                  {circles.map((circle) => (
-                    <option key={circle.id} value={`circle:${circle.id}`}>
-                      {circleOption(circle)}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-          </label>
-          <label>
-            {t('calendar.shareLevelLabel')}
-            <select value={shareLevel} onChange={(event) => setShareLevel(event.target.value as GrantableLevel)}>
-              {SHARE_LEVELS.map((level) => (
-                <option key={level} value={level}>
-                  {t(`calendar.shareLevelName.${level}` as Parameters<typeof t>[0])}
-                </option>
-              ))}
-            </select>
-            <span className="muted">{t(`calendar.shareLevelHint.${shareLevel}` as Parameters<typeof t>[0])}</span>
-          </label>
-        </>
-      )}
-    </FormDialog>
+        {choices.data && people.length === 0 && circles.length === 0 ? (
+          <>
+            <p className="muted">{t('calendar.shareNoPeople')}</p>
+            <p>
+              <Link className="button" to="/circles" onClick={onClose}>
+                {t('circles.open')}
+              </Link>
+            </p>
+          </>
+        ) : (
+          <>
+            <label>
+              {t('calendar.shareWith')}
+              <select value={choice} onChange={(event) => setChoice(event.target.value)}>
+                <option value="">{t('calendar.shareChoose')}</option>
+                {people.length > 0 && (
+                  <optgroup label={t('calendar.sharePeople')}>
+                    {people.map((person) => (
+                      <option key={person.userId} value={`user:${person.userId}`}>
+                        {personLabel(person)}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {circles.length > 0 && (
+                  <optgroup label={t('calendar.shareCircles')}>
+                    {circles.map((circle) => (
+                      <option key={circle.id} value={`circle:${circle.id}`}>
+                        {circleOption(circle)}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </label>
+            <label>
+              {t('calendar.shareLevelLabel')}
+              <select value={shareLevel} onChange={(event) => setShareLevel(event.target.value as GrantableLevel)}>
+                {SHARE_LEVELS.map((level) => (
+                  <option key={level} value={level}>
+                    {t(`calendar.shareLevelName.${level}` as Parameters<typeof t>[0])}
+                  </option>
+                ))}
+              </select>
+              <span className="muted">{t(`calendar.shareLevelHint.${shareLevel}` as Parameters<typeof t>[0])}</span>
+            </label>
+          </>
+        )}
+      </FormDialog>
+      {stopping ? (
+        <ConfirmDialog
+          title={t('sharing.stopTitle', { name: shareName(stopping, everyoneIn) })}
+          body={t('sharing.stopBody', { name: shareName(stopping, everyoneIn), what: t('calendar.shareStopWhat') })}
+          confirmLabel={t('sharing.stop')}
+          busy={isBusy}
+          error={problem}
+          onConfirm={() =>
+            void run(
+              () => graphql(UNSHARE, { shareId: stopping.id }),
+              t('calendar.shareStopped', { name: shareName(stopping, everyoneIn) }),
+            ).then((isDone) => isDone && setStopping(null))
+          }
+          onClose={() => setStopping(null)}
+        />
+      ) : null}
+    </>
   )
 }

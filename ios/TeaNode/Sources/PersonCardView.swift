@@ -211,11 +211,12 @@ struct PersonCardView: View {
         }
     }
 
-    /// What hangs on their account: where they are and their health.
+    /// What hangs on their account: where they are, their health and the finance accounts they share.
     @ViewBuilder
     private func accountSections(_ card: PersonCard) -> some View {
         PersonCardLocationView(card: card, connection: model.connection, isInSheet: isInSheet)
         PersonCardHealthView(card: card, isInSheet: isInSheet)
+        PersonCardFinanceView(card: card, isInSheet: isInSheet)
     }
 
     /// What hangs on the person's contact for them: photos, mail, recordings

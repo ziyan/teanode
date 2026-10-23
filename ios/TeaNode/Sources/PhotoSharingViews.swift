@@ -52,10 +52,15 @@ enum PhotoWords {
     }
 
     /// A share's line under who it is with: the level, and whether the place
-    /// of each photo comes with it.
+    /// of each photo and the names of the faces come with it.
     static func line(of share: PhotoAlbumShare) -> String {
         let level = title(of: share.knownShareLevel)
-        return share.isLocationIncluded ? String(localized: "\(level), with places") : level
+        switch (share.isLocationIncluded, share.isFaceNamesIncluded) {
+        case (true, true): return String(localized: "\(level), with places and names")
+        case (true, false): return String(localized: "\(level), with places")
+        case (false, true): return String(localized: "\(level), with names")
+        case (false, false): return level
+        }
     }
 }
 
@@ -454,7 +459,11 @@ struct PhotoAlbumShareSheet: View {
             "Level",
             selection: Binding(
                 get: { share.knownShareLevel },
-                set: { level in Task { await update(share, photoShareLevel: level, isLocationIncluded: share.isLocationIncluded) } })
+                set: { level in
+                    Task {
+                        await update(share, photoShareLevel: level, isLocationIncluded: share.isLocationIncluded, isFaceNamesIncluded: share.isFaceNamesIncluded)
+                    }
+                })
         ) {
             ForEach(PhotoShareLevel.allCases) { photoShareLevel in
                 Text(PhotoWords.title(of: photoShareLevel)).tag(photoShareLevel)
@@ -465,7 +474,20 @@ struct PhotoAlbumShareSheet: View {
             "Include where photos were taken",
             isOn: Binding(
                 get: { share.isLocationIncluded },
-                set: { isOn in Task { await update(share, photoShareLevel: share.knownShareLevel, isLocationIncluded: isOn) } }))
+                set: { isOn in
+                    Task {
+                        await update(share, photoShareLevel: share.knownShareLevel, isLocationIncluded: isOn, isFaceNamesIncluded: share.isFaceNamesIncluded)
+                    }
+                }))
+        Toggle(
+            "Include the names of the people in the photos",
+            isOn: Binding(
+                get: { share.isFaceNamesIncluded },
+                set: { isOn in
+                    Task {
+                        await update(share, photoShareLevel: share.knownShareLevel, isLocationIncluded: share.isLocationIncluded, isFaceNamesIncluded: isOn)
+                    }
+                }))
         Button("Stop sharing", systemImage: "person.badge.minus", role: .destructive) { shareToStop = share }
             .tint(.red)
     }
@@ -514,10 +536,12 @@ struct PhotoAlbumShareSheet: View {
         Section {
             Toggle("Include where photos were taken", isOn: $draft.isLocationIncluded)
         } footer: {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Without it, they see each picture without its place, and cannot get the original files.")
-                Text("People in the photos are shown with the names you gave them, with or without places.")
-            }
+            Text("Without it, they see each picture without its place, and cannot get the original files.")
+        }
+        Section {
+            Toggle("Include the names of the people in the photos", isOn: $draft.isFaceNamesIncluded)
+        } footer: {
+            Text("Without it, they see where the faces are in each photo, but not the names you gave them.")
         }
         Section {
             Button("Share") { Task { await share() } }
@@ -575,9 +599,10 @@ struct PhotoAlbumShareSheet: View {
         }
     }
 
-    private func update(_ share: PhotoAlbumShare, photoShareLevel: PhotoShareLevel, isLocationIncluded: Bool) async {
+    private func update(_ share: PhotoAlbumShare, photoShareLevel: PhotoShareLevel, isLocationIncluded: Bool, isFaceNamesIncluded: Bool) async {
         do {
-            let changed = try await connection.updatePhotoAlbumShare(share.id, photoShareLevel: photoShareLevel, isLocationIncluded: isLocationIncluded)
+            let changed = try await connection.updatePhotoAlbumShare(
+                share.id, photoShareLevel: photoShareLevel, isLocationIncluded: isLocationIncluded, isFaceNamesIncluded: isFaceNamesIncluded)
             shares = shares.map { $0.id == changed.id ? changed : $0 }
         } catch {
             problemText = model.describe(error)
@@ -588,7 +613,7 @@ struct PhotoAlbumShareSheet: View {
         do {
             try await connection.removePhotoAlbumShare(share.id)
             shares.removeAll { $0.id == share.id }
-            doneText = String(localized: "No longer shared with \(share.granteeDisplayName)")
+            doneText = String(localized: "Stopped sharing with \(share.granteeDisplayName)")
         } catch {
             problemText = model.describe(error)
         }

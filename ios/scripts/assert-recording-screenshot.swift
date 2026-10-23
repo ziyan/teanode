@@ -36,6 +36,12 @@ let expectedMarkersByScreen: [String: [String]] = [
     "recording-source-settings": ["editthissource"],
     "recording-citation": ["citedpassage"],
     "recording-learning-stopped": ["stoppedreadingtranscripts", "resumereading"],
+    // The warning that the others who speak did not agree is the first thing on the share screen.
+    "recording-share": ["notagreed"],
+    "recording-shared": ["harborwalk"],
+    "recording-shared-reading": ["harborwalk"],
+    // The library with the row that opens what others shared.
+    "recording-library-shared": ["sharedwithyou"],
 ]
 guard let expectedMarkers = expectedMarkersByScreen[recordingScreenName] else {
     fputs("No rendered-content assertion for \(recordingScreenName).\n", stderr)

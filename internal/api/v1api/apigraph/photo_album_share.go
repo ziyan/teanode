@@ -47,13 +47,17 @@ type PhotoAlbumShareView struct {
 	// were taken and receive the original files.
 	IsLocationIncluded bool `json:"isLocationIncluded"`
 
+	// IsFaceNamesIncluded says the people reached see the names the owner gave
+	// the faces in the album's photos.
+	IsFaceNamesIncluded bool `json:"isFaceNamesIncluded"`
+
 	CreatedAt time.Time `json:"createdAt"`
 }
 
 func describePhotoAlbumShare(share *models.PhotoAlbumShare) *PhotoAlbumShareView {
 	view := &PhotoAlbumShareView{
 		ID: share.ID, PhotoAlbumID: share.PhotoAlbumID, ShareLevel: string(share.ShareLevel),
-		IsLocationIncluded: share.IsLocationIncluded, CreatedAt: share.CreatedAt,
+		IsLocationIncluded: share.IsLocationIncluded, IsFaceNamesIncluded: share.IsFaceNamesIncluded, CreatedAt: share.CreatedAt,
 		GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName, GranteeCircleName: share.GranteeCircleName,
 	}
 	if share.GranteeUserID != "" {
@@ -88,6 +92,10 @@ type SharePhotoAlbumArguments struct {
 	// Let them see where the photos were taken and receive the original
 	// files; without it they see a picture made afresh, which carries no place
 	IsLocationIncluded bool `json:"isLocationIncluded" graphapi:"nullable"`
+
+	// Let them see the names the owner gave the faces in the photos; without
+	// it they see the boxes round the faces and no name
+	IsFaceNamesIncluded bool `json:"isFaceNamesIncluded" graphapi:"nullable"`
 }
 
 // UpdatePhotoAlbumShareArguments changes one share.
@@ -98,6 +106,8 @@ type UpdatePhotoAlbumShareArguments struct {
 	ShareLevel string `json:"shareLevel"`
 
 	IsLocationIncluded bool `json:"isLocationIncluded" graphapi:"nullable"`
+
+	IsFaceNamesIncluded bool `json:"isFaceNamesIncluded" graphapi:"nullable"`
 }
 
 // PhotoAlbumShareArguments names one share.
@@ -146,9 +156,14 @@ func (self *graph) SharePhotoAlbum(ctx context.Context, arguments SharePhotoAlbu
 		return nil, fmt.Errorf("%w: a circle's album belongs to every member of the circle already", api.ErrInvalidArguments)
 	}
 	transaction := self.transaction(ctx)
+	// What the grantee was given before, to tell whether this is more.
+	earlier, err := transaction.ListPhotoAlbumShares(principal.User.ID, access.PhotoAlbumID)
+	if err != nil {
+		return nil, translateError(err)
+	}
 	saved, err := transaction.SharePhotoAlbum(principal.User.ID, &models.PhotoAlbumShare{
 		PhotoAlbumID: access.PhotoAlbumID, GranteeUserID: granteeUserId, GranteeCircleID: granteeCircleId,
-		ShareLevel: shareLevel, IsLocationIncluded: arguments.IsLocationIncluded,
+		ShareLevel: shareLevel, IsLocationIncluded: arguments.IsLocationIncluded, IsFaceNamesIncluded: arguments.IsFaceNamesIncluded,
 	})
 	if err != nil {
 		// Not a circle in common, a person who does not exist, a circle the
@@ -165,6 +180,11 @@ func (self *graph) SharePhotoAlbum(ctx context.Context, arguments SharePhotoAlbu
 			saved = share
 		}
 	}
+	if isPhotoAlbumShareWider(earlier, saved) {
+		if err := self.tellAboutPhotoAlbumShare(ctx, principal.User, saved); err != nil {
+			return nil, err
+		}
+	}
 	log.Noticef("%s shared a photo album at %s", principal.User.Username, shareLevel)
 	return describePhotoAlbumShare(saved), nil
 }
@@ -179,7 +199,11 @@ func (self *graph) UpdatePhotoAlbumShare(ctx context.Context, arguments UpdatePh
 		return nil, err
 	}
 	transaction := self.transaction(ctx)
-	updated, err := transaction.UpdatePhotoAlbumShare(principal.User.ID, strings.TrimSpace(arguments.PhotoAlbumShareID), shareLevel, arguments.IsLocationIncluded)
+	earlier, err := transaction.GetPhotoAlbumShare(principal.User.ID, strings.TrimSpace(arguments.PhotoAlbumShareID))
+	if err != nil {
+		return nil, translateError(err)
+	}
+	updated, err := transaction.UpdatePhotoAlbumShare(principal.User.ID, strings.TrimSpace(arguments.PhotoAlbumShareID), shareLevel, arguments.IsLocationIncluded, arguments.IsFaceNamesIncluded)
 	if err != nil {
 		return nil, translateError(err)
 	}
@@ -192,11 +216,45 @@ func (self *graph) UpdatePhotoAlbumShare(ctx context.Context, arguments UpdatePh
 			updated = share
 		}
 	}
+	if isPhotoAlbumShareWider([]*models.PhotoAlbumShare{earlier}, updated) {
+		if err := self.tellAboutPhotoAlbumShare(ctx, principal.User, updated); err != nil {
+			return nil, err
+		}
+	}
 	return describePhotoAlbumShare(updated), nil
 }
 
+// isPhotoAlbumShareWider says whether the share gives its grantee more than the
+// album's shares did before: there was none for them, or a higher level, or it
+// now includes where the photos were taken or the names of the faces.
+func isPhotoAlbumShareWider(earlier []*models.PhotoAlbumShare, saved *models.PhotoAlbumShare) bool {
+	for _, share := range earlier {
+		if share.GranteeUserID == saved.GranteeUserID && share.GranteeCircleID == saved.GranteeCircleID {
+			isLevelHigher := saved.ShareLevel == models.PhotoAlbumShareLevelContribute && share.ShareLevel != models.PhotoAlbumShareLevelContribute
+			return isLevelHigher || (saved.IsLocationIncluded && !share.IsLocationIncluded) || (saved.IsFaceNamesIncluded && !share.IsFaceNamesIncluded)
+		}
+	}
+	return true
+}
+
+// tellAboutPhotoAlbumShare tells the people an album share reaches, naming the
+// album.
+func (self *graph) tellAboutPhotoAlbumShare(ctx context.Context, sharer *models.User, share *models.PhotoAlbumShare) error {
+	album, err := self.transaction(ctx).GetPhotoAlbum(sharer.ID, share.PhotoAlbumID)
+	if err != nil {
+		return translateError(err)
+	}
+	return self.tellAboutShare(ctx, sharer, models.ShareReceivedNote{
+		SharerName: sharer.DisplayName(), ShareKind: models.ShareKindPhotoAlbum, ShareLevel: string(share.ShareLevel),
+		ShareSubject: album.AlbumTitle, ShareSubjectID: share.PhotoAlbumID, ShareScopes: models.AlbumShareScopes(share.IsLocationIncluded, share.IsFaceNamesIncluded),
+	}, share.GranteeUserID, share.GranteeCircleID)
+}
+
 func (self *graph) RemovePhotoAlbumShare(ctx context.Context, arguments PhotoAlbumShareArguments) (bool, error) {
-	principal, err := self.requirePhotosPerson(ctx)
+	if err := self.requireService(models.ServicePhotos); err != nil {
+		return false, err
+	}
+	principal, err := self.requireShareOwner(ctx)
 	if err != nil {
 		return false, err
 	}

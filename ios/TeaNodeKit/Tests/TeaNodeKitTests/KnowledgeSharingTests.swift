@@ -106,4 +106,23 @@ final class KnowledgeSharingTests: XCTestCase {
         let sent = String(decoding: fake.sent.last?.httpBody ?? Data(), as: UTF8.self)
         XCTAssertTrue(sent.contains(#""query":"appointment""#) && sent.contains(#""first":5"#), sent)
     }
+
+    func testAPreviewListsThePagesItReachesAndTheFactsItKeepsBack() async throws {
+        let body = #"""
+            {"data":{"PreviewAgentPageShare":{"page":{"ownerUserId":"ada-id","ownerUsername":"ada","ownerName":"Ada Example","ownerAvatarUrl":null,"ownerAvatarColorIndex":1,
+              "path":"people/a-grandparent","name":"A Grandparent","nodeKind":"person","aliases":[],"opening":"Lives by the sea.","isQuoteShared":false,
+              "facts":[],"edges":[],"children":[]},
+              "reachedPageCount":4,"isReachedPageCountCut":false,"reachedPagePaths":["people/a-grandparent","people/a-grandparent/doctor"],"withheldFactCount":3}}}
+            """#
+        let fake = FakeServer { _ in (200, body) }
+        let account = Account(
+            server: try ServerAddress(parsing: "mail.example.com"), clientId: "a-client", accessToken: "tnt_a", refreshToken: "",
+            expiresAt: Date().addingTimeInterval(30 * 86400), username: "robin")
+        let preview = try await Connection(account: account, transport: fake).previewKnowledgeShare(
+            path: "people/a-grandparent", granteeUserId: "ben-id", granteeCircleId: nil, isQuoteShared: false)
+        XCTAssertEqual(preview.reachedPageCount, 4)
+        XCTAssertEqual(preview.reachedPagePaths, ["people/a-grandparent", "people/a-grandparent/doctor"])
+        XCTAssertEqual(preview.withheldFactCount, 3)
+        XCTAssertTrue(Documents.previewKnowledgeShare.contains("reachedPagePaths withheldFactCount"))
+    }
 }

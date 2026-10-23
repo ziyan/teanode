@@ -25,7 +25,7 @@ func NewRecordingCommand() *cli.Command {
 		{Name: "import", Usage: "upload an unchanged audio/video file; rerun to resume, your file is always retained", ArgsUsage: "<file>", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "recording-id", Usage: "resume this existing recording (requires --media-id)"}, &cli.StringFlag{Name: "media-id", Usage: "exact existing original to resume"}, &cli.StringFlag{Name: "title", Usage: "optional; without it the server names the recording from its transcript"}, &cli.StringFlag{Name: "content-type", Usage: "audio or video MIME type if the extension is unknown"}, &cli.StringFlag{Name: "client-recording-id", Usage: "stable import identity; default is the whole-file digest"}}, Action: runRecordingImport},
 		{Name: "download", Usage: "save and verify a recording original, or explicitly prepare compatible audio with --preview", ArgsUsage: "<recording-id> <media-id> <destination>", Flags: []cli.Flag{&cli.BoolFlag{Name: "preview", Usage: "download compatible audio; prepare locally if absent (requires write access)"}}, Action: runRecordingDownload},
 		{Name: "delete", Usage: "delete a recording, its originals and dependent derived media", ArgsUsage: "<recording-id>", Flags: []cli.Flag{&cli.BoolFlag{Name: "force", Usage: "delete without asking first"}}, Action: runRecordingDelete},
-	}, append(recordingCaptureCommands(), recordingActionCommands()...)...)}
+	}, append(append(recordingCaptureCommands(), recordingActionCommands()...), recordingShareCommands()...)...)}
 }
 func recordingCall(ctx context.Context, command *cli.Command, operationName string, variables map[string]any, answered any) error {
 	connection, err := openClient(command)

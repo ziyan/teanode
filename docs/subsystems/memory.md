@@ -1068,13 +1068,28 @@ boundary is a slash. The same path shared with the same person twice is one
 share, and sharing again changes the quotes. The owner has to have a page
 at the path, and has to share a circle with the person, or be in the
 circle. A reader is reached by a share to them while the two still share a
-circle, or by a share to a circle while both are in it. Leaving a circle, or
+circle, or by a share to a circle while both are in it, and only while the
+owner and the reader both have `agent:use` and `circle:use` and the reader's
+account is not disabled (`reachingPageSharesQuery`, with the same permission
+test the Health and Location reach queries use): an operator who takes either
+permission from a role has switched sharing pages off for those people. Leaving a circle, or
 being taken out of one, ends in the same transaction the direct shares
 between two people who no longer share any circle, and the shares the
 person made to a circle they are no longer in. A share to a circle that
 somebody else left needs no deleting: it stops reaching them by the join.
 Taking a share back, or any of this, removes the page from the reader on
 their next read, because there is nothing to remove.
+
+A share is a path and not a reference to a page, so the code that moves and
+removes pages keeps it true. `MoveAgentNode` rewrites the path of every share
+at or under the moved page, so a share follows the page it was made of (and a
+share under the moved subtree follows it too). A page moved into a shared
+subtree is shared by that share, and one moved out of it is not: the memory
+tool's `move` answer says whom the page is now shared with, or that it no
+longer is. `DeleteAgentNode`, which a merge ends with, ends the shares at or
+under the deleted page, and creating a page at a path ends a share left there
+by a page deleted before shares ended with it, so a page made at an old shared
+path is not shared.
 
 **What a reader sees** is made in one place, `internal/agent/shared_memory.go`,
 and it is the only code that reads another agent's graph. The memory tool,
@@ -1083,25 +1098,47 @@ the prompt all go through it, so what is left out is left out once:
 
 * A fact's quote, unless the owner shared the quotes, and never the quote of a
   fact any of whose evidence is a chat (what the owner's agent filed from a
-  chat with other people, or a chat archive or coding session document), since
-  that is the words of the others in it. Where it was read is said in the
+  chat with other people, or a chat archive or coding session document) or a
+  recording (a recording passage, or the journal document filed from one),
+  since that is the words of the others in it. Where it was read is said in the
   owner's terms and no more: "from Ada's mail", "from Ada's mail and
-  conversation", "from Ada's chats", never which mail or which document.
+  conversation", "from Ada's chats", never which mail or which document. The
+  quote shown is never one of evidence from the kinds below, either.
+* A fact whose evidence is all from a kind that has a sharing of its own, with
+  levels: a finance transaction or receipt, a recording, the location journal,
+  or a calendar event marked private (`sharedEvidence.isWithheld`). A page share
+  must not go around those. A fact with any other evidence, or none, or the
+  person's own words (`person`), is shown. A search leaves such a fact out
+  too. Health readings need no rule here: a turn that read Health is never
+  filed (`withoutPrivateTurns`), so no fact rests on it. The owner is told how
+  many a share keeps back in its preview (`withheldFactCount`,
+  `CountWithheldFacts`): "3 facts from finance, recordings, location, private
+  events, or records that are gone stay private", on the dashboard, the app, the
+  command line and the memory tool's `preview`; the reader is never told.
 * The page's overview. A model writes it from the page's links, its children
   and their openings and the quotes, so it can name a page that is not shared or
   repeat a quote the owner did not share. The view says "The owner's longer
   overview of this page is not shared." (`models.SharedOverviewNotice`).
-* A summary that quotes somebody, unless the owner shared the quotes: the page's
-  opening is left out of the view, of a listing and of a search hit when it has
-  a span between quotation marks of four words or more (`quotesSomebody`, in
+* A summary that the model may have copied from something the reader is not
+  shown: the page's opening is left out of the view, of a listing and of a
+  search hit when the page has a fact that is itself kept back (`isWithheld`,
+  above) or a fact read in a chat or a recording (`isOthersWords`), and when it
+  quotes somebody and the owner did not share the quotes. Quoting somebody is a
+  span between quotation marks of four words or more (`quotesSomebody`, in
   straight and curly double and single quotation marks, angle and corner
   brackets; eight characters for a language written without spaces; a single
   quotation mark opens a span only when it does not follow a letter or a
   digit, so an apostrophe does not). The rest of the sentence would be built
-  around the quote, so none of it is kept. And even when the owner shared the
-  quotes, one that quotes somebody is left out of a page that has a fact read in
-  a chat (`sharedSummaryFor`): the model that wrote it copied words it was
-  given, which in a chat may be the others' there.
+  around what was copied, so none of it is kept (`sharedSummaryFor`). The facts
+  looked at include the dormant and the replaced ones, which are not shown: the
+  summary may have been written while they were on the page. A search does not
+  find such a page by a word on its summary; it decides this for the pages the
+  search finds, and searches again without the ones it left out, so the cost
+  follows the hits and not the size of what is shared (`isSummaryLeftOut`).
+* Evidence that cannot be found counts as evidence that is kept back: a
+  document no longer in the archive, a private event deleted since the fact was
+  filed, and an event in a circle's calendar, which is not the owner's own. The
+  fact is not shown and its summary is left out (`sharedEvidenceOf`).
 * A link, unless the page at its other end is shared with the reader too, so
   a link never names a page the reader was not given. The owner's other pages
   are not named anywhere. And never the note on a link: the owner's agent wrote
@@ -1134,8 +1171,10 @@ with the person, `share`, `shares` and `unshare` are the person's own, and
 `share` is a granting call, so the person is asked first, by a card that says the page
 goes with everything under it, who it is for (a circle with how many people it
 is) and whether the quotes each fact was read from go too. `preview` shows what
-a share would show and how many pages it reaches (`PreviewAgentPageShare`), and
-shares nothing, so the person can decide first. The prompt
+a share would show, which pages it reaches (the first fifty paths and the total,
+and that a page added under it later is shared too) and how many facts it keeps
+back (`PreviewAgentPageShare`), and shares nothing, so the person can decide
+first. The prompt
 carries a "Shared with you" section as a block after the history
 (`<shared_with_you>`, `sharedIndexOverlay`), read afresh for every turn and not
 kept in the half-hour snapshot of the front of the prompt, so a share taken back
@@ -1176,6 +1215,26 @@ a quote that was not found is counted. What the person said in the same
 conversation is filed as always. The dream's reading goes through the same
 filing and is shown no shared text, because the dream cannot read a shared
 page at all.
+
+Both checks read the conversation as stored, where the marked tool results stay
+whole however far it was compacted. The note that stands in for a compacted
+part is a model's reading of it, so it can hold words from a shared page
+without the marker; a note written from a part in which a shared page was read
+ends with the marker and a sentence saying the words are theirs (`sharedPagesNotice`;
+`sharedRecordingsNotice` and `tools.SharedRecordingMarker` for a shared
+recording), and an earlier note that carries it passes it on when notes are
+folded. The check on words still compares against the stored results and not
+the note, so a paraphrase in the note is a thing the model is told about and not
+a thing code refuses.
+
+A shared recording is stricter, because a paraphrase of it passes a check on
+words. In a turn in which a tool answered with `tools.SharedRecordingMarker`,
+the filing run is shown only what the person wrote, and the lessons run reads
+none of the turn (`withoutSharedRecordingTurnsIn`). A fact from the agent's
+paraphrase of the recording therefore has nothing to rest on. Only the turn
+that read it is held back: a later turn that answers from what the
+conversation already holds is filed like any other. A shared page is
+still held to the check on words alone.
 
 What the reader's agent learns about the same subject is learned in its own
 graph, under its own page, and the two pages can disagree. They are two
