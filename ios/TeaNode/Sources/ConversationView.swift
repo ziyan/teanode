@@ -237,12 +237,23 @@ struct ConversationView: View {
     private func readLinkPreviewsAhead() async {
         guard let conversationId = model.conversationId else { return }
         let links = LinkPreview.linksAhead(of: model.transcript.lines)
+        guard !links.isEmpty else { return }
+        let askedAt = Date.now
+        let wasAtEnd = isAtEnd
         let app = app
         await withTaskGroup(of: Void.self) { group in
             for link in links {
                 group.addTask { _ = await app.linkPreview(for: link, inConversation: conversationId) }
             }
         }
+        // The cards of the newest messages, drawn now, made the list taller
+        // under a conversation just opened at its end: the end is found again
+        // once they are laid out, as after a card folds. Not when the person
+        // has scrolled since.
+        guard wasAtEnd, !Task.isCancelled else { return }
+        try? await Task.sleep(for: .milliseconds(150))
+        guard !Task.isCancelled, lastScrolledAt < askedAt else { return }
+        scrollPosition.scrollTo(edge: .bottom)
     }
 
     private func messages(_ scroller: ScrollViewProxy) -> some View {
