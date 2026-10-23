@@ -454,7 +454,19 @@ final class AppModel {
     /// would each download it; the second waits for the first read instead.
     private var pictureReads: [String: Task<UIImage?, Never>] = [:]
 
+    /// Pictures whose last read found nothing, by the same key, read while a
+    /// link card is drawn (LinkPreviewImage). Not watched, like
+    /// answeredLinkPreviews: the view that asked is told by its own answer.
+    @ObservationIgnored private var missingPictures: Set<String> = []
+
     private static func pictureKey(accountKey: String, path: String) -> String { accountKey + " " + path }
+
+    /// Whether the last read of a picture the server keeps found nothing,
+    /// without reading it again.
+    func isPictureMissing(_ path: String) -> Bool {
+        guard let account else { return false }
+        return missingPictures.contains(Self.pictureKey(accountKey: account.accountKey, path: path))
+    }
 
     /// Reads a picture the server keeps, once.
     func picture(_ path: String) async -> UIImage? {
@@ -486,7 +498,12 @@ final class AppModel {
         let reading = Task<UIImage?, Never> {
             let picture = await self.readPicture(path, of: chosen)
             self.pictureReads[key] = nil
-            if let picture { self.pictures[key] = picture }
+            if let picture {
+                self.pictures[key] = picture
+                self.missingPictures.remove(key)
+            } else {
+                self.missingPictures.insert(key)
+            }
             return picture
         }
         pictureReads[key] = reading
