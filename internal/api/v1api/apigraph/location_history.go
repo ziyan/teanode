@@ -1825,6 +1825,19 @@ func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported R
 			stored.MadePlace = matched
 		}
 	}
+	// An arrival at the place of the visit in progress is the phone saying
+	// again where the person is, as iOS does when the app watches its places
+	// afresh: it is joined into that visit, and nobody is told the person
+	// arrived where they already were. Read before the visit is stored, which
+	// ends the visit in progress.
+	isAlreadyThere := false
+	if known == nil && reported.ArrivedAt != nil && reported.DepartedAt == nil {
+		open, err := tx.GetOpenPlaceVisit(userId)
+		if err != nil {
+			return nil, err
+		}
+		isAlreadyThere = open != nil && open.PlaceID == visit.PlaceID && open.ArrivedAt != nil && !open.ArrivedAt.After(*reported.ArrivedAt)
+	}
 	isNew, err := tx.PutPlaceVisit(userId, visit)
 	if err != nil {
 		return nil, locationFailure(err)
@@ -1839,9 +1852,10 @@ func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported R
 	// A new visit that comes with its departure (the arrival report was lost)
 	// is told by its latest event: the person has left.
 	// A departure moved to the start of a pause is not told: the person did not
-	// leave then as far as anybody knows.
+	// leave then as far as anybody knows. Nor is an arrival where the person
+	// already was.
 	switch {
-	case clipped.IsDepartureCut:
+	case clipped.IsDepartureCut, isAlreadyThere:
 	case isNew && reported.DepartedAt != nil && reported.ArrivedAt != nil:
 		stored.Notice = &visitNotice{Visit: visit, IsArrival: false, HappenedAt: *reported.DepartedAt}
 	case isNew && reported.ArrivedAt != nil:
