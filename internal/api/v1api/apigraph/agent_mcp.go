@@ -351,5 +351,18 @@ func (self *mcpCatalog) call(ctx context.Context, name string, arguments json.Ra
 	if result == nil {
 		return mcpserve.Answer{}, false, nil
 	}
-	return mcpserve.Answer{Text: result.Content, IsUntrusted: result.Untrusted}, result.ShowVerbatim, nil
+	return mcpAnswerOf(result), result.ShowVerbatim, nil
+}
+
+// mcpAnswerOf is a tool's result as the protocol's answer: its text, and the
+// pictures it gave (a screenshot) beside it, which a model over MCP otherwise
+// never saw.
+func mcpAnswerOf(result *agenttools.Result) mcpserve.Answer {
+	answer := mcpserve.Answer{Text: result.Content, IsUntrusted: result.Untrusted}
+	for _, image := range result.Images {
+		if image.Type == "image" && len(image.Data) > 0 {
+			answer.Images = append(answer.Images, mcpserve.AnswerImage{MediaType: image.MediaType, Data: image.Data})
+		}
+	}
+	return answer
 }

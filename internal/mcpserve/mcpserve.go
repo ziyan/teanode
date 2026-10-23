@@ -22,6 +22,7 @@ package mcpserve
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 
@@ -58,6 +59,16 @@ type Answer struct {
 	// data, and wraps each page of it on its own when it is paged, so that
 	// a page read on with result_more is marked as the first one was.
 	IsUntrusted bool
+
+	// Images are pictures the tool gave to look at, such as a screenshot.
+	// They go beside the text as image parts; the text says what they are.
+	Images []AnswerImage
+}
+
+// AnswerImage is one picture of an answer.
+type AnswerImage struct {
+	MediaType string
+	Data      []byte
 }
 
 // Server answers one client's messages.
@@ -186,6 +197,7 @@ func (self *Server) call(ctx context.Context, request *mcp.Request) *mcp.Respons
 	// failure read on with result_more; both carry isError.
 	var text string
 	var isError bool
+	var images []AnswerImage
 	if parameters.Name == resultMoreName {
 		// Already a page, and holding it again would only hand out a
 		// second id for the same text.
@@ -193,10 +205,14 @@ func (self *Server) call(ctx context.Context, request *mcp.Request) *mcp.Respons
 	} else if answer, err := self.tools.Call(ctx, parameters.Name, parameters.Arguments); err != nil {
 		text, isError = self.paged(Answer{Text: err.Error()}, true), true
 	} else {
-		text = self.paged(answer, false)
+		text, images = self.paged(answer, false), answer.Images
+	}
+	content := []mcp.Content{{Type: "text", Text: text}}
+	for _, image := range images {
+		content = append(content, mcp.Content{Type: "image", MimeType: image.MediaType, Data: base64.StdEncoding.EncodeToString(image.Data)})
 	}
 	return self.success(request, &mcp.CallResult{
-		Content: []mcp.Content{{Type: "text", Text: text}},
+		Content: content,
 		IsError: isError,
 	})
 }
