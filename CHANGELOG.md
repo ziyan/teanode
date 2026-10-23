@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.195.2] - 2026-10-23
+
+### Fixed
+
+- A program your agent runs in a session on your computer no longer loses what it wrote or drew last when it exits. (#635)
+
 ## [0.195.1] - 2026-10-23
 
 ### Fixed
