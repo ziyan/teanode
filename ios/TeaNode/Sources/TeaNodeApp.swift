@@ -10,6 +10,14 @@ struct TeaNodeApp: App {
     @AppStorage(Appearance.storageKey) private var appearance = Appearance.system
     @AppStorage(DisplayLanguage.storageKey) private var language = DisplayLanguage.system
     @Environment(\.scenePhase) private var scenePhase
+    /// The appearance held while the app is not in front: the one on screen
+    /// as it left. iOS draws the app in light and in dark for the pictures
+    /// the app switcher keeps and takes each at once, before SwiftUI has
+    /// drawn every view in the new style (a dark list with light words). Held
+    /// to what is on screen, neither pass changes anything, so each picture
+    /// is the screen as it was. When the app comes back it follows the choice
+    /// again, and the system's appearance if that changed meanwhile.
+    @State private var heldAppearance: Appearance?
 
     private var app: AppModel { delegate.app }
 
@@ -38,7 +46,7 @@ struct TeaNodeApp: App {
             // app switcher keeps (a dark chat showed there with light parts),
             // so SwiftUI is told the chosen scheme as well; apply() still sets
             // the windows, which System (nil here) needs.
-            .preferredColorScheme(appearance.colorScheme)
+            .preferredColorScheme((heldAppearance ?? appearance).colorScheme)
             // After the choice is stored, so the windows' style is the last
             // thing set whichever way the change went.
             .onChange(of: appearance) { appearance.apply() }
@@ -58,7 +66,17 @@ struct TeaNodeApp: App {
                 PhotoBackupEngine.shared.sceneBecameActive()
             }
             .onChange(of: scenePhase, initial: true) { _, phase in
+                // Held to light or dark only: while what is shown cannot be
+                // read it is tried again at the next phase.
+                if phase != .active, heldAppearance == nil {
+                    let shownAppearance = appearance.shownNow
+                    if shownAppearance != .system {
+                        heldAppearance = shownAppearance
+                        shownAppearance.apply()
+                    }
+                }
                 if phase == .active {
+                    heldAppearance = nil
                     appearance.apply()
                     // Photos taken since are backed up when the app comes back.
                     PhotoBackupEngine.shared.sceneBecameActive()
