@@ -172,10 +172,14 @@ enum LocationText {
     }
 
     /// When a pause began and ended, such as "14:00 to 15:00"; "Since 14:00"
-    /// while it has no end.
+    /// while it has no end. The end has its day only when it is not the day
+    /// the pause began, as the row already sits under that day.
     static func times(of pause: LocationPause) -> String {
         switch (pause.startedDate, pause.endedDate) {
-        case (let startedDate?, let endDate?): String(localized: "\(time(startedDate)) to \(pauseEnd(endDate))")
+        case (let startedDate?, let endDate?) where Calendar.current.isDate(endDate, inSameDayAs: startedDate):
+            String(localized: "\(time(startedDate)) to \(time(endDate))")
+        case (let startedDate?, let endDate?):
+            String(localized: "\(time(startedDate)) to \(endDate.formatted(date: .abbreviated, time: .shortened))")
         case (let startedDate?, nil): String(localized: "Since \(time(startedDate))")
         case (nil, _): ""
         }
