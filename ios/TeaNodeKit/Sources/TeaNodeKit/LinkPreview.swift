@@ -71,6 +71,30 @@ public struct LinkPreview: Decodable, Hashable, Sendable, Identifiable {
 
     /// How many links one question may be about.
     public static let mostURLs = 10
+
+    /// The links whose cards the lines read so far show, the newest line's
+    /// first and each once, to be asked for before the lazy list draws those
+    /// lines: a card that arrives after its message is drawn makes the message
+    /// taller under the person's finger. Each line is read as its view reads
+    /// it: a person's words as they stand and the agent's as Markdown, and
+    /// none of a message still being written or sent, or taken back.
+    public static func linksAhead(of lines: [TranscriptLine]) -> [String] {
+        var seen = Set<String>()
+        var links: [String] = []
+        for line in lines.reversed() {
+            let link: String?
+            switch line.kind {
+            case .person where !line.isBeingSent && !line.isDeleted:
+                link = LinkText.firstLink(in: line.text, isMarkdown: false)
+            case .answer where !line.isStreaming && !line.isDeleted:
+                link = LinkText.firstLink(in: line.text, isMarkdown: true)
+            default:
+                link = nil
+            }
+            if let link, seen.insert(link).inserted { links.append(link) }
+        }
+        return links
+    }
 }
 
 extension Documents {

@@ -413,7 +413,31 @@ final class AppModel {
         let key = ObjectIdentifier(connection)
         let loader = linkPreviewLoaders[key] ?? LinkPreviewLoader { conversationId, urls in try await connection.linkPreviews(conversationId: conversationId, urls: urls) }
         linkPreviewLoaders[key] = loader
-        return await loader.preview(conversationId: conversationId, for: link)
+        let preview = await loader.preview(conversationId: conversationId, for: link)
+        if let preview {
+            answeredLinkPreviews[AnsweredLinkPreviewKey(connection: key, conversationId: conversationId, link: link)] = preview
+        }
+        return preview
+    }
+
+    /// The previews already answered, read while a message is drawn: a
+    /// message the lazy list builds again, scrolled back to, has its card
+    /// from its first frame rather than growing by it a moment later under
+    /// the person's finger. Not watched: the view that asked is told by its
+    /// own answer.
+    @ObservationIgnored private var answeredLinkPreviews: [AnsweredLinkPreviewKey: LinkPreview] = [:]
+
+    private struct AnsweredLinkPreviewKey: Hashable {
+        let connection: ObjectIdentifier
+        let conversationId: String
+        let link: String
+    }
+
+    /// The preview of a link already answered through the connection in use,
+    /// without waiting; nil when it has not been, or there is none.
+    func answeredLinkPreview(for link: String, inConversation conversationId: String) -> LinkPreview? {
+        guard let connection else { return nil }
+        return answeredLinkPreviews[AnsweredLinkPreviewKey(connection: ObjectIdentifier(connection), conversationId: conversationId, link: link)]
     }
 
     /// A file being shown in Quick Look: pictures with pinch to zoom, and

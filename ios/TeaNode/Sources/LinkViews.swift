@@ -57,10 +57,12 @@ struct InAppBrowserPresenter: ViewModifier {
 }
 
 /// LinkPreviewBelow puts the card of the first link of a message under it,
-/// when the page behind it has one. The card is asked for when the message
-/// appears, which in a lazy list is when it comes near the screen, and nothing
-/// is drawn until it is there, so the message does not make room for a card
-/// that does not come.
+/// when the page behind it has one. The conversation asks for the cards of its
+/// messages ahead of drawing them, and one already answered is drawn from the
+/// message's first frame: a card that came a moment later made the message
+/// taller under the person's finger, and the list jumped. One not answered yet
+/// is asked for when the message appears, and nothing is drawn until it is
+/// there, so the message does not make room for a card that does not come.
 struct LinkPreviewBelow: ViewModifier {
     /// The conversation the message is in, nil until it has been read: the
     /// server previews only a link written there by somebody other than the
@@ -82,11 +84,19 @@ struct LinkPreviewBelow: ViewModifier {
         conversationId != nil && isReady ? LinkText.firstLink(in: text, isMarkdown: isMarkdown) : nil
     }
 
+    /// The card to draw: the one this view was answered, or the one already
+    /// answered for its link when the view was built again.
+    private var shown: LinkPreview? {
+        if let preview { return preview }
+        guard let link, let conversationId else { return nil }
+        return app?.answeredLinkPreview(for: link, inConversation: conversationId)
+    }
+
     func body(content: Content) -> some View {
         VStack(alignment: alignment, spacing: 6) {
             content
-            if let preview, preview.hasCard {
-                LinkPreviewCard(preview: preview)
+            if let shown, shown.hasCard {
+                LinkPreviewCard(preview: shown)
             }
         }
         .task(id: link) {

@@ -204,6 +204,11 @@ struct ConversationView: View {
             .onAppear {
                 if model.isLoaded { scrollPosition.scrollTo(edge: .bottom) }
             }
+            // The cards of the messages read so far, asked for before the lazy
+            // list draws them (LinkPreviewBelow).
+            .task(id: LinkPreviewsAhead(conversationId: model.conversationId, lineCount: model.transcript.lines.count)) {
+                await readLinkPreviewsAhead()
+            }
             #if DEBUG
                 .task(id: model.isLoaded) {
                     // `-TeaNodeScreen conversation-long-message`: scrolled back to the top, where the long message starts;
@@ -224,6 +229,19 @@ struct ConversationView: View {
                     }
                 }
             #endif
+        }
+    }
+
+    /// Asks for the cards of the messages read so far, the newest first, so
+    /// that each is there when its message is first drawn.
+    private func readLinkPreviewsAhead() async {
+        guard let conversationId = model.conversationId else { return }
+        let links = LinkPreview.linksAhead(of: model.transcript.lines)
+        let app = app
+        await withTaskGroup(of: Void.self) { group in
+            for link in links {
+                group.addTask { _ = await app.linkPreview(for: link, inConversation: conversationId) }
+            }
         }
     }
 
@@ -2529,4 +2547,11 @@ extension View {
             textSelection(.disabled)
         }
     }
+}
+
+/// LinkPreviewsAhead is what the cards are asked for again on: another
+/// conversation, or more of its lines read.
+private struct LinkPreviewsAhead: Equatable {
+    let conversationId: String?
+    let lineCount: Int
 }

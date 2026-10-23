@@ -157,4 +157,19 @@ final class LinkPreviewTests: XCTestCase {
         XCTAssertEqual(later?.isAvailable, true)
         XCTAssertEqual(recorder.asked.count, 2)
     }
+
+    func testTheLinksAheadAreTheNewestFirstOnceAndOnlyOfFinishedMessages() {
+        var taken = TranscriptLine(id: "m6", kind: .person, text: "https://example.org/taken-back")
+        taken.isDeleted = true
+        let lines = [
+            TranscriptLine(id: "m1", kind: .person, text: "Look at https://example.com/first"),
+            TranscriptLine(id: "m2", kind: .answer, text: "See `https://example.com/code` and [the page](https://example.com/answer)."),
+            TranscriptLine(id: "m3", kind: .tool, text: "https://example.com/tool"),
+            TranscriptLine(id: "m4", kind: .person, text: "Again https://example.com/first"),
+            TranscriptLine(id: "m5", kind: .answer, text: "https://example.com/streaming", isStreaming: true),
+            taken,
+            TranscriptLine(id: Transcript.sentPrefix + "7", kind: .person, text: "https://example.com/sending"),
+        ]
+        XCTAssertEqual(LinkPreview.linksAhead(of: lines), ["https://example.com/first", "https://example.com/answer"])
+    }
 }
