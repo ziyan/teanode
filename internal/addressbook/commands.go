@@ -55,9 +55,9 @@ func (self *Commands) Save(ctx context.Context, principal *access.Principal, req
 		var book *models.AddressBook
 		var err error
 		if strings.TrimSpace(request.ID) != "" {
-			existing, book, err = usableContact(transaction, principal.User.ID, request.AddressBookID, request.ID)
+			existing, book, err = usableContact(ctx, transaction, principal.User.ID, request.AddressBookID, request.ID)
 		} else {
-			book, err = usableBook(transaction, principal.User.ID, request.AddressBookID)
+			book, err = usableBook(ctx, transaction, principal.User.ID, request.AddressBookID)
 		}
 		if err != nil {
 			return err
@@ -124,7 +124,7 @@ func (self *Commands) Delete(ctx context.Context, principal *access.Principal, a
 		return db.ErrNotFound
 	}
 	return self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
-		contact, book, err := usableContact(transaction, principal.User.ID, addressBookId, contactId)
+		contact, book, err := usableContact(ctx, transaction, principal.User.ID, addressBookId, contactId)
 		if err != nil {
 			return err
 		}
@@ -148,7 +148,7 @@ func (self *Commands) SetPicture(ctx context.Context, principal *access.Principa
 	var kept *models.Contact
 	var isSet bool
 	err := self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
-		existing, _, err := ownContact(transaction, principal.User.ID, contactId)
+		existing, _, err := ownContact(ctx, transaction, principal.User.ID, contactId)
 		if err != nil {
 			return err
 		}
@@ -183,7 +183,7 @@ func (self *Commands) RemovePicture(ctx context.Context, principal *access.Princ
 	}
 	var kept *models.Contact
 	err := self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
-		existing, _, err := usableContact(transaction, principal.User.ID, addressBookId, contactId)
+		existing, _, err := usableContact(ctx, transaction, principal.User.ID, addressBookId, contactId)
 		if err != nil {
 			return err
 		}
@@ -218,10 +218,22 @@ func canUseContacts(principal *access.Principal) bool {
 	return principal != nil && principal.User != nil && principal.Permissions != nil && principal.Permissions.Has(models.PermissionContactsUse)
 }
 
+// IsOutOfAgentReach is whether the caller is the person's agent and the book
+// is not one it may use: the agent keeps to the person's own books they gave
+// it, as its address book tool does, never a circle's and never a book of
+// theirs they kept back. The person's own request is never out of reach.
+func IsOutOfAgentReach(ctx context.Context, userId string, book *models.AddressBook) bool {
+	if db.PrincipalFromContext(ctx).ActorKind != models.AuditActorAgent {
+		return false
+	}
+	return book.UserID != userId || !book.AgentGranted
+}
+
 // usableBook is a book the person may add contacts to, or db.ErrNotFound: their
 // own, or a circle's they are in. The answer is the database's
-// AddressBookAccess, the one place that says who may use a book.
-func usableBook(transaction db.Transaction, userId, addressBookId string) (*models.AddressBook, error) {
+// AddressBookAccess, the one place that says who may use a book. The person's
+// agent is further kept to the books they gave it.
+func usableBook(ctx context.Context, transaction db.Transaction, userId, addressBookId string) (*models.AddressBook, error) {
 	book, err := transaction.GetAddressBook(strings.TrimSpace(addressBookId))
 	if err != nil {
 		return nil, err
@@ -233,7 +245,7 @@ func usableBook(transaction db.Transaction, userId, addressBookId string) (*mode
 	if err != nil {
 		return nil, err
 	}
-	if !bookAccess.CanEdit {
+	if !bookAccess.CanEdit || IsOutOfAgentReach(ctx, userId, book) {
 		return nil, db.ErrNotFound
 	}
 	return book, nil
@@ -243,9 +255,9 @@ func usableBook(transaction db.Transaction, userId, addressBookId string) (*mode
 // is named within its book, so when the caller says which book it is only that
 // one is looked in; otherwise the person's own books come first and then their
 // circles'.
-func usableContact(transaction db.Transaction, userId, addressBookId, contactId string) (*models.Contact, *models.AddressBook, error) {
+func usableContact(ctx context.Context, transaction db.Transaction, userId, addressBookId, contactId string) (*models.Contact, *models.AddressBook, error) {
 	if strings.TrimSpace(addressBookId) != "" {
-		book, err := usableBook(transaction, userId, addressBookId)
+		book, err := usableBook(ctx, transaction, userId, addressBookId)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -263,7 +275,7 @@ func usableContact(transaction db.Transaction, userId, addressBookId, contactId 
 		return nil, nil, err
 	}
 	for _, each := range reachable {
-		if !each.Access.CanEdit {
+		if !each.Access.CanEdit || IsOutOfAgentReach(ctx, userId, each.Book) {
 			continue
 		}
 		contact, err := transaction.LockContact(each.Book.ID, strings.TrimSpace(contactId))
@@ -279,12 +291,15 @@ func usableContact(transaction db.Transaction, userId, addressBookId, contactId 
 
 // ownContact is usableContact for what only the owner does: the person's own
 // books, never a circle's.
-func ownContact(transaction db.Transaction, userId, contactId string) (*models.Contact, *models.AddressBook, error) {
+func ownContact(ctx context.Context, transaction db.Transaction, userId, contactId string) (*models.Contact, *models.AddressBook, error) {
 	books, err := transaction.ListAddressBooks(userId)
 	if err != nil {
 		return nil, nil, err
 	}
 	for _, book := range books {
+		if IsOutOfAgentReach(ctx, userId, book) {
+			continue
+		}
 		contact, err := transaction.LockContact(book.ID, strings.TrimSpace(contactId))
 		if err != nil {
 			return nil, nil, err

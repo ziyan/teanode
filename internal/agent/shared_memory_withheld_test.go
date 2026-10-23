@@ -328,6 +328,44 @@ func TestASummaryIsLeftOutForADormantOrSupersededWithheldFact(t *testing.T) {
 	})
 }
 
+// A page shows its reader only its live facts: one gone dormant, or replaced
+// by a correction, is not shown, though nothing it cites is withheld.
+func TestADormantOrSupersededFactIsNotShown(t *testing.T) {
+	world := newSharedWorld(t)
+	world.fact(t, "people/a", &models.AgentFact{
+		Text: "Used to row on Sundays.", Dormant: true,
+		Evidence: []models.Evidence{{Kind: models.EvidenceMail, ID: "a-message"}},
+	})
+	var correctionId string
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		correction, err := tx.AddAgentFact(&models.AgentFact{
+			AgentID: world.ownerAgent.ID, NodeID: world.pages["people/a"].ID, Kind: models.FactPlain, Confidence: 1,
+			Text: "Rows on Saturdays.", Evidence: []models.Evidence{{Kind: models.EvidenceMail, ID: "a-message"}},
+		})
+		if err != nil {
+			t.Fatalf("AddAgentFact: %s", err)
+		}
+		correctionId = correction.ID
+	})
+	world.fact(t, "people/a", &models.AgentFact{
+		Text: "Rows on Fridays.", SupersededBy: correctionId,
+		Evidence: []models.Evidence{{Kind: models.EvidenceMail, ID: "a-message"}},
+	})
+	world.share(t, "people/a", true)
+
+	page := world.read(t, world.reader, "people/a")
+	if page == nil {
+		t.Fatal("the shared page is not read")
+	}
+	shownTexts := []string{}
+	for _, fact := range page.Facts {
+		shownTexts = append(shownTexts, fact.Text)
+	}
+	if len(shownTexts) != 1 || shownTexts[0] != "Rows on Saturdays." {
+		t.Errorf("the facts shown are %q, want only the live one", shownTexts)
+	}
+}
+
 // A fact that cites an event or a document that cannot be found is not shown
 // to a reader, since it may have been a private event or a recording: an
 // event deleted since the fact was filed, a document gone from the archive,

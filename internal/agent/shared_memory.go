@@ -391,7 +391,10 @@ func readSharedPageFrom(tx db.Transaction, shares []*models.AgentPageShare, page
 		page.Aliases = []string{}
 	}
 
-	facts, err := tx.ListAgentFacts(agentId, node.ID, true, everyFactOnPage)
+	// Only the live facts are shown: a dormant or replaced one is what the
+	// owner's agent no longer holds true. (Whether the summary is left out
+	// looks at those too, in sharedSummaryFor.)
+	facts, err := tx.ListAgentFacts(agentId, node.ID, false, everyFactOnPage)
 	if err != nil {
 		return nil, err
 	}

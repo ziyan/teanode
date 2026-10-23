@@ -311,6 +311,40 @@ func TestAMarkedCommandLineRequestReadsOnlyTheBooksGivenToTheAgent(t *testing.T)
 		}
 	}
 
+	// Nor does it change them: every write to a book not given to it is not
+	// found, as its address book tool refuses it.
+	for name, query := range map[string]string{
+		"save, kept back":           fmt.Sprintf(`mutation { SaveContact(addressBookId: %q, name: "Pat New") { id } }`, keptBackBookId),
+		"save, circle":              fmt.Sprintf(`mutation { SaveContact(addressBookId: %q, name: "Pat New") { id } }`, circleBookId),
+		"change, circle":            fmt.Sprintf(`mutation { SaveContact(addressBookId: %q, id: %q, name: "Sam Changed") { id } }`, circleBookId, circleContactId),
+		"delete, circle":            fmt.Sprintf(`mutation { DeleteContact(addressBookId: %q, id: %q) }`, circleBookId, circleContactId),
+		"delete, no book, own":      fmt.Sprintf(`mutation { DeleteContact(id: %q) }`, keptBackContactId),
+		"remove picture, kept back": fmt.Sprintf(`mutation { RemoveContactPicture(addressBookId: %q, id: %q) { id } }`, keptBackBookId, keptBackContactId),
+		"set account, kept back":    fmt.Sprintf(`mutation { SetContactAccount(addressBookId: %q, contactId: %q, accountUserId: %q) { id } }`, keptBackBookId, keptBackContactId, world.bob.ID),
+	} {
+		_, failures := world.askWithHeaders(t, world.alice, models.CredentialToken, marked, query)
+		if !strings.Contains(strings.ToLower(strings.Join(failures, "; ")), "not found") {
+			t.Errorf("%s, marked as the agent's: %v", name, failures)
+		}
+	}
+	if _, failures := world.askWithHeaders(t, world.alice, models.CredentialToken, nil, fmt.Sprintf(`query { GetContact(addressBookId: %q, id: %q) { id } }`, circleBookId, circleContactId)); len(failures) > 0 {
+		t.Errorf("the circle's contact is still there: %v", failures)
+	}
+	if _, failures := world.askWithHeaders(t, world.alice, models.CredentialToken, marked, fmt.Sprintf(`mutation { SaveContact(addressBookId: %q, name: "Pat Given") { id } }`, givenBookId)); len(failures) > 0 {
+		t.Errorf("saving to a book given to the agent: %v", failures)
+	}
+
+	ownBooks, failures := world.askWithHeaders(t, world.alice, models.CredentialToken, marked, `query { ListAddressBooks { id } }`)
+	if listed := ownBooks["ListAddressBooks"].([]any); len(failures) > 0 || len(listed) != 1 || listed[0].(map[string]any)["id"] != givenBookId {
+		t.Errorf("the agent lists only the own book given to it: %v %v", ownBooks, failures)
+	}
+	suggestions, failures := world.askWithHeaders(t, world.alice, models.CredentialToken, marked, `query { ListContactAccountSuggestions { addressBookId } }`)
+	for _, suggestion := range suggestions["ListContactAccountSuggestions"].([]any) {
+		if bookId := suggestion.(map[string]any)["addressBookId"]; len(failures) > 0 || bookId != givenBookId {
+			t.Errorf("a suggestion from a book kept back from the agent: %v %v", suggestion, failures)
+		}
+	}
+
 	data, failures := world.askWithHeaders(t, world.alice, models.CredentialToken, marked, `query { ListReachableAddressBooks { id } }`)
 	if len(failures) > 0 {
 		t.Fatalf("ListReachableAddressBooks: %v", failures)

@@ -288,21 +288,16 @@ func (self *graph) requireOwnAddressBook(ctx context.Context, addressBookId stri
 	if err != nil {
 		return nil, err
 	}
-	if book == nil || book.UserID != principal.User.ID {
+	if book == nil || book.UserID != principal.User.ID || self.isBookOutOfAgentReach(ctx, principal.User.ID, book) {
 		return nil, api.ErrNotFound
 	}
 	return book, nil
 }
 
-// isBookOutOfAgentReach is whether the caller is the person's agent and the
-// book is not one it may read: the agent keeps to the person's own books they
-// gave it, as its address book tool does, never a circle's and never a book
-// of theirs they kept back. The person's own request is never out of reach.
+// isBookOutOfAgentReach is addressbook.IsOutOfAgentReach: the agent keeps to
+// the person's own books they gave it.
 func (self *graph) isBookOutOfAgentReach(ctx context.Context, userId string, book *models.AddressBook) bool {
-	if db.PrincipalFromContext(ctx).ActorKind != models.AuditActorAgent {
-		return false
-	}
-	return book.UserID != userId || !book.AgentGranted
+	return addressbook.IsOutOfAgentReach(ctx, userId, book)
 }
 
 // requireUsableAddressBook is one book, if the caller may use it: their own,
@@ -376,6 +371,9 @@ func (self *graph) ListAddressBooks(ctx context.Context) ([]*AddressBookView, er
 	}
 	views := make([]*AddressBookView, 0, len(books))
 	for _, book := range books {
+		if self.isBookOutOfAgentReach(ctx, principal.User.ID, book) {
+			continue
+		}
 		view, err := self.addressBookView(ctx, &models.ReachableAddressBook{
 			Book: book, Access: models.AddressBookAccess{CanEdit: true, CanManage: true, IsOwner: true},
 		})
@@ -515,6 +513,16 @@ func (self *graph) ListContactAccountSuggestions(ctx context.Context) ([]*Contac
 	if err != nil {
 		return nil, err
 	}
+	// The suggestions are of the person's own books, and the agent's of the
+	// ones they gave it.
+	books, err := self.transaction(ctx).ListAddressBooks(principal.User.ID)
+	if err != nil {
+		return nil, err
+	}
+	isBookInReach := map[string]bool{}
+	for _, book := range books {
+		isBookInReach[book.ID] = !self.isBookOutOfAgentReach(ctx, principal.User.ID, book)
+	}
 	people, err := self.circlePeopleOf(ctx, principal.User.ID)
 	if err != nil {
 		return nil, err
@@ -522,7 +530,7 @@ func (self *graph) ListContactAccountSuggestions(ctx context.Context) ([]*Contac
 	suggestions := make([]*ContactAccountSuggestionView, 0, len(found))
 	for _, suggestion := range found {
 		account := people[suggestion.AccountUserID]
-		if account == nil {
+		if account == nil || !isBookInReach[suggestion.Contact.AddressBookID] {
 			continue
 		}
 		// The card is left out, as in a list. The contact is not linked yet,
