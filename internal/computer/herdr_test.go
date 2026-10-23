@@ -43,6 +43,8 @@ type fakeHerdr struct {
 	stateChangeCount int
 	// readCounts are how many times each pane's screen was read.
 	readCounts map[string]int
+	// processes are what runs in the foreground of each pane.
+	processes map[string][]map[string]any
 }
 
 func startFakeHerdr(t *testing.T, home string) *fakeHerdr {
@@ -148,6 +150,9 @@ func (self *fakeHerdr) serve(connection net.Conn) {
 	case "pane.close":
 		self.created = append(self.created, "close "+fmt.Sprint(request.Params["pane_id"]))
 		self.agents = slices.DeleteFunc(self.agents, func(each map[string]any) bool { return each["pane_id"] == request.Params["pane_id"] })
+	case "pane.process_info":
+		paneId, _ := request.Params["pane_id"].(string)
+		result = map[string]any{"type": "pane_process_info", "process_info": map[string]any{"pane_id": paneId, "foreground_processes": self.processes[paneId]}}
 	case "pane.send_text":
 		self.typed = append(self.typed, request.Params["text"].(string))
 	case "agent.prompt":
@@ -1211,5 +1216,129 @@ func TestAPaneThatDidNotChangeIsNotReadAgain(t *testing.T) {
 	listForTest(t, herdr)
 	if reads() != 3 {
 		t.Errorf("a pane herdr says changed was read %d times, want 3", reads())
+	}
+}
+
+// writeCodexSession writes a session's history as Codex files it: under the
+// day it started, with its header first.
+func writeCodexSession(t *testing.T, home, codingSessionId string, startedAt time.Time, header map[string]any) {
+	t.Helper()
+	payload := map[string]any{"id": codingSessionId, "timestamp": startedAt.UTC().Format(time.RFC3339Nano), "cwd": "/work/example", "originator": "codex-tui", "source": "cli"}
+	for key, value := range header {
+		payload[key] = value
+	}
+	headerLine, _ := json.Marshal(map[string]any{"timestamp": startedAt.UTC().Format(time.RFC3339Nano), "type": "session_meta", "payload": payload})
+	turnLine := `{"timestamp":"` + startedAt.UTC().Format(time.RFC3339Nano) + `","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"answer of ` + codingSessionId + `"}]}}`
+	local := startedAt.Local()
+	path := filepath.Join(home, ".codex", "sessions", local.Format("2006"), local.Format("01"), local.Format("02"),
+		"rollout-"+local.Format("2006-01-02T15-04-05")+"-"+codingSessionId+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(string(headerLine)+"\n"+turnLine+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// startCodexAt says every process started at startedAt.
+func startCodexAt(t *testing.T, startedAt time.Time) {
+	t.Helper()
+	previous := processStartedAt
+	processStartedAt = func(int) (time.Time, error) { return startedAt, nil }
+	t.Cleanup(func() { processStartedAt = previous })
+}
+
+func codexProcess(processId int, directory string, argv ...string) []map[string]any {
+	return []map[string]any{
+		{"pid": processId - 1, "name": "node", "argv": append([]any{"node", "codex"}, toAny(argv)...), "cwd": directory},
+		{"pid": processId, "name": "codex", "argv": append([]any{"codex"}, toAny(argv)...), "cwd": directory},
+	}
+}
+
+func toAny(values []string) []any {
+	converted := make([]any, 0, len(values))
+	for _, value := range values {
+		converted = append(converted, value)
+	}
+	return converted
+}
+
+func readTurnsForTest(t *testing.T, herdr *Herdr, paneId string) (*HerdrReadResult, error) {
+	t.Helper()
+	read, err := RunHerdr(context.Background(), herdr, "herdr_read", &HerdrArguments{PaneID: paneId})
+	if err != nil {
+		return nil, err
+	}
+	return read.(*HerdrReadResult), nil
+}
+
+func TestAnUnreportedCodexPaneReadsTheSessionItStarted(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	startedAt := time.Date(2026, 1, 2, 3, 4, 0, 0, time.Local)
+	startCodexAt(t, startedAt)
+	fake.setAgent("w1:p1", CodingAgentKindCodex, "idle", "", "")
+	fake.setAgent("w2:p1", CodingAgentKindCodex, "idle", "session-held", "")
+	fake.processes = map[string][]map[string]any{"w1:p1": codexProcess(200, "/work/example")}
+	// One from before this Codex started, one another pane holds, a run of
+	// "codex exec", one of the Codex app, an agent a session started and one
+	// in another directory: none of them is the pane's.
+	writeCodexSession(t, home, "session-before", startedAt.Add(-time.Hour), nil)
+	writeCodexSession(t, home, "session-held", startedAt.Add(time.Minute), nil)
+	writeCodexSession(t, home, "session-exec", startedAt.Add(2*time.Minute), map[string]any{"originator": "codex_exec", "source": "exec"})
+	writeCodexSession(t, home, "session-app", startedAt.Add(3*time.Minute), map[string]any{"originator": "Codex Desktop", "source": "vscode"})
+	writeCodexSession(t, home, "session-subagent", startedAt.Add(4*time.Minute), map[string]any{"source": map[string]any{"subagent": "review"}})
+	writeCodexSession(t, home, "session-elsewhere", startedAt.Add(5*time.Minute), map[string]any{"cwd": "/work/other"})
+	writeCodexSession(t, home, "session-pane", startedAt.Add(time.Second), nil)
+	herdr := NewHerdr(home)
+
+	read, err := readTurnsForTest(t, herdr, "w1:p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.HerdrSession.CodingSessionID != "session-pane" || len(read.Turns) == 0 || read.Turns[len(read.Turns)-1].TurnText != "answer of session-pane" {
+		t.Fatalf("the pane read %q: %+v", read.HerdrSession.CodingSessionID, read.Turns)
+	}
+}
+
+func TestACodexStartedWithResumeReadsTheSessionItResumed(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	startedAt := time.Date(2026, 1, 2, 3, 4, 0, 0, time.Local)
+	startCodexAt(t, startedAt)
+	fake.setAgent("w1:p1", CodingAgentKindCodex, "idle", "", "")
+	fake.processes = map[string][]map[string]any{"w1:p1": codexProcess(200, "/work/example", "resume", "session-resumed")}
+	writeCodexSession(t, home, "session-resumed", startedAt.Add(-24*time.Hour), nil)
+	writeCodexSession(t, home, "session-newer", startedAt.Add(time.Second), nil)
+	herdr := NewHerdr(home)
+
+	read, err := readTurnsForTest(t, herdr, "w1:p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.HerdrSession.CodingSessionID != "session-resumed" {
+		t.Fatalf("the pane read %q", read.HerdrSession.CodingSessionID)
+	}
+}
+
+func TestTwoUnreportedCodexPanesInOneDirectoryGetNone(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	startedAt := time.Date(2026, 1, 2, 3, 4, 0, 0, time.Local)
+	startCodexAt(t, startedAt)
+	fake.setAgent("w1:p1", CodingAgentKindCodex, "idle", "", "")
+	fake.setAgent("w2:p1", CodingAgentKindCodex, "idle", "", "")
+	fake.processes = map[string][]map[string]any{"w1:p1": codexProcess(200, "/work/example"), "w2:p1": codexProcess(300, "/work/example")}
+	writeCodexSession(t, home, "session-one", startedAt.Add(time.Second), nil)
+	writeCodexSession(t, home, "session-two", startedAt.Add(2*time.Second), nil)
+	herdr := NewHerdr(home)
+
+	for _, session := range listForTest(t, herdr) {
+		if session.CodingSessionID != "" {
+			t.Fatalf("%s was given %q", session.PaneID, session.CodingSessionID)
+		}
+	}
+	if _, err := readTurnsForTest(t, herdr, "w1:p1"); err == nil || !strings.Contains(err.Error(), "no history file") {
+		t.Fatalf("read answered %v", err)
 	}
 }

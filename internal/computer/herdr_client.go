@@ -63,11 +63,23 @@ type herdrAgent struct {
 	TerminalTitleStripped string `json:"terminal_title_stripped"`
 	// Revision and StateChangeSequence move when herdr's own idea of the pane
 	// changes: its agent, its status, its title. Not when the agent draws.
-	Revision            int64 `json:"revision"`
-	StateChangeSequence int64 `json:"state_change_seq"`
-	AgentSession        *struct {
-		Value string `json:"value"`
-	} `json:"agent_session"`
+	Revision            int64              `json:"revision"`
+	StateChangeSequence int64              `json:"state_change_seq"`
+	AgentSession        *herdrAgentSession `json:"agent_session"`
+}
+
+// herdrAgentSession is the coding agent's own identifier for the session in
+// a pane, as its hook reported it to herdr.
+type herdrAgentSession struct {
+	Value string `json:"value"`
+}
+
+// herdrProcess is one process in the foreground of a pane, in herdr's names.
+type herdrProcess struct {
+	ProcessID int      `json:"pid"`
+	Name      string   `json:"name"`
+	Argv      []string `json:"argv"`
+	Cwd       string   `json:"cwd"`
 }
 
 // herdrWorkspace and herdrTab are where a pane is, in herdr's own names:
@@ -184,6 +196,19 @@ func (self *herdrClient) listAgents(ctx context.Context) ([]*herdrAgent, error) 
 		return nil, err
 	}
 	return result.Agents, nil
+}
+
+// paneProcesses are the processes in the foreground of a pane.
+func (self *herdrClient) paneProcesses(ctx context.Context, paneId string) ([]*herdrProcess, error) {
+	var result struct {
+		ProcessInfo struct {
+			ForegroundProcesses []*herdrProcess `json:"foreground_processes"`
+		} `json:"process_info"`
+	}
+	if err := self.call(ctx, "pane.process_info", map[string]any{"pane_id": paneId}, &result); err != nil {
+		return nil, err
+	}
+	return result.ProcessInfo.ForegroundProcesses, nil
 }
 
 // readAgent is the text of the pane an agent is in: "visible" is the

@@ -245,6 +245,17 @@ history file and nobody has answered), TeaNode's own hooks when the person put
 them in, Codex's history file, the screen's "esc to interrupt", and herdr's
 state last. A session is `asking` exactly when a question was recognized.
 
+A session's history file is found by the identifier herdr gives the pane, which
+Codex's SessionStart hook reports to it. Codex can run its hooks in an app
+server it shares between sessions, started from whichever pane ran Codex first,
+so a later session's report names that first pane and herdr refuses it. For a
+Codex pane herdr has no session for, the program finds one itself
+(`herdr_codex_session.go`): the session its command line resumes, or else the
+newest session of Codex's terminal interface started in the pane's directory
+since the pane's Codex started (read from `/proc`, so on Linux only) that no
+other pane holds. Two such panes in one directory are given none, since which
+is whose is not known.
+
 When a question comes or goes, or a watched session finishes, the program
 says so unasked (`type: herdr`), and says it again after every reconnect until
 the server acknowledges it, as background commands' endings are. A question is
