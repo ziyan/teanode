@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.195.8] - 2026-10-24
+
+### Fixed
+
+- When the server runs out of storage space, the iPhone's photo backup says it is waiting for the server and why, instead of saying it is waiting for Wi-Fi. (#643)
+
 ## [0.195.7] - 2026-10-24
 
 ### Fixed
