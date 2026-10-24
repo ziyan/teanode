@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.195.9] - 2026-10-24
+
+### Fixed
+
+- Location: the people you share with are no longer told you left or arrived at a place you stayed at, as happened after the iPhone app was updated. (#641)
+
 ## [0.195.8] - 2026-10-24
 
 ### Fixed
