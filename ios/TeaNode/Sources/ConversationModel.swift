@@ -613,10 +613,10 @@ final class ConversationModel {
     /// is returned for the members sheet to say.
     func setAgentReading(_ isReading: Bool) async -> String? {
         guard let conversationId, let ownUserId, let before = chat?.member(ownUserId) else { return nil }
-        conversation?.chat = chat?.withAgentSwitches(userId: ownUserId, isAgentReading: isReading)
+        replaceChat { $0.withAgentSwitches(userId: ownUserId, isAgentReading: isReading) }
         return await changeChatReporting(
             isReportedOnScreen: false,
-            undo: { self.conversation?.chat = self.chat?.withAgentSwitches(userId: ownUserId, isAgentReading: before.isAgentReading) }
+            undo: { self.replaceChat { $0.withAgentSwitches(userId: ownUserId, isAgentReading: before.isAgentReading) } }
         ) { try await connection.setChatAgentReading(conversationId, isReading: isReading) }
     }
 
@@ -624,14 +624,25 @@ final class ConversationModel {
     /// as setAgentReading does.
     func setAgentAskableByOthers(_ isAskable: Bool) async -> String? {
         guard let conversationId, let ownUserId, let before = chat?.member(ownUserId) else { return nil }
-        conversation?.chat = chat?.withAgentSwitches(userId: ownUserId, isAgentAskableByOthers: isAskable)
+        replaceChat { $0.withAgentSwitches(userId: ownUserId, isAgentAskableByOthers: isAskable) }
         return await changeChatReporting(
             isReportedOnScreen: false,
             undo: {
-                self.conversation?.chat = self.chat?.withAgentSwitches(
-                    userId: ownUserId, isAgentAskableByOthers: before.isAgentAskableByOthers ?? false)
+                self.replaceChat {
+                    $0.withAgentSwitches(userId: ownUserId, isAgentAskableByOthers: before.isAgentAskableByOthers ?? false)
+                }
             }
         ) { try await connection.setChatAgentAskableByOthers(conversationId, isAskable: isAskable) }
+    }
+
+    /// Writes the chat as changed from what it is now. The change is worked
+    /// out before the conversation is written: `conversation?.chat = chat...`
+    /// reads the conversation while it is being written, a conflicting access
+    /// that stops the app.
+    private func replaceChat(_ change: (ChatSummary) -> ChatSummary) {
+        guard let current = chat else { return }
+        let changed = change(current)
+        conversation?.chat = changed
     }
 
     /// The person as the author of a message they have just sent in a chat,
