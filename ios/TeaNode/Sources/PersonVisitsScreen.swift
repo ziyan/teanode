@@ -2,8 +2,9 @@ import SwiftUI
 import TeaNodeKit
 
 /// PersonVisitsModel is what somebody sharing where they have been shows: their
-/// visits for one day, with a way back and forth by the day, and their places.
-/// Only at "Where I am and where I have been" does the server give them.
+/// visits for one day, with a way back and forth by the day, their places, and,
+/// for a map, the path of that day. Only at "Where I am and where I have been"
+/// does the server give them.
 @MainActor
 @Observable
 final class PersonVisitsModel {
@@ -15,13 +16,24 @@ final class PersonVisitsModel {
     /// The pauses that overlap the day, which show among the visits.
     private(set) var pauses: [LocationPause] = []
     private(set) var places: [LocationPlace] = []
+    /// The positions of the day shown, oldest first, read only for a map
+    /// that draws them.
+    private(set) var points: [LocationPoint] = []
+    /// The day the visits and the path shown were read for, nil until the
+    /// first reading: the map fits itself to a day once it is read.
+    private(set) var readDay: Date?
+    let isPathRead: Bool
     private(set) var isLoading = false
     private(set) var problemText: String?
 
-    init(connection: Connection, userId: String) {
+    init(connection: Connection, userId: String, isPathRead: Bool = false) {
         self.connection = connection
         self.userId = userId
+        self.isPathRead = isPathRead
     }
+
+    /// Whether the day shown is today, whose path grows as they move.
+    var isShowingToday: Bool { day == Calendar.current.startOfDay(for: Date()) }
 
     /// The day's visits and pauses together, newest first.
     var entries: [LocationTimelineEntry] { LocationDays.entries(visits: visits, pauses: pauses) }
@@ -36,7 +48,8 @@ final class PersonVisitsModel {
         Task { await load() }
     }
 
-    /// Reads their visits for the day shown and their places.
+    /// Reads their visits for the day shown, their places, and the day's path
+    /// when a map draws it.
     func load() async {
         let requestedDay = day
         let window = LocationDays.window(of: requestedDay)
@@ -47,11 +60,14 @@ final class PersonVisitsModel {
             let placePage = try await connection.locationPlaces(userId: userId, limitCount: LocationModel.placePageSize)
             // A server that cannot list pauses has none to show.
             let pauseList = (try? await connection.locationPauses(userId: userId, from: window.from, until: window.until)) ?? []
+            let pointList = try await isPathRead ? connection.locationPoints(userId: userId, from: window.from, until: window.until) : []
             // Another day was chosen while this was read.
             guard day == requestedDay else { return }
             visits = visitPage.placeVisits
             pauses = pauseList
             places = placePage.places
+            points = pointList
+            readDay = requestedDay
             problemText = nil
         } catch {
             guard !Task.isCancelled, day == requestedDay else { return }
@@ -81,13 +97,9 @@ struct PersonVisitsScreen: View {
 /// somebody sharing is chosen there: their visits and places, as the card's
 /// page shows them, or a line saying they share only where they are now.
 struct LocationChosenPersonVisits: View {
+    /// The day the map draws too: LocationModel.chosenPersonVisits.
+    let model: PersonVisitsModel
     let person: PersonLocation
-    @State private var model: PersonVisitsModel
-
-    init(connection: Connection, person: PersonLocation) {
-        self.person = person
-        _model = State(initialValue: PersonVisitsModel(connection: connection, userId: person.userId))
-    }
 
     var body: some View {
         if person.level == .history {

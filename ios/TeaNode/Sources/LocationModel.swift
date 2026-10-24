@@ -70,6 +70,9 @@ final class LocationModel {
     /// Who the map is centered on: somebody sharing, or nobody for the person's
     /// own. Their visits show in the drawer, under their name.
     private(set) var selectedUserId: String?
+    /// The selected person's day: the visits the drawer lists, and the path
+    /// and visits the map draws.
+    private(set) var chosenPersonVisits: PersonVisitsModel?
 
     init(connection: Connection) {
         self.connection = connection
@@ -539,8 +542,15 @@ final class LocationModel {
 
     private func refreshPeople() async {
         guard let read = try? await connection.sharedLocations() else { return }
+        let chosenMeasuredAt = selectedPerson?.latestPoint?.measuredAt
         people = read
         if let selectedUserId, !read.contains(where: { $0.userId == selectedUserId }) { clearSelection() }
+        // The selected person moved: today's path on the map grows with them.
+        if let chosenPersonVisits, chosenPersonVisits.readDay != nil, chosenPersonVisits.isShowingToday,
+            let measuredAt = selectedPerson?.latestPoint?.measuredAt, measuredAt != chosenMeasuredAt
+        {
+            await chosenPersonVisits.load()
+        }
     }
 
     private func refreshEveryone() async {
@@ -559,11 +569,15 @@ final class LocationModel {
             return
         }
         selectedUserId = userId
+        if chosenPersonVisits?.userId != userId {
+            chosenPersonVisits = PersonVisitsModel(connection: connection, userId: userId, isPathRead: true)
+        }
     }
 
     /// Goes back to the person's own location.
     func clearSelection() {
         selectedUserId = nil
+        chosenPersonVisits = nil
     }
 
     // MARK: Sharing
