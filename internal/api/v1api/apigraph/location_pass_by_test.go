@@ -104,3 +104,63 @@ func TestANoticeOfACircleWaitsUntilTheVisitCounts(t *testing.T) {
 		}
 	}
 }
+
+// When iOS says the person is inside a place the phone still counts them at,
+// the phone sends a departure and an arrival at that place in the same
+// second. Nobody is told the person left, and nobody is told they arrived
+// unless a position since the visit began was outside the place.
+func TestADepartureNobodySawIsNotTold(t *testing.T) {
+	world := newLocationWorld(t)
+	var home *models.Place
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		if home, err = tx.CreatePlace(world.ada.ID, &models.Place{PlaceName: "Home", LatitudeDegrees: 40, LongitudeDegrees: -75}); err != nil {
+			t.Fatalf("CreatePlace: %s", err)
+		}
+	})
+	toldOf := func(reported []ReportedVisit) []visitNotice {
+		var notices []visitNotice
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			unseen, err := readUnseenDepartures(tx, world.ada.ID, reported)
+			if err != nil {
+				t.Fatalf("readUnseenDepartures: %s", err)
+			}
+			for _, visit := range reported {
+				stored, err := world.graph.putReportedVisit(tx, world.ada.ID, visit, nil)
+				if err != nil {
+					t.Fatalf("putReportedVisit: %s", err)
+				}
+				if stored.Notice != nil {
+					notices = append(notices, *stored.Notice)
+				}
+			}
+			if notices, err = unseen.filter(tx, world.ada.ID, notices); err != nil {
+				t.Fatalf("filter: %s", err)
+			}
+		})
+		return notices
+	}
+	region := func(key string, arrivedAt, departedAt *time.Time) ReportedVisit {
+		return ReportedVisit{ClientVisitKey: key, PlaceID: home.ID, LatitudeDegrees: 40, LongitudeDegrees: -75,
+			VisitSource: string(models.VisitSourceRegion), ArrivedAt: arrivedAt, DepartedAt: departedAt}
+	}
+
+	arrivedAt := time.Now().Add(-3 * time.Hour).UTC().Truncate(time.Second)
+	if notices := toldOf([]ReportedVisit{region("home-1", &arrivedAt, nil)}); len(notices) != 1 {
+		t.Fatalf("the first arrival is told: %+v", notices)
+	}
+	world.report(t, world.ada, pointInput(40.0001, -75.0, ago(2*time.Hour)), "")
+	again := time.Now().Add(-time.Minute).UTC().Truncate(time.Second)
+	if notices := toldOf([]ReportedVisit{region("home-1", nil, &again), region("home-2", &again, nil)}); len(notices) != 0 {
+		t.Errorf("staying home is not leaving and arriving: %+v", notices)
+	}
+
+	// Away and back, with the leaving missed: the arrival is told, the
+	// departure is not.
+	world.report(t, world.ada, pointInput(40.05, -75.0, ago(30*time.Second)), "")
+	back := time.Now().UTC().Truncate(time.Second)
+	notices := toldOf([]ReportedVisit{region("home-2", nil, &back), region("home-3", &back, nil)})
+	if len(notices) != 1 || !notices[0].IsArrival {
+		t.Errorf("only the arrival is told: %+v", notices)
+	}
+}

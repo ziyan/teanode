@@ -708,6 +708,41 @@ func TestANewClosedVisitIsToldAsALeaving(t *testing.T) {
 	}
 }
 
+// An arrival reported under a new key at the place of the visit in progress is
+// the phone saying again where the person is: it joins that visit and is not
+// told. An arrival at another place is.
+func TestAnArrivalWhereThePersonAlreadyIsIsNotTold(t *testing.T) {
+	world := newLocationWorld(t)
+	reported := func(key string, source models.VisitSource, latitude float64, arrivedAt time.Time) *visitNotice {
+		var notice *visitNotice
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			stored, err := world.graph.putReportedVisit(tx, world.ada.ID, ReportedVisit{
+				ClientVisitKey: key, LatitudeDegrees: latitude, LongitudeDegrees: -75, AccuracyMeters: 10,
+				VisitSource: string(source), ArrivedAt: &arrivedAt,
+			}, nil)
+			if err != nil {
+				t.Fatalf("putReportedVisit: %s", err)
+			}
+			notice = stored.Notice
+		})
+		return notice
+	}
+	arrivedAt := time.Now().Add(-3 * time.Hour).Truncate(time.Second)
+	if notice := reported("home-visit", models.VisitSourceVisit, 40, arrivedAt); notice == nil || !notice.IsArrival {
+		t.Fatalf("the first arrival is told: %+v", notice)
+	}
+	if notice := reported("home-again", models.VisitSourceVisit, 40, time.Now().Truncate(time.Second)); notice != nil {
+		t.Errorf("an arrival where the person already is was told: %+v", notice)
+	}
+	visits := world.call(t, world.ada, `query { ListLocationVisits { placeVisits { arrivedAt departedAt } } }`)["ListLocationVisits"].(map[string]any)["placeVisits"].([]any)
+	if len(visits) != 1 || visits[0].(map[string]any)["departedAt"] != nil {
+		t.Errorf("one visit, still in progress: %v", visits)
+	}
+	if notice := reported("elsewhere", models.VisitSourceVisit, 41, time.Now().Truncate(time.Second)); notice == nil || !notice.IsArrival {
+		t.Errorf("an arrival at another place is told: %+v", notice)
+	}
+}
+
 // Everybody who shares with the viewer is described from one read of the
 // positions and one of the visits in progress.
 func TestListSharedLocationsDescribesEverySharer(t *testing.T) {
