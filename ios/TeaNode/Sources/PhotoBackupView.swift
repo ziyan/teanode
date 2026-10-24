@@ -286,6 +286,11 @@ struct PhotoBackupContent: View {
                     .foregroundStyle(.secondary)
                     .fullWidthRowSeparator()
             }
+            if status.phase == .waitingForServer, status.leftForLaterFileCount > 0 {
+                Label("\(status.leftForLaterFileCount) files will be sent when the server can take them.", systemImage: "clock.arrow.circlepath")
+                    .foregroundStyle(.secondary)
+                    .fullWidthRowSeparator()
+            }
             if status.isUploadingInBackground {
                 Label("Uploading in the background: \(status.queuedFileCount) files queued", systemImage: "arrow.up.circle")
                     .foregroundStyle(.secondary)
@@ -368,6 +373,7 @@ struct PhotoBackupContent: View {
         case .listing: listingText
         case .uploading: String(localized: "Backing up")
         case .waitingForNetwork: usesMobileData ? String(localized: "Waiting for the network") : String(localized: "Waiting for Wi-Fi")
+        case .waitingForServer: String(localized: "Waiting for the server")
         case .needsAccess: String(localized: "Needs access to all your photos")
         case .needsSignIn: String(localized: "Needs you to sign in again")
         case .paused: String(localized: "Paused")
@@ -418,6 +424,7 @@ struct PhotoBackupContent: View {
         case .listing: "photo.stack"
         case .uploading: "icloud.and.arrow.up"
         case .waitingForNetwork: "wifi"
+        case .waitingForServer: "exclamationmark.icloud"
         case .needsAccess, .needsSignIn: "exclamationmark.triangle"
         case .paused: "pause.circle"
         }
@@ -480,6 +487,18 @@ private let previewBackground = PhotoBackupStatus(
         PhotoBackupStatus(
             phase: .waitingForNetwork, backedUpItemCount: 1284, libraryItemCount: 3912, refusedFileCount: 2, leftForLaterFileCount: 6,
             lastFailure: .serverReason("photo storage is unavailable")))
+}
+#Preview("Waiting for the server, light") {
+    previewContent(
+        PhotoBackupStatus(
+            phase: .waitingForServer, backedUpItemCount: 1284, libraryItemCount: 3912, leftForLaterFileCount: 640, lastFailure: .serverOutOfSpace))
+}
+#Preview("Waiting for the server, dark") {
+    previewContent(
+        PhotoBackupStatus(
+            phase: .waitingForServer, backedUpItemCount: 1284, libraryItemCount: 3912, leftForLaterFileCount: 640, lastFailure: .serverOutOfSpace)
+    )
+    .preferredColorScheme(.dark)
 }
 #Preview("On for another account, light") {
     previewContent(previewUploading, isOnForOtherAccount: true)

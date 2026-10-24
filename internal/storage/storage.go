@@ -13,6 +13,8 @@ package storage
 import (
 	"context"
 	"errors"
+	"net/http"
+	"syscall"
 	"time"
 
 	"github.com/op/go-logging"
@@ -24,6 +26,29 @@ var log = logging.MustGetLogger("storage")
 // routinely: retention removes old messages, and a message received before
 // storage was configured was never written.
 var ErrNotFound = errors.New("storage: message not found")
+
+// IsOutOfSpace says whether a write failed because the disk or the object
+// store has no room left: the directory's file system (ENOSPC), or an object
+// store that answers 507 or names the error, as MinIO does when its drives
+// are full. It is told apart from other failures so that a client is told to
+// wait, rather than to try again at once, and is not told that the network
+// is at fault.
+func IsOutOfSpace(err error) bool {
+	if errors.Is(err, syscall.ENOSPC) {
+		return true
+	}
+	// The object store's errors are matched by their methods, the way the
+	// SDK's own error types are, rather than by the types themselves.
+	var codedError interface{ ErrorCode() string }
+	if errors.As(err, &codedError) {
+		switch codedError.ErrorCode() {
+		case "XMinioStorageFull", "InsufficientStorage":
+			return true
+		}
+	}
+	var responseError interface{ HTTPStatusCode() int }
+	return errors.As(err, &responseError) && responseError.HTTPStatusCode() == http.StatusInsufficientStorage
+}
 
 // Storage keeps raw messages, keyed by the identifier of the mail row they
 // belong to.
