@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.195.10] - 2026-10-24
+
+### Fixed
+
+- The iPhone app no longer closes when you turn "My agent remembers this chat" or "Others may ask my agent here" on or off. (#645)
+- A mailbox address with a dot in it, such as first.last@, is listed with the mailbox's addresses again and can be used to send from and to sign in with an app password. (#646)
+
 ## [0.195.9] - 2026-10-24
 
 ### Fixed
