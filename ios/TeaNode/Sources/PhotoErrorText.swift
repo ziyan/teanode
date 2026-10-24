@@ -32,6 +32,8 @@ extension PhotoBackupFailure {
             serverReason.flatMap { $0.isEmpty ? nil : $0.asReasonSentence } ?? String(localized: "The server would not take this file.")
         case .serverReason(let serverReason):
             serverReason.asReasonSentence
+        case .serverOutOfSpace:
+            String(localized: "The server is out of storage space. Backup goes on when there is room again.")
         case .fileIsEmpty:
             String(localized: "The photo library gave an empty file.")
         case .fileIsNotInLibrary:

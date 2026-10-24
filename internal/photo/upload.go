@@ -19,6 +19,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/storage"
 )
 
 // The server side of the resumable upload draft
@@ -646,6 +647,10 @@ func (self *Store) failAndWriteProblem(ctx context.Context, response http.Respon
 	self.writeProblem(response, err)
 }
 
+// outOfSpaceRetryAfter is how long a client is asked to wait when the server
+// has no room for the file.
+const outOfSpaceRetryAfter = 15 * time.Minute
+
 // writeProblem answers an error with the status it deserves.
 func (self *Store) writeProblem(response http.ResponseWriter, err error) {
 	var tooLarge *FileTooLargeError
@@ -675,6 +680,13 @@ func (self *Store) writeProblem(response http.ResponseWriter, err error) {
 		http.Error(response, "too many uploads are unfinished; finish or cancel some", http.StatusTooManyRequests)
 	case errors.Is(err, db.ErrInvalidArguments):
 		http.Error(response, "invalid upload", http.StatusBadRequest)
+	case storage.IsOutOfSpace(err):
+		// Not this file's fault and not the network's: the upload stays, and
+		// the client is told to wait a while rather than send it again at
+		// once, since room is made by a person or by originals moving off.
+		log.Errorf("a photo upload has no room: %s", err)
+		response.Header().Set("Retry-After", strconv.Itoa(int(outOfSpaceRetryAfter.Seconds())))
+		http.Error(response, "the server is out of storage space", http.StatusInsufficientStorage)
 	default:
 		log.Errorf("a photo upload failed: %s", err)
 		http.Error(response, "the upload could not be stored", http.StatusInternalServerError)

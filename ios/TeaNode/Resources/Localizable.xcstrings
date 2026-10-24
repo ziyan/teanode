@@ -85441,6 +85441,96 @@
           }
         }
       }
+    },
+    "Waiting for the server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーを待っています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待服务器"
+          }
+        }
+      }
+    },
+    "%lld files will be sent when the server can take them.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld file will be sent when the server can take it."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld files will be sent when the server can take them."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "サーバーが受け取れるようになると %lld 個のファイルを送信します。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "サーバーが受け取れるようになると %lld 個のファイルを送信します。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "服务器可以接收时，将发送 %lld 个文件。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "服务器可以接收时，将发送 %lld 个文件。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "The server is out of storage space. Backup goes on when there is room again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーの保存容量がいっぱいです。空きができるとバックアップを続けます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器的存储空间已满。有空间后会继续备份。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -128,7 +128,9 @@ the account's other uploads cause, as opposed to this file's own size, answers
 503 with a `Retry-After` (seconds until the oldest of them stops counting, at
 least 60 and at most 3600) and leaves the upload resumable
 (`QuotaError.IsCausedByOtherUploads`), because every client takes that as "try
-again"; a refusal its own bytes cause answers 413 and ends it. A request that
+again"; a refusal its own bytes cause answers 413 and ends it. A server whose
+disk or object store is full (`storage.IsOutOfSpace`) answers 507 with a
+`Retry-After` of 15 minutes and keeps the upload. A request that
 names the digest it will have (`X-Photo-Declared-SHA256`) of bytes the person
 already has as the original of a photo, and sends no more than their size, is
 not asked for room at all: it costs none.
@@ -603,6 +605,9 @@ What continues and what waits:
   counted per file and stop at three. After three server failures in a row a
   pass stops and the app tries again after a minute, then two, then four, up to
   a quarter of an hour; a longer `Retry-After` from the server stands.
+  The backup screen then says it is waiting for the server, not for Wi-Fi,
+  when the network lets uploads go (`PhotoBackupStatus.Phase.waitingForServer`),
+  and keeps the server's last problem on screen while its wait runs.
 - When iOS wakes the app because uploads finished, it has about 30 seconds. In
   the first 18 the app queues more files that are on the phone already,
   smallest first (`PhotoBackupCoordinator.topUp`), writes the index, and only

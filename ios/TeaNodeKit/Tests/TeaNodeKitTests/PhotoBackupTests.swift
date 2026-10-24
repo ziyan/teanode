@@ -566,6 +566,17 @@ final class PhotoBackupServerTests: XCTestCase {
             .refused(failure: .fileRefused(serverReason: "the library is full")), "a 413 is still the server refusing the file")
     }
 
+    func testAServerOutOfSpaceIsItsOwnProblemAndItsWaitStands() {
+        XCTAssertEqual(
+            PhotoBackupOutcome.interpret(
+                statusCode: 507, photoIdHeader: nil, bodyText: "the server is out of storage space\n", errorDescription: nil,
+                isConnectivityFailure: false, retryAfterHeader: "900"),
+            .retryLater(failure: .serverOutOfSpace, isConnectivityFailure: false, retryAfterSeconds: 900))
+        XCTAssertEqual(
+            PhotoBackupUploadClient.interpretCreation(statusCode: 507, locationHeader: nil, bodyText: nil, retryAfterHeader: nil),
+            .unsuccessful(.retryLater(failure: .serverOutOfSpace, isConnectivityFailure: false, retryAfterSeconds: nil)))
+    }
+
     func testARetryAfterIsReadAsSecondsOrAsADateAndIsNeverLongerThanAnHour() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         XCTAssertEqual(PhotoBackupOutcome.retryAfterSeconds(fromHeader: "120", now: now), 120)
@@ -1718,8 +1729,54 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
         let result = await coordinator.runPass(settings: settings)
         XCTAssertEqual(result.leftForLaterFileCount, 1)
         let status = await coordinator.status()
-        XCTAssertEqual(status.phase, .waitingForNetwork)
+        XCTAssertEqual(status.phase, .waitingForServer, "on Wi-Fi that works, the file waits for the server, not for Wi-Fi")
         XCTAssertEqual(status.lastFailure, .serverReason("photo storage is unavailable"))
+    }
+
+    func testAServerTroubleOnANetworkThatDoesNotLetUploadsGoStillWaitsForTheNetwork() async throws {
+        let rig = try makeRig(self, items: [makeItem("a")], network: FakeNetwork(isExpensiveNetwork: true, isReachable: true))
+        let coordinator = rig.coordinator
+        rig.transfer.onStart = { job in
+            rig.transfer.release(job)
+            Task { await coordinator.finished(job, outcome: .retryLater(failure: .serverReason("photo storage is unavailable"), isConnectivityFailure: false)) }
+        }
+        _ = await coordinator.runPass(settings: settings)
+        let status = await coordinator.status()
+        XCTAssertEqual(status.phase, .waitingForNetwork, "on mobile data that is not allowed, Wi-Fi is what the files wait for")
+    }
+
+    func testAServerFailureThatArrivesAfterThePassEndedPutsTheStatusOnWaitingForTheServer() async throws {
+        let rig = try makeRig(self, items: [makeItem("a")])
+        let coordinator = rig.coordinator
+        rig.transfer.onStart = { job in
+            rig.transfer.release(job)
+            Task { await coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p")) }
+        }
+        _ = await coordinator.runPass(settings: settings)
+        let late = PhotoBackupJob(
+            accountKey: "photos.example.com|robin", localIdentifier: "b", role: .original, clientPhotoId: "local:b", filename: "IMG_2.HEIC",
+            assetModificationDate: nil, outgoingFilename: "late", sizeBytes: 10)
+        await coordinator.finished(late, outcome: .retryLater(failure: .serverOutOfSpace, isConnectivityFailure: false, retryAfterSeconds: 900))
+        let status = await coordinator.status()
+        XCTAssertEqual(status.phase, .waitingForServer)
+        XCTAssertEqual(status.lastFailure, .serverOutOfSpace)
+    }
+
+    func testAPassMadeWhileTheServerAsksToWaitKeepsTheServersProblemOnTheScreen() async throws {
+        let rig = try makeRig(self, items: [makeItem("a"), makeItem("b", secondsSince2026: 1)], budget: PhotoBackupBudget(maximumUploadCount: 1, maximumOutstandingBytes: 1 << 30))
+        let coordinator = rig.coordinator
+        rig.transfer.onStart = { job in
+            rig.transfer.release(job)
+            Task { await coordinator.finished(job, outcome: .retryLater(failure: .serverOutOfSpace, isConnectivityFailure: false, retryAfterSeconds: 900)) }
+        }
+        _ = await coordinator.runPass(settings: settings)
+        let startedCount = rig.transfer.startedJobs.count
+        let result = await coordinator.runPass(settings: settings)
+        XCTAssertEqual(rig.transfer.startedJobs.count, startedCount, "nothing is sent while the server's wait runs")
+        XCTAssertGreaterThan(result.leftForLaterFileCount, 0)
+        let status = await coordinator.status()
+        XCTAssertEqual(status.phase, .waitingForServer)
+        XCTAssertEqual(status.lastFailure, .serverOutOfSpace, "not cleared by a pass that sent nothing")
     }
 
     func testAFailureThatArrivesAfterThePassEndedPutsTheStatusOnWaiting() async throws {
@@ -2029,7 +2086,7 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
         XCTAssertEqual(result.leftForLaterFileCount, 10)
         XCTAssertEqual(result.uploadedFileCount, 0)
         let status = await coordinator.status()
-        XCTAssertEqual(status.phase, .waitingForNetwork)
+        XCTAssertEqual(status.phase, .waitingForServer)
         XCTAssertEqual(status.lastFailure, .serverReason("photo storage is unavailable"))
         let pending = await rig.index.pendingLocalIdentifiers()
         XCTAssertEqual(pending.count, 10)
@@ -3615,7 +3672,7 @@ final class PhotoBackupContinuationTests: XCTestCase {
         XCTAssertFalse(beyondTheLimit, "a file never found where it is said to be does not start passes for ever")
         let backupStatus = await rig.coordinator.status()
         XCTAssertEqual(backupStatus.leftForLaterFileCount, 1)
-        XCTAssertEqual(backupStatus.phase, .waitingForNetwork)
+        XCTAssertEqual(backupStatus.phase, .waitingForServer)
     }
 
     // MARK: A question the server answers with a 403 has no reason in it

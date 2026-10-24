@@ -22,6 +22,8 @@ public enum PhotoBackupFailure: Codable, Equatable, Sendable {
     case fileRefused(serverReason: String?)
     /// The server's own words for a problem that is not the file's.
     case serverReason(String)
+    /// The server has no room left to keep the file.
+    case serverOutOfSpace
     /// The photo library gave a file with nothing in it.
     case fileIsEmpty
     /// The photo is no longer in the photo library.

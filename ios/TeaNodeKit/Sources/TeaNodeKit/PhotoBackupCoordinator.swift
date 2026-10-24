@@ -339,6 +339,12 @@ public enum PhotoBackupOutcome: Equatable, Sendable {
             return .retryLater(failure: reason.map { .serverReason($0) }, isConnectivityFailure: false)
         case 404, 409, 410:
             return .uploadMovedOn
+        case 507:
+            // The server has no room for the file: its own words are not
+            // needed, and the wait it asks for stands.
+            return .retryLater(
+                failure: .serverOutOfSpace, isConnectivityFailure: false,
+                retryAfterSeconds: retryAfterSeconds(fromHeader: retryAfterHeader, now: now))
         case 408, 425, 429, 500...599:
             return .retryLater(
                 failure: reason.map { .serverReason($0) }, isConnectivityFailure: false,
@@ -576,6 +582,9 @@ public struct PhotoBackupStatus: Equatable, Sendable {
         case uploading
         /// Files are left that wait for a Wi-Fi network or for iCloud.
         case waitingForNetwork
+        /// Files are left because the server kept failing or asked to wait, on
+        /// a network that lets them go: they wait for the server, not for Wi-Fi.
+        case waitingForServer
         /// The library cannot be read as backup needs.
         case needsAccess(PhotoBackupAccess)
         /// The server does not accept the device password.
@@ -827,6 +836,9 @@ public actor PhotoBackupCoordinator {
     /// Uploads in a row the server answered with a failure; any other answer
     /// starts the count again.
     private var consecutiveServerFailureCount = 0
+    /// Whether the server failed, or asked to wait, for a file this pass left
+    /// for later: what the screen then says is waited for.
+    private var hasServerHeldBackFiles = false
     /// Whether a small request made to queue a file (creating its upload, asking
     /// where it is) found no network. The rest of the pass does not try the other
     /// files, which would each wait for a timeout to find the same.
@@ -1010,6 +1022,7 @@ public actor PhotoBackupCoordinator {
         refusedFileCount = 0
         leftForLaterFileCount = 0
         consecutiveServerFailureCount = 0
+        hasServerHeldBackFiles = false
         hasLostNetwork = false
         exportedSizes = [:]
         dealtWithKeys = []
@@ -1121,7 +1134,9 @@ public actor PhotoBackupCoordinator {
             phase = .needsSignIn
             return result
         }
-        await index.clearErrorUnlessSignInIsNeeded()
+        // While the server's wait runs nothing is sent, so its last problem
+        // still stands and stays on the screen.
+        if pendingRetryTime == nil { await index.clearErrorUnlessSignInIsNeeded() }
         phase = .listing
         await publish()
 
@@ -1227,10 +1242,22 @@ public actor PhotoBackupCoordinator {
                 // those finish. That is uploading, not waiting for Wi-Fi.
                 phase = .uploading
             }
+        } else if leftForLaterFileCount > 0 {
+            phase = await phaseForFilesLeft()
         } else {
-            phase = leftForLaterFileCount > 0 ? .waitingForNetwork : .idle
+            phase = .idle
         }
         return result
+    }
+
+    /// What files a pass left for later wait for. On a network that lets
+    /// them go, after the server failed or asked to wait, that is the server:
+    /// saying Wi-Fi there sends the person looking at a network that works.
+    private func phaseForFilesLeft() async -> PhotoBackupStatus.Phase {
+        guard hasServerHeldBackFiles || pendingRetryTime != nil else { return .waitingForNetwork }
+        let current = await network.state()
+        let isNetworkUsable = current.isSatisfied && (settings.usesMobileData || !current.isExpensive)
+        return isNetworkUsable ? .waitingForServer : .waitingForNetwork
     }
 
     private struct QueueingOutcome {
@@ -1836,6 +1863,7 @@ public actor PhotoBackupCoordinator {
         let notBefore = now().addingTimeInterval(wait)
         retryNotBefore = max(retryNotBefore ?? notBefore, notBefore)
         consecutiveServerFailureCount = 0
+        hasServerHeldBackFiles = true
     }
 
     /// The session reports a finished upload. It may arrive while no pass runs,
@@ -1891,7 +1919,7 @@ public actor PhotoBackupCoordinator {
             } else {
                 await noteRetryLater(failure: nil, isConnectivityFailure: false, retryAfterSeconds: nil)
                 leftForLaterFileCount += 1
-                if !isRunning { phase = .waitingForNetwork }
+                if !isRunning { phase = .waitingForServer }
             }
         case .retryLater(let failure, let isConnectivityFailure, let retryAfterSeconds):
             await noteRetryLater(failure: failure, isConnectivityFailure: isConnectivityFailure, retryAfterSeconds: retryAfterSeconds)
@@ -1900,7 +1928,7 @@ public actor PhotoBackupCoordinator {
             // network, and one that finished with no pass running puts the
             // screen there too.
             leftForLaterFileCount += 1
-            if !isRunning { phase = .waitingForNetwork }
+            if !isRunning { phase = isConnectivityFailure ? .waitingForNetwork : .waitingForServer }
         }
         // With no pass running nobody writes the index afterwards (an upload
         // the system finished while the app was suspended): what this upload
@@ -1942,7 +1970,10 @@ public actor PhotoBackupCoordinator {
     }
 
     private func noteRetryLater(failure: PhotoBackupFailure?, isConnectivityFailure: Bool, retryAfterSeconds: Int?) async {
-        if !isConnectivityFailure { consecutiveServerFailureCount += 1 }
+        if !isConnectivityFailure {
+            consecutiveServerFailureCount += 1
+            hasServerHeldBackFiles = true
+        }
         if let retryAfterSeconds {
             let notBefore = now().addingTimeInterval(TimeInterval(retryAfterSeconds))
             retryNotBefore = max(retryNotBefore ?? notBefore, notBefore)
