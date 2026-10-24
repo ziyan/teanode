@@ -56,6 +56,12 @@ type Content struct {
 	Computer            string `json:"computer,omitempty"`
 	PaneID              string `json:"paneId,omitempty"`
 	QuestionFingerprint string `json:"questionFingerprint,omitempty"`
+
+	// Wording, when set, writes the title and body in the language of the
+	// person the phone belongs to (see PhoneLanguage), on the copy made for
+	// that phone by ForLanguage. Title and Body are then what it leaves them
+	// as. It is never sent.
+	Wording func(content *Content, language string) `json:"-"`
 }
 
 // Button is one action on a notification.

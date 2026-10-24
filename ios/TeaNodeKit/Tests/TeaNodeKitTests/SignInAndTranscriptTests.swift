@@ -125,6 +125,18 @@ final class SignInTests: XCTestCase {
         XCTAssertEqual(renewed.refreshToken, "another-refresh")
     }
 
+    func testACallSaysWhichLanguageTheAppIsShownIn() async throws {
+        let fake = FakeServer { _ in (200, #"{"data":{"GetSession":{"username":"robin"}}}"#) }
+        let account = Account(server: server, clientId: "a-client", accessToken: "tnt", refreshToken: "", expiresAt: .distantFuture, username: "robin")
+        _ = try await Connection(account: account, transport: fake).username()
+        XCTAssertEqual(fake.sent[0].value(forHTTPHeaderField: "X-Language"), Connection.shownLanguage())
+        XCTAssertEqual(Connection.shownLanguage(preferredLocalizations: ["zh-Hans", "en"]), "zh")
+        XCTAssertEqual(Connection.shownLanguage(preferredLocalizations: ["ja"]), "ja")
+        XCTAssertEqual(Connection.shownLanguage(preferredLocalizations: ["en"]), "en")
+        XCTAssertEqual(Connection.shownLanguage(preferredLocalizations: ["fr"]), "en")
+        XCTAssertEqual(Connection.shownLanguage(preferredLocalizations: []), "en")
+    }
+
     func testASignInAnotherProcessRenewedIsTakenUpInsteadOfRenewingAgain() async throws {
         let fake = FakeServer { request in
             if request.url?.path == "/oauth/token" { return (400, #"{"error":"invalid_grant"}"#) }

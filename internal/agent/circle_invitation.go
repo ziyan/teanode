@@ -42,16 +42,30 @@ func NoteCircleInvitation(tx db.Transaction, invitedUserId, invitedByName, circl
 	return person.ID, nil
 }
 
+// The words of the notifications about circles.
+var (
+	phraseInvitation        = push.Phrase{English: "Invitation", Chinese: "邀请", Japanese: "招待"}
+	phraseInvitedYou        = push.Phrase{English: "%s invited you to %s", Chinese: "%s 邀请你加入「%s」", Japanese: "%s さんから「%s」に招待されました"}
+	phraseCircles           = push.Phrase{English: "Circles", Chinese: "圈子", Japanese: "サークル"}
+	phraseCircleMemberAdded = push.Phrase{
+		English:  "An operator of this server put %s in %s, which you administer.",
+		Chinese:  "此服务器的运维者把 %s 加入了你管理的「%s」。",
+		Japanese: "このサーバーの運用者が %s さんを、あなたが管理する「%s」に追加しました。",
+	}
+)
+
 // NotifyCircleInvitation tells the phones of an agent's person about an
-// invitation, in the background. The title and body are the same in every
-// language: the notification is plain text sent to a phone that decrypts it,
-// and the phone has no catalog to word it from.
+// invitation, in the background, in their language.
 func (self *PhoneNotifier) NotifyCircleInvitation(agentId, invitedByName, circleName string) {
 	self.NotifyPhones(agentId, models.NotificationCircle, &push.Content{
 		NotificationKind: models.NotificationCircle,
-		Title:            "Invitation",
-		Body:             PhoneBody(invitedByName + " invited you to " + circleName),
+		Title:            phraseInvitation.English,
+		Body:             PhoneBody(phraseInvitedYou.In(push.LanguageEnglish, invitedByName, circleName)),
 		ThreadID:         "circle-invitations",
+		Wording: func(content *push.Content, language string) {
+			content.Title = phraseInvitation.In(language)
+			content.Body = PhoneBody(phraseInvitedYou.In(language, invitedByName, circleName))
+		},
 	})
 }
 
@@ -83,13 +97,17 @@ func NoteCircleMemberAdded(tx db.Transaction, administratorUserId, addedName, ci
 }
 
 // NotifyCircleMemberAdded tells the phones of an agent's person that an
-// account was put in a circle they administer, in the background, in English
-// for the reason NotifyCircleInvitation gives.
+// account was put in a circle they administer, in the background, in their
+// language.
 func (self *PhoneNotifier) NotifyCircleMemberAdded(agentId, addedName, circleName string) {
 	self.NotifyPhones(agentId, models.NotificationCircle, &push.Content{
 		NotificationKind: models.NotificationCircle,
-		Title:            "Circles",
-		Body:             PhoneBody(models.NoteText(models.NoteCircleMemberAdded, models.CircleMemberAddedDetail(addedName, circleName))),
+		Title:            phraseCircles.English,
+		Body:             PhoneBody(phraseCircleMemberAdded.In(push.LanguageEnglish, addedName, circleName)),
 		ThreadID:         "circle-members",
+		Wording: func(content *push.Content, language string) {
+			content.Title = phraseCircles.In(language)
+			content.Body = PhoneBody(phraseCircleMemberAdded.In(language, addedName, circleName))
+		},
 	})
 }

@@ -578,14 +578,19 @@ func (self *Agent) tellOwnerOfWaitingCall(mainConversationId string, shared *sha
 			NoteKind: string(models.NoteSkillShareCallWaiting), NoteDetail: detail,
 		}, true)
 	}
+	granteeName := shared.share.GranteeName
 	self.notifyPhones(shared.ownerAgent.ID, models.NotificationSkillShareCall, &push.Content{
 		NotificationKind: models.NotificationSkillShareCall,
 		ConversationID:   mainConversationId,
 		CallID:           call.ID,
-		Title:            "Approval needed",
-		Body:             PhoneBody(shared.share.GranteeName + " is waiting for your approval. Open the app to answer."),
+		Title:            phraseApprovalNeeded.English,
+		Body:             PhoneBody(phraseWaitingForApproval.In(push.LanguageEnglish, granteeName)),
 		ThreadID:         "skill-share-" + shared.share.ID,
 		Buttons:          []push.Button{{Label: "Open", ButtonAction: "open"}},
+		Wording: func(content *push.Content, language string) {
+			content.Title = phraseApprovalNeeded.In(language)
+			content.Body = PhoneBody(phraseWaitingForApproval.In(language, granteeName))
+		},
 	})
 }
 
@@ -703,28 +708,66 @@ func (self *Agent) tellGranteeOfAnswer(call *models.SkillShareCall, share *model
 			NotificationKind: models.NotificationSkillShareCall,
 			ConversationID:   call.GranteeConversationID,
 			CallID:           call.ID,
-			Title:            "Answered",
-			Body:             PhoneBody(sharedAnswerSentence(call, share.OwnerName)),
+			Title:            phraseAnswered.English,
+			Body:             PhoneBody(sharedAnswerSentence(call, share.OwnerName, push.LanguageEnglish)),
 			ThreadID:         "skill-share-" + share.ID,
 			Buttons:          []push.Button{{Label: "Open", ButtonAction: "open"}},
+			Wording: func(content *push.Content, language string) {
+				content.Title = phraseAnswered.In(language)
+				content.Body = PhoneBody(sharedAnswerSentence(call, share.OwnerName, language))
+			},
 		})
 	}
 	self.wakeForSkillShareCall(&skillShareAnswer{call: call, ownerName: share.OwnerName, skillName: share.SkillName})
 }
 
-// sharedAnswerSentence says how a call came out, for a notification.
-func sharedAnswerSentence(call *models.SkillShareCall, ownerName string) string {
-	switch call.CallState {
-	case models.SkillShareCallRan:
-		return ownerName + " approved what your agent asked for, and it ran."
-	case models.SkillShareCallFailed:
-		return ownerName + " approved what your agent asked for, but it did not complete."
-	case models.SkillShareCallDeclined:
-		return ownerName + " declined what your agent asked for."
-	case models.SkillShareCallExpired:
-		return "What your agent asked of " + ownerName + " expired without an answer."
+// The words of the notifications about a call to a shared skill.
+var (
+	phraseApprovalNeeded     = push.Phrase{English: "Approval needed", Chinese: "需要你的批准", Japanese: "承認が必要です"}
+	phraseWaitingForApproval = push.Phrase{
+		English:  "%s is waiting for your approval. Open the app to answer.",
+		Chinese:  "%s 在等你批准。打开应用回复。",
+		Japanese: "%s さんがあなたの承認を待っています。アプリを開いて返事をしてください。",
 	}
-	return ownerName + " answered what your agent asked for."
+	phraseAnswered = push.Phrase{English: "Answered", Chinese: "已回复", Japanese: "返事がありました"}
+
+	// sharedAnswerPhrases say how a call came out; each takes the owner's name.
+	sharedAnswerPhrases = map[models.SkillShareCallState]push.Phrase{
+		models.SkillShareCallRan: {
+			English:  "%s approved what your agent asked for, and it ran.",
+			Chinese:  "%s 批准了你的助手的请求，已经执行。",
+			Japanese: "%s さんがエージェントの依頼を承認し、実行されました。",
+		},
+		models.SkillShareCallFailed: {
+			English:  "%s approved what your agent asked for, but it did not complete.",
+			Chinese:  "%s 批准了你的助手的请求，但没有执行完成。",
+			Japanese: "%s さんがエージェントの依頼を承認しましたが、完了しませんでした。",
+		},
+		models.SkillShareCallDeclined: {
+			English:  "%s declined what your agent asked for.",
+			Chinese:  "%s 拒绝了你的助手的请求。",
+			Japanese: "%s さんがエージェントの依頼を断りました。",
+		},
+		models.SkillShareCallExpired: {
+			English:  "What your agent asked of %s expired without an answer.",
+			Chinese:  "你的助手向 %s 提出的请求已过期，没有得到回复。",
+			Japanese: "%s さんへのエージェントの依頼は、返事がないまま期限が切れました。",
+		},
+	}
+	phraseSharedAnswered = push.Phrase{
+		English:  "%s answered what your agent asked for.",
+		Chinese:  "%s 回复了你的助手的请求。",
+		Japanese: "%s さんがエージェントの依頼に返事をしました。",
+	}
+)
+
+// sharedAnswerSentence says how a call came out, for a notification, in a
+// language as push.PhoneLanguage names it.
+func sharedAnswerSentence(call *models.SkillShareCall, ownerName string, language string) string {
+	if phrase, ok := sharedAnswerPhrases[call.CallState]; ok {
+		return phrase.In(language, ownerName)
+	}
+	return phraseSharedAnswered.In(language, ownerName)
 }
 
 // sweepSkillShareCalls expires the calls that waited out their day, and tells

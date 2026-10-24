@@ -265,8 +265,16 @@ func TestAnAgentsNotificationTitleSaysWhoseAgentItIs(t *testing.T) {
 		"an agent with no owner recorded": {agentMessage("Bertie", ""), "", false, "Bertie"},
 		"a person in a group":             {&models.AgentMessage{AuthorKind: models.ChatAuthorPerson, AuthorName: "Maria"}, "Weekend trip", true, "Maria in Weekend trip"},
 	} {
-		if got := notificationTitle(test.message, test.chat, test.isGroup); got != test.want {
+		if got := notificationTitle(test.message, test.chat, test.isGroup, push.LanguageEnglish); got != test.want {
 			t.Errorf("%s: the title is %q, want %q", name, got, test.want)
 		}
+	}
+	// In Chinese and Japanese the chat and whose agent it is are worded as
+	// the dashboard words them.
+	if got := notificationTitle(agentMessage("Bertie", "Alice"), "Weekend trip", true, push.LanguageChinese); got != "Bertie · Alice 的助手（Weekend trip）" {
+		t.Errorf("in Chinese the title is %q", got)
+	}
+	if got := notificationTitle(agentMessage("Agent", "Alice"), "", false, push.LanguageJapanese); got != "Alice のエージェント" {
+		t.Errorf("in Japanese the title is %q", got)
 	}
 }

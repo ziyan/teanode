@@ -301,7 +301,10 @@ func (self *graph) TestAgentPhone(ctx context.Context, arguments AgentPhoneArgum
 		name = "TeaNode"
 	}
 	if err := notifier.NotifyPhone(ctx, phone, &push.Content{
-		NotificationKind: "test", Title: name, Body: "This phone can be reached. Notifications from " + name + " will arrive here.",
+		NotificationKind: "test", Title: name, Body: phrasePhoneReached.In(push.LanguageEnglish, name),
+		Wording: func(content *push.Content, language string) {
+			content.Body = phrasePhoneReached.In(language, name)
+		},
 	}); err != nil {
 		return nil, fmt.Errorf("%w: %w", api.ErrInvalidArguments, err)
 	}
@@ -310,4 +313,11 @@ func (self *graph) TestAgentPhone(ctx context.Context, arguments AgentPhoneArgum
 		return phoneView(phone), nil
 	}
 	return phoneView(updated), nil
+}
+
+// phrasePhoneReached is what the test notification says.
+var phrasePhoneReached = push.Phrase{
+	English:  "This phone can be reached. Notifications from %s will arrive here.",
+	Chinese:  "这部手机可以收到通知。%s 的通知会出现在这里。",
+	Japanese: "この端末に通知が届きます。%s からの通知はここに表示されます。",
 }

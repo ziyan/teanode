@@ -307,9 +307,14 @@ carry, so a client draws all of them one way. An agent's message also carries
 most agents keep the name "Agent" and two people's agents in one chat would
 otherwise be indistinguishable. Every surface names an agent the same way:
 "<agent name> · <owner>'s agent", or just "<owner>'s agent" while the agent
-still has the default name (`models.AgentSpeakerLabel` for the command line and
-phone notification titles, `agentSpeakerName` in the dashboard,
-`AgentSpeaker.name` in the app). Nobody reads another member's
+still has the default name (`models.AgentSpeakerLabel` for the command line,
+`agentSpeakerLabel` in `internal/chat` for phone notification titles, in the
+reader's language, `agentSpeakerName` in the dashboard, `AgentSpeaker.name` in
+the app). A phone notification's fixed words are written on the server in the
+language of the person the phone belongs to (`agent.Language`: the agent's
+own, else the account's chosen locale, else the one the dashboard or the app
+last said in `X-Language`), from a `push.Phrase` in English, Chinese and
+Japanese; what people and agents wrote is sent as it was. Nobody reads another member's
 conversation, an operator included: not to read it, ask in it, or react in it as
 them. A deleted message keeps its row and loses its words and files; an edited
 one has `editedAt`. A reply shows the words of the message it is to, except to a

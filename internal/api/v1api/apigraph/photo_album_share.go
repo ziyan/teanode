@@ -387,15 +387,22 @@ func (self *graph) notifyPhotosAdded(ctx context.Context, adder *models.User, al
 	if len(agentIds) == 0 {
 		return
 	}
-	body := fmt.Sprintf("%s added %d photos to %s", adder.DisplayName(), addedCount, album.AlbumTitle)
-	if addedCount == 1 {
-		body = fmt.Sprintf("%s added 1 photo to %s", adder.DisplayName(), album.AlbumTitle)
+	adderName, albumTitle := adder.DisplayName(), album.AlbumTitle
+	photosAdded := func(language string) string {
+		if addedCount == 1 {
+			return agent.PhoneBody(phrasePhotoAdded.In(language, adderName, albumTitle))
+		}
+		return agent.PhoneBody(phrasePhotosAdded.In(language, adderName, addedCount, albumTitle))
 	}
 	content := &push.Content{
 		NotificationKind: models.NotificationPhoto,
-		Title:            "Photos",
-		Body:             agent.PhoneBody(body),
+		Title:            phrasePhotos.English,
+		Body:             photosAdded(push.LanguageEnglish),
 		ThreadID:         "photo-album-" + album.ID,
+		Wording: func(content *push.Content, language string) {
+			content.Title = phrasePhotos.In(language)
+			content.Body = photosAdded(language)
+		},
 	}
 	transaction.AfterCommit(func() {
 		now := time.Now()
@@ -406,3 +413,14 @@ func (self *graph) notifyPhotosAdded(ctx context.Context, adder *models.User, al
 		}
 	})
 }
+
+// The words of the notification of photos added to a shared album.
+var (
+	phrasePhotos      = push.Phrase{English: "Photos", Chinese: "照片", Japanese: "写真"}
+	phrasePhotoAdded  = push.Phrase{English: "%s added 1 photo to %s", Chinese: "%s 向「%s」添加了 1 张照片", Japanese: "%s さんが「%s」に写真を1枚追加しました"}
+	phrasePhotosAdded = push.Phrase{
+		English:  "%s added %d photos to %s",
+		Chinese:  "%[1]s 向「%[3]s」添加了 %[2]d 张照片",
+		Japanese: "%[1]s さんが「%[3]s」に写真を%[2]d枚追加しました",
+	}
+)
