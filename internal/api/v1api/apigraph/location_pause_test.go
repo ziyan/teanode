@@ -596,3 +596,58 @@ func TestAPositionTheBrowserGaveIsNotKeptWhilePaused(t *testing.T) {
 		t.Error("after resuming it is kept")
 	}
 }
+
+// An arrival measured in the last moments of a pause counts from its end: the
+// phone's answer at a resume, stamped to the second, can come out just before
+// the server took the resume. One earlier than that, one that left before the
+// end, and one in a pause with no end are still not kept.
+func TestAnArrivalAtTheMomentOfAResumeCountsFromTheEnd(t *testing.T) {
+	at := func(minute, second, millisecond int) time.Time {
+		return time.Date(2026, 3, 4, 12, minute, second, millisecond*int(time.Millisecond), time.UTC)
+	}
+	endedAt := at(30, 0, 490)
+	pauses := locationPauseSet{{StartedAt: at(29, 47, 0), EndedAt: &endedAt}}
+
+	arrivedAt := at(30, 0, 0)
+	clipped := pauses.clipVisit(&arrivedAt, nil, nil)
+	if clipped.IsDropped || clipped.ArrivedAt == nil || !clipped.ArrivedAt.Equal(endedAt) {
+		t.Errorf("an arrival in the second the pause ended counts from its end: %+v", clipped)
+	}
+
+	departedAt := at(45, 0, 0)
+	if clipped = pauses.clipVisit(&arrivedAt, &departedAt, nil); clipped.IsDropped || clipped.ArrivedAt == nil || !clipped.ArrivedAt.Equal(endedAt) ||
+		clipped.DepartedAt == nil || !clipped.DepartedAt.Equal(departedAt) {
+		t.Errorf("and keeps its departure after the pause: %+v", clipped)
+	}
+
+	earlier := at(29, 50, 0)
+	if clipped = pauses.clipVisit(&earlier, nil, nil); !clipped.IsDropped {
+		t.Errorf("an arrival ten seconds before the end is inside the pause: %+v", clipped)
+	}
+
+	leftBefore := at(30, 0, 200)
+	if clipped = pauses.clipVisit(&arrivedAt, &leftBefore, nil); !clipped.IsDropped {
+		t.Errorf("a visit over before the pause ended is inside it: %+v", clipped)
+	}
+
+	open := locationPauseSet{{StartedAt: at(29, 47, 0)}}
+	if clipped = open.clipVisit(&arrivedAt, nil, nil); !clipped.IsDropped {
+		t.Errorf("a pause with no end has no last moments: %+v", clipped)
+	}
+}
+
+// The same through a report: a visit arriving a second before the pause ended
+// is stored, from the end.
+func TestAVisitReportedAsThePauseEndedIsStored(t *testing.T) {
+	world := newLocationWorld(t)
+	world.pastPause(t, world.ada, time.Hour, 3*time.Second)
+
+	report := world.reportPaused(t, world.ada, "", visitInput("resumed", 40, -75, ago(4*time.Second), ""))
+	if report["newVisitCount"] != float64(1) || report["pausedVisitCount"] != float64(0) {
+		t.Fatalf("the arrival at the resume is a visit: %v", report)
+	}
+	visits := world.visitsOf(t, world.ada)
+	if len(visits) != 1 || !pauseTimeOf(t, visits[0]["arrivedAt"]).After(time.Now().Add(-4*time.Second)) {
+		t.Errorf("it arrived at the end of the pause: %v", visits)
+	}
+}
