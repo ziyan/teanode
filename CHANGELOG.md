@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.195.7] - 2026-10-24
+
+### Fixed
+
+- Resuming location recording right after pausing it starts the visit at the place you are in again, instead of leaving a gap until the next visit. (#642)
+
 ## [0.195.6] - 2026-10-23
 
 ### Fixed
