@@ -1562,6 +1562,11 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 	}
 
 	view := &ReportLocationView{NewPointCount: newPointCount, PausedPointCount: pausedPointCount}
+	// Read before the visits are stored, which end the visits they name.
+	unseen, err := readUnseenDepartures(tx, user.ID, arguments.Visits)
+	if err != nil {
+		return nil, err
+	}
 	var notices []visitNotice
 	var madePlaces []*models.Place
 	isChanged := newPointCount > 0
@@ -1591,6 +1596,9 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 		if stored.MadePlace != nil {
 			madePlaces = append(madePlaces, stored.MadePlace)
 		}
+	}
+	if notices, err = unseen.filter(tx, user.ID, notices); err != nil {
+		return nil, err
 	}
 	if view.RefusedVisitCount > 0 {
 		log.Warningf("user %s is at %d places, the most there can be: %d visits of a report were left out for needing a new place",
@@ -1669,6 +1677,118 @@ func reportRange(arguments ReportLocationArguments) (time.Time, time.Time, bool)
 	}
 	return from, until, !from.IsZero()
 }
+
+// unseenDepartures are the departures of a report that nobody saw. When iOS
+// says the person is inside a place the phone still counts them at (the app
+// watched its places afresh, or the phone missed them leaving), the phone
+// ends the visit it counted and begins another, and sends the two together: a
+// region departure and a region arrival at the same place in the same second
+// (LocationOutbox.arrive in the app). Nobody is told of that departure, since
+// when the person left, or whether they did, is not known; the arrival is
+// told only when a position since the earlier arrival was outside the place.
+type unseenDepartures struct {
+	// startedAt is, for each place and second (unseenDepartureKey), when the
+	// visit the departure ends began, or nil when the server did not know it.
+	startedAt map[string]*time.Time
+}
+
+func unseenDepartureKey(placeId string, at time.Time) string {
+	return placeId + "\x00" + at.Truncate(time.Second).UTC().Format(time.RFC3339)
+}
+
+// readUnseenDepartures finds the departures of a report that come with an
+// arrival at the same place in the same second, and when the visits they end
+// began. It reads before the report is stored.
+func readUnseenDepartures(tx db.Transaction, userId string, reported []ReportedVisit) (*unseenDepartures, error) {
+	unseen := &unseenDepartures{startedAt: map[string]*time.Time{}}
+	arrivals := map[string]bool{}
+	for _, visit := range reported {
+		if visit.VisitSource == string(models.VisitSourceRegion) && visit.PlaceID != "" && visit.ArrivedAt != nil && visit.DepartedAt == nil {
+			arrivals[unseenDepartureKey(visit.PlaceID, *visit.ArrivedAt)] = true
+		}
+	}
+	if len(arrivals) == 0 {
+		return unseen, nil
+	}
+	for _, visit := range reported {
+		if visit.VisitSource != string(models.VisitSourceRegion) || visit.PlaceID == "" || visit.ArrivedAt != nil || visit.DepartedAt == nil {
+			continue
+		}
+		key := unseenDepartureKey(visit.PlaceID, *visit.DepartedAt)
+		if !arrivals[key] {
+			continue
+		}
+		known, err := tx.GetPlaceVisitByClientKey(userId, strings.TrimSpace(visit.ClientVisitKey))
+		if err != nil {
+			return nil, err
+		}
+		var startedAt *time.Time
+		if known != nil {
+			startedAt = known.ArrivedAt
+		}
+		unseen.startedAt[key] = startedAt
+	}
+	return unseen, nil
+}
+
+// filter takes out the notices of the departures nobody saw, and of the
+// arrivals that came with them when the person stayed inside the place.
+func (self *unseenDepartures) filter(tx db.Transaction, userId string, notices []visitNotice) ([]visitNotice, error) {
+	if len(self.startedAt) == 0 {
+		return notices, nil
+	}
+	kept := make([]visitNotice, 0, len(notices))
+	for _, notice := range notices {
+		if notice.Visit == nil {
+			kept = append(kept, notice)
+			continue
+		}
+		startedAt, isUnseen := self.startedAt[unseenDepartureKey(notice.Visit.PlaceID, notice.HappenedAt)]
+		if !isUnseen {
+			kept = append(kept, notice)
+			continue
+		}
+		if !notice.IsArrival {
+			continue
+		}
+		hasLeft, err := hasLeftPlace(tx, userId, notice.Visit.PlaceID, startedAt, notice.HappenedAt)
+		if err != nil {
+			return nil, err
+		}
+		if hasLeft {
+			kept = append(kept, notice)
+		}
+	}
+	return kept, nil
+}
+
+// hasLeftPlace says whether a position measured from startedAt until the
+// moment was outside the place, allowing for the error the phone gave with
+// it. With no start known, the person is taken to have left, and the arrival
+// is told as any other.
+func hasLeftPlace(tx db.Transaction, userId, placeId string, startedAt *time.Time, until time.Time) (bool, error) {
+	if startedAt == nil || !startedAt.Before(until) {
+		return startedAt == nil, nil
+	}
+	visited, err := tx.GetPlace(userId, placeId)
+	if err != nil || visited == nil {
+		return true, err
+	}
+	points, err := tx.ListLocationPoints(userId, *startedAt, until, unseenDeparturePointCountMost)
+	if err != nil {
+		return false, err
+	}
+	for _, point := range points {
+		if place.DistanceMeters(point.LatitudeDegrees, point.LongitudeDegrees, visited.LatitudeDegrees, visited.LongitudeDegrees) > visited.RadiusMeters+point.AccuracyMeters {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// unseenDeparturePointCountMost is how many positions hasLeftPlace reads: a
+// day with the app open in the foreground all along.
+const unseenDeparturePointCountMost = 20000
 
 // visitNotice is an arrival or a departure the people a location is shared
 // with are to be told of once the report is stored.
@@ -1825,6 +1945,19 @@ func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported R
 			stored.MadePlace = matched
 		}
 	}
+	// An arrival at the place of the visit in progress is the phone saying
+	// again where the person is, as iOS does when the app watches its places
+	// afresh: it is joined into that visit, and nobody is told the person
+	// arrived where they already were. Read before the visit is stored, which
+	// ends the visit in progress.
+	isAlreadyThere := false
+	if known == nil && reported.ArrivedAt != nil && reported.DepartedAt == nil {
+		open, err := tx.GetOpenPlaceVisit(userId)
+		if err != nil {
+			return nil, err
+		}
+		isAlreadyThere = open != nil && open.PlaceID == visit.PlaceID && open.ArrivedAt != nil && !open.ArrivedAt.After(*reported.ArrivedAt)
+	}
 	isNew, err := tx.PutPlaceVisit(userId, visit)
 	if err != nil {
 		return nil, locationFailure(err)
@@ -1839,9 +1972,10 @@ func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported R
 	// A new visit that comes with its departure (the arrival report was lost)
 	// is told by its latest event: the person has left.
 	// A departure moved to the start of a pause is not told: the person did not
-	// leave then as far as anybody knows.
+	// leave then as far as anybody knows. Nor is an arrival where the person
+	// already was.
 	switch {
-	case clipped.IsDepartureCut:
+	case clipped.IsDepartureCut, isAlreadyThere:
 	case isNew && reported.DepartedAt != nil && reported.ArrivedAt != nil:
 		stored.Notice = &visitNotice{Visit: visit, IsArrival: false, HappenedAt: *reported.DepartedAt}
 	case isNew && reported.ArrivedAt != nil:
