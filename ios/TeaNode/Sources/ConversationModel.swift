@@ -569,6 +569,15 @@ final class ConversationModel {
         replyingTo = AgentReference(agentMessageId: messageId, quotedRole: isOwn ? "user" : "assistant", quotedText: String(line.text.prefix(1000)))
     }
 
+    /// Who wrote the message a reply quotes, named as the chat names them
+    /// ("Ada", "Ada's agent"), or nil when it is not a chat's message.
+    func replyAuthorName(of reply: AgentReference) -> String? {
+        guard let messageId = reply.agentMessageId,
+            let author = transcript.lines.first(where: { $0.messageId == messageId })?.author
+        else { return nil }
+        return author.isDeletedAccount ? author.authorName : author.speakerName(ownedWords: ChatWords.agentOf)
+    }
+
     // MARK: Chats
 
     /// The agents chosen from the @ for the message being written.

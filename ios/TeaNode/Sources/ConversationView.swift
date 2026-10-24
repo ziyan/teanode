@@ -338,7 +338,7 @@ struct ConversationView: View {
                         detail: [FinanceMoney.shown(reference.amount, currencyCode: reference.currencyCode), reference.postedOn ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
                         onCancel: drop)
                 } else {
-                    ReplyBar(reply: reference, onCancel: drop)
+                    ReplyBar(reply: reference, authorName: model.replyAuthorName(of: reference), onCancel: drop)
                 }
             }
             // The agents an @ in the box offers, above the composer.
@@ -1618,14 +1618,19 @@ struct TodoPanel: View {
 /// ReplyBar is the message being replied to, above the composer.
 struct ReplyBar: View {
     let reply: AgentReference
+    /// Who wrote it, in a chat: a person or somebody's agent, not the
+    /// person's own agent. Nil in a conversation with the agent.
+    var authorName: String? = nil
     let onCancel: () -> Void
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        ReferenceStrip(
-            systemImage: "arrowshape.turn.up.left",
-            title: reply.quotedRole == "user" ? String(localized: "Replying to your own message") : String(localized: "Replying to \(app.agentTitle)"),
-            detail: reply.quotedText ?? "", onCancel: onCancel)
+        ReferenceStrip(systemImage: "arrowshape.turn.up.left", title: title, detail: reply.quotedText ?? "", onCancel: onCancel)
+    }
+
+    private var title: String {
+        if reply.quotedRole == "user" { return String(localized: "Replying to your own message") }
+        return String(localized: "Replying to \(authorName ?? app.agentTitle)")
     }
 }
 
