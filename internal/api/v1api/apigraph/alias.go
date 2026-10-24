@@ -303,12 +303,22 @@ func applyAliasParameters(alias *models.Alias, parameters *AliasParameters) {
 // anchorMailboxPattern turns a bare name into the pattern that names exactly
 // it, for an alias that delivers into a mailbox: somebody who types "zhou"
 // means zhou@, and a mailbox's addresses are read back from such patterns.
-// A pattern with anything of a regular expression in it is left alone.
+// So is a bare address with dots in it: "first.last" means first.last@,
+// not first, any character, last. A pattern with anything else of a regular
+// expression in it is left alone.
 func anchorMailboxPattern(parameters *AliasParameters) {
 	if parameters == nil || parameters.Kind != string(models.AliasKindMailbox) {
 		return
 	}
-	if local := models.LocalPartOfPattern(parameters.Pattern); local != "" {
+	local := models.LocalPartOfPattern(parameters.Pattern)
+	if local == "" && typedLocalPart.MatchString(strings.TrimSpace(parameters.Pattern)) {
+		local = strings.ToLower(strings.TrimSpace(parameters.Pattern))
+	}
+	if local != "" {
 		parameters.Pattern = models.PatternForLocalPart(local)
 	}
 }
+
+// typedLocalPart is a local part as people type one, with no anchors and
+// nothing of a regular expression but the dots in it.
+var typedLocalPart = regexp.MustCompile(`^[A-Za-z0-9_+-]+(\.[A-Za-z0-9_+-]+)+$`)

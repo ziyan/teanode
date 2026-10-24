@@ -439,15 +439,38 @@ func (self *Credential) Validate() error {
 // "^alice$" is alice, and so is a bare "alice", which is what people type
 // when the anchors mean nothing to them — or empty for a pattern that names
 // several or none, which is what a mailbox address has to be exactly one of.
+// It reads back what PatternForLocalPart writes: "^first\.last$" is
+// first.last, while an unescaped "." stands for any character and names
+// several.
 func LocalPartOfPattern(pattern string) string {
 	local := strings.TrimSpace(pattern)
 	local = strings.TrimPrefix(local, "^")
-	local = strings.TrimSuffix(local, "$")
-	if local == "" || strings.ContainsAny(local, `.*+?()[]{}|\^$@ `) {
-		return ""
+	if strings.HasSuffix(local, "$") && !strings.HasSuffix(local, `\$`) {
+		local = strings.TrimSuffix(local, "$")
 	}
-	return strings.ToLower(local)
+	var named strings.Builder
+	for index := 0; index < len(local); index++ {
+		character := local[index]
+		if character == '\\' {
+			index++
+			if index == len(local) || !strings.ContainsRune(patternSpecialCharacters, rune(local[index])) {
+				return ""
+			}
+			character = local[index]
+		} else if strings.ContainsRune(patternSpecialCharacters, rune(character)) {
+			return ""
+		}
+		if character == '@' || character == ' ' || character == '^' || character == '$' {
+			return ""
+		}
+		named.WriteByte(character)
+	}
+	return strings.ToLower(named.String())
 }
+
+// patternSpecialCharacters are the characters regexp.QuoteMeta escapes: any
+// of them unescaped makes a pattern name more than one local part.
+const patternSpecialCharacters = `\.+*?()|[]{}^$`
 
 // PatternForLocalPart is the pattern that names exactly one local part.
 func PatternForLocalPart(localPart string) string {
