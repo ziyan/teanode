@@ -77,6 +77,10 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
     /// and whether they took it back (its text is then empty).
     public var editedAt: String?
     public var isDeleted = false
+    /// For a message of a chat, the members it mentions by account, and
+    /// whether it mentions everybody, so that the mentions in it are marked.
+    public var mentionedUserIds: [String] = []
+    public var isAllMentioned = false
 
     /// The emoji one side put on it, if any.
     public func reaction(of reactorKind: String) -> String? {

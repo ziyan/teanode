@@ -72,9 +72,10 @@ type ChatMutation interface {
 	// told.
 	MarkChatRead(ctx context.Context, arguments MarkChatReadArguments) (bool, error)
 
-	// Silence a chat's phone notifications until a time, or, with none, stop
-	// silencing them.
-	MuteChat(ctx context.Context, arguments MuteChatArguments) (*models.AgentConversation, error)
+	// Choose what the caller's phone is told of in a chat: every message
+	// (all), only one that mentions them by name or mentions everybody
+	// (mentions), or nothing (off). It stays until they change it.
+	SetChatNotificationLevel(ctx context.Context, arguments SetChatNotificationLevelArguments) (*models.AgentConversation, error)
 
 	// Tell the others the caller is writing. Nothing is stored.
 	SetChatTyping(ctx context.Context, arguments SetChatTypingArguments) (bool, error)
@@ -149,10 +150,11 @@ type MarkChatReadArguments struct {
 	ThroughMessageID string `json:"throughMessageId"`
 }
 
-// MuteChatArguments say until when; none un-silences the chat.
-type MuteChatArguments struct {
-	ConversationID string     `json:"conversationId"`
-	MutedUntil     *time.Time `json:"mutedUntil" graphapi:"nullable"`
+// SetChatNotificationLevelArguments name the chat by the caller's
+// conversation, and the level: all, mentions or off.
+type SetChatNotificationLevelArguments struct {
+	ConversationID    string `json:"conversationId"`
+	NotificationLevel string `json:"notificationLevel"`
 }
 
 // SetChatTypingArguments name the chat by the caller's conversation.
@@ -603,10 +605,24 @@ func sizeInWords(size int64) string {
 	return fmt.Sprintf("%d bytes", size)
 }
 
+// chatSaying is what the caller says in a chat: the words, the files and the
+// message it replies to, whom it mentions, and whether the caller's agent says
+// it under its own name.
+type chatSaying struct {
+	body             string
+	attachmentIds    []string
+	replyToMessageId string
+	isByAgent        bool
+	mentionedUserIds []string
+	isAllMentioned   bool
+}
+
 // postChatMessage stores what the caller said in a chat, tells the members,
 // and notifies their phones. As the agent, the message is the agent's under
-// its name and the caller is its owner.
-func (self *graph) postChatMessage(ctx context.Context, session *chatSession, body string, attachmentIds []string, replyToMessageId string, isByAgent bool) (*models.AgentMessage, error) {
+// its name and the caller is its owner. Only members in the chat now are
+// mentioned; anybody else named is left out.
+func (self *graph) postChatMessage(ctx context.Context, session *chatSession, saying chatSaying) (*models.AgentMessage, error) {
+	body, attachmentIds, replyToMessageId, isByAgent := saying.body, saying.attachmentIds, saying.replyToMessageId, saying.isByAgent
 	tx := self.transaction(ctx)
 	if err := self.requireChatWritable(tx, session); err != nil {
 		return nil, err
@@ -651,6 +667,8 @@ func (self *graph) postChatMessage(ctx context.Context, session *chatSession, bo
 		AuthorName:       session.User.DisplayName(),
 		Body:             strings.TrimRight(body, " \t\r\n"),
 		ReplyToMessageID: strings.TrimSpace(replyToMessageId),
+		MentionedUserIDs: mentionedMembersOf(session.Chat, saying.mentionedUserIds),
+		IsAllMentioned:   saying.isAllMentioned,
 	}
 	for _, attachment := range attachments {
 		message.Attachments = append(message.Attachments, *attachment)
@@ -686,6 +704,20 @@ func (self *graph) postChatMessage(ctx context.Context, session *chatSession, bo
 	}
 	self.publishSaid(ctx, session, shown, repliedAt)
 	return shown, nil
+}
+
+// mentionedMembersOf are the people a message mentions among those asked
+// for: members in the chat now, each once, in the order given.
+func mentionedMembersOf(chat *models.Chat, userIds []string) []string {
+	var mentioned []string
+	for _, userId := range userIds {
+		userId = strings.TrimSpace(userId)
+		if member := chat.Member(userId); member == nil || member.IsRemoved || slices.Contains(mentioned, userId) {
+			continue
+		}
+		mentioned = append(mentioned, userId)
+	}
+	return mentioned
 }
 
 // publishSaid tells the members what was said, and their phones, once it is
@@ -754,7 +786,10 @@ func (self *graph) sayInChat(ctx context.Context, session *chatSession, argument
 	if len(addressed) > 0 && worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	shown, err := self.postChatMessage(ctx, session, arguments.Message, arguments.AttachmentIDs, replyTo, false)
+	shown, err := self.postChatMessage(ctx, session, chatSaying{
+		body: arguments.Message, attachmentIds: arguments.AttachmentIDs, replyToMessageId: replyTo,
+		mentionedUserIds: arguments.MentionedUserIDs, isAllMentioned: arguments.IsAllMentioned,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -798,7 +833,12 @@ func (self *graph) SayInChatAsAgent(ctx context.Context, arguments SayInChatAsAg
 	if !session.Agent.Active() {
 		return nil, agent.ErrUnavailable
 	}
-	return self.postChatMessage(ctx, session, arguments.Message, nil, "", true)
+	// The agent's tool has no composer to choose whom it mentions: an @
+	// before a member's name in its words is the mention.
+	mentionedUserIds, isAllMentioned := models.ChatMentionsIn(arguments.Message, session.Chat.ActiveMembers())
+	return self.postChatMessage(ctx, session, chatSaying{
+		body: arguments.Message, isByAgent: true, mentionedUserIds: mentionedUserIds, isAllMentioned: isAllMentioned,
+	})
 }
 
 // ReactInChatAsAgent is the agent's reaction on a message of a chat its owner
@@ -938,16 +978,16 @@ func (self *graph) MarkChatRead(ctx context.Context, arguments MarkChatReadArgum
 	return isMoved, nil
 }
 
-func (self *graph) MuteChat(ctx context.Context, arguments MuteChatArguments) (*models.AgentConversation, error) {
+func (self *graph) SetChatNotificationLevel(ctx context.Context, arguments SetChatNotificationLevelArguments) (*models.AgentConversation, error) {
+	notificationLevel := models.ChatNotificationLevel(strings.TrimSpace(arguments.NotificationLevel))
+	if !notificationLevel.IsValid() {
+		return nil, fmt.Errorf("%w: the notification level is all, mentions or off", api.ErrInvalidArguments)
+	}
 	session, err := self.requireChatMember(ctx, arguments.ConversationID)
 	if err != nil {
 		return nil, err
 	}
-	mutedUntil := arguments.MutedUntil
-	if mutedUntil != nil && !mutedUntil.After(time.Now()) {
-		mutedUntil = nil
-	}
-	if err := self.transaction(ctx).SetChatMuted(session.Chat.ID, session.User.ID, mutedUntil); err != nil {
+	if err := self.transaction(ctx).SetChatNotificationLevel(session.Chat.ID, session.User.ID, notificationLevel); err != nil {
 		return nil, translateError(err)
 	}
 	return self.chatConversationOf(ctx, session.User.ID, session.Conversation)

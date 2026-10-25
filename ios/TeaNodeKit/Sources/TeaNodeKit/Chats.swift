@@ -90,14 +90,15 @@ public struct ChatSummary: Codable, Hashable, Sendable {
     public var members: [ChatMember]
     /// How many messages by others are newer than the person's read mark.
     public var unreadCount: Int
-    public var isMuted: Bool
-    public var mutedUntil: String?
+    /// What the person's phone is told of here, as the server names it; see
+    /// `level`.
+    public var notificationLevel: String?
     /// The person is no longer in it; they read it up to when they left.
     public let isRemoved: Bool
 
     public init(
         chatId: String, chatKind: String, circleId: String? = nil, title: String? = nil, isCircleChat: Bool = false,
-        members: [ChatMember], unreadCount: Int = 0, isMuted: Bool = false, mutedUntil: String? = nil, isRemoved: Bool = false
+        members: [ChatMember], unreadCount: Int = 0, notificationLevel: ChatNotificationLevel = .all, isRemoved: Bool = false
     ) {
         self.chatId = chatId
         self.chatKind = chatKind
@@ -106,12 +107,18 @@ public struct ChatSummary: Codable, Hashable, Sendable {
         self.isCircleChat = isCircleChat
         self.members = members
         self.unreadCount = unreadCount
-        self.isMuted = isMuted
-        self.mutedUntil = mutedUntil
+        self.notificationLevel = notificationLevel.rawValue
         self.isRemoved = isRemoved
     }
 
     public var isGroup: Bool { chatKind == ChatKind.group.rawValue }
+
+    /// What the person's phone is told of here; all when the server named
+    /// none it knows.
+    public var level: ChatNotificationLevel {
+        get { notificationLevel.flatMap(ChatNotificationLevel.init(rawValue:)) ?? .all }
+        set { notificationLevel = newValue.rawValue }
+    }
 
     /// The people to show a chat by: everybody but the person, and but
     /// those who left a group. A direct chat keeps showing the other
@@ -190,13 +197,14 @@ public struct ChatSummary: Codable, Hashable, Sendable {
     }
 }
 
-/// ChatUnread is how many messages wait across the chats that are not
-/// muted: the number on the entry to the conversations. A muted chat shows
-/// its own count in the list and does not ask for attention from outside.
+/// ChatUnread is how many messages wait across the chats the person is told
+/// all of: the number on the entry to the conversations. A chat told only of
+/// mentions, or of nothing, shows its own count in the list and does not ask
+/// for attention from outside.
 public enum ChatUnread {
     public static func total(of conversations: [AgentConversation]) -> Int {
         conversations.reduce(0) { sum, conversation in
-            guard let chat = conversation.chat, !chat.isMuted else { return sum }
+            guard let chat = conversation.chat, chat.level == .all else { return sum }
             return sum + chat.unreadCount
         }
     }
@@ -357,6 +365,8 @@ extension Transcript {
         line.reactions = message.reactions ?? []
         line.editedAt = message.editedAt
         line.isDeleted = message.isDeleted ?? false
+        line.mentionedUserIds = message.mentionedUserIds ?? []
+        line.isAllMentioned = message.isAllMentioned ?? false
         for reference in message.references ?? [] {
             if reference.isReply {
                 line.quotedText = reference.quotedText ?? ""
@@ -445,6 +455,17 @@ public struct ChatTyping: Equatable, Sendable {
     }
 }
 
+/// ChatNotificationLevel is what a member's phone is told of in a chat: every
+/// message, only one that mentions them (by name, or everybody), or nothing.
+/// It stays until they change it.
+public enum ChatNotificationLevel: String, CaseIterable, Sendable, Identifiable {
+    case all
+    case mentions
+    case off
+
+    public var id: String { rawValue }
+}
+
 /// AddressableAgent is an agent a message in a chat can be addressed to: the
 /// person's own, and the agents of members who let the others ask.
 public struct AddressableAgent: Hashable, Sendable, Identifiable {
@@ -486,11 +507,51 @@ extension ChatSummary {
     }
 }
 
-/// ChatMention is the @ in the composer that chooses which agent a message in
-/// a chat is for. An agent's name in ordinary prose addresses nothing: only
-/// one chosen from the offer, whose name is still in the words, or the agent of
-/// a message replied to.
+/// MentionChoice is one line an @ in a chat offers: a person, which mentions
+/// them (their phone is told even when they hear only of mentions) and asks
+/// nothing of their agent; an agent, which asks it to answer; or everybody.
+public enum MentionChoice: Hashable, Sendable, Identifiable {
+    case person(userId: String, name: String)
+    case agent(AddressableAgent)
+    case all
+
+    public var id: String {
+        switch self {
+        case .person(let userId, _): return "person:\(userId)"
+        case .agent(let agent): return "agent:\(agent.agentId)"
+        case .all: return "all"
+        }
+    }
+}
+
+extension ChatSummary {
+    /// What an @ offers in this chat: the person's own agent first, then
+    /// everybody (in a group), then each of the others followed by their
+    /// agent when they let the chat ask it. A person and their agent are two
+    /// lines, named apart.
+    public func mentionChoices(ownUserId: String?, deletedAccountNote: String) -> [MentionChoice] {
+        let agents = addressableAgents(ownUserId: ownUserId, deletedAccountNote: deletedAccountNote)
+        var choices: [MentionChoice] = agents.filter(\.isOwn).map { .agent($0) }
+        if isGroup { choices.append(.all) }
+        for member in members where !member.isRemoved && !member.isDeletedAccount && !member.userId.isEmpty && member.userId != ownUserId {
+            let name = Self.name(of: member, deletedAccountNote: deletedAccountNote).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty { choices.append(.person(userId: member.userId, name: name)) }
+            if let agent = agents.first(where: { !$0.isOwn && $0.agentId == member.agentId }) { choices.append(.agent(agent)) }
+        }
+        return choices
+    }
+}
+
+/// ChatMention is the @ in the composer. Choosing an agent from what it
+/// offers asks that agent; an agent's name in ordinary prose asks nothing:
+/// only one chosen whose name is still in the words, or the agent of a
+/// message replied to. Mentioning people is read from the words: an @ and
+/// the name of somebody in the chat, or the word for everybody.
 public enum ChatMention {
+    /// The words after an @ that mention everybody, in each language the
+    /// apps are shown in, as the server's models.ChatAllMentionWords.
+    public static let allWords = ["all", "所有人", "全員"]
+
     /// The letters after the @ at the end of the words, when the words end
     /// in an @ that starts a word; nil otherwise. The caret of a text field
     /// is not known here, so a mention is the one being typed at the end.
@@ -502,18 +563,33 @@ public enum ChatMention {
         return String(query)
     }
 
-    /// The agents whose name starts with what was typed after the @, in any
-    /// case; every agent for a bare @.
-    public static func matching(_ agents: [AddressableAgent], query: String) -> [AddressableAgent] {
-        let wanted = query.lowercased()
-        return agents.filter { $0.name.lowercased().replacingOccurrences(of: " ", with: "").hasPrefix(wanted) }
+    /// What follows the @ for a choice. Everybody is the word of the language
+    /// the app is shown in (allWord); the server is told the mention apart
+    /// from the words, so any language's word means the same.
+    public static func word(of choice: MentionChoice, allWord: String) -> String {
+        switch choice {
+        case .person(_, let name): return name
+        case .agent(let agent): return agent.name
+        case .all: return allWord
+        }
     }
 
-    /// The words with the @ being typed made the chosen agent's name and a
-    /// space.
-    public static func choosing(_ agent: AddressableAgent, in draft: String) -> String {
+    /// The choices whose word starts with what was typed after the @, in any
+    /// case and with no spaces; every choice for a bare @. Everybody also
+    /// answers to "all" in any language.
+    public static func matching(_ choices: [MentionChoice], query: String, allWord: String) -> [MentionChoice] {
+        let wanted = query.lowercased()
+        func fits(_ word: String) -> Bool { word.lowercased().replacingOccurrences(of: " ", with: "").hasPrefix(wanted) }
+        return choices.filter { choice in
+            if case .all = choice, fits("all") { return true }
+            return fits(word(of: choice, allWord: allWord))
+        }
+    }
+
+    /// The words with the @ being typed made the chosen word and a space.
+    public static func choosing(_ choice: MentionChoice, in draft: String, allWord: String) -> String {
         guard let at = draft.lastIndex(of: "@") else { return draft }
-        return String(draft[..<at]) + "@\(agent.name) "
+        return String(draft[..<at]) + "@\(word(of: choice, allWord: allWord)) "
     }
 
     /// The agents a message is for: those chosen whose names are still in the
@@ -521,14 +597,89 @@ public enum ChatMention {
     /// of a message replied to, each once.
     public static func addressed(in text: String, chosen: [AddressableAgent], repliedToAgentId: String? = nil) -> [String] {
         var ids: [String] = []
-        for agent in chosen {
-            let mention = "@\(agent.name)"
-            guard let found = text.range(of: mention) else { continue }
-            if let next = text[found.upperBound...].first, next.isLetter || next.isNumber || next == "_" { continue }
+        for agent in chosen where hasMention(of: agent.name, in: text) {
             if !ids.contains(agent.agentId) { ids.append(agent.agentId) }
         }
         if let repliedToAgentId, !repliedToAgentId.isEmpty, !ids.contains(repliedToAgentId) { ids.append(repliedToAgentId) }
         return ids
+    }
+
+    /// Who the words mention when they are sent: each other person in the
+    /// chat whose name follows an @, typed or chosen, and everybody when an @
+    /// is followed by the word for it in any language. A name that is the
+    /// name of an agent chosen from the @ is that agent, asked, and mentions
+    /// nobody.
+    public static func mentioned(
+        in text: String, chat: ChatSummary, ownUserId: String?, deletedAccountNote: String, chosenAgents: [AddressableAgent]
+    ) -> (userIds: [String], isAllMentioned: Bool) {
+        let askedNames = Set(chosenAgents.filter { hasMention(of: $0.name, in: text) }.map { $0.name.lowercased() })
+        var userIds: [String] = []
+        for case .person(let userId, let name) in chat.mentionChoices(ownUserId: ownUserId, deletedAccountNote: deletedAccountNote)
+        where !askedNames.contains(name.lowercased()) && hasMention(of: name, in: text) && !userIds.contains(userId) {
+            userIds.append(userId)
+        }
+        return (userIds, allWords.contains { hasMention(of: $0, in: text) })
+    }
+
+    /// Whether the words hold an @ and then the word, at the start of a
+    /// mention (not inside an address) and not the start of a longer word.
+    public static func hasMention(of word: String, in text: String) -> Bool {
+        !ranges(of: [word], in: text).isEmpty
+    }
+
+    /// Where the words hold an @ and one of the given words, earliest first,
+    /// the longer of two that fit at one place: what a message's mentions
+    /// are marked over.
+    public static func ranges(of words: [String], in text: String) -> [Range<String.Index>] {
+        let candidates = words.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+            .sorted { $0.count > $1.count }
+        var found: [Range<String.Index>] = []
+        var at = text.startIndex
+        while let sign = text[at...].firstIndex(of: "@") {
+            defer { at = text.index(after: sign) }
+            if sign != text.startIndex {
+                let before = text[text.index(before: sign)]
+                if before.isASCII && (before.isLetter || before.isNumber || "_.+-@".contains(before)) { continue }
+            }
+            let rest = text[text.index(after: sign)...]
+            for word in candidates {
+                guard let match = rest.range(of: word, options: [.caseInsensitive, .anchored]) else { continue }
+                if let next = rest[match.upperBound...].first, next.isLetter || next.isNumber || next == "_" { continue }
+                found.append(sign..<match.upperBound)
+                break
+            }
+        }
+        return found
+    }
+}
+
+/// ChatMentionWord is a word a message mentions somebody by, after its @: a
+/// member's name, or a word for everybody. isReader says it is the person
+/// reading, whose mention is drawn stronger.
+public struct ChatMentionWord: Hashable, Sendable {
+    public let word: String
+    public let isReader: Bool
+
+    public init(word: String, isReader: Bool) {
+        self.word = word
+        self.isReader = isReader
+    }
+}
+
+extension TranscriptLine {
+    /// The words this message of a chat mentions people by, for marking: the
+    /// names of the members it mentions, and the words for everybody when it
+    /// mentions everybody, which include the reader.
+    public func mentionWords(in chat: ChatSummary?, ownUserId: String?, deletedAccountNote: String) -> [ChatMentionWord] {
+        var words: [ChatMentionWord] = []
+        for userId in mentionedUserIds {
+            guard let member = chat?.member(userId) else { continue }
+            words.append(ChatMentionWord(word: ChatSummary.name(of: member, deletedAccountNote: deletedAccountNote), isReader: userId == ownUserId))
+        }
+        if isAllMentioned {
+            words += ChatMention.allWords.map { ChatMentionWord(word: $0, isReader: true) }
+        }
+        return words
     }
 }
 
@@ -575,7 +726,7 @@ extension Documents {
     /// server's test of the app's documents fills in one level of shared
     /// fields.
     static let chatFields = """
-        chatId chatKind circleId title isCircleChat unreadCount isMuted mutedUntil isRemoved
+        chatId chatKind circleId title isCircleChat unreadCount notificationLevel isRemoved
         members { userId username name avatarUrl avatarColorIndex memberRole isDeletedAccount isRemoved readThroughMessageId isAgentReading isAgentAskableByOthers agentId agentName isAgentActive }
         """
     /// What every read of a message answers with, in every conversation.
@@ -585,6 +736,7 @@ extension Documents {
         references { itemId threadId subject from path name recordingId recordingTitle photoId photoTitle financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
         reactions { emoji reactorKind reactedAt reactorUserId reactorName }
         authorKind authorUserId authorName authorOwnerName authorAvatarUrl authorAvatarColorIndex authorAgentId agentRunId isMine isAgentWork editedAt isDeleted
+        mentionedUserIds isAllMentioned
         """
     public static let chatPeople = """
         query { ListCirclePeople { userId username name avatarUrl avatarColorIndex } }
@@ -618,8 +770,10 @@ extension Documents {
           MarkChatRead(conversationId: $conversationId, throughMessageId: $throughMessageId)
         }
         """
-    public static let muteChat = """
-        mutation ($conversationId: String!, $mutedUntil: DateTime) { MuteChat(conversationId: $conversationId, mutedUntil: $mutedUntil) { id } }
+    public static let setChatNotificationLevel = """
+        mutation ($conversationId: String!, $notificationLevel: String!) {
+          SetChatNotificationLevel(conversationId: $conversationId, notificationLevel: $notificationLevel) { id }
+        }
         """
     public static let setChatTyping = """
         mutation ($conversationId: String!) { SetChatTyping(conversationId: $conversationId) }
@@ -744,15 +898,14 @@ extension Connection {
             as: Answer.self)
     }
 
-    /// Silences a chat's notifications until a time, or with none stops
-    /// silencing them.
-    public func muteChat(_ conversationId: String, until: Date?) async throws {
-        struct Answer: Decodable, Sendable { let MuteChat: JSONValue? }
+    /// Chooses what the person's phone is told of in a chat: every message,
+    /// only one that mentions them or everybody, or nothing.
+    public func setChatNotificationLevel(_ conversationId: String, to notificationLevel: ChatNotificationLevel) async throws {
+        struct Answer: Decodable, Sendable { let SetChatNotificationLevel: JSONValue? }
         _ = try await execute(
-            Documents.muteChat,
-            variables: [
-                "conversationId": .string(conversationId), "mutedUntil": until.map { .string($0.formatted(.iso8601)) } ?? .null,
-            ], as: Answer.self)
+            Documents.setChatNotificationLevel,
+            variables: ["conversationId": .string(conversationId), "notificationLevel": .string(notificationLevel.rawValue)],
+            as: Answer.self)
     }
 
     /// Tells the others the person is writing. Nothing is stored.

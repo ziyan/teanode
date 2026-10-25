@@ -23,7 +23,7 @@ chat to its members), `internal/agent/chat.go`.
   see Chats below. A member can archive it, with the agent on or off, and it
   leaves only their own list: `UpdateAgentConversation` sets `archived_at` on
   their row, the listing follows it as for a named conversation, and a new
-  message does not bring it back. An archived chat is as quiet as a muted one:
+  message does not bring it back. An archived chat is as quiet as one turned off:
   no phone notification for it (`NotifyChatMessage` skips a member whose
   conversation is archived), and it stays out of the unread count, which is
   read from the live list.
@@ -275,7 +275,7 @@ why.
 
 **How it is stored.** What people and agents say is stored once, in
 `chat_message` (migration 0194). `chat` is the room, `chat_member` who is or was
-in it (with the read mark, the mute, whether the member's agent remembers it and
+in it (with the read mark, the notification level, whether the member's agent remembers it and
 whether the others may ask that agent there), `chat_reaction` one reaction for
 each person on a message. Each member also has their own `agent_conversation`
 of the kind `chat`, with `chat_id` pointing at the room, made in the
@@ -379,9 +379,9 @@ its phone notifications belong to the chat hub (`internal/chat`), which a server
 builds whether or not it has a language model, so chats are live, typing and
 read marks show, and phones are told on a server that runs no agent. A phone is
 told of a message (the notification kind `chat`, titled with the author's name
-and, in a group, the chat's) when its person is not the author, has not muted
-the chat and is not looking at that chat in a dashboard or the app
-(`Hub.NotifyChatMessage`): a shown tab or the app on another screen, or on
+and, in a group, the chat's) when its person is not the author, is told of it by
+their notification level and is not looking at that chat in a dashboard or the
+app (`Hub.NotifyChatMessage`): a shown tab or the app on another screen, or on
 another conversation, does not hold a message back; the phone's thread is the
 member's own conversation. The phones hang from the
 person's `agent` row, switched off or not, and the operations that register,
@@ -392,6 +392,32 @@ reporter and the conversation it shows (`conversationId`, empty when it shows
 none: the drawer closed, or the app on another screen), and
 `Presence.IsWatchingConversation` is true while a shown, recently used reporter
 has that conversation on screen.
+
+**Notification levels and mentions.** Each member chooses what their phone is
+told of in a chat, `chat_member.notification_level` (migration 0258): `all`,
+every message (the start); `mentions`, only a message that mentions them by name
+or mentions everybody; `off`, nothing, a mention included. It stays until they
+change it (`SetChatNotificationLevel`; the dashboard's chat menu, the app's chat
+menu, its members sheet and the list's long press, `notifications` on the
+command line and the conversation tool). The migration carried a mute that was
+still running over as `off`, and dropped `muted_until`. `ChatView` still answers
+`isMuted` (a chat turned off) and `mutedUntil` (always null) for app builds made
+before the level, which read them to list a chat at all.
+What a message mentions is stored with it when it is said, in
+`chat_message.mentioned_user_ids` and `is_all_mentioned`, never read again from
+the words: the composer's `@` offers each other member and, in a group,
+everybody (`@all`, written `@所有人` or `@全員` in Chinese and Japanese), and the
+client sends `mentionedUserIds` and `isAllMentioned` with `AskAgent`; the server
+keeps only members in the chat now. What an agent writes, which comes with no
+composer, is read once as it is stored (`models.ChatMentionsIn`: an @ and a
+member's name, or one of the words for everybody). Mentioning a person is not
+addressing their agent: the `@` lists a person and their agent apart ("Ada" and
+"Ada's agent"), a person mention starts no turn, and an agent addressed is no
+mention of its owner. A notification of a message that mentions its reader
+says so in their language ("Milo mentioned you in Trip"), and the dashboard
+and the app mark the mentions in the words, the reader's own stronger. A chat
+not at `all` does not count toward the unread number on the drawer's button or
+the Chats tab.
 
 **Agents in a chat.** A message starts a turn of an agent only when its author
 addresses that agent: the composer's `@` chooses it, or replying to one of its
@@ -524,8 +550,10 @@ how far each has read and what their agent does there, and `teanode agent ask
 `--ask-agent` on `ask` asks your own agent there and follows the turn like an
 ordinary ask, `--address ID-or-username` (repeatable) asks another member's
 agent that its owner let the chat ask, and a line of `agent chat` that starts
-with `@agent` asks your own.
-`direct`, `group`, `add`, `remove`, `leave`, `mute`, `read`, `edit` and
+with `@agent` asks your own; `--mention USERNAME` (repeatable) and
+`--mention-all` on `ask` mention people, and a line of `agent chat` mentions
+whoever it names after an @.
+`direct`, `group`, `add`, `remove`, `leave`, `notifications`, `read`, `edit` and
 `delete-message` do the rest, and `remember ID on|off` and
 `others-may-ask ID on|off` are the two switches. `agent chat` finds what the others say by looking every couple of
 seconds, as a terminal cannot be pushed to.
@@ -570,7 +598,7 @@ is judged from the call (`chatRiskOf`):
 | `add_members` | `AddChatMembers` | granting: they read everything said from then on |
 | `remove_member` | `RemoveChatMember` | destructive |
 | `leave` | `LeaveChat` | destructive: an admin has to add the person back |
-| `mute` | `MuteChat` | write; no end time mutes until the person unmutes, as the dashboard does |
+| `notifications` | `SetChatNotificationLevel` | write; `notification_level` is all, mentions or off |
 | `mark_read` | `MarkChatRead` | write; through the newest message people said unless one is named |
 | `edit` | `EditChatMessage` | outward, as sending is: everybody reads the new words as the person's, and the old ones are not kept |
 | `delete_message` | `DeleteChatMessage` | destructive |

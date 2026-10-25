@@ -60482,38 +60482,6 @@
         }
       }
     },
-    "Mute for 8 hours": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "8時間ミュート"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "静音 8 小时"
-          }
-        }
-      }
-    },
-    "Mute until I unmute": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "解除するまでミュート"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "静音直到我取消"
-          }
-        }
-      }
-    },
     "Leave group": {
       "localizations": {
         "ja": {
@@ -60974,22 +60942,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 的助手"
-          }
-        }
-      }
-    },
-    "Agents you can ask here": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ここで頼めるエージェント"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "可以在这里呼叫的助手"
           }
         }
       }
@@ -85528,6 +85480,135 @@
           "stringUnit": {
             "state": "translated",
             "value": "服务器的存储空间已满。有空间后会继续备份。"
+          }
+        }
+      }
+    },
+    "all": {
+      "comment": "After an @, mentions everybody in a chat",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全員"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有人"
+          }
+        }
+      }
+    },
+    "All messages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのメッセージ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有消息"
+          }
+        }
+      }
+    },
+    "Only mentions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メンションのみ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅@我"
+          }
+        }
+      }
+    },
+    "Notifications off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知オフ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知已关闭"
+          }
+        }
+      }
+    },
+    "Tells them": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本人に通知"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知对方"
+          }
+        }
+      }
+    },
+    "Everyone in this chat": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このチャットの全員"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聊天中的所有人"
+          }
+        }
+      }
+    },
+    "People and agents you can mention": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メンションできる人とエージェント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以@的人和助手"
+          }
+        }
+      }
+    },
+    "Only mentions: you are told when someone writes @ and your name, or @all. It stays as you set it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メンションのみ：誰かが @ とあなたの名前、または @全員 と書いたときだけ通知します。設定はそのまま続きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅@我：有人写下 @ 和你的名字，或 @所有人 时才会通知你。设置会一直保持。"
           }
         }
       }

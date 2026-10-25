@@ -769,3 +769,55 @@ func TestAReplyToAnAgentsMessageAddressesThatAgent(t *testing.T) {
 	world.call(t, world.grace, fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "thanks", references: [{agentMessageId: %q}]) { runId } }`, graceChat, question))
 	waitForRequests(2)
 }
+
+// Mentioning a person tells the person and never starts their agent;
+// addressing their agent starts it and is no mention of them. Only members
+// in the chat are mentioned, and an agent's @ before a member's name in its
+// answer mentions them.
+func TestAMentionOfAPersonIsNotAddressingTheirAgent(t *testing.T) {
+	world := newChatWorld(t)
+	answer := `{"id":"s3","model":"m","choices":[{"delta":{"content":"@` + world.grace.Name + ` Thursday at 3."},"finish_reason":"stop"}]}
+{"id":"s3","choices":[],"usage":{"prompt_tokens":120,"completion_tokens":8}}`
+	requests := world.withModel(t, []string{answer})
+	world.shareCircle(t, world.frank, "Home", world.grace, world.bob)
+	group := world.call(t, world.frank, fmt.Sprintf(`mutation { CreateGroupChat(title: "Trip", userIds: [%q, %q]) %s }`, world.grace.ID, world.bob.ID, chatTestFields))["CreateGroupChat"].(map[string]any)["id"].(string)
+	groupId := world.chatIdOf(t, world.frank, group)
+	graceGroup := world.conversationOf(t, world.grace, groupId)
+	frankAgent := world.agentOf(t, world.frank)
+	world.call(t, world.frank, fmt.Sprintf(`mutation { SetChatAgentAskableByOthers(conversationId: %q, isAgentAskableByOthers: true) %s }`, group, chatAgentFields))
+
+	// Grace mentions Frank, and somebody who is not in the chat: Frank is
+	// mentioned, his agent is not started, and the stranger is left out.
+	data := world.call(t, world.grace, fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "@Frank lunch?", mentionedUserIds: [%q, %q]) { runId conversationId } }`, graceGroup, world.frank.ID, world.alice.ID))
+	if runId := data["AskAgent"].(map[string]any)["runId"]; runId != "" {
+		t.Errorf("mentioning Frank started the run %v", runId)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if len(requests()) != 0 {
+		t.Fatal("mentioning Frank started his agent")
+	}
+	messages := world.read(t, world.frank, group)
+	mentioned := messages[len(messages)-1]
+	if ids, _ := mentioned["mentionedUserIds"].([]any); len(ids) != 1 || ids[0] != world.frank.ID || mentioned["isAllMentioned"] != false {
+		t.Errorf("the message mentions %v, all %v; want Frank alone", mentioned["mentionedUserIds"], mentioned["isAllMentioned"])
+	}
+
+	// Grace asks Frank's agent and mentions everybody: the agent answers, and
+	// the message mentions everybody but names nobody.
+	world.call(t, world.grace, fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "@Agent and @all: when?", addressedAgentIds: [%q], isAllMentioned: true) { runId } }`, graceGroup, frankAgent.ID))
+	reply := world.answerIn(t, world.grace, graceGroup)
+	messages = world.read(t, world.grace, graceGroup)
+	var asked map[string]any
+	for _, message := range messages {
+		if message["content"] == "@Agent and @all: when?" {
+			asked = message
+		}
+	}
+	if ids, _ := asked["mentionedUserIds"].([]any); asked == nil || len(ids) != 0 || asked["isAllMentioned"] != true {
+		t.Errorf("the question mentions %v, all %v; want everybody and nobody by name", asked["mentionedUserIds"], asked["isAllMentioned"])
+	}
+	// The agent wrote an @ before Grace's name: that mentions her.
+	if ids, _ := reply["mentionedUserIds"].([]any); len(ids) != 1 || ids[0] != world.grace.ID {
+		t.Errorf("the agent's answer %q mentions %v; want Grace", reply["content"], reply["mentionedUserIds"])
+	}
+}

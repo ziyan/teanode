@@ -880,7 +880,7 @@ func (self *changingOperations) Execute(_ context.Context, document string, vari
 	}
 	answer := map[string]any{
 		"id": "a-conversation", "title": "Weekend plans",
-		"chat": map[string]any{"chatId": "a-chat", "chatKind": "group", "isMuted": false, "members": []map[string]any{
+		"chat": map[string]any{"chatId": "a-chat", "chatKind": "group", "notificationLevel": "all", "members": []map[string]any{
 			{"userId": "u1", "username": "act-owner", "name": "Example Owner", "memberRole": "admin"},
 			{"userId": "u2", "username": "act-friend", "name": "Example Friend", "memberRole": "member"},
 		}},
@@ -931,7 +931,7 @@ func TestChatActionsAreJudgedByWhatTheyCost(t *testing.T) {
 		`{"action":"add_members","conversation_id":"c","usernames":["act-friend"]}`: tools.RiskGranting,
 		`{"action":"remove_member","conversation_id":"c","username":"act-friend"}`:  tools.RiskDestructive,
 		`{"action":"leave","conversation_id":"c"}`:                                  tools.RiskDestructive,
-		`{"action":"mute","conversation_id":"c"}`:                                   tools.RiskWrite,
+		`{"action":"notifications","conversation_id":"c"}`:                          tools.RiskWrite,
 		`{"action":"mark_read","conversation_id":"c"}`:                              tools.RiskWrite,
 		`{"action":"edit","chat_message_id":"m","text":"on my way"}`:                tools.RiskOutward,
 		`{"action":"delete_message","chat_message_id":"m"}`:                         tools.RiskDestructive,
@@ -1112,40 +1112,20 @@ func TestChatActionsRunTheOperationsAndAskInPlainWords(t *testing.T) {
 		t.Errorf("the card for leaving says %q", line)
 	}
 
-	// Muting: for good by default as the dashboard does it, until a length of
-	// time or a time, and off. A time that has passed is not a mute.
-	if _, err := call(`{"action":"mute","conversation_id":"` + chatId + `"}`); err != nil {
-		t.Fatalf("mute: %s", err)
-	}
-	if document, variables = operations.lastCall(t); !strings.Contains(document, "MuteChat(") || variables["mutedUntil"] != "2999-01-01T00:00:00Z" {
-		t.Errorf("mute asked %s with %v", document, variables)
-	}
-	before := time.Now()
-	if _, err := call(`{"action":"mute","conversation_id":"` + chatId + `","until":"8h"}`); err != nil {
-		t.Fatalf("mute for 8h: %s", err)
-	}
-	_, variables = operations.lastCall(t)
-	ends, err := time.Parse(time.RFC3339, fmt.Sprint(variables["mutedUntil"]))
-	if err != nil || ends.Before(before.Add(8*time.Hour-time.Minute)) || ends.After(before.Add(8*time.Hour+time.Minute)) {
-		t.Errorf("mute for 8h ends at %v (%v)", variables["mutedUntil"], err)
-	}
-	future := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Second)
-	if _, err := call(`{"action":"mute","conversation_id":"` + chatId + `","until":"` + future.Format(time.RFC3339) + `"}`); err != nil {
-		t.Fatalf("mute until a time: %s", err)
-	}
-	if _, variables = operations.lastCall(t); variables["mutedUntil"] != future.Format(time.RFC3339) {
-		t.Errorf("mute until %s asked %v", future, variables)
-	}
-	if _, err := call(`{"action":"mute","conversation_id":"` + chatId + `","is_muted":false}`); err != nil {
-		t.Fatalf("unmute: %s", err)
-	}
-	if _, variables = operations.lastCall(t); variables["mutedUntil"] != nil {
-		t.Errorf("unmute asked %v", variables)
+	// What the person's phone is told of: one of the three levels, and
+	// nothing else.
+	for _, notificationLevel := range []string{"mentions", "off", "all"} {
+		if _, err := call(`{"action":"notifications","conversation_id":"` + chatId + `","notification_level":"` + notificationLevel + `"}`); err != nil {
+			t.Fatalf("notifications %s: %s", notificationLevel, err)
+		}
+		if document, variables = operations.lastCall(t); !strings.Contains(document, "SetChatNotificationLevel(") || variables["notificationLevel"] != notificationLevel {
+			t.Errorf("notifications %s asked %s with %v", notificationLevel, document, variables)
+		}
 	}
 	for _, arguments := range []string{
-		`{"action":"mute","conversation_id":"` + chatId + `","until":"2020-01-01 09:00"}`,
-		`{"action":"mute","conversation_id":"` + chatId + `","until":"next whenever"}`,
-		`{"action":"mute","conversation_id":"` + chatId + `","is_muted":false,"until":"8h"}`,
+		`{"action":"notifications","conversation_id":"` + chatId + `"}`,
+		`{"action":"notifications","conversation_id":"` + chatId + `","notification_level":"loud"}`,
+		`{"action":"notifications","notification_level":"off"}`,
 	} {
 		if _, err := call(arguments); err == nil {
 			t.Errorf("%s was accepted", arguments)

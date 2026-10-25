@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"strings"
-	"time"
 )
 
 // Chats: conversations with other people in them. A chat is listed, read,
@@ -23,9 +22,11 @@ type AgentChat struct {
 	Members []*AgentChatMember `json:"members"`
 
 	// UnreadCount is how many messages by others you have not read.
-	UnreadCount int        `json:"unreadCount"`
-	IsMuted     bool       `json:"isMuted"`
-	MutedUntil  *time.Time `json:"mutedUntil"`
+	UnreadCount int `json:"unreadCount"`
+
+	// NotificationLevel is what your phone is told of in the chat: all,
+	// mentions or off.
+	NotificationLevel string `json:"notificationLevel"`
 
 	// IsRemoved says you are no longer in it; you read it up to then.
 	IsRemoved bool `json:"isRemoved"`
@@ -53,7 +54,7 @@ type AgentChatMember struct {
 
 // chatFields is a chat as the commands read it. The pictures are the dashboard's
 // and the app's to draw.
-const chatFields = `{ chatId chatKind circleId title isCircleChat unreadCount isMuted mutedUntil isRemoved
+const chatFields = `{ chatId chatKind circleId title isCircleChat unreadCount notificationLevel isRemoved
 		members { userId username name memberRole isDeletedAccount isRemoved readThroughMessageId isAgentReading isAgentAskableByOthers agentId agentName isAgentActive } }`
 
 // The documents.
@@ -67,7 +68,7 @@ const (
 	DocumentEditChatMessage             = `mutation ($messageId: String!, $message: String!) { EditChatMessage(messageId: $messageId, message: $message) { id createdAt content authorName editedAt } }`
 	DocumentDeleteChatMessage           = `mutation ($messageId: String!) { DeleteChatMessage(messageId: $messageId) }`
 	DocumentMarkChatRead                = `mutation ($conversationId: String!, $throughMessageId: String!) { MarkChatRead(conversationId: $conversationId, throughMessageId: $throughMessageId) }`
-	DocumentMuteChat                    = `mutation ($conversationId: String!, $mutedUntil: DateTime) { MuteChat(conversationId: $conversationId, mutedUntil: $mutedUntil) ` + conversationFields + ` }`
+	DocumentSetChatNotificationLevel    = `mutation ($conversationId: String!, $notificationLevel: String!) { SetChatNotificationLevel(conversationId: $conversationId, notificationLevel: $notificationLevel) ` + conversationFields + ` }`
 	DocumentSetChatTyping               = `mutation ($conversationId: String!) { SetChatTyping(conversationId: $conversationId) }`
 	DocumentSetChatAgentReading         = `mutation ($conversationId: String!, $isAgentReading: Boolean!) { SetChatAgentReading(conversationId: $conversationId, isAgentReading: $isAgentReading) ` + conversationFields + ` }`
 	DocumentSetChatAgentAskableByOthers = `mutation ($conversationId: String!, $isAgentAskableByOthers: Boolean!) { SetChatAgentAskableByOthers(conversationId: $conversationId, isAgentAskableByOthers: $isAgentAskableByOthers) ` + conversationFields + ` }`
@@ -174,20 +175,18 @@ func MarkChatRead(ctx context.Context, connection *Client, conversationId, throu
 	return result.MarkChatRead, nil
 }
 
-// MuteChat silences a chat's notifications until a time, or with nil
-// stops silencing them.
-func MuteChat(ctx context.Context, connection *Client, conversationId string, mutedUntil *time.Time) (*AgentConversation, error) {
+// SetChatNotificationLevel chooses what your phone is told of in a chat:
+// every message (all), only one that mentions you or everybody (mentions),
+// or nothing (off).
+func SetChatNotificationLevel(ctx context.Context, connection *Client, conversationId, notificationLevel string) (*AgentConversation, error) {
 	var result struct {
-		MuteChat *AgentConversation `json:"MuteChat"`
+		SetChatNotificationLevel *AgentConversation `json:"SetChatNotificationLevel"`
 	}
-	variables := map[string]any{"conversationId": conversationId, "mutedUntil": nil}
-	if mutedUntil != nil {
-		variables["mutedUntil"] = mutedUntil.Format(time.RFC3339)
-	}
-	if err := connection.Execute(ctx, DocumentMuteChat, variables, &result); err != nil {
+	variables := map[string]any{"conversationId": conversationId, "notificationLevel": notificationLevel}
+	if err := connection.Execute(ctx, DocumentSetChatNotificationLevel, variables, &result); err != nil {
 		return nil, err
 	}
-	return result.MuteChat, nil
+	return result.SetChatNotificationLevel, nil
 }
 
 // SetChatTyping tells the others in a chat you are writing.

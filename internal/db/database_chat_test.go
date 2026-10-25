@@ -782,33 +782,70 @@ func TestAReplyQuotesAMessageOfItsOwnChat(t *testing.T) {
 	})
 }
 
-// A mute is until a time, and clearing it is nil.
-func TestAChatCanBeMutedForAWhile(t *testing.T) {
+// A member's notification level starts at all and is theirs to change; a
+// level that is not one of the three, or a person not in the chat, is
+// refused.
+func TestAMembersNotificationLevelIsTheirsToChange(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		alice := newCircleTestUser(t, tx, "mute-alice")
-		bob := newCircleTestUser(t, tx, "mute-bob")
+		alice := newCircleTestUser(t, tx, "level-alice")
+		bob := newCircleTestUser(t, tx, "level-bob")
 		chat, err := tx.OpenDirectChat(alice.ID, bob.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		conversation := conversationOf(t, tx, bob, chat.ID)
-		until := time.Now().Add(time.Hour)
-		if err := tx.SetChatMuted(chat.ID, bob.ID, &until); err != nil {
+		if err := tx.ChatViewsFor(bob.ID, []*models.AgentConversation{conversation}); err != nil || conversation.Chat.NotificationLevel != models.ChatNotificationAll {
+			t.Fatalf("a new chat is %+v, %v", conversation.Chat, err)
+		}
+		if err := tx.SetChatNotificationLevel(chat.ID, bob.ID, models.ChatNotificationMentions); err != nil {
 			t.Fatal(err)
 		}
-		if err := tx.ChatViewsFor(bob.ID, []*models.AgentConversation{conversation}); err != nil || !conversation.Chat.IsMuted || conversation.Chat.MutedUntil == nil {
-			t.Fatalf("a muted chat is %+v, %v", conversation.Chat, err)
+		if err := tx.ChatViewsFor(bob.ID, []*models.AgentConversation{conversation}); err != nil || conversation.Chat.NotificationLevel != models.ChatNotificationMentions {
+			t.Fatalf("a chat set to mentions is %+v, %v", conversation.Chat, err)
 		}
-		if err := tx.SetChatMuted(chat.ID, bob.ID, nil); err != nil {
+		aliceConversation := conversationOf(t, tx, alice, chat.ID)
+		if err := tx.ChatViewsFor(alice.ID, []*models.AgentConversation{aliceConversation}); err != nil || aliceConversation.Chat.NotificationLevel != models.ChatNotificationAll {
+			t.Errorf("the other member's level moved with it: %+v, %v", aliceConversation.Chat, err)
+		}
+		if err := tx.SetChatNotificationLevel(chat.ID, bob.ID, "loud"); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("a level that is not one of the three: %v", err)
+		}
+		if err := tx.SetChatNotificationLevel(chat.ID, "nobody", models.ChatNotificationOff); !errors.Is(err, db.ErrNotFound) {
+			t.Errorf("a level by somebody who is not in the chat: %v", err)
+		}
+	})
+}
+
+// What a message mentions is kept with it and read back.
+func TestAChatMessageKeepsWhomItMentions(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		alice := newCircleTestUser(t, tx, "mention-alice")
+		bob := newCircleTestUser(t, tx, "mention-bob")
+		chat, err := tx.OpenDirectChat(alice.ID, bob.ID)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := tx.ChatViewsFor(bob.ID, []*models.AgentConversation{conversation}); err != nil || conversation.Chat.IsMuted || conversation.Chat.MutedUntil != nil {
-			t.Errorf("an unmuted chat is %+v, %v", conversation.Chat, err)
+		stored, err := tx.AppendChatMessage(&models.ChatMessage{
+			ChatID: chat.ID, AuthorUserID: alice.ID, AuthorName: "Alice", Body: "@Bob @all look",
+			MentionedUserIDs: []string{bob.ID}, IsAllMentioned: true,
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
-		if err := tx.SetChatMuted(chat.ID, "nobody", &until); !errors.Is(err, db.ErrNotFound) {
-			t.Errorf("a mute by somebody who is not in the chat: %v", err)
+		read, err := tx.GetChatMessage(stored.ID)
+		if err != nil || read == nil || len(read.MentionedUserIDs) != 1 || read.MentionedUserIDs[0] != bob.ID || !read.IsAllMentioned {
+			t.Fatalf("the message reads back as %+v, %v", read, err)
+		}
+		plain, err := tx.AppendChatMessage(&models.ChatMessage{ChatID: chat.ID, AuthorUserID: alice.ID, AuthorName: "Alice", Body: "hello"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if read, err := tx.GetChatMessage(plain.ID); err != nil || read.MentionedUserIDs != nil || read.IsAllMentioned {
+			t.Errorf("a message mentioning nobody reads back as %+v, %v", read, err)
 		}
 	})
 }

@@ -36,8 +36,8 @@ final class ChatTests: XCTestCase {
     private let chatAnswer = #"""
         {"id":"conversation-1","kind":"chat","jobKind":null,"title":"","summary":"","lastAt":"2030-01-01T10:00:00Z","archivedAt":null,
          "goal":null,"goalState":null,"goalNote":null,
-         "chat":{"chatId":"chat-1","chatKind":"direct","circleId":null,"title":"","isCircleChat":false,"unreadCount":2,"isMuted":false,
-           "mutedUntil":null,"isRemoved":false,
+         "chat":{"chatId":"chat-1","chatKind":"direct","circleId":null,"title":"","isCircleChat":false,"unreadCount":2,"notificationLevel":"all",
+           "isRemoved":false,
            "members":[
              {"userId":"user-a","username":"person-a","name":"Person A","avatarUrl":null,"avatarColorIndex":4,"memberRole":"member",
               "isDeletedAccount":false,"isRemoved":false,"readThroughMessageId":"","isAgentReading":false},
@@ -81,11 +81,17 @@ final class ChatTests: XCTestCase {
         XCTAssertFalse(conversation.isChat)
     }
 
-    func testTheCountOnTheEntryLeavesOutMutedChats() throws {
-        var muted = try JSONDecoder().decode(AgentConversation.self, from: Data(chatAnswer.utf8))
-        XCTAssertEqual(ChatUnread.total(of: [muted]), 2)
-        muted.chat?.isMuted = true
-        XCTAssertEqual(ChatUnread.total(of: [muted]), 0)
+    func testTheCountOnTheEntryLeavesOutChatsNotToldOfEverything() throws {
+        var quiet = try JSONDecoder().decode(AgentConversation.self, from: Data(chatAnswer.utf8))
+        XCTAssertEqual(quiet.chat?.level, .all)
+        XCTAssertEqual(ChatUnread.total(of: [quiet]), 2)
+        quiet.chat?.level = .mentions
+        XCTAssertEqual(ChatUnread.total(of: [quiet]), 0)
+        quiet.chat?.level = .off
+        XCTAssertEqual(ChatUnread.total(of: [quiet]), 0)
+        // A level the app does not know is all.
+        quiet.chat?.notificationLevel = "loud"
+        XCTAssertEqual(quiet.chat?.level, .all)
     }
 
     func testADirectChatIsNamedByTheOtherPersonAndAGroupByItsTitle() throws {
@@ -377,19 +383,16 @@ final class ChatTests: XCTestCase {
     }
 
     func testChangingAChatSendsWhatTheServerAsksFor() async throws {
-        let (connection, fake) = connection(answering: #"{"data":{"RenameChat":{"id":"c"},"MarkChatRead":true,"MuteChat":{"id":"c"},"SetChatTyping":true}}"#)
+        let (connection, fake) = connection(answering: #"{"data":{"RenameChat":{"id":"c"},"MarkChatRead":true,"SetChatNotificationLevel":{"id":"c"},"SetChatTyping":true}}"#)
         try await connection.renameChat("c", title: " Dinner ")
         XCTAssertEqual(try sentVariables(try XCTUnwrap(fake.sent.last)), ["conversationId": .string("c"), "title": .string("Dinner")])
         try await connection.markChatRead("c", through: "01J0000000000000000000003")
         XCTAssertEqual(
             try sentVariables(try XCTUnwrap(fake.sent.last)),
             ["conversationId": .string("c"), "throughMessageId": .string("01J0000000000000000000003")])
-        try await connection.muteChat("c", until: nil)
-        XCTAssertEqual(try sentVariables(try XCTUnwrap(fake.sent.last)), ["conversationId": .string("c"), "mutedUntil": .null])
-        try await connection.muteChat("c", until: Date(timeIntervalSince1970: 1_900_000_000))
+        try await connection.setChatNotificationLevel("c", to: .mentions)
         XCTAssertEqual(
-            try sentVariables(try XCTUnwrap(fake.sent.last)),
-            ["conversationId": .string("c"), "mutedUntil": .string("2030-03-17T17:46:40Z")])
+            try sentVariables(try XCTUnwrap(fake.sent.last)), ["conversationId": .string("c"), "notificationLevel": .string("mentions")])
         try await connection.setChatTyping("c")
         XCTAssertEqual(try sentVariables(try XCTUnwrap(fake.sent.last)), ["conversationId": .string("c")])
     }
@@ -443,12 +446,87 @@ final class ChatTests: XCTestCase {
         XCTAssertNil(ChatMention.query(in: "no at sign"))
     }
 
-    func testTheLettersNarrowTheAgentsAndChoosingPutsTheNameInTheWords() {
-        let agents = roomOfAgents().addressableAgents(ownUserId: "user-a", deletedAccountNote: "")
-        XCTAssertEqual(ChatMention.matching(agents, query: "").map(\.name), ["Annie", "Benny"])
-        XCTAssertEqual(ChatMention.matching(agents, query: "be").map(\.name), ["Benny"])
-        XCTAssertTrue(ChatMention.matching(agents, query: "x").isEmpty)
-        XCTAssertEqual(ChatMention.choosing(agents[1], in: "so @Be"), "so @Benny ")
+    func testTheAtOffersTheOwnAgentEverybodyThenEachPersonAndTheirAgentNamedApart() {
+        let choices = roomOfAgents().mentionChoices(ownUserId: "user-a", deletedAccountNote: "")
+        XCTAssertEqual(
+            choices.map(\.id),
+            ["agent:agent-user-a", "all", "person:user-b", "agent:agent-user-b", "person:user-c", "person:user-d"])
+        // A direct chat has no everybody to mention.
+        let direct = ChatSummary(chatId: "c", chatKind: "direct", members: roomOfAgents().members)
+        XCTAssertFalse(direct.mentionChoices(ownUserId: "user-a", deletedAccountNote: "").contains(.all))
+    }
+
+    func testTheLettersNarrowTheChoicesAndChoosingPutsTheWordInTheWords() {
+        let choices = roomOfAgents().mentionChoices(ownUserId: "user-a", deletedAccountNote: "")
+        XCTAssertEqual(ChatMention.matching(choices, query: "", allWord: "all").count, choices.count)
+        XCTAssertEqual(ChatMention.matching(choices, query: "be", allWord: "all").map(\.id), ["agent:agent-user-b"])
+        XCTAssertEqual(ChatMention.matching(choices, query: "user-c", allWord: "all").map(\.id), ["person:user-c"])
+        XCTAssertEqual(ChatMention.matching(choices, query: "al", allWord: "所有人").map(\.id), ["all"])
+        XCTAssertEqual(ChatMention.matching(choices, query: "所", allWord: "所有人").map(\.id), ["all"])
+        XCTAssertTrue(ChatMention.matching(choices, query: "x", allWord: "all").isEmpty)
+        XCTAssertEqual(ChatMention.choosing(choices[3], in: "so @Be", allWord: "all"), "so @Benny ")
+        XCTAssertEqual(ChatMention.choosing(.all, in: "@", allWord: "全員"), "@全員 ")
+        XCTAssertEqual(ChatMention.choosing(choices[2], in: "hi @us", allWord: "all"), "hi @USER-B ")
+    }
+
+    func testAMentionOfAPersonIsReadFromTheWordsAndAskingTheirAgentIsNone() {
+        let room = roomOfAgents()
+        let (userIds, isAll) = ChatMention.mentioned(
+            in: "@USER-B and @all, dinner?", chat: room, ownUserId: "user-a", deletedAccountNote: "", chosenAgents: [])
+        XCTAssertEqual(userIds, ["user-b"])
+        XCTAssertTrue(isAll)
+        XCTAssertTrue(ChatMention.mentioned(in: "大家@所有人", chat: room, ownUserId: "user-a", deletedAccountNote: "", chosenAgents: []).isAllMentioned)
+        // Asking Benny, user-b's agent, is no mention of user-b, and starts Benny.
+        let agents = room.addressableAgents(ownUserId: "user-a", deletedAccountNote: "")
+        let asked = ChatMention.mentioned(in: "@Benny when?", chat: room, ownUserId: "user-a", deletedAccountNote: "", chosenAgents: agents)
+        XCTAssertTrue(asked.userIds.isEmpty)
+        XCTAssertFalse(asked.isAllMentioned)
+        XCTAssertEqual(ChatMention.addressed(in: "@Benny when?", chosen: agents), ["agent-user-b"])
+        // Mentioning user-b asks no agent.
+        XCTAssertTrue(ChatMention.addressed(in: "@USER-B when?", chosen: agents).isEmpty)
+        // An agent chosen under a person's name is the agent.
+        let namesake = AddressableAgent(agentId: "agent-x", name: "USER-C", isOwn: false, ownerName: "Someone")
+        XCTAssertTrue(
+            ChatMention.mentioned(in: "@USER-C when?", chat: room, ownUserId: "user-a", deletedAccountNote: "", chosenAgents: [namesake]).userIds
+                .isEmpty)
+        // An address and a longer word mention nobody; the person is not offered themselves.
+        XCTAssertTrue(
+            ChatMention.mentioned(in: "x@USER-B.example @USER-Bx @USER-A", chat: room, ownUserId: "user-a", deletedAccountNote: "", chosenAgents: [])
+                .userIds.isEmpty)
+    }
+
+    func testTheMentionsInAMessageAreFoundForMarking() {
+        let text = "mail ada@example.com, @Ada Lin and @所有人!"
+        let ranges = ChatMention.ranges(of: ["Ada", "Ada Lin", "所有人"], in: text)
+        XCTAssertEqual(ranges.map { String(text[$0]) }, ["@Ada Lin", "@所有人"])
+    }
+
+    func testTheMentionsOfALineAreTheNamesOfThoseItMentionsAndTheWordsForEverybody() {
+        var line = TranscriptLine(id: "m1", kind: .person, text: "@USER-B @all")
+        line.mentionedUserIds = ["user-b", "user-gone"]
+        line.isAllMentioned = true
+        let words = line.mentionWords(in: roomOfAgents(), ownUserId: "user-b", deletedAccountNote: "")
+        XCTAssertEqual(words.first, ChatMentionWord(word: "USER-B", isReader: true))
+        XCTAssertEqual(Set(words.dropFirst().map(\.word)), Set(ChatMention.allWords))
+    }
+
+    func testAMessageOfAChatCarriesWhomItMentions() throws {
+        var message = AgentMessage(id: "m1", createdAt: "2030-01-01T10:00:00Z", role: "user", content: "@USER-B hi")
+        message.authorKind = "person"
+        message.authorName = "USER-A"
+        message.mentionedUserIds = ["user-b"]
+        message.isAllMentioned = true
+        let line = try XCTUnwrap(Transcript.chatLine(of: message))
+        XCTAssertEqual(line.mentionedUserIds, ["user-b"])
+        XCTAssertTrue(line.isAllMentioned)
+    }
+
+    func testAskingInAChatSendsWhomItMentions() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"AskAgent":{"runId":"","conversationId":"c"}}}"#)
+        _ = try await connection.ask("@USER-B hi", in: "c", drawerId: "d", mentionedUserIds: ["user-b"], isAllMentioned: true)
+        let sent = try sentVariables(try XCTUnwrap(fake.sent.last))
+        XCTAssertEqual(sent["mentionedUserIds"], .array([.string("user-b")]))
+        XCTAssertEqual(sent["isAllMentioned"], .bool(true))
     }
 
     func testAMessageIsForTheAgentsChosenWhoseNamesAreStillInItAndTheOneRepliedTo() {

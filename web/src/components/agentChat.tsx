@@ -7,7 +7,8 @@ import { personPath } from '../lib/circlePeople'
 import { Avatar } from './avatar'
 import { Tag } from './common'
 import { ConfirmDialog, FormDialog } from './dialog'
-import { PlusIcon, SparkIcon, TrashIcon } from './icons'
+import { PeopleIcon, PlusIcon, SparkIcon, TrashIcon, UserIcon } from './icons'
+import { mentionSpansOf, type MentionWord } from './mentionMarks'
 import { Tooltip } from './tooltip'
 import type { AgentMessageReaction } from './agentReactions'
 
@@ -58,15 +59,22 @@ export interface ChatSummary {
   isCircleChat: boolean
   members: ChatMember[]
   unreadCount: number
-  isMuted: boolean
-  mutedUntil: string | null
+  // What the signed-in person's phone is told of here.
+  notificationLevel: ChatNotificationLevel
   isRemoved: boolean
 }
+
+// ChatNotificationLevel is what a member's phone is told of in a chat: every
+// message, only one that mentions them (by name, or everybody), or nothing.
+export type ChatNotificationLevel = 'all' | 'mentions' | 'off'
+
+// The levels in the order a menu offers them.
+export const CHAT_NOTIFICATION_LEVELS: ChatNotificationLevel[] = ['all', 'mentions', 'off']
 
 // The chat as the queries select it. Interpolated whole, as a selection,
 // the way the dashboard's other shared field lists are.
 export const CHAT_FIELDS =
-  '{ chatId chatKind circleId title isCircleChat unreadCount isMuted mutedUntil isRemoved members { userId username name avatarUrl avatarColorIndex memberRole isDeletedAccount isRemoved readThroughMessageId isAgentReading isAgentAskableByOthers agentId agentName isAgentActive } }'
+  '{ chatId chatKind circleId title isCircleChat unreadCount notificationLevel isRemoved members { userId username name avatarUrl avatarColorIndex memberRole isDeletedAccount isRemoved readThroughMessageId isAgentReading isAgentAskableByOthers agentId agentName isAgentActive } }'
 
 const LIST_PEOPLE = `query { ListCirclePeople { userId username name avatarUrl avatarColorIndex } }`
 
@@ -91,9 +99,9 @@ export const MARK_CHAT_READ = `
   mutation ($conversationId: String!, $throughMessageId: String!) {
     MarkChatRead(conversationId: $conversationId, throughMessageId: $throughMessageId)
   }`
-export const MUTE_CHAT = `
-  mutation ($conversationId: String!, $mutedUntil: DateTime) {
-    MuteChat(conversationId: $conversationId, mutedUntil: $mutedUntil) { id }
+export const SET_CHAT_NOTIFICATION_LEVEL = `
+  mutation ($conversationId: String!, $notificationLevel: String!) {
+    SetChatNotificationLevel(conversationId: $conversationId, notificationLevel: $notificationLevel) { id }
   }`
 export const SET_CHAT_TYPING = `mutation ($conversationId: String!) { SetChatTyping(conversationId: $conversationId) }`
 export const SET_CHAT_AGENT_READING = `
@@ -118,12 +126,6 @@ export const TYPING_SENT_EVERY = 3_000
 // How long a typing line stays after the last word of it: a little longer
 // than the interval it is told at, so it does not flicker between two.
 export const TYPING_SHOWN_FOR = 5_000
-// Muting "until I unmute" is a date no chat outlasts; the server keeps what
-// it is given.
-export const MUTED_FOR_GOOD = '2999-01-01T00:00:00Z'
-// "Mute for a while" is this long.
-export const MUTED_FOR_A_WHILE = 8 * 60 * 60 * 1000
-
 // ChatLine is one message of a chat as the drawer draws it: a person's or
 // an agent's, with who said it.
 export interface ChatLine {
@@ -155,6 +157,9 @@ export interface ChatLine {
   attachments?: { id: string; name: string; contentType: string; size: number }[]
   references?: AgentReference[]
   reactions?: AgentMessageReaction[]
+  // Who the message mentions: members by account, and everybody.
+  mentionedUserIds?: string[]
+  isAllMentioned?: boolean
 }
 
 // ChatStoredMessage is the part of a stored message a chat line reads.
@@ -178,6 +183,8 @@ export interface ChatStoredMessage {
   isDeleted?: boolean | null
   // The run of the turn that wrote an agent's message.
   agentRunId?: string | null
+  mentionedUserIds?: string[] | null
+  isAllMentioned?: boolean | null
   // In a chat, a row of what the signed-in person's own agent did to
   // answer (a call, its result, a note), which only they read, and not
   // something said there.
@@ -217,6 +224,8 @@ export function chatLineOf(message: ChatStoredMessage): ChatLine {
     attachments: message.attachments ?? undefined,
     references: message.references ?? undefined,
     reactions: message.reactions ?? undefined,
+    mentionedUserIds: message.mentionedUserIds ?? undefined,
+    isAllMentioned: Boolean(message.isAllMentioned),
   }
 }
 
@@ -442,12 +451,19 @@ export function chatTitleOf(chat: ChatSummary, ownUserId: string, deleted: strin
   return names.join(', ') || fallback
 }
 
-// totalUnread is how many messages wait across the chats that are not
-// muted: the number on the drawer's button. A muted chat still shows its
-// own count in the list; it does not ask for attention from outside.
-export function totalUnread(conversations: { chat?: Pick<ChatSummary, 'unreadCount' | 'isMuted'> | null }[]): number {
+// totalUnread is how many messages wait across the chats the person is told
+// all of: the number on the drawer's button. A chat told only of mentions,
+// or of nothing, still shows its own count in the list; it does not ask for
+// attention from outside.
+export function totalUnread(
+  conversations: { chat?: Pick<ChatSummary, 'unreadCount' | 'notificationLevel'> | null }[],
+): number {
   return conversations.reduce(
-    (sum, conversation) => sum + (conversation.chat && !conversation.chat.isMuted ? conversation.chat.unreadCount : 0),
+    (sum, conversation) =>
+      sum +
+      (conversation.chat && (conversation.chat.notificationLevel ?? 'all') === 'all'
+        ? conversation.chat.unreadCount
+        : 0),
     0,
   )
 }
@@ -625,25 +641,6 @@ export function mentionAt(text: string, caret: number): Mention | null {
   return { start: at, query }
 }
 
-// agentsMatching are the agents whose name starts with what was typed after
-// the @, in any case; every agent for a bare @.
-export function agentsMatching(agents: AddressableAgent[], query: string): AddressableAgent[] {
-  const wanted = query.toLowerCase()
-  return agents.filter((agent) => agent.name.toLowerCase().replace(/\s+/g, '').startsWith(wanted))
-}
-
-// withMention puts the chosen agent's name where the @ was typed, and says
-// where the caret goes: after the name and a space.
-export function withMention(
-  text: string,
-  mention: Mention,
-  caret: number,
-  agent: AddressableAgent,
-): { text: string; caret: number } {
-  const name = `@${agent.name} `
-  return { text: text.slice(0, mention.start) + name + text.slice(caret), caret: mention.start + name.length }
-}
-
 // addressedIn is the agents a message is for: those chosen from the @ whose
 // name is still in the words, so that taking the name out takes the agent
 // out, and the agent of a message replied to. An agent's name typed by hand
@@ -662,37 +659,172 @@ export function addressedIn(text: string, chosen: AddressableAgent[], repliedToA
   return addressed
 }
 
-// MentionList is the agents offered under an @, one to press.
+// MentionChoice is one line an @ in a chat offers: a person, which mentions
+// them (their phone is told even when they hear only of mentions) and asks
+// no agent; an agent, which asks it to answer; or everybody in the chat.
+export type MentionChoice =
+  { kind: 'person'; userId: string; name: string } | { kind: 'agent'; agent: AddressableAgent } | { kind: 'all' }
+
+// mentionChoiceKey tells two choices apart in a list.
+export function mentionChoiceKey(choice: MentionChoice): string {
+  if (choice.kind === 'person') return `person:${choice.userId}`
+  if (choice.kind === 'agent') return `agent:${choice.agent.agentId}`
+  return 'all'
+}
+
+// mentionChoicesOf is what an @ offers in a chat: the person's own agent
+// first, then everybody (in a group), then each of the others followed by
+// their agent when they let the chat ask it. A person and their agent are
+// two lines, named apart: mentioning the person asks nothing of the agent,
+// and asking the agent is no mention of the person.
+export function mentionChoicesOf(chat: ChatSummary, ownUserId: string, deleted: string): MentionChoice[] {
+  const agents = addressableAgentsOf(chat, ownUserId, deleted)
+  const choices: MentionChoice[] = agents.filter((agent) => agent.isOwn).map((agent) => ({ kind: 'agent', agent }))
+  if (chat.chatKind === 'group') choices.push({ kind: 'all' })
+  for (const member of chat.members) {
+    if (member.isRemoved || member.isDeletedAccount || !member.userId || member.userId === ownUserId) continue
+    const name = memberNameOf(member, deleted).trim()
+    if (name) choices.push({ kind: 'person', userId: member.userId, name })
+    const agent = agents.find((each) => !each.isOwn && each.agentId === member.agentId)
+    if (agent) choices.push({ kind: 'agent', agent })
+  }
+  return choices
+}
+
+// mentionWordOf is what follows the @ for a choice. Everybody is the word of
+// the language the dashboard is shown in (allWord); the server is told the
+// mention apart from the words, so any language's word means the same.
+export function mentionWordOf(choice: MentionChoice, allWord: string): string {
+  if (choice.kind === 'person') return choice.name
+  if (choice.kind === 'agent') return choice.agent.name
+  return allWord
+}
+
+// mentionsMatching are the choices whose word starts with what was typed
+// after the @, in any case and with no spaces; every choice for a bare @.
+// Everybody also answers to "all" in any language.
+export function mentionsMatching(choices: MentionChoice[], query: string, allWord: string): MentionChoice[] {
+  const wanted = query.toLowerCase()
+  const fits = (word: string) => word.toLowerCase().replace(/\s+/g, '').startsWith(wanted)
+  return choices.filter((choice) => fits(mentionWordOf(choice, allWord)) || (choice.kind === 'all' && fits('all')))
+}
+
+// withMentionChoice puts the chosen word where the @ was typed, and says where
+// the caret goes: after it and a space.
+export function withMentionChoice(
+  text: string,
+  mention: Mention,
+  caret: number,
+  choice: MentionChoice,
+  allWord: string,
+): { text: string; caret: number } {
+  const word = `@${mentionWordOf(choice, allWord)} `
+  return { text: text.slice(0, mention.start) + word + text.slice(caret), caret: mention.start + word.length }
+}
+
+// CHAT_ALL_MENTION_WORDS are the words after an @ that mention everybody, in
+// each language the dashboard and the app are shown in, as the server's
+// models.ChatAllMentionWords.
+export const CHAT_ALL_MENTION_WORDS = ['all', '所有人', '全員']
+
+// hasMentionOf is whether the words hold an @ and then the word, at the start
+// of a mention (not inside an address) and not the start of a longer word.
+export function hasMentionOf(text: string, word: string): boolean {
+  return mentionSpansOf(text, [word]).length > 0
+}
+
+// mentionedIn is who the words mention when they are sent: each other person
+// in the chat whose name follows an @, typed or chosen, and everybody when an
+// @ is followed by the word for it in any language. A name that is the name
+// of an agent chosen from the @ is that agent, asked, and mentions nobody.
+export function mentionedIn(
+  text: string,
+  chat: ChatSummary,
+  ownUserId: string,
+  deleted: string,
+  chosenAgents: AddressableAgent[],
+): { mentionedUserIds: string[]; isAllMentioned: boolean } {
+  const askedNames = new Set(
+    chosenAgents.filter((agent) => hasMentionOf(text, agent.name)).map((agent) => agent.name.toLowerCase()),
+  )
+  const mentionedUserIds: string[] = []
+  for (const choice of mentionChoicesOf(chat, ownUserId, deleted)) {
+    if (choice.kind !== 'person' || askedNames.has(choice.name.toLowerCase())) continue
+    if (hasMentionOf(text, choice.name) && !mentionedUserIds.includes(choice.userId))
+      mentionedUserIds.push(choice.userId)
+  }
+  return { mentionedUserIds, isAllMentioned: CHAT_ALL_MENTION_WORDS.some((word) => hasMentionOf(text, word)) }
+}
+
+// mentionWordsOf are the words a line mentions people by, for marking: the
+// names of the members it mentions, and the words for everybody when it
+// mentions everybody, the reader's own drawn stronger.
+export function mentionWordsOf(
+  line: Pick<ChatLine, 'mentionedUserIds' | 'isAllMentioned'>,
+  chat: ChatSummary | null,
+  ownUserId: string,
+  deleted: string,
+): MentionWord[] {
+  const words: MentionWord[] = []
+  for (const userId of line.mentionedUserIds ?? []) {
+    const member = chat?.members.find((each) => each.userId === userId)
+    if (member) words.push({ word: memberNameOf(member, deleted), isReader: userId === ownUserId })
+  }
+  if (line.isAllMentioned) {
+    for (const word of CHAT_ALL_MENTION_WORDS) words.push({ word, isReader: true })
+  }
+  return words
+}
+
+// MentionList is what an @ offers, one to press: people, everybody and the
+// agents that can be asked, each named so that a person and their agent are
+// never mistaken for each other.
 export function MentionList({
-  agents,
+  choices,
+  allWord,
   activeIndex,
   onChoose,
   onHover,
 }: {
-  agents: AddressableAgent[]
+  choices: MentionChoice[]
+  allWord: string
   activeIndex: number
-  onChoose: (agent: AddressableAgent) => void
+  onChoose: (choice: MentionChoice) => void
   onHover: (index: number) => void
 }) {
   const { t } = useTranslation()
   return (
-    <ul className="agent-mention-list" role="listbox" aria-label={t('chat.mentionAgents')}>
-      {agents.map((agent, index) => (
+    <ul className="agent-mention-list" role="listbox" aria-label={t('chat.mentionChoices')}>
+      {choices.map((choice, index) => (
         <li
-          key={agent.agentId}
+          key={mentionChoiceKey(choice)}
           role="option"
           aria-selected={index === activeIndex}
           className={index === activeIndex ? 'active' : ''}
           onMouseDown={(event) => {
             // The box keeps its focus and its caret.
             event.preventDefault()
-            onChoose(agent)
+            onChoose(choice)
           }}
           onMouseEnter={() => onHover(index)}
         >
-          <SparkIcon size={14} />
-          <span className="agent-mention-name">{agent.name}</span>
-          <span className="muted">{agent.isOwn ? t('chat.mentionYours') : agent.ownerName}</span>
+          {choice.kind === 'agent' ? (
+            <SparkIcon size={14} />
+          ) : choice.kind === 'all' ? (
+            <PeopleIcon size={14} />
+          ) : (
+            <UserIcon size={14} />
+          )}
+          <span className="agent-mention-name">{mentionWordOf(choice, allWord)}</span>
+          <span className="muted">
+            {choice.kind === 'agent'
+              ? choice.agent.isOwn
+                ? t('chat.mentionYours')
+                : t('chat.agentOf', { owner: choice.agent.ownerName })
+              : choice.kind === 'all'
+                ? t('chat.mentionEveryone')
+                : t('chat.mentionPerson')}
+          </span>
         </li>
       ))}
     </ul>

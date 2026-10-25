@@ -69,15 +69,11 @@ func chatCommands() []*cli.Command {
 			Action:    runChatLeave,
 		},
 		{
-			Name:      "mute",
-			Usage:     "silence a chat's phone notifications, for good or until a time",
-			ArgsUsage: "<conversation-id>",
-			Flags: []cli.Flag{
-				&cli.StringFlag{Name: "until", Usage: "when to stop: a time such as 2026-11-01T09:00:00Z or '2026-11-01 09:00', or how long, such as 8h or 3d"},
-				&cli.BoolFlag{Name: "off", Usage: "stop silencing it"},
-				JSONFlag(),
-			},
-			Action: runChatMute,
+			Name:      "notifications",
+			Usage:     "choose what your phone is told of in a chat: all of it, only mentions of you or everybody, or off; it stays until you change it",
+			ArgsUsage: "<conversation-id> <all|mentions|off>",
+			Flags:     []cli.Flag{JSONFlag()},
+			Action:    runChatNotifications,
 		},
 		{
 			Name:      "read",
@@ -471,53 +467,25 @@ func runChatLeave(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
-// parseMutedUntil reads when a mute ends: a time, or how long from now. A
-// day is a unit here as it is not to time.ParseDuration.
-func parseMutedUntil(text string, now time.Time) (time.Time, error) {
-	text = strings.TrimSpace(text)
-	if strings.HasSuffix(text, "d") {
-		var days int
-		if _, err := fmt.Sscanf(strings.TrimSuffix(text, "d"), "%d", &days); err == nil && days > 0 {
-			return now.AddDate(0, 0, days), nil
-		}
-	}
-	if duration, err := time.ParseDuration(text); err == nil && duration > 0 {
-		return now.Add(duration), nil
-	}
-	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04", "2006-01-02T15:04"} {
-		if parsed, err := time.ParseInLocation(layout, text, time.Local); err == nil {
-			return parsed, nil
-		}
-	}
-	return time.Time{}, fmt.Errorf("%q is not a time or a length of time; try 2026-11-01 09:00, 8h or 3d", text)
-}
-
-func runChatMute(ctx context.Context, command *cli.Command) error {
+func runChatNotifications(ctx context.Context, command *cli.Command) error {
 	conversationId, err := requireConversationArgument(command)
 	if err != nil {
 		return err
 	}
-	if command.Bool("off") && command.String("until") != "" {
-		return fmt.Errorf("give --until or --off, not both")
-	}
-	var mutedUntil *time.Time
-	said := ": notifications on"
-	if !command.Bool("off") {
-		until := time.Now().AddDate(100, 0, 0)
-		said = ": silenced for good"
-		if text := strings.TrimSpace(command.String("until")); text != "" {
-			if until, err = parseMutedUntil(text, time.Now()); err != nil {
-				return err
-			}
-			said = ": silenced until " + until.Local().Format("2006-01-02 15:04")
-		}
-		mutedUntil = &until
+	notificationLevel := strings.ToLower(strings.TrimSpace(command.Args().Get(1)))
+	said, isKnown := map[string]string{
+		"all":      ": your phone is told of every message",
+		"mentions": ": your phone is told only of a message that mentions you or everybody",
+		"off":      ": your phone is told of nothing here",
+	}[notificationLevel]
+	if !isKnown {
+		return fmt.Errorf("say all, mentions or off after the conversation id")
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
-	conversation, err := client.MuteChat(ctx, connection, conversationId, mutedUntil)
+	conversation, err := client.SetChatNotificationLevel(ctx, connection, conversationId, notificationLevel)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -687,8 +655,11 @@ func printChatTranscript(command *cli.Command, view *client.AgentConversationVie
 	if chat.IsRemoved {
 		_, _ = fmt.Fprintln(command.Writer, "you are no longer in this chat; this is what was said while you were")
 	}
-	if chat.IsMuted {
-		_, _ = fmt.Fprintln(command.Writer, "notifications are silenced")
+	switch chat.NotificationLevel {
+	case "mentions":
+		_, _ = fmt.Fprintln(command.Writer, "your phone is told only of mentions")
+	case "off":
+		_, _ = fmt.Fprintln(command.Writer, "your phone is told of nothing here")
 	}
 	_, _ = fmt.Fprintln(command.Writer)
 	for _, message := range view.Messages {
@@ -733,7 +704,8 @@ func runChatFollow(ctx context.Context, command *cli.Command, connection *client
 	if lastId != "" {
 		_, _ = client.MarkChatRead(ctx, connection, conversationId, lastId)
 	}
-	write(fmt.Sprintf("In %s; start a line with @agent to ask your agent there; an empty line or Ctrl-D leaves.\n", forTerminal(view.Conversation.Title)))
+	write(fmt.Sprintf("In %s; start a line with @agent to ask your agent there, @ and a name mentions that person and @all everybody; an empty line or Ctrl-D leaves.\n", forTerminal(view.Conversation.Title)))
+	members := chatMembersOf(view.Conversation.Chat)
 
 	followContext, stopFollowing := context.WithCancel(ctx)
 	var waitGroup sync.WaitGroup
@@ -782,11 +754,29 @@ func runChatFollow(ctx context.Context, command *cli.Command, connection *client
 		// "@agent" at the start addresses your own agent, which answers in the
 		// chat; the words are said as they are.
 		addressesAgent := strings.HasPrefix(strings.ToLower(message), "@agent ") || strings.ToLower(message) == "@agent"
-		if _, sendError := client.AskAgentWith(ctx, connection, &client.AskAgentRequest{ConversationID: conversationId, Message: message, Surface: terminalSurface("cli"), ShouldAddressOwnAgent: addressesAgent}); sendError != nil {
+		// "@" and a member's name mentions them, and "@all" everybody: a
+		// terminal has no menu to choose them from, so the words are read.
+		mentionedUserIds, isAllMentioned := models.ChatMentionsIn(message, members)
+		if _, sendError := client.AskAgentWith(ctx, connection, &client.AskAgentRequest{
+			ConversationID: conversationId, Message: message, Surface: terminalSurface("cli"), ShouldAddressOwnAgent: addressesAgent,
+			MentionedUserIDs: mentionedUserIds, IsAllMentioned: isAllMentioned,
+		}); sendError != nil {
 			return describeError(command, sendError)
 		}
 		if err != nil {
 			return nil
 		}
 	}
+}
+
+// chatMembersOf are the people in a chat as models.ChatMentionsIn reads them.
+func chatMembersOf(chat *client.AgentChat) []*models.ChatMember {
+	if chat == nil {
+		return nil
+	}
+	members := make([]*models.ChatMember, 0, len(chat.Members))
+	for _, member := range chat.Members {
+		members = append(members, &models.ChatMember{UserID: member.UserID, Name: member.Name, IsRemoved: member.IsRemoved})
+	}
+	return members
 }

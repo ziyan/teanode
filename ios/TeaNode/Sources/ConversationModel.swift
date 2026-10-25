@@ -484,6 +484,9 @@ final class ConversationModel {
         // whose names are still in it, and the agent of a message it replies
         // to.
         let addressed = addressedAgentIds(for: text)
+        // And whom it mentions: the people named after an @, and everybody.
+        // Mentioning a person asks nothing of their agent.
+        let mentioned = mentionedPeople(in: text)
         let choosing = chosenAgents
         draft = ""
         references = []
@@ -504,7 +507,8 @@ final class ConversationModel {
             sentLineId = transcript.addSent(message, attachments: attachments, replyingTo: reply, author: ownAuthor)
             let asked = try await connection.ask(
                 message, in: conversationId, attachmentIds: attachments.map(\.id), references: referring,
-                drawerId: app.drawerId, addressedAgentIds: addressed)
+                drawerId: app.drawerId, addressedAgentIds: addressed, mentionedUserIds: mentioned.userIds,
+                isAllMentioned: mentioned.isAllMentioned)
             // A message in a chat comes back as the chat's own, and if it does
             // not, the chat is read again so that nothing sent looks unsent for
             // long. It has a turn to follow only when it asked the person's own
@@ -587,21 +591,47 @@ final class ConversationModel {
     /// members who let the others ask.
     var addressableAgents: [AddressableAgent] {
         guard isChat, let chat, !chat.isRemoved else { return [] }
-        return chat.addressableAgents(ownUserId: ownUserId, deletedAccountNote: String(localized: "(deleted account)"))
+        return chat.addressableAgents(ownUserId: ownUserId, deletedAccountNote: ChatWords.deletedAccountNote)
     }
 
-    /// The agents the @ at the end of the words offers, those the letters
+    /// What an @ offers in this chat: the person's own agent, everybody in a
+    /// group, and each of the others followed by their agent when it may be
+    /// asked.
+    var mentionChoices: [MentionChoice] {
+        guard isChat, let chat, !chat.isRemoved else { return [] }
+        return chat.mentionChoices(ownUserId: ownUserId, deletedAccountNote: ChatWords.deletedAccountNote)
+    }
+
+    /// The choices the @ at the end of the words offers, those the letters
     /// typed so far match; none when no @ is being typed.
-    var mentionSuggestions: [AddressableAgent] {
+    var mentionSuggestions: [MentionChoice] {
         guard isChat, let query = ChatMention.query(in: draft) else { return [] }
-        return ChatMention.matching(addressableAgents, query: query)
+        return ChatMention.matching(mentionChoices, query: query, allWord: ChatWords.allMentionWord)
     }
 
-    /// Puts the chosen agent's name where the @ is, and keeps the choice for
-    /// the message.
-    func choose(mention agent: AddressableAgent) {
-        draft = ChatMention.choosing(agent, in: draft)
-        if !chosenAgents.contains(where: { $0.agentId == agent.agentId }) { chosenAgents.append(agent) }
+    /// Puts the chosen word where the @ is, and keeps a chosen agent for the
+    /// message: an agent is asked only when chosen, a person is mentioned by
+    /// their name in the words.
+    func choose(mention choice: MentionChoice) {
+        draft = ChatMention.choosing(choice, in: draft, allWord: ChatWords.allMentionWord)
+        if case .agent(let agent) = choice, !chosenAgents.contains(where: { $0.agentId == agent.agentId }) {
+            chosenAgents.append(agent)
+        }
+    }
+
+    /// The words a message of the chat mentions people by, for its bubble to
+    /// mark; none outside a chat.
+    func mentionWords(of line: TranscriptLine) -> [ChatMentionWord] {
+        guard isChat, !line.mentionedUserIds.isEmpty || line.isAllMentioned else { return [] }
+        return line.mentionWords(in: chat, ownUserId: ownUserId, deletedAccountNote: ChatWords.deletedAccountNote)
+    }
+
+    /// Whom a message mentions: the others in the chat whose names follow an
+    /// @, and everybody; nobody outside a chat.
+    private func mentionedPeople(in text: String) -> (userIds: [String], isAllMentioned: Bool) {
+        guard isChat, let chat else { return ([], false) }
+        return ChatMention.mentioned(
+            in: text, chat: chat, ownUserId: ownUserId, deletedAccountNote: ChatWords.deletedAccountNote, chosenAgents: chosenAgents)
     }
 
     /// The agents a message is for: those chosen whose names are still in the
@@ -726,11 +756,10 @@ final class ConversationModel {
         await changeChat { try await connection.renameChat(conversationId, title: title) }
     }
 
-    /// Silences the chat's notifications until a time, or with none stops
-    /// silencing them.
-    func mute(until: Date?) async {
+    /// Chooses what the person's phone is told of in this chat.
+    func setNotificationLevel(_ notificationLevel: ChatNotificationLevel) async {
         guard let conversationId else { return }
-        await changeChat { try await connection.muteChat(conversationId, until: until) }
+        await changeChat { try await connection.setChatNotificationLevel(conversationId, to: notificationLevel) }
     }
 
     /// Puts people in the group; a refusal is thrown for the sheet that

@@ -66,8 +66,7 @@ function chatOf(unreadCount: number, readByOther: string | null = null) {
     title: '',
     isCircleChat: false,
     unreadCount,
-    isMuted: false,
-    mutedUntil: null,
+    notificationLevel: 'all',
     isRemoved: false,
     members: [person('person-a', 'Person A'), person('person-b', 'Person B', readByOther)],
   }
@@ -124,9 +123,9 @@ interface Shown {
   // Whether the person’s own agent did something to answer: a call and its
   // result, as rows of their own conversation.
   hasWorkRows?: boolean
-  // Whether the chat is muted, and whether the person asked somebody else's
-  // agent that its owner does not let the others ask.
-  isMuted?: boolean
+  // What the person is told of in the chat, and whether the person asked
+  // somebody else's agent that its owner does not let the others ask.
+  notificationLevel?: 'all' | 'mentions' | 'off'
   hasOwnerOnlyNote?: boolean
   // Whether Person B sent a link, and whether the page behind it has a preview.
   hasLink?: boolean
@@ -194,7 +193,7 @@ function answerWith(shown: Shown = {}) {
     summary: '',
     lastAt: hasNewMessage ? '2030-01-01T11:00:00Z' : '2030-01-01T10:00:00Z',
     archivedAt: null,
-    chat: { ...chatOf(unreadCount, readByOther), isMuted: Boolean(shown.isMuted) },
+    chat: { ...chatOf(unreadCount, readByOther), notificationLevel: shown.notificationLevel ?? 'all' },
   }
   const main = {
     id: 'main-conversation',
@@ -773,10 +772,15 @@ it('offers the agents an @ can ask, and sends the one chosen with the message', 
   await screen.findByText('Dinner at seven?')
   const box = await screen.findByRole('textbox', { name: /Message/ })
 
-  // A bare @ offers the person's own agent first, then the one that may be asked.
+  // A bare @ offers the person's own agent first, then the other person and
+  // their agent, which may be asked, named apart.
   fireEvent.change(box, { target: { value: '@', selectionStart: 1, selectionEnd: 1 } })
   const options = await screen.findAllByRole('option')
-  expect(options.map((option) => option.textContent)).toEqual(['RobinYours', 'BennyPerson B'])
+  expect(options.map((option) => option.textContent)).toEqual([
+    'RobinYours',
+    'Person BTells them',
+    "BennyPerson B's agent",
+  ])
 
   // Letters narrow it; Enter chooses it and puts its name in the box.
   fireEvent.change(box, { target: { value: '@Be', selectionStart: 3, selectionEnd: 3 } })
@@ -814,14 +818,27 @@ it('addresses nothing when an agent’s name is only typed, or taken out again',
   expect((asked?.[1] as { addressedAgentIds?: string[] }).addressedAgentIds).toBeUndefined()
 })
 
-it('offers no @ where no agent can be asked', async () => {
+it('offers the other person alone where no agent can be asked, and mentions them without asking anything', async () => {
   answerWith({ hasAgents: false })
   openOnChat()
   renderDrawer()
   await screen.findByText('Dinner at seven?')
   const box = await screen.findByRole('textbox', { name: /Message/ })
   fireEvent.change(box, { target: { value: '@', selectionStart: 1, selectionEnd: 1 } })
-  expect(screen.queryByRole('listbox')).toBeNull()
+  const options = await screen.findAllByRole('option')
+  expect(options.map((option) => option.textContent)).toEqual(['Person BTells them'])
+  fireEvent.keyDown(box, { key: 'Enter' })
+  expect((box as HTMLTextAreaElement).value).toBe('@Person B ')
+
+  fireEvent.change(box, { target: { value: '@Person B dinner?', selectionStart: 17, selectionEnd: 17 } })
+  fireEvent.keyDown(box, { key: 'Enter' })
+  await waitFor(() => {
+    const asked = vi
+      .mocked(graphql)
+      .mock.calls.find(([document]) => document.includes('mutation') && document.includes('AskAgent'))
+    expect(asked?.[1]).toMatchObject({ message: '@Person B dinner?', mentionedUserIds: ['person-b'] })
+    expect((asked?.[1] as { addressedAgentIds?: string[] }).addressedAgentIds).toBeUndefined()
+  })
 })
 
 it('shows an agent as thinking by name, draws its words as they come and replaces them with the stored answer', async () => {
@@ -1163,8 +1180,8 @@ it('puts the chat away from its row in the list, for a person whose agent is off
   )
 })
 
-it('shows a muted chat’s bell in the head, beside its title', async () => {
-  answerWith({ isMuted: true })
+it('shows a chat turned off by its bell in the head, beside its title', async () => {
+  answerWith({ notificationLevel: 'off' })
   openOnChat()
   const { container } = renderDrawer()
   await screen.findByText('Dinner at seven?')

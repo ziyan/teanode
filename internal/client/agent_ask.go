@@ -160,6 +160,12 @@ type AskAgentRequest struct {
 	// alone.
 	AddressedAgentIDs     []string
 	ShouldAddressOwnAgent bool
+
+	// In a chat, the people the message mentions, by account, and whether
+	// it mentions everybody. A member told only of mentions is told of it.
+	// Mentioning a person does not ask their agent.
+	MentionedUserIDs []string
+	IsAllMentioned   bool
 }
 
 // AgentToolCall is a tool the model asked for.
@@ -231,8 +237,8 @@ const todoFields = `{ id conversationId text createdAt doneAt }`
 
 // The documents.
 const (
-	DocumentAskAgent = `mutation ($conversationId: String, $message: String!, $surface: String, $readOnly: Boolean, $attachmentIds: [String!], $references: [AgentReferenceInput!], $effort: String, $addressedAgentIds: [String!], $shouldAddressOwnAgent: Boolean) {
-		AskAgent(conversationId: $conversationId, message: $message, surface: $surface, readOnly: $readOnly, attachmentIds: $attachmentIds, references: $references, effort: $effort, addressedAgentIds: $addressedAgentIds, shouldAddressOwnAgent: $shouldAddressOwnAgent) { runId conversationId }
+	DocumentAskAgent = `mutation ($conversationId: String, $message: String!, $surface: String, $readOnly: Boolean, $attachmentIds: [String!], $references: [AgentReferenceInput!], $effort: String, $addressedAgentIds: [String!], $shouldAddressOwnAgent: Boolean, $mentionedUserIds: [String!], $isAllMentioned: Boolean) {
+		AskAgent(conversationId: $conversationId, message: $message, surface: $surface, readOnly: $readOnly, attachmentIds: $attachmentIds, references: $references, effort: $effort, addressedAgentIds: $addressedAgentIds, shouldAddressOwnAgent: $shouldAddressOwnAgent, mentionedUserIds: $mentionedUserIds, isAllMentioned: $isAllMentioned) { runId conversationId }
 	}`
 	DocumentReadAgentRun = `query ($runId: String!, $after: Int, $wait: Int) {
 		ReadAgentRun(runId: $runId, after: $after, wait: $wait) { runId done events { kind runId sequence text tool callId arguments risk note error at } }
@@ -304,6 +310,12 @@ func AskAgentWith(ctx context.Context, connection *Client, request *AskAgentRequ
 	}
 	if request.ShouldAddressOwnAgent {
 		variables["shouldAddressOwnAgent"] = true
+	}
+	if len(request.MentionedUserIDs) > 0 {
+		variables["mentionedUserIds"] = request.MentionedUserIDs
+	}
+	if request.IsAllMentioned {
+		variables["isAllMentioned"] = true
 	}
 	if err := connection.executeAllowed(ctx, DocumentAskAgent, variables, &result); err != nil {
 		return nil, err

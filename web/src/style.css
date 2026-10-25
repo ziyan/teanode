@@ -19061,6 +19061,29 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   font-weight: 600;
 }
 
+/* A mention in a chat's message: the @ and the name in the brand green, on a
+   wash of it when it is the reader who is mentioned, so their own name
+   stands out of the rest. The text keeps its weight, and reads in either
+   theme. */
+.chat-mention {
+  padding: 0;
+  background: none;
+  color: var(--leaf);
+  font-weight: 600;
+}
+
+.chat-mention-reader {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--leaf) 22%, transparent);
+  color: inherit;
+}
+
+/* The level the chat is set to, ticked at the end of its row. */
+.head-menu-row-check {
+  margin-left: auto;
+}
+
 /* What a phone is told about: a group of ticks under the name, with a bold
    heading as the chat's switches have, not the browser's own box with its
    legend over the border. */

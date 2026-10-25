@@ -625,7 +625,8 @@ jobs:
           shoot location-person-card-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-person-card
           shoot location-person-card-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-person-card
           shoot location-person-card-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-person-card
-          # The chats: a direct one, a circle's, its members sheet, and the menu of agents an @ offers
+          # The chats: a direct one, a circle's (with a mention), its members sheet with what the phone is told of,
+          # and the menu of people and agents an @ offers
           # (the list of conversations is the Chats tab's, shot above).
           for chat_screen in chat-direct chat-group chat-members chat-mention; do
             shoot "$chat_screen-light" light large -TeaNodeDemo -TeaNodeScreen "$chat_screen"

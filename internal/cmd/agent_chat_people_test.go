@@ -35,18 +35,18 @@ func TestChatParity(test *testing.T) {
 		subcommand string
 		action     string
 	}{
-		"OpenDirectChat":    {"direct", "direct"},
-		"CreateGroupChat":   {"group", "group"},
-		"RenameChat":        {"rename", "rename"},
-		"AddChatMembers":    {"add", "add_members"},
-		"RemoveChatMember":  {"remove", "remove_member"},
-		"LeaveChat":         {"leave", "leave"},
-		"EditChatMessage":   {"edit", "edit"},
-		"DeleteChatMessage": {"delete-message", "delete_message"},
-		"MarkChatRead":      {"read", "mark_read"},
-		"MuteChat":          {"mute", "mute"},
-		"SetChatTyping":     {"", ""},
-		"SayInChatAsAgent":  {"", "send"},
+		"OpenDirectChat":           {"direct", "direct"},
+		"CreateGroupChat":          {"group", "group"},
+		"RenameChat":               {"rename", "rename"},
+		"AddChatMembers":           {"add", "add_members"},
+		"RemoveChatMember":         {"remove", "remove_member"},
+		"LeaveChat":                {"leave", "leave"},
+		"EditChatMessage":          {"edit", "edit"},
+		"DeleteChatMessage":        {"delete-message", "delete_message"},
+		"MarkChatRead":             {"read", "mark_read"},
+		"SetChatNotificationLevel": {"notifications", "notifications"},
+		"SetChatTyping":            {"", ""},
+		"SayInChatAsAgent":         {"", "send"},
 
 		// The agent's own reaction, apart from its person's: the person
 		// reacts with teanode agent react.
@@ -141,31 +141,8 @@ func TestChatParity(test *testing.T) {
 	if flagNamed(commandNamed(test, conversation, "group"), "with") == nil {
 		test.Error("conversation group takes --with")
 	}
-	mute := commandNamed(test, conversation, "mute")
-	if flagNamed(mute, "until") == nil || flagNamed(mute, "off") == nil {
-		test.Error("conversation mute takes --until and --off")
-	}
-}
-
-func TestAMuteEndsWhenAskedInTheWaysAPersonWritesIt(test *testing.T) {
-	test.Parallel()
-
-	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.Local)
-	for text, want := range map[string]time.Time{
-		"8h":                   now.Add(8 * time.Hour),
-		"3d":                   now.AddDate(0, 0, 3),
-		"2026-11-01 09:00":     time.Date(2026, 11, 1, 9, 0, 0, 0, time.Local),
-		"2026-11-01T09:00:00Z": time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC),
-	} {
-		got, err := parseMutedUntil(text, now)
-		if err != nil || !got.Equal(want) {
-			test.Errorf("%q is %v, %v; want %v", text, got, err, want)
-		}
-	}
-	for _, text := range []string{"", "soon", "-3h", "0d"} {
-		if _, err := parseMutedUntil(text, now); err == nil {
-			test.Errorf("%q was taken for a time", text)
-		}
+	if flagNamed(commandNamed(test, NewAgentCommand(), "ask"), "mention") == nil || flagNamed(commandNamed(test, NewAgentCommand(), "ask"), "mention-all") == nil {
+		test.Error("agent ask takes --mention and --mention-all")
 	}
 }
 

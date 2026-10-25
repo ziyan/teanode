@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { framedDrawer } from '../api'
 import { cleanLink, linkDisplayText } from '../lib/linkClean'
 import { BARE_LINK_SOURCE, trimLinkEnd } from '../lib/linkText'
+import { MentionedText } from './mentionMarks'
 import { withoutHiddenComments } from '../suggestions'
 
 import { CodeBlock } from './codeBlock'
@@ -153,7 +154,7 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
 
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > index) {
-      nodes.push(text.slice(index, match.index))
+      nodes.push(<MentionedText key={`${keyPrefix}-text-${index}`} text={text.slice(index, match.index)} />)
     }
     const key = `${keyPrefix}-${count++}`
     const [
@@ -238,7 +239,7 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
     index = match.index + match[0].length
   }
   if (index < text.length) {
-    nodes.push(text.slice(index))
+    nodes.push(<MentionedText key={`${keyPrefix}-text-${index}`} text={text.slice(index)} />)
   }
   return nodes
 }

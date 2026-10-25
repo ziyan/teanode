@@ -562,13 +562,19 @@ func (self *AskRun) postChatAnswer(tx db.Transaction, content string) (*postedCh
 	if chat == nil || chat.Member(settings.Owner.ID) == nil || chat.Member(settings.Owner.ID).IsRemoved {
 		return nil, fmt.Errorf("the person is no longer in this chat")
 	}
+	body := cutRunes(content, models.ChatMessageMostCharacters)
+	// An agent writes with no composer to choose whom it mentions, so an @
+	// before a member's name in its words is the mention.
+	mentionedUserIds, isAllMentioned := models.ChatMentionsIn(body, chat.ActiveMembers())
 	stored, err := tx.AppendChatMessage(&models.ChatMessage{
-		ChatID:        chat.ID,
-		AuthorUserID:  settings.Owner.ID,
-		AuthorName:    settings.Agent.DisplayName(),
-		AuthorAgentID: settings.Agent.ID,
-		AgentRunID:    self.ID,
-		Body:          cutRunes(content, models.ChatMessageMostCharacters),
+		ChatID:           chat.ID,
+		AuthorUserID:     settings.Owner.ID,
+		AuthorName:       settings.Agent.DisplayName(),
+		AuthorAgentID:    settings.Agent.ID,
+		AgentRunID:       self.ID,
+		Body:             body,
+		MentionedUserIDs: mentionedUserIds,
+		IsAllMentioned:   isAllMentioned,
 	})
 	if err != nil {
 		return nil, err
@@ -600,7 +606,7 @@ func (self *AskRun) announceChatAnswer(posted *postedChatMessage) {
 		copied.ConversationID = member.ConversationID
 		copied.IsMine = member.UserID == settings.Owner.ID
 		events = append(events, Event{Kind: EventSaid, ConversationID: member.ConversationID, MessageID: shown.ID, Message: &copied})
-		recipients = append(recipients, ChatRecipient{UserID: member.UserID, AgentID: member.AgentID, ConversationID: member.ConversationID, MutedUntil: member.MutedUntil, IsConversationArchived: member.IsConversationArchived})
+		recipients = append(recipients, ChatRecipient{UserID: member.UserID, AgentID: member.AgentID, ConversationID: member.ConversationID, NotificationLevel: member.NotificationLevel, IsConversationArchived: member.IsConversationArchived})
 	}
 	if self.agent.settings.ChatEvents == nil {
 		return

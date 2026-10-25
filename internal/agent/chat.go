@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"time"
-
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -41,12 +39,12 @@ type ChatRecipient struct {
 	AgentID        string
 	ConversationID string
 
-	// MutedUntil is when the member's silence on this chat ends, nil when
-	// they have not asked for any.
-	MutedUntil *time.Time
+	// NotificationLevel is what the member asked to be told of in this chat:
+	// every message, only one that mentions them, or nothing.
+	NotificationLevel models.ChatNotificationLevel
 
 	// IsConversationArchived says the member put the chat away: it is as
-	// quiet for them as a muted one.
+	// quiet for them as one turned off.
 	IsConversationArchived bool
 }
 
