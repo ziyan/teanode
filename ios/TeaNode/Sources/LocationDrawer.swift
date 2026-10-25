@@ -158,38 +158,71 @@ struct LocationDrawer<Header: View, Content: View>: View {
 }
 
 /// LocationChosenPersonHeader is the drawer's header while a person sharing is
-/// chosen: who they are and where, which opens their card, and the way back
-/// to everyone.
+/// chosen: who they are and where, which opens their card, a menu to mute the
+/// notices of their arriving and leaving, and the way back to everyone. While
+/// the notices are muted, a line under it says until when and has the button
+/// to unmute.
 struct LocationChosenPersonHeader: View {
     let person: PersonLocation
     let close: () -> Void
+    let mute: (LocationPauseChoice) -> Void
+    let unmute: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Their picture and name open their card, as they do in a chat.
-            OpensPersonCard(userId: person.userId) {
-                HStack(spacing: 12) {
-                    AvatarView(
-                        name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex, size: 36
-                    )
-                    .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: person.displayName)
-                            .font(.headline)
-                        Text(verbatim: LocationText.whereText(of: person))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                // Their picture and name open their card, as they do in a chat.
+                OpensPersonCard(userId: person.userId) {
+                    HStack(spacing: 12) {
+                        AvatarView(
+                            name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex, size: 36
+                        )
+                        .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: person.displayName)
+                                .font(.headline)
+                            Text(verbatim: LocationText.whereText(of: person))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .accessibilityElement(children: .combine)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Menu {
+                    ForEach(LocationPauseChoice.allCases) { choice in
+                        Button(choice.muteTitle) { mute(choice) }
+                    }
+                } label: {
+                    Label("Mute notifications", systemImage: "bell.slash")
+                        .labelStyle(.iconOnly)
+                        .font(.title2)
+                        .symbolRenderingMode(.hierarchical)
+                        .actionColor()
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                Button("Close", systemImage: "xmark.circle.fill", action: close)
+                    .labelStyle(.iconOnly)
+                    .font(.title2)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+            if let notificationMute = person.notificationMute, person.isNotificationMuted() {
+                HStack(spacing: 6) {
+                    Image(systemName: "bell.slash")
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text(verbatim: LocationText.mutedUntil(notificationMute))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button("Unmute", systemImage: "bell", action: unmute)
+                        .font(.subheadline)
+                        .actionColor()
                 }
             }
-            Button("Close", systemImage: "xmark.circle.fill", action: close)
-                .labelStyle(.iconOnly)
-                .font(.title2)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 44, minHeight: 44)
         }
         .padding(.horizontal)
         .padding(.bottom, 8)

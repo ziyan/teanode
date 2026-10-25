@@ -85190,6 +85190,86 @@
         }
       }
     },
+    "Mute notifications": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知をミュート"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "静音通知"
+          }
+        }
+      }
+    },
+    "Until I unmute": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ミュートを解除するまで"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到我取消静音"
+          }
+        }
+      }
+    },
+    "Notifications muted until %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@まで通知をミュート中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知已静音，到 %@"
+          }
+        }
+      }
+    },
+    "Notifications muted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知をミュート中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知已静音"
+          }
+        }
+      }
+    },
+    "Notifications unmuted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知のミュートを解除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消通知静音"
+          }
+        }
+      }
+    },
     "Paused until %@": {
       "localizations": {
         "ja": {

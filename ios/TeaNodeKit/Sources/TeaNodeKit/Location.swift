@@ -212,6 +212,10 @@ public struct PersonLocation: Codable, Identifiable, Hashable, Sendable {
     /// The pause in effect, when the person has paused. For somebody else
     /// the server then sends no `latestPoint` and no `openVisit`.
     public let pause: LocationPause?
+    /// The caller's mute of this person's arrived and left notices; nil when
+    /// not muted (the server sends nil for a mute that has ended, and always
+    /// for the caller's own location).
+    public let notificationMute: LocationNotificationMute?
 
     public var id: String { userId }
     public var level: LocationShareLevel { LocationShareLevel(rawValue: shareLevel) ?? .current }
@@ -222,7 +226,8 @@ public struct PersonLocation: Codable, Identifiable, Hashable, Sendable {
 
     public init(
         userId: String, username: String, name: String? = nil, avatarUrl: String? = nil, avatarColorIndex: Int? = nil,
-        shareLevel: String = "owner", latestPoint: LocationPoint? = nil, openVisit: PlaceVisit? = nil, pause: LocationPause? = nil
+        shareLevel: String = "owner", latestPoint: LocationPoint? = nil, openVisit: PlaceVisit? = nil, pause: LocationPause? = nil,
+        notificationMute: LocationNotificationMute? = nil
     ) {
         self.userId = userId
         self.username = username
@@ -233,6 +238,41 @@ public struct PersonLocation: Codable, Identifiable, Hashable, Sendable {
         self.latestPoint = latestPoint
         self.openVisit = openVisit
         self.pause = pause
+        self.notificationMute = notificationMute
+    }
+
+    /// Whether the caller muted this person's notices and the mute has not
+    /// ended at an instant.
+    public func isNotificationMuted(at date: Date = Date()) -> Bool {
+        notificationMute?.isInEffect(at: date) ?? false
+    }
+}
+
+/// LocationNotificationMute is the caller's mute of the arrived and left
+/// notices of one person sharing with them. It is the caller's own: the
+/// person muted is not told.
+public struct LocationNotificationMute: Codable, Hashable, Sendable {
+    /// RFC 3339; nil mutes until the caller unmutes.
+    public let mutedUntil: String?
+
+    public var mutedUntilDate: Date? { ServerTime.date(mutedUntil) }
+
+    /// Whether the mute goes on until the caller unmutes.
+    public var isOpenEnded: Bool { mutedUntil == nil }
+
+    public init(mutedUntil: String? = nil) {
+        self.mutedUntil = mutedUntil
+    }
+
+    public init(mutedUntilDate: Date?) {
+        self.init(mutedUntil: mutedUntilDate.map(CalendarDates.text))
+    }
+
+    /// Whether it is in effect at an instant: no end, or an end not yet reached.
+    public func isInEffect(at date: Date) -> Bool {
+        guard !isOpenEnded else { return true }
+        guard let mutedUntilDate else { return false }
+        return date < mutedUntilDate
     }
 }
 
@@ -534,6 +574,7 @@ extension Documents {
     static let personLocationFields = """
         userId username name avatarUrl avatarColorIndex shareLevel
         pause { id startedAt endedAt }
+        notificationMute { mutedUntil }
         latestPoint { latitudeDegrees longitudeDegrees accuracyMeters altitudeMeters speedMetersPerSecond courseDegrees measuredAt locationSource }
         openVisit {
           id arrivedAt departedAt durationSeconds latitudeDegrees longitudeDegrees accuracyMeters visitSource
@@ -625,6 +666,14 @@ extension Documents {
           }
         }
         """
+    public static let muteLocationNotifications = """
+        mutation ($userId: String!, $mutedUntil: DateTime) {
+          MuteLocationNotifications(userId: $userId, mutedUntil: $mutedUntil) { mutedUntil }
+        }
+        """
+    public static let unmuteLocationNotifications = """
+        mutation ($userId: String!) { UnmuteLocationNotifications(userId: $userId) }
+        """
     public static let eraseLocationHistory = """
         mutation ($from: DateTime, $until: DateTime) {
           EraseLocationHistory(from: $from, until: $until) { pointCount visitCount placeCount }
@@ -661,6 +710,7 @@ extension Documents {
         "searchPlaces": searchPlaces, "searchAddresses": searchAddresses, "locationPoints": locationPoints, "reportLocation": reportLocation, "savePlace": savePlace,
         "forgetPlace": forgetPlace, "checkIn": checkIn, "eraseLocationHistory": eraseLocationHistory, "locationPauses": locationPauses,
         "pauseLocation": pauseLocation, "resumeLocation": resumeLocation,
+        "muteLocationNotifications": muteLocationNotifications, "unmuteLocationNotifications": unmuteLocationNotifications,
         "sharedLocations": sharedLocations, "locationShares": locationShares, "shareLocation": shareLocation,
         "unshareLocation": unshareLocation, "locationEvents": locationEvents,
     ]
@@ -825,6 +875,27 @@ extension Connection {
     public func resumeLocation() async throws -> Bool {
         struct Answer: Decodable, Sendable { let ResumeLocation: Bool? }
         return try await execute(Documents.resumeLocation, as: Answer.self).ResumeLocation ?? false
+    }
+
+    // MARK: Muting notifications
+
+    /// Mutes the arrived and left notices of a person sharing with the caller,
+    /// until the end given or (with none) until the caller unmutes. Muting
+    /// again changes the end.
+    @discardableResult
+    public func muteLocationNotifications(userId: String, until mutedUntil: Date? = nil) async throws -> LocationNotificationMute? {
+        struct Answer: Decodable, Sendable { let MuteLocationNotifications: LocationNotificationMute? }
+        var variables: [String: JSONValue] = ["userId": .string(userId)]
+        if let mutedUntil { variables["mutedUntil"] = .string(CalendarDates.text(mutedUntil)) }
+        return try await execute(Documents.muteLocationNotifications, variables: variables, as: Answer.self).MuteLocationNotifications
+    }
+
+    /// Ends the mute in effect. True when there was one.
+    @discardableResult
+    public func unmuteLocationNotifications(userId: String) async throws -> Bool {
+        struct Answer: Decodable, Sendable { let UnmuteLocationNotifications: Bool? }
+        let variables: [String: JSONValue] = ["userId": .string(userId)]
+        return try await execute(Documents.unmuteLocationNotifications, variables: variables, as: Answer.self).UnmuteLocationNotifications ?? false
     }
 
     // MARK: Sharing

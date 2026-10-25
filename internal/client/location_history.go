@@ -78,6 +78,13 @@ type LocationPause struct {
 	EndedAt   *time.Time `json:"endedAt"`
 }
 
+// LocationNotificationMute is the caller's mute of the notices that one person
+// arrived at or left a place. MutedUntil is null for a mute that lasts until
+// the caller unmutes.
+type LocationNotificationMute struct {
+	MutedUntil *time.Time `json:"mutedUntil"`
+}
+
 // Location is where a person is. While Pause is set, anybody but the person
 // themselves is shown no latest point and no open visit.
 type Location struct {
@@ -88,6 +95,10 @@ type Location struct {
 	LatestPoint *LocationPoint `json:"latestPoint"`
 	OpenVisit   *PlaceVisit    `json:"openVisit"`
 	Pause       *LocationPause `json:"pause"`
+
+	// NotificationMute is the caller's mute of this person's arrived and left
+	// notices, null when not muted. Always null on the caller's own location.
+	NotificationMute *LocationNotificationMute `json:"notificationMute"`
 }
 
 // PlaceVisitPage is a page of visits; NextOffset is null on the last. Pauses
@@ -153,12 +164,15 @@ const (
 
 	locationPauseFields = `id startedAt endedAt`
 
+	locationNotificationMuteFields = `mutedUntil`
+
 	DocumentGetLocation = `query ($userId: String) {
   GetLocation(userId: $userId) {
     userId username name shareLevel
     latestPoint { ` + locationPointFields + ` }
     openVisit { ` + placeVisitFields + ` }
     pause { ` + locationPauseFields + ` }
+    notificationMute { ` + locationNotificationMuteFields + ` }
   }
 }`
 
@@ -208,6 +222,12 @@ const (
 }`
 
 	DocumentResumeLocation = `mutation { ResumeLocation }`
+
+	DocumentMuteLocationNotifications = `mutation ($userId: String!, $mutedUntil: DateTime) {
+  MuteLocationNotifications(userId: $userId, mutedUntil: $mutedUntil) { ` + locationNotificationMuteFields + ` }
+}`
+
+	DocumentUnmuteLocationNotifications = `mutation ($userId: String!) { UnmuteLocationNotifications(userId: $userId) }`
 
 	DocumentListLocationPoints = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
   ListLocationPoints(userId: $userId, from: $from, until: $until) { ` + locationPointFields + ` }
@@ -339,6 +359,35 @@ func ResumeLocation(ctx context.Context, connection *Client) (bool, error) {
 		return false, err
 	}
 	return result.ResumeLocation, nil
+}
+
+// MuteLocationNotifications stops the caller being told that the person userId
+// arrived at or left a place, from now, until mutedUntil, or until the caller
+// unmutes when it is nil. Muting while muted changes the end of the mute.
+func MuteLocationNotifications(ctx context.Context, connection *Client, userId string, mutedUntil *time.Time) (*LocationNotificationMute, error) {
+	variables := map[string]any{"userId": userId}
+	if mutedUntil != nil {
+		variables["mutedUntil"] = mutedUntil.UTC().Format(time.RFC3339)
+	}
+	var result struct {
+		MuteLocationNotifications *LocationNotificationMute `json:"MuteLocationNotifications"`
+	}
+	if err := connection.Execute(ctx, DocumentMuteLocationNotifications, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.MuteLocationNotifications, nil
+}
+
+// UnmuteLocationNotifications ends the mute of the person userId, and says
+// whether there was one in effect.
+func UnmuteLocationNotifications(ctx context.Context, connection *Client, userId string) (bool, error) {
+	var result struct {
+		UnmuteLocationNotifications bool `json:"UnmuteLocationNotifications"`
+	}
+	if err := connection.Execute(ctx, DocumentUnmuteLocationNotifications, map[string]any{"userId": userId}, &result); err != nil {
+		return false, err
+	}
+	return result.UnmuteLocationNotifications, nil
 }
 
 // PlacesQuery narrows and pages a listing of places. A zero field is left out.
@@ -660,6 +709,7 @@ const (
     latestPoint { ` + locationPointFields + ` }
     openVisit { ` + placeVisitFields + ` }
     pause { ` + locationPauseFields + ` }
+    notificationMute { ` + locationNotificationMuteFields + ` }
   }
 }`
 

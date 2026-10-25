@@ -633,6 +633,31 @@ final class LocationModel {
         }
     }
 
+    // MARK: Muting a person's notifications
+
+    /// Mutes the arrived and left notices of a person sharing, for the length
+    /// the choice gives, then reads the people again so the header shows it.
+    func muteNotifications(of person: PersonLocation, for choice: LocationPauseChoice) async {
+        do {
+            let mute = try await connection.muteLocationNotifications(userId: person.userId, until: choice.endDate(from: Date()))
+            doneText = mute.map(LocationText.mutedUntil) ?? String(localized: "Notifications muted")
+            await refreshPeople()
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+        }
+    }
+
+    /// Ends the mute of a person's notices.
+    func unmuteNotifications(of person: PersonLocation) async {
+        do {
+            try await connection.unmuteLocationNotifications(userId: person.userId)
+            doneText = String(localized: "Notifications unmuted")
+            await refreshPeople()
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+        }
+    }
+
     // MARK: Setting Location up
 
     /// The person's "Not now": the setup does not come back.

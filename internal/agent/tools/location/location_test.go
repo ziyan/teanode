@@ -259,7 +259,7 @@ func TestWritesAndTheirRisks(t *testing.T) {
 	risks := map[string]tools.Risk{
 		"now": tools.RiskRead, "visits": tools.RiskRead, "path": tools.RiskRead, "places": tools.RiskRead, "nearby": tools.RiskRead, "search": tools.RiskRead, "find_address": tools.RiskRead,
 		"people": tools.RiskRead, "shares": tools.RiskRead, "set_up": tools.RiskRead,
-		"save_place": tools.RiskWrite, "check_in": tools.RiskWrite, "unshare": tools.RiskWrite, "pause": tools.RiskWrite,
+		"save_place": tools.RiskWrite, "check_in": tools.RiskWrite, "unshare": tools.RiskWrite, "pause": tools.RiskWrite, "mute": tools.RiskWrite, "unmute": tools.RiskWrite,
 		"forget_place": tools.RiskDestructive, "erase": tools.RiskDestructive, "share": tools.RiskGranting, "resume": tools.RiskGranting,
 	}
 	for action, want := range risks {
@@ -726,6 +726,82 @@ func TestResumeWaitsOnThePersonAndEndsThePause(t *testing.T) {
 	merged := tools.Build().Get("location")
 	if line := merged.PreviewLine(context.Background(), json.RawMessage(`{"action":"resume"}`)); !strings.Contains(line, "again") {
 		t.Errorf("the card says recording starts again now: %q", line)
+	}
+}
+
+// Muting sends the person's userId, found from the username, and the end when
+// there is one, and answers when it ends; unmuting needs no confirmation.
+func TestMuteSendsThePersonAndTheEndAndUnmuteIsNotRestricted(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListSharedLocations":       `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"current","latestPoint":null,"openVisit":null}]`,
+		"MuteLocationNotifications": `{"mutedUntil":"2026-10-17T15:00:00Z"}`,
+	}}
+	answer, _, err := act(t, runOf(operations), "mute", `{"person":"Ben","muted_until":"2026-10-17T15:00"}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := operations.sent["MuteLocationNotifications"]
+	if sent["userId"] != "u-ben" || sent["mutedUntil"] != "2026-10-17T15:00:00Z" {
+		t.Errorf("sent: %v", sent)
+	}
+	if answer["notifications_muted"] != "until 2026-10-17 15:00" && answer["notifications_muted"] != "until 15:00" {
+		t.Errorf("answer: %v", answer)
+	}
+
+	untilUnmuted := &routing{answers: map[string]string{
+		"ListSharedLocations":       operations.answers["ListSharedLocations"],
+		"MuteLocationNotifications": `{"mutedUntil":null}`,
+	}}
+	answer, _, err = act(t, runOf(untilUnmuted), "mute", `{"person":"ben"}`, false)
+	if err != nil || untilUnmuted.sent["MuteLocationNotifications"]["mutedUntil"] != nil || answer["notifications_muted"] != "until unmuted" {
+		t.Errorf("no end given, none sent: %v %v %v", answer, untilUnmuted.sent["MuteLocationNotifications"], err)
+	}
+	if _, _, err := act(t, runOf(operations), "mute", `{}`, false); err == nil {
+		t.Error("mute needs a person")
+	}
+	if _, _, err := act(t, runOf(operations), "mute", `{"person":"ben","muted_until":"whenever"}`, false); err == nil {
+		t.Error("an end that is not a time is refused")
+	}
+	if _, _, err := act(t, runOf(operations), "mute", `{"person":"nobody"}`, false); err == nil {
+		t.Error("somebody who does not share is refused")
+	}
+
+	operations.answers["UnmuteLocationNotifications"] = `true`
+	answer, _, err = act(t, runOf(operations), "unmute", `{"person":"ben"}`, false)
+	if err != nil || answer["was_muted"] != true || answer["is_notified"] != true || operations.sent["UnmuteLocationNotifications"]["userId"] != "u-ben" {
+		t.Errorf("unmute: %v %v %v", answer, operations.sent["UnmuteLocationNotifications"], err)
+	}
+	if _, _, err := act(t, runOf(operations), "unmute", `{}`, false); err == nil {
+		t.Error("unmute needs a person")
+	}
+}
+
+// A person whose notices are muted shows it in the people listing and in the
+// answer about them alone, whether or not they paused.
+func TestReadsOfAMutedPersonSayWhenTheMuteEnds(t *testing.T) {
+	now := time.Now().UTC()
+	mutedUntil := now.Add(time.Hour).Format(time.RFC3339)
+	others := &routing{answers: map[string]string{
+		"ListSharedLocations": `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"current","latestPoint":null,"openVisit":null,"notificationMute":{"mutedUntil":"` + mutedUntil + `"}},
+			{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"current","latestPoint":null,"openVisit":null,"notificationMute":{"mutedUntil":null}},
+			{"userId":"u-dana","username":"dana","name":"Dana","shareLevel":"current","latestPoint":null,"openVisit":null,"notificationMute":null}]`,
+		"GetLocation": `{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"current","latestPoint":null,"openVisit":{"arrivedAt":"` + now.Add(-time.Hour).Format(time.RFC3339) + `","departedAt":null,"place":null},"notificationMute":{"mutedUntil":"` + mutedUntil + `"}}`,
+	}}
+	wantUntil := "until " + now.Add(time.Hour).Format("15:04")
+	if now.Add(time.Hour).YearDay() != now.YearDay() {
+		wantUntil = "until " + now.Add(time.Hour).Format("2006-01-02 15:04")
+	}
+	answer, _, err := act(t, runOf(others), "people", `{}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	people := answer["people"].([]any)
+	if len(people) != 3 || people[0].(map[string]any)["notifications_muted"] != wantUntil || people[1].(map[string]any)["notifications_muted"] != "until unmuted" || people[2].(map[string]any)["notifications_muted"] != nil {
+		t.Errorf("people: %v", people)
+	}
+	answer, _, err = act(t, runOf(others), "now", `{"person":"ben"}`, false)
+	if err != nil || answer["notifications_muted"] != wantUntil {
+		t.Errorf("now: %v %v", answer, err)
 	}
 }
 

@@ -37,26 +37,28 @@ func TestLocationParity(test *testing.T) {
 		subcommand string
 		action     string
 	}{
-		"GetLocation":          {"now", "now"},
-		"ListLocationVisits":   {"visits", "visits"},
-		"ListLocationPauses":   {"visits", "visits"},
-		"PauseLocation":        {"pause", "pause"},
-		"ResumeLocation":       {"resume", "resume"},
-		"ListPlaces":           {"places", "places"},
-		"ReadPlace":            {"place", "places"},
-		"ListNearbyPlaces":     {"nearby", "nearby"},
-		"SearchPlaces":         {"search", "search"},
-		"SearchAddresses":      {"addresses", "find_address"},
-		"ListLocationPoints":   {"path", ""},
-		"ReportLocation":       {"", ""},
-		"SavePlace":            {"save", "save_place"},
-		"ForgetPlace":          {"forget", "forget_place"},
-		"CheckIn":              {"checkin", "check_in"},
-		"EraseLocationHistory": {"erase", "erase"},
-		"ListSharedLocations":  {"people", "people"},
-		"ListLocationShares":   {"shares", "shares"},
-		"ShareLocation":        {"share", "share"},
-		"UnshareLocation":      {"unshare", "unshare"},
+		"GetLocation":                 {"now", "now"},
+		"ListLocationVisits":          {"visits", "visits"},
+		"ListLocationPauses":          {"visits", "visits"},
+		"PauseLocation":               {"pause", "pause"},
+		"ResumeLocation":              {"resume", "resume"},
+		"MuteLocationNotifications":   {"mute", "mute"},
+		"UnmuteLocationNotifications": {"unmute", "unmute"},
+		"ListPlaces":                  {"places", "places"},
+		"ReadPlace":                   {"place", "places"},
+		"ListNearbyPlaces":            {"nearby", "nearby"},
+		"SearchPlaces":                {"search", "search"},
+		"SearchAddresses":             {"addresses", "find_address"},
+		"ListLocationPoints":          {"path", ""},
+		"ReportLocation":              {"", ""},
+		"SavePlace":                   {"save", "save_place"},
+		"ForgetPlace":                 {"forget", "forget_place"},
+		"CheckIn":                     {"checkin", "check_in"},
+		"EraseLocationHistory":        {"erase", "erase"},
+		"ListSharedLocations":         {"people", "people"},
+		"ListLocationShares":          {"shares", "shares"},
+		"ShareLocation":               {"share", "share"},
+		"UnshareLocation":             {"unshare", "unshare"},
 		// A subscription is followed by the dashboard and the app; nothing
 		// on a command line or in a conversation follows a map.
 		"LocationEvents": {"", ""},
@@ -187,15 +189,17 @@ func locationServerAnswering(test *testing.T, replacements map[string]string) (*
 		"SearchPlaces": `{"foundPlaces":[{"placeName":"Elm Playground","osmType":"way","osmId":7,"distanceMeters":900}]}`,
 		"SearchAddresses": `[{"placeName":"6 Rue Example","addressText":"6 Rue Example, Exampleton, Testland","latitudeDegrees":40.5,"longitudeDegrees":-75.5,"distanceMeters":0},
 			{"placeName":"8 Rue Example","addressText":"8 Rue Example, Exampleton, Testland","latitudeDegrees":40.6,"longitudeDegrees":-75.6,"distanceMeters":2500}]`,
-		"SavePlace":            place,
-		"ForgetPlace":          `true`,
-		"CheckIn":              `{"id":"v3","arrivedAt":"2026-10-17T12:00:00Z","place":` + place + `}`,
-		"EraseLocationHistory": `{"pointCount":10,"visitCount":2,"placeCount":1}`,
-		"ListSharedLocations":  `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"history"},{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"current"}]`,
-		"PauseLocation":        `{"id":"pause1","startedAt":"2026-10-17T12:00:00Z","endedAt":"2026-10-17T13:30:00Z"}`,
-		"ResumeLocation":       `true`,
-		"ListLocationPauses":   `[{"id":"pause1","startedAt":"2026-10-17T10:00:00Z","endedAt":"2026-10-17T10:30:00Z"},{"id":"pause2","startedAt":"2026-10-17T09:55:00Z"}]`,
-		"ListLocationPoints":   `[{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":12,"measuredAt":"2026-10-17T10:00:00Z","locationSource":"phone"}]`,
+		"SavePlace":                   place,
+		"ForgetPlace":                 `true`,
+		"CheckIn":                     `{"id":"v3","arrivedAt":"2026-10-17T12:00:00Z","place":` + place + `}`,
+		"EraseLocationHistory":        `{"pointCount":10,"visitCount":2,"placeCount":1}`,
+		"ListSharedLocations":         `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"history"},{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"current"}]`,
+		"PauseLocation":               `{"id":"pause1","startedAt":"2026-10-17T12:00:00Z","endedAt":"2026-10-17T13:30:00Z"}`,
+		"ResumeLocation":              `true`,
+		"MuteLocationNotifications":   `{"mutedUntil":"2026-10-17T13:30:00Z"}`,
+		"UnmuteLocationNotifications": `true`,
+		"ListLocationPauses":          `[{"id":"pause1","startedAt":"2026-10-17T10:00:00Z","endedAt":"2026-10-17T10:30:00Z"},{"id":"pause2","startedAt":"2026-10-17T09:55:00Z"}]`,
+		"ListLocationPoints":          `[{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":12,"measuredAt":"2026-10-17T10:00:00Z","locationSource":"phone"}]`,
 	}
 	for operation, answer := range replacements {
 		answers[operation] = answer
@@ -649,6 +653,84 @@ func TestLocationResumeSaysWhetherThereWasAPause(test *testing.T) {
 	notPaused, _ := locationServerAnswering(test, map[string]string{"ResumeLocation": `false`})
 	if output, err := runLocationCommand(test, notPaused, "resume"); err != nil || !strings.Contains(output, "was not paused") {
 		test.Errorf("resuming when not paused: %q %v", output, err)
+	}
+}
+
+// mute names the person by username, sends the end that --for or --until
+// names, none for a mute until unmuted, and refuses what pause refuses.
+func TestLocationMuteSendsThePersonAndTheEndItWasGiven(test *testing.T) {
+	server, called := locationServer(test)
+	before := time.Now()
+	output, err := runLocationCommand(test, server, "mute", "ben", "--for", "1h30m")
+	if err != nil {
+		test.Fatal(err)
+	}
+	if called("MuteLocationNotifications")["userId"] != "u-ben" {
+		test.Errorf("the person was found by username: %v", called("MuteLocationNotifications"))
+	}
+	mutedUntil, parseErr := time.Parse(time.RFC3339, fmt.Sprint(called("MuteLocationNotifications")["mutedUntil"]))
+	if parseErr != nil || mutedUntil.Before(before.Add(89*time.Minute)) || mutedUntil.After(time.Now().Add(91*time.Minute)) {
+		test.Errorf("an hour and a half from now was sent: %v", called("MuteLocationNotifications"))
+	}
+	if !strings.Contains(output, "notifications muted until") {
+		test.Errorf("it says when the mute ends: %q", output)
+	}
+
+	next := time.Now().Add(26 * time.Hour).Truncate(time.Minute)
+	if _, err := runLocationCommand(test, server, "mute", "ben", "--until", next.Format("2006-01-02T15:04")); err != nil {
+		test.Fatal(err)
+	}
+	if sent := fmt.Sprint(called("MuteLocationNotifications")["mutedUntil"]); !strings.HasPrefix(sent, next.UTC().Format("2006-01-02T15:04")) {
+		test.Errorf("the moment typed was sent: %q, want %s", sent, next.UTC().Format(time.RFC3339))
+	}
+
+	untilUnmuted, calledAgain := locationServerAnswering(test, map[string]string{"MuteLocationNotifications": `{"mutedUntil":null}`})
+	output, err = runLocationCommand(test, untilUnmuted, "mute", "ben")
+	if err != nil || calledAgain("MuteLocationNotifications")["mutedUntil"] != nil || strings.TrimSpace(output) != "notifications muted" {
+		test.Errorf("no end was given, none is sent: %q %v %v", output, calledAgain("MuteLocationNotifications"), err)
+	}
+
+	for name, arguments := range map[string][]string{
+		"both":                        {"mute", "ben", "--for", "1h", "--until", "2099-01-01"},
+		"a length of zero":            {"mute", "ben", "--for", "0m"},
+		"the past":                    {"mute", "ben", "--until", "2020-01-01"},
+		"no person":                   {"mute"},
+		"somebody who does not share": {"mute", "nobody"},
+	} {
+		if _, err := runLocationCommand(test, server, arguments...); err == nil {
+			test.Errorf("%s should be refused", name)
+		}
+	}
+}
+
+// unmute says whether there was a mute to end.
+func TestLocationUnmuteSaysWhetherThereWasAMute(test *testing.T) {
+	server, called := locationServer(test)
+	output, err := runLocationCommand(test, server, "unmute", "ben")
+	if err != nil || !strings.Contains(output, "notifications on again") || called("UnmuteLocationNotifications")["userId"] != "u-ben" {
+		test.Errorf("unmuting: %q %v %v", output, err, called("UnmuteLocationNotifications"))
+	}
+	notMuted, _ := locationServerAnswering(test, map[string]string{"UnmuteLocationNotifications": `false`})
+	if output, err := runLocationCommand(test, notMuted, "unmute", "ben"); err != nil || !strings.Contains(output, "were not muted") {
+		test.Errorf("unmuting when not muted: %q %v", output, err)
+	}
+	if _, err := runLocationCommand(test, server, "unmute"); err == nil {
+		test.Error("unmute needs a person")
+	}
+}
+
+// The people listing says which person's notifications are muted, and until
+// when.
+func TestLocationPeopleShowsAMute(test *testing.T) {
+	until := time.Now().Add(time.Hour)
+	server, _ := locationServerAnswering(test, map[string]string{"ListSharedLocations": `[
+		{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"current","notificationMute":{"mutedUntil":"` + until.UTC().Format(time.RFC3339) + `"}},
+		{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"current","notificationMute":{"mutedUntil":null}},
+		{"userId":"u-dana","username":"dana","name":"Dana","shareLevel":"current","notificationMute":null}]`})
+	output, err := runLocationCommand(test, server, "people")
+	if err != nil || !regexp.MustCompile(`ben .*notifications muted until (\d{4}-\d{2}-\d{2} )?`+until.In(time.Local).Format("15:04")).MatchString(output) ||
+		!regexp.MustCompile(`cleo .*notifications muted\s*\n`).MatchString(output) || strings.Count(output, "notifications muted") != 2 {
+		test.Errorf("the people who share: %q %v", output, err)
 	}
 }
 

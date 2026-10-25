@@ -20,13 +20,14 @@ const (
 	visitFields       = `arrivedAt departedAt durationSeconds place { ` + placeFields + ` }`
 	listedVisitFields = visitFields + ` photoCount photosTakenBefore`
 	pauseFields       = `startedAt endedAt`
+	muteFields        = `mutedUntil`
 	foundFields       = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson`
 
 	documentGetLocation = `query ($userId: String) {
-  GetLocation(userId: $userId) { username name shareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } pause { ` + pauseFields + ` } }
+  GetLocation(userId: $userId) { username name shareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } pause { ` + pauseFields + ` } notificationMute { ` + muteFields + ` } }
 }`
 	documentListSharedLocations = `query {
-  ListSharedLocations { userId username name shareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } pause { ` + pauseFields + ` } }
+  ListSharedLocations { userId username name shareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } pause { ` + pauseFields + ` } notificationMute { ` + muteFields + ` } }
 }`
 	documentListVisits = `query ($userId: String, $from: DateTime, $until: DateTime, $placeId: String, $placeLabel: String, $offset: Int, $limitCount: Int) {
   ListLocationVisits(userId: $userId, from: $from, until: $until, placeId: $placeId, placeLabel: $placeLabel, offset: $offset, limitCount: $limitCount) {
@@ -69,6 +70,8 @@ const (
 }`
 	documentPause  = `mutation ($endedAt: DateTime) { PauseLocation(endedAt: $endedAt) { ` + pauseFields + ` } }`
 	documentResume = `mutation { ResumeLocation }`
+	documentMute   = `mutation ($userId: String!, $mutedUntil: DateTime) { MuteLocationNotifications(userId: $userId, mutedUntil: $mutedUntil) { ` + muteFields + ` } }`
+	documentUnmute = `mutation ($userId: String!) { UnmuteLocationNotifications(userId: $userId) }`
 	documentErase  = `mutation ($from: DateTime, $until: DateTime) {
   EraseLocationHistory(from: $from, until: $until) { pointCount visitCount placeCount }
 }`
@@ -118,6 +121,12 @@ type pauseData struct {
 	EndedAt   *time.Time `json:"endedAt"`
 }
 
+// muteData is the caller's mute of one person's arrived and left notices.
+// MutedUntil is null for a mute that lasts until the caller unmutes.
+type muteData struct {
+	MutedUntil *time.Time `json:"mutedUntil"`
+}
+
 type locationData struct {
 	UserID      string     `json:"userId"`
 	Username    string     `json:"username"`
@@ -126,6 +135,8 @@ type locationData struct {
 	LatestPoint *pointData `json:"latestPoint"`
 	OpenVisit   *visitData `json:"openVisit"`
 	Pause       *pauseData `json:"pause"`
+
+	NotificationMute *muteData `json:"notificationMute"`
 }
 
 type foundData struct {
@@ -371,6 +382,28 @@ func (self *scope) pauseEndWords(pause *pauseData) string {
 	return "until " + local.Format("2006-01-02 15:04")
 }
 
+// muteEndWords is when a mute of somebody's arrival and departure notices
+// ends, as the person says it: "until 15:00", with the date when it is not
+// today, or "until unmuted".
+func (self *scope) muteEndWords(mute *muteData) string {
+	if mute.MutedUntil == nil {
+		return "until unmuted"
+	}
+	local := mute.MutedUntil.In(self.where)
+	if now := self.now.In(self.where); local.Year() == now.Year() && local.YearDay() == now.YearDay() {
+		return "until " + local.Format("15:04")
+	}
+	return "until " + local.Format("2006-01-02 15:04")
+}
+
+// addNotificationMute says in a row about somebody else that the person has
+// muted the notices on their phone when that somebody arrives or leaves.
+func (self *scope) addNotificationMute(row map[string]any, mute *muteData) {
+	if mute != nil {
+		row["notifications_muted"] = self.muteEndWords(mute)
+	}
+}
+
 // pausedRow is what is said instead of where somebody is while they have
 // paused: they share no position until they resume.
 func (self *scope) pausedRow(name string, pause *pauseData) map[string]any {
@@ -472,6 +505,7 @@ func runNow(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if found != nil && found.Pause != nil && userId != nil {
 		answer := here.pausedRow(found.Name, found.Pause)
 		answer["person"], answer["share_level"] = found.Username, found.ShareLevel
+		here.addNotificationMute(answer, found.NotificationMute)
 		return tools.JSONResult(answer)
 	}
 	if found == nil || (found.LatestPoint == nil && found.OpenVisit == nil) {
@@ -488,6 +522,7 @@ func runNow(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if userId != nil {
 		answer["person"] = found.Username
 		answer["share_level"] = found.ShareLevel
+		here.addNotificationMute(answer, found.NotificationMute)
 	}
 	if found.LatestPoint != nil {
 		answer["position"] = here.position(found.LatestPoint)
@@ -1205,6 +1240,80 @@ func runResume(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	return tools.JSONResult(map[string]any{"is_recording": true, "was_paused": result.ResumeLocation})
 }
 
+type muteArguments struct {
+	Person     string `json:"person"`
+	MutedUntil string `json:"muted_until"`
+}
+
+// runMute stops the person being told on their phone when somebody who shares
+// their location arrives at or leaves a place, until the time given or until
+// they unmute. The API refuses an end that is not ahead or is too far ahead.
+func runMute(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	arguments, err := tools.DecodeArguments[muteArguments](call)
+	if err != nil {
+		return nil, err
+	}
+	here, err := scopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	userId, err := here.personId(ctx, arguments.Person, false)
+	if err != nil {
+		return nil, err
+	}
+	if userId == nil {
+		return nil, fmt.Errorf("whose notifications? give person, from people")
+	}
+	variables := map[string]any{"userId": *userId}
+	mutedUntil, err := here.moment(arguments.MutedUntil)
+	if err != nil {
+		return nil, err
+	}
+	if mutedUntil != nil {
+		variables["mutedUntil"] = *mutedUntil
+	}
+	var result struct {
+		MuteLocationNotifications muteData `json:"MuteLocationNotifications"`
+	}
+	if err := here.operations.Execute(ctx, documentMute, variables, &result); err != nil {
+		return nil, err
+	}
+	return tools.JSONResult(map[string]any{
+		"person": arguments.Person, "notifications_muted": here.muteEndWords(&result.MuteLocationNotifications), "timezone": here.where.String(),
+	})
+}
+
+type unmuteArguments struct {
+	Person string `json:"person"`
+}
+
+// runUnmute tells the person again when somebody arrives or leaves. It tells
+// them more and records nothing, so it does not wait for them.
+func runUnmute(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	arguments, err := tools.DecodeArguments[unmuteArguments](call)
+	if err != nil {
+		return nil, err
+	}
+	here, err := scopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	userId, err := here.personId(ctx, arguments.Person, false)
+	if err != nil {
+		return nil, err
+	}
+	if userId == nil {
+		return nil, fmt.Errorf("whose notifications? give person, from people")
+	}
+	var result struct {
+		UnmuteLocationNotifications bool `json:"UnmuteLocationNotifications"`
+	}
+	if err := here.operations.Execute(ctx, documentUnmute, map[string]any{"userId": *userId}, &result); err != nil {
+		return nil, err
+	}
+	return tools.JSONResult(map[string]any{"person": arguments.Person, "is_notified": true, "was_muted": result.UnmuteLocationNotifications})
+}
+
 func runCheckIn(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	arguments, err := tools.DecodeArguments[checkInArguments](call)
 	if err != nil {
@@ -1309,6 +1418,7 @@ func runPeople(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	for index := range result.ListSharedLocations {
 		each := &result.ListSharedLocations[index]
 		row := map[string]any{"person": each.Username, "name": each.Name, "share_level": each.ShareLevel}
+		here.addNotificationMute(row, each.NotificationMute)
 		if each.Pause != nil {
 			for key, value := range here.pausedRow(each.Name, each.Pause) {
 				row[key] = value

@@ -110,6 +110,18 @@ extension LocationPauseChoice {
     }
 }
 
+extension LocationPauseChoice {
+    /// What the mute menu calls it: the same three choices as the pause, the
+    /// last ending when the person unmutes.
+    var muteTitle: String {
+        switch self {
+        case .anHour: String(localized: "For an hour")
+        case .untilTomorrowMorning: String(localized: "Until tomorrow morning")
+        case .untilResumed: String(localized: "Until I unmute")
+        }
+    }
+}
+
 extension PlaceVisit {
     var coordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: latitudeDegrees, longitude: longitudeDegrees) }
 }
@@ -163,6 +175,13 @@ enum LocationText {
     static func pausedUntil(_ pause: LocationPause) -> String {
         guard let endDate = pause.endedDate else { return String(localized: "Paused until you resume") }
         return String(localized: "Paused until \(pauseEnd(endDate))")
+    }
+
+    /// A person's notices the caller muted: "Notifications muted until 15:00",
+    /// or without an end while the caller has to unmute.
+    static func mutedUntil(_ mute: LocationNotificationMute) -> String {
+        guard let endDate = mute.mutedUntilDate else { return String(localized: "Notifications muted") }
+        return String(localized: "Notifications muted until \(pauseEnd(endDate))")
     }
 
     /// What somebody who paused reads as to the people who share with them.
