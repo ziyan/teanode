@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.195.11] - 2026-10-25
+
+### Fixed
+
+- Phone notifications are in the language you read TeaNode in (English, Chinese or Japanese), not always English. (#647)
+- iPhone: replying to someone in a group chat names them above the message box, not your agent. (#648)
+
 ## [0.195.10] - 2026-10-24
 
 ### Fixed
