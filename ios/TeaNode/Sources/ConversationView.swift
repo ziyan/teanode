@@ -343,7 +343,7 @@ struct ConversationView: View {
             }
             // The agents an @ in the box offers, above the composer.
             if !model.mentionSuggestions.isEmpty {
-                MentionMenu(agents: model.mentionSuggestions) { agent in model.choose(mention: agent) }
+                MentionMenu(choices: model.mentionSuggestions) { choice in model.choose(mention: choice) }
             }
             // The steps sit behind the composer and stick out above it,
             // sliding up from behind it when a turn makes a list and back
@@ -725,7 +725,7 @@ struct ConversationItemView: View {
                         line: line, author: author, isRunStart: line.beginsRun(after: previous?.line),
                         readers: line.messageId.flatMap { readers[$0] } ?? []
                     ) {
-                        PersonBubble(line: line) { model.readingText = line.text }
+                        PersonBubble(line: line, mentions: model.mentionWords(of: line)) { model.readingText = line.text }
                             .onLongPressGesture(minimumDuration: 0.35) {
                                 if line.messageId != nil { MessageActionsPresenter.present(line: line, model: model, app: app) }
                             }
@@ -754,7 +754,7 @@ struct ConversationItemView: View {
                             DeletedMessageBubble()
                         } else {
                             AgentBubble(reactions: line.reactions) {
-                                MarkdownView(text: line.text, isSelectable: false)
+                                MarkdownView(text: line.text, isSelectable: false, mentions: model.mentionWords(of: line))
                             }
                             .onLongPressGesture(minimumDuration: 0.35) {
                                 MessageActionsPresenter.present(line: line, model: model, app: app)
@@ -1239,6 +1239,8 @@ struct DeletedMessageBubble: View {
 /// with what it replies to above it.
 struct PersonBubble: View {
     let line: TranscriptLine
+    /// The words a message of a chat mentions people by, marked in it.
+    var mentions: [ChatMentionWord] = []
     /// Opens the whole of a message too long to show in the bubble.
     var onShowAll: () -> Void = {}
 
@@ -1322,7 +1324,7 @@ struct PersonBubble: View {
                             .buttonStyle(.bordered)
                             .buttonBorderShape(.capsule)
                     } else {
-                        Text(Self.bubbleText(line.text, isOwn: !isOthers))
+                        Text(MentionMarks.marked(Self.bubbleText(line.text, isOwn: !isOthers), with: mentions))
                             .tint(linkColor)
                     }
                 }
@@ -1700,21 +1702,28 @@ struct MarkdownView: View {
     /// bubble they cannot: a long press there opens the message's reactions
     /// and actions, and its Select action selects.
     var isSelectable = true
+    /// The words a message of a chat mentions people by, marked in it.
+    var mentions: [ChatMentionWord] = []
+
+    /// The inline text of a block, with the message's mentions marked.
+    private func marked(_ text: String) -> AttributedString {
+        MentionMarks.marked(Self.inline(text), with: mentions)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(MarkdownBlock.parse(text).enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .paragraph(let text):
-                    Text(Self.inline(text))
+                    Text(marked(text))
                         .fixedSize(horizontal: false, vertical: true)
                         .selectable(isSelectable)
                 case .heading(let text):
-                    Text(Self.inline(text)).font(.headline)
+                    Text(marked(text)).font(.headline)
                 case .quote(let text):
                     HStack(spacing: 8) {
                         Capsule().fill(.tertiary).frame(width: 3)
-                        Text(Self.inline(text)).foregroundStyle(.secondary)
+                        Text(marked(text)).foregroundStyle(.secondary)
                     }
                     .fixedSize(horizontal: false, vertical: true)
                 case .list(let items):
@@ -1722,7 +1731,7 @@ struct MarkdownView: View {
                         ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 Text(item.marker).monospacedDigit().foregroundStyle(.secondary)
-                                Text(Self.inline(item.text))
+                                Text(marked(item.text))
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
@@ -1734,14 +1743,14 @@ struct MarkdownView: View {
                         Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                             GridRow {
                                 ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                                    Text(Self.inline(cell)).font(.subheadline.bold())
+                                    Text(marked(cell)).font(.subheadline.bold())
                                 }
                             }
                             Divider()
                             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                                 GridRow {
                                     ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                                        Text(Self.inline(cell)).font(.subheadline)
+                                        Text(marked(cell)).font(.subheadline)
                                     }
                                 }
                             }

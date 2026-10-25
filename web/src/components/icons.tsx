@@ -951,6 +951,26 @@ export function InboxOffIcon(props: IconProps) {
   )
 }
 
+// Told of everything: a bell, the same bell BellOffIcon crosses out.
+export function BellIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6 9a6 6 0 0 1 12 0v2c0 2 1 3 1 3H5s1-1 1-3z" />
+      <path d="M10.3 21a2 2 0 0 0 3.4 0" />
+    </Icon>
+  )
+}
+
+// Told of mentions alone: the @ a mention starts with.
+export function AtIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
+    </Icon>
+  )
+}
+
 // Stop sending: a bell with a line through it. Not a cross, which reads as
 // "close this", and not the circle with a slash, which is already what
 // reporting junk is drawn as.

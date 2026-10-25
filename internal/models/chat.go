@@ -1,8 +1,10 @@
 package models
 
 import (
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -39,6 +41,22 @@ const (
 	// a day.
 	GroupChatsMadePerDayMost = 20
 )
+
+// ChatNotificationLevel is what a member of a chat is told of on their
+// phone: every message, only one that mentions them (by name, or everybody),
+// or nothing. It is theirs alone and stays until they change it.
+type ChatNotificationLevel string
+
+const (
+	ChatNotificationAll      ChatNotificationLevel = "all"
+	ChatNotificationMentions ChatNotificationLevel = "mentions"
+	ChatNotificationOff      ChatNotificationLevel = "off"
+)
+
+// IsValid says the level is one of the three.
+func (self ChatNotificationLevel) IsValid() bool {
+	return self == ChatNotificationAll || self == ChatNotificationMentions || self == ChatNotificationOff
+}
 
 // ChatAuthorKind says whether a chat message was written by a person or by
 // somebody's agent.
@@ -175,10 +193,10 @@ type ChatMember struct {
 
 	// The rest is read from the row for the code that decides, and not
 	// shown.
-	JoinedAt   time.Time  `json:"-"`
-	RemovedAt  *time.Time `json:"-"`
-	MutedUntil *time.Time `json:"-"`
-	User       *User      `json:"-"`
+	JoinedAt          time.Time             `json:"-"`
+	RemovedAt         *time.Time            `json:"-"`
+	NotificationLevel ChatNotificationLevel `json:"-"`
+	User              *User                 `json:"-"`
 
 	// ConversationID is the member's own conversation for the chat, when the
 	// query that returned the member looked it up.
@@ -189,14 +207,9 @@ type ChatMember struct {
 	IsConversationArchived bool `json:"-"`
 }
 
-// IsMutedAt says whether the member asked not to be told of this chat at the
-// moment given.
-func (self *ChatMember) IsMutedAt(now time.Time) bool {
-	return self != nil && self.MutedUntil != nil && self.MutedUntil.After(now)
-}
-
 // ChatView is a chat as one member sees it: what a screen needs beside the
-// conversation, and what is theirs alone, their unread count and mute.
+// conversation, and what is theirs alone, their unread count and what they
+// are told of.
 type ChatView struct {
 	ChatID   string   `json:"chatId"`
 	ChatKind ChatKind `json:"chatKind"`
@@ -216,6 +229,13 @@ type ChatView struct {
 	// member's read mark.
 	UnreadCount int `json:"unreadCount"`
 
+	// NotificationLevel is what this member's phone is told of in the chat.
+	NotificationLevel ChatNotificationLevel `json:"notificationLevel"`
+
+	// IsMuted and MutedUntil are what app builds made before the level read
+	// instead: a chat turned off is muted, and no level has an end. Without
+	// them those builds could not list a chat at all. Drop them once the
+	// builds people have installed read NotificationLevel.
 	IsMuted    bool       `json:"isMuted"`
 	MutedUntil *time.Time `json:"mutedUntil"`
 
@@ -260,8 +280,22 @@ type ChatMessage struct {
 	EditedAt         *time.Time `json:"editedAt,omitempty"`
 	DeletedAt        *time.Time `json:"deletedAt,omitempty"`
 
+	// MentionedUserIDs are the members the message mentions by name, and
+	// IsAllMentioned says it mentions everybody in the chat. A member told
+	// only of mentions is told of a message that does either. Mentioning a
+	// person is not addressing their agent: that is AddressedAgentIDs on the
+	// ask, and starts a turn.
+	MentionedUserIDs []string `json:"mentionedUserIds,omitempty"`
+	IsAllMentioned   bool     `json:"isAllMentioned,omitempty"`
+
 	// Reactions are one per reactor, in the order they were made.
 	Reactions []AgentMessageReaction `json:"reactions,omitempty"`
+}
+
+// MentionsUser says the message mentions the person, by name or by
+// mentioning everybody.
+func (self *ChatMessage) MentionsUser(userId string) bool {
+	return self != nil && userId != "" && (self.IsAllMentioned || slices.Contains(self.MentionedUserIDs, userId))
 }
 
 // IsByAgent says an agent wrote it.
@@ -305,4 +339,73 @@ func AgentSpeakerLabel(agentName, ownerName string) string {
 		return owned
 	}
 	return agentName + " · " + owned
+}
+
+// ChatAllMentionWords are what follows an @ to mention everybody in a chat,
+// in each language the apps are shown in: the composer writes the one of its
+// language. What a message mentions is stored with it, so these are read
+// only from words that came without a composer (what an agent writes).
+var ChatAllMentionWords = []string{"all", "所有人", "全員"}
+
+// ChatMentionsIn are the people words mention when no composer chose them:
+// an @ that is not inside an address or a word, followed by the name of a member in the chat now,
+// or by one of ChatAllMentionWords. The name ends where a letter, a digit or
+// an underscore does not follow, so "@Ada" is not "@Adam"; of two names that
+// both fit, the longer is the one meant.
+func ChatMentionsIn(body string, members []*ChatMember) (mentionedUserIds []string, isAllMentioned bool) {
+	lowered := strings.ToLower(body)
+	for at := strings.IndexByte(lowered, '@'); at >= 0; {
+		if at == 0 || isMentionBoundary(lowered[:at]) {
+			rest := lowered[at+1:]
+			for _, word := range ChatAllMentionWords {
+				if hasMentionPrefix(rest, strings.ToLower(word)) {
+					isAllMentioned = true
+				}
+			}
+			mentioned, longest := "", 0
+			for _, member := range members {
+				name := strings.ToLower(strings.TrimSpace(member.Name))
+				if member.IsRemoved || member.UserID == "" || name == "" || len(name) <= longest {
+					continue
+				}
+				if hasMentionPrefix(rest, name) {
+					mentioned, longest = member.UserID, len(name)
+				}
+			}
+			if mentioned != "" && !slices.Contains(mentionedUserIds, mentioned) {
+				mentionedUserIds = append(mentionedUserIds, mentioned)
+			}
+		}
+		next := strings.IndexByte(lowered[at+1:], '@')
+		if next < 0 {
+			break
+		}
+		at += 1 + next
+	}
+	return mentionedUserIds, isAllMentioned
+}
+
+// isMentionBoundary says an @ after the text starts a mention: not one in
+// the middle of an address (ada@example.com) or of a Latin word. Chinese and
+// Japanese put no space before it.
+func isMentionBoundary(before string) bool {
+	last, _ := utf8.DecodeLastRuneInString(before)
+	if last < utf8.RuneSelf {
+		isWordCharacter := last >= 'a' && last <= 'z' || last >= 'A' && last <= 'Z' || last >= '0' && last <= '9'
+		return !isWordCharacter && !strings.ContainsRune("_.-+@", last)
+	}
+	return true
+}
+
+// hasMentionPrefix says the text starts with the name, and the name is not
+// the start of a longer word.
+func hasMentionPrefix(text, name string) bool {
+	if !strings.HasPrefix(text, name) {
+		return false
+	}
+	next, size := utf8.DecodeRuneInString(text[len(name):])
+	if size == 0 {
+		return true
+	}
+	return !unicode.IsLetter(next) && !unicode.IsDigit(next) && next != '_'
 }

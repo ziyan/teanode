@@ -460,6 +460,12 @@ type AgentMessage struct {
 	// their agent.
 	IsMine bool `json:"isMine,omitempty"`
 
+	// MentionedUserIDs and IsAllMentioned are, on a chat's message, who it
+	// mentions: see ChatMessage.MentionedUserIDs. A client marks the
+	// mentions in the words with them.
+	MentionedUserIDs []string `json:"mentionedUserIds,omitempty"`
+	IsAllMentioned   bool     `json:"isAllMentioned,omitempty"`
+
 	// IsAgentWork says that, in a chat, the row is what the reader's own
 	// agent did to answer (a call, its result, a note, a card) and not
 	// something said in the chat. Only they read it; the chat's messages are

@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -17,23 +18,59 @@ var (
 	phraseSpokeIn  = push.Phrase{English: "%s in %s", Chinese: "%s（%s）", Japanese: "%s（%s）"}
 	phraseSentFile = push.Phrase{English: "Sent a file", Chinese: "发送了文件", Japanese: "ファイルを送信しました"}
 
+	// What the title says of a message that mentions the person reading it,
+	// after who wrote it: them by name, or everybody in the chat.
+	phraseMentionedYou        = push.Phrase{English: "%s mentioned you", Chinese: "%s 提到了你", Japanese: "%sがあなたをメンションしました"}
+	phraseMentionedYouIn      = push.Phrase{English: "%s mentioned you in %s", Chinese: "%s 在%s中提到了你", Japanese: "%sが%sであなたをメンションしました"}
+	phraseMentionedEveryone   = push.Phrase{English: "%s mentioned everyone", Chinese: "%s @了所有人", Japanese: "%sが全員をメンションしました"}
+	phraseMentionedEveryoneIn = push.Phrase{English: "%s mentioned everyone in %s", Chinese: "%s 在%s中@了所有人", Japanese: "%sが%sで全員をメンションしました"}
+
 	// phraseOwnersAgent is somebody's agent, as the dashboard says it.
 	phraseOwnersAgent = push.Phrase{English: "%s's agent", Chinese: "%s 的助手", Japanese: "%s のエージェント"}
 )
 
 // notificationTitle is who spoke, and in which chat when it has several
-// people in it, in a language as push.PhoneLanguage names it. An agent is
-// named with its owner, since most are called "Agent" and a chat can have
-// several.
-func notificationTitle(message *models.AgentMessage, chatTitle string, isGroup bool, language string) string {
+// people in it, in a language as push.PhoneLanguage names it, and that they
+// mentioned the reader when they did. An agent is named with its owner,
+// since most are called "Agent" and a chat can have several.
+func notificationTitle(message *models.AgentMessage, chatTitle string, isGroup bool, readerUserId, language string) string {
 	authorName := strings.TrimSpace(message.AuthorName)
 	if message.AuthorKind == models.ChatAuthorAgent {
 		authorName = agentSpeakerLabel(message.AuthorName, message.AuthorOwnerName, language)
 	}
-	if !isGroup || strings.TrimSpace(chatTitle) == "" {
+	chatTitle = strings.TrimSpace(chatTitle)
+	isNamed := !isGroup || chatTitle == ""
+	switch {
+	case slices.Contains(message.MentionedUserIDs, readerUserId) && isNamed:
+		return phraseMentionedYou.In(language, authorName)
+	case slices.Contains(message.MentionedUserIDs, readerUserId):
+		return phraseMentionedYouIn.In(language, authorName, chatTitle)
+	case message.IsAllMentioned && isNamed:
+		return phraseMentionedEveryone.In(language, authorName)
+	case message.IsAllMentioned:
+		return phraseMentionedEveryoneIn.In(language, authorName, chatTitle)
+	case isNamed:
 		return authorName
 	}
-	return phraseSpokeIn.In(language, authorName, strings.TrimSpace(chatTitle))
+	return phraseSpokeIn.In(language, authorName, chatTitle)
+}
+
+// isToldOf says whether a member's phone is told of a message by what they
+// asked for in the chat: everything, only a message that mentions them (by
+// name, or everybody), or nothing. A chat they put away is as quiet as one
+// turned off. Addressing their agent is not mentioning them: that starts the
+// agent's turn and tells the person nothing more.
+func isToldOf(recipient Recipient, message *models.AgentMessage) bool {
+	if recipient.IsConversationArchived {
+		return false
+	}
+	switch recipient.NotificationLevel {
+	case models.ChatNotificationOff:
+		return false
+	case models.ChatNotificationMentions:
+		return message.IsAllMentioned || slices.Contains(message.MentionedUserIDs, recipient.UserID)
+	}
+	return true
 }
 
 // agentSpeakerLabel is models.AgentSpeakerLabel in a language: an agent
@@ -69,7 +106,7 @@ func notificationBody(message *models.AgentMessage, language string) string {
 }
 
 // NotifyChatMessage tells the phones of the members what somebody said: of
-// each member but the author who has not silenced or archived the chat and is not
+// each member but the author who is told of it (isToldOf) and is not
 // looking at that chat in a dashboard or the app: being in the app on another
 // screen, or in another conversation, does not hide a new message. An agent's message is told to its owner
 // too, who may be waiting for the answer away from the screen. The phones are
@@ -81,21 +118,22 @@ func (self *Hub) NotifyChatMessage(message *models.AgentMessage, chatTitle strin
 		if recipient.AgentID == "" || (recipient.UserID == message.AuthorUserID && message.AuthorKind != models.ChatAuthorAgent) {
 			continue
 		}
-		if recipient.IsConversationArchived || (recipient.MutedUntil != nil && recipient.MutedUntil.After(now)) {
+		if !isToldOf(recipient, message) {
 			continue
 		}
 		if self.settings.Presence.IsWatchingConversation(recipient.UserID, recipient.ConversationID, now) {
 			continue
 		}
+		readerUserId := recipient.UserID
 		self.phones.NotifyPhones(recipient.AgentID, models.NotificationChat, &push.Content{
 			NotificationKind: models.NotificationChat,
 			ConversationID:   recipient.ConversationID,
-			Title:            notificationTitle(message, chatTitle, isGroup, push.LanguageEnglish),
+			Title:            notificationTitle(message, chatTitle, isGroup, readerUserId, push.LanguageEnglish),
 			Body:             notificationBody(message, push.LanguageEnglish),
 			ThreadID:         recipient.ConversationID,
 			Buttons:          []push.Button{{Label: "Reply", ButtonAction: "reply"}, {Label: "Open", ButtonAction: "open"}},
 			Wording: func(content *push.Content, language string) {
-				content.Title = notificationTitle(message, chatTitle, isGroup, language)
+				content.Title = notificationTitle(message, chatTitle, isGroup, readerUserId, language)
 				content.Body = notificationBody(message, language)
 			},
 		})

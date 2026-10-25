@@ -31,6 +31,7 @@ import { Tooltip } from './tooltip'
 import { MenuButton } from './menuButton'
 import { Markdown } from './markdown'
 import { LinkedText } from './linkedText'
+import { MentionWords } from './mentionMarks'
 import { LinkPreviewCard } from './linkPreview'
 import { hasSharedCitation, linkSharedCitations, useShowPage } from './dashboardPath'
 import { IdeaSuggestions } from './ideaRow'
@@ -60,6 +61,8 @@ import {
   PaperclipIcon,
   PencilIcon,
   PeopleIcon,
+  AtIcon,
+  BellIcon,
   BellOffIcon,
   MoreIcon,
   StarIcon,
@@ -109,22 +112,19 @@ import {
   EDIT_CHAT_MESSAGE,
   LEAVE_CHAT,
   MARK_CHAT_READ,
-  MUTED_FOR_A_WHILE,
-  MUTED_FOR_GOOD,
-  MUTE_CHAT,
+  CHAT_NOTIFICATION_LEVELS,
   MentionList,
   READ_CHAT_MEMBERS,
   RENAME_CHAT,
   RenameChatDialog,
+  SET_CHAT_NOTIFICATION_LEVEL,
   SET_CHAT_TYPING,
   TYPING_SENT_EVERY,
   TYPING_SHOWN_FOR,
   TypingLine,
   UnreadCount,
-  addressableAgentsOf,
   addressedIn,
   agentSpeakerName,
-  agentsMatching,
   chatLineOf,
   chatTitleOf,
   isChatMessage,
@@ -136,17 +136,23 @@ import {
   linesWithoutStreaming,
   isStreamingKey,
   mentionAt,
+  mentionChoicesOf,
+  mentionedIn,
+  mentionsMatching,
   readersByMessage,
   beginsRun,
   totalUnread,
   withMemberRead,
-  withMention,
+  withMentionChoice,
+  mentionWordsOf,
   type AddressableAgent,
   type ChatLine,
+  type ChatNotificationLevel,
   type ChatMember,
   type ChatStoredMessage,
   type ChatSummary,
   type Mention,
+  type MentionChoice,
 } from './agentChat'
 
 // DEVICES_EVERY is how often the drawer asks what is attached while it is
@@ -724,7 +730,7 @@ export const CONVERSATIONS = `
 // those only what is unread.
 const CHAT_UNREAD = `
   query {
-    ListAgentConversations(archived: false) { id kind chat { unreadCount isMuted } }
+    ListAgentConversations(archived: false) { id kind chat { unreadCount notificationLevel } }
   }`
 
 // What waits for the person in each conversation: the questions and
@@ -754,6 +760,7 @@ const CONVERSATION = `
         references { itemId threadId subject from path name recordingId recordingTitle photoId photoTitle financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
         reactions { emoji reactorKind reactedAt reactorUserId reactorName }
         authorKind authorUserId authorName authorOwnerName authorAvatarUrl authorAvatarColorIndex authorAgentId agentRunId isMine isAgentWork editedAt isDeleted
+        mentionedUserIds isAllMentioned
       }
       total
       todos { id text doneAt }
@@ -781,8 +788,8 @@ const CITED = `
 const SHARED_OWNERS = `query { ListSharedAgentPages { ownerUsername ownerName } }`
 
 const ASK = `
-  mutation ($conversationId: String, $message: String!, $viewing: ViewingInput, $surface: String, $interruptedAnswer: InterruptedAnswerInput, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String, $addressedAgentIds: [String!]) {
-    AskAgent(conversationId: $conversationId, message: $message, viewing: $viewing, surface: $surface, interruptedAnswer: $interruptedAnswer, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId, addressedAgentIds: $addressedAgentIds) { runId conversationId }
+  mutation ($conversationId: String, $message: String!, $viewing: ViewingInput, $surface: String, $interruptedAnswer: InterruptedAnswerInput, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String, $addressedAgentIds: [String!], $mentionedUserIds: [String!], $isAllMentioned: Boolean) {
+    AskAgent(conversationId: $conversationId, message: $message, viewing: $viewing, surface: $surface, interruptedAnswer: $interruptedAnswer, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId, addressedAgentIds: $addressedAgentIds, mentionedUserIds: $mentionedUserIds, isAllMentioned: $isAllMentioned) { runId conversationId }
   }`
 
 const FEED = `
@@ -2358,25 +2365,26 @@ function UsageMenu({ budget, zone, onClose }: { budget: Budget | null; zone: str
 }
 
 // ChatMenu is what can be done about the chat on screen: who is in it, its
-// name if it is a group, its sound, and leaving it. A circle's chat follows
-// the circle, so it is neither renamed nor left from here.
+// name if it is a group, what the person's phone is told of in it, and
+// leaving it. A circle's chat follows the circle, so it is neither renamed
+// nor left from here.
 function ChatMenu({
   chat,
   onMembers,
   onRename,
-  onMute,
+  onNotificationLevel,
   onLeave,
   onClose,
 }: {
   chat: ChatSummary
   onMembers: () => void
   onRename: () => void
-  onMute: (mutedUntil: string | null) => void
+  onNotificationLevel: (notificationLevel: ChatNotificationLevel) => void
   onLeave: () => void
   onClose: () => void
 }) {
   const { t } = useTranslation()
-  const isForGood = chat.mutedUntil !== null && chat.mutedUntil >= '2999'
+  const current = chat.notificationLevel ?? 'all'
   return (
     <HeadMenu title={t('chat.menu')} className="chat-menu" onClose={onClose}>
       <button type="button" className="head-menu-row head-menu-action" role="menuitem" onClick={onMembers}>
@@ -2389,38 +2397,25 @@ function ChatMenu({
           <span className="head-menu-row-name">{t('chat.rename')}</span>
         </button>
       ) : null}
-      {chat.isMuted ? (
-        <button type="button" className="head-menu-row head-menu-action" role="menuitem" onClick={() => onMute(null)}>
-          <BellOffIcon size={14} />
-          <span className="head-menu-row-name">{t('chat.unmute')}</span>
-          {chat.mutedUntil && !isForGood ? (
-            <span className="head-menu-row-detail muted">
-              {t('chat.mutedUntil', { time: formatTime(chat.mutedUntil) })}
-            </span>
-          ) : null}
+      <div className="head-menu-title" role="presentation">
+        <strong>{t('chat.notifications')}</strong>
+      </div>
+      {CHAT_NOTIFICATION_LEVELS.map((notificationLevel) => (
+        <button
+          key={notificationLevel}
+          type="button"
+          className={['head-menu-row head-menu-action', notificationLevel === current ? 'selected' : '']
+            .filter(Boolean)
+            .join(' ')}
+          role="menuitemradio"
+          aria-checked={notificationLevel === current}
+          onClick={() => onNotificationLevel(notificationLevel)}
+        >
+          <NotificationLevelIcon notificationLevel={notificationLevel} size={14} />
+          <span className="head-menu-row-name">{t(NOTIFICATION_LEVEL_LABELS[notificationLevel])}</span>
+          {notificationLevel === current ? <CheckIcon size={14} className="head-menu-row-check" /> : null}
         </button>
-      ) : (
-        <>
-          <button
-            type="button"
-            className="head-menu-row head-menu-action"
-            role="menuitem"
-            onClick={() => onMute(new Date(Date.now() + MUTED_FOR_A_WHILE).toISOString())}
-          >
-            <BellOffIcon size={14} />
-            <span className="head-menu-row-name">{t('chat.muteForAWhile')}</span>
-          </button>
-          <button
-            type="button"
-            className="head-menu-row head-menu-action"
-            role="menuitem"
-            onClick={() => onMute(MUTED_FOR_GOOD)}
-          >
-            <BellOffIcon size={14} />
-            <span className="head-menu-row-name">{t('chat.muteForGood')}</span>
-          </button>
-        </>
-      )}
+      ))}
       {chat.chatKind === 'group' && !chat.isCircleChat ? (
         <button type="button" className="head-menu-row head-menu-action danger" role="menuitem" onClick={onLeave}>
           <LogoutIcon size={14} />
@@ -2428,6 +2423,48 @@ function ChatMenu({
         </button>
       ) : null}
     </HeadMenu>
+  )
+}
+
+// What the toast says once a notification level is set.
+const NOTIFICATION_LEVEL_DONE: Record<ChatNotificationLevel, Key> = {
+  all: 'chat.notifyAllDone',
+  mentions: 'chat.notifyMentionsDone',
+  off: 'chat.notifyOffDone',
+}
+
+// What each notification level is called in the chat's menu.
+const NOTIFICATION_LEVEL_LABELS: Record<ChatNotificationLevel, Key> = {
+  all: 'chat.notifyAll',
+  mentions: 'chat.notifyMentions',
+  off: 'chat.notifyOff',
+}
+
+// NotificationLevelIcon is a level drawn small: a bell for all of it, the @ for
+// mentions alone, a bell crossed out for nothing.
+function NotificationLevelIcon({
+  notificationLevel,
+  size,
+}: {
+  notificationLevel: ChatNotificationLevel
+  size: number
+}) {
+  if (notificationLevel === 'mentions') return <AtIcon size={size} />
+  if (notificationLevel === 'off') return <BellOffIcon size={size} />
+  return <BellIcon size={size} />
+}
+
+// QuietChatMark marks a chat the person is not told all of, beside its name:
+// the @ for mentions alone, a bell crossed out for nothing.
+function QuietChatMark({ chat }: { chat: Pick<ChatSummary, 'notificationLevel'> }) {
+  const { t } = useTranslation()
+  const notificationLevel = chat.notificationLevel ?? 'all'
+  if (notificationLevel === 'all') return null
+  const label = t(notificationLevel === 'mentions' ? 'chat.notifyingMentions' : 'chat.muted')
+  return (
+    <span className="chat-muted" role="img" aria-label={label} title={label}>
+      <NotificationLevelIcon notificationLevel={notificationLevel} size={12} />
+    </span>
   )
 }
 
@@ -3281,7 +3318,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         void loadConversations().catch(() => undefined)
         return
       }
-      graphql<{ ListAgentConversations: { chat?: { unreadCount: number; isMuted: boolean } | null }[] }>(CHAT_UNREAD)
+      graphql<{
+        ListAgentConversations: { chat?: { unreadCount: number; notificationLevel: ChatNotificationLevel } | null }[]
+      }>(CHAT_UNREAD)
         .then((response) => {
           if (!stopped) setUnreadChatCount(totalUnread(response.ListAgentConversations))
         })
@@ -4378,6 +4417,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             repliedToLine?.authorKind === 'agent' ? repliedToLine.authorAgentId : undefined,
           )
         : []
+    // And whom it mentions: the people named after an @, and everybody.
+    // Mentioning a person asks nothing of their agent.
+    const mentioned =
+      loaded?.kind === 'chat' && loaded.chat && !isSuggested
+        ? mentionedIn(message, loaded.chat, ownUserId, t('chat.deletedAccount'), chosenAgents)
+        : { mentionedUserIds: [], isAllMentioned: false }
     if (!isSuggested) {
       setDraft('')
       remember(draftKey(conversationId), '')
@@ -4471,6 +4516,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           references: pointed.length > 0 ? pointed : undefined,
           drawerId: drawerId.current,
           addressedAgentIds: addressedAgentIds.length > 0 ? addressedAgentIds : undefined,
+          mentionedUserIds: mentioned.mentionedUserIds.length > 0 ? mentioned.mentionedUserIds : undefined,
+          isAllMentioned: mentioned.isAllMentioned || undefined,
         })
       } finally {
         sending.current -= 1
@@ -4765,15 +4812,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     setLoaded((previous) => (previous?.chat ? { ...previous, title, chat: { ...previous.chat, title } } : previous))
     await loadConversations()
   }
-  const muteChat = async (mutedUntil: string | null) => {
+  const setNotificationLevel = async (notificationLevel: ChatNotificationLevel) => {
     setHeadMenu(null)
     try {
-      await graphql(MUTE_CHAT, { conversationId, mutedUntil })
-      toast.done(mutedUntil ? t('chat.mutedDone') : t('chat.unmutedDone'))
+      await graphql(SET_CHAT_NOTIFICATION_LEVEL, { conversationId, notificationLevel })
+      toast.done(t(NOTIFICATION_LEVEL_DONE[notificationLevel]))
       setLoaded((previous) =>
-        previous?.chat
-          ? { ...previous, chat: { ...previous.chat, isMuted: Boolean(mutedUntil), mutedUntil } }
-          : previous,
+        previous?.chat ? { ...previous, chat: { ...previous.chat, notificationLevel } } : previous,
       )
       await loadConversations()
     } catch (caught) {
@@ -4922,11 +4967,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                       conversation.title || untitledConversationName(conversation, t, language),
                     )}
                   </span>
-                  {conversation.chat.isMuted ? (
-                    <span className="chat-muted" title={t('chat.muted')}>
-                      <BellOffIcon size={12} />
-                    </span>
-                  ) : null}
+                  <QuietChatMark chat={conversation.chat} />
                   <UnreadCount count={conversation.chat.unreadCount} />
                 </>
               ) : (
@@ -5379,9 +5420,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   </div>
                 </div>
               ) : line.authorKind === 'agent' ? (
-                <Markdown text={line.text} onLeaving={leaving} pictureSource={pictureSource} />
+                <MentionWords.Provider value={mentionWordsOf(line, chat, ownUserId, deletedNote)}>
+                  <Markdown text={line.text} onLeaving={leaving} pictureSource={pictureSource} />
+                </MentionWords.Provider>
               ) : (
-                <LinkedText text={line.text} />
+                <LinkedText text={line.text} mentions={mentionWordsOf(line, chat, ownUserId, deletedNote)} />
               )}
               {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
               {line.editedAt && !isEditing ? <span className="agent-chat-edited">{t('chat.edited')}</span> : null}
@@ -5612,24 +5655,29 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const chat = loaded?.id === conversationId && loaded.kind === 'chat' ? (loaded.chat ?? null) : null
   const isInChat = chat !== null
   const deletedNote = t('chat.deletedAccount')
-  // The agents an @ offers here, those the typed letters match, and the
-  // box's @ made into a choice of one of them.
-  const addressable = chat && !chat.isRemoved ? addressableAgentsOf(chat, ownUserId, deletedNote) : []
-  const mentionAgents = mention ? agentsMatching(addressable, mention.query) : []
+  // What an @ offers here (people, everybody, the agents that can be
+  // asked), those the typed letters match, and the box's @ made into a
+  // choice of one of them.
+  const allWord = t('chat.mentionAllWord')
+  const mentionable = chat && !chat.isRemoved ? mentionChoicesOf(chat, ownUserId, deletedNote) : []
+  const mentionOffer = mention ? mentionsMatching(mentionable, mention.query, allWord) : []
   const watchMention = (words: string, caret: number | null) => {
-    const typed = isInChat && addressable.length > 0 ? mentionAt(words, caret ?? words.length) : null
+    const typed = isInChat && mentionable.length > 0 ? mentionAt(words, caret ?? words.length) : null
     setMention(typed)
     setMentionIndex(0)
   }
-  const chooseMention = (agent: AddressableAgent) => {
+  const chooseMention = (choice: MentionChoice) => {
     if (!mention) return
     const caret = input.current?.selectionStart ?? draft.length
-    const next = withMention(draft, mention, caret, agent)
+    const next = withMentionChoice(draft, mention, caret, choice, allWord)
     setDraft(next.text)
     remember(draftKey(conversationId), next.text)
-    setChosenAgents((previous) =>
-      previous.some((chosen) => chosen.agentId === agent.agentId) ? previous : [...previous, agent],
-    )
+    if (choice.kind === 'agent') {
+      const agent = choice.agent
+      setChosenAgents((previous) =>
+        previous.some((chosen) => chosen.agentId === agent.agentId) ? previous : [...previous, agent],
+      )
+    }
     setMention(null)
     window.setTimeout(() => {
       input.current?.focus()
@@ -5671,7 +5719,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const showTodos = todos.length > 0 && (running || todos.some((todo) => !todo.doneAt))
   const canSend = (draft.trim().length > 0 || pending.length > 0) && !uploading
   // Where an agent can be asked, the box says how.
-  const chatPlaceholder = addressable.length > 0 ? t('chat.placeholderWithAgents') : t('chat.placeholder')
+  const chatPlaceholder = mentionable.some((choice) => choice.kind === 'agent')
+    ? t('chat.placeholderWithAgents')
+    : t('chat.placeholder')
   // What the agent said it needs, while it is still waiting for it and
   // the person has not yet written back.
   const waitingNote = showingGoalNote && current?.goalState === 'waiting' ? (current.goalNote ?? '').trim() : ''
@@ -5764,11 +5814,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 <SparkIcon size={14} />
               )}
               <span className="agent-drawer-title">{title}</span>
-              {chat?.isMuted ? (
-                <span className="chat-muted" role="img" aria-label={t('chat.muted')} title={t('chat.muted')}>
-                  <BellOffIcon size={12} />
-                </span>
-              ) : null}
+              {chat ? <QuietChatMark chat={chat} /> : null}
               <ChevronDownIcon size={14} className="chevron" />
             </button>
             {/* In a goal's own conversation, where the goal stands, and the
@@ -5862,7 +5908,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 setHeadMenu(null)
                 setChatDialog('rename')
               }}
-              onMute={(mutedUntil) => void muteChat(mutedUntil)}
+              onNotificationLevel={(notificationLevel) => void setNotificationLevel(notificationLevel)}
               onLeave={() => {
                 setHeadMenu(null)
                 setChatDialog('leave')
@@ -6402,10 +6448,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   <PaperclipIcon size={16} />
                 </button>
               </Tooltip>
-              {mention && mentionAgents.length > 0 && (
+              {mention && mentionOffer.length > 0 && (
                 <MentionList
-                  agents={mentionAgents}
-                  activeIndex={Math.min(mentionIndex, mentionAgents.length - 1)}
+                  choices={mentionOffer}
+                  allWord={allWord}
+                  activeIndex={Math.min(mentionIndex, mentionOffer.length - 1)}
                   onChoose={chooseMention}
                   onHover={setMentionIndex}
                 />
@@ -6434,18 +6481,18 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   // Enter while an input method is composing picks a
                   // character, not a message to send.
                   if (isComposingText(event)) return
-                  // While an @ is offering agents, the arrows pick one, Enter
+                  // While an @ is offering choices, the arrows pick one, Enter
                   // and Tab choose it and Escape puts the offer away.
-                  if (mention && mentionAgents.length > 0) {
+                  if (mention && mentionOffer.length > 0) {
                     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                       event.preventDefault()
                       const step = event.key === 'ArrowDown' ? 1 : -1
-                      setMentionIndex((mentionIndex + step + mentionAgents.length) % mentionAgents.length)
+                      setMentionIndex((mentionIndex + step + mentionOffer.length) % mentionOffer.length)
                       return
                     }
                     if (event.key === 'Enter' || event.key === 'Tab') {
                       event.preventDefault()
-                      chooseMention(mentionAgents[Math.min(mentionIndex, mentionAgents.length - 1)])
+                      chooseMention(mentionOffer[Math.min(mentionIndex, mentionOffer.length - 1)])
                       return
                     }
                     if (event.key === 'Escape') {

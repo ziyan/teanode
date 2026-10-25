@@ -270,7 +270,7 @@
             let sam = chatMemberJSON("sam", readThroughMessageId: "c06")
             let lastAt = demoTime(daysAgo: 0, hour: 8, minute: 55)
             return
-                #"{"id":"chat-sam","kind":"chat","title":null,"summary":null,"lastAt":"\#(lastAt)","chat":{"chatId":"chat-sam","chatKind":"direct","circleId":null,"title":null,"isCircleChat":false,"unreadCount":\#(unreadCount),"isMuted":false,"mutedUntil":null,"isRemoved":false,"members":[\#(robin),\#(sam)]}}"#
+                #"{"id":"chat-sam","kind":"chat","title":null,"summary":null,"lastAt":"\#(lastAt)","chat":{"chatId":"chat-sam","chatKind":"direct","circleId":null,"title":null,"isCircleChat":false,"unreadCount":\#(unreadCount),"notificationLevel":"all","isRemoved":false,"members":[\#(robin),\#(sam)]}}"#
         }
 
         /// The family circle's chat: three people, each of whom has an agent
@@ -282,7 +282,7 @@
             let alex = chatMemberJSON("alex", readThroughMessageId: "g06")
             let lastAt = demoTime(daysAgo: 0, hour: 17, minute: 12)
             return
-                #"{"id":"chat-home","kind":"chat","title":"Home","summary":null,"lastAt":"\#(lastAt)","chat":{"chatId":"chat-home","chatKind":"group","circleId":"circle-home","title":"Home","isCircleChat":true,"unreadCount":\#(unreadCount),"isMuted":false,"mutedUntil":null,"isRemoved":false,"members":[\#(robin),\#(sam),\#(alex)]}}"#
+                #"{"id":"chat-home","kind":"chat","title":"Home","summary":null,"lastAt":"\#(lastAt)","chat":{"chatId":"chat-home","chatKind":"group","circleId":"circle-home","title":"Home","isCircleChat":true,"unreadCount":\#(unreadCount),"notificationLevel":"all","isRemoved":false,"members":[\#(robin),\#(sam),\#(alex)]}}"#
         }
 
         /// The chats in the conversation list: the group has messages waiting.
@@ -291,13 +291,14 @@
 
         static func chatMessageJSON(
             _ id: String, daysAgo: Int, hour: Int, minute: Int, from userId: String, _ content: String, reactions: String = "[]",
-            references: String = "[]"
+            references: String = "[]", mentionedUserIds: [String] = [], isAllMentioned: Bool = false
         ) -> String {
+            let mentioned = mentionedUserIds.map { "\"\($0)\"" }.joined(separator: ",")
             let person = demoPerson(userId)
             let createdAt = demoTime(daysAgo: daysAgo, hour: hour, minute: minute)
             let isMine = userId == "robin"
             return
-                #"{"id":"\#(id)","createdAt":"\#(createdAt)","role":"user","content":"\#(content)","reactions":\#(reactions),"references":\#(references),"authorKind":"person","authorUserId":"\#(userId)","authorName":"\#(person.name)","authorOwnerName":"","authorAvatarUrl":\#(person.avatarUrlJSON),"authorAvatarColorIndex":\#(person.avatarColorIndex),"authorAgentId":"","isMine":\#(isMine)}"#
+                #"{"id":"\#(id)","createdAt":"\#(createdAt)","role":"user","content":"\#(content)","reactions":\#(reactions),"references":\#(references),"authorKind":"person","authorUserId":"\#(userId)","authorName":"\#(person.name)","authorOwnerName":"","authorAvatarUrl":\#(person.avatarUrlJSON),"authorAvatarColorIndex":\#(person.avatarColorIndex),"authorAgentId":"","isMine":\#(isMine),"mentionedUserIds":[\#(mentioned)],"isAllMentioned":\#(isAllMentioned)}"#
         }
 
         /// A message by somebody's agent, said in front of the whole chat.
@@ -327,7 +328,8 @@
         }
 
         /// The circle's chat: a question for Sam's agent and its answer, which
-        /// is told apart from an answer of anybody else's agent by whose it is.
+        /// is told apart from an answer of anybody else's agent by whose it is,
+        /// and a message that mentions the person reading, marked.
         static var groupChatMessages: [String] {
             [
                 chatMessageJSON("g01", daysAgo: 0, hour: 17, minute: 2, from: "alex", "Who is picking up groceries tonight?"),
@@ -336,7 +338,9 @@
                 chatAgentMessageJSON(
                     "g04", daysAgo: 0, hour: 17, minute: 7, ownerUserId: "sam",
                     "The farmers market closes at 4 pm today, so it is closed by now. The corner shop is open until 10 pm."),
-                chatMessageJSON("g05", daysAgo: 0, hour: 17, minute: 10, from: "alex", "Thanks, I will make the list."),
+                chatMessageJSON(
+                    "g05", daysAgo: 0, hour: 17, minute: 10, from: "alex", "Thanks, I will make the list. @Robin can you get eggs too?",
+                    mentionedUserIds: ["robin"]),
                 chatMessageJSON("g06", daysAgo: 0, hour: 17, minute: 12, from: "robin", "Great, I will start the rice."),
             ]
         }

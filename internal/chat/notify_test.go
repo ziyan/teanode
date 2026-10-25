@@ -134,7 +134,7 @@ func (self *phoneWorld) read(t *testing.T, delivery *push.Delivery) *push.Conten
 	return content
 }
 
-// A member who archived the chat is left alone by it, as by a muted one, and
+// A member who archived the chat is left alone by it, as by one turned off, and
 // is told again once they put it back.
 func TestAChatMessageIsNotNotifiedToAMemberWhoArchivedTheChat(t *testing.T) {
 	world := newPhoneWorld(t)
@@ -154,26 +154,24 @@ func TestAChatMessageIsNotNotifiedToAMemberWhoArchivedTheChat(t *testing.T) {
 
 // On a server with no agent, a message in a chat reaches the phone of a member
 // who is not looking, with the author's name and the first line, grouped by
-// the member's conversation; not the author's own, not a muted chat's, not a
+// the member's conversation; not the author's own, not a chat turned off, not a
 // member who is looking.
-func TestAChatMessageIsNotifiedWithNoAgentUnlessMutedOrWatchedOrOwn(t *testing.T) {
+func TestAChatMessageIsNotifiedWithNoAgentUnlessOffOrWatchedOrOwn(t *testing.T) {
 	world := newPhoneWorld(t)
 	message := &models.AgentMessage{
 		ID: "a-message", AuthorKind: models.ChatAuthorPerson, AuthorUserID: "another-person", AuthorName: "Maria",
 		Content: "dinner at 7?\nbring the salad",
 	}
 
-	// Silenced: nothing.
-	mutedUntil := time.Now().Add(time.Hour)
-	muted := world.recipient
-	muted.MutedUntil = &mutedUntil
-	world.hub.NotifyChatMessage(message, "", false, []Recipient{muted})
-	world.expectSent(t, 0, "a muted chat")
-	// A mute that has ended is no mute.
-	ended := time.Now().Add(-time.Minute)
-	muted.MutedUntil = &ended
-	world.hub.NotifyChatMessage(message, "", false, []Recipient{muted})
-	sent := world.expectSent(t, 1, "a chat whose mute ended")
+	// Turned off: nothing.
+	off := world.recipient
+	off.NotificationLevel = models.ChatNotificationOff
+	world.hub.NotifyChatMessage(message, "", false, []Recipient{off})
+	world.expectSent(t, 0, "a chat turned off")
+	// Turned back on: told.
+	off.NotificationLevel = models.ChatNotificationAll
+	world.hub.NotifyChatMessage(message, "", false, []Recipient{off})
+	sent := world.expectSent(t, 1, "a chat turned back on")
 	content := world.read(t, sent[0])
 	if content.NotificationKind != models.NotificationChat || content.Title != "Maria" || content.Body != "dinner at 7?" ||
 		content.ThreadID != "the-members-conversation" || content.ConversationID != "the-members-conversation" {
@@ -265,16 +263,86 @@ func TestAnAgentsNotificationTitleSaysWhoseAgentItIs(t *testing.T) {
 		"an agent with no owner recorded": {agentMessage("Bertie", ""), "", false, "Bertie"},
 		"a person in a group":             {&models.AgentMessage{AuthorKind: models.ChatAuthorPerson, AuthorName: "Maria"}, "Weekend trip", true, "Maria in Weekend trip"},
 	} {
-		if got := notificationTitle(test.message, test.chat, test.isGroup, push.LanguageEnglish); got != test.want {
+		if got := notificationTitle(test.message, test.chat, test.isGroup, "a-reader", push.LanguageEnglish); got != test.want {
 			t.Errorf("%s: the title is %q, want %q", name, got, test.want)
 		}
 	}
 	// In Chinese and Japanese the chat and whose agent it is are worded as
 	// the dashboard words them.
-	if got := notificationTitle(agentMessage("Bertie", "Alice"), "Weekend trip", true, push.LanguageChinese); got != "Bertie · Alice 的助手（Weekend trip）" {
+	if got := notificationTitle(agentMessage("Bertie", "Alice"), "Weekend trip", true, "a-reader", push.LanguageChinese); got != "Bertie · Alice 的助手（Weekend trip）" {
 		t.Errorf("in Chinese the title is %q", got)
 	}
-	if got := notificationTitle(agentMessage("Agent", "Alice"), "", false, push.LanguageJapanese); got != "Alice のエージェント" {
+	if got := notificationTitle(agentMessage("Agent", "Alice"), "", false, "a-reader", push.LanguageJapanese); got != "Alice のエージェント" {
 		t.Errorf("in Japanese the title is %q", got)
+	}
+}
+
+// Each level tells the member of what they asked for: all of everything,
+// mentions only of a message that names them or everybody, off of nothing,
+// a mention included. Addressing their agent is not mentioning them.
+func TestAChatsNotificationLevelDecidesWhatAMemberIsToldOf(t *testing.T) {
+	t.Parallel()
+	member := Recipient{UserID: "user-ada", AgentID: "agent-ada", ConversationID: "a-conversation"}
+	plain := &models.AgentMessage{AuthorKind: models.ChatAuthorPerson, AuthorUserID: "user-milo", Content: "lunch?"}
+	named := &models.AgentMessage{AuthorKind: models.ChatAuthorPerson, AuthorUserID: "user-milo", Content: "@Ada lunch?", MentionedUserIDs: []string{"user-ada"}}
+	other := &models.AgentMessage{AuthorKind: models.ChatAuthorPerson, AuthorUserID: "user-milo", Content: "@Rosa lunch?", MentionedUserIDs: []string{"user-rosa"}}
+	everybody := &models.AgentMessage{AuthorKind: models.ChatAuthorPerson, AuthorUserID: "user-milo", Content: "@all lunch?", IsAllMentioned: true}
+	// "@Ada's agent" chose the agent: it is in addressedAgentIds of the ask,
+	// never in what the message mentions.
+	agentAddressed := &models.AgentMessage{AuthorKind: models.ChatAuthorPerson, AuthorUserID: "user-milo", Content: "@Bertie lunch?"}
+	for _, test := range []struct {
+		level   models.ChatNotificationLevel
+		message *models.AgentMessage
+		want    bool
+		why     string
+	}{
+		{models.ChatNotificationAll, plain, true, "all, a plain message"},
+		{"", plain, true, "no level read, a plain message"},
+		{models.ChatNotificationMentions, plain, false, "mentions, a plain message"},
+		{models.ChatNotificationMentions, named, true, "mentions, a message naming them"},
+		{models.ChatNotificationMentions, other, false, "mentions, a message naming somebody else"},
+		{models.ChatNotificationMentions, everybody, true, "mentions, a message mentioning everybody"},
+		{models.ChatNotificationMentions, agentAddressed, false, "mentions, a message addressing their agent"},
+		{models.ChatNotificationOff, named, false, "off, a message naming them"},
+		{models.ChatNotificationOff, everybody, false, "off, a message mentioning everybody"},
+	} {
+		recipient := member
+		recipient.NotificationLevel = test.level
+		if got := isToldOf(recipient, test.message); got != test.want {
+			t.Errorf("%s: told %v, want %v", test.why, got, test.want)
+		}
+	}
+	archived := member
+	archived.IsConversationArchived = true
+	if isToldOf(archived, named) {
+		t.Error("a member who archived the chat is told of a mention")
+	}
+}
+
+// A notification of a message that mentions the reader says so, in their
+// language: them by name before everybody.
+func TestAMentionsNotificationSaysTheReaderWasMentioned(t *testing.T) {
+	t.Parallel()
+	named := &models.AgentMessage{AuthorKind: models.ChatAuthorPerson, AuthorName: "Milo", MentionedUserIDs: []string{"user-ada"}, IsAllMentioned: true}
+	everybody := &models.AgentMessage{AuthorKind: models.ChatAuthorPerson, AuthorName: "Milo", IsAllMentioned: true}
+	for _, test := range []struct {
+		message  *models.AgentMessage
+		chat     string
+		isGroup  bool
+		language string
+		want     string
+	}{
+		{named, "Weekend trip", true, push.LanguageEnglish, "Milo mentioned you in Weekend trip"},
+		{named, "", false, push.LanguageEnglish, "Milo mentioned you"},
+		{everybody, "Weekend trip", true, push.LanguageEnglish, "Milo mentioned everyone in Weekend trip"},
+		{named, "Weekend trip", true, push.LanguageChinese, "Milo 在Weekend trip中提到了你"},
+		{everybody, "Weekend trip", true, push.LanguageJapanese, "MiloがWeekend tripで全員をメンションしました"},
+	} {
+		if got := notificationTitle(test.message, test.chat, test.isGroup, "user-ada", test.language); got != test.want {
+			t.Errorf("the title is %q, want %q", got, test.want)
+		}
+	}
+	if got := notificationTitle(named, "Weekend trip", true, "user-rosa", push.LanguageEnglish); got != "Milo mentioned everyone in Weekend trip" {
+		t.Errorf("to a member named nowhere but in everybody, the title is %q", got)
 	}
 }

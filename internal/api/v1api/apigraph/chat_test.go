@@ -97,7 +97,7 @@ func newChatWorldWith(t *testing.T, hasWorker bool) *chatWorld {
 }
 
 // chatFields is a chat conversation as the tests read it.
-const chatTestFields = `{ id kind title lastAt chat { chatId chatKind circleId title isCircleChat unreadCount isMuted mutedUntil isRemoved
+const chatTestFields = `{ id kind title lastAt chat { chatId chatKind circleId title isCircleChat unreadCount notificationLevel isMuted isRemoved
 	members { userId username name avatarColorIndex memberRole isDeletedAccount isRemoved readThroughMessageId isAgentReading } } }`
 
 // shareCircle puts people in a circle together.
@@ -135,6 +135,7 @@ func (self *chatWorld) read(t *testing.T, as *models.User, conversationId string
 	data := self.call(t, as, fmt.Sprintf(`query { ReadAgentConversation(conversationId: %q) {
 		total conversation %s
 		messages { id role content authorKind authorUserId authorName authorOwnerName authorAgentId authorAvatarColorIndex isMine editedAt isDeleted
+			mentionedUserIds isAllMentioned
 			references { agentMessageId quotedRole quotedText } attachments { id name }
 			reactions { emoji reactorKind reactorUserId reactorName } } } }`, conversationId, chatTestFields))
 	view := data["ReadAgentConversation"].(map[string]any)
@@ -459,7 +460,7 @@ func TestAMemberNeverReadsAnotherMembersAgentRows(t *testing.T) {
 		fmt.Sprintf(`query { ReadAgentConversation(conversationId: %q) { total } }`, carolChat),
 		fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "as carol") { runId } }`, carolChat),
 		fmt.Sprintf(`mutation { MarkChatRead(conversationId: %q, throughMessageId: "x") }`, carolChat),
-		fmt.Sprintf(`mutation { MuteChat(conversationId: %q) { id } }`, carolChat),
+		fmt.Sprintf(`mutation { SetChatNotificationLevel(conversationId: %q, notificationLevel: "off") { id } }`, carolChat),
 		fmt.Sprintf(`mutation { LeaveChat(conversationId: %q) }`, carolChat),
 	} {
 		world.refused(t, world.alice, query)
@@ -1224,28 +1225,30 @@ func TestAChatIsNotRenamedOrDeletedLikeAConversationWithTheAgent(t *testing.T) {
 	}
 }
 
-func TestAChatMuteIsPerPersonAndEndsWhenAsked(t *testing.T) {
+// A member's notification level is theirs alone, one of all, mentions and
+// off, and stays as they set it.
+func TestAChatsNotificationLevelIsPerPerson(t *testing.T) {
 	world := newChatWorld(t)
 	world.shareCircle(t, world.alice, "Home", world.bob)
 	aliceChat := world.openDirect(t, world.alice, world.bob)
-	until := time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339)
-	muted := world.call(t, world.alice, fmt.Sprintf(`mutation { MuteChat(conversationId: %q, mutedUntil: %q) %s }`, aliceChat, until, chatTestFields))["MuteChat"].(map[string]any)
-	chat := muted["chat"].(map[string]any)
-	if chat["isMuted"] != true || chat["mutedUntil"] == nil {
-		t.Errorf("a muted chat is %v", chat)
+	if chat := world.chatOf(t, world.alice, aliceChat); chat["notificationLevel"] != "all" {
+		t.Errorf("a new chat is %v", chat)
+	}
+	set := world.call(t, world.alice, fmt.Sprintf(`mutation { SetChatNotificationLevel(conversationId: %q, notificationLevel: "mentions") %s }`, aliceChat, chatTestFields))["SetChatNotificationLevel"].(map[string]any)
+	if chat := set["chat"].(map[string]any); chat["notificationLevel"] != "mentions" || chat["isMuted"] != false {
+		t.Errorf("a chat set to mentions is %v", chat)
 	}
 	bobChat := world.openDirect(t, world.bob, world.alice)
-	if chat := world.chatOf(t, world.bob, bobChat); chat["isMuted"] != false {
-		t.Errorf("Alice's mute reached Bob: %v", chat)
+	if chat := world.chatOf(t, world.bob, bobChat); chat["notificationLevel"] != "all" {
+		t.Errorf("Alice's level reached Bob: %v", chat)
 	}
-	unmuted := world.call(t, world.alice, fmt.Sprintf(`mutation { MuteChat(conversationId: %q) %s }`, aliceChat, chatTestFields))["MuteChat"].(map[string]any)
-	if chat := unmuted["chat"].(map[string]any); chat["isMuted"] != false || chat["mutedUntil"] != nil {
-		t.Errorf("an unmuted chat is %v", chat)
+	// Off is what an app built before the level reads as muted.
+	world.call(t, world.alice, fmt.Sprintf(`mutation { SetChatNotificationLevel(conversationId: %q, notificationLevel: "off") %s }`, aliceChat, chatTestFields))
+	if chat := world.chatOf(t, world.alice, aliceChat); chat["notificationLevel"] != "off" || chat["isMuted"] != true {
+		t.Errorf("a chat turned off is %v", chat)
 	}
-	// A time that has passed is no mute.
-	past := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
-	if chat := world.call(t, world.alice, fmt.Sprintf(`mutation { MuteChat(conversationId: %q, mutedUntil: %q) %s }`, aliceChat, past, chatTestFields))["MuteChat"].(map[string]any)["chat"].(map[string]any); chat["isMuted"] != false {
-		t.Errorf("a mute in the past left the chat muted: %v", chat)
+	if message := world.refused(t, world.alice, fmt.Sprintf(`mutation { SetChatNotificationLevel(conversationId: %q, notificationLevel: "loud") { id } }`, aliceChat)); !strings.Contains(message, "all, mentions or off") {
+		t.Errorf("a level that is not one of the three was answered %q", message)
 	}
 }
 
@@ -1285,7 +1288,7 @@ func TestEveryChatOperationAnswersNotFoundToAnOutsider(t *testing.T) {
 		fmt.Sprintf(`mutation { EditChatMessage(messageId: %q, message: "x") { id } }`, messageId),
 		fmt.Sprintf(`mutation { DeleteChatMessage(messageId: %q) }`, messageId),
 		fmt.Sprintf(`mutation { MarkChatRead(conversationId: %q, throughMessageId: %q) }`, aliceChat, messageId),
-		fmt.Sprintf(`mutation { MuteChat(conversationId: %q) { id } }`, aliceChat),
+		fmt.Sprintf(`mutation { SetChatNotificationLevel(conversationId: %q, notificationLevel: "off") { id } }`, aliceChat),
 		fmt.Sprintf(`mutation { SetChatTyping(conversationId: %q) }`, aliceChat),
 		fmt.Sprintf(`mutation { SayInChatAsAgent(conversationId: %q, message: "x") { id } }`, aliceChat),
 		fmt.Sprintf(`mutation { ReactInChatAsAgent(messageId: %q, emoji: "👍") }`, messageId),

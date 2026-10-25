@@ -302,7 +302,8 @@ struct ConversationsList: View {
     }
 
     /// A chat in the list: its people's pictures, its name, bold with a count
-    /// while messages wait in it, and a mark when it is muted.
+    /// while messages wait in it, and a mark when the person is not told of
+    /// all of it.
     private func chatRow(_ conversation: AgentConversation) -> some View {
         let chat = conversation.chat
         let unreadCount = chat?.unreadCount ?? 0
@@ -326,11 +327,13 @@ struct ConversationsList: View {
                     }
                 }
                 Spacer(minLength: 0)
-                if chat?.isMuted == true {
-                    Image(systemName: "bell.slash")
+                // A chat not told of everything says so: the @ for mentions
+                // alone, a bell crossed out for nothing.
+                if let level = chat?.level, level != .all {
+                    Image(systemName: ChatWords.symbol(of: level))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                        .accessibilityLabel("Muted")
+                        .accessibilityLabel(level == .mentions ? Text("Only mentions") : Text("Notifications off"))
                 }
                 if unreadCount > 0 {
                     UnreadBadge(unreadCount: unreadCount)
@@ -340,22 +343,9 @@ struct ConversationsList: View {
         // No swipe actions, as for the other rows: everything is in the
         // long press.
         .contextMenu {
-            if chat?.isMuted == true {
-                Button {
-                    Task { await act { try await connection.muteChat(conversation.id, until: nil) } }
-                } label: {
-                    Label("Unmute", systemImage: "bell")
-                }
-            } else {
-                Button {
-                    Task { await act { try await connection.muteChat(conversation.id, until: Date().addingTimeInterval(8 * 60 * 60)) } }
-                } label: {
-                    Label("Mute for 8 hours", systemImage: "bell.slash")
-                }
-                Button {
-                    Task { await act { try await connection.muteChat(conversation.id, until: Date.distantFuture) } }
-                } label: {
-                    Label("Mute until I unmute", systemImage: "bell.slash")
+            if let chat {
+                NotificationLevelPicker(level: chat.level) { level in
+                    Task { await act { try await connection.setChatNotificationLevel(conversation.id, to: level) } }
                 }
             }
             // Put away like any other conversation, for this person alone, and

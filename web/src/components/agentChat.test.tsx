@@ -4,7 +4,6 @@ import {
   addressableAgentsOf,
   addressedIn,
   agentSpeakerName,
-  agentsMatching,
   chatLineOf,
   isChatMessage,
   linesWithSaid,
@@ -15,7 +14,12 @@ import {
   readersByMessage,
   beginsRun,
   streamingKeyOf,
-  withMention,
+  withMentionChoice,
+  mentionChoicesOf,
+  mentionChoiceKey,
+  mentionsMatching,
+  mentionedIn,
+  mentionWordsOf,
   type ChatLine,
   type ChatMember,
   type ChatSummary,
@@ -101,8 +105,7 @@ function room(): ChatSummary {
     title: 'Trip',
     isCircleChat: false,
     unreadCount: 0,
-    isMuted: false,
-    mutedUntil: null,
+    notificationLevel: 'all',
     isRemoved: false,
     members: [
       withAgent('person-b', 'Benny', { isAgentAskableByOthers: true }),
@@ -133,19 +136,88 @@ it('finds an @ at the caret only where it starts a word', () => {
   expect(mentionAt('no at sign', 10)).toBeNull()
 })
 
-it('narrows the agents by the letters after the @, in any case', () => {
-  const agents = addressableAgentsOf(room(), 'person-a', '(deleted)')
-  expect(agentsMatching(agents, '').map((agent) => agent.name)).toEqual(['Annie', 'Benny'])
-  expect(agentsMatching(agents, 'be').map((agent) => agent.name)).toEqual(['Benny'])
-  expect(agentsMatching(agents, 'x')).toEqual([])
+it('offers the own agent, everybody, then each person followed by their agent when it may be asked', () => {
+  const keys = mentionChoicesOf(room(), 'person-a', '(deleted)').map(mentionChoiceKey)
+  expect(keys).toEqual([
+    'agent:agent-person-a',
+    'all',
+    'person:person-b',
+    'agent:agent-person-b',
+    'person:person-c',
+    'person:person-d',
+    'person:person-f',
+  ])
+  // A direct chat has nobody to mention as everybody.
+  expect(
+    mentionChoicesOf({ ...room(), chatKind: 'direct' }, 'person-a', '(deleted)').map(mentionChoiceKey),
+  ).not.toContain('all')
 })
 
-it('puts the chosen name where the @ was and the caret after it', () => {
-  const [annie] = addressableAgentsOf(room(), 'person-a', '(deleted)')
-  expect(withMention('hi @An there', { start: 3, query: 'An' }, 6, annie)).toEqual({
+it('narrows the choices by the letters after the @, everybody by its word in any language', () => {
+  const choices = mentionChoicesOf(room(), 'person-a', '(deleted)')
+  expect(mentionsMatching(choices, 'be', 'all').map(mentionChoiceKey)).toEqual(['agent:agent-person-b'])
+  expect(mentionsMatching(choices, 'person-c', 'all').map(mentionChoiceKey)).toEqual(['person:person-c'])
+  expect(mentionsMatching(choices, 'al', '所有人').map(mentionChoiceKey)).toEqual(['all'])
+  expect(mentionsMatching(choices, '所', '所有人').map(mentionChoiceKey)).toEqual(['all'])
+  expect(mentionsMatching(choices, 'x', 'all')).toEqual([])
+})
+
+it('puts the chosen word where the @ was and the caret after it', () => {
+  const choices = mentionChoicesOf(room(), 'person-a', '(deleted)')
+  const annie = choices[0]
+  expect(withMentionChoice('hi @An there', { start: 3, query: 'An' }, 6, annie, 'all')).toEqual({
     text: 'hi @Annie  there',
     caret: 10,
   })
+  expect(withMentionChoice('@', { start: 0, query: '' }, 1, { kind: 'all' }, '全員')).toEqual({
+    text: '@全員 ',
+    caret: 4,
+  })
+})
+
+it('mentions the people named after an @ and everybody, never the person behind an agent asked', () => {
+  expect(mentionedIn('@person-b and @all, dinner?', room(), 'person-a', '(deleted)', [])).toEqual({
+    mentionedUserIds: ['person-b'],
+    isAllMentioned: true,
+  })
+  expect(mentionedIn('大家@所有人', room(), 'person-a', '(deleted)', [])).toEqual({
+    mentionedUserIds: [],
+    isAllMentioned: true,
+  })
+  // Asking Benny, person-b's agent, is no mention of person-b.
+  const benny = mentionChoicesOf(room(), 'person-a', '(deleted)').find(
+    (choice) => choice.kind === 'agent' && choice.agent.name === 'Benny',
+  )
+  expect(benny?.kind).toBe('agent')
+  if (benny?.kind !== 'agent') return
+  expect(mentionedIn('@Benny when?', room(), 'person-a', '(deleted)', [benny.agent])).toEqual({
+    mentionedUserIds: [],
+    isAllMentioned: false,
+  })
+  // An agent chosen under the name of a person is the agent.
+  const namesake = { ...benny.agent, name: 'person-c' }
+  expect(mentionedIn('@person-c when?', room(), 'person-a', '(deleted)', [namesake]).mentionedUserIds).toEqual([])
+  // An address and a longer word mention nobody; the person themselves is not offered.
+  expect(mentionedIn('write to x@person-b.example or @person-bx', room(), 'person-a', '(deleted)', [])).toEqual({
+    mentionedUserIds: [],
+    isAllMentioned: false,
+  })
+})
+
+it('marks the names a line mentions, the reader’s own stronger', () => {
+  const words = mentionWordsOf(
+    { mentionedUserIds: ['person-a', 'person-b'], isAllMentioned: false },
+    room(),
+    'person-a',
+    '(deleted)',
+  )
+  expect(words).toEqual([
+    { word: 'person-a', isReader: true },
+    { word: 'person-b', isReader: false },
+  ])
+  expect(mentionWordsOf({ isAllMentioned: true }, room(), 'person-b', '(deleted)').map((word) => word.word)).toContain(
+    '所有人',
+  )
 })
 
 it('addresses the agents chosen whose names are still in the words, and the agent replied to', () => {

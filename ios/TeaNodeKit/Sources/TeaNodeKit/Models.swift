@@ -225,6 +225,10 @@ public struct AgentMessage: Codable, Identifiable, Hashable, Sendable {
     /// call, its result, a note), which only they read, and not something
     /// said there.
     public var isAgentWork: Bool? = nil
+    /// In a chat, the members the message mentions by account, and whether it
+    /// mentions everybody.
+    public var mentionedUserIds: [String]? = nil
+    public var isAllMentioned: Bool? = nil
 
     public init(
         id: String, createdAt: String, role: String, content: String, name: String? = nil, toolCallId: String? = nil,

@@ -14,6 +14,28 @@ enum ChatWords {
     /// "Ada's agent", in the person's language.
     static func agentOf(_ ownerName: String) -> String { String(localized: "\(ownerName)'s agent") }
 
+    /// The word after an @ that mentions everybody in a chat, in the language
+    /// the app is shown in.
+    static var allMentionWord: String { String(localized: "all", comment: "After an @, mentions everybody in a chat") }
+
+    /// What each notification level is called.
+    static func name(of notificationLevel: ChatNotificationLevel) -> String {
+        switch notificationLevel {
+        case .all: String(localized: "All messages")
+        case .mentions: String(localized: "Only mentions")
+        case .off: String(localized: "Off")
+        }
+    }
+
+    /// The symbol of each notification level: a bell, the @, a bell crossed out.
+    static func symbol(of notificationLevel: ChatNotificationLevel) -> String {
+        switch notificationLevel {
+        case .all: "bell"
+        case .mentions: "at"
+        case .off: "bell.slash"
+        }
+    }
+
     /// A member's name, with the note when their account is gone.
     static func name(of member: ChatMember) -> String {
         ChatSummary.name(of: member, deletedAccountNote: deletedAccountNote)
@@ -139,15 +161,58 @@ struct ChatTypingLine: View {
     }
 }
 
-/// MentionMenu offers the agents an @ in the composer can ask, as the
-/// dashboard's list does: a row for each with its symbol, its name and whose
-/// it is, the person's own first, then those whose owners let the others ask.
-/// It sits above the composer on glass, shows about five rows (one at the
-/// largest text sizes) and scrolls for more. A tap puts the agent's name in
-/// the words and addresses the message to it.
+/// MentionMarks marks the mentions in a message's words: each @ and name
+/// semibold, in the words' own color (green is kept for what can be pressed),
+/// and the reader's own on a highlighter's wash so it stands out of the rest.
+enum MentionMarks {
+    static func marked(_ attributed: AttributedString, with mentions: [ChatMentionWord]) -> AttributedString {
+        guard !mentions.isEmpty else { return attributed }
+        let text = String(attributed.characters)
+        guard text.contains("@") else { return attributed }
+        var marked = attributed
+        for range in ChatMention.ranges(of: mentions.map(\.word), in: text) {
+            let start = marked.index(marked.startIndex, offsetByCharacters: text.distance(from: text.startIndex, to: range.lowerBound))
+            let end = marked.index(start, offsetByCharacters: text.distance(from: range.lowerBound, to: range.upperBound))
+            let said = text[range].dropFirst().lowercased()
+            marked[start..<end].inlinePresentationIntent = .stronglyEmphasized
+            if mentions.contains(where: { $0.isReader && $0.word.lowercased() == said }) {
+                marked[start..<end][AttributeScopes.SwiftUIAttributes.BackgroundColorAttribute.self] = Color(.systemYellow).opacity(0.35)
+            }
+        }
+        return marked
+    }
+}
+
+/// NotificationLevelPicker chooses what the person's phone is told of in a
+/// chat: every message, only mentions, or nothing. In a menu it is a submenu
+/// with the level ticked; in a list, rows with a tick.
+struct NotificationLevelPicker: View {
+    let level: ChatNotificationLevel
+    let onChoose: (ChatNotificationLevel) -> Void
+
+    var body: some View {
+        Picker(selection: Binding(get: { level }, set: { onChoose($0) })) {
+            ForEach(ChatNotificationLevel.allCases) { choice in
+                Label(ChatWords.name(of: choice), systemImage: ChatWords.symbol(of: choice)).tag(choice)
+            }
+        } label: {
+            Label("Notifications", systemImage: ChatWords.symbol(of: level))
+        }
+        .pickerStyle(.menu)
+    }
+}
+
+/// MentionMenu offers what an @ in the composer can mention or ask, as the
+/// dashboard's list does: a row for each with its symbol, its name and what
+/// it is. The person's own agent comes first, then everybody in a group, then
+/// each of the others followed by their agent when its owner lets the others
+/// ask. A person and their agent are two rows, named apart: mentioning a
+/// person tells them and asks nothing of their agent. It sits above the
+/// composer on glass, shows about five rows (one at the largest text sizes)
+/// and scrolls for more. A tap puts the name in the words.
 struct MentionMenu: View {
-    let agents: [AddressableAgent]
-    let onChoose: (AddressableAgent) -> Void
+    let choices: [MentionChoice]
+    let onChoose: (MentionChoice) -> Void
     @ScaledMetric(relativeTo: .body) private var rowHeight: CGFloat = 56
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// The height of all the rows, measured, since a scroll view would
@@ -162,8 +227,8 @@ struct MentionMenu: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                ForEach(agents) { agent in
-                    MentionMenuRow(agent: agent, isLast: agent.id == agents.last?.id) { onChoose(agent) }
+                ForEach(choices) { choice in
+                    MentionMenuRow(choice: choice, isLast: choice.id == choices.last?.id) { onChoose(choice) }
                 }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowsHeight = $0 }
@@ -178,14 +243,14 @@ struct MentionMenu: View {
         .opacity(rowsHeight == 0 ? 0 : 1)
         .padding(.horizontal)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Agents you can ask here")
+        .accessibilityLabel("People and agents you can mention")
     }
 }
 
-/// MentionMenuRow is one agent in the mention menu, a plain row button across
+/// MentionMenuRow is one choice in the mention menu, a plain row button across
 /// the width of the menu.
 private struct MentionMenuRow: View {
-    let agent: AddressableAgent
+    let choice: MentionChoice
     let isLast: Bool
     let onChoose: () -> Void
     @ScaledMetric(relativeTo: .body) private var symbolSide: CGFloat = 34
@@ -193,24 +258,42 @@ private struct MentionMenuRow: View {
     private static var horizontalPadding: CGFloat { 16 }
     private static var symbolSpacing: CGFloat { 12 }
 
+    /// An agent's sparkles, a person, or the people for everybody.
+    private var symbol: String {
+        switch choice {
+        case .agent: "sparkles"
+        case .person: "person"
+        case .all: "person.2"
+        }
+    }
+
+    /// What the row is under its name. Most agents keep the name "Agent", so
+    /// whose it is tells two of them apart, in the dashboard's words; a
+    /// person's row says that mentioning tells them.
+    private var detail: String {
+        switch choice {
+        case .agent(let agent): agent.isOwn ? String(localized: "Yours") : ChatWords.agentOf(agent.ownerName)
+        case .person: String(localized: "Tells them")
+        case .all: String(localized: "Everyone in this chat")
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Button(action: onChoose) {
                 HStack(spacing: Self.symbolSpacing) {
-                    Image(systemName: "sparkles")
+                    Image(systemName: symbol)
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.primary)
                         .frame(width: symbolSide, height: symbolSide)
                         .background(Color(.tertiarySystemFill), in: .circle)
-                        // Read as the name and whose agent it is, not "sparkles".
+                        // Read as the name and what it is, not the symbol's name.
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(agent.name)
+                        Text(ChatMention.word(of: choice, allWord: ChatWords.allMentionWord))
                             .font(.body.weight(.semibold))
                             .foregroundStyle(.primary)
-                        // Most agents keep the name "Agent", so whose it is
-                        // tells two of them apart, in the dashboard's words.
-                        Text(agent.isOwn ? String(localized: "Yours") : agent.ownerName)
+                        Text(detail)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -349,9 +432,6 @@ struct ChatMenu: View {
     @State private var newTitle = ""
     @State private var isConfirmingLeave = false
 
-    /// How long "mute for a while" lasts.
-    private static let mutedForSeconds: TimeInterval = 8 * 60 * 60
-
     /// Opens the card of the member tapped in the members sheet, now that the
     /// sheet is gone.
     private func openPendingPerson() {
@@ -376,23 +456,10 @@ struct ChatMenu: View {
                         Label("Rename group", systemImage: "pencil")
                     }
                 }
-                if chat.isMuted {
-                    Button {
-                        Task { await model.mute(until: nil) }
-                    } label: {
-                        Label("Unmute", systemImage: "bell")
-                    }
-                } else {
-                    Button {
-                        Task { await model.mute(until: Date().addingTimeInterval(Self.mutedForSeconds)) }
-                    } label: {
-                        Label("Mute for 8 hours", systemImage: "bell.slash")
-                    }
-                    Button {
-                        Task { await model.mute(until: Date.distantFuture) }
-                    } label: {
-                        Label("Mute until I unmute", systemImage: "bell.slash")
-                    }
+                // What the phone is told of here, a submenu of the three
+                // levels with the current one ticked.
+                NotificationLevelPicker(level: chat.level) { level in
+                    Task { await model.setNotificationLevel(level) }
                 }
                 if chat.canBeLeft {
                     Divider()
@@ -478,6 +545,7 @@ struct ChatMembersSheet: View {
                         }
                     }
                     if let own = chat.member(model.ownUserId ?? ""), !own.isRemoved, !chat.isRemoved {
+                        notificationSection(chat)
                         agentSection(own)
                     }
                 }
@@ -509,6 +577,27 @@ struct ChatMembersSheet: View {
             if DemoServer.isRequested, DemoServer.screen == "chat-members" { return [.large] }
         #endif
         return [.medium, .large]
+    }
+
+    /// What the person's phone is told of in this chat, the three levels as
+    /// rows with the chosen one ticked, as Settings chooses among a few.
+    private func notificationSection(_ chat: ChatSummary) -> some View {
+        Section {
+            Picker(
+                "Notifications",
+                selection: Binding(get: { chat.level }, set: { level in Task { await model.setNotificationLevel(level) } })
+            ) {
+                ForEach(ChatNotificationLevel.allCases) { level in
+                    Text(ChatWords.name(of: level)).tag(level)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } header: {
+            Text("Notifications")
+        } footer: {
+            Text("Only mentions: you are told when someone writes @ and your name, or @all. It stays as you set it.")
+        }
     }
 
     /// What the person's agent does in this chat, as two switches that are the

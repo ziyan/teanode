@@ -249,6 +249,14 @@ type AskAgentArguments struct {
 	// client that does not know its id, such as the command line's
 	// --ask-agent.
 	ShouldAddressOwnAgent bool `json:"shouldAddressOwnAgent" graphapi:"nullable"`
+
+	// MentionedUserIDs are, in a chat, the members the message mentions by
+	// name, as the composer's @ chose them, and IsAllMentioned says it
+	// mentions everybody. A member told only of mentions is told of it.
+	// Mentioning a person is not addressing their agent: that is
+	// AddressedAgentIDs. Elsewhere both are ignored.
+	MentionedUserIDs []string `json:"mentionedUserIds" graphapi:"nullable"`
+	IsAllMentioned   bool     `json:"isAllMentioned" graphapi:"nullable"`
 }
 
 // AgentTurnView is the run to follow.

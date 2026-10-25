@@ -41,6 +41,8 @@ func newAgentAskCommand() *cli.Command {
 			&cli.StringSliceFlag{Name: "photo", Usage: "the id of a photo to ask about, as photo list shows them; repeat it for more than one"},
 			&cli.StringFlag{Name: "reply-to", Usage: "the id of a message in the conversation this answers, as conversation show --json lists them"},
 			&cli.StringSliceFlag{Name: "address", Usage: "in a chat (--conversation), ask this agent with the message: an agent id, or the username of the person it belongs to, from 'teanode agent conversation members <id>'; repeat it for more than one. Another person's agent answers only if its owner let the chat ask it. Replying to an agent's message (--reply-to) asks that agent as well"},
+			&cli.StringSliceFlag{Name: "mention", Usage: "in a chat (--conversation), mention this person with the message, by username, from 'teanode agent conversation members <id>'; repeat it for more than one. A person told only of mentions is told of it. It does not ask their agent: --address does"},
+			&cli.BoolFlag{Name: "mention-all", Usage: "in a chat (--conversation), mention everybody in it with the message"},
 			&cli.BoolFlag{Name: "ask-agent", Usage: "in a chat (--conversation), ask your own agent with it: the message goes to the people there and your agent answers them, for everybody to read; its work stays yours. Without it a message in a chat starts no agent"},
 		},
 		Action: runAgentAsk,
@@ -267,9 +269,17 @@ func runAgentAsk(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	mentionedUserIds, err := mentionedPeopleNamed(ctx, command, connection, conversationId)
+	if err != nil {
+		return err
+	}
+	if command.Bool("mention-all") && (conversationId == "" || command.Bool("new")) {
+		return fmt.Errorf("--mention-all mentions everybody in a chat: name the chat with --conversation")
+	}
 	return askOnce(ctx, command, connection, &client.AskAgentRequest{
 		ConversationID: conversationId, Message: message, Surface: "cli", AttachmentIDs: attachmentIds, References: references, Effort: command.String("effort"),
 		AddressedAgentIDs: addressedAgentIds, ShouldAddressOwnAgent: command.Bool("ask-agent"),
+		MentionedUserIDs: mentionedUserIds, IsAllMentioned: command.Bool("mention-all"),
 	}, command.Bool("json"), command.Bool("quiet"))
 }
 
@@ -314,6 +324,44 @@ func addressedAgentsNamed(ctx context.Context, command *cli.Command, connection 
 		}
 	}
 	return agentIds, nil
+}
+
+// mentionedPeopleNamed are the people --mention names, as account ids: each
+// the username of somebody in the chat now. A name that matches nobody is
+// refused here in words.
+func mentionedPeopleNamed(ctx context.Context, command *cli.Command, connection *client.Client, conversationId string) ([]string, error) {
+	named := command.StringSlice("mention")
+	if len(named) == 0 {
+		return nil, nil
+	}
+	if conversationId == "" || command.Bool("new") {
+		return nil, fmt.Errorf("--mention mentions somebody in a chat: name the chat with --conversation")
+	}
+	view, err := chatOf(ctx, command, connection, conversationId, 1)
+	if err != nil {
+		return nil, err
+	}
+	userIds := []string{}
+	for _, each := range named {
+		each = strings.TrimSpace(each)
+		if each == "" {
+			continue
+		}
+		found := ""
+		for _, member := range view.Conversation.Chat.Members {
+			if !member.IsRemoved && member.UserID != "" && strings.EqualFold(member.Username, each) {
+				found = member.UserID
+				break
+			}
+		}
+		if found == "" {
+			return nil, fmt.Errorf("%q is not the username of anybody in this chat; 'teanode agent conversation members <id>' says who is", each)
+		}
+		if !slices.Contains(userIds, found) {
+			userIds = append(userIds, found)
+		}
+	}
+	return userIds, nil
 }
 
 // agentCommandSurface is the surface a turn is started on when the agent's own

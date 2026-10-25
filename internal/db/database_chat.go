@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"sort"
@@ -137,9 +138,9 @@ type ChatOperation interface {
 	// the message is not the chat's.
 	MarkChatRead(chatId, userId, throughMessageId string) (bool, error)
 
-	// SetChatMuted silences a chat's notifications for a member until the
-	// time given; nil un-silences it.
-	SetChatMuted(chatId, userId string, mutedUntil *time.Time) error
+	// SetChatNotificationLevel sets what a member's phone is told of in a
+	// chat.
+	SetChatNotificationLevel(chatId, userId string, notificationLevel models.ChatNotificationLevel) error
 
 	// GetUsersByID reads accounts, without their groups, by id. One that is
 	// gone is left out.
@@ -168,7 +169,7 @@ type chatMemberModel struct {
 	JoinedAt               time.Time  `gorm:"column:joined_at"`
 	RemovedAt              *time.Time `gorm:"column:removed_at"`
 	ReadThroughMessageID   *string    `gorm:"column:read_through_message_id"`
-	MutedUntil             *time.Time `gorm:"column:muted_until"`
+	NotificationLevel      string     `gorm:"column:notification_level"`
 	IsAgentReading         bool       `gorm:"column:is_agent_reading"`
 	IsAgentAskableByOthers bool       `gorm:"column:is_agent_askable_by_others"`
 }
@@ -190,6 +191,8 @@ type chatMessageModel struct {
 	ReplyToMessageID *string    `gorm:"column:reply_to_message_id"`
 	EditedAt         *time.Time `gorm:"column:edited_at"`
 	DeletedAt        *time.Time `gorm:"column:deleted_at"`
+	MentionedUserIDs []byte     `gorm:"column:mentioned_user_ids;type:jsonb"`
+	IsAllMentioned   bool       `gorm:"column:is_all_mentioned"`
 }
 
 func (chatMessageModel) TableName() string { return "chat_message" }
@@ -282,11 +285,12 @@ func (self *transaction) addChatMemberRow(chatId, userId string, memberRole mode
 		}
 		return true, self.tx.Model(&chatMemberModel{}).Where(`"chat_id" = ? AND "user_id" = ?`, chatId, userId).Updates(map[string]any{
 			"member_name": user.DisplayName(), "member_role": string(memberRole), "joined_at": now, "removed_at": nil,
-			"read_through_message_id": nil, "muted_until": nil, "is_agent_reading": false, "is_agent_askable_by_others": false,
+			"read_through_message_id": nil, "notification_level": string(models.ChatNotificationAll), "is_agent_reading": false, "is_agent_askable_by_others": false,
 		}).Error
 	}
 	if err := self.tx.Create(&chatMemberModel{
 		ChatID: chatId, UserID: &userId, MemberName: user.DisplayName(), MemberRole: string(memberRole), JoinedAt: now,
+		NotificationLevel: string(models.ChatNotificationAll),
 	}).Error; err != nil {
 		return false, err
 	}
@@ -421,7 +425,7 @@ func chatMemberFromModel(model *chatMemberModel, users map[string]*models.User) 
 		IsAgentReading:         model.IsAgentReading,
 		JoinedAt:               model.JoinedAt.In(time.Local),
 		RemovedAt:              localTime(model.RemovedAt),
-		MutedUntil:             localTime(model.MutedUntil),
+		NotificationLevel:      models.ChatNotificationLevel(model.NotificationLevel),
 		IsAgentAskableByOthers: model.IsAgentAskableByOthers,
 	}
 	if user := users[member.UserID]; user != nil {
@@ -948,7 +952,6 @@ func (self *transaction) ChatViewsFor(userId string, conversations []*models.Age
 	if err != nil {
 		return err
 	}
-	now := time.Now()
 	for _, conversation := range conversations {
 		chat := byId[conversation.ChatID]
 		if !conversation.IsChat() || chat == nil {
@@ -956,13 +959,6 @@ func (self *transaction) ChatViewsFor(userId string, conversations []*models.Age
 		}
 		view := ChatViewOf(chat, userId)
 		view.UnreadCount = counts[chat.ID]
-		if member := chat.Member(userId); member != nil {
-			view.IsMuted = member.IsMutedAt(now)
-			if view.IsMuted {
-				mutedUntil := *member.MutedUntil
-				view.MutedUntil = &mutedUntil
-			}
-		}
 		conversation.Chat = view
 		conversation.Title = view.Title
 	}
@@ -983,8 +979,13 @@ func ChatViewOf(chat *models.Chat, userId string) *models.ChatView {
 		circleId := chat.CircleID
 		view.CircleID = &circleId
 	}
+	view.NotificationLevel = models.ChatNotificationAll
 	if member := chat.Member(userId); member != nil {
 		view.IsRemoved = member.IsRemoved
+		if member.NotificationLevel.IsValid() {
+			view.NotificationLevel = member.NotificationLevel
+		}
+		view.IsMuted = view.NotificationLevel == models.ChatNotificationOff
 	}
 	if view.Title == "" {
 		names := []string{}
@@ -1039,6 +1040,13 @@ func chatMessageFromModel(model *chatMessageModel) (*models.ChatMessage, error) 
 	if err := decodeJSON(model.Attachments, &message.Attachments); err != nil {
 		return nil, fmt.Errorf("db: cannot read the attachments of chat message %q: %w", model.ID, err)
 	}
+	if err := decodeJSON(model.MentionedUserIDs, &message.MentionedUserIDs); err != nil {
+		return nil, fmt.Errorf("db: cannot read whom chat message %q mentions: %w", model.ID, err)
+	}
+	if len(message.MentionedUserIDs) == 0 {
+		message.MentionedUserIDs = nil
+	}
+	message.IsAllMentioned = model.IsAllMentioned
 	return message, nil
 }
 
@@ -1054,6 +1062,14 @@ func (self *transaction) AppendChatMessage(message *models.ChatMessage) (*models
 		return nil, ErrNotFound
 	}
 	encoded, err := encodeChatAttachments(message.Attachments)
+	if err != nil {
+		return nil, err
+	}
+	mentionedUserIds := message.MentionedUserIDs
+	if mentionedUserIds == nil {
+		mentionedUserIds = []string{}
+	}
+	mentioned, err := json.Marshal(mentionedUserIds)
 	if err != nil {
 		return nil, err
 	}
@@ -1086,6 +1102,7 @@ func (self *transaction) AppendChatMessage(message *models.ChatMessage) (*models
 		AuthorAgentID:   stringPointer(message.AuthorAgentID), AgentRunID: stringPointer(message.AgentRunID),
 		Body: strings.ToValidUTF8(message.Body, "�"), Attachments: encoded,
 		ReplyToMessageID: stringPointer(message.ReplyToMessageID),
+		MentionedUserIDs: mentioned, IsAllMentioned: message.IsAllMentioned,
 	}
 	if model.ReplyToMessageID != nil {
 		var count int64
@@ -1270,8 +1287,11 @@ func moveChatReadMark(tx *gorm.DB, chatId, userId, throughMessageId string) (boo
 	return result.RowsAffected > 0, result.Error
 }
 
-func (self *transaction) SetChatMuted(chatId, userId string, mutedUntil *time.Time) error {
-	result := self.tx.Model(&chatMemberModel{}).Where(`"chat_id" = ? AND "user_id" = ?`, chatId, userId).Update("muted_until", mutedUntil)
+func (self *transaction) SetChatNotificationLevel(chatId, userId string, notificationLevel models.ChatNotificationLevel) error {
+	if !notificationLevel.IsValid() {
+		return ErrInvalidArguments
+	}
+	result := self.tx.Model(&chatMemberModel{}).Where(`"chat_id" = ? AND "user_id" = ?`, chatId, userId).Update("notification_level", string(notificationLevel))
 	if result.Error != nil {
 		return result.Error
 	}
@@ -1487,6 +1507,9 @@ func ChatMessageAsAgentMessage(message *models.ChatMessage, conversationId strin
 		AuthorName:     message.AuthorName,
 		EditedAt:       message.EditedAt,
 		IsDeleted:      message.DeletedAt != nil,
+
+		MentionedUserIDs: message.MentionedUserIDs,
+		IsAllMentioned:   message.IsAllMentioned,
 	}
 	if message.IsByAgent() {
 		converted.Role = "assistant"

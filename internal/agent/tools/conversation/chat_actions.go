@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/operator"
@@ -23,7 +22,7 @@ import (
 // takes, and to say who and what on the card.
 //
 // The actions are named as the command line names them
-// (teanode agent conversation direct, group, add, remove, leave, mute, read,
+// (teanode agent conversation direct, group, add, remove, leave, notifications, read,
 // remember, others-may-ask, edit, delete-message and rename), except that
 // "add" and "remove" say what they take because this tool also has other
 // things to add to, and "read" is mark_read because read already reads.
@@ -32,7 +31,7 @@ import (
 // lists them.
 var chatActions = []string{
 	"direct", "group", "rename", "add_members", "remove_member", "leave",
-	"mute", "mark_read", "edit", "delete_message", "remember", "others_may_ask",
+	"notifications", "mark_read", "edit", "delete_message", "remember", "others_may_ask",
 }
 
 // isChatAction says whether an action changes a chat.
@@ -81,7 +80,7 @@ func chatRiskOf(asked conversationArguments) tools.Risk {
 			return tools.RiskWrite
 		}
 		return tools.RiskGranting
-	case "direct", "group", "rename", "mute", "mark_read", "remember":
+	case "direct", "group", "rename", "notifications", "mark_read", "remember":
 		return tools.RiskWrite
 	}
 	return tools.RiskRead
@@ -90,38 +89,32 @@ func chatRiskOf(asked conversationArguments) tools.Risk {
 // The documents are the command line's (internal/client/agent_chat.go), with
 // the parts of the answer a model reads.
 const (
-	chatAnswerFields = `{ id title chat { chatId chatKind isMuted mutedUntil members { userId username name memberRole isRemoved } } }`
+	chatAnswerFields = `{ id title chat { chatId chatKind notificationLevel members { userId username name memberRole isRemoved } } }`
 
-	documentOpenDirectChat      = `mutation ($userId: String!) { OpenDirectChat(userId: $userId) ` + chatAnswerFields + ` }`
-	documentCreateGroupChat     = `mutation ($title: String, $userIds: [String!]!) { CreateGroupChat(title: $title, userIds: $userIds) ` + chatAnswerFields + ` }`
-	documentRenameChat          = `mutation ($conversationId: String!, $title: String!) { RenameChat(conversationId: $conversationId, title: $title) ` + chatAnswerFields + ` }`
-	documentAddChatMembers      = `mutation ($conversationId: String!, $userIds: [String!]!) { AddChatMembers(conversationId: $conversationId, userIds: $userIds) ` + chatAnswerFields + ` }`
-	documentRemoveChatMember    = `mutation ($conversationId: String!, $userId: String!) { RemoveChatMember(conversationId: $conversationId, userId: $userId) ` + chatAnswerFields + ` }`
-	documentLeaveChat           = `mutation ($conversationId: String!) { LeaveChat(conversationId: $conversationId) }`
-	documentMuteChat            = `mutation ($conversationId: String!, $mutedUntil: DateTime) { MuteChat(conversationId: $conversationId, mutedUntil: $mutedUntil) ` + chatAnswerFields + ` }`
-	documentMarkChatRead        = `mutation ($conversationId: String!, $throughMessageId: String!) { MarkChatRead(conversationId: $conversationId, throughMessageId: $throughMessageId) }`
-	documentEditChatMessage     = `mutation ($messageId: String!, $message: String!) { EditChatMessage(messageId: $messageId, message: $message) { id editedAt } }`
-	documentDeleteChatMessage   = `mutation ($messageId: String!) { DeleteChatMessage(messageId: $messageId) }`
-	documentSetChatAgentReading = `mutation ($conversationId: String!, $isAgentReading: Boolean!) { SetChatAgentReading(conversationId: $conversationId, isAgentReading: $isAgentReading) ` + chatAnswerFields + ` }`
-	documentSetChatAgentAskable = `mutation ($conversationId: String!, $isAgentAskableByOthers: Boolean!) { SetChatAgentAskableByOthers(conversationId: $conversationId, isAgentAskableByOthers: $isAgentAskableByOthers) ` + chatAnswerFields + ` }`
+	documentOpenDirectChat       = `mutation ($userId: String!) { OpenDirectChat(userId: $userId) ` + chatAnswerFields + ` }`
+	documentCreateGroupChat      = `mutation ($title: String, $userIds: [String!]!) { CreateGroupChat(title: $title, userIds: $userIds) ` + chatAnswerFields + ` }`
+	documentRenameChat           = `mutation ($conversationId: String!, $title: String!) { RenameChat(conversationId: $conversationId, title: $title) ` + chatAnswerFields + ` }`
+	documentAddChatMembers       = `mutation ($conversationId: String!, $userIds: [String!]!) { AddChatMembers(conversationId: $conversationId, userIds: $userIds) ` + chatAnswerFields + ` }`
+	documentRemoveChatMember     = `mutation ($conversationId: String!, $userId: String!) { RemoveChatMember(conversationId: $conversationId, userId: $userId) ` + chatAnswerFields + ` }`
+	documentLeaveChat            = `mutation ($conversationId: String!) { LeaveChat(conversationId: $conversationId) }`
+	documentSetChatNotifications = `mutation ($conversationId: String!, $notificationLevel: String!) { SetChatNotificationLevel(conversationId: $conversationId, notificationLevel: $notificationLevel) ` + chatAnswerFields + ` }`
+	documentMarkChatRead         = `mutation ($conversationId: String!, $throughMessageId: String!) { MarkChatRead(conversationId: $conversationId, throughMessageId: $throughMessageId) }`
+	documentEditChatMessage      = `mutation ($messageId: String!, $message: String!) { EditChatMessage(messageId: $messageId, message: $message) { id editedAt } }`
+	documentDeleteChatMessage    = `mutation ($messageId: String!) { DeleteChatMessage(messageId: $messageId) }`
+	documentSetChatAgentReading  = `mutation ($conversationId: String!, $isAgentReading: Boolean!) { SetChatAgentReading(conversationId: $conversationId, isAgentReading: $isAgentReading) ` + chatAnswerFields + ` }`
+	documentSetChatAgentAskable  = `mutation ($conversationId: String!, $isAgentAskableByOthers: Boolean!) { SetChatAgentAskableByOthers(conversationId: $conversationId, isAgentAskableByOthers: $isAgentAskableByOthers) ` + chatAnswerFields + ` }`
 
 	documentListCirclePeople = `query { ListCirclePeople { userId username name } }`
 )
-
-// mutedForGood is the time a mute that never ends is set to, the one the
-// dashboard sets and recognizes as "until I unmute". A far year of the
-// command line's would show there as a date.
-const mutedForGood = "2999-01-01T00:00:00Z"
 
 // chatAnswer is the conversation an operation answers with.
 type chatAnswer struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
 	Chat  struct {
-		ChatKind   string     `json:"chatKind"`
-		IsMuted    bool       `json:"isMuted"`
-		MutedUntil *time.Time `json:"mutedUntil"`
-		Members    []struct {
+		ChatKind          string `json:"chatKind"`
+		NotificationLevel string `json:"notificationLevel"`
+		Members           []struct {
 			UserID     string `json:"userId"`
 			Username   string `json:"username"`
 			Name       string `json:"name"`
@@ -153,8 +146,8 @@ func chatResult(operationResult map[string]any, operation, note string) (*tools.
 		}
 	}
 	answer["people_in_it"] = people
-	if answered.Chat.IsMuted && answered.Chat.MutedUntil != nil {
-		answer["muted_until"] = answered.Chat.MutedUntil.Format(time.RFC3339)
+	if answered.Chat.NotificationLevel != "" {
+		answer["notification_level"] = answered.Chat.NotificationLevel
 	}
 	result, err := tools.JSONResult(answer)
 	if err != nil {
@@ -368,19 +361,24 @@ func runChatAction(ctx context.Context, run tools.Run, arguments conversationArg
 		}
 		return tools.TextResult("left the chat; the person can still read it up to now"), nil
 
-	case "mute":
+	case "notifications":
 		if conversationId == "" {
-			return nil, fmt.Errorf("muting needs the conversation_id of a chat")
+			return nil, fmt.Errorf("notifications needs the conversation_id of a chat")
 		}
-		mutedUntil, note, err := mutedUntilOf(ctx, arguments)
+		notificationLevel := strings.ToLower(strings.TrimSpace(arguments.NotificationLevel))
+		note, isKnown := map[string]string{
+			"all":      "the person's phone is told of every message in this chat",
+			"mentions": "the person's phone is told only of a message that mentions them or everybody",
+			"off":      "the person's phone is told of nothing in this chat",
+		}[notificationLevel]
+		if !isKnown {
+			return nil, fmt.Errorf("notification_level is all, mentions or off")
+		}
+		result, err := operator.Execute(ctx, documentSetChatNotifications, map[string]any{"conversationId": conversationId, "notificationLevel": notificationLevel})
 		if err != nil {
 			return nil, err
 		}
-		result, err := operator.Execute(ctx, documentMuteChat, map[string]any{"conversationId": conversationId, "mutedUntil": mutedUntil})
-		if err != nil {
-			return nil, err
-		}
-		return chatResult(result, "MuteChat", note)
+		return chatResult(result, "SetChatNotificationLevel", note)
 
 	case "mark_read":
 		conversation, err := chatConversation(ctx, run, conversationId)
@@ -493,38 +491,6 @@ func memberNamed(conversation *models.AgentConversation, text string) (*models.C
 		return nil, fmt.Errorf("%q is not in this chat; read shows who is", strings.TrimSpace(text))
 	}
 	return nil, fmt.Errorf("more than one person in this chat is called %q; give the username, which read shows", strings.TrimSpace(text))
-}
-
-// mutedUntilOf is when a mute ends, as the operation takes it, and what to
-// say about it: nothing to stop silencing, a time or a length of time
-// from now, or no end at all.
-func mutedUntilOf(ctx context.Context, arguments conversationArguments) (any, string, error) {
-	if arguments.IsMuted != nil && !*arguments.IsMuted {
-		if strings.TrimSpace(arguments.Until) != "" {
-			return nil, "", fmt.Errorf("give until to mute until a time, or is_muted false to stop muting, not both")
-		}
-		return nil, "notifications are on again", nil
-	}
-	until := strings.TrimSpace(arguments.Until)
-	if until == "" {
-		return mutedForGood, "muted until the person unmutes it", nil
-	}
-	now := time.Now()
-	var ends time.Time
-	if duration, err := tools.ParseDuration(until); err == nil {
-		ends = now.Add(duration)
-	} else {
-		var parseErr error
-		if ends, parseErr = tools.ParseTime(until, tools.Location(tools.MustRun(ctx).Owner()), now); parseErr != nil {
-			return nil, "", fmt.Errorf("%q is not a time or a length of time; try 2026-11-01 09:00, 8h or 3d", until)
-		}
-	}
-	// The operation takes a time that has passed as "stop silencing it",
-	// which is not what was asked.
-	if !ends.After(now) {
-		return nil, "", fmt.Errorf("%q has already passed; to stop muting a chat, say is_muted false", until)
-	}
-	return ends.UTC().Format(time.RFC3339), "muted until " + ends.UTC().Format(time.RFC3339), nil
 }
 
 // newestChatMessageID is the newest message of a chat that people said, as

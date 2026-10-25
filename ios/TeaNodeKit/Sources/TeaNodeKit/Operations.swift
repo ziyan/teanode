@@ -34,8 +34,8 @@ public enum Documents {
         }
         """
     public static let ask = """
-        mutation ($conversationId: String, $message: String!, $surface: String, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String, $interruptedAnswer: InterruptedAnswerInput, $addressedAgentIds: [String!]) {
-          AskAgent(conversationId: $conversationId, message: $message, surface: $surface, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId, interruptedAnswer: $interruptedAnswer, addressedAgentIds: $addressedAgentIds) { runId conversationId }
+        mutation ($conversationId: String, $message: String!, $surface: String, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String, $interruptedAnswer: InterruptedAnswerInput, $addressedAgentIds: [String!], $mentionedUserIds: [String!], $isAllMentioned: Boolean) {
+          AskAgent(conversationId: $conversationId, message: $message, surface: $surface, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId, interruptedAnswer: $interruptedAnswer, addressedAgentIds: $addressedAgentIds, mentionedUserIds: $mentionedUserIds, isAllMentioned: $isAllMentioned) { runId conversationId }
         }
         """
     public static let voice = """
@@ -165,7 +165,7 @@ public enum Documents {
         "readRun": readRun, "registerLiveActivity": registerLiveActivity,
         "chatPeople": chatPeople, "openDirectChat": openDirectChat, "createGroupChat": createGroupChat, "renameChat": renameChat,
         "addChatMembers": addChatMembers, "removeChatMember": removeChatMember, "leaveChat": leaveChat,
-        "editChatMessage": editChatMessage, "deleteChatMessage": deleteChatMessage, "markChatRead": markChatRead, "muteChat": muteChat,
+        "editChatMessage": editChatMessage, "deleteChatMessage": deleteChatMessage, "markChatRead": markChatRead, "setChatNotificationLevel": setChatNotificationLevel,
         "setChatTyping": setChatTyping, "setChatAgentReading": setChatAgentReading,
         "setChatAgentAskableByOthers": setChatAgentAskableByOthers,
     ]
@@ -387,7 +387,7 @@ extension Connection {
     public func ask(
         _ message: String, in conversationId: String?, attachmentIds: [String] = [], references: [AgentReference] = [],
         surface: String = Surface.typed, drawerId: String, interruptedAnswer: (heardText: String, unheardText: String)? = nil,
-        addressedAgentIds: [String] = []
+        addressedAgentIds: [String] = [], mentionedUserIds: [String] = [], isAllMentioned: Bool = false
     ) async throws -> (runId: String, conversationId: String) {
         struct Answer: Decodable, Sendable {
             struct Asked: Decodable, Sendable {
@@ -412,6 +412,12 @@ extension Connection {
         if !addressedAgentIds.isEmpty {
             variables["addressedAgentIds"] = .array(addressedAgentIds.map { .string($0) })
         }
+        // In a chat, whom the message mentions; mentioning a person asks
+        // nothing of their agent.
+        if !mentionedUserIds.isEmpty {
+            variables["mentionedUserIds"] = .array(mentionedUserIds.map { .string($0) })
+        }
+        if isAllMentioned { variables["isAllMentioned"] = .bool(true) }
         if let conversationId { variables["conversationId"] = .string(conversationId) }
         let asked = try await execute(Documents.ask, variables: variables, as: Answer.self).AskAgent
         return (asked.runId, asked.conversationId)
