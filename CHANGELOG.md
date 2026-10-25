@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.197.0] - 2026-10-25
+
+### Added
+
+- Location: choosing somebody who shares where they have been draws their path on the map right away: today's on the dashboard, and on the iPhone the day their list shows, with the places they went. (#644)
+
 ## [0.196.0] - 2026-10-25
 
 ### Added
