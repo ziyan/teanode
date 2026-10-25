@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.196.0] - 2026-10-25
+
+### Added
+
+- Mention someone in a group chat with @ and their name, or everybody with @all, on the dashboard, the iPhone app and the command line. A mention starts no agent; their agent is a separate choice in the @ menu. (#649)
+- Each chat has a notification setting: all messages, only mentions, or off. It replaces muting for 8 hours or until unmuted; a chat that was muted is now off. (#649)
+
 ## [0.195.11] - 2026-10-25
 
 ### Fixed
