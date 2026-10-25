@@ -72,42 +72,50 @@ func (self *placeVisitNotices) claim(ownerUserId, placeId, receiverUserId string
 }
 
 // placeVisitLabelWords is how a labeled place the person did not name is
-// called, after "arrived at" and "left".
-var placeVisitLabelWords = map[models.PlaceLabel]string{
-	models.PlaceLabelHome:   "home",
-	models.PlaceLabelWork:   "work",
-	models.PlaceLabelSchool: "school",
-	models.PlaceLabelFamily: "a family member's home",
-	models.PlaceLabelGym:    "the gym",
+// called, after "arrived at" and "left" (phraseArrivedAt, phraseLeft).
+var placeVisitLabelWords = map[models.PlaceLabel]push.Phrase{
+	models.PlaceLabelHome:   {English: "home", Chinese: "家", Japanese: "家"},
+	models.PlaceLabelWork:   {English: "work", Chinese: "公司", Japanese: "職場"},
+	models.PlaceLabelSchool: {English: "school", Chinese: "学校", Japanese: "学校"},
+	models.PlaceLabelFamily: {English: "a family member's home", Chinese: "亲人家", Japanese: "家族の家"},
+	models.PlaceLabelGym:    {English: "the gym", Chinese: "健身房", Japanese: "ジム"},
 }
 
-// placeVisitPlaceWords is what to call the place in a notification, or ""
-// when it is neither named by the person nor labeled.
-func placeVisitPlaceWords(place *models.Place) string {
+// What a notification says about an arrival or a departure, around the
+// place's words.
+var (
+	phraseArrivedAt = push.Phrase{English: "arrived at %s", Chinese: "到%s了", Japanese: "%sに着きました"}
+	phraseLeft      = push.Phrase{English: "left %s", Chinese: "离开%s了", Japanese: "%sを出ました"}
+)
+
+// placeVisitPlaceWords is what to call the place in a notification, in a
+// language, or "" when it is neither named by the person nor labeled.
+func placeVisitPlaceWords(place *models.Place, language string) string {
 	if place == nil {
 		return ""
 	}
 	if place.IsNamedByPerson && place.PlaceName != "" {
 		return place.PlaceName
 	}
-	return placeVisitLabelWords[place.PlaceLabel]
+	words, ok := placeVisitLabelWords[place.PlaceLabel]
+	if !ok {
+		return ""
+	}
+	return words.In(language)
 }
 
 // PlaceVisitBody is what a notification says about an arrival or a departure,
-// or "" when the place is not one to tell anybody about. Like the other
-// notifications it is English in every language: it is plain text sent to a
-// phone that decrypts it, and nothing here knows the receiver's language (a
-// person's notifications are worded without a catalog, see
-// NotifyCircleInvitation).
-func PlaceVisitBody(place *models.Place, isArrival bool) string {
-	words := placeVisitPlaceWords(place)
+// in a language as push.PhoneLanguage names it, or "" when the place is not
+// one to tell anybody about.
+func PlaceVisitBody(place *models.Place, isArrival bool, language string) string {
+	words := placeVisitPlaceWords(place, language)
 	if words == "" {
 		return ""
 	}
 	if isArrival {
-		return PhoneBody("arrived at " + words)
+		return PhoneBody(phraseArrivedAt.In(language, words))
 	}
-	return PhoneBody("left " + words)
+	return PhoneBody(phraseLeft.In(language, words))
 }
 
 // NotifyPlaceVisit tells the phones of everyone the owner shares their
@@ -168,7 +176,7 @@ func (self *PhoneNotifier) NotifyPlaceVisitAt(ctx context.Context, ownerUserId s
 				return err
 			}
 		}
-		if PlaceVisitBody(place, isArrival) == "" {
+		if PlaceVisitBody(place, isArrival, push.LanguageEnglish) == "" {
 			return nil
 		}
 		if owner, err = tx.GetUser(ownerUserId); err != nil || owner == nil {
@@ -180,8 +188,7 @@ func (self *PhoneNotifier) NotifyPlaceVisitAt(ctx context.Context, ownerUserId s
 		log.Warningf("cannot work out who to tell about a visit to a place: %s", err)
 		return
 	}
-	body := PlaceVisitBody(place, isArrival)
-	if body == "" || owner == nil {
+	if PlaceVisitBody(place, isArrival, push.LanguageEnglish) == "" || owner == nil {
 		return
 	}
 	for _, grantee := range grantees {
@@ -194,9 +201,12 @@ func (self *PhoneNotifier) NotifyPlaceVisitAt(ctx context.Context, ownerUserId s
 		self.NotifyPhones(grantee.AgentID, models.NotificationLocation, &push.Content{
 			NotificationKind: models.NotificationLocation,
 			Title:            PhoneBody(owner.DisplayName()),
-			Body:             body,
+			Body:             PlaceVisitBody(place, isArrival, push.LanguageEnglish),
 			LocationUserID:   ownerUserId,
 			ThreadID:         "location-" + ownerUserId,
+			Wording: func(content *push.Content, language string) {
+				content.Body = PlaceVisitBody(place, isArrival, language)
+			},
 		})
 	}
 }

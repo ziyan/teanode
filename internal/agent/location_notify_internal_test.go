@@ -8,6 +8,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/push"
 )
 
 // locationNotifyFixture is the phone fixture's person (robin, with one phone)
@@ -201,14 +202,22 @@ func TestPlaceVisitBodyNamesTheKindsOfPlace(t *testing.T) {
 		"unlabeled":      {&models.Place{PlaceName: "Example Road"}, true, ""},
 		"none":           {nil, true, ""},
 	} {
-		if body := PlaceVisitBody(each.place, each.isArrival); body != each.expected {
+		if body := PlaceVisitBody(each.place, each.isArrival, push.LanguageEnglish); body != each.expected {
 			t.Errorf("%s: %q, not %q", name, body, each.expected)
 		}
 	}
 	for _, label := range models.PlaceLabels {
-		if placeVisitLabelWords[label] == "" {
-			t.Errorf("the label %q has no words", label)
+		words := placeVisitLabelWords[label]
+		if words.English == "" || words.Chinese == "" || words.Japanese == "" {
+			t.Errorf("the label %q has no words in some language: %+v", label, words)
 		}
+	}
+	home := &models.Place{PlaceName: "Example Road", PlaceLabel: models.PlaceLabelHome}
+	if body := PlaceVisitBody(home, true, push.LanguageChinese); body != "到家了" {
+		t.Errorf("an arrival home in Chinese: %q", body)
+	}
+	if body := PlaceVisitBody(home, false, push.LanguageJapanese); body != "家を出ました" {
+		t.Errorf("a departure from home in Japanese: %q", body)
 	}
 }
 

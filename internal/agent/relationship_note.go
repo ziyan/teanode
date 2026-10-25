@@ -36,13 +36,42 @@ func NoteRelationship(tx db.Transaction, toldUserId string, noteKind models.Agen
 }
 
 // NotifyRelationship tells the phones of an agent's person what the note
-// says, in the background, in English for the reason NotifyCircleInvitation
-// gives.
+// says, in the background, in their language.
 func (self *PhoneNotifier) NotifyRelationship(agentId string, noteKind models.AgentNoteKind, detail string) {
 	self.NotifyPhones(agentId, models.NotificationCircle, &push.Content{
 		NotificationKind: models.NotificationCircle,
-		Title:            "Circles",
+		Title:            phraseCircles.English,
 		Body:             PhoneBody(models.NoteText(noteKind, detail)),
 		ThreadID:         "circle-relationships",
+		Wording: func(content *push.Content, language string) {
+			content.Title = phraseCircles.In(language)
+			content.Body = PhoneBody(relationshipText(noteKind, detail, language))
+		},
 	})
+}
+
+// The relationship notes in Chinese and Japanese. The word for what the
+// person is to them is English on the server (models.RelationshipKind.Word),
+// so these say a relationship was set and where to see it, without the word.
+var (
+	phraseRelationshipSet = push.Phrase{
+		Chinese:  "%s设置了你们的关系。你可以在“圈子”页面查看和更改。",
+		Japanese: "%sさんがあなたとの関係を設定しました。サークルのページで確認、変更できます。",
+	}
+	phraseRelationshipRemoved = push.Phrase{Chinese: "%s删除了你们的关系。", Japanese: "%sさんがあなたとの関係を削除しました。"}
+)
+
+// relationshipText is what a relationship note says, in a language.
+func relationshipText(noteKind models.AgentNoteKind, detail string, language string) string {
+	relationship := models.ParseRelationshipNote(detail)
+	if language == push.LanguageEnglish || relationship == nil {
+		return models.NoteText(noteKind, detail)
+	}
+	switch noteKind {
+	case models.NoteRelationshipSet:
+		return phraseRelationshipSet.In(language, relationship.PersonName)
+	case models.NoteRelationshipRemoved:
+		return phraseRelationshipRemoved.In(language, relationship.PersonName)
+	}
+	return models.NoteText(noteKind, detail)
 }

@@ -42,11 +42,27 @@ const (
 
 	// phonePushTimeout bounds one notification's trip through the relay.
 	phonePushTimeout = 30 * time.Second
-
-	// phonePrivateAnswerBody is what a notification says in place of an
-	// answer that may quote something private.
-	phonePrivateAnswerBody = "Your answer is ready"
 )
+
+// The fixed words of the agent's notifications, in each language a phone is
+// told in (push.Phrase).
+var (
+	// phrasePrivateAnswer is what a notification says in place of an answer
+	// that may quote something private.
+	phrasePrivateAnswer = push.Phrase{English: "Your answer is ready", Chinese: "你的回答已准备好", Japanese: "回答の準備ができました"}
+
+	phraseWaitingForYou = push.Phrase{English: "Waiting for you", Chinese: "等你回复", Japanese: "あなたの返事を待っています"}
+	phraseAgentNeedsYou = push.Phrase{English: "Your agent needs you", Chinese: "你的助手需要你", Japanese: "エージェントがあなたを必要としています"}
+	phraseApprove       = push.Phrase{English: "Approve?", Chinese: "批准吗？", Japanese: "承認しますか？"}
+	phraseWantsToUse    = push.Phrase{English: "Wants to use %s.", Chinese: "想要使用 %s。", Japanese: "%s を使おうとしています。"}
+)
+
+// privateAnswerWording puts phrasePrivateAnswer in the body, in the reader's
+// language. The body is set to its English beforehand as well, so the
+// answer is never what is left there.
+func privateAnswerWording(content *push.Content, language string) {
+	content.Body = phrasePrivateAnswer.In(language)
+}
 
 // Phones is what sends this agent's notifications, which is the chat hub's as
 // well on a running server.
@@ -116,17 +132,17 @@ func (self *Agent) pushOwnTurns(ctx context.Context, now time.Time) {
 			// A notification is read on a lock screen. A turn that called a
 			// private tool (a schedule the person wrote that reads a note)
 			// may quote it, so the phone is told only that there is an answer.
-			body := PhoneBody(answer.Content)
-			if privateAnswers[answer.ID] {
-				body = phonePrivateAnswerBody
-			}
 			content := &push.Content{
 				NotificationKind: models.NotificationMessage,
 				ConversationID:   answer.ConversationID,
 				Title:            agentName,
-				Body:             body,
+				Body:             PhoneBody(answer.Content),
 				ThreadID:         answer.ConversationID,
 				Buttons:          []push.Button{{Label: "Reply", ButtonAction: "reply"}, {Label: "Open", ButtonAction: "open"}},
+			}
+			if privateAnswers[answer.ID] {
+				content.Body = phrasePrivateAnswer.English
+				content.Wording = privateAnswerWording
 			}
 			if err := self.NotifyPhone(ctx, phone, content); err != nil {
 				log.Noticef("an answer did not reach phone %s: %s", phone.ID, err)
@@ -215,21 +231,32 @@ func (self *AskRun) notifyInteraction(interaction *models.AgentInteraction) {
 		ConversationID: interaction.ConversationID,
 		RunID:          interaction.RunID,
 		CallID:         interaction.CallID,
-		Title:          "Waiting for you",
 		Body:           PhoneBody(interaction.InteractionText),
 		ThreadID:       interaction.ConversationID,
 	}
-	notificationKind := models.NotificationQuestion
+	title := phraseWaitingForYou
 	if interaction.InteractionKind == models.InteractionTakeOver {
-		content.Title = "Your agent needs you"
+		title = phraseAgentNeedsYou
 	}
+	content.Title = title.English
+	content.Wording = func(content *push.Content, language string) {
+		content.Title = title.In(language)
+	}
+	notificationKind := models.NotificationQuestion
 	if interaction.InteractionKind == models.InteractionApproval {
 		notificationKind = models.NotificationApproval
-		content.Title = "Approve?"
 		// Only the tool's name: an approval card's line can carry what the
 		// call was given, a command or a token among it, and a notification
-		// is read on a lock screen. The card in the app shows the rest.
-		content.Body = "Wants to use " + interaction.ToolName + "."
+		// is read on a lock screen. The card in the app shows the rest. The
+		// English is set as well as the wording, so the line is never what is
+		// left in the body.
+		toolName := interaction.ToolName
+		content.Title = phraseApprove.English
+		content.Body = phraseWantsToUse.In(push.LanguageEnglish, toolName)
+		content.Wording = func(content *push.Content, language string) {
+			content.Title = phraseApprove.In(language)
+			content.Body = phraseWantsToUse.In(language, toolName)
+		}
 		content.Buttons = []push.Button{{Label: "Approve", ButtonAction: "approve"}, {Label: "Deny", ButtonAction: "deny"}}
 	} else {
 		for index, choice := range interaction.InteractionChoices {
@@ -261,21 +288,22 @@ func (self *AskRun) notifyAnswer(answer string) {
 	// A notification is read on a lock screen. The answer of a turn that
 	// called a private tool may quote a note or a password, so the phone is
 	// told only that there is one.
-	body := PhoneBody(answer)
-	self.mutex.Lock()
-	if self.hasMadePrivateCall {
-		body = phonePrivateAnswerBody
-	}
-	self.mutex.Unlock()
-	self.agent.notifyPhones(self.settings.Agent.ID, models.NotificationAnswer, &push.Content{
+	content := &push.Content{
 		NotificationKind: models.NotificationAnswer,
 		ConversationID:   self.settings.Conversation.ID,
 		RunID:            self.ID,
 		Title:            agentName,
-		Body:             body,
+		Body:             PhoneBody(answer),
 		ThreadID:         self.settings.Conversation.ID,
 		Buttons:          []push.Button{{Label: "Reply", ButtonAction: "reply"}, {Label: "Open", ButtonAction: "open"}},
-	})
+	}
+	self.mutex.Lock()
+	if self.hasMadePrivateCall {
+		content.Body = phrasePrivateAnswer.English
+		content.Wording = privateAnswerWording
+	}
+	self.mutex.Unlock()
+	self.agent.notifyPhones(self.settings.Agent.ID, models.NotificationAnswer, content)
 }
 
 // isWatched says whether the person is looking at a dashboard or the app

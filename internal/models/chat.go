@@ -293,7 +293,8 @@ func ChatDirectKey(userId, otherUserId string) string {
 // "<owner name>'s agent" while the agent still has the default name, which
 // would otherwise repeat the word. The clients word it in the person's
 // language; this is the English of the command line and of a phone's
-// notification, which has no catalog.
+// notification to a person who reads English (internal/chat words it in the
+// others).
 func AgentSpeakerLabel(agentName, ownerName string) string {
 	agentName, ownerName = strings.TrimSpace(agentName), strings.TrimSpace(ownerName)
 	if ownerName == "" {

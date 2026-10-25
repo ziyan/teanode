@@ -193,6 +193,19 @@ public actor Connection {
         let errors: [GraphQLError]?
     }
 
+    /// The header that says which language the app is shown in, as the
+    /// dashboard's does: the server writes the person's notifications in it,
+    /// and what the agent says when they have set no language of their own.
+    static let languageHeader = "X-Language"
+
+    /// The language the app is shown in, named as the dashboard names its
+    /// own: en, zh or ja. iOS picks it among the app's languages from the
+    /// person's preferred ones, so a phone in another language shows English.
+    static func shownLanguage(preferredLocalizations: [String] = Bundle.main.preferredLocalizations) -> String {
+        let language = preferredLocalizations.first?.lowercased().split(separator: "-").first.map(String.init) ?? ""
+        return ["zh", "ja"].contains(language) ? language : "en"
+    }
+
     /// Runs a GraphQL document and decodes its data.
     public func execute<Answer: Decodable & Sendable>(
         _ document: String, variables: [String: JSONValue] = [:], requestTimeoutInterval: TimeInterval? = nil, as answer: Answer.Type
@@ -201,6 +214,7 @@ public actor Connection {
         if let requestTimeoutInterval { request.timeoutInterval = requestTimeoutInterval }
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(Self.shownLanguage(), forHTTPHeaderField: Self.languageHeader)
         request.httpBody = try JSONEncoder().encode(["query": JSONValue.string(document), "variables": .object(variables)])
         let (data, _) = try await send(authorizing: request)
         // The errors are read on their own first: a refused field comes back

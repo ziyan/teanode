@@ -124,7 +124,7 @@ func (self *PhoneNotifier) NotifyPhone(ctx context.Context, phone *models.AgentP
 	if err != nil {
 		return fmt.Errorf("agent: the phone's notification key cannot be read: %w", err)
 	}
-	delivery, err := push.EncryptContent(key, content)
+	delivery, err := push.EncryptContent(key, content.ForLanguage(self.phoneLanguage(ctx, phone)))
 	if err != nil {
 		return err
 	}
@@ -143,6 +143,29 @@ func (self *PhoneNotifier) NotifyPhone(ctx context.Context, phone *models.AgentP
 		log.Warningf("cannot record a notification to phone %s: %s", phone.ID, err)
 	}
 	return sendError
+}
+
+// phoneLanguage is the language a phone's notifications are written in:
+// what its person's agent talks to them in (Language), so a person reading
+// the app in Chinese is not told in English. English when it cannot be
+// read.
+func (self *PhoneNotifier) phoneLanguage(ctx context.Context, phone *models.AgentPhone) string {
+	language := ""
+	if err := self.settings.Database.TransactionContext(context.WithoutCancel(ctx), func(tx db.Transaction) error {
+		person, err := tx.GetAgent(phone.AgentID)
+		if err != nil || person == nil {
+			return err
+		}
+		user, err := tx.GetUser(person.UserID)
+		if err != nil {
+			return err
+		}
+		language = Language(person, user)
+		return nil
+	}); err != nil {
+		log.Warningf("cannot read the language of phone %s, so it is told in English: %s", phone.ID, err)
+	}
+	return push.PhoneLanguage(language)
 }
 
 // NotifyPhones sends a notification to each of the person's phones that
