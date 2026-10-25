@@ -194,10 +194,11 @@ struct LocationChosenPersonHeader: View {
                         Button(choice.muteTitle) { mute(choice) }
                     }
                 } label: {
+                    // Solid, not hierarchical: an outline symbol drawn pale reads
+                    // as a disabled button beside the filled close button.
                     Label("Mute notifications", systemImage: "bell.slash")
                         .labelStyle(.iconOnly)
                         .font(.title2)
-                        .symbolRenderingMode(.hierarchical)
                         .actionColor()
                         .frame(minWidth: 44, minHeight: 44)
                 }
