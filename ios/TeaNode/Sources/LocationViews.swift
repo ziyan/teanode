@@ -256,10 +256,10 @@ struct LocationScreen: View {
     /// What the drawer holds under its header.
     @ViewBuilder
     private var drawerContent: some View {
-        if isShowingPeople, let person = model.selectedPerson {
+        if isShowingPeople, let person = model.selectedPerson, let personVisits = model.chosenPersonVisits {
             // A new list for each person chosen, so one person's day and
             // visits never show under another's name.
-            LocationChosenPersonVisits(connection: model.connection, person: person)
+            LocationChosenPersonVisits(model: personVisits, person: person)
                 .id(person.userId)
                 .contentMargins(.top, 0, for: .scrollContent)
         } else if model.isSetupShown {
@@ -339,15 +339,46 @@ struct LocationMapHeader: View {
 
     /// The person's own places to pin, leaving out each one that somebody on
     /// the map is at now: MapKit draws a pin above every picture, so it would
-    /// cover them, and their picture already says they are there.
+    /// cover them, and their picture already says they are there. None while
+    /// somebody's day is drawn, whose places are the ones that matter.
     private var pinnedPlaces: [LocationPlace] {
+        guard chosenDay == nil else { return [] }
+        return model.places.filter(\.isOfPersonsOwn).filter { place in
+            !isUnderPicture(latitudeDegrees: place.latitudeDegrees, longitudeDegrees: place.longitudeDegrees, radiusMeters: place.radiusMeters)
+        }
+    }
+
+    /// Whether a place has somebody's picture on it now.
+    private func isUnderPicture(latitudeDegrees: Double, longitudeDegrees: Double, radiusMeters: Double) -> Bool {
         let shownPeople: [PersonLocation] = isShowingPeople ? model.people : []
         let coordinates: [CLLocationCoordinate2D] = ([model.latestCoordinate] + shownPeople.map(\.coordinate)).compactMap { $0 }
-        let pictures: [CLLocation] = coordinates.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
-        return model.places.filter(\.isOfPersonsOwn).filter { place in
-            let center = CLLocation(latitude: place.latitudeDegrees, longitude: place.longitudeDegrees)
-            return !pictures.contains { $0.distance(from: center) <= place.radiusMeters }
+        let center = CLLocation(latitude: latitudeDegrees, longitude: longitudeDegrees)
+        return coordinates.contains { CLLocation(latitude: $0.latitude, longitude: $0.longitude).distance(from: center) <= radiusMeters }
+    }
+
+    /// The day of the person chosen, while they share where they have been:
+    /// the map draws its path and the places they went.
+    private var chosenDay: PersonVisitsModel? {
+        guard isShowingPeople, model.selectedPerson?.level == .history else { return nil }
+        return model.chosenPersonVisits
+    }
+
+    /// The places the person chosen went that day, each once, leaving out the
+    /// one their picture is on.
+    private var chosenDayPlaces: [PlaceVisit] {
+        var seenPlaceIds = Set<String>()
+        return (chosenDay?.visits ?? []).filter { visit in
+            seenPlaceIds.insert(visit.place.id).inserted
+                && !isUnderPicture(latitudeDegrees: visit.latitudeDegrees, longitudeDegrees: visit.longitudeDegrees, radiusMeters: visit.place.radiusMeters)
         }
+    }
+
+    /// The region of the chosen person's day: its path and visits, and where
+    /// they are now when the day is today.
+    private var chosenDayRegion: MKCoordinateRegion? {
+        guard let chosenDay, chosenDay.readDay != nil else { return nil }
+        let now: CLLocationCoordinate2D? = chosenDay.isShowingToday ? model.selectedPerson?.coordinate : nil
+        return LocationMapRegion.fitting(chosenDay.points.map(\.coordinate) + chosenDay.visits.map(\.coordinate) + [now].compactMap { $0 })
     }
 
     var body: some View {
@@ -357,6 +388,12 @@ struct LocationMapHeader: View {
             }
             ForEach(pinnedPlaces.prefix(40)) { place in
                 Marker(place.shownName, systemImage: place.symbolName, coordinate: place.coordinate)
+            }
+            if let chosenDay, chosenDay.path.count > 1 {
+                MapPolyline(coordinates: chosenDay.path.map(\.coordinate)).stroke(.tint, lineWidth: 4)
+            }
+            ForEach(chosenDayPlaces) { visit in
+                Marker(visit.place.shownName, systemImage: visit.place.symbolName, coordinate: visit.coordinate)
             }
             ForEach(pinGroups) { group in
                 Annotation(group.title, coordinate: group.coordinate) {
@@ -379,6 +416,8 @@ struct LocationMapHeader: View {
         .onChange(of: model.latestCoordinate?.latitude, initial: true) { focus() }
         // Centers on the person chosen, or back on the person's own.
         .onChange(of: model.selectedPerson?.userId) { focus() }
+        // Fits the chosen person's day once it is read, and each day chosen.
+        .onChange(of: chosenDay?.readDay) { focus() }
         .onChange(of: model.ownFocusCount) { focus() }
         .onChange(of: recorder.livePosition?.latitudeDegrees) { _, _ in
             // The first reading centers the map once; after that the person
@@ -427,7 +466,9 @@ struct LocationMapHeader: View {
     }
 
     private func focus() {
-        if let coordinate = model.selectedPerson?.coordinate {
+        if let chosenDayRegion {
+            position = .region(chosenDayRegion)
+        } else if let coordinate = model.selectedPerson?.coordinate {
             position = .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 1500, longitudinalMeters: 1500))
         } else if isShowingPhone, let live = recorder.livePosition {
             position = .region(MKCoordinateRegion(center: live.coordinate, latitudinalMeters: 1500, longitudinalMeters: 1500))
@@ -631,12 +672,18 @@ struct LocationDayScreen: View {
     @State private var isErasing = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    /// The day's positions joined through the places visited.
+    private var path: [LocationPoint] {
+        let window = LocationDays.window(of: day)
+        return LocationDays.path(points: points, visits: visits, from: window.from, until: window.until)
+    }
+
     var body: some View {
         GeometryReader { proxy in
             VStack(spacing: 0) {
                 Map(position: $position) {
-                    if points.count > 1 {
-                        MapPolyline(coordinates: points.map(\.coordinate)).stroke(.tint, lineWidth: 4)
+                    if path.count > 1 {
+                        MapPolyline(coordinates: path.map(\.coordinate)).stroke(.tint, lineWidth: 4)
                     }
                     ForEach(visits) { visit in
                         Marker(visit.place.shownName, systemImage: visit.place.symbolName, coordinate: visit.coordinate)

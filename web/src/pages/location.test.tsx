@@ -552,6 +552,20 @@ it("draws a day's path from the Map button on its heading", async () => {
   expect(screen.queryByRole('button', { name: /^Show the path of / })).toBeNull()
 })
 
+it("draws today's path of somebody sharing as soon as they are chosen", async () => {
+  answerWith({ visits: [visit()], sharedViews: [PERSON_B_VIEW] })
+  renderAt('/location?person=person-b')
+
+  await waitFor(() => expect(calls('ListLocationPoints')).toHaveLength(1))
+  const [, variables] = calls('ListLocationPoints')[0]
+  const { userId, from, until } = variables as { userId: string; from: string; until: string }
+  expect(userId).toBe('person-b')
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  expect(new Date(from).getTime()).toBe(todayStart.getTime())
+  expect(new Date(until).getTime()).toBeGreaterThan(todayStart.getTime())
+})
+
 it('erases the selected day, or everything, with the sentence that says what stays', async () => {
   answerWith({ visits: [visit()] })
   renderAt('/location?day=2030-03-05')

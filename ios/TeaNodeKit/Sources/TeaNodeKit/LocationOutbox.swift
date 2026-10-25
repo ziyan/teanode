@@ -573,6 +573,28 @@ public enum LocationDays {
             .sorted { ($0.anchorDate ?? .distantPast) > ($1.anchorDate ?? .distantPast) }
     }
 
+    /// A day's path as a map draws it: the positions, and each visit's
+    /// position at its arrival and at its departure, oldest first. A phone in
+    /// the background sends few positions on the way, so the line goes
+    /// through the places the person went even when it sent none between
+    /// them. Only moments from `from` up to, not including, `until` count.
+    public static func path(points: [LocationPoint], visits: [PlaceVisit], from: Date, until: Date) -> [LocationPoint] {
+        let visitPoints = visits.flatMap { visit in
+            [visit.arrivedAt, visit.departedAt].compactMap { moment in
+                moment.map {
+                    LocationPoint(
+                        latitudeDegrees: visit.latitudeDegrees, longitudeDegrees: visit.longitudeDegrees, accuracyMeters: visit.accuracyMeters,
+                        measuredAt: $0)
+                }
+            }
+        }
+        let timed: [(date: Date, point: LocationPoint)] = (points + visitPoints).compactMap { point in
+            guard let date = point.measuredDate, date >= from, date < until else { return nil }
+            return (date, point)
+        }
+        return timed.sorted { $0.date < $1.date }.map(\.point)
+    }
+
     /// The span of one day, from its midnight to the next.
     public static func window(of day: Date, calendar: Calendar = .current) -> (from: Date, until: Date) {
         let start = calendar.startOfDay(for: day)

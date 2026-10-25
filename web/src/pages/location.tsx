@@ -26,6 +26,7 @@ import {
   PLACE_FIELDS,
   PlaceVisit,
   parseDayKey,
+  pathThroughVisits,
   placeSubtitle,
   placeTitle,
   tomorrowMorning,
@@ -351,17 +352,30 @@ function LocationContent({ userId }: { userId: string }) {
         : null,
     [tab, visitsRequestKey, userId, canReadHistory],
   )
+  // The day whose path the map draws: the day chosen, or, with somebody
+  // sharing chosen, today, so choosing them shows where they went, as the
+  // iPhone's map does.
+  const todayKey = dayKeyOf(new Date())
+  const pathRange = useMemo(() => {
+    if (range) return range
+    const todayStart = parseDayKey(todayKey)
+    return viewedUserId && todayStart ? dayRange(todayStart) : null
+  }, [range, viewedUserId, todayKey])
   // The day's path is read when the day, the person or the page is, and again
   // when the live feed says the viewed person moved; not on a timer, since a
   // day holds thousands of positions and a day in the past does not change.
-  const pointsRequestKey = JSON.stringify([viewedUserId, range?.from ?? null])
+  const pointsRequestKey = JSON.stringify([viewedUserId, pathRange?.from ?? null])
   const points = useQuery(
     async (): Promise<Answered<LocationPoint[]>> => ({
       requestKey: pointsRequestKey,
       answer:
-        range && canReadHistory
-          ? (await graphql<{ ListLocationPoints: LocationPoint[] }>(LIST_POINTS, { userId: viewedUserId, ...range }))
-              .ListLocationPoints
+        pathRange && canReadHistory
+          ? (
+              await graphql<{ ListLocationPoints: LocationPoint[] }>(LIST_POINTS, {
+                userId: viewedUserId,
+                ...pathRange,
+              })
+            ).ListLocationPoints
           : [],
     }),
     [pointsRequestKey, userId, canReadHistory],
@@ -599,8 +613,8 @@ function LocationContent({ userId }: { userId: string }) {
     }))
   }, [placeRows, visitRows, linkedPlaceFound, selectedPlaceId, t])
   const path = useMemo(
-    () => (pointList ?? []).map(({ latitudeDegrees, longitudeDegrees }) => ({ latitudeDegrees, longitudeDegrees })),
-    [pointList],
+    () => (pathRange ? pathThroughVisits(pointList ?? [], visitRows, pathRange) : []),
+    [pointList, visitRows, pathRange],
   )
 
   const timeFormat = useMemo(

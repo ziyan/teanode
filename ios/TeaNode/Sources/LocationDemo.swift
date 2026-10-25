@@ -83,9 +83,16 @@
                 """#
         }
 
+        /// The moment the first person's day is told from: now, or 5 a.m.
+        /// when the screenshots run just after midnight, so their visits and
+        /// path always fall on today.
+        static var historyPersonNow: Date {
+            max(Date(), Calendar.current.startOfDay(for: Date()).addingTimeInterval(5 * 3600))
+        }
+
         /// The first person's visits today, the one at the school still in progress.
         static var historyPersonVisits: [String] {
-            let now = Date()
+            let now = historyPersonNow
             return [
                 sharedVisitJSON(
                     id: "visit-sam-1", placeJSON: historyPersonSchool, latitude: 10.5080, longitude: 20.4950,
@@ -94,6 +101,20 @@
                     id: "visit-sam-2", placeJSON: historyPersonGym, latitude: 10.4960, longitude: 20.5120,
                     arrivedAt: now.addingTimeInterval(-4 * 3600), departedAt: now.addingTimeInterval(-3 * 3600)),
             ]
+        }
+
+        /// The first person's path today, from the gym to the school, for
+        /// the part of it inside the range asked for.
+        static func historyPersonPoints(from: Date, until: Date) -> [String] {
+            let start = historyPersonNow.addingTimeInterval(-3 * 3600)
+            return (0..<30).compactMap { step in
+                let fraction = Double(step) / 29
+                let measuredAt = start.addingTimeInterval(Double(step) * 4 * 60)
+                guard measuredAt >= from, measuredAt < until else { return nil }
+                let latitude = 10.4960 + (10.5080 - 10.4960) * fraction
+                let longitude = 20.5120 + (20.4950 - 20.5120) * fraction + sin(fraction * 5) * 0.0012
+                return #"{"latitudeDegrees":\#(latitude),"longitudeDegrees":\#(longitude),"accuracyMeters":8,"altitudeMeters":null,"speedMetersPerSecond":1.3,"courseDegrees":null,"measuredAt":"\#(CalendarDates.text(measuredAt))","locationSource":"phone"}"#
+            }
         }
 
         // `-TeaNodeScreen location-paused`: the person has paused too, with one
@@ -323,7 +344,10 @@
                 var until = Date.distantFuture
                 if let text = variables["from"] as? String, let date = ServerTime.date(text) { from = date }
                 if let text = variables["until"] as? String, let date = ServerTime.date(text) { until = date }
-                return #"{"data":{"ListLocationPoints":[\#(LocationDemo.points(from: from, until: until).joined(separator: ","))]}}"#
+                let points =
+                    variables["userId"] as? String == LocationDemo.historyPersonId
+                    ? LocationDemo.historyPersonPoints(from: from, until: until) : LocationDemo.points(from: from, until: until)
+                return #"{"data":{"ListLocationPoints":[\#(points.joined(separator: ","))]}}"#
             }
             if query.contains("SavePlace(") {
                 let place = LocationDemo.place(variables["placeId"] as? String ?? LocationDemo.parkPlaceId)

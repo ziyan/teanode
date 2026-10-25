@@ -171,6 +171,39 @@ export function parseDayKey(value: string | null): Date | null {
   return dayKeyOf(date) === value ? date : null
 }
 
+// pathThroughVisits is a day's path as the map draws it: the positions, and
+// each visit's place at its arrival and at its departure, in time order. A
+// phone in the background sends few positions on the way, so the line goes
+// through the places the person went even when it sent none between them.
+export function pathThroughVisits(
+  points: Pick<LocationPoint, 'latitudeDegrees' | 'longitudeDegrees' | 'measuredAt'>[],
+  visits: Pick<PlaceVisit, 'place' | 'arrivedAt' | 'departedAt'>[],
+  range: { from: string; until: string },
+): { latitudeDegrees: number; longitudeDegrees: number }[] {
+  const fromMS = new Date(range.from).getTime()
+  const untilMS = new Date(range.until).getTime()
+  const moments = points.map((point) => ({
+    momentMS: new Date(point.measuredAt).getTime(),
+    latitudeDegrees: point.latitudeDegrees,
+    longitudeDegrees: point.longitudeDegrees,
+  }))
+  for (const visit of visits) {
+    for (const moment of [visit.arrivedAt, visit.departedAt]) {
+      const momentMS = moment ? new Date(moment).getTime() : NaN
+      if (momentMS >= fromMS && momentMS < untilMS) {
+        moments.push({
+          momentMS,
+          latitudeDegrees: visit.place.latitudeDegrees,
+          longitudeDegrees: visit.place.longitudeDegrees,
+        })
+      }
+    }
+  }
+  return moments
+    .sort((first, second) => first.momentMS - second.momentMS)
+    .map(({ latitudeDegrees, longitudeDegrees }) => ({ latitudeDegrees, longitudeDegrees }))
+}
+
 // dayRange is the moments a day starts and ends at, to ask the server about.
 export function dayRange(dayStart: Date): { from: string; until: string } {
   const next = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1)
