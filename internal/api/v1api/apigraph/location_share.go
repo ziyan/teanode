@@ -108,7 +108,12 @@ func (self *graph) ListSharedLocations(ctx context.Context) ([]*LocationView, er
 	if err != nil {
 		return nil, err
 	}
-	pauses, err := tx.GetLocationPausesInEffect(userIds, time.Now())
+	now := time.Now()
+	pauses, err := tx.GetLocationPausesInEffect(userIds, now)
+	if err != nil {
+		return nil, err
+	}
+	mutes, err := tx.GetLocationNotificationMutes(principal.User.ID, userIds, now)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +123,9 @@ func (self *graph) ListSharedLocations(ctx context.Context) ([]*LocationView, er
 		if user == nil {
 			continue
 		}
-		views = append(views, locationViewOf(&locationReach{User: user, ShareLevel: sharer.ShareLevel}, latestPoints[user.ID], openVisits[user.ID], pauses[user.ID]))
+		view := locationViewOf(&locationReach{User: user, ShareLevel: sharer.ShareLevel}, latestPoints[user.ID], openVisits[user.ID], pauses[user.ID])
+		view.NotificationMute = describeLocationNotificationMute(mutes[user.ID])
+		views = append(views, view)
 	}
 	return views, nil
 }

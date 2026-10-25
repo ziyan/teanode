@@ -7,6 +7,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/place"
 	"github.com/ziyan/teanode/internal/push"
 )
 
@@ -31,6 +32,47 @@ const placeVisitNoticeWindow = 15 * time.Minute
 // placeVisitNoticeInterval is how long the same arrival or departure, at the
 // same place by the same person to the same receiver, is told only once.
 const placeVisitNoticeInterval = 10 * time.Minute
+
+// placeVisitTogetherSlack is how far apart two people's arrivals or
+// departures may be and still be the same one: two phones in one car cross a
+// place's edge a minute or two apart. A receiver who was at the place this
+// close to the time is not told; they were there.
+const placeVisitTogetherSlack = 3 * time.Minute
+
+// placeVisitTogetherMarginMeters is added to the place's radius when asking
+// whether the receiver was there, since their phone measures the same spot a
+// little differently, and is the most a position's own accuracy may add.
+const placeVisitTogetherMarginMeters = 50
+
+// placeVisitTogetherPointsMost bounds the receiver's positions read around the
+// time. A phone in use records one every few seconds at the most, so six
+// minutes hold far fewer.
+const placeVisitTogetherPointsMost = 1000
+
+// wasThereToo says whether the receiver was at the place themselves when the
+// owner arrived at or left it, within placeVisitTogetherSlack: a visit of
+// theirs near it that overlaps that time, or their latest position in that
+// time inside it. A receiver whose phone records nothing is told, as before.
+func wasThereToo(tx db.Transaction, receiverUserId string, visitPlace *models.Place, happenedAt time.Time) (bool, error) {
+	from, until := happenedAt.Add(-placeVisitTogetherSlack), happenedAt.Add(placeVisitTogetherSlack)
+	reachMeters := visitPlace.RadiusMeters + placeVisitTogetherMarginMeters
+	visits, _, err := tx.ListPlaceVisits(receiverUserId, db.PlaceVisitFilter{From: &from, Until: &until, LimitCount: 20})
+	if err != nil {
+		return false, err
+	}
+	for _, visit := range visits {
+		if place.DistanceMeters(visit.LatitudeDegrees, visit.LongitudeDegrees, visitPlace.LatitudeDegrees, visitPlace.LongitudeDegrees) <= reachMeters {
+			return true, nil
+		}
+	}
+	points, err := tx.ListLocationPoints(receiverUserId, from, until, placeVisitTogetherPointsMost)
+	if err != nil || len(points) == 0 {
+		return false, err
+	}
+	latest := points[len(points)-1]
+	distanceMeters := place.DistanceMeters(latest.LatitudeDegrees, latest.LongitudeDegrees, visitPlace.LatitudeDegrees, visitPlace.LongitudeDegrees)
+	return distanceMeters <= reachMeters+min(latest.AccuracyMeters, placeVisitTogetherMarginMeters), nil
+}
 
 // placeVisitNotices remembers when each arrival or departure was last told.
 // It is in memory and per instance, and that is enough: a report reaches one
@@ -126,7 +168,10 @@ func PlaceVisitBody(place *models.Place, isArrival bool, language string) string
 //
 // It does nothing for a visit with no place, an unnamed and unlabeled place,
 // an arrival or departure more than placeVisitNoticeWindow ago, or a notice
-// already told in the last placeVisitNoticeInterval to the same receiver. A
+// already told in the last placeVisitNoticeInterval to the same receiver.
+// Nor does it tell a receiver who muted the owner's notices, or one who was
+// at the place too (wasThereToo): people who arrive or leave together, or
+// somebody already there, see it for themselves. A
 // receiver is told only of what happened after the share that reaches them was
 // made, since what the owner did before it is not theirs to know; for a share
 // to a circle that is the share's own date. The sending is in the background,
@@ -161,6 +206,8 @@ func (self *PhoneNotifier) NotifyPlaceVisitAt(ctx context.Context, ownerUserId s
 	place := visit.Place
 	var owner *models.User
 	var grantees []*db.LocationGrantee
+	// silenced is the receivers who muted the owner or were there too.
+	silenced := map[string]bool{}
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		// Nobody is told of an arrival or a departure inside a pause, or while
 		// the person is paused: a notice of where they just were, a few
@@ -182,8 +229,27 @@ func (self *PhoneNotifier) NotifyPlaceVisitAt(ctx context.Context, ownerUserId s
 		if owner, err = tx.GetUser(ownerUserId); err != nil || owner == nil {
 			return err
 		}
-		grantees, err = tx.ListLocationGrantees(ownerUserId)
-		return err
+		if grantees, err = tx.ListLocationGrantees(ownerUserId); err != nil {
+			return err
+		}
+		muters, err := tx.ListLocationNotificationMuters(ownerUserId, now)
+		if err != nil {
+			return err
+		}
+		for _, muter := range muters {
+			silenced[muter] = true
+		}
+		for _, grantee := range grantees {
+			if silenced[grantee.UserID] || happenedAt.Before(grantee.SharedAt) {
+				continue
+			}
+			isThere, err := wasThereToo(tx, grantee.UserID, place, happenedAt)
+			if err != nil {
+				return err
+			}
+			silenced[grantee.UserID] = isThere
+		}
+		return nil
 	}); err != nil {
 		log.Warningf("cannot work out who to tell about a visit to a place: %s", err)
 		return
@@ -192,7 +258,7 @@ func (self *PhoneNotifier) NotifyPlaceVisitAt(ctx context.Context, ownerUserId s
 		return
 	}
 	for _, grantee := range grantees {
-		if happenedAt.Before(grantee.SharedAt) {
+		if happenedAt.Before(grantee.SharedAt) || silenced[grantee.UserID] {
 			continue
 		}
 		if !self.placeVisitNotices.claim(ownerUserId, place.ID, grantee.UserID, isArrival, now) {
