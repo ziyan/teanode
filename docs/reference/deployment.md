@@ -210,6 +210,33 @@ Both are safe to run against a server handling mail; in-flight deliveries
 finish. Pin the image tag rather than following `latest` if you would rather
 an upgrade were a thing you did on a day you chose.
 
+## What your server relies on beyond your own machines
+
+Your mail, models, storage and backups are yours. A few things are not,
+because the iPhone app is published once for everybody:
+
+- **Phone notifications go through `https://mail.teanode.com`.** Apple
+  delivers to an app only from the push key of the account that publishes
+  it, so every server sends through that relay, and the app registers each
+  phone there. What a server sends is encrypted for the phone before it
+  leaves, and the relay keeps nothing, so it learns only that a phone was
+  sent something. Live Activities on the lock screen travel the same way.
+  If the relay cannot be reached, phones get no notifications until it can;
+  everything else works. `agent.push.relayUrl` names another relay, which
+  helps only with an app you build and sign with a push key of your own (see
+  `agent.push` and `agent.push.relay` in `docs/configuration.md`).
+- **Connecting a phone by its code uses `https://teanode.com/app/connect`.**
+  The code a server shows is that address, which the app claims, so a phone's
+  camera opens the app. The server's address and the code follow the `#`,
+  which a browser never sends, so neither reaches that site. Typing the
+  server's address into the app works without it.
+- **New versions are read from the GitHub releases of `ziyan/teanode`**, and
+  the image comes from `ghcr.io/ziyan/teanode`. The check sends nothing about
+  your deployment; `upgrade.enabled` turns it off. The repository is compiled
+  in, so the dashboard can install only this project's releases.
+- **Places and maps** default to OpenStreetMap's Nominatim for naming places
+  and OpenFreeMap for map tiles. Both are settings under `places`.
+
 ## What to back up
 
 **PostgreSQL, and nothing else matters as much.** It holds the configuration,
