@@ -32,6 +32,14 @@ final class PersonVisitsModel {
         self.isPathRead = isPathRead
     }
 
+    /// The line the map draws: the day's positions joined through the places
+    /// they went.
+    var path: [LocationPoint] {
+        guard let readDay else { return [] }
+        let window = LocationDays.window(of: readDay)
+        return LocationDays.path(points: points, visits: visits, from: window.from, until: window.until)
+    }
+
     /// Whether the day shown is today, whose path grows as they move.
     var isShowingToday: Bool { day == Calendar.current.startOfDay(for: Date()) }
 

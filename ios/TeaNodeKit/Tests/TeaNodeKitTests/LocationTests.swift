@@ -649,6 +649,26 @@ final class LocationTests: XCTestCase {
         XCTAssertEqual(window.until, date("2024-01-03T00:00:00Z"))
     }
 
+    func testADaysPathGoesThroughThePlacesVisitedBetweenFewPositions() {
+        func point(_ latitude: Double, _ measuredAt: String) -> LocationPoint {
+            LocationPoint(latitudeDegrees: latitude, longitudeDegrees: 20.5, accuracyMeters: 10, measuredAt: measuredAt)
+        }
+        func visit(_ latitude: Double, arrived: String?, departed: String?) -> PlaceVisit {
+            PlaceVisit(
+                id: "v\(latitude)", place: place("p", latitude: latitude), arrivedAt: arrived, departedAt: departed, latitudeDegrees: latitude,
+                longitudeDegrees: 20.5)
+        }
+        let path = LocationDays.path(
+            points: [point(1, "2024-01-02T08:00:00Z"), point(5, "2024-01-02T20:00:00Z")],
+            visits: [
+                visit(3, arrived: "2024-01-02T12:00:00Z", departed: "2024-01-02T13:00:00Z"),
+                // Arrived the day before: only the departure is in the day.
+                visit(2, arrived: "2024-01-01T22:00:00Z", departed: "2024-01-02T09:00:00Z"),
+                visit(6, arrived: "2024-01-02T21:00:00Z", departed: nil),
+            ], from: date("2024-01-02T00:00:00Z"), until: date("2024-01-03T00:00:00Z"))
+        XCTAssertEqual(path.map(\.latitudeDegrees), [1, 2, 3, 3, 5, 6])
+    }
+
     // MARK: Setting Location up
 
     private func fixturePlace(label: String) -> LocationPlace {

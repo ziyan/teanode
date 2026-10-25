@@ -400,7 +400,9 @@ level for another person). The dashboard and the iPhone draw it with the Map
 button on each day heading. With somebody sharing at `history` chosen, the
 dashboard draws theirs for the day chosen, or today when none is, and the
 iPhone's map draws theirs with the places they went for the day their list
-shows, today at first; today's path grows as they move. `teanode location path` prints it on the command
+shows, today at first; today's path grows as they move. The maps draw the
+line through the day's visits too, at each arrival and departure in time
+order, since a phone in the background sends few positions on the way. `teanode location path` prints it on the command
 line, and the agent's `location_path` answers the number of positions, the first
 and last time, the distance travelled in kilometers and up to 60 positions
 evenly spread, with `is_truncated` saying some were left out.

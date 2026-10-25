@@ -4,6 +4,7 @@ import {
   anHourAfter,
   foundPlaceNamed,
   isPauseInEffect,
+  pathThroughVisits,
   pauseDurationSeconds,
   placeSubtitle,
   placeTitle,
@@ -77,5 +78,36 @@ describe('pauses', () => {
     expect(tomorrowMorning(new Date(2030, 2, 6, 4, 59)).getTime()).toBe(new Date(2030, 2, 6, 8, 0).getTime())
     expect(tomorrowMorning(new Date(2030, 2, 6, 5, 0)).getTime()).toBe(new Date(2030, 2, 7, 8, 0).getTime())
     expect(tomorrowMorning(new Date(2030, 2, 31, 6, 0)).getTime()).toBe(new Date(2030, 3, 1, 8, 0).getTime())
+  })
+})
+
+describe("a day's path", () => {
+  const range = { from: '2030-03-05T00:00:00Z', until: '2030-03-06T00:00:00Z' }
+  const at = (latitudeDegrees: number) => ({ latitudeDegrees, longitudeDegrees: 0 })
+  const placeAt = (latitudeDegrees: number) => ({ ...found, ...at(latitudeDegrees) }) as never
+
+  it('goes through the places visited, in time order, between few positions', () => {
+    const path = pathThroughVisits(
+      [
+        { ...at(1), measuredAt: '2030-03-05T08:00:00Z' },
+        { ...at(5), measuredAt: '2030-03-05T20:00:00Z' },
+      ],
+      [
+        { place: placeAt(3), arrivedAt: '2030-03-05T12:00:00Z', departedAt: '2030-03-05T13:00:00Z' },
+        { place: placeAt(2), arrivedAt: '2030-03-04T22:00:00Z', departedAt: '2030-03-05T09:00:00Z' },
+      ],
+      range,
+    )
+    // The arrival the day before is outside the day; the departure is in it.
+    expect(path.map((point) => point.latitudeDegrees)).toEqual([1, 2, 3, 3, 5])
+  })
+
+  it('is the visits alone when no position was sent', () => {
+    const path = pathThroughVisits(
+      [],
+      [{ place: placeAt(4), arrivedAt: '2030-03-05T18:00:00Z', departedAt: null }],
+      range,
+    )
+    expect(path).toEqual([at(4)])
   })
 })

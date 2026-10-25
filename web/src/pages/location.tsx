@@ -26,6 +26,7 @@ import {
   PLACE_FIELDS,
   PlaceVisit,
   parseDayKey,
+  pathThroughVisits,
   placeSubtitle,
   placeTitle,
   tomorrowMorning,
@@ -612,8 +613,8 @@ function LocationContent({ userId }: { userId: string }) {
     }))
   }, [placeRows, visitRows, linkedPlaceFound, selectedPlaceId, t])
   const path = useMemo(
-    () => (pointList ?? []).map(({ latitudeDegrees, longitudeDegrees }) => ({ latitudeDegrees, longitudeDegrees })),
-    [pointList],
+    () => (pathRange ? pathThroughVisits(pointList ?? [], visitRows, pathRange) : []),
+    [pointList, visitRows, pathRange],
   )
 
   const timeFormat = useMemo(

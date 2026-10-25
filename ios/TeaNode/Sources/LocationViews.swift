@@ -389,8 +389,8 @@ struct LocationMapHeader: View {
             ForEach(pinnedPlaces.prefix(40)) { place in
                 Marker(place.shownName, systemImage: place.symbolName, coordinate: place.coordinate)
             }
-            if let chosenDay, chosenDay.points.count > 1 {
-                MapPolyline(coordinates: chosenDay.points.map(\.coordinate)).stroke(.tint, lineWidth: 4)
+            if let chosenDay, chosenDay.path.count > 1 {
+                MapPolyline(coordinates: chosenDay.path.map(\.coordinate)).stroke(.tint, lineWidth: 4)
             }
             ForEach(chosenDayPlaces) { visit in
                 Marker(visit.place.shownName, systemImage: visit.place.symbolName, coordinate: visit.coordinate)
@@ -672,12 +672,18 @@ struct LocationDayScreen: View {
     @State private var isErasing = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    /// The day's positions joined through the places visited.
+    private var path: [LocationPoint] {
+        let window = LocationDays.window(of: day)
+        return LocationDays.path(points: points, visits: visits, from: window.from, until: window.until)
+    }
+
     var body: some View {
         GeometryReader { proxy in
             VStack(spacing: 0) {
                 Map(position: $position) {
-                    if points.count > 1 {
-                        MapPolyline(coordinates: points.map(\.coordinate)).stroke(.tint, lineWidth: 4)
+                    if path.count > 1 {
+                        MapPolyline(coordinates: path.map(\.coordinate)).stroke(.tint, lineWidth: 4)
                     }
                     ForEach(visits) { visit in
                         Marker(visit.place.shownName, systemImage: visit.place.symbolName, coordinate: visit.coordinate)
