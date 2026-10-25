@@ -83,9 +83,16 @@
                 """#
         }
 
+        /// The moment the first person's day is told from: now, or 5 a.m.
+        /// when the screenshots run just after midnight, so their visits and
+        /// path always fall on today.
+        static var historyPersonNow: Date {
+            max(Date(), Calendar.current.startOfDay(for: Date()).addingTimeInterval(5 * 3600))
+        }
+
         /// The first person's visits today, the one at the school still in progress.
         static var historyPersonVisits: [String] {
-            let now = Date()
+            let now = historyPersonNow
             return [
                 sharedVisitJSON(
                     id: "visit-sam-1", placeJSON: historyPersonSchool, latitude: 10.5080, longitude: 20.4950,
@@ -99,7 +106,7 @@
         /// The first person's path today, from the gym to the school, for
         /// the part of it inside the range asked for.
         static func historyPersonPoints(from: Date, until: Date) -> [String] {
-            let start = Date().addingTimeInterval(-3 * 3600)
+            let start = historyPersonNow.addingTimeInterval(-3 * 3600)
             return (0..<30).compactMap { step in
                 let fraction = Double(step) / 29
                 let measuredAt = start.addingTimeInterval(Double(step) * 4 * 60)
