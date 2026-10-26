@@ -58,6 +58,13 @@ type ChatOperation interface {
 	// takes the person out of some of them.
 	ListChatsOf(userId string) ([]*models.Chat, error)
 
+	// ListChatActivityBetween is what was said in the chats the person is or
+	// was in, in a stretch of time: for each chat with a message created from
+	// from up to but not including until that the person could read (after
+	// they joined, and up to when they left), not counting deleted ones, how
+	// many and the times of the first and the last, earliest first.
+	ListChatActivityBetween(userId string, from, until time.Time) ([]*ChatActivity, error)
+
 	// GetDirectChat is the direct chat between two people, or nil when
 	// they have none.
 	GetDirectChat(userId, otherUserId string) (*models.Chat, error)
@@ -1529,4 +1536,48 @@ func ChatMessageAsAgentMessage(message *models.ChatMessage, conversationId strin
 		converted.References = []models.AgentReference{reference}
 	}
 	return converted
+}
+
+// ChatActivity is one chat in a stretch of time: how many messages the
+// person could read that were said in it then, and when the first and the
+// last were.
+type ChatActivity struct {
+	ChatID       string
+	MessageCount int
+	FirstAt      time.Time
+	LastAt       time.Time
+}
+
+func (self *transaction) ListChatActivityBetween(userId string, from, until time.Time) ([]*ChatActivity, error) {
+	if userId == "" || !from.Before(until) {
+		return nil, ErrInvalidArguments
+	}
+	// Only what the person could read: not before they joined, and not after
+	// they left, the window a chat's own conversation shows them.
+	var rows []struct {
+		ChatID       string    `gorm:"column:chat_id"`
+		MessageCount int       `gorm:"column:message_count"`
+		FirstAt      time.Time `gorm:"column:first_at"`
+		LastAt       time.Time `gorm:"column:last_at"`
+	}
+	if err := self.tx.Raw(`
+		SELECT member."chat_id" AS chat_id, count(*) AS message_count,
+		       min(message."created_at") AS first_at, max(message."created_at") AS last_at
+		FROM "chat_member" member
+		JOIN "chat_message" message ON message."chat_id" = member."chat_id"
+		WHERE member."user_id" = ? AND message."created_at" >= ? AND message."created_at" < ?
+		  AND message."deleted_at" IS NULL AND message."created_at" >= member."joined_at"
+		  AND (member."removed_at" IS NULL OR message."created_at" <= member."removed_at")
+		GROUP BY member."chat_id"
+		ORDER BY min(message."created_at") ASC, member."chat_id" ASC`, userId, from, until).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	activity := make([]*ChatActivity, 0, len(rows))
+	for _, row := range rows {
+		activity = append(activity, &ChatActivity{
+			ChatID: row.ChatID, MessageCount: row.MessageCount,
+			FirstAt: row.FirstAt.In(time.Local), LastAt: row.LastAt.In(time.Local),
+		})
+	}
+	return activity, nil
 }

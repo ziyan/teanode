@@ -155,6 +155,14 @@ type MemoryOperation interface {
 	// occurrence starts in the window, earliest first and at most the
 	// limit, for a pass that must not read a whole calendar.
 	ListCalendarObjectsStartingBetween(calendarId string, from, until time.Time, limit int) ([]*models.CalendarObject, error)
+
+	// ListCalendarObjectsDoneSince are the objects of a reminders list that
+	// are marked done and were last written at or after since, earliest first
+	// and at most limit, for the journal's reminders done on a day. The time a
+	// reminder says it was done is in its file, and a file written again later
+	// (renamed, say) lists under its later time, so the caller reads the file
+	// and keeps the ones done in its window.
+	ListCalendarObjectsDoneSince(calendarId string, since time.Time, limit int) ([]*models.CalendarObject, error)
 	GetCalendarObject(calendarId, objectId string) (*models.CalendarObject, error)
 	LockCalendarObject(calendarId, objectId string) (*models.CalendarObject, error)
 	GetCalendarObjectByUID(calendarId, uid string) (*models.CalendarObject, error)

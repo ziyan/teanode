@@ -1,3 +1,5 @@
+DROP INDEX "recording_owner_recorded";
+DROP INDEX "chat_message_chat_created";
 DELETE FROM "role_permission" WHERE "permission_key" = 'journal:use';
 ALTER TABLE "agent_dream" DROP COLUMN "journal_narratives_refused";
 ALTER TABLE "agent_dream" DROP COLUMN "journal_periods_written";
