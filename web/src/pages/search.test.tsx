@@ -142,6 +142,15 @@ it.each([
   await waitFor(() => expect(screen.getByTestId('where').textContent).toBe(target))
 })
 
+it('shows the picture of a photo found beside its name, and no picture for anything else', async () => {
+  answer(EVERY_AREA)
+  renderAt('/search?q=seed')
+  const photo = (await screen.findByText('Seed tray photo')).closest('button')!
+  expect(photo.querySelector('img')?.getAttribute('src')).toBe('/api/v1/photos/photo-1/previews/small')
+  expect(screen.getByText('Seed order chat').closest('button')!.querySelector('img')).toBeNull()
+  expect(document.querySelectorAll('.search-result-photo')).toHaveLength(1)
+})
+
 it('opens the mail search when the folder of a message cannot be found', async () => {
   vi.mocked(graphql).mockImplementation(async (query: string) => {
     if (query.includes('GetMailboxItem')) throw new Error('gone')
