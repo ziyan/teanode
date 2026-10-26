@@ -204,42 +204,59 @@ extension View {
 /// StatementAccountActions gives an account that came from statement
 /// imports what a provider's account does not have: a rename and a delete,
 /// from a swipe or a long press. A provider's account is left as it is,
-/// since its next sync would bring it back.
+/// since its next sync would bring it back. The row only says which account
+/// is asked about; the list shows the sheet and the question
+/// (StatementAccountPresentations), since a sheet on a row is closed when the
+/// list draws the row again, as a swipe closing or a reload of the list does.
 struct StatementAccountActions: ViewModifier {
-    @Environment(FinanceModel.self) private var finance
     let account: FinanceAccount
-    let onChange: () async -> Void
-    @State private var isRenaming = false
-    @State private var isConfirmingDelete = false
+    @Binding var renaming: FinanceAccount?
+    @Binding var deleting: FinanceAccount?
 
     func body(content: Content) -> some View {
         if account.isFromStatements {
             content
                 .swipeActions {
-                    Button("Delete", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
+                    Button("Delete", systemImage: "trash", role: .destructive) { deleting = account }
                         .tint(.red)
-                    Button("Rename", systemImage: "pencil") { isRenaming = true }
+                    Button("Rename", systemImage: "pencil") { renaming = account }
                         .tint(.indigo)
                 }
                 .contextMenu {
-                    Button("Rename", systemImage: "pencil") { isRenaming = true }
-                    Button("Delete", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
+                    Button("Rename", systemImage: "pencil") { renaming = account }
+                    Button("Delete", systemImage: "trash", role: .destructive) { deleting = account }
                         .tint(.red)
-                }
-                .confirmationDialog("Delete \(account.shownName)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-                    Button("Delete account", role: .destructive) { delete() }
-                } message: {
-                    Text("Its transactions and its net worth history are deleted for good, and spending, budgets and net worth stop counting them. Spending rules limited to this account are deleted with it. Importing its statements or screenshots again brings the transactions back, but not values you recorded by hand.")
-                }
-                .sheet(isPresented: $isRenaming) {
-                    RenameStatementAccountSheet(account: account, onRenamed: onChange)
                 }
         } else {
             content
         }
     }
+}
 
-    private func delete() {
+/// StatementAccountPresentations is the rename sheet and the delete question
+/// of StatementAccountActions, on the list that holds the rows.
+struct StatementAccountPresentations: ViewModifier {
+    @Environment(FinanceModel.self) private var finance
+    @Binding var renaming: FinanceAccount?
+    @Binding var deleting: FinanceAccount?
+    let onChange: () async -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .confirmationDialog(
+                "Delete \(deleting?.shownName ?? "")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                titleVisibility: .visible, presenting: deleting
+            ) { account in
+                Button("Delete account", role: .destructive) { delete(account) }
+            } message: { _ in
+                Text("Its transactions and its net worth history are deleted for good, and spending, budgets and net worth stop counting them. Spending rules limited to this account are deleted with it. Importing its statements or screenshots again brings the transactions back, but not values you recorded by hand.")
+            }
+            .sheet(item: $renaming) { account in
+                RenameStatementAccountSheet(account: account, onRenamed: onChange)
+            }
+    }
+
+    private func delete(_ account: FinanceAccount) {
         let name = account.shownName
         Task {
             do {
@@ -258,8 +275,14 @@ struct StatementAccountActions: ViewModifier {
 }
 
 extension View {
-    func statementAccountActions(_ account: FinanceAccount, onChange: @escaping () async -> Void) -> some View {
-        modifier(StatementAccountActions(account: account, onChange: onChange))
+    func statementAccountActions(_ account: FinanceAccount, renaming: Binding<FinanceAccount?>, deleting: Binding<FinanceAccount?>) -> some View {
+        modifier(StatementAccountActions(account: account, renaming: renaming, deleting: deleting))
+    }
+
+    func statementAccountPresentations(
+        renaming: Binding<FinanceAccount?>, deleting: Binding<FinanceAccount?>, onChange: @escaping () async -> Void
+    ) -> some View {
+        modifier(StatementAccountPresentations(renaming: renaming, deleting: deleting, onChange: onChange))
     }
 }
 
