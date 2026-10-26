@@ -16,6 +16,36 @@ enum NotificationCategories {
     static let location = "location"
     static let questionPrefix = "question-"
 
+    // The journal's evening question. The server sends it as a notification
+    // of kind journalEveningQuestion (NotificationContent) carrying the day it
+    // asks about as journalDay, written YYYY-MM-DD. It is shown with five
+    // buttons, Awful to Great, which set that day's mood in the background,
+    // without opening the app. Pressing the notification itself opens the day.
+    static let journalEveningQuestion = "journalEveningQuestion"
+    static let journalMoodActionPrefix = "journalMood"
+
+    /// The mood, 1 (awful) to 5 (great), that a button of the evening
+    /// question stands for; nil for any other button.
+    static func journalMoodLevel(forAction actionIdentifier: String) -> Int? {
+        guard actionIdentifier.hasPrefix(journalMoodActionPrefix), let level = Int(actionIdentifier.dropFirst(journalMoodActionPrefix.count)),
+            (1...5).contains(level)
+        else { return nil }
+        return level
+    }
+
+    /// The five buttons of the evening question, the mood's name on each.
+    private static var journalMoodActions: [UNNotificationAction] {
+        let names = [
+            String(localized: "Awful"), String(localized: "Low"), String(localized: "Okay"), String(localized: "Good"), String(localized: "Great"),
+        ]
+        return names.enumerated().map { index, name in
+            // No options: pressing one is answered without opening the app or
+            // unlocking the phone, since a mood is not private enough to ask
+            // for the passcode.
+            UNNotificationAction(identifier: journalMoodActionPrefix + String(index + 1), title: name, options: [])
+        }
+    }
+
     /// The categories known before any notification arrives. A question's
     /// choices are not known in advance, so its category is made when it
     /// arrives (category(for:)).
@@ -40,6 +70,7 @@ enum NotificationCategories {
             UNNotificationCategory(identifier: circle, actions: [openAction], intentIdentifiers: []),
             // Somebody arrived or left: nothing to answer, only Location to open.
             UNNotificationCategory(identifier: location, actions: [openAction], intentIdentifiers: []),
+            UNNotificationCategory(identifier: journalEveningQuestion, actions: journalMoodActions, intentIdentifiers: []),
         ]
     }
 
@@ -77,6 +108,8 @@ enum NotificationCategories {
             return fixed.first { $0.identifier == circle }
         case "location":
             return fixed.first { $0.identifier == location }
+        case journalEveningQuestion:
+            return fixed.first { $0.identifier == journalEveningQuestion }
         case "question":
             let buttons = Array((content.buttons ?? []).prefix(4))
             let actions: [UNNotificationAction] = buttons.map { button in
@@ -109,6 +142,8 @@ struct NotificationInfo: Sendable {
     let callId: String
     /// For a location notification, the person who arrived or left.
     let locationUserId: String
+    /// For the journal's evening question, the day it asks about, YYYY-MM-DD.
+    let journalDay: String
     /// A question's choices, by the button that gives them.
     let answers: [String: String]
 
@@ -121,6 +156,7 @@ struct NotificationInfo: Sendable {
         runId = content.runId ?? ""
         callId = content.callId ?? ""
         locationUserId = content.locationUserId ?? ""
+        journalDay = content.journalDay ?? ""
         var answers: [String: String] = [:]
         for button in content.buttons ?? [] where button.buttonAction.hasPrefix("answer:") {
             answers[button.buttonAction] = button.label
@@ -136,13 +172,14 @@ struct NotificationInfo: Sendable {
         runId = info["runId"] as? String ?? ""
         callId = info["callId"] as? String ?? ""
         locationUserId = info["locationUserId"] as? String ?? ""
+        journalDay = info["journalDay"] as? String ?? info["day"] as? String ?? ""
         answers = info["answers"] as? [String: String] ?? [:]
     }
 
     var dictionary: [String: Any] {
         [
             "accountKey": accountKey, "notificationKind": notificationKind, "conversationId": conversationId, "runId": runId, "callId": callId,
-            "locationUserId": locationUserId, "answers": answers,
+            "locationUserId": locationUserId, "journalDay": journalDay, "answers": answers,
         ]
     }
 }

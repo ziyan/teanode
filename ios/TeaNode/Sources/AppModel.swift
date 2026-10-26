@@ -150,6 +150,10 @@ final class AppModel {
         #endif
         return .all
     }
+    /// The day the Journal opens on, YYYY-MM-DD, from a link such as
+    /// `/journal/2030-01-15` or from the evening question's notification; empty
+    /// opens the list of days. The screen takes it and clears it.
+    var openedJournalDay: String?
     /// What the Health screen opens on, from a link such as `/health` or
     /// `/health?type=stepCount`. The screen takes it and clears it.
     var openedHealthLink: HealthLink?
@@ -310,6 +314,11 @@ final class AppModel {
                 openedFinancePart = part
             }
             openedSection = .finance
+        case "journal":
+            // /journal/YYYY-MM-DD is a day; the pages of a week, a month and a
+            // year open the list.
+            openedJournalDay = segments.count == 2 && JournalDays.isDayText(segments[1]) ? segments[1] : ""
+            openedSection = .journal
         case "passwords":
             // Only the part: an item's address would say which item, and an
             // address is no reason to open one.
@@ -616,6 +625,10 @@ final class AppModel {
     /// at it (the server's health:use), as far as the server has said.
     private(set) var canUseHealth = false
 
+    /// Whether the account may keep a journal (the server's journal:use), as
+    /// far as the server has said.
+    private(set) var canUseJournal = false
+
     /// Whether the account may keep passwords, passkeys, cards and notes (the
     /// server's passwords:use), as far as the server has said.
     private(set) var canUsePasswords = false
@@ -640,6 +653,7 @@ final class AppModel {
         if let session {
             canUseLocation = session.holds("location:use")
             canUseHealth = session.holds("health:use")
+            canUseJournal = session.holds("journal:use")
             canUsePasswords = session.holds("passwords:use")
             hasReadPermissions = true
         }
@@ -680,6 +694,7 @@ final class AppModel {
                 connection = Connection(account: DemoServer.account, transport: transport)
                 canUseLocation = true
                 canUseHealth = true
+                canUseJournal = true
                 canUsePasswords = true
                 hasReadPermissions = true
                 return
@@ -707,6 +722,7 @@ final class AppModel {
         canChat = false
         canUseLocation = false
         canUseHealth = false
+        canUseJournal = false
         canUsePasswords = false
         hasReadPermissions = false
         hasPermissionReadFailed = false
@@ -997,6 +1013,10 @@ final class AppModel {
                 // Somebody arrived or left: Location, with them selected.
                 openedLocationUserId = info.locationUserId.isEmpty ? nil : info.locationUserId
                 openedSection = .location
+            } else if info.notificationKind == NotificationCategories.journalEveningQuestion {
+                // The evening question: the day it asks about, in the Journal.
+                openedJournalDay = info.journalDay
+                openedSection = .journal
             } else if !info.conversationId.isEmpty {
                 openedConversationId = info.conversationId
             }
@@ -1016,6 +1036,12 @@ final class AppModel {
                     _ = try await notifyingConnection.ask(text, in: info.conversationId.isEmpty ? nil : info.conversationId, drawerId: drawerId)
                 }
             default:
+                if info.notificationKind == NotificationCategories.journalEveningQuestion {
+                    // One of the five faces of the evening question.
+                    guard let moodLevel = NotificationCategories.journalMoodLevel(forAction: pressed.actionIdentifier), JournalDays.isDayText(info.journalDay) else { return }
+                    try await notifyingConnection.setJournalMood(day: info.journalDay, moodLevel: moodLevel)
+                    return
+                }
                 guard let answer = info.answers[pressed.actionIdentifier] else { return }
                 try await notifyingConnection.answerQuestion(runId: info.runId, callId: info.callId, answer: answer)
             }
@@ -1023,6 +1049,8 @@ final class AppModel {
             // A reply to a person in a chat went to the chat, not to the agent.
             if info.notificationKind == "chat" {
                 await tell(String(localized: "That did not reach the chat: \(describe(error))"))
+            } else if info.notificationKind == NotificationCategories.journalEveningQuestion {
+                await tell(String(localized: "That did not reach your journal: \(describe(error))"))
             } else {
                 await tell(String(localized: "That did not reach your agent: \(describe(error))"))
             }
@@ -1262,6 +1290,7 @@ extension AppModel {
         case .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
         case .location: return canUseLocation
         case .health: return canUseHealth
+        case .journal: return canUseJournal
         case .passwords: return canUsePasswords
         case .coding: return services.isAssistantEnabled && hasCodingComputers
         case .settings: return true

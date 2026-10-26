@@ -4,7 +4,7 @@ import TeaNodeKit
 /// AppSection is a part of TeaNode, as the dashboard's sidebar has them: a
 /// tab of the tab bar, a row of the More tab, or a row of the iPad's sidebar.
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
-    case agent, goals, ideas, mail, calendar, contacts, photos, location, health, passwords, knowledge, finance, recordings, coding, settings
+    case agent, journal, goals, ideas, mail, calendar, contacts, photos, location, health, passwords, knowledge, finance, recordings, coding, settings
 
     var id: String { rawValue }
 
@@ -14,6 +14,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .agent: String(localized: "Chats")
+        case .journal: JournalText.title
         case .goals: String(localized: "Goals")
         case .ideas: String(localized: "Ideas")
         case .mail: String(localized: "Mail")
@@ -34,6 +35,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
     var systemImage: String {
         switch self {
         case .agent: "bubble.left"
+        case .journal: "book.closed"
         case .goals: "target"
         case .ideas: "lightbulb"
         case .mail: "envelope"
@@ -501,7 +503,7 @@ struct MainView: View {
     /// Whether the server has yet to say if the account has a part.
     private func isStillUnknown(_ section: AppSection) -> Bool {
         switch section {
-        case .location, .health, .passwords: !app.hasReadPermissions
+        case .location, .health, .passwords, .journal: !app.hasReadPermissions
         case .coding: false
         default: app.services == nil
         }
@@ -601,6 +603,18 @@ struct MainView: View {
                 HealthNotAllowedView()
                     .toolbar { MoreBackButton() }
             }
+        } else if section == .journal, !app.hasReadPermissions {
+            // Whether the account may use the Journal is read with the chats, as
+            // Health's is.
+            NavigationStack {
+                ServicesLoadingView(isWaitingForPermissions: true)
+                    .toolbar { MoreBackButton() }
+            }
+        } else if section == .journal, !app.canUseJournal {
+            NavigationStack {
+                JournalNotAllowedView()
+                    .toolbar { MoreBackButton() }
+            }
         } else if section == .passwords, !app.hasReadPermissions {
             // Whether the account may use Passwords is read with the chats, as
             // Health's is.
@@ -638,6 +652,8 @@ struct MainView: View {
             LocationScreen(connection: connection, segment: $locationSegment)
         case .health:
             HealthScreen(connection: connection)
+        case .journal:
+            JournalScreen(connection: connection)
         case .passwords:
             PasswordsScreen(model: passwords)
         case .contacts:
