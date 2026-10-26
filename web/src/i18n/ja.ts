@@ -1925,6 +1925,7 @@ export const ja: Catalog = {
   'agent.runKinds.recording_sync': '録音からメモリを更新',
   'agent.runKinds.ingest': 'ソースの読み取り',
   'agent.runKinds.dream': '夢の整理',
+  'agent.runKinds.journal': '日記',
   'agent.runKinds.schedule': '予約実行',
   'agent.runKinds.extract': '抽出',
   'agent.runKinds.draft': '下書き',
