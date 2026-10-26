@@ -275,6 +275,15 @@ func (self *component) serve(response http.ResponseWriter, request *http.Request
 	}
 
 	handler := &carddav.Handler{Backend: backing, Prefix: Prefix}
+	// A phone asking about the address books is told each one's change tag.
+	if request.Method == "PROPFIND" && len(segments) <= 3 {
+		requestBody, ok := readBody(response, request)
+		if !ok {
+			return
+		}
+		self.servePropfind(response, request.WithContext(ctx), signedIn, requestBody, nil, handler)
+		return
+	}
 	handler.ServeHTTP(response, request.WithContext(ctx))
 }
 
@@ -315,12 +324,38 @@ func (self *component) serveCalendars(response http.ResponseWriter, request *htt
 	handler := &caldav.Handler{Backend: backing, Prefix: Prefix}
 
 	// And a phone is told, when it asks about the calendars, which of them it
-	// may not change.
+	// may not change, and each one's change tag.
 	if request.Method == "PROPFIND" && len(segments) <= 3 {
-		self.serveWithPrivileges(response, request, signedIn, handler)
+		requestBody, ok := readBody(response, request)
+		if !ok {
+			return
+		}
+		readOnly, err := self.readOnlyCalendars(request.Context(), signedIn)
+		if err != nil {
+			// Something that cannot be checked: the library's answer
+			// stands, and the refusal where changes are kept is what
+			// protects.
+			log.Warningf("cannot read which calendars are read only: %s", err)
+		}
+		self.servePropfind(response, request, signedIn, requestBody, readOnly, handler)
 		return
 	}
 	handler.ServeHTTP(response, request)
+}
+
+// readBody reads a request's body and puts it back for the handler after,
+// answering 400 when it cannot be read.
+func readBody(response http.ResponseWriter, request *http.Request) ([]byte, bool) {
+	if request.Body == nil {
+		return nil, true
+	}
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		http.Error(response, "that request could not be read", http.StatusBadRequest)
+		return nil, false
+	}
+	request.Body = io.NopCloser(bytes.NewReader(body))
+	return body, true
 }
 
 // serveEvent answers a fetch of one event with exactly what is stored.

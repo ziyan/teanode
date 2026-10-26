@@ -226,6 +226,15 @@ There is no `sync-collection`: the library has no server side for it. Clients
 keep in step by listing the calendar and comparing ETags, and a deletion is
 discovered when an href stops being listed. Nothing keeps tombstones.
 
+Each calendar, and each address book on the contacts side, answers
+`getctag` (Apple's calendar server namespace) with a tag that changes when any
+object in it is added, changed or deleted: the object count and a digest of
+the objects' names and ETags (`internal/dav/changetag.go`). A sync adapter
+reads a collection again only when its tag moves, and some read nothing at all
+without one. The library has no such property, so a PROPFIND answer is
+rewritten to carry it. There is no `sync-token`, since there is no
+`sync-collection` to go with it.
+
 Free-busy has no server side either, so it is intercepted before the library
 sees the REPORT — the same place and the same way `addressbook-query` is. It is
 also the one report that answers with a calendar rather than with XML.
