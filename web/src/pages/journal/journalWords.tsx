@@ -52,6 +52,10 @@ export function JournalWordsCard({
   const isOriginalOpen = openText === 'original'
   const [isAsking, setIsAsking] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
+  // What the person was saving when somebody else saved first: kept, and put
+  // back in the editor over the newer version, so a refused save loses no
+  // words. The newer version is shown above it to compare.
+  const [rescuedDraft, setRescuedDraft] = useState<string | null>(null)
   const isPeriod = target.periodKind !== null
   const hasWords = words.original.trim() !== ''
   const isTouchedUpShown = words.isTouchUpOn && !isOriginalOpen
@@ -61,16 +65,22 @@ export function JournalWordsCard({
   const isEditing =
     isEditable && (words.isTouchUpOn ? isOriginalOpen : isOriginalOpen || (!hasWords && isOpenWhenEmpty))
 
-  async function run(action: () => Promise<void>, failure: string) {
+  async function run(action: () => Promise<void>, failure: string, draftBeingSaved?: string) {
     setIsBusy(true)
     try {
       await action()
     } catch (caught) {
       if (isConflict(caught)) {
         // Somebody (the phone, another tab) saved after this page read it.
-        // Their text is shown, so nothing is overwritten by accident.
+        // Their text is read again, so nothing is overwritten by accident,
+        // and the person's own draft stays in the editor to save again.
         toast.failed(t('journal.savedElsewhere'))
-        setOpenText(null)
+        if (draftBeingSaved !== undefined) {
+          setRescuedDraft(draftBeingSaved)
+          setOpenText('original')
+        } else {
+          setOpenText(null)
+        }
         await onChanged()
       } else {
         toast.failure(caught, failure)
@@ -126,19 +136,25 @@ export function JournalWordsCard({
         <OriginalEditor
           // A new copy from the server starts the text again: the draft is
           // only ever a draft of the version it was opened on.
-          key={words.modifiedAt ?? 'none'}
+          key={`${words.modifiedAt ?? 'none'}:${rescuedDraft === null ? 'own' : 'rescued'}`}
           words={words}
+          rescuedDraft={rescuedDraft}
           isBusy={isBusy}
           isPeriod={isPeriod}
           onCancel={hasWords || words.isTouchUpOn || !isOpenWhenEmpty ? () => setOpenText(null) : undefined}
           onSave={(text, how) =>
-            run(async () => {
-              await saveOriginal(text)
-              if (words.isTouchUpOn && how !== words.touchUpHow) await touchUp(how)
-              toast.done(words.isTouchUpOn ? t('journal.touchUpOnItsWay') : t('journal.wordsSaved'))
-              setOpenText(null)
-              await onChanged()
-            }, t('journal.wordsFailed'))
+            run(
+              async () => {
+                await saveOriginal(text)
+                if (words.isTouchUpOn && how !== words.touchUpHow) await touchUp(how)
+                toast.done(words.isTouchUpOn ? t('journal.touchUpOnItsWay') : t('journal.wordsSaved'))
+                setRescuedDraft(null)
+                setOpenText(null)
+                await onChanged()
+              },
+              t('journal.wordsFailed'),
+              text,
+            )
           }
           onStopTouchUp={() =>
             run(async () => {
@@ -289,6 +305,7 @@ function JournalNotes({ words }: { words: JournalWordsView }) {
 
 function OriginalEditor({
   words,
+  rescuedDraft,
   isBusy,
   isPeriod,
   onCancel,
@@ -296,6 +313,7 @@ function OriginalEditor({
   onStopTouchUp,
 }: {
   words: JournalWordsView
+  rescuedDraft: string | null
   isBusy: boolean
   isPeriod: boolean
   onCancel?: () => void
@@ -303,7 +321,7 @@ function OriginalEditor({
   onStopTouchUp: () => void
 }) {
   const { t } = useTranslation()
-  const [draft, setDraft] = useState(words.original)
+  const [draft, setDraft] = useState(rescuedDraft ?? words.original)
   const [how, setHow] = useState(words.touchUpHow)
   const hasChanged = draft !== words.original || (words.isTouchUpOn && how !== words.touchUpHow)
   return (
@@ -314,6 +332,12 @@ function OriginalEditor({
         onSave(draft, how.trim())
       }}
     >
+      {rescuedDraft !== null && (
+        <div className="journal-rescued">
+          <p className="muted">{t('journal.savedElsewhereAbove')}</p>
+          <Prose text={words.original} />
+        </div>
+      )}
       <label htmlFor="journal-original">
         {words.isTouchUpOn ? t('journal.originalLabelTouchedUp') : t('journal.originalLabel')}
       </label>

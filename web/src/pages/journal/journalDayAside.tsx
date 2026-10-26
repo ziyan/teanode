@@ -17,6 +17,7 @@ import {
   wholeNumberText,
 } from './journalApi'
 import { JournalCard } from './journalParts'
+import { isDashboardPath } from './journalPaths'
 
 // The column down the right of a day: where the person was, everything in the
 // order it happened, their Health and their calendar.
@@ -143,7 +144,7 @@ export function MomentsCard({ day }: { day: JournalDay }) {
           )
           return (
             <li key={`${moment.recordKind}:${moment.recordId}:${index}`}>
-              {moment.dashboardPath.startsWith('/') ? (
+              {isDashboardPath(moment.dashboardPath) ? (
                 <Link className="journal-moment" to={moment.dashboardPath}>
                   {content}
                 </Link>

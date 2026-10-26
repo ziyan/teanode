@@ -569,8 +569,11 @@ it('says a day was saved somewhere else when the save is refused, and reads it a
     target: { value: 'changed here' },
   })
   fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-  expect(await screen.findByText('This was saved somewhere else. Showing the latest version.')).toBeTruthy()
+  expect(await screen.findByText('This was saved somewhere else first. Nothing was lost.')).toBeTruthy()
   await waitFor(() => expect(calls('ReadJournalDay')).toHaveLength(2))
+  // What the person typed is still there to save again, under the newer text.
+  expect(await screen.findByText(/Saved somewhere else meanwhile/)).toBeTruthy()
+  expect((screen.getByRole('textbox', { name: 'What you wrote' }) as HTMLTextAreaElement).value).toBe('changed here')
 })
 
 it('shows notes from the notes folder as read only, marked as such', async () => {

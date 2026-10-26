@@ -21873,6 +21873,19 @@ a.journal-chip:hover {
 }
 
 /* The original, edited in the writing face and no wider than a line reads. */
+/* The version somebody else saved first, above the person's kept draft. */
+.journal-rescued {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-2);
+}
+
+.journal-rescued > p:first-child {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-label);
+}
+
 .journal-editor textarea {
   max-width: var(--measure);
   font-family: var(--journal-serif);
