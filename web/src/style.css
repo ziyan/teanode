@@ -21730,6 +21730,9 @@ button.person-row:focus-visible {
 .journal-pair {
   display: flex;
   flex-wrap: wrap;
+  /* Each card is as tall as it is: a section that is folded up to its head
+     should not be stretched to the height of the one beside it. */
+  align-items: flex-start;
   gap: var(--space-4);
 }
 
