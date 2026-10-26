@@ -92,7 +92,7 @@ func TestSeededRoles(t *testing.T) {
 		t.Error("a member manages")
 	}
 	// What the migrations gave an existing Member role, a new server's has.
-	for _, permission := range []Permission{PermissionCalendarUse, PermissionContactsUse, PermissionAgentUse, PermissionCircleUse, PermissionLocationUse, PermissionHealthUse, PermissionPasswordsUse} {
+	for _, permission := range []Permission{PermissionCalendarUse, PermissionContactsUse, PermissionAgentUse, PermissionCircleUse, PermissionLocationUse, PermissionHealthUse, PermissionPasswordsUse, PermissionShoppingUse} {
 		if !slices.Contains(SeededRolePermissions(RoleNameMember), permission) {
 			t.Errorf("a new server's member does not hold %s", permission)
 		}

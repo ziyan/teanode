@@ -47,7 +47,7 @@ func SeededRolePermissions(name string) []Permission {
 		// invited to, which an account made from a circle's page is put in.
 		// The migrations that added each of these gave it to an existing
 		// Member role too, so a new server and an upgraded one agree.
-		return []Permission{PermissionMailRead, PermissionMailWrite, PermissionMailSend, PermissionMailboxManage, PermissionCalendarUse, PermissionContactsUse, PermissionAgentUse, PermissionCircleUse, PermissionLocationUse, PermissionHealthUse, PermissionPasswordsUse}
+		return []Permission{PermissionMailRead, PermissionMailWrite, PermissionMailSend, PermissionMailboxManage, PermissionCalendarUse, PermissionContactsUse, PermissionAgentUse, PermissionCircleUse, PermissionLocationUse, PermissionHealthUse, PermissionPasswordsUse, PermissionShoppingUse}
 	}
 	return nil
 }

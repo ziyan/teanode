@@ -216,6 +216,45 @@ func (self *database) ListenLocationEvents(ctx context.Context) (<-chan string, 
 	return self.listen(ctx, LocationEventChannel)
 }
 
+// ShoppingEventChannel is what an instance LISTENs on to hear that a
+// shopping list changed on another instance, so that a list open on this one
+// ticks as somebody checks it off in the store.
+const ShoppingEventChannel = "shopping_event"
+
+// ShoppingEvent is what travels on ShoppingEventChannel: which list changed.
+// What changed is read from the tables by whoever may.
+type ShoppingEvent struct {
+	ShoppingListID string `json:"shoppingListId"`
+
+	// EndedForUserIDs are people who could read the list until now and
+	// cannot any longer (a share ended, the list was deleted), told so that
+	// a screen they have open reads again and drops it.
+	EndedForUserIDs []string `json:"endedForUserIds,omitempty"`
+}
+
+// NotifyShoppingEvent is outside any transaction, like NotifyLocationEvent:
+// the change is stored already, and this is a word to the instances
+// listening now. A screen that missed it reads the list again later.
+func (self *database) NotifyShoppingEvent(shoppingListId string, endedForUserIds ...string) error {
+	for start := 0; start == 0 || start < len(endedForUserIds); start += locationEventEndedMost {
+		end := min(start+locationEventEndedMost, len(endedForUserIds))
+		payload, err := json.Marshal(&ShoppingEvent{ShoppingListID: shoppingListId, EndedForUserIDs: endedForUserIds[start:end]})
+		if err != nil {
+			return err
+		}
+		if err := self.db.Exec("SELECT pg_notify(?, ?)", ShoppingEventChannel, string(payload)).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ListenShoppingEvents delivers the payload (a ShoppingEvent as JSON) of
+// every change any instance announces, for as long as the context lives.
+func (self *database) ListenShoppingEvents(ctx context.Context) (<-chan string, error) {
+	return self.listen(ctx, ShoppingEventChannel)
+}
+
 // listenConnectWait is how long listen waits for the LISTEN to be in place
 // before handing back the channel regardless: the listener keeps trying on
 // its own, and whoever is waiting has a poll to fall back on.
