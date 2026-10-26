@@ -17,7 +17,7 @@ To see it working at the end: on a development server with a week of invented da
 - [x] (2026-10-26) Research: every source a day can link to, how each is dated and listed, the dreams, the record links, the design rules of the dashboard and the iPhone app. Summarized in Context and Orientation and in Surprises.
 - [x] (2026-10-26) Design mockups of the day, the timeline, the week, the month, the year, and the iPhone timeline and day, shown to the maintainer.
 - [x] (2026-10-26) This plan written, with the open questions in the Decision Log.
-- [ ] The maintainer answers the open questions.
+- [x] (2026-10-26) The maintainer answered the open questions (see the Decision Log).
 - [ ] Milestone 1: storage, the new record kinds, and reading a day and a period on the server, with the command line.
 - [ ] Milestone 2: the person's writing (words, mood, looking back), the day facts and weather steps, and the agent's `journal` tool.
 - [ ] Milestone 3: the dream's journal phase: day narratives, the chosen links, weeks, months and years.
@@ -87,21 +87,23 @@ To see it working at the end: on a development server with a week of invented da
 
 - Decision: the journal is the one writer of period stories. The dream's timeline phase stops writing `time/YYYY/MM` pages from `Agent.Digest` on its own, and writes them from the journal's month and year narratives instead (the memory page links to the journal period).
   Rationale: one name per idea, one writer per fact. Two model-written stories of the same month would disagree.
-  Date/Author: 2026-10-26, design; open for the maintainer (question 7).
+  Date/Author: 2026-10-26, design; agreed by the maintainer.
 
 - Decision: the words. **Journal** is the feature, the page and the screen. A **journal day** is one day of it; a **journal period** is a week, a month or a year. The person's text is their **words**; their text on a period is **looking back**. The agent's text is the **narrative** with a one-line **headline**. What the agent chose for a day is a **choice** with a **reason**; what the person added by hand is a **pin**. The day's numbers are its **facts**. Removing everything is **erase**, as for location history and Health.
   Rationale: one word per idea, avoiding "entry" (Passwords uses "item") and the existing `journal` document kind and source type.
   Date/Author: 2026-10-26, design.
 
-Open questions for the maintainer (each with the recommendation the plan follows unless answered otherwise):
+- Decision: the maintainer's answers to the first questions (2026-10-26). Weather comes from Open-Meteo, on by default with a switch to stop it, at the rounded coordinates of the day's main place, and a day with no location has none. TeaNode asks "How was today?" each evening, on by default at 9 PM local, easy to stop. The model sees the whole day, the person's words included, and the page says so in one line. Notes from the `journal` source show on their day, read-only, marked "From your notes", when a person has that source. No sharing in this plan. Past days are backfilled: facts for every day at once, narratives newest first a few days per run. The journal becomes the one writer of the month and year stories memory keeps under `time/YYYY/MM`.
+  Rationale: the maintainer's answers.
+  Date/Author: 2026-10-26, maintainer.
 
-1. Weather: fetch it from Open-Meteo (free, no key, worldwide, with history), sending the coordinates of the day's main place rounded to about 11 km, once per day? Recommended: yes, on by default, with a switch to stop it on the Journal's settings, and no weather for a day with no location.
-2. The evening question: should TeaNode ask "How was today?" each evening (a notification at a time the person sets, 9 PM by default) with the five moods as actions? Recommended: on by default, easy to stop, following the project's "on by default" rule.
-3. The person's words and the model: the dream reads them to write the narrative, so they reach the model's provider, as conversations do. Recommended: yes, said in one line on the page; and a per-day "Keep this day to myself" switch that keeps the words (and that day) out of dreams and memory.
-4. Notes from the `journal` source type (a folder of dated notes on the person's computer): show a note dated that day as part of the day's words, read-only, marked "From your notes"? Recommended: yes.
-5. Sharing: should a journal day or period be shareable with a circle or one person in it? Recommended: not in this plan; private only, with sharing as a later plan once the shape has settled.
-6. Backfill: write the past? The sources go back months (photos, location, mail). Recommended: build the facts for every past day at once (model-free), and let dreams write narratives backwards a few days per run within the budget, newest first, so the last month fills in within a week.
-7. Memory's month pages: replace `Agent.Digest`'s month stories with the journal's (the Decision above)? Recommended: yes.
+- Decision: any past day can be changed at any time: words, mood, looking back, pins, hidden choices. A change makes that day stale, and the next dream writes it again and then each period above it (its week, month, year), in that order, before any backfill. Backfill never overwrites what the person wrote, and never writes a day the person changed since its last narrative without reading the change.
+  Rationale: the maintainer: "keep in mind I might go back and change a past day".
+  Date/Author: 2026-10-26, maintainer.
+
+- Decision: rewording on request. On a day's words (or a period's looking back) the person can ask TeaNode to reword them, optionally saying how ("shorter", "fix the grammar", "warmer"). TeaNode answers with a proposed text shown beside the original with the changes marked; the person accepts it (it replaces the words, which remain theirs), edits it first, or discards it. Nothing is applied without the person's acceptance, and the dream never rewords. The same works from a conversation ("reword today's journal") and on the iPhone write sheet; the command line has `teanode journal reword DATE [--how ...]`, which prints the proposal and applies it only with `--accept`.
+  Rationale: the maintainer: "sometimes I want AI-assisted rewording". It keeps the rule that the agent never changes the words on its own: the person decides each time.
+  Date/Author: 2026-10-26, maintainer.
 
 ## Outcomes & Retrospective
 
@@ -161,7 +163,7 @@ At the end of Milestone 1, `teanode journal day 2026-10-22 --json` on a developm
 
 ### Milestone 2: writing, facts, weather, the tool
 
-GraphQL mutations: `SetJournalWords(day, words, baseModifiedAt)` (refused if someone saved in between, as notes are), `SetJournalMood(day, moodLevel, moodWords)`, `SetJournalLookingBack(periodKind, periodStart, text)`, `PinJournalRecord(day, record)`, `HideJournalChoice(linkId)`, `SetJournalDayPrivate(day, isKeptPrivate)`, `RewriteJournalNarrative(day | period)` (marks it stale), `DeleteJournalNarrative(day | period)`, `EraseJournal()` (every row of the three tables; the records themselves untouched), `SetJournalSettings` (weather and the evening question). Each with a command: `teanode journal write [DATE] (--text | --file | -) [--append]`, `teanode journal mood [DATE] good [--words ...]`, `teanode journal look-back week|month|year [DATE] ...`, `teanode journal pin DATE kind:id`, `teanode journal private DATE on|off`, `teanode journal rewrite DATE`, `teanode journal erase`.
+GraphQL mutations: `SetJournalWords(day, words, baseModifiedAt)` (refused if someone saved in between, as notes are), `SetJournalMood(day, moodLevel, moodWords)`, `SetJournalLookingBack(periodKind, periodStart, text)`, `PinJournalRecord(day, record)`, `HideJournalChoice(linkId)`, `ProposeJournalRewording(day | period, how)` (returns a proposal, stores nothing), `RewriteJournalNarrative(day | period)` (marks it stale), `DeleteJournalNarrative(day | period)`, `EraseJournal()` (every row of the three tables; the records themselves untouched), `SetJournalSettings` (weather and the evening question). Each with a command: `teanode journal write [DATE] (--text | --file | -) [--append]`, `teanode journal mood [DATE] good [--words ...]`, `teanode journal look-back week|month|year [DATE] ...`, `teanode journal pin DATE kind:id`, `teanode journal private DATE on|off`, `teanode journal rewrite DATE`, `teanode journal erase`.
 
 A model-free step in the agent's worker tick, like `queueLocationJournals` (`internal/agent/location_journal.go`), runs hourly: it computes `facts` for today and for any finished day whose facts are older than its records, and for each finished day without weather (and the setting on) fetches it once from Open-Meteo's archive (or forecast, for today) at the rounded coordinates of the main place, storing the result. It fills Health's State of Mind into the mood when the person has not chosen.
 
@@ -244,3 +246,5 @@ In `internal/models/journal.go`: `JournalDay`, `JournalPeriod`, `JournalLink`, `
 In `internal/db/database_journal.go`, a `JournalOperation` interface on the database with `GetJournalDay`, `ListJournalDays`, `PutJournalWords`, `PutJournalMood`, `PutJournalFacts`, `PutJournalWeather`, `PutJournalNarrative`, `ListStaleJournalDays`, `GetJournalPeriod`, `PutJournalLookingBack`, `PutJournalPeriodNarrative`, `ListJournalLinks`, `PutJournalLink`, `HideJournalLink`, `SearchJournal`, `EraseJournal`.
 
 Revision note (2026-10-26): first version, written after the research and the mockups, before the maintainer's answers.
+
+Revision note (2026-10-26, later): recorded the maintainer's answers, that past days can be changed and how the change ripples up, and rewording on request.
