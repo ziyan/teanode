@@ -13,7 +13,7 @@ extension Documents {
         weatherCode weatherKind highCelsius lowCelsius precipitationMM placeName
         """
     static let journalFactsFields = """
-        photoCount placeCount walkedMeters stepCount sleepMinutes workoutMinutes codingSessionCount codingMinutes
+        photoCount placeCount walkedMeters stepCount sleepMinutes workoutMinutes codingSessionCount workProjectCount codingMinutes
         meetingCount meetingMinutes recordingCount conversationCount chatMessageCount mailReceivedCount mailSentCount
         documentCount transactionCount spentMinorUnits spentCurrency shoppingTripCount memoryPageCount mainPlaceName
         """
@@ -63,10 +63,15 @@ extension Documents {
             choices { \(journalLinkFields) }
             pins { \(journalLinkFields) }
             coverPhotoId
+            workProjects {
+              name firstAt lastAt activeMinutes stretchCount topics
+              shipped { documentId title address happenedAt isDraft }
+              summary documentId
+            }
             codingSessions { documentId title directory assistant startedAt endedAt stretchCount linkReason }
             documents { documentId title sourceName happenedAt isChosen linkReason }
             documentTotal
-            conversations { conversationId title firstAt lastAt messageCount }
+            conversations { conversationId title isMain firstAt lastAt messageCount }
             chats { chatId chatName firstAt lastAt messageCount }
             mail { itemId fromName subject receivedAt isSent isImportant isChosen linkReason repeatCount }
             mailTotal

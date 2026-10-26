@@ -75,6 +75,9 @@ public struct JournalFacts: Codable, Hashable, Sendable {
     public let sleepMinutes: Int
     public let workoutMinutes: Int
     public let codingSessionCount: Int
+    /// How many projects were worked on, which a period adds up day by day;
+    /// absent from a server that counts only sessions.
+    public let workProjectCount: Int?
     public let codingMinutes: Int
     public let meetingCount: Int
     public let meetingMinutes: Int
@@ -90,6 +93,9 @@ public struct JournalFacts: Codable, Hashable, Sendable {
     public let shoppingTripCount: Int
     public let memoryPageCount: Int
     public let mainPlaceName: String
+
+    /// The projects worked on, none when the server did not say.
+    public var projectCount: Int { workProjectCount ?? 0 }
 }
 
 /// JournalNote is a note from the person's notes folder, shown read only on
@@ -238,6 +244,59 @@ public struct JournalCodingSession: Codable, Hashable, Sendable, Identifiable {
     public var id: String { documentId }
 }
 
+/// JournalShipped is a pull request, merge request or commit of the day.
+public struct JournalShipped: Codable, Hashable, Sendable, Identifiable {
+    public let documentId: String
+    public let title: String
+    /// Where the request lives, on the host that holds the repository.
+    public let address: String
+    public let happenedAt: String
+    public let isDraft: Bool
+    public var id: String { documentId + "|" + address }
+
+    /// The address as a web page, or nil for anything else: the address
+    /// comes from a remote host, and a link never runs a script or opens a
+    /// file.
+    public var webAddress: URL? {
+        guard let url = URL(string: address), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http", url.host != nil else {
+            return nil
+        }
+        return url
+    }
+}
+
+/// JournalWorkProject is one project the person worked on in a day: the
+/// whole day's coding in a repository or folder, which is what a person
+/// reads first. Its coding sessions are the details behind it.
+public struct JournalWorkProject: Codable, Hashable, Sendable, Identifiable {
+    /// The repository's or folder's name.
+    public let name: String
+    public let firstAt: String
+    public let lastAt: String
+    /// The time spent in it, from the spans of its sessions.
+    public let activeMinutes: Int
+    public let stretchCount: Int
+    /// The titles of its sessions, each once.
+    @JournalList public var topics: [String]
+    @JournalList public var shipped: [JournalShipped]
+    /// What the agent wrote was done in it, once the day is written; empty
+    /// before.
+    public let summary: String
+    /// The project's first session.
+    public let documentId: String
+    public var id: String { name + "|" + documentId }
+
+    /// How many topics are listed before "and N more".
+    public static let topicLimit = 4
+
+    /// The topics to list, and how many more there are.
+    public func shownTopics(limit: Int = JournalWorkProject.topicLimit) -> (shown: [String], hiddenCount: Int) {
+        let named = topics.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let shown = Array(named.prefix(max(0, limit)))
+        return (shown, named.count - shown.count)
+    }
+}
+
 /// JournalDocument is an ingested document of the day that involves the
 /// person.
 public struct JournalDocument: Codable, Hashable, Sendable, Identifiable {
@@ -255,10 +314,15 @@ public struct JournalDocument: Codable, Hashable, Sendable, Identifiable {
 public struct JournalConversation: Codable, Hashable, Sendable, Identifiable {
     public let conversationId: String
     public let title: String
+    /// The person's main conversation, which the app names in the person's
+    /// own language; absent from an older server.
+    public let isMain: Bool?
     public let firstAt: String
     public let lastAt: String
     public let messageCount: Int
     public var id: String { conversationId }
+
+    public var isMainChat: Bool { isMain ?? false }
 }
 
 /// JournalChat is a circle or group chat that had messages that day.
@@ -438,6 +502,9 @@ public struct JournalDay: Codable, Hashable, Sendable {
     @JournalList public var choices: [JournalLink]
     @JournalList public var pins: [JournalLink]
     public let coverPhotoId: String
+    /// The day's work by project, what is read first; the coding sessions
+    /// and documents are its details.
+    @JournalList public var workProjects: [JournalWorkProject]
     @JournalList public var codingSessions: [JournalCodingSession]
     @JournalList public var documents: [JournalDocument]
     public let documentTotal: Int
@@ -541,4 +608,27 @@ public struct JournalErased: Codable, Hashable, Sendable {
     public let dayCount: Int
     public let periodCount: Int
     public let linkCount: Int
+}
+
+
+// MARK: Long lists
+
+/// JournalRows says how many rows of a long list to show: the first few, and
+/// all of them once the person asks.
+public enum JournalRows {
+    /// How many rows a list shows before "Show all".
+    public static let limit = 6
+    /// How many of the day's moments are shown before "Show all".
+    public static let momentLimit = 12
+
+    /// The part of a list to draw.
+    public static func shown<Element>(_ rows: [Element], limit: Int = JournalRows.limit, isShowingAll: Bool) -> [Element] {
+        isShowingAll ? rows : Array(rows.prefix(max(0, limit)))
+    }
+
+    /// Whether there are more rows than the limit, so that "Show all" has
+    /// something to show.
+    public static func hasMore<Element>(_ rows: [Element], limit: Int = JournalRows.limit) -> Bool {
+        rows.count > limit
+    }
 }
