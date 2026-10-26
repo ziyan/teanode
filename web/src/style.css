@@ -1073,6 +1073,13 @@ button.conversation-tile:focus-visible {
   font-size: var(--text-body);
 }
 
+/* "3 of 12", beside the arrows that move through them. */
+.lightbox-position {
+  flex: 0 0 auto;
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}
+
 .lightbox-name .muted {
   font-size: var(--text-label);
 }
