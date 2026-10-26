@@ -138,6 +138,11 @@ func (self *component) wellKnown(response http.ResponseWriter, request *http.Req
 
 // serve is every request under the mount.
 func (self *component) serve(response http.ResponseWriter, request *http.Request) {
+	if isDebuggedClient(request) && request.Header.Get("X-Dav-Debugged") == "" {
+		request.Header.Set("X-Dav-Debugged", "1")
+		self.serveDebugged(response, request, self.serve)
+		return
+	}
 	isEnabled := func(service models.Service) bool {
 		return self.configuration.Current().Services.IsEnabled(service) && self.runningServices.IsEnabled(service)
 	}
