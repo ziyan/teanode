@@ -22,8 +22,9 @@ type WorkProject struct {
 	FirstAt time.Time
 	LastAt  time.Time
 
-	// ActiveMinutes adds up the sessions' spans: time in the project, not the
-	// stretch from the first session to the last.
+	// ActiveMinutes adds up when the person was at its sessions
+	// (CodingSession.PersonSpans): not the stretch from the first session to
+	// the last, nor an assistant working on its own.
 	ActiveMinutes int
 	StretchCount  int
 
@@ -40,16 +41,9 @@ type WorkProject struct {
 	// only has pull requests.
 	DocumentID string
 
-	// spans are its stretches, which ActiveMinutes is added up from with
-	// overlaps counted once.
-	spans [][2]time.Time
-}
-
-func sessionSpans(session CodingSession) [][2]time.Time {
-	if len(session.Spans) > 0 {
-		return session.Spans
-	}
-	return [][2]time.Time{{session.StartedAt, session.EndedAt}}
+	// personSpans are when the person was at it, which ActiveMinutes is added
+	// up from with overlaps counted once.
+	personSpans [][2]time.Time
 }
 
 // Shipped is a pull request, merge request or commit of the day.
@@ -123,7 +117,7 @@ func workProjects(sessions []CodingSession, shipped map[string][]Shipped) []Work
 		if session.EndedAt.After(project.LastAt) {
 			project.LastAt = session.EndedAt
 		}
-		project.spans = append(project.spans, sessionSpans(session)...)
+		project.personSpans = append(project.personSpans, session.PersonSpans...)
 		project.StretchCount += session.StretchCount
 		if session.Title != "" && !containsFold(project.Topics, session.Title) && !strings.EqualFold(session.Title, name) {
 			project.Topics = append(project.Topics, session.Title)
@@ -144,7 +138,7 @@ func workProjects(sessions []CodingSession, shipped map[string][]Shipped) []Work
 		}
 	}
 	for index := range projects {
-		projects[index].ActiveMinutes = minutesOfUnion(projects[index].spans)
+		projects[index].ActiveMinutes = minutesOfUnion(projects[index].personSpans)
 	}
 	// The page reads the day's work from the top: the projects that took the
 	// most time come first, then the ones with the most shipped, then the

@@ -210,8 +210,9 @@ type JournalFacts struct {
 // JournalFactsVersion is the way a day's numbers are worked out now. It goes
 // up when the counting changes, so that the days already counted are counted
 // again: 2 counts work by project, 3 measures each stretch from its own
-// first and last post, 4 puts the photos taken before screenshots.
-const JournalFactsVersion = 4
+// first and last post, 4 puts the photos taken before screenshots, 5 counts
+// work by the person's own posts.
+const JournalFactsVersion = 5
 
 // JournalPeriod is a week, a month or a year of a person's journal.
 type JournalPeriod struct {

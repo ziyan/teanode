@@ -95,13 +95,9 @@ func minutesOfUnion(spans [][2]time.Time) int {
 }
 
 func codingMinutes(sessions []CodingSession) int {
-	spans := make([][2]time.Time, 0, len(sessions))
+	var spans [][2]time.Time
 	for _, session := range sessions {
-		if len(session.Spans) > 0 {
-			spans = append(spans, session.Spans...)
-			continue
-		}
-		spans = append(spans, [2]time.Time{session.StartedAt, session.EndedAt})
+		spans = append(spans, session.PersonSpans...)
 	}
 	return minutesOfUnion(spans)
 }

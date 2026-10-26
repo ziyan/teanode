@@ -176,10 +176,12 @@ type CodingSession struct {
 	// first one's.
 	StretchCount int
 
-	// Spans are when each stretch was worked, which the time worked is added
-	// up from: the time from the first stretch to the last also holds the
-	// pauses between them.
-	Spans [][2]time.Time
+	// PersonSpans are when the person was at it, which the time worked is
+	// added up from: each of their posts, run on to their next one when that
+	// came within half an hour. An assistant working on its own for hours
+	// between their posts is its time, not theirs, and neither are the pauses
+	// between stretches.
+	PersonSpans [][2]time.Time
 }
 
 // Document is an ingested document of the day that involves the person: work

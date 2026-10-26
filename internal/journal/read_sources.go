@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/big"
 	"net/mail"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -20,8 +19,13 @@ import (
 // The sections of a day, one reader each. Every one asks its source for the
 // day's range and keeps the few fields a page shows.
 
-// postClock is the first line of a post in a chat unit: "15:04 author: words".
-var postClock = regexp.MustCompile(`(?m)^(\d{1,2}):(\d{2}) [^:\n]{1,80}: `)
+// personPauseMost is the longest wait between two of the person's posts
+// that still counts as working on: the half hour that also ends a stretch.
+const personPauseMost = 30 * time.Minute
+
+// personPostLeast is what a post of the person's counts for on its own:
+// reading what came before it and writing it.
+const personPostLeast = 5 * time.Minute
 
 // journalNoteTextMost is how much of a note from the notes folder a day keeps.
 const journalNoteTextMost = 4000
@@ -177,28 +181,44 @@ func isNamedIn(document *models.AgentDocument, names []string) bool {
 	return false
 }
 
-// postClockSpan is the minutes between the first and the last post of a chat
-// unit's text, counted on the clock the unit writes them in, which a post
-// that crosses midnight wraps.
-func postClockSpan(chunks []*models.AgentChunk) (minutes int, isFound bool) {
-	first, last := -1, -1
-	for _, chunk := range chunks {
-		for _, match := range postClock.FindAllStringSubmatch(chunk.Text, -1) {
-			hour, minute := atoi(match[1]), atoi(match[2])
-			if hour > 23 || minute > 59 {
-				continue
-			}
-			clock := hour*60 + minute
-			if first < 0 {
-				first = clock
-			}
-			last = clock
+// stretchTimes puts a stretch's posts on the clock from the stretch's start
+// (its first post): when its last post was made, by anyone, and the spans the
+// person was at it. Each post comes after the one before, so a clock that
+// goes back has passed midnight.
+func stretchTimes(startedAt time.Time, posts []models.AgentChunkPost, personNames []string) (endedAt time.Time, personSpans [][2]time.Time) {
+	if len(posts) == 0 {
+		return startedAt, nil
+	}
+	postedAt := startedAt
+	previousClock := posts[0].ClockMinutes
+	var personTimes []time.Time
+	for _, post := range posts {
+		postedAt = postedAt.Add(time.Duration((post.ClockMinutes-previousClock+24*60)%(24*60)) * time.Minute)
+		previousClock = post.ClockMinutes
+		if isPersonAuthor(post.Author, personNames) {
+			personTimes = append(personTimes, postedAt)
 		}
 	}
-	if first < 0 {
-		return 0, false
+	for index, personTime := range personTimes {
+		end := personTime.Add(personPostLeast)
+		if index+1 < len(personTimes) && personTimes[index+1].Sub(personTime) <= personPauseMost && personTimes[index+1].After(end) {
+			end = personTimes[index+1]
+		}
+		personSpans = append(personSpans, [2]time.Time{personTime, end})
 	}
-	return (last - first + 24*60) % (24 * 60), true
+	return postedAt, personSpans
+}
+
+// isPersonAuthor says a post's author is one of the names the person goes by
+// in chat (reading.ChatNamesOf, lowercase).
+func isPersonAuthor(author string, personNames []string) bool {
+	author = strings.ToLower(strings.TrimSpace(author))
+	for _, name := range personNames {
+		if author == name {
+			return true
+		}
+	}
+	return false
 }
 
 func atoi(text string) int {
@@ -277,29 +297,26 @@ func (self *dayReader) readDocuments() error {
 			self.day.Documents = append(self.day.Documents, entry)
 		}
 	}
-	// Each stretch says when it began; the clock of its last post, read from
-	// its last chunk (the first and last chunks of every stretch in two
-	// reads), says how long it lasted. A session is its stretches: worked
-	// from the first's start to the last's end, for the time they add up to.
+	// Each stretch says when it began; the clocks and authors of its posts,
+	// read for every stretch at once, say when it ended and when the person
+	// was at it. A session is its stretches: from the first's start to the
+	// last's end, for the time the person spent in them.
 	var stretchIds []string
 	for _, documents := range stretches {
 		for _, document := range documents {
 			stretchIds = append(stretchIds, document.ID)
 		}
 	}
-	ends, err := self.transaction.ListAgentChunkEnds(self.agent.ID, stretchIds)
+	posts, err := self.transaction.ListAgentChunkPosts(self.agent.ID, stretchIds)
 	if err != nil {
 		return err
 	}
 	for key, index := range sessionIndexes {
 		session := &self.day.CodingSessions[index]
-		session.Spans = session.Spans[:0]
+		session.PersonSpans = [][2]time.Time{}
 		for _, document := range stretches[key] {
-			end := *document.HappenedAt
-			if minutes, isFound := postClockSpan(ends[document.ID]); isFound {
-				end = end.Add(time.Duration(minutes) * time.Minute)
-			}
-			session.Spans = append(session.Spans, [2]time.Time{*document.HappenedAt, end})
+			end, personSpans := stretchTimes(*document.HappenedAt, posts[document.ID], names)
+			session.PersonSpans = append(session.PersonSpans, personSpans...)
 			if end.After(session.EndedAt) {
 				session.EndedAt = end
 			}
