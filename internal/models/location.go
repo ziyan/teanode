@@ -307,3 +307,86 @@ type LocationNotificationMute struct {
 func (self *LocationNotificationMute) IsInEffectAt(instant time.Time) bool {
 	return self.MutedUntil == nil || self.MutedUntil.After(instant)
 }
+
+// MotionActivity is what the phone's motion sensor said the person was doing
+// from StartedAt on, until the next activity starts. ActivityKind is one of
+// stationary, walking, running, cycling, automotive and unknown;
+// ActivityConfidence is low, medium or high.
+type MotionActivity struct {
+	ID     string `json:"id"`
+	UserID string `json:"userId"`
+
+	StartedAt          time.Time `json:"startedAt"`
+	ActivityKind       string    `json:"activityKind"`
+	ActivityConfidence string    `json:"activityConfidence"`
+
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// Trip is the travel between the departure of one visit and the arrival of the
+// next. It is derived data, built again whenever the visits, positions or
+// motion activity around it change. FromVisitID and ToVisitID are empty when
+// the visit is gone.
+type Trip struct {
+	ID     string `json:"id"`
+	UserID string `json:"userId"`
+
+	StartedAt time.Time `json:"startedAt"`
+	EndedAt   time.Time `json:"endedAt"`
+
+	FromVisitID string `json:"fromVisitId,omitempty"`
+	ToVisitID   string `json:"toVisitId,omitempty"`
+
+	DistanceMeters float64 `json:"distanceMeters"`
+
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Legs are oldest first, filled in by the listing of trips.
+	Legs []*TripLeg `json:"legs,omitempty"`
+}
+
+// TripLeg is a part of a trip made one way. DetectedTravelMode is what was
+// worked out from motion activity or speed; TravelMode is the way after the
+// person's corrections, which is the one to show and to count. They differ
+// exactly when IsTravelModeCorrected. DetectionSource is motion or speed.
+// TravelMode and IsTravelModeCorrected are filled in by the reads, not stored.
+type TripLeg struct {
+	ID     string `json:"id"`
+	TripID string `json:"tripId"`
+	UserID string `json:"userId"`
+
+	StartedAt time.Time `json:"startedAt"`
+	EndedAt   time.Time `json:"endedAt"`
+
+	TravelMode            string `json:"travelMode"`
+	DetectedTravelMode    string `json:"detectedTravelMode"`
+	IsTravelModeCorrected bool   `json:"isTravelModeCorrected"`
+	DetectionSource       string `json:"detectionSource"`
+
+	DistanceMeters float64 `json:"distanceMeters"`
+}
+
+// TravelModeCorrection is the person saying that the span of time from
+// StartedAt to EndedAt was traveled the way TravelMode says.
+type TravelModeCorrection struct {
+	ID     string `json:"id"`
+	UserID string `json:"userId"`
+
+	StartedAt  time.Time `json:"startedAt"`
+	EndedAt    time.Time `json:"endedAt"`
+	TravelMode string    `json:"travelMode"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// TravelTotal is the distance and time traveled one way in one period.
+// PeriodStartDay is the first day of the period, as YYYY-MM-DD in the
+// traveler's time zone.
+type TravelTotal struct {
+	PeriodStartDay  string  `json:"periodStartDay"`
+	TravelMode      string  `json:"travelMode"`
+	DistanceMeters  float64 `json:"distanceMeters"`
+	DurationSeconds int64   `json:"durationSeconds"`
+	LegCount        int     `json:"legCount"`
+}

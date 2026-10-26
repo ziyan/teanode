@@ -164,7 +164,8 @@ type LocationOperation interface {
 	// range (all of them when both ends are nil), and then the places left
 	// with no visit that the person neither named nor labeled. Pauses that
 	// began in the range and are over go too; the pause in effect stays, so
-	// erasing does not resume recording. It deletes in
+	// erasing does not resume recording. Trips, legs, motion activity and
+	// corrections of the way of travel that started in the range go too. It deletes in
 	// the same transaction the location journal documents of the days the
 	// range touches, with their chunks, since those say where the person was
 	// as plainly as the visits did. Anything the agent already learned from
@@ -1487,6 +1488,10 @@ func (self *transaction) EraseLocationHistory(userId string, from, until *time.T
 	// The gaps in recording are as much a part of where the person was as the
 	// visits, so the ones that are over go with them.
 	if err := self.deleteEndedLocationPauses(userId, from, until, time.Now()); err != nil {
+		return 0, 0, 0, err
+	}
+	// How the person got between places says where they were too.
+	if err := self.deleteTravelHistory(userId, from, until); err != nil {
 		return 0, 0, 0, err
 	}
 	pointResult := points.Delete(&locationPointModel{})

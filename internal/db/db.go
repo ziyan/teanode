@@ -195,6 +195,7 @@ type Transaction interface {
 	LocationOperation
 	LocationLockOperation
 	LocationPauseOperation
+	TravelOperation
 	LocationNotificationMuteOperation
 	LocationKnowledgeOperation
 	LocationShareOperation

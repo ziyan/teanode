@@ -432,6 +432,47 @@ line, and the agent's `location_path` answers the number of positions, the first
 and last time, the distance travelled in kilometers and up to 60 positions
 evenly spread, with `is_truncated` saying some were left out.
 
+## Trips and ways of travel
+
+A trip is the travel from leaving one visit to arriving at the next, and a leg
+is a part of a trip with one way of travel: walk, run, bike, car, bus, train,
+boat or plane (`docs/planning/location-travel-execplan.md` has the reasons).
+
+- **What they come from.** The visits, the positions and the phone's motion
+  activity (table `motion_activity`: what iOS's Core Motion said the person
+  was doing from a moment on, sent with `ReportLocation` as `activities` when
+  the person allowed Motion & Fitness). Package `internal/travel` builds them
+  and knows nothing of the database: the path is the first visit, the
+  positions between (an accuracy worse than 500 m is dropped when better ones
+  exist, and a jump faster than 300 m/s), then the next visit; less than
+  150 m is no trip. Motion activity cuts the trip into legs where the way
+  changes (walking, running, cycling, automotive), merging a leg under a
+  minute or 100 m into its neighbor. With motion activity for less than half
+  of the trip, the trip is one leg guessed from its average speed (up to
+  2.2 m/s walk, 5 bike, 75 car, faster plane). A leg of 100 km or more at
+  55 m/s or more is a plane whatever the phone said. Bus, train and boat are
+  never detected; they come from corrections.
+- **When they are built.** Trips are derived, stored in `trip` and
+  `trip_leg`, and built again by package `internal/travel/rebuild`: after each
+  report for the days it touched (a day before to two days after, and from
+  the arrival of a visit it completed), after a check-in, and once at start
+  for the days before trips existed (`trip_backfill` says who is done).
+  Erasing history erases trips, motion activity and corrections in the
+  range.
+- **Corrections.** The person corrects a leg (`SetTripLegTravelMode`); the
+  correction is kept apart, as a span of time with a way
+  (`travel_mode_correction`), and a leg takes the correction that covers half
+  of it or more. A rebuild keeps it; taking it back returns the detected way.
+- **Totals.** `ListTravelTotals` sums the distance and time of legs by the
+  period they started in (day, week from Monday, month, year) in the
+  traveler's time zone, at most 400 periods at a time.
+- **Who sees them.** Trips and totals are seen at the history share level,
+  like the day's path; only the person corrects their own.
+- **Where.** The dashboard's day list (a row between visits, a menu per leg
+  on one's own) and Travel tab; the iPhone's day list and Travel screen; the
+  command line `teanode location trips`, `travel` and `travel-mode`; the
+  location tool's `trips`, `travel_totals` and `travel_mode`.
+
 ## Photos taken during a visit
 
 `ListLocationVisits` adds `photoCount` and `photos` to each of the caller's

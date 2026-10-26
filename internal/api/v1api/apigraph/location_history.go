@@ -16,6 +16,8 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/place"
+	"github.com/ziyan/teanode/internal/travel"
+	"github.com/ziyan/teanode/internal/travel/rebuild"
 )
 
 // Where a person is and where they have been: the positions their phone and
@@ -76,6 +78,21 @@ type LocationQuery interface {
 	// with the caller. Needs location:use.
 	ListLocationPauses(ctx context.Context, arguments ListLocationPausesArguments) ([]*LocationPauseView, error)
 
+	// List the trips between visits that overlap the range, newest first,
+	// each with its legs and their ways of travel. A trip is the travel from
+	// leaving one visit to arriving at the next; a leg is a part of it with
+	// one way of travel: walk, run, bike, car, bus, train, boat or plane.
+	// Walk, run, bike and car are detected from the phone's motion activity,
+	// plane from distance and speed, and the rest come from the person's
+	// corrections. Someone else's trips need history. Needs location:use.
+	ListTrips(ctx context.Context, arguments ListTripsArguments) (*TripPageView, error)
+
+	// How far a person traveled each way per day, week (from Monday), month
+	// or year in their time zone, newest period first, for legs that began in
+	// the range; at most 400 periods. Someone else's need history. Needs
+	// location:use.
+	ListTravelTotals(ctx context.Context, arguments ListTravelTotalsArguments) ([]*TravelTotalView, error)
+
 	// Every person whose location is shared with the caller, directly or
 	// through a circle, at the highest level any share gives: their latest
 	// position and the visit in progress, or that they have paused. Needs
@@ -89,7 +106,9 @@ type LocationQuery interface {
 
 // LocationMutation records and changes them.
 type LocationMutation interface {
-	// A phone's batch of up to 500 positions and 50 visits. Sending the same
+	// A phone's batch of up to 500 positions, 50 visits and 500 motion
+	// activity readings. After it is stored, the trips of the days it touched
+	// are built again (ListTrips). Sending the same
 	// batch again adds nothing, which is how a phone can send until it knows
 	// the server has them. What was measured while the caller had paused is
 	// not stored, and is counted; the answer says the pause in effect, so that
@@ -133,6 +152,12 @@ type LocationMutation interface {
 	// Tell the caller again where that person arrives and leaves. True when a
 	// mute was in effect. Needs location:use.
 	UnmuteLocationNotifications(ctx context.Context, arguments UnmuteLocationNotificationsArguments) (bool, error)
+
+	// Correct the way of travel of one of the caller's trip legs; leave
+	// travelMode out to go back to the detected way. The correction is kept
+	// for the leg's span of time, so it holds when the trip is built again.
+	// Needs location:use.
+	SetTripLegTravelMode(ctx context.Context, arguments SetTripLegTravelModeArguments) (*TripLegView, error)
 
 	// Erases your positions and visits (in the range), the pauses that began
 	// in it and are over, and the places left with no visit that you did not
@@ -341,6 +366,9 @@ type ReportLocationView struct {
 	// positions, and the visits at places they have, are stored all the same.
 	RefusedVisitCount int `json:"refusedVisitCount"`
 
+	// NewActivityCount is how many motion activity readings were new.
+	NewActivityCount int `json:"newActivityCount"`
+
 	// PausedPointCount and PausedVisitCount are how many positions and visits
 	// were left out because they were measured while the person had paused.
 	PausedPointCount int `json:"pausedPointCount"`
@@ -456,6 +484,21 @@ type ReportLocationArguments struct {
 
 	Points []ReportedPoint `json:"points"`
 	Visits []ReportedVisit `json:"visits"`
+
+	// Activities is what the phone's motion activity said the person was
+	// doing, each from its start until the next one's; a phone without
+	// Motion & Fitness, or an older app, sends none.
+	Activities []ReportedActivity `json:"activities" graphapi:"nullable"`
+}
+
+// ReportedActivity is one of the phone's motion activity readings.
+type ReportedActivity struct {
+	StartedAt time.Time `json:"startedAt"`
+
+	// ActivityKind is stationary, walking, running, cycling, automotive or
+	// unknown; ActivityConfidence is low, medium or high.
+	ActivityKind       string `json:"activityKind"`
+	ActivityConfidence string `json:"activityConfidence"`
 }
 
 // ReportedPoint is one position a phone measured.
@@ -550,6 +593,10 @@ const (
 	// more sends it in several.
 	reportPointsMost = 500
 	reportVisitsMost = 50
+
+	// reportActivitiesMost bounds the motion activity readings of a report,
+	// as reportPointsMost bounds its positions.
+	reportActivitiesMost = 500
 
 	// reportFutureMost is how far ahead of the server's clock a time may be:
 	// a phone's clock is not exactly this one's, but a day ahead is a bug.
@@ -1474,6 +1521,21 @@ func validateReport(arguments ReportLocationArguments, now time.Time) error {
 			return fmt.Errorf("%w: position %d is measured more than a day in the future", api.ErrInvalidArguments, index+1)
 		}
 	}
+	if len(arguments.Activities) > reportActivitiesMost {
+		return fmt.Errorf("%w: send at most %d motion activity readings at a time", api.ErrInvalidArguments, reportActivitiesMost)
+	}
+	for index, activity := range arguments.Activities {
+		switch {
+		case activity.StartedAt.IsZero():
+			return fmt.Errorf("%w: activity %d has no time", api.ErrInvalidArguments, index+1)
+		case activity.StartedAt.After(latest):
+			return fmt.Errorf("%w: activity %d starts more than a day in the future", api.ErrInvalidArguments, index+1)
+		case !travel.IsActivityKind(activity.ActivityKind):
+			return fmt.Errorf("%w: activity %d has the kind %q; one of stationary, walking, running, cycling, automotive, unknown", api.ErrInvalidArguments, index+1, activity.ActivityKind)
+		case !travel.IsActivityConfidence(activity.ActivityConfidence):
+			return fmt.Errorf("%w: activity %d has the confidence %q; one of low, medium, high", api.ErrInvalidArguments, index+1, activity.ActivityConfidence)
+		}
+	}
 	for index, visit := range arguments.Visits {
 		key := strings.TrimSpace(visit.ClientVisitKey)
 		switch {
@@ -1574,6 +1636,21 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 	if err != nil {
 		return nil, locationFailure(err)
 	}
+	// Motion activity is kept like positions: none of what began inside a
+	// pause.
+	activities := make([]*models.MotionActivity, 0, len(arguments.Activities))
+	for _, activity := range arguments.Activities {
+		if pauses.covering(activity.StartedAt) != nil {
+			continue
+		}
+		activities = append(activities, &models.MotionActivity{
+			StartedAt: activity.StartedAt, ActivityKind: activity.ActivityKind, ActivityConfidence: activity.ActivityConfidence,
+		})
+	}
+	newActivityCount, err := tx.PutMotionActivities(user.ID, activities)
+	if err != nil {
+		return nil, locationFailure(err)
+	}
 
 	// The agent's source of where the person went is made with the first
 	// report, and is the same one afterwards.
@@ -1585,7 +1662,7 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 		}
 	}
 
-	view := &ReportLocationView{NewPointCount: newPointCount, PausedPointCount: pausedPointCount}
+	view := &ReportLocationView{NewPointCount: newPointCount, NewActivityCount: newActivityCount, PausedPointCount: pausedPointCount}
 	// Read before the visits are stored, which end the visits they name.
 	unseen, err := readUnseenDepartures(tx, user.ID, arguments.Visits)
 	if err != nil {
@@ -1596,7 +1673,7 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 	// storedArrivedAt is the earliest arrival of a visit the report added or
 	// changed, as stored.
 	var storedArrivedAt *time.Time
-	isChanged := newPointCount > 0
+	isChanged := newPointCount > 0 || newActivityCount > 0
 	for _, reported := range arguments.Visits {
 		stored, err := self.putReportedVisit(tx, user.ID, reported, pauses)
 		if err != nil {
@@ -1669,6 +1746,16 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 	if err := tellDeparturesWhenTheyEnded(tx, user.ID, notices); err != nil {
 		return nil, err
 	}
+	// The trips of the days the report touched, from the arrival of a visit
+	// it completed, are built again from what is stored now.
+	if from, until, hasTimes := reportRange(arguments); hasTimes && isChanged {
+		if storedArrivedAt != nil && storedArrivedAt.Before(from) {
+			from = *storedArrivedAt
+		}
+		if err := rebuild.Around(tx, user.ID, from, until); err != nil {
+			return nil, locationFailure(err)
+		}
+	}
 	self.takeNewPlacesAfterCommit(tx, user.ID, len(madePlaces))
 	// A batch the server already had changes nothing, so the people watching
 	// the map are not told to read the same position again.
@@ -1729,12 +1816,19 @@ func reportedVisitRange(reported []ReportedVisit) (time.Time, time.Time) {
 // visits of a report give, and whether it gives any.
 func reportRange(arguments ReportLocationArguments) (time.Time, time.Time, bool) {
 	from, until := reportedVisitRange(arguments.Visits)
+	times := make([]time.Time, 0, len(arguments.Points)+len(arguments.Activities))
 	for _, point := range arguments.Points {
-		if from.IsZero() || point.MeasuredAt.Before(from) {
-			from = point.MeasuredAt
+		times = append(times, point.MeasuredAt)
+	}
+	for _, activity := range arguments.Activities {
+		times = append(times, activity.StartedAt)
+	}
+	for _, at := range times {
+		if from.IsZero() || at.Before(from) {
+			from = at
 		}
-		if until.IsZero() || point.MeasuredAt.After(until) {
-			until = point.MeasuredAt
+		if until.IsZero() || at.After(until) {
+			until = at
 		}
 	}
 	return from, until, !from.IsZero()
@@ -2313,6 +2407,10 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 	}
 	visit.Place = checkedIn
 	notices = append(notices, visitNotice{Visit: visit, IsArrival: true, HappenedAt: now})
+	// The check-in ends the trip that led here.
+	if err := rebuild.Around(tx, userId, now, now); err != nil {
+		return nil, locationFailure(err)
+	}
 	// A place found nearby arrives named, so only one made from coordinates
 	// alone is left to name.
 	self.afterLocationChange(ctx, tx, userId, notices, madePlaces)
