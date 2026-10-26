@@ -338,6 +338,40 @@ it('searches the journal and lists the days and periods that match', async () =>
 
 // the day
 
+// The units come from the person's account, and from the browser's region only
+// while they have chosen none. The browser here is en-US, which reads as
+// Fahrenheit and miles.
+it.each([
+  ['metric', '14°', '8°', '5.4 km walked'],
+  ['us', '58°', '46°', '3.4 mi walked'],
+  ['', '58°', '46°', '3.4 mi walked'],
+])(
+  'writes a day in the units of a person who chose %j, in an en-US browser',
+  async (measurementSystem, high, low, walked) => {
+    answerWith({ day: () => fullDay({ facts: { ...FACTS, walkedMeters: 5400 } }) })
+    renderAt('/journal/2026-10-22', ['journal:use'], measurementSystem)
+
+    expect(await screen.findByText(high)).toBeTruthy()
+    expect(screen.getByText(`/ ${low}`)).toBeTruthy()
+    expect(screen.getByText(walked)).toBeTruthy()
+  },
+)
+
+it('writes the weather of a metric browser in Celsius until the person chooses US units', async () => {
+  const browserLanguage = vi.spyOn(window.navigator, 'language', 'get').mockReturnValue('en-GB')
+  try {
+    answerWith({ day: () => fullDay() })
+    renderAt('/journal/2026-10-22')
+    expect(await screen.findByText('14°')).toBeTruthy()
+    cleanup()
+
+    renderAt('/journal/2026-10-22', ['journal:use'], 'us')
+    expect(await screen.findByText('58°')).toBeTruthy()
+  } finally {
+    browserLanguage.mockRestore()
+  }
+})
+
 it('shows the sections of a day, each with something to show, and the narrative with its mentions as chips', async () => {
   answerWith({ day: () => fullDay() })
   renderAt('/journal/2026-10-22')

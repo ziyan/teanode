@@ -211,7 +211,7 @@ func (self *Client) Execute(ctx context.Context, query string, variables map[str
 	if zone := localZoneName(); zone != "" {
 		request.Header.Set("X-Timezone", zone)
 	}
-	if language := localLanguage(); language != "" {
+	if language := LocalLanguage(); language != "" {
 		request.Header.Set("Accept-Language", language)
 	}
 
@@ -273,7 +273,7 @@ func (self *Client) executeAllowed(ctx context.Context, query string, variables 
 	if zone := localZoneName(); zone != "" {
 		request.Header.Set("X-Timezone", zone)
 	}
-	if language := localLanguage(); language != "" {
+	if language := LocalLanguage(); language != "" {
 		request.Header.Set("Accept-Language", language)
 	}
 

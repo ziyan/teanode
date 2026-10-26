@@ -57,7 +57,7 @@ func NewUserCommand() *cli.Command {
 			},
 			{
 				Name:      "update",
-				Usage:     "change an account's name, address, pronoun, or the username it signs in with",
+				Usage:     "change an account's name, address, pronoun, units, or the username it signs in with",
 				ArgsUsage: "<username>",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
@@ -71,6 +71,10 @@ func NewUserCommand() *cli.Command {
 					&cli.StringFlag{
 						Name:  "pronoun",
 						Usage: "how you are described: he, she, they or none; your own account only. The people who share a circle with you see it, as they see your name; it words what you are to them (a son rather than a child) and how your agent speaks of you",
+					},
+					&cli.StringFlag{
+						Name:  "units",
+						Usage: "the units you read measurements in: automatic (from your language and region), metric (°C, km, kg) or us (°F, miles, pounds); your own account only unless you manage accounts",
 					},
 					&cli.StringFlag{
 						Name:  "rename",
@@ -273,7 +277,7 @@ func runUserReset(ctx context.Context, command *cli.Command) error {
 func runUserUpdate(ctx context.Context, command *cli.Command) error {
 	username := command.Args().First()
 	if username == "" {
-		return usage("which username? usage: teanode user update <username> [--name ...] [--email ...] [--pronoun he|she|they|none] [--rename ...]")
+		return usage("which username? usage: teanode user update <username> [--name ...] [--email ...] [--pronoun he|she|they|none] [--units automatic|metric|us] [--rename ...]")
 	}
 	parameters := &client.UserParameters{}
 	if command.IsSet("name") {
@@ -295,8 +299,15 @@ func runUserUpdate(ctx context.Context, command *cli.Command) error {
 		}
 		parameters.Pronoun = &pronoun
 	}
+	if command.IsSet("units") {
+		measurementSystem, err := unitsFlag(command.String("units"))
+		if err != nil {
+			return err
+		}
+		parameters.MeasurementSystem = &measurementSystem
+	}
 	if *parameters == (client.UserParameters{}) {
-		return fmt.Errorf("nothing to change; pass --name, --email, --pronoun or --rename")
+		return fmt.Errorf("nothing to change; pass --name, --email, --pronoun, --units or --rename")
 	}
 
 	connection, err := openClient(command)
@@ -324,6 +335,18 @@ func pronounFlag(value string) (string, error) {
 		return "", nil
 	}
 	return "", usage("--pronoun is he, she, they or none")
+}
+
+// unitsFlag reads --units: metric or us, or automatic to follow the language
+// and region, which the server stores as the empty word.
+func unitsFlag(value string) (string, error) {
+	switch measurementSystem := strings.ToLower(strings.TrimSpace(value)); measurementSystem {
+	case models.MeasurementSystemMetric, models.MeasurementSystemUS:
+		return measurementSystem, nil
+	case "automatic":
+		return models.MeasurementSystemAutomatic, nil
+	}
+	return "", usage("--units is automatic, metric or us")
 }
 
 func avatarUserFlag() cli.Flag {

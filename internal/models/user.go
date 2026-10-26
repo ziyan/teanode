@@ -79,6 +79,10 @@ type User struct {
 	TimezoneMode   string     `json:"timezoneMode,omitempty"` // auto | fixed; empty is auto
 	TimezoneSeenAt *time.Time `json:"timezoneSeenAt,omitempty"`
 
+	// MeasurementSystem is the units they read measurements in: metric, us,
+	// or empty to follow their language and region. See measurement.go.
+	MeasurementSystem string `json:"measurementSystem,omitempty"`
+
 	// Pronoun is how they are described, as they said it; empty until they
 	// do. See relationship.go.
 	Pronoun Pronoun `json:"pronoun,omitempty"`
@@ -142,6 +146,9 @@ func (self *User) Validate() error {
 	case "", "auto", "fixed":
 	default:
 		errors.add("timezoneMode", "%q is not auto or fixed", self.TimezoneMode)
+	}
+	if !IsMeasurementSystem(self.MeasurementSystem) {
+		errors.add("measurementSystem", "%q is not metric or us", self.MeasurementSystem)
 	}
 	if self.Pronoun != "" && !self.Pronoun.IsValid() {
 		errors.add("pronoun", "%q is not he, she or they", self.Pronoun)

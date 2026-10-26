@@ -195,6 +195,7 @@ struct JournalTodayCard: View {
     let day: JournalDay?
     let setMood: (JournalMoodLevel) -> Void
     let write: () -> Void
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -226,7 +227,7 @@ struct JournalTodayCard: View {
         var sentences: [String] = []
         if let weather = day?.weather {
             let name = JournalText.weatherName(weather.kind)
-            let temperature = JournalText.temperatureText(celsius: weather.highCelsius)
+            let temperature = JournalText.temperatureText(celsius: weather.highCelsius, measurementSystem: app.measurementSystem)
             sentences.append(name.isEmpty ? temperature : String(localized: "\(temperature) and \(name)."))
         }
         var counted: [String] = []
@@ -264,6 +265,7 @@ struct JournalWeekRow: View {
 struct JournalDayRow: View {
     let summary: JournalDaySummary
     let connection: Connection
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         HStack(spacing: 12) {
@@ -319,7 +321,7 @@ struct JournalDayRow: View {
     private var detailText: String {
         var parts: [String] = []
         if let level = summary.mood?.level { parts.append(JournalText.moodName(level)) }
-        let facts = JournalText.factsLine(of: summary)
+        let facts = JournalText.factsLine(of: summary, measurementSystem: app.measurementSystem)
         if !facts.isEmpty { parts.append(facts) }
         return parts.joined(separator: ", ")
     }

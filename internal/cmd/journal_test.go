@@ -26,6 +26,18 @@ func journalMoment(hour, minute int) string {
 // it, and records the variables of each document by operation name.
 func journalServer(test *testing.T) (*httptest.Server, func(string) map[string]any, func(string) int) {
 	test.Helper()
+	return journalServerFor(test, "")
+}
+
+// journalServerFor is journalServer for a caller whose account reads
+// measurements in the given measurement system. The shell's language is
+// cleared first, so that what a test prints does not depend on the machine
+// it runs on; a test that wants one sets it after.
+func journalServerFor(test *testing.T, measurementSystem string) (*httptest.Server, func(string) map[string]any, func(string) int) {
+	test.Helper()
+	for _, variable := range []string{"LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"} {
+		test.Setenv(variable, "")
+	}
 	var lock sync.Mutex
 	calls := map[string]map[string]any{}
 	counts := map[string]int{}
@@ -83,6 +95,7 @@ func journalServer(test *testing.T) (*httptest.Server, func(string) map[string]a
 		"ListJournalDays": `{"totalCount":20,"today":"2026-10-23","firstDay":"2026-09-01","days":[
 			{"day":"2026-10-23","isToday":true,"mood":null,"weather":null,"headline":"","wordsExcerpt":"Started the morning with a run along the harbor and a long coffee afterwards, then a slow walk home through the market.","hasWords":true,"facts":{},"photoIds":[],"hasNarrative":false},
 			{"day":"2026-10-22","isToday":false,"mood":{"moodLevel":4,"moodWords":"","moodSource":"person"},"weather":null,"headline":"Harbor and coffee","wordsExcerpt":"Rowed.","hasWords":true,"facts":{},"photoIds":[],"hasNarrative":true}]}`,
+		"GetCurrentUser":    `{"id":"u1","username":"ada","measurementSystem":"` + measurementSystem + `"}`,
 		"ReadJournalDay":    day,
 		"ReadJournalPeriod": week,
 		"SearchJournal": `{"totalCount":22,"hits":[{"day":"2026-10-22","periodKind":"","headline":"Harbor and coffee","snippet":"Rowed on the harbor before breakfast."},
@@ -203,6 +216,35 @@ func TestJournalListsDaysAndPages(test *testing.T) {
 		if _, err := runJournalCommand(test, server, arguments...); err == nil {
 			test.Errorf("%v was accepted", arguments)
 		}
+	}
+}
+
+// The weather is written in the units the account reads: as chosen, and for
+// an account that chose nothing as the region of the shell's language says,
+// metric when it names none.
+func TestJournalDayWeatherFollowsTheMeasurementSystem(test *testing.T) {
+	for _, scenario := range []struct {
+		name              string
+		measurementSystem string
+		language          string
+		wanted            string
+	}{
+		{"metric chosen beats a US language", "metric", "en_US.UTF-8", "rain, 11 to 17°C, "},
+		{"us chosen beats a metric language", "us", "ja_JP.UTF-8", "rain, 52 to 63°F, "},
+		{"automatic in a US language", "", "en_US.UTF-8", "rain, 52 to 63°F, "},
+		{"automatic in a language with no region", "", "en", "rain, 11 to 17°C, "},
+		{"automatic in another region", "", "en_GB.UTF-8", "rain, 11 to 17°C, "},
+		{"automatic with nothing said", "", "", "rain, 11 to 17°C, "},
+	} {
+		test.Run(scenario.name, func(test *testing.T) {
+			server, _, _ := journalServerFor(test, scenario.measurementSystem)
+			test.Setenv("LANG", scenario.language)
+			output, err := runJournalCommand(test, server, "day", "2026-10-22")
+			if err != nil {
+				test.Fatal(err)
+			}
+			mustContain(test, output, scenario.wanted)
+		})
 	}
 }
 

@@ -342,7 +342,7 @@ struct JournalPeriodScreen: View {
         var rows: [(title: String, value: String)] = []
         if totals.photoCount > 0 { rows.append((String(localized: "Photos"), JournalText.countText(totals.photoCount))) }
         if totals.placeCount > 0 { rows.append((String(localized: "Places"), JournalText.countText(totals.placeCount))) }
-        if totals.walkedMeters > 0 { rows.append((String(localized: "Walked"), JournalText.distanceText(meters: totals.walkedMeters))) }
+        if totals.walkedMeters > 0 { rows.append((String(localized: "Walked"), JournalText.distanceText(meters: totals.walkedMeters, measurementSystem: app.measurementSystem))) }
         if totals.stepCount > 0 { rows.append((String(localized: "Steps"), JournalText.countText(totals.stepCount))) }
         if totals.sleepMinutes > 0 { rows.append((String(localized: "Sleep"), JournalText.durationText(minutes: totals.sleepMinutes))) }
         if totals.workoutMinutes > 0 { rows.append((String(localized: "Workouts"), JournalText.durationText(minutes: totals.workoutMinutes))) }

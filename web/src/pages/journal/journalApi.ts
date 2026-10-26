@@ -1,5 +1,6 @@
 import { Key, Values } from '../../i18n/i18n'
 import { addDays, dayText, parseDay } from '../health/healthApi'
+import { useOptionalSession } from '../../session'
 
 // What the Journal pages ask the server and the shapes they get back, with the
 // small calculations the pages make from them. The operations are the ones in
@@ -628,19 +629,28 @@ export function clockText(value: string | null | undefined, timeZone: string, la
 
 // units
 
-// Fahrenheit and miles for the places that use them. The page asks the
-// browser's locale, since the server keeps no unit of its own.
+// Fahrenheit and miles for the places that use them. A person's own choice
+// (metric or us) is the answer; when they have made none, the browser's
+// region is, since the server keeps no region of its own.
 const IMPERIAL_REGIONS = ['US', 'LR', 'MM']
 
 export function usesImperialUnits(
+  measurementSystem: string | undefined,
   locale: string = typeof navigator === 'undefined' ? '' : navigator.language,
 ): boolean {
+  if (measurementSystem === 'us') return true
+  if (measurementSystem === 'metric') return false
   try {
     const region = new Intl.Locale(locale).maximize().region
     return region !== undefined && IMPERIAL_REGIONS.includes(region)
   } catch {
     return false
   }
+}
+
+// useIsImperial is whether the signed-in person reads Fahrenheit and miles.
+export function useIsImperial(): boolean {
+  return usesImperialUnits(useOptionalSession()?.measurementSystem)
 }
 
 export function temperatureText(celsius: number, isImperial: boolean): string {

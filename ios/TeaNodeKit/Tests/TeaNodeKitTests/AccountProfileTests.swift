@@ -152,6 +152,46 @@ final class AccountProfileTests: XCTestCase {
         XCTAssertEqual(try sentVariables(fake), ["userId": .string("user-1"), "pronoun": .string("he")])
     }
 
+    // MARK: Units
+
+    func testTheProfileCarriesTheUnitsThePersonReadsIn() async throws {
+        let (connection, _) = connection(answering: #"""
+            {"data":{"GetCurrentUser":{"id":"user-1","username":"robin","name":"Robin","email":null,"timezone":"","timezoneMode":"","measurementSystem":"us"}}}
+            """#)
+        let read = try await connection.accountProfile()
+        XCTAssertEqual(read?.chosenMeasurementSystem, .us)
+        XCTAssertEqual(AccountProfile(id: "user-1", username: "robin", measurementSystem: "metric").chosenMeasurementSystem, .metric)
+        XCTAssertEqual(profile.chosenMeasurementSystem, .automatic, "a profile read from a server that predates it follows the phone")
+        XCTAssertEqual(AccountProfile(id: "user-1", username: "robin", measurementSystem: "imperial").chosenMeasurementSystem, .automatic)
+    }
+
+    func testChoosingUnitsIsAChangeAndIsSentWithTheProfile() {
+        var draft = ProfileDraft(profile)
+        XCTAssertEqual(draft.measurementSystem, .automatic)
+        XCTAssertEqual(draft.variables["measurementSystem"], .string(""))
+        draft.measurementSystem = .metric
+        XCTAssertTrue(draft.hasChanges)
+        XCTAssertTrue(draft.canSave)
+        XCTAssertEqual(draft.variables["measurementSystem"], .string("metric"))
+        // Taking it back to automatic clears it on the server.
+        var chosen = ProfileDraft(AccountProfile(id: "user-1", username: "robin", measurementSystem: "us"))
+        XCTAssertFalse(chosen.hasChanges)
+        chosen.measurementSystem = .automatic
+        XCTAssertTrue(chosen.hasChanges)
+        XCTAssertEqual(chosen.variables["measurementSystem"], .string(""))
+    }
+
+    func testSavingSendsTheUnits() async throws {
+        let (connection, fake) = connection(answering: #"""
+            {"data":{"UpdateUser":{"id":"user-1","username":"robin","measurementSystem":"us"}}}
+            """#)
+        var draft = ProfileDraft(profile)
+        draft.measurementSystem = .us
+        let saved = try await connection.updateAccountProfile(draft)
+        XCTAssertEqual(saved.chosenMeasurementSystem, .us)
+        XCTAssertEqual(try sentVariables(fake)["measurementSystem"], .string("us"))
+    }
+
     // MARK: Picture
 
     func testDecodesThePictureAndColorTheServerChose() async throws {

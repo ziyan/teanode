@@ -17,7 +17,7 @@ afterEach(() => {
   vi.resetAllMocks()
 })
 
-function answerWith(pronoun: string) {
+function answerWith(pronoun: string, measurementSystem = '') {
   vi.mocked(graphql).mockImplementation(async (document) => {
     if (document.includes('GetCurrentUser')) {
       return {
@@ -30,6 +30,7 @@ function answerWith(pronoun: string) {
           avatarColorIndex: 2,
           timezone: '',
           timezoneMode: 'auto',
+          measurementSystem,
           pronoun,
         },
       } as never
@@ -101,4 +102,44 @@ it('shows the pronoun the person has, and clears it when they choose Not set', a
 
   await waitFor(() => expect(updateCalls()).toHaveLength(1))
   expect(updateCalls()[0][1]).toMatchObject({ pronoun: '' })
+})
+
+it('offers units, automatic until the person chooses, with what each means', async () => {
+  answerWith('')
+  renderPage()
+
+  const field = await screen.findByRole('combobox', { name: 'Units' })
+  expect(field.textContent).toContain('Automatic (from your language and region)')
+  fireEvent.click(field)
+  expect(screen.getByRole('option', { name: 'Metric (°C, km)' })).toBeTruthy()
+  expect(screen.getByRole('option', { name: 'US (°F, mi)' })).toBeTruthy()
+  // Nothing has changed, so there is nothing to save.
+  expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+})
+
+it('saves the chosen units with the rest of the profile', async () => {
+  answerWith('')
+  renderPage()
+
+  fireEvent.click(await screen.findByRole('combobox', { name: 'Units' }))
+  fireEvent.click(screen.getByRole('option', { name: 'Metric (°C, km)' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(updateCalls()).toHaveLength(1))
+  expect(updateCalls()[0][1]).toMatchObject({ userId: 'person-a', measurementSystem: 'metric' })
+})
+
+it('shows the units the person has, and goes back to automatic when they choose it', async () => {
+  answerWith('', 'us')
+  renderPage()
+
+  const field = await screen.findByRole('combobox', { name: 'Units' })
+  expect(field.textContent).toContain('US (°F, mi)')
+
+  fireEvent.click(field)
+  fireEvent.click(screen.getByRole('option', { name: 'Automatic (from your language and region)' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(updateCalls()).toHaveLength(1))
+  expect(updateCalls()[0][1]).toMatchObject({ measurementSystem: '' })
 })
