@@ -33,13 +33,17 @@ const (
 // conversation. Actions is empty when every call of the tool is private, and
 // otherwise the actions that are: the passwords tool's list shows names, sites
 // and user names, and reading a note or making up a password puts text into
-// the conversation, and none of that belongs in memory or in a later run.
+// the conversation, and none of that belongs in memory or in a later run. The
+// journal's readings hold the person's own words about their days and, under
+// their switch, their Health; the journal is already where those days are
+// kept, so the turns that read it are not filed again.
 var privateTools = []struct {
 	Name    string
 	Actions []string
 }{
 	{Name: "health"},
 	{Name: "passwords", Actions: []string{"list", "read_note", "generate"}},
+	{Name: "journal", Actions: []string{"day", "period", "days", "search"}},
 }
 
 // IsToolCall says whether a tool call is one of the private tools, as
