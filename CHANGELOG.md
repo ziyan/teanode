@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.199.2] - 2026-10-26
+
+### Fixed
+
+- iPhone: renaming or deleting an account of imported statements in Finance, and comparing codes for a changed key in Passwords, no longer close by themselves. (#658)
+
 ## [0.199.1] - 2026-10-26
 
 ### Fixed
