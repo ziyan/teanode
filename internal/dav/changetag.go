@@ -25,8 +25,9 @@ import (
 //
 // The tag is the number of objects and a digest of their names and versions
 // (db CalendarChangeTag), so it changes when one is added, changed or deleted
-// and not otherwise. There is no sync-token: the server has no sync-collection
-// report, and a client told it had one would ask for it and fail.
+// and not otherwise. A calendar also answers a sync-token made from the same
+// tag, and the reports it answers, for the phones that sync with the
+// sync-collection report instead (sync_collection.go).
 
 const changeTagNamespace = "http://calendarserver.org/ns/"
 
@@ -69,9 +70,16 @@ func collectionOf(href, userId string) (kind, collectionId string, ok bool) {
 	return "", "", false
 }
 
+// collectionTag is a collection's change tag and its kind (calendarsSegment
+// or contactsSegment).
+type collectionTag struct {
+	kind string
+	tag  string
+}
+
 // changeTagsOf are the tags of the collections a multistatus answer names, by
 // href, read in one transaction.
-func (self *component) changeTagsOf(ctx context.Context, signedIn *session, body []byte) (map[string]string, error) {
+func (self *component) changeTagsOf(ctx context.Context, signedIn *session, body []byte) (map[string]collectionTag, error) {
 	type collection struct{ kind, id string }
 	named := map[string]collection{}
 	for _, block := range responseBlock.FindAll(body, -1) {
@@ -84,7 +92,7 @@ func (self *component) changeTagsOf(ctx context.Context, signedIn *session, body
 			named[href] = collection{kind: kind, id: collectionId}
 		}
 	}
-	tags := map[string]string{}
+	tags := map[string]collectionTag{}
 	if len(named) == 0 {
 		return tags, nil
 	}
@@ -100,7 +108,7 @@ func (self *component) changeTagsOf(ctx context.Context, signedIn *session, body
 			if err != nil {
 				return err
 			}
-			tags[href] = tag
+			tags[href] = collectionTag{kind: each.kind, tag: tag}
 		}
 		return nil
 	})
@@ -108,28 +116,38 @@ func (self *component) changeTagsOf(ctx context.Context, signedIn *session, body
 }
 
 // withChangeTags is a multistatus answer with each named collection's getctag
-// moved from the not found part to the found part, filled in. With allprop,
-// where nothing was named as not found, it is added. Anything it does not
-// recognize it leaves exactly as it was.
-func withChangeTags(body []byte, tags map[string]string, isAll bool) []byte {
+// moved from the not found part to the found part, filled in, and for a
+// calendar its sync-token and supported-report-set too (sync_collection.go).
+// With allprop, where nothing was named as not found, the getctag is added.
+// Anything it does not recognize it leaves exactly as it was.
+func withChangeTags(body []byte, tags map[string]collectionTag, isAll bool) []byte {
 	return responseBlock.ReplaceAllFunc(body, func(block []byte) []byte {
 		found := hrefOfBlock.FindSubmatch(block)
 		if found == nil {
 			return block
 		}
-		tag, ok := tags[strings.TrimSpace(string(found[1]))]
+		collection, ok := tags[strings.TrimSpace(string(found[1]))]
 		if !ok {
 			return block
 		}
-		isChangeTagAsked := isAll
+		answered := []foundProperty{{missing: missingChangeTag, value: `<getctag xmlns="` + changeTagNamespace + `">` + collection.tag + `</getctag>`}}
+		if collection.kind == calendarsSegment {
+			answered = append(answered,
+				foundProperty{missing: missingSyncToken, value: `<sync-token xmlns="DAV:">` + syncTokenOf(collection.tag) + `</sync-token>`},
+				foundProperty{missing: missingSupportedReportSet, value: calendarSupportedReportSet})
+		}
+		isAsked := make([]bool, len(answered))
+		isAsked[0] = isAll
 		rewritten := propstatBlock.ReplaceAllFunc(block, func(propstat []byte) []byte {
 			status := statusOfBlock.FindSubmatch(propstat)
 			if status == nil || !bytes.Contains(status[1], []byte(" 404 ")) {
 				return propstat
 			}
-			if missingChangeTag.Match(propstat) {
-				isChangeTagAsked = true
-				propstat = missingChangeTag.ReplaceAll(propstat, nil)
+			for index, property := range answered {
+				if property.missing.Match(propstat) {
+					isAsked[index] = true
+					propstat = property.missing.ReplaceAll(propstat, nil)
+				}
 			}
 			// A not found part with nothing left in it says nothing.
 			if emptyProp.Match(propstat) {
@@ -137,12 +155,43 @@ func withChangeTags(body []byte, tags map[string]string, isAll bool) []byte {
 			}
 			return propstat
 		})
-		if !isChangeTagAsked {
+		properties := ""
+		for index, property := range answered {
+			if isAsked[index] {
+				properties += property.value
+			}
+		}
+		if properties == "" {
 			return block
 		}
-		return withFoundProperties(rewritten, `<getctag xmlns="`+changeTagNamespace+`">`+tag+`</getctag>`)
+		return withFoundProperties(rewritten, properties)
 	})
 }
+
+// foundProperty is a property the library does not answer, as it writes it
+// in the not found part, and the value put in the found part instead.
+type foundProperty struct {
+	missing *regexp.Regexp
+	value   string
+}
+
+// missingProperty matches a property the library wrote empty in a not found
+// part.
+func missingProperty(local, namespace string) *regexp.Regexp {
+	return regexp.MustCompile(`<` + local + `\b[^>]*xmlns="` + regexp.QuoteMeta(namespace) + `"[^>]*(?:/>|>\s*</` + local + `>)`)
+}
+
+var (
+	missingSyncToken          = missingProperty("sync-token", "DAV:")
+	missingSupportedReportSet = missingProperty("supported-report-set", "DAV:")
+)
+
+// calendarSupportedReportSet names the reports a calendar answers.
+const calendarSupportedReportSet = `<supported-report-set xmlns="DAV:">` +
+	`<supported-report><report><calendar-multiget xmlns="` + calendarNS + `"/></report></supported-report>` +
+	`<supported-report><report><calendar-query xmlns="` + calendarNS + `"/></report></supported-report>` +
+	`<supported-report><report><sync-collection/></report></supported-report>` +
+	`</supported-report-set>`
 
 // withFoundProperties puts properties into a response's 200 part, making the
 // part when the response has none.

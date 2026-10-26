@@ -337,6 +337,10 @@ func (self *component) serveCalendarReport(writer http.ResponseWriter, request *
 	if err := xml.Unmarshal(body, &asked); err != nil {
 		return false
 	}
+	if asked.XMLName.Space == "DAV:" && asked.XMLName.Local == "sync-collection" {
+		self.serveCalendarSync(writer, request, backing, body)
+		return true
+	}
 	if asked.XMLName.Space != calendarNS {
 		return false
 	}
