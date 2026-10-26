@@ -1932,6 +1932,7 @@ export const en = {
   'agent.runKinds.recording_sync': 'Update memory from a recording',
   'agent.runKinds.ingest': 'Reading a source',
   'agent.runKinds.dream': 'Dream',
+  'agent.runKinds.journal': 'Journal',
   'agent.runKinds.schedule': 'Scheduled run',
   'agent.runKinds.extract': 'Extraction',
   'agent.runKinds.draft': 'Draft',
