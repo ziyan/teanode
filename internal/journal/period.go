@@ -146,6 +146,7 @@ func addDays(days []*models.JournalDay) (models.JournalFacts, [5]int) {
 	places := map[string]bool{}
 	mainPlaceDays := map[string]int{}
 	mainPlaceNames := map[string]string{}
+	mainPlaceCoordinates := map[string][2]float64{}
 	currencyDays := map[string]int{}
 	for _, day := range days {
 		facts := day.Facts
@@ -173,6 +174,7 @@ func addDays(days []*models.JournalDay) (models.JournalFacts, [5]int) {
 		if facts.MainPlaceID != "" {
 			mainPlaceDays[facts.MainPlaceID]++
 			mainPlaceNames[facts.MainPlaceID] = facts.MainPlaceName
+			mainPlaceCoordinates[facts.MainPlaceID] = [2]float64{facts.MainPlaceLatitude, facts.MainPlaceLongitude}
 		}
 		if facts.SpentCurrency != "" {
 			currencyDays[facts.SpentCurrency]++
@@ -196,6 +198,7 @@ func addDays(days []*models.JournalDay) (models.JournalFacts, [5]int) {
 		}
 	}
 	totals.MainPlaceID, totals.MainPlaceName = bestPlace, mainPlaceNames[bestPlace]
+	totals.MainPlaceLatitude, totals.MainPlaceLongitude = mainPlaceCoordinates[bestPlace][0], mainPlaceCoordinates[bestPlace][1]
 
 	// Money is added in one currency: the one most days spent in.
 	bestCurrency := ""
