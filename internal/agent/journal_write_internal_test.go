@@ -35,8 +35,8 @@ func inventedDay() *journal.Day {
 			Name: "harbor", FirstAt: at(9, 0), LastAt: at(10, 0), ActiveMinutes: 60, StretchCount: 1,
 			Topics: []string{"Fix the tide chart"}, DocumentID: "doc1",
 		}},
-		Documents:      []journal.Document{{DocumentID: "doc2", Title: "harbor-team: 22 Oct", SourceName: "Harbor chat", HappenedAt: at(10, 30)}},
-		DocumentTotal:  1,
+		Documents:     []journal.Document{{DocumentID: "doc2", Title: "harbor-team: 22 Oct", SourceName: "Harbor chat", HappenedAt: at(10, 30)}},
+		DocumentTotal: 1,
 		Mail: []journal.Mail{
 			{ItemID: "mail1", Counterpart: "Ben Quay", Subject: "Budget for the dock", ReceivedAt: at(13, 30), IsImportant: true},
 			{ItemID: "mail2", Counterpart: "The Tide Almanac", Subject: "Your weekly tides", ReceivedAt: at(7, 0)},
