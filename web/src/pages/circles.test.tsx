@@ -710,3 +710,91 @@ it('offers no Photos for a member with no contact of the person, or to a person 
   await screen.findByRole('menuitem', { name: 'Relationship' })
   expect(screen.queryByRole('menuitem', { name: 'Photos' })).toBeNull()
 })
+
+// An album as the server lists it for the circle's page.
+function circleAlbum(overrides: Record<string, unknown>) {
+  return {
+    id: 'album-one',
+    ownerUserId: null,
+    circleId: 'circle-one',
+    albumTitle: 'Garden',
+    coverPhotoId: null,
+    createdAt: '2030-01-01T00:00:00Z',
+    updatedAt: '2030-01-02T00:00:00Z',
+    photoCount: 4,
+    firstTakenAt: null,
+    lastTakenAt: null,
+    coverPreviewUrl: '',
+    ownerUsername: '',
+    ownerName: '',
+    ownerAvatarUrl: null,
+    ownerAvatarColorIndex: 0,
+    circleName: 'Fixture Home',
+    isOwnedByCaller: false,
+    shareLevel: 'contribute',
+    canCallerContribute: true,
+    canCallerManage: true,
+    isLocationIncluded: false,
+    ...overrides,
+  }
+}
+
+it("shows the circle's albums and those shared with it, and makes an album for the circle", async () => {
+  const albums = [
+    circleAlbum({}),
+    circleAlbum({
+      id: 'album-two',
+      circleId: null,
+      ownerUserId: 'person-b',
+      albumTitle: 'Trip',
+      ownerName: 'Person B',
+      shareLevel: 'view',
+    }),
+  ]
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('ReadCircle')) return { ReadCircle: circle() } as never
+    if (document.includes('GetCurrentUser')) return { GetCurrentUser: { id: 'person-a', pronoun: '' } } as never
+    if (document.includes('ListPhotoAlbums')) {
+      expect(variables).toEqual({ circleId: 'circle-one' })
+      return { ListPhotoAlbums: albums } as never
+    }
+    if (document.includes('CreatePhotoAlbum'))
+      return { CreatePhotoAlbum: circleAlbum({ id: 'album-new', albumTitle: 'Picnic' }) } as never
+    return {} as never
+  })
+  renderAt('/circles/circle-one', { canUsePhotos: true })
+
+  const section = (await screen.findByText('Trip')).closest('section') as HTMLElement
+  expect(within(section).getByText('Garden')).toBeTruthy()
+  // A shared album says who shared it; the circle's own does not repeat the circle's name.
+  expect(within(section).getByText('Person B')).toBeTruthy()
+  expect(within(section).queryByText('Fixture Home')).toBeNull()
+  expect(within(section).getByText('Trip').closest('a')?.getAttribute('href')).toBe('/photos/albums/album-two')
+
+  fireEvent.click(within(section).getByRole('button', { name: 'New album' }))
+  const dialog = await screen.findByRole('dialog', { name: 'New album for Fixture Home' })
+  fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Picnic' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+  await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/photos/albums/album-new'))
+  expect(mutationCalls('CreatePhotoAlbum')[0][1]).toEqual({
+    albumTitle: 'Picnic',
+    photoIds: [],
+    circleId: 'circle-one',
+  })
+})
+
+it('says a circle has no albums yet, and shows no Photos to a person who cannot use them', async () => {
+  vi.mocked(graphql).mockImplementation(async (document) => {
+    if (document.includes('ReadCircle')) return { ReadCircle: circle() } as never
+    if (document.includes('ListPhotoAlbums')) return { ListPhotoAlbums: [] } as never
+    return {} as never
+  })
+  renderAt('/circles/circle-one', { canUsePhotos: true })
+  expect(await screen.findByText(/No albums yet\. Make one for this circle/)).toBeTruthy()
+  cleanup()
+
+  renderAt('/circles/circle-one')
+  expect(await screen.findByText('Person B')).toBeTruthy()
+  expect(screen.queryByText(/No albums yet/)).toBeNull()
+  expect(mutationCalls('ListPhotoAlbums')).toHaveLength(1)
+})

@@ -277,7 +277,9 @@ function AlbumSection({
 // One album: its cover, square, its title under it, and in muted text how
 // many photos it holds and the dates they span. An album that is not the
 // person's own says whose it is, by the owner's face and name or the circle's.
-function AlbumCell({ album }: { album: PhotoAlbum }) {
+// On a circle's page, circleId is that circle, whose name its own albums need
+// not repeat.
+export function AlbumCell({ album, circleId }: { album: PhotoAlbum; circleId?: string }) {
   const { plural, language } = useTranslation()
   const details = [
     plural(album.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' }),
@@ -298,7 +300,7 @@ function AlbumCell({ album }: { album: PhotoAlbum }) {
       </span>
       <span className="photo-album-title">{album.albumTitle}</span>
       <span className="photo-album-details muted">{details}</span>
-      {!album.isOwnedByCaller && <AlbumOwnerMark album={album} />}
+      {!album.isOwnedByCaller && !(circleId && album.circleId === circleId) && <AlbumOwnerMark album={album} />}
     </Link>
   )
 }
