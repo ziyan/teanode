@@ -563,9 +563,18 @@ func journalMentions(narrative string) []string {
 	return mentions
 }
 
+// journalCitation finds a reference used as a citation rather than inside a
+// sentence: two side by side, or one standing alone between two sentences.
+// The page shows each as the record's title where it was written, so a
+// citation reads as a run of bold titles between the sentences.
+var journalCitation = regexp.MustCompile(`\]\]\s*\[\[|(?m)(^|[.!?]\s+)\[\[[^\]]+\]\]\s*($|[A-Z])`)
+
 // checkJournalMentions refuses a narrative that mentions a record that is not
-// in allowed.
+// in allowed, or puts its mentions after its sentences as citations.
 func checkJournalMentions(narrative string, allowed map[string]bool) error {
+	if citation := journalCitation.FindString(narrative); citation != "" {
+		return &journalRefusal{reason: fmt.Sprintf("the narrative uses references as citations (%q): the page shows each as the record's title where it is written, so write each one inside a sentence, where the record's name would go", strings.TrimSpace(citation))}
+	}
 	var unknown []string
 	for _, reference := range journalMentions(narrative) {
 		if !allowed[reference] {
