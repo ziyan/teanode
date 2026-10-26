@@ -35,6 +35,7 @@ const (
 	PermissionCircleUse       Permission = "circle:use"    // make circles of people on this server, and join them
 	PermissionLocationUse     Permission = "location:use"  // record where one goes, and share it with the circles one is in
 	PermissionHealthUse       Permission = "health:use"    // keep one's Health data from the iPhone, and share some of it with the circles one is in
+	PermissionJournalUse      Permission = "journal:use"   // keep a journal of one's days, which links to what one keeps elsewhere and which the agent writes in
 	PermissionPasswordsUse    Permission = "passwords:use" // keep passwords, passkeys, cards and notes that only one's own devices can read, and share some of them
 	PermissionShoppingUse     Permission = "shopping:use"  // keep shopping lists, share them with the circles one is in, and check them off at the store
 	PermissionAgentAudit      Permission = "agent:audit"   // every person's agent state and usage, limits, switch-off; never content
@@ -86,6 +87,7 @@ var permissionKinds = []struct {
 	{PermissionCircleUse, PermissionKindServer, ""},
 	{PermissionLocationUse, PermissionKindServer, ""},
 	{PermissionHealthUse, PermissionKindServer, ""},
+	{PermissionJournalUse, PermissionKindServer, ""},
 	{PermissionPasswordsUse, PermissionKindServer, ""},
 	{PermissionShoppingUse, PermissionKindServer, ""},
 	{PermissionAgentAudit, PermissionKindServer, ""},

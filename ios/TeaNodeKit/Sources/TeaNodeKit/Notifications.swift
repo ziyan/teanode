@@ -15,9 +15,18 @@ import Foundation
 
 /// NotificationContent is what a notification says, as the server encrypts
 /// it for this phone (`push.Content` in internal/push/payload.go).
+///
+/// The evening question of the journal (a notificationKind of
+/// "journalEveningQuestion") is sent with the day it asks about, `journalDay`,
+/// written YYYY-MM-DD in the person's own calendar. The phone shows it with
+/// five buttons, Awful, Low, Okay, Good and Great, each of which sets that
+/// day's mood without opening the app (SetJournalMood); pressing the
+/// notification itself opens that day in the journal. A server that names the
+/// day `day` is read as well.
 public struct NotificationContent: Codable, Equatable, Sendable {
     /// alert, herdr_question, goal_needs_you, speak_first, message,
-    /// approval, question, answer, circle, chat, skill_share_call, photo, location, shopping or test.
+    /// approval, question, answer, circle, chat, skill_share_call, photo,
+    /// location, shopping, journalEveningQuestion or test.
     public let notificationKind: String
     public let conversationId: String?
     public let runId: String?
@@ -34,10 +43,49 @@ public struct NotificationContent: Codable, Equatable, Sendable {
     /// the list (`shoppingListId` in `push.Content`), so that tapping it
     /// opens the list.
     public let shoppingListId: String?
+    /// For the journal's evening question, the day it asks about.
+    public let journalDay: String?
     public let title: String
     public let body: String
     public let buttons: [NotificationButton]?
     public let threadId: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case notificationKind, conversationId, runId, callId, locationUserId, journalDay, title, body, buttons, threadId
+    }
+
+    private enum SpelledAsDayKeys: String, CodingKey {
+        case day
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        notificationKind = try container.decode(String.self, forKey: .notificationKind)
+        conversationId = try container.decodeIfPresent(String.self, forKey: .conversationId)
+        runId = try container.decodeIfPresent(String.self, forKey: .runId)
+        callId = try container.decodeIfPresent(String.self, forKey: .callId)
+        locationUserId = try container.decodeIfPresent(String.self, forKey: .locationUserId)
+        let spelledAsDay = try decoder.container(keyedBy: SpelledAsDayKeys.self)
+        journalDay = try container.decodeIfPresent(String.self, forKey: .journalDay) ?? spelledAsDay.decodeIfPresent(String.self, forKey: .day)
+        title = try container.decode(String.self, forKey: .title)
+        body = try container.decode(String.self, forKey: .body)
+        buttons = try container.decodeIfPresent([NotificationButton].self, forKey: .buttons)
+        threadId = try container.decodeIfPresent(String.self, forKey: .threadId)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(notificationKind, forKey: .notificationKind)
+        try container.encodeIfPresent(conversationId, forKey: .conversationId)
+        try container.encodeIfPresent(runId, forKey: .runId)
+        try container.encodeIfPresent(callId, forKey: .callId)
+        try container.encodeIfPresent(locationUserId, forKey: .locationUserId)
+        try container.encodeIfPresent(journalDay, forKey: .journalDay)
+        try container.encode(title, forKey: .title)
+        try container.encode(body, forKey: .body)
+        try container.encodeIfPresent(buttons, forKey: .buttons)
+        try container.encodeIfPresent(threadId, forKey: .threadId)
+    }
 }
 
 /// NotificationButton is one action on a notification.

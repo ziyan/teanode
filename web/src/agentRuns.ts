@@ -53,6 +53,8 @@ export const RUN_KINDS = [
   'shopping_picture',
   // A pasted or photographed list read into items.
   'shopping_import',
+  // The touch-ups and stories the person asked for in the journal.
+  'journal',
 ]
 
 // runKindLabel is a run's kind in the reader's words. A kind this dashboard

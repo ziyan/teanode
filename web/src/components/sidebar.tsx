@@ -32,6 +32,7 @@ import {
   SmartphoneIcon,
   SparkIcon,
   ChatIcon,
+  JournalIcon,
   TerminalIcon,
   UserIcon,
   WalletIcon,
@@ -244,6 +245,7 @@ export function Sidebar({
   const inMailbox =
     [
       '/chat',
+      '/journal',
       '/knowledge',
       '/recordings',
       '/coding',
@@ -385,7 +387,17 @@ export function Sidebar({
                   <span className="sidebar-label">{agentLabel}</span>
                 </NavLink>
               )}
-              {agent.isAvailable && <div className="sidebar-divider" />}
+              {hasPermission(session.permissions, 'journal:use') && (
+                <NavLink to="/journal" title={collapsed ? t('journal.title') : undefined}>
+                  <span className="sidebar-icon">
+                    <JournalIcon />
+                  </span>
+                  <span className="sidebar-label">{t('journal.title')}</span>
+                </NavLink>
+              )}
+              {(agent.isAvailable || hasPermission(session.permissions, 'journal:use')) && (
+                <div className="sidebar-divider" />
+              )}
               {/* Only when there is a choice to make. One mailbox named at
                   the top of its own rail is a heading that says nothing: the
                   rows under it are that mailbox's folders and there is
@@ -600,6 +612,12 @@ export function Sidebar({
                 <NavLink to="/chat">
                   <ChatIcon />
                   <span className="sidebar-label">{t('nav.chats')}</span>
+                </NavLink>
+              )}
+              {hasPermission(session.permissions, 'journal:use') && (
+                <NavLink to="/journal">
+                  <JournalIcon />
+                  <span className="sidebar-label">{t('journal.title')}</span>
                 </NavLink>
               )}
               {session.services?.isAssistantEnabled && hasPermission(session.permissions, 'agent:use') && (

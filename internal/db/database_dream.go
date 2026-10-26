@@ -216,6 +216,10 @@ type agentDreamModel struct {
 	Gaps               int `gorm:"column:gaps"`
 	Unknown            int `gorm:"column:unknown"`
 
+	JournalDaysWritten       int `gorm:"column:journal_days_written"`
+	JournalPeriodsWritten    int `gorm:"column:journal_periods_written"`
+	JournalNarrativesRefused int `gorm:"column:journal_narratives_refused"`
+
 	Proposals []byte `gorm:"column:proposals;type:jsonb"`
 	Tokens    int64  `gorm:"column:tokens"`
 	Notes     string `gorm:"column:notes"`
@@ -274,6 +278,8 @@ func (self *transaction) FinishAgentDream(dream *models.AgentDream) error {
 		"overviews_written": dream.OverviewsWritten, "themes_made": dream.ThemesMade,
 		"themes_updated": dream.ThemesUpdated, "reflections_written": dream.ReflectionsWritten,
 		"notes": dream.Notes, "last_error": dream.LastError,
+		"journal_days_written": dream.JournalDaysWritten, "journal_periods_written": dream.JournalPeriodsWritten,
+		"journal_narratives_refused": dream.JournalNarrativesRefused,
 	}).Error
 }
 
@@ -316,7 +322,9 @@ func (self *transaction) ListAgentDreams(agentId string, limit int) ([]*models.A
 			Rehearsed: row.Rehearsed, Gaps: row.Gaps, Unknown: row.Unknown,
 			OverviewsWritten: row.OverviewsWritten, ThemesMade: row.ThemesMade,
 			ThemesUpdated: row.ThemesUpdated, ReflectionsWritten: row.ReflectionsWritten,
-			Proposals: []models.DreamProposal{},
+			JournalDaysWritten: row.JournalDaysWritten, JournalPeriodsWritten: row.JournalPeriodsWritten,
+			JournalNarrativesRefused: row.JournalNarrativesRefused,
+			Proposals:                []models.DreamProposal{},
 		}
 		if len(row.Proposals) > 0 {
 			if err := json.Unmarshal(row.Proposals, &dream.Proposals); err != nil {

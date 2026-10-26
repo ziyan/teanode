@@ -26,6 +26,11 @@ type RecordingOperation interface {
 	GetRecording(userId, recordingId string) (*models.Recording, error)
 	LockRecording(userId, recordingId string) (*models.Recording, error)
 	ListRecordings(userId, beforeId, searchText string, limit int) ([]*models.Recording, error)
+
+	// ListRecordingsBetween is the person's recordings that were made from
+	// from up to but not including until (by recordedAt, else by when it
+	// arrived), earliest first and at most limit, not counting deleted ones.
+	ListRecordingsBetween(userId string, from, until time.Time, limit int) ([]*models.Recording, error)
 	UpdateRecordingCapture(userId, recordingId string, expectedGeneration int64, captureState models.RecordingCaptureState, durationMS int64, gaps []models.RecordingGap) (*models.Recording, error)
 	CreateRecordingMedia(userId string, media *models.RecordingMedia, maximumMediaBytes, maximumAccountBytes int64) (*models.RecordingMedia, error)
 	GetRecordingMedia(userId, mediaId string) (*models.RecordingMedia, error)
@@ -645,4 +650,26 @@ func sameRecordingMediaDuration(recordingOrigin models.RecordingOrigin, storedDu
 		return true
 	}
 	return recordingOrigin != models.RecordingOriginCapture && requestedDurationMS == 0
+}
+
+func (self *transaction) ListRecordingsBetween(userId string, from, until time.Time, limit int) ([]*models.Recording, error) {
+	if userId == "" {
+		return nil, ErrNotFound
+	}
+	if limit < 1 || limit > 1000 || !from.Before(until) {
+		return nil, ErrInvalidArguments
+	}
+	// A recording that says when it was made is placed there, one that does
+	// not where it arrived, which is how the recording's own link dates it.
+	var rows []recordingModel
+	if err := self.tx.Where(`user_id = ? AND deleted_at IS NULL AND COALESCE(recorded_at, created_at) >= ? AND COALESCE(recorded_at, created_at) < ?`,
+		userId, from, until).
+		Order("COALESCE(recorded_at, created_at) ASC, id ASC").Limit(limit).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	recordings := make([]*models.Recording, 0, len(rows))
+	for index := range rows {
+		recordings = append(recordings, recordingFromModel(&rows[index]))
+	}
+	return recordings, nil
 }
