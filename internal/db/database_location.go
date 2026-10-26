@@ -152,6 +152,13 @@ type LocationOperation interface {
 	// report are stored.
 	NormalizePlaceVisits(userId string, from, until time.Time) error
 
+	// ListOverlappedVisitRanges finds the people with a visit that began
+	// after the arrival of a visit of theirs at another place and before it
+	// ended, among visits that began since the instant, and for each the
+	// range from the first such visit's arrival to the end of the last one,
+	// for NormalizePlaceVisits. Visits put in order overlap none.
+	ListOverlappedVisitRanges(since time.Time) ([]VisitRange, error)
+
 	// EndOpenPlaceVisit sets the departure of the visit in progress and answers
 	// it, or answers nil when there is none.
 	EndOpenPlaceVisit(userId string, at time.Time) (*models.PlaceVisit, error)
