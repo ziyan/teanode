@@ -454,20 +454,47 @@ boat or plane (`docs/planning/location-travel-execplan.md` has the reasons).
   never detected; they come from corrections.
 - **When they are built.** Trips are derived, stored in `trip` and
   `trip_leg`, and built again by package `internal/travel/rebuild`: after each
-  report for the days it touched (a day before to two days after, and from
-  the arrival of a visit it completed), after a check-in, and once at start
-  for the days before trips existed (`trip_backfill` says who is done).
-  Erasing history erases trips, motion activity and corrections in the
-  range.
+  report, around each run of the times it carries (positions, visit arrivals
+  and departures, motion activity, and the arrival of a visit it completed; a
+  run has no gap of over two days, so a report of two distant days does not
+  rebuild the days between), after a check-in, after a place is forgotten or
+  history is erased, and once at start for the days before trips existed
+  (`trip_backfill` says who is done). A rebuild starts at the departure of the
+  person's latest visit that departed before the first time (a day before when
+  there is none), so that a trip whose departure was long before the report,
+  such as after a phone that was off for 30 hours, is built; it ends six hours
+  after the last time. It reads visits up to the first arrival after the
+  window (at most 30 days on), and every position of the window, a page at a
+  time. Visits more than 30 days apart are no trip (`MaximumTripDuration`). A
+  report with a position, a visit time or a motion activity more than 400 days
+  old is refused; the phone drops that one entry.
+- **Ids stay.** A rebuild keeps the id of a stored trip that starts at the
+  same instant as the one built, and of its leg that starts at the same
+  instant as a built leg, and writes nothing for a trip that came out the
+  same (times, visits and legs, distances to the meter), so that an id the
+  person was just shown still works.
+- **Forgetting and erasing.** Erasing history erases the trips that overlap
+  the range (a trip that began before it and ended inside it too), the motion
+  activity and the corrections that started in it. Afterwards, and after a
+  place is forgotten, the trips left without a visit at one end are built
+  again, and so is each edge of the range, so the visits beside what went are
+  joined by the trip between them.
 - **Corrections.** The person corrects a leg (`SetTripLegTravelMode`); the
   correction is kept apart, as a span of time with a way
   (`travel_mode_correction`), and a leg takes the correction that covers half
-  of it or more. A rebuild keeps it; taking it back returns the detected way.
+  of it or more. A new correction takes its span out of older ones that
+  overlap it: what an older correction said about the time outside the span
+  still holds (it is shortened, or split in two). A rebuild keeps corrections;
+  taking one back returns the detected way.
 - **Totals.** `ListTravelTotals` sums the distance and time of legs by the
   period they started in (day, week from Monday, month, year) in the
-  traveler's time zone, at most 400 periods at a time.
+  traveler's time zone, at most 400 periods at a time. `ListTrips` leaves out
+  trips that began more than 30 days before the range (no trip lasts that
+  long), so it does not look through all earlier history.
 - **Who sees them.** Trips and totals are seen at the history share level,
-  like the day's path; only the person corrects their own.
+  like the day's path; only the person corrects their own. Someone it is
+  shared with sees the places at the ends as a list of visits shows them,
+  without the radius and the owner's other records of the place.
 - **Where.** The dashboard's day list (a row between visits, a menu per leg
   on one's own) and Travel tab; the iPhone's day list and Travel screen; the
   command line `teanode location trips`, `travel` and `travel-mode`; the

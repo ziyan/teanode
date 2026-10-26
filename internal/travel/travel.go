@@ -13,26 +13,26 @@ import (
 	"github.com/ziyan/teanode/internal/place"
 )
 
-// Mode is a way of travel.
-type Mode string
+// TravelMode is a way of travel.
+type TravelMode string
 
 const (
-	ModeWalk  Mode = "walk"
-	ModeRun   Mode = "run"
-	ModeBike  Mode = "bike"
-	ModeCar   Mode = "car"
-	ModeBus   Mode = "bus"
-	ModeTrain Mode = "train"
-	ModeBoat  Mode = "boat"
-	ModePlane Mode = "plane"
+	TravelModeWalk  TravelMode = "walk"
+	TravelModeRun   TravelMode = "run"
+	TravelModeBike  TravelMode = "bike"
+	TravelModeCar   TravelMode = "car"
+	TravelModeBus   TravelMode = "bus"
+	TravelModeTrain TravelMode = "train"
+	TravelModeBoat  TravelMode = "boat"
+	TravelModePlane TravelMode = "plane"
 )
 
-// Modes lists the eight ways of travel in the order they are shown.
-var Modes = []Mode{ModeWalk, ModeRun, ModeBike, ModeCar, ModeBus, ModeTrain, ModeBoat, ModePlane}
+// TravelModes lists the eight ways of travel in the order they are shown.
+var TravelModes = []TravelMode{TravelModeWalk, TravelModeRun, TravelModeBike, TravelModeCar, TravelModeBus, TravelModeTrain, TravelModeBoat, TravelModePlane}
 
-// IsMode reports whether the text is one of the eight ways of travel.
-func IsMode(text string) bool {
-	for _, mode := range Modes {
+// IsTravelMode reports whether the text is one of the eight ways of travel.
+func IsTravelMode(text string) bool {
+	for _, mode := range TravelModes {
 		if string(mode) == text {
 			return true
 		}
@@ -86,19 +86,19 @@ func contains(list []string, text string) bool {
 	return false
 }
 
-// ModeOfActivity is the way of travel a kind of motion activity stands for.
+// TravelModeOfActivityKind is the way of travel a kind of motion activity stands for.
 // Stationary and unknown stand for none: they say the person was not moving
 // or that the phone could not tell, which is no way of travel.
-func ModeOfActivity(activityKind string) (Mode, bool) {
+func TravelModeOfActivityKind(activityKind string) (TravelMode, bool) {
 	switch activityKind {
 	case ActivityKindWalking:
-		return ModeWalk, true
+		return TravelModeWalk, true
 	case ActivityKindRunning:
-		return ModeRun, true
+		return TravelModeRun, true
 	case ActivityKindCycling:
-		return ModeBike, true
+		return TravelModeBike, true
 	case ActivityKindAutomotive:
-		return ModeCar, true
+		return TravelModeCar, true
 	}
 	return "", false
 }
@@ -115,6 +115,12 @@ const (
 	// own noise is as long as the path.
 	MinimumTripDistanceMeters = 150
 
+	// MaximumTripDuration is the longest a trip lasts. Visits a longer time
+	// apart are not joined: the person was not on the way all that time, the
+	// phone has simply said nothing in between. Listings of trips rely on
+	// it (db.TripLongestDuration is the same length).
+	MaximumTripDuration = 30 * 24 * time.Hour
+
 	// MaximumAccuracyMeters is the worst accuracy a position can have and
 	// still be used, when better positions exist. Worse than this the phone
 	// is placing the person by a cell tower, which can be a kilometer off.
@@ -126,9 +132,9 @@ const (
 	MaximumSpeedMetersPerSecond = 300
 
 	// MinimumLegDuration and MinimumLegDistanceMeters are the size below
-	// which a leg is a blip of the phone's activity detection, not a change
-	// of the way of travel, such as a crossing of a road between two bus
-	// rides, and is merged into the leg beside it.
+	// which a leg is a short leg: a slip of the phone's activity detection, not
+	// a change of the way of travel (a crossing of a road between two bus
+	// rides, say), and is merged into the leg beside it.
 	MinimumLegDuration       = time.Minute
 	MinimumLegDistanceMeters = 100
 
@@ -152,17 +158,17 @@ const (
 	MinimumPlaneSpeedMetersPerSecond = 55
 )
 
-// Activity is what the phone said the person was doing from a moment on. It
+// MotionActivity is what the phone said the person was doing from a moment on. It
 // lasts until the next activity starts.
-type Activity struct {
+type MotionActivity struct {
 	StartedAt          time.Time
 	ActivityKind       string
 	ActivityConfidence string
 }
 
-// Stay is a visit: the person was at one place from arrival to departure. A
+// Visit is a time the person was at one place, from arrival to departure. A
 // visit still going on has no departure.
-type Stay struct {
+type Visit struct {
 	VisitID                           string
 	ArrivedAt, DepartedAt             *time.Time
 	LatitudeDegrees, LongitudeDegrees float64
@@ -177,7 +183,7 @@ type Position struct {
 // Leg is a part of a trip with one way of travel.
 type Leg struct {
 	StartedAt, EndedAt time.Time
-	DetectedMode       Mode
+	DetectedTravelMode TravelMode
 	DetectionSource    string
 	DistanceMeters     float64
 }
@@ -200,26 +206,27 @@ type pathPoint struct {
 	cumulativeMeters float64
 }
 
-// BuildTrips builds the trips between consecutive stays. The inputs may come
+// BuildTrips builds the trips between consecutive visits. The inputs may come
 // in any order; they are not changed.
-func BuildTrips(stays []Stay, positions []Position, activities []Activity) []Trip {
-	stays = append([]Stay(nil), stays...)
-	sort.SliceStable(stays, func(first, second int) bool {
-		return stayOrderTime(stays[first]).Before(stayOrderTime(stays[second]))
+func BuildTrips(visits []Visit, positions []Position, activities []MotionActivity) []Trip {
+	visits = append([]Visit(nil), visits...)
+	sort.SliceStable(visits, func(first, second int) bool {
+		return visitOrderTime(visits[first]).Before(visitOrderTime(visits[second]))
 	})
 	positions = append([]Position(nil), positions...)
 	sort.SliceStable(positions, func(first, second int) bool {
 		return positions[first].MeasuredAt.Before(positions[second].MeasuredAt)
 	})
-	activities = append([]Activity(nil), activities...)
+	activities = append([]MotionActivity(nil), activities...)
 	sort.SliceStable(activities, func(first, second int) bool {
 		return activities[first].StartedAt.Before(activities[second].StartedAt)
 	})
 
 	var trips []Trip
-	for index := 0; index+1 < len(stays); index++ {
-		from, to := stays[index], stays[index+1]
-		if from.DepartedAt == nil || to.ArrivedAt == nil || !to.ArrivedAt.After(*from.DepartedAt) {
+	for index := 0; index+1 < len(visits); index++ {
+		from, to := visits[index], visits[index+1]
+		if from.DepartedAt == nil || to.ArrivedAt == nil || !to.ArrivedAt.After(*from.DepartedAt) ||
+			to.ArrivedAt.Sub(*from.DepartedAt) > MaximumTripDuration {
 			continue
 		}
 		trip, isTrip := buildTrip(from, to, positions, activities)
@@ -230,19 +237,19 @@ func BuildTrips(stays []Stay, positions []Position, activities []Activity) []Tri
 	return trips
 }
 
-// stayOrderTime is the time a stay is ordered by: its arrival, or its
+// visitOrderTime is the time a visit is ordered by: its arrival, or its
 // departure when the arrival is not known.
-func stayOrderTime(stay Stay) time.Time {
-	if stay.ArrivedAt != nil {
-		return *stay.ArrivedAt
+func visitOrderTime(visit Visit) time.Time {
+	if visit.ArrivedAt != nil {
+		return *visit.ArrivedAt
 	}
-	if stay.DepartedAt != nil {
-		return *stay.DepartedAt
+	if visit.DepartedAt != nil {
+		return *visit.DepartedAt
 	}
 	return time.Time{}
 }
 
-func buildTrip(from, to Stay, positions []Position, activities []Activity) (Trip, bool) {
+func buildTrip(from, to Visit, positions []Position, activities []MotionActivity) (Trip, bool) {
 	startedAt, endedAt := *from.DepartedAt, *to.ArrivedAt
 	path := buildPath(from, to, positions)
 	totalMeters := path[len(path)-1].cumulativeMeters
@@ -259,27 +266,27 @@ func buildTrip(from, to Stay, positions []Position, activities []Activity) (Trip
 	legs := motionLegs(path, startedAt, endedAt, activities)
 	if legs == nil {
 		legs = []Leg{{
-			StartedAt:       startedAt,
-			EndedAt:         endedAt,
-			DetectedMode:    modeOfSpeed(totalMeters / endedAt.Sub(startedAt).Seconds()),
-			DetectionSource: DetectionSourceSpeed,
-			DistanceMeters:  totalMeters,
+			StartedAt:          startedAt,
+			EndedAt:            endedAt,
+			DetectedTravelMode: travelModeOfSpeed(totalMeters / endedAt.Sub(startedAt).Seconds()),
+			DetectionSource:    DetectionSourceSpeed,
+			DistanceMeters:     totalMeters,
 		}}
 	}
 	for index := range legs {
 		seconds := legs[index].EndedAt.Sub(legs[index].StartedAt).Seconds()
 		if legs[index].DistanceMeters >= MinimumPlaneDistanceMeters &&
 			legs[index].DistanceMeters/seconds >= MinimumPlaneSpeedMetersPerSecond {
-			legs[index].DetectedMode = ModePlane
+			legs[index].DetectedTravelMode = TravelModePlane
 		}
 	}
 	trip.Legs = legs
 	return trip, true
 }
 
-// buildPath is the first stay's coordinates, the positions measured during the
-// trip that are believable, and the second stay's coordinates.
-func buildPath(from, to Stay, positions []Position) []pathPoint {
+// buildPath is the first visit's coordinates, the positions measured during the
+// trip that are believable, and the second visit's coordinates.
+func buildPath(from, to Visit, positions []Position) []pathPoint {
 	startedAt, endedAt := *from.DepartedAt, *to.ArrivedAt
 	var inside []Position
 	hasAccuratePosition := false
@@ -346,17 +353,17 @@ func distanceAt(path []pathPoint, moment time.Time) float64 {
 
 // motionLegs cuts the trip into legs by motion activity. It returns nil when
 // the activity names a way for less than half of the trip's time.
-func motionLegs(path []pathPoint, startedAt, endedAt time.Time, activities []Activity) []Leg {
+func motionLegs(path []pathPoint, startedAt, endedAt time.Time, activities []MotionActivity) []Leg {
 	type span struct {
 		startedAt, endedAt time.Time
-		mode               Mode
+		mode               TravelMode
 	}
 	// The spans with a way, clipped to the trip. An activity lasts until the
 	// next one starts, so the one in effect when the trip began counts.
 	var spans []span
 	var coveredSeconds float64
 	for index, activity := range activities {
-		mode, hasMode := ModeOfActivity(activity.ActivityKind)
+		mode, hasMode := TravelModeOfActivityKind(activity.ActivityKind)
 		if !hasMode {
 			continue
 		}
@@ -384,12 +391,12 @@ func motionLegs(path []pathPoint, startedAt, endedAt time.Time, activities []Act
 		return nil
 	}
 
-	// Cut halfway through each stretch with no way between two spans, so that
+	// Cut halfway through the time with no way between two spans, so that
 	// it extends both neighbors. The ends of the trip are the ends of the
 	// first and last legs.
 	legs := make([]Leg, 0, len(spans))
 	for index, current := range spans {
-		leg := Leg{StartedAt: current.startedAt, EndedAt: current.endedAt, DetectedMode: current.mode, DetectionSource: DetectionSourceMotion}
+		leg := Leg{StartedAt: current.startedAt, EndedAt: current.endedAt, DetectedTravelMode: current.mode, DetectionSource: DetectionSourceMotion}
 		if index == 0 {
 			leg.StartedAt = startedAt
 		}
@@ -410,7 +417,7 @@ func motionLegs(path []pathPoint, startedAt, endedAt time.Time, activities []Act
 	}
 	// Shorter legs are merged by their path length, which is only known now.
 	for {
-		shortIndex := shortestBlip(legs)
+		shortIndex := shortestShortLeg(legs)
 		if shortIndex < 0 {
 			break
 		}
@@ -426,7 +433,7 @@ func motionLegs(path []pathPoint, startedAt, endedAt time.Time, activities []Act
 func mergeLegs(legs []Leg) []Leg {
 	merged := legs[:0:0]
 	for _, leg := range legs {
-		if count := len(merged); count > 0 && merged[count-1].DetectedMode == leg.DetectedMode {
+		if count := len(merged); count > 0 && merged[count-1].DetectedTravelMode == leg.DetectedTravelMode {
 			merged[count-1].EndedAt = leg.EndedAt
 			continue
 		}
@@ -435,23 +442,23 @@ func mergeLegs(legs []Leg) []Leg {
 	return merged
 }
 
-// shortestBlip is the index of the shortest leg that is too short in time or
+// shortestShortLeg is the index of the shortest leg that is too short in time or
 // distance to stand alone, or -1 when there is none or only one leg is left.
-func shortestBlip(legs []Leg) int {
+func shortestShortLeg(legs []Leg) int {
 	if len(legs) < 2 {
 		return -1
 	}
-	blipIndex := -1
+	shortLegIndex := -1
 	for index, leg := range legs {
 		duration := leg.EndedAt.Sub(leg.StartedAt)
 		if duration >= MinimumLegDuration && leg.DistanceMeters >= MinimumLegDistanceMeters {
 			continue
 		}
-		if blipIndex < 0 || duration < legs[blipIndex].EndedAt.Sub(legs[blipIndex].StartedAt) {
-			blipIndex = index
+		if shortLegIndex < 0 || duration < legs[shortLegIndex].EndedAt.Sub(legs[shortLegIndex].StartedAt) {
+			shortLegIndex = index
 		}
 	}
-	return blipIndex
+	return shortLegIndex
 }
 
 // absorb merges a leg into the neighbor it touches longest, which is the
@@ -476,15 +483,15 @@ func absorb(legs []Leg, index int) []Leg {
 	return mergeLegs(legs)
 }
 
-// modeOfSpeed guesses the way of travel from an average speed.
-func modeOfSpeed(metersPerSecond float64) Mode {
+// travelModeOfSpeed guesses the way of travel from an average speed.
+func travelModeOfSpeed(metersPerSecond float64) TravelMode {
 	switch {
 	case metersPerSecond <= MaximumWalkSpeedMetersPerSecond:
-		return ModeWalk
+		return TravelModeWalk
 	case metersPerSecond <= MaximumBikeSpeedMetersPerSecond:
-		return ModeBike
+		return TravelModeBike
 	case metersPerSecond <= MaximumCarSpeedMetersPerSecond:
-		return ModeCar
+		return TravelModeCar
 	}
-	return ModePlane
+	return TravelModePlane
 }

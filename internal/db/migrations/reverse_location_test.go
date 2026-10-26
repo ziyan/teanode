@@ -66,11 +66,15 @@ func TestTheLocationMigrationKeepsItsVocabulariesAndReverses(t *testing.T) {
 		t.Errorf("a deleted visit leaves %s joined keys", got)
 	}
 
-	reverse, err := os.ReadFile("0240_location.reverse.sql")
-	if err != nil {
-		t.Fatalf("ReadFile: %s", err)
+	// Undone newest first, as a rollback would: the trips of 0263 point at
+	// the visits this one makes.
+	for _, name := range []string{"0263_location_travel.reverse.sql", "0240_location.reverse.sql"} {
+		reverse, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("ReadFile: %s", err)
+		}
+		dbtest.Exec(t, database, string(reverse))
 	}
-	dbtest.Exec(t, database, string(reverse))
 	for _, table := range []string{"location_point", "place", "place_visit", "place_visit_key", "location_share"} {
 		if got := dbtest.QueryString(t, database, `SELECT coalesce(to_regclass('"`+table+`"')::text, '')`); got != "" {
 			t.Errorf("the %s table is still there: %q", table, got)

@@ -146,8 +146,8 @@ const MUTE_LOCATION_NOTIFICATIONS = `mutation ($userId: String!, $mutedUntil: Da
   MuteLocationNotifications(userId: $userId, mutedUntil: $mutedUntil) { mutedUntil }
 }`
 const UNMUTE_LOCATION_NOTIFICATIONS = `mutation ($userId: String!) { UnmuteLocationNotifications(userId: $userId) }`
-const LIST_TRIPS = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
-  ListTrips(userId: $userId, from: $from, until: $until) { trips { ${TRIP_FIELDS} } nextOffset }
+const LIST_TRIPS = `query ($userId: String, $from: DateTime!, $until: DateTime!, $offset: Int, $limitCount: Int) {
+  ListTrips(userId: $userId, from: $from, until: $until, offset: $offset, limitCount: $limitCount) { trips { ${TRIP_FIELDS} } nextOffset }
 }`
 const SET_TRIP_LEG_TRAVEL_MODE = `mutation ($tripLegId: String!, $travelMode: String) {
   SetTripLegTravelMode(tripLegId: $tripLegId, travelMode: $travelMode) { id travelMode isTravelModeCorrected }
@@ -161,6 +161,11 @@ const ERASE_LOCATION_HISTORY = `mutation ($from: DateTime, $until: DateTime) {
 
 type VisitPage = { placeVisits: PlaceVisit[]; nextOffset: number | null }
 type PlacePage = { places: Place[]; nextOffset: number | null }
+// The trips are read this many to a page, and no more pages than the maximum
+// are followed, so a very long span of visits cannot ask without end.
+const TRIPS_PAGE_SIZE = 200
+const MAXIMUM_TRIPS_PAGES = 10
+
 type TripPage = { trips: Trip[]; nextOffset: number | null }
 type DayRange = { from: string; until: string }
 
@@ -561,23 +566,29 @@ function LocationContent({ userId }: { userId: string }) {
       ).toISOString(),
     }
   }, [range, visitPage, visitRows, visitsPaging.pageIndex])
+  // Every page of the trips in the span, up to the maximum pages.
+  async function listAllTrips(userId: string | null, from: string, until: string): Promise<Trip[]> {
+    const allTrips: Trip[] = []
+    let offset: number | null = 0
+    for (let pageIndex = 0; offset !== null && pageIndex < MAXIMUM_TRIPS_PAGES; pageIndex++) {
+      const page: TripPage = (
+        await graphql<{ ListTrips: TripPage }>(LIST_TRIPS, { userId, from, until, offset, limitCount: TRIPS_PAGE_SIZE })
+      ).ListTrips
+      allTrips.push(...page.trips)
+      offset = page.nextOffset
+    }
+    return allTrips
+  }
   const tripsRequestKey = JSON.stringify([viewedUserId, tripsSpan?.from ?? null, tripsSpan?.until ?? null])
   const trips = useQuery(
     async (): Promise<Answered<Trip[]> | null> =>
       tab === 'visits' && canReadHistory && tripsSpan
         ? {
             requestKey: tripsRequestKey,
-            answer: (
-              await graphql<{ ListTrips: TripPage }>(LIST_TRIPS, {
-                userId: viewedUserId,
-                from: tripsSpan.from,
-                until: tripsSpan.until,
-              })
-            ).ListTrips.trips,
+            answer: await listAllTrips(viewedUserId, tripsSpan.from, tripsSpan.until),
           }
         : null,
     [tab, tripsRequestKey, userId, canReadHistory],
-    { refresh: false },
   )
   const tripList = answeredFor(trips.data, tripsRequestKey)
 
@@ -615,9 +626,9 @@ function LocationContent({ userId }: { userId: string }) {
       }
     })
     const dayStartMS = range ? new Date(range.from).getTime() : 0
-    // Pauses and trips, oldest first, so a newer one is put in front of the
-    // older one at the same place. The list is newest first, so a trip stands
-    // in front of the visit it leaves: the first visit that began earlier.
+    // Pauses and trips, newest first, so between two visits the rows come out
+    // newest first whatever their kinds. The list is newest first, so a row
+    // stands in front of the first visit that began earlier than it did.
     const inserted: { startedAt: string; row: (momentMS: number) => TimelineRow }[] = [
       ...(pauseList ?? []).map((pause) => ({
         startedAt: pause.startedAt,
@@ -645,7 +656,9 @@ function LocationContent({ userId }: { userId: string }) {
               },
             ],
       ),
-    ].sort((first, second) => new Date(first.startedAt).getTime() - new Date(second.startedAt).getTime())
+    ].sort((first, second) => new Date(second.startedAt).getTime() - new Date(first.startedAt).getTime())
+    // Each goes right before the first visit that began earlier, so it lands
+    // after the newer rows already placed in front of that visit.
     for (const each of inserted) {
       const momentMS = Math.max(new Date(each.startedAt).getTime(), dayStartMS)
       const index = rows.findIndex((existing) => existing.kind === 'visit' && existing.momentMS < momentMS)
@@ -860,6 +873,7 @@ function LocationContent({ userId }: { userId: string }) {
   function reloadAll() {
     void me.reload()
     void visits.reload()
+    void trips.reload()
     void places.reload()
     void pauses.reload()
   }

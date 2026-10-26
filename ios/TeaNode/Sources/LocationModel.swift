@@ -203,6 +203,16 @@ final class LocationModel {
         trips = read
     }
 
+    /// Reads the trips of a stretch the visits newly loaded cover and merges
+    /// them into the ones already read: a trip read again replaces its old
+    /// copy. A failed read leaves the trips as they were.
+    private func readTrips(from: Date, until: Date) async {
+        guard let read = await fetchTrips(connection: connection, from: from, until: until) else { return }
+        let readIds = Set(read.map(\.id))
+        let merged = trips.filter { !readIds.contains($0.id) } + read
+        trips = merged.sorted { ($0.startedDate ?? .distantPast) > ($1.startedDate ?? .distantPast) }
+    }
+
     /// Corrects the way of travel of one of the person's own legs, or with
     /// nil takes the correction back, and reads the trips again. True when
     /// the server took it.
@@ -269,10 +279,16 @@ final class LocationModel {
         do {
             let page = try await connection.locationVisits(offset: offset, limitCount: Self.visitPageSize)
             let known = Set(visits.map(\.id))
-            visits += page.placeVisits.filter { !known.contains($0.id) }
+            let previousOldest = visits.compactMap(\.anchorDate).min()
+            let addedVisits = page.placeVisits.filter { !known.contains($0.id) }
+            visits += addedVisits
             nextVisitOffset = page.nextOffset
             await readPauses()
-            await readTrips()
+            if let previousOldest, let addedOldest = addedVisits.compactMap(\.anchorDate).min(), addedOldest < previousOldest {
+                await readTrips(from: addedOldest, until: previousOldest)
+            } else if previousOldest == nil {
+                await readTrips()
+            }
         } catch {
             problemText = error.localizedDescription
         }
@@ -477,6 +493,7 @@ final class LocationModel {
             location = nil
             visits = []
             pauses = []
+            trips = []
             places = []
             nextVisitOffset = nil
             nextPlaceOffset = nil

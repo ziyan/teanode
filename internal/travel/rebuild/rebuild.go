@@ -7,6 +7,7 @@
 package rebuild
 
 import (
+	"sort"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -15,28 +16,74 @@ import (
 )
 
 const (
-	// paddingBefore and paddingAfter widen the times a change touched to
-	// the trips that can depend on them: a position or a visit changes the
-	// trip it lies in, which began at the departure before it, and a late
-	// departure ends a visit that began a day or more earlier.
-	paddingBefore = 24 * time.Hour
-	paddingAfter  = 48 * time.Hour
+	// defaultLookBack is how far before the times a change touched the
+	// window starts when the person has no visit that departed before them.
+	defaultLookBack = 24 * time.Hour
+
+	// lookAhead is how far after the times a change touched the window
+	// ends. A position, a visit or a motion activity changes only the trips
+	// that start at or before its time, except through the visits the
+	// report itself carries, and those are among the times given.
+	lookAhead = 6 * time.Hour
 
 	// readMargin is how much further than the trips rebuilt the visits are
 	// read, so that a trip that starts inside the window finds the visit it
 	// ends at, and the one it starts from.
 	readMargin = 24 * time.Hour
 
-	// pointsMost bounds the positions read for one rebuild. A phone in use
-	// records at most one every few seconds, and the window is a few days.
-	pointsMost = 100000
+	// arrivalLookAhead is how far after the window the arrival that ends its
+	// last trip is looked for. No trip lasts longer (db.TripLongestDuration).
+	arrivalLookAhead = db.TripLongestDuration
+
+	// RunGapMost is the longest gap between two times of one change that
+	// still make them one window; across a longer one they are rebuilt
+	// apart, so that a report holding two distant days does not rebuild all
+	// the days between.
+	RunGapMost = 48 * time.Hour
 )
+
+// pointsPageSize is how many positions are read at a time; a variable so that
+// a test can make it small.
+var pointsPageSize = 10000
 
 // Around rebuilds the trips that the times from and until can have changed.
 // A caller that stored positions, visits or motion activity between them
-// calls it in the same transaction, holding the person's location lock.
+// calls it in the same transaction, holding the person's location lock. The
+// window starts at the departure of the person's latest visit that departed
+// before from (or a day before from when there is none): a trip that began
+// before then and was not built, because the person's phone was off, ends in
+// the visit this change brings.
 func Around(tx db.Transaction, userId string, from, until time.Time) error {
-	return Window(tx, userId, from.Add(-paddingBefore), until.Add(paddingAfter))
+	windowStart := from.Add(-defaultLookBack)
+	departure, err := tx.GetLatestVisitDeparture(userId, from)
+	if err != nil {
+		return err
+	}
+	if departure != nil {
+		windowStart = *departure
+	}
+	return Window(tx, userId, windowStart, until.Add(lookAhead))
+}
+
+// AroundTimes rebuilds around each run of the times, a run being times with no
+// gap of more than RunGapMost between them.
+func AroundTimes(tx db.Transaction, userId string, times []time.Time) error {
+	if len(times) == 0 {
+		return nil
+	}
+	times = append([]time.Time(nil), times...)
+	sort.Slice(times, func(first, second int) bool { return times[first].Before(times[second]) })
+	runStart, runEnd := times[0], times[0]
+	for _, at := range times[1:] {
+		if at.Sub(runEnd) > RunGapMost {
+			if err := Around(tx, userId, runStart, runEnd); err != nil {
+				return err
+			}
+			runStart = at
+		}
+		runEnd = at
+	}
+	return Around(tx, userId, runStart, runEnd)
 }
 
 // Window rebuilds the trips that start at or after windowStart and before
@@ -47,32 +94,36 @@ func Window(tx db.Transaction, userId string, windowStart, windowEnd time.Time) 
 		return nil
 	}
 	readStart, readEnd := windowStart.Add(-readMargin), windowEnd.Add(readMargin)
-	stays, err := staysBetween(tx, userId, readStart, readEnd)
+	// A trip that starts near the window's end arrives later than it: read up
+	// to the first arrival after the window, or its last trip is deleted
+	// without being built again.
+	arrival, err := tx.GetFirstVisitArrival(userId, windowEnd, windowEnd.Add(arrivalLookAhead))
 	if err != nil {
 		return err
 	}
-	points, err := tx.ListLocationPoints(userId, readStart, readEnd, pointsMost)
+	if arrival != nil && arrival.Add(time.Second).After(readEnd) {
+		readEnd = arrival.Add(time.Second)
+	}
+	visits, err := visitsBetween(tx, userId, readStart, readEnd)
 	if err != nil {
 		return err
 	}
-	positions := make([]travel.Position, 0, len(points))
-	for _, point := range points {
-		positions = append(positions, travel.Position{
-			MeasuredAt: point.MeasuredAt, LatitudeDegrees: point.LatitudeDegrees, LongitudeDegrees: point.LongitudeDegrees, AccuracyMeters: point.AccuracyMeters,
-		})
+	positions, err := positionsBetween(tx, userId, readStart, readEnd)
+	if err != nil {
+		return err
 	}
 	motionActivities, err := tx.ListMotionActivities(userId, readStart, readEnd)
 	if err != nil {
 		return err
 	}
-	activities := make([]travel.Activity, 0, len(motionActivities))
+	activities := make([]travel.MotionActivity, 0, len(motionActivities))
 	for _, motionActivity := range motionActivities {
-		activities = append(activities, travel.Activity{
+		activities = append(activities, travel.MotionActivity{
 			StartedAt: motionActivity.StartedAt, ActivityKind: motionActivity.ActivityKind, ActivityConfidence: motionActivity.ActivityConfidence,
 		})
 	}
 	var trips []*models.Trip
-	for _, built := range travel.BuildTrips(stays, positions, activities) {
+	for _, built := range travel.BuildTrips(visits, positions, activities) {
 		if built.StartedAt.Before(windowStart) || !built.StartedAt.Before(windowEnd) {
 			continue
 		}
@@ -83,7 +134,7 @@ func Window(tx db.Transaction, userId string, windowStart, windowEnd time.Time) 
 		for _, leg := range built.Legs {
 			trip.Legs = append(trip.Legs, &models.TripLeg{
 				UserID: userId, StartedAt: leg.StartedAt, EndedAt: leg.EndedAt,
-				DetectedTravelMode: string(leg.DetectedMode), DetectionSource: leg.DetectionSource, DistanceMeters: leg.DistanceMeters,
+				DetectedTravelMode: string(leg.DetectedTravelMode), DetectionSource: leg.DetectionSource, DistanceMeters: leg.DistanceMeters,
 			})
 		}
 		trips = append(trips, trip)
@@ -91,23 +142,48 @@ func Window(tx db.Transaction, userId string, windowStart, windowEnd time.Time) 
 	return tx.ReplaceTrips(userId, windowStart, windowEnd, trips)
 }
 
-// staysBetween reads the person's visits that overlap the range, every page
-// of them.
-func staysBetween(tx db.Transaction, userId string, from, until time.Time) ([]travel.Stay, error) {
-	var stays []travel.Stay
-	for offset := 0; ; {
-		visits, nextOffset, err := tx.ListPlaceVisits(userId, db.PlaceVisitFilter{From: &from, Until: &until, Offset: offset, LimitCount: db.PlacePageMost})
+// positionsBetween reads every position measured in the range, a page at a
+// time, oldest first: none is left out for there being many.
+func positionsBetween(tx db.Transaction, userId string, from, until time.Time) ([]travel.Position, error) {
+	var positions []travel.Position
+	for pageFrom := from; pageFrom.Before(until); {
+		points, err := tx.ListLocationPoints(userId, pageFrom, until, pointsPageSize)
 		if err != nil {
 			return nil, err
 		}
-		for _, visit := range visits {
-			stays = append(stays, travel.Stay{
-				VisitID: visit.ID, ArrivedAt: visit.ArrivedAt, DepartedAt: visit.DepartedAt,
-				LatitudeDegrees: visit.LatitudeDegrees, LongitudeDegrees: visit.LongitudeDegrees,
+		for _, point := range points {
+			positions = append(positions, travel.Position{
+				MeasuredAt: point.MeasuredAt, LatitudeDegrees: point.LatitudeDegrees, LongitudeDegrees: point.LongitudeDegrees, AccuracyMeters: point.AccuracyMeters,
 			})
 		}
-		if nextOffset <= 0 || len(visits) == 0 {
-			return stays, nil
+		if len(points) < pointsPageSize {
+			break
+		}
+		// A microsecond, the precision times are stored with: a nanosecond
+		// would be rounded down to the last position, which would be read
+		// again.
+		pageFrom = points[len(points)-1].MeasuredAt.Add(time.Microsecond)
+	}
+	return positions, nil
+}
+
+// visitsBetween reads the person's visits that overlap the range, every page
+// of them.
+func visitsBetween(tx db.Transaction, userId string, from, until time.Time) ([]travel.Visit, error) {
+	var visits []travel.Visit
+	for offset := 0; ; {
+		placeVisits, nextOffset, err := tx.ListPlaceVisits(userId, db.PlaceVisitFilter{From: &from, Until: &until, Offset: offset, LimitCount: db.PlacePageMost})
+		if err != nil {
+			return nil, err
+		}
+		for _, placeVisit := range placeVisits {
+			visits = append(visits, travel.Visit{
+				VisitID: placeVisit.ID, ArrivedAt: placeVisit.ArrivedAt, DepartedAt: placeVisit.DepartedAt,
+				LatitudeDegrees: placeVisit.LatitudeDegrees, LongitudeDegrees: placeVisit.LongitudeDegrees,
+			})
+		}
+		if nextOffset <= 0 || len(placeVisits) == 0 {
+			return visits, nil
 		}
 		offset = nextOffset
 	}

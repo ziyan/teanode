@@ -268,8 +268,12 @@ public struct LocationBatch: Sendable, Equatable {
         )
     }
 
+    /// The call's variables; "activities" only when there are some, since a
+    /// server without the argument refuses a call that names it.
     public var variables: [String: JSONValue] {
-        ["points": .array(points.map(\.variables)), "visits": .array(visits.map(\.variables)), "activities": .array(activities.map(\.variables))]
+        var variables: [String: JSONValue] = ["points": .array(points.map(\.variables)), "visits": .array(visits.map(\.variables))]
+        if !activities.isEmpty { variables["activities"] = .array(activities.map(\.variables)) }
+        return variables
     }
 }
 
@@ -659,7 +663,8 @@ public enum LocationDays {
             guard let startedDate = pause.startedDate else { continue }
             pausesByDay[calendar.startOfDay(for: startedDate), default: []].append(pause)
         }
-        for trip in trips {
+        // A trip with no leg has nothing to draw.
+        for trip in trips where !trip.legs.isEmpty {
             guard let startedDate = trip.startedDate else { continue }
             tripsByDay[calendar.startOfDay(for: startedDate), default: []].append(trip)
         }
@@ -676,7 +681,7 @@ public enum LocationDays {
     /// The visits, pauses and trips of one stretch as a single timeline,
     /// newest first.
     public static func entries(visits: [PlaceVisit], pauses: [LocationPause], trips: [Trip] = []) -> [LocationTimelineEntry] {
-        (visits.map { LocationTimelineEntry.visit($0) } + pauses.map { .pause($0) } + trips.map { .trip($0) })
+        (visits.map { LocationTimelineEntry.visit($0) } + pauses.map { .pause($0) } + trips.filter { !$0.legs.isEmpty }.map { .trip($0) })
             .filter { $0.anchorDate != nil }
             .sorted { ($0.anchorDate ?? .distantPast) > ($1.anchorDate ?? .distantPast) }
     }

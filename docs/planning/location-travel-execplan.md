@@ -25,6 +25,7 @@ To see it working: report a day of positions, visits and motion activity for a p
 
 - Deciding who still needs past trips from the data alone does not work: a person's first visit always begins before their first trip, so they looked unfinished forever. A marker table (`trip_backfill`) replaced it.
 - The iPhone app's Location lists are a segmented picker in the drawer, not side-menu rows, so Travel is a row at the top of the Visits list.
+- `ListPlacesOfVisits` scanned into a struct with an embedded `placeModel` that had no `gorm:"embedded"` tag, so every place it returned was empty; no test read a place name through `ListTrips` until the viewer test did.
 - `activities` on `ReportLocation` is optional, so that phones running an older app keep reporting.
 
 ## Decision Log
@@ -35,6 +36,11 @@ To see it working: report a day of positions, visits and motion activity for a p
 - Decision: trips are seen by whoever sees the person's history (share level `history`), like the day's path; only the person corrects. Rationale: the person chose it.
 - Decision: `TripView` carries `fromPlace` and `toPlace`, read for a page in one query (`ListPlacesOfVisits`). Rationale: the iPhone and the command line name where a trip went.
 - Decision: trips and legs are derived data, rebuilt whenever the visits, positions or motion activity of their days change; the person's corrections are kept apart, as spans of time with a way of travel (`travel_mode_correction`), and applied to whatever legs they cover. Rationale: visits arrive late and out of order, so trips must be rebuildable at any time without losing what the person said.
+- Decision: a rebuild after a report starts at the departure of the person's latest visit that departed before the report's first time (a day before if none) and ends six hours after its last time. Rationale: a fixed day before missed a trip whose departure was longer ago, such as a phone that was off for 30 hours; a change can only affect trips that start at or before its time, except through visits the report carries, which are among the times. The window reads visits to the first arrival after it (at most 30 days) and all positions in pages. Date: 2026-10-26.
+- Decision: a report with a position, visit time or motion activity more than 400 days old is refused (the phone drops that entry), and a report is rebuilt around each run of its times with no gap over two days, not in one window from the earliest to the latest. Rationale: one time in 1970 would have rebuilt decades. Visits more than 30 days apart are no trip. Date: 2026-10-26.
+- Decision: a rebuild keeps the id of a stored trip that starts when the built one does, and of a leg that starts when a built leg does, and writes nothing for a trip that came out the same. Rationale: an id the person was shown must still work when they correct it after another report rebuilt the day. Date: 2026-10-26.
+- Decision: a new correction takes its span out of overlapping older corrections (shortening or splitting them) instead of deleting them. Rationale: correcting the second leg of an old correction that covered two legs reverted the first. Date: 2026-10-26.
+- Decision: `ListTrips` only looks at trips that started less than 30 days before the range. Rationale: no trip lasts that long, and the query otherwise scans all earlier history. Date: 2026-10-26.
 
 ## Outcomes & Retrospective
 

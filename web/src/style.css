@@ -19809,6 +19809,13 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   gap: var(--space-1);
 }
 
+/* The tag stays on the line of the leg, which truncates with an ellipsis as the
+   other rows do, and does not make the line taller than its text. */
+.location-trip-leg .tag {
+  padding-block: 0;
+  vertical-align: middle;
+}
+
 .location-trip-leg {
   display: flex;
   align-items: center;

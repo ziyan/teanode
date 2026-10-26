@@ -638,6 +638,17 @@ extension Documents {
           }
         }
         """
+    /// The same report for a batch with no motion activity: a server that
+    /// has no `activities` argument takes it, and only a batch that carries
+    /// activity needs the server to know the argument.
+    public static let reportLocationWithoutActivities = """
+        mutation ($agentPhoneId: String, $points: [ReportedPointInput!]!, $visits: [ReportedVisitInput!]!) {
+          ReportLocation(agentPhoneId: $agentPhoneId, points: $points, visits: $visits) {
+            newPointCount newVisitCount updatedVisitCount pausedPointCount pausedVisitCount
+            pause { id startedAt endedAt }
+          }
+        }
+        """
     public static let locationPauses = """
         query ($userId: String, $from: DateTime!, $until: DateTime!) {
           ListLocationPauses(userId: $userId, from: $from, until: $until) { \(locationPauseFields) }
@@ -707,7 +718,8 @@ extension Documents {
     /// The location documents, for the server's schema check.
     public static let locationDocuments: [String: String] = [
         "location": location, "locationVisits": locationVisits, "locationPlaces": locationPlaces, "nearbyPlaces": nearbyPlaces,
-        "searchPlaces": searchPlaces, "searchAddresses": searchAddresses, "locationPoints": locationPoints, "reportLocation": reportLocation, "savePlace": savePlace,
+        "searchPlaces": searchPlaces, "searchAddresses": searchAddresses, "locationPoints": locationPoints, "reportLocation": reportLocation,
+        "reportLocationWithoutActivities": reportLocationWithoutActivities, "savePlace": savePlace,
         "forgetPlace": forgetPlace, "checkIn": checkIn, "eraseLocationHistory": eraseLocationHistory, "locationPauses": locationPauses,
         "pauseLocation": pauseLocation, "resumeLocation": resumeLocation,
         "muteLocationNotifications": muteLocationNotifications, "unmuteLocationNotifications": unmuteLocationNotifications,
@@ -813,7 +825,8 @@ extension Connection {
         struct Answer: Decodable, Sendable { let ReportLocation: ReportLocationResult }
         var variables = batch.variables
         if let agentPhoneId { variables["agentPhoneId"] = .string(agentPhoneId) }
-        return try await execute(Documents.reportLocation, variables: variables, as: Answer.self).ReportLocation
+        let document = batch.activities.isEmpty ? Documents.reportLocationWithoutActivities : Documents.reportLocation
+        return try await execute(document, variables: variables, as: Answer.self).ReportLocation
     }
 
     /// Names, labels, moves or resizes a place; with no identifier in the

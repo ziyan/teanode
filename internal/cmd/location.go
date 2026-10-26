@@ -1434,13 +1434,13 @@ func tripSpanWords(trip *client.Trip) string {
 }
 
 // tripLegWords is the legs of a trip as "walk 0.6 km, car 11.8 km", marking a
-// way the person set.
+// way that was corrected, as the dashboard does.
 func tripLegWords(trip *client.Trip) string {
 	words := make([]string, 0, len(trip.Legs))
 	for _, leg := range trip.Legs {
 		each := leg.TravelMode + " " + kilometersWords(leg.DistanceMeters)
 		if leg.IsTravelModeCorrected {
-			each += " (set by you)"
+			each += " (corrected)"
 		}
 		words = append(words, each)
 	}
@@ -1547,7 +1547,7 @@ func runLocationTrips(ctx context.Context, command *cli.Command) error {
 			timeWords(time.Duration(trip.DurationSeconds) * time.Second), tripLegWords(trip), tripLegIDWords(trip),
 		})
 	}
-	if err := printTable([]string{"time", "from to", "distance", "duration", "legs", "leg ids"}, rows); err != nil {
+	if err := printTable([]string{"time", "route", "distance", "duration", "legs", "leg ids"}, rows); err != nil {
 		return err
 	}
 	noteNextPage(page.NextOffset, first)
@@ -1667,6 +1667,17 @@ func runLocationTravel(ctx context.Context, command *cli.Command) error {
 			headers = append(headers, mode)
 		}
 	}
+	// A way this command does not know is shown as "other", so the total is
+	// the sum of the columns.
+	isOtherUsed := false
+	for mode := range isModeUsed {
+		if !slices.Contains(travelModes, mode) {
+			isOtherUsed = true
+		}
+	}
+	if isOtherUsed {
+		headers = append(headers, "other")
+	}
 	headers = append(headers, "total")
 	rows := make([][]string, 0, len(periodStartDays))
 	for _, periodStartDay := range periodStartDays {
@@ -1679,8 +1690,21 @@ func runLocationTravel(ctx context.Context, command *cli.Command) error {
 			}
 			row = append(row, cell)
 		}
-		for _, meters := range distances[periodStartDay] {
+		otherMeters := 0.0
+		isOtherFound := false
+		for mode, meters := range distances[periodStartDay] {
 			totalMeters += meters
+			if !slices.Contains(travelModes, mode) {
+				otherMeters += meters
+				isOtherFound = true
+			}
+		}
+		if isOtherUsed {
+			cell := ""
+			if isOtherFound {
+				cell = kilometersWords(otherMeters)
+			}
+			row = append(row, cell)
 		}
 		rows = append(rows, append(row, kilometersWords(totalMeters)))
 	}

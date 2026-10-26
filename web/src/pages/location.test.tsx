@@ -176,6 +176,8 @@ function total(overrides: Partial<TravelTotal> = {}): TravelTotal {
 function answerWith(shown: {
   // The trips ListTrips answers with, and the totals ListTravelTotals does.
   trips?: Trip[]
+  // Answers the trips asked for, a page at a time, when there are several.
+  tripPageFor?: (variables: Record<string, unknown>) => { trips: Trip[]; nextOffset: number | null }
   travelTotals?: TravelTotal[]
   own?: Record<string, unknown> | null
   sharedViews?: Record<string, unknown>[]
@@ -215,7 +217,11 @@ function answerWith(shown: {
       if (!found) throw new APIError('api: not found')
       return { ReadPlace: found } as never
     }
-    if (document.includes('ListTrips(')) return { ListTrips: { trips: shown.trips ?? [], nextOffset: null } } as never
+    if (document.includes('ListTrips(')) {
+      if (shown.tripPageFor)
+        return { ListTrips: shown.tripPageFor((variables ?? {}) as Record<string, unknown>) } as never
+      return { ListTrips: { trips: shown.trips ?? [], nextOffset: null } } as never
+    }
     if (document.includes('ListTravelTotals(')) return { ListTravelTotals: shown.travelTotals ?? [] } as never
     if (document.includes('SetTripLegTravelMode(')) return { SetTripLegTravelMode: { id: 'leg-car' } } as never
     if (document.includes('ListLocationPoints')) return { ListLocationPoints: [] } as never
@@ -1772,6 +1778,92 @@ it('shows the trip between the two visits it joins, with each leg, its distance 
   expect(library.compareDocumentPosition(walk) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(walk.compareDocumentPosition(park) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(calls('ListTrips(')[0][1]).toMatchObject({ userId: null })
+})
+
+it('reads every page of trips, 200 at a time, and shows them all', async () => {
+  answerWith({
+    visits: [libraryVisit(), visit()],
+    tripPageFor: (variables) =>
+      variables.offset === 0
+        ? { trips: [trip()], nextOffset: 1 }
+        : {
+            trips: [
+              trip({
+                id: 'trip-two',
+                startedAt: '2030-03-05T12:10:00Z',
+                legs: [tripLeg({ id: 'leg-bike', travelMode: 'bike', detectedTravelMode: 'bike' })],
+              }),
+            ],
+            nextOffset: null,
+          },
+  })
+  renderAt('/location')
+
+  expect(await screen.findByText('Bike')).toBeTruthy()
+  expect(screen.getByText('Car')).toBeTruthy()
+  const asked = calls('ListTrips(').map((each) => each[1])
+  expect(asked).toHaveLength(2)
+  expect(asked[0]).toMatchObject({ offset: 0, limitCount: 200 })
+  expect(asked[1]).toMatchObject({ offset: 1, limitCount: 200 })
+})
+
+it('stops following the pages of trips after ten', async () => {
+  answerWith({
+    visits: [libraryVisit(), visit()],
+    tripPageFor: (variables) => ({ trips: [], nextOffset: (variables.offset as number) + 1 }),
+  })
+  renderAt('/location')
+
+  await waitFor(() => expect(calls('ListTrips(')).toHaveLength(10))
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  expect(calls('ListTrips(')).toHaveLength(10)
+})
+
+it('puts a pause above a trip that began before it between the same two visits', async () => {
+  answerWith({
+    visits: [
+      visit({
+        id: 'visit-late',
+        place: place({ id: 'place-late', placeName: 'Fixture Library' }),
+        arrivedAt: '2030-03-05T09:00:00Z',
+        departedAt: '2030-03-05T10:00:00Z',
+      }),
+      visit({ id: 'visit-early', arrivedAt: '2030-03-05T07:00:00Z', departedAt: '2030-03-05T08:00:00Z' }),
+    ],
+    trips: [trip({ startedAt: '2030-03-05T08:05:00Z', endedAt: '2030-03-05T08:55:00Z' })],
+    pauses: [{ id: 'pause-between', startedAt: '2030-03-05T08:20:00Z', endedAt: '2030-03-05T08:40:00Z' }],
+  })
+  renderAt('/location')
+
+  const paused = await screen.findByText('Paused')
+  const walk = await screen.findByText('Walk')
+  const library = screen.getByText('Fixture Library')
+  const park = screen.getAllByText('Fixture Park')[0]
+  const follows = (first: HTMLElement, second: HTMLElement) =>
+    Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING)
+  expect(follows(library, paused)).toBe(true)
+  expect(follows(paused, walk)).toBe(true)
+  expect(follows(walk, park)).toBe(true)
+})
+
+it('reads the trips again when the visits are read again', async () => {
+  answerWith({ visits: [libraryVisit(), visit()], trips: [trip()] })
+  const base = vi.mocked(graphql).getMockImplementation()
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('ListNearbyPlaces')) return { ListNearbyPlaces: [] } as never
+    if (document.includes('CheckIn')) return { CheckIn: { id: 'visit-new' } } as never
+    return base!(document, variables)
+  })
+  stubBrowserPosition()
+  renderAt('/location')
+
+  await screen.findByText('0.6 km · 8 min')
+  const before = calls('ListTrips(').length
+  fireEvent.click(screen.getByRole('button', { name: 'Check in' }))
+  const dialog = await screen.findByRole('alertdialog')
+  await within(dialog).findByText('Your browser places you within 15 m.')
+  fireEvent.click(within(dialog).getByRole('button', { name: /Check in here/ }))
+  await waitFor(() => expect(calls('ListTrips(').length).toBeGreaterThan(before))
 })
 
 it('corrects the way of travel of a leg and reads the trips again', async () => {

@@ -6758,7 +6758,7 @@ export const en = {
   'location.tabTravel': 'Travel',
   'location.travel': 'Travel',
   'location.personTravel': 'Travel of {name}',
-  'location.travelHint': 'How far was traveled by each way of travel, per period.',
+  'location.travelHint': 'Distance traveled by each way of travel, per period.',
   'location.travelPeriods': 'Period',
   'location.travelPeriodDay': 'Day',
   'location.travelPeriodWeek': 'Week',

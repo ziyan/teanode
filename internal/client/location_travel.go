@@ -77,7 +77,7 @@ const (
 }`
 )
 
-// ListTrips is a page of trips that started in the range, newest first, of the
+// ListTrips is a page of trips that overlap the range, newest first, of the
 // caller or, with a userId, of somebody who shares their history with them.
 func ListTrips(ctx context.Context, connection *Client, userId *string, from, until time.Time, offset, limitCount *int) (*TripPage, error) {
 	variables := map[string]any{"from": from.UTC().Format(time.RFC3339), "until": until.UTC().Format(time.RFC3339)}

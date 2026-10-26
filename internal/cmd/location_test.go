@@ -828,7 +828,7 @@ func TestLocationTripsListsTripsWithTheirLegs(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, want := range []string{"12.4 km", "walk 0.6 km, bus 11.8 km (set by you)", "walk leg1, bus leg2", "Maple Park to somewhere"} {
+	for _, want := range []string{"12.4 km", "walk 0.6 km, bus 11.8 km (corrected)", "walk leg1, bus leg2", "Maple Park to somewhere"} {
 		if !strings.Contains(output, want) {
 			test.Errorf("the table lacks %q: %q", want, output)
 		}
@@ -885,6 +885,21 @@ func TestLocationTravelListsDistancePerWay(test *testing.T) {
 	}
 	if _, err := runLocationCommand(test, server, "travel", "--person", "ben", "--json"); err != nil || called("ListTravelTotals")["period"] != "week" || called("ListTravelTotals")["userId"] != "u-ben" {
 		test.Errorf("week is the default: %v %v", called("ListTravelTotals"), err)
+	}
+}
+
+// A way this command does not know still gets a column, so the total of a row
+// is the sum of its columns.
+func TestLocationTravelShowsAnUnknownWayAsOther(test *testing.T) {
+	server, _ := locationServerAnswering(test, map[string]string{"ListTravelTotals": `[{"periodStartDay":"2026-10-12","travelMode":"walk","distanceMeters":1000,"durationSeconds":600,"legCount":1},
+{"periodStartDay":"2026-10-12","travelMode":"hoverboard","distanceMeters":2000,"durationSeconds":600,"legCount":1}]`})
+	output, err := runLocationCommand(test, server, "travel")
+	if err != nil {
+		test.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], "other") || !strings.Contains(lines[1], "1.0 km") || !strings.Contains(lines[1], "2.0 km") || !strings.Contains(lines[1], "3.0 km") {
+		test.Errorf("walk, other and the total of both: %q", output)
 	}
 }
 

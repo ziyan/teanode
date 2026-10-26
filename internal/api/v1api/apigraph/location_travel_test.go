@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ziyan/teanode/internal/models"
 )
 
 func activityInput(activityKind string, startedAt string) string {
@@ -158,4 +160,153 @@ func TestTravelRefusesUnknownKindsAndWays(t *testing.T) {
 		t.Errorf("the refusal names the ways: %q", refusal)
 	}
 	world.refused(t, world.ada, fmt.Sprintf(`query { ListTravelTotals(period: "fortnight", from: %q, until: %q) { travelMode } }`, at(-60), at(180)))
+}
+
+// threeVisitDay reports home, a stop and an office along one road, 2 and 3
+// kilometers apart: two trips.
+func threeVisitDay(t *testing.T, world *locationWorld, at func(minutes float64) string) {
+	t.Helper()
+	visits := strings.Join([]string{
+		visitInput("home", 40, -75, at(0), at(60)),
+		visitInput("stop", 40.02, -75, at(90), at(120)),
+		visitInput("office", 40.05, -75, at(150), ""),
+	}, ",")
+	world.report(t, world.ada, pointInput(40.01, -75, at(75))+","+pointInput(40.035, -75, at(135)), visits)
+}
+
+func tripsWithPlaces(t *testing.T, world *locationWorld, from, until string) []map[string]any {
+	t.Helper()
+	page := world.call(t, world.ada, fmt.Sprintf(`query { ListTrips(from: %q, until: %q) { trips { id startedAt fromPlace { id } toPlace { id } } } }`, from, until))["ListTrips"].(map[string]any)
+	trips := []map[string]any{}
+	for _, each := range page["trips"].([]any) {
+		trips = append(trips, each.(map[string]any))
+	}
+	return trips
+}
+
+// A person the trips are shared with sees the places at the ends as a list of
+// visits shows them, without the owner's own records of them.
+func TestTripPlacesAreReducedForSomeoneTheyAreSharedWith(t *testing.T) {
+	world := newLocationWorld(t)
+	base := time.Now().Add(-6 * time.Hour).UTC().Truncate(time.Second)
+	at := func(minutes float64) string {
+		return base.Add(time.Duration(minutes * float64(time.Minute))).Format(time.RFC3339)
+	}
+	travelDay(t, world, at)
+	world.call(t, world.ada, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "history") { id } }`, world.ben.ID))
+	query := `fromPlace { placeName radiusMeters createdAt } toPlace { placeName radiusMeters createdAt }`
+	read := func(user *models.User, argument string) map[string]any {
+		page := world.call(t, user, fmt.Sprintf(`query { ListTrips(%sfrom: %q, until: %q) { trips { %s } } }`, argument, at(-60), at(180), query))["ListTrips"].(map[string]any)
+		trips := page["trips"].([]any)
+		if len(trips) != 1 {
+			t.Fatalf("one trip: %v", trips)
+		}
+		return trips[0].(map[string]any)["fromPlace"].(map[string]any)
+	}
+	own := read(world.ada, "")
+	if own["radiusMeters"].(float64) <= 0 {
+		t.Fatalf("the owner sees the radius: %v", own)
+	}
+	viewed := read(world.ben, fmt.Sprintf(`userId: %q, `, world.ada.ID))
+	if viewed["placeName"] == "" || viewed["radiusMeters"].(float64) != 0 {
+		t.Errorf("a viewer sees the name and not the radius: %v", viewed)
+	}
+}
+
+// A leg id the person was shown still names the leg after another report
+// builds the day again.
+func TestALegIdSurvivesAnotherReportOfTheSameDay(t *testing.T) {
+	world := newLocationWorld(t)
+	base := time.Now().Add(-6 * time.Hour).UTC().Truncate(time.Second)
+	at := func(minutes float64) string {
+		return base.Add(time.Duration(minutes * float64(time.Minute))).Format(time.RFC3339)
+	}
+	travelDay(t, world, at)
+	trip := world.tripsOf(t, "ada", "", at(-60), at(180))[0]
+	shown := legsOf(trip)[1]["id"]
+
+	world.report(t, world.ada, pointInput(40.03, -75, at(81)), "")
+	trips := world.tripsOf(t, "ada", "", at(-60), at(180))
+	if len(trips) != 1 || trips[0]["id"] != trip["id"] || legsOf(trips[0])[1]["id"] != shown {
+		t.Fatalf("the trip and its legs keep their ids: %v", trips)
+	}
+	corrected := world.call(t, world.ada, fmt.Sprintf(`mutation { SetTripLegTravelMode(tripLegId: %q, travelMode: "bus") { travelMode } }`, shown))["SetTripLegTravelMode"].(map[string]any)
+	if corrected["travelMode"] != "bus" {
+		t.Errorf("the leg the person was shown is corrected: %v", corrected)
+	}
+}
+
+// Forgetting a place joins the visits beside it by a trip of their own.
+func TestForgettingAPlaceBuildsTheTripBetweenItsNeighbors(t *testing.T) {
+	world := newLocationWorld(t)
+	base := time.Now().Add(-6 * time.Hour).UTC().Truncate(time.Second)
+	at := func(minutes float64) string {
+		return base.Add(time.Duration(minutes * float64(time.Minute))).Format(time.RFC3339)
+	}
+	threeVisitDay(t, world, at)
+	trips := tripsWithPlaces(t, world, at(-60), at(300))
+	if len(trips) != 2 {
+		t.Fatalf("two trips: %v", trips)
+	}
+	// Newest first: the second trip ends at the office and begins at the stop.
+	stopId := trips[0]["fromPlace"].(map[string]any)["id"]
+	world.call(t, world.ada, fmt.Sprintf(`mutation { ForgetPlace(placeId: %q) }`, stopId))
+	trips = tripsWithPlaces(t, world, at(-60), at(300))
+	if len(trips) != 1 || trips[0]["fromPlace"] == nil || trips[0]["toPlace"] == nil {
+		t.Fatalf("one trip, from home to the office, with both places: %v", trips)
+	}
+}
+
+// Erasing the middle of a day joins the visits on both sides of it by a trip.
+func TestErasingTheMiddleOfADayBuildsTheTripAcrossIt(t *testing.T) {
+	world := newLocationWorld(t)
+	base := time.Now().Add(-6 * time.Hour).UTC().Truncate(time.Second)
+	at := func(minutes float64) string {
+		return base.Add(time.Duration(minutes * float64(time.Minute))).Format(time.RFC3339)
+	}
+	threeVisitDay(t, world, at)
+	world.call(t, world.ada, fmt.Sprintf(`mutation { EraseLocationHistory(from: %q, until: %q) { visitCount } }`, at(80), at(130)))
+	trips := tripsWithPlaces(t, world, at(-60), at(300))
+	if len(trips) != 1 || trips[0]["fromPlace"] == nil || trips[0]["toPlace"] == nil {
+		t.Fatalf("one trip across the erased visit: %v", trips)
+	}
+}
+
+// A time more than 400 days back is refused, so that one report cannot build
+// the trips of years.
+func TestAReportOfTimesLongAgoIsRefused(t *testing.T) {
+	world := newLocationWorld(t)
+	longAgo := time.Now().AddDate(-1, -2, 0).UTC().Format(time.RFC3339)
+	for name, mutation := range map[string]string{
+		"position": fmt.Sprintf(`mutation { ReportLocation(points: [%s], visits: []) { newPointCount } }`, pointInput(40, -75, "1970-01-02T00:00:00Z")),
+		"visit":    fmt.Sprintf(`mutation { ReportLocation(points: [], visits: [%s]) { newPointCount } }`, visitInput("old", 40, -75, longAgo, "")),
+		"activity": fmt.Sprintf(`mutation { ReportLocation(points: [], visits: [], activities: [%s]) { newPointCount } }`, activityInput("walking", longAgo)),
+	} {
+		if refusal := world.refused(t, world.ada, mutation); !strings.Contains(refusal, "400 days") {
+			t.Errorf("%s: the refusal says why: %q", name, refusal)
+		}
+	}
+}
+
+// A report of two days a long way apart builds the trips of both.
+func TestAReportOfTwoDistantDaysBuildsBothDaysTrips(t *testing.T) {
+	world := newLocationWorld(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	format := func(base time.Time, minutes float64) string {
+		return base.Add(time.Duration(minutes * float64(time.Minute))).Format(time.RFC3339)
+	}
+	oldBase, newBase := now.Add(-100*24*time.Hour), now.Add(-6*time.Hour)
+	visits := strings.Join([]string{
+		visitInput("old-home", 40, -75, format(oldBase, 0), format(oldBase, 60)),
+		visitInput("old-office", 40.05, -75, format(oldBase, 90), format(oldBase, 150)),
+		visitInput("new-home", 40, -75, format(newBase, 0), format(newBase, 60)),
+		visitInput("new-office", 40.05, -75, format(newBase, 90), ""),
+	}, ",")
+	world.report(t, world.ada, "", visits)
+	if trips := world.tripsOf(t, "ada", "", format(oldBase, -60), format(oldBase, 300)); len(trips) != 1 {
+		t.Errorf("the old day has its trip: %v", trips)
+	}
+	if trips := world.tripsOf(t, "ada", "", format(newBase, -60), format(newBase, 300)); len(trips) != 1 {
+		t.Errorf("the new day has its trip: %v", trips)
+	}
 }

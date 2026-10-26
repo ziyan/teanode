@@ -71,13 +71,37 @@ struct VisitReading: Sendable {
     }
 }
 
+/// ResumeOnce resumes a continuation the first time it is told to and ignores
+/// every later call, so that an answer and a timeout racing each other cannot
+/// resume it twice.
+private final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<[ReportedActivity]?, Never>?
+
+    init(_ continuation: CheckedContinuation<[ReportedActivity]?, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(returning activities: [ReportedActivity]?) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(returning: activities)
+    }
+}
+
 /// MotionActivityReader asks Core Motion what the person was doing, which iOS
 /// keeps for seven days. It is outside the recorder so that what Core Motion
 /// hands back, which is not safe to pass between threads, is made into plain
 /// values where it arrives.
 enum MotionActivityReader {
     /// iOS keeps this much motion activity.
-    static let lookbackSeconds = 7.0 * 86400
+    static let lookbackSeconds = 7.0 * 86400 - 600
+
+    /// How long a read waits for Core Motion before giving up, so that a
+    /// query it never answers does not hold up reporting.
+    static let readTimeoutSeconds = 10.0
 
     private nonisolated(unsafe) static let manager = CMMotionActivityManager()
 
@@ -92,12 +116,16 @@ enum MotionActivityReader {
     /// first read also shows iOS's question, when it has not been asked.
     static func read(from: Date, until: Date) async -> [ReportedActivity]? {
         await withCheckedContinuation { (continuation: CheckedContinuation<[ReportedActivity]?, Never>) in
+            let resumeOnce = ResumeOnce(continuation)
             manager.queryActivityStarting(from: from, to: until, to: .main) { activities, error in
                 guard error == nil else {
-                    continuation.resume(returning: nil)
+                    resumeOnce.resume(returning: nil)
                     return
                 }
-                continuation.resume(returning: (activities ?? []).map(reportedActivity))
+                resumeOnce.resume(returning: (activities ?? []).map(reportedActivity))
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + readTimeoutSeconds) {
+                resumeOnce.resume(returning: nil)
             }
         }
     }
@@ -315,17 +343,14 @@ final class LocationRecorder {
     private let defaults: UserDefaults
     private let outboxDirectory: URL?
 
-    /// Kept for each account (with the account key after it): when motion
-    /// activity was last read, so the next read starts there.
-    private static let lastActivityQueriedAtKeyPrefix = "locationLastActivityQueriedAt."
+    /// Kept for each account (with the account key after it): the newest
+    /// start of a motion activity queued, so the next read starts there and
+    /// leaves out what it already queued.
+    private static let lastActivityStartedAtKeyPrefix = "locationLastActivityStartedAt."
     /// How often motion activity is read when nothing forces it: a read is a
     /// query of what iOS already keeps, and the activities are told with the
     /// next report.
     private static let motionReadSeconds = 300.0
-    /// How far before the last read the next one starts, so an activity that
-    /// began before it and was still going is not missed. The outbox keeps
-    /// one of each start.
-    private static let motionOverlapSeconds = 3600.0
 
     private static let isRecordingOnKey = "locationIsRecordingOn"
     private static let hasAskedForAlwaysKey = "locationHasAskedForAlways"
@@ -469,7 +494,7 @@ final class LocationRecorder {
         }
         if let url = outboxURL(accountKey: accountKey) { try? FileManager.default.removeItem(at: url) }
         defaults.removeObject(forKey: LocationPauseTracker.defaultsKey(accountKey: accountKey))
-        defaults.removeObject(forKey: Self.lastActivityQueriedAtKeyPrefix + accountKey)
+        defaults.removeObject(forKey: Self.lastActivityStartedAtKeyPrefix + accountKey)
     }
 
     /// Stops sending, and waits for a batch on its way to be answered. Used
@@ -488,6 +513,12 @@ final class LocationRecorder {
         if isErased {
             outbox.discardUnsent(from: from, until: until)
             saveOutbox(isUrgent: true)
+            // An erase that reaches the present leaves nothing of the
+            // activity read so far to send again: reading goes on from here.
+            let doesEraseReachPresent = until.map { $0 >= Date() } ?? true
+            if doesEraseReachPresent, let accountKey = outbox.accountKey {
+                defaults.set(Date(), forKey: Self.lastActivityStartedAtKeyPrefix + accountKey)
+            }
         }
         Task { await flush(isForced: true) }
     }
@@ -1117,14 +1148,14 @@ final class LocationRecorder {
             next.accountKey = accountKey
         }
         outbox = next
-        unsentCount = next.points.count + next.visits.count
+        unsentCount = next.points.count + next.visits.count + next.activities.count
         if isOutboxUnwritten { writeOutbox() }
     }
 
     /// Notes that the outbox changed, and writes it: at once when the change
     /// is urgent (a visit), else at most once a second.
     private func saveOutbox(isUrgent: Bool) {
-        unsentCount = outbox.points.count + outbox.visits.count
+        unsentCount = outbox.points.count + outbox.visits.count + outbox.activities.count
         isOutboxUnwritten = true
         if isUrgent || Date().timeIntervalSince(outboxWrittenAt) >= Self.outboxWriteSeconds {
             writeOutbox()
@@ -1237,14 +1268,17 @@ final class LocationRecorder {
         let now = Date()
         motionReadAt = now
         let oldest = now.addingTimeInterval(-MotionActivityReader.lookbackSeconds)
-        let defaultsKey = Self.lastActivityQueriedAtKeyPrefix + accountKey
-        let lastQueriedAt = defaults.object(forKey: defaultsKey) as? Date
-        let from = max(oldest, lastQueriedAt.map { $0.addingTimeInterval(-Self.motionOverlapSeconds) } ?? oldest)
+        let defaultsKey = Self.lastActivityStartedAtKeyPrefix + accountKey
+        let lastStartedAt = defaults.object(forKey: defaultsKey) as? Date
+        let from = max(oldest, lastStartedAt ?? oldest)
         guard let activities = await MotionActivityReader.read(from: from, until: now) else { return }
         // The account was changed while iOS answered: its activity is not the new account's.
         guard outbox.accountKey == accountKey else { return }
-        outbox.addActivities(activities.filter { pauseTracker.isRecordable(pointMeasuredAt: $0.startedAt) })
-        defaults.set(now, forKey: defaultsKey)
+        // An activity is known by its start, so the one that starts at the
+        // newest start already queued is the same one, read again.
+        let unseen = activities.filter { activity in lastStartedAt.map { activity.startedAt > $0 } ?? true }
+        outbox.addActivities(unseen.filter { pauseTracker.isRecordable(pointMeasuredAt: $0.startedAt) })
+        if let newestStartedAt = unseen.map(\.startedAt).max() { defaults.set(newestStartedAt, forKey: defaultsKey) }
         saveOutbox(isUrgent: false)
     }
 

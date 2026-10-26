@@ -6,13 +6,14 @@ import TeaNodeKit
 // their own trips), and the Travel screen that adds the distance up by day,
 // week, month and year.
 
-/// The trips that began in a range, newest first, read a page at a time.
+/// The trips that began in a range, newest first, read a page at a time until
+/// the server has no more, at most twenty pages.
 /// Nil when they could not be read (a server that has no trips, or no
 /// connection): a list then shows no trips and says nothing, since the visits
 /// it lists are the point.
 func fetchTrips(connection: Connection, userId: String? = nil, from: Date, until: Date) async -> [Trip]? {
     let pageSize = 100
-    let pageCountMost = 10
+    let pageCountMost = 20
     var trips: [Trip] = []
     var offset = 0
     for _ in 0..<pageCountMost {
@@ -91,16 +92,19 @@ struct LocationTripRow: View {
     let correctLeg: ((TripLeg, TravelMode?) -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(trip.legs) { leg in
-                if let correctLeg {
-                    LocationTripLegMenu(leg: leg, correctLeg: correctLeg)
-                } else {
-                    LocationTripLegLine(leg: leg, isMenu: false)
+        // A trip with no leg has nothing to draw.
+        if !trip.legs.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(trip.legs) { leg in
+                    if let correctLeg {
+                        LocationTripLegMenu(leg: leg, correctLeg: correctLeg)
+                    } else {
+                        LocationTripLegLine(leg: leg, isMenu: false)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -150,19 +154,18 @@ struct LocationTripLegMenu: View {
 
     var body: some View {
         Menu {
-            Picker(
-                String(localized: "travel-way-of-travel", defaultValue: "Way of travel"),
-                selection: Binding<TravelMode?>(
-                    get: { leg.mode },
-                    set: { mode in
-                        if let mode { correctLeg(leg, mode) }
-                    })
-            ) {
-                ForEach(TravelMode.allCases) { mode in
-                    Label(mode.title, systemImage: mode.symbolName).tag(Optional(mode))
+            ForEach(TravelMode.allCases) { mode in
+                Button {
+                    correctLeg(leg, mode)
+                } label: {
+                    if mode == leg.mode {
+                        Label(mode.title, systemImage: "checkmark")
+                    } else {
+                        Label(mode.title, systemImage: mode.symbolName)
+                    }
                 }
             }
-            .pickerStyle(.inline)
+            Divider()
             Button(String(localized: "travel-as-detected", defaultValue: "As detected"), systemImage: "arrow.uturn.backward") {
                 correctLeg(leg, nil)
             }
@@ -189,8 +192,26 @@ struct LocationTravelScreen: View {
     /// How many pages back from the one with the current period.
     @State private var pageBack = 0
     @State private var periods: [TravelPeriod] = []
+    /// The kind the periods were read for, so that they are never drawn under
+    /// the labels of another.
+    @State private var loadedPeriodKind = TravelPeriodKind.week
+    /// The pages back that came back with no period, for the current kind.
+    @State private var emptyPageBacks: Set<Int> = []
     @State private var isLoading = true
     @State private var loadFailedText: String?
+
+    /// How many pages back the person can go.
+    private static let pageBackMost = 20
+
+    /// The periods to draw: none while those read are for another kind.
+    private var shownPeriods: [TravelPeriod] { loadedPeriodKind == periodKind ? periods : [] }
+
+    /// Earlier is offered until twenty pages back, or until this page and the
+    /// one after it (the one the person came from) both came back empty.
+    private var isEarlierOffered: Bool {
+        guard pageBack < Self.pageBackMost else { return false }
+        return !(emptyPageBacks.contains(pageBack) && emptyPageBacks.contains(pageBack - 1))
+    }
 
     private struct Page: Equatable {
         let periodKind: TravelPeriodKind
@@ -213,10 +234,12 @@ struct LocationTravelScreen: View {
                         .labelsHidden()
                     }
                     Section {
-                        Button(String(localized: "travel-earlier", defaultValue: "Earlier"), systemImage: "chevron.left") {
-                            pageBack += 1
+                        if isEarlierOffered {
+                            Button(String(localized: "travel-earlier", defaultValue: "Earlier"), systemImage: "chevron.left") {
+                                pageBack += 1
+                            }
+                            .actionColor()
                         }
-                        .actionColor()
                         if pageBack > 0 {
                             Button(String(localized: "travel-later", defaultValue: "Later"), systemImage: "chevron.right") {
                                 pageBack -= 1
@@ -225,15 +248,15 @@ struct LocationTravelScreen: View {
                         }
                     }
                     Section {
-                        ForEach(periods) { period in
-                            LocationTravelPeriodRow(period: period, periodKind: periodKind)
+                        ForEach(shownPeriods) { period in
+                            LocationTravelPeriodRow(period: period, periodKind: loadedPeriodKind)
                         }
                     }
                 }
                 .overlay {
-                    if isLoading && periods.isEmpty {
+                    if isLoading && shownPeriods.isEmpty {
                         ProgressView()
-                    } else if periods.isEmpty {
+                    } else if shownPeriods.isEmpty {
                         ContentUnavailableView(
                             "No travel here", systemImage: "figure.walk",
                             description: Text("Trips between visits show up here once they are recorded."))
@@ -244,23 +267,36 @@ struct LocationTravelScreen: View {
         .navigationTitle("Travel")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: Page(periodKind: periodKind, pageBack: pageBack)) { await load() }
-        .onChange(of: periodKind) { pageBack = 0 }
+        .onChange(of: periodKind) {
+            periods = []
+            emptyPageBacks = []
+            pageBack = 0
+        }
     }
 
     private func load() async {
         let requested = Page(periodKind: periodKind, pageBack: pageBack)
         let range = requested.periodKind.pageRange(pageBack: requested.pageBack)
         isLoading = true
-        defer { isLoading = false }
         do {
             let totals = try await connection.travelTotals(userId: userId, period: requested.periodKind, from: range.from, until: range.until)
-            // Another page was chosen while this was read.
-            guard requested == Page(periodKind: periodKind, pageBack: pageBack) else { return }
-            periods = TravelPeriods.group(totals)
+            // Another page was chosen while this was read: that load is the
+            // one that finishes loading.
+            guard !Task.isCancelled, requested == Page(periodKind: periodKind, pageBack: pageBack) else { return }
+            let read = TravelPeriods.group(totals)
+            periods = read
+            loadedPeriodKind = requested.periodKind
+            if read.isEmpty {
+                emptyPageBacks.insert(requested.pageBack)
+            } else {
+                emptyPageBacks.remove(requested.pageBack)
+            }
             loadFailedText = nil
+            isLoading = false
         } catch {
             guard !Task.isCancelled, requested == Page(periodKind: periodKind, pageBack: pageBack) else { return }
             loadFailedText = error.loadProblemText
+            isLoading = false
         }
     }
 }

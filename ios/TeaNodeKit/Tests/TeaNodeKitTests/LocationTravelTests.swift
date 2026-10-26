@@ -173,6 +173,17 @@ final class LocationTravelTests: XCTestCase {
         XCTAssertTrue(Documents.reportLocation.contains("activities: $activities"))
     }
 
+    func testABatchWithoutActivitiesSendsNoActivitiesVariableOrArgument() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"ReportLocation":{"newPointCount":0,"newVisitCount":0,"updatedVisitCount":0}}}"#)
+        let batch = LocationBatch(points: [], visits: [])
+        XCTAssertNil(batch.variables["activities"])
+        XCTAssertFalse(Documents.reportLocationWithoutActivities.contains("activities"))
+        _ = try await connection.reportLocation(batch)
+        XCTAssertNil(try sentVariables(fake.sent[0])["activities"])
+        let body = String(decoding: fake.sent[0].httpBody ?? Data(), as: UTF8.self)
+        XCTAssertFalse(body.contains("activities"))
+    }
+
     // MARK: The outbox
 
     func testAnActivityIsQueuedOncePerStartAndKeptInOrder() {

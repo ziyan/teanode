@@ -160,11 +160,16 @@ func (self *graph) ListTrips(ctx context.Context, arguments ListTripsArguments) 
 	page := &TripPageView{Trips: make([]*TripView, 0, len(trips)), NextOffset: nextOffset}
 	for _, trip := range trips {
 		view := describeTrip(trip)
+		// Anybody but the owner sees the reduced place, as in a list of visits.
+		describe := describePlaceForViewer
+		if reach.ShareLevel == models.LocationShareLevelOwner {
+			describe = describePlace
+		}
 		if place, ok := places[trip.FromVisitID]; ok {
-			view.FromPlace = describePlace(place)
+			view.FromPlace = describe(place)
 		}
 		if place, ok := places[trip.ToVisitID]; ok {
-			view.ToPlace = describePlace(place)
+			view.ToPlace = describe(place)
 		}
 		page.Trips = append(page.Trips, view)
 	}
@@ -179,7 +184,7 @@ func (self *graph) SetTripLegTravelMode(ctx context.Context, arguments SetTripLe
 	var travelMode *string
 	if arguments.TravelMode != nil && strings.TrimSpace(*arguments.TravelMode) != "" {
 		mode := strings.ToLower(strings.TrimSpace(*arguments.TravelMode))
-		if !travel.IsMode(mode) {
+		if !travel.IsTravelMode(mode) {
 			return nil, fmt.Errorf("%w: a way of travel is one of walk, run, bike, car, bus, train, boat, plane", api.ErrInvalidArguments)
 		}
 		travelMode = &mode

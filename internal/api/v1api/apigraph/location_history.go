@@ -602,6 +602,12 @@ const (
 	// a phone's clock is not exactly this one's, but a day ahead is a bug.
 	reportFutureMost = 24 * time.Hour
 
+	// reportPastMost is how far behind the server's clock a time may be. A
+	// phone that was off for a year still sends its last readings, but a
+	// time decades back is a bug, and the trips of every day since would be
+	// built again for it.
+	reportPastMost = 400 * 24 * time.Hour
+
 	// clientVisitKeyLongest bounds the key a phone gives a visit.
 	clientVisitKeyLongest = 128
 
@@ -1508,7 +1514,7 @@ func validateReport(arguments ReportLocationArguments, now time.Time) error {
 	if len(arguments.Visits) > reportVisitsMost {
 		return fmt.Errorf("%w: send at most %d visits at a time", api.ErrInvalidArguments, reportVisitsMost)
 	}
-	latest := now.Add(reportFutureMost)
+	latest, earliest := now.Add(reportFutureMost), now.Add(-reportPastMost)
 	for index, point := range arguments.Points {
 		switch {
 		case !place.IsOnEarth(point.LatitudeDegrees, point.LongitudeDegrees):
@@ -1519,6 +1525,8 @@ func validateReport(arguments ReportLocationArguments, now time.Time) error {
 			return fmt.Errorf("%w: position %d has no time", api.ErrInvalidArguments, index+1)
 		case point.MeasuredAt.After(latest):
 			return fmt.Errorf("%w: position %d is measured more than a day in the future", api.ErrInvalidArguments, index+1)
+		case point.MeasuredAt.Before(earliest):
+			return fmt.Errorf("%w: position %d is measured more than 400 days ago", api.ErrInvalidArguments, index+1)
 		}
 	}
 	if len(arguments.Activities) > reportActivitiesMost {
@@ -1530,6 +1538,8 @@ func validateReport(arguments ReportLocationArguments, now time.Time) error {
 			return fmt.Errorf("%w: activity %d has no time", api.ErrInvalidArguments, index+1)
 		case activity.StartedAt.After(latest):
 			return fmt.Errorf("%w: activity %d starts more than a day in the future", api.ErrInvalidArguments, index+1)
+		case activity.StartedAt.Before(earliest):
+			return fmt.Errorf("%w: activity %d starts more than 400 days ago", api.ErrInvalidArguments, index+1)
 		case !travel.IsActivityKind(activity.ActivityKind):
 			return fmt.Errorf("%w: activity %d has the kind %q; one of stationary, walking, running, cycling, automotive, unknown", api.ErrInvalidArguments, index+1, activity.ActivityKind)
 		case !travel.IsActivityConfidence(activity.ActivityConfidence):
@@ -1549,6 +1559,8 @@ func validateReport(arguments ReportLocationArguments, now time.Time) error {
 			return fmt.Errorf("%w: visit %d has neither an arrival nor a departure", api.ErrInvalidArguments, index+1)
 		case visit.ArrivedAt != nil && visit.ArrivedAt.After(latest), visit.DepartedAt != nil && visit.DepartedAt.After(latest):
 			return fmt.Errorf("%w: visit %d is more than a day in the future", api.ErrInvalidArguments, index+1)
+		case visit.ArrivedAt != nil && visit.ArrivedAt.Before(earliest), visit.DepartedAt != nil && visit.DepartedAt.Before(earliest):
+			return fmt.Errorf("%w: visit %d is more than 400 days ago", api.ErrInvalidArguments, index+1)
 		case visit.ArrivedAt != nil && visit.DepartedAt != nil && visit.DepartedAt.Before(*visit.ArrivedAt):
 			return fmt.Errorf("%w: visit %d departs before it arrives", api.ErrInvalidArguments, index+1)
 		}
@@ -1746,13 +1758,12 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 	if err := tellDeparturesWhenTheyEnded(tx, user.ID, notices); err != nil {
 		return nil, err
 	}
-	// The trips of the days the report touched, from the arrival of a visit
-	// it completed, are built again from what is stored now.
-	if from, until, hasTimes := reportRange(arguments); hasTimes && isChanged {
-		if storedArrivedAt != nil && storedArrivedAt.Before(from) {
-			from = *storedArrivedAt
-		}
-		if err := rebuild.Around(tx, user.ID, from, until); err != nil {
+	// The trips around each run of the times the report touched, from the
+	// arrival of a visit it completed, are built again from what is stored
+	// now. A run is times with no gap of over two days: a report holding two
+	// distant days does not rebuild the days between.
+	if times := reportTimes(arguments, storedArrivedAt); len(times) > 0 && isChanged {
+		if err := rebuild.AroundTimes(tx, user.ID, times); err != nil {
 			return nil, locationFailure(err)
 		}
 	}
@@ -1814,6 +1825,29 @@ func reportedVisitRange(reported []ReportedVisit) (time.Time, time.Time) {
 
 // reportRange is the earliest and the latest time the positions and the
 // visits of a report give, and whether it gives any.
+// reportTimes are the times a report gives: those of its positions, motion
+// activity and visits, and the arrival of a visit it completed as stored.
+func reportTimes(arguments ReportLocationArguments, storedArrivedAt *time.Time) []time.Time {
+	times := make([]time.Time, 0, len(arguments.Points)+len(arguments.Activities)+2*len(arguments.Visits)+1)
+	for _, point := range arguments.Points {
+		times = append(times, point.MeasuredAt)
+	}
+	for _, activity := range arguments.Activities {
+		times = append(times, activity.StartedAt)
+	}
+	for _, visit := range arguments.Visits {
+		for _, at := range []*time.Time{visit.ArrivedAt, visit.DepartedAt} {
+			if at != nil {
+				times = append(times, *at)
+			}
+		}
+	}
+	if storedArrivedAt != nil {
+		times = append(times, *storedArrivedAt)
+	}
+	return times
+}
+
 func reportRange(arguments ReportLocationArguments) (time.Time, time.Time, bool) {
 	from, until := reportedVisitRange(arguments.Visits)
 	times := make([]time.Time, 0, len(arguments.Points)+len(arguments.Activities))
@@ -2310,12 +2344,38 @@ func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) 
 	return describePlace(saved), nil
 }
 
+// rebuildTripsMissingVisit builds again around the trips that lost a visit at
+// either end (a place was forgotten, or visits were erased): the visits on
+// both sides of what was lost get the trip between them, if there was one.
+func rebuildTripsMissingVisit(tx db.Transaction, userId string) error {
+	trips, err := tx.ListTripsMissingVisit(userId, db.TripsMissingVisitMost)
+	if err != nil {
+		return err
+	}
+	times := make([]time.Time, 0, 2*len(trips))
+	for _, trip := range trips {
+		times = append(times, trip.StartedAt, trip.EndedAt)
+	}
+	return rebuild.AroundTimes(tx, userId, times)
+}
+
 func (self *graph) ForgetPlace(ctx context.Context, arguments ForgetPlaceArguments) (bool, error) {
 	principal, err := self.requireLocationPerson(ctx)
 	if err != nil {
 		return false, err
 	}
-	if err := self.transaction(ctx).ForgetPlace(principal.User.ID, strings.TrimSpace(arguments.PlaceID)); err != nil {
+	tx := self.transaction(ctx)
+	userId := principal.User.ID
+	// One change of a person's location at a time, as in ReportLocation.
+	if err := tx.LockLocation(userId); err != nil {
+		return false, err
+	}
+	if err := tx.ForgetPlace(userId, strings.TrimSpace(arguments.PlaceID)); err != nil {
+		return false, locationFailure(err)
+	}
+	// The trips into and out of the visits that went are left without a
+	// visit; the visits beside them are joined by a trip of their own.
+	if err := rebuildTripsMissingVisit(tx, userId); err != nil {
 		return false, locationFailure(err)
 	}
 	return true, nil
@@ -2494,8 +2554,28 @@ func (self *graph) EraseLocationHistory(ctx context.Context, arguments EraseLoca
 		return nil, fmt.Errorf("%w: the range must start before it ends", api.ErrInvalidArguments)
 	}
 	tx := self.transaction(ctx)
+	// One change of a person's location at a time, as in ReportLocation.
+	if err := tx.LockLocation(principal.User.ID); err != nil {
+		return nil, err
+	}
 	pointCount, visitCount, placeCount, err := tx.EraseLocationHistory(principal.User.ID, arguments.From, arguments.Until)
 	if err != nil {
+		return nil, locationFailure(err)
+	}
+	// The trips that ran into or out of what was erased are gone; the visits
+	// beside the range may now be joined by a trip across it, and the trips
+	// left without a visit are built again.
+	var edges []time.Time
+	if arguments.From != nil {
+		edges = append(edges, *arguments.From)
+	}
+	if arguments.Until != nil {
+		edges = append(edges, *arguments.Until)
+	}
+	if err := rebuild.AroundTimes(tx, principal.User.ID, edges); err != nil {
+		return nil, locationFailure(err)
+	}
+	if err := rebuildTripsMissingVisit(tx, principal.User.ID); err != nil {
 		return nil, locationFailure(err)
 	}
 	// The people following this person on a map are told, so that a position

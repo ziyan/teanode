@@ -113,11 +113,11 @@ func TestReplacingTripsReplacesOnlyItsWindow(t *testing.T) {
 		if len(after) != 3 || after[0].ID != before[0].ID || after[2].ID != before[2].ID {
 			t.Fatalf("the first and last trips are untouched: %+v", after)
 		}
-		if after[1].ID == before[1].ID || len(after[1].Legs) != 2 || after[1].Legs[0].TravelMode != "walk" || after[1].Legs[1].TravelMode != "bike" {
-			t.Fatalf("the middle trip is the new one with its two legs: %+v", after[1])
+		if after[1].ID != before[1].ID || len(after[1].Legs) != 2 || after[1].Legs[0].TravelMode != "walk" || after[1].Legs[1].TravelMode != "bike" {
+			t.Fatalf("the middle trip keeps its id and has its two legs: %+v", after[1])
 		}
-		if old, err := tx.GetTripLeg(userId, before[1].Legs[0].ID); err != nil || old != nil {
-			t.Fatalf("the replaced leg is gone: %+v %v", old, err)
+		if old, err := tx.GetTripLeg(userId, before[1].Legs[0].ID); err != nil || old == nil || old.TravelMode != "walk" {
+			t.Fatalf("the leg that starts together is the new walk: %+v %v", old, err)
 		}
 		if others := everything(otherUserId); len(others) != 1 {
 			t.Fatalf("somebody else's trip stays: %+v", others)
@@ -201,9 +201,9 @@ func TestACorrectionCoveringHalfALegDecidesItsTravelMode(t *testing.T) {
 	})
 }
 
-// Correcting a span replaces every correction it overlaps, and nil clears
-// them and adds nothing.
-func TestCorrectingASpanReplacesOverlapsAndNilClears(t *testing.T) {
+// Correcting a span takes it out of the corrections it overlaps, and nil
+// clears the span and adds nothing.
+func TestCorrectingASpanTakesItOutOfOverlapsAndNilClears(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
 	userIdForCount := ""
@@ -250,13 +250,14 @@ func TestCorrectingASpanReplacesOverlapsAndNilClears(t *testing.T) {
 		set(0, 10, &train)
 		set(10, 20, &boat)
 		equal(modes(), "train", "boat", "car")
-		// A span over both replaces both, and covers half of each leg.
+		// A span over the end of one and the start of the next covers most of
+		// each leg.
 		bus := "bus"
-		set(5, 15, &bus)
+		set(4, 16, &bus)
 		equal(modes(), "bus", "bus", "car")
 		set(0, 30, &bus)
 		equal(modes(), "bus", "bus", "bus")
-		// Clearing a span takes away every correction it overlaps.
+		// Clearing a span takes away the corrections inside it.
 		set(0, 30, nil)
 		equal(modes(), "car", "car", "car")
 
@@ -357,6 +358,27 @@ func TestTravelTotalsGroupByPeriodInTheTravelersZone(t *testing.T) {
 		found, err := tx.ListTravelTotals(userId, zone, "day", from, until)
 		if err != nil || len(found) < 3 || found[0].PeriodStartDay != "2026-03-05" || found[0].TravelMode != "car" || found[1].TravelMode != "bus" {
 			t.Fatalf("ordered newest first, then car before bus: %+v %v", found, err)
+		}
+
+		// A caller in another zone asks from its own midnight, which is the
+		// afternoon before here: the range is widened to whole days here, so
+		// the day holds all of its legs.
+		tokyo, err := time.LoadLocation("Asia/Tokyo")
+		if err != nil {
+			t.Skipf("no time zone data: %s", err)
+		}
+		widened, err := tx.ListTravelTotals(userId, zone, "day", time.Date(2026, time.March, 5, 0, 0, 0, 0, tokyo), time.Date(2026, time.March, 6, 0, 0, 0, 0, tokyo))
+		if err != nil {
+			t.Fatalf("ListTravelTotals from another zone: %s", err)
+		}
+		widenedDistance := map[string]float64{}
+		for _, total := range widened {
+			widenedDistance[total.PeriodStartDay+" "+total.TravelMode] += total.DistanceMeters
+		}
+		// Tokyo's day runs from 07:00 to 07:00 here, so it touches the 4th and
+		// the 5th, and the bus at 09:00 on the 5th counts.
+		if widenedDistance["2026-03-04 car"] != 1000 || widenedDistance["2026-03-05 bus"] != 500 {
+			t.Errorf("the days the range touches are whole: %v", widenedDistance)
 		}
 
 		// Only legs that started inside the range count.
