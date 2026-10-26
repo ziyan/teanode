@@ -483,7 +483,9 @@
         /// part way through a library, `photos-backup-waiting` with files
         /// waiting for the network, and `photos-backup-background` with a long
         /// queue the system is sending with the app closed, `photos-backup-paused`
-        /// with backup paused by the person; the engine takes its invented counts from
+        /// with backup paused by the person, `photos-backup-refused` with a few files that
+        /// could not be backed up and `photos-backup-refused-files` the list of them; the
+        /// engine takes its invented counts from
         /// this name (PhotoBackupEngine.applyDemo), so no server is asked.
         static var screen: String? {
             let arguments = ProcessInfo.processInfo.arguments

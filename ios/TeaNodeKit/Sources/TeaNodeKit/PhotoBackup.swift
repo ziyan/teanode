@@ -278,7 +278,7 @@ public enum PhotoBackupPlanner {
     /// server refused too often is left alone.
     static func needsUpload(_ role: PhotoBackupFileRole, of item: PhotoBackupItem, record: PhotoBackupRecord?) -> Bool {
         guard let state = record?.roles[role.rawValue] else { return true }
-        if state.refusalCount >= maximumRefusalCount { return false }
+        if state.skippedAt != nil || state.refusalCount >= maximumRefusalCount { return false }
         if !state.isOnServer { return true }
         if role == .edited, let modified = item.modificationDate, let sent = state.assetModificationDate, modified.timeIntervalSince(sent) > 1 {
             return true
@@ -378,10 +378,15 @@ public struct PhotoBackupRoleRecord: Codable, Equatable, Sendable {
     /// The upload the server holds a part of this file in, while there is one.
     /// Nil in an index written before uploads could be continued.
     public var partialUpload: PhotoBackupPartialUpload?
+    /// When the person chose to stop trying a file that could not be backed
+    /// up: it is no longer sent, counted as a failure or tried again by "Back
+    /// up now", until they ask for it again. Nil for every other file, and in
+    /// an index written before files could be skipped.
+    public var skippedAt: Date?
 
     public init(
         isOnServer: Bool = false, serverPhotoId: String? = nil, assetModificationDate: Date? = nil, refusalCount: Int = 0,
-        refusalFailure: PhotoBackupFailure? = nil, partialUpload: PhotoBackupPartialUpload? = nil
+        refusalFailure: PhotoBackupFailure? = nil, partialUpload: PhotoBackupPartialUpload? = nil, skippedAt: Date? = nil
     ) {
         self.isOnServer = isOnServer
         self.serverPhotoId = serverPhotoId
@@ -389,7 +394,42 @@ public struct PhotoBackupRoleRecord: Codable, Equatable, Sendable {
         self.refusalCount = refusalCount
         self.refusalFailure = refusalFailure
         self.partialUpload = partialUpload
+        self.skippedAt = skippedAt
     }
+
+    /// Backup gave up on the file and the person has not skipped it: it is
+    /// one of the files that could not be backed up.
+    var isRefused: Bool { skippedAt == nil && refusalCount >= PhotoBackupPlanner.maximumRefusalCount }
+}
+
+/// PhotoBackupRefusedFile is one file backup gave up on, as the list of them
+/// shows it: which photo and which of its files, why, and whether the person
+/// skipped it.
+public struct PhotoBackupRefusedFile: Identifiable, Equatable, Sendable {
+    public let localIdentifier: String
+    public let clientPhotoId: String
+    public let role: PhotoBackupFileRole
+    /// Why it did not go up the last time it was tried; nil when no reason was kept.
+    public let failure: PhotoBackupFailure?
+    /// How many times it was tried and did not go up.
+    public let refusalCount: Int
+    /// When the person chose to stop trying it; nil while it counts as a failure.
+    public let skippedAt: Date?
+
+    public init(
+        localIdentifier: String, clientPhotoId: String, role: PhotoBackupFileRole, failure: PhotoBackupFailure?, refusalCount: Int,
+        skippedAt: Date? = nil
+    ) {
+        self.localIdentifier = localIdentifier
+        self.clientPhotoId = clientPhotoId
+        self.role = role
+        self.failure = failure
+        self.refusalCount = refusalCount
+        self.skippedAt = skippedAt
+    }
+
+    public var id: String { PhotoBackupUpload.key(localIdentifier: localIdentifier, role: role) }
+    public var isSkipped: Bool { skippedAt != nil }
 }
 
 /// PhotoBackupRecord is what the index knows of one item of the library.
@@ -458,6 +498,8 @@ public struct PhotoBackupSummary: Equatable, Sendable {
     public var libraryItemCount: Int
     /// Files the server refused often enough to be left alone.
     public var refusedFileCount: Int
+    /// Files that could not be backed up and that the person chose to skip.
+    public var skippedFileCount: Int
     public var lastFailure: PhotoBackupFailure?
     /// The server refused the sign-in: the device password is wrong or revoked.
     public var isSignInNeeded: Bool
@@ -515,6 +557,7 @@ public actor PhotoBackupIndex {
     /// status, published after every upload, does not walk every record.
     private var backedUpItemCount = 0
     private var refusedFileCount = 0
+    private var skippedFileCount = 0
     /// Files planned and not on the server, leaving out the refused ones.
     private var pendingFileCountKept = 0
     /// Whether the file existed and could not be read when the index was opened.
@@ -537,41 +580,46 @@ public actor PhotoBackupIndex {
                 wasStartedOver = true
             }
         }
-        (backedUpItemCount, refusedFileCount, pendingFileCountKept) = Self.counts(of: contents.records.values)
+        (backedUpItemCount, refusedFileCount, skippedFileCount, pendingFileCountKept) = Self.counts(of: contents.records.values)
     }
 
     /// How many records have their original on the server, how many of their
-    /// files the server refused often enough to be left alone, and how many
-    /// files are still to send.
-    private static func counts(of records: some Sequence<PhotoBackupRecord>) -> (backedUp: Int, refused: Int, pending: Int) {
+    /// files the server refused often enough to be left alone, how many the
+    /// person skipped, and how many files are still to send.
+    private static func counts(of records: some Sequence<PhotoBackupRecord>) -> (backedUp: Int, refused: Int, skipped: Int, pending: Int) {
         var backedUp = 0
         var refused = 0
+        var skipped = 0
         var pending = 0
         for record in records {
             if record.isOriginalOnServer { backedUp += 1 }
             for state in record.roles.values {
-                if state.refusalCount >= PhotoBackupPlanner.maximumRefusalCount {
+                if state.skippedAt != nil {
+                    skipped += 1
+                } else if state.refusalCount >= PhotoBackupPlanner.maximumRefusalCount {
                     refused += 1
                 } else if !state.isOnServer {
                     pending += 1
                 }
             }
         }
-        return (backedUp, refused, pending)
+        return (backedUp, refused, skipped, pending)
     }
 
     /// The only way a record is written, so that the counters follow it.
     private func store(_ record: PhotoBackupRecord?, for localIdentifier: String) {
         if let old = contents.records[localIdentifier] {
-            let (backedUp, refused, pending) = Self.counts(of: [old])
+            let (backedUp, refused, skipped, pending) = Self.counts(of: [old])
             backedUpItemCount -= backedUp
             refusedFileCount -= refused
+            skippedFileCount -= skipped
             pendingFileCountKept -= pending
         }
         if let record {
-            let (backedUp, refused, pending) = Self.counts(of: [record])
+            let (backedUp, refused, skipped, pending) = Self.counts(of: [record])
             backedUpItemCount += backedUp
             refusedFileCount += refused
+            skippedFileCount += skipped
             pendingFileCountKept += pending
         }
         contents.records[localIdentifier] = record
@@ -590,6 +638,7 @@ public actor PhotoBackupIndex {
         contents = Contents()
         backedUpItemCount = 0
         refusedFileCount = 0
+        skippedFileCount = 0
         pendingFileCountKept = 0
         unwrittenChangeCount = 0
         try? fileManager.removeItem(at: fileURL)
@@ -601,6 +650,7 @@ public actor PhotoBackupIndex {
         contents = Contents()
         backedUpItemCount = 0
         refusedFileCount = 0
+        skippedFileCount = 0
         pendingFileCountKept = 0
         contents.accountKey = accountKey
         if hadAccount { wasStartedOver = true }
@@ -648,7 +698,7 @@ public actor PhotoBackupIndex {
     public func summary() -> PhotoBackupSummary {
         PhotoBackupSummary(
             backedUpItemCount: backedUpItemCount, libraryItemCount: contents.libraryItemCount, refusedFileCount: refusedFileCount,
-            lastFailure: contents.lastFailure, isSignInNeeded: contents.isSignInNeeded,
+            skippedFileCount: skippedFileCount, lastFailure: contents.lastFailure, isSignInNeeded: contents.isSignInNeeded,
             lastPassFinishedAt: contents.lastPassFinishedAt)
     }
 
@@ -665,7 +715,7 @@ public actor PhotoBackupIndex {
     /// first, and by identifier for items with the same place.
     public func pendingLocalIdentifiers() -> [String] {
         let pending: [(localIdentifier: String, sendOrder: Int)] = contents.records.compactMap { localIdentifier, record in
-            record.roles.values.contains { !$0.isOnServer && $0.refusalCount < PhotoBackupPlanner.maximumRefusalCount }
+            record.roles.values.contains { !$0.isOnServer && $0.skippedAt == nil && $0.refusalCount < PhotoBackupPlanner.maximumRefusalCount }
                 ? (localIdentifier, record.sendOrder ?? Int.max) : nil
         }
         return pending.sorted { first, second in
@@ -852,11 +902,11 @@ public actor PhotoBackupIndex {
     /// Lets every refused file be tried again, which "Back up now" does. A
     /// file that is not on the server becomes a fresh file still to send, not
     /// nothing: with no record of the role it would be neither pending nor
-    /// listed again.
+    /// listed again. A file the person skipped stays skipped.
     public func clearRefusals() {
         for (localIdentifier, var record) in contents.records {
             var isChanged = false
-            for (roleName, var state) in record.roles where state.refusalCount > 0 {
+            for (roleName, var state) in record.roles where state.refusalCount > 0 && state.skippedAt == nil {
                 if state.isOnServer {
                     state.refusalCount = 0
                     state.refusalFailure = nil
@@ -869,6 +919,61 @@ public actor PhotoBackupIndex {
             if isChanged { store(record, for: localIdentifier) }
         }
         didChange()
+    }
+
+    /// The files that could not be backed up, and those the person skipped:
+    /// the ones still counted as failures first, then the skipped ones, each in
+    /// the order their photos are sent in.
+    public func refusedFiles() -> [PhotoBackupRefusedFile] {
+        var found: [(file: PhotoBackupRefusedFile, sendOrder: Int)] = []
+        for (localIdentifier, record) in contents.records {
+            for (roleName, state) in record.roles where state.isRefused || state.skippedAt != nil {
+                guard let role = PhotoBackupFileRole(rawValue: roleName) else { continue }
+                let file = PhotoBackupRefusedFile(
+                    localIdentifier: localIdentifier, clientPhotoId: record.clientPhotoId, role: role, failure: state.refusalFailure,
+                    refusalCount: state.refusalCount, skippedAt: state.skippedAt)
+                found.append((file, record.sendOrder ?? Int.max))
+            }
+        }
+        return found.sorted { first, second in
+            if first.file.isSkipped != second.file.isSkipped { return !first.file.isSkipped }
+            if first.sendOrder != second.sendOrder { return first.sendOrder < second.sendOrder }
+            if first.file.localIdentifier != second.file.localIdentifier { return first.file.localIdentifier < second.file.localIdentifier }
+            return first.file.role.uploadOrder < second.file.role.uploadOrder
+        }.map(\.file)
+    }
+
+    /// Lets one file that could not be backed up, or that the person skipped,
+    /// be sent again: it becomes a file still to send, as `clearRefusals` makes
+    /// every refused one. Written at once, as the person asked for it.
+    public func retryFile(localIdentifier: String, role: PhotoBackupFileRole) {
+        guard var record = contents.records[localIdentifier], var state = record.roles[role.rawValue],
+            state.refusalCount > 0 || state.skippedAt != nil
+        else { return }
+        if state.isOnServer {
+            state.refusalCount = 0
+            state.refusalFailure = nil
+            state.skippedAt = nil
+            record.roles[role.rawValue] = state
+        } else {
+            record.roles[role.rawValue] = PhotoBackupRoleRecord()
+        }
+        store(record, for: localIdentifier)
+        didChange(force: true)
+    }
+
+    /// Stops trying a file that could not be backed up, at the person's word:
+    /// it is no longer sent or counted as a failure, and "Back up now" leaves it
+    /// alone, until `retryFile` asks for it again. Why it failed is kept, to be
+    /// shown with it. Written at once, as the person asked for it.
+    public func skipFile(localIdentifier: String, role: PhotoBackupFileRole) {
+        guard var record = contents.records[localIdentifier], var state = record.roles[role.rawValue], !state.isOnServer || state.refusalCount > 0
+        else { return }
+        state.skippedAt = now()
+        state.partialUpload = nil
+        record.roles[role.rawValue] = state
+        store(record, for: localIdentifier)
+        didChange(force: true)
     }
 
     /// Sets the library's change token. A listing under way is dropped with it:

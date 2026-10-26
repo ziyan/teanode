@@ -407,6 +407,107 @@ final class PhotoBackupIndexTests: XCTestCase {
         XCTAssertEqual(record?.roles["original"], PhotoBackupRoleRecord())
     }
 
+    func testTheFilesThatCouldNotBeBackedUpAreListedWithWhy() async throws {
+        let index = try PhotoBackupIndex(directory: try temporaryDirectory(self))
+        await index.markUploaded(localIdentifier: "a", clientPhotoId: "local:a", role: .original, serverPhotoId: "p1", assetModificationDate: nil)
+        for _ in 0..<PhotoBackupPlanner.maximumRefusalCount {
+            await index.markRefused(localIdentifier: "a", clientPhotoId: "local:a", role: .liveVideo, failure: .fileIsEmpty)
+            await index.markRefused(localIdentifier: "b", clientPhotoId: "local:b", role: .original, failure: .fileRefused(serverReason: "not a picture"))
+        }
+        // Refused once only: still being tried, so not listed.
+        await index.markRefused(localIdentifier: "c", clientPhotoId: "local:c", role: .original, failure: .fileIsNotInLibrary)
+        let files = await index.refusedFiles()
+        XCTAssertEqual(files.map(\.id).sorted(), ["a|liveVideo", "b|original"])
+        let video = files.first { $0.id == "a|liveVideo" }
+        XCTAssertEqual(video?.failure, .fileIsEmpty)
+        XCTAssertEqual(video?.refusalCount, PhotoBackupPlanner.maximumRefusalCount)
+        XCTAssertEqual(video?.isSkipped, false)
+        XCTAssertEqual(files.first { $0.id == "b|original" }?.failure, .fileRefused(serverReason: "not a picture"))
+    }
+
+    func testASkippedFileIsNotCountedSentOrBroughtBackByBackUpNow() async throws {
+        let directory = try temporaryDirectory(self)
+        let skippedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let index = try PhotoBackupIndex(directory: directory, now: { skippedAt })
+        let items = [makeItem("a"), makeItem("b")]
+        for _ in 0..<PhotoBackupPlanner.maximumRefusalCount {
+            await index.markRefused(localIdentifier: "a", clientPhotoId: "local:a", role: .original, failure: .fileIsEmpty)
+            await index.markRefused(localIdentifier: "b", clientPhotoId: "local:b", role: .original, failure: .fileIsEmpty)
+        }
+        await index.skipFile(localIdentifier: "a", role: .original)
+        var summary = await index.summary()
+        XCTAssertEqual(summary.refusedFileCount, 1)
+        XCTAssertEqual(summary.skippedFileCount, 1)
+
+        await index.clearRefusals()
+        summary = await index.summary()
+        let plan = await index.plan(items: items)
+        let pending = await index.pendingLocalIdentifiers()
+        XCTAssertEqual(plan.map(\.key), ["b|original"], "Back up now tries the refused file again and leaves the skipped one alone")
+        XCTAssertEqual(pending, ["b"])
+        XCTAssertEqual(summary.refusedFileCount, 0)
+        XCTAssertEqual(summary.skippedFileCount, 1)
+
+        // Still skipped, with why it failed, after the index is read again.
+        await index.flush()
+        let reopened = try PhotoBackupIndex(directory: directory)
+        let files = await reopened.refusedFiles()
+        XCTAssertEqual(files, [
+            PhotoBackupRefusedFile(
+                localIdentifier: "a", clientPhotoId: "local:a", role: .original, failure: .fileIsEmpty,
+                refusalCount: PhotoBackupPlanner.maximumRefusalCount, skippedAt: skippedAt)
+        ])
+        let reopenedSummary = await reopened.summary()
+        XCTAssertEqual(reopenedSummary.skippedFileCount, 1)
+    }
+
+    func testOneFileIsTriedAgainOnItsOwn() async throws {
+        let index = try PhotoBackupIndex(directory: try temporaryDirectory(self))
+        let items = [makeItem("a"), makeItem("b")]
+        for _ in 0..<PhotoBackupPlanner.maximumRefusalCount {
+            await index.markRefused(localIdentifier: "a", clientPhotoId: "local:a", role: .original, failure: .fileIsEmpty)
+            await index.markRefused(localIdentifier: "b", clientPhotoId: "local:b", role: .original, failure: .fileIsEmpty)
+        }
+        await index.skipFile(localIdentifier: "b", role: .original)
+        await index.retryFile(localIdentifier: "a", role: .original)
+        var plan = await index.plan(items: items)
+        XCTAssertEqual(plan.map(\.key), ["a|original"], "only the file asked for is tried again")
+        // A skipped file is asked for again the same way.
+        await index.retryFile(localIdentifier: "b", role: .original)
+        plan = await index.plan(items: items)
+        let summary = await index.summary()
+        let files = await index.refusedFiles()
+        XCTAssertEqual(plan.map(\.key), ["a|original", "b|original"])
+        XCTAssertEqual(summary.refusedFileCount, 0)
+        XCTAssertEqual(summary.skippedFileCount, 0)
+        XCTAssertEqual(files, [])
+    }
+
+    func testAFileOnTheServerIsNotSkippedAndATriedAgainEditKeepsItsPhoto() async throws {
+        let index = try PhotoBackupIndex(directory: try temporaryDirectory(self))
+        await index.markUploaded(localIdentifier: "a", clientPhotoId: "local:a", role: .original, serverPhotoId: "p1", assetModificationDate: nil)
+        await index.skipFile(localIdentifier: "a", role: .original)
+        var summary = await index.summary()
+        XCTAssertEqual(summary.skippedFileCount, 0, "a file that went up has nothing to skip")
+        await index.markUploaded(localIdentifier: "a", clientPhotoId: "local:a", role: .edited, serverPhotoId: "p1", assetModificationDate: nil)
+        for _ in 0..<PhotoBackupPlanner.maximumRefusalCount {
+            await index.markRefused(localIdentifier: "a", clientPhotoId: "local:a", role: .edited, failure: .fileIsEmpty)
+        }
+        await index.retryFile(localIdentifier: "a", role: .edited)
+        let record = await index.record(forLocalIdentifier: "a")
+        summary = await index.summary()
+        XCTAssertEqual(record?.roles["edited"]?.isOnServer, true)
+        XCTAssertEqual(record?.roles["edited"]?.refusalCount, 0)
+        XCTAssertEqual(summary.refusedFileCount, 0)
+    }
+
+    func testAnIndexWrittenBeforeFilesCouldBeSkippedIsRead() throws {
+        let written = #"{"isOnServer":false,"refusalCount":3,"refusalFailure":{"fileIsEmpty":{}}}"#
+        let state = try JSONDecoder().decode(PhotoBackupRoleRecord.self, from: Data(written.utf8))
+        XCTAssertNil(state.skippedAt)
+        XCTAssertEqual(state.refusalCount, 3)
+    }
+
     func testRefusalsOfAFileOnTheServerAreResetToo() async throws {
         let index = try PhotoBackupIndex(directory: try temporaryDirectory(self))
         await index.markUploaded(localIdentifier: "a", clientPhotoId: "local:a", role: .original, serverPhotoId: "p1", assetModificationDate: nil)

@@ -337,8 +337,58 @@ final class PhotoBackupEngine {
         apply(
             PhotoBackupStatus(
                 phase: phase, backedUpItemCount: summary.backedUpItemCount, libraryItemCount: summary.libraryItemCount,
-                refusedFileCount: summary.refusedFileCount, lastFailure: summary.lastFailure,
+                refusedFileCount: summary.refusedFileCount, skippedFileCount: summary.skippedFileCount, lastFailure: summary.lastFailure,
                 lastPassFinishedAt: summary.lastPassFinishedAt))
+    }
+
+    // MARK: Files that could not be backed up
+
+    /// The files backup gave up on, and those the person skipped, for the list
+    /// the status opens.
+    func refusedFiles() async -> [PhotoBackupRefusedFile] {
+        #if DEBUG
+            if DemoServer.isRequested { return demoRefusedFiles }
+        #endif
+        guard isEnabled, let index = try? makeIndex() else { return [] }
+        return await index.refusedFiles()
+    }
+
+    /// Sends one file again at once, whether it failed or was skipped. Only
+    /// that file: the others that failed wait for Back up now.
+    func retry(_ file: PhotoBackupRefusedFile) async {
+        #if DEBUG
+            if DemoServer.isRequested {
+                demoRefusedFiles.removeAll { $0.id == file.id }
+                applyDemo()
+                return
+            }
+        #endif
+        guard isEnabled, let index = try? makeIndex() else { return }
+        problemText = nil
+        await index.retryFile(localIdentifier: file.localIdentifier, role: file.role)
+        await index.clearErrorUnlessSignInIsNeeded()
+        startPasses()
+        await refresh()
+    }
+
+    /// Stops trying one file: it no longer counts as a failure, and Back up now
+    /// leaves it alone, until the person tries it again from the list.
+    func skip(_ file: PhotoBackupRefusedFile) async {
+        #if DEBUG
+            if DemoServer.isRequested {
+                demoRefusedFiles = demoRefusedFiles.map { listed in
+                    guard listed.id == file.id else { return listed }
+                    return PhotoBackupRefusedFile(
+                        localIdentifier: listed.localIdentifier, clientPhotoId: listed.clientPhotoId, role: listed.role, failure: listed.failure,
+                        refusalCount: listed.refusalCount, skippedAt: Date())
+                }
+                applyDemo()
+                return
+            }
+        #endif
+        guard isEnabled, let index = try? makeIndex() else { return }
+        await index.skipFile(localIdentifier: file.localIdentifier, role: file.role)
+        await refresh()
     }
 
     private func apply(_ newStatus: PhotoBackupStatus) {
@@ -819,6 +869,22 @@ final class PhotoBackupEngine {
     // MARK: Demo
 
     #if DEBUG
+        /// The files that could not be backed up in `photos-backup-refused` and
+        /// `photos-backup-refused-files`: a Live Photo's video the library gave
+        /// empty, an edit the server would not take, and an original already
+        /// skipped whose photo has left the library.
+        @ObservationIgnored private var demoRefusedFiles: [PhotoBackupRefusedFile] = [
+            PhotoBackupRefusedFile(
+                localIdentifier: "demo-refused-harbor", clientPhotoId: "local:demo-refused-harbor", role: .liveVideo, failure: .fileIsEmpty,
+                refusalCount: PhotoBackupPlanner.maximumRefusalCount),
+            PhotoBackupRefusedFile(
+                localIdentifier: "demo-refused-garden", clientPhotoId: "local:demo-refused-garden", role: .edited,
+                failure: .fileRefused(serverReason: "the file is not a picture or a video"), refusalCount: PhotoBackupPlanner.maximumRefusalCount),
+            PhotoBackupRefusedFile(
+                localIdentifier: "demo-refused-gone", clientPhotoId: "local:demo-refused-gone", role: .original, failure: .fileIsNotInLibrary,
+                refusalCount: PhotoBackupPlanner.maximumRefusalCount, skippedAt: Date(timeIntervalSinceNow: -2 * 86_400)),
+        ]
+
         /// The two Photo Backup screens CI photographs, with invented counts.
         private func applyDemo() {
             let isWaiting = DemoServer.screen == "photos-backup-waiting"
@@ -827,7 +893,10 @@ final class PhotoBackupEngine {
             let isInBackground = DemoServer.screen == "photos-backup-background"
             // `photos-backup-paused`: the person paused backup part way through the library.
             let isPausedDemo = DemoServer.screen == "photos-backup-paused"
-            let isOn = DemoServer.screen == "photos-backup-on" || isWaiting || isInBackground || isPausedDemo
+            // `photos-backup-refused`: everything is backed up but a few files, and
+            // `photos-backup-refused-files` the list of them that row opens.
+            let isRefusedDemo = DemoServer.screen == "photos-backup-refused" || DemoServer.screen == "photos-backup-refused-files"
+            let isOn = DemoServer.screen == "photos-backup-on" || isWaiting || isInBackground || isPausedDemo || isRefusedDemo
             // `settings-photo-backup-other-account` and `photos-backup-other-account` have backup on for a
             // different account than the one signed in.
             let isOnForOtherAccount = DemoServer.screen == "settings-photo-backup-other-account" || DemoServer.screen == "photos-backup-other-account"
@@ -840,6 +909,13 @@ final class PhotoBackupEngine {
                 status = PhotoBackupStatus(
                     phase: .waitingForNetwork, backedUpItemCount: 3_890, libraryItemCount: 3_912, leftForLaterFileCount: 22,
                     lastFailure: .serverReason("photo storage is unavailable"), lastPassFinishedAt: Date(timeIntervalSinceNow: -600))
+                return
+            }
+            if isRefusedDemo {
+                status = PhotoBackupStatus(
+                    phase: .idle, backedUpItemCount: 3_912, libraryItemCount: 3_912,
+                    refusedFileCount: demoRefusedFiles.filter { !$0.isSkipped }.count,
+                    skippedFileCount: demoRefusedFiles.filter(\.isSkipped).count, lastPassFinishedAt: Date(timeIntervalSinceNow: -43))
                 return
             }
             if isPausedDemo {

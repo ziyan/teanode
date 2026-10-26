@@ -608,6 +608,15 @@ What continues and what waits:
   The backup screen then says it is waiting for the server, not for Wi-Fi,
   when the network lets uploads go (`PhotoBackupStatus.Phase.waitingForServer`),
   and keeps the server's last problem on screen while its wait runs.
+- A file refused three times, by the server or by the photo library (an empty
+  file, a photo no longer there), is counted on the backup screen, and that
+  row opens the list of them (`PhotoBackupIndex.refusedFiles`): the photo's
+  picture, which of its files it is, when it was taken and why it did not go
+  up. Each can be tried again on its own (`retryFile`), which starts a pass,
+  or skipped (`skipFile`, `PhotoBackupRoleRecord.skippedAt`): a skipped file is
+  not sent, not counted as a problem, and left alone by Back up now, which
+  tries every other refused file again, until the person tries it again from
+  the same list.
 - When iOS wakes the app because uploads finished, it has about 30 seconds. In
   the first 18 the app queues more files that are on the phone already,
   smallest first (`PhotoBackupCoordinator.topUp`), writes the index, and only

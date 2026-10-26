@@ -602,6 +602,9 @@ public struct PhotoBackupStatus: Equatable, Sendable {
     /// Files queued with the session now.
     public var queuedFileCount: Int
     public var refusedFileCount: Int
+    /// Files that could not be backed up and that the person chose to skip:
+    /// not counted among the refused ones, and not tried again.
+    public var skippedFileCount: Int
     /// Files the last pass could not send and left for later: they wait for
     /// the network, for iCloud, or for the server to answer again.
     public var leftForLaterFileCount: Int
@@ -689,7 +692,7 @@ public struct PhotoBackupStatus: Equatable, Sendable {
 
     public init(
         phase: Phase = .off, backedUpItemCount: Int = 0, libraryItemCount: Int = 0, plannedFileCount: Int = 0, finishedFileCount: Int = 0,
-        queuedFileCount: Int = 0, refusedFileCount: Int = 0, leftForLaterFileCount: Int = 0,
+        queuedFileCount: Int = 0, refusedFileCount: Int = 0, skippedFileCount: Int = 0, leftForLaterFileCount: Int = 0,
         lastFailure: PhotoBackupFailure? = nil, lastPassFinishedAt: Date? = nil, isPassRunning: Bool = false, waitingFileCount: Int = 0,
         listedItemCount: Int? = nil, isListingUnfinished: Bool = false, estimatedSecondsLeft: Int? = nil
     ) {
@@ -700,6 +703,7 @@ public struct PhotoBackupStatus: Equatable, Sendable {
         self.finishedFileCount = finishedFileCount
         self.queuedFileCount = queuedFileCount
         self.refusedFileCount = refusedFileCount
+        self.skippedFileCount = skippedFileCount
         self.leftForLaterFileCount = leftForLaterFileCount
         self.lastFailure = lastFailure
         self.lastPassFinishedAt = lastPassFinishedAt
@@ -933,7 +937,7 @@ public actor PhotoBackupCoordinator {
         var shownStatus = PhotoBackupStatus(
             phase: shownPhase, backedUpItemCount: summary.backedUpItemCount, libraryItemCount: summary.libraryItemCount,
             plannedFileCount: plannedFileCount, finishedFileCount: finishedFileCount, queuedFileCount: outstanding.count,
-            refusedFileCount: summary.refusedFileCount, leftForLaterFileCount: leftForLaterFileCount,
+            refusedFileCount: summary.refusedFileCount, skippedFileCount: summary.skippedFileCount, leftForLaterFileCount: leftForLaterFileCount,
             lastFailure: summary.lastFailure, lastPassFinishedAt: summary.lastPassFinishedAt, isPassRunning: isRunning,
             waitingFileCount: waitingFileCount, listedItemCount: listedItemCount, isListingUnfinished: isListingUnfinished)
         timeLeft.record(date: now(), backedUpItemCount: shownStatus.backedUpItemCount, isUploading: shownStatus.isUploading)
