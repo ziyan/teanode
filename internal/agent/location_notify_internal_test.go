@@ -335,3 +335,128 @@ func TestNoArrivalIsToldInsideAPauseOrWhileThePersonIsPaused(t *testing.T) {
 		t.Errorf("an arrival after the pause is told: %d notifications", fixture.told())
 	}
 }
+
+// A person who muted the sharer is not told of their arrivals or departures
+// while the mute lasts, and is told again once they unmute.
+func TestAMutedSharerIsNotToldUntilUnmuted(t *testing.T) {
+	fixture := newLocationNotifyFixture(t, models.LocationShareLevelCurrent)
+	visit := fixture.visitTo(t, &models.Place{PlaceName: "Corner Cafe", IsNamedByPerson: true})
+
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		mutedUntil := time.Now().Add(time.Hour)
+		if _, err := tx.MuteLocationNotifications(fixture.owner.ID, fixture.sharer.ID, &mutedUntil, time.Now()); err != nil {
+			t.Fatalf("MuteLocationNotifications: %s", err)
+		}
+	})
+	fixture.worker.Phones().NotifyPlaceVisit(context.Background(), fixture.sharer.ID, visit, true)
+	fixture.worker.Phones().NotifyPlaceVisit(context.Background(), fixture.sharer.ID, visit, false)
+	if fixture.told() != 0 {
+		t.Fatalf("a muted sharer's arrival and departure sent %d notifications", fixture.told())
+	}
+
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		if isUnmuted, err := tx.UnmuteLocationNotifications(fixture.owner.ID, fixture.sharer.ID, time.Now()); err != nil || !isUnmuted {
+			t.Fatalf("UnmuteLocationNotifications: %v %s", isUnmuted, err)
+		}
+	})
+	fixture.worker.Phones().NotifyPlaceVisit(context.Background(), fixture.sharer.ID, visit, true)
+	if fixture.told() != 1 {
+		t.Errorf("after unmuting the arrival sent %d notifications, not one", fixture.told())
+	}
+}
+
+// receiverVisit stores a visit of the receiver's own, at a place of theirs at
+// the coordinates, arrived a minute ago and still in progress.
+func (self *locationNotifyFixture) receiverVisit(t *testing.T, latitudeDegrees, longitudeDegrees float64) {
+	t.Helper()
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		own, err := tx.CreatePlace(self.owner.ID, &models.Place{PlaceName: "Their place", IsNamedByPerson: true, LatitudeDegrees: latitudeDegrees, LongitudeDegrees: longitudeDegrees, RadiusMeters: 100})
+		if err != nil {
+			t.Fatalf("CreatePlace: %s", err)
+		}
+		arrivedAt := time.Now().Add(-time.Minute)
+		if _, err := tx.PutPlaceVisit(self.owner.ID, &models.PlaceVisit{
+			PlaceID: own.ID, ClientVisitKey: "receiver-visit", VisitSource: models.VisitSourceRegion, ArrivedAt: &arrivedAt,
+			LatitudeDegrees: latitudeDegrees, LongitudeDegrees: longitudeDegrees, AccuracyMeters: 20,
+		}); err != nil {
+			t.Fatalf("PutPlaceVisit: %s", err)
+		}
+	})
+}
+
+// receiverPosition stores a position of the receiver's own, measured a
+// minute ago.
+func (self *locationNotifyFixture) receiverPosition(t *testing.T, latitudeDegrees, longitudeDegrees float64) {
+	t.Helper()
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		if _, err := tx.InsertLocationPoints(self.owner.ID, []*models.LocationPoint{{
+			LatitudeDegrees: latitudeDegrees, LongitudeDegrees: longitudeDegrees, AccuracyMeters: 20,
+			MeasuredAt: time.Now().Add(-time.Minute), LocationSource: models.LocationSourcePhone,
+		}}); err != nil {
+			t.Fatalf("InsertLocationPoints: %s", err)
+		}
+	})
+}
+
+// A receiver who was at the place too is not told that the sharer arrived or
+// left: they came together, left together, or were already there. One whose
+// visit or position was somewhere else is told.
+func TestAReceiverWhoWasThereTooIsNotTold(t *testing.T) {
+	for _, each := range []struct {
+		name       string
+		isVisit    bool
+		isThere    bool
+		isArrival  bool
+		toldNumber int
+	}{
+		{name: "a visit there, an arrival", isVisit: true, isThere: true, isArrival: true, toldNumber: 0},
+		{name: "a visit there, a departure", isVisit: true, isThere: true, isArrival: false, toldNumber: 0},
+		{name: "a visit elsewhere", isVisit: true, isThere: false, isArrival: true, toldNumber: 1},
+		{name: "a position there", isVisit: false, isThere: true, isArrival: false, toldNumber: 0},
+		{name: "a position elsewhere", isVisit: false, isThere: false, isArrival: true, toldNumber: 1},
+	} {
+		t.Run(each.name, func(t *testing.T) {
+			fixture := newLocationNotifyFixture(t, models.LocationShareLevelCurrent)
+			visit := fixture.visitTo(t, &models.Place{PlaceName: "Corner Cafe", IsNamedByPerson: true, RadiusMeters: 100})
+			// visitTo puts the sharer's place at 51.5, -0.1; elsewhere is about
+			// eleven kilometers north, and there is thirty meters off.
+			latitudeDegrees := 51.6
+			if each.isThere {
+				latitudeDegrees = 51.50027
+			}
+			if each.isVisit {
+				fixture.receiverVisit(t, latitudeDegrees, -0.1)
+			} else {
+				fixture.receiverPosition(t, latitudeDegrees, -0.1)
+			}
+			fixture.worker.Phones().NotifyPlaceVisitAt(context.Background(), fixture.sharer.ID, visit, each.isArrival, time.Now())
+			if fixture.told() != each.toldNumber {
+				t.Errorf("the phone was sent %d notifications, want %d", fixture.told(), each.toldNumber)
+			}
+		})
+	}
+}
+
+// A receiver who left the place before the sharer arrived, and whose phone
+// has said so since, is told: they were not there together.
+func TestAReceiverWhoLeftBeforeTheArrivalIsTold(t *testing.T) {
+	fixture := newLocationNotifyFixture(t, models.LocationShareLevelCurrent)
+	visit := fixture.visitTo(t, &models.Place{PlaceName: "Corner Cafe", IsNamedByPerson: true, RadiusMeters: 100})
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		own, err := tx.CreatePlace(fixture.owner.ID, &models.Place{PlaceName: "Their place", IsNamedByPerson: true, LatitudeDegrees: 51.5, LongitudeDegrees: -0.1, RadiusMeters: 100})
+		if err != nil {
+			t.Fatalf("CreatePlace: %s", err)
+		}
+		arrivedAt, departedAt := time.Now().Add(-time.Hour), time.Now().Add(-10*time.Minute)
+		if _, err := tx.PutPlaceVisit(fixture.owner.ID, &models.PlaceVisit{
+			PlaceID: own.ID, ClientVisitKey: "receiver-visit", VisitSource: models.VisitSourceRegion, ArrivedAt: &arrivedAt, DepartedAt: &departedAt,
+			LatitudeDegrees: 51.5, LongitudeDegrees: -0.1, AccuracyMeters: 20,
+		}); err != nil {
+			t.Fatalf("PutPlaceVisit: %s", err)
+		}
+	})
+	fixture.worker.Phones().NotifyPlaceVisitAt(context.Background(), fixture.sharer.ID, visit, true, time.Now())
+	if fixture.told() != 1 {
+		t.Errorf("the phone was sent %d notifications, not one", fixture.told())
+	}
+}

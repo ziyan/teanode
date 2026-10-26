@@ -63,6 +63,22 @@ func NewLocationCommand() *cli.Command {
 			},
 			{Name: "resume", Usage: "start recording where you are again, now", Flags: []cli.Flag{JSONFlag()}, Action: runLocationResume},
 			{
+				Name:      "mute",
+				Usage:     "stop being told on your phone when a person arrives or leaves, for a while or until you unmute",
+				ArgsUsage: "<username>",
+				Description: "The person must share their location with you ('teanode location people'). While muted\n" +
+					"your phone does not tell you when they arrive at or leave a place. Give --for or --until\n" +
+					"for a mute that ends by itself, at most 30 days ahead; with neither it lasts until\n" +
+					"'teanode location unmute'. Muting while muted changes when the mute ends.",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "for", Usage: "mute for this long, such as 1h30m or 2d"},
+					&cli.StringFlag{Name: "until", Usage: "mute until this moment, as YYYY-MM-DD or YYYY-MM-DDTHH:MM"},
+				},
+				Action: runLocationMute,
+			},
+			{Name: "unmute", Usage: "be told on your phone when a person arrives or leaves again", ArgsUsage: "<username>", Flags: []cli.Flag{JSONFlag()}, Action: runLocationUnmute},
+			{
 				Name:  "visits",
 				Usage: "where you have been, newest first, with the times you paused",
 				Flags: append([]cli.Flag{
@@ -375,6 +391,16 @@ func locationPerson(ctx context.Context, command *cli.Command, connection *clien
 	if username == "" {
 		return "", nil
 	}
+	return locationSharingPerson(ctx, command, connection, username, doesNeedHistory)
+}
+
+// locationPersonByUsername is the account of somebody who shares their
+// location with the caller, named by the argument of a command.
+func locationPersonByUsername(ctx context.Context, command *cli.Command, connection *client.Client, username string) (string, error) {
+	return locationSharingPerson(ctx, command, connection, strings.TrimSpace(username), false)
+}
+
+func locationSharingPerson(ctx context.Context, command *cli.Command, connection *client.Client, username string, doesNeedHistory bool) (string, error) {
 	people, err := client.ListSharedLocations(ctx, connection)
 	if err != nil {
 		return "", describeError(command, err)
@@ -568,30 +594,9 @@ func runLocationPause(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() != 0 {
 		return usage("usage: teanode location pause [--for 1h30m | --until 2026-10-23T08:00]")
 	}
-	if command.IsSet("for") && command.IsSet("until") {
-		return usage("give --for or --until, not both")
-	}
-	var endedAt *time.Time
-	switch {
-	case command.IsSet("for"):
-		duration, err := parsePauseLength(command.String("for"))
-		if err != nil {
-			return usage("--for: " + err.Error())
-		}
-		moment := time.Now().Add(duration)
-		endedAt = &moment
-	case command.IsSet("until"):
-		moment, err := locationMoment(command, "until")
-		if err != nil {
-			return err
-		}
-		if moment == nil {
-			return usage("--until needs a moment, as YYYY-MM-DD or YYYY-MM-DDTHH:MM")
-		}
-		if !moment.After(time.Now()) {
-			return usage("--until must be in the future")
-		}
-		endedAt = moment
+	endedAt, err := locationEndFromFlags(command)
+	if err != nil {
+		return err
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -605,6 +610,117 @@ func runLocationPause(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(pause)
 	}
 	fmt.Println("paused " + pauseEndWords(pause.EndedAt, time.Now()))
+	return nil
+}
+
+// locationEndFromFlags is the moment --for or --until names, in the future, or
+// nil when neither is given, for a pause or a mute that lasts until it is
+// ended by hand. Both together are refused.
+func locationEndFromFlags(command *cli.Command) (*time.Time, error) {
+	if command.IsSet("for") && command.IsSet("until") {
+		return nil, usage("give --for or --until, not both")
+	}
+	switch {
+	case command.IsSet("for"):
+		duration, err := parsePauseLength(command.String("for"))
+		if err != nil {
+			return nil, usage("--for: " + err.Error())
+		}
+		moment := time.Now().Add(duration)
+		return &moment, nil
+	case command.IsSet("until"):
+		moment, err := locationMoment(command, "until")
+		if err != nil {
+			return nil, err
+		}
+		if moment == nil {
+			return nil, usage("--until needs a moment, as YYYY-MM-DD or YYYY-MM-DDTHH:MM")
+		}
+		if !moment.After(time.Now()) {
+			return nil, usage("--until must be in the future")
+		}
+		return moment, nil
+	}
+	return nil, nil
+}
+
+// muteEndWords is when a mute ends, as a person says it: "until 15:00", with
+// the day when it is not today, or empty for a mute until you unmute.
+func muteEndWords(mutedUntil *time.Time, now time.Time) string {
+	if mutedUntil == nil {
+		return ""
+	}
+	local := mutedUntil.In(time.Local)
+	if local.YearDay() == now.In(time.Local).YearDay() && local.Year() == now.In(time.Local).Year() {
+		return "until " + local.Format("15:04")
+	}
+	return "until " + local.Format("2006-01-02 15:04")
+}
+
+// notificationMuteWords is a mute as the people listing and the mute command
+// say it: "notifications muted until 15:00", or "notifications muted".
+func notificationMuteWords(mute *client.LocationNotificationMute, now time.Time) string {
+	if endWords := muteEndWords(mute.MutedUntil, now); endWords != "" {
+		return "notifications muted " + endWords
+	}
+	return "notifications muted"
+}
+
+// runLocationMute mutes the arrived and left notices of the person named, for
+// as long as --for says, until the moment --until says, or until unmuted.
+func runLocationMute(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return usage("usage: teanode location mute <username> [--for 1h30m | --until 2026-10-23T08:00]")
+	}
+	mutedUntil, err := locationEndFromFlags(command)
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	userId, err := locationPersonByUsername(ctx, command, connection, command.Args().First())
+	if err != nil {
+		return err
+	}
+	mute, err := client.MuteLocationNotifications(ctx, connection, userId, mutedUntil)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(mute)
+	}
+	fmt.Println(notificationMuteWords(mute, time.Now()))
+	return nil
+}
+
+// runLocationUnmute ends the mute of the person named, and says whether there
+// was one.
+func runLocationUnmute(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return usage("usage: teanode location unmute <username>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	userId, err := locationPersonByUsername(ctx, command, connection, command.Args().First())
+	if err != nil {
+		return err
+	}
+	isUnmuted, err := client.UnmuteLocationNotifications(ctx, connection, userId)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(map[string]bool{"isUnmuted": isUnmuted})
+	}
+	if !isUnmuted {
+		fmt.Println("their notifications were not muted")
+		return nil
+	}
+	fmt.Println("notifications on again")
 	return nil
 }
 
@@ -1154,8 +1270,12 @@ func runLocationPeople(ctx context.Context, command *cli.Command) error {
 	rows := make([][]string, 0, len(people))
 	for _, each := range people {
 		where, since := "no position yet", ""
+		muteCell := ""
+		if each.NotificationMute != nil {
+			muteCell = notificationMuteWords(each.NotificationMute, time.Now())
+		}
 		if each.Pause != nil {
-			rows = append(rows, []string{each.Username, each.ShareLevel, "Location paused " + pauseEndWords(each.Pause.EndedAt, time.Now()), "", ""})
+			rows = append(rows, []string{each.Username, each.ShareLevel, "Location paused " + pauseEndWords(each.Pause.EndedAt, time.Now()), "", "", muteCell})
 			continue
 		}
 		if each.OpenVisit != nil {
@@ -1170,9 +1290,9 @@ func runLocationPeople(ctx context.Context, command *cli.Command) error {
 		if each.LatestPoint != nil {
 			seen = timeWords(time.Since(each.LatestPoint.MeasuredAt)) + " ago"
 		}
-		rows = append(rows, []string{each.Username, each.ShareLevel, where, since, seen})
+		rows = append(rows, []string{each.Username, each.ShareLevel, where, since, seen, muteCell})
 	}
-	return printTable([]string{"person", "level", "at", "", "last seen"}, rows)
+	return printTable([]string{"person", "level", "at", "", "last seen", ""}, rows)
 }
 
 func runLocationShares(ctx context.Context, command *cli.Command) error {

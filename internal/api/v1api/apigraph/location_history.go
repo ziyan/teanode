@@ -124,6 +124,16 @@ type LocationMutation interface {
 	// location:use.
 	ResumeLocation(ctx context.Context) (bool, error)
 
+	// Stop telling the caller's phones that somebody sharing their location
+	// with the caller arrived at or left a place, until mutedUntil or, with
+	// none, until the caller unmutes. Muting again changes the end. mutedUntil
+	// must be after now and at most 30 days ahead. Needs location:use.
+	MuteLocationNotifications(ctx context.Context, arguments MuteLocationNotificationsArguments) (*LocationNotificationMuteView, error)
+
+	// Tell the caller again where that person arrives and leaves. True when a
+	// mute was in effect. Needs location:use.
+	UnmuteLocationNotifications(ctx context.Context, arguments UnmuteLocationNotificationsArguments) (bool, error)
+
 	// Erases your positions and visits (in the range), the pauses that began
 	// in it and are over, and the places left with no visit that you did not
 	// name or label. Places you named or labeled stay, and so does the pause
@@ -176,6 +186,11 @@ type LocationView struct {
 	// anybody but the person themselves a pause hides LatestPoint and
 	// OpenVisit: they are null while it lasts.
 	Pause *LocationPauseView `json:"pause"`
+
+	// NotificationMute is the caller's mute of this person's arrivals and
+	// departures, null when the caller is told of them. Always null on the
+	// caller's own location.
+	NotificationMute *LocationNotificationMuteView `json:"notificationMute"`
 }
 
 // LocationPointView is one position a phone or browser reported.
@@ -864,7 +879,16 @@ func (self *graph) GetLocation(ctx context.Context, arguments GetLocationArgumen
 	if err != nil {
 		return nil, err
 	}
-	return describeLocation(self.transaction(ctx), reach)
+	view, err := describeLocation(self.transaction(ctx), reach)
+	if err != nil || reach.ShareLevel == models.LocationShareLevelOwner {
+		return view, err
+	}
+	mutes, err := self.transaction(ctx).GetLocationNotificationMutes(principal.User.ID, []string{reach.User.ID}, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	view.NotificationMute = describeLocationNotificationMute(mutes[reach.User.ID])
+	return view, nil
 }
 
 // describeLocation is where a person is, for a viewer who reaches it.

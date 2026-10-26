@@ -260,6 +260,27 @@ before then is told a second after the arrival, so the two come in order. A
 notice that waits lives in the server's memory, so a restart in those three
 minutes loses it.
 
+Nobody is told what they saw for themselves. A receiver who was at the place
+too, within three minutes of the arrival or departure, is not told of it: a
+visit of their own near the place (its radius and 50 meters) that overlaps
+that time, or their latest position in that time inside it. People who arrive
+or leave together, and somebody already there when another arrives, get no
+notice. A receiver whose phone records nothing is told as before. The arrival
+waits three minutes anyway, so the receiver's own arrival has usually reached
+the server by then.
+
+A person can mute the notices of one person who shares with them: for an hour,
+until tomorrow morning, or until they unmute, the same choices as a pause
+(table `location_notification_mute`, migration
+`0259_location_notification_mute.sql`, one row for each pair of people).
+`MuteLocationNotifications` and `UnmuteLocationNotifications` set and end it,
+and `notificationMute` on the person (`ListSharedLocations`, `GetLocation`)
+says it is in effect and until when. The dashboard has it on a chosen person's
+page, the phone in the drawer's header with that person chosen, the command
+line as `teanode location mute` and `unmute`, and the agent as the location
+tool's `mute` and `unmute`. A mute silences only the arrived and left notices;
+the map still shows where the person is.
+
 ## Pausing
 
 A person can stop their location being recorded for a while: for an hour, until

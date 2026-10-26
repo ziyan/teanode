@@ -153,6 +153,18 @@
             return [ownPauseJSON, pauseJSON(id: "pause-yesterday", startedAt: at(17, 55), endedAt: at(18, 40))]
         }
 
+        // `-TeaNodeScreen location-person-muted`: the first person is chosen and
+        // the person has muted their arrived and left notices until later today.
+        static var isPersonMuteScreen: Bool { DemoServer.screen == "location-person-muted" }
+
+        /// When the mute of the first person's notices ends: three hours after
+        /// the demo first asked, the same instant for every answer.
+        static let personMuteEndsAt = Date().addingTimeInterval(3 * 3600)
+
+        static var personMuteJSON: String {
+            #"{"mutedUntil":"\#(CalendarDates.text(personMuteEndsAt))"}"#
+        }
+
         /// A person as `GetLocation` and `ListSharedLocations` give them.
         static func sharedPersonJSON(userId: String) -> String {
             let person = DemoServer.demoPerson(userId)
@@ -168,8 +180,9 @@
             let point =
                 #"{"latitudeDegrees":\#(latitude),"longitudeDegrees":\#(longitude),"accuracyMeters":12,"altitudeMeters":null,"speedMetersPerSecond":null,"courseDegrees":null,"measuredAt":"\#(CalendarDates.text(measuredAt))","locationSource":"phone"}"#
             let open = isHistory ? historyPersonVisits[0] : "null"
+            let notificationMute = isHistory && isPersonMuteScreen ? personMuteJSON : "null"
             return #"""
-                {"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"shareLevel":"\#(isHistory ? "history" : "current")","latestPoint":\#(point),"openVisit":\#(open)}
+                {"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"shareLevel":"\#(isHistory ? "history" : "current")","latestPoint":\#(point),"openVisit":\#(open),"notificationMute":\#(notificationMute)}
                 """#
         }
 
@@ -269,6 +282,10 @@
                 return #"{"data":{"ListLocationPauses":[\#(pauses.joined(separator: ","))]}}"#
             }
             if query.contains("PauseLocation(") { return #"{"data":{"PauseLocation":\#(LocationDemo.ownPauseJSON)}}"# }
+            if query.contains("UnmuteLocationNotifications(") { return #"{"data":{"UnmuteLocationNotifications":true}}"# }
+            if query.contains("MuteLocationNotifications(") {
+                return #"{"data":{"MuteLocationNotifications":\#(LocationDemo.personMuteJSON)}}"#
+            }
             if query.contains("ResumeLocation") { return #"{"data":{"ResumeLocation":true}}"# }
             if query.contains("ListLocationShares") {
                 return #"{"data":{"ListLocationShares":\#(isSetupScreen ? "[]" : LocationDemo.sharesJSON)}}"#

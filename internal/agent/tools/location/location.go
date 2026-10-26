@@ -229,6 +229,26 @@ func init() {
 				Run: runResume,
 			},
 			{
+				Name: "location_mute", Family: tools.FamilyGeneral, Risk: tools.RiskWrite, Permissions: locationPermissions,
+				Description: "Stop the person being told on their phone when somebody who shares their location with them arrives at or leaves a place, from now, for a while or until they unmute. " +
+					"'person' is the username of somebody who shares with the person (people says who). " +
+					"'muted_until' is when it ends by itself (RFC 3339, or YYYY-MM-DDTHH:MM in the person's zone, at most 30 days ahead); leave it out to mute until the person unmutes. " +
+					"Muting while muted changes when it ends. It answers when the mute ends; people and now show a mute as notifications_muted.",
+				Parameters: tools.Object(map[string]any{
+					"person":      tools.StringProperty("the username of the person whose arrivals and departures are muted, from people"),
+					"muted_until": tools.StringProperty("when the mute ends by itself, as RFC 3339 or YYYY-MM-DDTHH:MM in the person's own time zone; leave out to mute until the person unmutes"),
+				}, "person"),
+				Run: runMute,
+			},
+			{
+				Name: "location_unmute", Family: tools.FamilyGeneral, Risk: tools.RiskWrite, Permissions: locationPermissions,
+				Description: "Tell the person on their phone again when somebody who shares their location with them arrives at or leaves a place, after a mute. 'person' is the username, from people.",
+				Parameters: tools.Object(map[string]any{
+					"person": tools.StringProperty("the username of the person whose arrivals and departures are told again, from people"),
+				}, "person"),
+				Run: runUnmute,
+			},
+			{
 				Name: "location_erase", Family: tools.FamilyGeneral, Risk: tools.RiskDestructive, Permissions: locationPermissions,
 				Description: "Erases the person's positions and visits (in the range, or all of them when no range is given), and the places left with no visit that they did not name or label. " +
 					"Places they named or labeled stay. Anything the person's agent already learned from those days stays in its memory until they remove it. This cannot be undone.",
@@ -311,7 +331,7 @@ func init() {
 			tools.Group{
 				Name: "location", Family: tools.FamilyGeneral,
 				Description: "Where the person is and where they have been: their position now, their visits to places and how long each lasted, the path of a day, the places they named or labeled, " +
-					"places OpenStreetMap knows near them, sharing where they are with their circles, and pausing it for a while. Place names come from OpenStreetMap unless the person named the place.",
+					"places OpenStreetMap knows near them, sharing where they are with their circles, pausing it for a while, and muting the notices when somebody sharing with them arrives or leaves. Place names come from OpenStreetMap unless the person named the place.",
 				Guidance: "Location is the person's own and private; use it when the answer depends on where they are or have been, and say plainly what you used. " +
 					"In a chat with other people only the person's own location is read: another person's is never repeated into a chat.",
 				Members: []tools.Member{
@@ -327,6 +347,8 @@ func init() {
 					{Action: "check_in", Tool: "location_check_in"},
 					{Action: "pause", Tool: "location_pause"},
 					{Action: "resume", Tool: "location_resume"},
+					{Action: "mute", Tool: "location_mute"},
+					{Action: "unmute", Tool: "location_unmute"},
 					{Action: "erase", Tool: "location_erase"},
 					{Action: "people", Tool: "location_people"},
 					{Action: "shares", Tool: "location_shares"},

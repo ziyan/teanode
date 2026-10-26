@@ -234,7 +234,11 @@ struct LocationScreen: View {
     @ViewBuilder
     private var drawerHeader: some View {
         if isShowingPeople, let person = model.selectedPerson {
-            LocationChosenPersonHeader(person: person) { model.focusOnOwn() }
+            LocationChosenPersonHeader(
+                person: person,
+                close: { model.focusOnOwn() },
+                mute: { choice in Task { await model.muteNotifications(of: person, for: choice) } },
+                unmute: { Task { await model.unmuteNotifications(of: person) } })
         } else {
             VStack(spacing: 0) {
                 // The person's own pause, where it is seen with the lists.
@@ -290,7 +294,8 @@ struct LocationScreen: View {
         /// The screens a screenshot names: `-TeaNodeScreen location-day`,
         /// `location-places`, `location-place`, `location-settings`,
         /// `location-sharing`, `location-paused` (the person and somebody sharing have paused),
-        /// `location-settings-paused`, `location-person`, `location-person-card` (the
+        /// `location-settings-paused`, `location-person`, `location-person-muted` (the same with
+        /// the person's notices muted until later today), `location-person-card` (the
         /// same with the person's card over the map, which the app shell
         /// brings up), `location-people` (more
         /// people than fit under the map), `location-checkin` (the check-in
@@ -304,7 +309,7 @@ struct LocationScreen: View {
             guard DemoServer.isRequested, path.isEmpty else { return }
             switch DemoServer.screen {
             case "location-day": path = [.day(Date())]
-            case "location-person", "location-person-card": model.select(userId: LocationDemo.historyPersonId)
+            case "location-person", "location-person-card", "location-person-muted": model.select(userId: LocationDemo.historyPersonId)
             case "location-people": path = [.people]
             case "location-checkin": isCheckingIn = true
             case "location-place", "location-address":

@@ -158,6 +158,11 @@ function answerWith(shown: {
       const endedAt = (variables as { endedAt: string | null }).endedAt
       return { PauseLocation: { id: 'pause-new', startedAt: new Date().toISOString(), endedAt } } as never
     }
+    if (document.includes('MuteLocationNotifications(')) {
+      const mutedUntil = (variables as { mutedUntil: string | null }).mutedUntil
+      return { MuteLocationNotifications: { mutedUntil } } as never
+    }
+    if (document.includes('UnmuteLocationNotifications(')) return { UnmuteLocationNotifications: true } as never
     if (document.includes('ResumeLocation')) return { ResumeLocation: true } as never
     if (document.includes('ListPlaces'))
       return { ListPlaces: { places: shown.places ?? [], nextOffset: null } } as never
@@ -1385,6 +1390,94 @@ it('shows the pause in effect with Resume, which ends it with a toast', async ()
 
   await waitFor(() => expect(calls('ResumeLocation')).toHaveLength(1))
   expect(await screen.findByText('Recording resumed.')).toBeTruthy()
+})
+
+it('mutes the notices of the person shown for an hour, with the end an hour from now', async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW] })
+  renderAt('/location?person=person-b')
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2030-03-05T12:00:00Z'))
+  try {
+    fireEvent.click(await screen.findByRole('button', { name: 'Mute notifications' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'For an hour' }))
+    await waitFor(() => expect(calls('MuteLocationNotifications(')).toHaveLength(1))
+  } finally {
+    vi.useRealTimers()
+  }
+  expect(calls('MuteLocationNotifications(')[0][1]).toEqual({
+    userId: 'person-b',
+    mutedUntil: '2030-03-05T13:00:00.000Z',
+  })
+  expect(await screen.findByText(/^Notifications muted until/)).toBeTruthy()
+})
+
+it('mutes until 08:00 the next morning on the browser clock, or until unmuted', async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW] })
+  renderAt('/location?person=person-b')
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(2030, 2, 5, 22, 15))
+  try {
+    fireEvent.click(await screen.findByRole('button', { name: 'Mute notifications' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Until tomorrow morning' }))
+    await waitFor(() => expect(calls('MuteLocationNotifications(')).toHaveLength(1))
+    fireEvent.click(await screen.findByRole('button', { name: 'Mute notifications' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Until I unmute' }))
+    await waitFor(() => expect(calls('MuteLocationNotifications(')).toHaveLength(2))
+  } finally {
+    vi.useRealTimers()
+  }
+  expect(calls('MuteLocationNotifications(')[0][1]).toEqual({
+    userId: 'person-b',
+    mutedUntil: new Date(2030, 2, 6, 8, 0).toISOString(),
+  })
+  expect(calls('MuteLocationNotifications(')[1][1]).toEqual({ userId: 'person-b', mutedUntil: null })
+})
+
+it('says in a toast when muting failed, and offers the mute again', async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW] })
+  const answered = vi.mocked(graphql).getMockImplementation()!
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('MuteLocationNotifications(')) throw new Error('Muting is refused')
+    return answered(document, variables)
+  })
+  renderAt('/location?person=person-b')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Mute notifications' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Until I unmute' }))
+
+  expect(await screen.findByText('Muting is refused')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Mute notifications' })).toBeTruthy()
+})
+
+it('shows the mute in effect with Unmute, which ends it with a toast', async () => {
+  answerWith({ sharedViews: [{ ...PERSON_B_VIEW, notificationMute: { mutedUntil: null } }] })
+  renderAt('/location?person=person-b')
+
+  expect(await screen.findByText('Notifications muted')).toBeTruthy()
+  // Only one thing at a time: the mute is not offered again while it is on.
+  expect(screen.queryByRole('button', { name: 'Mute notifications' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Unmute' }))
+
+  await waitFor(() => expect(calls('UnmuteLocationNotifications(')).toHaveLength(1))
+  expect(calls('UnmuteLocationNotifications(')[0][1]).toEqual({ userId: 'person-b' })
+  expect(await screen.findByText('Notifications unmuted.')).toBeTruthy()
+})
+
+it('says until when a timed mute lasts', async () => {
+  answerWith({
+    sharedViews: [{ ...PERSON_B_VIEW, notificationMute: { mutedUntil: new Date(2030, 2, 5, 15, 0).toISOString() } }],
+  })
+  renderAt('/location?person=person-b')
+
+  expect(await screen.findByText(/^Notifications muted until /)).toBeTruthy()
+})
+
+it('does not offer a mute on the page of the person themselves', async () => {
+  answerWith({})
+  renderAt('/location')
+
+  await screen.findByRole('button', { name: 'Pause recording' })
+  expect(screen.queryByRole('button', { name: 'Mute notifications' })).toBeNull()
 })
 
 it('reads the person again when a timed pause ends while the page is open', async () => {

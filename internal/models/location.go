@@ -288,3 +288,22 @@ type LocationPause struct {
 func (self *LocationPause) IsInEffectAt(instant time.Time) bool {
 	return !self.StartedAt.After(instant) && (self.EndedAt == nil || self.EndedAt.After(instant))
 }
+
+// LocationNotificationMute is a person's mute of the notices that somebody
+// sharing their location with them arrived at or left a place. UserID is the
+// person who muted, MutedUserID the person they no longer hear about. It is
+// in effect at an instant when MutedUntil is nil, a mute that lasts until the
+// person unmutes, or after the instant.
+type LocationNotificationMute struct {
+	UserID      string     `json:"userId"`
+	MutedUserID string     `json:"mutedUserId"`
+	MutedUntil  *time.Time `json:"mutedUntil,omitempty"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// IsInEffectAt reports whether the mute covers the instant.
+func (self *LocationNotificationMute) IsInEffectAt(instant time.Time) bool {
+	return self.MutedUntil == nil || self.MutedUntil.After(instant)
+}

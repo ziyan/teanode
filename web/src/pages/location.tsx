@@ -6,7 +6,7 @@ import { Avatar } from '../components/avatar'
 import { PageHeadingActions } from '../components/breadcrumb'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
-import { MapIcon, MoreIcon, PauseIcon, PencilIcon } from '../components/icons'
+import { BellOffIcon, MapIcon, MoreIcon, PauseIcon, PencilIcon } from '../components/icons'
 import { isLocationPermissionGranted, readFreshBrowserLocation } from '../components/browserLocation'
 import { LocationAddressChooser } from '../components/locationAddressChooser'
 import { LocationCheckInDialog } from '../components/locationCheckIn'
@@ -15,6 +15,7 @@ import {
   dayKeyOf,
   dayRange,
   LABEL_KEYS,
+  LocationNotificationMute,
   LocationPause,
   LocationPoint,
   LocationView,
@@ -127,6 +128,10 @@ const LIST_PAUSES = `query ($userId: String, $from: DateTime!, $until: DateTime!
 }`
 const PAUSE_LOCATION = `mutation ($endedAt: DateTime) { PauseLocation(endedAt: $endedAt) { ${PAUSE_FIELDS} } }`
 const RESUME_LOCATION = `mutation { ResumeLocation }`
+const MUTE_LOCATION_NOTIFICATIONS = `mutation ($userId: String!, $mutedUntil: DateTime) {
+  MuteLocationNotifications(userId: $userId, mutedUntil: $mutedUntil) { mutedUntil }
+}`
+const UNMUTE_LOCATION_NOTIFICATIONS = `mutation ($userId: String!) { UnmuteLocationNotifications(userId: $userId) }`
 const ERASE_LOCATION_HISTORY = `mutation ($from: DateTime, $until: DateTime) {
   EraseLocationHistory(from: $from, until: $until) { pointCount visitCount placeCount }
 }`
@@ -245,6 +250,8 @@ function LocationContent({ userId }: { userId: string }) {
   const [isBusy, setIsBusy] = useState(false)
   // Whether the person's own pause is being set or ended.
   const [isChangingPause, setIsChangingPause] = useState(false)
+  // Whether the mute of the chosen person's notices is being set or ended.
+  const [isChangingMute, setIsChangingMute] = useState(false)
   // Bumped when a timer for the end of a pause ran out before the end itself.
   const [pauseEndCheck, setPauseEndCheck] = useState(0)
   // Why the open dialog's work failed, shown in the dialog with what was typed
@@ -814,6 +821,49 @@ function LocationContent({ userId }: { userId: string }) {
     }
   }
 
+  // The words for a mute of a person's arrived and left notices.
+  function notificationMuteText(mute: LocationNotificationMute): string {
+    return mute.mutedUntil
+      ? t('location.notificationsMutedUntil', { time: arrivalOf(mute.mutedUntil) })
+      : t('location.notificationsMutedOpen')
+  }
+
+  // Mutes the chosen person's arrived and left notices until the given moment,
+  // or until the caller unmutes. The result is a toast; the people are read
+  // again so the page shows the new state.
+  async function muteNotifications(mutedUntil: Date | null) {
+    if (!viewedUserId) return
+    setIsChangingMute(true)
+    try {
+      const answer = await graphql<{ MuteLocationNotifications: LocationNotificationMute }>(
+        MUTE_LOCATION_NOTIFICATIONS,
+        { userId: viewedUserId, mutedUntil: mutedUntil ? mutedUntil.toISOString() : null },
+      )
+      toast.done(notificationMuteText(answer.MuteLocationNotifications))
+      void shared.reload(true)
+    } catch (failure) {
+      toast.failed(failure instanceof Error && failure.message ? failure.message : t('location.muteFailed'))
+    } finally {
+      setIsChangingMute(false)
+    }
+  }
+
+  async function unmuteNotifications() {
+    if (!viewedUserId) return
+    setIsChangingMute(true)
+    try {
+      await graphql<{ UnmuteLocationNotifications: boolean }>(UNMUTE_LOCATION_NOTIFICATIONS, {
+        userId: viewedUserId,
+      })
+      toast.done(t('location.unmuted'))
+      void shared.reload(true)
+    } catch (failure) {
+      toast.failed(failure instanceof Error && failure.message ? failure.message : t('location.unmuteFailed'))
+    } finally {
+      setIsChangingMute(false)
+    }
+  }
+
   // Work done from a dialog. A failure stays in the dialog.
   async function act(work: () => Promise<unknown>, done: string, failed: string): Promise<boolean> {
     setIsBusy(true)
@@ -970,6 +1020,52 @@ function LocationContent({ userId }: { userId: string }) {
             {t('person.profile')}
           </Link>
         )}
+        {viewedPerson && !viewedPerson.notificationMute && (
+          <MenuButton
+            label={t('location.muteNotifications')}
+            icon={
+              <>
+                <BellOffIcon size={14} />
+                {t('location.muteNotifications')}
+              </>
+            }
+            disabled={isChangingMute}
+            render={(close) => (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    close()
+                    void muteNotifications(anHourAfter(new Date()))
+                  }}
+                >
+                  {t('location.muteForHour')}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    close()
+                    void muteNotifications(tomorrowMorning(new Date()))
+                  }}
+                >
+                  {t('location.muteUntilTomorrow')}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    close()
+                    void muteNotifications(null)
+                  }}
+                >
+                  {t('location.muteUntilUnmuted')}
+                </button>
+              </>
+            )}
+          />
+        )}
         {!isViewingOther && !ownPause && (
           <MenuButton
             label={t('location.pause')}
@@ -1051,6 +1147,15 @@ function LocationContent({ userId }: { userId: string }) {
             <span>{ownPauseText(ownPause)}</span>
             <button type="button" disabled={isChangingPause} onClick={() => void resumeRecording()}>
               {t('location.resume')}
+            </button>
+          </div>
+        )}
+        {viewedPerson?.notificationMute && (
+          <div className="location-here">
+            <BellOffIcon size={16} />
+            <span>{notificationMuteText(viewedPerson.notificationMute)}</span>
+            <button type="button" disabled={isChangingMute} onClick={() => void unmuteNotifications()}>
+              {t('location.unmute')}
             </button>
           </div>
         )}

@@ -63,6 +63,13 @@ export type LocationView = {
   // The pause in effect. While it is, somebody else's view has no latestPoint
   // and no openVisit.
   pause?: LocationPause | null
+  // The caller's mute of this person's arrived and left notices, null when not
+  // muted. mutedUntil is null when the mute lasts until the caller unmutes.
+  notificationMute?: LocationNotificationMute | null
+}
+
+export type LocationNotificationMute = {
+  mutedUntil: string | null
 }
 
 export type FoundPlace = {
@@ -87,7 +94,7 @@ export const PLACE_FIELDS =
 export const VISIT_FIELDS = `id arrivedAt departedAt durationSeconds place { ${PLACE_FIELDS} }`
 export const PAUSE_FIELDS = 'id startedAt endedAt'
 export const PERSON_FIELDS = `userId username name avatarUrl avatarColorIndex shareLevel
-  latestPoint { ${POINT_FIELDS} } openVisit { id arrivedAt place { ${PLACE_FIELDS} } } pause { ${PAUSE_FIELDS} }`
+  latestPoint { ${POINT_FIELDS} } openVisit { id arrivedAt place { ${PLACE_FIELDS} } } pause { ${PAUSE_FIELDS} } notificationMute { mutedUntil }`
 
 export const LABEL_KEYS: Record<string, Key> = {
   home: 'location.label.home',
