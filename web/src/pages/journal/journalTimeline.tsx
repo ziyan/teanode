@@ -56,7 +56,7 @@ import {
   parseDay,
   periodPath,
   temperatureText,
-  usesImperialUnits,
+  useIsImperial,
   wholeNumberText,
   weekdayIndex,
   weekdayNames,
@@ -407,7 +407,7 @@ function dayFacts(
 
 function DayCard({ day }: { day: JournalDaySummary }) {
   const { t, plural, language } = useTranslation()
-  const isImperial = usesImperialUnits()
+  const isImperial = useIsImperial()
   const level = moodLevelOf(day.mood)
   const facts = dayFacts(day, t, plural, language)
   const photoIds = day.photoIds.slice(0, 4)

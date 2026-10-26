@@ -240,7 +240,7 @@ function Address() {
   return <output data-testid="address">{location.pathname + location.search}</output>
 }
 
-export function renderAt(entry: string, permissions = ['journal:use']) {
+export function renderAt(entry: string, permissions = ['journal:use'], measurementSystem = '') {
   return render(
     <TranslationProvider>
       <ToastProvider>
@@ -250,6 +250,7 @@ export function renderAt(entry: string, permissions = ['journal:use']) {
             authenticated: true,
             authenticationRequired: true,
             username: 'person-a-login',
+            measurementSystem,
             passkeysEnabled: false,
             permissions: { everywhere: permissions, byDomain: [] },
           }}

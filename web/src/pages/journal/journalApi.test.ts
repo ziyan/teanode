@@ -106,13 +106,17 @@ it('writes money by the places its currency has, not by hundredths', () => {
   expect(amountText(5, '', 'en')).toBe('$0.05')
 })
 
-it('uses degrees Fahrenheit and miles only where the locale does', () => {
-  expect(usesImperialUnits('en-US')).toBe(true)
-  expect(usesImperialUnits('en')).toBe(true)
-  expect(usesImperialUnits('en-GB')).toBe(false)
-  expect(usesImperialUnits('ja-JP')).toBe(false)
-  expect(usesImperialUnits('zh-CN')).toBe(false)
-  expect(usesImperialUnits('not a locale')).toBe(false)
+it('uses degrees Fahrenheit and miles only where the person or the locale does', () => {
+  expect(usesImperialUnits(undefined, 'en-US')).toBe(true)
+  expect(usesImperialUnits('', 'en-US')).toBe(true)
+  expect(usesImperialUnits('', 'en')).toBe(true)
+  expect(usesImperialUnits('', 'en-GB')).toBe(false)
+  expect(usesImperialUnits('', 'ja-JP')).toBe(false)
+  expect(usesImperialUnits('', 'zh-CN')).toBe(false)
+  expect(usesImperialUnits('', 'not a locale')).toBe(false)
+  // What the person chose beats the browser's region either way.
+  expect(usesImperialUnits('metric', 'en-US')).toBe(false)
+  expect(usesImperialUnits('us', 'ja-JP')).toBe(true)
   expect(temperatureText(14.4, true)).toBe('58°')
   expect(temperatureText(14.4, false)).toBe('14°')
 })
