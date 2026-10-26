@@ -1,5 +1,5 @@
 import { formatMoney } from '../../components/common'
-import { PencilIcon, TrashIcon } from '../../components/icons'
+import { PencilIcon, RestoreIcon, TrashIcon } from '../../components/icons'
 import { Tooltip } from '../../components/tooltip'
 import { useTranslation } from '../../i18n/i18n'
 import { formatDay } from '../finance/financeApi'
@@ -143,6 +143,7 @@ export function ShoppingItemGrid({
                   shoppingItem={shoppingItem}
                   tab={tab}
                   isBusy={isBusy}
+                  isCompact
                   onEdit={onEdit}
                   onRemove={onRemove}
                   onNeedAgain={onNeedAgain}
@@ -189,11 +190,13 @@ function ListItemCheck({
 }
 
 // ListItemActions are an item's buttons on a list: Need again on Not needed,
-// edit, and remove.
+// edit, and remove. On a card Need again is an icon like the other two, so
+// the three fit on one line of a card's width.
 function ListItemActions({
   shoppingItem,
   tab,
   isBusy,
+  isCompact = false,
   onEdit,
   onRemove,
   onNeedAgain,
@@ -201,6 +204,7 @@ function ListItemActions({
   shoppingItem: ShoppingItem
   tab: ShoppingTab
   isBusy: boolean
+  isCompact?: boolean
   onEdit: (shoppingItem: ShoppingItem) => void
   onRemove: (shoppingItem: ShoppingItem) => void
   onNeedAgain: (shoppingItem: ShoppingItem) => void
@@ -208,7 +212,20 @@ function ListItemActions({
   const { t } = useTranslation()
   return (
     <>
-      {tab === 'not-needed' ? (
+      {tab === 'not-needed' && isCompact ? (
+        <Tooltip label={t('shopping.needAgain')}>
+          <button
+            type="button"
+            className="icon-action"
+            aria-label={`${shoppingItem.itemDescription}: ${t('shopping.needAgain')}`}
+            disabled={isBusy}
+            onClick={() => onNeedAgain(shoppingItem)}
+          >
+            <RestoreIcon size={16} />
+          </button>
+        </Tooltip>
+      ) : null}
+      {tab === 'not-needed' && !isCompact ? (
         <button type="button" className="button-quiet" disabled={isBusy} onClick={() => onNeedAgain(shoppingItem)}>
           {t('shopping.needAgain')}
         </button>
