@@ -1073,6 +1073,13 @@ button.conversation-tile:focus-visible {
   font-size: var(--text-body);
 }
 
+/* "3 of 12", beside the arrows that move through them. */
+.lightbox-position {
+  flex: 0 0 auto;
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}
+
 .lightbox-name .muted {
   font-size: var(--text-label);
 }
@@ -22292,6 +22299,9 @@ button.person-row:focus-visible {
 .journal-pair {
   display: flex;
   flex-wrap: wrap;
+  /* Each card is as tall as it is: a section that is folded up to its head
+     should not be stretched to the height of the one beside it. */
+  align-items: flex-start;
   gap: var(--space-4);
 }
 
@@ -22312,6 +22322,217 @@ button.person-row:focus-visible {
 
 .journal-card-flush {
   padding-bottom: var(--space-1);
+}
+
+/* Words that can be long (a folder, a subject, a title with no spaces) break
+   anywhere rather than push the card wider than the window, and the lines of
+   a card give up their width to let them. */
+.journal-card,
+.journal-day-card,
+.journal-day-column,
+.journal-month-cell,
+.journal-year-month {
+  overflow-wrap: anywhere;
+}
+
+/* The head of a panel: the title and the buttons share the first line, on a
+   phone too, and the sentence under them has the whole width. The
+   dashboard's own head drops the action under the title on a phone, which
+   is right for a button of words and wrong for a chevron. Buttons too wide
+   to share the line (the switch between the touched-up words and the
+   original) drop under the title, at the right. */
+.journal-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: 4px;
+  margin-bottom: var(--space-5);
+}
+
+.journal-card-head.is-alone {
+  margin-bottom: 0;
+}
+
+.journal-card-head h3 {
+  flex: 1 1 8rem;
+  min-width: 0;
+  margin: 0;
+}
+
+.journal-card-head-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.journal-card-head p {
+  flex: 1 1 100%;
+  max-width: var(--measure);
+  margin: 0;
+}
+
+/* A part of a panel that is folded until asked for. */
+.journal-disclosure {
+  margin-top: var(--space-3);
+}
+
+.journal-disclosure:first-child {
+  margin-top: 0;
+}
+
+.journal-disclosure-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 var(--space-2) 0 0;
+  border: 0;
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--text-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.journal-disclosure-toggle:hover {
+  color: var(--text);
+}
+
+.journal-details {
+  margin-top: var(--space-1);
+}
+
+.journal-details > .journal-row:last-of-type {
+  padding-bottom: 0;
+}
+
+/* The foot of a list that shows its first rows: the line of the row it would
+   have been, and the button for the rest. */
+.journal-show-all {
+  display: flex;
+  padding: var(--space-3) 0 var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.journal-show-all .button-quiet {
+  font-size: 13px;
+}
+
+.journal-moments + .journal-show-all,
+.journal-shipped .journal-show-all {
+  padding-top: var(--space-2);
+  border-top: 0;
+}
+
+/* What was done in one project: a panel of its own inside the day's work. */
+.journal-projects {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.journal-project {
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+
+.journal-project-name {
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.journal-project-time {
+  margin-top: 2px;
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.journal-project-summary {
+  max-width: var(--measure);
+  margin: var(--space-2) 0 0;
+  font-family: var(--journal-serif);
+  font-size: 15.5px;
+  line-height: 1.6;
+}
+
+.journal-project-topics {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  font-size: var(--text-body);
+  line-height: 1.5;
+}
+
+.journal-project-topics li {
+  position: relative;
+  padding-left: 14px;
+}
+
+.journal-project-topics li + li {
+  margin-top: 2px;
+}
+
+.journal-project-topics li::before {
+  content: '';
+  position: absolute;
+  top: 0.62em;
+  left: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.journal-project-topics li.muted::before {
+  display: none;
+}
+
+.journal-shipped {
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.journal-shipped-label {
+  margin-bottom: 4px;
+  font-size: var(--text-label);
+}
+
+.journal-shipped ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.journal-shipped li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--space-2);
+  padding: 3px 0;
+  font-size: var(--text-body);
+}
+
+.journal-shipped a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.journal-shipped a svg {
+  flex: 0 0 auto;
 }
 
 .journal-title-with-icon {
@@ -22491,6 +22712,13 @@ a.journal-chip:hover {
   gap: var(--space-2) var(--space-3);
 }
 
+.journal-toolbar-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
 .journal-stepper {
   display: inline-flex;
   align-items: center;
@@ -22582,7 +22810,7 @@ a.journal-chip:hover {
 }
 
 .journal-mood-card {
-  flex: 1 1 380px;
+  flex: 3 1 380px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -22665,7 +22893,9 @@ a.journal-chip:hover {
 }
 
 .journal-weather-card {
-  flex: 0 1 300px;
+  /* Grows when the two cards stack, so it is as wide as the one above it. */
+  flex: 1 1 260px;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--space-4);
@@ -22903,7 +23133,7 @@ a.journal-chip:hover {
   padding: var(--space-3) var(--space-5) var(--space-2);
 }
 
-.journal-map-body .settings-section-head {
+.journal-map-body .journal-card-head:not(.is-alone) {
   margin-bottom: var(--space-2);
 }
 
@@ -23296,6 +23526,13 @@ a.journal-moment:hover {
   line-height: 1.45;
 }
 
+.journal-day-headline.is-numbers {
+  font-family: inherit;
+  font-size: var(--text-title);
+  font-weight: 550;
+  color: var(--muted);
+}
+
 .journal-excerpt {
   margin: 6px 0 0;
   padding-left: 10px;
@@ -23423,10 +23660,24 @@ a.journal-moment:hover {
   font-size: 11.5px;
 }
 
+/* The five moods are one unit: when the legend wraps, they go below the
+   sentence together, and do not break one word to a line. */
+.journal-legend-sentence {
+  flex: 1 1 100%;
+}
+
+.journal-legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px var(--space-3);
+}
+
 .journal-legend-item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
 }
 
 .journal-year-ago {
@@ -23865,6 +24116,57 @@ a.journal-year-month:hover {
    seven columns and drops what no longer fits in them, and the controls at
    the top wrap. */
 @media (max-width: 600px) {
+  /* The zoom control is one line of four equal parts; under it the steps and
+     the way out to the timeline share a line, one at each end. */
+  .journal-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .journal-zoom {
+    display: flex;
+  }
+
+  .journal-zoom > a {
+    flex: 1 1 0;
+    justify-content: center;
+    padding: 7px 4px;
+    font-size: 13px;
+  }
+
+  .journal-toolbar-nav {
+    flex-wrap: nowrap;
+    justify-content: space-between;
+  }
+
+  /* Two tiles to a row, and an odd one out takes the whole row, so five
+     numbers are three short rows and not a screen of one. */
+  .journal-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+
+  .journal-tiles > .tile:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .journal-tile {
+    padding: var(--space-3);
+  }
+
+  .journal-tile .tile-value {
+    font-size: 20px;
+  }
+
+  .journal-tile .tile-detail {
+    overflow-wrap: anywhere;
+  }
+
+  .journal-card-head-actions {
+    gap: var(--space-1);
+  }
+
   .journal-day-card {
     gap: var(--space-3);
     padding: var(--space-3) var(--space-4);

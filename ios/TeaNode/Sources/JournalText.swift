@@ -275,6 +275,30 @@ enum JournalText {
         durationText(minutes: Int(milliseconds / 60_000))
     }
 
+    /// "3 projects", the way a day or a period counts its work.
+    static func projectCountText(_ projectCount: Int) -> String {
+        String(localized: "\(projectCount) projects")
+    }
+
+    /// "6 h 10 min, 3 projects": the time spent coding and how many projects
+    /// it was spread over. Never the number of sessions, which is how often
+    /// an assistant was started and says nothing about the work.
+    static func workText(minutes: Int, projectCount: Int) -> String {
+        var parts: [String] = []
+        if minutes > 0 { parts.append(durationText(minutes: minutes)) }
+        if projectCount > 0 { parts.append(projectCountText(projectCount)) }
+        return parts.joined(separator: ", ")
+    }
+
+    /// "2 h 10 min, 9:20 AM to 5:05 PM": how long a project took and when.
+    static func projectTimeText(_ project: JournalWorkProject) -> String {
+        var parts: [String] = []
+        if project.activeMinutes > 0 { parts.append(durationText(minutes: project.activeMinutes)) }
+        let range = timeRangeText(from: project.firstAt, until: project.lastAt == project.firstAt ? nil : project.lastAt)
+        if !range.isEmpty { parts.append(range) }
+        return parts.joined(separator: ", ")
+    }
+
     /// "$52.10", from minor units.
     static func moneyText(minorUnits: Int64, currency: String) -> String {
         let amount = JournalMoney.amount(minorUnits: minorUnits, currency: currency)

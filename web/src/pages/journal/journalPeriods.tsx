@@ -39,9 +39,12 @@ import {
   weekdayNames,
   weekdayShortText,
   wholeNumberText,
+  workText,
   yearOf,
 } from './journalApi'
 import { NarrativeCard, RecordKindIcon } from './journalNarrative'
+import { ShowAllButton, useRowLimit } from './journalCollapse'
+import { RecordLink } from './journalOpen'
 import {
   JournalCard,
   MoodDot,
@@ -49,6 +52,7 @@ import {
   PeriodToolbar,
   browserToday,
   monthStepPaths,
+  useKeptScroll,
   usePendingPoll,
   weekStartsOnOf,
   weekStepPaths,
@@ -97,6 +101,7 @@ function PeriodShell({
   }, [query])
   const period = query.data
   usePendingPoll(Boolean(period?.lookingBack.touchUpPending || period?.narrative.narrativePending), reload)
+  useKeptScroll(Boolean(period))
 
   const heading = describe(period)
   useBreadcrumbDetail(heading.detail, heading.parent)
@@ -361,10 +366,10 @@ function WeekDays({ period }: { period: JournalPeriod }) {
                 </span>
               )}
             </span>
-            {summary?.coverPhotoId && (
+            {(summary?.coverPhotoId || summary?.photoIds[0]) && (
               <img
                 className="journal-day-column-photo"
-                src={photoSmallPreviewPath(summary.coverPhotoId)}
+                src={photoSmallPreviewPath(summary.coverPhotoId || summary.photoIds[0])}
                 alt=""
                 loading="lazy"
                 draggable={false}
@@ -468,7 +473,7 @@ function WeekNumbers({ period }: { period: JournalPeriod }) {
       id: 'work',
       label: t('journal.tileWork'),
       value: durationText(totals.codingMinutes, t),
-      unit: plural(totals.codingSessionCount, { one: 'journal.sessionsOne', other: 'journal.sessionsOther' }),
+      unit: plural(totals.workProjectCount, { one: 'journal.projectsOne', other: 'journal.projectsOther' }),
       detail:
         totals.codingMinutes > 0
           ? t('journal.mostOn', { weekday: longDay(indexOfMost(work)), value: durationText(Math.max(...work), t) })
@@ -517,10 +522,16 @@ function WeekNumbers({ period }: { period: JournalPeriod }) {
 function WeekMoments({ period }: { period: JournalPeriod }) {
   const { t, language } = useTranslation()
   const choices = period.choices.filter((choice) => !choice.isHidden)
+  const limit = useRowLimit(choices.length)
   if (choices.length === 0) return null
   return (
-    <JournalCard title={t('journal.weekMoments')} description={t('journal.weekMomentsHint')} isFlush>
-      {choices.map((choice) => {
+    <JournalCard
+      title={t('journal.weekMoments')}
+      description={t('journal.weekMomentsHint')}
+      collapseId="week-moments"
+      isFlush
+    >
+      {choices.slice(0, limit.shownCount).map((choice) => {
         const record = choice.record
         const happened = record.happenedAt ? new Date(record.happenedAt) : null
         return (
@@ -536,7 +547,7 @@ function WeekMoments({ period }: { period: JournalPeriod }) {
                 {record.isUnavailable || !isDashboardPath(record.dashboardPath) ? (
                   <span>{record.title || t('journal.pinGone')}</span>
                 ) : (
-                  <Link to={record.dashboardPath}>{record.title}</Link>
+                  <RecordLink to={record.dashboardPath}>{record.title}</RecordLink>
                 )}
               </span>
               {choice.linkReason && <span className="muted journal-row-detail">{choice.linkReason}</span>}
@@ -544,6 +555,7 @@ function WeekMoments({ period }: { period: JournalPeriod }) {
           </div>
         )
       })}
+      <ShowAllButton limit={limit} />
     </JournalCard>
   )
 }
@@ -560,6 +572,7 @@ function WeekPlaces({ period }: { period: JournalPeriod }) {
     <JournalCard
       title={t('journal.places')}
       description={plural(period.totals.placeCount, { one: 'journal.placesOne', other: 'journal.placesOther' })}
+      collapseId="week-places"
     >
       <div className="journal-chips">
         {[...counts.entries()].map(([place, count]) => (
@@ -650,10 +663,10 @@ function MonthGrid({ month, period }: { month: string; period: JournalPeriod }) 
             const label = dayShortText(day, language)
             const content = (
               <>
-                {summary?.coverPhotoId && (
+                {(summary?.coverPhotoId || summary?.photoIds[0]) && (
                   <img
                     className="journal-month-photo"
-                    src={photoSmallPreviewPath(summary.coverPhotoId)}
+                    src={photoSmallPreviewPath(summary.coverPhotoId || summary.photoIds[0])}
                     alt=""
                     loading="lazy"
                     draggable={false}
@@ -696,13 +709,15 @@ function MonthGrid({ month, period }: { month: string; period: JournalPeriod }) 
         </div>
       </div>
       <div className="journal-legend muted">
-        <span>{t('journal.monthLegend')}</span>
-        {MOOD_LEVELS.map((level) => (
-          <span key={level} className="journal-legend-item">
-            <MoodDot level={level} />
-            {t(MOOD_NAMES[level])}
-          </span>
-        ))}
+        <span className="journal-legend-sentence">{t('journal.monthLegend')}</span>
+        <span className="journal-legend-items">
+          {MOOD_LEVELS.map((level) => (
+            <span key={level} className="journal-legend-item">
+              <MoodDot level={level} />
+              {t(MOOD_NAMES[level])}
+            </span>
+          ))}
+        </span>
       </div>
     </>
   )
@@ -731,11 +746,8 @@ function MonthMoods({ period }: { period: JournalPeriod }) {
       value: t('journal.stepsAverage', { count: wholeNumberText(totals.stepCount / stepDays.length, language) }),
     })
   }
-  if (totals.codingSessionCount > 0) {
-    rows.push({
-      label: 'journal.tileWork',
-      value: `${durationText(totals.codingMinutes, t)}, ${plural(totals.codingSessionCount, { one: 'journal.sessionsOne', other: 'journal.sessionsOther' })}`,
-    })
+  if (totals.codingMinutes > 0 || totals.workProjectCount > 0) {
+    rows.push({ label: 'journal.tileWork', value: workText(totals, t, plural) })
   }
   if (totals.photoCount > 0)
     rows.push({ label: 'journal.tilePhotos', value: wholeNumberText(totals.photoCount, language) })
@@ -761,7 +773,7 @@ function MonthMoods({ period }: { period: JournalPeriod }) {
   }
   if (total === 0 && rows.length === 0) return null
   return (
-    <JournalCard title={t('journal.moodMonth')}>
+    <JournalCard title={t('journal.monthNumbers')} collapseId="month-numbers">
       {total > 0 && (
         <>
           <div
@@ -804,6 +816,7 @@ function MonthMoods({ period }: { period: JournalPeriod }) {
 // them along a line from January to December, each as long as it lasted.
 function Chapters({ period, year }: { period: JournalPeriod; year?: string }) {
   const { t, language } = useTranslation()
+  const limit = useRowLimit(period.chapters.length)
   if (period.chapters.length === 0) return null
   const first = parseDay(`${year}-01-01`)
   const length = year ? (parseDay(`${Number(year) + 1}-01-01`).getTime() - first.getTime()) / 86_400_000 : 0
@@ -811,7 +824,12 @@ function Chapters({ period, year }: { period: JournalPeriod; year?: string }) {
   const share = (day: string, extraDays: number) =>
     Math.min(1, Math.max(0, ((parseDay(dayOf(day)).getTime() - first.getTime()) / 86_400_000 + extraDays) / length))
   return (
-    <JournalCard title={t('journal.chapters')} description={t('journal.chaptersHint')} isFlush>
+    <JournalCard
+      title={t('journal.chapters')}
+      description={t('journal.chaptersHint')}
+      collapseId={year ? 'year-chapters' : 'month-chapters'}
+      isFlush
+    >
       {year && (
         <>
           <div className="journal-chapter-strip" role="img" aria-label={t('journal.chaptersLine', { year })}>
@@ -833,7 +851,7 @@ function Chapters({ period, year }: { period: JournalPeriod; year?: string }) {
           </div>
         </>
       )}
-      {period.chapters.map((chapter, index) => (
+      {period.chapters.slice(0, limit.shownCount).map((chapter, index) => (
         <Link key={`${chapter.fromDay}-${index}`} className="journal-chapter" to={dayPath(dayOf(chapter.fromDay))}>
           <span className="journal-chapter-swatch" data-index={index % 4} aria-hidden="true" />
           <span className="journal-row-body">
@@ -850,6 +868,7 @@ function Chapters({ period, year }: { period: JournalPeriod; year?: string }) {
           </span>
         </Link>
       ))}
+      <ShowAllButton limit={limit} />
     </JournalCard>
   )
 }
@@ -926,11 +945,8 @@ function YearNumbers({ period }: { period: JournalPeriod }) {
     rows.push({ label: 'journal.tilePhotos', value: wholeNumberText(totals.photoCount, language) })
   if (totals.stepCount > 0)
     rows.push({ label: 'journal.tileSteps', value: wholeNumberText(totals.stepCount, language) })
-  if (totals.codingSessionCount > 0) {
-    rows.push({
-      label: 'journal.tileWork',
-      value: `${durationText(totals.codingMinutes, t)}, ${plural(totals.codingSessionCount, { one: 'journal.sessionsOne', other: 'journal.sessionsOther' })}`,
-    })
+  if (totals.codingMinutes > 0 || totals.workProjectCount > 0) {
+    rows.push({ label: 'journal.tileWork', value: workText(totals, t, plural) })
   }
   if (totals.recordingCount > 0) {
     rows.push({ label: 'journal.recordings', value: wholeNumberText(totals.recordingCount, language) })
@@ -939,7 +955,7 @@ function YearNumbers({ period }: { period: JournalPeriod }) {
     rows.push({ label: 'journal.tileSpent', value: amountText(totals.spentMinorUnits, totals.spentCurrency, language) })
   }
   return (
-    <JournalCard title={t('journal.yearNumbers')}>
+    <JournalCard title={t('journal.yearNumbers')} collapseId="year-numbers">
       {rows.length === 0 ? (
         <p className="muted">{t('journal.yearNoNumbers')}</p>
       ) : (

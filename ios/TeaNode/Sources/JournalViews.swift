@@ -171,12 +171,14 @@ struct JournalScreen: View {
 
     #if DEBUG
         /// The screens a screenshot names: `-TeaNodeScreen journal-day` (the full
-        /// day), `journal-day-words` (a day with words only), `journal-write` (the
-        /// write sheet over today), `journal-week`, `journal-month`.
+        /// day), `journal-day-work` (the same day from its work, with Details and
+        /// the work chat folded), `journal-day-words` (a day with words only),
+        /// `journal-write` (the write sheet over today), `journal-week`,
+        /// `journal-month`.
         private func openDemoScreen() {
             guard DemoServer.isRequested, path.isEmpty else { return }
             switch DemoServer.screen {
-            case "journal-day": path = [.day(JournalDemo.fullDay)]
+            case "journal-day", "journal-day-work": path = [.day(JournalDemo.fullDay)]
             case "journal-day-words": path = [.day(JournalDemo.wordsDay)]
             case "journal-week": path = [.period(.week, JournalDemo.fullDay)]
             case "journal-month": path = [.period(.month, JournalDemo.fullDay)]

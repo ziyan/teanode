@@ -10,6 +10,8 @@ import { useOptionalSession } from '../../session'
 
 export type Translate = (key: Key, values?: Values) => string
 
+export type Plural = (count: number, forms: { one: Key; other: Key }, values?: Values) => string
+
 export type PeriodKind = 'week' | 'month' | 'year'
 
 export type JournalMood = {
@@ -36,6 +38,8 @@ export type JournalFacts = {
   sleepMinutes: number
   workoutMinutes: number
   codingSessionCount: number
+  // How many projects were worked on; a period adds its days' counts up.
+  workProjectCount: number
   codingMinutes: number
   meetingCount: number
   meetingMinutes: number
@@ -133,6 +137,31 @@ export type JournalCodingSession = {
   linkReason: string
 }
 
+export type JournalShipped = {
+  documentId: string
+  title: string
+  // Where the request lives, on the host that holds the repository.
+  address: string
+  happenedAt: string
+  isDraft: boolean
+}
+
+// One project worked on in a day: the whole day's coding in a repository or
+// folder, in the one place a person reads first.
+export type JournalWorkProject = {
+  name: string
+  firstAt: string
+  lastAt: string
+  activeMinutes: number
+  stretchCount: number
+  // The titles of its sessions, each once.
+  topics: string[]
+  shipped: JournalShipped[]
+  // What the agent wrote was done, once the day is written; empty before.
+  summary: string
+  documentId: string
+}
+
 export type JournalDocument = {
   documentId: string
   title: string
@@ -145,6 +174,8 @@ export type JournalDocument = {
 export type JournalConversation = {
   conversationId: string
   title: string
+  // The person's main conversation, which is named in their own language.
+  isMain: boolean
   firstAt: string
   lastAt: string
   messageCount: number
@@ -268,6 +299,7 @@ export type JournalDay = {
   choices: JournalLink[]
   pins: JournalLink[]
   coverPhotoId: string
+  workProjects: JournalWorkProject[]
   codingSessions: JournalCodingSession[]
   documents: JournalDocument[]
   documentTotal: number
@@ -338,7 +370,8 @@ export type JournalSettings = {
 const MOOD_FIELDS = '{ moodLevel moodWords moodSource }'
 const WEATHER_FIELDS = '{ weatherCode weatherKind highCelsius lowCelsius precipitationMM placeName }'
 const FACTS_FIELDS =
-  '{ photoCount placeCount walkedMeters stepCount sleepMinutes workoutMinutes codingSessionCount codingMinutes ' +
+  '{ photoCount placeCount walkedMeters stepCount sleepMinutes workoutMinutes codingSessionCount workProjectCount ' +
+  'codingMinutes ' +
   'meetingCount meetingMinutes recordingCount conversationCount chatMessageCount mailReceivedCount mailSentCount ' +
   'documentCount transactionCount spentMinorUnits spentCurrency shoppingTripCount memoryPageCount mainPlaceName }'
 const DAY_SUMMARY_FIELDS =
@@ -375,9 +408,11 @@ const DAY_FIELDS =
   ' pins ' +
   LINK_FIELDS +
   ' coverPhotoId ' +
+  'workProjects { name firstAt lastAt activeMinutes stretchCount topics ' +
+  'shipped { documentId title address happenedAt isDraft } summary documentId } ' +
   'codingSessions { documentId title directory assistant startedAt endedAt stretchCount linkReason } ' +
   'documents { documentId title sourceName happenedAt isChosen linkReason } documentTotal ' +
-  'conversations { conversationId title firstAt lastAt messageCount } ' +
+  'conversations { conversationId title isMain firstAt lastAt messageCount } ' +
   'chats { chatId chatName firstAt lastAt messageCount } ' +
   'mail { itemId fromName subject receivedAt isSent isImportant isChosen linkReason repeatCount } mailTotal ' +
   'recordings { recordingId title recordedAt durationMS summary } ' +
@@ -680,6 +715,25 @@ export function durationText(minutes: number, t: Translate): string {
   return t('journal.durationHoursMinutes', { hours, minutes: rest })
 }
 
+// workText is the time spent coding and the projects it was spread over, for
+// the totals of a week, a month or a year: "6 h 10 min, 3 projects". Never the
+// number of sessions, which is how many times the assistant was started and
+// says nothing about the work.
+export function workText(
+  totals: { codingMinutes: number; workProjectCount: number },
+  t: Translate,
+  plural: Plural,
+): string {
+  return [
+    totals.codingMinutes > 0 ? durationText(totals.codingMinutes, t) : '',
+    totals.workProjectCount > 0
+      ? plural(totals.workProjectCount, { one: 'journal.projectsOne', other: 'journal.projectsOther' })
+      : '',
+  ]
+    .filter(Boolean)
+    .join(', ')
+}
+
 // amountText is money in a currency's minor units, as the currency writes it.
 // The number of places comes from the currency, so a yen is not divided by a
 // hundred.
@@ -693,6 +747,26 @@ export function amountText(minorUnits: number, currency: string, language: strin
     return `${(minorUnits / 100).toFixed(2)} ${code}`
   }
 }
+
+// webAddressOf is an address only when it is a web page: the address of a
+// pull request comes from a remote host, and a link must never run a script
+// or open a file.
+export function webAddressOf(address: string): string | null {
+  try {
+    const parsed = new URL(address)
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.href : null
+  } catch {
+    return null
+  }
+}
+
+// How many topics of a project are listed before "and N more".
+export const PROJECT_TOPIC_LIMIT = 4
+
+// How many rows of a list are shown before "Show all", and how many moments
+// of the day.
+export const LIST_ROW_LIMIT = 6
+export const MOMENT_LIMIT = 12
 
 // the narrative
 

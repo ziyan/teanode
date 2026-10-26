@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { CloseIcon, ExternalIcon, MinusIcon, PlusIcon } from './icons'
+import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, ExternalIcon, MinusIcon, PlusIcon } from './icons'
 import { Tooltip } from './tooltip'
 import { useTranslation } from '../i18n/i18n'
 
@@ -122,6 +122,11 @@ export function Lightbox({
   source,
   name,
   where,
+  openHref,
+  openLabel,
+  position,
+  onPrevious,
+  onNext,
   onClose,
 }: {
   source: string
@@ -130,6 +135,16 @@ export function Lightbox({
   // opened it knows one. A picture a person handed the agent directly does
   // not have one, and then the frame says only what it is.
   where?: string
+  // Where the link in the frame goes, and what it says, when it is not the
+  // picture's own bytes: a page that shows more of the same picture.
+  openHref?: string
+  openLabel?: string
+  // Where this picture is among the ones the lightbox was opened on, such as
+  // "3 of 12", and the way to the picture before and after it. A lightbox
+  // opened on one picture leaves all three out.
+  position?: string
+  onPrevious?: () => void
+  onNext?: () => void
   onClose: () => void
 }) {
   const { t } = useTranslation()
@@ -148,6 +163,11 @@ export function Lightbox({
   // necessarily caught up with.
   const viewNow = useRef(view)
   viewNow.current = view
+
+  // Another picture starts fitted, not where the last one was zoomed to.
+  useEffect(() => {
+    setView(FIT)
+  }, [source])
 
   // Where a point in the window falls on the stage, measured from the
   // middle of it, which is where the picture's own transform is anchored.
@@ -180,7 +200,13 @@ export function Lightbox({
         onClose()
         return
       }
-      if (event.key === '+' || event.key === '=') {
+      if (event.key === 'ArrowLeft' && onPrevious) {
+        event.preventDefault()
+        onPrevious()
+      } else if (event.key === 'ArrowRight' && onNext) {
+        event.preventDefault()
+        onNext()
+      } else if (event.key === '+' || event.key === '=') {
         event.preventDefault()
         zoomBy(STEP)
       } else if (event.key === '-' || event.key === '_') {
@@ -193,7 +219,7 @@ export function Lightbox({
     }
     document.addEventListener('keydown', onKeyDown, true)
     return () => document.removeEventListener('keydown', onKeyDown, true)
-  }, [onClose, zoomBy])
+  }, [onClose, onNext, onPrevious, zoomBy])
 
   // The way out is where the keyboard lands, so that Tab starts inside the
   // lightbox and Enter on arrival closes it.
@@ -325,17 +351,32 @@ export function Lightbox({
     >
       <div className="lightbox" role="dialog" aria-modal="true" aria-label={name}>
         <div className="lightbox-head">
+          {onPrevious ? (
+            <Tooltip label={t('lightbox.previous')}>
+              <button type="button" className="icon-button" onClick={onPrevious} aria-label={t('lightbox.previous')}>
+                <ChevronLeftIcon size={18} />
+              </button>
+            </Tooltip>
+          ) : null}
           <div className="lightbox-name">
             <strong>{name}</strong>
             {said ? <span className="muted">{said}</span> : null}
           </div>
-          <Tooltip label={t('lightbox.openRaw')}>
+          {position ? <span className="muted lightbox-position">{position}</span> : null}
+          {onNext ? (
+            <Tooltip label={t('lightbox.next')}>
+              <button type="button" className="icon-button" onClick={onNext} aria-label={t('lightbox.next')}>
+                <ChevronRightIcon size={18} />
+              </button>
+            </Tooltip>
+          ) : null}
+          <Tooltip label={openLabel ?? t('lightbox.openRaw')}>
             <a
               className="icon-button"
-              href={source}
+              href={openHref ?? source}
               target="_blank"
               rel="noreferrer"
-              aria-label={t('lightbox.openRaw')}
+              aria-label={openLabel ?? t('lightbox.openRaw')}
             >
               <ExternalIcon size={16} />
             </a>
