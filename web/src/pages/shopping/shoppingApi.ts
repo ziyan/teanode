@@ -535,16 +535,19 @@ export async function removeShoppingItems(shoppingItemIds: string[]): Promise<vo
   )
 }
 
-export async function checkShoppingItem(shoppingItemId: string, isChecked: boolean): Promise<void> {
+// checkShoppingItem puts an item in the cart or takes it out. The first item
+// a person puts in the cart starts their trip, at storeName (the item's store
+// when left out), and the others the list reaches are told.
+export async function checkShoppingItem(shoppingItemId: string, isChecked: boolean, storeName?: string): Promise<void> {
   await graphql(
     `
-      mutation ($shoppingItemId: String!, $isChecked: Boolean!) {
-        CheckShoppingItem(shoppingItemId: $shoppingItemId, isChecked: $isChecked) {
+      mutation ($shoppingItemId: String!, $isChecked: Boolean!, $storeName: String) {
+        CheckShoppingItem(shoppingItemId: $shoppingItemId, isChecked: $isChecked, storeName: $storeName) {
           id
         }
       }
     `,
-    { shoppingItemId, isChecked },
+    { shoppingItemId, isChecked, storeName: storeName || null },
   )
 }
 
@@ -631,26 +634,19 @@ export async function setShoppingItemPicture(shoppingItemId: string, agentAttach
   )
 }
 
-export async function startShopping(storeName: string, shoppingListIds: string[]): Promise<ShoppingTrip> {
-  const answer = await graphql<{ StartShopping: ShoppingTrip }>(
-    `mutation ($storeName: String, $shoppingListIds: [String!]!) {
-       StartShopping(storeName: $storeName, shoppingListIds: $shoppingListIds) { ${SHOPPING_TRIP_FIELDS} }
-     }`,
-    { storeName, shoppingListIds },
-  )
-  return answer.StartShopping
-}
-
-export async function finishShopping(shoppingTripId: string): Promise<void> {
+// finishShopping is Done: what the person put in the cart is bought, no
+// receipt needed. With no trip named it ends their own trip, or buys their
+// cart when none is open.
+export async function finishShopping(shoppingTripId?: string): Promise<void> {
   await graphql(
     `
-      mutation ($shoppingTripId: String!) {
+      mutation ($shoppingTripId: String) {
         FinishShopping(shoppingTripId: $shoppingTripId) {
           id
         }
       }
     `,
-    { shoppingTripId },
+    { shoppingTripId: shoppingTripId || null },
   )
 }
 

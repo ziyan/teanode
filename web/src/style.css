@@ -21675,85 +21675,118 @@ button.person-row:focus-visible {
    The Shopping page: the person's lists beside what is open (a list, a store
    or a receipt). On a phone the lists become a strip above it that scrolls
    sideways, and the tables stay tables inside a box that scrolls. */
-.shopping-layout {
-  display: grid;
-  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
-  gap: var(--space-4);
-  align-items: start;
+/* The page is the mailbox's frame and panes (.mailbox-frame, .mailbox,
+   .mailbox-list, .mailbox-pane); what is here is the rows in the column and
+   the parts of the pane only Shopping has. */
+.shopping-list-toolbar {
+  justify-content: flex-start;
 }
 
-.shopping-main {
-  min-width: 0;
+.shopping-list-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.shopping-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.shopping-rows-heading {
+  margin: 0;
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+/* A list or a store in the column: its name with how many are needed at
+   the end, and under the name who it is shared with. */
+.shopping-row-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px var(--space-2);
+  align-items: baseline;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  color: inherit;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.shopping-row-link:hover {
+  background: var(--field);
+}
+
+.shopping-row-link.active {
+  background: var(--sidebar-hover);
+}
+
+.shopping-row-name {
+  overflow: hidden;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shopping-row-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.shopping-row-meta {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The pane scrolls on its own, as the mailbox's reading side does, so the
+   column keeps its place while a long list is scrolled. */
+.shopping-pane {
+  overflow-y: auto;
 }
 
 /* The words a screen reader says for a column without a heading are placed
    absolutely; without a positioned box around them they escape the table's
    own scroll box and widen the whole page on a phone. */
-.shopping-main .table-wrap,
+.shopping-pane .table-wrap,
 .dialog .table-wrap {
   position: relative;
 }
 
-.shopping-lists {
-  margin-bottom: 0;
+/* Back to the column only where the column is not beside the pane. */
+.shopping-pane-back {
+  display: none;
+  flex: none;
 }
 
-.shopping-lists-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-2);
+@container mailbox (max-width: 860px) {
+  .shopping-pane-back {
+    display: inline-flex;
+  }
 }
 
-.shopping-lists-head h3 {
-  margin: 0;
+@supports not (container-type: inline-size) {
+  @media (max-width: 860px) {
+    .shopping-pane-back {
+      display: inline-flex;
+    }
+  }
 }
 
-.shopping-lists-subheading {
-  margin: var(--space-4) 0 var(--space-1);
-  font-size: var(--text-label);
-  font-weight: 550;
-  color: var(--muted);
+.shopping-home {
+  padding: var(--space-3) 0;
 }
 
-.shopping-lists-empty {
-  margin: var(--space-2) 0 0;
-}
-
-.shopping-list-links {
-  list-style: none;
-  margin: var(--space-2) 0 0;
-  padding: 0;
-}
-
-/* The border is there at rest and only changes color for the list that is
-   open, so choosing a list moves nothing. */
-.shopping-list-link {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid transparent;
-  border-radius: var(--radius-2);
-  color: var(--text);
-  text-decoration: none;
-}
-
-.shopping-list-link:hover {
-  background: var(--sidebar-hover);
-}
-
-.shopping-list-link.is-current {
-  border-color: var(--border-strong);
-  background: var(--sidebar-hover);
-}
-
-.shopping-list-link-name {
-  font-weight: 550;
-}
-
-.shopping-list-link-detail {
-  font-size: var(--text-label);
+.shopping-home h3 {
+  margin-top: 0;
 }
 
 .shopping-list-card {
@@ -21768,6 +21801,7 @@ button.person-row:focus-visible {
 }
 
 .shopping-list-summary {
+  flex: 1;
   min-width: 0;
 }
 
@@ -21856,6 +21890,154 @@ button.person-row:focus-visible {
 
 .shopping-picture-large.shopping-picture-empty {
   font-size: 32px;
+}
+
+/* A picture across the top of a card in the pictures view: square, the
+   whole product shown rather than cropped, on the field color so a picture
+   with its own white ground still reads as a tile. */
+.shopping-picture-card {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  object-fit: contain;
+  background: var(--field);
+}
+
+.shopping-picture-card.shopping-picture-empty {
+  font-size: 48px;
+}
+
+.shopping-card .picture-opener {
+  width: 100%;
+}
+
+/* The tabs of a list and the layout switch on one line, the switch at the
+   end; the line under the tabs runs under both. */
+.shopping-tabs-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.shopping-tabs-row .tabs {
+  flex: 1;
+  min-width: 0;
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+/* On a phone the tabs need the whole width: the switch goes on a line of
+   its own above them, at the end. */
+@media (max-width: 640px) {
+  .shopping-tabs-row {
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+  }
+
+  .shopping-tabs-row .tabs {
+    flex-basis: 100%;
+  }
+
+  .shopping-tabs-row .shopping-view-switch {
+    order: -1;
+    margin-left: auto;
+  }
+}
+
+/* The store's list buttons and the layout switch share a line, the switch
+   at the end. */
+.shopping-view-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.shopping-view-bar .shopping-list-toggles {
+  margin-bottom: 0;
+}
+
+.shopping-view-bar .shopping-view-switch {
+  margin-left: auto;
+}
+
+.shopping-view-switch {
+  flex: none;
+}
+
+.shopping-card-groups {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.shopping-card-group h4 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+/* Two cards side by side on a phone, as many as fit on a desktop. */
+.shopping-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shopping-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+}
+
+.shopping-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+}
+
+.shopping-card-name {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.shopping-card-name input[type='checkbox'] {
+  flex: none;
+  margin-top: 3px;
+}
+
+.shopping-card-facts {
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+/* The buttons sit at the foot of the card, so a row of cards lines its
+   buttons up whatever the names above them take. */
+.shopping-card-actions {
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: var(--space-1);
+}
+
+.shopping-card.is-in-cart .shopping-item-description strong {
+  color: var(--muted);
+  text-decoration: line-through;
 }
 
 .shopping-picture-field {
@@ -22040,24 +22222,4 @@ button.person-row:focus-visible {
   align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-2);
-}
-
-@media (max-width: 900px) {
-  .shopping-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .shopping-list-links {
-    display: flex;
-    gap: var(--space-2);
-    overflow-x: auto;
-  }
-
-  .shopping-list-links li {
-    flex: 0 0 auto;
-  }
-
-  .shopping-lists-subheading {
-    margin-top: var(--space-3);
-  }
 }
