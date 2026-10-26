@@ -19803,6 +19803,25 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   white-space: normal;
 }
 
+.location-trip {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+}
+
+.location-trip-leg {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 32px;
+}
+
+.location-travel-paging {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 .location-row-meta {
   flex: 0 0 auto;
   white-space: nowrap;

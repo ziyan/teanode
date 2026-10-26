@@ -4,7 +4,7 @@ import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { APIError, graphql, subscribe } from '../api'
-import { LocationPause, Place, PlaceVisit } from '../components/locationData'
+import { LocationPause, Place, PlaceVisit, TravelTotal, Trip, TripLeg } from '../components/locationData'
 import { ToastProvider } from '../components/toast'
 import { TranslationProvider } from '../i18n/i18n'
 import { SessionProvider } from '../session'
@@ -113,7 +113,70 @@ const PERSON_B_VIEW = {
   openVisit: null,
 }
 
+function tripLeg(overrides: Partial<TripLeg> = {}): TripLeg {
+  return {
+    id: 'leg-walk',
+    startedAt: '2030-03-05T13:30:00Z',
+    endedAt: '2030-03-05T13:38:00Z',
+    durationSeconds: 480,
+    distanceMeters: 600,
+    travelMode: 'walk',
+    detectedTravelMode: 'walk',
+    isTravelModeCorrected: false,
+    ...overrides,
+  }
+}
+
+// The trip from the park to the library: a walk, then a drive.
+function trip(overrides: Partial<Trip> = {}): Trip {
+  return {
+    id: 'trip-one',
+    startedAt: '2030-03-05T13:30:00Z',
+    endedAt: '2030-03-05T14:00:00Z',
+    durationSeconds: 1800,
+    distanceMeters: 12400,
+    legs: [
+      tripLeg(),
+      tripLeg({
+        id: 'leg-car',
+        startedAt: '2030-03-05T13:40:00Z',
+        endedAt: '2030-03-05T14:00:00Z',
+        durationSeconds: 1080,
+        distanceMeters: 11800,
+        travelMode: 'car',
+        detectedTravelMode: 'car',
+      }),
+    ],
+    ...overrides,
+  }
+}
+
+// The visit after the trip's, so the trip stands between the two.
+function libraryVisit(): PlaceVisit {
+  return visit({
+    id: 'visit-library',
+    place: place({ id: 'place-library', placeName: 'Fixture Library' }),
+    arrivedAt: '2030-03-05T14:00:00Z',
+    departedAt: '2030-03-05T15:00:00Z',
+    durationSeconds: 3600,
+  })
+}
+
+function total(overrides: Partial<TravelTotal> = {}): TravelTotal {
+  return {
+    periodStartDay: '2030-03-04',
+    travelMode: 'walk',
+    distanceMeters: 3000,
+    durationSeconds: 2400,
+    legCount: 4,
+    ...overrides,
+  }
+}
+
 function answerWith(shown: {
+  // The trips ListTrips answers with, and the totals ListTravelTotals does.
+  trips?: Trip[]
+  travelTotals?: TravelTotal[]
   own?: Record<string, unknown> | null
   sharedViews?: Record<string, unknown>[]
   movedView?: typeof PERSON_B_VIEW
@@ -152,6 +215,9 @@ function answerWith(shown: {
       if (!found) throw new APIError('api: not found')
       return { ReadPlace: found } as never
     }
+    if (document.includes('ListTrips(')) return { ListTrips: { trips: shown.trips ?? [], nextOffset: null } } as never
+    if (document.includes('ListTravelTotals(')) return { ListTravelTotals: shown.travelTotals ?? [] } as never
+    if (document.includes('SetTripLegTravelMode(')) return { SetTripLegTravelMode: { id: 'leg-car' } } as never
     if (document.includes('ListLocationPoints')) return { ListLocationPoints: [] } as never
     if (document.includes('ListLocationPauses')) return { ListLocationPauses: shown.pauses ?? [] } as never
     if (document.includes('PauseLocation(')) {
@@ -241,6 +307,12 @@ function renderAt(entry: string, options: { canUsePhotos?: boolean; earlierEntri
       </ToastProvider>
     </TranslationProvider>,
   )
+}
+
+// The variables the latest request for travel totals carried.
+function lastTotalsRequest() {
+  const asked = calls('ListTravelTotals(')
+  return asked[asked.length - 1][1] as { from: string; until: string; period: string; userId: string | null }
 }
 
 function calls(operation: string) {
@@ -1683,4 +1755,143 @@ it('shows the pause in effect as the newest row of the timeline, and reads the p
   expect(container.querySelectorAll('.location-row').length).toBeGreaterThan(0)
   expect(screen.queryByText(/No visits yet/)).toBeNull()
   expect(calls('ListLocationPauses')[0][1]).toMatchObject({ userId: 'person-b' })
+})
+
+it('shows the trip between the two visits it joins, with each leg, its distance and its time', async () => {
+  answerWith({ visits: [libraryVisit(), visit()], trips: [trip()] })
+  renderAt('/location')
+
+  expect(await screen.findByText('0.6 km · 8 min')).toBeTruthy()
+  expect(screen.getByText('11.8 km · 18 min')).toBeTruthy()
+  expect(screen.getByText('Walk')).toBeTruthy()
+  expect(screen.getByText('Car')).toBeTruthy()
+  // Newest first: the library, then the trip that led to it, then the park.
+  const library = screen.getByText('Fixture Library')
+  const walk = screen.getByText('Walk')
+  const park = screen.getAllByText('Fixture Park')[0]
+  expect(library.compareDocumentPosition(walk) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(walk.compareDocumentPosition(park) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(calls('ListTrips(')[0][1]).toMatchObject({ userId: null })
+})
+
+it('corrects the way of travel of a leg and reads the trips again', async () => {
+  answerWith({ visits: [libraryVisit(), visit()], trips: [trip()] })
+  renderAt('/location')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Change the way of travel, Car' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Bus' }))
+
+  await waitFor(() => expect(calls('SetTripLegTravelMode(')).toHaveLength(1))
+  expect(calls('SetTripLegTravelMode(')[0][1]).toEqual({ tripLegId: 'leg-car', travelMode: 'bus' })
+  expect(await screen.findByText('Changed to Bus.')).toBeTruthy()
+  await waitFor(() => expect(calls('ListTrips(').length).toBeGreaterThan(1))
+})
+
+it('marks a corrected leg, shows what was detected, and goes back to it with null', async () => {
+  answerWith({
+    visits: [libraryVisit(), visit()],
+    trips: [
+      trip({
+        legs: [tripLeg({ id: 'leg-bus', travelMode: 'bus', detectedTravelMode: 'car', isTravelModeCorrected: true })],
+      }),
+    ],
+  })
+  renderAt('/location')
+
+  expect(await screen.findByText('corrected')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Change the way of travel, Bus' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'As detected (Car)' }))
+
+  await waitFor(() => expect(calls('SetTripLegTravelMode(')).toHaveLength(1))
+  expect(calls('SetTripLegTravelMode(')[0][1]).toEqual({ tripLegId: 'leg-bus', travelMode: null })
+  expect(await screen.findByText('Back to the detected way of travel, Car.')).toBeTruthy()
+})
+
+it('says in a toast when correcting a leg failed', async () => {
+  answerWith({ visits: [libraryVisit(), visit()], trips: [trip()] })
+  const answered = vi.mocked(graphql).getMockImplementation()!
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('SetTripLegTravelMode(')) throw new Error('Correcting is refused')
+    return answered(document, variables)
+  })
+  renderAt('/location')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Change the way of travel, Car' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Train' }))
+
+  expect(await screen.findByText('Correcting is refused')).toBeTruthy()
+})
+
+it('shows the trips of somebody else without a menu to correct them', async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW], visits: [libraryVisit(), visit()], trips: [trip()] })
+  renderAt('/location?person=person-b')
+
+  expect(await screen.findByText('0.6 km · 8 min')).toBeTruthy()
+  expect(calls('ListTrips(')[0][1]).toMatchObject({ userId: 'person-b' })
+  expect(screen.queryByRole('button', { name: /Change the way of travel/ })).toBeNull()
+})
+
+it('lists the travel of each week with a column for each way that has any distance', async () => {
+  answerWith({
+    travelTotals: [
+      total(),
+      total({ travelMode: 'car', distanceMeters: 20000, legCount: 2 }),
+      total({ periodStartDay: '2030-02-25', distanceMeters: 1000 }),
+    ],
+  })
+  renderAt('/location?tab=travel')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Week' }))
+
+  expect(await screen.findByText('Week of Mar 4')).toBeTruthy()
+  await waitFor(() => expect(lastTotalsRequest()).toMatchObject({ period: 'week', userId: null }))
+  expect(screen.getByText('Week of Feb 25')).toBeTruthy()
+  expect(screen.getAllByRole('row')).toHaveLength(3)
+  const headers = screen.getAllByRole('columnheader').map((each) => each.textContent)
+  expect(headers).toEqual(['Period', 'Walk', 'Car', 'Total'])
+  const newest = within(screen.getByRole('row', { name: /Week of Mar 4/ }))
+  expect(newest.getByText('3 km')).toBeTruthy()
+  expect(newest.getByText('20 km')).toBeTruthy()
+  expect(newest.getByText('23 km')).toBeTruthy()
+  // The older week drove nowhere.
+  expect(within(screen.getByRole('row', { name: /Week of Feb 25/ })).getByText('-')).toBeTruthy()
+  expect(screen.getByTestId('address').textContent).toContain('travelPeriod=week')
+})
+
+it('says travel appears after the phone records some', async () => {
+  answerWith({})
+  renderAt('/location?tab=travel')
+
+  expect(await screen.findByText(/Trips appear after the phone records some travel/)).toBeTruthy()
+})
+
+it('pages the totals back with Previous, and forward again with Next', async () => {
+  answerWith({ travelTotals: [total()] })
+  renderAt('/location?tab=travel&travelPeriod=week')
+
+  await screen.findByText('Week of Mar 4')
+  const newestPage = lastTotalsRequest()
+  expect((screen.getByRole('button', { name: 'Next' }) as HTMLButtonElement).disabled).toBe(true)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Previous' }))
+
+  await waitFor(() => expect(screen.getByTestId('address').textContent).toContain('travelPage=1'))
+  await waitFor(() => {
+    const olderPage = lastTotalsRequest()
+    // The page before ends where the newest page began, twelve weeks wide.
+    expect(olderPage.until).toBe(newestPage.from)
+    expect(new Date(olderPage.until).getTime() - new Date(olderPage.from).getTime()).toBeGreaterThan(
+      83 * 24 * 60 * 60 * 1000,
+    )
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  await waitFor(() => expect(screen.getByTestId('address').textContent).not.toContain('travelPage'))
+})
+
+it('offers the Travel tab on a person who shares their history', async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW], travelTotals: [total()] })
+  renderAt('/location?person=person-b&tab=travel')
+
+  expect(await screen.findByText('Travel of Person B')).toBeTruthy()
+  expect(calls('ListTravelTotals(')[0][1]).toMatchObject({ userId: 'person-b' })
 })
