@@ -19,12 +19,16 @@ type User struct {
 	// empty until they say.
 	Pronoun string `json:"pronoun"`
 
+	// MeasurementSystem is the units they read measurements in: metric, us,
+	// or empty to follow their language and region.
+	MeasurementSystem string `json:"measurementSystem"`
+
 	// AvatarURL is where their picture is served, nil while they have none.
 	AvatarURL        *string `json:"avatarUrl"`
 	AvatarColorIndex int     `json:"avatarColorIndex"`
 }
 
-const userFields = `{ id username name email pronoun avatarUrl avatarColorIndex }`
+const userFields = `{ id username name email pronoun measurementSystem avatarUrl avatarColorIndex }`
 
 // ListUsers returns the accounts configured on the server.
 func ListUsers(ctx context.Context, connection *Client) ([]*User, error) {
@@ -104,9 +108,14 @@ type UserParameters struct {
 
 	// Pronoun is he, she or they; a pointer to the empty string clears it.
 	Pronoun *string
+
+	// MeasurementSystem is metric or us; a pointer to the empty string goes
+	// back to following their language and region.
+	MeasurementSystem *string
 }
 
-// UpdateUser changes an account's name, address, username or pronoun.
+// UpdateUser changes an account's name, address, username, pronoun or the
+// units it reads measurements in.
 func UpdateUser(ctx context.Context, connection *Client, username string, parameters *UserParameters) (*User, error) {
 	var result struct {
 		UpdateUser *User `json:"UpdateUser"`
@@ -115,8 +124,8 @@ func UpdateUser(ctx context.Context, connection *Client, username string, parame
 	if err != nil {
 		return nil, err
 	}
-	query := `mutation ($userId: String!, $name: String, $email: String, $username: String, $pronoun: String) {
-		UpdateUser(userId: $userId, name: $name, email: $email, username: $username, pronoun: $pronoun) ` + userFields + `
+	query := `mutation ($userId: String!, $name: String, $email: String, $username: String, $pronoun: String, $measurementSystem: String) {
+		UpdateUser(userId: $userId, name: $name, email: $email, username: $username, pronoun: $pronoun, measurementSystem: $measurementSystem) ` + userFields + `
 	}`
 	variables := map[string]any{"userId": userId}
 	if parameters.Name != nil {
@@ -130,6 +139,9 @@ func UpdateUser(ctx context.Context, connection *Client, username string, parame
 	}
 	if parameters.Pronoun != nil {
 		variables["pronoun"] = *parameters.Pronoun
+	}
+	if parameters.MeasurementSystem != nil {
+		variables["measurementSystem"] = *parameters.MeasurementSystem
 	}
 	if err := connection.Execute(ctx, query, variables, &result); err != nil {
 		return nil, err
