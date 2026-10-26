@@ -8,7 +8,7 @@ Write in {{.Language}}, whatever language the material is in. Names of people an
 
 headline is one plain line of at most 80 characters that says what the {{.PeriodKind}} was.
 
-narrative is two to four short paragraphs separated by blank lines, about what the {{.PeriodKind}} added up to: what was going on, what changed and what mattered. Do not retell every day. Mention a record by writing its reference in double square brackets, copied exactly from the pages below, for example [[mail:example1]]. Mention only records whose references appear below, and only the ones the story needs. Never write a reference you were not given. Everything you say comes from the pages below; do not invent a reason, a person, a feeling or a time.
+narrative is two to four short paragraphs separated by blank lines, about what the {{.PeriodKind}} added up to: what was going on, what changed and what mattered. Do not retell every day. Mention a record by writing its reference in double square brackets, copied exactly from the pages below, for example [[mail:example1]]. The page shows a reference as the record's title, right where you wrote it, so put it in the sentence where the record's name would go ("you answered [[mail:example1]] before lunch"), never after a sentence as a citation and never two side by side. Mention only records whose references appear below, and only the ones the story needs. Never write a reference you were not given. Everything you say comes from the pages below; do not invent a reason, a person, a feeling or a time.
 
 choices are the records from the pages that mattered most over the {{.PeriodKind}}, at most six, each with a reason of a few words. Choose only references that appear below. An empty list is a fine answer.
 {{if .IsYear}}

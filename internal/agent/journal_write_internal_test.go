@@ -213,6 +213,15 @@ func TestAnAnswerNamingARecordNotInTheDayIsRefused(t *testing.T) {
 		"a cover that is not a photo of the day":     func(answer *journalDayAnswer) { answer.CoverPhotoID = "photo9" },
 		"a cover that is another record":             func(answer *journalDayAnswer) { answer.CoverPhotoID = "mail1" },
 		"no narrative":                               func(answer *journalDayAnswer) { answer.Narrative = "  " },
+		"references side by side": func(answer *journalDayAnswer) {
+			answer.Narrative = "You read the budget [[mail:mail1]] [[agent_document:doc1]] after lunch."
+		},
+		"a reference standing between two sentences": func(answer *journalDayAnswer) {
+			answer.Narrative = "You met Ben for lunch. [[calendar_occurrence:event1@2026-10-22T12:00:00Z]] Then you fixed a chart."
+		},
+		"a reference after the last sentence": func(answer *journalDayAnswer) {
+			answer.Narrative = "You met Ben for lunch.\n\nYou read the budget. [[mail:mail1]]"
+		},
 	} {
 		answer := *good
 		answer.Choices = append([]journalChoiceAnswer(nil), good.Choices...)
@@ -220,6 +229,11 @@ func TestAnAnswerNamingARecordNotInTheDayIsRefused(t *testing.T) {
 		if _, err := checkJournalDayAnswer(&answer, input); err == nil {
 			t.Errorf("%s was accepted", name)
 		}
+	}
+	// A sentence may begin with a mention: it is a name, written where the
+	// name goes.
+	if _, err := checkJournalDayAnswer(&journalDayAnswer{Headline: "x", Narrative: "You had lunch.\n\n[[mail:mail1]] asked you to decide. Then [[agent_document:doc1]] took the afternoon."}, input); err != nil {
+		t.Errorf("mentions inside sentences were refused: %s", err)
 	}
 	_, err = checkJournalDayAnswer(&journalDayAnswer{Headline: "x", Narrative: "See [[mail:invented]] and [[photo:photo9]]."}, input)
 	if err == nil || !strings.Contains(err.Error(), "mail:invented, photo:photo9") {
