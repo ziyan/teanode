@@ -64,8 +64,9 @@ type MonthSummary struct {
 
 // ReadPeriod reads the period of a kind that contains a day. weekStart is
 // sunday or monday, for a week. now is the moment of the reading, which
-// fixes today.
-func ReadPeriod(transaction db.Transaction, user *models.User, periodKind models.JournalPeriodKind, day, weekStart string, now time.Time) (*Period, error) {
+// fixes today. The days, their totals and their moods are what a reader with
+// these options may see (ShownDay).
+func ReadPeriod(transaction db.Transaction, user *models.User, periodKind models.JournalPeriodKind, day, weekStart string, now time.Time, options ReadOptions) (*Period, error) {
 	if !periodKind.IsValid() {
 		return nil, errors.New("journal: a period is a week, a month or a year")
 	}
@@ -101,7 +102,9 @@ func ReadPeriod(transaction db.Transaction, user *models.User, periodKind models
 		if err != nil {
 			return nil, err
 		}
-		period.Days = days
+		for _, stored := range days {
+			period.Days = append(period.Days, ShownDay(stored, options))
+		}
 	}
 	period.DayCount = len(period.Days)
 	period.Totals, period.MoodCounts = addDays(period.Days)

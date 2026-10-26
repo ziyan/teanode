@@ -98,7 +98,7 @@ func TestRefreshStoresFactsMoodsAndWeatherAndWalksBack(t *testing.T) {
 		}
 
 		// A period adds the days up.
-		period, err := journal.ReadPeriod(tx, world.user, models.JournalPeriodWeek, worldDay, models.WeekStartsMonday, now)
+		period, err := journal.ReadPeriod(tx, world.user, models.JournalPeriodWeek, worldDay, models.WeekStartsMonday, now, journal.AllReadOptions())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -106,7 +106,7 @@ func TestRefreshStoresFactsMoodsAndWeatherAndWalksBack(t *testing.T) {
 			period.MoodCounts != [5]int{0, 0, 0, 1, 0} || period.Totals.PlaceCount != 3 || period.Totals.MainPlaceLatitude != 40.7 || period.Days[0].Day != "2026-10-21" || period.Days[2].Day != "2026-10-23" {
 			t.Errorf("the week: %+v totals %+v", period, period.Totals)
 		}
-		year, err := journal.ReadPeriod(tx, world.user, models.JournalPeriodYear, worldDay, "", now)
+		year, err := journal.ReadPeriod(tx, world.user, models.JournalPeriodYear, worldDay, "", now, journal.AllReadOptions())
 		if err != nil {
 			t.Fatal(err)
 		}

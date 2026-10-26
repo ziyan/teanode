@@ -56,6 +56,7 @@ import {
 } from './journalParts'
 import { JournalWordsCard } from './journalWords'
 import { WeatherIcon } from '../../components/icons'
+import { isDashboardPath } from './journalPaths'
 
 // A week, a month and a year: each with what TeaNode wrote about it, the
 // person's own looking back, and the days (or months) it holds. The pages
@@ -532,7 +533,7 @@ function WeekMoments({ period }: { period: JournalPeriod }) {
             </span>
             <span className="journal-row-body">
               <span className="journal-row-title">
-                {record.isUnavailable || !record.dashboardPath.startsWith('/') ? (
+                {record.isUnavailable || !isDashboardPath(record.dashboardPath) ? (
                   <span>{record.title || t('journal.pinGone')}</span>
                 ) : (
                   <Link to={record.dashboardPath}>{record.title}</Link>

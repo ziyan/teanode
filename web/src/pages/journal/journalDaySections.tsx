@@ -19,6 +19,7 @@ import {
 } from './journalApi'
 import { JournalCard, useAddressValue } from './journalParts'
 import { RecordKindIcon } from './journalNarrative'
+import { isDashboardPath } from './journalPaths'
 
 // The sections down the left of a day: what the person did and what came in,
 // each shown only when the day has something for it, and each linking to the
@@ -154,7 +155,9 @@ export function PinsSection({ day, onChanged }: Section) {
         <Row
           key={pin.linkId}
           to={
-            pin.record.isUnavailable || !pin.record.dashboardPath.startsWith('/') ? undefined : pin.record.dashboardPath
+            pin.record.isUnavailable || !isDashboardPath(pin.record.dashboardPath)
+              ? undefined
+              : pin.record.dashboardPath
           }
           icon={<RecordKindIcon recordKind={pin.record.recordKind} size={16} />}
           title={pin.record.isUnavailable ? t('journal.pinGone') : pin.record.title}

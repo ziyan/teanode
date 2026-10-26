@@ -46,9 +46,10 @@ type JournalOperation interface {
 	// none.
 	FirstJournalDay(userId string) (string, error)
 
-	// SetJournalWords replaces a day's words. With baseModifiedAt, the save is
-	// refused with ErrJournalChanged unless the day's words were last saved
-	// then (compared to the microsecond); nil skips the check.
+	// SetJournalWords replaces a day's words. The save is refused with
+	// ErrJournalChanged unless the day's words were last saved at
+	// baseModifiedAt (compared to the microsecond), or, with nil, were never
+	// saved.
 	SetJournalWords(userId, day, timeZone, words string, baseModifiedAt *time.Time, at time.Time) (*models.JournalDay, error)
 
 	// SetJournalMood sets or clears (moodLevel nil) a day's mood. A mood from
@@ -165,7 +166,10 @@ const journalDayLayout = "2006-01-02"
 const (
 	journalTouchUpHowCharactersMost = 500
 	journalLinkReasonCharactersMost = 500
-	journalMoodWordsCharactersMost  = 500
+
+	// journalPinsPerDayMost is how many records a person can pin to one day.
+	journalPinsPerDayMost          = 200
+	journalMoodWordsCharactersMost = 500
 )
 
 var journalEveningQuestionTimePattern = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
@@ -536,10 +540,12 @@ func (self *transaction) FirstJournalDay(userId string) (string, error) {
 // isJournalSaveBasedOnStored says whether a save that was based on the version
 // last saved at baseModifiedAt may go on: the version stored now was saved at
 // that time, to the microsecond (the precision the database keeps, and more
-// than some clients send back).
+// than some clients send back). A save based on nothing (nil) goes on only
+// when nothing was ever saved: two devices that both opened an empty day must
+// not have the second save replace the first without a word.
 func isJournalSaveBasedOnStored(storedModifiedAt, baseModifiedAt *time.Time) bool {
 	if baseModifiedAt == nil {
-		return true
+		return storedModifiedAt == nil
 	}
 	return storedModifiedAt != nil && storedModifiedAt.Truncate(time.Microsecond).Equal(baseModifiedAt.Truncate(time.Microsecond))
 }
@@ -623,7 +629,9 @@ func (self *transaction) SetJournalMood(userId, day, timeZone string, moodLevel 
 		return self.GetJournalDay(userId, day)
 	}
 	if moodLevel == nil {
-		_, err = subject.update(self.tx, `"mood_level" = NULL, "mood_words" = '', "mood_source" = '', "modified_at" = ?`, at)
+		// A mood the person cleared stays the person's decision (source
+		// person, no level), so that Apple Health does not fill it back in.
+		_, err = subject.update(self.tx, `"mood_level" = NULL, "mood_words" = '', "mood_source" = ?, "modified_at" = ?`, string(moodSource), at)
 	} else {
 		_, err = subject.update(self.tx, `"mood_level" = ?, "mood_words" = ?, "mood_source" = ?, "modified_at" = ?`,
 			*moodLevel, truncateRunes(moodWords, journalMoodWordsCharactersMost), string(moodSource), at)
@@ -1075,6 +1083,15 @@ func (self *transaction) PinJournalRecord(userId, day, timeZone string, recordKi
 	if err != nil {
 		return nil, err
 	}
+	// Every pin is found again each time the day is read, so a day keeps a
+	// number of them a page can show.
+	var pinCount int64
+	if err := self.tx.Raw(`SELECT count(*) FROM "journal_link" WHERE "journal_day_id" = ? AND "link_source" = 'person'`, dayId).Scan(&pinCount).Error; err != nil {
+		return nil, err
+	}
+	if pinCount >= journalPinsPerDayMost {
+		return nil, fmt.Errorf("%w: a day keeps at most %d pins", ErrLimitReached, journalPinsPerDayMost)
+	}
 	var rows []journalLinkModel
 	if err := self.tx.Raw(`SELECT `+journalLinkSelect+` FROM "journal_link" WHERE "journal_day_id" = ? AND "record_kind" = ? AND "record_id" = ? FOR UPDATE`,
 		dayId, string(recordKind), recordId).Scan(&rows).Error; err != nil {
@@ -1137,13 +1154,14 @@ const journalSearchWindowCharacters = 160
 // journalSearchRows is every day and every period of a person that has
 // something to search in, with the texts in the order a snippet is taken
 // from them: the person's words, their touched-up version, the agent's
-// narrative.
+// narrative. A narrative is searched and quoted without its [[kind:id]]
+// mentions, which are identifiers and would match a search for "mail".
 const journalSearchRows = `SELECT 'day' AS "target_kind", to_char("day", 'YYYY-MM-DD') AS "start_day", "headline",
-		"words" AS "own_text", coalesce("touched_up_words", '') AS "touched_up_text", "narrative"
-	FROM "journal_day" WHERE "user_id" = @user AND ("words" ILIKE @pattern OR coalesce("touched_up_words", '') ILIKE @pattern OR "headline" ILIKE @pattern OR "narrative" ILIKE @pattern)
+		"words" AS "own_text", coalesce("touched_up_words", '') AS "touched_up_text", regexp_replace("narrative", '\[\[[^]]*\]\]', '', 'g') AS "narrative"
+	FROM "journal_day" WHERE "user_id" = @user AND ("words" ILIKE @pattern OR coalesce("touched_up_words", '') ILIKE @pattern OR "headline" ILIKE @pattern OR regexp_replace("narrative", '\[\[[^]]*\]\]', '', 'g') ILIKE @pattern)
 	UNION ALL
-	SELECT "period_kind", to_char("period_start", 'YYYY-MM-DD'), "headline", "looking_back", coalesce("touched_up_looking_back", ''), "narrative"
-	FROM "journal_period" WHERE "user_id" = @user AND ("looking_back" ILIKE @pattern OR coalesce("touched_up_looking_back", '') ILIKE @pattern OR "headline" ILIKE @pattern OR "narrative" ILIKE @pattern)`
+	SELECT "period_kind", to_char("period_start", 'YYYY-MM-DD'), "headline", "looking_back", coalesce("touched_up_looking_back", ''), regexp_replace("narrative", '\[\[[^]]*\]\]', '', 'g')
+	FROM "journal_period" WHERE "user_id" = @user AND ("looking_back" ILIKE @pattern OR coalesce("touched_up_looking_back", '') ILIKE @pattern OR "headline" ILIKE @pattern OR regexp_replace("narrative", '\[\[[^]]*\]\]', '', 'g') ILIKE @pattern)`
 
 // escapeLikePattern makes a text match only itself in LIKE and ILIKE, where
 // a backslash is the escape character unless told otherwise.
@@ -1314,4 +1332,38 @@ func (self *transaction) EraseJournal(userId string) (dayCount, periodCount, lin
 		return
 	}
 	return int(erasedDays.RowsAffected), int(erasedPeriods.RowsAffected), int(linkTotal), nil
+}
+
+// forgetJournalHealthCopies takes out of a person's journal days what came
+// from their Health: the numbers in the facts and a mood from Apple Health.
+// Erasing Health erases what the journal kept of it too; the next refresh
+// counts again from what Health still holds.
+func (self *transaction) forgetJournalHealthCopies(userId string) error {
+	return self.tx.Exec(`UPDATE "journal_day" SET
+		"facts" = "facts" - 'stepCount' - 'sleepMinutes' - 'workoutMinutes' - 'walkedMeters' - 'healthMoodLevel',
+		"mood_level" = CASE WHEN "mood_source" = 'health' THEN NULL ELSE "mood_level" END,
+		"mood_words" = CASE WHEN "mood_source" = 'health' THEN '' ELSE "mood_words" END,
+		"mood_source" = CASE WHEN "mood_source" = 'health' THEN '' ELSE "mood_source" END
+		WHERE "user_id" = ?`, userId).Error
+}
+
+// forgetJournalLocationCopies takes out of a person's journal days what came
+// from where they were: the places in the facts and the place name of the
+// weather. With a range, only the days it touches (a day either side, since a
+// day's edges are in its own zone); without, every day.
+func (self *transaction) forgetJournalLocationCopies(userId string, from, until *time.Time) error {
+	query := `UPDATE "journal_day" SET
+		"facts" = "facts" - 'placeCount' - 'visitedPlaceIds' - 'mainPlaceId' - 'mainPlaceName' - 'mainPlaceLatitude' - 'mainPlaceLongitude',
+		"weather" = CASE WHEN "weather" IS NULL THEN NULL ELSE "weather" - 'placeName' END
+		WHERE "user_id" = ?`
+	arguments := []any{userId}
+	if from != nil {
+		query += ` AND "day" >= ?`
+		arguments = append(arguments, from.UTC().AddDate(0, 0, -1).Format("2006-01-02"))
+	}
+	if until != nil {
+		query += ` AND "day" <= ?`
+		arguments = append(arguments, until.UTC().AddDate(0, 0, 1).Format("2006-01-02"))
+	}
+	return self.tx.Exec(query, arguments...).Error
 }

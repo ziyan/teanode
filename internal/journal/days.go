@@ -47,6 +47,11 @@ func ParseDay(day string) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, fmt.Errorf("journal: a day is written YYYY-MM-DD, not %q", day)
 	}
+	// Nobody's journal goes back before the year 1900; a year 0000 parses but
+	// is not a date the database keeps.
+	if parsed.Year() < 1900 {
+		return time.Time{}, fmt.Errorf("journal: %q is before the year 1900", day)
+	}
 	return parsed, nil
 }
 

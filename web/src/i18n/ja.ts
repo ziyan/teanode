@@ -7608,7 +7608,9 @@ export const ja: Catalog = {
   'journal.wordsSaved': '保存しました。',
   'journal.wordsFailed': '言葉を保存できませんでした。',
   'journal.wordsChangedAt': '最終更新 {when}',
-  'journal.savedElsewhere': 'ほかの場所で保存されました。最新のバージョンを表示しています。',
+  'journal.savedElsewhere': '先にほかの場所で保存されました。何も失われていません。',
+  'journal.savedElsewhereAbove':
+    'その間にほかの場所で次の内容が保存されました。あなたの文章は下の欄にあります。保存すると残ります。',
   'journal.fromYourNotes': 'あなたのノートから',
   'journal.dayAsSeen': 'TeaNode が見たこの日',
   'journal.weekAsSeen': 'TeaNode が見たこの週',

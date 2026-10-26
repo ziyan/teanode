@@ -84,12 +84,15 @@ func (self *graph) ReadJournalDay(ctx context.Context, arguments ReadJournalDayA
 	if err != nil {
 		return nil, err
 	}
-	// The person's own page shows their Health whatever the agent may read.
-	options := journal.OptionsFor(principal.Permissions, true)
+	options, err := self.journalReadOptions(ctx, tx, principal)
+	if err != nil {
+		return nil, err
+	}
 	read, err := journal.ReadDay(tx, principal.User, agent, arguments.Day, now, options)
 	if err != nil {
 		return nil, journalFailure(err)
 	}
+	read.Row = journal.ShownDay(read.Row, options)
 	weekStart, err := journalWeekStartOf(tx, principal.User.ID)
 	if err != nil {
 		return nil, err
@@ -272,7 +275,11 @@ func (self *graph) ReadJournalPeriod(ctx context.Context, arguments ReadJournalP
 	if err != nil {
 		return nil, err
 	}
-	period, err := journal.ReadPeriod(tx, principal.User, periodKind, arguments.Day, weekStart, now)
+	options, err := self.journalReadOptions(ctx, tx, principal)
+	if err != nil {
+		return nil, err
+	}
+	period, err := journal.ReadPeriod(tx, principal.User, periodKind, arguments.Day, weekStart, now, options)
 	if err != nil {
 		return nil, journalFailure(err)
 	}

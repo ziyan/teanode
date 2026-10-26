@@ -40,6 +40,7 @@ import {
   targetVariables,
 } from './journalApi'
 import { JournalCard } from './journalParts'
+import { isDashboardPath } from './journalPaths'
 
 // What TeaNode wrote about a day or a period. Each mention of a record in it
 // is a chip that opens the record; one the reader can no longer open is
@@ -110,7 +111,7 @@ export function NarrativeText({ narrative }: { narrative: JournalNarrative }) {
           {paragraph.map((piece, pieceIndex) => {
             if (!piece.isReference) return piece.text
             const reference = references.get(piece.reference)
-            if (reference && !reference.isUnavailable && reference.dashboardPath.startsWith('/')) {
+            if (reference && !reference.isUnavailable && isDashboardPath(reference.dashboardPath)) {
               return <RecordChip key={pieceIndex} record={reference} />
             }
             // A record that is gone, or no longer the reader's, is its kind
