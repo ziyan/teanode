@@ -114,8 +114,10 @@ var journalMoodNames = map[int]string{
 	models.JournalMoodGood: "good", models.JournalMoodGreat: "great",
 }
 
-// journalWeatherWords says a day's weather in a sentence fragment.
-func journalWeatherWords(weather *models.JournalWeather) string {
+// journalWeatherWords says a day's weather in a sentence fragment, with the
+// temperatures in the units the person reads, so that the page the model
+// writes says "18°C" or "64°F" the way they would.
+func journalWeatherWords(weather *models.JournalWeather, isUSUnits bool) string {
 	if weather == nil {
 		return ""
 	}
@@ -144,7 +146,11 @@ func journalWeatherWords(weather *models.JournalWeather) string {
 	default:
 		kind = "mixed"
 	}
-	words := fmt.Sprintf("%s, a high of %.0f C and a low of %.0f C", kind, weather.HighCelsius, weather.LowCelsius)
+	high, low, unit := weather.HighCelsius, weather.LowCelsius, "C"
+	if isUSUnits {
+		high, low, unit = models.FahrenheitFromCelsius(high), models.FahrenheitFromCelsius(low), "F"
+	}
+	words := fmt.Sprintf("%s, a high of %.0f°%s and a low of %.0f°%s", kind, high, unit, low, unit)
 	if weather.PrecipitationMM >= 0.5 {
 		words += fmt.Sprintf(", %.1f mm of rain or snow", weather.PrecipitationMM)
 	}
@@ -381,8 +387,9 @@ func (self *journalDayInput) lines(isCandidate bool) string {
 }
 
 // journalHealthLines are the day's Health numbers, which exist only when the
-// day was read with Health, that is only while the person lets the agent.
-func journalHealthLines(day *journal.Day) string {
+// day was read with Health, that is only while the person lets the agent. The
+// distance is in the units the person reads.
+func journalHealthLines(day *journal.Day, isUSUnits bool) string {
 	health := day.Health
 	if health == nil {
 		return ""
@@ -392,7 +399,11 @@ func journalHealthLines(day *journal.Day) string {
 		lines = append(lines, fmt.Sprintf("Steps: %d", health.StepCount))
 	}
 	if health.WalkedMeters > 0 {
-		lines = append(lines, fmt.Sprintf("Walked: %.1f km", health.WalkedMeters/1000))
+		if isUSUnits {
+			lines = append(lines, fmt.Sprintf("Walked: %.1f miles", models.MilesFromMeters(health.WalkedMeters)))
+		} else {
+			lines = append(lines, fmt.Sprintf("Walked: %.1f km", health.WalkedMeters/1000))
+		}
 	}
 	if health.SleepMinutes > 0 {
 		lines = append(lines, fmt.Sprintf("Slept the night before: %d h %d min", health.SleepMinutes/60, health.SleepMinutes%60))
@@ -451,7 +462,8 @@ func (self *journalDayInput) prompt(owner *models.User, agent *models.Agent, opt
 	if self.lines(false) == "" {
 		data["Records"] = "(none)"
 	}
-	if health := journalHealthLines(day); health != "" {
+	isUSUnits := owner.UsesUSUnits()
+	if health := journalHealthLines(day, isUSUnits); health != "" {
 		data["Health"] = fenced(health)
 	}
 	if row := day.Row; row != nil {
@@ -468,7 +480,7 @@ func (self *journalDayInput) prompt(owner *models.User, agent *models.Agent, opt
 			}
 			data["Mood"] = mood
 		}
-		data["Weather"] = journalWeatherWords(shown.Weather)
+		data["Weather"] = journalWeatherWords(shown.Weather, isUSUnits)
 		if len(row.NarrativeCorrections) > 0 {
 			corrections := make([]string, 0, len(row.NarrativeCorrections))
 			for _, correction := range row.NarrativeCorrections {

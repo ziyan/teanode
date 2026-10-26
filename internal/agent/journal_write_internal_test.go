@@ -65,7 +65,7 @@ func TestTheDayPromptCarriesTheOriginalWordsAndTheCorrections(t *testing.T) {
 	if !strings.Contains(prompt, "It was Ben, not Sam.") || !strings.Contains(prompt, "follow them even where the records seem to say otherwise") {
 		t.Errorf("the corrections are not given as facts to follow:\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "overcast, a high of 14 C and a low of 8 C, near Harbor Office") {
+	if !strings.Contains(prompt, "overcast, a high of 14°C and a low of 8°C, near Harbor Office") {
 		t.Errorf("no weather:\n%s", prompt)
 	}
 	records, candidates, _ := strings.Cut(prompt, "The candidates to choose from")
@@ -90,6 +90,40 @@ func TestTheDayPromptCarriesTheOriginalWordsAndTheCorrections(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "2 mail received") || !strings.Contains(prompt, "2 photos") {
 		t.Errorf("the totals are missing:\n%s", prompt)
+	}
+}
+
+// The weather and the distance walked are written in the units the person
+// reads, so that a page says "57°F" to someone who chose US units, even in a
+// language that names no region, and "14°C" to someone who chose metric even
+// where the region would have said US. Someone who chose nothing is read
+// from the language they chose, else the one their browser said.
+func TestTheDayPromptWritesTheUnitsThePersonReads(t *testing.T) {
+	day := inventedDay()
+	day.Health = &journal.Health{WalkedMeters: 5400}
+	for _, scenario := range []struct {
+		name                                  string
+		measurementSystem, locale, localeSeen string
+		weather, walked                       string
+	}{
+		{"nothing said", "", "en", "", "a high of 14°C and a low of 8°C", "Walked: 5.4 km"},
+		{"us chosen", "us", "ja", "", "a high of 57°F and a low of 46°F", "Walked: 3.4 miles"},
+		{"metric chosen in a US region", "metric", "en-US", "", "a high of 14°C and a low of 8°C", "Walked: 5.4 km"},
+		{"automatic in a US region", "", "en-US", "", "a high of 57°F and a low of 46°F", "Walked: 3.4 miles"},
+		{"automatic, region only from the browser", "", "", "en_US", "a high of 57°F and a low of 46°F", "Walked: 3.4 miles"},
+		{"automatic in another region", "", "en-GB", "", "a high of 14°C and a low of 8°C", "Walked: 5.4 km"},
+	} {
+		owner := inventedOwner()
+		owner.MeasurementSystem, owner.Locale, owner.LocaleSeen = scenario.measurementSystem, scenario.locale, scenario.localeSeen
+		prompt, err := newJournalDayInput(day).prompt(owner, &models.Agent{}, healthOptions(true))
+		if err != nil {
+			t.Fatalf("%s: %s", scenario.name, err)
+		}
+		for _, wanted := range []string{scenario.weather, scenario.walked} {
+			if !strings.Contains(prompt, wanted) {
+				t.Errorf("%s: %q is missing from the prompt:\n%s", scenario.name, wanted, prompt)
+			}
+		}
 	}
 }
 
