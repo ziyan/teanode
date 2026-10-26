@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useId, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 
 import { LocationMap, MapPathPoint, MapPlace } from '../../components/locationMap'
@@ -10,12 +10,15 @@ import {
   JournalHealth,
   JournalSleepStage,
   clockText,
+  MOMENT_LIMIT,
   dayOf,
   distanceText,
   durationText,
   useIsImperial,
   wholeNumberText,
 } from './journalApi'
+import { CollapseButton, ShowAllButton, useRememberedCollapse, useRowLimit } from './journalCollapse'
+import { RecordLink } from './journalOpen'
 import { JournalCard } from './journalParts'
 import { isDashboardPath } from './journalPaths'
 
@@ -56,6 +59,9 @@ export function PlacesCard({ day }: { day: JournalDay }) {
     () => positioned.map((visit) => ({ latitudeDegrees: visit.latitude, longitudeDegrees: visit.longitude })),
     [positioned],
   )
+  const limit = useRowLimit(day.visits.length)
+  const [isCollapsed, toggle] = useRememberedCollapse('card:places', false)
+  const bodyId = useId()
   if (day.visits.length === 0) return null
   const walked =
     day.facts.walkedMeters > 0
@@ -63,7 +69,7 @@ export function PlacesCard({ day }: { day: JournalDay }) {
       : ''
   return (
     <section className="settings-section card journal-card journal-map-card">
-      {positioned.length > 0 && (
+      {positioned.length > 0 && !isCollapsed && (
         <div className="journal-map">
           <LocationMap
             people={NO_PEOPLE}
@@ -76,31 +82,39 @@ export function PlacesCard({ day }: { day: JournalDay }) {
         </div>
       )}
       <div className="journal-map-body">
-        <div className="settings-section-head">
-          <div>
-            <h3>{t('journal.places')}</h3>
-            <p className="muted">
-              {plural(day.visits.length, { one: 'journal.visitsOne', other: 'journal.visitsOther' })}
-              {walked}
-            </p>
+        <div className={isCollapsed ? 'journal-card-head is-alone' : 'journal-card-head'}>
+          <h3>{t('journal.places')}</h3>
+          <div className="journal-card-head-actions">
+            <Link className="button-quiet" to={`/location?day=${dayOf(day.day)}`}>
+              {t('journal.openInLocation')}
+            </Link>
+            <CollapseButton title={t('journal.places')} isCollapsed={isCollapsed} controls={bodyId} onToggle={toggle} />
           </div>
-          <Link className="button-quiet" to={`/location?day=${dayOf(day.day)}`}>
-            {t('journal.openInLocation')}
-          </Link>
+          <p className="muted">
+            {plural(day.visits.length, { one: 'journal.visitsOne', other: 'journal.visitsOther' })}
+            {walked}
+          </p>
         </div>
-        <ol className="journal-visits">
-          {day.visits.map((visit, index) => (
-            <li key={visit.visitId}>
-              <span className="journal-visit-number" aria-hidden="true">
-                {index + 1}
-              </span>
-              <Link to={visit.placeId ? `/location?place=${encodeURIComponent(visit.placeId)}` : '/location'}>
-                {visit.placeName || t('journal.unnamedPlace')}
-              </Link>
-              <span className="muted journal-row-time">{visitTimes(visit, clock, t)}</span>
-            </li>
-          ))}
-        </ol>
+        <div id={bodyId} hidden={isCollapsed}>
+          {isCollapsed ? null : (
+            <>
+              <ol className="journal-visits">
+                {day.visits.slice(0, limit.shownCount).map((visit, index) => (
+                  <li key={visit.visitId}>
+                    <span className="journal-visit-number" aria-hidden="true">
+                      {index + 1}
+                    </span>
+                    <Link to={visit.placeId ? `/location?place=${encodeURIComponent(visit.placeId)}` : '/location'}>
+                      {visit.placeName || t('journal.unnamedPlace')}
+                    </Link>
+                    <span className="muted journal-row-time">{visitTimes(visit, clock, t)}</span>
+                  </li>
+                ))}
+              </ol>
+              <ShowAllButton limit={limit} />
+            </>
+          )}
+        </div>
       </div>
     </section>
   )
@@ -119,14 +133,16 @@ function visitTimes(
   return ''
 }
 
-// MomentsCard is everything the day linked to, in the order it happened.
+// MomentsCard is what the day is remembered by, in the order it happened:
+// the first dozen, and the rest on request.
 export function MomentsCard({ day }: { day: JournalDay }) {
   const { t, language } = useTranslation()
+  const limit = useRowLimit(day.moments.length, MOMENT_LIMIT)
   if (day.moments.length === 0) return null
   return (
-    <JournalCard title={t('journal.throughTheDay')} description={t('journal.throughTheDayHint')}>
+    <JournalCard title={t('journal.throughTheDay')} description={t('journal.throughTheDayHint')} collapseId="moments">
       <ol className="journal-moments">
-        {day.moments.map((moment, index) => {
+        {day.moments.slice(0, limit.shownCount).map((moment, index) => {
           const content = (
             <>
               <span className="journal-moment-time muted">{clockText(moment.at, day.timeZone, language)}</span>
@@ -145,9 +161,9 @@ export function MomentsCard({ day }: { day: JournalDay }) {
           return (
             <li key={`${moment.recordKind}:${moment.recordId}:${index}`}>
               {isDashboardPath(moment.dashboardPath) ? (
-                <Link className="journal-moment" to={moment.dashboardPath}>
+                <RecordLink className="journal-moment" to={moment.dashboardPath}>
                   {content}
-                </Link>
+                </RecordLink>
               ) : (
                 <div className="journal-moment">{content}</div>
               )}
@@ -155,6 +171,7 @@ export function MomentsCard({ day }: { day: JournalDay }) {
           )
         })}
       </ol>
+      <ShowAllButton limit={limit} />
     </JournalCard>
   )
 }
@@ -243,6 +260,7 @@ export function HealthCard({ day }: { day: JournalDay }) {
           {t('journal.openInHealth')}
         </Link>
       }
+      collapseId="health"
     >
       {health.stepCount > 0 && (
         <div className="journal-health-block">
@@ -298,7 +316,42 @@ export function HealthCard({ day }: { day: JournalDay }) {
 export function CalendarCard({ day }: { day: JournalDay }) {
   const { t, language } = useTranslation()
   const clock = (value: string | null | undefined) => clockText(value, day.timeZone, language)
-  if (day.events.length === 0 && day.reminders.length === 0) return null
+  const rows = [
+    ...day.events.map((event) => (
+      <Link
+        key={`${event.eventId}:${event.startsAt}`}
+        className="journal-event"
+        to={`/calendar?event=${encodeURIComponent(event.eventId)}`}
+      >
+        <span className="journal-event-bar" aria-hidden="true" />
+        <span className="journal-row-body">
+          <span>{event.title}</span>
+          {(event.location || event.calendarName) && (
+            <span className="muted journal-row-detail">{event.location || event.calendarName}</span>
+          )}
+        </span>
+        <span className="muted journal-row-time">{event.isAllDay ? t('journal.allDay') : clock(event.startsAt)}</span>
+      </Link>
+    )),
+    ...day.reminders.map((reminder) => (
+      <Link
+        key={reminder.reminderId}
+        className="journal-event"
+        to={`/reminders?reminder=${encodeURIComponent(reminder.reminderId)}`}
+      >
+        <span className="journal-event-bar" aria-hidden="true" />
+        <span className="journal-row-body">
+          <span>{reminder.title}</span>
+          <span className="muted journal-row-detail">
+            {reminder.doneAt ? t('journal.reminderDone') : t('journal.reminder')}
+          </span>
+        </span>
+        <span className="muted journal-row-time">{clock(reminder.doneAt ?? reminder.dueAt)}</span>
+      </Link>
+    )),
+  ]
+  const limit = useRowLimit(rows.length)
+  if (rows.length === 0) return null
   return (
     <JournalCard
       title={t('journal.calendar')}
@@ -307,40 +360,11 @@ export function CalendarCard({ day }: { day: JournalDay }) {
           {t('journal.openTheDay')}
         </Link>
       }
+      collapseId="calendar"
       isFlush
     >
-      {day.events.map((event) => (
-        <Link
-          key={`${event.eventId}:${event.startsAt}`}
-          className="journal-event"
-          to={`/calendar?event=${encodeURIComponent(event.eventId)}`}
-        >
-          <span className="journal-event-bar" aria-hidden="true" />
-          <span className="journal-row-body">
-            <span>{event.title}</span>
-            {(event.location || event.calendarName) && (
-              <span className="muted journal-row-detail">{event.location || event.calendarName}</span>
-            )}
-          </span>
-          <span className="muted journal-row-time">{event.isAllDay ? t('journal.allDay') : clock(event.startsAt)}</span>
-        </Link>
-      ))}
-      {day.reminders.map((reminder) => (
-        <Link
-          key={reminder.reminderId}
-          className="journal-event"
-          to={`/reminders?reminder=${encodeURIComponent(reminder.reminderId)}`}
-        >
-          <span className="journal-event-bar" aria-hidden="true" />
-          <span className="journal-row-body">
-            <span>{reminder.title}</span>
-            <span className="muted journal-row-detail">
-              {reminder.doneAt ? t('journal.reminderDone') : t('journal.reminder')}
-            </span>
-          </span>
-          <span className="muted journal-row-time">{clock(reminder.doneAt ?? reminder.dueAt)}</span>
-        </Link>
-      ))}
+      {rows.slice(0, limit.shownCount)}
+      <ShowAllButton limit={limit} />
     </JournalCard>
   )
 }

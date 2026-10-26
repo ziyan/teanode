@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useEffect, useId, useRef } from 'react'
+import { Link, useLocation, useNavigationType, useSearchParams } from 'react-router-dom'
 
 import { PageHeadingActions } from '../../components/breadcrumb'
 import { ChevronLeftIcon, ChevronRightIcon, MoodIcon } from '../../components/icons'
@@ -22,6 +22,7 @@ import {
   periodPath,
   yearOf,
 } from './journalApi'
+import { CollapseButton, useRememberedCollapse } from './journalCollapse'
 
 // The small pieces the Journal's pages share: a card with a head, the
 // address flags, the poll while something is on its way, the faces, and the
@@ -30,7 +31,12 @@ import {
 // JournalCard is a panel with the dashboard's own head (a title, a sentence
 // under it, and the one action that belongs to the panel), written out here
 // rather than with SettingsSection so a panel can be the paper-colored one
-// the person's own words sit on.
+// the person's own words sit on, and so a panel can fold up to its head.
+//
+// A panel with a collapseId has a chevron in its head, and stays as the
+// person left it on every day. The head is a grid of its own: the title and
+// the buttons share the first line on a phone too, where the dashboard's
+// head drops the action under the title.
 export function JournalCard({
   title,
   description,
@@ -38,6 +44,8 @@ export function JournalCard({
   isPaper = false,
   isFlush = false,
   id,
+  collapseId,
+  isCollapsedByDefault = false,
   children,
 }: {
   title: React.ReactNode
@@ -47,21 +55,45 @@ export function JournalCard({
   // No padding at the bottom, for a panel that ends in rows with their own.
   isFlush?: boolean
   id?: string
+  // Names the panel to the browser's memory of what is folded; left out, the
+  // panel cannot be folded.
+  collapseId?: string
+  isCollapsedByDefault?: boolean
   children?: React.ReactNode
 }) {
+  const [isCollapsed, toggle] = useRememberedCollapse(`card:${collapseId ?? ''}`, isCollapsedByDefault)
+  const bodyId = useId()
   const classNames = ['settings-section', 'card', 'journal-card']
   if (isPaper) classNames.push('journal-paper')
-  if (isFlush) classNames.push('journal-card-flush')
+  if (isFlush && !(collapseId && isCollapsed)) classNames.push('journal-card-flush')
+  const hasChildren = children !== undefined && children !== null && children !== false
+  const isFolded = Boolean(collapseId) && isCollapsed
   return (
     <section id={id} className={classNames.join(' ')}>
-      <div className="settings-section-head">
-        <div>
-          <h3>{title}</h3>
-          {description && <p className="muted">{description}</p>}
-        </div>
-        {action}
+      <div className={hasChildren && !isFolded ? 'journal-card-head' : 'journal-card-head is-alone'}>
+        <h3>{title}</h3>
+        {(action || collapseId) && (
+          <div className="journal-card-head-actions">
+            {action}
+            {collapseId && hasChildren && (
+              <CollapseButton
+                title={typeof title === 'string' ? title : ''}
+                isCollapsed={isCollapsed}
+                controls={bodyId}
+                onToggle={toggle}
+              />
+            )}
+          </div>
+        )}
+        {description && <p className="muted">{description}</p>}
       </div>
-      {children}
+      {collapseId ? (
+        <div id={bodyId} hidden={isFolded}>
+          {isFolded ? null : children}
+        </div>
+      ) : (
+        children
+      )}
     </section>
   )
 }
@@ -104,6 +136,36 @@ export function usePendingPoll(isPending: boolean, reload: () => Promise<void> |
     }, POLL_INTERVAL_MILLISECONDS)
     return () => window.clearInterval(timer)
   }, [isPending])
+}
+
+// Where the page was scrolled to, by the history entry it was shown for, so
+// that Back from a record opened on another page lands where the person was
+// reading and not at the top. Kept in memory only: a reload starts at the top
+// like any page. The dashboard scrolls inside .content, which the browser's
+// own restoring does not reach.
+const scrollPositions = new Map<string, number>()
+
+export function useKeptScroll(isReady: boolean) {
+  const location = useLocation()
+  const navigationType = useNavigationType()
+  const entry = `${location.key}:${location.pathname}`
+  const hasRestored = useRef(false)
+  useEffect(() => {
+    const scroller = document.querySelector('.content')
+    if (!scroller) return
+    const remember = () => scrollPositions.set(entry, scroller.scrollTop)
+    scroller.addEventListener('scroll', remember, { passive: true })
+    return () => scroller.removeEventListener('scroll', remember)
+  }, [entry])
+  useEffect(() => {
+    if (!isReady || hasRestored.current) return
+    hasRestored.current = true
+    // Only going back or forward returns to a place; a link starts at the top.
+    if (navigationType !== 'POP') return
+    const saved = scrollPositions.get(entry)
+    const scroller = document.querySelector('.content')
+    if (saved && scroller) scroller.scrollTo({ top: saved })
+  }, [isReady, entry, navigationType])
 }
 
 // MoodDot is a small filled circle in the color of a mood, or in the empty
@@ -217,7 +279,7 @@ export function PeriodToolbar({
   return (
     <PageHeadingActions>
       <div className="journal-toolbar">
-        <div className="segmented" role="group" aria-label={t('journal.zoomGroup')}>
+        <div className="segmented journal-zoom" role="group" aria-label={t('journal.zoomGroup')}>
           {sizes.map((size) => (
             <Link
               key={size.id}
@@ -229,30 +291,32 @@ export function PeriodToolbar({
             </Link>
           ))}
         </div>
-        <div className="journal-stepper">
-          <Tooltip label={previousLabel}>
-            <Link className="icon-button" to={previousPath} aria-label={previousLabel}>
-              <ChevronLeftIcon size={18} />
-            </Link>
-          </Tooltip>
-          <Link className="button-quiet" to={currentPath}>
-            {currentLabel}
-          </Link>
-          <Tooltip label={nextLabel}>
-            {isNextDisabled ? (
-              <button type="button" className="icon-button" aria-label={nextLabel} disabled>
-                <ChevronRightIcon size={18} />
-              </button>
-            ) : (
-              <Link className="icon-button" to={nextPath} aria-label={nextLabel}>
-                <ChevronRightIcon size={18} />
+        <div className="journal-toolbar-nav">
+          <div className="journal-stepper">
+            <Tooltip label={previousLabel}>
+              <Link className="icon-button" to={previousPath} aria-label={previousLabel}>
+                <ChevronLeftIcon size={18} />
               </Link>
-            )}
-          </Tooltip>
+            </Tooltip>
+            <Link className="button-quiet" to={currentPath}>
+              {currentLabel}
+            </Link>
+            <Tooltip label={nextLabel}>
+              {isNextDisabled ? (
+                <button type="button" className="icon-button" aria-label={nextLabel} disabled>
+                  <ChevronRightIcon size={18} />
+                </button>
+              ) : (
+                <Link className="icon-button" to={nextPath} aria-label={nextLabel}>
+                  <ChevronRightIcon size={18} />
+                </Link>
+              )}
+            </Tooltip>
+          </div>
+          <Link className="button-quiet" to="/journal">
+            {t('journal.timeline')}
+          </Link>
         </div>
-        <Link className="button-quiet" to="/journal">
-          {t('journal.timeline')}
-        </Link>
       </div>
     </PageHeadingActions>
   )

@@ -46,6 +46,7 @@ import {
   dayShortText,
   dayText,
   durationText,
+  workText,
   hitPath,
   monthHeadingText,
   monthLength,
@@ -147,7 +148,7 @@ function TimelineToolbar({ searched, onSearch }: { searched: string; onSearch: (
   return (
     <PageHeadingActions>
       <div className="journal-toolbar">
-        <div className="segmented" role="group" aria-label={t('journal.zoomGroup')}>
+        <div className="segmented journal-zoom" role="group" aria-label={t('journal.zoomGroup')}>
           <Link to={dayPath(today)}>{t('journal.zoomDay')}</Link>
           <Link to={periodPath('week', today)}>{t('journal.zoomWeek')}</Link>
           <Link to={periodPath('month', today)}>{t('journal.zoomMonth')}</Link>
@@ -360,13 +361,35 @@ const FACT_LIMIT = 5
 
 type Fact = { id: string; icon: React.ReactNode; text: string }
 
+// The line that stands in for a headline on a day that has none: the first
+// few of its numbers that are more than nothing, such as "3 projects, 4
+// places, 3 photos". Never the date again, which the block beside the card
+// already says.
+function dayNumbersLine(
+  day: JournalDaySummary,
+  t: ReturnType<typeof useTranslation>['t'],
+  plural: ReturnType<typeof useTranslation>['plural'],
+): string {
+  const { facts } = day
+  const parts: string[] = []
+  if (facts.workProjectCount > 0)
+    parts.push(plural(facts.workProjectCount, { one: 'journal.projectsOne', other: 'journal.projectsOther' }))
+  if (facts.placeCount > 0)
+    parts.push(plural(facts.placeCount, { one: 'journal.placesOne', other: 'journal.placesOther' }))
+  if (facts.photoCount > 0)
+    parts.push(plural(facts.photoCount, { one: 'journal.photosCountOne', other: 'journal.photosCountOther' }))
+  return parts.length > 0 ? parts.join(', ') : t('journal.dayQuiet')
+}
+
 // The chips under a day on the timeline: its weather, then the first few of
-// its numbers that are more than nothing.
+// its numbers that are more than nothing. A day with no headline already
+// says its places in the line that stands for one.
 function dayFacts(
   day: JournalDaySummary,
   t: ReturnType<typeof useTranslation>['t'],
   plural: ReturnType<typeof useTranslation>['plural'],
   language: string,
+  isPlacesSaid: boolean,
 ): Fact[] {
   const facts: JournalFacts = day.facts
   const found: Fact[] = []
@@ -379,7 +402,7 @@ function dayFacts(
       text: plural(facts.meetingCount, { one: 'journal.meetingsOne', other: 'journal.meetingsOther' }),
     })
   }
-  if (facts.placeCount > 0) {
+  if (facts.placeCount > 0 && !isPlacesSaid) {
     found.push({
       id: 'places',
       icon: <LocationIcon size={14} />,
@@ -409,7 +432,7 @@ function DayCard({ day }: { day: JournalDaySummary }) {
   const { t, plural, language } = useTranslation()
   const isImperial = useIsImperial()
   const level = moodLevelOf(day.mood)
-  const facts = dayFacts(day, t, plural, language)
+  const facts = dayFacts(day, t, plural, language, day.headline === '')
   const photoIds = day.photoIds.slice(0, 4)
   const morePhotos = day.facts.photoCount - photoIds.length
   return (
@@ -432,13 +455,13 @@ function DayCard({ day }: { day: JournalDaySummary }) {
             {t('journal.todaySoFar')}
           </div>
         )}
-        <h3 className="journal-day-headline">
+        <h3 className={day.headline ? 'journal-day-headline' : 'journal-day-headline is-numbers'}>
           <Link className="journal-day-link" to={dayPath(day.day)}>
-            {day.headline || dayShortText(day.day, language)}
+            {day.headline || dayNumbersLine(day, t, plural)}
           </Link>
         </h3>
         {day.hasWords && day.wordsExcerpt && <blockquote className="journal-excerpt">{day.wordsExcerpt}</blockquote>}
-        {!day.hasWords && (
+        {day.isToday && !day.hasWords && (
           <div className="journal-add-words">
             <Link className="button" to={dayPath(day.day)}>
               {t('journal.addYourWords')}
@@ -607,8 +630,13 @@ function YearAgo({ today }: { today: string }) {
       isPaper
     >
       <div className="journal-year-ago">
-        {day.coverPhotoId && (
-          <img src={photoSmallPreviewPath(day.coverPhotoId)} alt="" loading="lazy" draggable={false} />
+        {(day.coverPhotoId || day.photoIds[0]) && (
+          <img
+            src={photoSmallPreviewPath(day.coverPhotoId || day.photoIds[0])}
+            alt=""
+            loading="lazy"
+            draggable={false}
+          />
         )}
         {words && <p className="journal-prose">{words}</p>}
       </div>
@@ -648,11 +676,8 @@ function WeekSoFar({ today }: { today: string }) {
       value: t('journal.sleepAverage', { duration: durationText(totals.sleepMinutes / sleepNights, t) }),
     })
   }
-  if (totals.codingSessionCount > 0) {
-    rows.push({
-      label: 'journal.tileWork',
-      value: `${durationText(totals.codingMinutes, t)}, ${plural(totals.codingSessionCount, { one: 'journal.sessionsOne', other: 'journal.sessionsOther' })}`,
-    })
+  if (totals.codingMinutes > 0 || totals.workProjectCount > 0) {
+    rows.push({ label: 'journal.tileWork', value: workText(totals, t, plural) })
   }
   if (totals.spentMinorUnits > 0) {
     rows.push({ label: 'journal.tileSpent', value: amountText(totals.spentMinorUnits, totals.spentCurrency, language) })
@@ -661,14 +686,7 @@ function WeekSoFar({ today }: { today: string }) {
     rows.push({ label: 'journal.tilePlaces', value: wholeNumberText(totals.placeCount, language) })
   if (rows.length === 0) return null
   return (
-    <JournalCard
-      title={t('journal.weekSoFar')}
-      action={
-        <Link className="button-quiet" to={periodPath('week', today)}>
-          {t('journal.readTheWeek')}
-        </Link>
-      }
-    >
+    <JournalCard title={t('journal.weekSoFar')}>
       <dl className="journal-numbers">
         {rows.map((row) => (
           <div key={row.label}>
@@ -677,6 +695,13 @@ function WeekSoFar({ today }: { today: string }) {
           </div>
         ))}
       </dl>
+      <div className="journal-card-foot">
+        <span className="journal-card-foot-actions">
+          <Link className="button-quiet" to={periodPath('week', today)}>
+            {t('journal.readTheWeek')}
+          </Link>
+        </span>
+      </div>
     </JournalCard>
   )
 }
