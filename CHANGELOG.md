@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.199.0] - 2026-10-26
+
+### Added
+
+- iPhone: tapping "files could not be backed up" on the photo backup screen lists those files with their photo, which part failed and why, and lets you try one again or skip it. (#652)
+
 ## [0.198.1] - 2026-10-26
 
 ### Fixed
