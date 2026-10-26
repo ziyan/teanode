@@ -107,6 +107,9 @@ struct ShoppingListItemRow: View {
                             priceText
                         }
                     }
+                    // Inside the label: a button sets its own alignment there,
+                    // which centered lines that wrap.
+                    .multilineTextAlignment(.leading)
                     Spacer(minLength: 8)
                     if !dynamicTypeSize.isAccessibilitySize {
                         priceText
@@ -165,6 +168,7 @@ struct ShoppingListItemTile: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(.rect)
             }
@@ -181,12 +185,11 @@ extension View {
     /// The style of a button whose label is an item's words beside other
     /// buttons in a list row: borderless, so each takes only its own taps
     /// (a plain button takes the whole row's), with the words in their own
-    /// colors rather than the tint, and lines that wrap kept to the left,
-    /// where a button would center them.
+    /// colors rather than the tint. A button centers lines that wrap, so the
+    /// label sets `.multilineTextAlignment(.leading)` on its own words.
     func shoppingWordsButton() -> some View {
         buttonStyle(.borderless)
             .tint(Color.primary)
-            .multilineTextAlignment(.leading)
     }
 }
 
