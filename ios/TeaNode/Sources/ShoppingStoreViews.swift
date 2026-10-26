@@ -319,6 +319,9 @@ struct ShoppingStoreItemRow: View {
                             .foregroundStyle(isChecked ? .secondary : .primary)
                         detailText
                     }
+                    // Inside the label: a button sets its own alignment there,
+                    // which centered lines that wrap.
+                    .multilineTextAlignment(.leading)
                     Spacer(minLength: 0)
                 }
                 .frame(minHeight: 44)
@@ -384,6 +387,7 @@ struct ShoppingStoreItemTile: View {
                             .lineLimit(2)
                         detailText
                     }
+                    .multilineTextAlignment(.leading)
                     Spacer(minLength: 0)
                 }
                 .contentShape(.rect)
