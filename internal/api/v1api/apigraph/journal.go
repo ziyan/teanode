@@ -55,9 +55,10 @@ type JournalQuery interface {
 
 // JournalMutation writes a person's journal.
 type JournalMutation interface {
-	// Replaces the words of a day with the caller's original text. With
-	// baseModifiedAt, the wordsModifiedAt the caller read, a day saved by
-	// somebody else since is refused as a conflict and nothing changes. When
+	// Replaces the words of a day with the caller's original text. A day saved
+	// since the caller read it (baseModifiedAt, the modifiedAt of the words
+	// they read, null when none were ever saved) is refused as a conflict and
+	// nothing changes. When
 	// touching up is on for the day, the touched-up text is made again from
 	// the new words (touchUpPending says it is on its way). The day's
 	// narrative becomes stale. A day after today is refused. Needs
@@ -169,8 +170,9 @@ type SetJournalWordsArguments struct {
 	Day   string `json:"day"`
 	Words string `json:"words"`
 
-	// BaseModifiedAt is the wordsModifiedAt the caller read; null skips the
-	// conflict check (for a day that had no words).
+	// BaseModifiedAt is the modifiedAt of the words the caller read; null for
+	// a day whose words were never saved, which is refused once they have
+	// been.
 	BaseModifiedAt *time.Time `json:"baseModifiedAt" graphapi:"nullable"`
 }
 

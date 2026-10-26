@@ -258,6 +258,14 @@ func TestReadJournalPeriodAddsUpTheDaysThatWereKept(t *testing.T) {
 	world := newJournalWorld(t)
 	mood := func(level int) *int { return &level }
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		// The totals count photos and places only for a person who keeps them.
+		role, err := tx.CreateRole(&models.Role{Name: "journal photos and places", Permissions: []models.Permission{models.PermissionPhotosUse, models.PermissionLocationUse}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.CreateGroup(&models.Group{Name: "journal photos and places", UserIDs: []string{world.ada.ID}, RoleIDs: []string{role.ID}}); err != nil {
+			t.Fatal(err)
+		}
 		for day, steps := range map[string]int{"2026-03-02": 4000, "2026-03-04": 6000, "2026-03-10": 100} {
 			facts := models.JournalFacts{HasActivity: true, PhotoCount: 2, StepCount: steps, VisitedPlaceIDs: []string{"p1"}, PlaceCount: 1, MainPlaceID: "p1", MainPlaceName: "Harbor Cafe"}
 			if err := tx.PutJournalFacts(world.ada.ID, day, "UTC", facts, time.Now()); err != nil {

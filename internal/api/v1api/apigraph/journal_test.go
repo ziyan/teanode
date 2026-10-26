@@ -287,7 +287,7 @@ func TestJournalTouchUpQueuesOneJobAndKeepsTheRequest(t *testing.T) {
 		t.Errorf("a refused request queued a job")
 	}
 
-	world.run(t, world.ada, setJournalWordsQuery, map[string]any{"day": "2026-03-04", "words": "went to teh harbour"})
+	saved := asMap(t, asMap(t, world.run(t, world.ada, setJournalWordsQuery, map[string]any{"day": "2026-03-04", "words": "went to teh harbour"})["SetJournalWords"])["words"])
 	data := world.run(t, world.ada, touchUpJournalQuery, map[string]any{"day": "2026-03-04", "how": "fix the spelling"})
 	touchUp := asMap(t, data["TouchUpJournalWords"])
 	words := asMap(t, touchUp["words"])
@@ -300,7 +300,7 @@ func TestJournalTouchUpQueuesOneJobAndKeepsTheRequest(t *testing.T) {
 	}
 	world.run(t, world.ada, touchUpJournalQuery, map[string]any{"day": "2026-03-04"})
 	// Changing the words asks again, and it is the one job.
-	data = world.run(t, world.ada, setJournalWordsQuery, map[string]any{"day": "2026-03-04", "words": "went to the harbour"})
+	data = world.run(t, world.ada, setJournalWordsQuery, map[string]any{"day": "2026-03-04", "words": "went to the harbour", "baseModifiedAt": saved["modifiedAt"]})
 	if words := asMap(t, asMap(t, data["SetJournalWords"])["words"]); words["touchUpPending"] != true || words["original"] != "went to the harbour" || words["touchUpHow"] != "fix the spelling" {
 		t.Errorf("the words changed while touching up is on: %v", words)
 	}
@@ -376,7 +376,7 @@ func TestJournalLookingBackBelongsToThePeriodContainingTheDay(t *testing.T) {
 	}
 	// The conflict check is the words' check.
 	first := asMap(t, asMap(t, world.run(t, world.ada, setJournalLookingBackQuery, map[string]any{"periodKind": "month", "day": "2026-04-05", "lookingBack": "April."})["SetJournalLookingBack"])["lookingBack"])
-	world.run(t, world.ada, setJournalLookingBackQuery, map[string]any{"periodKind": "month", "day": "2026-04-05", "lookingBack": "April, again."})
+	world.run(t, world.ada, setJournalLookingBackQuery, map[string]any{"periodKind": "month", "day": "2026-04-05", "lookingBack": "April, again.", "baseModifiedAt": first["modifiedAt"]})
 	if failure := world.refusal(t, world.ada, setJournalLookingBackQuery, map[string]any{"periodKind": "month", "day": "2026-04-05", "lookingBack": "Lost.", "baseModifiedAt": first["modifiedAt"]}); !strings.Contains(failure, "conflict") {
 		t.Errorf("a conflict on a month: %q", failure)
 	}

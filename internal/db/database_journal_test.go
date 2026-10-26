@@ -141,7 +141,8 @@ func TestJournalMoodFromTheDevicesNeverReplacesTheOneThePersonChose(t *testing.T
 			t.Errorf("Health cleared the person's mood: %+v, %v", day, err)
 		}
 		day, err = tx.SetJournalMood(ada.ID, "2026-03-03", journalTestZone, nil, "ignored", models.JournalMoodFromPerson, journalTestAt(11))
-		if err != nil || day.MoodLevel != nil || day.MoodWords != "" || day.MoodSource != "" {
+		// Cleared by the person, the mood stays theirs, so Health does not fill it in.
+		if err != nil || day.MoodLevel != nil || day.MoodWords != "" || day.MoodSource != models.JournalMoodFromPerson {
 			t.Errorf("the person cleared the mood: %+v, %v", day, err)
 		}
 	})
@@ -288,7 +289,8 @@ func TestJournalTouchUpFollowsTheOriginal(t *testing.T) {
 		if _, err := tx.GetJournalDay(ada.ID, "2026-03-03"); !errors.Is(err, db.ErrNotFound) {
 			t.Fatalf("a refused request made a row: %v", err)
 		}
-		if _, err := tx.SetJournalWords(ada.ID, "2026-03-03", journalTestZone, "  ", nil, journalTestAt(8)); err != nil {
+		blank, err := tx.SetJournalWords(ada.ID, "2026-03-03", journalTestZone, "  ", nil, journalTestAt(8))
+		if err != nil {
 			t.Fatal(err)
 		}
 		if err := tx.RequestJournalTouchUp(ada.ID, target, journalTestZone, nil, journalTestAt(8)); !errors.Is(err, db.ErrInvalidArguments) {
@@ -296,7 +298,7 @@ func TestJournalTouchUpFollowsTheOriginal(t *testing.T) {
 		}
 
 		original := "went to the harbour and had cofee"
-		if _, err := tx.SetJournalWords(ada.ID, "2026-03-03", journalTestZone, original, nil, journalTestAt(9)); err != nil {
+		if _, err := tx.SetJournalWords(ada.ID, "2026-03-03", journalTestZone, original, blank.WordsModifiedAt, journalTestAt(9)); err != nil {
 			t.Fatal(err)
 		}
 		if waiting, err := tx.ListJournalTouchUpsWaiting(ada.ID); err != nil || len(waiting) != 0 {
@@ -342,7 +344,7 @@ func TestJournalTouchUpFollowsTheOriginal(t *testing.T) {
 
 		// Changing the original asks again.
 		changed := original + " with Ben"
-		if _, err := tx.SetJournalWords(ada.ID, "2026-03-03", journalTestZone, changed, nil, journalTestAt(12)); err != nil {
+		if _, err := tx.SetJournalWords(ada.ID, "2026-03-03", journalTestZone, changed, day.WordsModifiedAt, journalTestAt(12)); err != nil {
 			t.Fatal(err)
 		}
 		day, _ = tx.GetJournalDay(ada.ID, "2026-03-03")
@@ -364,7 +366,8 @@ func TestJournalTouchUpFollowsTheOriginal(t *testing.T) {
 		}
 
 		// Clearing the words has nothing to touch up, and nothing waits.
-		if _, err := tx.SetJournalWords(ada.ID, "2026-03-03", journalTestZone, "", nil, journalTestAt(13)); err != nil {
+		day, _ = tx.GetJournalDay(ada.ID, "2026-03-03")
+		if _, err := tx.SetJournalWords(ada.ID, "2026-03-03", journalTestZone, "", day.WordsModifiedAt, journalTestAt(13)); err != nil {
 			t.Fatal(err)
 		}
 		day, _ = tx.GetJournalDay(ada.ID, "2026-03-03")
@@ -376,7 +379,7 @@ func TestJournalTouchUpFollowsTheOriginal(t *testing.T) {
 		}
 
 		// Turning it off deletes the touched-up text and refuses a late one.
-		if _, err := tx.SetJournalWords(ada.ID, "2026-03-03", journalTestZone, changed, nil, journalTestAt(14)); err != nil {
+		if _, err := tx.SetJournalWords(ada.ID, "2026-03-03", journalTestZone, changed, day.WordsModifiedAt, journalTestAt(14)); err != nil {
 			t.Fatal(err)
 		}
 		if err := tx.StopJournalTouchUp(ada.ID, target); err != nil {
@@ -427,8 +430,13 @@ func TestJournalPeriodsKeepLookingBack(t *testing.T) {
 			month.Chapters == nil || month.NarrativeCorrections == nil || month.TouchedUpLookingBack != nil {
 			t.Fatalf("a month as first saved: %+v, %v", month, err)
 		}
-		if _, err := tx.SetJournalLookingBack(ada.ID, models.JournalPeriodMonth, "2026-03-01", "Lost.", nil, journalTestAt(9)); err != nil {
-			t.Fatalf("an unconditional save: %v", err)
+		// A save based on nothing, once something was saved, is a conflict: it
+		// would replace the first device's words without a word.
+		if _, err := tx.SetJournalLookingBack(ada.ID, models.JournalPeriodMonth, "2026-03-01", "Lost.", nil, journalTestAt(9)); !errors.Is(err, db.ErrJournalChanged) {
+			t.Fatalf("a save based on nothing after a save: %v", err)
+		}
+		if _, err := tx.SetJournalLookingBack(ada.ID, models.JournalPeriodMonth, "2026-03-01", "Kept.", month.LookingBackModifiedAt, journalTestAt(9)); err != nil {
+			t.Fatalf("a save based on the version stored: %v", err)
 		}
 		if _, err := tx.SetJournalLookingBack(ada.ID, models.JournalPeriodMonth, "2026-03-01", "Lost again.", month.LookingBackModifiedAt, journalTestAt(10)); !errors.Is(err, db.ErrJournalChanged) {
 			t.Errorf("a save based on an older version: %v", err)
@@ -467,7 +475,7 @@ func TestJournalPeriodsKeepLookingBack(t *testing.T) {
 			t.Errorf("ada's months: %d, %v", len(months), err)
 		}
 		months, err = tx.ListJournalPeriods(ada.ID, models.JournalPeriodMonth, "2026-03-01", "2026-03-31")
-		if err != nil || len(months) != 1 || months[0].LookingBack != "Lost." {
+		if err != nil || len(months) != 1 || months[0].LookingBack != "Kept." {
 			t.Errorf("ada's months in March: %d, %v", len(months), err)
 		}
 	})
@@ -934,6 +942,44 @@ func TestJournalNarrativesWaitingOldestRequestFirst(t *testing.T) {
 		period, _ := tx.GetJournalPeriod(ada.ID, models.JournalPeriodMonth, "2026-03-01")
 		if period.NarrativeRequestedAt == nil {
 			t.Errorf("the month's request was not stored")
+		}
+	})
+}
+
+// Erasing Health or where the person went erases the journal's copies of it:
+// the numbers it kept and a mood that came from Apple Health.
+func TestErasingHealthOrPlacesErasesTheJournalsCopies(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ada, _ := journalTestPeople(t, tx)
+		facts := models.JournalFacts{HasActivity: true, StepCount: 8000, SleepMinutes: 400, PhotoCount: 3, PlaceCount: 2, MainPlaceName: "Harbor Cafe", MainPlaceID: "place-1"}
+		if err := tx.PutJournalFacts(ada.ID, "2026-03-03", journalTestZone, facts, journalTestAt(8)); err != nil {
+			t.Fatal(err)
+		}
+		good := models.JournalMoodGood
+		if _, err := tx.SetJournalMood(ada.ID, "2026-03-03", journalTestZone, &good, "", models.JournalMoodFromHealth, journalTestAt(8)); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.PutJournalWeather(ada.ID, "2026-03-03", &models.JournalWeather{WeatherCode: 2, PlaceName: "Harbor Cafe"}); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := tx.EraseHealthData(ada.ID, ""); err != nil {
+			t.Fatal(err)
+		}
+		day, err := tx.GetJournalDay(ada.ID, "2026-03-03")
+		if err != nil || day.Facts.StepCount != 0 || day.Facts.SleepMinutes != 0 || day.MoodLevel != nil || day.Facts.PhotoCount != 3 {
+			t.Fatalf("after erasing Health: %+v, %v", day, err)
+		}
+
+		if _, _, _, err := tx.EraseLocationHistory(ada.ID, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		day, err = tx.GetJournalDay(ada.ID, "2026-03-03")
+		if err != nil || day.Facts.PlaceCount != 0 || day.Facts.MainPlaceName != "" || day.Weather == nil || day.Weather.PlaceName != "" || day.Weather.WeatherCode != 2 || day.Facts.PhotoCount != 3 {
+			t.Fatalf("after erasing where the person went: %+v, %v", day, err)
 		}
 	})
 }

@@ -405,7 +405,11 @@ func TestInputDigestMovesWithWhatTheNarrativeIsWrittenFrom(t *testing.T) {
 		if digestOf() != base {
 			t.Error("the touched-up words, the weather and the story itself are not inputs")
 		}
-		if _, err := tx.SetJournalWords(world.user.ID, worldDay, zone, "A windy day with a long walk.", nil, local(22, 0)); err != nil {
+		saved, err := tx.GetJournalDay(world.user.ID, worldDay)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.SetJournalWords(world.user.ID, worldDay, zone, "A windy day with a long walk.", saved.WordsModifiedAt, local(22, 0)); err != nil {
 			t.Fatal(err)
 		}
 		changed := digestOf()

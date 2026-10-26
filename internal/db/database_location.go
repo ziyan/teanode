@@ -1488,6 +1488,9 @@ func (self *transaction) EraseLocationHistory(userId string, from, until *time.T
 	if err := self.deleteLocationDayDocuments(userId, from, until); err != nil {
 		return 0, 0, 0, err
 	}
+	if err := self.forgetJournalLocationCopies(userId, from, until); err != nil {
+		return 0, 0, 0, err
+	}
 	// The gaps in recording are as much a part of where the person was as the
 	// visits, so the ones that are over go with them.
 	if err := self.deleteEndedLocationPauses(userId, from, until, time.Now()); err != nil {

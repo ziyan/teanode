@@ -108,6 +108,9 @@ func (self *graph) SetJournalWords(ctx context.Context, arguments SetJournalWord
 	if utf8.RuneCountInString(arguments.Words) > journalWordsCharactersMost {
 		return nil, fmt.Errorf("%w: words are at most %d characters", api.ErrInvalidArguments, journalWordsCharactersMost)
 	}
+	if err := refuseJournalWordsTheAgentWouldRemove(ctx, tx, principal.User.ID, target, arguments.Words); err != nil {
+		return nil, err
+	}
 	row, err := tx.SetJournalWords(principal.User.ID, target.Day, journal.Zone(principal.User).String(), arguments.Words, arguments.BaseModifiedAt, now)
 	if errors.Is(err, db.ErrJournalChanged) {
 		return nil, fmt.Errorf("%w: %s", api.ErrConflict, journalChangedSentence)
@@ -121,7 +124,11 @@ func (self *graph) SetJournalWords(ctx context.Context, arguments SetJournalWord
 			return nil, err
 		}
 	}
-	return storedJournalDayView(tx, principal.User, row, now)
+	options, err := self.journalReadOptions(ctx, tx, principal)
+	if err != nil {
+		return nil, err
+	}
+	return storedJournalDayView(tx, principal.User, journal.ShownDay(row, options), now)
 }
 
 func (self *graph) SetJournalMood(ctx context.Context, arguments SetJournalMoodArguments) (*JournalDayView, error) {
@@ -142,7 +149,11 @@ func (self *graph) SetJournalMood(ctx context.Context, arguments SetJournalMoodA
 	if err != nil {
 		return nil, journalFailure(err)
 	}
-	return storedJournalDayView(tx, principal.User, row, now)
+	options, err := self.journalReadOptions(ctx, tx, principal)
+	if err != nil {
+		return nil, err
+	}
+	return storedJournalDayView(tx, principal.User, journal.ShownDay(row, options), now)
 }
 
 func (self *graph) SetJournalLookingBack(ctx context.Context, arguments SetJournalLookingBackArguments) (*JournalPeriodView, error) {
@@ -157,6 +168,9 @@ func (self *graph) SetJournalLookingBack(ctx context.Context, arguments SetJourn
 	}
 	if utf8.RuneCountInString(arguments.LookingBack) > journalWordsCharactersMost {
 		return nil, fmt.Errorf("%w: looking back is at most %d characters", api.ErrInvalidArguments, journalWordsCharactersMost)
+	}
+	if err := refuseJournalWordsTheAgentWouldRemove(ctx, tx, principal.User.ID, target, arguments.LookingBack); err != nil {
+		return nil, err
 	}
 	row, err := tx.SetJournalLookingBack(principal.User.ID, target.PeriodKind, target.PeriodStart, arguments.LookingBack, arguments.BaseModifiedAt, now)
 	if errors.Is(err, db.ErrJournalChanged) {
@@ -343,6 +357,9 @@ func (self *graph) UpdateJournalSettings(ctx context.Context, arguments UpdateJo
 	if err != nil {
 		return nil, err
 	}
+	if db.PrincipalFromContext(ctx).ActorKind == models.AuditActorAgent {
+		return nil, fmt.Errorf("%w: %s", api.ErrPermissionDenied, journalTheAgentMayNot)
+	}
 	tx := self.transaction(ctx)
 	settings, err := tx.GetJournalSettings(principal.User.ID)
 	if err != nil {
@@ -371,9 +388,49 @@ func (self *graph) EraseJournal(ctx context.Context) (*EraseJournalView, error) 
 	if err != nil {
 		return nil, err
 	}
+	if db.PrincipalFromContext(ctx).ActorKind == models.AuditActorAgent {
+		return nil, fmt.Errorf("%w: %s", api.ErrPermissionDenied, journalTheAgentMayNot)
+	}
 	dayCount, periodCount, linkCount, err := self.transaction(ctx).EraseJournal(principal.User.ID)
 	if err != nil {
 		return nil, journalFailure(err)
 	}
 	return &EraseJournalView{DayCount: dayCount, PeriodCount: periodCount, LinkCount: linkCount}, nil
+}
+
+// journalTheAgentMayNot is why a command the agent runs on the person's
+// computer, which arrives with the person's own token, is refused what is the
+// person's alone: erasing the journal and changing what they decided about it.
+const journalTheAgentMayNot = "only the person can erase their journal or change its settings, not the agent"
+
+// refuseJournalWordsTheAgentWouldRemove keeps the rule that the person's words
+// are theirs for a command the agent runs as the person: it may add to the
+// original (the person asked it to), never remove or rewrite any of it. The
+// person's own saves are not asked.
+func refuseJournalWordsTheAgentWouldRemove(ctx context.Context, tx db.Transaction, userId string, target models.JournalTarget, words string) error {
+	if db.PrincipalFromContext(ctx).ActorKind != models.AuditActorAgent {
+		return nil
+	}
+	stored := ""
+	if target.IsPeriod() {
+		period, err := tx.GetJournalPeriod(userId, target.PeriodKind, target.PeriodStart)
+		if err != nil && !errors.Is(err, db.ErrNotFound) {
+			return err
+		}
+		if period != nil {
+			stored = period.LookingBack
+		}
+	} else {
+		day, err := tx.GetJournalDay(userId, target.Day)
+		if err != nil && !errors.Is(err, db.ErrNotFound) {
+			return err
+		}
+		if day != nil {
+			stored = day.Words
+		}
+	}
+	if !strings.HasPrefix(words, stored) {
+		return fmt.Errorf("%w: the agent can add to the person's words, never remove or change them", api.ErrPermissionDenied)
+	}
+	return nil
 }

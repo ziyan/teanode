@@ -852,6 +852,10 @@ func (self *transaction) EraseHealthData(userId, healthType string) (int, error)
 	if userId == "" || (healthType != "" && !health.IsValidIdentifier(healthType)) {
 		return 0, ErrInvalidArguments
 	}
+	// The journal keeps a day's steps, sleep and Health mood; they go too.
+	if err := self.forgetJournalHealthCopies(userId); err != nil {
+		return 0, err
+	}
 	if healthType == "" {
 		erased := self.tx.Exec(`DELETE FROM "health_sample" WHERE "user_id" = ?`, userId)
 		if erased.Error != nil {

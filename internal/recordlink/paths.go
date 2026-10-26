@@ -2,6 +2,7 @@ package recordlink
 
 import (
 	"net/url"
+	"strings"
 )
 
 // Where each kind of record opens on the dashboard. The resolvers put these
@@ -67,7 +68,7 @@ func VisitPath(day, placeId string) string {
 // page of this dashboard, else the search over what was read with its title in
 // it, since a document has no page of its own.
 func DocumentPath(title, address string) string {
-	if len(address) > 1 && address[0] == '/' && address[1] != '/' {
+	if isDashboardAddress(address) {
 		return address
 	}
 	return "/knowledge?documents=" + url.QueryEscape(title)
@@ -88,3 +89,14 @@ func GoalPath(conversationId string) string {
 
 // IdeasPath opens the agent's ideas.
 const IdeasPath = "/settings/agent/ideas"
+
+// isDashboardAddress says an address from a document is a path of this
+// dashboard: a slash and then a letter, a digit or one of ._~-, with no
+// backslash anywhere. "//host" and "/\host" are other sites to a browser.
+func isDashboardAddress(address string) bool {
+	if len(address) < 2 || address[0] != '/' || strings.Contains(address, "\\") {
+		return false
+	}
+	next := address[1]
+	return (next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z') || (next >= '0' && next <= '9') || strings.ContainsRune("._~-", rune(next))
+}

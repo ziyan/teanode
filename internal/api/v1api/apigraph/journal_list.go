@@ -97,9 +97,13 @@ func (self *graph) ListJournalDays(ctx context.Context, arguments ListJournalDay
 	if err != nil {
 		return nil, journalFailure(err)
 	}
+	options, err := self.journalReadOptions(ctx, tx, principal)
+	if err != nil {
+		return nil, err
+	}
 	view := &JournalDayPageView{Days: make([]*JournalDaySummaryView, 0, len(days)), TotalCount: totalCount, Today: today, FirstDay: firstDay}
 	for _, day := range days {
-		view.Days = append(view.Days, describeJournalDaySummary(day, today))
+		view.Days = append(view.Days, describeJournalDaySummary(journal.ShownDay(day, options), today))
 	}
 	return view, nil
 }
