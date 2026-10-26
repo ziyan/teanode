@@ -141,9 +141,10 @@ export function usePendingPoll(isPending: boolean, reload: () => Promise<void> |
 // Where the page was scrolled to, by the history entry it was shown for, so
 // that Back from a record opened on another page lands where the person was
 // reading and not at the top. Kept in memory only: a reload starts at the top
-// like any page. The dashboard scrolls inside .content, which the browser's
-// own restoring does not reach.
-const scrollPositions = new Map<string, number>()
+// like any page. The dashboard scrolls inside .content on a wide screen and
+// the window may on a phone; neither is reached by the browser's own
+// restoring, so both are kept.
+const scrollPositions = new Map<string, { contentTop: number; windowTop: number }>()
 
 export function useKeptScroll(isReady: boolean) {
   const location = useLocation()
@@ -152,10 +153,14 @@ export function useKeptScroll(isReady: boolean) {
   const hasRestored = useRef(false)
   useEffect(() => {
     const scroller = document.querySelector('.content')
-    if (!scroller) return
-    const remember = () => scrollPositions.set(entry, scroller.scrollTop)
-    scroller.addEventListener('scroll', remember, { passive: true })
-    return () => scroller.removeEventListener('scroll', remember)
+    const remember = () =>
+      scrollPositions.set(entry, { contentTop: scroller?.scrollTop ?? 0, windowTop: window.scrollY })
+    scroller?.addEventListener('scroll', remember, { passive: true })
+    window.addEventListener('scroll', remember, { passive: true })
+    return () => {
+      scroller?.removeEventListener('scroll', remember)
+      window.removeEventListener('scroll', remember)
+    }
   }, [entry])
   useEffect(() => {
     if (!isReady || hasRestored.current) return
@@ -163,8 +168,9 @@ export function useKeptScroll(isReady: boolean) {
     // Only going back or forward returns to a place; a link starts at the top.
     if (navigationType !== 'POP') return
     const saved = scrollPositions.get(entry)
-    const scroller = document.querySelector('.content')
-    if (saved && scroller) scroller.scrollTo({ top: saved })
+    if (!saved) return
+    if (saved.contentTop > 0) document.querySelector('.content')?.scrollTo({ top: saved.contentTop })
+    if (saved.windowTop > 0) window.scrollTo({ top: saved.windowTop })
   }, [isReady, entry, navigationType])
 }
 

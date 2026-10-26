@@ -21769,10 +21769,12 @@ button.person-row:focus-visible {
 /* The head of a panel: the title and the buttons share the first line, on a
    phone too, and the sentence under them has the whole width. The
    dashboard's own head drops the action under the title on a phone, which
-   is right for a button of words and wrong for a chevron. */
+   is right for a button of words and wrong for a chevron. Buttons too wide
+   to share the line (the switch between the touched-up words and the
+   original) drop under the title, at the right. */
 .journal-card-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   column-gap: var(--space-3);
   row-gap: 4px;
@@ -21784,23 +21786,23 @@ button.person-row:focus-visible {
 }
 
 .journal-card-head h3 {
-  grid-column: 1;
+  flex: 1 1 8rem;
   min-width: 0;
   margin: 0;
 }
 
 .journal-card-head-actions {
-  grid-column: 2;
-  grid-row: 1;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-2);
+  margin-left: auto;
   white-space: nowrap;
 }
 
 .journal-card-head p {
-  grid-column: 1 / -1;
+  flex: 1 1 100%;
   max-width: var(--measure);
   margin: 0;
 }
