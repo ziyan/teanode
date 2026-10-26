@@ -59,6 +59,7 @@ type shoppingReceiptMatchModel struct {
 	ID                          string     `gorm:"column:id;primaryKey"`
 	FinanceReceiptID            string     `gorm:"column:finance_receipt_id"`
 	ReceiptLineNumber           int        `gorm:"column:receipt_line_number"`
+	ReceiptLineDescription      string     `gorm:"column:receipt_line_description"`
 	ShoppingItemID              string     `gorm:"column:shopping_item_id"`
 	ReceiptMatchState           string     `gorm:"column:receipt_match_state"`
 	MatchedQuantity             *string    `gorm:"column:matched_quantity"`
@@ -102,12 +103,17 @@ func (self *transaction) matchesWithLineIds(rows []shoppingReceiptMatchModel) ([
 	if err := self.tx.Where("\"receipt_id\" IN ?", receiptIds).Find(&lines).Error; err != nil {
 		return nil, err
 	}
-	lineIds := map[string]string{}
-	for _, line := range lines {
-		lineIds[fmt.Sprintf("%s %d", line.ReceiptID, line.LineNumber)] = line.ID
+	byNumber := map[string]*agentFinanceReceiptLineModel{}
+	for index := range lines {
+		byNumber[fmt.Sprintf("%s %d", lines[index].ReceiptID, lines[index].LineNumber)] = &lines[index]
 	}
-	for _, match := range matches {
-		match.FinanceReceiptLineID = lineIds[fmt.Sprintf("%s %d", match.FinanceReceiptID, match.ReceiptLineNumber)]
+	for index, match := range matches {
+		line := byNumber[fmt.Sprintf("%s %d", match.FinanceReceiptID, match.ReceiptLineNumber)]
+		// A line of that number with other words is another line: the receipt
+		// was read again and numbered differently.
+		if line != nil && isSameReceiptLine(line, &rows[index]) {
+			match.FinanceReceiptLineID = line.ID
+		}
 	}
 	return matches, nil
 }
@@ -153,18 +159,41 @@ func (self *transaction) ownShoppingReceiptLine(userId, financeReceiptLineId str
 	return &line, receipt, nil
 }
 
-// receiptLineOfNumber is the item line of a receipt with that number now.
-func (self *transaction) receiptLineOfNumber(financeReceiptId string, lineNumber int) (*agentFinanceReceiptLineModel, error) {
+// isSameReceiptLine says the line is the one the match was made with: the
+// same words, compared without case and spacing.
+func isSameReceiptLine(line *agentFinanceReceiptLineModel, match *shoppingReceiptMatchModel) bool {
+	normalize := func(text string) string { return strings.ToLower(strings.Join(strings.Fields(text), " ")) }
+	return match.ReceiptLineDescription == "" || normalize(line.Description) == normalize(match.ReceiptLineDescription)
+}
+
+// receiptLineOfMatch is the item line a match was made with, as the receipt
+// has it now. ErrInvalidArguments when the receipt was read again and has no
+// such line any more.
+func (self *transaction) receiptLineOfMatch(match *shoppingReceiptMatchModel) (*agentFinanceReceiptLineModel, error) {
 	var line agentFinanceReceiptLineModel
 	isFound, err := findOneRow(self.tx.Where("\"receipt_id\" = ? AND \"line_number\" = ? AND \"receipt_line_kind\" = ?",
-		financeReceiptId, lineNumber, string(models.ReceiptLineKindItem)), &line)
+		match.FinanceReceiptID, match.ReceiptLineNumber, string(models.ReceiptLineKindItem)), &line)
 	if err != nil {
 		return nil, err
 	}
-	if !isFound {
-		return nil, ErrNotFound
+	if !isFound || !isSameReceiptLine(&line, match) {
+		return nil, fmt.Errorf("%w: the receipt was read again and no longer has that line", ErrInvalidArguments)
 	}
 	return &line, nil
+}
+
+// usableReceiptQuantity is a quantity a receipt printed, as kept, or empty
+// when it is not one a count can be (zero, or not a number): a receipt's own
+// oddities never refuse what the rest of it does.
+func usableReceiptQuantity(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return ""
+	}
+	canonical, err := canonicalShoppingQuantity(text)
+	if err != nil {
+		return ""
+	}
+	return canonical
 }
 
 // isShoppingStoreOfMerchant says an item's store is the merchant's: one of
@@ -240,13 +269,12 @@ func (self *transaction) applyShoppingReceiptMatch(userId string, receipt *agent
 	match.PreviousShoppingItemState, match.PreviousNeededQuantity = row.ShoppingItemState, &previousQuantity
 	match.PreviousLastBoughtAt, match.PreviousOutOfStockAt = row.LastBoughtAt, row.OutOfStockAt
 	match.PreviousOutOfStockByUserID, match.PreviousOutOfStockStoreName = row.OutOfStockByUserID, row.OutOfStockStoreName
+	match.ReceiptLineNumber, match.ReceiptLineDescription = line.LineNumber, line.Description
 	if matchedQuantity == "" && line.Quantity != nil && line.QuantityUnit == "" {
 		matchedQuantity = *line.Quantity
 	}
-	if strings.TrimSpace(matchedQuantity) != "" {
-		if canonical, err := canonicalShoppingQuantity(matchedQuantity); err == nil {
-			match.MatchedQuantity = &canonical
-		}
+	if canonical := usableReceiptQuantity(matchedQuantity); canonical != "" {
+		match.MatchedQuantity = &canonical
 	}
 	if unitPrice := receiptLineUnitPrice(line); unitPrice != "" {
 		storeName := receipt.MerchantName
@@ -259,7 +287,7 @@ func (self *transaction) applyShoppingReceiptMatch(userId string, receipt *agent
 		}
 		quantity := optionalString(match.MatchedQuantity)
 		if quantity == "" && line.Quantity != nil {
-			quantity = *line.Quantity
+			quantity = usableReceiptQuantity(*line.Quantity)
 		}
 		price, err := self.recordShoppingItemPrice(row, &models.ShoppingItemPrice{
 			StoreName: storeName, UnitPriceAmount: unitPrice, CurrencyCode: receipt.CurrencyCode, Quantity: quantity,
@@ -307,6 +335,17 @@ func (self *transaction) ApplyShoppingReceiptMatches(userId, financeReceiptId st
 		isLineTaken[match.ReceiptLineNumber] = true
 		isItemTaken[match.ShoppingItemID] = true
 	}
+	// The lists of every item proposed are held first, in one order, so two
+	// receipts that touch the same lists take turns rather than deadlock.
+	proposedItemIds := []string{}
+	for _, proposal := range proposals {
+		if proposal != nil {
+			proposedItemIds = append(proposedItemIds, proposal.ShoppingItemID)
+		}
+	}
+	if err := self.lockListsOfShoppingItems(proposedItemIds); err != nil {
+		return nil, nil, err
+	}
 	written := []*shoppingReceiptMatchModel{}
 	changedListIds := []string{}
 	for _, proposal := range proposals {
@@ -334,17 +373,15 @@ func (self *transaction) ApplyShoppingReceiptMatches(userId, financeReceiptId st
 			continue
 		}
 		match := &shoppingReceiptMatchModel{
-			ID: newID(), FinanceReceiptID: receipt.ID, ReceiptLineNumber: line.LineNumber, ShoppingItemID: row.ID,
+			ID: newID(), FinanceReceiptID: receipt.ID, ReceiptLineNumber: line.LineNumber, ReceiptLineDescription: line.Description, ShoppingItemID: row.ID,
 			ReceiptMatchState: string(models.ReceiptMatchStateProposed), CreatedAt: time.Now(),
 		}
 		if proposal.IsSure {
 			if err := self.applyShoppingReceiptMatch(userId, receipt, &line, row, proposal.MatchedQuantity, match); err != nil {
 				return nil, nil, err
 			}
-		} else if strings.TrimSpace(proposal.MatchedQuantity) != "" {
-			if canonical, err := canonicalShoppingQuantity(proposal.MatchedQuantity); err == nil {
-				match.MatchedQuantity = &canonical
-			}
+		} else if canonical := usableReceiptQuantity(proposal.MatchedQuantity); canonical != "" {
+			match.MatchedQuantity = &canonical
 		}
 		if err := self.tx.Create(match).Error; err != nil {
 			return nil, nil, err
@@ -401,9 +438,9 @@ func (self *transaction) undoShoppingReceiptMatch(match *shoppingReceiptMatchMod
 		}
 	}
 	// A change made to the item after the match (needed again, checked off,
-	// a new count) is the newer word, and stays.
-	isChangedSince := match.DecidedAt != nil && row.UpdatedAt.After(match.DecidedAt.Add(time.Second))
-	if !isChangedSince {
+	// a new count) is the newer word, and stays: the item is put back only
+	// while it is as applying left it.
+	if isAsReceiptLeftIt(row, match) {
 		updates := map[string]any{
 			"last_bought_at": match.PreviousLastBoughtAt, "out_of_stock_at": match.PreviousOutOfStockAt,
 			"out_of_stock_by_user_id": match.PreviousOutOfStockByUserID, "out_of_stock_store_name": match.PreviousOutOfStockStoreName,
@@ -426,6 +463,39 @@ func (self *transaction) undoShoppingReceiptMatch(match *shoppingReceiptMatchMod
 		}
 	}
 	return self.touchShoppingList(row.ShoppingListID)
+}
+
+// isAsReceiptLeftIt says the item is in the state and count applying the
+// match left it in: bought (not needed), or still needed for what the line did
+// not buy of it.
+func isAsReceiptLeftIt(row *shoppingItemModel, match *shoppingReceiptMatchModel) bool {
+	expectedState, expectedQuantity := models.ShoppingItemStateNotNeeded, optionalString(match.PreviousNeededQuantity)
+	if models.ShoppingItemState(match.PreviousShoppingItemState) == models.ShoppingItemStateNeeded && match.MatchedQuantity != nil && match.PreviousNeededQuantity != nil {
+		needed, isNeededParsed := parseRat(*match.PreviousNeededQuantity)
+		bought, isBoughtParsed := parseRat(*match.MatchedQuantity)
+		if isNeededParsed && isBoughtParsed && bought.Cmp(needed) < 0 {
+			expectedState, expectedQuantity = models.ShoppingItemStateNeeded, new(big.Rat).Sub(needed, bought).FloatString(3)
+		}
+	}
+	if models.ShoppingItemState(row.ShoppingItemState) != expectedState {
+		return false
+	}
+	current, isCurrentParsed := parseRat(row.NeededQuantity)
+	expected, isExpectedParsed := parseRat(expectedQuantity)
+	return !isCurrentParsed || !isExpectedParsed || current.Cmp(expected) == 0
+}
+
+// lockListsOfShoppingItems holds the lists the items are on, in one order.
+func (self *transaction) lockListsOfShoppingItems(shoppingItemIds []string) error {
+	shoppingItemIds = uniqueStrings(shoppingItemIds)
+	if len(shoppingItemIds) == 0 {
+		return nil
+	}
+	var listIds []string
+	if err := self.tx.Model(&shoppingItemModel{}).Where("\"id\" IN ?", shoppingItemIds).Distinct().Pluck("shopping_list_id", &listIds).Error; err != nil {
+		return err
+	}
+	return self.lockShoppingLists(listIds)
 }
 
 // refreshShoppingItemPrice makes the newest price kept the item's price.
@@ -465,6 +535,18 @@ func (self *transaction) dismissShoppingReceiptMatch(userId string, match *shopp
 // reachableShoppingReceiptMatch is a match of one of the person's receipts
 // to an item they reach, its row held.
 func (self *transaction) reachableShoppingReceiptMatch(userId, shoppingReceiptMatchId string) (*shoppingReceiptMatchModel, *agentFinanceReceiptModel, error) {
+	// The item's list is held before the match's row, the order every other
+	// path takes them in.
+	var itemIds []string
+	if err := self.tx.Model(&shoppingReceiptMatchModel{}).Where("\"id\" = ?", shoppingReceiptMatchId).Pluck("shopping_item_id", &itemIds).Error; err != nil {
+		return nil, nil, err
+	}
+	if len(itemIds) == 0 {
+		return nil, nil, ErrNotFound
+	}
+	if err := self.lockListsOfShoppingItems(itemIds); err != nil {
+		return nil, nil, err
+	}
 	var match shoppingReceiptMatchModel
 	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("\"id\" = ?", shoppingReceiptMatchId), &match)
 	if err != nil {
@@ -504,7 +586,7 @@ func (self *transaction) DecideShoppingReceiptMatch(userId, shoppingReceiptMatch
 	state := models.ReceiptMatchState(match.ReceiptMatchState)
 	switch {
 	case isApplied && state != models.ReceiptMatchStateApplied:
-		line, err := self.receiptLineOfNumber(receipt.ID, match.ReceiptLineNumber)
+		line, err := self.receiptLineOfMatch(match)
 		if err != nil {
 			return nil, "", err
 		}
@@ -546,7 +628,7 @@ func (self *transaction) MatchShoppingReceiptLine(userId, financeReceiptLineId, 
 	if err != nil {
 		return nil, "", err
 	}
-	if isFound && existing.ReceiptMatchState == string(models.ReceiptMatchStateApplied) {
+	if isFound && existing.ReceiptMatchState == string(models.ReceiptMatchStateApplied) && isSameReceiptLine(line, &existing) {
 		decided, err := self.decidedMatch(&existing)
 		return decided, row.ShoppingListID, err
 	}
@@ -588,10 +670,21 @@ func (self *transaction) UndoShoppingReceipt(userId, financeReceiptId string) ([
 	if len(listIds) == 0 {
 		return []string{}, nil
 	}
+	var itemIds []string
+	if err := self.tx.Model(&shoppingReceiptMatchModel{}).Where(`"finance_receipt_id" = ? AND "receipt_match_state" = ? AND "shopping_item_id" IN
+		(SELECT "id" FROM "shopping_item" WHERE "shopping_list_id" IN ?)`, receipt.ID, string(models.ReceiptMatchStateApplied), listIds).
+		Pluck("shopping_item_id", &itemIds).Error; err != nil {
+		return nil, err
+	}
+	if err := self.lockListsOfShoppingItems(itemIds); err != nil {
+		return nil, err
+	}
+	// Newest first: two matches of one item undo in the reverse of the
+	// order they were applied in, each finding the item as it left it.
 	var matches []shoppingReceiptMatchModel
 	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(`"finance_receipt_id" = ? AND "receipt_match_state" = ? AND "shopping_item_id" IN
 		(SELECT "id" FROM "shopping_item" WHERE "shopping_list_id" IN ?)`, receipt.ID, string(models.ReceiptMatchStateApplied), listIds).
-		Find(&matches).Error; err != nil {
+		Order("\"decided_at\" DESC, \"id\" DESC").Find(&matches).Error; err != nil {
 		return nil, err
 	}
 	changed := []string{}
@@ -609,6 +702,17 @@ func (self *transaction) AddShoppingItemFromReceiptLine(userId, financeReceiptLi
 	line, receipt, err := self.ownShoppingReceiptLine(userId, financeReceiptLineId)
 	if err != nil {
 		return nil, err
+	}
+	// A line already applied to an item is that item's: adding it again would
+	// write its price twice.
+	var applied shoppingReceiptMatchModel
+	isApplied, err := findOneRow(self.tx.Where("\"finance_receipt_id\" = ? AND \"receipt_line_number\" = ? AND \"receipt_match_state\" = ?",
+		receipt.ID, line.LineNumber, string(models.ReceiptMatchStateApplied)), &applied)
+	if err != nil {
+		return nil, err
+	}
+	if isApplied && isSameReceiptLine(line, &applied) {
+		return self.GetShoppingItem(userId, applied.ShoppingItemID)
 	}
 	description := strings.TrimSpace(line.Description)
 	if len([]rune(description)) > shoppingItemDescriptionLengthMost {
@@ -629,8 +733,17 @@ func (self *transaction) AddShoppingItemFromReceiptLine(userId, financeReceiptLi
 	if err != nil {
 		return nil, err
 	}
-	match := &shoppingReceiptMatchModel{ID: newID(), FinanceReceiptID: receipt.ID, ReceiptLineNumber: line.LineNumber, ShoppingItemID: row.ID, CreatedAt: time.Now()}
-	if err := self.applyShoppingReceiptMatch(userId, receipt, line, row, "", match); err != nil {
+	// A dismissed or proposed match of this line and item is the row reused.
+	var match shoppingReceiptMatchModel
+	isFound, err := findOneRow(self.tx.Where("\"finance_receipt_id\" = ? AND \"receipt_line_number\" = ? AND \"shopping_item_id\" = ?",
+		receipt.ID, line.LineNumber, row.ID), &match)
+	if err != nil {
+		return nil, err
+	}
+	if !isFound {
+		match = shoppingReceiptMatchModel{ID: newID(), FinanceReceiptID: receipt.ID, ReceiptLineNumber: line.LineNumber, ShoppingItemID: row.ID, CreatedAt: time.Now()}
+	}
+	if err := self.applyShoppingReceiptMatch(userId, receipt, line, row, "", &match); err != nil {
 		return nil, err
 	}
 	match.PreviousShoppingItemState = string(models.ShoppingItemStateNotNeeded)
@@ -641,7 +754,7 @@ func (self *transaction) AddShoppingItemFromReceiptLine(userId, financeReceiptLi
 		match.PreviousOutOfStockByUserID, match.PreviousOutOfStockStoreName = nullableText(previous.OutOfStockByUserID), previous.OutOfStockStoreName
 	}
 	match.DecidedByUserID = &userId
-	if err := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(match).Error; err != nil {
+	if err := self.tx.Save(&match).Error; err != nil {
 		return nil, err
 	}
 	return self.GetShoppingItemByID(row.ID)

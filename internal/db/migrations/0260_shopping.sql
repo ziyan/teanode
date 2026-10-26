@@ -135,9 +135,10 @@ CREATE TABLE "shopping_item_price" (
 );
 CREATE INDEX "shopping_item_price_item" ON "shopping_item_price" ("shopping_item_id", "observed_on" DESC, "created_at" DESC);
 
--- A line of a receipt tied to an item, by the line's number on the receipt:
--- reading a receipt again replaces its lines (new rows, the same numbers), and
--- what was decided about them stays. applied: the item was checked off and its
+-- A line of a receipt tied to an item, by the line's number on the receipt and
+-- its words (receipt_line_description): reading a receipt again replaces its
+-- lines (new rows, the same numbers), and what was decided about them stays,
+-- while a reading that numbered the lines differently matches nothing. applied: the item was checked off and its
 -- price written (shopping_item_price_id); what it was before is kept, so the
 -- receipt can be undone. proposed: the matcher was unsure and left it to the
 -- person. dismissed: undone or refused, and never proposed again.
@@ -145,6 +146,7 @@ CREATE TABLE "shopping_receipt_match" (
     "id"                                   character varying(32)    NOT NULL PRIMARY KEY,
     "finance_receipt_id"                   character varying(32)    NOT NULL REFERENCES "agent_finance_receipt" ("id") ON DELETE CASCADE,
     "receipt_line_number"                  integer                  NOT NULL CHECK ("receipt_line_number" > 0),
+    "receipt_line_description"             text                     NOT NULL DEFAULT '',
     "shopping_item_id"                     character varying(32)    NOT NULL REFERENCES "shopping_item" ("id") ON DELETE CASCADE,
     "receipt_match_state"                  character varying(16)    NOT NULL
         CHECK ("receipt_match_state" IN ('applied', 'proposed', 'dismissed')),

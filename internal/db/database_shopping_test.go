@@ -206,10 +206,10 @@ func TestAShoppingTripBuysWhatItsShopperPutInTheCart(t *testing.T) {
 		if err != nil || len(open) != 1 || open[0].ShopperUsername != "sam" {
 			t.Fatalf("the owner does not see sam shopping: %+v %v", open, err)
 		}
-		if _, err := tx.FinishShoppingTrip(world.owner.ID, trip.ID); !errors.Is(err, db.ErrNotFound) {
+		if _, _, err := tx.FinishShoppingTrip(world.owner.ID, trip.ID); !errors.Is(err, db.ErrNotFound) {
 			t.Fatalf("the owner finished sam's trip: %v", err)
 		}
-		if _, err := tx.FinishShoppingTrip(world.sam.ID, trip.ID); err != nil {
+		if _, _, err := tx.FinishShoppingTrip(world.sam.ID, trip.ID); err != nil {
 			t.Fatalf("FinishShoppingTrip: %s", err)
 		}
 		milk, _ := tx.GetShoppingItem(world.owner.ID, items[0].ID)

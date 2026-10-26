@@ -433,6 +433,21 @@ func (self *graph) announceShopping(tx db.Transaction, shoppingListIds []string,
 	})
 }
 
+// uniqueShoppingListIds is the lists named in any of the groups, once each.
+func uniqueShoppingListIds(groups ...[]string) []string {
+	seen := map[string]bool{}
+	ids := []string{}
+	for _, group := range groups {
+		for _, id := range group {
+			if id != "" && !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
+}
+
 // withPicturePaths fills in where each item's picture is served from.
 func withPicturePaths(items ...*models.ShoppingItem) []*models.ShoppingItem {
 	for _, item := range items {
@@ -1114,6 +1129,9 @@ func (self *graph) FindShoppingItemPicture(ctx context.Context, arguments Shoppi
 	if err != nil {
 		return false, translateError(err)
 	}
+	if item.PictureSource == models.ShoppingPictureSourceUpload {
+		return false, fmt.Errorf("%w: the item has a picture somebody gave it; remove that picture first to find one on the web", api.ErrInvalidArguments)
+	}
 	owner, err := tx.GetAgentByUser(user.ID)
 	if err != nil {
 		return false, err
@@ -1193,7 +1211,7 @@ func (self *graph) StartShopping(ctx context.Context, arguments StartShoppingArg
 	if err != nil {
 		return nil, translateError(err)
 	}
-	self.announceShopping(tx, append(append([]string{}, trip.ShoppingListIDs...), boughtListIds...))
+	self.announceShopping(tx, uniqueShoppingListIds(trip.ShoppingListIDs, boughtListIds))
 	if notifier := self.phoneNotifier(); notifier != nil {
 		detached := context.WithoutCancel(ctx)
 		tx.AfterCommit(func() { notifier.NotifyShoppingStarted(detached, user, trip) })
@@ -1207,11 +1225,11 @@ func (self *graph) FinishShopping(ctx context.Context, arguments FinishShoppingA
 		return nil, err
 	}
 	tx := self.transaction(ctx)
-	trip, err := tx.FinishShoppingTrip(user.ID, arguments.ShoppingTripID)
+	trip, boughtListIds, err := tx.FinishShoppingTrip(user.ID, arguments.ShoppingTripID)
 	if err != nil {
 		return nil, translateError(err)
 	}
-	self.announceShopping(tx, trip.ShoppingListIDs)
+	self.announceShopping(tx, uniqueShoppingListIds(trip.ShoppingListIDs, boughtListIds))
 	return trip, nil
 }
 

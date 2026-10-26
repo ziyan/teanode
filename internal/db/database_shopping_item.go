@@ -773,7 +773,7 @@ func (self *transaction) SetShoppingItemPicture(shoppingItemId, pictureFileId, p
 	}
 	if err := self.tx.Model(&shoppingItemModel{}).Where("\"id\" = ?", row.ID).Updates(map[string]any{
 		"picture_file_id": pictureFileId, "picture_page_url": picturePageUrl, "picture_source": string(pictureSource),
-		"picture_searched_at": time.Now(), "updated_at": time.Now(),
+		"picture_searched_at": time.Now(),
 	}).Error; err != nil {
 		return "", err
 	}

@@ -654,7 +654,9 @@ func (self *transaction) DeclineShoppingListShare(granteeUserId, shoppingListSha
 func (self *transaction) ListShoppingListReaderUserIDs(shoppingListId string) ([]string, error) {
 	var userIds []string
 	if err := self.tx.Raw(`
-		SELECT list.user_id FROM "shopping_list" list WHERE list.id = @list
+		SELECT list.user_id FROM "shopping_list" list
+		JOIN "user" owner_user ON owner_user.id = list.user_id AND owner_user.disabled_at IS NULL
+		WHERE list.id = @list AND `+userHasPermissionSQL("list.user_id")+`
 		UNION
 		SELECT share.grantee_user_id FROM "shopping_list_share" share
 		JOIN "shopping_list" list ON list.id = share.shopping_list_id

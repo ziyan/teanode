@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -20,9 +22,10 @@ type ShoppingTripOperation interface {
 	StartShoppingTrip(userId, storeName string, shoppingListIds []string) (*models.ShoppingTrip, []string, error)
 
 	// FinishShoppingTrip ends one of the person's trips: what they put in
-	// the cart on its lists is bought. It answers the trip as finished.
-	// ErrNotFound unless the trip is theirs and open.
-	FinishShoppingTrip(userId, shoppingTripId string) (*models.ShoppingTrip, error)
+	// the cart on any list they reach is bought. It answers the trip as
+	// finished and the lists whose items were bought. ErrNotFound unless the
+	// trip is theirs and open.
+	FinishShoppingTrip(userId, shoppingTripId string) (*models.ShoppingTrip, []string, error)
 
 	// ListOpenShoppingTrips are the trips open now on the lists the person
 	// reaches, theirs included, newest first, each with who is shopping.
@@ -92,24 +95,42 @@ func (self *transaction) shoppingTripsOf(rows []shoppingTripModel) ([]*models.Sh
 // were bought.
 func (self *transaction) finishShoppingTrips(rows []shoppingTripModel) ([]string, error) {
 	now := time.Now()
-	changedListIds := []string{}
+	// Every list any of these shoppers reaches is held first, once and in one
+	// order, so two trips ending at once take turns rather than deadlock.
+	reachable := map[string][]string{}
+	allListIds := []string{}
 	for _, row := range rows {
+		if _, isRead := reachable[row.UserID]; isRead {
+			continue
+		}
 		listIds, err := self.reachableShoppingListIds(row.UserID)
 		if err != nil {
 			return nil, err
 		}
-		if err := self.lockShoppingLists(listIds); err != nil {
-			return nil, err
-		}
+		reachable[row.UserID] = listIds
+		allListIds = append(allListIds, listIds...)
+	}
+	if err := self.lockShoppingLists(allListIds); err != nil {
+		return nil, err
+	}
+	changedListIds := []string{}
+	for _, row := range rows {
+		listIds := reachable[row.UserID]
 		if len(listIds) > 0 {
-			result := self.tx.Model(&shoppingItemModel{}).
-				Where("\"shopping_list_id\" IN ? AND \"shopping_item_state\" = 'in_cart' AND \"carted_by_user_id\" = ?", listIds, row.UserID).
-				Updates(withUpdatedAt(boughtShoppingItemUpdates(now), now))
-			if result.Error != nil {
-				return nil, result.Error
+			// The lists whose items this buys, which are the ones to announce.
+			var bought []string
+			cart := self.tx.Model(&shoppingItemModel{}).
+				Where("\"shopping_list_id\" IN ? AND \"shopping_item_state\" = 'in_cart' AND \"carted_by_user_id\" = ?", listIds, row.UserID)
+			if err := cart.Session(&gorm.Session{}).Distinct().Pluck("shopping_list_id", &bought).Error; err != nil {
+				return nil, err
 			}
-			if result.RowsAffected > 0 {
-				changedListIds = append(changedListIds, listIds...)
+			if len(bought) > 0 {
+				if err := self.tx.Model(&shoppingItemModel{}).
+					Where("\"shopping_list_id\" IN ? AND \"shopping_item_state\" = 'in_cart' AND \"carted_by_user_id\" = ?", bought, row.UserID).
+					Updates(withUpdatedAt(boughtShoppingItemUpdates(now), now)).Error; err != nil {
+					return nil, err
+				}
+				changedListIds = append(changedListIds, bought...)
 			}
 		}
 		if err := self.tx.Model(&shoppingTripModel{}).Where("\"id\" = ?", row.ID).Update("finished_at", now).Error; err != nil {
@@ -177,26 +198,27 @@ func (self *transaction) StartShoppingTrip(userId, storeName string, shoppingLis
 	return trips[0], changedListIds, nil
 }
 
-func (self *transaction) FinishShoppingTrip(userId, shoppingTripId string) (*models.ShoppingTrip, error) {
+func (self *transaction) FinishShoppingTrip(userId, shoppingTripId string) (*models.ShoppingTrip, []string, error) {
 	var row shoppingTripModel
 	isFound, err := findOneRow(self.tx.Where("\"id\" = ? AND \"user_id\" = ? AND \"finished_at\" IS NULL", shoppingTripId, userId), &row)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !isFound {
-		return nil, ErrNotFound
+		return nil, nil, ErrNotFound
 	}
-	if _, err := self.finishShoppingTrips([]shoppingTripModel{row}); err != nil {
-		return nil, err
+	boughtListIds, err := self.finishShoppingTrips([]shoppingTripModel{row})
+	if err != nil {
+		return nil, nil, err
 	}
 	if err := self.tx.Where("\"id\" = ?", row.ID).Take(&row).Error; err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	trips, err := self.shoppingTripsOf([]shoppingTripModel{row})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return trips[0], nil
+	return trips[0], boughtListIds, nil
 }
 
 func (self *transaction) ListOpenShoppingTrips(userId string) ([]*models.ShoppingTrip, error) {

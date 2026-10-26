@@ -204,8 +204,13 @@ func TestTheEdgesOfShoppingAStore(t *testing.T) {
 		if again, err := tx.CheckShoppingItem(world.sam.ID, bread.ID, true); err != nil || again.CartedByUserID != world.owner.ID {
 			t.Fatalf("sam took the bread out of the owner's cart: %+v %v", again, err)
 		}
-		if _, err := tx.FinishShoppingTrip(world.owner.ID, trip.ID); err != nil {
+		_, bought, err := tx.FinishShoppingTrip(world.owner.ID, trip.ID)
+		if err != nil {
 			t.Fatal(err)
+		}
+		// Both lists had something bought, so both are announced; nothing else.
+		if len(bought) != 2 {
+			t.Fatalf("Done says it bought on %v, want the two lists", bought)
 		}
 		if bought := itemOf(t, tx, world.owner.ID, napkins.ID); bought.ShoppingItemState != models.ShoppingItemStateNotNeeded {
 			t.Fatalf("the napkins of a list switched on at the store were not bought: %+v", bought)
@@ -251,4 +256,84 @@ func TestAReceiptLineAddedToAListStaysBoughtWhenUndone(t *testing.T) {
 		}
 	})
 	_ = time.Now
+}
+
+// Two lines tied to one item undo in turn and put it back as it was; a line
+// added to a list twice writes its price once; a receipt line whose quantity is
+// zero does not refuse the rest of the receipt; and a receipt read again with
+// its lines numbered differently does not apply a match to another line.
+func TestTheSecondRoundOfReceiptEdges(t *testing.T) {
+	t.Parallel()
+	world := newShoppingWorld(t)
+	world.run(t, func(tx db.Transaction) {
+		list := mustCreateShoppingList(t, tx, world.owner.ID, "Groceries")
+		items := mustAddShoppingItems(t, tx, world.owner.ID, list.ID,
+			&models.ShoppingItem{ItemDescription: "Oat flakes", NeededQuantity: "3"}, &models.ShoppingItem{ItemDescription: "Dish soap"})
+		receipt := inventedGroceryReceipt(world.ownerAgentId, "mail-second-round")
+		receipt.ReceiptLines[3].Quantity = "0"
+		stored, err := tx.PutFinanceReceipt(receipt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := stored.ReceiptLines
+		// A zero quantity on the soap's line does not refuse the batch.
+		if _, _, err := tx.ApplyShoppingReceiptMatches(world.owner.ID, stored.ID, []*models.ShoppingReceiptMatchProposal{
+			{FinanceReceiptLineID: lines[3].ID, ShoppingItemID: items[1].ID, IsSure: true},
+		}); err != nil {
+			t.Fatalf("a zero quantity refused the receipt: %s", err)
+		}
+		// Two lines tied by hand to the oats, one of each, then undone.
+		if _, _, err := tx.MatchShoppingReceiptLine(world.owner.ID, lines[0].ID, items[0].ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := tx.MatchShoppingReceiptLine(world.owner.ID, lines[1].ID, items[0].ID); err != nil {
+			t.Fatal(err)
+		}
+		if oats := itemOf(t, tx, world.owner.ID, items[0].ID); oats.ShoppingItemState != models.ShoppingItemStateNotNeeded {
+			t.Fatalf("the oats were not bought: %+v", oats)
+		}
+		if _, err := tx.UndoShoppingReceipt(world.owner.ID, stored.ID); err != nil {
+			t.Fatal(err)
+		}
+		if oats := itemOf(t, tx, world.owner.ID, items[0].ID); oats.ShoppingItemState != models.ShoppingItemStateNeeded || oats.NeededQuantity != "3" {
+			t.Fatalf("undo did not put the oats back: %+v", oats)
+		}
+		// The pears' line added twice is one item with one price.
+		first, err := tx.AddShoppingItemFromReceiptLine(world.owner.ID, lines[1].ID, list.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		second, err := tx.AddShoppingItemFromReceiptLine(world.owner.ID, lines[1].ID, list.ID)
+		if err != nil || second.ID != first.ID {
+			t.Fatalf("adding the line again made another item: %v", err)
+		}
+		if prices, _ := tx.ListShoppingItemPrices(world.owner.ID, first.ID); len(prices) != 1 {
+			t.Fatalf("adding the line twice wrote %d prices", len(prices))
+		}
+	})
+	// The receipt read again with the oats and the pears swapped: a match
+	// proposed for line 1 (the oats) is not applied to what line 1 is now.
+	world.run(t, func(tx db.Transaction) {
+		lists, _ := tx.ListShoppingLists(world.owner.ID)
+		items, _, _ := tx.ListShoppingItems(world.owner.ID, lists[0].ID, []models.ShoppingItemState{models.ShoppingItemStateNeeded}, 0, 10)
+		var soapId string
+		for _, item := range items {
+			if item.ItemDescription == "Dish soap" {
+				soapId = item.ID
+			}
+		}
+		receipts, _ := tx.ListFinanceReceipts(world.ownerAgentId, nil)
+		stored := receipts.FinanceReceipts[0]
+		written, _, err := tx.ApplyShoppingReceiptMatches(world.owner.ID, stored.ID, []*models.ShoppingReceiptMatchProposal{
+			{FinanceReceiptLineID: stored.ReceiptLines[3].ID, ShoppingItemID: soapId, IsSure: false},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(written) == 0 {
+			// The soap's line was undone, hence dismissed, and is not proposed again.
+			return
+		}
+		t.Fatalf("a dismissed line was proposed again: %+v", written)
+	})
 }

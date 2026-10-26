@@ -351,29 +351,34 @@ final class ShoppingStoreModel {
 
     /// Finds the person's open trip at this store, and starts one the first time the screen
     /// is read when it was opened to start shopping, unless a trip of theirs here is open
-    /// already (the screen was left and opened again).
+    /// already (the screen was left and opened again). A start that fails is tried again
+    /// only from the Start button, not on every reading the live feed causes.
     private func startIfNeeded() async {
         if ownTrip == nil, let open = trips.ownTrip(atStoreKey: storeKey, userId: ownUserId) {
             ownTrip = open
         }
         guard isStartingTrip, !hasStarted, ownTrip == nil else { return }
-        hasStarted = true
+        await startTrip()
+    }
+
+    /// Asks the server to start the person's trip here, for the lists included.
+    private func startTrip() async {
         let listIds = includedListIds.isEmpty ? lists.map(\.shoppingListId) : includedListIds
         guard !listIds.isEmpty else { return }
+        hasStarted = true
         do {
             ownTrip = try await connection.startShopping(storeName: storeName, shoppingListIds: listIds)
         } catch {
-            // Not started: the Start button stays, to try again.
-            hasStarted = false
             problemText = ShoppingWords.problem(error)
         }
     }
 
     /// Starts the person shopping here, from the Start button of a store that was only
-    /// being looked at.
+    /// being looked at, or on the first item they put in the cart.
     func start() async {
         isStartingTrip = true
-        await startIfNeeded()
+        guard ownTrip == nil else { return }
+        await startTrip()
     }
 
     func follow() async {
@@ -390,6 +395,11 @@ final class ShoppingStoreModel {
     func toggle(_ item: ShoppingItem) async {
         let isChecking = !isChecked(item)
         pendingChecks[item.id] = isChecking
+        // Putting something in the cart is shopping: without a trip nothing
+        // would ever buy it.
+        if isChecking && ownTrip == nil {
+            await start()
+        }
         do {
             replace(try await connection.checkShoppingItem(shoppingItemId: item.id, isChecked: isChecking))
         } catch {
