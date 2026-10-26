@@ -95,26 +95,6 @@ func (self *journalAccess) options() journal.ReadOptions {
 	return journal.OptionsFor(self.permissions, self.canAgentReadHealth)
 }
 
-// journalFactsWithoutHealth is a day's numbers with the ones that came from
-// Apple Health taken out. The stored row keeps Health copies of its own, and
-// Health reaches the model only while the person lets the agent read it.
-func journalFactsWithoutHealth(facts models.JournalFacts) models.JournalFacts {
-	facts.StepCount, facts.SleepMinutes, facts.WalkedMeters, facts.WorkoutMinutes, facts.HealthMoodLevel = 0, 0, 0, 0, 0
-	return facts
-}
-
-// journalMoodForAgent is the day's mood as the agent may use it: the person's
-// own, and one from Apple Health only while the agent may read Health.
-func journalMoodForAgent(row *models.JournalDay, canAgentReadHealth bool) (level int, words string) {
-	if row == nil || row.MoodLevel == nil {
-		return 0, ""
-	}
-	if row.MoodSource == models.JournalMoodFromHealth && !canAgentReadHealth {
-		return 0, ""
-	}
-	return *row.MoodLevel, row.MoodWords
-}
-
 // journalFactsToStore is the numbers to keep after a day was read without
 // Health: the ones just worked out, with the Health numbers the row already
 // had, since a read that left Health out knows nothing of them.
@@ -442,7 +422,7 @@ func (self *journalDayInput) totals() string {
 
 // prompt renders the day for the model. The person's original words are used,
 // never the touched-up version, and the corrections are given as facts.
-func (self *journalDayInput) prompt(owner *models.User, agent *models.Agent, canAgentReadHealth bool) (string, error) {
+func (self *journalDayInput) prompt(owner *models.User, agent *models.Agent, options journal.ReadOptions) (string, error) {
 	day := self.Day
 	data := map[string]any{
 		"PersonName":   personName(owner),
@@ -478,14 +458,17 @@ func (self *journalDayInput) prompt(owner *models.User, agent *models.Agent, can
 		if words := strings.TrimSpace(row.Words); words != "" {
 			data["Words"] = fenced(words)
 		}
-		if level, moodWords := journalMoodForAgent(row, canAgentReadHealth); level != 0 {
-			mood := journalMoodNames[level]
-			if moodWords = oneLineForModel(moodWords, 200); moodWords != "" {
+		// The stored row keeps copies of Health (a mood from Apple Health);
+		// what the model may see of it is what journal.ShownDay lets through.
+		shown := journal.ShownDay(row, options)
+		if shown.MoodLevel != nil {
+			mood := journalMoodNames[*shown.MoodLevel]
+			if moodWords := oneLineForModel(shown.MoodWords, 200); moodWords != "" {
 				mood += `, in their words "` + moodWords + `"`
 			}
 			data["Mood"] = mood
 		}
-		data["Weather"] = journalWeatherWords(row.Weather)
+		data["Weather"] = journalWeatherWords(shown.Weather)
 		if len(row.NarrativeCorrections) > 0 {
 			corrections := make([]string, 0, len(row.NarrativeCorrections))
 			for _, correction := range row.NarrativeCorrections {
@@ -680,7 +663,7 @@ func (self *Agent) writeReadJournalDay(ctx context.Context, run *Run, read *jour
 		return self.storeJournalFailure(ctx, run, target, read.TimeZone, "there is nothing on this day to write about yet")
 	}
 	input := newJournalDayInput(read)
-	prompt, err := input.prompt(run.Owner, run.Agent, access.canAgentReadHealth)
+	prompt, err := input.prompt(run.Owner, run.Agent, access.options())
 	if err != nil {
 		return err
 	}

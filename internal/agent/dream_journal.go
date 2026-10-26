@@ -186,13 +186,13 @@ func (self *Agent) dreamJournalDay(ctx context.Context, run *Run, row *models.Jo
 func (self *Agent) dreamJournalPeriods(ctx context.Context, run *Run, budget *dreamBudget, ask journalAsk, counts *journalCounts, now time.Time) {
 	today := journal.Today(run.Owner, now)
 	var targets [3][]models.JournalTarget
-	var canAgentReadHealth bool
+	var options journal.ReadOptions
 	if err := run.Database().TransactionContext(ctx, func(transaction db.Transaction) error {
 		access, err := readJournalAccess(transaction, run.Owner.ID)
 		if err != nil {
 			return err
 		}
-		canAgentReadHealth = access.canAgentReadHealth
+		options = access.options()
 		weekStart, err := journal.WeekStartOf(transaction, run.Owner.ID)
 		if err != nil {
 			return err
@@ -238,7 +238,7 @@ func (self *Agent) dreamJournalPeriods(ctx context.Context, run *Run, budget *dr
 			}
 			var input *journalPeriodInput
 			if err := run.Database().TransactionContext(ctx, func(transaction db.Transaction) (err error) {
-				input, err = readJournalPeriodInput(transaction, run.Owner, target, canAgentReadHealth, now)
+				input, err = readJournalPeriodInput(transaction, run.Owner, target, options, now)
 				return err
 			}); err != nil {
 				log.Warningf("cannot read the journal %s from %s: %s", target.PeriodKind, target.PeriodStart, err)

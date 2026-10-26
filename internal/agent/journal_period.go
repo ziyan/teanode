@@ -57,7 +57,7 @@ type journalPeriodInput struct {
 	Months      []*models.JournalPeriod
 	PeriodLinks map[string][]*models.JournalLink
 
-	canAgentReadHealth bool
+	options journal.ReadOptions
 
 	// allowed is every reference the narrative or a choice may name.
 	allowed map[string]bool
@@ -113,7 +113,7 @@ func visibleJournalLinks(transaction db.Transaction, userId, journalDayId, journ
 // readJournalPeriodInput reads what the period named by target is written
 // from. The days' moods are the person's own unless the agent may read
 // Health; the days' numbers are not given to the model at all.
-func readJournalPeriodInput(transaction db.Transaction, user *models.User, target models.JournalTarget, canAgentReadHealth bool, now time.Time) (*journalPeriodInput, error) {
+func readJournalPeriodInput(transaction db.Transaction, user *models.User, target models.JournalTarget, options journal.ReadOptions, now time.Time) (*journalPeriodInput, error) {
 	weekStart := ""
 	if target.PeriodKind == models.JournalPeriodWeek {
 		var err error
@@ -126,7 +126,7 @@ func readJournalPeriodInput(transaction db.Transaction, user *models.User, targe
 		return nil, err
 	}
 	input := &journalPeriodInput{
-		Target: target, Start: first, End: last, Today: journal.Today(user, now), canAgentReadHealth: canAgentReadHealth,
+		Target: target, Start: first, End: last, Today: journal.Today(user, now), options: options,
 		DayLinks: map[string][]*models.JournalLink{}, PeriodLinks: map[string][]*models.JournalLink{}, allowed: map[string]bool{},
 	}
 	row, err := transaction.GetJournalPeriod(user.ID, target.PeriodKind, first)
@@ -148,8 +148,10 @@ func readJournalPeriodInput(transaction db.Transaction, user *models.User, targe
 			return nil, err
 		}
 		for _, day := range rows {
+			// Shown as the agent may see it: a mood from Apple Health is not
+			// there unless the agent may read Health.
 			if strings.TrimSpace(day.Narrative) != "" {
-				input.Days = append(input.Days, day)
+				input.Days = append(input.Days, journal.ShownDay(day, options))
 			}
 		}
 	}
@@ -292,8 +294,8 @@ func (self *journalPeriodInput) pages() string {
 		for _, day := range self.Days {
 			weekday, _ := journal.Weekday(day.Day)
 			heading := fmt.Sprintf("Day %s (%s)", day.Day, weekday)
-			if level, _ := journalMoodForAgent(day, self.canAgentReadHealth); level != 0 {
-				heading += ", mood " + journalMoodNames[level]
+			if day.MoodLevel != nil {
+				heading += ", mood " + journalMoodNames[*day.MoodLevel]
 			}
 			blocks = append(blocks, pageOf(heading, day.Headline, day.Narrative, self.DayLinks[day.ID]))
 		}
@@ -357,7 +359,7 @@ func (self *Agent) writeJournalPeriod(ctx context.Context, run *Run, target mode
 		if access, err = readJournalAccess(transaction, run.Owner.ID); err != nil {
 			return err
 		}
-		input, err = readJournalPeriodInput(transaction, run.Owner, target, access.canAgentReadHealth, time.Now())
+		input, err = readJournalPeriodInput(transaction, run.Owner, target, access.options(), time.Now())
 		return err
 	}); err != nil {
 		return err
