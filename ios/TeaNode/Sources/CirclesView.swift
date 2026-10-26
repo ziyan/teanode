@@ -279,6 +279,9 @@ struct CircleDetailView: View {
     @State private var photos: PhotosModel
     @State private var isNamingAlbum = false
     @State private var albumTitleText = ""
+    /// Whether the screen was shown before, so that coming back to it reads
+    /// the albums again.
+    @State private var hasAppeared = false
 
     init(directory: CircleDirectory, circleId: String) {
         self.directory = directory
@@ -296,17 +299,16 @@ struct CircleDetailView: View {
             ScrollViewReader { scroller in
                 list
                     .task(id: directory.isLoaded) {
-                        guard DemoServer.isRequested, directory.isLoaded else { return }
-                        if DemoServer.screen == "circle-detail-photos" {
-                            try? await Task.sleep(for: .seconds(1))
-                            withAnimation { scroller.scrollTo(Self.newAlbumRowId, anchor: .bottom) }
-                            return
-                        }
-                        guard ["circle-detail", "circle-detail-operator"].contains(DemoServer.screen),
+                        guard DemoServer.isRequested, ["circle-detail", "circle-detail-operator"].contains(DemoServer.screen), directory.isLoaded,
                             let invitation = circle?.pendingInvitations.first
                         else { return }
                         try? await Task.sleep(for: .seconds(1))
                         withAnimation { scroller.scrollTo(invitation.id, anchor: .bottom) }
+                    }
+                    .task(id: albums != nil) {
+                        guard DemoServer.isRequested, DemoServer.screen == "circle-detail-photos", albums != nil else { return }
+                        try? await Task.sleep(for: .seconds(1))
+                        withAnimation { scroller.scrollTo(Self.newAlbumRowId, anchor: .bottom) }
                     }
             }
         #else
@@ -346,9 +348,15 @@ struct CircleDetailView: View {
             await readAddressBooks()
             await readAlbums()
         }
-        .task { await readAddressBooks() }
+        // Read once the server says the person may use them, which it may say
+        // after the screen is first shown.
+        .task(id: AppModel.shared.isSectionAvailable(.contacts)) { await readAddressBooks() }
+        .task(id: AppModel.shared.isSectionAvailable(.photos)) { await readAlbums() }
         // Again on coming back from an album, whose photos may have changed.
-        .onAppear { Task { await readAlbums() } }
+        .onAppear {
+            if hasAppeared { Task { await readAlbums() } }
+            hasAppeared = true
+        }
         .alert(circle.map { String(localized: "New album for \($0.name)") } ?? "", isPresented: $isNamingAlbum) {
             TextField("Title", text: $albumTitleText)
             Button("Create") {

@@ -81,10 +81,6 @@
             if query.contains("GetSession"), screen == "circle-detail" {
                 return session.replacingOccurrences(of: #""user:manage","#, with: "")
             }
-            // The Home circle's own album, and two shared with everyone in it.
-            if query.contains("ListPhotoAlbums"), variables["circleId"] as? String == "circle-home" {
-                return #"{"data":{"ListPhotoAlbums":[\#(circleAlbumsJSON)]}}"#
-            }
             // The person's own address book and the Home circle's, which everyone in the circle edits.
             if query.contains("ListReachableAddressBooks") {
                 return #"{"data":{"ListReachableAddressBooks":[\#(ownAddressBookJSON),\#(circleAddressBookJSON)]}}"#
@@ -236,7 +232,8 @@
         /// invitation nobody has answered.
         /// The albums on the Home circle's page: the circle's own, which every
         /// member adds to, one Sam shared with the whole circle, and one of
-        /// Robin's, the person's own.
+        /// Robin's, the person's own. The photos demo answers with them, since
+        /// it answers every list of albums.
         static let circleAlbumsJSON = [
             #"{"id":"circle-album-garden","ownerUserId":null,"circleId":"circle-home","albumTitle":"Garden","coverPhotoId":null,"createdAt":"2026-10-10T10:00:00Z","updatedAt":"2026-10-16T10:00:00Z","photoCount":12,"firstTakenAt":"2026-09-20T10:00:00Z","lastTakenAt":"2026-10-12T10:00:00Z","coverPreviewUrl":"/api/v1/photos/demo-01/previews/small?v=1","ownerUsername":"","ownerName":"","ownerAvatarUrl":null,"ownerAvatarColorIndex":0,"circleName":"Home","isOwnedByCaller":false,"shareLevel":"contribute","canCallerContribute":true,"canCallerManage":true,"isLocationIncluded":false}"#,
             #"{"id":"circle-album-lake","ownerUserId":"sam","circleId":null,"albumTitle":"Lake weekend","coverPhotoId":null,"createdAt":"2026-10-04T10:00:00Z","updatedAt":"2026-10-14T10:00:00Z","photoCount":4,"firstTakenAt":"2026-10-03T10:00:00Z","lastTakenAt":"2026-10-04T10:00:00Z","coverPreviewUrl":"/api/v1/photos/demo-s1/previews/small?v=1","ownerUsername":"sam","ownerName":"Sam","ownerAvatarUrl":null,"ownerAvatarColorIndex":2,"circleName":"","isOwnedByCaller":false,"shareLevel":"view","canCallerContribute":false,"canCallerManage":false,"isLocationIncluded":false}"#,
