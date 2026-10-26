@@ -222,9 +222,10 @@ than it was for contacts — the encoder is faithful — but it still holds: it 
 not fold, and what is stored is folded, so what it would write is neither the
 length advertised nor the bytes the ETag was taken over.
 
-There is no `sync-collection`: the library has no server side for it. Clients
-keep in step by listing the calendar and comparing ETags, and a deletion is
-discovered when an href stops being listed. Nothing keeps tombstones.
+The library has no server side for `sync-collection`, so it is answered
+before the library sees the REPORT (below). Most clients keep in step by
+listing the calendar and comparing ETags, and a deletion is discovered when an
+href stops being listed. Nothing keeps tombstones.
 
 Each calendar, and each address book on the contacts side, answers
 `getctag` (Apple's calendar server namespace) with a tag that changes when any
@@ -232,8 +233,17 @@ object in it is added, changed or deleted: the object count and a digest of
 the objects' names and ETags (`internal/dav/changetag.go`). A sync adapter
 reads a collection again only when its tag moves, and some read nothing at all
 without one. The library has no such property, so a PROPFIND answer is
-rewritten to carry it. There is no `sync-token`, since there is no
-`sync-collection` to go with it.
+rewritten to carry it.
+
+A calendar also answers `sync-token` and `supported-report-set`, and the
+`sync-collection` report (`internal/dav/sync_collection.go`), for the phones
+that sync that way: an Android phone's calendar app asks each calendar for
+only those two and reads nothing from one without them. The token is the
+change tag. Nothing keeps tombstones, so the report cannot say what changed
+since an older token: with no token it lists every event, with the current
+one it lists nothing, and with any other it answers `valid-sync-token`, which
+tells the client to start again from no token. Address books do not answer
+`sync-collection` yet.
 
 Free-busy has no server side either, so it is intercepted before the library
 sees the REPORT — the same place and the same way `addressbook-query` is. It is
