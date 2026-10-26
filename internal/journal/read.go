@@ -496,3 +496,15 @@ func OptionsFor(permissions *models.EffectivePermissions, shouldReadHealth bool)
 		ShouldReadHealth: shouldReadHealth,
 	}
 }
+
+// RecordCount is how many records the day was read from, the lists that are
+// capped counted by their totals.
+func (self *Day) RecordCount() int {
+	count := len(self.CodingSessions) + self.DocumentTotal + len(self.JournalNotes) + len(self.Conversations) + len(self.Chats) +
+		self.MailReceivedTotal + self.MailSentTotal + len(self.Recordings) + self.PhotoTotal + len(self.Visits) + len(self.Events) +
+		len(self.Reminders) + len(self.Transactions) + len(self.Notes) + len(self.MemoryPages)
+	if self.Health != nil {
+		count += len(self.Health.Workouts)
+	}
+	return count
+}

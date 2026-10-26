@@ -30,8 +30,8 @@ import (
 //     heart rate, workouts), when Health was read: a day read without it,
 //     for the agent that may not read Health, has no such line, so letting the
 //     agent read Health makes the day stale once;
-//   - "words|" and the person's original words, never the touched-up version,
-//     which is made from them;
+//   - "words|" and the person's original words when there are any, never the
+//     touched-up version, which is made from them;
 //   - "mood|" and the mood's level and words, not where the mood came from;
 //   - "correction|" and the text of each correction, in order, not when it was
 //     made.
@@ -104,7 +104,10 @@ func InputDigest(day *Day) string {
 	sort.Strings(lines)
 
 	if row := day.Row; row != nil {
-		lines = append(lines, "words|"+row.Words)
+		// A day whose row was made by something else than words has none.
+		if row.Words != "" {
+			lines = append(lines, "words|"+row.Words)
+		}
 		if row.MoodLevel != nil {
 			lines = append(lines, fmt.Sprintf("mood|%d|%s", *row.MoodLevel, row.MoodWords))
 		}

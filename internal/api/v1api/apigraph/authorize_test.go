@@ -109,7 +109,8 @@ var authorizing = map[string]bool{
 	// requirePermission(health:use), plus the caller's account. Whose Health a
 	// call is about, and which categories of it, is then settled by
 	// reachHealth, the one place that decides.
-	"requireHealthPerson": true,
+	"requireHealthPerson":  true,
+	"requireJournalPerson": true,
 	// requirePermission(passwords:use), plus the caller's account. What an
 	// item is, and whom it reaches, is then settled by the database, which
 	// answers not found for anything that is not the caller's or shared with
