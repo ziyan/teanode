@@ -198,6 +198,7 @@ enum UpkeepWords {
         case "watch": String(localized: "Watching")
         case "follow_up_sweep": String(localized: "Check follow-ups")
         case "nearby": String(localized: "Look around town")
+        case "journal": String(localized: "Journal")
         default: jobKind
         }
     }

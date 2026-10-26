@@ -1261,7 +1261,7 @@ public struct AgentRunSummary: Codable, Hashable, Sendable, Identifiable {
     public static let jobKinds = [
         "triage", "reply", "research", "summarize", "remember", "ingest", "recording", "dream", "schedule", "extract", "draft", "describe", "compact",
         "evaluate", "survey", "subagent", "mcp", "goal", "background", "speak_first", "alert", "categorize", "statement_import",
-        "read_receipt", "describe_photo", "tax_document", "tax_mail", "watch", "follow_up_sweep", "nearby",
+        "read_receipt", "describe_photo", "tax_document", "tax_mail", "watch", "follow_up_sweep", "nearby", "journal",
     ]
 
     /// Every token it used: read fresh, read from the cache, and written.
