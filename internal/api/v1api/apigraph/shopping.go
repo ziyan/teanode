@@ -768,19 +768,61 @@ func (self *graph) RenameShoppingList(ctx context.Context, arguments RenameShopp
 	return list, nil
 }
 
+// removeShoppingPicturesAfterCommit deletes the files of pictures whose items
+// are gone, once their removal is committed.
+func (self *graph) removeShoppingPicturesAfterCommit(tx db.Transaction, items []*models.ShoppingItem) {
+	pictureFileIds := []string{}
+	for _, item := range items {
+		if item.PictureFileID != "" {
+			pictureFileIds = append(pictureFileIds, item.PictureFileID)
+		}
+	}
+	if len(pictureFileIds) == 0 || self.storage == nil {
+		return
+	}
+	store := self.storage
+	tx.AfterCommit(func() {
+		for _, pictureFileId := range pictureFileIds {
+			if err := store.DeleteFile(context.Background(), pictureFileId); err != nil {
+				log.Warningf("cannot remove a shopping item's picture: %s", err)
+			}
+		}
+	})
+}
+
 func (self *graph) DeleteShoppingList(ctx context.Context, arguments ShoppingListArguments) (bool, error) {
 	user, err := self.shoppingPerson(ctx)
 	if err != nil {
 		return false, err
 	}
 	tx := self.transaction(ctx)
+	access, err := tx.GetShoppingListAccess(user.ID, arguments.ShoppingListID)
+	if err != nil {
+		return false, translateError(err)
+	}
+	if !access.IsOwner {
+		return false, api.ErrNotFound
+	}
 	readers, err := tx.ListShoppingListReaderUserIDs(arguments.ShoppingListID)
 	if err != nil {
 		return false, translateError(err)
 	}
+	// Its items' pictures go with it, read before the rows do.
+	items := []*models.ShoppingItem{}
+	for offset := 0; ; offset += 500 {
+		page, total, err := tx.ListShoppingItems(user.ID, arguments.ShoppingListID, nil, offset, 500)
+		if err != nil {
+			return false, translateError(err)
+		}
+		items = append(items, page...)
+		if len(page) == 0 || int64(offset+len(page)) >= total {
+			break
+		}
+	}
 	if err := tx.DeleteShoppingList(user.ID, arguments.ShoppingListID); err != nil {
 		return false, translateError(err)
 	}
+	self.removeShoppingPicturesAfterCommit(tx, items)
 	self.announceShopping(tx, []string{arguments.ShoppingListID}, readers...)
 	log.Noticef("%s deleted a shopping list", user.Username)
 	return true, nil
@@ -963,10 +1005,19 @@ func (self *graph) RemoveShoppingItems(ctx context.Context, arguments RemoveShop
 		return 0, err
 	}
 	tx := self.transaction(ctx)
+	removed := []*models.ShoppingItem{}
+	for _, shoppingItemId := range arguments.ShoppingItemIDs {
+		item, err := tx.GetShoppingItem(user.ID, shoppingItemId)
+		if err != nil {
+			return 0, translateError(err)
+		}
+		removed = append(removed, item)
+	}
 	listIds, err := tx.RemoveShoppingItems(user.ID, arguments.ShoppingItemIDs)
 	if err != nil {
 		return 0, translateError(err)
 	}
+	self.removeShoppingPicturesAfterCommit(tx, removed)
 	self.announceShopping(tx, listIds)
 	return len(arguments.ShoppingItemIDs), nil
 }
