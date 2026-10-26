@@ -21,8 +21,9 @@ import (
 // found again for one answer.
 const journalReferencesMost = 60
 
-// journalReferencePattern is a record in a narrative: [[kind:id]].
-var journalReferencePattern = regexp.MustCompile(`\[\[([a-z_]+):([^\[\]]+)\]\]`)
+// journalReferencePattern is a record in a narrative: [[kind:id|words]], or
+// [[kind:id]]. The words are the clients' to show; the reference is read here.
+var journalReferencePattern = regexp.MustCompile(`\[\[([a-z_]+):([^\[\]|]+)(?:\|([^\[\]]*))?\]\]`)
 
 // journalRecordResolver finds the records a journal day or period links to
 // and mentions, for the person they belong to. A person without an agent

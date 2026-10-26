@@ -245,7 +245,7 @@
                 record("mail", "mail-lena", title: "Lena's mockups", path: "/mailbox/inbox/thread/mail-lena", hour: 15, day: dayText),
             ]
             let text =
-                "A release day. Two coding sessions finished the release branch and the build went out before lunch. The [[recording:recording-review]] settled onboarding, and [[mail:mail-lena]] is waiting for a reply.\n\nOn the way home you walked through [[place_visit:visit-park]] before the rain."
+                "A release day. Two coding sessions finished the release branch and the build went out before lunch. The [[recording:recording-review|design review]] settled onboarding, and [[mail:mail-lena|Lena's question about the beta]] is waiting for a reply.\n\nOn the way home you walked through [[place_visit:visit-park|the park]] before the rain."
             view["words"] = words(original: fullDayOriginal, touchedUp: fullDayTouchedUp, how: "fix the spelling", day: dayText)
             view["narrative"] = narrative(
                 headline: "Release day: Orchard 2.4 shipped, and the park before the rain.", text: text, references: references,
@@ -433,7 +433,7 @@
             for level in moods where (1...5).contains(level) { moodCounts[level - 1] += 1 }
             let name = periodKind == "week" ? "week" : periodKind == "month" ? "month" : "year"
             let text =
-                "A \(name) that bent around one day. The early days went to the release branch, with the upload test failing twice, and Thursday the release went out. The [[place_visit:visit-park]] walk afterward was the best part."
+                "A \(name) that bent around one day. The early days went to the release branch, with the upload test failing twice, and Thursday the release went out. The walk through [[place_visit:visit-park|the park]] afterward was the best part."
             let months: [Any] = kind == .year ? yearMonths(start) : []
             let chapters: [Any] = kind == .year ? [yearChapter(start)] : []
             let totals = facts(["photoCount": 49, "placeCount": 11, "walkedMeters": 21700.0, "stepCount": 58210, "sleepMinutes": 2530, "codingSessionCount": 7, "workProjectCount": 4, "codingMinutes": 1170, "meetingCount": 14, "mailReceivedCount": 188, "spentMinorUnits": 31240])

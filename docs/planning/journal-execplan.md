@@ -120,6 +120,10 @@ To see it working at the end: on a development server with a week of invented da
 - Decision: on the iPhone, Journal sits in More under "Every day", and the person can make it one of their tabs in Edit.
   Date/Author: 2026-10-26, maintainer.
 
+- Decision: a narrative names a record inside its sentence, with words of its own: `[[mail:id|Lena's question about the dock]]`. The page shows those words, linked to the record. References used as citations (side by side, or alone between sentences) are refused once with the reason.
+  Rationale: shown as the record's title in place, a citation read as a run of bold titles between sentences, and a title made an awkward sentence ("lunch at Visit to the noodle place"). Drawn as a bordered chip, a long title became a boxed paragraph of its own.
+  Date/Author: 2026-10-26, agent.
+
 - Decision: a day's time worked is the time the person was at their coding sessions, read from their own posts: each post counts five minutes and runs on to their next post when that came within half an hour. The assistant's posts set when a session ended, not how long the person worked.
   Rationale: counted from each stretch's first post to its last, an assistant left working on its own, overnight or through a day away from the desk, made that whole time work, close to 24 hours a day. The person's posts are told apart by author, the names they go by in chat.
   Date/Author: 2026-10-26, agent.
@@ -190,9 +194,9 @@ The agent's tool `internal/agent/tools/journal/`: `read_day`, `read_period`, `li
 
 ### Milestone 3: the dream writes
 
-Add `self.dreamJournal(ctx, run, record, budget)` to the phase list in `internal/agent/dream.go`, before `dreamTimeline`. In one run, while the budget lasts: for each finished day without a narrative or with a stale digest (newest first, never today, within the last three months or asked for by the person; with the original words, never the touched-up text, and every stored correction given as a fact to follow), assemble the day's input from `journal.ReadDay` as a numbered list of `kind:id`, time and a one-line description per record (the coding session's title and directory, the mail's sender and subject with its insight, the chat unit's channel and first lines, the photo's place and time), the person's words, mood and weather, and the candidate documents; ask `dreamThink` for a JSON answer `{headline, narrative, choices: [{record, reason}], coverPhotoId}` in which the narrative refers to records as `[[kind:id]]`; check every reference and choice against the input; store. Then the periods whose days changed: a week once its last day is written, a month, a year, each from the narratives below it.
+Add `self.dreamJournal(ctx, run, record, budget)` to the phase list in `internal/agent/dream.go`, before `dreamTimeline`. In one run, while the budget lasts: for each finished day without a narrative or with a stale digest (newest first, never today, within the last three months or asked for by the person; with the original words, never the touched-up text, and every stored correction given as a fact to follow), assemble the day's input from `journal.ReadDay` as a numbered list of `kind:id`, time and a one-line description per record (the coding session's title and directory, the mail's sender and subject with its insight, the chat unit's channel and first lines, the photo's place and time), the person's words, mood and weather, and the candidate documents; ask `dreamThink` for a JSON answer `{headline, narrative, choices: [{record, reason}], coverPhotoId}` in which the narrative refers to records as `[[kind:id|the words its sentence shows]]`, inside its sentences; check every reference and choice against the input; store. Then the periods whose days changed: a week once its last day is written, a month, a year, each from the narratives below it.
 
-The dashboard renders `[[kind:id]]` as a chip with the kind's icon and the record's title from the resolver; a reference the reader can no longer see renders as plain words.
+The dashboard and the iPhone render a mention as its words in bold, linked to the record (the record's title when it has no words, as in `[[kind:id]]`); a reference the reader can no longer see renders as plain words, without the words the story gave it.
 
 Change `dreamTimeline` (`internal/agent/dream_timeline.go`) to write the `time/YYYY/MM` memory pages from the journal's month narrative and to link them to the period, if the maintainer agrees (question 7).
 

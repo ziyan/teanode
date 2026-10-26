@@ -12,7 +12,19 @@ final class JournalNarrativeTests: XCTestCase {
     func testAMentionBecomesTheRecordsTitleBetweenTheWords() throws {
         let park = try record("place_visit", "v1", title: "Riverside Park")
         let paragraphs = JournalNarrativeText.paragraphs(of: "You walked through [[place_visit:v1]] before the rain.", references: [park])
-        XCTAssertEqual(paragraphs, [[.words("You walked through "), .mention(park), .words(" before the rain.")]])
+        XCTAssertEqual(paragraphs, [[.words("You walked through "), .mention(park, words: ""), .words(" before the rain.")]])
+    }
+
+    func testAMentionCarriesTheWordsTheStoryWroteForIt() throws {
+        let park = try record("place_visit", "v1", title: "Visit to Riverside Park")
+        let paragraphs = JournalNarrativeText.paragraphs(of: "Lunch at [[place_visit:v1| the park by the river ]], then home.", references: [park])
+        XCTAssertEqual(paragraphs, [[.words("Lunch at "), .mention(park, words: "the park by the river"), .words(", then home.")]])
+    }
+
+    func testAMentionOfARecordThatCannotBeSeenLeavesOutItsWordsToo() throws {
+        let gone = try record("mail", "m1", title: "", isUnavailable: true)
+        let paragraphs = JournalNarrativeText.paragraphs(of: "You read [[mail:m1|the lease letter]] today.", references: [gone])
+        XCTAssertEqual(paragraphs, [[.words("You read today.")]])
     }
 
     func testParagraphsAreSeparatedByBlankLines() throws {
@@ -30,13 +42,13 @@ final class JournalNarrativeTests: XCTestCase {
         let first = try record("mail", "a", title: "Lena")
         let second = try record("mail", "b", title: "City Water")
         let paragraphs = JournalNarrativeText.paragraphs(of: "[[mail:a]] [[mail:b]]", references: [first, second])
-        XCTAssertEqual(paragraphs, [[.mention(first), .words(" "), .mention(second)]])
+        XCTAssertEqual(paragraphs, [[.mention(first, words: ""), .words(" "), .mention(second, words: "")]])
     }
 
     func testAnOccurrenceOfARepeatingEventKeepsItsColonsAndAt() throws {
         let standup = try record("calendar_occurrence", "e1@2026-10-22T09:00:00Z", title: "Stand-up")
         let paragraphs = JournalNarrativeText.paragraphs(of: "Then [[calendar_occurrence:e1@2026-10-22T09:00:00Z]].", references: [standup])
-        XCTAssertEqual(paragraphs, [[.words("Then "), .mention(standup), .words(".")]])
+        XCTAssertEqual(paragraphs, [[.words("Then "), .mention(standup, words: ""), .words(".")]])
     }
 
     func testBracketsThatAreNotAMentionStayAsWords() {

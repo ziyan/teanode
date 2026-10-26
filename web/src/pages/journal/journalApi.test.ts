@@ -32,17 +32,21 @@ const t = (key: string, values?: Record<string, string | number>) =>
 
 it('splits a story at its blank lines into words and mentions', () => {
   const paragraphs = narrativeParagraphs(
-    'You were at the [[agent_document:doc-1]] at noon.\n\n  \nThen [[calendar_occurrence:event-1@2026-10-22T09:30:00Z]] and [[photo:p-2]].',
+    'You were at the [[agent_document:doc-1|release review]] at noon.\n\n  \nThen [[calendar_occurrence:event-1@2026-10-22T09:30:00Z]] and [[photo:p-2]].',
   )
   expect(paragraphs).toHaveLength(2)
   expect(paragraphs[0]).toEqual([
     { isReference: false, text: 'You were at the ' },
-    { isReference: true, reference: 'agent_document:doc-1' },
+    { isReference: true, reference: 'agent_document:doc-1', words: 'release review' },
     { isReference: false, text: ' at noon.' },
   ])
   expect(
     paragraphs[1].filter((piece) => piece.isReference).map((piece) => (piece as { reference: string }).reference),
   ).toEqual(['calendar_occurrence:event-1@2026-10-22T09:30:00Z', 'photo:p-2'])
+  // A mention with no words of its own leaves them empty, for the title to stand in.
+  expect(paragraphs[1].filter((piece) => piece.isReference).map((piece) => (piece as { words: string }).words)).toEqual(
+    ['', ''],
+  )
 })
 
 it('leaves brackets that are not a mention as they are', () => {

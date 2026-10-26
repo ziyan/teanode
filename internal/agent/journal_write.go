@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/journal"
@@ -56,8 +57,14 @@ const (
 )
 
 // journalReferencePattern is a mention of a record in a narrative, the same
-// one the API and the command line read: [[kind:id]].
-var journalReferencePattern = regexp.MustCompile(`\[\[([a-z_]+):([^\[\]]+)\]\]`)
+// one the API, the command line, the dashboard and the iPhone read:
+// [[kind:id|the words the sentence shows for it]], or [[kind:id]], which
+// shows the record's title.
+var journalReferencePattern = regexp.MustCompile(`\[\[([a-z_]+):([^\[\]|]+)(?:\|([^\[\]]*))?\]\]`)
+
+// journalMentionWordsCharacters is the most a mention's words may be: a
+// name or a short phrase in a sentence, not a sentence of their own.
+const journalMentionWordsCharacters = 80
 
 // journalCounts is what a writing pass did, for the dream's record.
 type journalCounts struct {
@@ -572,6 +579,11 @@ var journalCitation = regexp.MustCompile(`\]\]\s*\[\[|(?m)(^|[.!?]\s+)\[\[[^\]]+
 // checkJournalMentions refuses a narrative that mentions a record that is not
 // in allowed, or puts its mentions after its sentences as citations.
 func checkJournalMentions(narrative string, allowed map[string]bool) error {
+	for _, match := range journalReferencePattern.FindAllStringSubmatch(narrative, -1) {
+		if words := match[3]; utf8.RuneCountInString(words) > journalMentionWordsCharacters || strings.ContainsAny(words, "\n|") {
+			return &journalRefusal{reason: fmt.Sprintf("the words of the mention %q are not a short phrase on one line: write at most %d characters after the |", match[0], journalMentionWordsCharacters)}
+		}
+	}
 	if citation := journalCitation.FindString(narrative); citation != "" {
 		return &journalRefusal{reason: fmt.Sprintf("the narrative uses references as citations (%q): the page shows each as the record's title where it is written, so write each one inside a sentence, where the record's name would go", strings.TrimSpace(citation))}
 	}
