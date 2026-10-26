@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.198.1] - 2026-10-26
+
+### Fixed
+
+- Location: when a phone reports leaving a place hours late, the visit there ends where the next stop began instead of covering the whole trip, and nobody is told "left" hours afterwards. (#653)
+
 ## [0.198.0] - 2026-10-26
 
 ### Added
