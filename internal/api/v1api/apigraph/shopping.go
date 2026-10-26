@@ -297,8 +297,8 @@ type SetShoppingStoreReminderArguments struct {
 	IsReminded bool   `json:"isReminded"`
 }
 
-// ShoppingItemInput is one item to add.
-type ShoppingItemInput struct {
+// ShoppingItemEntry is one item to add.
+type ShoppingItemEntry struct {
 	ItemDescription string `json:"itemDescription"`
 	ItemDetails     string `json:"itemDetails" graphapi:"nullable"`
 
@@ -318,7 +318,7 @@ type ShoppingItemInput struct {
 
 type AddShoppingItemsArguments struct {
 	ShoppingListID string              `json:"shoppingListId"`
-	ShoppingItems  []ShoppingItemInput `json:"shoppingItems"`
+	ShoppingItems  []ShoppingItemEntry `json:"shoppingItems"`
 }
 
 type UpdateShoppingItemArguments struct {
