@@ -199,6 +199,7 @@ type Transaction interface {
 	LocationKnowledgeOperation
 	LocationShareOperation
 	HealthOperation
+	JournalOperation
 	HealthLockOperation
 	HealthShareOperation
 	FinanceShareOperation

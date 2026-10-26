@@ -33,6 +33,7 @@ type Query interface {
 	SharingQuery
 	LocationQuery
 	HealthQuery
+	JournalQuery
 	PasswordsQuery
 	ReminderQuery
 	NoteQuery
@@ -122,6 +123,7 @@ type Mutation interface {
 	SharingMutation
 	LocationMutation
 	HealthMutation
+	JournalMutation
 	PasswordsMutation
 	ChatMutation
 	ReminderMutation

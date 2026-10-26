@@ -29,6 +29,22 @@ const (
 	RecordFinanceTransaction  AgentRecordKind = "finance_transaction"
 	RecordFinanceReceipt      AgentRecordKind = "finance_receipt"
 	RecordRecordingPassage    AgentRecordKind = "recording_passage"
+
+	// The kinds a journal day links to besides the ones above. A calendar
+	// occurrence is the event's identifier, "@" and the occurrence's start
+	// (RFC 3339), so that one occurrence of a repeating event can be named; a
+	// Health day is the Health type, "@" and the day (stepCount@2026-10-22).
+	RecordPhoto              AgentRecordKind = "photo"
+	RecordPlaceVisit         AgentRecordKind = "place_visit"
+	RecordAgentDocument      AgentRecordKind = "agent_document"
+	RecordChatMessage        AgentRecordKind = "chat_message"
+	RecordRecording          AgentRecordKind = "recording"
+	RecordCalendarOccurrence AgentRecordKind = "calendar_occurrence"
+	RecordHealthDay          AgentRecordKind = "health_day"
+	RecordShoppingTrip       AgentRecordKind = "shopping_trip"
+	RecordNote               AgentRecordKind = "note"
+	RecordIdea               AgentRecordKind = "idea"
+	RecordGoal               AgentRecordKind = "goal"
 )
 
 // AgentRecordKinds is every kind, for validation and for the tool's schema.
