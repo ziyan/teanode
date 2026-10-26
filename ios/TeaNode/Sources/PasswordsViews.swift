@@ -266,6 +266,8 @@ struct PasswordsListView: View {
     @Binding var searchText: String
     let onNew: (PasswordsItemKind) -> Void
     @State private var finishAsk: PasswordsFinishAsk?
+    /// The changed key a notice's "Compare codes" asked about.
+    @State private var comparing: PasswordsCompareTarget?
 
     private var shownItems: [PasswordItem] {
         model.items.filter { filter.includes($0) && $0.matches(words: searchText) }
@@ -324,6 +326,9 @@ struct PasswordsListView: View {
             }
         }
         .refreshable { await model.sync() }
+        .sheet(item: $comparing) { target in
+            PasswordsCompareCodesSheet(model: model, target: target)
+        }
     }
 
     /// Notices of keys that changed: each was accepted, nothing waits on it, and it stays until it is dismissed.
@@ -331,7 +336,7 @@ struct PasswordsListView: View {
     private var keyChangeSection: some View {
         ForEach(model.keyChanges) { change in
             Section {
-                PasswordsKeyChangeRow(model: model, change: change)
+                PasswordsKeyChangeRow(model: model, change: change) { comparing = PasswordsCompareTarget(change: change) }
             }
         }
     }

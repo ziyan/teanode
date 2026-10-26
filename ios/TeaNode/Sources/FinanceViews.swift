@@ -1786,6 +1786,10 @@ struct AccountsView: View {
     @State private var accounts: [FinanceAccount] = []
     @State private var statementImport: StatementImport?
     @State private var isRegeneratingStatementAddress = false
+    /// The account of imported statements a row's swipe or long press asked
+    /// to rename or to delete (StatementAccountActions).
+    @State private var renamingAccount: FinanceAccount?
+    @State private var deletingAccount: FinanceAccount?
 
     var body: some View {
         List {
@@ -1848,13 +1852,14 @@ struct AccountsView: View {
                                 }
                             }
                         }
-                        .statementAccountActions(account) { await load() }
+                        .statementAccountActions(account, renaming: $renamingAccount, deleting: $deletingAccount)
                         if account.accountKind == "investment" { AccountTradesLink(account: account) }
                     }
                 }
             }
             statementImportSection
         }
+        .statementAccountPresentations(renaming: $renamingAccount, deleting: $deletingAccount) { await load() }
         .navigationTitle("Accounts")
         .financeManageDemoScreens(accounts: accounts) { Task { await load(); await loadStatementImport() } }
         .task {

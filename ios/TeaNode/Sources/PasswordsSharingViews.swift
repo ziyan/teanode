@@ -102,7 +102,7 @@ struct PasswordsShareScreen: View {
             if !keyChangesHere.isEmpty {
                 ForEach(keyChangesHere) { change in
                     Section {
-                        PasswordsKeyChangeRow(model: model, change: change)
+                        PasswordsKeyChangeRow(model: model, change: change) { comparing = PasswordsCompareTarget(change: change) }
                     }
                 }
             }
@@ -416,22 +416,20 @@ struct PasswordsCompareCodesSheet: View {
 
 /// PasswordsKeyChangeRow is the notice that a person's key changed, as rows of a list: it was
 /// accepted, nothing waits on it, and it stays until it is dismissed. The words are a row of their
-/// own, and "Compare codes" (which shows both codes) and "Dismiss" are a row each.
+/// own, and "Compare codes" (which shows both codes) and "Dismiss" are a row each. The list
+/// shows the codes (`onCompare`): a sheet on a row is closed when the list draws the row again.
 struct PasswordsKeyChangeRow: View {
     let model: PasswordsModel
     let change: PasswordsKeyChange
-    @State private var isComparing = false
+    let onCompare: () -> Void
 
     var body: some View {
         Group {
             Text("\(change.displayName)'s key changed. This happens when they erase Passwords and set it up again. If you did not expect it, compare safety codes with them.")
                 .font(.footnote)
-            Button { isComparing = true } label: {
+            Button { onCompare() } label: {
                 Label("Compare codes", systemImage: "checkmark.shield")
                     .actionColor()
-            }
-            .sheet(isPresented: $isComparing) {
-                PasswordsCompareCodesSheet(model: model, target: PasswordsCompareTarget(change: change))
             }
             Button { Task { await model.dismissKeyChange(change) } } label: {
                 Label("Dismiss", systemImage: "xmark")
