@@ -12,6 +12,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // journalListPageSize is how many days a page of 'teanode journal list' holds.
@@ -326,9 +327,20 @@ func journalMoodLine(mood *client.JournalMoodView) string {
 	return line
 }
 
+// journalUsesUSUnits says whether this person reads Fahrenheit and miles: as
+// their account says, else as the region of the language this shell speaks
+// says, else metric. A token that is no account has no choice to read.
+func journalUsesUSUnits(ctx context.Context, connection *client.Client) bool {
+	measurementSystem := models.MeasurementSystemAutomatic
+	if user, err := client.GetCurrentUser(ctx, connection); err == nil && user != nil {
+		measurementSystem = user.MeasurementSystem
+	}
+	return models.UsesUSUnits(measurementSystem, client.LocalLanguage())
+}
+
 // journalWeatherLine is the weather as one line: its kind, the lows and
-// highs, and the rain.
-func journalWeatherLine(weather *client.JournalWeatherView) string {
+// highs in the units the person reads, and the rain.
+func journalWeatherLine(weather *client.JournalWeatherView, isUSUnits bool) string {
 	if weather == nil {
 		return ""
 	}
@@ -336,7 +348,11 @@ func journalWeatherLine(weather *client.JournalWeatherView) string {
 	if kind == "" {
 		kind = weather.WeatherKind
 	}
-	line := fmt.Sprintf("%s, %.0f to %.0f°C", kind, weather.LowCelsius, weather.HighCelsius)
+	low, high, unit := weather.LowCelsius, weather.HighCelsius, "C"
+	if isUSUnits {
+		low, high, unit = models.FahrenheitFromCelsius(low), models.FahrenheitFromCelsius(high), "F"
+	}
+	line := fmt.Sprintf("%s, %.0f to %.0f°%s", kind, low, high, unit)
 	if weather.PrecipitationMM >= 0.5 {
 		line += fmt.Sprintf(", %.0f mm of rain", weather.PrecipitationMM)
 	}
@@ -647,20 +663,21 @@ func runJournalDay(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(view)
 	}
-	printJournalDay(view)
+	isUSUnits := view.Weather != nil && journalUsesUSUnits(ctx, connection)
+	printJournalDay(view, isUSUnits)
 	return nil
 }
 
 // printJournalDay prints a day: its mood, weather and numbers, your words,
 // the story, what was chosen and pinned, each source in a line or a few, and
 // the moments in the order they happened.
-func printJournalDay(view *client.JournalDayView) {
+func printJournalDay(view *client.JournalDayView, isUSUnits bool) {
 	fmt.Println(forTerminal(journalDayLabel(view.Day, view.IsToday)))
 	fields := [][2]string{}
 	if line := journalMoodLine(view.Mood); line != "" {
 		fields = append(fields, [2]string{"mood", line})
 	}
-	if line := journalWeatherLine(view.Weather); line != "" {
+	if line := journalWeatherLine(view.Weather, isUSUnits); line != "" {
 		fields = append(fields, [2]string{"weather", line})
 	}
 	if line := journalFactsLine(view.Facts); line != "" {

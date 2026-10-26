@@ -33,9 +33,9 @@ func localZoneName() string {
 	return ""
 }
 
-// localLanguage is the language the shell speaks, from LANGUAGE, LC_ALL or
+// LocalLanguage is the language the shell speaks, from LANGUAGE, LC_ALL or
 // LANG, reduced to a tag like "de" or "pt-BR". Empty when nothing says.
-func localLanguage() string {
+func LocalLanguage() string {
 	for _, variable := range []string{"LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"} {
 		value := strings.TrimSpace(os.Getenv(variable))
 		if value == "" || value == "C" || value == "POSIX" {
