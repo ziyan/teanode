@@ -6,6 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/graphql/language/parser"
+	"github.com/graphql-go/graphql/language/source"
+
+	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/journal"
@@ -646,4 +652,47 @@ func TestJournalTimelinePagesAndRanges(t *testing.T) {
 	}
 	world.refusal(t, world.ada, listJournalDaysQuery, map[string]any{"fromDay": "March"})
 	world.refusal(t, world.ada, listJournalDaysQuery, map[string]any{"offset": -1})
+}
+
+// Every document the command line sends for the journal is valid against the
+// schema the server builds, so that renaming a field or an argument on the
+// server fails here and not in somebody's terminal.
+func TestJournalClientDocumentsMatchTheSchema(t *testing.T) {
+	t.Parallel()
+
+	component, err := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, &api.Settings{})
+	if err != nil {
+		t.Fatalf("the schema does not build: %s", err)
+	}
+	schema := component.(*graph).schema
+	for name, document := range map[string]string{
+		"ListJournalDays":         client.DocumentListJournalDays,
+		"ReadJournalDay":          client.DocumentReadJournalDay,
+		"ReadJournalPeriod":       client.DocumentReadJournalPeriod,
+		"SearchJournal":           client.DocumentSearchJournal,
+		"ReadJournalSettings":     client.DocumentReadJournalSettings,
+		"SetJournalWords":         client.DocumentSetJournalWords,
+		"SetJournalMood":          client.DocumentSetJournalMood,
+		"SetJournalLookingBack":   client.DocumentSetJournalLookingBack,
+		"TouchUpJournalWords":     client.DocumentTouchUpJournalWords,
+		"StopJournalTouchUp":      client.DocumentStopJournalTouchUp,
+		"CorrectJournalNarrative": client.DocumentCorrectJournalNarrative,
+		"RemoveJournalCorrection": client.DocumentRemoveJournalCorrection,
+		"WriteJournalNarrative":   client.DocumentWriteJournalNarrative,
+		"DeleteJournalNarrative":  client.DocumentDeleteJournalNarrative,
+		"PinJournalRecord":        client.DocumentPinJournalRecord,
+		"RemoveJournalLink":       client.DocumentRemoveJournalLink,
+		"UpdateJournalSettings":   client.DocumentUpdateJournalSettings,
+		"EraseJournal":            client.DocumentEraseJournal,
+	} {
+		parsed, err := parser.Parse(parser.ParseParams{Source: source.NewSource(&source.Source{Body: []byte(document), Name: name})})
+		if err != nil {
+			t.Errorf("%s does not parse: %s", name, err)
+			continue
+		}
+		validation := graphql.ValidateDocument(&schema, parsed, nil)
+		for _, failure := range validation.Errors {
+			t.Errorf("%s is not valid against the schema: %s", name, failure.Message)
+		}
+	}
 }
