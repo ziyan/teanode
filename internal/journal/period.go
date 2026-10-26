@@ -83,11 +83,11 @@ func ReadPeriod(transaction db.Transaction, user *models.User, periodKind models
 		switch {
 		case err == nil:
 			period.Links = links
-		case errors.Is(err, db.ErrNotFound) || isUnbuilt(err):
+		case errors.Is(err, db.ErrNotFound):
 		default:
 			return nil, err
 		}
-	case errors.Is(err, db.ErrNotFound) || isUnbuilt(err):
+	case errors.Is(err, db.ErrNotFound):
 	default:
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func listDays(transaction db.Transaction, userId, fromDay, untilDay string) ([]*
 		page, total, err := transaction.ListJournalDays(userId, fromDay, untilDay, offset, daysPageSize)
 		switch {
 		case err == nil:
-		case errors.Is(err, db.ErrNotFound) || isUnbuilt(err):
+		case errors.Is(err, db.ErrNotFound):
 			return nil, nil
 		default:
 			return nil, err
@@ -227,7 +227,7 @@ func summarizeMonths(transaction db.Transaction, userId, yearStart string, days 
 		for _, period := range periods {
 			headlines[period.PeriodStart] = period.Headline
 		}
-	case errors.Is(err, db.ErrNotFound) || isUnbuilt(err):
+	case errors.Is(err, db.ErrNotFound):
 	default:
 		return nil, err
 	}

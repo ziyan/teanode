@@ -3,7 +3,6 @@ package journal
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -351,38 +350,9 @@ type Workout struct {
 	Meters       float64
 }
 
-// isUnbuilt says the journal's storage is not there yet, which a day reads
-// as nothing kept. It goes with the placeholder that answers it, when the
-// storage is built.
-func isUnbuilt(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "the journal is not built yet")
-}
-
 // ZoneName is the name of the zone a person's new days are cut in.
 func ZoneName(user *models.User) string {
-	if name := Zone(user).String(); name != "" && name != "Local" {
-		return name
-	}
-	return "UTC"
-}
-
-// WeekStartOf is the day the person's weeks begin, sunday or monday, as their
-// own calendar draws them: Sunday for a person with no calendar, as the
-// calendar does.
-func WeekStartOf(transaction db.Transaction, userId string) (string, error) {
-	calendars, err := transaction.ListCalendars(userId)
-	if err != nil {
-		return "", err
-	}
-	for _, calendar := range calendars {
-		if calendar.CalendarKind == models.CalendarEvents || calendar.CalendarKind == "" {
-			if known := models.KnownWeekStart(calendar.WeekStart); known != "" {
-				return known, nil
-			}
-			break
-		}
-	}
-	return models.WeekStartsSunday, nil
+	return Zone(user).String()
 }
 
 // ReadDay reads a journal day: the stored row and links, and every section
@@ -399,7 +369,7 @@ func ReadDay(transaction db.Transaction, user *models.User, agent *models.Agent,
 	switch {
 	case err == nil:
 		result.Row = row
-	case errors.Is(err, db.ErrNotFound) || isUnbuilt(err):
+	case errors.Is(err, db.ErrNotFound):
 	default:
 		return nil, err
 	}
@@ -417,7 +387,7 @@ func ReadDay(transaction db.Transaction, user *models.User, agent *models.Agent,
 		switch {
 		case err == nil:
 			result.Links = links
-		case errors.Is(err, db.ErrNotFound) || isUnbuilt(err):
+		case errors.Is(err, db.ErrNotFound):
 		default:
 			return nil, err
 		}

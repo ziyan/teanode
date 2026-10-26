@@ -224,24 +224,29 @@ func TestReadDayLeavesOutWhatTheCallerMayNotRead(t *testing.T) {
 	})
 }
 
-// The stored row and the links ride along with the day, and a storage that
-// is not built yet is a day with nothing kept.
-func TestReadDayCarriesTheRowAndTheLinksAndSurvivesUnbuiltStorage(t *testing.T) {
+// The stored row and the links ride along with the day, and the day is cut
+// in the zone it was made in.
+func TestReadDayCarriesTheRowAndTheLinks(t *testing.T) {
 	world, release := newWorld(t)
 	defer release()
 
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		// The real transaction answers that the journal is not built.
-		unbuilt := readWorldDay(t, tx, world, journal.AllReadOptions())
-		if unbuilt.Row != nil || unbuilt.Links != nil {
-			t.Errorf("an unbuilt storage keeps nothing: %+v", unbuilt.Row)
+		none := readWorldDay(t, tx, world, journal.AllReadOptions())
+		if none.Row != nil || len(none.Links) != 0 {
+			t.Errorf("nothing is kept for the day: %+v", none.Row)
 		}
 
-		store := newMemoryJournal(tx)
 		moodLevel := models.JournalMoodGood
-		store.days[worldDay] = &models.JournalDay{ID: "journal-day-one", Day: worldDay, TimeZone: "Europe/London", Words: "A windy day.", MoodLevel: &moodLevel}
-		store.links["journal-day-one|"] = []*models.JournalLink{{ID: "link-one", RecordKind: models.RecordMail, RecordID: world.importantItemId, LinkSource: models.JournalLinkFromAgent, LinkReason: "needed a reply"}}
-		day, err := journal.ReadDay(store, world.user, world.agent, worldDay, local(22, 0), journal.AllReadOptions())
+		if _, err := tx.SetJournalWords(world.user.ID, worldDay, "Europe/London", "A windy day.", nil, local(22, 0)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.SetJournalMood(world.user.ID, worldDay, "Europe/London", &moodLevel, "", models.JournalMoodFromPerson, local(22, 0)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.PinJournalRecord(world.user.ID, worldDay, "Europe/London", models.RecordMail, world.importantItemId, "needed a reply", local(22, 0)); err != nil {
+			t.Fatal(err)
+		}
+		day, err := journal.ReadDay(tx, world.user, world.agent, worldDay, local(22, 0), journal.AllReadOptions())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -252,7 +257,7 @@ func TestReadDayCarriesTheRowAndTheLinksAndSurvivesUnbuiltStorage(t *testing.T) 
 		if day.TimeZone != "Europe/London" || !day.From.Equal(time.Date(2026, 10, 22, 0, 0, 0, 0, mustZone("Europe/London"))) {
 			t.Errorf("the zone the day was made in: %s %s", day.TimeZone, day.From)
 		}
-		if _, err := journal.ReadDay(store, world.user, world.agent, "22 October", local(22, 0), journal.AllReadOptions()); err == nil {
+		if _, err := journal.ReadDay(tx, world.user, world.agent, "22 October", local(22, 0), journal.AllReadOptions()); err == nil {
 			t.Error("a day written another way is refused")
 		}
 	})
@@ -367,44 +372,49 @@ func TestInputDigestMovesWithWhatTheNarrativeIsWrittenFrom(t *testing.T) {
 		}
 
 		// The person's words, mood and corrections are inputs; the touched-up
-		// version, the source of the mood and the weather are not.
-		store := newMemoryJournal(tx)
-		moodLevel := models.JournalMoodGood
-		row := &models.JournalDay{ID: "one", Day: worldDay, TimeZone: "America/New_York", Words: "A windy day.", MoodLevel: &moodLevel, MoodSource: models.JournalMoodFromPerson}
-		store.days[worldDay] = row
+		// version, the source of the mood, the weather and the story are not.
+		// The day is made in the zone it is read in.
+		zone := journal.ZoneName(world.user)
 		digestOf := func() string {
-			day, err := journal.ReadDay(store, world.user, world.agent, worldDay, local(22, 0), options)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return journal.InputDigest(day)
+			return journal.InputDigest(readWorldDay(t, tx, world, options))
+		}
+		if _, err := tx.SetJournalWords(world.user.ID, worldDay, zone, "A windy day.", nil, local(22, 0)); err != nil {
+			t.Fatal(err)
+		}
+		moodLevel := models.JournalMoodGood
+		if _, err := tx.SetJournalMood(world.user.ID, worldDay, zone, &moodLevel, "", models.JournalMoodFromPerson, local(22, 0)); err != nil {
+			t.Fatal(err)
 		}
 		base := digestOf()
 		if base == first {
 			t.Error("words and a mood are part of the input")
 		}
-		touchedUp := "A breezy day."
-		row.TouchedUpWords = &touchedUp
-		row.MoodSource = models.JournalMoodFromHealth
-		row.Weather = &models.JournalWeather{WeatherCode: 3, HighCelsius: 14}
-		row.Headline, row.Narrative = "Windy", "A story."
-		if digestOf() != base {
-			t.Error("the touched-up words, the source of the mood, the weather and the story itself are not inputs")
+		if err := tx.RequestJournalTouchUp(world.user.ID, models.JournalTarget{Day: worldDay}, zone, nil, local(22, 0)); err != nil {
+			t.Fatal(err)
 		}
-		row.Words = "A windy day with a long walk."
+		if _, err := tx.PutJournalTouchedUp(world.user.ID, models.JournalTarget{Day: worldDay}, "A breezy day.", models.JournalWordsDigest("A windy day.", "")); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.PutJournalWeather(world.user.ID, worldDay, &models.JournalWeather{WeatherCode: 3, HighCelsius: 14, FetchedAt: local(22, 0)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.PutJournalNarrative(world.user.ID, models.JournalTarget{Day: worldDay}, zone,
+			models.JournalNarrativeWriting{Headline: "Windy", Narrative: "A story.", InputDigest: base}, local(22, 0)); err != nil {
+			t.Fatal(err)
+		}
+		if digestOf() != base {
+			t.Error("the touched-up words, the weather and the story itself are not inputs")
+		}
+		if _, err := tx.SetJournalWords(world.user.ID, worldDay, zone, "A windy day with a long walk.", nil, local(22, 0)); err != nil {
+			t.Fatal(err)
+		}
 		changed := digestOf()
-		row.NarrativeCorrections = []models.JournalCorrection{{CorrectionText: "It was Sam at lunch."}}
+		if err := tx.AddJournalCorrection(world.user.ID, models.JournalTarget{Day: worldDay}, zone, "It was Sam at lunch.", local(22, 0)); err != nil {
+			t.Fatal(err)
+		}
 		corrected := digestOf()
 		if changed == base || corrected == changed {
 			t.Error("the words and a correction are inputs")
 		}
-
-		// A photo arriving late changes the day.
-		takenAt := local(12, 0)
-		late, _, err := tx.CreatePhoto(&models.Photo{UserID: world.user.ID, ClientPhotoID: "late-upload", PhotoKind: models.PhotoKindPicture, PhotoSource: models.PhotoSourceCommandLine, TakenAt: &takenAt})
-		if err != nil {
-			t.Fatal(err)
-		}
-		_ = late
 	})
 }
