@@ -1011,12 +1011,15 @@ func (self *dayReader) readTransactions() error {
 			AccountName: name, AmountMinorUnits: minorUnits(found.Amount, found.CurrencyCode), Currency: found.CurrencyCode,
 		})
 	}
-	// By the time they happened, and those that say only a day by when they
-	// were made known to us, which is the same on every read.
+	// By the time they happened; those that say only a day by what they were
+	// (then their identifier), which is the same on every read.
 	sort.SliceStable(self.day.Transactions, func(left, right int) bool {
 		one, other := self.day.Transactions[left], self.day.Transactions[right]
 		if at, otherAt := transactionAt(one, self.day.From), transactionAt(other, self.day.From); !at.Equal(otherAt) {
 			return at.Before(otherAt)
+		}
+		if one.Description != other.Description {
+			return one.Description < other.Description
 		}
 		return one.TransactionID < other.TransactionID
 	})
