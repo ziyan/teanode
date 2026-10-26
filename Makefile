@@ -2,7 +2,7 @@
 
 .PHONY: all help generate build web test benchmark coverage format check lint lint-ci check-naming check-secrets clean watch docker \
 	dev dev-backend dev-frontend dev-up dev-down dev-logs dev-shell dev-clean test-deployment check-catalogs check-queries \
-	check-config-docs check-link-buttons check-button-colors
+	check-config-docs check-link-buttons check-button-colors check-presentations
 
 GO ?= go
 NPM ?= npm
@@ -80,7 +80,7 @@ check-secrets: ## Fail if a secret or private reference is in a tracked file
 check-config-docs: ## Fail if a configuration field is not documented
 	@scripts/check-config-docs.bash
 
-lint-ci: check check-secrets check-catalogs check-config-docs check-link-buttons check-button-colors ## Run the linters CI runs
+lint-ci: check check-secrets check-catalogs check-config-docs check-link-buttons check-button-colors check-presentations ## Run the linters CI runs
 	@set -e; \
 	if ! $(GOLANGCI_LINT) --version 2>/dev/null | grep -qF "$(GOLANGCI_LINT_VERSION:v%=%)"; then \
 		$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION); \
@@ -177,6 +177,9 @@ check-link-buttons: ## Fail on a button styled as a link that does not say why
 
 check-button-colors: ## Fail on an iPhone button or row whose symbol and words are different colors
 	@node ios/scripts/check-button-colors.mjs
+
+check-presentations: ## Fail on an iPhone sheet or cover attached inside a list or a menu
+	@node ios/scripts/check-presentations.mjs
 
 check-queries: $(WEB_DIR)/node_modules ## Validate the dashboard's GraphQL against a running server
 	@cd $(WEB_DIR) && TEANODE_URL=$(or $(TEANODE_URL),http://127.0.0.1:8833) node scripts/check-queries.mjs
