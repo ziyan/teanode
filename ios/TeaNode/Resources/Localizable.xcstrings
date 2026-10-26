@@ -86508,13 +86508,13 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ の週"
+            "value": "%@からの週"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ 开始的一周"
+            "value": "%@开始的一周"
           }
         }
       }
