@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.199.1] - 2026-10-26
+
+### Fixed
+
+- iPhone: naming an unnamed person from a photo's Info no longer closes the sheet as soon as it opens. (#657)
+
 ## [0.199.0] - 2026-10-26
 
 ### Added
