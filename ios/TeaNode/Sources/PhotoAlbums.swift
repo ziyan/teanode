@@ -334,7 +334,8 @@ struct PhotoAlbumsView: View {
 
 /// PhotoAlbumRow is an album as a list row, on a person's card and on a
 /// circle's page: its cover, its title and how many photos it holds, and, when
-/// isSharerShown, who shared it if somebody shared it with the person.
+/// isSharerShown, who shared it, the person included, unless it is a circle's
+/// own album.
 struct PhotoAlbumRow: View {
     let album: PhotoAlbum
     let connection: Connection
@@ -362,8 +363,14 @@ struct PhotoAlbumRow: View {
                 Text("\(album.photoCount) photos")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                if isSharerShown, album.isSharedWithCaller {
-                    PhotoAlbumOwnerLine(album: album)
+                if isSharerShown, !album.isCircleAlbum {
+                    HStack(spacing: 4) {
+                        AvatarView(name: album.ownerDisplayName, avatarUrl: album.ownerAvatarUrl, colorIndex: album.ownerAvatarColorIndex, size: 16)
+                        Text(album.ownerDisplayName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
             }
             Spacer(minLength: 0)

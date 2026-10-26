@@ -750,6 +750,14 @@ it("shows the circle's albums and those shared with it, and makes an album for t
       ownerName: 'Person B',
       shareLevel: 'view',
     }),
+    circleAlbum({
+      id: 'album-three',
+      circleId: null,
+      ownerUserId: 'person-a',
+      albumTitle: 'Hike',
+      ownerName: 'Person A',
+      isOwnedByCaller: true,
+    }),
   ]
   vi.mocked(graphql).mockImplementation(async (document, variables) => {
     if (document.includes('ReadCircle')) return { ReadCircle: circle() } as never
@@ -766,8 +774,9 @@ it("shows the circle's albums and those shared with it, and makes an album for t
 
   const section = (await screen.findByText('Trip')).closest('section') as HTMLElement
   expect(within(section).getByText('Garden')).toBeTruthy()
-  // A shared album says who shared it; the circle's own does not repeat the circle's name.
+  // A shared album says who shared it, the person too; the circle's own does not repeat the circle's name.
   expect(within(section).getByText('Person B')).toBeTruthy()
+  expect(within(section).getByText('Person A')).toBeTruthy()
   expect(within(section).queryByText('Fixture Home')).toBeNull()
   expect(within(section).getByText('Trip').closest('a')?.getAttribute('href')).toBe('/photos/albums/album-two')
 
