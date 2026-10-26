@@ -489,7 +489,7 @@ func TestJournalPinsOnlyReadableRecordsAndHidesChoices(t *testing.T) {
 	for name, variables := range map[string]map[string]any{
 		"a record that is ben's":  {"day": "2026-03-04", "recordKind": "contact", "recordId": world.benContact.ID},
 		"a record that is gone":   {"day": "2026-03-04", "recordKind": "contact", "recordId": "gone"},
-		"a kind that is not":      {"day": "2026-03-04", "recordKind": "diary", "recordId": "x"},
+		"a kind that is not":      {"day": "2026-03-04", "recordKind": "scrapbook", "recordId": "x"},
 		"no record":               {"day": "2026-03-04", "recordKind": "contact", "recordId": " "},
 		"a day that is not there": {"day": "2999-01-01", "recordKind": "contact", "recordId": world.adaContact.ID},
 	} {
