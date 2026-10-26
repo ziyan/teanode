@@ -25,6 +25,9 @@ final class LocationModel {
     /// The person's pauses over the stretch the visits cover, newest first,
     /// which the timeline shows among the visits.
     private(set) var pauses: [LocationPause] = []
+    /// The person's trips over the stretch the visits cover, newest first,
+    /// which the timeline shows between the visits.
+    private(set) var trips: [Trip] = []
     private(set) var places: [LocationPlace] = []
     private(set) var nextPlaceOffset: Int?
     /// Whether the first read has finished, one way or the other.
@@ -107,7 +110,7 @@ final class LocationModel {
     var ownUserId: String? { location?.userId }
 
     /// The visits and pauses grouped by day, newest first.
-    var days: [LocationVisitDay] { LocationDays.group(visits, pauses: pauses) }
+    var days: [LocationVisitDay] { LocationDays.group(visits, pauses: pauses, trips: trips) }
 
     /// Whether the places shown are narrowed by a label or by words.
     var isFilteringPlaces: Bool { placeLabelFilter != nil || !trimmedPlaceSearchText.isEmpty }
@@ -182,7 +185,47 @@ final class LocationModel {
             loadFailedText = nil
         }
         finishSetupIfDone()
-        Task { await readPauses() }
+        Task {
+            await readPauses()
+            await readTrips()
+        }
+    }
+
+    /// Reads the trips from the oldest visit shown on. A trip begins at the
+    /// departure from a visit, so none is older. A server that cannot list
+    /// trips, or a failed read, leaves the trips as they were.
+    private func readTrips() async {
+        guard let oldest = visits.compactMap(\.anchorDate).min() else {
+            trips = []
+            return
+        }
+        guard let read = await fetchTrips(connection: connection, from: oldest, until: Date().addingTimeInterval(3600)) else { return }
+        trips = read
+    }
+
+    /// Reads the trips of a stretch the visits newly loaded cover and merges
+    /// them into the ones already read: a trip read again replaces its old
+    /// copy. A failed read leaves the trips as they were.
+    private func readTrips(from: Date, until: Date) async {
+        guard let read = await fetchTrips(connection: connection, from: from, until: until) else { return }
+        let readIds = Set(read.map(\.id))
+        let merged = trips.filter { !readIds.contains($0.id) } + read
+        trips = merged.sorted { ($0.startedDate ?? .distantPast) > ($1.startedDate ?? .distantPast) }
+    }
+
+    /// Corrects the way of travel of one of the person's own legs, or with
+    /// nil takes the correction back, and reads the trips again. True when
+    /// the server took it.
+    @discardableResult
+    func correct(_ leg: TripLeg, to travelMode: TravelMode?) async -> Bool {
+        do {
+            try await connection.setTripLegTravelMode(tripLegId: leg.id, travelMode: travelMode)
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+            return false
+        }
+        await readTrips()
+        return true
     }
 
     /// Reads the pauses over the stretch the visits shown cover: back to the
@@ -236,9 +279,16 @@ final class LocationModel {
         do {
             let page = try await connection.locationVisits(offset: offset, limitCount: Self.visitPageSize)
             let known = Set(visits.map(\.id))
-            visits += page.placeVisits.filter { !known.contains($0.id) }
+            let previousOldest = visits.compactMap(\.anchorDate).min()
+            let addedVisits = page.placeVisits.filter { !known.contains($0.id) }
+            visits += addedVisits
             nextVisitOffset = page.nextOffset
             await readPauses()
+            if let previousOldest, let addedOldest = addedVisits.compactMap(\.anchorDate).min(), addedOldest < previousOldest {
+                await readTrips(from: addedOldest, until: previousOldest)
+            } else if previousOldest == nil {
+                await readTrips()
+            }
         } catch {
             problemText = error.localizedDescription
         }
@@ -443,6 +493,7 @@ final class LocationModel {
             location = nil
             visits = []
             pauses = []
+            trips = []
             places = []
             nextVisitOffset = nil
             nextPlaceOffset = nil

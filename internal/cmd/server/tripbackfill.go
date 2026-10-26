@@ -1,0 +1,114 @@
+package server
+
+import (
+	"context"
+	"time"
+
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/travel/rebuild"
+)
+
+// Building the trips of days recorded before this server knew what a trip was.
+//
+// Each report builds the trips of the days it touches, so trips exist from
+// the day this shipped. The days before have visits and positions but no
+// trips, and a person's distance per week or year would start empty. Once, at
+// start: for each person with visits not yet marked as done
+// (trip_backfill), this builds trips back from their earliest trip, or now,
+// a week at a time, skipping weeks with no visit, and marks them. A start
+// after the first finds nobody.
+
+// tripBackfillWindow is how much is built in one transaction.
+const tripBackfillWindow = 7 * 24 * time.Hour
+
+// backfillTrips builds the trips of past days for every person who needs it.
+func backfillTrips(ctx context.Context, database db.Database) {
+	var userIds []string
+	if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		userIds, err = tx.ListUsersNeedingTripBackfill()
+		return err
+	}); err != nil {
+		if ctx.Err() == nil {
+			log.Warningf("failed to look for people whose trips were never built: %s", err)
+		}
+		return
+	}
+	builtCount := 0
+	for _, userId := range userIds {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := backfillTripsOf(ctx, database, userId); err != nil {
+			if ctx.Err() == nil {
+				log.Warningf("failed to build the past trips of user %s: %s", userId, err)
+			}
+			continue
+		}
+		builtCount++
+	}
+	if builtCount > 0 {
+		log.Noticef("built the past trips of %d people", builtCount)
+	}
+}
+
+// backfillTripsOf builds one person's trips from their earliest trip, or
+// now, back to their earliest visit, a week at a time, each week in its own
+// transaction holding their location lock.
+func backfillTripsOf(ctx context.Context, database db.Database, userId string) error {
+	var windowEnd time.Time
+	if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
+		earliest, err := tx.GetEarliestTripStart(userId)
+		if err != nil {
+			return err
+		}
+		windowEnd = time.Now()
+		if earliest != nil {
+			windowEnd = *earliest
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	for ctx.Err() == nil {
+		isDone := false
+		if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
+			// The latest visit before the window's end says where the next
+			// week to build is, so a year with a month of no visits is not
+			// walked a week at a time.
+			visits, _, err := tx.ListPlaceVisits(userId, db.PlaceVisitFilter{Until: &windowEnd, LimitCount: 1})
+			if err != nil {
+				return err
+			}
+			if len(visits) == 0 {
+				isDone = true
+				return nil
+			}
+			if latest := visitTime(visits[0]); latest != nil && latest.Add(time.Second).Before(windowEnd) {
+				windowEnd = latest.Add(time.Second)
+			}
+			if err := tx.LockLocation(userId); err != nil {
+				return err
+			}
+			return rebuild.Window(tx, userId, windowEnd.Add(-tripBackfillWindow), windowEnd)
+		}); err != nil {
+			return err
+		}
+		if isDone {
+			return database.TransactionContext(ctx, func(tx db.Transaction) error {
+				return tx.MarkTripsBackfilled(userId, time.Now())
+			})
+		}
+		windowEnd = windowEnd.Add(-tripBackfillWindow)
+	}
+	return ctx.Err()
+}
+
+// visitTime is the latest moment a visit says: its departure, which is where
+// the trip after it starts, or its arrival while it has none.
+func visitTime(visit *models.PlaceVisit) *time.Time {
+	if visit.DepartedAt != nil {
+		return visit.DepartedAt
+	}
+	return visit.ArrivedAt
+}

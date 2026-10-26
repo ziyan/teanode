@@ -926,13 +926,16 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	})
 
 	// The visits that were stored overlapping before a late departure was
-	// put in order with the visits since it began. Once, at start: visits
-	// put in order overlap none, so after one pass there is nothing left.
+	// put in order with the visits since it began, then the trips of days
+	// recorded before trips were built, from the visits in order. Once, at
+	// start: visits put in order overlap none, and every report builds the
+	// trips of the days it touches, so after one pass there is nothing left.
 	scavengeGroup.Add(1)
 	go func() {
 		defer deferutil.Recover()
 		defer scavengeGroup.Done()
 		repairOverlappedVisits(scavengeContext, self.database)
+		backfillTrips(scavengeContext, self.database)
 	}()
 
 	// The list headers of mail that arrived before this server read them.

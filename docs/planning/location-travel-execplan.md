@@ -11,19 +11,22 @@ To see it working: report a day of positions, visits and motion activity for a p
 ## Progress
 
 - [x] (2026-10-26) Decisions taken with the person (see Decision Log).
-- [ ] Migration `0263_location_travel.sql` and its reverse, models, database operations, tests.
-- [ ] `internal/travel`: building trips and legs from visits, positions and motion activity; tests.
-- [ ] `ReportLocation` takes motion activity; trips rebuilt after each report; erase removes them; the backfill at start builds them for past days.
-- [ ] GraphQL: `ListTrips`, `SetTripLegTravelMode`, `ListTravelTotals`; tests including the app and dashboard documents against the schema.
-- [ ] Agent tool actions and CLI commands; parity tests.
-- [ ] Dashboard: trips in the day's list, correcting a leg, the Travel totals.
-- [ ] iPhone: Motion & Fitness in Location setup, motion activity sent with reports, trips in the day's list, correcting a leg, the Travel totals; demo server and screenshots.
+- [x] (2026-10-26) Migration `0263_location_travel.sql` and its reverse, models, database operations, tests.
+- [x] (2026-10-26) `internal/travel`: building trips and legs from visits, positions and motion activity; tests.
+- [x] (2026-10-26) `ReportLocation` takes motion activity; trips rebuilt after each report and check-in; erase removes them; the backfill at start builds them for past days.
+- [x] (2026-10-26) GraphQL: `ListTrips`, `SetTripLegTravelMode`, `ListTravelTotals`; tests including the app and dashboard documents against the schema.
+- [x] (2026-10-26) Agent tool actions and CLI commands; parity tests.
+- [x] (2026-10-26) Dashboard: trips in the day's list, correcting a leg, the Travel totals.
+- [x] (2026-10-26) iPhone: Motion & Fitness in Location setup, motion activity sent with reports, trips in the day's list, correcting a leg, the Travel totals; demo server and screenshots (CI not yet run).
 - [ ] Docs: `docs/subsystems/location.md` (Travel), `docs/reference/command-line.md`.
 - [ ] Review until a round finds nothing; parity check; deploy; TestFlight; tell the journal session how to read trips.
 
 ## Surprises & Discoveries
 
-None yet.
+- Deciding who still needs past trips from the data alone does not work: a person's first visit always begins before their first trip, so they looked unfinished forever. A marker table (`trip_backfill`) replaced it.
+- The iPhone app's Location lists are a segmented picker in the drawer, not side-menu rows, so Travel is a row at the top of the Visits list.
+- `ListPlacesOfVisits` scanned into a struct with an embedded `placeModel` that had no `gorm:"embedded"` tag, so every place it returned was empty; no test read a place name through `ListTrips` until the viewer test did.
+- `activities` on `ReportLocation` is optional, so that phones running an older app keep reporting.
 
 ## Decision Log
 
@@ -31,7 +34,13 @@ None yet.
 - Decision: the iPhone asks for Motion & Fitness permission, offered in Location setup and skippable. Rationale: the person chose it; iOS motion activity tells walking, running, cycling and driving apart reliably even when background positions are 500 meters apart. Without it the way is guessed from speed.
 - Decision: past days get trips too, guessed from speed and distance, built once at start. Rationale: the person chose it, so that totals start full.
 - Decision: trips are seen by whoever sees the person's history (share level `history`), like the day's path; only the person corrects. Rationale: the person chose it.
+- Decision: `TripView` carries `fromPlace` and `toPlace`, read for a page in one query (`ListPlacesOfVisits`). Rationale: the iPhone and the command line name where a trip went.
 - Decision: trips and legs are derived data, rebuilt whenever the visits, positions or motion activity of their days change; the person's corrections are kept apart, as spans of time with a way of travel (`travel_mode_correction`), and applied to whatever legs they cover. Rationale: visits arrive late and out of order, so trips must be rebuildable at any time without losing what the person said.
+- Decision: a rebuild after a report starts at the departure of the person's latest visit that departed before the report's first time (a day before if none) and ends six hours after its last time. Rationale: a fixed day before missed a trip whose departure was longer ago, such as a phone that was off for 30 hours; a change can only affect trips that start at or before its time, except through visits the report carries, which are among the times. The window reads visits to the first arrival after it (at most 30 days) and all positions in pages. Date: 2026-10-26.
+- Decision: a report with a position, visit time or motion activity more than 400 days old is refused (the phone drops that entry), and a report is rebuilt around each run of its times with no gap over two days, not in one window from the earliest to the latest. Rationale: one time in 1970 would have rebuilt decades. Visits more than 30 days apart are no trip. Date: 2026-10-26.
+- Decision: a rebuild keeps the id of a stored trip that starts when the built one does, and of a leg that starts when a built leg does, and writes nothing for a trip that came out the same. Rationale: an id the person was shown must still work when they correct it after another report rebuilt the day. Date: 2026-10-26.
+- Decision: a new correction takes its span out of overlapping older corrections (shortening or splitting them) instead of deleting them. Rationale: correcting the second leg of an old correction that covered two legs reverted the first. Date: 2026-10-26.
+- Decision: `ListTrips` only looks at trips that started less than 30 days before the range. Rationale: no trip lasts that long, and the query otherwise scans all earlier history. Date: 2026-10-26.
 
 ## Outcomes & Retrospective
 
@@ -62,12 +71,13 @@ Data. Migration `0263_location_travel.sql` adds four tables, each with `user_id`
 - `trip`: `id`, `user_id`, `started_at`, `ended_at` (after `started_at`), `from_visit_id` and `to_visit_id` referencing `place_visit(id) ON DELETE SET NULL`, `distance_meters`, `created_at`; index on (`user_id`, `started_at`).
 - `trip_leg`: `id`, `trip_id` referencing `trip(id) ON DELETE CASCADE`, `user_id`, `started_at`, `ended_at`, `detected_travel_mode` (one of `walk`, `run`, `bike`, `car`, `bus`, `train`, `boat`, `plane`), `detection_source` (`motion` or `speed`), `distance_meters`; index on (`user_id`, `started_at`).
 - `travel_mode_correction`: `id`, `user_id`, `started_at`, `ended_at` (after `started_at`), `travel_mode` (the eight), `created_at`, `updated_at`; index on (`user_id`, `started_at`).
+- `trip_backfill`: `user_id` (primary key), `backfilled_at`: the people whose past days have had their trips built once.
 
 A leg's way of travel is the correction that covers at least half of its time, if any, otherwise what was detected. Correcting a leg deletes the person's corrections that overlap the leg's span and adds one for exactly that span. Clearing it deletes those.
 
 Building trips (`internal/travel`, pure functions with no database, so they are tested on their own). Input: the person's visits in a window in arrival order, their positions in it, their motion activity in it. For each pair of consecutive visits where the first has a departure and the second an arrival after it, the trip runs from that departure to that arrival. Its path is the first visit's coordinates, the positions measured inside the trip (dropping those with an accuracy worse than 500 meters when better ones exist, and any position that would need more than 300 meters a second from the one before), then the second visit's coordinates. A trip whose path is shorter than 150 meters is not a trip (the person moved within one place). Legs: the motion activity inside the trip is mapped to ways (walking to walk, running to run, cycling to bike, automotive to car; stationary and unknown belong to no way) and cut where the way changes; a leg shorter than one minute or 100 meters is merged into the neighbor it touches longest; the leg's distance is the path length inside its time, with the path interpolated at the cuts; `detection_source` is `motion`. When motion activity covers less than half of the trip's time, the trip is one leg guessed from its average speed (path length divided by duration): at most 2.2 meters a second is walk, at most 5 is bike, at most 75 is car, faster is plane; `detection_source` is `speed`. Run is never guessed from speed. Whatever the source, a leg of at least 100 kilometers at an average of at least 55 meters a second is plane, since iOS reports a plane as driving. Bus, train and boat are never detected.
 
-When trips are built. After `ReportLocation` stores anything, the trips of the days it touched are rebuilt: the window starts a day before the earliest time in the report (positions, visits, activity) and ends two days after the latest; trips that start in the window are deleted and trips are built from the visits whose departure lies in it. `EraseLocationHistory` also erases the trips, legs, motion activity and corrections in its range. At start, a once-over like `repairOverlappedVisits` builds trips for each person whose earliest visit is earlier than their earliest trip (or who has visits and no trips), in seven-day windows, so past days get trips.
+When trips are built. After `ReportLocation` stores anything, the trips of the days it touched are rebuilt: the window starts a day before the earliest time in the report (positions, visits, activity) and ends two days after the latest; trips that start in the window are deleted and trips are built from the visits whose departure lies in it. `EraseLocationHistory` also erases the trips, legs, motion activity and corrections in its range. At start, a once-over (`internal/cmd/server/tripbackfill.go`) builds trips for each person with visits who is not in `trip_backfill`, back from their earliest trip (or now) in seven-day windows, skipping weeks with no visit, then marks them, so past days get trips and a later start finds nobody. Reading the database and replacing a window's trips is package `internal/travel/rebuild` (`rebuild.Around` for the days a report touched, `rebuild.Window` for the backfill), so that `internal/travel` stays free of the database. A check-in rebuilds the trips around it too.
 
 API. `ReportLocation` gains `activities: [ReportedActivity]` (`startedAt`, `activityKind`, `activityConfidence`), at most 500 a report, refused like an invalid point when a kind or confidence is unknown or a time is more than a day ahead. New operations, at share level history for reading:
 

@@ -19810,6 +19810,32 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   white-space: normal;
 }
 
+.location-trip {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+}
+
+/* The tag stays on the line of the leg, which truncates with an ellipsis as the
+   other rows do, and does not make the line taller than its text. */
+.location-trip-leg .tag {
+  padding-block: 0;
+  vertical-align: middle;
+}
+
+.location-trip-leg {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 32px;
+}
+
+.location-travel-paging {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 .location-row-meta {
   flex: 0 0 auto;
   white-space: nowrap;

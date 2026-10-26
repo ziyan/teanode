@@ -14,6 +14,7 @@ import {
   anHourAfter,
   dayKeyOf,
   dayRange,
+  durationText,
   LABEL_KEYS,
   LocationNotificationMute,
   LocationPause,
@@ -31,6 +32,16 @@ import {
   placeSubtitle,
   placeTitle,
   tomorrowMorning,
+  TRAVEL_MODES,
+  TRAVEL_PERIODS,
+  TRAVEL_TOTAL_FIELDS,
+  TravelPeriod,
+  TravelTotal,
+  travelDistanceText,
+  travelRange,
+  Trip,
+  TripLeg,
+  TRIP_FIELDS,
   VISIT_FIELDS,
   visitDurationText,
 } from '../components/locationData'
@@ -46,22 +57,25 @@ import { SettingsEmpty, SettingsSection } from '../components/settingsList'
 import { Select } from '../components/select'
 import { Tabs, TabItem } from '../components/tabs'
 import { useToast } from '../components/toast'
+import { TravelModeIcon } from '../components/travelModeIcon'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
 import { personPath } from '../lib/circlePeople'
 import { hasPermission, useSession } from '../session'
 
 // Where the person is and has been, and who shares it with them: a map, the
-// visit in progress under it, and three tabs. Visits are by day, newest first,
-// in pages; Places are the ones the person named or labeled first; Sharing is
-// who sees where they are. The tab and the day are in the address.
+// visit in progress under it, and four tabs. Visits are by day, newest first,
+// in pages, with the trips between them; Places are the ones the person named
+// or labeled first; Travel is the distance traveled by each way of travel per
+// day, week, month or year; Sharing is who sees where they are. The tab and the day are in the address.
 
-const TAB_IDS = ['visits', 'places', 'sharing'] as const
+const TAB_IDS = ['visits', 'places', 'travel', 'sharing'] as const
 type TabID = (typeof TAB_IDS)[number]
 
 const TABS: TabItem[] = [
   { id: 'visits', label: 'location.tabVisits' },
   { id: 'places', label: 'location.tabPlaces' },
+  { id: 'travel', label: 'location.tabTravel' },
   { id: 'sharing', label: 'location.tabSharing' },
 ]
 // While somebody else is looked at: Sharing is only ever the person's own.
@@ -132,18 +146,55 @@ const MUTE_LOCATION_NOTIFICATIONS = `mutation ($userId: String!, $mutedUntil: Da
   MuteLocationNotifications(userId: $userId, mutedUntil: $mutedUntil) { mutedUntil }
 }`
 const UNMUTE_LOCATION_NOTIFICATIONS = `mutation ($userId: String!) { UnmuteLocationNotifications(userId: $userId) }`
+const LIST_TRIPS = `query ($userId: String, $from: DateTime!, $until: DateTime!, $offset: Int, $limitCount: Int) {
+  ListTrips(userId: $userId, from: $from, until: $until, offset: $offset, limitCount: $limitCount) { trips { ${TRIP_FIELDS} } nextOffset }
+}`
+const SET_TRIP_LEG_TRAVEL_MODE = `mutation ($tripLegId: String!, $travelMode: String) {
+  SetTripLegTravelMode(tripLegId: $tripLegId, travelMode: $travelMode) { id travelMode isTravelModeCorrected }
+}`
+const LIST_TRAVEL_TOTALS = `query ($userId: String, $period: String!, $from: DateTime!, $until: DateTime!) {
+  ListTravelTotals(userId: $userId, period: $period, from: $from, until: $until) { ${TRAVEL_TOTAL_FIELDS} }
+}`
 const ERASE_LOCATION_HISTORY = `mutation ($from: DateTime, $until: DateTime) {
   EraseLocationHistory(from: $from, until: $until) { pointCount visitCount placeCount }
 }`
 
 type VisitPage = { placeVisits: PlaceVisit[]; nextOffset: number | null }
 type PlacePage = { places: Place[]; nextOffset: number | null }
+// The trips are read this many to a page, and no more pages than the maximum
+// are followed, so a very long span of visits cannot ask without end.
+const TRIPS_PAGE_SIZE = 200
+const MAXIMUM_TRIPS_PAGES = 10
+
+type TripPage = { trips: Trip[]; nextOffset: number | null }
 type DayRange = { from: string; until: string }
 
-// A row of the timeline: a visit, or a stretch of time recording was paused.
+// A row of the timeline: a visit, a stretch of time recording was paused, or
+// the trip from one visit to the next.
 type TimelineRow =
   | { kind: 'visit'; key: string; dayKey: string; momentMS: number; visit: PlaceVisit }
   | { kind: 'pause'; key: string; dayKey: string; momentMS: number; pause: LocationPause }
+  | { kind: 'trip'; key: string; dayKey: string; momentMS: number; trip: Trip }
+
+// The words for each way of travel.
+const TRAVEL_MODE_KEYS: Record<string, Key> = {
+  walk: 'location.travelMode.walk',
+  run: 'location.travelMode.run',
+  bike: 'location.travelMode.bike',
+  car: 'location.travelMode.car',
+  bus: 'location.travelMode.bus',
+  train: 'location.travelMode.train',
+  boat: 'location.travelMode.boat',
+  plane: 'location.travelMode.plane',
+}
+
+const DEFAULT_TRAVEL_PERIOD: TravelPeriod = 'day'
+const TRAVEL_PERIOD_KEYS: Record<TravelPeriod, Key> = {
+  day: 'location.travelPeriodDay',
+  week: 'location.travelPeriodWeek',
+  month: 'location.travelPeriodMonth',
+  year: 'location.travelPeriodYear',
+}
 
 // How long after the last keystroke the words typed to find a place are asked
 // about, so the server is not asked for every letter.
@@ -224,6 +275,11 @@ function LocationContent({ userId }: { userId: string }) {
   const isKnownLabel = (value: string | null) => PLACE_LABELS.some((each) => each === value)
   const placesLabel = isKnownLabel(parameters.get('placesLabel')) ? (parameters.get('placesLabel') ?? '') : ''
   const placesQuery = parameters.get('placesQuery') ?? ''
+  // The Travel tab's period and how many pages back from the newest it is,
+  // in the address.
+  const requestedPeriod = TRAVEL_PERIODS.find((each) => each === parameters.get('travelPeriod'))
+  const travelPeriod: TravelPeriod = requestedPeriod ?? DEFAULT_TRAVEL_PERIOD
+  const travelPageIndex = Math.max(0, Math.floor(Number(parameters.get('travelPage'))) || 0)
 
   // The person whose visits and places are shown, in the address, when it is
   // somebody sharing with this person. The person themselves is not in it.
@@ -252,6 +308,8 @@ function LocationContent({ userId }: { userId: string }) {
   const [isChangingPause, setIsChangingPause] = useState(false)
   // Whether the mute of the chosen person's notices is being set or ended.
   const [isChangingMute, setIsChangingMute] = useState(false)
+  // The leg whose way of travel is being corrected.
+  const [changingTripLegId, setChangingTripLegId] = useState<string | null>(null)
   // Bumped when a timer for the end of a pause ran out before the end itself.
   const [pauseEndCheck, setPauseEndCheck] = useState(0)
   // Why the open dialog's work failed, shown in the dialog with what was typed
@@ -272,6 +330,11 @@ function LocationContent({ userId }: { userId: string }) {
   // instead of stepping through every place that was clicked.
   const setSelectedPlaceId = (placeId: string | null) => changeParameters({ place: placeId }, { replace: true })
   const selectTab = (id: string) => changeParameters({ tab: id === 'visits' ? null : id })
+  // A different period is a different table: back to the newest page.
+  const selectTravelPeriod = (nextPeriod: TravelPeriod) =>
+    changeParameters({ travelPeriod: nextPeriod === DEFAULT_TRAVEL_PERIOD ? null : nextPeriod, travelPage: null })
+  const selectTravelPage = (pageIndex: number) =>
+    changeParameters({ travelPage: pageIndex <= 0 ? null : String(pageIndex) })
   // A different day is a different list: back to its first page.
   const selectDay = (nextDayKey: string | null) => changeParameters({ day: nextDayKey, page: null })
 
@@ -486,6 +549,68 @@ function LocationContent({ userId }: { userId: string }) {
     { refresh: false },
   )
   const pauseList = answeredFor(pauses.data, pausesRequestKey)
+  // The trips among the visits shown: those in the day, or in the span of the
+  // page of visits (from its oldest visit to its newest departure, the first
+  // page reaching to tomorrow so a trip begun just now is in it).
+  const tripsSpan = useMemo((): { from: string; until: string } | null => {
+    if (range) return range
+    if (!visitPage) return null
+    const momentsMS = visitRows.flatMap((visit) =>
+      [visit.arrivedAt, visit.departedAt].flatMap((moment) => (moment ? [new Date(moment).getTime()] : [])),
+    )
+    if (momentsMS.length === 0) return null
+    return {
+      from: new Date(Math.min(...momentsMS)).toISOString(),
+      until: new Date(
+        visitsPaging.pageIndex === 0 ? Date.now() + 24 * 60 * 60 * 1000 : Math.max(...momentsMS) + 60 * 1000,
+      ).toISOString(),
+    }
+  }, [range, visitPage, visitRows, visitsPaging.pageIndex])
+  // Every page of the trips in the span, up to the maximum pages.
+  async function listAllTrips(userId: string | null, from: string, until: string): Promise<Trip[]> {
+    const allTrips: Trip[] = []
+    let offset: number | null = 0
+    for (let pageIndex = 0; offset !== null && pageIndex < MAXIMUM_TRIPS_PAGES; pageIndex++) {
+      const page: TripPage = (
+        await graphql<{ ListTrips: TripPage }>(LIST_TRIPS, { userId, from, until, offset, limitCount: TRIPS_PAGE_SIZE })
+      ).ListTrips
+      allTrips.push(...page.trips)
+      offset = page.nextOffset
+    }
+    return allTrips
+  }
+  const tripsRequestKey = JSON.stringify([viewedUserId, tripsSpan?.from ?? null, tripsSpan?.until ?? null])
+  const trips = useQuery(
+    async (): Promise<Answered<Trip[]> | null> =>
+      tab === 'visits' && canReadHistory && tripsSpan
+        ? {
+            requestKey: tripsRequestKey,
+            answer: await listAllTrips(viewedUserId, tripsSpan.from, tripsSpan.until),
+          }
+        : null,
+    [tab, tripsRequestKey, userId, canReadHistory],
+  )
+  const tripList = answeredFor(trips.data, tripsRequestKey)
+
+  // The Travel tab: the totals of one page of periods, for the person shown.
+  const travelRequestKey = JSON.stringify([viewedUserId, travelPeriod, travelPageIndex])
+  const travelTotals = useQuery(async (): Promise<Answered<TravelTotal[]> | null> => {
+    if (tab !== 'travel' || !canReadHistory) return null
+    const span = travelRange(travelPeriod, travelPageIndex, new Date())
+    return {
+      requestKey: travelRequestKey,
+      answer:
+        (
+          await graphql<{ ListTravelTotals: TravelTotal[] | null }>(LIST_TRAVEL_TOTALS, {
+            userId: viewedUserId,
+            period: travelPeriod,
+            from: span.from,
+            until: span.until,
+          })
+        ).ListTravelTotals ?? [],
+    }
+  }, [tab, travelRequestKey, userId, canReadHistory])
+  const travelTotalList = answeredFor(travelTotals.data, travelRequestKey)
   // The visits in the server's order, each pause put before the first visit
   // that began earlier than it. In a day's list a pause that began on an
   // earlier day stands at the day's start.
@@ -501,25 +626,46 @@ function LocationContent({ userId }: { userId: string }) {
       }
     })
     const dayStartMS = range ? new Date(range.from).getTime() : 0
-    // Oldest first, so a newer pause is put in front of the older one at the
-    // same place.
-    const byOldest = [...(pauseList ?? [])].sort(
-      (first, second) => new Date(first.startedAt).getTime() - new Date(second.startedAt).getTime(),
-    )
-    for (const pause of byOldest) {
-      const momentMS = Math.max(new Date(pause.startedAt).getTime(), dayStartMS)
-      const row: TimelineRow = {
-        kind: 'pause',
-        key: `pause-${pause.id}`,
-        dayKey: dayKeyOf(new Date(momentMS)),
-        momentMS,
-        pause,
-      }
-      const index = rows.findIndex((each) => each.kind === 'visit' && each.momentMS < momentMS)
-      rows.splice(index < 0 ? rows.length : index, 0, row)
+    // Pauses and trips, newest first, so between two visits the rows come out
+    // newest first whatever their kinds. The list is newest first, so a row
+    // stands in front of the first visit that began earlier than it did.
+    const inserted: { startedAt: string; row: (momentMS: number) => TimelineRow }[] = [
+      ...(pauseList ?? []).map((pause) => ({
+        startedAt: pause.startedAt,
+        row: (momentMS: number): TimelineRow => ({
+          kind: 'pause',
+          key: `pause-${pause.id}`,
+          dayKey: dayKeyOf(new Date(momentMS)),
+          momentMS,
+          pause,
+        }),
+      })),
+      ...(tripList ?? []).flatMap((trip) =>
+        trip.legs.length === 0
+          ? []
+          : [
+              {
+                startedAt: trip.startedAt,
+                row: (momentMS: number): TimelineRow => ({
+                  kind: 'trip',
+                  key: `trip-${trip.id}`,
+                  dayKey: dayKeyOf(new Date(momentMS)),
+                  momentMS,
+                  trip,
+                }),
+              },
+            ],
+      ),
+    ].sort((first, second) => new Date(second.startedAt).getTime() - new Date(first.startedAt).getTime())
+    // Each goes right before the first visit that began earlier, so it lands
+    // after the newer rows already placed in front of that visit.
+    for (const each of inserted) {
+      const momentMS = Math.max(new Date(each.startedAt).getTime(), dayStartMS)
+      const index = rows.findIndex((existing) => existing.kind === 'visit' && existing.momentMS < momentMS)
+      rows.splice(index < 0 ? rows.length : index, 0, each.row(momentMS))
     }
     return rows
-  }, [visitRows, pauseList, range])
+  }, [visitRows, pauseList, tripList, range])
   // Where an open visit's window of photos ends: the moment its visits arrived,
   // not each render, so the links of a row do not change while it is shown.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -641,6 +787,48 @@ function LocationContent({ userId }: { userId: string }) {
     [language],
   )
   const timeOf = (moment: string) => timeFormat.format(new Date(moment))
+  const travelDayFormat = useMemo(
+    () => new Intl.DateTimeFormat(language, { weekday: 'short', month: 'short', day: 'numeric' }),
+    [language],
+  )
+  const travelMonthFormat = useMemo(
+    () => new Intl.DateTimeFormat(language, { year: 'numeric', month: 'long' }),
+    [language],
+  )
+  const travelYearFormat = useMemo(() => new Intl.DateTimeFormat(language, { year: 'numeric' }), [language])
+  // The heading of a row of the totals: the day, "Week of Oct 20", "October
+  // 2030" or "2030".
+  const travelPeriodText = (periodStartDay: string): string => {
+    const start = parseDayKey(periodStartDay) ?? new Date()
+    if (travelPeriod === 'week') return t('location.travelWeekOf', { day: shortDayFormat.format(start) })
+    if (travelPeriod === 'month') return travelMonthFormat.format(start)
+    if (travelPeriod === 'year') return travelYearFormat.format(start)
+    return travelDayFormat.format(start)
+  }
+  // The rows of the totals, newest period first, and a column for each way of
+  // travel with any distance in them, in the usual order, any way this
+  // dashboard does not know after them.
+  const travelTable = useMemo(() => {
+    const periods = new Map<string, Record<string, number>>()
+    for (const total of travelTotalList ?? []) {
+      const distances = periods.get(total.periodStartDay) ?? {}
+      distances[total.travelMode] = (distances[total.travelMode] ?? 0) + total.distanceMeters
+      periods.set(total.periodStartDay, distances)
+    }
+    const usedModes = new Set([...periods.values()].flatMap((distances) => Object.keys(distances)))
+    const knownModes: string[] = TRAVEL_MODES.filter((each) => usedModes.has(each))
+    const otherModes = [...usedModes].filter((each) => !knownModes.includes(each)).sort()
+    return {
+      modes: [...knownModes, ...otherModes],
+      rows: [...periods.entries()]
+        .sort(([first], [second]) => (first < second ? 1 : first > second ? -1 : 0))
+        .map(([periodStartDay, distances]) => ({
+          periodStartDay,
+          distances,
+          totalMeters: Object.values(distances).reduce((sum, each) => sum + each, 0),
+        })),
+    }
+  }, [travelTotalList])
   // A person's arrival with its day when it was not today, so a visit begun
   // days ago does not read as this evening's: the weekday within the week,
   // the date alone beyond it, short enough to stay on one line on a phone.
@@ -685,6 +873,7 @@ function LocationContent({ userId }: { userId: string }) {
   function reloadAll() {
     void me.reload()
     void visits.reload()
+    void trips.reload()
     void places.reload()
     void pauses.reload()
   }
@@ -861,6 +1050,35 @@ function LocationContent({ userId }: { userId: string }) {
       toast.failed(failure instanceof Error && failure.message ? failure.message : t('location.unmuteFailed'))
     } finally {
       setIsChangingMute(false)
+    }
+  }
+
+  // The words for a way of travel; one the dashboard does not know is shown
+  // as the server wrote it.
+  function travelModeName(travelMode: string): string {
+    return TRAVEL_MODE_KEYS[travelMode] ? t(TRAVEL_MODE_KEYS[travelMode]) : travelMode
+  }
+
+  // Corrects the way of travel of one leg of the person's own trips, or, with
+  // null, goes back to the detected one. The result is a toast; the trips are
+  // read again so the row shows the new way.
+  async function changeTravelMode(leg: TripLeg, travelMode: string | null) {
+    setChangingTripLegId(leg.id)
+    try {
+      await graphql<{ SetTripLegTravelMode: { id: string } }>(SET_TRIP_LEG_TRAVEL_MODE, {
+        tripLegId: leg.id,
+        travelMode,
+      })
+      toast.done(
+        travelMode
+          ? t('location.tripLegChanged', { mode: travelModeName(travelMode) })
+          : t('location.tripLegAsDetected', { mode: travelModeName(leg.detectedTravelMode) }),
+      )
+      void trips.reload(true)
+    } catch (failure) {
+      toast.failed(failure instanceof Error && failure.message ? failure.message : t('location.tripLegFailed'))
+    } finally {
+      setChangingTripLegId(null)
     }
   }
 
@@ -1287,6 +1505,7 @@ function LocationContent({ userId }: { userId: string }) {
             (isPersonUnreadable ? <SettingsEmpty>{t('location.personNotRead')}</SettingsEmpty> : <Loading />)}
           {canReadHistory && !visitPage && visits.loading && <Loading />}
           <ErrorMessage error={pauses.error} />
+          <ErrorMessage error={trips.error} />
           {visitPage && timelineRows.length === 0 && (pauseList !== null || Boolean(pauses.error)) && (
             <SettingsEmpty>
               {dayKey
@@ -1315,7 +1534,68 @@ function LocationContent({ userId }: { userId: string }) {
                     )}
                   </div>
                 )}
-                {row.kind === 'pause' ? (
+                {row.kind === 'trip' ? (
+                  <div className="location-row location-trip">
+                    {row.trip.legs.map((leg) => (
+                      <div key={leg.id} className="location-trip-leg">
+                        <span className="location-row-icon">
+                          <TravelModeIcon travelMode={leg.travelMode} />
+                        </span>
+                        <span className="location-row-body">
+                          <span>
+                            <strong>{travelModeName(leg.travelMode)}</strong>{' '}
+                            <span className="muted">
+                              {travelDistanceText(leg.distanceMeters, language)} ·{' '}
+                              {durationText(leg.durationSeconds, t)}
+                            </span>
+                            {leg.isTravelModeCorrected && (
+                              <>
+                                {' '}
+                                <Tag value={t('location.travelModeCorrected')} />
+                              </>
+                            )}
+                          </span>
+                        </span>
+                        {!isReadOnly && (
+                          <MenuButton
+                            className="icon-action"
+                            label={t('location.tripLegMenu', { mode: travelModeName(leg.travelMode) })}
+                            icon={<MoreIcon size={16} />}
+                            disabled={changingTripLegId === leg.id}
+                            render={(close) => (
+                              <>
+                                {TRAVEL_MODES.map((travelMode) => (
+                                  <button
+                                    key={travelMode}
+                                    type="button"
+                                    role="menuitem"
+                                    aria-current={leg.travelMode === travelMode || undefined}
+                                    onClick={() => {
+                                      close()
+                                      void changeTravelMode(leg, travelMode)
+                                    }}
+                                  >
+                                    {travelModeName(travelMode)}
+                                  </button>
+                                ))}
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    close()
+                                    void changeTravelMode(leg, null)
+                                  }}
+                                >
+                                  {t('location.travelModeAsDetected', { mode: travelModeName(leg.detectedTravelMode) })}
+                                </button>
+                              </>
+                            )}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : row.kind === 'pause' ? (
                   <div className="location-row">
                     <span className="location-row-icon">
                       <PauseIcon size={16} />
@@ -1456,6 +1736,82 @@ function LocationContent({ userId }: { userId: string }) {
             </div>
           )}
           <p className="muted location-credit">{t('location.credit')}</p>
+        </SettingsSection>
+      )}
+
+      {tab === 'travel' && (
+        <SettingsSection
+          card
+          title={viewedPerson ? t('location.personTravel', { name: viewedName }) : t('location.travel')}
+          description={t('location.travelHint')}
+          action={
+            <div className="segmented" role="group" aria-label={t('location.travelPeriods')}>
+              {TRAVEL_PERIODS.map((candidate) => (
+                <button
+                  key={candidate}
+                  type="button"
+                  className={travelPeriod === candidate ? 'active' : ''}
+                  aria-pressed={travelPeriod === candidate}
+                  onClick={() => selectTravelPeriod(candidate)}
+                >
+                  {t(TRAVEL_PERIOD_KEYS[candidate])}
+                </button>
+              ))}
+            </div>
+          }
+        >
+          <ErrorMessage error={travelTotals.error} />
+          {viewedPerson && !canReadHistory && <SettingsEmpty>{notSharedHistoryText}</SettingsEmpty>}
+          {isPersonPending &&
+            (isPersonUnreadable ? <SettingsEmpty>{t('location.personNotRead')}</SettingsEmpty> : <Loading />)}
+          {canReadHistory && !travelTotalList && travelTotals.loading && <Loading />}
+          {travelTotalList && travelTable.rows.length === 0 && (
+            <SettingsEmpty>{t('location.travelEmpty')}</SettingsEmpty>
+          )}
+          {travelTable.rows.length > 0 && (
+            <div className="table-wrap">
+              <table className="numbers-table">
+                <thead>
+                  <tr>
+                    <th>{t('location.travelPeriodColumn')}</th>
+                    {travelTable.modes.map((travelMode) => (
+                      <th key={travelMode} className="numeric">
+                        {travelModeName(travelMode)}
+                      </th>
+                    ))}
+                    <th className="numeric">{t('location.travelTotal')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {travelTable.rows.map((each) => (
+                    <tr key={each.periodStartDay}>
+                      <th scope="row">{travelPeriodText(each.periodStartDay)}</th>
+                      {travelTable.modes.map((travelMode) => (
+                        <td key={travelMode} className="numeric">
+                          {each.distances[travelMode] ? travelDistanceText(each.distances[travelMode], language) : '-'}
+                        </td>
+                      ))}
+                      <td className="numeric">{travelDistanceText(each.totalMeters, language)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {canReadHistory && (
+            <div className="list-foot location-travel-paging">
+              <button type="button" onClick={() => selectTravelPage(travelPageIndex + 1)}>
+                {t('location.travelPrevious')}
+              </button>
+              <button
+                type="button"
+                disabled={travelPageIndex === 0}
+                onClick={() => selectTravelPage(travelPageIndex - 1)}
+              >
+                {t('location.travelNext')}
+              </button>
+            </div>
+          )}
         </SettingsSection>
       )}
 

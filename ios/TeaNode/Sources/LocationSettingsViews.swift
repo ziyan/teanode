@@ -48,6 +48,7 @@ struct LocationSettingsView: View {
                     "TeaNode notes where you stop and when you leave, even when the app is closed. Turned off, it records nothing new. What is already recorded stays until you erase it.")
             }
             pauseSection
+            motionSection
             Section {
                 Button(role: .destructive) {
                     isConfirmingErase = true
@@ -131,6 +132,31 @@ struct LocationSettingsView: View {
                 if recorder.hasPendingPauseChange {
                     Text("The server has not been told yet. TeaNode keeps trying.")
                 }
+            }
+        }
+    }
+
+    /// Whether Motion & Fitness is on, which tells walking, running, cycling
+    /// and driving apart for the trips between visits, with a way to ask for
+    /// it or to open Settings. Left out on a device that cannot tell.
+    @ViewBuilder
+    private var motionSection: some View {
+        if recorder.isMotionAvailable {
+            Section {
+                LabeledContent(String(localized: "Motion & Fitness")) {
+                    Text(recorder.isMotionAuthorized ? LocalizedStringKey("On") : LocalizedStringKey("Off"))
+                }
+                if recorder.isMotionUndecided {
+                    Button(String(localized: "Allow Motion & Fitness"), systemImage: "figure.walk.motion") {
+                        recorder.askForMotionAuthorization()
+                    }
+                    .actionColor()
+                } else if !recorder.isMotionAuthorized {
+                    Button(String(localized: "Open Settings"), systemImage: "gearshape") { Self.openSettings() }
+                        .actionColor()
+                }
+            } footer: {
+                Text("Tells walking, running, cycling and driving apart, so the trips between your visits show how you got there. Without it, the way of travel is guessed from speed.")
             }
         }
     }

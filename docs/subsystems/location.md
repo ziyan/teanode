@@ -435,6 +435,74 @@ line, and the agent's `location_path` answers the number of positions, the first
 and last time, the distance travelled in kilometers and up to 60 positions
 evenly spread, with `is_truncated` saying some were left out.
 
+## Trips and ways of travel
+
+A trip is the travel from leaving one visit to arriving at the next, and a leg
+is a part of a trip with one way of travel: walk, run, bike, car, bus, train,
+boat or plane (`docs/planning/location-travel-execplan.md` has the reasons).
+
+- **What they come from.** The visits, the positions and the phone's motion
+  activity (table `motion_activity`: what iOS's Core Motion said the person
+  was doing from a moment on, sent with `ReportLocation` as `activities` when
+  the person allowed Motion & Fitness). Package `internal/travel` builds them
+  and knows nothing of the database: the path is the first visit, the
+  positions between (an accuracy worse than 500 m is dropped when better ones
+  exist, and a jump faster than 300 m/s), then the next visit; less than
+  150 m is no trip. Motion activity cuts the trip into legs where the way
+  changes (walking, running, cycling, automotive), merging a leg under a
+  minute or 100 m into its neighbor. With motion activity for less than half
+  of the trip, the trip is one leg guessed from its average speed (up to
+  2.2 m/s walk, 5 bike, 75 car, faster plane). A leg of 100 km or more at
+  55 m/s or more is a plane whatever the phone said. Bus, train and boat are
+  never detected; they come from corrections.
+- **When they are built.** Trips are derived, stored in `trip` and
+  `trip_leg`, and built again by package `internal/travel/rebuild`: after each
+  report, around each run of the times it carries (positions, visit arrivals
+  and departures, motion activity, and the arrival of a visit it completed; a
+  run has no gap of over two days, so a report of two distant days does not
+  rebuild the days between), after a check-in, after a place is forgotten or
+  history is erased, and once at start for the days before trips existed
+  (`trip_backfill` says who is done). A rebuild starts at the departure of the
+  person's latest visit that departed before the first time (a day before when
+  there is none), so that a trip whose departure was long before the report,
+  such as after a phone that was off for 30 hours, is built; it ends six hours
+  after the last time. It reads visits up to the first arrival after the
+  window (at most 30 days on), and every position of the window, a page at a
+  time. Visits more than 30 days apart are no trip (`MaximumTripDuration`). A
+  report with a position, a visit time or a motion activity more than 400 days
+  old is refused; the phone drops that one entry.
+- **Ids stay.** A rebuild keeps the id of a stored trip that starts at the
+  same instant as the one built, and of its leg that starts at the same
+  instant as a built leg, and writes nothing for a trip that came out the
+  same (times, visits and legs, distances to the meter), so that an id the
+  person was just shown still works.
+- **Forgetting and erasing.** Erasing history erases the trips that overlap
+  the range (a trip that began before it and ended inside it too), the motion
+  activity and the corrections that started in it. Afterwards, and after a
+  place is forgotten, the trips left without a visit at one end are built
+  again, and so is each edge of the range, so the visits beside what went are
+  joined by the trip between them.
+- **Corrections.** The person corrects a leg (`SetTripLegTravelMode`); the
+  correction is kept apart, as a span of time with a way
+  (`travel_mode_correction`), and a leg takes the correction that covers half
+  of it or more. A new correction takes its span out of older ones that
+  overlap it: what an older correction said about the time outside the span
+  still holds (it is shortened, or split in two). A rebuild keeps corrections;
+  taking one back returns the detected way.
+- **Totals.** `ListTravelTotals` sums the distance and time of legs by the
+  period they started in (day, week from Monday, month, year) in the
+  traveler's time zone, at most 400 periods at a time. `ListTrips` leaves out
+  trips that began more than 30 days before the range (no trip lasts that
+  long), so it does not look through all earlier history.
+- **Who sees them.** Trips and totals are seen at the history share level,
+  like the day's path; only the person corrects their own. Someone it is
+  shared with sees the places at the ends as a list of visits shows them,
+  without the radius and the owner's other records of the place.
+- **Where.** The dashboard's day list (a row between visits, a menu per leg
+  on one's own) and Travel tab; the iPhone's day list and Travel screen; the
+  command line `teanode location trips`, `travel` and `travel-mode`; the
+  location tool's `trips`, `travel_totals` and `travel_mode`.
+
 ## Photos taken during a visit
 
 `ListLocationVisits` adds `photoCount` and `photos` to each of the caller's
