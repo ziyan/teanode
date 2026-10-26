@@ -225,30 +225,33 @@ func (self *Agent) runShoppingPicture(ctx context.Context, run *Run) error {
 	if len(offered) == 0 {
 		return markSearched()
 	}
+	// Without a model to choose a page and look at its picture, no picture
+	// is set: a wrong picture is worse than none.
+	if !self.canThink(run.Configuration()) || self.settings.Registry == nil {
+		return markSearched()
+	}
 	order := make([]int, 0, len(offered))
-	if self.canThink(run.Configuration()) && self.settings.Registry != nil {
-		var resultsText strings.Builder
-		for index, result := range offered {
-			fmt.Fprintf(&resultsText, "result %d: %s\n%s\n%s\n\n", index+1, result.Title, result.URL, result.Description)
-		}
-		prompt, err := render("shopping_picture.txt", map[string]any{
-			"Item":    fenced(item.ItemDescription + "\n" + item.ItemDetails + "\nstore: " + item.StoreName),
-			"Results": fenced(resultsText.String()),
-		})
-		if err != nil {
-			return err
-		}
-		thinking, err := self.thinkAbout(ctx, run, "Finding a picture of "+item.ItemDescription, prompt, nil, noTools, 1,
-			models.AgentJobShoppingPicture, config.AgentWorkScan)
-		if err != nil {
-			return err
-		}
-		answer := readModelAnswer[shoppingPictureAnswer](thinking.Text, "resultNumber")
-		if answer.IsValid && answer.Value.ResultNumber >= 1 && answer.Value.ResultNumber <= len(offered) {
-			order = append(order, answer.Value.ResultNumber-1)
-		} else if answer.IsValid && answer.Value.ResultNumber == 0 {
-			return markSearched()
-		}
+	var resultsText strings.Builder
+	for index, result := range offered {
+		fmt.Fprintf(&resultsText, "result %d: %s\n%s\n%s\n\n", index+1, result.Title, result.URL, result.Description)
+	}
+	prompt, err := render("shopping_picture.txt", map[string]any{
+		"Item":    fenced(item.ItemDescription + "\n" + item.ItemDetails + "\nstore: " + item.StoreName),
+		"Results": fenced(resultsText.String()),
+	})
+	if err != nil {
+		return err
+	}
+	thinking, err := self.thinkAbout(ctx, run, "Finding a picture of "+item.ItemDescription, prompt, nil, noTools, 1,
+		models.AgentJobShoppingPicture, config.AgentWorkScan)
+	if err != nil {
+		return err
+	}
+	answer := readModelAnswer[shoppingPictureAnswer](thinking.Text, "resultNumber")
+	if answer.IsValid && answer.Value.ResultNumber >= 1 && answer.Value.ResultNumber <= len(offered) {
+		order = append(order, answer.Value.ResultNumber-1)
+	} else if answer.IsValid && answer.Value.ResultNumber == 0 {
+		return markSearched()
 	}
 	for index := range offered {
 		if len(order) == 0 || order[0] != index {
@@ -266,6 +269,13 @@ func (self *Agent) runShoppingPicture(ctx context.Context, run *Run) error {
 		}
 		image, err := fetcher.FetchImage(ctx, page.ImageURL)
 		if err != nil {
+			continue
+		}
+		isMatch, err := self.isShoppingPictureOfItem(ctx, run, item, offered[index], image)
+		if err != nil {
+			return err
+		}
+		if !isMatch {
 			continue
 		}
 		pictureFileId := "shopping-picture-" + item.ID + "-" + strconv.FormatInt(time.Now().UnixNano(), 10)
@@ -299,6 +309,42 @@ func (self *Agent) runShoppingPicture(ctx context.Context, run *Run) error {
 		return nil
 	}
 	return markSearched()
+}
+
+// shoppingPictureCheckAnswer is the model's word on a fetched picture.
+type shoppingPictureCheckAnswer struct {
+	IsMatch bool `json:"isMatch"`
+}
+
+// isShoppingPictureOfItem shows the model a picture fetched for an item and
+// says whether it is a clear picture of that item. A page's picture is often
+// not its product: a recipe's dish, a store's aisle, a site's banner or a
+// stock photo of groceries. An answer the model did not give plainly counts
+// as no.
+func (self *Agent) isShoppingPictureOfItem(ctx context.Context, run *Run, item *models.ShoppingItem, page websearch.Result, image *linkpreview.Image) (bool, error) {
+	prompt, err := render("shopping_picture_check.txt", map[string]any{
+		"Item": fenced(item.ItemDescription + "\n" + item.ItemDetails + "\nstore: " + item.StoreName + storeBrandNote(item)),
+		"Page": fenced(page.Title + "\n" + page.URL),
+	})
+	if err != nil {
+		return false, err
+	}
+	picture := []llm.ContentPart{{Type: "image", MediaType: "image/jpeg", Data: image.Content}}
+	thinking, err := self.thinkAbout(ctx, run, "Checking a picture of "+item.ItemDescription, prompt, picture, noTools, 1,
+		models.AgentJobShoppingPicture, config.AgentWorkScan)
+	if err != nil {
+		return false, err
+	}
+	answer := readModelAnswer[shoppingPictureCheckAnswer](thinking.Text, "isMatch")
+	return answer.IsValid && answer.Value.IsMatch, nil
+}
+
+// storeBrandNote says an item is a store's own product, for the check.
+func storeBrandNote(item *models.ShoppingItem) string {
+	if item.IsStoreBrand {
+		return " (the store's own brand)"
+	}
+	return ""
 }
 
 // shoppingImportAnswer is a list read by the model.

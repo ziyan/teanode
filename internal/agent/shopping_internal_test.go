@@ -1,12 +1,17 @@
 package agent
 
 import (
+	"bytes"
+	"image"
+	"image/jpeg"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent/tools/websearch"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/linkpreview"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/push"
 )
@@ -145,5 +150,31 @@ func TestAShoppingNoticeIsClaimedOncePerInterval(t *testing.T) {
 	}
 	if !notices.claim("arrival one", time.Hour, now.Add(2*time.Hour)) {
 		t.Error("the notice was refused after its interval")
+	}
+}
+
+// A picture found for an item is kept only when the model, shown it, says
+// plainly that it is the item: a no, or an answer it did not give plainly,
+// keeps no picture, since a wrong picture is worse than none.
+func TestAShoppingPictureIsKeptOnlyWhenTheModelSeesTheItem(t *testing.T) {
+	fixture, model := receiptJobFixture(t, `{"isMatch": true}`, `{"isMatch": false}`, `It might be the peas.`)
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 8, 8)), nil); err != nil {
+		t.Fatal(err)
+	}
+	item := &models.ShoppingItem{ItemDescription: "Frozen petite peas", StoreName: "Example Market"}
+	page := websearch.Result{Title: "Petite peas", URL: "https://shop.example.com/peas"}
+	picture := &linkpreview.Image{Content: encoded.Bytes(), WidthPixels: 8, HeightPixels: 8}
+	for attempt, want := range []bool{true, false, false} {
+		isMatch, err := fixture.worker.isShoppingPictureOfItem(t.Context(), fixture.run(), item, page, picture)
+		if err != nil {
+			t.Fatalf("attempt %d: %s", attempt, err)
+		}
+		if isMatch != want {
+			t.Fatalf("attempt %d: isMatch %v, want %v", attempt, isMatch, want)
+		}
+	}
+	if len(model.prompts) != 3 || !strings.Contains(model.prompts[0], "image") || !strings.Contains(model.prompts[0], "Frozen petite peas") {
+		t.Fatalf("the model was not shown the picture with the item: %d prompts", len(model.prompts))
 	}
 }
