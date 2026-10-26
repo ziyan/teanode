@@ -38,6 +38,16 @@
   --bad: #dc2626;
   --warn: #d97706;
 
+  /* How a day felt, from awful to great, in the Journal: a blue for the low
+     end, a gray for okay and the leaf's greens for the high end. Never a
+     verdict (red and green mean good and bad elsewhere); a mood is a
+     reading, so none of them is the color of a warning. */
+  --mood-1: #2f4b8f;
+  --mood-2: #6f8cc9;
+  --mood-3: #a3a39b;
+  --mood-4: #94bb5c;
+  --mood-5: #4f7a1f;
+
   /* Spacing, on an 8px unit. Quarter steps below one unit, half steps above;
      anything between these is drift, not a finer scale.
        1  icon and label pairs, chip to chip
@@ -120,6 +130,11 @@
     --good: #4ade80;
     --bad: #f87171;
     --warn: #fbbf24;
+    --mood-1: #7c9be6;
+    --mood-2: #a9bde8;
+    --mood-3: #8a8a92;
+    --mood-4: #b5d68a;
+    --mood-5: #9fca63;
   }
 }
 
@@ -142,6 +157,11 @@
   --good: #4ade80;
   --bad: #f87171;
   --warn: #fbbf24;
+  --mood-1: #7c9be6;
+  --mood-2: #a9bde8;
+  --mood-3: #8a8a92;
+  --mood-4: #b5d68a;
+  --mood-5: #9fca63;
 }
 
 * {
