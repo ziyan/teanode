@@ -223,6 +223,7 @@ func (self *dayReader) readDocuments() error {
 	// assistant, directory and title, from its first stretch to its last.
 	sessionIndexes := map[string]int{}
 	lastStretches := map[string]*models.AgentDocument{}
+	stretchStarts := map[string][]time.Time{}
 	shipped := map[string][]Shipped{}
 	for _, document := range documents {
 		source := self.sources[document.SourceID]
@@ -232,6 +233,7 @@ func (self *dayReader) readDocuments() error {
 		if assistant := codingAssistantOf(document); assistant != "" {
 			session := codingSessionOf(document, assistant)
 			key := session.Assistant + "\x00" + session.Directory + "\x00" + session.Title
+			stretchStarts[key] = append(stretchStarts[key], *document.HappenedAt)
 			index, isKnown := sessionIndexes[key]
 			if !isKnown {
 				sessionIndexes[key] = len(self.day.CodingSessions)
@@ -295,12 +297,37 @@ func (self *dayReader) readDocuments() error {
 		if minutes, isFound := postClockSpan(chunks); isFound {
 			session.EndedAt = last.HappenedAt.Add(time.Duration(minutes) * time.Minute)
 		}
+		session.Spans = stretchSpans(stretchStarts[key], *last.HappenedAt, session.EndedAt)
 	}
 	sort.SliceStable(self.day.CodingSessions, func(left, right int) bool {
 		return self.day.CodingSessions[left].StartedAt.Before(self.day.CodingSessions[right].StartedAt)
 	})
 	self.day.WorkProjects = workProjects(self.day.CodingSessions, shipped)
 	return self.readJournalNotes()
+}
+
+// stretchGapMost is the longest a stretch is taken to have lasted when only
+// its start is read: a stretch ends at a pause of half an hour.
+const stretchGapMost = 30 * time.Minute
+
+// stretchSpans is when each stretch of a session was worked: from its start
+// to the next one's, or half an hour at most, and the last one (lastStart)
+// to the session's end, which its transcript says.
+func stretchSpans(starts []time.Time, lastStart, end time.Time) [][2]time.Time {
+	sort.Slice(starts, func(left, right int) bool { return starts[left].Before(starts[right]) })
+	spans := make([][2]time.Time, 0, len(starts))
+	for index, start := range starts {
+		if start.Equal(lastStart) {
+			spans = append(spans, [2]time.Time{start, end})
+			continue
+		}
+		stop := start.Add(stretchGapMost)
+		if index+1 < len(starts) && starts[index+1].Before(stop) {
+			stop = starts[index+1]
+		}
+		spans = append(spans, [2]time.Time{start, stop})
+	}
+	return spans
 }
 
 func codingSessionOf(document *models.AgentDocument, assistant string) CodingSession {

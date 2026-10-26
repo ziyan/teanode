@@ -39,6 +39,17 @@ type WorkProject struct {
 	// the project (with what was done in it) names; empty for a project that
 	// only has pull requests.
 	DocumentID string
+
+	// spans are its stretches, which ActiveMinutes is added up from with
+	// overlaps counted once.
+	spans [][2]time.Time
+}
+
+func sessionSpans(session CodingSession) [][2]time.Time {
+	if len(session.Spans) > 0 {
+		return session.Spans
+	}
+	return [][2]time.Time{{session.StartedAt, session.EndedAt}}
 }
 
 // Shipped is a pull request, merge request or commit of the day.
@@ -112,7 +123,7 @@ func workProjects(sessions []CodingSession, shipped map[string][]Shipped) []Work
 		if session.EndedAt.After(project.LastAt) {
 			project.LastAt = session.EndedAt
 		}
-		project.ActiveMinutes += minutesBetween(session.StartedAt, session.EndedAt)
+		project.spans = append(project.spans, sessionSpans(session)...)
 		project.StretchCount += session.StretchCount
 		if session.Title != "" && !containsFold(project.Topics, session.Title) && !strings.EqualFold(session.Title, name) {
 			project.Topics = append(project.Topics, session.Title)
@@ -131,6 +142,9 @@ func workProjects(sessions []CodingSession, shipped map[string][]Shipped) []Work
 		if requests[len(requests)-1].HappenedAt.After(project.LastAt) {
 			project.LastAt = requests[len(requests)-1].HappenedAt
 		}
+	}
+	for index := range projects {
+		projects[index].ActiveMinutes = minutesOfUnion(projects[index].spans)
 	}
 	sort.SliceStable(projects, func(left, right int) bool { return projects[left].FirstAt.Before(projects[right].FirstAt) })
 	return projects

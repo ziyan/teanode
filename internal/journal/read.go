@@ -175,6 +175,11 @@ type CodingSession struct {
 	// half an hour) the day had in this project and title; DocumentID is the
 	// first one's.
 	StretchCount int
+
+	// Spans are when each stretch was worked, which the time worked is added
+	// up from: the time from the first stretch to the last also holds the
+	// pauses between them.
+	Spans [][2]time.Time
 }
 
 // Document is an ingested document of the day that involves the person: work
