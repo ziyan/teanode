@@ -112,7 +112,8 @@ struct JournalRecordRow: View {
 }
 
 /// JournalNarrativeView is what the agent wrote, in the writing face, with
-/// each record it mentions as its title in bold, which opens the record.
+/// each record it mentions in bold, as the words the story wrote for it or its
+/// title, which opens the record.
 struct JournalNarrativeView: View {
     let narrative: JournalNarrative
     let open: (JournalRecord) -> Void
@@ -148,8 +149,8 @@ struct JournalNarrativeView: View {
             switch piece {
             case .words(let words):
                 result.append(AttributedString(words))
-            case .mention(let record):
-                var mention = AttributedString(record.title)
+            case .mention(let record, let words):
+                var mention = AttributedString(words.isEmpty ? record.title : words)
                 // A record the app has no screen for is only its title.
                 if JournalRecordOpening.of(record: record).isOpenable {
                     mention.inlinePresentationIntent = .stronglyEmphasized

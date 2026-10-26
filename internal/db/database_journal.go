@@ -1159,14 +1159,16 @@ const journalSearchWindowCharacters = 160
 // journalSearchRows is every day and every period of a person that has
 // something to search in, with the texts in the order a snippet is taken
 // from them: the person's words, their touched-up version, the agent's
-// narrative. A narrative is searched and quoted without its [[kind:id]]
-// mentions, which are identifiers and would match a search for "mail".
+// narrative. A narrative is searched and quoted with each mention's words in
+// place of the mention ([[kind:id|words]] reads "words"): its reference is an
+// identifier, and would match a search for "mail". The bar is optional as
+// {0,1}, since the query's placeholders are question marks.
 const journalSearchRows = `SELECT 'day' AS "target_kind", to_char("day", 'YYYY-MM-DD') AS "start_day", "headline",
-		"words" AS "own_text", coalesce("touched_up_words", '') AS "touched_up_text", regexp_replace("narrative", '\[\[[^]]*\]\]', '', 'g') AS "narrative"
-	FROM "journal_day" WHERE "user_id" = @user AND ("words" ILIKE @pattern OR coalesce("touched_up_words", '') ILIKE @pattern OR "headline" ILIKE @pattern OR regexp_replace("narrative", '\[\[[^]]*\]\]', '', 'g') ILIKE @pattern)
+		"words" AS "own_text", coalesce("touched_up_words", '') AS "touched_up_text", regexp_replace("narrative", '\[\[[^]|]*\|{0,1}([^]]*)\]\]', '\1', 'g') AS "narrative"
+	FROM "journal_day" WHERE "user_id" = @user AND ("words" ILIKE @pattern OR coalesce("touched_up_words", '') ILIKE @pattern OR "headline" ILIKE @pattern OR regexp_replace("narrative", '\[\[[^]|]*\|{0,1}([^]]*)\]\]', '\1', 'g') ILIKE @pattern)
 	UNION ALL
-	SELECT "period_kind", to_char("period_start", 'YYYY-MM-DD'), "headline", "looking_back", coalesce("touched_up_looking_back", ''), regexp_replace("narrative", '\[\[[^]]*\]\]', '', 'g')
-	FROM "journal_period" WHERE "user_id" = @user AND ("looking_back" ILIKE @pattern OR coalesce("touched_up_looking_back", '') ILIKE @pattern OR "headline" ILIKE @pattern OR regexp_replace("narrative", '\[\[[^]]*\]\]', '', 'g') ILIKE @pattern)`
+	SELECT "period_kind", to_char("period_start", 'YYYY-MM-DD'), "headline", "looking_back", coalesce("touched_up_looking_back", ''), regexp_replace("narrative", '\[\[[^]|]*\|{0,1}([^]]*)\]\]', '\1', 'g')
+	FROM "journal_period" WHERE "user_id" = @user AND ("looking_back" ILIKE @pattern OR coalesce("touched_up_looking_back", '') ILIKE @pattern OR "headline" ILIKE @pattern OR regexp_replace("narrative", '\[\[[^]|]*\|{0,1}([^]]*)\]\]', '\1', 'g') ILIKE @pattern)`
 
 // escapeLikePattern makes a text match only itself in LIKE and ILIKE, where
 // a backslash is the escape character unless told otherwise.

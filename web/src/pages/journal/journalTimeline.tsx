@@ -195,12 +195,23 @@ function TimelineToolbar({ searched, onSearch }: { searched: string; onSearch: (
 }
 
 // plainSummary is the first paragraph of a narrative as words, each mention
-// replaced by the title of what it points at.
+// replaced by the words the story wrote for it, or the title of what it points
+// at; one the reader can no longer see by nothing.
 function plainSummary(period: JournalPeriod | null): string {
   if (!period || period.narrative.narrative.trim() === '') return ''
-  const titles = new Map(period.narrative.references.map((reference) => [reference.reference, reference.title]))
+  const titles = new Map(
+    period.narrative.references
+      .filter((reference) => !reference.isUnavailable)
+      .map((reference) => [reference.reference, reference.title]),
+  )
   const first = narrativeParagraphs(period.narrative.narrative)[0] ?? []
-  return first.map((piece) => (piece.isReference ? (titles.get(piece.reference) ?? '') : piece.text)).join('')
+  return first
+    .map((piece) => {
+      if (!piece.isReference) return piece.text
+      const title = titles.get(piece.reference)
+      return title === undefined ? '' : piece.words || title
+    })
+    .join('')
 }
 
 type Week = { weekStart: string; days: JournalDaySummary[] }

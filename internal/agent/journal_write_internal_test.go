@@ -219,6 +219,12 @@ func TestAnAnswerNamingARecordNotInTheDayIsRefused(t *testing.T) {
 		"a reference standing between two sentences": func(answer *journalDayAnswer) {
 			answer.Narrative = "You met Ben for lunch. [[calendar_occurrence:event1@2026-10-22T12:00:00Z]] Then you fixed a chart."
 		},
+		"a mention whose words are a sentence of their own": func(answer *journalDayAnswer) {
+			answer.Narrative = "You read [[mail:mail1|" + strings.Repeat("the budget for the dock ", 5) + "]] after lunch."
+		},
+		"a mention whose words run over two lines": func(answer *journalDayAnswer) {
+			answer.Narrative = "You read [[mail:mail1|the budget\nfor the dock]] after lunch."
+		},
 		"a reference after the last sentence": func(answer *journalDayAnswer) {
 			answer.Narrative = "You met Ben for lunch.\n\nYou read the budget. [[mail:mail1]]"
 		},
@@ -234,6 +240,14 @@ func TestAnAnswerNamingARecordNotInTheDayIsRefused(t *testing.T) {
 	// name goes.
 	if _, err := checkJournalDayAnswer(&journalDayAnswer{Headline: "x", Narrative: "You had lunch.\n\n[[mail:mail1]] asked you to decide. Then [[agent_document:doc1]] took the afternoon."}, input); err != nil {
 		t.Errorf("mentions inside sentences were refused: %s", err)
+	}
+	// A mention carries the words its sentence shows, and is still the record it names.
+	writing, err = checkJournalDayAnswer(&journalDayAnswer{Headline: "x", Narrative: "You answered [[mail:mail1|Ben's budget question]] before lunch."}, input)
+	if err != nil || !strings.Contains(writing.Narrative, "[[mail:mail1|Ben's budget question]]") {
+		t.Errorf("a mention with its words: %v", err)
+	}
+	if _, err := checkJournalDayAnswer(&journalDayAnswer{Headline: "x", Narrative: "You read [[mail:invented|a letter]]."}, input); err == nil {
+		t.Error("a mention with words of a record not in the day was accepted")
 	}
 	_, err = checkJournalDayAnswer(&journalDayAnswer{Headline: "x", Narrative: "See [[mail:invented]] and [[photo:photo9]]."}, input)
 	if err == nil || !strings.Contains(err.Error(), "mail:invented, photo:photo9") {

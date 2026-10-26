@@ -88,15 +88,15 @@ export function RecordKindIcon({ recordKind, size = 14 }: { recordKind: string; 
   }
 }
 
-// RecordMention is a mention in the narrative: the record's title, in bold
-// inside the sentence and linking to the record, as on the iPhone. It wraps
-// with the words around it: drawn as a box, a long title became a boxed
-// paragraph of its own. A path that is not one of the dashboard's own is not
-// followed.
-export function RecordMention({ record }: { record: JournalRecord }) {
+// RecordMention is a mention in the narrative: the words the story wrote for
+// the record, or its title when it wrote none, in bold inside the sentence and
+// linking to the record, as on the iPhone. It wraps with the words around it:
+// drawn as a box, a long title became a boxed paragraph of its own. A path
+// that is not one of the dashboard's own is not followed.
+export function RecordMention({ record, words }: { record: JournalRecord; words: string }) {
   return (
     <RecordLink className="journal-mention" to={record.dashboardPath}>
-      {record.title}
+      {words || record.title}
     </RecordLink>
   )
 }
@@ -112,7 +112,7 @@ export function NarrativeText({ narrative }: { narrative: JournalNarrative }) {
             if (!piece.isReference) return piece.text
             const reference = references.get(piece.reference)
             if (reference && !reference.isUnavailable && isDashboardPath(reference.dashboardPath)) {
-              return <RecordMention key={pieceIndex} record={reference} />
+              return <RecordMention key={pieceIndex} record={reference} words={piece.words} />
             }
             // A record that is gone, or no longer the reader's, is its kind
             // in plain words.

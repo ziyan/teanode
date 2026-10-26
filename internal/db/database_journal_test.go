@@ -817,6 +817,15 @@ func TestJournalSearchFindsDaysAndPeriods(t *testing.T) {
 			t.Errorf("a search with no match: %d", totalCount)
 		}
 
+		// A mention's words are searched and quoted in its place; its reference is not.
+		must(tx.PutJournalNarrative(ada.ID, models.JournalTarget{Day: "2026-03-06"}, journalTestZone, models.JournalNarrativeWriting{Headline: "Paperwork", Narrative: "Ada read [[mail:m1|the lease letter]] at noon, and [[photo:p1]] later.", InputDigest: "d"}, journalTestAt(8)))
+		if hits, totalCount, _ = tx.SearchJournal(ada.ID, "lease letter", 0, 10); totalCount != 1 || hits[0].Snippet != "Ada read the lease letter at noon, and later." {
+			t.Errorf("a search for a mention's words: %q of %d", hits[0].Snippet, totalCount)
+		}
+		if _, totalCount, _ = tx.SearchJournal(ada.ID, "mail:m1", 0, 10); totalCount != 0 {
+			t.Errorf("a reference was searched: %d", totalCount)
+		}
+
 		// A touched-up text is searched too, and the snippet comes from it when the original has no match.
 		target := models.JournalTarget{Day: "2026-03-05"}
 		must(tx.RequestJournalTouchUp(ada.ID, target, journalTestZone, nil, journalTestAt(9)))

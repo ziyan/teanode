@@ -794,12 +794,15 @@ export const MOMENT_LIMIT = 12
 
 // the narrative
 
-export type NarrativePiece = { isReference: false; text: string } | { isReference: true; reference: string }
+// A mention carries the words its sentence shows for it, [[kind:id|words]],
+// or none, [[kind:id]], when the record's title stands in.
+export type NarrativePiece =
+  { isReference: false; text: string } | { isReference: true; reference: string; words: string }
 
-const REFERENCE = /\[\[([a-z_]+:[^\]\s][^\]]*)\]\]/g
+const REFERENCE = /\[\[([a-z_]+:[^\]\s|][^\]|]*)(?:\|([^\]]*))?\]\]/g
 
 // narrativeParagraphs splits a narrative at its blank lines, and each
-// paragraph into the words and the [[kind:id]] mentions in them.
+// paragraph into the words and the mentions in them.
 export function narrativeParagraphs(narrative: string): NarrativePiece[][] {
   return narrative
     .split(/\n\s*\n/)
@@ -810,7 +813,7 @@ export function narrativeParagraphs(narrative: string): NarrativePiece[][] {
       let last = 0
       for (const match of paragraph.matchAll(REFERENCE)) {
         if (match.index > last) pieces.push({ isReference: false, text: paragraph.slice(last, match.index) })
-        pieces.push({ isReference: true, reference: match[1] })
+        pieces.push({ isReference: true, reference: match[1], words: (match[2] ?? '').trim() })
         last = match.index + match[0].length
       }
       if (last < paragraph.length) pieces.push({ isReference: false, text: paragraph.slice(last) })

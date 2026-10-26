@@ -27,8 +27,9 @@ var journalMoodWords = []string{"awful", "low", "okay", "good", "great"}
 // journalDayPattern is what looks like a day, to tell a day from words.
 var journalDayPattern = regexp.MustCompile(`^\d{4}-\d{1,2}-\d{1,2}$`)
 
-// journalReferencePattern is a record in a narrative: [[kind:id]].
-var journalReferencePattern = regexp.MustCompile(`\[\[([a-z_]+):([^\[\]]+)\]\]`)
+// journalReferencePattern is a record in a narrative: [[kind:id|words]], or
+// [[kind:id]], which shows the record's title.
+var journalReferencePattern = regexp.MustCompile(`\[\[([a-z_]+):([^\[\]|]+)(?:\|([^\[\]]*))?\]\]`)
 
 // NewJournalCommand is `teanode journal`: one page for each day, written by
 // you and by your agent together. A day links to everything that happened in
@@ -470,9 +471,10 @@ func journalExcerpt(text string, characters int) string {
 	return strings.TrimRight(string([]rune(text)[:characters-1]), " ,;:.") + "…"
 }
 
-// journalNarrativeText is a narrative with each [[kind:id]] replaced by the
-// title of the record, from the references the server resolved. A record the
-// reader cannot see any more is said so, and the words around it still read.
+// journalNarrativeText is a narrative with each mention replaced by the words
+// the story wrote for it, or by the title of the record when it wrote none,
+// from the references the server resolved. A record the reader cannot see any
+// more is said so, and the words around it still read.
 func journalNarrativeText(narrative string, references []*client.JournalRecordView) string {
 	titles := map[string]string{}
 	for _, reference := range references {
@@ -483,10 +485,16 @@ func journalNarrativeText(narrative string, references []*client.JournalRecordVi
 	}
 	return journalReferencePattern.ReplaceAllStringFunc(narrative, func(match string) string {
 		parts := journalReferencePattern.FindStringSubmatch(match)
-		if title, isKnown := titles[parts[1]+":"+parts[2]]; isKnown {
-			return title
+		title, isKnown := titles[parts[1]+":"+parts[2]]
+		if !isKnown {
+			return "a record you can no longer see"
 		}
-		return "a record you can no longer see"
+		// The words the story wrote for it read best in its sentence; a record
+		// the reader can no longer see shows neither.
+		if words := strings.TrimSpace(parts[3]); words != "" {
+			return words
+		}
+		return title
 	})
 }
 

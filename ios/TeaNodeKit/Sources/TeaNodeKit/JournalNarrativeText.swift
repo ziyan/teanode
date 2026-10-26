@@ -1,16 +1,18 @@
 import Foundation
 
 // A narrative is a few paragraphs separated by blank lines, in which a record
-// the agent mentions is written [[kind:id]]. The server answers each mention
-// beside the narrative (its title and where it opens), and the screen draws
-// the mention as the record's title, which opens the record where the app has
-// a screen for it.
+// the agent mentions is written [[kind:id|the words its sentence shows]], or
+// [[kind:id]]. The server answers each mention beside the narrative (its title
+// and where it opens), and the screen draws the mention as its words, or the
+// record's title when it has none, which opens the record where the app has a
+// screen for it.
 
 /// JournalNarrativePiece is a piece of a paragraph: plain words, or a mention
-/// of a record.
+/// of a record with the words the story wrote for it (empty when it wrote
+/// none, for the title to stand in).
 public enum JournalNarrativePiece: Hashable, Sendable {
     case words(String)
-    case mention(JournalRecord)
+    case mention(JournalRecord, words: String)
 }
 
 /// JournalNarrativeText reads a narrative into paragraphs of pieces.
@@ -35,12 +37,15 @@ public enum JournalNarrativeText {
         var rest = Substring(paragraph)
         while let open = rest.range(of: "[[") {
             guard let close = rest[open.upperBound...].range(of: "]]") else { break }
-            let reference = String(rest[open.upperBound..<close.lowerBound])
+            let inside = rest[open.upperBound..<close.lowerBound]
+            let bar = inside.firstIndex(of: "|")
+            let reference = String(inside[inside.startIndex..<(bar ?? inside.endIndex)])
+            let mentionWords = bar.map { String(inside[inside.index(after: $0)...]).trimmingCharacters(in: .whitespaces) } ?? ""
             let before = String(rest[rest.startIndex..<open.lowerBound])
             if isReference(reference) {
                 if !before.isEmpty { pieces.append(.words(before)) }
                 if let record = recordsByReference[reference], !record.isUnavailable, !record.title.isEmpty {
-                    pieces.append(.mention(record))
+                    pieces.append(.mention(record, words: mentionWords))
                 }
                 rest = rest[close.upperBound...]
             } else {

@@ -58,7 +58,7 @@ const NARRATIVE: JournalNarrative = {
   ...NO_NARRATIVE,
   headline: 'Release day',
   narrative:
-    'A release day. You worked on the [[agent_document:doc-1]] and kept a [[photo:gone-1]] from the walk.\n\nYou slept 6 h 10 min.',
+    'A release day. You worked on the [[agent_document:doc-1]] and kept a [[photo:gone-1|a picture of the pier]] from the walk.\n\nYou slept 6 h 10 min.',
   references: [
     {
       recordKind: 'agent_document',
@@ -333,7 +333,7 @@ it('lists the days newest first in weeks, with the summary of a finished week an
         narrative: {
           ...NO_NARRATIVE,
           headline: 'A week that bent around one day.',
-          narrative: 'Harbor shipped on Thursday after the [[agent_document:doc-1]].',
+          narrative: 'Harbor shipped on Thursday after the [[agent_document:doc-1|release review]].',
           references: NARRATIVE.references,
         },
       }),
@@ -354,7 +354,7 @@ it('lists the days newest first in weeks, with the summary of a finished week an
   expect(screen.queryByRole('heading', { level: 3, name: 'October 26' })).toBeNull()
   // The finished week is asked for to head its days. The week that holds today is read once,
   // for the card of the week so far, and not for a summary it has no story for.
-  await waitFor(() => expect(screen.getByText(/Harbor shipped on Thursday after the Release branch/)).toBeTruthy())
+  await waitFor(() => expect(screen.getByText(/Harbor shipped on Thursday after the release review\./)).toBeTruthy())
   expect(screen.getByText('A week that bent around one day.')).toBeTruthy()
   const weekCalls = calls('ReadJournalPeriod')
     .map(([, variables]) => variables as { periodKind: string; day: string })
@@ -490,7 +490,8 @@ it('shows the sections of a day, each with something to show, and the narrative 
   expect(screen.getByText('Partly cloudy, at Home')).toBeTruthy()
   // The person's own words.
   expect(screen.getByText('shipped the release. nothing broke.')).toBeTruthy()
-  // A mention the reader can open is a link with the record's title; one that is gone is plain words.
+  // A mention the reader can open is a link with the record's title; one that is gone is its kind in
+  // plain words, never the words the story wrote for it.
   const mention = screen
     .getAllByRole('link', { name: 'Release branch for the sample app' })
     .find((link) => link.className.includes('journal-mention'))
