@@ -120,7 +120,7 @@ extension Documents {
         """
     public static let setJournalWords = """
         mutation ($day: String!, $words: String!, $baseModifiedAt: DateTime) {
-          SetJournalWords(day: $day, words: $words, baseModifiedAt: $baseModifiedAt) { day }
+          SetJournalWords(day: $day, words: $words, baseModifiedAt: $baseModifiedAt) { day words { modifiedAt } }
         }
         """
     public static let setJournalMood = """
@@ -130,7 +130,9 @@ extension Documents {
         """
     public static let setJournalLookingBack = """
         mutation ($periodKind: String!, $day: String!, $lookingBack: String!, $baseModifiedAt: DateTime) {
-          SetJournalLookingBack(periodKind: $periodKind, day: $day, lookingBack: $lookingBack, baseModifiedAt: $baseModifiedAt) { periodStart }
+          SetJournalLookingBack(periodKind: $periodKind, day: $day, lookingBack: $lookingBack, baseModifiedAt: $baseModifiedAt) {
+            periodStart lookingBack { modifiedAt }
+          }
         }
         """
     public static let touchUpJournalWords = """
@@ -230,25 +232,31 @@ extension Connection {
 
     // MARK: Writing
 
-    /// Saves the person's original words for a day or a period. baseModifiedAt
-    /// is the modifiedAt the words were read with, sent back as it came: a
-    /// save over somebody else's since is refused.
-    public func setJournalWords(for target: JournalTarget, words: String, baseModifiedAt: String?) async throws {
+    /// Saves the person's original words for a day or a period, and answers
+    /// the time they were saved at, which the next save sends as its base.
+    /// baseModifiedAt is the modifiedAt the words were read with, sent back as
+    /// it came: a save over somebody else's since is refused.
+    @discardableResult
+    public func setJournalWords(for target: JournalTarget, words: String, baseModifiedAt: String?) async throws -> String? {
+        struct Stamp: Decodable, Sendable { let modifiedAt: String? }
         struct Answer: Decodable, Sendable {
-            struct Saved: Decodable, Sendable {}
-            let SetJournalWords: Saved?
-            let SetJournalLookingBack: Saved?
+            struct SavedDay: Decodable, Sendable { let words: Stamp? }
+            struct SavedPeriod: Decodable, Sendable { let lookingBack: Stamp? }
+            let SetJournalWords: SavedDay?
+            let SetJournalLookingBack: SavedPeriod?
         }
         var variables = target.variables
         variables["baseModifiedAt"] = baseModifiedAt.map { JSONValue.string($0) } ?? JSONValue.null
+        let answer: Answer
         switch target {
         case .day:
             variables["words"] = .string(words)
-            _ = try await execute(Documents.setJournalWords, variables: variables, as: Answer.self)
+            answer = try await execute(Documents.setJournalWords, variables: variables, as: Answer.self)
         case .period:
             variables["lookingBack"] = .string(words)
-            _ = try await execute(Documents.setJournalLookingBack, variables: variables, as: Answer.self)
+            answer = try await execute(Documents.setJournalLookingBack, variables: variables, as: Answer.self)
         }
+        return answer.SetJournalWords?.words?.modifiedAt ?? answer.SetJournalLookingBack?.lookingBack?.modifiedAt
     }
 
     /// Sets a day's mood; nil clears it. moodWords is sent only when given.

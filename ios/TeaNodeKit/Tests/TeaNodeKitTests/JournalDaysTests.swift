@@ -102,6 +102,18 @@ final class JournalDaysTests: XCTestCase {
         XCTAssertFalse(JournalPolling.shouldRead(isPending: false, attemptCount: 0))
     }
 
+    func testTheEveningQuestionTimeIsHoursAndMinutes() {
+        XCTAssertEqual(JournalEveningTime.parts(of: "21:30")?.hour, 21)
+        XCTAssertEqual(JournalEveningTime.parts(of: "21:30")?.minute, 30)
+        XCTAssertEqual(JournalEveningTime.parts(of: "9:05")?.hour, 9)
+        XCTAssertNil(JournalEveningTime.parts(of: "24:00"))
+        XCTAssertNil(JournalEveningTime.parts(of: "21:75"))
+        XCTAssertNil(JournalEveningTime.parts(of: "evening"))
+        XCTAssertNil(JournalEveningTime.parts(of: "21"))
+        XCTAssertEqual(JournalEveningTime.text(hour: 9, minute: 5), "09:05")
+        XCTAssertEqual(JournalEveningTime.parts(of: JournalEveningTime.defaultText)?.hour, 21)
+    }
+
     func testAMoodLevelIsOneToFive() {
         XCTAssertEqual(JournalMoodLevel.allCases.map(\.rawValue), [1, 2, 3, 4, 5])
         XCTAssertEqual(JournalMoodLevel(moodLevel: 4), .good)

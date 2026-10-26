@@ -184,6 +184,29 @@ extension JournalDays {
     }
 }
 
+// MARK: The evening question
+
+/// JournalEveningTime is the time of day the evening question is asked, which
+/// the server writes HH:MM in the person's zone.
+public enum JournalEveningTime {
+    public static let defaultText = "21:00"
+
+    /// The hour and minute a time is written as; nil for text that is not a
+    /// time of day.
+    public static func parts(of text: String) -> (hour: Int, minute: Int)? {
+        let pieces = text.split(separator: ":", omittingEmptySubsequences: false)
+        guard pieces.count == 2, pieces[0].count <= 2, pieces[1].count == 2, let hour = Int(pieces[0]), let minute = Int(pieces[1]),
+            (0...23).contains(hour), (0...59).contains(minute)
+        else { return nil }
+        return (hour, minute)
+    }
+
+    /// The time the server takes: two digits each.
+    public static func text(hour: Int, minute: Int) -> String {
+        String(format: "%02d:%02d", hour, minute)
+    }
+}
+
 // MARK: Money
 
 /// JournalMoney turns the server's minor units (cents) into an amount.

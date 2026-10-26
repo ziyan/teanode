@@ -144,8 +144,10 @@ final class JournalTests: XCTestCase {
     // MARK: Writing
 
     func testSavingWordsSendsTheTimeTheyWereReadAtExactlyAsItCame() async throws {
-        let (connection, fake) = try connection(answering: #"{"data":{"SetJournalWords":{"day":"2026-10-22"}}}"#)
-        try await connection.setJournalWords(for: .day("2026-10-22"), words: "New words.", baseModifiedAt: "2026-10-22T22:48:03.123456789Z")
+        let (connection, fake) = try connection(answering: #"{"data":{"SetJournalWords":{"day":"2026-10-22","words":{"modifiedAt":"2026-10-22T23:01:00.5Z"}}}}"#)
+        let savedAt = try await connection.setJournalWords(for: .day("2026-10-22"), words: "New words.", baseModifiedAt: "2026-10-22T22:48:03.123456789Z")
+        // The time the save made is what the next save is based on.
+        XCTAssertEqual(savedAt, "2026-10-22T23:01:00.5Z")
         let request = try XCTUnwrap(fake.sent.first)
         let sent = try variables(of: request)
         XCTAssertEqual(sent["day"] as? String, "2026-10-22")
@@ -162,8 +164,9 @@ final class JournalTests: XCTestCase {
     }
 
     func testLookingBackIsSavedForThePeriodContainingTheDay() async throws {
-        let (connection, fake) = try connection(answering: #"{"data":{"SetJournalLookingBack":{"periodStart":"2026-10-19"}}}"#)
-        try await connection.setJournalWords(for: .period(.week, containing: "2026-10-22"), words: "Too much desk.", baseModifiedAt: nil)
+        let (connection, fake) = try connection(answering: #"{"data":{"SetJournalLookingBack":{"periodStart":"2026-10-19","lookingBack":{"modifiedAt":"2026-10-25T20:00:00Z"}}}}"#)
+        let savedAt = try await connection.setJournalWords(for: .period(.week, containing: "2026-10-22"), words: "Too much desk.", baseModifiedAt: nil)
+        XCTAssertEqual(savedAt, "2026-10-25T20:00:00Z")
         let request = try XCTUnwrap(fake.sent.first)
         let sent = try variables(of: request)
         XCTAssertEqual(sent["periodKind"] as? String, "week")
