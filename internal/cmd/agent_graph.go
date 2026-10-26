@@ -1008,7 +1008,7 @@ func runAgentGraphMerge(ctx context.Context, command *cli.Command) error {
 }
 
 // recordReferenceUsage says how a record is named on the command line.
-const recordReferenceUsage = "kind:id, with kind one of contact, mail, calendar_event, reminder, conversation_message, finance_transaction, finance_receipt or recording_passage; a passage is recording_passage:<recording id>@<start ms>-<end ms>"
+const recordReferenceUsage = "kind:id, with kind one of contact, mail, calendar_event, reminder, conversation_message, finance_transaction, finance_receipt, recording_passage, photo, place_visit, agent_document, chat_message, recording, calendar_occurrence, health_day, note, idea or goal; a passage is recording_passage:<recording id>@<start ms>-<end ms>, an occurrence calendar_occurrence:<event id>@<start, RFC 3339> and a Health day health_day:<type>@<YYYY-MM-DD>"
 
 func runAgentGraphLink(ctx context.Context, command *cli.Command) error {
 	if reference := command.String("record"); reference != "" {

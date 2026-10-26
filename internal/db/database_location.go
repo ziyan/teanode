@@ -156,6 +156,10 @@ type LocationOperation interface {
 	// it, or answers nil when there is none.
 	EndOpenPlaceVisit(userId string, at time.Time) (*models.PlaceVisit, error)
 
+	// GetPlaceVisit is one of the person's visits with its place, or nil when
+	// they have no such visit.
+	GetPlaceVisit(userId, visitId string) (*models.PlaceVisit, error)
+
 	// ListPlaceVisits pages visits newest first, each with its place.
 	// nextOffset is as in ListPlaces.
 	ListPlaceVisits(userId string, filter PlaceVisitFilter) (visits []*models.PlaceVisit, nextOffset int, err error)
@@ -1750,6 +1754,26 @@ func (self *transaction) GetPlaceVisitByClientKey(userId, clientVisitKey string)
 		return nil, err
 	}
 	visit := found.toModel()
+	places, err := self.loadPlacesById([]string{visit.PlaceID})
+	if err != nil {
+		return nil, err
+	}
+	visit.Place = places[visit.PlaceID]
+	return visit, nil
+}
+
+func (self *transaction) GetPlaceVisit(userId, visitId string) (*models.PlaceVisit, error) {
+	if userId == "" || visitId == "" {
+		return nil, nil
+	}
+	var rows []placeVisitModel
+	if err := self.tx.Where(`"user_id" = ? AND "id" = ?`, userId, visitId).Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	visit := rows[0].toModel()
 	places, err := self.loadPlacesById([]string{visit.PlaceID})
 	if err != nil {
 		return nil, err

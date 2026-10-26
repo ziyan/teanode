@@ -128,6 +128,26 @@ func ResolveRecord(transaction db.Transaction, reader Reader, recordKind models.
 		err = resolveFinanceReceipt(transaction, reader, resolved)
 	case models.RecordRecordingPassage:
 		err = resolveRecording(transaction, reader, resolved, detail, startMS, endMS)
+	case models.RecordPhoto:
+		err = resolvePhoto(transaction, reader, resolved)
+	case models.RecordPlaceVisit:
+		err = resolvePlaceVisit(transaction, reader, resolved)
+	case models.RecordAgentDocument:
+		err = resolveAgentDocument(transaction, reader, resolved)
+	case models.RecordChatMessage:
+		err = resolveChatMessage(transaction, reader, resolved)
+	case models.RecordRecording:
+		err = resolveWholeRecording(transaction, reader, resolved)
+	case models.RecordCalendarOccurrence:
+		err = resolveCalendarOccurrence(transaction, reader, resolved)
+	case models.RecordHealthDay:
+		err = resolveHealthDay(transaction, reader, resolved)
+	case models.RecordNote:
+		err = resolveNote(transaction, reader, resolved)
+	case models.RecordIdea:
+		err = resolveIdea(transaction, reader, resolved)
+	case models.RecordGoal:
+		err = resolveGoal(transaction, reader, resolved)
 	default:
 		return nil, fmt.Errorf("recordlink: %q is not a kind of record", recordKind)
 	}
