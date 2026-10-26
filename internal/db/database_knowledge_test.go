@@ -629,3 +629,35 @@ func TestEveryWordFindsOnlyPassagesWithAllTheWords(test *testing.T) {
 		}
 	})
 }
+
+// The ends of documents are their first and last chunk each, and the one
+// chunk of a document of one, read for many documents at once.
+func TestTheEndsOfDocumentsAreTheirFirstAndLastChunks(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		source := knowledgeSource(test, tx)
+		long := knowledgeDocument(test, tx, source, "posts/dev/general.jsonl#long")
+		short := knowledgeDocument(test, tx, source, "posts/dev/general.jsonl#short")
+		chunks := []*models.AgentChunk{}
+		for number, text := range []string{"first post", "middle post", "last post"} {
+			chunks = append(chunks, &models.AgentChunk{Number: number, Text: text})
+		}
+		if err := tx.ReplaceAgentChunks(long, chunks); err != nil {
+			test.Fatal(err)
+		}
+		ends, err := tx.ListAgentChunkEnds(source.AgentID, []string{long.ID, short.ID})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if got := ends[long.ID]; len(got) != 2 || got[0].Text != "first post" || got[1].Text != "last post" {
+			test.Errorf("the ends of a document of three chunks: %+v", got)
+		}
+		if got := ends[short.ID]; len(got) != 1 {
+			test.Errorf("a document of one chunk has it once: %+v", got)
+		}
+		if empty, err := tx.ListAgentChunkEnds(source.AgentID, nil); err != nil || len(empty) != 0 {
+			test.Errorf("no documents: %v, %v", empty, err)
+		}
+	})
+}

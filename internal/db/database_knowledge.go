@@ -138,6 +138,12 @@ type KnowledgeOperation interface {
 	GetAgentChunks(agentId string, chunkIds []string) ([]*models.AgentChunk, error)
 	ListAgentChunks(agentId, documentId string) ([]*models.AgentChunk, error)
 
+	// ListAgentChunkEnds is the first and the last chunk of each of these
+	// documents (one chunk for a document of one), in two reads for all of
+	// them: what says when a stretch of work began and ended, without its
+	// whole transcript.
+	ListAgentChunkEnds(agentId string, documentIds []string) (map[string][]*models.AgentChunk, error)
+
 	// HasAgentChunks says whether a document has any passages: whether
 	// anything was read out of it.
 	HasAgentChunks(agentId, documentId string) (bool, error)
@@ -935,6 +941,28 @@ func (self *transaction) HasAgentChunks(agentId, documentId string) (bool, error
 
 func (self *transaction) ListAgentChunks(agentId, documentId string) ([]*models.AgentChunk, error) {
 	return self.chunksFrom(self.tx.Where(`"agent_id" = ? AND "document_id" = ?`, agentId, documentId).Order(`"number" ASC`))
+}
+
+func (self *transaction) ListAgentChunkEnds(agentId string, documentIds []string) (map[string][]*models.AgentChunk, error) {
+	ends := map[string][]*models.AgentChunk{}
+	if len(documentIds) == 0 {
+		return ends, nil
+	}
+	for _, order := range []string{"ASC", "DESC"} {
+		chunks, err := self.chunksFrom(self.tx.Raw(`SELECT DISTINCT ON ("document_id") * FROM "agent_chunk"
+			WHERE "agent_id" = ? AND "document_id" IN ? ORDER BY "document_id", "number" `+order, agentId, documentIds))
+		if err != nil {
+			return nil, err
+		}
+		for _, chunk := range chunks {
+			known := ends[chunk.DocumentID]
+			if len(known) == 1 && known[0].ID == chunk.ID {
+				continue
+			}
+			ends[chunk.DocumentID] = append(known, chunk)
+		}
+	}
+	return ends, nil
 }
 
 // SearchAgentChunks finds chunks by words.
