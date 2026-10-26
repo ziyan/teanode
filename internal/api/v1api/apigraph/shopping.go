@@ -341,6 +341,10 @@ type RemoveShoppingItemsArguments struct {
 type CheckShoppingItemArguments struct {
 	ShoppingItemID string `json:"shoppingItemId"`
 	IsChecked      bool   `json:"isChecked"`
+
+	// The store being shopped, for the trip checking starts when the person
+	// has none open; the item's store by default
+	StoreName string `json:"storeName" graphapi:"nullable"`
 }
 
 type SetShoppingItemNeedArguments struct {
@@ -386,7 +390,9 @@ type StartShoppingArguments struct {
 }
 
 type FinishShoppingArguments struct {
-	ShoppingTripID string `json:"shoppingTripId"`
+	// The trip to end; leave out to end the caller's own open trip, or, with
+	// none open, to buy what they put in the cart all the same
+	ShoppingTripID string `json:"shoppingTripId" graphapi:"nullable"`
 }
 
 type DecideShoppingReceiptMatchArguments struct {
@@ -1070,7 +1076,14 @@ func (self *graph) CheckShoppingItem(ctx context.Context, arguments CheckShoppin
 		return nil, err
 	}
 	tx := self.transaction(ctx)
-	item, err := tx.CheckShoppingItem(user.ID, arguments.ShoppingItemID, arguments.IsChecked)
+	item, startedTrip, err := tx.CheckShoppingItem(user.ID, arguments.ShoppingItemID, arguments.IsChecked, arguments.StoreName)
+	if err == nil && startedTrip != nil {
+		self.announceShopping(tx, startedTrip.ShoppingListIDs)
+		if notifier := self.phoneNotifier(); notifier != nil {
+			detached := context.WithoutCancel(ctx)
+			tx.AfterCommit(func() { notifier.NotifyShoppingStarted(detached, user, startedTrip) })
+		}
+	}
 	return self.changedShoppingItem(tx, item, err)
 }
 

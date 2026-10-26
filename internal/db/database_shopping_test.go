@@ -186,24 +186,30 @@ func TestAShoppingTripBuysWhatItsShopperPutInTheCart(t *testing.T) {
 			&models.ShoppingItem{ItemDescription: "Cookie kit", StoreName: "Example Market"},
 		)
 	})
-	var trip *models.ShoppingTrip
+	var trip, ownTrip *models.ShoppingTrip
 	world.run(t, func(tx db.Transaction) {
 		var err error
 		if trip, _, err = tx.StartShoppingTrip(world.sam.ID, "Example Market", []string{list.ID}); err != nil {
 			t.Fatalf("StartShoppingTrip: %s", err)
 		}
-		if _, err := tx.CheckShoppingItem(world.sam.ID, items[0].ID, true); err != nil {
+		// sam is shopping already, so checking starts nothing new.
+		if _, started, err := tx.CheckShoppingItem(world.sam.ID, items[0].ID, true, ""); err != nil || started != nil {
+			t.Fatalf("sam's check: %+v %v", started, err)
+		}
+		// The owner put bread in the cart without starting: that started
+		// their trip, at the bread's store.
+		if _, ownTrip, err = tx.CheckShoppingItem(world.owner.ID, items[1].ID, true, ""); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := tx.CheckShoppingItem(world.owner.ID, items[1].ID, true); err != nil {
-			t.Fatal(err)
+		if ownTrip == nil || ownTrip.StoreName != "Example Market" || !slices.Equal(ownTrip.ShoppingListIDs, []string{list.ID}) {
+			t.Fatalf("checking did not start the owner's trip: %+v", ownTrip)
 		}
 		marked, err := tx.SetShoppingItemOutOfStock(world.sam.ID, items[2].ID, true, "")
 		if err != nil || marked.OutOfStockAt == nil || marked.OutOfStockStoreName != "Example Market" || marked.OutOfStockByName != "sam" {
 			t.Fatalf("out of stock: %+v %v", marked, err)
 		}
 		open, err := tx.ListOpenShoppingTrips(world.owner.ID)
-		if err != nil || len(open) != 1 || open[0].ShopperUsername != "sam" {
+		if err != nil || len(open) != 2 || !slices.ContainsFunc(open, func(each *models.ShoppingTrip) bool { return each.ShopperUsername == "sam" }) {
 			t.Fatalf("the owner does not see sam shopping: %+v %v", open, err)
 		}
 		if _, _, err := tx.FinishShoppingTrip(world.owner.ID, trip.ID); !errors.Is(err, db.ErrNotFound) {
@@ -222,13 +228,6 @@ func TestAShoppingTripBuysWhatItsShopperPutInTheCart(t *testing.T) {
 		}
 	})
 	// The owner's trip, left open seven hours, is finished by sam's next one.
-	var ownTrip *models.ShoppingTrip
-	world.run(t, func(tx db.Transaction) {
-		var err error
-		if ownTrip, _, err = tx.StartShoppingTrip(world.owner.ID, "", []string{list.ID}); err != nil {
-			t.Fatal(err)
-		}
-	})
 	dbtest.Exec(t, world.database, `UPDATE "shopping_trip" SET "started_at" = now() - interval '7 hours' WHERE "id" = '`+ownTrip.ID+`'`)
 	world.run(t, func(tx db.Transaction) {
 		_, bought, err := tx.StartShoppingTrip(world.sam.ID, "Example Market", []string{list.ID})
@@ -241,6 +240,62 @@ func TestAShoppingTripBuysWhatItsShopperPutInTheCart(t *testing.T) {
 		bread, _ := tx.GetShoppingItem(world.owner.ID, items[1].ID)
 		if bread.ShoppingItemState != models.ShoppingItemStateNotNeeded {
 			t.Fatalf("the bread in a stale trip's cart was not bought: %+v", bread)
+		}
+	})
+}
+
+// Done needs no trip and no receipt: putting something in the cart starts
+// the person's trip, and a second list joins it; Done with no trip named
+// buys the cart, and still buys a cart whose trip ended under it.
+func TestDoneBuysTheCartWithoutAStartedTrip(t *testing.T) {
+	t.Parallel()
+	world := newShoppingWorld(t)
+	var groceries, party *models.ShoppingList
+	var milk, plates *models.ShoppingItem
+	world.run(t, func(tx db.Transaction) {
+		groceries = mustCreateShoppingList(t, tx, world.owner.ID, "Groceries")
+		party = mustCreateShoppingList(t, tx, world.owner.ID, "Party supplies")
+		milk = mustAddShoppingItems(t, tx, world.owner.ID, groceries.ID, &models.ShoppingItem{ItemDescription: "Milk"})[0]
+		plates = mustAddShoppingItems(t, tx, world.owner.ID, party.ID, &models.ShoppingItem{ItemDescription: "Paper plates"})[0]
+	})
+	world.run(t, func(tx db.Transaction) {
+		_, started, err := tx.CheckShoppingItem(world.owner.ID, milk.ID, true, "Example Market")
+		if err != nil || started == nil || started.StoreName != "Example Market" {
+			t.Fatalf("the first check did not start a trip at the store given: %+v %v", started, err)
+		}
+		if _, again, err := tx.CheckShoppingItem(world.owner.ID, plates.ID, true, ""); err != nil || again != nil {
+			t.Fatalf("the second check started another trip: %+v %v", again, err)
+		}
+		open, err := tx.ListOpenShoppingTrips(world.owner.ID)
+		if err != nil || len(open) != 1 || len(open[0].ShoppingListIDs) != 2 {
+			t.Fatalf("the trip did not gain the second list: %+v %v", open, err)
+		}
+		finished, bought, err := tx.FinishShoppingTrip(world.owner.ID, "")
+		if err != nil || finished.FinishedAt == nil || len(bought) != 2 {
+			t.Fatalf("Done with no trip named: %+v %v %v", finished, bought, err)
+		}
+		if _, _, err := tx.FinishShoppingTrip(world.owner.ID, ""); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Fatalf("Done with nothing in the cart: %v", err)
+		}
+	})
+	// A cart whose trip ended under it is still bought by Done.
+	world.run(t, func(tx db.Transaction) {
+		if _, err := tx.SetShoppingItemNeed(world.owner.ID, milk.ID, true, ""); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := tx.CheckShoppingItem(world.owner.ID, milk.ID, true, ""); err != nil {
+			t.Fatal(err)
+		}
+	})
+	dbtest.Exec(t, world.database, `UPDATE "shopping_trip" SET "finished_at" = now() WHERE "finished_at" IS NULL`)
+	world.run(t, func(tx db.Transaction) {
+		finished, bought, err := tx.FinishShoppingTrip(world.owner.ID, "")
+		if err != nil || !slices.Equal(bought, []string{groceries.ID}) || !slices.Equal(finished.ShoppingListIDs, []string{groceries.ID}) {
+			t.Fatalf("Done did not buy a cart with no trip: %+v %v %v", finished, bought, err)
+		}
+		boughtMilk, _ := tx.GetShoppingItem(world.owner.ID, milk.ID)
+		if boughtMilk.ShoppingItemState != models.ShoppingItemStateNotNeeded || boughtMilk.LastBoughtAt == nil {
+			t.Fatalf("the milk was not bought: %+v", boughtMilk)
 		}
 	})
 }

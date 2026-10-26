@@ -28,11 +28,10 @@ import {
   ShoppingItem,
   ShoppingList,
   ShoppingTrip,
-  startShopping,
 } from './shoppingApi'
 import { ShoppingImportDialog } from './shoppingImportDialog'
 import { ShoppingItemDialog, ShoppingItemDialogTarget } from './shoppingItemDialog'
-import { ShoppingItemTable } from './shoppingItemTable'
+import { ShoppingItemGrid, ShoppingItemTable } from './shoppingItemTable'
 import {
   countShoppingTabs,
   isPositiveNumber,
@@ -46,7 +45,8 @@ import {
   ShoppingTab,
   uploadAgentAttachment,
 } from './shoppingItems'
-import { useShoppingLayout } from './shoppingLayout'
+import { ShoppingPaneBack, useShoppingLayout } from './shoppingLayout'
+import { ShoppingViewSwitch, useShoppingView } from './shoppingView'
 import { ShoppingShareDialog } from './shoppingShareDialog'
 import { useShoppingEvents } from './useShoppingEvents'
 
@@ -78,7 +78,7 @@ type Opened =
   | { dialogKind: 'deleteList' }
   | { dialogKind: 'removeItem'; shoppingItem: ShoppingItem }
   | { dialogKind: 'needAgain'; shoppingItem: ShoppingItem }
-  | { dialogKind: 'startShopping' }
+  | { dialogKind: 'shopAtStore' }
 
 export function ShoppingListPage() {
   const { shoppingListId = '' } = useParams()
@@ -120,6 +120,10 @@ export function ShoppingListPage() {
 
   const openTrips = (content.data?.shoppingTrips ?? []).filter((trip) => trip.finishedAt === null)
   const ownTrip = openTrips.find((trip) => trip.userId === session.userId) ?? null
+  const hasOwnCart = shoppingItems.some(
+    (item) => item.shoppingItemState === 'in_cart' && item.cartedByUserId === session.userId,
+  )
+  const [shoppingView, chooseShoppingView] = useShoppingView()
 
   async function reloadAll() {
     reloadShoppingLists()
@@ -212,8 +216,9 @@ export function ShoppingListPage() {
   return (
     <>
       <ErrorMessage error={content.error} />
-      <section className="card shopping-list-card" aria-label={shoppingList.listName}>
+      <section className="shopping-list-card" aria-label={shoppingList.listName}>
         <div className="shopping-list-head">
+          <ShoppingPaneBack />
           <div className="shopping-list-summary">
             <p className="muted">{ownerLine}</p>
             {openTrips.map((trip) => (
@@ -249,24 +254,25 @@ export function ShoppingListPage() {
         </div>
 
         <div className="page-actions shopping-list-actions">
-          {ownTrip ? (
-            <>
-              <button
-                type="button"
-                disabled={isBusy}
-                onClick={() => void act(() => finishShopping(ownTrip.id), t('shopping.shoppingDone'))}
-              >
-                {t('shopping.doneShopping')}
-              </button>
-              {ownTrip.storeName ? (
-                <Link className="button" to={shoppingStoreAddress(ownTrip.storeName, ownTrip.shoppingListIds)}>
-                  {t('shopping.openStore', { storeName: ownTrip.storeName })}
-                </Link>
-              ) : null}
-            </>
+          {/* There is no starting: the first item put in the cart starts
+              the person's trip and tells the others. Done shows once there
+              is something to buy, and needs no receipt. */}
+          {ownTrip || hasOwnCart ? (
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={() => void act(() => finishShopping(ownTrip?.id), t('shopping.shoppingDone'))}
+            >
+              {t('shopping.doneShopping')}
+            </button>
+          ) : null}
+          {ownTrip?.storeName ? (
+            <Link className="button" to={shoppingStoreAddress(ownTrip.storeName, ownTrip.shoppingListIds)}>
+              {t('shopping.openStore', { storeName: ownTrip.storeName })}
+            </Link>
           ) : (
-            <button type="button" disabled={isBusy} onClick={() => setOpened({ dialogKind: 'startShopping' })}>
-              {t('shopping.startShopping')}
+            <button type="button" disabled={isBusy} onClick={() => setOpened({ dialogKind: 'shopAtStore' })}>
+              {t('shopping.shopAtStore')}
             </button>
           )}
           <button type="button" disabled={isBusy} onClick={() => setOpened({ dialogKind: 'import' })}>
@@ -301,10 +307,23 @@ export function ShoppingListPage() {
           </button>
         </div>
 
-        <Tabs items={tabs} active={tab} onSelect={selectTab} />
+        <div className="shopping-tabs-row">
+          <Tabs items={tabs} active={tab} onSelect={selectTab} />
+          <ShoppingViewSwitch shoppingView={shoppingView} onChoose={chooseShoppingView} />
+        </div>
 
         {tabItems.length === 0 ? (
           <SettingsEmpty>{t(EMPTY_TAB_WORDS[tab])}</SettingsEmpty>
+        ) : shoppingView === 'pictures' ? (
+          <ShoppingItemGrid
+            shoppingItems={shownItems}
+            tab={tab}
+            isBusy={isBusy}
+            onCheck={(shoppingItem, isChecked) => void act(() => checkShoppingItem(shoppingItem.id, isChecked))}
+            onEdit={(shoppingItem) => setOpened({ dialogKind: 'item', target: { shoppingItem } })}
+            onRemove={(shoppingItem) => setOpened({ dialogKind: 'removeItem', shoppingItem })}
+            onNeedAgain={(shoppingItem) => setOpened({ dialogKind: 'needAgain', shoppingItem })}
+          />
         ) : (
           <ShoppingItemTable
             shoppingItems={shownItems}
@@ -420,13 +439,10 @@ export function ShoppingListPage() {
           onClose={() => setOpened(null)}
         />
       ) : null}
-      {opened?.dialogKind === 'startShopping' ? (
-        <StartShoppingDialog
+      {opened?.dialogKind === 'shopAtStore' ? (
+        <ShopAtStoreDialog
           shoppingList={shoppingList}
-          onStarted={(trip) => {
-            void reloadAll()
-            navigate(shoppingStoreAddress(trip.storeName, trip.shoppingListIds))
-          }}
+          onChosen={(storeName) => navigate(shoppingStoreAddress(storeName, [shoppingList.id]))}
           onClose={() => setOpened(null)}
         />
       ) : null}
@@ -518,56 +534,40 @@ function NeedAgainDialog({
   )
 }
 
-// StartShoppingDialog picks the store to shop and starts: the others the list
-// reaches are told, and the store's screen opens with this list on it.
-function StartShoppingDialog({
+// ShopAtStoreDialog picks a store and opens its screen with this list on it.
+// Nothing is started: the first item put in the cart there does that.
+function ShopAtStoreDialog({
   shoppingList,
-  onStarted,
+  onChosen,
   onClose,
 }: {
   shoppingList: ShoppingList
-  onStarted: (trip: ShoppingTrip) => void
+  onChosen: (storeName: string) => void
   onClose: () => void
 }) {
   const { t } = useTranslation()
-  const toast = useToast()
   const stores = useQuery(() => listShoppingStores(), [], { refresh: false })
   const [storeName, setStoreName] = useState('')
-  const [isBusy, setIsBusy] = useState(false)
-
-  async function submit() {
-    setIsBusy(true)
-    try {
-      const trip = await startShopping(storeName.trim(), [shoppingList.id])
-      toast.done(t('shopping.shoppingStarted', { storeName: trip.storeName || storeName.trim() }))
-      onStarted({ ...trip, storeName: trip.storeName || storeName.trim() })
-    } catch (caught) {
-      toast.failure(caught, t('shopping.failed'))
-    } finally {
-      setIsBusy(false)
-    }
-  }
 
   return (
     <FormDialog
-      title={t('shopping.startShopping')}
-      submitLabel={t('shopping.startShopping')}
-      busy={isBusy}
+      title={t('shopping.shopAtStore')}
+      submitLabel={t('shopping.openStoreButton')}
       canSubmit={storeName.trim() !== ''}
-      onSubmit={() => void submit()}
+      onSubmit={() => onChosen(storeName.trim())}
       onClose={onClose}
     >
       <ErrorMessage error={stores.error} />
-      <p className="muted">{t('shopping.startShoppingHint', { listName: shoppingList.listName })}</p>
+      <p className="muted">{t('shopping.shopAtStoreHint', { listName: shoppingList.listName })}</p>
       <label>
         {t('shopping.store')}
         <input
           value={storeName}
-          list="shopping-start-store-choices"
+          list="shopping-store-choices"
           placeholder={t('shopping.storePlaceholder')}
           onChange={(event) => setStoreName(event.target.value)}
         />
-        <datalist id="shopping-start-store-choices">
+        <datalist id="shopping-store-choices">
           {(stores.data ?? []).map((store) => (
             <option key={store.storeKey} value={store.storeName} />
           ))}

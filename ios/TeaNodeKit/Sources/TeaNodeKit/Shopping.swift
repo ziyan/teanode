@@ -1124,8 +1124,8 @@ extension Documents {
         mutation ($shoppingItemIds: [String!]!) { RemoveShoppingItems(shoppingItemIds: $shoppingItemIds) }
         """
     public static let checkShoppingItem = """
-        mutation ($shoppingItemId: String!, $isChecked: Boolean!) {
-          CheckShoppingItem(shoppingItemId: $shoppingItemId, isChecked: $isChecked) { \(shoppingItemFields) }
+        mutation ($shoppingItemId: String!, $isChecked: Boolean!, $storeName: String) {
+          CheckShoppingItem(shoppingItemId: $shoppingItemId, isChecked: $isChecked, storeName: $storeName) { \(shoppingItemFields) }
         }
         """
     public static let setShoppingItemNeed = """
@@ -1162,7 +1162,7 @@ extension Documents {
         }
         """
     public static let finishShopping = """
-        mutation ($shoppingTripId: String!) { FinishShopping(shoppingTripId: $shoppingTripId) { \(shoppingTripFields) } }
+        mutation ($shoppingTripId: String) { FinishShopping(shoppingTripId: $shoppingTripId) { \(shoppingTripFields) } }
         """
     public static let matchShoppingReceipt = """
         mutation ($financeReceiptId: String!) { MatchShoppingReceipt(financeReceiptId: $financeReceiptId) }
@@ -1391,13 +1391,15 @@ extension Connection {
             Documents.removeShoppingItems, variables: ["shoppingItemIds": .array(shoppingItemIds.map { .string($0) })], as: Answer.self)
     }
 
-    /// Puts an item in the cart, or back to needed.
+    /// Puts an item in the cart, or back to needed. The first item the person
+    /// puts in the cart starts their trip, at storeName (the item's store
+    /// when empty), and the others the list reaches are told.
     @discardableResult
-    public func checkShoppingItem(shoppingItemId: String, isChecked: Bool) async throws -> ShoppingItem {
+    public func checkShoppingItem(shoppingItemId: String, isChecked: Bool, storeName: String = "") async throws -> ShoppingItem {
         struct Answer: Decodable, Sendable { let CheckShoppingItem: ShoppingItem }
-        return try await execute(
-            Documents.checkShoppingItem, variables: ["shoppingItemId": .string(shoppingItemId), "isChecked": .bool(isChecked)], as: Answer.self
-        ).CheckShoppingItem
+        var variables: [String: JSONValue] = ["shoppingItemId": .string(shoppingItemId), "isChecked": .bool(isChecked)]
+        if !storeName.isEmpty { variables["storeName"] = .string(storeName) }
+        return try await execute(Documents.checkShoppingItem, variables: variables, as: Answer.self).CheckShoppingItem
     }
 
     /// Needs an item again with a count, or marks it not needed.
@@ -1458,13 +1460,15 @@ extension Connection {
         return try await execute(Documents.startShopping, variables: variables, as: Answer.self).StartShopping
     }
 
-    /// Ends a trip: what the person put in the cart is bought.
+    /// Done: what the person put in the cart is bought, no receipt needed.
+    /// With no trip named it ends their own trip, or buys their cart when
+    /// none is open.
     @discardableResult
-    public func finishShopping(shoppingTripId: String) async throws -> ShoppingTrip {
+    public func finishShopping(shoppingTripId: String? = nil) async throws -> ShoppingTrip {
         struct Answer: Decodable, Sendable { let FinishShopping: ShoppingTrip }
-        return try await execute(
-            Documents.finishShopping, variables: ["shoppingTripId": .string(shoppingTripId)], as: Answer.self
-        ).FinishShopping
+        var variables: [String: JSONValue] = [:]
+        if let shoppingTripId, !shoppingTripId.isEmpty { variables["shoppingTripId"] = .string(shoppingTripId) }
+        return try await execute(Documents.finishShopping, variables: variables, as: Answer.self).FinishShopping
     }
 
     // MARK: Receipts

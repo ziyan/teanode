@@ -58,9 +58,8 @@ func NewShoppingCommand() *cli.Command {
 			"  teanode shopping add Groceries Apples Bread --store \"Example Market\"\n" +
 			"  teanode shopping add Groceries --from-file list.txt\n" +
 			"  teanode shopping store \"Example Market\"\n" +
-			"  teanode shopping shop --store \"Example Market\" Groceries\n" +
-			"  teanode shopping check <item id>\n" +
-			"  teanode shopping done <trip id>",
+			"  teanode shopping check --store \"Example Market\" <item id>\n" +
+			"  teanode shopping done",
 		Commands: []*cli.Command{
 			{Name: "lists", Usage: "the lists you reach, yours first, with how many items are needed", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingLists},
 			{
@@ -120,7 +119,11 @@ func NewShoppingCommand() *cli.Command {
 				Action: runShoppingEdit,
 			},
 			{Name: "remove", Usage: "take items off their lists for good; to keep one in the catalog use not-needed", ArgsUsage: "<item id>...", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runShoppingRemove},
-			{Name: "check", Usage: "put items in the cart", ArgsUsage: "<item id>...", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingCheck},
+			{
+				Name: "check", Usage: "put items in the cart; the first one starts your trip and tells the others", ArgsUsage: "<item id>...",
+				Flags:  []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "store", Usage: "the store you are shopping, for the trip the first check starts; the item's store by default"}},
+				Action: runShoppingCheck,
+			},
 			{Name: "uncheck", Usage: "take items out of the cart, back to needed", ArgsUsage: "<item id>...", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingUncheck},
 			{
 				Name: "need", Usage: "need items again, with a count", ArgsUsage: "<item id>...",
@@ -169,7 +172,7 @@ func NewShoppingCommand() *cli.Command {
 				Flags:  []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "store", Usage: "the store; leave out for none in particular"}},
 				Action: runShoppingShop,
 			},
-			{Name: "done", Usage: "finish shopping: what you put in the cart is bought", ArgsUsage: "<trip id>", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingDone},
+			{Name: "done", Usage: "finish shopping: what you put in the cart is bought, no receipt needed", ArgsUsage: "[trip id]", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingDone},
 			{Name: "receipt", Usage: "what a Finance receipt did to your lists", ArgsUsage: "<finance receipt id>", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingReceipt},
 			{Name: "match-receipt", Usage: "match a receipt to your lists again, for one read before the list had its items", ArgsUsage: "<finance receipt id>", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingMatchReceipt},
 			{
@@ -931,13 +934,13 @@ func runShoppingRemove(ctx context.Context, command *cli.Command) error {
 
 func runShoppingCheck(ctx context.Context, command *cli.Command) error {
 	return eachShoppingItem(ctx, command, "usage: teanode shopping check <item id>...", "in the cart:", func(connection *client.Client, shoppingItemId string) (*models.ShoppingItem, error) {
-		return client.CheckShoppingItem(ctx, connection, shoppingItemId, true)
+		return client.CheckShoppingItem(ctx, connection, shoppingItemId, true, strings.TrimSpace(command.String("store")))
 	})
 }
 
 func runShoppingUncheck(ctx context.Context, command *cli.Command) error {
 	return eachShoppingItem(ctx, command, "usage: teanode shopping uncheck <item id>...", "out of the cart:", func(connection *client.Client, shoppingItemId string) (*models.ShoppingItem, error) {
-		return client.CheckShoppingItem(ctx, connection, shoppingItemId, false)
+		return client.CheckShoppingItem(ctx, connection, shoppingItemId, false, "")
 	})
 }
 
@@ -1193,7 +1196,7 @@ func runShoppingShop(ctx context.Context, command *cli.Command) error {
 }
 
 func runShoppingDone(ctx context.Context, command *cli.Command) error {
-	arguments, err := shoppingArguments(command, 1, "usage: teanode shopping done <trip id>; 'teanode shopping trips' lists them")
+	arguments, err := shoppingArguments(command, 0, "usage: teanode shopping done [trip id]")
 	if err != nil {
 		return err
 	}
@@ -1201,9 +1204,14 @@ func runShoppingDone(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	trip, err := client.FinishShopping(ctx, connection, arguments[0])
+	// No trip named ends the person's own, or buys their cart without one.
+	tripId := ""
+	if len(arguments) > 0 {
+		tripId = arguments[0]
+	}
+	trip, err := client.FinishShopping(ctx, connection, tripId)
 	if err != nil {
-		return describeNotFound(command, err, "the trip "+arguments[0])
+		return describeNotFound(command, err, "the trip "+tripId)
 	}
 	return printShoppingDone(command, trip, "finished shopping; what you put in the cart is bought")
 }

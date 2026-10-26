@@ -12,10 +12,9 @@ import TeaNodeKit
 enum ShoppingPlace: Hashable {
     case list(String)
     /// A store, with the lists to start with (all the lists that have items
-    /// there when empty), and whether opening it starts the person's trip:
-    /// it does from "Start shopping" and from the notice at the store, not
-    /// when a store is only looked at, which would tell the household.
-    case store(String, listIds: [String], isStartingTrip: Bool)
+    /// there when empty). Opening it starts nothing: the first item put in
+    /// the cart there starts the person's trip.
+    case store(String, listIds: [String])
 }
 
 /// ShoppingReceiptTarget is a receipt whose effect on the lists a sheet shows.
@@ -256,6 +255,21 @@ final class ShoppingListModel {
         if !isDone { isReminded = previous }
     }
 
+    /// Whether Done has anything to do here: the person has a trip open on
+    /// this list, or has put something on it in the cart.
+    func isShopping(ownUserId: String?) -> Bool {
+        trips.contains { $0.isOpen && $0.userId == ownUserId } || items.contains { $0.isInCart && $0.cartedByUserId == ownUserId }
+    }
+
+    /// Done: what the person put in the cart is bought, no receipt needed.
+    func finish() async {
+        let isDone = await attempt {
+            _ = try await connection.finishShopping()
+            await load()
+        }
+        if isDone { doneText = String(localized: "Done shopping. What you checked off is bought.") }
+    }
+
     /// Reads the stores the lists have items for, to choose one to shop at.
     func loadStores() async {
         stores = (try? await connection.shoppingStores()) ?? stores
@@ -278,8 +292,8 @@ final class ShoppingListModel {
 
 /// ShoppingStoreModel is the screen of shopping one store: the needed items
 /// of the lists included that are for the store or for any store, each a check
-/// to put in the cart, and the person's trip, which starts when the screen
-/// opens and ends with Done.
+/// to put in the cart, and the person's trip, which the server starts when
+/// they put the first item in the cart and which ends with Done.
 @MainActor
 @Observable
 final class ShoppingStoreModel {
@@ -298,19 +312,16 @@ final class ShoppingStoreModel {
     /// The lists included, as chosen; empty until the first read says which lists
     /// have items here, when all of them are.
     private var includedListIds: [String]
-    private var isStartingTrip: Bool
-    private var hasStarted = false
     /// Checks answered at once and not yet confirmed by the server, by item.
     private(set) var pendingChecks: [String: Bool] = [:]
     let receipts: ShoppingReceiptReader
     var problemText: String?
     var doneText: String?
 
-    init(connection: Connection, storeName: String, listIds: [String], ownUserId: String?, isStartingTrip: Bool) {
+    init(connection: Connection, storeName: String, listIds: [String], ownUserId: String?) {
         self.connection = connection
         self.storeName = storeName
         self.includedListIds = listIds
-        self.isStartingTrip = isStartingTrip
         self.ownUserId = ownUserId
         let reader = ShoppingReceiptReader(connection: connection)
         receipts = reader
@@ -323,6 +334,12 @@ final class ShoppingStoreModel {
     var sections: ShoppingStoreSections { ShoppingGrouping.forStore(shownItems) }
     var otherShopperNames: [String] { trips.otherShoppers(atStoreKey: storeKey, excludingUserId: ownUserId) }
     var includedCount: Int { lists.filter(\.isIncluded).count }
+
+    /// Whether Done has anything to do: the person has a trip open, or has
+    /// put something here in the cart.
+    var isShopping: Bool {
+        ownTrip != nil || items.contains { $0.isInCart && $0.cartedByUserId == ownUserId }
+    }
 
     /// The items shown: those still wanted, whichever the server sent.
     private var shownItems: [ShoppingItem] { items.filter { !$0.isNotNeeded } }
@@ -342,43 +359,10 @@ final class ShoppingStoreModel {
             if includedListIds.isEmpty { includedListIds = read.includedListIds }
             hasLoaded = true
             loadFailedText = nil
+            ownTrip = trips.first { $0.isOpen && $0.userId == ownUserId }
         } catch {
             if hasLoaded { problemText = error.loadProblemText } else { loadFailedText = error.loadProblemText }
-            return
         }
-        await startIfNeeded()
-    }
-
-    /// Finds the person's open trip at this store, and starts one the first time the screen
-    /// is read when it was opened to start shopping, unless a trip of theirs here is open
-    /// already (the screen was left and opened again). A start that fails is tried again
-    /// only from the Start button, not on every reading the live feed causes.
-    private func startIfNeeded() async {
-        if ownTrip == nil, let open = trips.ownTrip(atStoreKey: storeKey, userId: ownUserId) {
-            ownTrip = open
-        }
-        guard isStartingTrip, !hasStarted, ownTrip == nil else { return }
-        await startTrip()
-    }
-
-    /// Asks the server to start the person's trip here, for the lists included.
-    private func startTrip() async {
-        let listIds = includedListIds.isEmpty ? lists.map(\.shoppingListId) : includedListIds
-        guard !listIds.isEmpty else { return }
-        hasStarted = true
-        do {
-            ownTrip = try await connection.startShopping(storeName: storeName, shoppingListIds: listIds)
-        } catch {
-            problemText = ShoppingWords.problem(error)
-        }
-    }
-
-    /// Starts the person shopping here, from the Start button of a store that was only
-    /// being looked at, or on the first item they put in the cart.
-    func start() async {
-        isStartingTrip = true
-        guard ownTrip == nil else { return }
-        await startTrip()
     }
 
     func follow() async {
@@ -395,17 +379,15 @@ final class ShoppingStoreModel {
     func toggle(_ item: ShoppingItem) async {
         let isChecking = !isChecked(item)
         pendingChecks[item.id] = isChecking
-        // Putting something in the cart is shopping: without a trip nothing
-        // would ever buy it.
-        if isChecking && ownTrip == nil {
-            await start()
-        }
         do {
-            replace(try await connection.checkShoppingItem(shoppingItemId: item.id, isChecked: isChecking))
+            // The server starts the person's trip with the first item they
+            // put in the cart, at this store, and tells the others.
+            replace(try await connection.checkShoppingItem(shoppingItemId: item.id, isChecked: isChecking, storeName: storeName))
         } catch {
             problemText = ShoppingWords.problem(error)
         }
         pendingChecks[item.id] = nil
+        if isChecking && ownTrip == nil { await load() }
     }
 
     func setOutOfStock(_ item: ShoppingItem, isOutOfStock: Bool) async {
@@ -438,12 +420,12 @@ final class ShoppingStoreModel {
         }
     }
 
-    /// Ends the trip, which buys what is in the cart; true when it is over.
+    /// Done: what the person put in the cart is bought, no receipt needed;
+    /// true when it is over.
     func finish() async -> Bool {
-        guard let ownTrip else { return true }
         do {
-            try await connection.finishShopping(shoppingTripId: ownTrip.id)
-            self.ownTrip = nil
+            try await connection.finishShopping()
+            ownTrip = nil
             return true
         } catch {
             problemText = ShoppingWords.problem(error)

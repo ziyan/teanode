@@ -128,7 +128,7 @@ it('checks an item off with CheckShoppingItem', async () => {
   fireEvent.click(await screen.findByRole('checkbox', { name: 'Check off Peas' }))
 
   await waitFor(() => expect(callsOf('CheckShoppingItem')).toHaveLength(1))
-  expect(callsOf('CheckShoppingItem')[0][1]).toEqual({ shoppingItemId: 'item-1', isChecked: true })
+  expect(callsOf('CheckShoppingItem')[0][1]).toEqual({ shoppingItemId: 'item-1', isChecked: true, storeName: null })
 })
 
 it('keeps the tab in the address and offers Need again on the items that are not needed', async () => {
@@ -301,16 +301,39 @@ it('says who is shopping the list now, and finishes the trip of the caller', asy
   expect(callsOf('FinishShopping')[0][1]).toEqual({ shoppingTripId: 'trip-2' })
 })
 
-it('starts shopping at a store and opens the store with the list on it', async () => {
+it('opens a store with the list on it and starts nothing; Done waits for something in the cart', async () => {
   serve()
   renderShopping('/shopping/lists/list-1')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Start shopping' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Shop at a store' }))
+  expect(screen.queryByRole('button', { name: 'Done shopping' })).toBeNull()
   fireEvent.change(screen.getByLabelText('Store'), { target: { value: 'Example Market' } })
-  fireEvent.click(lastOf(screen.getAllByRole('button', { name: 'Start shopping' })))
+  fireEvent.click(screen.getByRole('button', { name: 'Open the store' }))
 
-  await waitFor(() => expect(callsOf('StartShopping')).toHaveLength(1))
-  expect(callsOf('StartShopping')[0][1]).toEqual({ storeName: 'Example Market', shoppingListIds: ['list-1'] })
+  await waitFor(() =>
+    expect(screen.getByTestId('where').textContent).toBe('/shopping/stores/Example%20Market?lists=list-1'),
+  )
+  expect(callsOf('StartShopping')).toHaveLength(0)
+})
+
+it('buys what the caller put in the cart with Done, with no trip and no receipt', async () => {
+  serve({ items: [shoppingItem({ shoppingItemState: 'in_cart', cartedByUserId: 'person-a', cartedByName: 'Alex' })] })
+  renderShopping('/shopping/lists/list-1')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Done shopping' }))
+  await waitFor(() => expect(callsOf('FinishShopping')).toHaveLength(1))
+  expect(callsOf('FinishShopping')[0][1]).toEqual({ shoppingTripId: null })
+})
+
+it('lays the items out as cards with big pictures, and a picture opens in the lightbox', async () => {
+  serve({ items: [shoppingItem({ picturePath: '/api/v1/shopping/pictures/item-1' })] })
+  renderShopping('/shopping/lists/list-1')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Pictures' }))
+  await waitFor(() => expect(screen.getByTestId('where').textContent).toContain('view=pictures'))
+  expect(document.querySelector('.shopping-card')).toBeTruthy()
+  fireEvent.click(screen.getByRole('img', { name: 'Peas' }))
+  expect(await screen.findByRole('dialog', { name: 'Peas' })).toBeTruthy()
 })
 
 it('offers the owner the sharing and the deleting, and the people it is shared with neither', async () => {
@@ -345,4 +368,14 @@ it('sends nobody without shopping:use anywhere', async () => {
 
   expect(await screen.findByText('Shopping lists are not available to your account.')).toBeTruthy()
   expect(callsOf('GetShoppingList(')).toHaveLength(0)
+})
+
+it('lists the lists and the stores in the column, and asks to choose one at /shopping', async () => {
+  serve()
+  renderShopping('/shopping')
+
+  expect(await screen.findByText('Choose a list or a store.')).toBeTruthy()
+  const column = screen.getByRole('navigation', { name: 'Lists' })
+  expect(within(column).getByRole('link', { name: /Groceries/ }).getAttribute('href')).toBe('/shopping/lists/list-1')
+  expect(await within(column).findByRole('link', { name: /Example Market/ })).toBeTruthy()
 })

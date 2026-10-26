@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -24,7 +25,10 @@ type ShoppingTripOperation interface {
 	// FinishShoppingTrip ends one of the person's trips: what they put in
 	// the cart on any list they reach is bought. It answers the trip as
 	// finished and the lists whose items were bought. ErrNotFound unless the
-	// trip is theirs and open.
+	// trip is theirs and open. With no trip named it ends the person's own
+	// open trip, however old; with none open, what they have in the cart is
+	// bought all the same, recorded as a trip that starts and ends now, and
+	// with nothing in the cart either it is ErrInvalidArguments.
 	FinishShoppingTrip(userId, shoppingTripId string) (*models.ShoppingTrip, []string, error)
 
 	// ListOpenShoppingTrips are the trips open now on the lists the person
@@ -199,6 +203,9 @@ func (self *transaction) StartShoppingTrip(userId, storeName string, shoppingLis
 }
 
 func (self *transaction) FinishShoppingTrip(userId, shoppingTripId string) (*models.ShoppingTrip, []string, error) {
+	if shoppingTripId == "" {
+		return self.finishOwnShopping(userId)
+	}
 	var row shoppingTripModel
 	isFound, err := findOneRow(self.tx.Where("\"id\" = ? AND \"user_id\" = ? AND \"finished_at\" IS NULL", shoppingTripId, userId), &row)
 	if err != nil {
@@ -219,6 +226,77 @@ func (self *transaction) FinishShoppingTrip(userId, shoppingTripId string) (*mod
 		return nil, nil, err
 	}
 	return trips[0], boughtListIds, nil
+}
+
+// finishOwnShopping is Done with no trip named: the person's newest open
+// trip ends, and any older one with it. A person who put things in the cart
+// without a trip (one ended under them as stale) still buys them: a trip is
+// written for the purchase, for the lists it bought on, so the record of what
+// was bought when is the same either way.
+func (self *transaction) finishOwnShopping(userId string) (*models.ShoppingTrip, []string, error) {
+	var open []shoppingTripModel
+	if err := self.tx.Where("\"user_id\" = ? AND \"finished_at\" IS NULL", userId).Order("\"started_at\" DESC").Find(&open).Error; err != nil {
+		return nil, nil, err
+	}
+	if len(open) == 0 {
+		listIds, err := self.reachableShoppingListIds(userId)
+		if err != nil {
+			return nil, nil, err
+		}
+		var carted []string
+		if len(listIds) > 0 {
+			if err := self.tx.Model(&shoppingItemModel{}).
+				Where("\"shopping_list_id\" IN ? AND \"shopping_item_state\" = 'in_cart' AND \"carted_by_user_id\" = ?", listIds, userId).
+				Distinct().Pluck("shopping_list_id", &carted).Error; err != nil {
+				return nil, nil, err
+			}
+		}
+		if len(carted) == 0 {
+			return nil, nil, fmt.Errorf("%w: nothing is in your cart", ErrInvalidArguments)
+		}
+		row := shoppingTripModel{ID: newID(), UserID: userId, StartedAt: time.Now()}
+		if err := self.tx.Create(&row).Error; err != nil {
+			return nil, nil, err
+		}
+		for _, listId := range carted {
+			if err := self.tx.Create(&shoppingTripListModel{ShoppingTripID: row.ID, ShoppingListID: listId}).Error; err != nil {
+				return nil, nil, err
+			}
+		}
+		open = []shoppingTripModel{row}
+	}
+	boughtListIds, err := self.finishShoppingTrips(open)
+	if err != nil {
+		return nil, nil, err
+	}
+	newest := open[0]
+	if err := self.tx.Where("\"id\" = ?", newest.ID).Take(&newest).Error; err != nil {
+		return nil, nil, err
+	}
+	trips, err := self.shoppingTripsOf([]shoppingTripModel{newest})
+	if err != nil {
+		return nil, nil, err
+	}
+	return trips[0], boughtListIds, nil
+}
+
+// joinShoppingTrip puts the person on a trip for a list as they put one of
+// its items in the cart: their open trip gains the list when it does not
+// name it already, and a person with none open (or only one left open long
+// enough to be stale) starts one, which is answered so the others are told.
+func (self *transaction) joinShoppingTrip(userId, storeName, shoppingListId string) (*models.ShoppingTrip, error) {
+	var open shoppingTripModel
+	isFound, err := findOneRow(self.tx.Where("\"user_id\" = ? AND \"finished_at\" IS NULL AND \"started_at\" >= ?",
+		userId, time.Now().Add(-models.ShoppingTripStaleAfter)).Order("\"started_at\" DESC"), &open)
+	if err != nil {
+		return nil, err
+	}
+	if isFound {
+		return nil, self.tx.Clauses(clause.OnConflict{DoNothing: true}).
+			Create(&shoppingTripListModel{ShoppingTripID: open.ID, ShoppingListID: shoppingListId}).Error
+	}
+	trip, _, err := self.StartShoppingTrip(userId, storeName, []string{shoppingListId})
+	return trip, err
 }
 
 func (self *transaction) ListOpenShoppingTrips(userId string) ([]*models.ShoppingTrip, error) {

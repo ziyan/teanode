@@ -80,6 +80,12 @@ To see it working: two invented accounts in one circle. The first creates "Groce
 - Decision: a new permission, `shopping:use`, granted to the administrator, operator and member roles by the migration, gates every operation, as `photos:use` gates photos.
   Rationale: an operator can switch a feature off for a role in the usual place.
   Date/Author: 2026-10-26, this plan.
+- Decision: there is no Start shopping button. The first item a person puts in the cart starts their trip on the server, and Done (`FinishShopping` with no trip named) buys the cart with no receipt and no trip needed.
+  Rationale: the person found Start shopping misleading and asked to say they are done without a receipt; checking an item already started the trip on the phone.
+  Date/Author: 2026-10-26, after the first build.
+- Decision: the dashboard reuses the mailbox's two panes (lists and stores in the column, the open one in the pane), and every list and store offers a pictures layout whose pictures open full screen.
+  Rationale: the person asked for the mail design instead of two cards side by side, and for bigger pictures with a lightbox.
+  Date/Author: 2026-10-26, after the first build.
 
 ## Outcomes & Retrospective
 
