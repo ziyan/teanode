@@ -452,6 +452,9 @@ type JournalDayView struct {
 	// The day's records, by source. Each list is capped and comes with the
 	// total; a source the caller does not hold is empty and named in
 	// UnavailableSections.
+	// WorkProjects is the day's work by project, what a person reads first;
+	// CodingSessions and Documents are its details.
+	WorkProjects        []*JournalWorkProjectView   `json:"workProjects"`
 	CodingSessions      []*JournalCodingSessionView `json:"codingSessions"`
 	Documents           []*JournalDocumentView      `json:"documents"`
 	DocumentTotal       int                         `json:"documentTotal"`
@@ -474,6 +477,41 @@ type JournalDayView struct {
 
 	// Moments is everything above in the order it happened.
 	Moments []*JournalMomentView `json:"moments"`
+}
+
+// JournalWorkProjectView is one project the person worked on that day: its
+// coding sessions and the pull and merge requests of its repository.
+type JournalWorkProjectView struct {
+	// Name is the repository's or folder's name.
+	Name    string    `json:"name"`
+	FirstAt time.Time `json:"firstAt"`
+	LastAt  time.Time `json:"lastAt"`
+
+	// ActiveMinutes adds up the sessions' spans.
+	ActiveMinutes int `json:"activeMinutes"`
+	StretchCount  int `json:"stretchCount"`
+
+	// Topics are the titles of its sessions, each once.
+	Topics []string `json:"topics"`
+
+	// Shipped are the pull and merge requests of the day.
+	Shipped []*JournalShippedView `json:"shipped"`
+
+	// Summary is what the agent wrote was done in it, once the day is
+	// written; empty before.
+	Summary string `json:"summary"`
+
+	// DocumentID is the project's first session, which a choice names.
+	DocumentID string `json:"documentId"`
+}
+
+// JournalShippedView is a pull request, merge request or commit of the day.
+type JournalShippedView struct {
+	DocumentID string    `json:"documentId"`
+	Title      string    `json:"title"`
+	Address    string    `json:"address"`
+	HappenedAt time.Time `json:"happenedAt"`
+	IsDraft    bool      `json:"isDraft"`
 }
 
 // JournalCodingSessionView is a day's work in one project with Claude Code or
@@ -511,11 +549,16 @@ type JournalDocumentView struct {
 // JournalConversationView is a conversation with the agent that had messages
 // that day.
 type JournalConversationView struct {
-	ConversationID string    `json:"conversationId"`
-	Title          string    `json:"title"`
-	FirstAt        time.Time `json:"firstAt"`
-	LastAt         time.Time `json:"lastAt"`
-	MessageCount   int       `json:"messageCount"`
+	ConversationID string `json:"conversationId"`
+
+	// Title is the conversation's title, or "Main chat" for the person's main
+	// conversation (IsMain), which a client may name in its own language.
+	Title  string `json:"title"`
+	IsMain bool   `json:"isMain"`
+
+	FirstAt      time.Time `json:"firstAt"`
+	LastAt       time.Time `json:"lastAt"`
+	MessageCount int       `json:"messageCount"`
 }
 
 // JournalChatView is a circle or group chat that had messages that day.

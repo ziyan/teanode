@@ -140,6 +140,24 @@ func (self *graph) ReadJournalDay(ctx context.Context, arguments ReadJournalDayA
 // describeJournalSections puts the sections of a day read from the sources
 // into the view, each a list and never null.
 func describeJournalSections(view *JournalDayView, read *journal.Day, reasons map[string]string) {
+	view.WorkProjects = []*JournalWorkProjectView{}
+	for _, project := range read.WorkProjects {
+		shipped := make([]*JournalShippedView, 0, len(project.Shipped))
+		for _, request := range project.Shipped {
+			shipped = append(shipped, &JournalShippedView{
+				DocumentID: request.DocumentID, Title: request.Title, Address: request.Address, HappenedAt: request.HappenedAt, IsDraft: request.IsDraft,
+			})
+		}
+		topics := project.Topics
+		if topics == nil {
+			topics = []string{}
+		}
+		view.WorkProjects = append(view.WorkProjects, &JournalWorkProjectView{
+			Name: project.Name, FirstAt: project.FirstAt, LastAt: project.LastAt, ActiveMinutes: project.ActiveMinutes,
+			StretchCount: project.StretchCount, Topics: topics, Shipped: shipped, DocumentID: project.DocumentID,
+			Summary: reasons["agent_document:"+project.DocumentID],
+		})
+	}
 	view.CodingSessions = []*JournalCodingSessionView{}
 	for _, session := range read.CodingSessions {
 		endedAt := session.EndedAt
@@ -159,7 +177,7 @@ func describeJournalSections(view *JournalDayView, read *journal.Day, reasons ma
 	view.Conversations = []*JournalConversationView{}
 	for _, conversation := range read.Conversations {
 		view.Conversations = append(view.Conversations, &JournalConversationView{
-			ConversationID: conversation.ConversationID, Title: conversation.Title, FirstAt: conversation.FirstAt,
+			ConversationID: conversation.ConversationID, Title: conversation.Title, IsMain: conversation.IsMain, FirstAt: conversation.FirstAt,
 			LastAt: conversation.LastAt, MessageCount: conversation.MessageCount,
 		})
 	}

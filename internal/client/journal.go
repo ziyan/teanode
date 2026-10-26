@@ -230,6 +230,7 @@ type JournalDayView struct {
 	// The day's records, by source. Each list is capped and comes with the
 	// total; a source the caller does not hold is empty and named in
 	// UnavailableSections.
+	WorkProjects        []*JournalWorkProjectView   `json:"workProjects"`
 	CodingSessions      []*JournalCodingSessionView `json:"codingSessions"`
 	Documents           []*JournalDocumentView      `json:"documents"`
 	DocumentTotal       int                         `json:"documentTotal"`
@@ -283,11 +284,34 @@ type JournalDocumentView struct {
 	LinkReason string `json:"linkReason"`
 }
 
+// JournalWorkProjectView is one project the person worked on that day.
+type JournalWorkProjectView struct {
+	Name          string                `json:"name"`
+	FirstAt       time.Time             `json:"firstAt"`
+	LastAt        time.Time             `json:"lastAt"`
+	ActiveMinutes int                   `json:"activeMinutes"`
+	StretchCount  int                   `json:"stretchCount"`
+	Topics        []string              `json:"topics"`
+	Shipped       []*JournalShippedView `json:"shipped"`
+	Summary       string                `json:"summary"`
+	DocumentID    string                `json:"documentId"`
+}
+
+// JournalShippedView is a pull request, merge request or commit of the day.
+type JournalShippedView struct {
+	DocumentID string    `json:"documentId"`
+	Title      string    `json:"title"`
+	Address    string    `json:"address"`
+	HappenedAt time.Time `json:"happenedAt"`
+	IsDraft    bool      `json:"isDraft"`
+}
+
 // JournalConversationView is a conversation with the agent that had messages
 // that day.
 type JournalConversationView struct {
 	ConversationID string    `json:"conversationId"`
 	Title          string    `json:"title"`
+	IsMain         bool      `json:"isMain"`
 	FirstAt        time.Time `json:"firstAt"`
 	LastAt         time.Time `json:"lastAt"`
 	MessageCount   int       `json:"messageCount"`
@@ -576,9 +600,10 @@ const (
     mood { ` + journalMoodFields + ` } weather { ` + journalWeatherFields + ` } facts { ` + journalFactsFields + ` }
     narrative { ` + journalNarrativeFields + ` }
     choices { ` + journalLinkFields + ` } pins { ` + journalLinkFields + ` } coverPhotoId
+    workProjects { name firstAt lastAt activeMinutes stretchCount topics summary documentId shipped { documentId title address happenedAt isDraft } }
     codingSessions { documentId title directory assistant startedAt endedAt stretchCount linkReason }
     documents { documentId title sourceName happenedAt isChosen linkReason } documentTotal
-    conversations { conversationId title firstAt lastAt messageCount }
+    conversations { conversationId title isMain firstAt lastAt messageCount }
     chats { chatId chatName firstAt lastAt messageCount }
     mail { itemId fromName subject receivedAt isSent isImportant isChosen linkReason repeatCount } mailTotal
     recordings { recordingId title recordedAt durationMS summary }

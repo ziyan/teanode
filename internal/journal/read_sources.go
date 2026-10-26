@@ -223,6 +223,7 @@ func (self *dayReader) readDocuments() error {
 	// assistant, directory and title, from its first stretch to its last.
 	sessionIndexes := map[string]int{}
 	lastStretches := map[string]*models.AgentDocument{}
+	shipped := map[string][]Shipped{}
 	for _, document := range documents {
 		source := self.sources[document.SourceID]
 		if isOtherwiseRead(source) || document.HappenedAt == nil {
@@ -253,6 +254,16 @@ func (self *dayReader) readDocuments() error {
 				continue
 			}
 		} else if !isNamedIn(document, names) {
+			continue
+		}
+		// A pull request, merge request or commit is what a project shipped,
+		// and is shown with the project rather than as a document of its own.
+		if repository, isRequest := repositoryOfAddress(document.URL); isRequest {
+			shipped[repository] = append(shipped[repository], Shipped{
+				DocumentID: document.ID, Title: strings.TrimSpace(strings.TrimPrefix(document.Title, "Draft:")),
+				Address: document.URL, HappenedAt: *document.HappenedAt,
+				IsDraft: strings.HasPrefix(document.Title, "Draft:") || strings.HasPrefix(document.Title, "[Draft]"),
+			})
 			continue
 		}
 		self.day.DocumentTotal++
@@ -288,6 +299,7 @@ func (self *dayReader) readDocuments() error {
 	sort.SliceStable(self.day.CodingSessions, func(left, right int) bool {
 		return self.day.CodingSessions[left].StartedAt.Before(self.day.CodingSessions[right].StartedAt)
 	})
+	self.day.WorkProjects = workProjects(self.day.CodingSessions, shipped)
 	return self.readJournalNotes()
 }
 
@@ -359,11 +371,14 @@ func (self *dayReader) readConversations() error {
 		if title == "" {
 			title = strings.TrimSpace(conversation.Summary)
 		}
-		if title == "" {
-			title = "Conversation"
+		if title == "" || conversation.IsMain {
+			title = "Main chat"
+			if !conversation.IsMain {
+				title = "Conversation"
+			}
 		}
 		self.day.Conversations = append(self.day.Conversations, Conversation{
-			ConversationID: conversation.ConversationID, Title: title, FirstMessageID: conversation.FirstMessageID,
+			ConversationID: conversation.ConversationID, Title: title, IsMain: conversation.IsMain, FirstMessageID: conversation.FirstMessageID,
 			FirstAt: conversation.FirstAt, LastAt: conversation.LastAt, MessageCount: conversation.MessageCount,
 		})
 	}

@@ -716,7 +716,32 @@ func journalMoreLine(shown, total int) []string {
 
 // printJournalSections prints each source of a day in a line or a few.
 func printJournalSections(view *client.JournalDayView) {
+	// The day's work is read by project: how long, on what, and what shipped,
+	// with what the agent wrote was done in it once the day is written.
 	lines := []string{}
+	for _, project := range view.WorkProjects {
+		line := fmt.Sprintf("%s to %s  %s", journalClock(project.FirstAt), journalClock(project.LastAt), project.Name)
+		if project.ActiveMinutes > 0 {
+			line += ", " + journalDuration(project.ActiveMinutes)
+		}
+		lines = append(lines, line)
+		if project.Summary != "" {
+			lines = append(lines, "  "+project.Summary)
+		}
+		if len(project.Topics) > 0 {
+			lines = append(lines, "  worked on: "+strings.Join(project.Topics, "; "))
+		}
+		for _, request := range project.Shipped {
+			title := request.Title
+			if request.IsDraft {
+				title += " (draft)"
+			}
+			lines = append(lines, "  shipped: "+title)
+		}
+	}
+	journalSection("Work", lines)
+
+	lines = []string{}
 	for _, session := range view.CodingSessions {
 		line := fmt.Sprintf("%s  %s", journalClock(session.StartedAt), session.Title)
 		if session.EndedAt != nil && journalClock(*session.EndedAt) != journalClock(session.StartedAt) {
@@ -733,7 +758,7 @@ func printJournalSections(view *client.JournalDayView) {
 		}
 		lines = append(lines, line)
 	}
-	journalSection("Work", lines)
+	journalSection("Coding sessions", lines)
 
 	lines = []string{}
 	for _, document := range view.Documents {
@@ -747,7 +772,11 @@ func printJournalSections(view *client.JournalDayView) {
 
 	lines = []string{}
 	for _, conversation := range view.Conversations {
-		lines = append(lines, fmt.Sprintf("%s  %s, %s", journalClock(conversation.FirstAt), conversation.Title, countWords(conversation.MessageCount, "message")))
+		title := conversation.Title
+		if conversation.IsMain {
+			title = "Main chat"
+		}
+		lines = append(lines, fmt.Sprintf("%s  %s, %s", journalClock(conversation.FirstAt), title, countWords(conversation.MessageCount, "message")))
 	}
 	for _, chat := range view.Chats {
 		lines = append(lines, fmt.Sprintf("%s  %s, %s", journalClock(chat.FirstAt), chat.ChatName, countWords(chat.MessageCount, "message")))
@@ -1455,4 +1484,15 @@ func runJournalErase(ctx context.Context, command *cli.Command) error {
 	}
 	fmt.Printf("erased %s, %s and %s\n", countWords(erased.DayCount, "day"), countWords(erased.PeriodCount, "period"), countWords(erased.LinkCount, "link"))
 	return nil
+}
+
+// journalDuration is minutes as a person reads them: "3 h 20 min", "45 min".
+func journalDuration(minutes int) string {
+	switch {
+	case minutes < 60:
+		return fmt.Sprintf("%d min", minutes)
+	case minutes%60 == 0:
+		return fmt.Sprintf("%d h", minutes/60)
+	}
+	return fmt.Sprintf("%d h %d min", minutes/60, minutes%60)
 }

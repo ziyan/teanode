@@ -112,6 +112,10 @@ type Day struct {
 
 	CodingSessions []CodingSession
 
+	// WorkProjects are the coding sessions and the pull and merge requests of
+	// the day, by project: what the day's work was, before its details.
+	WorkProjects []WorkProject
+
 	Documents     []Document
 	DocumentTotal int
 
@@ -195,7 +199,11 @@ type JournalNote struct {
 // it that day.
 type Conversation struct {
 	ConversationID string
+
+	// Title is the conversation's title; the main conversation is called the
+	// main chat (IsMain), whatever title a turn once gave it.
 	Title          string
+	IsMain         bool
 	FirstMessageID string
 	FirstAt        time.Time
 	LastAt         time.Time

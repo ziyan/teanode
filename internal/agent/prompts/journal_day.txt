@@ -1,16 +1,21 @@
 Write the journal page for {{.PersonName}}'s day, {{.Weekday}} {{.Day}}, from the record below. Answer with one JSON object and nothing else:
 
-{"headline": "…", "narrative": "…", "choices": [{"reference": "mail:example1", "reason": "…"}], "coverPhotoId": "…"}
+{"headline": "…", "narrative": "…", "choices": [{"reference": "mail:example1", "reason": "…"}], "projects": [{"reference": "agent_document:example2", "reason": "…"}], "coverPhotoId": "…"}
 
 Write in {{.Language}}, whatever language the material is in. Names of people and places keep their own spelling.
 
 {{.PersonName}} reads this page; nobody else does. Write it to them, as "you".
+{{if .IsSoFar}}
+The day is not over: this is the day so far, asked for now. Write what has happened until now, and nothing about the rest of the day.
+{{end}}
 
 headline is one plain line of at most 80 characters that says what the day was.
 
 narrative is two to four short paragraphs separated by blank lines. Say what happened, in the order it makes sense to tell it, and what seemed to matter. Mention a record by writing its reference in double square brackets, copied exactly from the lists below, for example [[mail:example1]]. Mention only records that are in the lists, and only the ones the story needs. Never write a reference you were not given, and never guess one. Everything you say comes from the record: if it does not say why something was done, say what was done and stop. Do not invent a reason, a person, a feeling or a time.
 
 choices are the mail, documents and messages from the candidates list that mattered, at most eight, most important first, each with a reason of a few words ("you were asked to decide", "puts something on your calendar"). Choose only from the candidates. Leave the routine ones out; the page counts them. An empty list is a fine answer.
+
+projects has one entry for each line of the records that begins "Project", with that line's reference, and as reason one or two sentences of at most 200 characters saying what was done in the project that day, from what it worked on and the pull and merge requests: what was built, fixed or decided, not how many sessions or hours. When the project's line says too little to tell, say what it was about in a few words.
 
 coverPhotoId is the id of one photo from the lists, written as it follows "photo:", that would stand for the day, or "" when there is none.
 

@@ -29,24 +29,43 @@ type Moment struct {
 	DashboardPath string
 }
 
-// Moments puts everything the day holds that has a time into the order it
-// happened, earliest first. Photos taken within a quarter hour of each other
-// are one moment, at the first of them. Events with no time of day come first,
-// and a transaction that says only the day it posted on is placed at the
-// start of the day.
+// Moments puts what the day is remembered by into the order it happened,
+// earliest first: the day read as a story, not every record of it. A project
+// is one moment, when work on it began; a document or a message only when it
+// mattered (the agent chose it, the person pinned it, or the message was
+// important); photos taken within a quarter hour of each other are one
+// moment, at the first of them. Events with no time of day come first, and a
+// transaction that says only the day it posted on is placed at the start of
+// the day.
 func Moments(day *Day) []Moment {
 	var moments []Moment
 	zone := day.zone()
 	clock := func(at time.Time) string { return at.In(zone).Format("15:04") }
+	linked := map[string]bool{}
+	for _, link := range day.Links {
+		if !link.IsHidden {
+			linked[string(link.RecordKind)+":"+link.RecordID] = true
+		}
+	}
 
-	for _, session := range day.CodingSessions {
+	for _, project := range day.WorkProjects {
+		recordKind, recordId := models.RecordAgentDocument, project.DocumentID
+		if recordId == "" && len(project.Shipped) > 0 {
+			recordId = project.Shipped[0].DocumentID
+		}
+		detail := minutesWords(project.ActiveMinutes)
+		if len(project.Shipped) > 0 {
+			detail = joinDetail(detail, countWords(len(project.Shipped), "request"))
+		}
 		moments = append(moments, Moment{
-			At: session.StartedAt, RecordKind: models.RecordAgentDocument, RecordID: session.DocumentID,
-			Title: session.Title, Detail: joinDetail(session.Directory, minutesWords(minutesBetween(session.StartedAt, session.EndedAt))),
-			DashboardPath: recordlink.DocumentPath(session.Title, ""),
+			At: project.FirstAt, RecordKind: recordKind, RecordID: recordId,
+			Title: project.Name, Detail: detail, DashboardPath: recordlink.DocumentPath(project.Name, ""),
 		})
 	}
 	for _, document := range day.Documents {
+		if !linked["agent_document:"+document.DocumentID] {
+			continue
+		}
 		moments = append(moments, Moment{
 			At: document.HappenedAt, RecordKind: models.RecordAgentDocument, RecordID: document.DocumentID,
 			Title: document.Title, Detail: document.SourceName, DashboardPath: recordlink.DocumentPath(document.Title, ""),
@@ -67,6 +86,9 @@ func Moments(day *Day) []Moment {
 		})
 	}
 	for _, mail := range day.Mail {
+		if !mail.IsImportant && !linked["mail:"+mail.ItemID] {
+			continue
+		}
 		direction := "from "
 		if mail.IsSent {
 			direction = "to "

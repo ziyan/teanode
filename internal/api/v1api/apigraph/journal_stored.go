@@ -139,7 +139,7 @@ func storedJournalDayView(tx db.Transaction, user *models.User, row *models.Jour
 		Day: row.Day, TimeZone: row.TimeZone, IsToday: row.Day == today, Weekday: weekday, WeekStart: firstOfWeek,
 		Words: describeJournalDayWords(row), Mood: describeJournalMood(row), Weather: describeJournalWeather(row.Weather),
 		Facts: describeJournalFacts(row.Facts), Narrative: narrative, Choices: choices, Pins: pins, CoverPhotoID: row.CoverPhotoID,
-		CodingSessions: []*JournalCodingSessionView{}, Documents: []*JournalDocumentView{}, Conversations: []*JournalConversationView{},
+		WorkProjects: []*JournalWorkProjectView{}, CodingSessions: []*JournalCodingSessionView{}, Documents: []*JournalDocumentView{}, Conversations: []*JournalConversationView{},
 		Chats: []*JournalChatView{}, Mail: []*JournalMailView{}, Recordings: []*JournalRecordingView{}, Photos: []*JournalPhotoView{},
 		Visits: []*JournalVisitView{}, Events: []*JournalEventView{}, Reminders: []*JournalReminderView{},
 		Transactions: []*JournalTransactionView{}, ShoppingTrips: []*JournalShoppingTripView{}, Notes: []*JournalRecordView{},

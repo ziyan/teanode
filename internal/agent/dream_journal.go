@@ -126,7 +126,7 @@ func (self *Agent) dreamJournalDays(ctx context.Context, run *Run, budget *dream
 					return true
 				}
 			}
-			if (isBeyondDepth && !row.IsNarrativeRequested) || !(row.Facts.HasActivity || strings.TrimSpace(row.Words) != "") {
+			if (isBeyondDepth && !row.IsNarrativeRequested) || (!row.Facts.HasActivity && strings.TrimSpace(row.Words) == "") {
 				continue
 			}
 			if isRecentlyRefused(row.NarrativeFailure, row.ModifiedAt, row.NarrativeRequestedAt, now) {

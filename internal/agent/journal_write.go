@@ -190,9 +190,11 @@ type journalDayInput struct {
 	Records []journalRecordLine
 
 	// allowed is every reference the narrative may mention, candidates is
-	// the references a choice may name, and photos the ids a cover may be.
+	// the references a choice may name, projects the references a project's
+	// summary may name, and photos the ids a cover may be.
 	allowed    map[string]bool
 	candidates map[string]bool
+	projects   map[string]bool
 	photos     map[string]bool
 }
 
@@ -231,7 +233,7 @@ func described(first, second string) string {
 // photo of each stretch of them, and the photos offered to stand for the day.
 func newJournalDayInput(day *journal.Day) *journalDayInput {
 	input := &journalDayInput{
-		Day: day, allowed: map[string]bool{}, candidates: map[string]bool{}, photos: map[string]bool{},
+		Day: day, allowed: map[string]bool{}, candidates: map[string]bool{}, projects: map[string]bool{}, photos: map[string]bool{},
 		Zone: time.UTC,
 	}
 	if location, err := time.LoadLocation(day.TimeZone); err == nil && day.TimeZone != "" {
@@ -250,9 +252,36 @@ func newJournalDayInput(day *journal.Day) *journalDayInput {
 		return moments[string(recordKind)+":"+recordId].Detail
 	}
 
-	for _, session := range day.CodingSessions {
-		input.add(models.RecordAgentDocument, session.DocumentID, session.StartedAt,
-			"Coding session: "+described(session.Title, detailOf(models.RecordAgentDocument, session.DocumentID)), false)
+	// The day's work is read by project: what it was, not its stretches.
+	for _, project := range day.WorkProjects {
+		recordId := project.DocumentID
+		if recordId == "" && len(project.Shipped) > 0 {
+			recordId = project.Shipped[0].DocumentID
+		}
+		line := fmt.Sprintf("Project %s: %s", project.Name, journalMinutesWords(project.ActiveMinutes))
+		if len(project.Topics) > 0 {
+			line += "; worked on: " + strings.Join(project.Topics, "; ")
+		}
+		if len(project.Shipped) > 0 {
+			titles := make([]string, 0, len(project.Shipped))
+			for _, request := range project.Shipped {
+				title := request.Title
+				if request.IsDraft {
+					title += " (draft)"
+				}
+				titles = append(titles, title)
+			}
+			line += "; pull and merge requests: " + strings.Join(titles, "; ")
+		}
+		input.add(models.RecordAgentDocument, recordId, project.FirstAt, line, false)
+		if recordId != "" {
+			input.projects[string(models.RecordAgentDocument)+":"+recordId] = true
+		}
+		for _, request := range project.Shipped {
+			if request.DocumentID != recordId {
+				input.add(models.RecordAgentDocument, request.DocumentID, request.HappenedAt, "Pull or merge request in "+project.Name+": "+request.Title, false)
+			}
+		}
 	}
 	for index, document := range day.Documents {
 		if index == journalDocumentLinesMost {
@@ -445,6 +474,7 @@ func (self *journalDayInput) prompt(owner *models.User, agent *models.Agent, opt
 		return "", err
 	}
 	data["Weekday"] = strings.ToUpper(weekday[:1]) + weekday[1:]
+	data["IsSoFar"] = day.Day == journal.Today(owner, time.Now())
 	if candidates := self.lines(true); candidates != "" {
 		data["Candidates"] = fenced(candidates)
 	}
@@ -482,9 +512,13 @@ func (self *journalDayInput) prompt(owner *models.User, agent *models.Agent, opt
 
 // journalDayAnswer is what the model is asked to answer for a day.
 type journalDayAnswer struct {
-	Headline     string                `json:"headline"`
-	Narrative    string                `json:"narrative"`
-	Choices      []journalChoiceAnswer `json:"choices"`
+	Headline  string                `json:"headline"`
+	Narrative string                `json:"narrative"`
+	Choices   []journalChoiceAnswer `json:"choices"`
+
+	// Projects say what was done in each project of the day's work, the
+	// reason being the summary; they are kept as choices of the project.
+	Projects     []journalChoiceAnswer `json:"projects"`
 	CoverPhotoID string                `json:"coverPhotoId"`
 }
 
@@ -590,6 +624,11 @@ func checkJournalDayAnswer(answer *journalDayAnswer, input *journalDayInput) (*m
 	if err != nil {
 		return nil, err
 	}
+	projectLinks, err := checkJournalChoices(answer.Projects, input.projects, len(input.projects))
+	if err != nil {
+		return nil, err
+	}
+	links = append(links, projectLinks...)
 	cover := strings.TrimPrefix(strings.TrimSpace(answer.CoverPhotoID), string(models.RecordPhoto)+":")
 	if cover != "" && !input.photos[cover] {
 		return nil, &journalRefusal{reason: fmt.Sprintf("the cover photo %q is not one of the photos in the list", cover)}
@@ -680,6 +719,12 @@ func (self *Agent) writeReadJournalDay(ctx context.Context, run *Run, read *jour
 		return err
 	}
 	writing.InputDigest = journal.InputDigest(read)
+	// Today's story is the day so far, written because the person asked: its
+	// digest never matches a whole day's, so the first dream after the day
+	// ends writes it again from all of it.
+	if read.Day == journal.Today(run.Owner, time.Now()) {
+		writing.InputDigest += ":so-far"
+	}
 	now := time.Now()
 	if err := run.Database().TransactionContext(ctx, func(transaction db.Transaction) error {
 		if err := transaction.PutJournalNarrative(run.Owner.ID, target, read.TimeZone, *writing, now); err != nil {
@@ -699,4 +744,18 @@ func (self *Agent) storeJournalFailure(ctx context.Context, run *Run, target mod
 	return run.Database().TransactionContext(ctx, func(transaction db.Transaction) error {
 		return transaction.PutJournalNarrativeFailure(run.Owner.ID, target, timeZone, failure, time.Now())
 	})
+}
+
+// journalMinutesWords is a length of time as the model reads it: "3 h 20 min",
+// "45 min".
+func journalMinutesWords(minutes int) string {
+	switch {
+	case minutes <= 0:
+		return "a few minutes"
+	case minutes < 60:
+		return fmt.Sprintf("%d min", minutes)
+	case minutes%60 == 0:
+		return fmt.Sprintf("%d h", minutes/60)
+	}
+	return fmt.Sprintf("%d h %d min", minutes/60, minutes%60)
 }

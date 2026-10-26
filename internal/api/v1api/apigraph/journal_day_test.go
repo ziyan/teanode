@@ -132,7 +132,8 @@ func TestReadJournalDayHoldsTheSourcesTheReaderMayRead(t *testing.T) {
 	for _, moment := range moments {
 		kinds = append(kinds, asMap(t, moment)["recordKind"].(string))
 	}
-	if fmt.Sprint(kinds) != "[place_visit mail]" || asMap(t, moments[1])["dashboardPath"] != "/mailbox/starred/"+asMap(t, mail[0])["itemId"].(string) {
+	// A message that did not matter is in the mail section, not a moment.
+	if fmt.Sprint(kinds) != "[place_visit]" {
 		t.Errorf("moments in the order they happened: %v", moments)
 	}
 	if narrative := asMap(t, view["narrative"]); narrative["headline"] != "" || narrative["isStale"] != false || narrative["sourceCount"] != float64(2) || narrative["isBeyondDepth"] != true {

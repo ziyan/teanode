@@ -445,14 +445,15 @@ func TestJournalCorrectionsAndWritingTheNarrative(t *testing.T) {
 		t.Errorf("a correction of 501 characters: %q", failure)
 	}
 
-	// Writing it again; today is not over.
+	// Writing it again, and today's so far, which the person may ask for.
 	data = world.run(t, world.ada, writeNarrativeQuery, map[string]any{"day": "2026-03-03"})
 	if asMap(t, data["WriteJournalNarrative"])["narrativePending"] != true {
 		t.Errorf("writing a day: %v", data)
 	}
 	today := journal.Today(world.ada, time.Now())
-	if failure := world.refusal(t, world.ada, writeNarrativeQuery, map[string]any{"day": today}); !strings.Contains(failure, "not over") {
-		t.Errorf("writing today: %q", failure)
+	data = world.run(t, world.ada, writeNarrativeQuery, map[string]any{"day": today})
+	if asMap(t, data["WriteJournalNarrative"])["narrativePending"] != true {
+		t.Errorf("writing today so far: %v", data)
 	}
 	data = world.run(t, world.ada, writeNarrativeQuery, map[string]any{"day": today, "periodKind": "month"})
 	if asMap(t, data["WriteJournalNarrative"])["narrativePending"] != true {

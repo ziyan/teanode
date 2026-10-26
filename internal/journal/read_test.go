@@ -325,7 +325,9 @@ func TestMomentsAreInTheOrderTheDayHappened(t *testing.T) {
 		if photos := byKind[models.RecordPhoto]; len(photos) != 2 || photos[0].RecordID != world.photoIds["morning"] || photos[0].DashboardPath != "/photos/"+world.photoIds["morning"] {
 			t.Errorf("each photo taken far apart is its own moment: %+v", photos)
 		}
-		if mail := byKind[models.RecordMail]; len(mail) != 3 || mail[0].RecordID != world.importantItemId || mail[0].Detail != "from Sam Reed" || mail[1].Detail != "to Sam Reed <sam@example.test>" {
+		// Only the message that mattered is a moment of the day; the others
+		// are in the mail section.
+		if mail := byKind[models.RecordMail]; len(mail) != 1 || mail[0].RecordID != world.importantItemId || mail[0].Detail != "from Sam Reed" {
 			t.Errorf("mail moments: %+v", mail)
 		}
 		if visits := byKind[models.RecordPlaceVisit]; len(visits) != 3 || visits[0].Title != "Home" || !visits[0].At.Equal(local(0, 0)) || visits[0].Detail != "5 h" || visits[1].Title != "Harbor Cafe" || visits[1].Detail != "3 h" ||
@@ -342,7 +344,9 @@ func TestMomentsAreInTheOrderTheDayHappened(t *testing.T) {
 		if chats := byKind[models.RecordChatMessage]; len(chats) != 1 || chats[0].RecordID != world.firstChatMessageId || !strings.HasPrefix(chats[0].DashboardPath, "/chat?conversation=") {
 			t.Errorf("chat moments: %+v", chats)
 		}
-		if coding := byKind[models.RecordAgentDocument]; len(coding) != 3 || coding[0].Title != "Fix the tide chart" || coding[0].Detail != "~/src/harbor, 45 min" {
+		// A project is one moment, named after its folder; a document that
+		// nobody chose is not one.
+		if coding := byKind[models.RecordAgentDocument]; len(coding) != 1 || coding[0].Title != "harbor" || coding[0].Detail != "45 min" {
 			t.Errorf("document moments: %+v", coding)
 		}
 		if workouts := byKind[models.RecordHealthDay]; len(workouts) != 1 || workouts[0].Title != "Running" || workouts[0].RecordID != "workout@"+worldDay {
