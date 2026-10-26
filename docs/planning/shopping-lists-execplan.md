@@ -23,8 +23,8 @@ To see it working: two invented accounts in one circle. The first creates "Groce
 - [x] (2026-10-26) Research: receipts, sharing, live events, location arrival, pushes, images, tools and parity tests (see Context and Orientation).
 - [x] (2026-10-26) Sketches of every screen (a private design canvas), reviewed by the maintainer, and decisions taken (Decision Log).
 - [x] (2026-10-26) This plan written; migration number 0260 claimed with the other sessions.
-- [ ] Milestone 1: storage (migration 0260, models, database operations and their tests).
-- [ ] Milestone 2: GraphQL operations, live events, the receipt matching and picture jobs, the arrival and shopping notifications.
+- [x] (2026-10-26) Milestone 1: storage (migration 0260, models, database operations and their tests); `go test ./internal/db -run Shopping` passes, as does the reverse test.
+- [x] (2026-10-26) Milestone 2: GraphQL operations, live events, the receipt matching and picture jobs, the arrival and shopping notifications, the Sharing page's new kind; `TestAShoppingListIsSharedAndCheckedOffLive` and `TestEveryReceiptChecksOffWhatTheShoppingListsNeeded` pass.
 - [ ] Milestone 3: the command line and the agent's `shopping` tool, with the parity test.
 - [ ] Milestone 4: the dashboard's Shopping page.
 - [ ] Milestone 5: the iPhone app's Shopping section.
@@ -35,6 +35,9 @@ To see it working: two invented accounts in one circle. The first creates "Groce
 - Observation: there is no image search anywhere in the server. Web search is Brave's web endpoint only, and the link preview code (`internal/linkpreview`) already fetches a page's picture through `safefetch`, scales it and keeps it in the file store.
   Evidence: `internal/agent/tools/websearch/websearch.go`, `internal/linkpreview/fetch.go`.
 - Observation: the location code has no hook for the owner's own agent on arrival; `afterLocationChange` in `internal/api/v1api/apigraph/location_history.go` tells only the people the location is shared with.
+- Observation: GraphQL names an input object after its Go type with Input added, so a Go type ending in Input became "...InputInput"; the item to add is `ShoppingItemEntry` (GraphQL `ShoppingItemEntryInput`).
+  Evidence: `ReceiptLine` in `apigraph/agent_finance_receipt.go` is `ReceiptLineInput` in `internal/client/finance.go`.
+- Observation: a job kind is at most 16 characters (the run's job kind column), so the jobs are `match_shopping` and `shopping_picture`.
 
 ## Decision Log
 
