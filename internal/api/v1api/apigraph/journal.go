@@ -301,16 +301,20 @@ type JournalFactsView struct {
 	SleepMinutes       int     `json:"sleepMinutes"`
 	WorkoutMinutes     int     `json:"workoutMinutes"`
 	CodingSessionCount int     `json:"codingSessionCount"`
-	CodingMinutes      int     `json:"codingMinutes"`
-	MeetingCount       int     `json:"meetingCount"`
-	MeetingMinutes     int     `json:"meetingMinutes"`
-	RecordingCount     int     `json:"recordingCount"`
-	ConversationCount  int     `json:"conversationCount"`
-	ChatMessageCount   int     `json:"chatMessageCount"`
-	MailReceivedCount  int     `json:"mailReceivedCount"`
-	MailSentCount      int     `json:"mailSentCount"`
-	DocumentCount      int     `json:"documentCount"`
-	TransactionCount   int     `json:"transactionCount"`
+
+	// WorkProjectCount is how many projects were worked on (for a period,
+	// added up day by day).
+	WorkProjectCount  int `json:"workProjectCount"`
+	CodingMinutes     int `json:"codingMinutes"`
+	MeetingCount      int `json:"meetingCount"`
+	MeetingMinutes    int `json:"meetingMinutes"`
+	RecordingCount    int `json:"recordingCount"`
+	ConversationCount int `json:"conversationCount"`
+	ChatMessageCount  int `json:"chatMessageCount"`
+	MailReceivedCount int `json:"mailReceivedCount"`
+	MailSentCount     int `json:"mailSentCount"`
+	DocumentCount     int `json:"documentCount"`
+	TransactionCount  int `json:"transactionCount"`
 
 	// SpentMinorUnits is money spent in SpentCurrency's minor units (cents).
 	SpentMinorUnits   int64  `json:"spentMinorUnits"`

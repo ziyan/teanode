@@ -103,6 +103,19 @@ func Refresh(ctx context.Context, transaction db.Transaction, user *models.User,
 	if err := refresher.walkBack(ctx, yesterday, &result); err != nil {
 		return result, err
 	}
+	// Days counted an older way are counted again, a month of them a run.
+	outdated, err := transaction.ListJournalDaysCountedBefore(user.ID, models.JournalFactsVersion, olderDaysMost)
+	if err != nil {
+		return result, err
+	}
+	for _, day := range outdated {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		if err := refresher.computeDay(day, &result); err != nil {
+			return result, err
+		}
+	}
 	if weather != nil {
 		if err := refresher.fetchWeather(ctx, today, weather, &result); err != nil {
 			return result, err

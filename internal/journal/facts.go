@@ -23,6 +23,8 @@ func ComputeFacts(day *Day) models.JournalFacts {
 		PhotoCount:         day.PhotoTotal,
 		PhotoCandidateIDs:  append([]string(nil), day.PhotoCandidateIDs...),
 		CodingSessionCount: len(day.CodingSessions),
+		WorkProjectCount:   len(day.WorkProjects),
+		FactsVersion:       models.JournalFactsVersion,
 		CodingMinutes:      codingMinutes(day.CodingSessions),
 		RecordingCount:     len(day.Recordings),
 		ConversationCount:  len(day.Conversations),

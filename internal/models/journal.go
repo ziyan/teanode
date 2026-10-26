@@ -179,6 +179,7 @@ type JournalFacts struct {
 	SleepMinutes       int      `json:"sleepMinutes"`
 	WorkoutMinutes     int      `json:"workoutMinutes"`
 	CodingSessionCount int      `json:"codingSessionCount"`
+	WorkProjectCount   int      `json:"workProjectCount"`
 	CodingMinutes      int      `json:"codingMinutes"`
 	MeetingCount       int      `json:"meetingCount"`
 	MeetingMinutes     int      `json:"meetingMinutes"`
@@ -199,7 +200,17 @@ type JournalFacts struct {
 	MainPlaceLatitude  float64  `json:"mainPlaceLatitude,omitempty"`
 	MainPlaceLongitude float64  `json:"mainPlaceLongitude,omitempty"`
 	HealthMoodLevel    int      `json:"healthMoodLevel,omitempty"`
+
+	// FactsVersion is the way the numbers were worked out
+	// (JournalFactsVersion then); a day worked out an older way is worked out
+	// again.
+	FactsVersion int `json:"factsVersion,omitempty"`
 }
+
+// JournalFactsVersion is the way a day's numbers are worked out now. It goes
+// up when the counting changes, so that the days already counted are counted
+// again: 2 counts work by project and each stretch's own time.
+const JournalFactsVersion = 2
 
 // JournalPeriod is a week, a month or a year of a person's journal.
 type JournalPeriod struct {
