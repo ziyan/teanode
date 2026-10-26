@@ -183,43 +183,93 @@ public struct ReportedVisit: Codable, Hashable, Sendable {
     }
 }
 
-/// LocationBatch is what one ReportLocation call carries: the oldest points
-/// and visits in the outbox, at most 500 and 50.
+/// ReportedActivity is one stretch of motion activity waiting to be reported:
+/// what Core Motion said the person was doing, from a moment on. It lasts
+/// until the next one starts.
+public struct ReportedActivity: Codable, Hashable, Sendable {
+    public var sequence: Int
+    public let startedAt: Date
+    /// "stationary", "walking", "running", "cycling", "automotive" or
+    /// "unknown".
+    public let activityKind: String
+    /// "low", "medium" or "high".
+    public let activityConfidence: String
+
+    /// The kinds the server takes.
+    public static let activityKinds: Set<String> = ["stationary", "walking", "running", "cycling", "automotive", "unknown"]
+
+    /// The confidences the server takes.
+    public static let activityConfidences: Set<String> = ["low", "medium", "high"]
+
+    public init(sequence: Int = 0, startedAt: Date, activityKind: String, activityConfidence: String) {
+        self.sequence = sequence
+        self.startedAt = startedAt
+        self.activityKind = activityKind
+        self.activityConfidence = activityConfidence
+    }
+
+    var variables: JSONValue {
+        .object([
+            "startedAt": .string(CalendarDates.text(startedAt)), "activityKind": .string(activityKind),
+            "activityConfidence": .string(activityConfidence),
+        ])
+    }
+}
+
+/// LocationBatch is what one ReportLocation call carries: the oldest points,
+/// visits and motion activities in the outbox, at most 500, 50 and 500.
 public struct LocationBatch: Sendable, Equatable {
     public let points: [ReportedPoint]
     public let visits: [ReportedVisit]
+    public let activities: [ReportedActivity]
 
-    public init(points: [ReportedPoint], visits: [ReportedVisit]) {
+    public init(points: [ReportedPoint], visits: [ReportedVisit], activities: [ReportedActivity] = []) {
         self.points = points
         self.visits = visits
+        self.activities = activities
     }
 
-    public var isEmpty: Bool { points.isEmpty && visits.isEmpty }
+    public var isEmpty: Bool { points.isEmpty && visits.isEmpty && activities.isEmpty }
 
-    /// How many positions and visits it carries together.
-    public var entryCount: Int { points.count + visits.count }
+    /// How many positions, visits and activities it carries together.
+    public var entryCount: Int { points.count + visits.count + activities.count }
 
     /// The two smaller batches to send when the server calls this one invalid
-    /// without saying which entry is wrong: the positions apart from the
-    /// visits if it holds both, else the first half and the rest of whichever
-    /// it holds. Nil for a single entry, which is the one the server refuses.
+    /// without saying which entry is wrong: the first kind of entry it holds
+    /// (positions, then visits, then activities) apart from the rest if it
+    /// holds more than one kind, else the first half and the rest of
+    /// whichever it holds. Nil for a single entry, which is the one the
+    /// server refuses.
     public func split() -> (first: LocationBatch, second: LocationBatch)? {
         guard entryCount > 1 else { return nil }
-        if !points.isEmpty, !visits.isEmpty {
-            return (LocationBatch(points: points, visits: []), LocationBatch(points: [], visits: visits))
+        let kindCount = [points.isEmpty, visits.isEmpty, activities.isEmpty].filter { !$0 }.count
+        if kindCount > 1 {
+            if !points.isEmpty {
+                return (
+                    LocationBatch(points: points, visits: []), LocationBatch(points: [], visits: visits, activities: activities)
+                )
+            }
+            return (LocationBatch(points: [], visits: visits), LocationBatch(points: [], visits: [], activities: activities))
         }
-        if points.isEmpty {
+        if !points.isEmpty {
+            let middle = points.count / 2
+            return (LocationBatch(points: Array(points[..<middle]), visits: []), LocationBatch(points: Array(points[middle...]), visits: []))
+        }
+        if !visits.isEmpty {
             let middle = visits.count / 2
             return (
                 LocationBatch(points: [], visits: Array(visits[..<middle])), LocationBatch(points: [], visits: Array(visits[middle...]))
             )
         }
-        let middle = points.count / 2
-        return (LocationBatch(points: Array(points[..<middle]), visits: []), LocationBatch(points: Array(points[middle...]), visits: []))
+        let middle = activities.count / 2
+        return (
+            LocationBatch(points: [], visits: [], activities: Array(activities[..<middle])),
+            LocationBatch(points: [], visits: [], activities: Array(activities[middle...]))
+        )
     }
 
     public var variables: [String: JSONValue] {
-        ["points": .array(points.map(\.variables)), "visits": .array(visits.map(\.variables))]
+        ["points": .array(points.map(\.variables)), "visits": .array(visits.map(\.variables)), "activities": .array(activities.map(\.variables))]
     }
 }
 
@@ -248,6 +298,10 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
     public static let pointCountMost = 20_000
     public static let pointCountPerBatch = 500
     public static let visitCountPerBatch = 50
+    /// The most motion activities kept, and sent in one call; the oldest go
+    /// first.
+    public static let activityCountMost = 5_000
+    public static let activityCountPerBatch = 500
 
     /// Whose it is. What was noticed while another account was in use is not
     /// reported as the person now signed in.
@@ -255,12 +309,26 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
     private var nextSequence = 1
     public private(set) var points: [ReportedPoint] = []
     public private(set) var visits: [ReportedVisit] = []
+    /// The motion activities, oldest first, one for each start time.
+    public private(set) var activities: [ReportedActivity] = []
     /// The visits begun and not ended, by the place they are at.
     public private(set) var openRegionVisits: [String: OpenRegionVisit] = [:]
 
     public init(accountKey: String? = nil) { self.accountKey = accountKey }
 
-    public var isEmpty: Bool { points.isEmpty && visits.isEmpty }
+    /// An outbox kept before there were motion activities has no list of
+    /// them: it decodes with none.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        accountKey = try container.decodeIfPresent(String.self, forKey: .accountKey)
+        nextSequence = try container.decodeIfPresent(Int.self, forKey: .nextSequence) ?? 1
+        points = try container.decodeIfPresent([ReportedPoint].self, forKey: .points) ?? []
+        visits = try container.decodeIfPresent([ReportedVisit].self, forKey: .visits) ?? []
+        activities = try container.decodeIfPresent([ReportedActivity].self, forKey: .activities) ?? []
+        openRegionVisits = try container.decodeIfPresent([String: OpenRegionVisit].self, forKey: .openRegionVisits) ?? [:]
+    }
+
+    public var isEmpty: Bool { points.isEmpty && visits.isEmpty && activities.isEmpty }
 
     /// The latest a time may be after now. The server refuses more than a day;
     /// an hour less leaves room for the phone's clock being ahead of its.
@@ -298,6 +366,14 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
         return true
     }
 
+    /// Whether the server would take the activity: a kind and a confidence it
+    /// knows, and a time not more than a day ahead.
+    public static func isAcceptable(_ activity: ReportedActivity, now: Date = Date()) -> Bool {
+        ReportedActivity.activityKinds.contains(activity.activityKind)
+            && ReportedActivity.activityConfidences.contains(activity.activityConfidence)
+            && isNotTooFarAhead(activity.startedAt, now: now)
+    }
+
     /// Queues a position, unless the server would refuse it (not on the
     /// earth, a negative accuracy, a time more than a day ahead): it would
     /// refuse the whole batch for it.
@@ -319,6 +395,25 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
         queued.sequence = nextSequence
         nextSequence += 1
         visits.append(queued)
+    }
+
+    /// Queues motion activities, oldest first, unless the server would refuse
+    /// one, or one with the same start is already waiting (the phone asks
+    /// again from where it last asked, so the same activity comes back). Past
+    /// the most kept, the oldest go.
+    public mutating func addActivities(_ added: [ReportedActivity]) {
+        var startTimes = Set(activities.map(\.startedAt))
+        for activity in added.sorted(by: { $0.startedAt < $1.startedAt }) {
+            // To the whole second, which is how the server and the file keep it.
+            let startedAt = Date(timeIntervalSince1970: activity.startedAt.timeIntervalSince1970.rounded(.down))
+            var queued = ReportedActivity(
+                startedAt: startedAt, activityKind: activity.activityKind, activityConfidence: activity.activityConfidence)
+            guard Self.isAcceptable(queued), startTimes.insert(startedAt).inserted else { continue }
+            queued.sequence = nextSequence
+            nextSequence += 1
+            activities.append(queued)
+        }
+        if activities.count > Self.activityCountMost { activities.removeFirst(activities.count - Self.activityCountMost) }
     }
 
     /// Notes that the person came into a place they named, and queues the
@@ -375,11 +470,14 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
         }
         points.removeAll { isInRange($0.measuredAt) }
         visits.removeAll { isInRange($0.arrivedAt ?? $0.departedAt) }
+        activities.removeAll { isInRange($0.startedAt) }
     }
 
-    /// The oldest points and visits, as many as one call takes.
+    /// The oldest points, visits and activities, as many as one call takes.
     public func nextBatch() -> LocationBatch {
-        LocationBatch(points: Array(points.prefix(Self.pointCountPerBatch)), visits: Array(visits.prefix(Self.visitCountPerBatch)))
+        LocationBatch(
+            points: Array(points.prefix(Self.pointCountPerBatch)), visits: Array(visits.prefix(Self.visitCountPerBatch)),
+            activities: Array(activities.prefix(Self.activityCountPerBatch)))
     }
 
     /// Takes out what a batch carried, once the server has answered. Entries
@@ -389,6 +487,7 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
     public mutating func remove(_ batch: LocationBatch) {
         if let last = batch.points.last?.sequence { points.removeAll { $0.sequence <= last } }
         if let last = batch.visits.last?.sequence { visits.removeAll { $0.sequence <= last } }
+        if let last = batch.activities.last?.sequence { activities.removeAll { $0.sequence <= last } }
     }
 
     /// The name of the file an account's outbox is kept in: one file for each
@@ -522,7 +621,7 @@ public enum LocationPlaceWatch {
 }
 
 /// LocationVisitDay is the visits that began on one day, newest first, and
-/// the pauses that began on it.
+/// the pauses and trips that began on it.
 public struct LocationVisitDay: Identifiable, Hashable, Sendable {
     /// Midnight of the day, in the zone it was grouped in.
     public let startOfDay: Date
@@ -544,10 +643,14 @@ public enum LocationDays {
     /// Groups visits by the day they began (or ended, when the arrival was
     /// not seen), newest day first and newest visit first within it. A visit
     /// with no time at all is left out: it cannot be placed. A pause is
-    /// placed on the day it began, among the visits of that day.
-    public static func group(_ visits: [PlaceVisit], pauses: [LocationPause] = [], calendar: Calendar = .current) -> [LocationVisitDay] {
+    /// placed on the day it began, among the visits of that day, and so is a
+    /// trip.
+    public static func group(
+        _ visits: [PlaceVisit], pauses: [LocationPause] = [], trips: [Trip] = [], calendar: Calendar = .current
+    ) -> [LocationVisitDay] {
         var visitsByDay: [Date: [PlaceVisit]] = [:]
         var pausesByDay: [Date: [LocationPause]] = [:]
+        var tripsByDay: [Date: [Trip]] = [:]
         for visit in visits {
             guard let anchor = visit.anchorDate else { continue }
             visitsByDay[calendar.startOfDay(for: anchor), default: []].append(visit)
@@ -556,19 +659,24 @@ public enum LocationDays {
             guard let startedDate = pause.startedDate else { continue }
             pausesByDay[calendar.startOfDay(for: startedDate), default: []].append(pause)
         }
-        let days = Set(visitsByDay.keys).union(pausesByDay.keys)
+        for trip in trips {
+            guard let startedDate = trip.startedDate else { continue }
+            tripsByDay[calendar.startOfDay(for: startedDate), default: []].append(trip)
+        }
+        let days = Set(visitsByDay.keys).union(pausesByDay.keys).union(tripsByDay.keys)
         return days.sorted(by: >).map { day in
             let sortedVisits = visitsByDay[day, default: []].sorted { ($0.anchorDate ?? .distantPast) > ($1.anchorDate ?? .distantPast) }
-            let entries = (sortedVisits.map { LocationTimelineEntry.visit($0) } + pausesByDay[day, default: []].map { .pause($0) })
+            let entries = (sortedVisits.map { LocationTimelineEntry.visit($0) } + pausesByDay[day, default: []].map { .pause($0) }
+                + tripsByDay[day, default: []].map { .trip($0) })
                 .sorted { ($0.anchorDate ?? .distantPast) > ($1.anchorDate ?? .distantPast) }
             return LocationVisitDay(startOfDay: day, visits: sortedVisits, entries: entries)
         }
     }
 
-    /// The visits and pauses of one stretch as a single timeline, newest
-    /// first.
-    public static func entries(visits: [PlaceVisit], pauses: [LocationPause]) -> [LocationTimelineEntry] {
-        (visits.map { LocationTimelineEntry.visit($0) } + pauses.map { .pause($0) })
+    /// The visits, pauses and trips of one stretch as a single timeline,
+    /// newest first.
+    public static func entries(visits: [PlaceVisit], pauses: [LocationPause], trips: [Trip] = []) -> [LocationTimelineEntry] {
+        (visits.map { LocationTimelineEntry.visit($0) } + pauses.map { .pause($0) } + trips.map { .trip($0) })
             .filter { $0.anchorDate != nil }
             .sorted { ($0.anchorDate ?? .distantPast) > ($1.anchorDate ?? .distantPast) }
     }

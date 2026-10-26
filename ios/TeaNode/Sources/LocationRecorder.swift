@@ -1,4 +1,5 @@
 import CoreLocation
+import CoreMotion
 import Foundation
 import Observation
 import TeaNodeKit
@@ -67,6 +68,66 @@ struct VisitReading: Sendable {
                 latitudeDegrees: latitudeDegrees, longitudeDegrees: longitudeDegrees, arrivedAt: arrivedAt, departedAt: departedAt),
             latitudeDegrees: latitudeDegrees, longitudeDegrees: longitudeDegrees, accuracyMeters: accuracyMeters, arrivedAt: arrivedAt,
             departedAt: departedAt, visitSource: "visit")
+    }
+}
+
+/// MotionActivityReader asks Core Motion what the person was doing, which iOS
+/// keeps for seven days. It is outside the recorder so that what Core Motion
+/// hands back, which is not safe to pass between threads, is made into plain
+/// values where it arrives.
+enum MotionActivityReader {
+    /// iOS keeps this much motion activity.
+    static let lookbackSeconds = 7.0 * 86400
+
+    private nonisolated(unsafe) static let manager = CMMotionActivityManager()
+
+    /// Whether this device can tell: it needs the motion coprocessor, which
+    /// the simulator and some iPads lack.
+    static var isAvailable: Bool { CMMotionActivityManager.isActivityAvailable() }
+
+    static var authorizationStatus: CMAuthorizationStatus { CMMotionActivityManager.authorizationStatus() }
+
+    /// Every stretch of activity iOS recorded in a range, oldest first; nil
+    /// when it could not be read (not allowed, or no motion hardware). The
+    /// first read also shows iOS's question, when it has not been asked.
+    static func read(from: Date, until: Date) async -> [ReportedActivity]? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<[ReportedActivity]?, Never>) in
+            manager.queryActivityStarting(from: from, to: until, to: .main) { activities, error in
+                guard error == nil else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: (activities ?? []).map(reportedActivity))
+            }
+        }
+    }
+
+    /// What Core Motion says, as the server takes it: the kind from the flags
+    /// (moving ones first, since a stretch can be flagged as more than one),
+    /// and how sure iOS was.
+    private static func reportedActivity(_ activity: CMMotionActivity) -> ReportedActivity {
+        let activityKind: String
+        if activity.automotive {
+            activityKind = "automotive"
+        } else if activity.cycling {
+            activityKind = "cycling"
+        } else if activity.running {
+            activityKind = "running"
+        } else if activity.walking {
+            activityKind = "walking"
+        } else if activity.stationary {
+            activityKind = "stationary"
+        } else {
+            activityKind = "unknown"
+        }
+        let activityConfidence: String
+        switch activity.confidence {
+        case .high: activityConfidence = "high"
+        case .medium: activityConfidence = "medium"
+        case .low: activityConfidence = "low"
+        @unknown default: activityConfidence = "low"
+        }
+        return ReportedActivity(startedAt: activity.startDate, activityKind: activityKind, activityConfidence: activityConfidence)
     }
 }
 
@@ -188,6 +249,25 @@ final class LocationRecorder {
     /// Whether iOS has not asked the person yet.
     var isAuthorizationUndecided: Bool { authorizationStatus == .notDetermined }
 
+    /// What the person allowed of Motion & Fitness, which tells walking,
+    /// running, cycling and driving apart for the trips between visits.
+    private(set) var motionAuthorizationStatus = CMAuthorizationStatus.notDetermined
+
+    /// Whether motion activity may be read.
+    var isMotionAuthorized: Bool { motionAuthorizationStatus == .authorized }
+
+    /// Whether iOS has not asked the person about Motion & Fitness yet.
+    var isMotionUndecided: Bool { motionAuthorizationStatus == .notDetermined }
+
+    /// Whether this device can tell the activity at all. The screenshots
+    /// show the rows that depend on it.
+    var isMotionAvailable: Bool {
+        #if DEBUG
+            if DemoServer.isRequested { return true }
+        #endif
+        return MotionActivityReader.isAvailable
+    }
+
     @ObservationIgnored private var manager: CLLocationManager?
     private let delegate = LocationManagerDelegate()
     @ObservationIgnored private var serviceSession: CLServiceSession?
@@ -202,6 +282,7 @@ final class LocationRecorder {
     @ObservationIgnored private var outbox = LocationOutbox()
     @ObservationIgnored private var isFlushing = false
     @ObservationIgnored private var isFlushRequestedAgain = false
+    @ObservationIgnored private var motionReadAt = Date.distantPast
     /// Set while the history is being erased, so that nothing is sent that
     /// the erase would then have to take back.
     @ObservationIgnored private var isReportingHeld = false
@@ -233,6 +314,18 @@ final class LocationRecorder {
     @ObservationIgnored private var isWatchingPlacesAgain = false
     private let defaults: UserDefaults
     private let outboxDirectory: URL?
+
+    /// Kept for each account (with the account key after it): when motion
+    /// activity was last read, so the next read starts there.
+    private static let lastActivityQueriedAtKeyPrefix = "locationLastActivityQueriedAt."
+    /// How often motion activity is read when nothing forces it: a read is a
+    /// query of what iOS already keeps, and the activities are told with the
+    /// next report.
+    private static let motionReadSeconds = 300.0
+    /// How far before the last read the next one starts, so an activity that
+    /// began before it and was still going is not missed. The outbox keeps
+    /// one of each start.
+    private static let motionOverlapSeconds = 3600.0
 
     private static let isRecordingOnKey = "locationIsRecordingOn"
     private static let hasAskedForAlwaysKey = "locationHasAskedForAlways"
@@ -284,6 +377,7 @@ final class LocationRecorder {
         manager.delegate = delegate
         self.manager = manager
         authorizationStatus = manager.authorizationStatus
+        motionAuthorizationStatus = MotionActivityReader.authorizationStatus
         isRecordingOn = defaults.object(forKey: Self.isRecordingOnKey) as? Bool ?? isAuthorizedAlways
         applyMonitoring()
         Task { await flush() }
@@ -297,6 +391,7 @@ final class LocationRecorder {
         guard manager != nil else { return }
         if isActive {
             if let manager { authorizationStatus = manager.authorizationStatus }
+            motionAuthorizationStatus = MotionActivityReader.authorizationStatus
             // A new session at every launch and every return to the
             // foreground: iOS ends background updates for one that was not
             // started in the foreground.
@@ -374,6 +469,7 @@ final class LocationRecorder {
         }
         if let url = outboxURL(accountKey: accountKey) { try? FileManager.default.removeItem(at: url) }
         defaults.removeObject(forKey: LocationPauseTracker.defaultsKey(accountKey: accountKey))
+        defaults.removeObject(forKey: Self.lastActivityQueriedAtKeyPrefix + accountKey)
     }
 
     /// Stops sending, and waits for a batch on its way to be answered. Used
@@ -646,6 +742,22 @@ final class LocationRecorder {
             if DemoServer.isRequested { return }
         #endif
         if authorizationStatus == .notDetermined { manager?.requestWhenInUseAuthorization() }
+    }
+
+    /// Asks for Motion & Fitness. iOS shows its question the first time motion
+    /// activity is read, so a read of the last minute asks it; the status is
+    /// taken again when the person has answered.
+    func askForMotionAuthorization() {
+        #if DEBUG
+            if DemoServer.isRequested { return }
+        #endif
+        guard isMotionUndecided else { return }
+        Task {
+            _ = await MotionActivityReader.read(from: Date().addingTimeInterval(-60), until: Date())
+            motionAuthorizationStatus = MotionActivityReader.authorizationStatus
+            // Allowed now: the last seven days go with the next report.
+            if isMotionAuthorized { await flush(isForced: true) }
+        }
     }
 
     /// Whether the screen that says why Always is wanted should be shown:
@@ -1055,8 +1167,9 @@ final class LocationRecorder {
             isFlushRequestedAgain = true
             return
         }
-        guard refusalText == nil, !isReportingHeld, !outbox.isEmpty, isForced || retryGate.canTry(at: Date()) else { return }
+        guard refusalText == nil, !isReportingHeld, isForced || retryGate.canTry(at: Date()) else { return }
         guard let connection = AppModel.shared.connection, connection.accountKey == outbox.accountKey else { return }
+        guard !outbox.isEmpty || isMotionReadDue(isForced: isForced) else { return }
         isFlushing = true
         let background = BackgroundTaskHolder(name: "Report location")
         defer {
@@ -1064,6 +1177,7 @@ final class LocationRecorder {
             background.end()
             writeOutbox()
         }
+        await collectMotionActivities(accountKey: connection.accountKey, isForced: isForced)
         repeat {
             isFlushRequestedAgain = false
             guard !isReportingHeld, let connection = AppModel.shared.connection, connection.accountKey == outbox.accountKey else { return }
@@ -1102,6 +1216,36 @@ final class LocationRecorder {
                 saveOutbox(isUrgent: false)
             }
         } while isFlushRequestedAgain
+    }
+
+    /// Whether motion activity should be read now: the person allowed it,
+    /// recording is on and not paused, and either a read is forced or the last
+    /// one was a while ago.
+    private func isMotionReadDue(isForced: Bool) -> Bool {
+        #if DEBUG
+            if DemoServer.isRequested { return false }
+        #endif
+        guard isRecordingOn, !isPaused, isMotionAuthorized, MotionActivityReader.isAvailable else { return false }
+        return isForced || Date().timeIntervalSince(motionReadAt) >= Self.motionReadSeconds
+    }
+
+    /// Reads what iOS recorded of the person's motion since the last read
+    /// (at most seven days back) and queues it in the outbox, one activity
+    /// for each start. What began inside a pause is left out, as positions are.
+    private func collectMotionActivities(accountKey: String, isForced: Bool) async {
+        guard isMotionReadDue(isForced: isForced), outbox.accountKey == accountKey else { return }
+        let now = Date()
+        motionReadAt = now
+        let oldest = now.addingTimeInterval(-MotionActivityReader.lookbackSeconds)
+        let defaultsKey = Self.lastActivityQueriedAtKeyPrefix + accountKey
+        let lastQueriedAt = defaults.object(forKey: defaultsKey) as? Date
+        let from = max(oldest, lastQueriedAt.map { $0.addingTimeInterval(-Self.motionOverlapSeconds) } ?? oldest)
+        guard let activities = await MotionActivityReader.read(from: from, until: now) else { return }
+        // The account was changed while iOS answered: its activity is not the new account's.
+        guard outbox.accountKey == accountKey else { return }
+        outbox.addActivities(activities.filter { pauseTracker.isRecordable(pointMeasuredAt: $0.startedAt) })
+        defaults.set(now, forKey: defaultsKey)
+        saveOutbox(isUrgent: false)
     }
 
     /// Sends a batch. If the server calls it invalid without saying which

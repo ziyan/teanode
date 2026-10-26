@@ -292,25 +292,29 @@ public enum LocationPauseRetry {
     }
 }
 
-/// LocationTimelineEntry is one row of a timeline: a visit, or a pause, which
-/// shows as the gap it is.
+/// LocationTimelineEntry is one row of a timeline: a visit, a pause, which
+/// shows as the gap it is, or a trip between two visits.
 public enum LocationTimelineEntry: Identifiable, Hashable, Sendable {
     case visit(PlaceVisit)
     case pause(LocationPause)
+    case trip(Trip)
 
     public var id: String {
         switch self {
         case .visit(let visit): "visit:\(visit.id)"
         case .pause(let pause): "pause:\(pause.id)"
+        case .trip(let trip): "trip:\(trip.id)"
         }
     }
 
     /// Where it is placed on a day: a visit's arrival (else its departure), a
-    /// pause's start.
+    /// pause's start, a trip's start (the departure from the visit before it,
+    /// so it sits between that visit and the next).
     public var anchorDate: Date? {
         switch self {
         case .visit(let visit): visit.anchorDate
         case .pause(let pause): pause.startedDate
+        case .trip(let trip): trip.startedDate
         }
     }
 }

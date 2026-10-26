@@ -338,6 +338,10 @@ jobs:
           shoot location-person-muted-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-person-muted
           shoot location-person-muted-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-person-muted
           shoot location-person-muted-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-person-muted
+          # The Travel screen, how far the person traveled by each way, at Week.
+          shoot location-travel-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-travel
+          shoot location-travel-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-travel
+          shoot location-travel-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-travel
           # Health: the list of kinds of data, a steps chart, a night's stages, a heart rate line, a
           # workout's route, somebody sharing Health, the settings and the setup that comes before iOS asks.
           shoot health-light light large -TeaNodeDemo -TeaNodeTab health

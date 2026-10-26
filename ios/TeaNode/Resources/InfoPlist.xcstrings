@@ -240,6 +240,30 @@
           }
         }
       }
+    },
+    "NSMotionUsageDescription": {
+      "comment": "Info.plist purpose string; the English is the value in ios/project.yml.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode reads your phone's motion activity to tell walking, running, cycling and driving apart, so the trips between the places you go show how you got there."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 会读取手机的运动活动，区分步行、跑步、骑行和驾车，让你去过的地方之间的行程显示是怎么到达的。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode は端末のモーションアクティビティを読み取り、徒歩、ランニング、自転車、車を区別して、訪れた場所の間をどう移動したかを表示します。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -109,6 +109,7 @@ targets:
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "TeaNode backs up your photos and videos to your server when you turn on backup."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "TeaNode uses the microphone while you call your agent or explicitly record a meeting."
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "TeaNode shows where you are on the map and follows you while the app is open, and your agent asks where you are when something you asked depends on it."
+        INFOPLIST_KEY_NSMotionUsageDescription: "TeaNode reads your phone's motion activity to tell walking, running, cycling and driving apart, so the trips between the places you go show how you got there."
         INFOPLIST_KEY_NSHealthShareUsageDescription: "TeaNode copies the Health data you allow to your own TeaNode server. Your agent reads it only if you turn that on in Health settings."
         INFOPLIST_KEY_NSHealthUpdateUsageDescription: "TeaNode only reads Apple Health and never writes to it."
         INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription: "TeaNode records the places you go, so you can look back on them, share where you are with your family, and so your agent knows your routine."

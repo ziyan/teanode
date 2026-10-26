@@ -631,8 +631,8 @@ extension Documents {
         }
         """
     public static let reportLocation = """
-        mutation ($agentPhoneId: String, $points: [ReportedPointInput!]!, $visits: [ReportedVisitInput!]!) {
-          ReportLocation(agentPhoneId: $agentPhoneId, points: $points, visits: $visits) {
+        mutation ($agentPhoneId: String, $points: [ReportedPointInput!]!, $visits: [ReportedVisitInput!]!, $activities: [ReportedActivityInput!]!) {
+          ReportLocation(agentPhoneId: $agentPhoneId, points: $points, visits: $visits, activities: $activities) {
             newPointCount newVisitCount updatedVisitCount pausedPointCount pausedVisitCount
             pause { id startedAt endedAt }
           }
