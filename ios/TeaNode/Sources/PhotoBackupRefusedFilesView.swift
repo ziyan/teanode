@@ -1,4 +1,5 @@
 import Photos
+import os
 import SwiftUI
 import TeaNodeKit
 import UIKit
@@ -221,10 +222,18 @@ struct PhotoBackupFilePreview {
         options.resizeMode = .fast
         options.isNetworkAccessAllowed = false
         let image = await withCheckedContinuation { (continuation: CheckedContinuation<UIImage?, Never>) in
+            // Resumed by the first answer alone: a second resume would stop
+            // the app, and PhotoKit does not promise a single answer in every
+            // case.
+            let answered = OSAllocatedUnfairLock(initialState: false)
             PHImageManager.default().requestImage(
                 for: asset, targetSize: CGSize(width: thumbnailPixels, height: thumbnailPixels), contentMode: .aspectFill, options: options
             ) { image, _ in
-                continuation.resume(returning: image)
+                let isFirst = answered.withLock { isAnswered in
+                    defer { isAnswered = true }
+                    return !isAnswered
+                }
+                if isFirst { continuation.resume(returning: image) }
             }
         }
         return PhotoBackupFilePreview(image: image, takenAt: asset.creationDate, isInLibrary: true)
