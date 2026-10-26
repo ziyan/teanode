@@ -99,6 +99,9 @@ type MemoryOperation interface {
 	UpdateAddressBook(book *models.AddressBook) (*models.AddressBook, error)
 	DeleteAddressBook(addressBookId string) error
 	ListContacts(addressBookId, query string, limit int) ([]*models.Contact, error)
+
+	// AddressBookChangeTag is CalendarChangeTag for an address book.
+	AddressBookChangeTag(addressBookId string) (string, error)
 	GetContact(addressBookId, contactId string) (*models.Contact, error)
 	LockContact(addressBookId, contactId string) (*models.Contact, error)
 	GetContactByUID(addressBookId, uid string) (*models.Contact, error)
@@ -150,6 +153,11 @@ type MemoryOperation interface {
 	UpdateCalendar(calendar *models.Calendar) (*models.Calendar, error)
 	DeleteCalendar(userId, calendarId string) error
 	ListCalendarObjects(calendarId string) ([]*models.CalendarObject, error)
+
+	// CalendarChangeTag names the calendar's contents as they are now: it
+	// changes whenever an object is added, changed or deleted, which is how a
+	// phone knows to read the calendar again.
+	CalendarChangeTag(calendarId string) (string, error)
 
 	// ListCalendarObjectsStartingBetween are the objects whose first
 	// occurrence starts in the window, earliest first and at most the

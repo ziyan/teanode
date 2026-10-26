@@ -5,7 +5,6 @@ import (
 	"context"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -116,36 +115,4 @@ func withoutWritePrivilege(body []byte, readOnly map[string]bool) []byte {
 		}
 		return writePrivilege.ReplaceAll(block, nil)
 	})
-}
-
-// serveWithPrivileges runs the library's handler and, when the person reaches
-// a calendar they may only read, rewrites its PROPFIND answer to say so.
-func (self *component) serveWithPrivileges(response http.ResponseWriter, request *http.Request, signedIn *session, handler http.Handler) {
-	readOnly, err := self.readOnlyCalendars(request.Context(), signedIn)
-	if err != nil || len(readOnly) == 0 {
-		// Nothing to rewrite, which is nearly every account; or something
-		// that cannot be checked, in which case the library's answer stands
-		// and the refusal where changes are kept is what protects.
-		if err != nil {
-			log.Warningf("cannot read which calendars are read only: %s", err)
-		}
-		handler.ServeHTTP(response, request)
-		return
-	}
-	buffered := &bufferedResponse{header: http.Header{}}
-	handler.ServeHTTP(buffered, request)
-	body := buffered.body.Bytes()
-	if buffered.httpStatus == http.StatusMultiStatus {
-		body = withoutWritePrivilege(body, readOnly)
-	}
-	for name, values := range buffered.header {
-		response.Header()[name] = values
-	}
-	if response.Header().Get("Content-Length") != "" {
-		response.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	}
-	if buffered.httpStatus != 0 {
-		response.WriteHeader(buffered.httpStatus)
-	}
-	_, _ = response.Write(body)
 }
