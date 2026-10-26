@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.199.4] - 2026-10-26
+
+### Changed
+
+- Search everything shows each photo it finds with its picture, on the iPhone and the dashboard, not only its file name. (#663)
+
 ## [0.199.3] - 2026-10-26
 
 ### Fixed
