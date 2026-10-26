@@ -86397,18 +86397,66 @@
         }
       }
     },
-    "Start shopping": {
+    "Done shopping": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "買い物を始める"
+            "value": "買い物を終える"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开始购物"
+            "value": "购物完成"
+          }
+        }
+      }
+    },
+    "Shop at a store": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "店で買い物する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去商店购物"
+          }
+        }
+      }
+    },
+    "Done shopping. What you checked off is bought.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "買い物を終えました。チェックを入れた品物は購入済みになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购物完成，你勾选的商品已算买好。"
+          }
+        }
+      }
+    },
+    "See the picture of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@の画像を見る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看%@的图片"
           }
         }
       }

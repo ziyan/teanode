@@ -368,13 +368,13 @@ jobs:
           for passwords_screen in passwords-card passwords-agent-login passwords-shared-login passwords-deleted passwords-generator passwords-intro passwords-setup; do
             shoot "$passwords_screen-light" light large -TeaNodeDemo -TeaNodeTab passwords -TeaNodeScreen "$passwords_screen"
           done
-          # Shopping (docs/planning/shopping-lists-execplan.md): the lists, one list at home, the store being
-          # shopped, an item's sheet and the import sheet (the last two over the list), each in light, dark and the
-          # largest text.
+          # Shopping (docs/planning/shopping-lists-execplan.md): the lists, one list at home and the store being
+          # shopped (each as rows and as pictures), an item's sheet and the import sheet (the last two over the
+          # list), each in light, dark and the largest text.
           shoot shopping-light light large -TeaNodeDemo -TeaNodeTab shopping
           shoot shopping-dark dark large -TeaNodeDemo -TeaNodeTab shopping
           shoot shopping-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab shopping
-          for shopping_screen in shopping-list shopping-store shopping-item shopping-import; do
+          for shopping_screen in shopping-list shopping-list-pictures shopping-store shopping-store-pictures shopping-item shopping-import; do
             shoot "$shopping_screen-light" light large -TeaNodeDemo -TeaNodeTab shopping -TeaNodeScreen "$shopping_screen"
             shoot "$shopping_screen-dark" dark large -TeaNodeDemo -TeaNodeTab shopping -TeaNodeScreen "$shopping_screen"
             shoot "$shopping_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab shopping -TeaNodeScreen "$shopping_screen"

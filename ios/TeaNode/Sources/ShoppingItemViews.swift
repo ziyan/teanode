@@ -8,69 +8,115 @@ import TeaNodeKit
 
 /// ShoppingPictureView is an item's picture as the server keeps it, read with
 /// the app's sign-in, in a rounded square. An item with none shows its first
-/// letter.
+/// letter. A zoomable picture opens full screen when tapped, to see the
+/// product close up; the letter is not a picture and opens nothing.
 struct ShoppingPictureView: View {
     let item: ShoppingItem
-    var size: CGFloat = 44
+    /// The side of the square; nil fills the width it is given, as a tile's
+    /// picture does.
+    var size: CGFloat? = 44
+    var isZoomable = false
     @Environment(AppModel.self) private var app: AppModel?
     @State private var picture: UIImage?
 
     var body: some View {
-        ZStack {
-            Color(.tertiarySystemFill)
-            if let picture {
-                Image(uiImage: picture)
-                    .resizable()
-                    .scaledToFill()
+        Group {
+            if isZoomable, let picture {
+                Button {
+                    LightboxPresenter.present(picture, name: item.itemDescription)
+                } label: {
+                    square
+                }
+                // Borderless, not plain: in a list a plain button takes the
+                // whole row's taps.
+                .buttonStyle(.borderless)
+                .accessibilityLabel(Text("See the picture of \(item.itemDescription)"))
             } else {
-                Text(verbatim: item.initial)
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
+                square
+                    .accessibilityHidden(true)
             }
         }
-        .frame(width: size, height: size)
-        .clipShape(.rect(cornerRadius: size / 5, style: .continuous))
-        .accessibilityHidden(true)
         .task(id: item.picturePath) {
             picture = nil
             guard item.hasPicture else { return }
             picture = await app?.picture(item.picturePath)
         }
     }
+
+    @ViewBuilder private var square: some View {
+        if let size {
+            ground
+                .frame(width: size, height: size)
+                .clipShape(.rect(cornerRadius: size / 5, style: .continuous))
+        } else {
+            ground
+                .frame(maxWidth: .infinity)
+                .aspectRatio(1, contentMode: .fit)
+                .clipShape(.rect(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    /// The picture on its ground, or the first letter. A tile shows the whole
+    /// product, not a crop of it.
+    private var ground: some View {
+        ZStack {
+            Color(.tertiarySystemFill)
+            if let picture, size == nil {
+                Image(uiImage: picture)
+                    .resizable()
+                    .scaledToFit()
+            } else if let picture {
+                Image(uiImage: picture)
+                    .resizable()
+                    .scaledToFill()
+            } else if size == nil {
+                Text(verbatim: item.initial)
+                    .font(.largeTitle)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(verbatim: item.initial)
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
 }
 
-/// ShoppingListItemRow is an item on a list: its picture, what it is and what
-/// it needs, and about what it costs. A tap opens it.
+/// ShoppingListItemRow is an item on a list: its picture, which opens full
+/// screen, what it is and what it needs, and about what it costs. A tap on
+/// the words opens the item.
 struct ShoppingListItemRow: View {
     let item: ShoppingItem
     let onOpen: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        Button(action: onOpen) {
-            HStack(spacing: 12) {
-                ShoppingPictureView(item: item, size: 44)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: item.itemDescription)
-                        .foregroundStyle(item.isNotNeeded ? .secondary : .primary)
-                    Text(verbatim: ShoppingWords.listItemDetail(item))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    // At the largest sizes the price goes under the words, which
-                    // otherwise break mid-word beside it.
-                    if dynamicTypeSize.isAccessibilitySize {
+        HStack(spacing: 12) {
+            ShoppingPictureView(item: item, size: 44, isZoomable: true)
+            Button(action: onOpen) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: item.itemDescription)
+                            .foregroundStyle(item.isNotNeeded ? .secondary : .primary)
+                        Text(verbatim: ShoppingWords.listItemDetail(item))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        // At the largest sizes the price goes under the words, which
+                        // otherwise break mid-word beside it.
+                        if dynamicTypeSize.isAccessibilitySize {
+                            priceText
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    if !dynamicTypeSize.isAccessibilitySize {
                         priceText
                     }
                 }
-                Spacer(minLength: 8)
-                if !dynamicTypeSize.isAccessibilitySize {
-                    priceText
-                }
+                .frame(minHeight: 44)
+                .contentShape(.rect)
             }
-            .frame(minHeight: 44)
-            .contentShape(.rect)
+            .buttonStyle(.borderless)
         }
-        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -82,6 +128,44 @@ struct ShoppingListItemRow: View {
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+/// ShoppingListItemTile is an item in the pictures layout of a list: the
+/// picture across the tile, which opens full screen, and under it what it
+/// is, what it needs and about what it costs. A tap on the words opens it.
+struct ShoppingListItemTile: View {
+    let item: ShoppingItem
+    let onOpen: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ShoppingPictureView(item: item, size: nil, isZoomable: true)
+            Button(action: onOpen) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: item.itemDescription)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(item.isNotNeeded ? .secondary : .primary)
+                        .lineLimit(2)
+                    Text(verbatim: ShoppingWords.listItemDetail(item))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                    let price = ShoppingMoney.shownLineTotal(of: item)
+                    if !price.isEmpty {
+                        Text(verbatim: price)
+                            .font(.footnote)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(8)
+        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 16, style: .continuous))
     }
 }
 
@@ -190,7 +274,7 @@ struct ShoppingItemSheet: View {
             // The picture stands above the menu's row as the section's
             // header, so the row keeps its rounded card and no divider.
             VStack(spacing: 12) {
-                ShoppingPictureView(item: shown, size: 120)
+                ShoppingPictureView(item: shown, size: 120, isZoomable: true)
                     .frame(maxWidth: .infinity)
                 if isSearchingPicture {
                     HStack(spacing: 8) {

@@ -88,7 +88,7 @@ struct ShoppingScreen: View {
             if !model.stores.isEmpty {
                 Section {
                     ForEach(model.stores) { store in
-                        NavigationLink(value: ShoppingPlace.store(store.storeName, listIds: [], isStartingTrip: false)) {
+                        NavigationLink(value: ShoppingPlace.store(store.storeName, listIds: [])) {
                             ShoppingStoreRow(store: store)
                         }
                     }
@@ -124,13 +124,14 @@ struct ShoppingScreen: View {
     #if DEBUG
         /// `-TeaNodeScreen shopping-list`, `shopping-item` and `shopping-import` open the
         /// first list (the last two with the item or the import sheet over it), and
-        /// `shopping-store` the store screen.
+        /// `shopping-store` the store screen; `shopping-list-pictures` and
+        /// `shopping-store-pictures` show those two as pictures.
         private func openDemoScreen() {
             guard DemoServer.isRequested, path.isEmpty, let screen = DemoServer.screen else { return }
             if screen.hasPrefix("shopping-list") || screen == "shopping-item" || screen == "shopping-import" {
                 path = [.list(ShoppingDemo.groceriesListId)]
-            } else if screen == "shopping-store" {
-                path = [.store(ShoppingDemo.exampleMarket, listIds: [], isStartingTrip: false)]
+            } else if screen.hasPrefix("shopping-store") {
+                path = [.store(ShoppingDemo.exampleMarket, listIds: [])]
             }
         }
     #endif
@@ -147,9 +148,8 @@ struct ShoppingPlaceScreen: View {
         switch place {
         case .list(let listId):
             ShoppingListScreen(connection: connection, listId: listId, path: $path)
-        case .store(let storeName, let listIds, let isStartingTrip):
-            ShoppingStoreScreen(
-                connection: connection, storeName: storeName, listIds: listIds, ownUserId: app.ownUserId, isStartingTrip: isStartingTrip)
+        case .store(let storeName, let listIds):
+            ShoppingStoreScreen(connection: connection, storeName: storeName, listIds: listIds, ownUserId: app.ownUserId)
         }
     }
 }
@@ -221,9 +221,48 @@ enum ShoppingListGrouping: Hashable {
     case aisle
 }
 
+/// ShoppingLayoutChoice is how a list or a store lays out its items: as rows,
+/// or as tiles with big pictures, which are easier to find a product on the
+/// shelf by. The choice is kept on the phone, for every list and store.
+enum ShoppingLayoutChoice: String {
+    case list
+    case pictures
+
+    static let storageKey = "shopping.layout"
+
+    /// The tiles' columns: two side by side on a phone, one at the largest
+    /// text sizes, where two leave the words no room.
+    static func tileColumns(_ dynamicTypeSize: DynamicTypeSize) -> [GridItem] {
+        let minimum: CGFloat = dynamicTypeSize.isAccessibilitySize ? 280 : 150
+        return [GridItem(.adaptive(minimum: minimum), spacing: 12)]
+    }
+
+    #if DEBUG
+        /// The demo's screens ending in `-pictures` show the tiles, and every
+        /// other one the rows, whatever an earlier screenshot left chosen.
+        static func applyDemo(to layoutName: inout String) {
+            guard DemoServer.isRequested, let screen = DemoServer.screen, screen.hasPrefix("shopping") else { return }
+            layoutName = screen.hasSuffix("-pictures") ? ShoppingLayoutChoice.pictures.rawValue : ShoppingLayoutChoice.list.rawValue
+        }
+    #endif
+}
+
+/// ShoppingLayoutPicker chooses the layout, in a screen's menu.
+struct ShoppingLayoutPicker: View {
+    @Binding var layoutName: String
+
+    var body: some View {
+        Picker("Layout", selection: $layoutName) {
+            Label("List", systemImage: "list.bullet").tag(ShoppingLayoutChoice.list.rawValue)
+            Label("Pictures", systemImage: "square.grid.2x2").tag(ShoppingLayoutChoice.pictures.rawValue)
+        }
+        .pickerStyle(.inline)
+    }
+}
+
 /// ShoppingListScreen is one list at home: its items under their stores or
-/// aisles, what is not needed now, and the controls to add, import, share and
-/// start shopping.
+/// aisles, as rows or tiles, what is not needed now, and the controls to add,
+/// import, share, open a store to shop at and say shopping is done.
 struct ShoppingListScreen: View {
     let connection: Connection
     let listId: String
@@ -244,6 +283,8 @@ struct ShoppingListScreen: View {
     @State private var isChoosingStore = false
     @State private var pickedReceiptItems: [PhotosPickerItem] = []
     @State private var isTakingReceiptPicture = false
+    @AppStorage(ShoppingLayoutChoice.storageKey) private var layoutName = ShoppingLayoutChoice.list.rawValue
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(connection: Connection, listId: String, path: Binding<[ShoppingPlace]>) {
         self.connection = connection
@@ -258,6 +299,9 @@ struct ShoppingListScreen: View {
         screen
             .refreshable { await model.load() }
             .task {
+                #if DEBUG
+                    ShoppingLayoutChoice.applyDemo(to: &layoutName)
+                #endif
                 await model.load()
                 #if DEBUG
                     openDemoSheet()
@@ -319,14 +363,14 @@ struct ShoppingListScreen: View {
             }
             ForEach(groups) { group in
                 Section {
-                    ForEach(group.items) { item in row(item) }
+                    items(group.items)
                 } header: {
                     Text(verbatim: groupTitle(group))
                 }
             }
             if !model.notNeeded.isEmpty {
                 Section("Not needed") {
-                    ForEach(model.notNeeded) { item in row(item) }
+                    items(model.notNeeded)
                 }
             }
         }
@@ -344,6 +388,40 @@ struct ShoppingListScreen: View {
         case .store: ShoppingWords.storeTitle(group)
         case .aisle: ShoppingWords.aisleTitle(group)
         }
+    }
+
+    /// A section's items: a row each, or tiles in a grid that fills the
+    /// section's one row.
+    @ViewBuilder private func items(_ sectionItems: [ShoppingItem]) -> some View {
+        if layoutName == ShoppingLayoutChoice.pictures.rawValue {
+            LazyVGrid(columns: ShoppingLayoutChoice.tileColumns(dynamicTypeSize), spacing: 12) {
+                ForEach(sectionItems) { item in tile(item) }
+            }
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+        } else {
+            ForEach(sectionItems) { item in row(item) }
+        }
+    }
+
+    /// A tile has no swipe: Need again and Remove are in its menu.
+    private func tile(_ item: ShoppingItem) -> some View {
+        ShoppingListItemTile(item: item) { editing = item }
+            .contextMenu {
+                if item.isNotNeeded {
+                    Button("Need again", systemImage: "arrow.uturn.backward") { needingAgain = item }
+                }
+                Button("Remove", systemImage: "trash", role: .destructive) { removing = item }
+                    .tint(.red)
+            }
+            .confirmationDialog(
+                "Remove from the list", isPresented: Binding(get: { removing?.id == item.id }, set: { if !$0 { removing = nil } }),
+                titleVisibility: .visible, presenting: removing
+            ) { chosen in
+                Button("Remove", role: .destructive) { Task { await model.remove(chosen) } }
+            } message: { chosen in
+                Text("\(chosen.itemDescription) is taken off the list for everyone it is shared with.")
+            }
     }
 
     private func row(_ item: ShoppingItem) -> some View {
@@ -409,6 +487,10 @@ struct ShoppingListScreen: View {
 
     private var menu: some View {
         Menu {
+            ShoppingLayoutPicker(layoutName: $layoutName)
+            if model.isShopping(ownUserId: app.ownUserId) {
+                Button("Shop at a store", systemImage: "cart") { chooseStore() }
+            }
             Button("Import", systemImage: "square.and.arrow.down") { isImporting = true }
             Menu("Upload a receipt", systemImage: "doc.text.viewfinder") {
                 ShoppingReceiptSourceChoices(pickedItems: $pickedReceiptItems, isTakingPicture: $isTakingReceiptPicture)
@@ -438,16 +520,28 @@ struct ShoppingListScreen: View {
 
     private var floatingControls: some View {
         HStack(spacing: 12) {
+            // There is no starting: the first item put in the cart starts the
+            // person's trip. Done shows once there is something to buy.
             Button {
-                startShopping()
+                if model.isShopping(ownUserId: app.ownUserId) {
+                    Task { await model.finish() }
+                } else {
+                    chooseStore()
+                }
             } label: {
-                Text("Start shopping")
-                    .frame(maxWidth: .infinity)
+                Group {
+                    if model.isShopping(ownUserId: app.ownUserId) {
+                        Text("Done shopping")
+                    } else {
+                        Text("Shop at a store")
+                    }
+                }
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
             .controlSize(.large)
-            .disabled(model.neededCount == 0)
+            .disabled(model.neededCount == 0 && !model.isShopping(ownUserId: app.ownUserId))
             .confirmationDialog("Where are you shopping?", isPresented: $isChoosingStore, titleVisibility: .visible) {
                 ForEach(model.storeChoices, id: \.self) { storeName in
                     Button(storeName) { open(storeName: storeName) }
@@ -475,8 +569,8 @@ struct ShoppingListScreen: View {
 
     /// Opens the store to shop at: the only one the list has something to
     /// buy at, any store when it has none, and the person's choice when it
-    /// has several.
-    private func startShopping() {
+    /// has several. Opening it starts nothing.
+    private func chooseStore() {
         Task {
             await model.loadStores()
             let choices = model.storeChoices
@@ -489,7 +583,7 @@ struct ShoppingListScreen: View {
     }
 
     private func open(storeName: String) {
-        path.append(.store(storeName, listIds: [listId], isStartingTrip: true))
+        path.append(.store(storeName, listIds: [listId]))
     }
 
     // MARK: Sheets

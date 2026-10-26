@@ -418,6 +418,12 @@ final class ShoppingTests: XCTestCase {
         let (checking, checkFake) = connection(answering: #"{"data":{"CheckShoppingItem":\#(answer)}}"#)
         try await checking.checkShoppingItem(shoppingItemId: "item-1", isChecked: true)
         XCTAssertEqual(try sentVariables(checkFake.sent[0])["isChecked"], .bool(true))
+        XCTAssertNil(try sentVariables(checkFake.sent[0])["storeName"])
+
+        // Checking at a store names it, for the trip the first check starts.
+        let (atStore, atStoreFake) = connection(answering: #"{"data":{"CheckShoppingItem":\#(answer)}}"#)
+        try await atStore.checkShoppingItem(shoppingItemId: "item-1", isChecked: true, storeName: "Example Market")
+        XCTAssertEqual(try sentVariables(atStoreFake.sent[0])["storeName"], .string("Example Market"))
 
         let (needing, needFake) = connection(answering: #"{"data":{"SetShoppingItemNeed":\#(answer)}}"#)
         try await needing.setShoppingItemNeed(shoppingItemId: "item-1", isNeeded: true, neededQuantity: "2")
@@ -449,6 +455,11 @@ final class ShoppingTests: XCTestCase {
         let (finishing, finishFake) = connection(answering: #"{"data":{"FinishShopping":\#(trip)}}"#)
         try await finishing.finishShopping(shoppingTripId: "trip-1")
         XCTAssertEqual(try sentVariables(finishFake.sent[0])["shoppingTripId"], .string("trip-1"))
+
+        // Done with no trip named buys the cart all the same.
+        let (done, doneFake) = connection(answering: #"{"data":{"FinishShopping":\#(trip)}}"#)
+        try await done.finishShopping()
+        XCTAssertNil(try sentVariables(doneFake.sent[0])["shoppingTripId"])
     }
 
     func testTheStoreScreenAsksForTheListsIncludedAndAnyStore() async throws {
