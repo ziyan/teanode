@@ -179,6 +179,8 @@ struct ShoppingImportSheet: View {
         .disabled(isAdding || isNameMissing)
         .padding(.horizontal)
         .padding(.bottom, 8)
+        // A floating button stops growing before it covers the items under it.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
 
     // MARK: What they do

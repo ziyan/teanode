@@ -73,17 +73,17 @@ struct ShoppingStoreScreen: View {
     private var content: some View {
         let sections = model.sections
         return List {
+            // The summary and the list buttons share one section, so the
+            // list does not put a section's spacing between them.
             Section {
                 header
+                if model.lists.count > 1 {
+                    listButtons
+                        .listRowInsets(EdgeInsets())
+                }
             }
             .listRowBackground(Color.clear)
-            if model.lists.count > 1 {
-                Section {
-                    listButtons
-                }
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-            }
+            .listRowSeparator(.hidden)
             ForEach(sections.aisleGroups) { group in
                 Section {
                     ForEach(group.items) { item in row(item) }
@@ -204,6 +204,8 @@ struct ShoppingStoreScreen: View {
         .disabled(model.receipts.readingText != nil)
         .padding(.horizontal)
         .padding(.bottom, 8)
+        // A floating button stops growing before it covers the items under it.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
 
     private func finish() {
@@ -221,6 +223,7 @@ struct ShoppingStoreItemRow: View {
     let isChecked: Bool
     let showsListName: Bool
     let onToggle: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Button(action: onToggle) {
@@ -230,7 +233,10 @@ struct ShoppingStoreItemRow: View {
                     .foregroundStyle(isChecked ? Color.accentColor : Color.secondary)
                     .symbolEffect(.bounce, value: isChecked)
                     .frame(width: 32)
-                ShoppingPictureView(item: item, size: 44)
+                // At the largest sizes the words need the width the picture takes.
+                if !dynamicTypeSize.isAccessibilitySize {
+                    ShoppingPictureView(item: item, size: 44)
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: item.shownTitle)
                         .foregroundStyle(isChecked ? .secondary : .primary)

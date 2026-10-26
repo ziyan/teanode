@@ -44,6 +44,7 @@ struct ShoppingPictureView: View {
 struct ShoppingListItemRow: View {
     let item: ShoppingItem
     let onOpen: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Button(action: onOpen) {
@@ -55,9 +56,16 @@ struct ShoppingListItemRow: View {
                     Text(verbatim: ShoppingWords.listItemDetail(item))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    // At the largest sizes the price goes under the words, which
+                    // otherwise break mid-word beside it.
+                    if dynamicTypeSize.isAccessibilitySize {
+                        priceText
+                    }
                 }
                 Spacer(minLength: 8)
-                priceText
+                if !dynamicTypeSize.isAccessibilitySize {
+                    priceText
+                }
             }
             .frame(minHeight: 44)
             .contentShape(.rect)
@@ -90,6 +98,7 @@ struct ShoppingItemSheet: View {
     /// Takes the item off the list.
     let onRemove: (ShoppingItem) async -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// The item as last read, which the picture and the stock change.
     @State private var shown: ShoppingItem
@@ -165,6 +174,21 @@ struct ShoppingItemSheet: View {
 
     private var pictureSection: some View {
         Section {
+            Menu {
+                Button("Find another", systemImage: "magnifyingglass") { pictureSearchCount += 1 }
+                PhotosPicker(selection: $pickedItems, maxSelectionCount: 1, matching: .images) {
+                    Label("Choose a photo", systemImage: "photo.on.rectangle")
+                }
+                if shown.hasPicture {
+                    Button("Remove the picture", systemImage: "xmark.circle") { Task { await removePicture() } }
+                }
+            } label: {
+                changePictureLabel
+            }
+            .disabled(isWorking)
+        } header: {
+            // The picture stands above the menu's row as the section's
+            // header, so the row keeps its rounded card and no divider.
             VStack(spacing: 12) {
                 ShoppingPictureView(item: shown, size: 120)
                     .frame(maxWidth: .infinity)
@@ -177,20 +201,21 @@ struct ShoppingItemSheet: View {
                     }
                 }
             }
-            .listRowBackground(Color.clear)
-            Menu {
-                Button("Find another", systemImage: "magnifyingglass") { pictureSearchCount += 1 }
-                PhotosPicker(selection: $pickedItems, maxSelectionCount: 1, matching: .images) {
-                    Label("Choose a photo", systemImage: "photo.on.rectangle")
-                }
-                if shown.hasPicture {
-                    Button("Remove the picture", systemImage: "xmark.circle") { Task { await removePicture() } }
-                }
-            } label: {
-                Label("Change picture", systemImage: "photo")
-                    .actionColor()
-            }
-            .disabled(isWorking)
+            .textCase(nil)
+            .padding(.bottom, 8)
+        }
+    }
+
+    /// The words of the picture's menu. At the largest sizes the symbol beside
+    /// them left so little room that "Change" broke mid-word, so there they
+    /// stand alone.
+    @ViewBuilder private var changePictureLabel: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            Text("Change picture")
+                .actionColor()
+        } else {
+            Label("Change picture", systemImage: "photo")
+                .actionColor()
         }
     }
 

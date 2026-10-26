@@ -295,24 +295,27 @@ struct ShoppingListScreen: View {
 
     private var content: some View {
         List {
-            if let shoppersLine = ShoppingWords.listShoppersLine(model.trips.openTrips(ofListId: listId, excludingUserId: app.ownUserId)) {
+            // The shoppers line and the picker share one section, so the
+            // list does not put a section's spacing between them.
+            let shoppersLine = ShoppingWords.listShoppersLine(model.trips.openTrips(ofListId: listId, excludingUserId: app.ownUserId))
+            if shoppersLine != nil || !model.items.isEmpty {
                 Section {
-                    Text(verbatim: shoppersLine)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .listRowBackground(Color.clear)
-            }
-            if !model.items.isEmpty {
-                Section {
-                    Picker("Group by", selection: $grouping) {
-                        Text("By store").tag(ShoppingListGrouping.store)
-                        Text("By aisle").tag(ShoppingListGrouping.aisle)
+                    if let shoppersLine {
+                        Text(verbatim: shoppersLine)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+                    if !model.items.isEmpty {
+                        Picker("Group by", selection: $grouping) {
+                            Text("By store").tag(ShoppingListGrouping.store)
+                            Text("By aisle").tag(ShoppingListGrouping.aisle)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
                 }
                 .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
             ForEach(groups) { group in
                 Section {
@@ -466,6 +469,8 @@ struct ShoppingListScreen: View {
         }
         .padding(.horizontal)
         .padding(.bottom, 8)
+        // Floating buttons stop growing before they cover the items under them.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
 
     /// Opens the store to shop at: the only one the list has something to
