@@ -53,6 +53,9 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   // A page of its own in the mailbox's rail, after the calendar.
   { prefix: '/location', trail: [{ label: 'location.title', to: '/location' }] },
   { prefix: '/health', trail: [{ label: 'health.title', to: '/health' }] },
+  // A page of its own in the rail, after the chats. A day and the periods
+  // above it add their own crumbs below.
+  { prefix: '/journal', trail: [{ label: 'journal.title', to: '/journal' }] },
   { prefix: '/passwords', trail: [{ label: 'passwords.title', to: '/passwords' }] },
   { prefix: '/manage/mail', trail: [{ label: 'nav.mail', to: '/manage/mail' }] },
   { prefix: '/manage/queue', trail: [{ label: 'nav.queue', to: '/manage/queue' }] },
@@ -253,6 +256,26 @@ function useTrail(): { label: string; to?: string }[] {
         return [...crumbs, { label: detail, to: '/knowledge' + (under ? '/' + under : '') }, { label: item }]
       }
       return [...crumbs, { label: detail }]
+    }
+
+    // A day of the journal sits under its week, a week under its month and a
+    // month under its year, so the way back up is one step at a time. The page
+    // names the larger period (the item) when it has read it; its link is
+    // made from the address, since any day in a period opens the period. The
+    // heading is blank until the page has its name, as a domain's is.
+    const journal = /^\/journal\/(week\/|month\/|year\/)?([^/]+)$/.exec(location.pathname)
+    if (journal) {
+      if (!detail) return [...crumbs, { label: '' }]
+      const [, kind, segment] = journal
+      const parent =
+        kind === undefined
+          ? `/journal/week/${segment}`
+          : kind === 'week/'
+            ? `/journal/month/${segment.slice(0, 7)}`
+            : kind === 'month/'
+              ? `/journal/year/${segment.slice(0, 4)}`
+              : null
+      return [...crumbs, ...(item && parent ? [{ label: item, to: parent }] : []), { label: detail }]
     }
 
     if (detail) {
