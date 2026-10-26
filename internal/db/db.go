@@ -200,6 +200,7 @@ type Transaction interface {
 	LocationShareOperation
 	HealthOperation
 	JournalOperation
+	JournalSourceOperation
 	HealthLockOperation
 	HealthShareOperation
 	FinanceShareOperation

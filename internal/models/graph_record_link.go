@@ -48,10 +48,17 @@ const (
 )
 
 // AgentRecordKinds is every kind, for validation and for the tool's schema.
+//
+// RecordShoppingTrip is not in it yet: the shopping tables, and so the
+// resolver that would check a trip is the person's, are not on this branch.
+// It joins the list with that resolver.
 var AgentRecordKinds = []AgentRecordKind{
 	RecordContact, RecordMail, RecordCalendarEvent, RecordReminder,
 	RecordConversationMessage, RecordFinanceTransaction, RecordFinanceReceipt,
 	RecordRecordingPassage,
+	RecordPhoto, RecordPlaceVisit, RecordAgentDocument, RecordChatMessage,
+	RecordRecording, RecordCalendarOccurrence, RecordHealthDay,
+	RecordNote, RecordIdea, RecordGoal,
 }
 
 // IsAgentRecordKind says whether a word names a kind.
@@ -115,6 +122,19 @@ var recordRelationsOf = map[AgentRecordKind][]AgentRecordRelation{
 	RecordFinanceTransaction:  {RecordRelationPaid, RecordRelationPaidBy, RecordRelationAbout},
 	RecordFinanceReceipt:      {RecordRelationReceiptFor, RecordRelationPaid, RecordRelationPaidBy, RecordRelationAbout},
 	RecordRecordingPassage:    {RecordRelationSpokeIn, RecordRelationAttended, RecordRelationMentionedIn, RecordRelationAbout},
+
+	// The kinds a journal day links to. A page is only ever loosely about
+	// them, except that a person attended an event or a recording.
+	RecordPhoto:              {RecordRelationMentionedIn, RecordRelationAbout},
+	RecordPlaceVisit:         {RecordRelationMentionedIn, RecordRelationAbout},
+	RecordAgentDocument:      {RecordRelationMentionedIn, RecordRelationAbout},
+	RecordChatMessage:        {RecordRelationMentionedIn, RecordRelationAbout},
+	RecordRecording:          {RecordRelationAttended, RecordRelationMentionedIn, RecordRelationAbout},
+	RecordCalendarOccurrence: {RecordRelationAttended, RecordRelationOrganized, RecordRelationMentionedIn, RecordRelationAbout},
+	RecordHealthDay:          {RecordRelationMentionedIn, RecordRelationAbout},
+	RecordNote:               {RecordRelationMentionedIn, RecordRelationAbout},
+	RecordIdea:               {RecordRelationMentionedIn, RecordRelationAbout},
+	RecordGoal:               {RecordRelationMentionedIn, RecordRelationAbout},
 }
 
 // RecordRelationsOf is the relations that fit a kind of record.

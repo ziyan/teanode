@@ -32,6 +32,12 @@ type journalRecordResolver struct {
 	transaction db.Transaction
 	reader      recordlink.Reader
 	hasAgent    bool
+
+	// permissions, when set, are the caller's: a record of a source the caller
+	// may not read anywhere else is unavailable here too, so that a mention in
+	// a narrative cannot show what the caller's role does not reach. Reading a
+	// whole day sets it.
+	permissions *models.EffectivePermissions
 }
 
 func newJournalRecordResolver(tx db.Transaction, userId string) (*journalRecordResolver, error) {
@@ -52,7 +58,7 @@ func newJournalRecordResolver(tx db.Transaction, userId string) (*journalRecordR
 // failing the whole page.
 func (self *journalRecordResolver) resolve(recordKind models.AgentRecordKind, recordId string) *recordlink.Resolved {
 	unavailable := &recordlink.Resolved{RecordKind: recordKind, RecordID: recordId, IsUnavailable: true}
-	if !self.hasAgent {
+	if !self.hasAgent || (self.permissions != nil && !isJournalKindReadable(self.permissions, recordKind)) {
 		return unavailable
 	}
 	resolved, err := recordlink.ResolveRecord(self.transaction, self.reader, recordKind, recordId, models.AgentRecordDetail{}, 0, 0)

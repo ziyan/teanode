@@ -99,6 +99,14 @@ type MailboxOperation interface {
 	// and junk are left out.
 	ListNoteItems(mailboxId, noteIdentifier string) ([]*models.MailboxItem, error)
 
+	// ListNoteItemsBetween is every version of the notes of a mailbox that
+	// were created or changed from from up to but not including until: the
+	// notes with a version filed here in that stretch, or written then
+	// (their first version's date), each with all its versions, newest item
+	// first, flagged deleted or not, each with its message. Items in the
+	// trash and junk are left out.
+	ListNoteItemsBetween(mailboxId string, from, until time.Time) ([]*models.MailboxItem, error)
+
 	// ListExpunged is what vanished from a folder since a modseq.
 	ListExpunged(folderId string, sinceModSeq uint64) ([]*models.MailboxFolderExpunge, error)
 
@@ -2050,4 +2058,51 @@ func truncateRunes(value string, limit int) string {
 func contains(value string) string {
 	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.TrimSpace(value))
 	return "%" + escaped + "%"
+}
+
+func (self *transaction) ListNoteItemsBetween(mailboxId string, from, until time.Time) ([]*models.MailboxItem, error) {
+	if mailboxId == "" {
+		return nil, nil
+	}
+	notesOfMailbox := func() *gorm.DB {
+		return self.tx.Model(&mailboxItemModel{}).
+			Joins("INNER JOIN \"mailbox_folder\" ON \"mailbox_folder\".\"id\" = \"mailbox_item\".\"folder_id\"").
+			Joins("INNER JOIN \"mail\" ON \"mail\".\"id\" = \"mailbox_item\".\"mail_id\"").
+			Where("\"mailbox_folder\".\"mailbox_id\" = ? AND \"mail\".\"kind\" = ?", mailboxId, models.MailKindNote.String()).
+			Where("\"mailbox_folder\".\"kind\" NOT IN ?", []string{string(models.MailboxFolderKindTrash), string(models.MailboxFolderKindJunk)})
+	}
+	// The notes first, by the versions that fall in the stretch: one filed here
+	// then (a change), or one the writing client dated then (a creation; a
+	// phone's clock may be wrong, but the note's own date is what the person
+	// thinks of as when they wrote it).
+	var identifiers []string
+	if err := notesOfMailbox().
+		Where("(\"mailbox_item\".\"added_at\" >= ? AND \"mailbox_item\".\"added_at\" < ?) OR (\"mail\".\"received_at\" >= ? AND \"mail\".\"received_at\" < ?)", from, until, from, until).
+		Distinct().Pluck("\"mail\".\"note_identifier\"", &identifiers).Error; err != nil {
+		return nil, err
+	}
+	if len(identifiers) == 0 {
+		return nil, nil
+	}
+	var rows []mailboxItemModel
+	if err := notesOfMailbox().Where("\"mail\".\"note_identifier\" IN ?", identifiers).
+		Select("\"mailbox_item\".*").
+		Order("\"mailbox_item\".\"added_at\" DESC, \"mailbox_item\".\"id\" DESC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	items := make([]*models.MailboxItem, 0, len(rows))
+	mailIds := make([]string, 0, len(rows))
+	for index := range rows {
+		items = append(items, itemFromModel(&rows[index]))
+		mailIds = append(mailIds, rows[index].MailID)
+	}
+	mails, err := self.GetMails(mailIds, nil)
+	if err != nil {
+		return nil, err
+	}
+	for index, item := range items {
+		item.Mail = mails[index]
+	}
+	return items, nil
 }

@@ -28,6 +28,14 @@ type InsightOperation interface {
 	// GetMailInsights reads the insights a mailbox has for these messages,
 	// by mail id.
 	GetMailInsights(mailboxId string, mailIds []string) (map[string]*models.MailInsight, error)
+
+	// ListAgentConversationActivityBetween is what was said with the agent in
+	// a stretch of time: for each of the person's own conversations (the main
+	// one and the named ones, not a run's transcript or a chat) that had a
+	// message from the person, or an answer in words, created from from up to
+	// but not including until, how many such messages and the times of the
+	// first and the last, earliest first.
+	ListAgentConversationActivityBetween(agentId string, from, until time.Time) ([]*AgentConversationActivity, error)
 	LockMailInsight(mailboxId, mailId string) (*models.MailInsight, error)
 	SetMailProposalStatus(mailboxId, mailId string, index int, proposalStatus string) error
 	ReplaceMailProposals(mailboxId, mailId string, proposals []models.MailProposal) error
@@ -1425,4 +1433,62 @@ func (self *transaction) RedactAgentConversationMessages(conversationId string, 
 		changedCount++
 	}
 	return changedCount, nil
+}
+
+// AgentConversationActivity is one conversation with the agent in a stretch
+// of time: how many messages were said in it then, and when the first and the
+// last were.
+type AgentConversationActivity struct {
+	ConversationID string
+	Title          string
+	Summary        string
+	MessageCount   int
+
+	// FirstMessageID is the first message said in the stretch, which is where
+	// a link to the conversation opens it.
+	FirstMessageID string
+	FirstAt        time.Time
+	LastAt         time.Time
+}
+
+func (self *transaction) ListAgentConversationActivityBetween(agentId string, from, until time.Time) ([]*AgentConversationActivity, error) {
+	if agentId == "" || !from.Before(until) {
+		return nil, ErrInvalidArguments
+	}
+	// A conversation whose last message is before from cannot have one in the
+	// stretch, which keeps the join to the conversations that were alive then
+	// instead of every conversation the agent ever had. A tool's result and a
+	// system note are not something said, and neither is an answer that is
+	// only tool calls.
+	var rows []struct {
+		ConversationID string    `gorm:"column:conversation_id"`
+		Title          string    `gorm:"column:title"`
+		Summary        string    `gorm:"column:summary"`
+		MessageCount   int       `gorm:"column:message_count"`
+		FirstMessageID string    `gorm:"column:first_message_id"`
+		FirstAt        time.Time `gorm:"column:first_at"`
+		LastAt         time.Time `gorm:"column:last_at"`
+	}
+	if err := self.tx.Raw(`
+		SELECT c."id" AS conversation_id, c."title" AS title, c."summary" AS summary,
+		       count(*) AS message_count, (array_agg(m."id" ORDER BY m."created_at", m."id"))[1] AS first_message_id,
+		       min(m."created_at") AS first_at, max(m."created_at") AS last_at
+		FROM "agent_conversation" c
+		JOIN "agent_message" m ON m."conversation_id" = c."id"
+		WHERE c."agent_id" = ? AND c."kind" IN ('main', 'named') AND c."last_at" >= ?
+		  AND m."created_at" >= ? AND m."created_at" < ?
+		  AND (m."role" = 'user' OR (m."role" = 'assistant' AND m."content" <> ''))
+		GROUP BY c."id", c."title", c."summary"
+		ORDER BY min(m."created_at") ASC, c."id" ASC`, agentId, from, from, until).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	activity := make([]*AgentConversationActivity, 0, len(rows))
+	for _, row := range rows {
+		activity = append(activity, &AgentConversationActivity{
+			ConversationID: row.ConversationID, Title: row.Title, Summary: row.Summary,
+			MessageCount: row.MessageCount, FirstMessageID: row.FirstMessageID,
+			FirstAt: row.FirstAt.In(time.Local), LastAt: row.LastAt.In(time.Local),
+		})
+	}
+	return activity, nil
 }

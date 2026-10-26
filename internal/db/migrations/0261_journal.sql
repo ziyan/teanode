@@ -141,3 +141,11 @@ ALTER TABLE "agent_dream" ADD COLUMN "journal_narratives_refused" integer NOT NU
 INSERT INTO "role_permission" ("role_id", "permission_key")
 SELECT "id", 'journal:use' FROM "role" WHERE lower("name") IN ('administrator', 'operator', 'member')
 ON CONFLICT DO NOTHING;
+
+-- A day reads the sources by their time. Two of them had no index for it: a
+-- chat's messages by when they were said (the existing one is by id, within
+-- the chat), and a person's recordings by when they were recorded (the
+-- existing one is by when they arrived). The rest of the sources already have
+-- one by person and time.
+CREATE INDEX "chat_message_chat_created" ON "chat_message" ("chat_id", "created_at");
+CREATE INDEX "recording_owner_recorded" ON "recording" ("user_id", (COALESCE("recorded_at", "created_at")) DESC) WHERE "deleted_at" IS NULL;
