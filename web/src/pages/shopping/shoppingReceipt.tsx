@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { ReactNode, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { useBreadcrumbDetail } from '../../components/breadcrumb'
@@ -56,9 +56,12 @@ export function ShoppingReceiptPage() {
   useBreadcrumbDetail(t('shopping.receiptTitle'))
   return (
     <section className="shopping-list-card">
-      <ShoppingPaneBack />
       <ErrorMessage error={lists.error} />
-      <ShoppingReceiptMatches financeReceiptId={financeReceiptId} shoppingLists={lists.data ?? []} />
+      <ShoppingReceiptMatches
+        financeReceiptId={financeReceiptId}
+        shoppingLists={lists.data ?? []}
+        headStart={<ShoppingPaneBack />}
+      />
     </section>
   )
 }
@@ -95,10 +98,14 @@ function ShoppingReceiptSectionContent({ financeReceiptId }: { financeReceiptId:
 export function ShoppingReceiptMatches({
   financeReceiptId,
   shoppingLists,
+  headStart,
 }: {
   financeReceiptId: string
   // The lists the person reaches, for choosing where a line with no match goes.
   shoppingLists: ShoppingList[]
+  // What goes before the receipt's line at the top: the way back to the
+  // lists on the receipt's own page, nothing in Finance's dialog.
+  headStart?: ReactNode
 }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -157,6 +164,7 @@ export function ShoppingReceiptMatches({
     <div className="shopping-receipt">
       <ErrorMessage error={receipt.error} />
       <div className="shopping-receipt-head">
+        {headStart}
         <p className="muted">
           {[
             view.merchantName,

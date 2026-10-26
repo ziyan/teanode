@@ -75,17 +75,22 @@ export function ShoppingViewSwitch({
 }
 
 // ShoppingItemCard is one item in the pictures view: the picture across the
-// top, which opens in the lightbox, then the check, what it is, and the line
-// under it (how many, the price). The actions sit at the foot, the same
-// buttons the table row has.
+// top, which opens in the lightbox, then where it is (its store and aisle),
+// the check, what it is, and the line under it (how many, the price). The
+// actions sit at the foot, the same buttons the table row has.
 export function ShoppingItemCard({
   shoppingItem,
+  groupName,
   listName,
   check,
   facts,
   actions,
 }: {
   shoppingItem: ShoppingItem
+  // The store and aisle the table would put it under. The cards run on in
+  // that order without headings, so an aisle of one item does not leave a
+  // row of empty space; each card says where it is instead.
+  groupName: string
   listName?: string
   // The checkbox that puts it in the cart, or nothing where an item cannot
   // be checked (a bought item on Not needed).
@@ -104,24 +109,18 @@ export function ShoppingItemCard({
     >
       <ShoppingPicture item={shoppingItem} pictureSize="card" />
       <div className="shopping-card-body">
+        <div className="shopping-card-group-name">{groupName}</div>
+        {/* The facts sit under the name, past the check, so the words of a
+            card start on one line. */}
         <div className="shopping-card-name">
           {check}
-          <ShoppingItemName item={shoppingItem} listName={listName} />
+          <div className="shopping-card-words">
+            <ShoppingItemName item={shoppingItem} listName={listName} />
+            {shownFacts.length > 0 ? <div className="shopping-card-facts">{shownFacts.join(' · ')}</div> : null}
+          </div>
         </div>
-        {shownFacts.length > 0 ? <div className="shopping-card-facts">{shownFacts.join(' · ')}</div> : null}
         <div className="row-actions shopping-card-actions">{actions}</div>
       </div>
     </li>
-  )
-}
-
-// ShoppingCardGroup is a run of cards under the heading of its store and
-// aisle, as the table puts a band across itself.
-export function ShoppingCardGroup({ heading, children }: { heading: string; children: ReactNode }) {
-  return (
-    <section className="shopping-card-group">
-      <h4>{heading}</h4>
-      <ul className="shopping-cards">{children}</ul>
-    </section>
   )
 }

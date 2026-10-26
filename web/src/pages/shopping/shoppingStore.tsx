@@ -21,7 +21,7 @@ import {
 import { ShoppingItemDialog } from './shoppingItemDialog'
 import { groupShoppingItemsByAisle, quantityText, storeKeyOf } from './shoppingItems'
 import { ShoppingPaneBack, useShoppingLayout } from './shoppingLayout'
-import { ShoppingCardGroup, ShoppingItemCard, ShoppingViewSwitch, useShoppingView } from './shoppingView'
+import { ShoppingItemCard, ShoppingViewSwitch, useShoppingView } from './shoppingView'
 import { ShoppingItemName, ShoppingPicture } from './shoppingParts'
 import { useShoppingEvents } from './useShoppingEvents'
 
@@ -185,46 +185,40 @@ export function ShoppingStorePage() {
         {shoppingItems.length === 0 ? (
           <SettingsEmpty>{t('shopping.storeEmpty', { storeName })}</SettingsEmpty>
         ) : shoppingView === 'pictures' ? (
-          <div className="shopping-card-groups">
-            {groups.map((group) => (
-              <ShoppingCardGroup
-                key={group.isAnyStore ? '\u0000any-store' : group.aisleName}
-                heading={
-                  group.isAnyStore ? t('shopping.storeAnyStoreSection') : group.aisleName || t('shopping.noAisle')
-                }
-              >
-                {group.shoppingItems.map((shoppingItem) => (
-                  <ShoppingItemCard
-                    key={shoppingItem.id}
-                    shoppingItem={shoppingItem}
-                    listName={isListNamed ? shoppingItem.listName : undefined}
-                    check={
-                      <StoreItemCheck
-                        shoppingItem={shoppingItem}
-                        isBusy={isBusy}
-                        onCheck={(isChecked) =>
-                          void act(() => checkShoppingItem(shoppingItem.id, isChecked, storeName))
-                        }
-                      />
-                    }
-                    facts={[t('shopping.needCount', { quantity: quantityText(shoppingItem) })]}
-                    actions={
-                      <StoreItemActions
-                        shoppingItem={shoppingItem}
-                        isBusy={isBusy}
-                        onOutOfStock={() =>
-                          void act(() =>
-                            setShoppingItemOutOfStock(shoppingItem.id, !shoppingItem.outOfStockAt, storeName),
-                          )
-                        }
-                        onEdit={() => setEditing(shoppingItem.id)}
-                      />
-                    }
-                  />
-                ))}
-              </ShoppingCardGroup>
-            ))}
-          </div>
+          <ul className="shopping-cards">
+            {groups.flatMap((group) =>
+              group.shoppingItems.map((shoppingItem) => (
+                <ShoppingItemCard
+                  key={shoppingItem.id}
+                  shoppingItem={shoppingItem}
+                  groupName={
+                    group.isAnyStore ? t('shopping.storeAnyStoreSection') : group.aisleName || t('shopping.noAisle')
+                  }
+                  listName={isListNamed ? shoppingItem.listName : undefined}
+                  check={
+                    <StoreItemCheck
+                      shoppingItem={shoppingItem}
+                      isBusy={isBusy}
+                      onCheck={(isChecked) => void act(() => checkShoppingItem(shoppingItem.id, isChecked, storeName))}
+                    />
+                  }
+                  facts={[t('shopping.needCount', { quantity: quantityText(shoppingItem) })]}
+                  actions={
+                    <StoreItemActions
+                      shoppingItem={shoppingItem}
+                      isBusy={isBusy}
+                      onOutOfStock={() =>
+                        void act(() =>
+                          setShoppingItemOutOfStock(shoppingItem.id, !shoppingItem.outOfStockAt, storeName),
+                        )
+                      }
+                      onEdit={() => setEditing(shoppingItem.id)}
+                    />
+                  }
+                />
+              )),
+            )}
+          </ul>
         ) : (
           <div className="table-wrap">
             <table className="shopping-table">

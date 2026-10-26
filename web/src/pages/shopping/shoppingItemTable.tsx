@@ -6,7 +6,7 @@ import { formatDay } from '../finance/financeApi'
 import { ShoppingItem } from './shoppingApi'
 import { groupShoppingItems, priceNumber, quantityText, ShoppingTab } from './shoppingItems'
 import { ShoppingItemName, ShoppingPicture } from './shoppingParts'
-import { ShoppingCardGroup, ShoppingItemCard } from './shoppingView'
+import { ShoppingItemCard } from './shoppingView'
 
 // The items of one tab of a list, as a table grouped under a heading for each
 // store and aisle ("Example Market · Frozen"), the items that can be got
@@ -120,40 +120,36 @@ export function ShoppingItemGrid({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="shopping-card-groups">
-      {groupShoppingItems(shoppingItems).map((group) => (
-        <ShoppingCardGroup
-          key={`${group.storeName}\u0000${group.aisleName}`}
-          heading={[group.storeName || t('shopping.anyStore'), group.aisleName].filter(Boolean).join(' · ')}
-        >
-          {group.shoppingItems.map((shoppingItem) => (
-            <ShoppingItemCard
-              key={shoppingItem.id}
-              shoppingItem={shoppingItem}
-              check={<ListItemCheck shoppingItem={shoppingItem} tab={tab} isBusy={isBusy} onCheck={onCheck} />}
-              facts={[
-                shoppingItem.shoppingItemState === 'not_needed'
-                  ? ''
-                  : t('shopping.needCount', { quantity: quantityText(shoppingItem) }),
-                priceText(shoppingItem),
-                shoppingItem.lastBoughtAt ? t('shopping.boughtOn', { day: formatDay(shoppingItem.lastBoughtAt) }) : '',
-              ]}
-              actions={
-                <ListItemActions
-                  shoppingItem={shoppingItem}
-                  tab={tab}
-                  isBusy={isBusy}
-                  isCompact
-                  onEdit={onEdit}
-                  onRemove={onRemove}
-                  onNeedAgain={onNeedAgain}
-                />
-              }
-            />
-          ))}
-        </ShoppingCardGroup>
-      ))}
-    </div>
+    <ul className="shopping-cards">
+      {groupShoppingItems(shoppingItems).flatMap((group) =>
+        group.shoppingItems.map((shoppingItem) => (
+          <ShoppingItemCard
+            key={shoppingItem.id}
+            shoppingItem={shoppingItem}
+            groupName={[group.storeName || t('shopping.anyStore'), group.aisleName].filter(Boolean).join(' · ')}
+            check={<ListItemCheck shoppingItem={shoppingItem} tab={tab} isBusy={isBusy} onCheck={onCheck} />}
+            facts={[
+              shoppingItem.shoppingItemState === 'not_needed'
+                ? ''
+                : t('shopping.needCount', { quantity: quantityText(shoppingItem) }),
+              priceText(shoppingItem),
+              shoppingItem.lastBoughtAt ? t('shopping.boughtOn', { day: formatDay(shoppingItem.lastBoughtAt) }) : '',
+            ]}
+            actions={
+              <ListItemActions
+                shoppingItem={shoppingItem}
+                tab={tab}
+                isBusy={isBusy}
+                isCompact
+                onEdit={onEdit}
+                onRemove={onRemove}
+                onNeedAgain={onNeedAgain}
+              />
+            }
+          />
+        )),
+      )}
+    </ul>
   )
 }
 
