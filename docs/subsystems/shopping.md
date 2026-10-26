@@ -70,15 +70,24 @@ any store after them, by aisle; each item says which list it is on. Buttons
 include or leave out each list. The same thing on two lists stays two rows,
 because each list's own people must see only their list.
 
-`StartShopping` opens a trip for the lists included and tells, on their
-phones, everybody else those lists reach and who has not muted the list
-("Alex started shopping Groceries", "At Example Market."), at most once in two
-hours about the same shopper. Looking at a store does not start a trip; the
-person presses Start shopping, or taps the notice at the store.
-`FinishShopping` buys what the shopper put in the cart on every list they
-reach, a list switched on at the store after the trip began included; an
-item in another person's cart stays in theirs, and checking it again does not
-take it over.
+There is no Start button. The first item a person puts in the cart
+(`CheckShoppingItem`) opens their trip, at the store the screen is for (the
+item's store from a list), and tells, on their phones, everybody else the list
+reaches and who has not muted it ("Alex started shopping Groceries", "At
+Example Market."), at most once in two hours about the same shopper. An item
+on another list joins the open trip. Looking at a store, or opening it from
+the notice at the store, starts nothing. `StartShopping` still opens a trip by
+hand, for the command line and the agent. `FinishShopping` is Done: it buys
+what the shopper put in the cart on every list they reach, with no receipt
+needed, and with no trip named it ends the person's own trip, or buys their
+cart when none is open. An item in another person's cart stays in theirs, and
+checking it again does not take it over.
+
+The dashboard draws Shopping as the mailbox is drawn: the lists and the stores
+in the column, the open list, store or receipt in the pane, one at a time on a
+phone. A list or a store lays its items out as rows or as cards with big
+pictures (`view=pictures` in the address, remembered in the browser; on the
+iPhone a choice in the screen's menu), and every picture opens full screen.
 
 ## Live
 

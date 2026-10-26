@@ -1,28 +1,47 @@
 import { initialOf } from '../../components/avatar'
 import { Tag } from '../../components/common'
+import { ZoomablePicture } from '../../components/lightbox'
 import { useTranslation } from '../../i18n/i18n'
 import { ShoppingItem } from './shoppingApi'
 
 // The pieces of an item that more than one part of the Shopping page draws.
 
 // ShoppingPicture is an item's picture, square, or a neutral square with the
-// first letter of its description while it has none.
+// first letter of its description while it has none. A picture opens in the
+// lightbox, to see the product close up; the letter is not a picture and
+// opens nothing.
 export function ShoppingPicture({
   item,
-  isLarge = false,
+  pictureSize = 'small',
 }: {
   item: Pick<ShoppingItem, 'picturePath' | 'itemDescription'>
-  isLarge?: boolean
+  // small in a table row, large in the item dialog, card across the top of
+  // a card in the pictures view.
+  pictureSize?: 'small' | 'large' | 'card'
 }) {
-  const className = isLarge ? 'shopping-picture shopping-picture-large' : 'shopping-picture'
+  const { t } = useTranslation()
+  const className = PICTURE_CLASS_NAMES[pictureSize]
   if (item.picturePath) {
-    return <img className={className} src={item.picturePath} alt="" loading="lazy" draggable={false} />
+    return (
+      <ZoomablePicture
+        source={item.picturePath}
+        name={item.itemDescription}
+        imageClassName={className}
+        openTitle={t('shopping.openPicture')}
+      />
+    )
   }
   return (
     <span className={`${className} shopping-picture-empty`} aria-hidden="true">
       {initialOf(item.itemDescription)}
     </span>
   )
+}
+
+const PICTURE_CLASS_NAMES = {
+  small: 'shopping-picture',
+  large: 'shopping-picture shopping-picture-large',
+  card: 'shopping-picture shopping-picture-card',
 }
 
 // ShoppingItemName is an item's description with its details under it in

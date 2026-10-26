@@ -25,6 +25,7 @@ import {
   undoShoppingReceipt,
 } from './shoppingApi'
 import { shoppingReceiptAddress } from './shoppingItems'
+import { ShoppingPaneBack } from './shoppingLayout'
 import { ShoppingPicture } from './shoppingParts'
 import { useShoppingEvents } from './useShoppingEvents'
 
@@ -54,7 +55,8 @@ export function ShoppingReceiptPage() {
   const lists = useQuery(() => listShoppingLists(), [], { refresh: false })
   useBreadcrumbDetail(t('shopping.receiptTitle'))
   return (
-    <section className="card shopping-list-card">
+    <section className="shopping-list-card">
+      <ShoppingPaneBack />
       <ErrorMessage error={lists.error} />
       <ShoppingReceiptMatches financeReceiptId={financeReceiptId} shoppingLists={lists.data ?? []} />
     </section>

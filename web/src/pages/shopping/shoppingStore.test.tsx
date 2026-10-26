@@ -125,7 +125,11 @@ it('checks an item off and marks one out of stock for the store', async () => {
 
   fireEvent.click(await screen.findByRole('checkbox', { name: 'Check off Peas' }))
   await waitFor(() => expect(callsOf('CheckShoppingItem')).toHaveLength(1))
-  expect(callsOf('CheckShoppingItem')[0][1]).toEqual({ shoppingItemId: 'item-1', isChecked: true })
+  expect(callsOf('CheckShoppingItem')[0][1]).toEqual({
+    shoppingItemId: 'item-1',
+    isChecked: true,
+    storeName: 'Example Market',
+  })
 
   fireEvent.click(screen.getByRole('button', { name: 'Peas: Mark out of stock' }))
   await waitFor(() => expect(callsOf('SetShoppingItemOutOfStock')).toHaveLength(1))
@@ -143,13 +147,13 @@ it('checks an item off and marks one out of stock for the store', async () => {
   expect(callsOf('SetShoppingItemOutOfStock')[1][1]).toMatchObject({ shoppingItemId: 'item-6', isOutOfStock: false })
 })
 
-it('starts shopping with the lists switched on, and stops the reminders at this store', async () => {
+it('has no Start, and stops the reminders at this store', async () => {
   serve()
   renderShopping(`${storeAddress}?lists=list-2`)
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Start shopping' }))
-  await waitFor(() => expect(callsOf('StartShopping')).toHaveLength(1))
-  expect(callsOf('StartShopping')[0][1]).toEqual({ storeName: 'Example Market', shoppingListIds: ['list-2'] })
+  await screen.findByText('Crackers')
+  expect(screen.queryByRole('button', { name: 'Start shopping' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Done shopping' })).toBeNull()
 
   fireEvent.click(screen.getByRole('button', { name: "Don't remind me at this store" }))
   await waitFor(() => expect(callsOf('SetShoppingStoreReminder')).toHaveLength(1))

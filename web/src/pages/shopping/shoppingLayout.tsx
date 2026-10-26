@@ -1,25 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
-import { Navigate, NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom'
 
 import { ErrorMessage, Loading } from '../../components/common'
 import { FormDialog } from '../../components/dialog'
-import { PlusIcon } from '../../components/icons'
+import { ArrowLeftIcon, PlusIcon } from '../../components/icons'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
 import { hasPermission, useSession } from '../../session'
-import { createShoppingList, listShoppingLists, ShoppingList } from './shoppingApi'
-import { listenToShoppingEvents, shoppingListAddress } from './shoppingItems'
+import { createShoppingList, listShoppingLists, listShoppingStores, ShoppingList, ShoppingStore } from './shoppingApi'
+import { listenToShoppingEvents, SHOPPING_PATH, shoppingListAddress, shoppingStoreAddress } from './shoppingItems'
 
-// The Shopping page: the person's lists on the left (their own first, then
-// the ones shared with them) and what is open beside them, a list, a store or
-// a receipt, each with a path of its own. Every part of it is in the address,
-// so Back, a reload and a copied link land in the same place.
+// The Shopping page, drawn as the mailbox is: the person's lists (their own
+// first, then the ones shared with them) and the stores their items are for
+// in the column on the left, and what is open beside them, a list, a store or
+// a receipt, in the pane, each with a path of its own. Every part of it is in
+// the address, so Back, a reload and a copied link land in the same place.
+// Where the two do not fit side by side, one shows at a time: the column at
+// /shopping, the pane once something is open, with a way back to the column.
 //
-// The lists are read here once, for every part, and read again when the live
-// feed says a list changed.
+// The lists and stores are read here once, for every part, and read again
+// when the live feed says a list changed.
 
 export interface ShoppingLayoutContext {
   shoppingLists: ShoppingList[]
@@ -49,53 +52,68 @@ export function ShoppingLayout() {
 function ShoppingLayoutContent() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const location = useLocation()
   const lists = useQuery(() => listShoppingLists(), [], { refresh: false })
+  const stores = useQuery(() => listShoppingStores(), [], { refresh: false })
   const [isNaming, setIsNaming] = useState(false)
 
-  const reloadRef = useRef(lists.reload)
-  reloadRef.current = lists.reload
-  useEffect(() => listenToShoppingEvents(() => void reloadRef.current(true)), [])
+  const reloadRef = useRef(() => {
+    void lists.reload(true)
+    void stores.reload(true)
+  })
+  reloadRef.current = () => {
+    void lists.reload(true)
+    void stores.reload(true)
+  }
+  useEffect(() => listenToShoppingEvents(() => reloadRef.current()), [])
 
   const shoppingLists = lists.data ?? []
   const ownLists = shoppingLists.filter((shoppingList) => shoppingList.isOwner)
   const sharedLists = shoppingLists.filter((shoppingList) => !shoppingList.isOwner)
+  const shoppingStores = stores.data ?? []
   const context: ShoppingLayoutContext = {
     shoppingLists,
     isLoading: lists.loading && !lists.data,
-    reloadShoppingLists: () => void lists.reload(true),
+    reloadShoppingLists: () => reloadRef.current(),
   }
+  // Something is open in the pane at every address below /shopping itself.
+  const isReading = location.pathname.replace(/\/+$/, '') !== SHOPPING_PATH
 
   return (
-    <div className="shopping-layout">
+    <>
       <ErrorMessage error={lists.error} />
-      <nav className="shopping-lists card" aria-label={t('shopping.listsHeading')}>
-        <div className="shopping-lists-head">
-          <h3>{t('shopping.listsHeading')}</h3>
-          <Tooltip label={t('shopping.newList')}>
-            <button
-              type="button"
-              className="icon-action"
-              aria-label={t('shopping.newList')}
-              onClick={() => setIsNaming(true)}
-            >
-              <PlusIcon size={16} />
-            </button>
-          </Tooltip>
+      <div className="mailbox-frame">
+        <div className={['mailbox', 'shopping-panes', isReading ? 'reading' : ''].filter(Boolean).join(' ')}>
+          <nav className="mailbox-list" aria-label={t('shopping.listsHeading')}>
+            <div className="list-toolbar shopping-list-toolbar">
+              <button type="button" className="primary" onClick={() => setIsNaming(true)}>
+                <PlusIcon size={16} /> {t('shopping.newList')}
+              </button>
+            </div>
+            <div className="mailbox-rows">
+              {lists.loading && !lists.data ? <Loading /> : null}
+              {lists.data && shoppingLists.length === 0 ? (
+                <p className="mailbox-placeholder">{t('shopping.noLists')}</p>
+              ) : null}
+              <ShoppingListRows shoppingLists={ownLists} />
+              {sharedLists.length > 0 ? (
+                <>
+                  <h4 className="shopping-rows-heading">{t('shopping.sharedWithYou')}</h4>
+                  <ShoppingListRows shoppingLists={sharedLists} />
+                </>
+              ) : null}
+              {shoppingStores.length > 0 ? (
+                <>
+                  <h4 className="shopping-rows-heading">{t('shopping.storesHeading')}</h4>
+                  <ShoppingStoreRows shoppingStores={shoppingStores} />
+                </>
+              ) : null}
+            </div>
+          </nav>
+          <div className="mailbox-pane shopping-pane">
+            <Outlet context={context} />
+          </div>
         </div>
-        {lists.loading && !lists.data ? <Loading /> : null}
-        {lists.data && shoppingLists.length === 0 ? (
-          <p className="muted shopping-lists-empty">{t('shopping.noLists')}</p>
-        ) : null}
-        <ShoppingListLinks shoppingLists={ownLists} />
-        {sharedLists.length > 0 ? (
-          <>
-            <h4 className="shopping-lists-subheading">{t('shopping.sharedWithYou')}</h4>
-            <ShoppingListLinks shoppingLists={sharedLists} />
-          </>
-        ) : null}
-      </nav>
-      <div className="shopping-main">
-        <Outlet context={context} />
       </div>
       {isNaming ? (
         <NewListDialog
@@ -107,38 +125,71 @@ function ShoppingLayoutContent() {
           onClose={() => setIsNaming(false)}
         />
       ) : null}
-    </div>
+    </>
   )
 }
 
-function ShoppingListLinks({ shoppingLists }: { shoppingLists: ShoppingList[] }) {
-  const { t, plural } = useTranslation()
+function rowClassName({ isActive }: { isActive: boolean }): string {
+  return isActive ? 'shopping-row-link active' : 'shopping-row-link'
+}
+
+function ShoppingListRows({ shoppingLists }: { shoppingLists: ShoppingList[] }) {
+  const { t } = useTranslation()
   if (shoppingLists.length === 0) return null
   return (
-    <ul className="shopping-list-links">
+    <ul className="shopping-rows">
       {shoppingLists.map((shoppingList) => (
         <li key={shoppingList.id}>
-          <NavLink
-            to={shoppingListAddress(shoppingList.id)}
-            className={({ isActive }) => (isActive ? 'shopping-list-link is-current' : 'shopping-list-link')}
-          >
-            <span className="shopping-list-link-name">{shoppingList.listName}</span>
-            <span className="muted shopping-list-link-detail">
-              {[
-                plural(shoppingList.neededCount, { one: 'shopping.toBuyOne', other: 'shopping.toBuyOther' }),
-                shoppingList.isOwner
-                  ? shoppingList.isShared
-                    ? t('shopping.sharedMark')
-                    : ''
-                  : t('shopping.sharedBy', { name: shoppingList.ownerName || shoppingList.ownerUsername }),
-              ]
-                .filter(Boolean)
-                .join(' · ')}
+          <NavLink to={shoppingListAddress(shoppingList.id)} className={rowClassName}>
+            <span className="shopping-row-name">{shoppingList.listName}</span>
+            <span className="shopping-row-count">{shoppingList.neededCount.toLocaleString()}</span>
+            <span className="shopping-row-meta">
+              {shoppingList.isOwner
+                ? shoppingList.isShared
+                  ? t('shopping.sharedMark')
+                  : t('shopping.notShared')
+                : t('shopping.sharedBy', { name: shoppingList.ownerName || shoppingList.ownerUsername })}
             </span>
           </NavLink>
         </li>
       ))}
     </ul>
+  )
+}
+
+// ShoppingStoreRows are the stores the person's items are for, each opening
+// the store's screen, with how many items are needed there.
+function ShoppingStoreRows({ shoppingStores }: { shoppingStores: ShoppingStore[] }) {
+  return (
+    <ul className="shopping-rows">
+      {shoppingStores.map((shoppingStore) => (
+        <li key={shoppingStore.storeKey}>
+          <NavLink to={shoppingStoreAddress(shoppingStore.storeName)} className={rowClassName}>
+            <span className="shopping-row-name">{shoppingStore.storeName}</span>
+            <span className="shopping-row-count">{shoppingStore.neededCount.toLocaleString()}</span>
+          </NavLink>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// ShoppingPaneBack is the way back to the column of lists, for the width
+// where the column is not beside the pane; with both in view it is hidden.
+export function ShoppingPaneBack() {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  return (
+    <Tooltip label={t('shopping.backToLists')}>
+      <button
+        type="button"
+        className="icon-button shopping-pane-back"
+        aria-label={t('shopping.backToLists')}
+        onClick={() => navigate(SHOPPING_PATH)}
+      >
+        <ArrowLeftIcon size={16} />
+      </button>
+    </Tooltip>
   )
 }
 
@@ -190,8 +241,8 @@ function NewListDialog({
   )
 }
 
-// ShoppingHome is /shopping on its own: the first list when there is one, and
-// otherwise the offer to make one.
+// ShoppingHome is /shopping on its own: in the pane, a line saying to choose
+// a list or a store, and with no lists yet the offer to make one.
 export function ShoppingHome() {
   const { t } = useTranslation()
   const { shoppingLists, isLoading, reloadShoppingLists } = useShoppingLayout()
@@ -199,10 +250,14 @@ export function ShoppingHome() {
   const navigate = useNavigate()
   if (isLoading) return null
   if (shoppingLists.length > 0) {
-    return <Navigate replace to={shoppingListAddress(shoppingLists[0].id)} />
+    return (
+      <div className="mailbox-pane-placeholder">
+        <span>{t('shopping.choose')}</span>
+      </div>
+    )
   }
   return (
-    <div className="card">
+    <div className="shopping-home">
       <h3>{t('shopping.title')}</h3>
       <p className="muted">{t('shopping.intro')}</p>
       <div className="page-actions">

@@ -215,7 +215,6 @@ func TestArgumentsAreCheckedBeforeAnythingIsSent(t *testing.T) {
 		{"out_of_stock", `{}`, "item_id"},
 		{"price", `{"item_id":"item-1"}`, "unit_price_amount"},
 		{"start_shopping", `{"list_ids":[" "]}`, "list_ids"},
-		{"finish_shopping", `{}`, "trip_id"},
 		{"decide_match", `{"match_id":"match-1"}`, "is_applied"},
 		{"match_line", `{"item_id":"item-1"}`, "receipt_line_id"},
 		{"add_from_receipt", `{"receipt_line_id":"line-1"}`, "list_id"},

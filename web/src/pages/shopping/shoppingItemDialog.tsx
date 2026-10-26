@@ -191,7 +191,7 @@ export function ShoppingItemDialog({
     >
       {item ? (
         <div className="shopping-picture-field">
-          <ShoppingPicture item={item} isLarge />
+          <ShoppingPicture item={item} pictureSize="large" />
           <div className="shopping-picture-buttons">
             <button
               type="button"

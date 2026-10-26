@@ -51,8 +51,12 @@ type ShoppingItemOperation interface {
 	RemoveShoppingItems(userId string, shoppingItemIds []string) ([]string, error)
 
 	// CheckShoppingItem puts an item in the cart (checked) or back to needed
-	// (unchecked). Checking clears out of stock.
-	CheckShoppingItem(userId, shoppingItemId string, isChecked bool) (*models.ShoppingItem, error)
+	// (unchecked). Checking clears out of stock. Putting something in the
+	// cart is shopping: a person with no open trip starts one at storeName
+	// (the item's store when empty), and an open trip that does not name the
+	// item's list gains it. The trip it started, if any, is answered, for the
+	// others to be told.
+	CheckShoppingItem(userId, shoppingItemId string, isChecked bool, storeName string) (*models.ShoppingItem, *models.ShoppingTrip, error)
 
 	// SetShoppingItemNeed makes an item needed with a count (Need again), or,
 	// with isNeeded false, not needed: bought when it was in the cart.
@@ -686,28 +690,49 @@ func boughtShoppingItemUpdates(boughtAt time.Time) map[string]any {
 	}
 }
 
-func (self *transaction) CheckShoppingItem(userId, shoppingItemId string, isChecked bool) (*models.ShoppingItem, error) {
+func (self *transaction) CheckShoppingItem(userId, shoppingItemId string, isChecked bool, storeName string) (*models.ShoppingItem, *models.ShoppingTrip, error) {
+	var startedTrip *models.ShoppingTrip
+	if isChecked {
+		// The trip is joined before the item is held: ending a stale trip
+		// holds every list its shopper reaches, and lists are held before
+		// items.
+		item, err := self.GetShoppingItem(userId, shoppingItemId)
+		if err != nil {
+			return nil, nil, err
+		}
+		if item.ShoppingItemState == models.ShoppingItemStateNeeded {
+			if strings.TrimSpace(storeName) == "" {
+				storeName = item.StoreName
+			}
+			if startedTrip, err = self.joinShoppingTrip(userId, storeName, item.ShoppingListID); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
 	row, err := self.lockShoppingItem(userId, shoppingItemId)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if isChecked {
 		switch models.ShoppingItemState(row.ShoppingItemState) {
 		case models.ShoppingItemStateNotNeeded:
-			return nil, fmt.Errorf("%w: the item is not needed; need it again first", ErrInvalidArguments)
+			return nil, nil, fmt.Errorf("%w: the item is not needed; need it again first", ErrInvalidArguments)
 		case models.ShoppingItemStateInCart:
 			// Already in somebody's cart: it stays in theirs, so their Done
 			// buys it.
-			return self.GetShoppingItemByID(row.ID)
+			item, err := self.GetShoppingItemByID(row.ID)
+			return item, startedTrip, err
 		}
-		return self.changeShoppingItem(row, map[string]any{
+		item, err := self.changeShoppingItem(row, map[string]any{
 			"shopping_item_state": string(models.ShoppingItemStateInCart), "carted_by_user_id": userId, "carted_at": time.Now(),
 			"out_of_stock_at": nil, "out_of_stock_by_user_id": nil, "out_of_stock_store_name": "",
 		})
+		return item, startedTrip, err
 	}
-	return self.changeShoppingItem(row, map[string]any{
+	item, err := self.changeShoppingItem(row, map[string]any{
 		"shopping_item_state": string(models.ShoppingItemStateNeeded), "carted_by_user_id": nil, "carted_at": nil,
 	})
+	return item, nil, err
 }
 
 func (self *transaction) SetShoppingItemNeed(userId, shoppingItemId string, isNeeded bool, neededQuantity string) (*models.ShoppingItem, error) {

@@ -17,11 +17,11 @@ import {
   setShoppingItemOutOfStock,
   setShoppingStoreReminder,
   ShoppingItem,
-  startShopping,
 } from './shoppingApi'
 import { ShoppingItemDialog } from './shoppingItemDialog'
 import { groupShoppingItemsByAisle, quantityText, storeKeyOf } from './shoppingItems'
-import { useShoppingLayout } from './shoppingLayout'
+import { ShoppingPaneBack, useShoppingLayout } from './shoppingLayout'
+import { ShoppingCardGroup, ShoppingItemCard, ShoppingViewSwitch, useShoppingView } from './shoppingView'
 import { ShoppingItemName, ShoppingPicture } from './shoppingParts'
 import { useShoppingEvents } from './useShoppingEvents'
 
@@ -62,6 +62,10 @@ export function ShoppingStorePage() {
     (trip) => trip.finishedAt === null && trip.storeKey === storeKey,
   )
   const ownTrip = openTrips.find((trip) => trip.userId === session.userId) ?? null
+  const hasOwnCart = shoppingItems.some(
+    (item) => item.shoppingItemState === 'in_cart' && item.cartedByUserId === session.userId,
+  )
+  const [shoppingView, chooseShoppingView] = useShoppingView()
   const otherTrips = openTrips.filter((trip) => trip.userId !== session.userId)
   const editingItem = shoppingItems.find((each) => each.id === editing) ?? null
 
@@ -111,8 +115,9 @@ export function ShoppingStorePage() {
   return (
     <>
       <ErrorMessage error={view.error} />
-      <section className="card shopping-list-card" aria-label={storeName}>
+      <section className="shopping-list-card" aria-label={storeName}>
         <div className="shopping-list-head">
+          <ShoppingPaneBack />
           <div className="shopping-list-summary">
             {otherTrips.map((trip) => (
               <p key={trip.id} className="shopping-trip-line">
@@ -124,34 +129,18 @@ export function ShoppingStorePage() {
         </div>
 
         <div className="page-actions shopping-list-actions">
-          {ownTrip ? (
+          {/* The first item put in the cart starts the trip, so there is no
+              Start; Done buys the cart and needs no receipt. */}
+          {ownTrip || hasOwnCart ? (
             <button
               type="button"
               className="primary"
               disabled={isBusy}
-              onClick={() => void act(() => finishShopping(ownTrip.id), t('shopping.shoppingDone'))}
+              onClick={() => void act(() => finishShopping(ownTrip?.id), t('shopping.shoppingDone'))}
             >
               {t('shopping.doneShopping')}
             </button>
-          ) : (
-            <button
-              type="button"
-              className="primary"
-              disabled={isBusy || includedLists.length === 0}
-              onClick={() =>
-                void act(
-                  () =>
-                    startShopping(
-                      storeName,
-                      includedLists.map((each) => each.shoppingListId),
-                    ),
-                  t('shopping.shoppingStarted', { storeName }),
-                )
-              }
-            >
-              {t('shopping.startShopping')}
-            </button>
-          )}
+          ) : null}
           <button
             type="button"
             disabled={isBusy}
@@ -168,26 +157,74 @@ export function ShoppingStorePage() {
           </button>
         </div>
 
-        {shoppingLists.length > 0 ? (
-          <div className="shopping-list-toggles" role="group" aria-label={t('shopping.listsHeading')}>
-            {shoppingLists.map((each) => (
-              <button
-                key={each.shoppingListId}
-                type="button"
-                className={each.isIncluded ? 'shopping-list-toggle is-included' : 'shopping-list-toggle'}
-                aria-pressed={each.isIncluded}
-                disabled={isBusy}
-                onClick={() => toggleList(each.shoppingListId)}
-              >
-                {each.listName}
-                <span className="tab-count">{each.neededCount.toLocaleString()}</span>
-              </button>
-            ))}
+        {shoppingLists.length > 0 || shoppingItems.length > 0 ? (
+          <div className="shopping-view-bar">
+            {shoppingLists.length > 0 ? (
+              <div className="shopping-list-toggles" role="group" aria-label={t('shopping.listsHeading')}>
+                {shoppingLists.map((each) => (
+                  <button
+                    key={each.shoppingListId}
+                    type="button"
+                    className={each.isIncluded ? 'shopping-list-toggle is-included' : 'shopping-list-toggle'}
+                    aria-pressed={each.isIncluded}
+                    disabled={isBusy}
+                    onClick={() => toggleList(each.shoppingListId)}
+                  >
+                    {each.listName}
+                    <span className="tab-count">{each.neededCount.toLocaleString()}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {shoppingItems.length > 0 ? (
+              <ShoppingViewSwitch shoppingView={shoppingView} onChoose={chooseShoppingView} />
+            ) : null}
           </div>
         ) : null}
 
         {shoppingItems.length === 0 ? (
           <SettingsEmpty>{t('shopping.storeEmpty', { storeName })}</SettingsEmpty>
+        ) : shoppingView === 'pictures' ? (
+          <div className="shopping-card-groups">
+            {groups.map((group) => (
+              <ShoppingCardGroup
+                key={group.isAnyStore ? '\u0000any-store' : group.aisleName}
+                heading={
+                  group.isAnyStore ? t('shopping.storeAnyStoreSection') : group.aisleName || t('shopping.noAisle')
+                }
+              >
+                {group.shoppingItems.map((shoppingItem) => (
+                  <ShoppingItemCard
+                    key={shoppingItem.id}
+                    shoppingItem={shoppingItem}
+                    listName={isListNamed ? shoppingItem.listName : undefined}
+                    check={
+                      <StoreItemCheck
+                        shoppingItem={shoppingItem}
+                        isBusy={isBusy}
+                        onCheck={(isChecked) =>
+                          void act(() => checkShoppingItem(shoppingItem.id, isChecked, storeName))
+                        }
+                      />
+                    }
+                    facts={[t('shopping.needCount', { quantity: quantityText(shoppingItem) })]}
+                    actions={
+                      <StoreItemActions
+                        shoppingItem={shoppingItem}
+                        isBusy={isBusy}
+                        onOutOfStock={() =>
+                          void act(() =>
+                            setShoppingItemOutOfStock(shoppingItem.id, !shoppingItem.outOfStockAt, storeName),
+                          )
+                        }
+                        onEdit={() => setEditing(shoppingItem.id)}
+                      />
+                    }
+                  />
+                ))}
+              </ShoppingCardGroup>
+            ))}
+          </div>
         ) : (
           <div className="table-wrap">
             <table className="shopping-table">
@@ -219,7 +256,7 @@ export function ShoppingStorePage() {
                       shoppingItem={shoppingItem}
                       isListNamed={isListNamed}
                       isBusy={isBusy}
-                      onCheck={(isChecked) => void act(() => checkShoppingItem(shoppingItem.id, isChecked))}
+                      onCheck={(isChecked) => void act(() => checkShoppingItem(shoppingItem.id, isChecked, storeName))}
                       onOutOfStock={() =>
                         void act(() =>
                           setShoppingItemOutOfStock(shoppingItem.id, !shoppingItem.outOfStockAt, storeName),
@@ -263,18 +300,10 @@ function StoreItemRow({
   onOutOfStock: () => void
   onEdit: () => void
 }) {
-  const { t } = useTranslation()
-  const outOfStockLabel = shoppingItem.outOfStockAt ? t('shopping.backInStock') : t('shopping.markOutOfStock')
   return (
     <tr className={shoppingItem.shoppingItemState === 'in_cart' ? 'shopping-row is-in-cart' : 'shopping-row'}>
       <td className="shrink">
-        <input
-          type="checkbox"
-          checked={shoppingItem.shoppingItemState === 'in_cart'}
-          disabled={isBusy}
-          aria-label={t('shopping.checkItem', { itemDescription: shoppingItem.itemDescription })}
-          onChange={(event) => onCheck(event.target.checked)}
-        />
+        <StoreItemCheck shoppingItem={shoppingItem} isBusy={isBusy} onCheck={onCheck} />
       </td>
       <td className="shrink">
         <ShoppingPicture item={shoppingItem} />
@@ -285,29 +314,73 @@ function StoreItemRow({
       <td>{quantityText(shoppingItem)}</td>
       <td className="shrink">
         <div className="row-actions">
-          <Tooltip label={outOfStockLabel}>
-            <button
-              type="button"
-              className="icon-action"
-              aria-label={`${shoppingItem.itemDescription}: ${outOfStockLabel}`}
-              disabled={isBusy}
-              onClick={onOutOfStock}
-            >
-              {shoppingItem.outOfStockAt ? <RestoreIcon size={16} /> : <InboxOffIcon size={16} />}
-            </button>
-          </Tooltip>
-          <Tooltip label={t('shopping.editItem')}>
-            <button
-              type="button"
-              className="icon-action"
-              aria-label={`${shoppingItem.itemDescription}: ${t('shopping.editItem')}`}
-              onClick={onEdit}
-            >
-              <PencilIcon size={16} />
-            </button>
-          </Tooltip>
+          <StoreItemActions shoppingItem={shoppingItem} isBusy={isBusy} onOutOfStock={onOutOfStock} onEdit={onEdit} />
         </div>
       </td>
     </tr>
+  )
+}
+
+// StoreItemCheck is the box that puts an item in the cart at the store.
+function StoreItemCheck({
+  shoppingItem,
+  isBusy,
+  onCheck,
+}: {
+  shoppingItem: ShoppingItem
+  isBusy: boolean
+  onCheck: (isChecked: boolean) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <input
+      type="checkbox"
+      checked={shoppingItem.shoppingItemState === 'in_cart'}
+      disabled={isBusy}
+      aria-label={t('shopping.checkItem', { itemDescription: shoppingItem.itemDescription })}
+      onChange={(event) => onCheck(event.target.checked)}
+    />
+  )
+}
+
+// StoreItemActions are an item's buttons at the store: out of stock (or in
+// stock again) and edit.
+function StoreItemActions({
+  shoppingItem,
+  isBusy,
+  onOutOfStock,
+  onEdit,
+}: {
+  shoppingItem: ShoppingItem
+  isBusy: boolean
+  onOutOfStock: () => void
+  onEdit: () => void
+}) {
+  const { t } = useTranslation()
+  const outOfStockLabel = shoppingItem.outOfStockAt ? t('shopping.backInStock') : t('shopping.markOutOfStock')
+  return (
+    <>
+      <Tooltip label={outOfStockLabel}>
+        <button
+          type="button"
+          className="icon-action"
+          aria-label={`${shoppingItem.itemDescription}: ${outOfStockLabel}`}
+          disabled={isBusy}
+          onClick={onOutOfStock}
+        >
+          {shoppingItem.outOfStockAt ? <RestoreIcon size={16} /> : <InboxOffIcon size={16} />}
+        </button>
+      </Tooltip>
+      <Tooltip label={t('shopping.editItem')}>
+        <button
+          type="button"
+          className="icon-action"
+          aria-label={`${shoppingItem.itemDescription}: ${t('shopping.editItem')}`}
+          onClick={onEdit}
+        >
+          <PencilIcon size={16} />
+        </button>
+      </Tooltip>
+    </>
   )
 }

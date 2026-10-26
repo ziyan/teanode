@@ -821,13 +821,13 @@ func itemIdsOfItems(items []*models.ShoppingItem) []string {
 
 func runCheck(ctx context.Context, here *scope, asked *arguments) (*tools.Result, error) {
 	return changeEach(ctx, here, asked, "check", func(itemId string) (*models.ShoppingItem, error) {
-		return client.CheckShoppingItem(ctx, here.operations, itemId, true)
+		return client.CheckShoppingItem(ctx, here.operations, itemId, true, asked.storeNameText())
 	})
 }
 
 func runUncheck(ctx context.Context, here *scope, asked *arguments) (*tools.Result, error) {
 	return changeEach(ctx, here, asked, "uncheck", func(itemId string) (*models.ShoppingItem, error) {
-		return client.CheckShoppingItem(ctx, here.operations, itemId, false)
+		return client.CheckShoppingItem(ctx, here.operations, itemId, false, "")
 	})
 }
 
@@ -912,11 +912,7 @@ func runStartShopping(ctx context.Context, here *scope, asked *arguments) (*tool
 }
 
 func runFinishShopping(ctx context.Context, here *scope, asked *arguments) (*tools.Result, error) {
-	tripId, err := requiredText(asked.TripID, "trip_id", "finish_shopping", "start_shopping and trips give them")
-	if err != nil {
-		return nil, err
-	}
-	if _, err := client.FinishShopping(ctx, here.operations, tripId); err != nil {
+	if _, err := client.FinishShopping(ctx, here.operations, strings.TrimSpace(asked.TripID)); err != nil {
 		return nil, err
 	}
 	return tools.TextResult("finished shopping; what was in the cart is bought"), nil
