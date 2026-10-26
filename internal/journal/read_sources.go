@@ -221,14 +221,6 @@ func isPersonAuthor(author string, personNames []string) bool {
 	return false
 }
 
-func atoi(text string) int {
-	value := 0
-	for _, digit := range text {
-		value = value*10 + int(digit-'0')
-	}
-	return value
-}
-
 func (self *dayReader) readDocuments() error {
 	if err := self.loadSources(); err != nil {
 		return err

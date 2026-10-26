@@ -312,8 +312,11 @@ func TestTheCatalogStaysShort(t *testing.T) {
 	// more of its area, and this is the tool a model reaches for first when it
 	// does not know which that is. 71 since passwords, a new thing with its own
 	// permission: the items the person let the agent use, whose verbs (list,
-	// read a note, make up a password) no other tool has.
-	if count := len(catalog.All()); count > 71 {
+	// read a note, make up a password) no other tool has. 72 since journal, a
+	// new thing with its own permission: the person's days, whose verbs (read
+	// a day or a period, write their words, set the mood, pin a record) no
+	// other tool has.
+	if count := len(catalog.All()); count > 72 {
 		t.Fatalf("the catalog is %d tools; merge the verbs of something before adding another name", count)
 	}
 

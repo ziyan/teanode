@@ -888,7 +888,7 @@ func runPin(ctx context.Context, call *tools.Call, here *scope) (*tools.Result, 
 	}
 	recordKind, recordId, hasColon := strings.Cut(strings.TrimSpace(arguments.Record), ":")
 	if !hasColon || recordKind == "" || recordId == "" {
-		return nil, errors.New("record is kind:id, as the journal gives it, for example mail:... or photo:...")
+		return nil, errors.New("record is kind:id, as the journal gives it, for example mail:<id> or photo:<id>")
 	}
 	variables := map[string]any{"day": day, "recordKind": recordKind, "recordId": recordId}
 	if reason := strings.TrimSpace(arguments.Reason); reason != "" {
