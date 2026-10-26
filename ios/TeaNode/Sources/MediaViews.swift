@@ -323,8 +323,8 @@ struct ZoomablePicture: UIViewRepresentable {
 /// thumbnail, anything else as its name and size; a tap opens it.
 struct AttachmentView: View {
     let attachment: AgentAttachment
-    @State private var isImportingRecording = false
     @Environment(AppModel.self) private var app
+    @Environment(\.messagePresenter) private var presenter
 
     private var path: String { "/api/v1/agent/attachments/\(attachment.id)" }
 
@@ -342,7 +342,7 @@ struct AttachmentView: View {
         if app.account?.cachedRecordingUserId != nil,
             attachment.contentType.hasPrefix("audio/") || attachment.contentType.hasPrefix("video/")
         {
-            Button { isImportingRecording = true } label: { Label("Save as recording", systemImage: "waveform") }
+            Button { presenter?.present(.recordingImport(attachment)) } label: { Label("Save as recording", systemImage: "waveform") }
         }
     }
 
@@ -380,9 +380,6 @@ struct AttachmentView: View {
             .accessibilityActions {
                 saveAsRecordingButton
             }
-            .sheet(isPresented: $isImportingRecording) {
-                if let connection = app.connection { RecordingAttachmentImportView(connection: connection, attachment: attachment) }
-            }
         }
     }
 }
@@ -396,12 +393,11 @@ struct FileCard: View {
     let file: AgentFile
     @Environment(AppModel.self) private var app
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.messagePresenter) private var presenter
     @State private var shareAddress: URL?
-    @State private var openedPhotoId: OpenedPhoto?
     /// The photo made of this file once the person kept it in their library.
     @State private var savedPhotoId: String?
     @State private var isSavingToLibrary = false
-    @State private var savingProblemText: String?
     /// The picture, once read, which is what Copy hands on and what the menu's
     /// preview shows. The picture inside the card asks the app for the same
     /// one, and the app downloads it once for both.
@@ -465,7 +461,7 @@ struct FileCard: View {
         if let photoId {
             // A photo the agent showed opens in the app's photo viewer, where
             // it can be favorited, saved or shared.
-            openedPhotoId = OpenedPhoto(id: photoId)
+            presenter?.present(.agentPhoto(photoId: photoId))
         } else {
             Task { await app.preview(file.path, name: file.name) }
         }
@@ -599,16 +595,6 @@ struct FileCard: View {
     var body: some View {
         cardWithMenu
             .sensoryFeedback(.success, trigger: savedPhotoId)
-            .alert("Cannot save to my library", isPresented: Binding(get: { savingProblemText != nil }, set: { if !$0 { savingProblemText = nil } }), presenting: savingProblemText) { _ in
-                Button("OK", role: .cancel) {}
-            } message: { text in
-                Text(text)
-            }
-            .fullScreenCover(item: $openedPhotoId) { opened in
-                if let connection = app.connection {
-                    AgentPhotoViewer(photoId: opened.id, connection: connection)
-                }
-            }
             .task(id: file.attachmentId) {
                 if file.isImage {
                     loadedPicture = await app.picture(file.path)
@@ -648,7 +634,7 @@ extension FileCard {
         do {
             savedPhotoId = try await connection.savePhotoFromAttachment(file.attachmentId).id
         } catch {
-            savingProblemText = app.describe(error)
+            presenter?.present(.savingProblem(app.describe(error)))
         }
     }
 }
@@ -716,13 +702,18 @@ struct ArtifactCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var address: URL?
     @State private var markdown: String?
-    @State private var isOpen = false
+    @Environment(\.messagePresenter) private var presenter
+
+    /// Opens the artifact: the conversation shows it (MessagePresentations).
+    private func open() {
+        presenter?.present(.artifact(name: file.name, markdown: markdown, address: address))
+    }
 
     private var isReady: Bool { address != nil || markdown != nil }
 
     private var openButton: some View {
         Button {
-            isOpen = true
+            open()
         } label: {
             Label("Open", systemImage: "arrow.up.forward.app")
         }
@@ -746,7 +737,7 @@ struct ArtifactCard: View {
         AgentBubble {
             VStack(alignment: .leading, spacing: 8) {
                 Button {
-                    isOpen = true
+                    open()
                 } label: {
                     HStack(spacing: 6) {
                         Label(file.name.isEmpty ? String(localized: "Untitled") : file.name, systemImage: "sparkles")
@@ -779,7 +770,7 @@ struct ArtifactCard: View {
                         // name does. A page or drawing below is not given this: it runs, and a
                         // tap on it belongs to the page (its buttons and links).
                         ScrollView { MarkdownView(text: markdown) }
-                            .onTapGesture { isOpen = true }
+                            .onTapGesture { open() }
                     } else if let address {
                         ArtifactWebView(address: address)
                     } else {
@@ -798,24 +789,6 @@ struct ArtifactCard: View {
                 }
             }
             copyButton
-        }
-        .sheet(isPresented: $isOpen) {
-            NavigationStack {
-                Group {
-                    if let markdown {
-                        ScrollView { MarkdownView(text: markdown).padding() }
-                    } else if let address {
-                        ArtifactWebView(address: address)
-                    }
-                }
-                .navigationTitle(file.name)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { isOpen = false }
-                    }
-                }
-            }
         }
         .task(id: "\(file.attachmentId)-\(colorScheme == .dark)") {
             guard let connection = app.connection else { return }

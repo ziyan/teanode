@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.199.4] - 2026-10-26
+
+### Changed
+
+- Search everything shows each photo it finds with its picture, on the iPhone and the dashboard, not only its file name. (#663)
+
+## [0.199.3] - 2026-10-26
+
+### Fixed
+
+- iPhone: a photo, an artifact or Save as recording opened from a message no longer closes by itself while an answer is streaming in. (#660)
+
 ## [0.199.2] - 2026-10-26
 
 ### Fixed

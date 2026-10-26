@@ -547,6 +547,7 @@
                 }
                 .padding()
             }
+            .messagePresentations()
             .navigationBarTitleDisplayMode(.inline)
         }
     }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import TeaNodeKit
 
 /// PartSearch is a search the Search tab asks a part of the app to show: the
@@ -242,6 +243,18 @@ struct SearchResultRow: View {
     let result: SearchResult
 
     var body: some View {
+        if result.area == .photos {
+            // A file name and a date say little about which photo it is.
+            HStack(spacing: 12) {
+                SearchPhotoThumbnail(photoId: result.targetId)
+                words
+            }
+        } else {
+            words
+        }
+    }
+
+    private var words: some View {
         // In the text's colors, which a button would otherwise draw green: a
         // result is a place to go, not an action (ios/DESIGN.md).
         VStack(alignment: .leading, spacing: 2) {
@@ -262,5 +275,31 @@ struct SearchResultRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(.rect)
+    }
+}
+
+/// SearchPhotoThumbnail is the picture of a photo found, before its name. A
+/// photo with no preview yet keeps the square, empty.
+struct SearchPhotoThumbnail: View {
+    let photoId: String
+    @Environment(AppModel.self) private var app
+    @State private var picture: UIImage?
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(Color(.tertiarySystemFill))
+            .frame(width: 48, height: 48)
+            .overlay {
+                if let picture {
+                    Image(uiImage: picture)
+                        .resizable()
+                        .scaledToFill()
+                }
+            }
+            .clipShape(.rect(cornerRadius: 8, style: .continuous))
+            .accessibilityHidden(true)
+            .task(id: photoId) {
+                picture = await app.picture("/api/v1/photos/\(photoId)/previews/small")
+            }
     }
 }
