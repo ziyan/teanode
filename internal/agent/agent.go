@@ -23,6 +23,7 @@ import (
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/finance/rates"
+	"github.com/ziyan/teanode/internal/journal"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
@@ -146,6 +147,12 @@ type Agent struct {
 	lastFollowUpBackfill                 time.Time
 	lastNearbyQueue                      time.Time
 	lastLocationJournal                  time.Time
+	lastJournalRefresh                   time.Time
+	lastJournalEveningQuestion           time.Time
+
+	// journalWeather asks the weather service for a day's weather: Open-Meteo,
+	// through the server's safe outbound client. A test hands in its own.
+	journalWeather journal.WeatherFetcher
 
 	// watchesQueuedAt is when a look was last queued for each person's
 	// watch, by agent and skill/watch; see queueWatching.
@@ -305,6 +312,7 @@ func New(settings *Settings) *Agent {
 		settings.Tick = 5 * time.Second
 	}
 	self := &Agent{settings: settings, handlers: map[models.AgentJobKind]Handler{}, presence: settings.Presence}
+	self.journalWeather = journal.NewWeatherFetcher(nil, journal.DefaultWeatherURLs)
 	if self.presence == nil {
 		self.presence = NewPresence()
 	}
@@ -356,6 +364,7 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobWatch, self.runWatch)
 	self.Register(models.AgentJobFollowUpSweep, self.runFollowUpSweep)
 	self.Register(models.AgentJobNearby, self.runNearby)
+	self.Register(models.AgentJobJournal, self.runJournal)
 	self.catalog = FullCatalog()
 	return self
 }
@@ -558,6 +567,8 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.queueFollowUpBackfills(ctx, now)
 	self.queueNearbyRuns(ctx, now)
 	self.queueLocationJournals(ctx, now)
+	self.refreshJournals(ctx, now)
+	self.askJournalEveningQuestions(ctx, now)
 	self.queueEvaluating(ctx, now)
 	self.sweepBackgroundWork(ctx, now)
 	self.sweepSkillShareCalls(ctx, now)
