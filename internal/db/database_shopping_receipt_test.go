@@ -195,13 +195,13 @@ func TestTheEdgesOfShoppingAStore(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := tx.CheckShoppingItem(world.owner.ID, napkins.ID, true); err != nil {
+		if _, _, err := tx.CheckShoppingItem(world.owner.ID, napkins.ID, true, ""); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := tx.CheckShoppingItem(world.owner.ID, bread.ID, true); err != nil {
+		if _, _, err := tx.CheckShoppingItem(world.owner.ID, bread.ID, true, ""); err != nil {
 			t.Fatal(err)
 		}
-		if again, err := tx.CheckShoppingItem(world.sam.ID, bread.ID, true); err != nil || again.CartedByUserID != world.owner.ID {
+		if again, _, err := tx.CheckShoppingItem(world.sam.ID, bread.ID, true, ""); err != nil || again.CartedByUserID != world.owner.ID {
 			t.Fatalf("sam took the bread out of the owner's cart: %+v %v", again, err)
 		}
 		_, bought, err := tx.FinishShoppingTrip(world.owner.ID, trip.ID)
@@ -215,7 +215,7 @@ func TestTheEdgesOfShoppingAStore(t *testing.T) {
 		if bought := itemOf(t, tx, world.owner.ID, napkins.ID); bought.ShoppingItemState != models.ShoppingItemStateNotNeeded {
 			t.Fatalf("the napkins of a list switched on at the store were not bought: %+v", bought)
 		}
-		if _, err := tx.CheckShoppingItem(world.owner.ID, napkins.ID, true); !errors.Is(err, db.ErrInvalidArguments) {
+		if _, _, err := tx.CheckShoppingItem(world.owner.ID, napkins.ID, true, ""); !errors.Is(err, db.ErrInvalidArguments) {
 			t.Fatalf("a not needed item was put in the cart: %v", err)
 		}
 		if marked, err := tx.SetShoppingItemOutOfStock(world.owner.ID, napkins.ID, true, ""); err != nil || marked.ShoppingItemState != models.ShoppingItemStateNotNeeded {

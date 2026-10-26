@@ -71,7 +71,7 @@ const (
 
 	DocumentRemoveShoppingItems = `mutation ($shoppingItemIds: [String!]!) { RemoveShoppingItems(shoppingItemIds: $shoppingItemIds) }`
 
-	DocumentCheckShoppingItem = `mutation ($shoppingItemId: String!, $isChecked: Boolean!) { CheckShoppingItem(shoppingItemId: $shoppingItemId, isChecked: $isChecked) ` + shoppingItemSelection + ` }`
+	DocumentCheckShoppingItem = `mutation ($shoppingItemId: String!, $isChecked: Boolean!, $storeName: String) { CheckShoppingItem(shoppingItemId: $shoppingItemId, isChecked: $isChecked, storeName: $storeName) ` + shoppingItemSelection + ` }`
 
 	DocumentSetShoppingItemNeed = `mutation ($shoppingItemId: String!, $isNeeded: Boolean!, $neededQuantity: String) { SetShoppingItemNeed(shoppingItemId: $shoppingItemId, isNeeded: $isNeeded, neededQuantity: $neededQuantity) ` + shoppingItemSelection + ` }`
 
@@ -85,7 +85,7 @@ const (
 
 	DocumentStartShopping = `mutation ($storeName: String, $shoppingListIds: [String!]!) { StartShopping(storeName: $storeName, shoppingListIds: $shoppingListIds) ` + shoppingTripSelection + ` }`
 
-	DocumentFinishShopping = `mutation ($shoppingTripId: String!) { FinishShopping(shoppingTripId: $shoppingTripId) ` + shoppingTripSelection + ` }`
+	DocumentFinishShopping = `mutation ($shoppingTripId: String) { FinishShopping(shoppingTripId: $shoppingTripId) ` + shoppingTripSelection + ` }`
 
 	DocumentMatchShoppingReceipt = `mutation ($financeReceiptId: String!) { MatchShoppingReceipt(financeReceiptId: $financeReceiptId) }`
 
@@ -524,12 +524,18 @@ func RemoveShoppingItems(ctx context.Context, executor Executor, shoppingItemIds
 	return result.RemoveShoppingItems, nil
 }
 
-// CheckShoppingItem puts an item in the cart, or back to needed.
-func CheckShoppingItem(ctx context.Context, executor Executor, shoppingItemId string, isChecked bool) (*models.ShoppingItem, error) {
+// CheckShoppingItem puts an item in the cart, or back to needed. Putting one
+// in the cart starts the caller's trip when none is open, at storeName (the
+// item's store when empty).
+func CheckShoppingItem(ctx context.Context, executor Executor, shoppingItemId string, isChecked bool, storeName string) (*models.ShoppingItem, error) {
+	variables := map[string]any{"shoppingItemId": shoppingItemId, "isChecked": isChecked}
+	if storeName != "" {
+		variables["storeName"] = storeName
+	}
 	var result struct {
 		CheckShoppingItem *models.ShoppingItem `json:"CheckShoppingItem"`
 	}
-	if err := executor.Execute(ctx, DocumentCheckShoppingItem, map[string]any{"shoppingItemId": shoppingItemId, "isChecked": isChecked}, &result); err != nil {
+	if err := executor.Execute(ctx, DocumentCheckShoppingItem, variables, &result); err != nil {
 		return nil, err
 	}
 	return result.CheckShoppingItem, nil
@@ -621,12 +627,18 @@ func StartShopping(ctx context.Context, executor Executor, storeName string, sho
 	return result.StartShopping, nil
 }
 
-// FinishShopping ends a trip; what the caller put in the cart is bought.
+// FinishShopping ends a trip; what the caller put in the cart is bought. An
+// empty trip id ends the caller's own open trip, or buys their cart without
+// one.
 func FinishShopping(ctx context.Context, executor Executor, shoppingTripId string) (*models.ShoppingTrip, error) {
 	var result struct {
 		FinishShopping *models.ShoppingTrip `json:"FinishShopping"`
 	}
-	if err := executor.Execute(ctx, DocumentFinishShopping, map[string]any{"shoppingTripId": shoppingTripId}, &result); err != nil {
+	variables := map[string]any{}
+	if shoppingTripId != "" {
+		variables["shoppingTripId"] = shoppingTripId
+	}
+	if err := executor.Execute(ctx, DocumentFinishShopping, variables, &result); err != nil {
 		return nil, err
 	}
 	return result.FinishShopping, nil

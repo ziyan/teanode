@@ -796,7 +796,7 @@ once.
 
 A list is a catalog: an item that was bought stays on it as `not needed`, with
 its picture, store and prices, and `need` brings it back with a count. Everybody a
-list is shared with can add, change and check off items, start shopping and
+list is shared with can add, change and check off items, shop and
 upload receipts; only the owner shares it further or deletes it. Store names
 are compared without case or punctuation, so `Example Market` and
 `example-market` are one store.
@@ -816,14 +816,14 @@ are compared without case or punctuation, so `Example Market` and
 | `teanode shopping import-preview [LIST] (--from-file FILE\|-) [--picture FILE]...` | the reading alone: nothing is added. With a list it says which items would merge |
 | `teanode shopping edit ITEM-ID [--description WORDS] [--details WORDS] [--store NAME] [--aisle NAME] [--quantity N] [--unit UNIT] [--store-brand \| --not-store-brand]` | change an item; only what you name changes, and `--store ""` makes it an item for any store |
 | `teanode shopping remove ITEM-ID...` | take items off their lists for good, with their prices and pictures, at most 100 at once. It asks first, or takes `--force`. To keep an item in the catalog use `not-needed` |
-| `teanode shopping check ITEM-ID...` / `uncheck ITEM-ID...` | put items in the cart, or back to needed. An item stays in the cart until the trip is done, a receipt matches it, or a new trip starts on its list more than six hours later; then it is bought |
+| `teanode shopping check ITEM-ID... [--store NAME]` / `uncheck ITEM-ID...` | put items in the cart, or back to needed. The first one starts your trip, at `--store` (the item's store by default), and tells the others the list reaches. An item stays in the cart until you are done, a receipt matches it, or a new trip starts on its list more than six hours later; then it is bought |
 | `teanode shopping need ITEM-ID... [--quantity N]` / `not-needed ITEM-ID...` | need items again with a count (1 by default), or mark them bought or not wanted now |
 | `teanode shopping out-of-stock ITEM-ID [--store NAME] [--in-stock]` | say a store had none of an item (the item's own store by default), or that it is in stock again |
 | `teanode shopping price ITEM-ID PRICE [--store NAME] [--on DAY] [--currency CODE]` / `prices ITEM-ID` | remember the price of one that you saw, and list the prices remembered, newest first, from receipts and from people |
 | `teanode shopping picture ITEM-ID` / `set-picture ITEM-ID FILE` | search the web for another picture of an item, which arrives in a minute or so; or give it a picture of your own, or take its picture away with `--remove` |
 | `teanode shopping stores` / `store STORE [--list LIST]... [--this-store-only]` | the stores your items are for, with how many are needed at each; and the store screen: what to get at one store across your lists, by aisle, each item saying which list it is on, and who is shopping there. The items for any store are listed too unless `--this-store-only` |
 | `teanode shopping trips` | who is shopping now, on the lists you reach |
-| `teanode shopping shop LIST... [--store NAME]` / `done TRIP-ID` | start shopping a store for some lists, which tells the others the lists reach, and finish: what you put in the cart is bought |
+| `teanode shopping shop LIST... [--store NAME]` / `done [TRIP-ID]` | start shopping a store for some lists by hand, which tells the others the lists reach (checking an item does it too), and finish: what you put in the cart is bought, no receipt needed. `done` alone ends your own trip, or buys your cart when no trip is open |
 | `teanode shopping receipt FINANCE-RECEIPT-ID` | what a receipt did to your lists: each item line with the items it was matched to (applied, or proposed and waiting) and the match ids, and what is still needed at that store. Every Finance receipt is matched to your lists on its own, wherever it came from |
 | `teanode shopping match-receipt FINANCE-RECEIPT-ID` | match a receipt again, for one read before the list had its items. It is queued, and `receipt` shows the result a minute later |
 | `teanode shopping decide MATCH-ID apply\|dismiss` | apply a match the matcher was unsure of, which checks the item off and remembers its price, or dismiss one; dismissing an applied match undoes it |

@@ -104,8 +104,8 @@ func init() {
 				Preview:     tools.PreviewOf(removeItemsCard), PreviewIn: removeItemsCardIn,
 				Run: runWith(runRemoveItems),
 			},
-			write("shopping_check", "Put items in the cart (item_id, or item_ids for several). An item stays in the cart until the trip is finished, a receipt matches it, or a new trip starts on its list more than six hours later; then it is bought.",
-				tools.Object(map[string]any{"item_id": itemIDProperty, "item_ids": itemIDsProperty}), runCheck),
+			write("shopping_check", "Put items in the cart (item_id, or item_ids for several). The first one starts the person's trip, at store_name (the item's store by default), and the others the list reaches are told. An item stays in the cart until finish_shopping, a receipt matches it, or a new trip starts on its list more than six hours later; then it is bought.",
+				tools.Object(map[string]any{"item_id": itemIDProperty, "item_ids": itemIDsProperty, "store_name": storeNameProperty}), runCheck),
 			write("shopping_uncheck", "Take items out of the cart, back to needed.",
 				tools.Object(map[string]any{"item_id": itemIDProperty, "item_ids": itemIDsProperty}), runUncheck),
 			write("shopping_need", "Need items again, with needed_quantity of each (1 when left out). A bought item stays on its list as not_needed with its picture, store and prices, and this brings it back.",
@@ -123,8 +123,8 @@ func init() {
 				tools.Object(map[string]any{"item_id": itemIDProperty}, "item_id"), runFindPicture),
 			write("shopping_start_shopping", "Start the person shopping a store for some lists (list_ids; store_name, or none for no store in particular). The others the lists reach are told the person started. Answers the trip_id that finish_shopping takes.",
 				tools.Object(map[string]any{"list_ids": listIDsProperty, "store_name": storeNameProperty}, "list_ids"), runStartShopping),
-			write("shopping_finish_shopping", "Finish a trip: what the person put in the cart is bought.",
-				tools.Object(map[string]any{"trip_id": tripIDProperty}, "trip_id"), runFinishShopping),
+			write("shopping_finish_shopping", "Finish shopping: what the person put in the cart is bought. No receipt is needed. Leave out trip_id to end the person's own trip, or to buy their cart when no trip is open.",
+				tools.Object(map[string]any{"trip_id": tripIDProperty}), runFinishShopping),
 			write("shopping_match_receipt", "Match one of the person's Finance receipts to their lists again, for a receipt read before the list had its items. It is queued and takes a minute or so; receipt shows what it did.",
 				tools.Object(map[string]any{"receipt_id": receiptIDProperty}, "receipt_id"), runMatchReceipt),
 			write("shopping_decide_match", "Decide a match the matcher was unsure of: is_applied true applies it (the item is checked off and its price remembered), false dismisses it, undoing it when it was applied. The match_id is in receipt.",
@@ -219,7 +219,7 @@ var (
 	unitPriceAmountProperty    = tools.StringProperty("price: the price of one as text, a number of at least zero, such as 3.49")
 	observedOnProperty         = tools.StringProperty("price: the day it was seen, as YYYY-MM-DD; today by default")
 	currencyCodeProperty       = tools.StringProperty("price: the currency, such as USD; the item's by default")
-	tripIDProperty             = tools.StringProperty("finish_shopping: the trip, by the trip_id that start_shopping or trips gives")
+	tripIDProperty             = tools.StringProperty("finish_shopping: the trip, by the trip_id that start_shopping or trips gives; leave out for the person's own")
 	receiptIDProperty          = tools.StringProperty("the Finance receipt, by the id that finance receipts give")
 	receiptLineIDProperty      = tools.StringProperty("the receipt line, by the receipt_line_id that receipt gives")
 	matchIDProperty            = tools.StringProperty("decide_match: the match, by the match_id that receipt gives")
