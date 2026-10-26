@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -118,6 +119,48 @@ func NewLocationCommand() *cli.Command {
 					personFlag,
 				},
 				Action: runLocationPath,
+			},
+			{
+				Name:  "trips",
+				Usage: "how you got from place to place: each trip with its legs and their ways of travel",
+				Description: "A trip is the travel between leaving one place and arriving at the next, made of legs,\n" +
+					"each with a way of travel (" + travelModeWords() + "). The way is worked out from\n" +
+					"your phone's motion activity, or from speed and distance without it; bus, train and\n" +
+					"boat are never worked out, only set with 'teanode location travel-mode'. The last\n" +
+					"column gives the leg identifiers that command takes. Without --day, --from or\n" +
+					"--until it lists today.",
+				Flags: append([]cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "day", Usage: "one day, as YYYY-MM-DD; today by default"},
+					&cli.StringFlag{Name: "from", Usage: "the first moment, as YYYY-MM-DD or YYYY-MM-DDTHH:MM; today's start by default"},
+					&cli.StringFlag{Name: "until", Usage: "the moment after the last, the same way; now by default"},
+					personFlag,
+				}, pagingFlags...),
+				Action: runLocationTrips,
+			},
+			{
+				Name:  "travel",
+				Usage: "how far you traveled by each way of travel, per day, week, month or year",
+				Description: "A leg counts in the period it started in. Weeks start on Monday. Distances are in\n" +
+					"kilometers. Without --from and --until it lists the last 12 periods.",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "by", Usage: "the period: day, week, month or year", Value: "week"},
+					&cli.StringFlag{Name: "from", Usage: "the first moment, as YYYY-MM-DD or YYYY-MM-DDTHH:MM"},
+					&cli.StringFlag{Name: "until", Usage: "the moment after the last, the same way; now by default"},
+					personFlag,
+				},
+				Action: runLocationTravel,
+			},
+			{
+				Name:      "travel-mode",
+				Usage:     "correct the way of travel of one leg of a trip",
+				ArgsUsage: "<leg id> <" + strings.Join(travelModes, "|") + "|detected>",
+				Description: "The leg ids are in the last column of 'teanode location trips'. 'detected' takes your\n" +
+					"correction off, so the leg is counted as it was worked out. Only your own legs can be\n" +
+					"corrected; the correction stays when the trip is rebuilt.",
+				Flags:  []cli.Flag{JSONFlag()},
+				Action: runLocationTravelMode,
 			},
 			{
 				Name:   "nearby",
@@ -1364,5 +1407,316 @@ func runLocationUnshare(ctx context.Context, command *cli.Command) error {
 		return describeNotFound(command, err, "the share "+command.Args().First())
 	}
 	fmt.Println("no longer shared")
+	return nil
+}
+
+// travelModes are the ways of travel a leg can have, in the order they are
+// listed.
+var travelModes = []string{"walk", "run", "bike", "car", "bus", "train", "boat", "plane"}
+
+func travelModeWords() string {
+	return strings.Join(travelModes, ", ")
+}
+
+// kilometersWords is a distance in meters as kilometers with one decimal.
+func kilometersWords(distanceMeters float64) string {
+	return fmt.Sprintf("%.1f km", distanceMeters/1000)
+}
+
+// tripSpanWords is when a trip happened: both ends with the day when it
+// started on one and ended on another.
+func tripSpanWords(trip *client.Trip) string {
+	startedAt, endedAt := trip.StartedAt.In(time.Local), trip.EndedAt.In(time.Local)
+	if startedAt.YearDay() == endedAt.YearDay() && startedAt.Year() == endedAt.Year() {
+		return startedAt.Format("2006-01-02 15:04") + " to " + endedAt.Format("15:04")
+	}
+	return startedAt.Format("2006-01-02 15:04") + " to " + endedAt.Format("2006-01-02 15:04")
+}
+
+// tripLegWords is the legs of a trip as "walk 0.6 km, car 11.8 km", marking a
+// way the person set.
+func tripLegWords(trip *client.Trip) string {
+	words := make([]string, 0, len(trip.Legs))
+	for _, leg := range trip.Legs {
+		each := leg.TravelMode + " " + kilometersWords(leg.DistanceMeters)
+		if leg.IsTravelModeCorrected {
+			each += " (set by you)"
+		}
+		words = append(words, each)
+	}
+	return strings.Join(words, ", ")
+}
+
+// tripLegIDWords is the identifiers of the legs of a trip, each with its way,
+// for the command that corrects one.
+func tripLegIDWords(trip *client.Trip) string {
+	words := make([]string, 0, len(trip.Legs))
+	for _, leg := range trip.Legs {
+		words = append(words, leg.TravelMode+" "+leg.ID)
+	}
+	return strings.Join(words, ", ")
+}
+
+// tripsWindow is the range of a listing of trips: one day with --day, else
+// --from and --until, today when none is given.
+func tripsWindow(command *cli.Command) (time.Time, time.Time, error) {
+	now := time.Now().In(time.Local)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	if command.IsSet("day") {
+		if command.IsSet("from") || command.IsSet("until") {
+			return time.Time{}, time.Time{}, usage("give --day, or --from and --until, not both")
+		}
+		given := strings.TrimSpace(command.String("day"))
+		day, err := time.ParseInLocation("2006-01-02", given, time.Local)
+		if err != nil {
+			return time.Time{}, time.Time{}, usage(fmt.Sprintf("--day is a date written YYYY-MM-DD, not %q", given))
+		}
+		return day, day.AddDate(0, 0, 1), nil
+	}
+	from, err := locationMoment(command, "from")
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	until, err := locationMoment(command, "until")
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	switch {
+	case from == nil && until == nil:
+		return today, today.AddDate(0, 0, 1), nil
+	case from == nil:
+		start := until.AddDate(0, 0, -1)
+		from = &start
+	case until == nil:
+		end := now
+		if !end.After(*from) {
+			end = from.AddDate(0, 0, 1)
+		}
+		until = &end
+	}
+	if !until.After(*from) {
+		return time.Time{}, time.Time{}, usage("--until must be after --from")
+	}
+	return *from, *until, nil
+}
+
+// runLocationTrips lists the trips of a range, newest first.
+func runLocationTrips(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 0 {
+		return usage("usage: teanode location trips [--day 2026-10-17 | --from ... --until ...] [--person ben]")
+	}
+	from, until, err := tripsWindow(command)
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	userId, err := locationPerson(ctx, command, connection, true)
+	if err != nil {
+		return err
+	}
+	var personId *string
+	if userId != "" {
+		personId = &userId
+	}
+	first, offset := int(command.Int("first")), int(command.Int("offset"))
+	page, err := client.ListTrips(ctx, connection, personId, from, until, &offset, &first)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(page)
+	}
+	if len(page.Trips) == 0 {
+		fmt.Println("no trips in that range")
+		return nil
+	}
+	rows := make([][]string, 0, len(page.Trips))
+	for _, trip := range page.Trips {
+		fromName, toName := "somewhere", "somewhere"
+		if trip.FromPlace != nil {
+			fromName = placeLine(trip.FromPlace)
+		}
+		if trip.ToPlace != nil {
+			toName = placeLine(trip.ToPlace)
+		}
+		rows = append(rows, []string{
+			tripSpanWords(trip), fromName + " to " + toName, kilometersWords(trip.DistanceMeters),
+			timeWords(time.Duration(trip.DurationSeconds) * time.Second), tripLegWords(trip), tripLegIDWords(trip),
+		})
+	}
+	if err := printTable([]string{"time", "from to", "distance", "duration", "legs", "leg ids"}, rows); err != nil {
+		return err
+	}
+	noteNextPage(page.NextOffset, first)
+	return nil
+}
+
+// travelPeriodStart is the start of the period that holds a moment, in the
+// local zone, with weeks starting on Monday.
+func travelPeriodStart(moment time.Time, period string) time.Time {
+	local := moment.In(time.Local)
+	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.Local)
+	switch period {
+	case "week":
+		return day.AddDate(0, 0, -((int(day.Weekday()) + 6) % 7))
+	case "month":
+		return time.Date(day.Year(), day.Month(), 1, 0, 0, 0, 0, time.Local)
+	case "year":
+		return time.Date(day.Year(), 1, 1, 0, 0, 0, 0, time.Local)
+	}
+	return day
+}
+
+// travelPeriodsBack is the start of the period that is count periods before
+// the one holding a moment.
+func travelPeriodsBack(moment time.Time, period string, count int) time.Time {
+	start := travelPeriodStart(moment, period)
+	switch period {
+	case "week":
+		return start.AddDate(0, 0, -7*count)
+	case "month":
+		return start.AddDate(0, -count, 0)
+	case "year":
+		return start.AddDate(-count, 0, 0)
+	}
+	return start.AddDate(0, 0, -count)
+}
+
+// travelLastPeriods is how many periods a listing of travel covers when no
+// range is given.
+const travelLastPeriods = 12
+
+// runLocationTravel lists the distance traveled by each way, per period,
+// newest first.
+func runLocationTravel(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 0 {
+		return usage("usage: teanode location travel [--by day|week|month|year] [--from ...] [--until ...] [--person ben]")
+	}
+	period := strings.ToLower(strings.TrimSpace(command.String("by")))
+	switch period {
+	case "day", "week", "month", "year":
+	default:
+		return usage(fmt.Sprintf("--by is day, week, month or year, not %q", command.String("by")))
+	}
+	from, err := locationMoment(command, "from")
+	if err != nil {
+		return err
+	}
+	until, err := locationMoment(command, "until")
+	if err != nil {
+		return err
+	}
+	if until == nil {
+		now := time.Now()
+		until = &now
+	}
+	if from == nil {
+		start := travelPeriodsBack(*until, period, travelLastPeriods-1)
+		from = &start
+	}
+	if !until.After(*from) {
+		return usage("--until must be after --from")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	userId, err := locationPerson(ctx, command, connection, true)
+	if err != nil {
+		return err
+	}
+	var personId *string
+	if userId != "" {
+		personId = &userId
+	}
+	totals, err := client.ListTravelTotals(ctx, connection, personId, period, *from, *until)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		if totals == nil {
+			totals = []*client.TravelTotal{}
+		}
+		return PrintJSON(totals)
+	}
+	if len(totals) == 0 {
+		fmt.Println("no travel in that range")
+		return nil
+	}
+	// One row per period, one column per way of travel that appears.
+	distances := map[string]map[string]float64{}
+	isModeUsed := map[string]bool{}
+	periodStartDays := []string{}
+	for _, total := range totals {
+		if distances[total.PeriodStartDay] == nil {
+			distances[total.PeriodStartDay] = map[string]float64{}
+			periodStartDays = append(periodStartDays, total.PeriodStartDay)
+		}
+		distances[total.PeriodStartDay][total.TravelMode] += total.DistanceMeters
+		isModeUsed[total.TravelMode] = true
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(periodStartDays)))
+	headers := []string{period + " starting"}
+	modes := []string{}
+	for _, mode := range travelModes {
+		if isModeUsed[mode] {
+			modes = append(modes, mode)
+			headers = append(headers, mode)
+		}
+	}
+	headers = append(headers, "total")
+	rows := make([][]string, 0, len(periodStartDays))
+	for _, periodStartDay := range periodStartDays {
+		row := []string{periodStartDay}
+		totalMeters := 0.0
+		for _, mode := range modes {
+			cell := ""
+			if meters, isFound := distances[periodStartDay][mode]; isFound {
+				cell = kilometersWords(meters)
+			}
+			row = append(row, cell)
+		}
+		for _, meters := range distances[periodStartDay] {
+			totalMeters += meters
+		}
+		rows = append(rows, append(row, kilometersWords(totalMeters)))
+	}
+	return printTable(headers, rows)
+}
+
+// runLocationTravelMode sets, or with "detected" clears, the way of travel of
+// one leg.
+func runLocationTravelMode(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 2 {
+		return usage("usage: teanode location travel-mode <leg id> <" + strings.Join(travelModes, "|") + "|detected>")
+	}
+	tripLegId := strings.TrimSpace(command.Args().Get(0))
+	word := strings.ToLower(strings.TrimSpace(command.Args().Get(1)))
+	var travelMode *string
+	if word != "detected" {
+		if !slices.Contains(travelModes, word) {
+			return usage(fmt.Sprintf("%q is not a way of travel: %s, or detected to take your correction off", word, travelModeWords()))
+		}
+		travelMode = &word
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	leg, err := client.SetTripLegTravelMode(ctx, connection, tripLegId, travelMode)
+	if err != nil {
+		return describeNotFound(command, err, "the leg "+tripLegId)
+	}
+	if command.Bool("json") {
+		return PrintJSON(leg)
+	}
+	if travelMode == nil {
+		fmt.Printf("correction taken off; the leg is counted as %s\n", leg.TravelMode)
+		return nil
+	}
+	fmt.Printf("the leg is counted as %s\n", leg.TravelMode)
 	return nil
 }

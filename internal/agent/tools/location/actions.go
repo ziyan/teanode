@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,6 +22,7 @@ const (
 	visitFields       = `arrivedAt departedAt durationSeconds place { ` + placeFields + ` }`
 	listedVisitFields = visitFields + ` photoCount photosTakenBefore`
 	pauseFields       = `startedAt endedAt`
+	tripLegFields     = `id startedAt endedAt durationSeconds distanceMeters travelMode detectedTravelMode isTravelModeCorrected detectionSource`
 	muteFields        = `mutedUntil`
 	foundFields       = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson`
 
@@ -36,6 +39,25 @@ const (
 }`
 	documentListPauses = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
   ListLocationPauses(userId: $userId, from: $from, until: $until) { ` + pauseFields + ` }
+}`
+	documentListTrips = `query ($userId: String, $from: DateTime!, $until: DateTime!, $offset: Int, $limitCount: Int) {
+  ListTrips(userId: $userId, from: $from, until: $until, offset: $offset, limitCount: $limitCount) {
+    nextOffset
+    trips {
+      id startedAt endedAt durationSeconds distanceMeters
+      fromPlace { ` + placeFields + ` }
+      toPlace { ` + placeFields + ` }
+      legs { ` + tripLegFields + ` }
+    }
+  }
+}`
+	documentSetTripLegTravelMode = `mutation ($tripLegId: String!, $travelMode: String) {
+  SetTripLegTravelMode(tripLegId: $tripLegId, travelMode: $travelMode) { ` + tripLegFields + ` }
+}`
+	documentListTravelTotals = `query ($userId: String, $period: String!, $from: DateTime!, $until: DateTime!) {
+  ListTravelTotals(userId: $userId, period: $period, from: $from, until: $until) {
+    periodStartDay travelMode distanceMeters durationSeconds legCount
+  }
 }`
 	documentListPoints = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
   ListLocationPoints(userId: $userId, from: $from, until: $until) { ` + pointFields + ` }
@@ -1576,4 +1598,339 @@ func placeNameOf(ctx context.Context, placeId string) string {
 		}
 	}
 	return ""
+}
+
+// travelModes are the ways of travel a leg can have, in the order they are
+// listed.
+var travelModes = []string{"walk", "run", "bike", "car", "bus", "train", "boat", "plane"}
+
+type tripLegData struct {
+	ID                    string    `json:"id"`
+	StartedAt             time.Time `json:"startedAt"`
+	EndedAt               time.Time `json:"endedAt"`
+	DurationSeconds       int       `json:"durationSeconds"`
+	DistanceMeters        float64   `json:"distanceMeters"`
+	TravelMode            string    `json:"travelMode"`
+	DetectedTravelMode    string    `json:"detectedTravelMode"`
+	IsTravelModeCorrected bool      `json:"isTravelModeCorrected"`
+	DetectionSource       string    `json:"detectionSource"`
+}
+
+type tripData struct {
+	ID              string        `json:"id"`
+	StartedAt       time.Time     `json:"startedAt"`
+	EndedAt         time.Time     `json:"endedAt"`
+	DurationSeconds int           `json:"durationSeconds"`
+	DistanceMeters  float64       `json:"distanceMeters"`
+	FromPlace       *placeData    `json:"fromPlace"`
+	ToPlace         *placeData    `json:"toPlace"`
+	Legs            []tripLegData `json:"legs"`
+}
+
+type travelTotalData struct {
+	PeriodStartDay  string  `json:"periodStartDay"`
+	TravelMode      string  `json:"travelMode"`
+	DistanceMeters  float64 `json:"distanceMeters"`
+	DurationSeconds int     `json:"durationSeconds"`
+	LegCount        int     `json:"legCount"`
+}
+
+// kilometers is a distance in meters as kilometers with one decimal.
+func kilometers(distanceMeters float64) float64 {
+	return roundTo(distanceMeters/1000, 1)
+}
+
+// legRow is a leg as the model reads it. The leg id is only given for the
+// person's own trips, since only the person corrects a leg.
+func legRow(leg *tripLegData, isOwn bool) map[string]any {
+	row := map[string]any{
+		"travel_mode":         leg.TravelMode,
+		"distance_kilometers": kilometers(leg.DistanceMeters),
+		"distance_meters":     math.Round(leg.DistanceMeters),
+		"leg_duration":        durationWords(time.Duration(leg.DurationSeconds) * time.Second),
+		"is_corrected":        leg.IsTravelModeCorrected,
+	}
+	if leg.IsTravelModeCorrected {
+		row["detected_travel_mode"] = leg.DetectedTravelMode
+	}
+	if isOwn {
+		row["trip_leg_id"] = leg.ID
+	}
+	return row
+}
+
+type tripsArguments struct {
+	Day    string `json:"day"`
+	From   string `json:"from"`
+	Until  string `json:"until"`
+	Person string `json:"person"`
+	Limit  *int   `json:"limit"`
+	Offset *int   `json:"offset"`
+}
+
+// tripsWindow is the range a listing of trips covers: one day, or from and
+// until, or else today. A from alone runs to now; an until alone starts a day
+// before it.
+func (self *scope) tripsWindow(arguments tripsArguments) (time.Time, time.Time, error) {
+	local := self.now.In(self.where)
+	today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, self.where)
+	if given := strings.TrimSpace(arguments.Day); given != "" {
+		if strings.TrimSpace(arguments.From) != "" || strings.TrimSpace(arguments.Until) != "" {
+			return time.Time{}, time.Time{}, errors.New("give day, or from and until, not both")
+		}
+		day, err := time.ParseInLocation("2006-01-02", given, self.where)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("%q is not a day: write YYYY-MM-DD", given)
+		}
+		return day, day.AddDate(0, 0, 1), nil
+	}
+	from, err := self.parsedMoment(arguments.From)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	until, err := self.parsedMoment(arguments.Until)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	switch {
+	case from == nil && until == nil:
+		return today, today.AddDate(0, 0, 1), nil
+	case from == nil:
+		start := until.AddDate(0, 0, -1)
+		from = &start
+	case until == nil:
+		end := self.now
+		if !end.After(*from) {
+			end = from.AddDate(0, 0, 1)
+		}
+		until = &end
+	}
+	if !until.After(*from) {
+		return time.Time{}, time.Time{}, errors.New("until must be after from")
+	}
+	return *from, *until, nil
+}
+
+// parsedMoment is moment as a time; empty is nil.
+func (self *scope) parsedMoment(value string) (*time.Time, error) {
+	text, err := self.moment(value)
+	if err != nil || text == nil {
+		return nil, err
+	}
+	parsed, err := time.Parse(time.RFC3339, *text)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
+}
+
+// runTrips answers the trips of a range, newest first, with their legs.
+func runTrips(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	arguments, err := tools.DecodeArguments[tripsArguments](call)
+	if err != nil {
+		return nil, err
+	}
+	here, err := scopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	from, until, err := here.tripsWindow(arguments)
+	if err != nil {
+		return nil, err
+	}
+	variables := map[string]any{"from": from.UTC().Format(time.RFC3339), "until": until.UTC().Format(time.RFC3339)}
+	withPaging(variables, arguments.Offset, arguments.Limit)
+	userId, err := here.personId(ctx, arguments.Person, true)
+	if err != nil {
+		return nil, err
+	}
+	if userId != nil {
+		variables["userId"] = *userId
+	}
+	var result struct {
+		ListTrips struct {
+			NextOffset *int       `json:"nextOffset"`
+			Trips      []tripData `json:"trips"`
+		} `json:"ListTrips"`
+	}
+	if err := here.operations.Execute(ctx, documentListTrips, variables, &result); err != nil {
+		return nil, err
+	}
+	rows := make([]map[string]any, 0, len(result.ListTrips.Trips))
+	for index := range result.ListTrips.Trips {
+		trip := &result.ListTrips.Trips[index]
+		row := map[string]any{
+			"started":             here.timeText(&trip.StartedAt),
+			"ended":               here.timeText(&trip.EndedAt),
+			"trip_duration":       durationWords(time.Duration(trip.DurationSeconds) * time.Second),
+			"distance_kilometers": kilometers(trip.DistanceMeters),
+			"distance_meters":     math.Round(trip.DistanceMeters),
+		}
+		if trip.FromPlace != nil {
+			row["from_place"] = placeDisplayName(trip.FromPlace)
+			row["from_place_id"] = trip.FromPlace.ID
+		}
+		if trip.ToPlace != nil {
+			row["to_place"] = placeDisplayName(trip.ToPlace)
+			row["to_place_id"] = trip.ToPlace.ID
+		}
+		legs := make([]map[string]any, 0, len(trip.Legs))
+		for legIndex := range trip.Legs {
+			legs = append(legs, legRow(&trip.Legs[legIndex], userId == nil))
+		}
+		row["legs"] = legs
+		rows = append(rows, row)
+	}
+	answer := map[string]any{"timezone": here.where.String(), "trips": rows}
+	withNext(answer, result.ListTrips.NextOffset)
+	return untrusted(tools.JSONResult(answer))
+}
+
+type travelTotalsArguments struct {
+	Period string `json:"period"`
+	From   string `json:"from"`
+	Until  string `json:"until"`
+	Person string `json:"person"`
+}
+
+// travelLastPeriods is how many periods the totals cover when no range is
+// given.
+const travelLastPeriods = 12
+
+// periodStart is the start of the period that holds a moment, in the person's
+// zone, with weeks starting on Monday.
+func (self *scope) periodStart(moment time.Time, period string, periodsBack int) time.Time {
+	local := moment.In(self.where)
+	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, self.where)
+	switch period {
+	case "week":
+		return day.AddDate(0, 0, -((int(day.Weekday())+6)%7)-7*periodsBack)
+	case "month":
+		return time.Date(day.Year(), day.Month()-time.Month(periodsBack), 1, 0, 0, 0, 0, self.where)
+	case "year":
+		return time.Date(day.Year()-periodsBack, 1, 1, 0, 0, 0, 0, self.where)
+	}
+	return day.AddDate(0, 0, -periodsBack)
+}
+
+// runTravelTotals answers the distance per way of travel for each period.
+func runTravelTotals(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	arguments, err := tools.DecodeArguments[travelTotalsArguments](call)
+	if err != nil {
+		return nil, err
+	}
+	here, err := scopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	period := strings.ToLower(strings.TrimSpace(arguments.Period))
+	if period == "" {
+		period = "week"
+	}
+	if period != "day" && period != "week" && period != "month" && period != "year" {
+		return nil, fmt.Errorf("%q is not a period: write day, week, month or year", arguments.Period)
+	}
+	until, err := here.parsedMoment(arguments.Until)
+	if err != nil {
+		return nil, err
+	}
+	if until == nil {
+		until = &here.now
+	}
+	from, err := here.parsedMoment(arguments.From)
+	if err != nil {
+		return nil, err
+	}
+	if from == nil {
+		start := here.periodStart(*until, period, travelLastPeriods-1)
+		from = &start
+	}
+	if !until.After(*from) {
+		return nil, errors.New("until must be after from")
+	}
+	variables := map[string]any{"period": period, "from": from.UTC().Format(time.RFC3339), "until": until.UTC().Format(time.RFC3339)}
+	userId, err := here.personId(ctx, arguments.Person, true)
+	if err != nil {
+		return nil, err
+	}
+	if userId != nil {
+		variables["userId"] = *userId
+	}
+	var result struct {
+		ListTravelTotals []travelTotalData `json:"ListTravelTotals"`
+	}
+	if err := here.operations.Execute(ctx, documentListTravelTotals, variables, &result); err != nil {
+		return nil, err
+	}
+	type periodSum struct {
+		byMode      map[string]any
+		totalMeters float64
+	}
+	periods := map[string]*periodSum{}
+	periodStartDays := []string{}
+	for _, total := range result.ListTravelTotals {
+		sum := periods[total.PeriodStartDay]
+		if sum == nil {
+			sum = &periodSum{byMode: map[string]any{}}
+			periods[total.PeriodStartDay] = sum
+			periodStartDays = append(periodStartDays, total.PeriodStartDay)
+		}
+		previous, _ := sum.byMode[total.TravelMode].(float64)
+		sum.byMode[total.TravelMode] = previous + total.DistanceMeters
+		sum.totalMeters += total.DistanceMeters
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(periodStartDays)))
+	rows := make([]map[string]any, 0, len(periodStartDays))
+	for _, periodStartDay := range periodStartDays {
+		sum := periods[periodStartDay]
+		byMode := map[string]any{}
+		for mode, meters := range sum.byMode {
+			byMode[mode] = kilometers(meters.(float64))
+		}
+		rows = append(rows, map[string]any{
+			"period_start_day":                   periodStartDay,
+			"distance_kilometers_by_travel_mode": byMode,
+			"total_distance_kilometers":          kilometers(sum.totalMeters),
+		})
+	}
+	return tools.JSONResult(map[string]any{"timezone": here.where.String(), "period": period, "periods": rows})
+}
+
+type travelModeArguments struct {
+	TripLegID  string `json:"trip_leg_id"`
+	TravelMode string `json:"travel_mode"`
+}
+
+// runTravelMode sets, or with an empty travel_mode clears, the way of travel
+// of one of the person's own legs.
+func runTravelMode(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	arguments, err := tools.DecodeArguments[travelModeArguments](call)
+	if err != nil {
+		return nil, err
+	}
+	here, err := scopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tripLegId := strings.TrimSpace(arguments.TripLegID)
+	if tripLegId == "" {
+		return nil, errors.New("trip_leg_id is needed: trips gives it for each leg")
+	}
+	variables := map[string]any{"tripLegId": tripLegId}
+	if travelMode := strings.ToLower(strings.TrimSpace(arguments.TravelMode)); travelMode != "" {
+		if !slices.Contains(travelModes, travelMode) {
+			return nil, fmt.Errorf("%q is not a way of travel: write %s, or leave it empty to take the correction off", arguments.TravelMode, strings.Join(travelModes, ", "))
+		}
+		variables["travelMode"] = travelMode
+	}
+	var result struct {
+		SetTripLegTravelMode tripLegData `json:"SetTripLegTravelMode"`
+	}
+	if err := here.operations.Execute(ctx, documentSetTripLegTravelMode, variables, &result); err != nil {
+		return nil, err
+	}
+	row := legRow(&result.SetTripLegTravelMode, true)
+	row["timezone"] = here.where.String()
+	row["started"] = here.timeText(&result.SetTripLegTravelMode.StartedAt)
+	return tools.JSONResult(row)
 }

@@ -44,6 +44,9 @@ func TestLocationParity(test *testing.T) {
 		"ResumeLocation":              {"resume", "resume"},
 		"MuteLocationNotifications":   {"mute", "mute"},
 		"UnmuteLocationNotifications": {"unmute", "unmute"},
+		"ListTrips":                   {"trips", "trips"},
+		"SetTripLegTravelMode":        {"travel-mode", "travel_mode"},
+		"ListTravelTotals":            {"travel", "travel_totals"},
 		"ListPlaces":                  {"places", "places"},
 		"ReadPlace":                   {"place", "places"},
 		"ListNearbyPlaces":            {"nearby", "nearby"},
@@ -115,10 +118,12 @@ func TestLocationParity(test *testing.T) {
 	flagNames := map[string]string{
 		"userId": "person", "from": "from", "until": "until", "placeId": "place", "placeLabel": "label", "query": "query",
 		"offset": "offset", "limitCount": "first", "latitudeDegrees": "latitude", "longitudeDegrees": "longitude", "radiusMeters": "radius",
+		"period": "by",
 	}
 	propertyNames := map[string]string{
 		"userId": "person", "from": "from", "until": "until", "placeId": "place_id", "placeLabel": "place_label", "query": "query",
 		"offset": "offset", "limitCount": "limit", "latitudeDegrees": "latitude_degrees", "longitudeDegrees": "longitude_degrees", "radiusMeters": "radius_meters",
+		"period": "period",
 	}
 	// "<Operation>.<argument>.<surface>" is exempt for the reason given.
 	exempt := map[string]string{
@@ -199,7 +204,15 @@ func locationServerAnswering(test *testing.T, replacements map[string]string) (*
 		"MuteLocationNotifications":   `{"mutedUntil":"2026-10-17T13:30:00Z"}`,
 		"UnmuteLocationNotifications": `true`,
 		"ListLocationPauses":          `[{"id":"pause1","startedAt":"2026-10-17T10:00:00Z","endedAt":"2026-10-17T10:30:00Z"},{"id":"pause2","startedAt":"2026-10-17T09:55:00Z"}]`,
-		"ListLocationPoints":          `[{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":12,"measuredAt":"2026-10-17T10:00:00Z","locationSource":"phone"}]`,
+		"ListTrips": `{"nextOffset":null,"trips":[{"id":"t1","startedAt":"2026-10-17T08:05:00Z","endedAt":"2026-10-17T08:40:00Z","durationSeconds":2100,"distanceMeters":12400,
+			"fromPlace":` + place + `,"toPlace":null,
+			"legs":[{"id":"leg1","startedAt":"2026-10-17T08:05:00Z","endedAt":"2026-10-17T08:15:00Z","durationSeconds":600,"distanceMeters":600,"travelMode":"walk","detectedTravelMode":"walk","isTravelModeCorrected":false,"detectionSource":"motion"},
+				{"id":"leg2","startedAt":"2026-10-17T08:15:00Z","endedAt":"2026-10-17T08:40:00Z","durationSeconds":1500,"distanceMeters":11800,"travelMode":"bus","detectedTravelMode":"car","isTravelModeCorrected":true,"detectionSource":"motion"}]}]}`,
+		"ListTravelTotals": `[{"periodStartDay":"2026-10-12","travelMode":"walk","distanceMeters":600,"durationSeconds":600,"legCount":1},
+			{"periodStartDay":"2026-10-12","travelMode":"bus","distanceMeters":11800,"durationSeconds":1500,"legCount":1},
+			{"periodStartDay":"2026-10-05","travelMode":"car","distanceMeters":2000,"durationSeconds":300,"legCount":1}]`,
+		"SetTripLegTravelMode": `{"id":"leg2","startedAt":"2026-10-17T08:15:00Z","endedAt":"2026-10-17T08:40:00Z","durationSeconds":1500,"distanceMeters":11800,"travelMode":"bus","detectedTravelMode":"car","isTravelModeCorrected":true,"detectionSource":"motion"}`,
+		"ListLocationPoints":   `[{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":12,"measuredAt":"2026-10-17T10:00:00Z","locationSource":"phone"}]`,
 	}
 	for operation, answer := range replacements {
 		answers[operation] = answer
@@ -804,5 +817,93 @@ func TestLocationVisitsListsThePausesAmongThem(test *testing.T) {
 	}
 	if _, err := runLocationCommand(test, server, "visits", "--person", "ben", "--from", "2026-10-17"); err != nil || called("ListLocationPauses")["userId"] != "u-ben" {
 		test.Errorf("another person's pauses are asked for by their account: %v %v", err, called("ListLocationPauses"))
+	}
+}
+
+// trips lists each trip with its places, distance in kilometers, its legs and
+// the leg ids that travel-mode takes; a day is a range of that day.
+func TestLocationTripsListsTripsWithTheirLegs(test *testing.T) {
+	server, called := locationServer(test)
+	output, err := runLocationCommand(test, server, "trips", "--day", "2026-10-17", "--person", "ben")
+	if err != nil {
+		test.Fatal(err)
+	}
+	for _, want := range []string{"12.4 km", "walk 0.6 km, bus 11.8 km (set by you)", "walk leg1, bus leg2", "Maple Park to somewhere"} {
+		if !strings.Contains(output, want) {
+			test.Errorf("the table lacks %q: %q", want, output)
+		}
+	}
+	sent := called("ListTrips")
+	from, fromErr := time.Parse(time.RFC3339, fmt.Sprint(sent["from"]))
+	until, untilErr := time.Parse(time.RFC3339, fmt.Sprint(sent["until"]))
+	if fromErr != nil || untilErr != nil || until.Sub(from) < 23*time.Hour || until.Sub(from) > 25*time.Hour || sent["userId"] != "u-ben" {
+		test.Errorf("one day of ben's was asked for: %v", sent)
+	}
+
+	empty, _ := locationServerAnswering(test, map[string]string{"ListTrips": `{"nextOffset":null,"trips":[]}`})
+	if output, err := runLocationCommand(test, empty, "trips"); err != nil || !strings.Contains(output, "no trips") {
+		test.Errorf("no trips: %q %v", output, err)
+	}
+	for name, arguments := range map[string][]string{
+		"a day and a range": {"trips", "--day", "2026-10-17", "--from", "2026-10-16"},
+		"not a day":         {"trips", "--day", "today"},
+		"backwards":         {"trips", "--from", "2026-10-17", "--until", "2026-10-16"},
+	} {
+		if _, err := runLocationCommand(test, server, arguments...); err == nil {
+			test.Errorf("%s should be refused", name)
+		}
+	}
+}
+
+// travel lists a row per period, newest first, with a column for each way that
+// appears, in kilometers, and its total.
+func TestLocationTravelListsDistancePerWay(test *testing.T) {
+	server, called := locationServer(test)
+	output, err := runLocationCommand(test, server, "travel", "--by", "month")
+	if err != nil {
+		test.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) != 3 || !strings.HasPrefix(lines[1], "2026-10-12") || !strings.Contains(lines[1], "12.4 km") || !strings.HasPrefix(lines[2], "2026-10-05") {
+		test.Errorf("newest period first with its total: %q", output)
+	}
+	for _, header := range []string{"month starting", "walk", "car", "bus", "total"} {
+		if !strings.Contains(lines[0], header) {
+			test.Errorf("the header lacks %q: %q", header, lines[0])
+		}
+	}
+	if strings.Contains(lines[0], "plane") {
+		test.Errorf("a way nobody used has no column: %q", lines[0])
+	}
+	sent := called("ListTravelTotals")
+	from, _ := time.Parse(time.RFC3339, fmt.Sprint(sent["from"]))
+	if sent["period"] != "month" || from.IsZero() || time.Since(from) < 10*30*24*time.Hour || time.Since(from) > 12*31*24*time.Hour {
+		test.Errorf("the last 12 months were asked for: %v", sent)
+	}
+	if _, err := runLocationCommand(test, server, "travel", "--by", "fortnight"); err == nil {
+		test.Error("a period nobody has should be refused")
+	}
+	if _, err := runLocationCommand(test, server, "travel", "--person", "ben", "--json"); err != nil || called("ListTravelTotals")["period"] != "week" || called("ListTravelTotals")["userId"] != "u-ben" {
+		test.Errorf("week is the default: %v %v", called("ListTravelTotals"), err)
+	}
+}
+
+// travel-mode sends the way, and "detected" sends none to take the correction
+// off; a way nobody has is refused before anything is sent.
+func TestLocationTravelModeSetsAndClearsAWay(test *testing.T) {
+	server, called := locationServer(test)
+	output, err := runLocationCommand(test, server, "travel-mode", "leg2", "Bus")
+	if err != nil || called("SetTripLegTravelMode")["travelMode"] != "bus" || called("SetTripLegTravelMode")["tripLegId"] != "leg2" || !strings.Contains(output, "bus") {
+		test.Errorf("setting: %q %v %v", output, called("SetTripLegTravelMode"), err)
+	}
+	if _, err := runLocationCommand(test, server, "travel-mode", "leg2", "detected"); err != nil || called("SetTripLegTravelMode")["travelMode"] != nil {
+		test.Errorf("clearing sends no way: %v %v", called("SetTripLegTravelMode"), err)
+	}
+	refused, calledAgain := locationServer(test)
+	if _, err := runLocationCommand(test, refused, "travel-mode", "leg2", "rocket"); err == nil || calledAgain("SetTripLegTravelMode") != nil {
+		test.Errorf("a way nobody has: %v %v", err, calledAgain("SetTripLegTravelMode"))
+	}
+	if _, err := runLocationCommand(test, refused, "travel-mode", "leg2"); err == nil {
+		test.Error("a way is needed")
 	}
 }
