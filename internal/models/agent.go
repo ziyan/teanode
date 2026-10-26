@@ -654,6 +654,12 @@ const (
 	// conversation takes one goal turn at a time.
 	AgentJobGoal AgentJobKind = "goal"
 
+	// AgentJobJournal makes the touch-ups and the narratives of a person's
+	// journal that they asked for. Its subject is the person's user
+	// identifier, so the queue's rule of one open job per agent, kind and
+	// subject gathers requests that arrive together into one run.
+	AgentJobJournal AgentJobKind = "journal"
+
 	// AgentJobBackfill queues triage for what was already in a mailbox when
 	// it was granted.
 	AgentJobBackfill AgentJobKind = "backfill"
