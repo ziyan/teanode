@@ -86711,22 +86711,6 @@
         }
       }
     },
-    "TeaNode writes the story of a day after it ends.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "一日が終わると、TeaNodeがその日のストーリーを書きます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "一天结束后，TeaNode 才会写下它的故事。"
-          }
-        }
-      }
-    },
     "This day has no story yet.": {
       "localizations": {
         "ja": {
@@ -87191,22 +87175,6 @@
         }
       }
     },
-    "Each day is colored by how it was.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "各日はその日の気分で色分けされています。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每一天按当天的心情着色。"
-          }
-        }
-      }
-    },
     "Walked": {
       "localizations": {
         "ja": {
@@ -87235,22 +87203,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "锻炼"
-          }
-        }
-      }
-    },
-    "Coding sessions": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "コーディングセッション"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "编程会话"
           }
         }
       }
@@ -88527,6 +88479,234 @@
           "stringUnit": {
             "state": "translated",
             "value": "决定日记以及助手撰写的页面中温度和距离的写法。自动则根据你的语言和地区。"
+          }
+        }
+      }
+    },
+    "What you worked on": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り組んだこと"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你做了什么"
+          }
+        }
+      }
+    },
+    "Work chat and documents": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仕事のチャットと文書"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作聊天和文档"
+          }
+        }
+      }
+    },
+    "Show all %lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての%lld件を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示全部 %lld 项"
+          }
+        }
+      }
+    },
+    "Show fewer": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示を減らす"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起"
+          }
+        }
+      }
+    },
+    "Write today so far": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここまでの今日を書く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写到目前为止的今天"
+          }
+        }
+      }
+    },
+    "TeaNode writes the story of a day after it ends. You can ask for the day so far.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode は1日が終わってからその日の物語を書きます。ここまでの1日を先に書いてもらうこともできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 会在一天结束后写下这一天的故事。你也可以让它先写到目前为止的这一天。"
+          }
+        }
+      }
+    },
+    "Each day shows its first photo, and is colored by how it was.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各日には最初の写真が表示され、その日の気分で色分けされます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每一天显示它的第一张照片，并按当天的心情着色。"
+          }
+        }
+      }
+    },
+    "%lld projects": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld project"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld projects"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 个项目"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 个项目"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lldプロジェクト"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lldプロジェクト"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "TeaNode wrote or changed %lld memory pages from this day": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "TeaNode wrote or changed %lld memory page from this day"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "TeaNode wrote or changed %lld memory pages from this day"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "TeaNode 因这一天撰写或修改了 %lld 个记忆页面"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "TeaNode 因这一天撰写或修改了 %lld 个记忆页面"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この日をもとに TeaNode が書いた、または変更したメモリーページは%lld件です"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この日をもとに TeaNode が書いた、または変更したメモリーページは%lld件です"
+                }
+              }
+            }
           }
         }
       }

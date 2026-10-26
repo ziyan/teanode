@@ -1,6 +1,4 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-
 import { graphql } from '../../api'
 import { FormDialog } from '../../components/dialog'
 import {
@@ -39,6 +37,7 @@ import {
   narrativeParagraphs,
   targetVariables,
 } from './journalApi'
+import { RecordLink } from './journalOpen'
 import { JournalCard } from './journalParts'
 import { isDashboardPath } from './journalPaths'
 
@@ -94,10 +93,10 @@ export function RecordKindIcon({ recordKind, size = 14 }: { recordKind: string; 
 // is not followed.
 export function RecordChip({ record }: { record: JournalRecord }) {
   return (
-    <Link className="journal-chip" to={record.dashboardPath}>
+    <RecordLink className="journal-chip" to={record.dashboardPath}>
       <RecordKindIcon recordKind={record.recordKind} size={13} />
       <span>{record.title}</span>
-    </Link>
+    </RecordLink>
   )
 }
 
@@ -138,7 +137,8 @@ export function NarrativeCard({
   title: string
   // The sentence under the title when there is a story to read.
   description?: string
-  // Today has no story: it is written after the day ends.
+  // Today's story is the day so far, written on request, and again after the
+  // day ends.
   isToday?: boolean
   // What the button says when there is no story yet or it is out of reach.
   writeLabel: string
@@ -168,12 +168,11 @@ export function NarrativeCard({
       await onChanged()
     }, t('journal.narrativeFailed'))
 
-  const actions =
-    isToday || narrative.narrativePending ? undefined : hasStory ? (
-      <button type="button" className="button-quiet" disabled={isBusy} onClick={() => void writeNow()}>
-        <RefreshIcon size={14} /> {t('journal.writeAgain')}
-      </button>
-    ) : undefined
+  const actions = narrative.narrativePending ? undefined : hasStory ? (
+    <button type="button" className="button-quiet" disabled={isBusy} onClick={() => void writeNow()}>
+      <RefreshIcon size={14} /> {t('journal.writeAgain')}
+    </button>
+  ) : undefined
 
   return (
     <JournalCard
@@ -186,9 +185,7 @@ export function NarrativeCard({
       description={hasStory ? description : undefined}
       action={actions}
     >
-      {isToday ? (
-        <p className="muted">{t('journal.narrativeToday')}</p>
-      ) : narrative.narrativePending && !hasStory ? (
+      {narrative.narrativePending && !hasStory ? (
         <p className="muted journal-status" role="status">
           {t('journal.narrativePending')}
         </p>
@@ -231,7 +228,11 @@ export function NarrativeCard({
       ) : (
         <>
           <p className="muted">
-            {narrative.isBeyondDepth ? t('journal.narrativeBeyondDepth') : t('journal.narrativeNone')}
+            {isToday
+              ? t('journal.narrativeToday')
+              : narrative.isBeyondDepth
+                ? t('journal.narrativeBeyondDepth')
+                : t('journal.narrativeNone')}
           </p>
           <div className="page-actions">
             <button type="button" disabled={isBusy} onClick={() => void writeNow()}>

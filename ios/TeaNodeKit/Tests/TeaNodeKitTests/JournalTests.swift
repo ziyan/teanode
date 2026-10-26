@@ -256,6 +256,123 @@ final class JournalTests: XCTestCase {
         XCTAssertEqual(again, content)
     }
 
+    // MARK: Work by project
+
+    private let factsWithProjects = #"""
+        {"photoCount":3,"placeCount":2,"walkedMeters":0,"stepCount":0,"sleepMinutes":0,"workoutMinutes":0,"codingSessionCount":236,"workProjectCount":3,
+         "codingMinutes":370,"meetingCount":0,"meetingMinutes":0,"recordingCount":0,"conversationCount":2,"chatMessageCount":0,"mailReceivedCount":0,
+         "mailSentCount":0,"documentCount":0,"transactionCount":0,"spentMinorUnits":0,"spentCurrency":"USD","shoppingTripCount":0,"memoryPageCount":0,
+         "mainPlaceName":""}
+        """#
+
+    private var dayWithProjects: String {
+        #"""
+        {"data":{"ReadJournalDay":{
+          "day":"2026-10-22","timeZone":"UTC","isToday":false,"weekday":"thursday","weekStart":"2026-10-19",
+          "words":null,"mood":null,"weather":null,"facts":\#(factsWithProjects),"narrative":null,"choices":[],"pins":[],"coverPhotoId":"",
+          "workProjects":[
+            {"name":"sample-app","firstAt":"2026-10-22T09:20:00Z","lastAt":"2026-10-22T17:05:00Z","activeMinutes":130,"stretchCount":3,
+             "topics":["Release branch","Fix the flaky upload test","","Rename the config keys","Update the changelog","Tidy the build scripts","Remove the old fixtures"],
+             "shipped":[
+               {"documentId":"request-1","title":"Fix the flaky upload test","address":"https://git.example.com/sample/sample-app/pulls/12","happenedAt":"2026-10-22T15:40:00Z","isDraft":false},
+               {"documentId":"request-2","title":"Rename the config keys","address":"javascript:alert(1)","happenedAt":"2026-10-22T16:10:00Z","isDraft":true}],
+             "summary":"Cut the release branch.","documentId":"doc-1"},
+            {"name":"notes","firstAt":"2026-10-22T18:00:00Z","lastAt":"2026-10-22T18:30:00Z","activeMinutes":20,"stretchCount":1,
+             "topics":null,"shipped":null,"summary":"","documentId":"doc-9"}],
+          "codingSessions":[],"documents":[],"documentTotal":0,
+          "conversations":[
+            {"conversationId":"conversation-main","title":"Main chat","isMain":true,"firstAt":"2026-10-22T18:00:00Z","lastAt":"2026-10-22T18:20:00Z","messageCount":6},
+            {"conversationId":"conversation-2","title":"Draft the announcement","isMain":false,"firstAt":"2026-10-22T11:05:00Z","lastAt":"2026-10-22T11:30:00Z","messageCount":4}],
+          "chats":[],"mail":[],"mailTotal":0,"recordings":[],"photos":[],"photoTotal":0,"visits":[],"events":[],"reminders":[],"transactions":[],
+          "health":null,"shoppingTrips":[],"notes":[],"memoryPages":[],"unavailableSections":[],"moments":[]}}}
+        """#
+    }
+
+    func testTheDaysWorkIsDecodedByProject() async throws {
+        let (connection, fake) = try connection(answering: dayWithProjects)
+        let day = try await connection.journalDay("2026-10-22")
+        XCTAssertEqual(day.facts?.projectCount, 3)
+        XCTAssertEqual(day.workProjects.map(\.name), ["sample-app", "notes"])
+        let project = try XCTUnwrap(day.workProjects.first)
+        XCTAssertEqual(project.activeMinutes, 130)
+        XCTAssertEqual(project.summary, "Cut the release branch.")
+        XCTAssertEqual(project.shipped.map(\.title), ["Fix the flaky upload test", "Rename the config keys"])
+        XCTAssertTrue(project.shipped[1].isDraft)
+        // A null list of topics or requests is an empty one.
+        XCTAssertEqual(day.workProjects[1].topics, [])
+        XCTAssertEqual(day.workProjects[1].shipped, [])
+        // The query asks for what the screen reads.
+        let sentQuery = try query(of: XCTUnwrap(fake.sent.first))
+        XCTAssertTrue(sentQuery.contains("workProjects"))
+        XCTAssertTrue(sentQuery.contains("workProjectCount"))
+        XCTAssertTrue(sentQuery.contains("isMain"))
+    }
+
+    func testOnlyAWebPageIsAddressOfARequest() throws {
+        let day = try JSONDecoder().decode(DayAnswer.self, from: Data(dayWithProjects.utf8)).data.ReadJournalDay
+        let shipped = try XCTUnwrap(day.workProjects.first).shipped
+        XCTAssertEqual(shipped[0].webAddress?.absoluteString, "https://git.example.com/sample/sample-app/pulls/12")
+        // An address that runs a script is no link.
+        XCTAssertNil(shipped[1].webAddress)
+    }
+
+    private struct DayAnswer: Decodable {
+        struct Read: Decodable { let ReadJournalDay: JournalDay }
+        let data: Read
+    }
+
+    func testTheMainConversationIsKnown() async throws {
+        let (connection, _) = try connection(answering: dayWithProjects)
+        let day = try await connection.journalDay("2026-10-22")
+        XCTAssertEqual(day.conversations.map(\.isMainChat), [true, false])
+    }
+
+    func testAnOlderServerSendsNoProjectsAndNoMainConversation() async throws {
+        // The answer of a server from before the fields: no workProjects, no
+        // workProjectCount, no isMain.
+        let (connection, _) = try connection(answering: dayAnswer)
+        let day = try await connection.journalDay("2026-10-22")
+        XCTAssertEqual(day.workProjects, [])
+        XCTAssertNil(day.facts)
+        let conversation = #"{"conversationId":"c1","title":"Old","firstAt":"2026-10-22T09:00:00Z","lastAt":"2026-10-22T09:10:00Z","messageCount":2}"#
+        let decoded = try JSONDecoder().decode(JournalConversation.self, from: Data(conversation.utf8))
+        XCTAssertNil(decoded.isMain)
+        XCTAssertFalse(decoded.isMainChat)
+        let facts = factsWithProjects.replacingOccurrences(of: #""workProjectCount":3,"#, with: "")
+        let oldFacts = try JSONDecoder().decode(JournalFacts.self, from: Data(facts.utf8))
+        XCTAssertNil(oldFacts.workProjectCount)
+        XCTAssertEqual(oldFacts.projectCount, 0)
+    }
+
+    func testAProjectListsFourTopicsAndCountsTheRest() async throws {
+        let (connection, _) = try connection(answering: dayWithProjects)
+        let day = try await connection.journalDay("2026-10-22")
+        let topics = try XCTUnwrap(day.workProjects.first).shownTopics()
+        // The blank topic is not one, so six are named and four are listed.
+        XCTAssertEqual(topics.shown, ["Release branch", "Fix the flaky upload test", "Rename the config keys", "Update the changelog"])
+        XCTAssertEqual(topics.hiddenCount, 2)
+        let few = try XCTUnwrap(day.workProjects.last).shownTopics()
+        XCTAssertEqual(few.shown, [])
+        XCTAssertEqual(few.hiddenCount, 0)
+    }
+
+    func testALongListShowsItsFirstRowsUntilAskedForAll() {
+        let rows = Array(1...9)
+        XCTAssertEqual(JournalRows.shown(rows, isShowingAll: false), [1, 2, 3, 4, 5, 6])
+        XCTAssertEqual(JournalRows.shown(rows, isShowingAll: true), rows)
+        XCTAssertTrue(JournalRows.hasMore(rows))
+        XCTAssertFalse(JournalRows.hasMore(Array(1...6)))
+        XCTAssertEqual(JournalRows.shown(rows, limit: JournalRows.momentLimit, isShowingAll: false), rows)
+        XCTAssertEqual(JournalRows.momentLimit, 12)
+    }
+
+    func testTheDocumentsAskForTheProjects() {
+        XCTAssertTrue(Documents.journalFactsFields.contains("workProjectCount"))
+        XCTAssertTrue(Documents.journalDay.contains("workProjects"))
+        XCTAssertTrue(Documents.journalDay.contains("shipped { documentId title address happenedAt isDraft }"))
+        XCTAssertTrue(Documents.journalDay.contains("conversations { conversationId title isMain"))
+    }
+
     // MARK: Documents
 
     func testEveryDocumentNamesItsOperation() {

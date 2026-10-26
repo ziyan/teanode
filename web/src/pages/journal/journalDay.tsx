@@ -29,6 +29,7 @@ import {
   PinsSection,
   RecordingsSection,
   ShoppingSection,
+  WorkChatSection,
   WorkSection,
 } from './journalDaySections'
 import {
@@ -49,7 +50,8 @@ import {
   APPLE_HEALTH_MOOD_SOURCE,
 } from './journalApi'
 import { NarrativeCard } from './journalNarrative'
-import { MoodRadios, PeriodToolbar, browserToday, dayStepPaths, usePendingPoll } from './journalParts'
+import { PhotoLightbox } from './journalOpen'
+import { MoodRadios, PeriodToolbar, browserToday, dayStepPaths, useKeptScroll, usePendingPoll } from './journalParts'
 import { JournalWordsCard } from './journalWords'
 
 // One day: the person's mood and the weather, the day's numbers, their own
@@ -83,6 +85,7 @@ function JournalDayContent({ day: dayText }: { day: string }) {
   }, [query])
   const day = query.data
   usePendingPoll(Boolean(day?.words.touchUpPending || day?.narrative.narrativePending), reload)
+  useKeptScroll(Boolean(day))
 
   useBreadcrumbDetail(
     dayHeadingText(dayText, language),
@@ -118,7 +121,7 @@ function DayBody({ day, onChanged }: { day: JournalDay; onChanged: () => Promise
   const { t } = useTranslation()
   const isEmpty = isEmptyDay(day)
   return (
-    <>
+    <PhotoLightbox photos={day.photos} timeZone={day.timeZone}>
       <section className="journal-glance" aria-label={t('journal.glance')}>
         <MoodCard day={day} onChanged={onChanged} />
         <WeatherCard day={day} />
@@ -147,11 +150,12 @@ function DayBody({ day, onChanged }: { day: JournalDay; onChanged: () => Promise
                 : undefined
             }
             isToday={day.isToday}
-            writeLabel={t('journal.writeThisDay')}
+            writeLabel={day.isToday ? t('journal.writeTodaySoFar') : t('journal.writeThisDay')}
             onChanged={onChanged}
           />
           <PinsSection day={day} onChanged={onChanged} />
           <WorkSection day={day} onChanged={onChanged} />
+          <WorkChatSection day={day} />
           <MailSection day={day} onChanged={onChanged} />
           <PhotosSection day={day} />
           <div className="journal-pair">
@@ -171,7 +175,7 @@ function DayBody({ day, onChanged }: { day: JournalDay; onChanged: () => Promise
           <CalendarCard day={day} />
         </aside>
       </div>
-    </>
+    </PhotoLightbox>
   )
 }
 
@@ -354,7 +358,10 @@ function FactTiles({ day }: { day: JournalDay }) {
       id: 'work',
       label: t('journal.tileWork'),
       value: durationText(facts.codingMinutes, t),
-      detail: plural(facts.codingSessionCount, { one: 'journal.sessionsOne', other: 'journal.sessionsOther' }),
+      detail:
+        facts.workProjectCount > 0
+          ? plural(facts.workProjectCount, { one: 'journal.projectsOne', other: 'journal.projectsOther' })
+          : undefined,
       to: '/coding',
       icon: <CodeIcon size={14} />,
     })

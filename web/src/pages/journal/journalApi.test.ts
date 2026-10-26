@@ -16,6 +16,8 @@ import {
   temperatureText,
   textParagraphs,
   usesImperialUnits,
+  webAddressOf,
+  workText,
   weekStartOf,
   weekdayIndex,
 } from './journalApi'
@@ -128,4 +130,32 @@ it('finds the page the server gave for a record of the day', () => {
   ])
   expect(found.get('agent_document:a')).toBe('/coding')
   expect(found.has('photo:b')).toBe(false)
+})
+
+it('takes the address of a request only when it is a web page', () => {
+  expect(webAddressOf('https://git.example.com/sample/pulls/12')).toBe('https://git.example.com/sample/pulls/12')
+  expect(webAddressOf('http://git.example.com/sample/pulls/12')).toBe('http://git.example.com/sample/pulls/12')
+  expect(webAddressOf('javascript:alert(1)')).toBeNull()
+  expect(webAddressOf('file:///etc/hosts')).toBeNull()
+  expect(webAddressOf('not an address')).toBeNull()
+  expect(webAddressOf('')).toBeNull()
+})
+
+it('writes the work of a period as hours and projects, and leaves out what is not there', () => {
+  const words: Record<string, string> = {
+    'journal.durationHoursMinutes': '{hours} h {minutes} min',
+    'journal.durationMinutes': '{minutes} min',
+    'journal.projectsOne': '1 project',
+    'journal.projectsOther': '{count} projects',
+  }
+  const say = (key: string, values?: Record<string, string | number>) =>
+    words[key].replace(/\{(\w+)\}/g, (_, name: string) => String(values?.[name]))
+  const plural = (count: number, forms: { one: string; other: string }) =>
+    say(count === 1 ? forms.one : forms.other, { count })
+  expect(workText({ codingMinutes: 370, workProjectCount: 3 }, say as never, plural as never)).toBe(
+    '6 h 10 min, 3 projects',
+  )
+  expect(workText({ codingMinutes: 40, workProjectCount: 1 }, say as never, plural as never)).toBe('40 min, 1 project')
+  expect(workText({ codingMinutes: 0, workProjectCount: 2 }, say as never, plural as never)).toBe('2 projects')
+  expect(workText({ codingMinutes: 0, workProjectCount: 0 }, say as never, plural as never)).toBe('')
 })

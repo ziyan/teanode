@@ -75,10 +75,13 @@
             DemoDay(
                 daysAgo: 4, moodLevel: 4, moodWords: "tired, but the release is out",
                 headline: "Release day: Orchard 2.4 shipped, and the park before the rain.", wordsExcerpt: "Shipped the Orchard release at last.",
-                highCelsius: 14, weatherKind: "partlyCloudy", facts: ["photoCount": 23, "stepCount": 9412, "placeCount": 5, "walkedMeters": 5400], photoCount: 23),
+                highCelsius: 14, weatherKind: "partlyCloudy",
+                facts: [
+                    "photoCount": 23, "stepCount": 9412, "placeCount": 5, "walkedMeters": 5400, "codingSessionCount": 5, "workProjectCount": 2, "codingMinutes": 250,
+                ], photoCount: 23),
             DemoDay(
                 daysAgo: 5, moodLevel: 2, moodWords: "", headline: "A late night chasing the failing upload test.", wordsExcerpt: "",
-                highCelsius: 13, weatherKind: "cloudy", facts: ["sleepMinutes": 340, "codingSessionCount": 3], photoCount: 0),
+                highCelsius: 13, weatherKind: "cloudy", facts: ["sleepMinutes": 340, "codingSessionCount": 3, "workProjectCount": 1, "codingMinutes": 190], photoCount: 0),
             DemoDay(
                 daysAgo: 6, moodLevel: 4, moodWords: "", headline: "Planning the freeze, and dinner with Sam.", wordsExcerpt: "",
                 highCelsius: 15, weatherKind: "clear", facts: ["meetingCount": 4, "spentMinorUnits": 6820, "spentCurrency": "USD"], photoCount: 1),
@@ -106,7 +109,7 @@
         static func facts(_ values: [String: Any] = [:]) -> [String: Any] {
             var facts: [String: Any] = [
                 "photoCount": 0, "placeCount": 0, "walkedMeters": 0.0, "stepCount": 0, "sleepMinutes": 0, "workoutMinutes": 0, "codingSessionCount": 0,
-                "codingMinutes": 0, "meetingCount": 0, "meetingMinutes": 0, "recordingCount": 0, "conversationCount": 0, "chatMessageCount": 0,
+                "workProjectCount": 0, "codingMinutes": 0, "meetingCount": 0, "meetingMinutes": 0, "recordingCount": 0, "conversationCount": 0, "chatMessageCount": 0,
                 "mailReceivedCount": 0, "mailSentCount": 0, "documentCount": 0, "transactionCount": 0, "spentMinorUnits": 0, "spentCurrency": "USD",
                 "shoppingTripCount": 0, "memoryPageCount": 0, "mainPlaceName": "",
             ]
@@ -194,7 +197,7 @@
                 "weekStart": JournalDays.weekStart(of: dayText, weekStartsOn: "monday") ?? dayText,
                 "words": words(original: "", day: dayText), "mood": orNull(demo.map { mood($0) }), "weather": orNull(demo.map { weather($0) }),
                 "facts": facts(demo?.facts ?? [:]), "narrative": narrative(day: dayText), "choices": [Any](), "pins": [Any](), "coverPhotoId": "",
-                "codingSessions": [Any](), "documents": [Any](), "documentTotal": 0, "conversations": [Any](), "chats": [Any](), "mail": [Any](),
+                "workProjects": [Any](), "codingSessions": [Any](), "documents": [Any](), "documentTotal": 0, "conversations": [Any](), "chats": [Any](), "mail": [Any](),
                 "mailTotal": 0, "recordings": [Any](), "photos": [Any](), "photoTotal": 0, "visits": [Any](), "events": [Any](), "reminders": [Any](),
                 "transactions": [Any](), "health": NSNull(), "shoppingTrips": [Any](), "notes": [Any](), "memoryPages": [Any](), "unavailableSections": [Any](),
                 "moments": [Any](),
@@ -274,9 +277,22 @@
                 [
                     "documentId": "document-1", "title": "Orchard 2.4 release notes", "sourceName": "Team wiki", "happenedAt": moment(dayText, hour: 11),
                     "isChosen": true, "linkReason": "You wrote most of it today",
-                ] as [String: Any]
+                ] as [String: Any],
+                [
+                    "documentId": "document-2", "title": "Lunch order", "sourceName": "Team chat", "happenedAt": moment(dayText, hour: 11.6),
+                    "isChosen": false, "linkReason": "",
+                ] as [String: Any],
+                [
+                    "documentId": "document-3", "title": "Build is green again", "sourceName": "Team chat", "happenedAt": moment(dayText, hour: 15.4),
+                    "isChosen": false, "linkReason": "",
+                ] as [String: Any],
             ]
             view["documentTotal"] = 38
+            view["workProjects"] = demoWorkProjects(dayText)
+            view["memoryPages"] = [
+                ["nodeId": "node-1", "path": "projects/orchard", "title": "Orchard release", "factCount": 3] as [String: Any],
+                ["nodeId": "node-2", "path": "people/sam", "title": "Sam", "factCount": 1] as [String: Any],
+            ]
             view["mail"] = [
                 [
                     "itemId": "mail-lena", "fromName": "Lena", "subject": "Onboarding mockups", "receivedAt": moment(dayText, hour: 15), "isSent": false,
@@ -320,9 +336,13 @@
             ]
             view["conversations"] = [
                 [
-                    "conversationId": "conversation-1", "title": "Release checklist", "firstAt": moment(dayText, hour: 9.2), "lastAt": moment(dayText, hour: 12),
-                    "messageCount": 14,
-                ] as [String: Any]
+                    "conversationId": "conversation-1", "title": "Release checklist", "isMain": false, "firstAt": moment(dayText, hour: 9.2),
+                    "lastAt": moment(dayText, hour: 12), "messageCount": 14,
+                ] as [String: Any],
+                [
+                    "conversationId": "conversation-main", "title": "Main chat", "isMain": true, "firstAt": moment(dayText, hour: 18.2),
+                    "lastAt": moment(dayText, hour: 18.9), "messageCount": 31,
+                ] as [String: Any],
             ]
             view["moments"] = [
                 moment(dayText, "Woke up", "Slept 6 h 10 min", kind: "health_day", hour: 6.8),
@@ -333,6 +353,35 @@
                 moment(dayText, "Groceries checked off", "Corner Market", kind: "shopping_trip", hour: 19.5),
                 moment(dayText, "You wrote in the journal", "", kind: "note", hour: 22.8),
             ]
+        }
+
+        /// The day's coding by project: what was done, what it was about, and
+        /// the requests sent for review.
+        static func demoWorkProjects(_ dayText: String) -> [[String: Any]] {
+            let orchardTopics = [
+                "Release branch for Orchard", "Fix the flaky upload test", "Rename the config keys", "Update the changelog", "Tidy the build scripts",
+                "Remove the old fixtures",
+            ]
+            let orchardRequests: [[String: Any]] = [
+                [
+                    "documentId": "request-1", "title": "Fix the flaky upload test", "address": "https://git.example.com/orchard/orchard/pulls/12",
+                    "happenedAt": moment(dayText, hour: 15.2), "isDraft": false,
+                ],
+                [
+                    "documentId": "request-2", "title": "Rename the config keys", "address": "https://git.example.com/orchard/orchard/pulls/13",
+                    "happenedAt": moment(dayText, hour: 16.4), "isDraft": true,
+                ],
+            ]
+            let orchard: [String: Any] = [
+                "name": "orchard", "firstAt": moment(dayText, hour: 9.3), "lastAt": moment(dayText, hour: 17.1), "activeMinutes": 190, "stretchCount": 3,
+                "topics": orchardTopics, "shipped": orchardRequests,
+                "summary": "Cut the release branch and fixed the upload test that kept failing.", "documentId": "session-1",
+            ]
+            let notes: [String: Any] = [
+                "name": "garden-notes", "firstAt": moment(dayText, hour: 20.1), "lastAt": moment(dayText, hour: 21), "activeMinutes": 60, "stretchCount": 1,
+                "topics": ["Plan the spring beds"], "shipped": [Any](), "summary": "", "documentId": "session-3",
+            ]
+            return [orchard, notes]
         }
 
         static func moment(
@@ -387,7 +436,7 @@
                 "A \(name) that bent around one day. The early days went to the release branch, with the upload test failing twice, and Thursday the release went out. The [[place_visit:visit-park]] walk afterward was the best part."
             let months: [Any] = kind == .year ? yearMonths(start) : []
             let chapters: [Any] = kind == .year ? [yearChapter(start)] : []
-            let totals = facts(["photoCount": 49, "placeCount": 11, "walkedMeters": 21700.0, "stepCount": 58210, "sleepMinutes": 2530, "codingSessionCount": 7, "meetingCount": 14, "mailReceivedCount": 188, "spentMinorUnits": 31240])
+            let totals = facts(["photoCount": 49, "placeCount": 11, "walkedMeters": 21700.0, "stepCount": 58210, "sleepMinutes": 2530, "codingSessionCount": 7, "workProjectCount": 4, "codingMinutes": 1170, "meetingCount": 14, "mailReceivedCount": 188, "spentMinorUnits": 31240])
             return [
                 "periodKind": periodKind, "periodStart": start, "periodEnd": end, "isCurrent": start <= today && today <= end,
                 "lookingBack": words(original: "Too much of the week at the desk. Keep Saturdays free.", day: start),
