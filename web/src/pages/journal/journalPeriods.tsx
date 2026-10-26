@@ -3,6 +3,7 @@ import { Link, Navigate, useParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { useBreadcrumbDetail, useBreadcrumbNote } from '../../components/breadcrumb'
+import { useIsDesktop } from '../../components/sidebar'
 import { ErrorMessage, Loading } from '../../components/common'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
 import { useQuery } from '../../components/useQuery'
@@ -105,8 +106,12 @@ function PeriodShell({
   useKeptScroll(Boolean(period))
 
   const heading = describe(period)
-  useBreadcrumbDetail(heading.detail, heading.parent)
-  useBreadcrumbNote(heading.note)
+  // The phone's bar holds the trail and the name in one line: there it is
+  // Journal and the period's name alone, where the larger period and the
+  // dates were cut short.
+  const isDesktop = useIsDesktop()
+  useBreadcrumbDetail(heading.detail, isDesktop ? heading.parent : null)
+  useBreadcrumbNote(isDesktop ? heading.note : null)
 
   const today = browserToday()
   const start = period?.periodStart ?? anchor

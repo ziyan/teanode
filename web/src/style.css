@@ -22403,9 +22403,10 @@ button.person-row:focus-visible {
   white-space: nowrap;
 }
 
+/* The description always takes the line under the title: with a reading
+   width of its own it fitted beside the title on a wide card. */
 .journal-card-head p {
-  flex: 1 1 100%;
-  max-width: var(--measure);
+  flex: 0 0 100%;
   margin: 0;
 }
 
