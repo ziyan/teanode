@@ -207,10 +207,10 @@ export function ShoppingStorePage() {
                 </tr>
               </thead>
               {groups.map((group) => (
-                <tbody key={group.aisleName}>
+                <tbody key={group.isAnyStore ? '\u0000any-store' : group.aisleName}>
                   <tr className="shopping-group-row">
                     <th colSpan={5} scope="colgroup">
-                      {group.aisleName || t('shopping.noAisle')}
+                      {group.isAnyStore ? t('shopping.storeAnyStoreSection') : group.aisleName || t('shopping.noAisle')}
                     </th>
                   </tr>
                   {group.shoppingItems.map((shoppingItem) => (

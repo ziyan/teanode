@@ -255,6 +255,7 @@ export function Sidebar({
       '/location',
       '/health',
       '/passwords',
+      '/shopping',
       '/circles',
       '/browser',
       '/people',

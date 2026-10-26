@@ -75,7 +75,7 @@ it('shows the items of every list by aisle, each saying its list while more than
   const headings = Array.from(container.querySelectorAll('.shopping-group-row th')).map(
     (heading) => heading.textContent,
   )
-  expect(headings).toEqual(['Frozen', 'Snacks'])
+  expect(headings).toEqual(['Frozen', 'Also on the list, any store'])
   const crackersRow = screen.getByText('Crackers').closest('tr') as HTMLElement
   expect(within(crackersRow).getByText('Party')).toBeTruthy()
   const peasRow = screen.getByText('Peas').closest('tr') as HTMLElement

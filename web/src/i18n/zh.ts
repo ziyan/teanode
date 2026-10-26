@@ -7229,6 +7229,7 @@ export const zh: Catalog = {
   'shopping.lastBought': '上次购买',
   'shopping.actionsColumn': '操作',
   'shopping.anyStore': '任意商店',
+  'shopping.storeAnyStoreSection': '清单上的其他物品，任何商店都可以买',
   'shopping.noAisle': '未分区',
   'shopping.checkItem': '勾选{itemDescription}',
   'shopping.editItem': '编辑商品',

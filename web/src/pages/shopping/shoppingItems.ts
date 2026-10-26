@@ -63,21 +63,29 @@ export function groupShoppingItems(items: ShoppingItem[]): ShoppingItemGroup[] {
   return storeOrder.flatMap((storeName) => ordered.filter((group) => group.storeName === storeName))
 }
 
-// groupShoppingItemsByAisle is the store screen's grouping: the aisle is the
-// heading, whatever store the item is for, in the order the server sent them.
+// groupShoppingItemsByAisle is the store screen's grouping: the store's own
+// items under their aisles, in the order the server sent them, and the items
+// for any store last, under one heading of their own (isAnyStore), since
+// their aisle is not this store's.
 export function groupShoppingItemsByAisle(
   items: ShoppingItem[],
-): { aisleName: string; shoppingItems: ShoppingItem[] }[] {
-  const groups = new Map<string, { aisleName: string; shoppingItems: ShoppingItem[] }>()
+): { aisleName: string; isAnyStore: boolean; shoppingItems: ShoppingItem[] }[] {
+  const groups = new Map<string, { aisleName: string; isAnyStore: boolean; shoppingItems: ShoppingItem[] }>()
+  const anyStore = { aisleName: '', isAnyStore: true, shoppingItems: [] as ShoppingItem[] }
   for (const item of items) {
+    if (item.storeKey === '') {
+      anyStore.shoppingItems.push(item)
+      continue
+    }
     let group = groups.get(item.aisleName)
     if (!group) {
-      group = { aisleName: item.aisleName, shoppingItems: [] }
+      group = { aisleName: item.aisleName, isAnyStore: false, shoppingItems: [] }
       groups.set(item.aisleName, group)
     }
     group.shoppingItems.push(item)
   }
-  return [...groups.values()]
+  const ordered = [...groups.values()]
+  return anyStore.shoppingItems.length > 0 ? [...ordered, anyStore] : ordered
 }
 
 // plainNumber writes a number kept as text without the places it does not

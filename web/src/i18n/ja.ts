@@ -7523,6 +7523,7 @@ export const ja: Catalog = {
   'shopping.lastBought': '最後に買った日',
   'shopping.actionsColumn': '操作',
   'shopping.anyStore': 'どの店でも',
+  'shopping.storeAnyStoreSection': 'リストのほかの品物（どの店でも）',
   'shopping.noAisle': '売り場なし',
   'shopping.checkItem': '{itemDescription}にチェックを入れる',
   'shopping.editItem': '品物を編集',

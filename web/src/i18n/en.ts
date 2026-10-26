@@ -7586,6 +7586,7 @@ export const en = {
   'shopping.lastBought': 'Last bought',
   'shopping.actionsColumn': 'Actions',
   'shopping.anyStore': 'Any store',
+  'shopping.storeAnyStoreSection': 'Also on the list, any store',
   'shopping.noAisle': 'No aisle',
   'shopping.checkItem': 'Check off {itemDescription}',
   'shopping.editItem': 'Edit item',

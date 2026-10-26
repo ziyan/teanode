@@ -579,6 +579,14 @@ func (self *graph) ListShoppingStoreItems(ctx context.Context, arguments ListSho
 			items = append(items, item)
 		}
 	}
+	// The store is named as its items write it, not as it was typed in the
+	// address: "example market" is shown as the list has it.
+	for _, item := range everything {
+		if item.StoreKey != "" && item.StoreKey == models.ShoppingStoreKey(storeName) {
+			storeName = item.StoreName
+			break
+		}
+	}
 	trips, err := tx.ListOpenShoppingTrips(user.ID)
 	if err != nil {
 		return nil, translateError(err)

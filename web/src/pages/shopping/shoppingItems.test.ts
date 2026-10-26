@@ -48,15 +48,16 @@ it('groups by store, named stores alphabetically and the items for any store las
   )
 })
 
-it('groups the store screen by aisle alone', () => {
+it('groups the store screen by aisle, with the items for any store last', () => {
   const groups = groupShoppingItemsByAisle([
     shoppingItem({ id: '1', aisleName: 'Frozen' }),
     shoppingItem({ id: '2', storeName: '', storeKey: '', aisleName: 'Frozen' }),
     shoppingItem({ id: '3', aisleName: 'Snacks' }),
   ])
-  expect(groups.map((group) => [group.aisleName, group.shoppingItems.length])).toEqual([
-    ['Frozen', 2],
-    ['Snacks', 1],
+  expect(groups.map((group) => [group.aisleName, group.isAnyStore, group.shoppingItems.map((item) => item.id)])).toEqual([
+    ['Frozen', false, ['1']],
+    ['Snacks', false, ['3']],
+    ['', true, ['2']],
   ])
 })
 
