@@ -93,7 +93,7 @@ func repositoryOfAddress(address string) (string, bool) {
 }
 
 // workProjects groups the day's coding sessions and the requests it shipped
-// by project, earliest first. A request whose repository no session worked in
+// by project, the most worked on first. A request whose repository no session worked in
 // is a project of its own, so work done elsewhere (a review, a web edit) is
 // still there.
 func workProjects(sessions []CodingSession, shipped map[string][]Shipped) []WorkProject {
@@ -146,7 +146,19 @@ func workProjects(sessions []CodingSession, shipped map[string][]Shipped) []Work
 	for index := range projects {
 		projects[index].ActiveMinutes = minutesOfUnion(projects[index].spans)
 	}
-	sort.SliceStable(projects, func(left, right int) bool { return projects[left].FirstAt.Before(projects[right].FirstAt) })
+	// The page reads the day's work from the top: the projects that took the
+	// most time come first, then the ones with the most shipped, then the
+	// earliest.
+	sort.SliceStable(projects, func(left, right int) bool {
+		one, other := projects[left], projects[right]
+		if one.ActiveMinutes != other.ActiveMinutes {
+			return one.ActiveMinutes > other.ActiveMinutes
+		}
+		if len(one.Shipped) != len(other.Shipped) {
+			return len(one.Shipped) > len(other.Shipped)
+		}
+		return one.FirstAt.Before(other.FirstAt)
+	})
 	return projects
 }
 

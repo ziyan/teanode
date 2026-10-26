@@ -3,6 +3,7 @@ import { Link, Navigate, useParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { useBreadcrumbDetail, useBreadcrumbNote } from '../../components/breadcrumb'
+import { useIsDesktop } from '../../components/sidebar'
 import { ErrorMessage, Loading } from '../../components/common'
 import {
   ActivityIcon,
@@ -37,6 +38,7 @@ import {
   READ_JOURNAL_DAY,
   SET_JOURNAL_MOOD,
   amountText,
+  dayCompactText,
   dayHeadingText,
   dayShortText,
   distanceText,
@@ -87,11 +89,15 @@ function JournalDayContent({ day: dayText }: { day: string }) {
   usePendingPoll(Boolean(day?.words.touchUpPending || day?.narrative.narrativePending), reload)
   useKeptScroll(Boolean(day))
 
+  // The phone's bar holds the trail and the page's name in one line: there
+  // the day is its short date (Mon, Oct 26) after Journal alone, where the
+  // full name and its year were cut short.
+  const isDesktop = useIsDesktop()
   useBreadcrumbDetail(
-    dayHeadingText(dayText, language),
-    day?.weekStart ? t('journal.weekOf', { date: dayShortText(day.weekStart, language) }) : null,
+    isDesktop ? dayHeadingText(dayText, language) : dayCompactText(dayText, language),
+    isDesktop && day?.weekStart ? t('journal.weekOf', { date: dayShortText(day.weekStart, language) }) : null,
   )
-  useBreadcrumbNote(dayText.slice(0, 4))
+  useBreadcrumbNote(isDesktop ? dayText.slice(0, 4) : null)
 
   return (
     <>

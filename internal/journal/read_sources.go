@@ -737,14 +737,19 @@ func (self *dayReader) readPhotos() error {
 // they were taken. Screenshots are passed over while there are enough that are
 // not, since a picture of a screen is a poor one to stand for a day.
 func spreadPhotos(photos []*models.Photo, most int) []string {
+	// Photos the person took come first, a screenshot only after all of them:
+	// the first of the list stands for the day on a timeline or a month.
 	pool := make([]*models.Photo, 0, len(photos))
+	var screenshots []*models.Photo
 	for _, photo := range photos {
-		if !photo.IsScreenshot {
+		if photo.IsScreenshot {
+			screenshots = append(screenshots, photo)
+		} else {
 			pool = append(pool, photo)
 		}
 	}
 	if len(pool) < most {
-		pool = photos
+		pool = append(pool, screenshots...)
 	}
 	if len(pool) == 0 {
 		return nil

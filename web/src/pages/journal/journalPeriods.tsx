@@ -39,7 +39,8 @@ import {
   weekdayNames,
   weekdayShortText,
   wholeNumberText,
-  workText,
+  periodWorkText,
+  workDaysText,
   yearOf,
 } from './journalApi'
 import { NarrativeCard, RecordKindIcon } from './journalNarrative'
@@ -287,14 +288,20 @@ function WeekContent({ anchor }: { anchor: string }) {
           </div>
           <WeekDays period={period} />
           <WeekNumbers period={period} />
-          <div className="journal-split">
-            <div className="journal-split-main">
-              <WeekMoments period={period} />
+          {/* Places beside the moments, or across the page when the agent
+              has not chosen any yet, so no column stands empty. */}
+          {period.choices.some((choice) => !choice.isHidden) ? (
+            <div className="journal-split">
+              <div className="journal-split-main">
+                <WeekMoments period={period} />
+              </div>
+              <div className="journal-split-side">
+                <WeekPlaces period={period} />
+              </div>
             </div>
-            <div className="journal-split-side">
-              <WeekPlaces period={period} />
-            </div>
-          </div>
+          ) : (
+            <WeekPlaces period={period} />
+          )}
         </>
       )}
     </PeriodShell>
@@ -473,7 +480,7 @@ function WeekNumbers({ period }: { period: JournalPeriod }) {
       id: 'work',
       label: t('journal.tileWork'),
       value: durationText(totals.codingMinutes, t),
-      unit: plural(totals.workProjectCount, { one: 'journal.projectsOne', other: 'journal.projectsOther' }),
+      unit: workDaysText(period.days, plural),
       detail:
         totals.codingMinutes > 0
           ? t('journal.mostOn', { weekday: longDay(indexOfMost(work)), value: durationText(Math.max(...work), t) })
@@ -747,7 +754,7 @@ function MonthMoods({ period }: { period: JournalPeriod }) {
     })
   }
   if (totals.codingMinutes > 0 || totals.workProjectCount > 0) {
-    rows.push({ label: 'journal.tileWork', value: workText(totals, t, plural) })
+    rows.push({ label: 'journal.tileWork', value: periodWorkText(totals, period.days, t, plural) })
   }
   if (totals.photoCount > 0)
     rows.push({ label: 'journal.tilePhotos', value: wholeNumberText(totals.photoCount, language) })
@@ -764,11 +771,18 @@ function MonthMoods({ period }: { period: JournalPeriod }) {
   if (warmest?.weather) {
     rows.push({
       label: 'journal.weather',
-      value: t('journal.weatherSummary', {
-        rain: plural(rainy, { one: 'journal.rainDaysOne', other: 'journal.rainDaysOther' }),
-        date: dayShortText(warmest.day, language),
-        temperature: temperatureText(warmest.weather.highCelsius, isImperial),
-      }),
+      // Days of rain are said only when there were some.
+      value:
+        rainy > 0
+          ? t('journal.weatherSummary', {
+              rain: plural(rainy, { one: 'journal.rainDaysOne', other: 'journal.rainDaysOther' }),
+              date: dayShortText(warmest.day, language),
+              temperature: temperatureText(warmest.weather.highCelsius, isImperial),
+            })
+          : t('journal.weatherWarmest', {
+              date: dayShortText(warmest.day, language),
+              temperature: temperatureText(warmest.weather.highCelsius, isImperial),
+            }),
     })
   }
   if (total === 0 && rows.length === 0) return null
@@ -946,7 +960,7 @@ function YearNumbers({ period }: { period: JournalPeriod }) {
   if (totals.stepCount > 0)
     rows.push({ label: 'journal.tileSteps', value: wholeNumberText(totals.stepCount, language) })
   if (totals.codingMinutes > 0 || totals.workProjectCount > 0) {
-    rows.push({ label: 'journal.tileWork', value: workText(totals, t, plural) })
+    rows.push({ label: 'journal.tileWork', value: periodWorkText(totals, period.days, t, plural) })
   }
   if (totals.recordingCount > 0) {
     rows.push({ label: 'journal.recordings', value: wholeNumberText(totals.recordingCount, language) })

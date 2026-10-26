@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { expect, it, vi } from 'vitest'
+import { beforeEach, expect, it, vi } from 'vitest'
 
 import { graphql, openAgentConversation } from '../../api'
 import type { JournalDay, JournalLink, JournalNarrative, JournalPeriod } from './journalApi'
@@ -17,6 +17,14 @@ import {
   summary,
   setUpJournalTestWorld,
 } from './journalFixtures'
+
+// The day page names itself shorter on a phone, which it asks matchMedia;
+// jsdom has none, and a test that does not care about the width is a desktop.
+beforeEach(() => {
+  if (typeof window.matchMedia !== 'function') {
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }))
+  }
+})
 
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
@@ -1262,7 +1270,7 @@ it("shows a month day's first photo when no cover was chosen, and the numbers wi
     period: () =>
       journalPeriod('month', '2026-10-01', '2026-10-31', {
         days: [
-          summary(THURSDAY, { photoIds: ['photo-first', 'photo-second'] }),
+          summary(THURSDAY, { photoIds: ['photo-first', 'photo-second'], facts: { ...NO_FACTS, codingMinutes: 120 } }),
           summary('2026-10-21', { coverPhotoId: 'photo-chosen', photoIds: ['photo-other'] }),
         ],
         totals: { ...NO_FACTS, codingMinutes: 21_000, workProjectCount: 12, codingSessionCount: 10764 },
@@ -1272,7 +1280,9 @@ it("shows a month day's first photo when no cover was chosen, and the numbers wi
   renderAt('/journal/month/2026-10')
   expect(await screen.findByText('The month in numbers')).toBeTruthy()
   expect(screen.queryByText('Mood across the month')).toBeNull()
-  expect(screen.getByText('350 h, 12 projects')).toBeTruthy()
+  // A period's work is its hours and the days that had any, never its
+  // projects added up day by day.
+  expect(screen.getByText('350 h on 1 day')).toBeTruthy()
   expect(screen.queryByText(/sessions/)).toBeNull()
   expect(document.querySelector('.journal-mood-bar')).toBeNull()
   const sources = [...document.querySelectorAll('.journal-month-photo')].map((image) => image.getAttribute('src'))
