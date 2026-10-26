@@ -226,6 +226,7 @@ enum SharingWords {
         case .finance: String(localized: "sharing.kindFinance", defaultValue: "Finance account")
         case .skill: String(localized: "Skill")
         case .passwords: String(localized: "Passwords")
+        case .shoppingList: String(localized: "sharing.kindShoppingList", defaultValue: "Shopping list")
         case nil: shareKind
         }
     }
@@ -431,6 +432,7 @@ extension SharingWords {
         case .finance: String(localized: "sharing.noteKindFinance", defaultValue: "finance")
         case .skill: String(localized: "sharing.noteKindSkills", defaultValue: "skills")
         case .passwords: String(localized: "sharing.noteKindPasswords", defaultValue: "passwords")
+        case .shoppingList: String(localized: "sharing.noteKindShoppingLists", defaultValue: "shopping lists")
         case nil: shareKind
         }
     }
@@ -454,6 +456,7 @@ extension SharingWords {
             if subject.isEmpty { return String(localized: "\(note.sharerName) shared a recording with you (\(level)).") }
             return String(localized: "\(note.sharerName) shared the recording \(subject) with you (\(level)).")
         case .finance: return String(localized: "\(note.sharerName) shared a finance account with you (\(level)).")
+        case .shoppingList: return String(localized: "\(note.sharerName) shared the shopping list \(subject) with you.")
         case .passwords, nil: return nil
         }
     }

@@ -921,6 +921,7 @@ struct NotificationKindToggle: View {
         case "skill_share_call": String(localized: "Skill calls waiting for your approval")
         case "location": String(localized: "People who share their location arriving at and leaving places")
         case "photo": String(localized: "Photos added to albums shared with you")
+        case "shopping": String(localized: "Shopping lists: arriving at a store, and someone starting to shop a list")
         default: notificationKind
         }
     }

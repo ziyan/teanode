@@ -14,6 +14,7 @@ enum NotificationCategories {
     static let skillShareCall = "skill_share_call"
     static let circle = "circle"
     static let location = "location"
+    static let shopping = "shopping"
     static let questionPrefix = "question-"
 
     /// The categories known before any notification arrives. A question's
@@ -40,6 +41,8 @@ enum NotificationCategories {
             UNNotificationCategory(identifier: circle, actions: [openAction], intentIdentifiers: []),
             // Somebody arrived or left: nothing to answer, only Location to open.
             UNNotificationCategory(identifier: location, actions: [openAction], intentIdentifiers: []),
+            // Arrived at a store, or somebody started shopping: only Shopping to open.
+            UNNotificationCategory(identifier: shopping, actions: [openAction], intentIdentifiers: []),
         ]
     }
 
@@ -77,6 +80,8 @@ enum NotificationCategories {
             return fixed.first { $0.identifier == circle }
         case "location":
             return fixed.first { $0.identifier == location }
+        case "shopping":
+            return fixed.first { $0.identifier == shopping }
         case "question":
             let buttons = Array((content.buttons ?? []).prefix(4))
             let actions: [UNNotificationAction] = buttons.map { button in
@@ -109,6 +114,10 @@ struct NotificationInfo: Sendable {
     let callId: String
     /// For a location notification, the person who arrived or left.
     let locationUserId: String
+    /// For a shopping notification of arriving at a store, the store.
+    let shoppingStoreName: String
+    /// For a shopping notification that somebody started shopping a list, the list.
+    let shoppingListId: String
     /// A question's choices, by the button that gives them.
     let answers: [String: String]
 
@@ -121,6 +130,8 @@ struct NotificationInfo: Sendable {
         runId = content.runId ?? ""
         callId = content.callId ?? ""
         locationUserId = content.locationUserId ?? ""
+        shoppingStoreName = content.shoppingStoreName ?? ""
+        shoppingListId = content.shoppingListId ?? ""
         var answers: [String: String] = [:]
         for button in content.buttons ?? [] where button.buttonAction.hasPrefix("answer:") {
             answers[button.buttonAction] = button.label
@@ -136,13 +147,15 @@ struct NotificationInfo: Sendable {
         runId = info["runId"] as? String ?? ""
         callId = info["callId"] as? String ?? ""
         locationUserId = info["locationUserId"] as? String ?? ""
+        shoppingStoreName = info["shoppingStoreName"] as? String ?? ""
+        shoppingListId = info["shoppingListId"] as? String ?? ""
         answers = info["answers"] as? [String: String] ?? [:]
     }
 
     var dictionary: [String: Any] {
         [
             "accountKey": accountKey, "notificationKind": notificationKind, "conversationId": conversationId, "runId": runId, "callId": callId,
-            "locationUserId": locationUserId, "answers": answers,
+            "locationUserId": locationUserId, "shoppingStoreName": shoppingStoreName, "shoppingListId": shoppingListId, "answers": answers,
         ]
     }
 }

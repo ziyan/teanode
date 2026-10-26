@@ -23,6 +23,10 @@
             if let photoAnswer = Self.photoAnswer(request) {
                 return (photoAnswer, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
             }
+            // So is the picture of a shopping item.
+            if let picture = Self.shoppingPicture(for: request) {
+                return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
             // A person's picture is read from its address, not asked for in GraphQL.
             if let picture = Self.avatarPicture(for: request) {
                 return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
@@ -33,7 +37,9 @@
             }
             let query = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let answer: String
-            if let linkPreviewAnswer = Self.linkPreviewAnswering(query: query, body: request.httpBody) {
+            if let shoppingAnswer = Self.shoppingAnswer(query: query, body: request.httpBody) {
+                answer = shoppingAnswer
+            } else if let linkPreviewAnswer = Self.linkPreviewAnswering(query: query, body: request.httpBody) {
                 answer = linkPreviewAnswer
             } else if let personCardAnswer = Self.personCardAnswering(query: query, body: request.httpBody) {
                 // Before the rest: its document names fields (photos, recordings, mail) that the operations below are looked for by.

@@ -157,7 +157,7 @@ final class SharingTests: XCTestCase {
         let cases: [(String, String)] = [
             ("calendar", "UnshareCalendar"), ("location", "UnshareLocation"), ("memory_page", "UnshareAgentPage"),
             ("photo_album", "RemovePhotoAlbumShare"), ("skill", "UnshareSkill"), ("recording", "UnshareRecording"),
-            ("finance", "UnshareFinanceAccount"),
+            ("finance", "UnshareFinanceAccount"), ("shopping_list", "UnshareShoppingList"),
         ]
         for (kind, operation) in cases {
             let (connection, fake) = connection(answering: #"{"data":{"\#(operation)":true}}"#)

@@ -4,7 +4,7 @@ import TeaNodeKit
 /// AppSection is a part of TeaNode, as the dashboard's sidebar has them: a
 /// tab of the tab bar, a row of the More tab, or a row of the iPad's sidebar.
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
-    case agent, goals, ideas, mail, calendar, contacts, photos, location, health, passwords, knowledge, finance, recordings, coding, settings
+    case agent, goals, ideas, mail, calendar, contacts, photos, location, health, passwords, shopping, knowledge, finance, recordings, coding, settings
 
     var id: String { rawValue }
 
@@ -21,6 +21,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .location: String(localized: "Location")
         case .health: HealthWords.title
         case .passwords: PasswordsWords.title
+        case .shopping: String(localized: "Shopping")
         case .contacts: String(localized: "Contacts")
         case .photos: String(localized: "Photos")
         case .knowledge: String(localized: "Knowledge")
@@ -41,6 +42,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .location: "location"
         case .health: "heart.text.square"
         case .passwords: "key"
+        case .shopping: "cart"
         case .contacts: "person"
         case .photos: "photo.on.rectangle"
         case .knowledge: "brain"
@@ -501,7 +503,7 @@ struct MainView: View {
     /// Whether the server has yet to say if the account has a part.
     private func isStillUnknown(_ section: AppSection) -> Bool {
         switch section {
-        case .location, .health, .passwords: !app.hasReadPermissions
+        case .location, .health, .passwords, .shopping: !app.hasReadPermissions
         case .coding: false
         default: app.services == nil
         }
@@ -613,6 +615,18 @@ struct MainView: View {
                 PasswordsNotAllowedView()
                     .toolbar { MoreBackButton() }
             }
+        } else if section == .shopping, !app.hasReadPermissions {
+            // Whether the account may use Shopping is read with the chats, as
+            // Passwords' is.
+            NavigationStack {
+                ServicesLoadingView(isWaitingForPermissions: true)
+                    .toolbar { MoreBackButton() }
+            }
+        } else if section == .shopping, !app.canUseShopping {
+            NavigationStack {
+                ShoppingNotAllowedView()
+                    .toolbar { MoreBackButton() }
+            }
         } else if !app.isSectionAvailable(section) {
             NavigationStack {
                 ServiceOffView(section: section, connection: connection)
@@ -640,6 +654,8 @@ struct MainView: View {
             HealthScreen(connection: connection)
         case .passwords:
             PasswordsScreen(model: passwords)
+        case .shopping:
+            ShoppingScreen(connection: connection)
         case .contacts:
             ContactsScreen(connection: connection)
         case .photos:
