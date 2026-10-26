@@ -1046,6 +1046,19 @@ struct PhotoInfoView: View {
             .sheet(isPresented: $isChangingLocation) {
                 PhotoLocationSheet(model: model, photos: [shownPhoto])
             }
+            // On the list, not on the people's section: a list builds its
+            // sections as they are shown, and a sheet on one is closed as
+            // soon as the list builds the section again.
+            .sheet(item: $namingGroup) { group in
+                NamePersonSheet(model: model, group: group) { _ in
+                    Task { await loadDetail() }
+                }
+            }
+            .alert("Name this person", isPresented: $isExplainingContacts) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Naming people means choosing a contact from your address book, and Contacts is not turned on for you. Ask whoever runs this server to turn on Contacts.")
+            }
             .onChange(of: isChangingDate) { _, isStillChanging in
                 if !isStillChanging { Task { await loadDetail() } }
             }
@@ -1180,16 +1193,6 @@ struct PhotoInfoView: View {
             Text("photos.people")
         } footer: {
             Text("Touch and hold a person if it is not them.")
-        }
-        .sheet(item: $namingGroup) { group in
-            NamePersonSheet(model: model, group: group) { _ in
-                Task { await loadDetail() }
-            }
-        }
-        .alert("Name this person", isPresented: $isExplainingContacts) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Naming people means choosing a contact from your address book, and Contacts is not turned on for you. Ask whoever runs this server to turn on Contacts.")
         }
     }
 
