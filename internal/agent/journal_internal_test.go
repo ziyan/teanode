@@ -114,7 +114,13 @@ func (self *journalFixture) dayAgo(count int) string {
 func (self *journalFixture) words(t *testing.T, day, words string) {
 	t.Helper()
 	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
-		if _, err := tx.SetJournalWords(self.run.Owner.ID, day, journal.Zone(self.run.Owner).String(), words, nil, time.Now()); err != nil {
+		// A save names the time the words were last saved, once there are
+		// words to save over.
+		var base *time.Time
+		if existing, err := tx.GetJournalDay(self.run.Owner.ID, day); err == nil {
+			base = existing.WordsModifiedAt
+		}
+		if _, err := tx.SetJournalWords(self.run.Owner.ID, day, journal.Zone(self.run.Owner).String(), words, base, time.Now()); err != nil {
 			t.Fatalf("SetJournalWords: %s", err)
 		}
 	})
