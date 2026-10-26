@@ -440,13 +440,16 @@ function DayCard({ day }: { day: JournalDaySummary }) {
       <div className="journal-date-block">
         <div className="journal-date-weekday muted">{weekdayShortText(day.day, language)}</div>
         <div className="journal-date-number">{Number(day.day.slice(8, 10))}</div>
-        <span
-          className="journal-mood-badge"
-          role="img"
-          aria-label={level > 0 ? t('journal.moodOfDay', { mood: t(MOOD_NAMES[level]) }) : t('journal.noMoodYet')}
-        >
-          <MoodFace level={level} size={22} isFilled={level > 0} />
-        </span>
+        {/* A day with no mood shows none: an empty face read as Okay. */}
+        {level > 0 && (
+          <span
+            className="journal-mood-badge"
+            role="img"
+            aria-label={t('journal.moodOfDay', { mood: t(MOOD_NAMES[level]) })}
+          >
+            <MoodFace level={level} size={22} />
+          </span>
+        )}
       </div>
       <div className="journal-day-body">
         {day.isToday && (
