@@ -490,11 +490,11 @@ it('shows the sections of a day, each with something to show, and the narrative 
   expect(screen.getByText('Partly cloudy, at Home')).toBeTruthy()
   // The person's own words.
   expect(screen.getByText('shipped the release. nothing broke.')).toBeTruthy()
-  // A mention the reader can open is a chip with the record's title; one that is gone is plain words.
-  const chip = screen
+  // A mention the reader can open is a link with the record's title; one that is gone is plain words.
+  const mention = screen
     .getAllByRole('link', { name: 'Release branch for the sample app' })
-    .find((link) => link.className.includes('journal-chip'))
-  expect(chip?.getAttribute('href')).toBe('/coding')
+    .find((link) => link.className.includes('journal-mention'))
+  expect(mention?.getAttribute('href')).toBe('/coding')
   const story = screen.getByText(/You worked on the/).closest('p') as HTMLElement
   expect(story.textContent).toContain('and kept a a photo from the walk.')
   expect(within(story).queryByRole('link', { name: /photo/ })).toBeNull()

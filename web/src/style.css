@@ -22036,8 +22036,23 @@ button.person-row:focus-visible {
   line-height: 1.75;
 }
 
-/* A mention in the narrative: the kind's mark and the record's title. In the
-   page's own face, since it is a thing and not part of the sentence. */
+/* A mention in the narrative: the record's title, bold in the sentence's own
+   face, underlined lightly so it reads as something to open. */
+.journal-mention {
+  font-weight: 650;
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, var(--text) 30%, transparent);
+  text-underline-offset: 3px;
+}
+
+.journal-mention:hover {
+  text-decoration-color: currentColor;
+}
+
+/* A place chip on the week: its name and how many days, in the page's own
+   face. */
 .journal-chip {
   display: inline-flex;
   align-items: center;
