@@ -71,6 +71,12 @@ const (
 	// or leaving a place they named or labeled. It opens the app on Location
 	// with that person.
 	NotificationLocation = "location"
+
+	// NotificationJournalEveningQuestion is the journal's "How was today?",
+	// with five mood buttons. It is not one of NotificationKinds a phone
+	// chooses among: the person turns it on and off, and sets its time, in the
+	// journal's settings, so a phone that chose only some kinds still gets it.
+	NotificationJournalEveningQuestion = "journalEveningQuestion"
 )
 
 // NotificationKinds is every kind, in the order a person chooses among them.
@@ -78,7 +84,7 @@ var NotificationKinds = []string{NotificationMessage, NotificationApproval, Noti
 
 // Wants reports whether the phone takes a kind of notification.
 func (self *AgentPhone) Wants(notificationKind string) bool {
-	if len(self.NotificationKinds) == 0 {
+	if notificationKind == NotificationJournalEveningQuestion || len(self.NotificationKinds) == 0 {
 		return true
 	}
 	for _, wanted := range self.NotificationKinds {

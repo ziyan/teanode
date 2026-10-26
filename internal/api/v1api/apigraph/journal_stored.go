@@ -106,16 +106,7 @@ func (self *journalRecordResolver) describeLinks(links []*models.JournalLink) (c
 // journalWeekStartOf is the day the person's weeks start on: what their first
 // calendar says, and Monday when it says nothing.
 func journalWeekStartOf(tx db.Transaction, userId string) (string, error) {
-	calendars, err := tx.ListCalendars(userId)
-	if err != nil {
-		return "", err
-	}
-	if len(calendars) > 0 {
-		if known := models.KnownWeekStart(calendars[0].WeekStart); known != "" {
-			return known, nil
-		}
-	}
-	return models.WeekStartsMonday, nil
+	return journal.WeekStartOf(tx, userId)
 }
 
 // storedJournalDayView is a day as the journal keeps it.
