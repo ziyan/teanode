@@ -405,3 +405,30 @@ it('lists a shared page that is gone as deleted, with no link, and still stops i
   await waitFor(() => expect(calls('UnshareAgentPage')).toHaveLength(1))
   expect(calls('UnshareAgentPage')[0][1]).toEqual({ shareId: 'share-gone' })
 })
+
+it('lists a shopping list the person shares, opening it in Shopping, and stops it with its own operation', async () => {
+  answerWith(
+    [
+      made({
+        shareKind: 'shopping_list',
+        shareId: 'share-shopping',
+        subjectId: 'list-1',
+        subjectName: 'Groceries',
+        shareLevel: '',
+      }),
+    ],
+    [],
+  )
+  renderAt('/sharing')
+
+  const what = (await screen.findByRole('link', { name: 'Groceries' })) as HTMLAnchorElement
+  expect(what.getAttribute('href')).toBe('/shopping/lists/list-1')
+  const row = what.closest('tr') as HTMLElement
+  expect(within(row).getByText('Shopping list')).toBeTruthy()
+
+  fireEvent.click(screen.getByRole('button', { name: /stop sharing with Person B/i }))
+  fireEvent.click(screen.getByRole('button', { name: 'Stop sharing' }))
+
+  await waitFor(() => expect(calls('UnshareShoppingList')).toHaveLength(1))
+  expect(calls('UnshareShoppingList')[0][1]).toEqual({ shoppingListShareId: 'share-shopping' })
+})

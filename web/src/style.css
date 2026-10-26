@@ -21670,3 +21670,370 @@ button.person-row:focus-visible {
     height: 44px;
   }
 }
+
+/* --- shopping lists -------------------------------------------------------
+   The Shopping page: the person's lists beside what is open (a list, a store
+   or a receipt). On a phone the lists become a strip above it that scrolls
+   sideways, and the tables stay tables inside a box that scrolls. */
+.shopping-layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.shopping-main {
+  min-width: 0;
+}
+
+.shopping-lists {
+  margin-bottom: 0;
+}
+
+.shopping-lists-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.shopping-lists-head h3 {
+  margin: 0;
+}
+
+.shopping-lists-subheading {
+  margin: var(--space-4) 0 var(--space-1);
+  font-size: var(--text-label);
+  font-weight: 550;
+  color: var(--muted);
+}
+
+.shopping-lists-empty {
+  margin: var(--space-2) 0 0;
+}
+
+.shopping-list-links {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+
+/* The border is there at rest and only changes color for the list that is
+   open, so choosing a list moves nothing. */
+.shopping-list-link {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.shopping-list-link:hover {
+  background: var(--sidebar-hover);
+}
+
+.shopping-list-link.is-current {
+  border-color: var(--border-strong);
+  background: var(--sidebar-hover);
+}
+
+.shopping-list-link-name {
+  font-weight: 550;
+}
+
+.shopping-list-link-detail {
+  font-size: var(--text-label);
+}
+
+.shopping-list-card {
+  min-width: 0;
+}
+
+.shopping-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.shopping-list-summary {
+  min-width: 0;
+}
+
+.shopping-list-summary p {
+  margin: 0 0 var(--space-1);
+}
+
+.shopping-trip-line {
+  font-weight: 550;
+}
+
+.shopping-list-actions {
+  margin-top: var(--space-3);
+}
+
+.shopping-table {
+  min-width: 560px;
+}
+
+.shopping-table td.wrap {
+  min-width: 12rem;
+}
+
+.shopping-table th.shrink,
+.shopping-table td.shrink {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/* The store and aisle a run of items is under: a band across the table. */
+.shopping-group-row th {
+  padding: var(--space-2) 10px;
+  background: var(--field);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+.shopping-table td {
+  vertical-align: middle;
+}
+
+.shopping-item-name {
+  min-width: 0;
+}
+
+.shopping-item-description {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.shopping-item-name .muted {
+  font-size: var(--text-label);
+}
+
+/* An item in the cart is crossed out, and keeps its place in the table. */
+.shopping-row.is-in-cart .shopping-item-description strong {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.shopping-picture {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  object-fit: cover;
+}
+
+.shopping-picture-large {
+  width: 96px;
+  height: 96px;
+  border-radius: var(--radius-2);
+}
+
+.shopping-picture-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--field);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.shopping-picture-large.shopping-picture-empty {
+  font-size: 32px;
+}
+
+.shopping-picture-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.shopping-picture-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.shopping-prices {
+  margin-top: var(--space-4);
+}
+
+.shopping-prices h4 {
+  margin: 0 0 var(--space-2);
+}
+
+.shopping-price-chart {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  height: auto;
+  margin-bottom: var(--space-3);
+}
+
+.shopping-price-chart polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.shopping-price-chart circle {
+  fill: var(--accent);
+}
+
+.shopping-import-files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.shopping-import-files button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.shopping-import-file {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 4px 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  font-size: var(--text-label);
+}
+
+.shopping-share-heading {
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.shopping-shares {
+  margin-bottom: var(--space-3);
+}
+
+.shopping-share-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.shopping-share-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The lists on the store screen, switched on and off. */
+.shopping-list-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.shopping-list-toggle {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.shopping-list-toggle.is-included {
+  border-color: var(--text);
+  background: var(--sidebar-hover);
+  color: var(--text);
+}
+
+.tab-count {
+  margin-left: var(--space-1);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.shopping-receipt-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.shopping-receipt-head p {
+  margin: 0;
+}
+
+.shopping-receipt-add-to {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.shopping-receipt-matches {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.shopping-receipt-matches li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+}
+
+.shopping-receipt-other {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.shopping-receipt-section {
+  margin-top: var(--space-4);
+}
+
+.shopping-receipt-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+@media (max-width: 900px) {
+  .shopping-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shopping-list-links {
+    display: flex;
+    gap: var(--space-2);
+    overflow-x: auto;
+  }
+
+  .shopping-list-links li {
+    flex: 0 0 auto;
+  }
+
+  .shopping-lists-subheading {
+    margin-top: var(--space-3);
+  }
+}

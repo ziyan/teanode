@@ -51,6 +51,7 @@ import {
 } from './financeReceipts'
 import { ReceiptEntryDialog } from './financeReceiptEntry'
 import { FinanceTransactionDialog } from './financeTransactionDialog'
+import { ShoppingReceiptSection } from '../shopping/shoppingReceipt'
 import { useSpendingCategoryDisplayName } from './spendingCategoryName'
 
 // The Receipts section: every receipt read, the newest purchase first and
@@ -781,6 +782,7 @@ function FinanceReceiptDialog({
           )}
           <ReceiptPhoto receipt={receipt} name={name} />
           <ReceiptLines receipt={receipt} />
+          <ShoppingReceiptSection financeReceiptId={receipt.id} />
           <InMemory recordKind="finance_receipt" recordId={receipt.id} />
           <div className="finance-receipt-buttons">
             <button type="button" disabled={isBusy} onClick={onMatch}>
