@@ -104,8 +104,7 @@ func (self *Agent) runMatchShopping(ctx context.Context, run *Run) error {
 	}
 	prompt, err := render("shopping_match.txt", map[string]any{
 		"PersonName": personName(run.Owner),
-		"Merchant":   receipt.MerchantName,
-		"Lines":      fenced(linesText.String()),
+		"Lines":      fenced("merchant: " + receipt.MerchantName + "\n" + linesText.String()),
 		"Items":      fenced(itemsText.String()),
 	})
 	if err != nil {
@@ -275,10 +274,18 @@ func (self *Agent) runShoppingPicture(ctx context.Context, run *Run) error {
 		}
 		var previousFileId string
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-			previousFileId, err = tx.SetShoppingItemPicture(item.ID, pictureFileId, offered[index].URL, models.ShoppingPictureSourceWeb)
+			// Written only if nobody gave the item a picture meanwhile, and
+			// only while the item is still on a list its owner reaches.
+			if _, err := tx.GetShoppingItem(run.Owner.ID, item.ID); err != nil {
+				return err
+			}
+			previousFileId, err = tx.SetShoppingItemPicture(item.ID, pictureFileId, offered[index].URL, models.ShoppingPictureSourceWeb, item.PictureFileID)
 			return err
 		}); err != nil {
 			_ = run.Storage().DeleteFile(ctx, pictureFileId)
+			if errors.Is(err, db.ErrShoppingPictureChanged) || errors.Is(err, db.ErrNotFound) {
+				return nil
+			}
 			return err
 		}
 		if previousFileId != "" {

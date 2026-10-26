@@ -86125,22 +86125,6 @@
         }
       }
     },
-    "Opening a store starts shopping there and lets the people you share a list with know.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "店舗を開くとその店での買い物が始まり、リストを共有している人に知らせます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开商店即开始在那里购物，并让与你共享清单的人知道。"
-          }
-        }
-      }
-    },
     "No shopping lists yet": {
       "localizations": {
         "ja": {

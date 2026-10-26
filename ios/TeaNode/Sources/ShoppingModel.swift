@@ -11,9 +11,11 @@ import TeaNodeKit
 /// store.
 enum ShoppingPlace: Hashable {
     case list(String)
-    /// A store, with the lists to start with; all the lists that have items
-    /// there when empty.
-    case store(String, listIds: [String])
+    /// A store, with the lists to start with (all the lists that have items
+    /// there when empty), and whether opening it starts the person's trip:
+    /// it does from "Start shopping" and from the notice at the store, not
+    /// when a store is only looked at, which would tell the household.
+    case store(String, listIds: [String], isStartingTrip: Bool)
 }
 
 /// ShoppingReceiptTarget is a receipt whose effect on the lists a sheet shows.
@@ -296,6 +298,7 @@ final class ShoppingStoreModel {
     /// The lists included, as chosen; empty until the first read says which lists
     /// have items here, when all of them are.
     private var includedListIds: [String]
+    private var isStartingTrip: Bool
     private var hasStarted = false
     /// Checks answered at once and not yet confirmed by the server, by item.
     private(set) var pendingChecks: [String: Bool] = [:]
@@ -303,10 +306,11 @@ final class ShoppingStoreModel {
     var problemText: String?
     var doneText: String?
 
-    init(connection: Connection, storeName: String, listIds: [String], ownUserId: String?) {
+    init(connection: Connection, storeName: String, listIds: [String], ownUserId: String?, isStartingTrip: Bool) {
         self.connection = connection
         self.storeName = storeName
         self.includedListIds = listIds
+        self.isStartingTrip = isStartingTrip
         self.ownUserId = ownUserId
         let reader = ShoppingReceiptReader(connection: connection)
         receipts = reader
@@ -345,22 +349,31 @@ final class ShoppingStoreModel {
         await startIfNeeded()
     }
 
-    /// Starts the person shopping here the first time the screen is read, unless a trip of
-    /// theirs at this store is open already (the screen was left and opened again).
+    /// Finds the person's open trip at this store, and starts one the first time the screen
+    /// is read when it was opened to start shopping, unless a trip of theirs here is open
+    /// already (the screen was left and opened again).
     private func startIfNeeded() async {
-        guard !hasStarted else { return }
-        hasStarted = true
-        if let open = trips.ownTrip(atStoreKey: storeKey, userId: ownUserId) {
+        if ownTrip == nil, let open = trips.ownTrip(atStoreKey: storeKey, userId: ownUserId) {
             ownTrip = open
-            return
         }
+        guard isStartingTrip, !hasStarted, ownTrip == nil else { return }
+        hasStarted = true
         let listIds = includedListIds.isEmpty ? lists.map(\.shoppingListId) : includedListIds
         guard !listIds.isEmpty else { return }
         do {
             ownTrip = try await connection.startShopping(storeName: storeName, shoppingListIds: listIds)
         } catch {
+            // Not started: the Start button stays, to try again.
+            hasStarted = false
             problemText = ShoppingWords.problem(error)
         }
+    }
+
+    /// Starts the person shopping here, from the Start button of a store that was only
+    /// being looked at.
+    func start() async {
+        isStartingTrip = true
+        await startIfNeeded()
     }
 
     func follow() async {

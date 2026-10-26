@@ -48,7 +48,9 @@ written in a store's order is shown in it.
 
 A list reaches its owner and whoever its shares reach: a share to a person while
 the two share a circle, a share to a circle while both the reader and the owner
-are in it, and only while the owner is enabled and has `shopping:use`. One
+are in it, and only while the owner (and the reader) is enabled and has
+`shopping:use`. A person without it reaches no list, their own included: they
+are reminded of nothing, and no receipt of theirs checks anything off. One
 query says it (`shoppingListReachQuery`), and every operation that takes a list
 or an item asks it through `GetShoppingListAccess`. Leaving a circle deletes
 the direct shares it made possible (`endShoppingSharesOutsideCircles`, called
@@ -69,10 +71,14 @@ include or leave out each list. The same thing on two lists stays two rows,
 because each list's own people must see only their list.
 
 `StartShopping` opens a trip for the lists included and tells, on their
-phones, everybody else those lists reach ("Alex started shopping Groceries",
-"At Example Market."), at most once in two hours about the same shopper.
-`FinishShopping` buys what the shopper put in the cart on the trip's lists;
-another person's cart on the same list is theirs to finish.
+phones, everybody else those lists reach and who has not muted the list
+("Alex started shopping Groceries", "At Example Market."), at most once in two
+hours about the same shopper. Looking at a store does not start a trip; the
+person presses Start shopping, or taps the notice at the store.
+`FinishShopping` buys what the shopper put in the cart on every list they
+reach, a list switched on at the store after the trip began included; an
+item in another person's cart stays in theirs, and checking it again does not
+take it over.
 
 ## Live
 
@@ -97,12 +103,21 @@ which item and whether it is sure.
 
 A sure match checks its item off (bought, or still needed for what the line
 did not buy of it) and records the line's price at the store, from the printed
-unit price or the amount over the count. An unsure one is only proposed, for
-the person to apply or dismiss. What the item was before goes on the match, so
-"Undo the check-offs" puts it back and takes the price away. A line or an item
-already matched on a receipt is never matched again by the job, and a
-dismissed pair is never proposed again, so running the matcher twice changes
-nothing that was decided.
+unit price or the amount over the count or weight. An unsure one is only
+proposed, for the person to apply or dismiss. Everything applying changes
+about the item goes on the match first (its state, count, when it was last
+bought, an out-of-stock mark), so "Undo the check-offs" puts exactly that back
+and takes the price away; an item somebody changed after the match keeps the
+newer change. A match is kept by the receipt and the line's number, because
+reading a receipt again replaces its line rows: what was decided survives a
+second reading. A line or an item already matched on a receipt is never
+matched again by the job, and a dismissed pair is never proposed again, so
+running the matcher twice changes nothing that was decided. The match is
+queued after the receipt is stored, in a transaction of its own, so it never
+costs the receipt. The merchant's name and lines are inside the untrusted
+fence; the worst a hostile receipt can do is check off items that are needed
+(each undoable), since the model has no tools and sees only the person's own
+candidate items.
 
 ## Pictures
 
@@ -115,7 +130,8 @@ without the page the current picture came from. A person can upload a picture
 instead. Pictures are served from `/api/v1/shopping/pictures/{shoppingItemId}`
 to the people the list reaches, so a reader's device never loads anything from
 the page's site. With no search configured an item simply has no picture until
-somebody uploads one.
+somebody uploads one. A picture found after a person uploaded one, or after
+another search changed it, is thrown away.
 
 ## Reading a list
 

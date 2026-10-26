@@ -82,6 +82,9 @@ type ShoppingOperation interface {
 	// list when they arrive at a store. On until they turn it off.
 	SetShoppingListReminder(userId, shoppingListId string, isReminded bool) error
 
+	// ListShoppingListReminderMuters are the people who muted the list.
+	ListShoppingListReminderMuters(shoppingListId string) ([]string, error)
+
 	// SetShoppingStoreReminder says whether the person is reminded at a
 	// store at all.
 	SetShoppingStoreReminder(userId, storeName string, isReminded bool) error
@@ -165,11 +168,14 @@ func (shoppingStoreMuteModel) TableName() string { return "shopping_store_mute" 
 // joins on circle_member are what make a share stop reaching somebody the
 // moment the circle it depended on is gone, and the joins on the accounts what
 // make a disabled owner's lists, or those of an owner or a reader without
-// shopping:use, reach nobody else.
+// shopping:use, reach nobody, the owner included: such a person is reminded
+// of nothing and no receipt of theirs checks anything off.
 var shoppingListReachQuery = `
 SELECT list.id AS shopping_list_id, list.user_id AS owner_user_id, true AS is_owner
 FROM "shopping_list" list
+JOIN "user" owner_user ON owner_user.id = list.user_id AND owner_user.disabled_at IS NULL
 WHERE list.user_id = @reader AND (@list = '' OR list.id = @list)
+  AND ` + userHasPermissionSQL("list.user_id") + `
 UNION ALL
 SELECT list.id, list.user_id, false
 FROM "shopping_list_share" share
@@ -684,6 +690,14 @@ func (self *transaction) SetShoppingListReminder(userId, shoppingListId string, 
 		Create(&shoppingListReminderMuteModel{ShoppingListID: shoppingListId, UserID: userId, CreatedAt: time.Now()}).Error
 }
 
+func (self *transaction) ListShoppingListReminderMuters(shoppingListId string) ([]string, error) {
+	var userIds []string
+	if err := self.tx.Model(&shoppingListReminderMuteModel{}).Where("\"shopping_list_id\" = ?", shoppingListId).Pluck("user_id", &userIds).Error; err != nil {
+		return nil, err
+	}
+	return userIds, nil
+}
+
 func (self *transaction) SetShoppingStoreReminder(userId, storeName string, isReminded bool) error {
 	storeName = strings.TrimSpace(storeName)
 	storeKey := models.ShoppingStoreKey(storeName)
@@ -739,10 +753,16 @@ func canonicalShoppingQuantity(text string) (string, error) {
 		return "1", nil
 	}
 	value, isParsed := new(big.Rat).SetString(text)
-	if !isParsed || value.Sign() <= 0 || value.Cmp(big.NewRat(1000000000, 1)) >= 0 {
+	if !isParsed {
 		return "", fmt.Errorf("%w: a count needed is a number above zero, such as 2 or 1.5", ErrInvalidArguments)
 	}
-	return trimDecimal(value.FloatString(3)), nil
+	// Checked as it is kept, to three places: 0.0004 is kept as 0, which is
+	// not a count.
+	rounded, _ := new(big.Rat).SetString(value.FloatString(3))
+	if rounded.Sign() <= 0 || rounded.Cmp(big.NewRat(1000000000, 1)) >= 0 {
+		return "", fmt.Errorf("%w: a count needed is a number above zero, such as 2 or 1.5", ErrInvalidArguments)
+	}
+	return trimDecimal(rounded.FloatString(3)), nil
 }
 
 // canonicalShoppingAmount is a price as kept: a decimal of at least zero with
@@ -753,10 +773,14 @@ func canonicalShoppingAmount(text string) (string, error) {
 		return "", nil
 	}
 	value, isParsed := new(big.Rat).SetString(text)
-	if !isParsed || value.Sign() < 0 || value.Cmp(big.NewRat(10000000000, 1)) >= 0 {
+	if !isParsed {
 		return "", fmt.Errorf("%w: a price is a number of at least zero, such as 3.49", ErrInvalidArguments)
 	}
-	return trimDecimal(value.FloatString(8)), nil
+	rounded, _ := new(big.Rat).SetString(value.FloatString(8))
+	if rounded.Sign() < 0 || rounded.Cmp(big.NewRat(10000000000, 1)) >= 0 {
+		return "", fmt.Errorf("%w: a price is a number of at least zero, such as 3.49", ErrInvalidArguments)
+	}
+	return trimDecimal(rounded.FloatString(8)), nil
 }
 
 // trimDecimal drops the zeros after a decimal point, and the point when

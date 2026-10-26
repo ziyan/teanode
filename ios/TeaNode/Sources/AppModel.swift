@@ -1014,7 +1014,7 @@ final class AppModel {
                 // Arrived at a store, or somebody started shopping a list:
                 // Shopping, at that store or that list.
                 if !info.shoppingStoreName.isEmpty {
-                    openedShopping = .store(info.shoppingStoreName, listIds: [])
+                    openedShopping = .store(info.shoppingStoreName, listIds: [], isStartingTrip: true)
                 } else if !info.shoppingListId.isEmpty {
                     openedShopping = .list(info.shoppingListId)
                 }

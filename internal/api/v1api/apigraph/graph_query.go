@@ -36,7 +36,8 @@ type queryExecution struct {
 // search across everything runs each of its areas in a transaction of its own,
 // side by side, and holds none across them, and so does a person's card with
 // its sections, and the previews of links, which wait on the pages they fetch.
-var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true, "JudgeAgentRetrievalPlan": true, "ReadAgentCodingContext": true, "RecallAgentCodingMemory": true, "ListPhotos": true, "CountPhotos": true, "SearchPlaces": true, "SearchAddresses": true, "ListNearbyPlaces": true, "SearchEverything": true, "ReadPersonCard": true, "ReadLinkPreviews": true}
+// Reading a shopping list waits on a model looking at its pictures.
+var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true, "JudgeAgentRetrievalPlan": true, "ReadAgentCodingContext": true, "RecallAgentCodingMemory": true, "ListPhotos": true, "CountPhotos": true, "SearchPlaces": true, "SearchAddresses": true, "ListNearbyPlaces": true, "SearchEverything": true, "ReadPersonCard": true, "ReadLinkPreviews": true, "PreviewShoppingImport": true}
 
 // isTransactionFreeMutation is the mutations that do slow work, such as reading
 // and storing a file as large as a video, and so are not run inside the

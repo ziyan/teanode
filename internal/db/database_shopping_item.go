@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -64,7 +65,11 @@ type ShoppingItemOperation interface {
 	// SetShoppingItemPicture gives an item a picture kept in the file store,
 	// and answers the file of the picture it had, for the caller to remove.
 	// The server's own; the caller has checked the person may.
-	SetShoppingItemPicture(shoppingItemId, pictureFileId, picturePageUrl string, pictureSource models.ShoppingPictureSource) (string, error)
+	// A picture found on the web is written only while the item still has
+	// the picture it had when the search began (expectedPictureFileId) and
+	// that picture is not one a person uploaded; otherwise
+	// ErrShoppingPictureChanged and nothing is written.
+	SetShoppingItemPicture(shoppingItemId, pictureFileId, picturePageUrl string, pictureSource models.ShoppingPictureSource, expectedPictureFileId string) (string, error)
 
 	// MarkShoppingItemPictureSearched records that a search for the item's
 	// picture was made now, found or not.
@@ -92,6 +97,10 @@ type ShoppingItemOperation interface {
 	// for that store, and for any store when asked.
 	ListShoppingItemsNeededAt(userId, storeKey string, isAnyStoreIncluded bool) ([]*models.ShoppingItem, error)
 }
+
+// ErrShoppingPictureChanged is a picture found on the web arriving after the
+// item's picture changed, or a person uploaded one: the newer stays.
+var ErrShoppingPictureChanged = errors.New("db: the item's picture changed meanwhile")
 
 // The longest of each of an item's words, so that a pasted page does not
 // become one item.
@@ -293,6 +302,19 @@ func (self *transaction) lockShoppingItem(userId, shoppingItemId string) (*shopp
 	if shoppingItemId == "" {
 		return nil, ErrNotFound
 	}
+	// The list's row is held before the item's, the order every change to a
+	// list takes them in (AddShoppingItems, a trip ending), so two changes to
+	// one list wait for each other rather than deadlock.
+	var listIds []string
+	if err := self.tx.Model(&shoppingItemModel{}).Where("\"id\" = ?", shoppingItemId).Pluck("shopping_list_id", &listIds).Error; err != nil {
+		return nil, err
+	}
+	if len(listIds) == 0 {
+		return nil, ErrNotFound
+	}
+	if err := self.lockShoppingLists(listIds); err != nil {
+		return nil, err
+	}
 	var row shoppingItemModel
 	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("\"id\" = ?", shoppingItemId), &row)
 	if err != nil {
@@ -307,6 +329,16 @@ func (self *transaction) lockShoppingItem(userId, shoppingItemId string) (*shopp
 		}
 	}
 	return &row, nil
+}
+
+// lockShoppingLists holds the rows of lists for the rest of the transaction,
+// in the order of their identifiers.
+func (self *transaction) lockShoppingLists(shoppingListIds []string) error {
+	shoppingListIds = uniqueStrings(shoppingListIds)
+	if len(shoppingListIds) == 0 {
+		return nil
+	}
+	return self.tx.Exec(`SELECT 1 FROM "shopping_list" WHERE "id" IN ? ORDER BY "id" FOR UPDATE`, shoppingListIds).Error
 }
 
 // parseRat reads a decimal written as text.
@@ -397,7 +429,7 @@ func (self *transaction) AddShoppingItems(userId, shoppingListId string, items [
 	}
 	// The list's row is held so that two imports at once take turns, and the
 	// second merges into what the first added.
-	if err := self.tx.Exec(`SELECT 1 FROM "shopping_list" WHERE "id" = ? FOR UPDATE`, shoppingListId).Error; err != nil {
+	if err := self.lockShoppingLists([]string{shoppingListId}); err != nil {
 		return nil, nil, err
 	}
 	var count int64
@@ -492,6 +524,14 @@ func (self *transaction) AddShoppingItems(userId, shoppingListId string, items [
 		nextItemRank++
 		if err := self.tx.Create(row).Error; err != nil {
 			return nil, nil, err
+		}
+		// A price given with the item is a price seen, kept in its history.
+		if item.UnitPriceAmount != "" {
+			if _, err := self.recordShoppingItemPrice(row, &models.ShoppingItemPrice{
+				UnitPriceAmount: item.UnitPriceAmount, CurrencyCode: item.CurrencyCode, PriceSource: models.ShoppingPriceSourcePerson, CreatedByUserID: userId,
+			}); err != nil {
+				return nil, nil, err
+			}
 		}
 		storedIds = append(storedIds, row.ID)
 		isMerged = append(isMerged, false)
@@ -610,6 +650,9 @@ func (self *transaction) RemoveShoppingItems(userId string, shoppingItemIds []st
 			return nil, err
 		}
 	}
+	if err := self.lockShoppingLists(listIds); err != nil {
+		return nil, err
+	}
 	if err := self.tx.Where("\"id\" IN ?", shoppingItemIds).Delete(&shoppingItemModel{}).Error; err != nil {
 		return nil, err
 	}
@@ -649,6 +692,14 @@ func (self *transaction) CheckShoppingItem(userId, shoppingItemId string, isChec
 		return nil, err
 	}
 	if isChecked {
+		switch models.ShoppingItemState(row.ShoppingItemState) {
+		case models.ShoppingItemStateNotNeeded:
+			return nil, fmt.Errorf("%w: the item is not needed; need it again first", ErrInvalidArguments)
+		case models.ShoppingItemStateInCart:
+			// Already in somebody's cart: it stays in theirs, so their Done
+			// buys it.
+			return self.GetShoppingItemByID(row.ID)
+		}
 		return self.changeShoppingItem(row, map[string]any{
 			"shopping_item_state": string(models.ShoppingItemStateInCart), "carted_by_user_id": userId, "carted_at": time.Now(),
 			"out_of_stock_at": nil, "out_of_stock_by_user_id": nil, "out_of_stock_store_name": "",
@@ -698,17 +749,24 @@ func (self *transaction) SetShoppingItemOutOfStock(userId, shoppingItemId string
 	if storeName == "" {
 		storeName = row.StoreName
 	}
-	// Out of stock is about an item still to buy: one in the cart goes back.
-	return self.changeShoppingItem(row, map[string]any{
-		"shopping_item_state": string(models.ShoppingItemStateNeeded), "carted_by_user_id": nil, "carted_at": nil,
-		"out_of_stock_at": time.Now(), "out_of_stock_by_user_id": userId, "out_of_stock_store_name": storeName,
-	})
+	updates := map[string]any{"out_of_stock_at": time.Now(), "out_of_stock_by_user_id": userId, "out_of_stock_store_name": storeName}
+	// Out of stock is about an item still to buy: one in the cart goes back
+	// to needed; a needed or not needed one keeps its state.
+	if models.ShoppingItemState(row.ShoppingItemState) == models.ShoppingItemStateInCart {
+		updates["shopping_item_state"] = string(models.ShoppingItemStateNeeded)
+		updates["carted_by_user_id"], updates["carted_at"] = nil, nil
+	}
+	return self.changeShoppingItem(row, updates)
 }
 
-func (self *transaction) SetShoppingItemPicture(shoppingItemId, pictureFileId, picturePageUrl string, pictureSource models.ShoppingPictureSource) (string, error) {
+func (self *transaction) SetShoppingItemPicture(shoppingItemId, pictureFileId, picturePageUrl string, pictureSource models.ShoppingPictureSource, expectedPictureFileId string) (string, error) {
 	row, err := self.lockShoppingItem("", shoppingItemId)
 	if err != nil {
 		return "", err
+	}
+	if pictureSource == models.ShoppingPictureSourceWeb &&
+		(row.PictureFileID != expectedPictureFileId || row.PictureSource == string(models.ShoppingPictureSourceUpload)) {
+		return "", ErrShoppingPictureChanged
 	}
 	if pictureFileId == "" {
 		pictureSource, picturePageUrl = "", ""

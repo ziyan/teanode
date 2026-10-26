@@ -205,12 +205,6 @@ func (self *Agent) RecordReceipt(ctx context.Context, agentRow *models.Agent, re
 		if stored, err = tx.GetFinanceReceipt(agentRow.ID, stored.ID); err != nil {
 			return err
 		}
-		// A receipt is one system: whatever it is matched to here, it also
-		// checks off what the owner's shopping lists needed. A failure to
-		// queue that is said and never costs the receipt.
-		if err := self.QueueShoppingReceiptMatch(tx, agentRow, stored); err != nil {
-			log.Warningf("cannot queue the shopping match of a receipt: %s", err)
-		}
 		personMatches := stored.ReceiptMatches
 		if strings.TrimSpace(recording.FinanceTransactionID) != "" {
 			err := matchReceiptByHand(tx, agentRow.ID, stored, recording.FinanceTransactionID, "")
@@ -271,6 +265,17 @@ func (self *Agent) RecordReceipt(ctx context.Context, agentRow *models.Agent, re
 	})
 	if err != nil {
 		return nil, err
+	}
+	// A receipt is one system: whatever it is matched to here, it also
+	// checks off what the owner's shopping lists needed. That is queued once
+	// the receipt is kept, in a transaction of its own, so a failure is said
+	// and never costs the receipt.
+	if recorded.FinanceReceipt != nil {
+		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+			return self.QueueShoppingReceiptMatch(tx, agentRow, recorded.FinanceReceipt)
+		}); err != nil {
+			log.Warningf("cannot queue the shopping match of a receipt: %s", err)
+		}
 	}
 	return recorded, nil
 }

@@ -87,13 +87,18 @@ func (self *transaction) shoppingTripsOf(rows []shoppingTripModel) ([]*models.Sh
 }
 
 // finishShoppingTrips ends the trips and buys what each one's shopper put in
-// the cart on its lists, and answers the lists whose items were bought.
+// the cart, on every list they still reach (a list switched on at the store
+// after the trip began is shopped too), and answers the lists whose items
+// were bought.
 func (self *transaction) finishShoppingTrips(rows []shoppingTripModel) ([]string, error) {
 	now := time.Now()
 	changedListIds := []string{}
 	for _, row := range rows {
-		var listIds []string
-		if err := self.tx.Model(&shoppingTripListModel{}).Where("\"shopping_trip_id\" = ?", row.ID).Pluck("shopping_list_id", &listIds).Error; err != nil {
+		listIds, err := self.reachableShoppingListIds(row.UserID)
+		if err != nil {
+			return nil, err
+		}
+		if err := self.lockShoppingLists(listIds); err != nil {
 			return nil, err
 		}
 		if len(listIds) > 0 {

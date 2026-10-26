@@ -692,28 +692,29 @@ func (self *graph) ListShoppingReceiptMatches(ctx context.Context, arguments Sho
 }
 
 func (self *graph) PreviewShoppingImport(ctx context.Context, arguments PreviewShoppingImportArguments) (*ShoppingImportView, error) {
-	user, err := self.shoppingPerson(ctx)
-	if err != nil {
-		return nil, err
-	}
 	worker := self.agentWorker()
 	if worker == nil {
 		return nil, fmt.Errorf("%w: reading a list needs the agent, which this server does not run", api.ErrInvalidArguments)
 	}
+	// Read in phases of their own (isModelBackedQuery): no transaction is
+	// held open while the model looks at the list.
+	var user *models.User
 	var owner *models.Agent
 	shoppingListId := strings.TrimSpace(arguments.ShoppingListID)
-	// Read outside the request's transaction: the model is asked in between,
-	// and a transaction held open across a model's answer holds a connection.
-	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+	if err := self.readInPhase(ctx, func(phaseContext context.Context) (err error) {
+		if user, err = self.shoppingPerson(phaseContext); err != nil {
+			return err
+		}
+		tx := self.transaction(phaseContext)
 		if shoppingListId != "" {
 			if _, err := tx.GetShoppingListAccess(user.ID, shoppingListId); err != nil {
-				return err
+				return translateError(err)
 			}
 		}
 		owner, err = tx.GetAgentByUser(user.ID)
 		return err
 	}); err != nil {
-		return nil, translateError(err)
+		return nil, err
 	}
 	if owner == nil {
 		return nil, fmt.Errorf("%w: reading a list needs your agent; set it up first", api.ErrInvalidArguments)
@@ -734,16 +735,25 @@ func (self *graph) PreviewShoppingImport(ctx context.Context, arguments PreviewS
 		if itemView.NeededQuantity == "" {
 			itemView.NeededQuantity = "1"
 		}
-		if shoppingListId != "" {
-			merged, err := self.transaction(ctx).FindShoppingItemToMerge(user.ID, shoppingListId, item.ItemDescription, item.StoreName)
+		view.ShoppingItems = append(view.ShoppingItems, itemView)
+	}
+	if shoppingListId == "" {
+		return view, nil
+	}
+	if err := self.readInPhase(ctx, func(phaseContext context.Context) error {
+		tx := self.transaction(phaseContext)
+		for _, itemView := range view.ShoppingItems {
+			merged, err := tx.FindShoppingItemToMerge(user.ID, shoppingListId, itemView.ItemDescription, itemView.StoreName)
 			if err != nil {
-				return nil, translateError(err)
+				return translateError(err)
 			}
 			if merged != nil {
 				itemView.MergedShoppingItemID, itemView.MergedShoppingItemState, itemView.MergedNeededQuantity = merged.ID, string(merged.ShoppingItemState), merged.NeededQuantity
 			}
 		}
-		view.ShoppingItems = append(view.ShoppingItems, itemView)
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return view, nil
 }
@@ -1157,7 +1167,7 @@ func (self *graph) SetShoppingItemPicture(ctx context.Context, arguments SetShop
 		}
 	}
 	source := models.ShoppingPictureSourceUpload
-	previousFileId, err := tx.SetShoppingItemPicture(item.ID, pictureFileId, "", source)
+	previousFileId, err := tx.SetShoppingItemPicture(item.ID, pictureFileId, "", source, "")
 	if err != nil {
 		return nil, translateError(err)
 	}

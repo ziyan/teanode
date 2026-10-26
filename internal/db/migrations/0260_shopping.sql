@@ -135,28 +135,33 @@ CREATE TABLE "shopping_item_price" (
 );
 CREATE INDEX "shopping_item_price_item" ON "shopping_item_price" ("shopping_item_id", "observed_on" DESC, "created_at" DESC);
 
--- A line of a receipt tied to an item. applied: the item was checked off and
--- its price written (shopping_item_price_id); what it was before is kept, so
--- the receipt can be undone. proposed: the matcher was unsure and left it to
--- the person. dismissed: undone or refused, and never proposed again.
+-- A line of a receipt tied to an item, by the line's number on the receipt:
+-- reading a receipt again replaces its lines (new rows, the same numbers), and
+-- what was decided about them stays. applied: the item was checked off and its
+-- price written (shopping_item_price_id); what it was before is kept, so the
+-- receipt can be undone. proposed: the matcher was unsure and left it to the
+-- person. dismissed: undone or refused, and never proposed again.
 CREATE TABLE "shopping_receipt_match" (
-    "id"                          character varying(32)    NOT NULL PRIMARY KEY,
-    "finance_receipt_id"          character varying(32)    NOT NULL REFERENCES "agent_finance_receipt" ("id") ON DELETE CASCADE,
-    "finance_receipt_line_id"     character varying(32)    NOT NULL REFERENCES "agent_finance_receipt_line" ("id") ON DELETE CASCADE,
-    "shopping_item_id"            character varying(32)    NOT NULL REFERENCES "shopping_item" ("id") ON DELETE CASCADE,
-    "receipt_match_state"         character varying(16)    NOT NULL
+    "id"                                   character varying(32)    NOT NULL PRIMARY KEY,
+    "finance_receipt_id"                   character varying(32)    NOT NULL REFERENCES "agent_finance_receipt" ("id") ON DELETE CASCADE,
+    "receipt_line_number"                  integer                  NOT NULL CHECK ("receipt_line_number" > 0),
+    "shopping_item_id"                     character varying(32)    NOT NULL REFERENCES "shopping_item" ("id") ON DELETE CASCADE,
+    "receipt_match_state"                  character varying(16)    NOT NULL
         CHECK ("receipt_match_state" IN ('applied', 'proposed', 'dismissed')),
-    "matched_quantity"            numeric(12, 3),
-    "previous_shopping_item_state" character varying(16)   NOT NULL DEFAULT ''
+    "matched_quantity"                     numeric(12, 3),
+    "previous_shopping_item_state"         character varying(16)    NOT NULL DEFAULT ''
         CHECK ("previous_shopping_item_state" IN ('', 'needed', 'in_cart', 'not_needed')),
-    "previous_needed_quantity"    numeric(12, 3),
-    "shopping_item_price_id"      character varying(32) REFERENCES "shopping_item_price" ("id") ON DELETE SET NULL,
-    "decided_by_user_id"          character varying(32) REFERENCES "user" ("id") ON DELETE SET NULL,
-    "created_at"                  timestamp with time zone NOT NULL,
-    "decided_at"                  timestamp with time zone,
-    UNIQUE ("finance_receipt_line_id", "shopping_item_id")
+    "previous_needed_quantity"             numeric(12, 3),
+    "previous_last_bought_at"              timestamp with time zone,
+    "previous_out_of_stock_at"             timestamp with time zone,
+    "previous_out_of_stock_by_user_id"     character varying(32) REFERENCES "user" ("id") ON DELETE SET NULL,
+    "previous_out_of_stock_store_name"     character varying(200)   NOT NULL DEFAULT '',
+    "shopping_item_price_id"               character varying(32) REFERENCES "shopping_item_price" ("id") ON DELETE SET NULL,
+    "decided_by_user_id"                   character varying(32) REFERENCES "user" ("id") ON DELETE SET NULL,
+    "created_at"                           timestamp with time zone NOT NULL,
+    "decided_at"                           timestamp with time zone,
+    UNIQUE ("finance_receipt_id", "receipt_line_number", "shopping_item_id")
 );
-CREATE INDEX "shopping_receipt_match_receipt" ON "shopping_receipt_match" ("finance_receipt_id");
 CREATE INDEX "shopping_receipt_match_item" ON "shopping_receipt_match" ("shopping_item_id");
 
 -- Somebody shopping a store now, for some lists. finished_at is set by Done,

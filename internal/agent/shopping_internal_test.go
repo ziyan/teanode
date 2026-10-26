@@ -22,6 +22,7 @@ func TestEveryReceiptChecksOffWhatTheShoppingListsNeeded(t *testing.T) {
 	var mailbox *models.Mailbox
 	var mail *models.Mail
 	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		dbtest.GrantPermission(t, tx, fixture.owner.ID, models.PermissionShoppingUse)
 		list, err := tx.CreateShoppingList(fixture.owner.ID, "Groceries")
 		if err != nil {
 			t.Fatalf("CreateShoppingList: %s", err)

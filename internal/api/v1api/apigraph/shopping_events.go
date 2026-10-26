@@ -198,6 +198,18 @@ func (self *graph) shoppingPictureView(response http.ResponseWriter, request *ht
 		if user == nil || user.Disabled() {
 			return db.ErrNotFound
 		}
+		// The checks the photo routes make: a session somebody took over is
+		// still that person's to use, and the person may keep shopping lists.
+		if _, err := self.impersonatorOf(request, user); err != nil {
+			return db.ErrNotFound
+		}
+		permissions, err := tx.EffectivePermissions(user.ID)
+		if err != nil {
+			return err
+		}
+		if !permissions.Has(models.PermissionShoppingUse) {
+			return db.ErrNotFound
+		}
 		item, err = tx.GetShoppingItem(user.ID, mux.Vars(request)["shoppingItemId"])
 		return err
 	}); err != nil {

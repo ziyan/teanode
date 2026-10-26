@@ -210,8 +210,18 @@ func (self *PhoneNotifier) NotifyShoppingStarted(ctx context.Context, shopper *m
 			if err != nil {
 				return err
 			}
+			muters, err := tx.ListShoppingListReminderMuters(listId)
+			if err != nil {
+				return err
+			}
+			isMuted := map[string]bool{}
+			for _, userId := range muters {
+				isMuted[userId] = true
+			}
 			for _, readerId := range readers {
-				if readerId == shopper.ID {
+				// A person who muted the list hears neither the reminder at
+				// a store nor that somebody started shopping it.
+				if readerId == shopper.ID || isMuted[readerId] {
 					continue
 				}
 				listNames[readerId] = append(listNames[readerId], list.ListName)

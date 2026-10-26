@@ -19,11 +19,12 @@ struct ShoppingStoreScreen: View {
     @State private var pickedReceiptItems: [PhotosPickerItem] = []
     @State private var isTakingReceiptPicture = false
 
-    init(connection: Connection, storeName: String, listIds: [String], ownUserId: String?) {
+    init(connection: Connection, storeName: String, listIds: [String], ownUserId: String?, isStartingTrip: Bool) {
         self.connection = connection
         self.storeName = storeName
         _model = State(
-            initialValue: ShoppingStoreModel(connection: connection, storeName: storeName, listIds: listIds, ownUserId: ownUserId))
+            initialValue: ShoppingStoreModel(
+                connection: connection, storeName: storeName, listIds: listIds, ownUserId: ownUserId, isStartingTrip: isStartingTrip))
     }
 
     var body: some View {
@@ -49,12 +50,22 @@ struct ShoppingStoreScreen: View {
                     menu
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { finish() }
+                    tripButton
                 }
             }
             .safeAreaInset(edge: .bottom) { scanButton }
             .toolbarVisibility(.hidden, for: .tabBar)
             .overlay { stateOverlay }
+    }
+
+    /// Done while the person's trip is open; Start shopping while the store is only being
+    /// looked at.
+    @ViewBuilder private var tripButton: some View {
+        if model.ownTrip == nil && model.hasLoaded {
+            Button("Start shopping") { Task { await model.start() } }
+        } else {
+            Button("Done") { finish() }
+        }
     }
 
     // MARK: Items

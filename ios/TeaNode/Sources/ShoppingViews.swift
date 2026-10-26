@@ -88,14 +88,12 @@ struct ShoppingScreen: View {
             if !model.stores.isEmpty {
                 Section {
                     ForEach(model.stores) { store in
-                        NavigationLink(value: ShoppingPlace.store(store.storeName, listIds: [])) {
+                        NavigationLink(value: ShoppingPlace.store(store.storeName, listIds: [], isStartingTrip: false)) {
                             ShoppingStoreRow(store: store)
                         }
                     }
                 } header: {
                     Text("Stores")
-                } footer: {
-                    Text("Opening a store starts shopping there and lets the people you share a list with know.")
                 }
             }
         }
@@ -132,7 +130,7 @@ struct ShoppingScreen: View {
             if screen.hasPrefix("shopping-list") || screen == "shopping-item" || screen == "shopping-import" {
                 path = [.list(ShoppingDemo.groceriesListId)]
             } else if screen == "shopping-store" {
-                path = [.store(ShoppingDemo.exampleMarket, listIds: [])]
+                path = [.store(ShoppingDemo.exampleMarket, listIds: [], isStartingTrip: false)]
             }
         }
     #endif
@@ -149,8 +147,9 @@ struct ShoppingPlaceScreen: View {
         switch place {
         case .list(let listId):
             ShoppingListScreen(connection: connection, listId: listId, path: $path)
-        case .store(let storeName, let listIds):
-            ShoppingStoreScreen(connection: connection, storeName: storeName, listIds: listIds, ownUserId: app.ownUserId)
+        case .store(let storeName, let listIds, let isStartingTrip):
+            ShoppingStoreScreen(
+                connection: connection, storeName: storeName, listIds: listIds, ownUserId: app.ownUserId, isStartingTrip: isStartingTrip)
         }
     }
 }
@@ -485,7 +484,7 @@ struct ShoppingListScreen: View {
     }
 
     private func open(storeName: String) {
-        path.append(.store(storeName, listIds: [listId]))
+        path.append(.store(storeName, listIds: [listId], isStartingTrip: true))
     }
 
     // MARK: Sheets

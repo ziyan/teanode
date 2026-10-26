@@ -227,6 +227,7 @@ type ShoppingItemPrice struct {
 type ShoppingReceiptMatch struct {
 	ID                        string            `json:"id"`
 	FinanceReceiptID          string            `json:"financeReceiptId"`
+	ReceiptLineNumber         int               `json:"receiptLineNumber"`
 	FinanceReceiptLineID      string            `json:"financeReceiptLineId"`
 	ShoppingItemID            string            `json:"shoppingItemId"`
 	ReceiptMatchState         ReceiptMatchState `json:"receiptMatchState"`
