@@ -624,6 +624,15 @@ struct SettingsForm: View {
                         }
                     }
                 }
+                if let connection = app.connection, app.canUseJournal {
+                    Section {
+                        NavigationLink {
+                            JournalSettingsScreen(connection: connection)
+                        } label: {
+                            JournalSettingsRow()
+                        }
+                    }
+                }
                 if let connection = app.connection {
                     Section("Your agent") {
                         NavigationLink {
@@ -823,6 +832,7 @@ struct SettingsForm: View {
                 case "skill-share-call": SkillShareCallsView(connection: connection, share: DemoServer.lentSkillShare) {}
                 case "settings-picture": PreferencesView(connection: connection) { saved in app.profileSaved(saved) }
                 case "health-settings", "health-setup": HealthSettingsScreen(connection: connection)
+                case "journal-settings": JournalSettingsScreen(connection: connection)
                 default: EmptyView()
                 }
             }
