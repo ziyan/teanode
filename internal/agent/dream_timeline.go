@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/journal"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/recordlink"
 )
 
 // dreamTimeline writes up the open month from its digest.
@@ -16,13 +18,20 @@ import (
 // closes for the year it was in. The whole timeline costs less than one
 // conversation, because the collecting is arithmetic (digest.go) and only
 // the writing up is a model.
+//
+// A month the journal has written a narrative for is not written up here:
+// the journal is the one writer of a month's story, and the page is made from
+// its narrative with no model call, before the budget is looked at.
 func (self *Agent) dreamTimeline(ctx context.Context, run *Run, record *models.AgentDream, budget *dreamBudget) {
+	journalMonths := self.writeMonthsFromJournal(ctx, run, record)
 	if !budget.left() {
 		return
 	}
 	now := time.Now()
 	from, until := MonthBounds(now, run.Owner)
-	self.writeMonth(ctx, run, record, budget, from, until)
+	if !journalMonths[from.Format("2006/01")] {
+		self.writeMonth(ctx, run, record, budget, from, until)
+	}
 
 	// The months before: a first ingest brings years of record at once,
 	// and a timeline with one page on it is not a timeline. A few a
@@ -45,6 +54,9 @@ func (self *Agent) dreamTimeline(ctx context.Context, run *Run, record *models.A
 	for _, month := range owed {
 		if ctx.Err() != nil || !budget.left() {
 			return
+		}
+		if journalMonths[month] {
+			continue
 		}
 		start, err := time.ParseInLocation("2006/01", month, Location(run.Owner))
 		if err != nil {
@@ -117,6 +129,12 @@ func (self *Agent) writeMonth(ctx context.Context, run *Run, record *models.Agen
 	if text == "" {
 		return
 	}
+	self.keepMonthPage(ctx, run, record, from, until, path, text)
+}
+
+// keepMonthPage stores a month's page and links it to what the month was
+// about.
+func (self *Agent) keepMonthPage(ctx context.Context, run *Run, record *models.AgentDream, from, until time.Time, path, text string) {
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		tx.AsActor(models.ActorDream)
 		page, err := tx.PutAgentNode(&models.AgentNode{
@@ -154,4 +172,81 @@ func (self *Agent) writeMonth(ctx context.Context, run *Run, record *models.Agen
 		return
 	}
 	record.Rewritten++
+}
+
+// writeMonthsFromJournal writes the month pages from the narratives of the
+// journal's months, with no model call, and answers which months it wrote
+// ("2006/01"). A page that already says the same is left alone. A memory page
+// cannot link to a journal period, so the page says where the month is in the
+// journal, and says whom it is written to: the journal's narrative speaks to
+// the person as "you".
+func (self *Agent) writeMonthsFromJournal(ctx context.Context, run *Run, record *models.AgentDream) map[string]bool {
+	months := map[string]bool{}
+	var periods []*models.JournalPeriod
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		permissions, err := tx.EffectivePermissions(run.Owner.ID)
+		if err != nil || !permissions.Has(models.PermissionJournalUse) {
+			return err
+		}
+		periods, err = tx.ListJournalPeriods(run.Owner.ID, models.JournalPeriodMonth, "", "")
+		return err
+	}); err != nil {
+		log.Warningf("cannot list the journal's months: %s", err)
+		return months
+	}
+	for _, period := range periods {
+		if ctx.Err() != nil {
+			return months
+		}
+		if strings.TrimSpace(period.Narrative) == "" {
+			continue
+		}
+		from, err := time.ParseInLocation(journal.DayLayout, period.PeriodStart, Location(run.Owner))
+		if err != nil {
+			continue
+		}
+		until := from.AddDate(0, 1, 0)
+		path := PeriodPath(from, true)
+		months[from.Format("2006/01")] = true
+
+		var text, existing string
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			text = self.monthPageFromJournal(tx, run, period, from)
+			node, err := tx.GetAgentNode(run.Agent.ID, path)
+			if err != nil || node == nil {
+				return err
+			}
+			existing = node.Summary
+			return nil
+		}); err != nil {
+			log.Debugf("cannot make the page of %s from the journal: %s", from.Format("January 2006"), err)
+			continue
+		}
+		if text != "" && text != existing {
+			self.keepMonthPage(ctx, run, record, from, until, path, text)
+		}
+	}
+	return months
+}
+
+// monthPageFromJournal is the text of a month page made from the journal's
+// narrative of the month. A mention of a record is replaced by the record's
+// title, or taken out when the agent may not read the record.
+func (self *Agent) monthPageFromJournal(tx db.Transaction, run *Run, period *models.JournalPeriod, from time.Time) string {
+	reader := recordlink.Reader{UserID: run.Owner.ID, AgentID: run.Agent.ID, IsAgent: true}
+	narrative := journalReferencePattern.ReplaceAllStringFunc(period.Narrative, func(mention string) string {
+		parts := journalReferencePattern.FindStringSubmatch(mention)
+		resolved, err := recordlink.ResolveRecord(tx, reader, models.AgentRecordKind(parts[1]), parts[2], models.AgentRecordDetail{}, 0, 0)
+		if err != nil || resolved == nil || !resolved.IsReadable() || resolved.Title == "" {
+			return ""
+		}
+		return resolved.Title
+	})
+	var builder strings.Builder
+	if headline := strings.TrimSpace(period.Headline); headline != "" {
+		builder.WriteString("**" + headline + "**\n\n")
+	}
+	builder.WriteString(strings.TrimSpace(narrative))
+	builder.WriteString(fmt.Sprintf("\n\nThis is the journal's account of the month, written to %s as \"you\". The journal page is /journal/month/%s.", personName(run.Owner), from.Format("2006-01")))
+	return builder.String()
 }

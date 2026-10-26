@@ -12,8 +12,9 @@ import (
 
 // Every operation of the journal on the API has a command under the name
 // below, and every command is an operation. The agent's journal tool is
-// written with the dream that makes the narratives, and its parity is checked
-// with it; this checks the API and the command line.
+// checked against the same operations in internal/agent/tools/journal, which
+// names the ones that are deliberately the person's alone; this checks the API
+// and the command line.
 func TestJournalParity(test *testing.T) {
 	test.Parallel()
 

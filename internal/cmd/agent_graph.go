@@ -1932,6 +1932,8 @@ func runDreamLog(ctx context.Context, command *cli.Command) error {
 			{dream.OverviewsWritten, "overviews written"},
 			{dream.ThemesMade, "themes made"}, {dream.ThemesUpdated, "themes updated"},
 			{dream.ReflectionsWritten, "reflections written"},
+			{dream.JournalDaysWritten, "journal days written"}, {dream.JournalPeriodsWritten, "journal periods written"},
+			{dream.JournalNarrativesRefused, "journal narratives refused"},
 			{dream.Merged, "said twice, merged"},
 		} {
 			if pair.count > 0 {

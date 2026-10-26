@@ -591,6 +591,15 @@ type AgentDream struct {
 	ThemesUpdated      int `json:"themesUpdated"`
 	ReflectionsWritten int `json:"reflectionsWritten"`
 
+	// JournalDaysWritten and JournalPeriodsWritten are the narratives of
+	// journal days, and of weeks, months and years, the night wrote.
+	// JournalNarrativesRefused is the answers it threw away because they
+	// named a record that was not in what it was given, or were not an
+	// answer at all.
+	JournalDaysWritten       int `json:"journalDaysWritten"`
+	JournalPeriodsWritten    int `json:"journalPeriodsWritten"`
+	JournalNarrativesRefused int `json:"journalNarrativesRefused"`
+
 	// Backlog is how much was still waiting when it stopped. A cap here
 	// is pacing, never truncation: what is not read tonight is read
 	// tomorrow, and this is the number that says how many nights that is.
@@ -639,6 +648,15 @@ func (self *AgentDream) Describe() string {
 	}
 	if self.Moved > 0 {
 		parts = append(parts, plural(self.Moved, "page", "pages")+" filed away")
+	}
+	if self.JournalDaysWritten > 0 {
+		parts = append(parts, plural(self.JournalDaysWritten, "journal day", "journal days")+" written")
+	}
+	if self.JournalPeriodsWritten > 0 {
+		parts = append(parts, plural(self.JournalPeriodsWritten, "journal period", "journal periods")+" written")
+	}
+	if self.JournalNarrativesRefused > 0 {
+		parts = append(parts, plural(self.JournalNarrativesRefused, "journal narrative", "journal narratives")+" refused")
 	}
 	if self.Dormant > 0 {
 		parts = append(parts, plural(self.Dormant, "fact", "facts")+" retired")
