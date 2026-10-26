@@ -88210,6 +88210,38 @@
           }
         }
       }
+    },
+    "No albums yet. Make one for this circle, or share one of your albums with it from the album.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルバムはまだありません。このサークル用に作成するか、自分のアルバムからこのサークルに共有してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有相簿。可以为这个圈子新建一个，或在你的相簿里把它共享给这个圈子。"
+          }
+        }
+      }
+    },
+    "This circle's albums, which everyone in it adds photos to, and the albums people shared with everyone here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサークルのアルバム（メンバー全員が写真を追加できます）と、ここにいる全員に共有されたアルバムです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个圈子的相簿（圈子里每个人都可以添加照片），以及有人共享给这里所有人的相簿。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

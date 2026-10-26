@@ -466,7 +466,9 @@ calendar, its albums, its address book (every member reads and edits it, an
 admin renames or deletes it, and it has no grantee column, so the cleanup above
 has nothing to end: leaving the circle is what takes it away), and the list of
 members. The circle's admins manage them,
-and they go with the circle. The admins can also rename and delete the circle's
+and they go with the circle. The circle's page shows its albums together with
+the albums people shared with the whole circle (see Sharing in
+`docs/subsystems/photos.md`). The admins can also rename and delete the circle's
 calendar (`SaveCalendar`, `DeleteCircleCalendar`).
 
 Whether somebody is reached is decided when they read, and requires more than

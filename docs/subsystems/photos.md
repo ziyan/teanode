@@ -399,6 +399,16 @@ deleted) by the circle's admins; it is not shared further, since every member
 has it. A photo in somebody else's album is still the photo of whoever added
 it (`photo_album_item.added_by_user_id`), on their space, in their library.
 
+A circle's page lists its albums: the circle's own and those shared with the
+whole circle, the caller's own among them, but not an album shared with one
+member or with another circle. `ListPhotoAlbums(circleId)` answers it
+(`ListCirclePhotoAlbums` in the database: the albums reached, narrowed to those
+`circlePhotoAlbumIdsQuery` names, where a shared album counts only while its
+owner is still in the circle), and refuses somebody who is not in the circle as
+not found. The dashboard's circle page and the iPhone app's show it with a way
+to make another album for the circle; `teanode photo album list --circle` and
+the photo tool's `album-list` with `circle` give the same list.
+
 Who may do what is one answer, asked of the database: `GetPhotoAlbumAccess`
 (owner, member of the owning circle, direct share, share to a circle both the
 reader and the owner are in) and `GetPhotoAccess` (the owner, or any album that

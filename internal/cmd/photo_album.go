@@ -22,7 +22,14 @@ func newPhotoAlbumCommand() *cli.Command {
 		Name:  "album",
 		Usage: "named sets of your photos",
 		Commands: []*cli.Command{
-			{Name: "list", Usage: "the albums you reach, the most recently changed first: yours, your circles' and those shared with you", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumList},
+			{
+				Name: "list", Usage: "the albums you reach, the most recently changed first: yours, your circles' and those shared with you",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "circle", Usage: "only the albums of a circle you are in, as its page shows them: the circle's own and those shared with everyone in it (a circle's id or name, from teanode circle list)"},
+				},
+				Action: runPhotoAlbumList,
+			},
 			{
 				Name: "read", Usage: "an album and its photos", ArgsUsage: "<album id>",
 				Flags: []cli.Flag{
@@ -105,7 +112,16 @@ func runPhotoAlbumList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	albums, err := client.ListPhotoAlbums(ctx, connection)
+	var albums []*models.PhotoAlbum
+	if circleNamed := strings.TrimSpace(command.String("circle")); circleNamed != "" {
+		var circleId string
+		if circleId, _, err = photoCircleNamed(ctx, connection, circleNamed); err != nil {
+			return describeError(command, err)
+		}
+		albums, err = client.ListCirclePhotoAlbums(ctx, connection, circleId)
+	} else {
+		albums, err = client.ListPhotoAlbums(ctx, connection)
+	}
 	if err != nil {
 		return describeError(command, err)
 	}
