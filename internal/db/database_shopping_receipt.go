@@ -118,7 +118,7 @@ func (self *transaction) ownShoppingReceiptLine(userId, financeReceiptLineId str
 }
 
 // isShoppingStoreOfMerchant says an item's store is the merchant's: one of
-// the two compared names holds the other ("traderjoes" in "traderjoes552").
+// the two compared names holds the other ("examplemarket" in "examplemarket552").
 func isShoppingStoreOfMerchant(storeKey, merchantKey string) bool {
 	if storeKey == "" || merchantKey == "" {
 		return false

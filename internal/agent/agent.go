@@ -350,6 +350,8 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobCategorize, self.runCategorize)
 	self.Register(models.AgentJobStatementImport, self.runStatementImport)
 	self.Register(models.AgentJobReadReceipt, self.runReadReceipt)
+	self.Register(models.AgentJobMatchShopping, self.runMatchShopping)
+	self.Register(models.AgentJobShoppingPicture, self.runShoppingPicture)
 	self.Register(models.AgentJobDescribePhoto, self.runDescribePhoto)
 	self.Register(models.AgentJobTaxDocument, self.runReadTaxDocument)
 	self.Register(models.AgentJobTaxMail, self.runTaxMail)

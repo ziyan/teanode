@@ -730,6 +730,23 @@ const (
 	// to, when there is one.
 	AgentJobReadReceipt AgentJobKind = "read_receipt"
 
+	// AgentJobMatchShopping ties the lines of a receipt to the items of the
+	// shopping lists its owner reaches: sure matches check items off and keep
+	// their price, unsure ones wait for the person. Its subject is the
+	// receipt. Every receipt, from any source, queues it while the owner
+	// has items a receipt could have bought.
+	AgentJobMatchShopping AgentJobKind = "match_shopping"
+
+	// AgentJobShoppingPicture finds a picture for an item on a shopping list:
+	// a web search, the page the model picks, and that page's own picture,
+	// kept scaled down in the file store. Its subject is the item.
+	AgentJobShoppingPicture AgentJobKind = "shopping_picture"
+
+	// AgentJobShoppingImport names the run that reads a pasted list or a
+	// screenshot of one into shopping items, which is made in the request
+	// rather than queued.
+	AgentJobShoppingImport AgentJobKind = "shopping_import"
+
 	// AgentJobDescribePhoto writes what is in a photo, with the words that
 	// can be read in it, and keeps it on the photo and searchable. Its
 	// subject is the photo. The kind's name is at most 16 characters, which

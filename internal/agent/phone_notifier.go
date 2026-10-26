@@ -57,6 +57,7 @@ type PhoneNotifier struct {
 	// lately, so that a phone flickering at the edge of a place is not told
 	// again and again (location_notify.go).
 	placeVisitNotices placeVisitNotices
+	shoppingNotices   shoppingNotices
 }
 
 // NewPhoneNotifier is a notifier that builds its sender when the first

@@ -76,8 +76,8 @@ const (
 )
 
 // ShoppingStoreKey is the form every store name is compared in: lower case,
-// letters and digits only, so "Trader Joe's", "TRADER JOES" and "trader
-// joe’s" are one store. A name with no letter or digit has the empty key,
+// letters and digits only, so "Example Market", "EXAMPLE MARKET'S" and
+// "example-market" are one store. A name with no letter or digit has the empty key,
 // which is any store.
 func ShoppingStoreKey(storeName string) string {
 	var builder strings.Builder
@@ -177,6 +177,11 @@ type ShoppingItem struct {
 	PicturePageURL    string                `json:"picturePageUrl"`
 	PictureSource     ShoppingPictureSource `json:"pictureSource"`
 	PictureSearchedAt *time.Time            `json:"pictureSearchedAt"`
+
+	// PicturePath is where a signed-in reader of the list gets the picture
+	// from this server, empty when there is none. Filled for a reader, not
+	// stored.
+	PicturePath string `json:"picturePath"`
 
 	CreatedByUserID string    `json:"createdByUserId"`
 	CreatedAt       time.Time `json:"createdAt"`

@@ -10,7 +10,7 @@ After this plan a person keeps **shopping lists** in TeaNode, on the dashboard, 
 
 - A list has a name ("Groceries") and **items**. An item has a description, details (preferences such as "Fuji preferred"), a picture the agent finds on the web, a count needed and a unit, a unit price, the store to get it from (or any store), whether it is a store brand, and the aisle. A list is reused: a bought item stays on it as not needed, with its picture, store and prices, and "Need again" brings it back with a count.
 - A list is shared with a circle or a person. Everybody it reaches can add, change and check off items and upload receipts; only the owner shares it further or deletes it.
-- At the store, the person **shops a store, not a list**: one screen holds the needed items of every list they reach that are for that store or for any store, grouped by aisle, each saying which list it is on when more than one list is included. Checking an item off shows on everybody's screen at once. An item can be marked out of stock. When somebody starts shopping, the others the list reaches get a notification ("Alex started shopping Groceries", "At Trader Joe's").
+- At the store, the person **shops a store, not a list**: one screen holds the needed items of every list they reach that are for that store or for any store, grouped by aisle, each saying which list it is on when more than one list is included. Checking an item off shows on everybody's screen at once. An item can be marked out of stock. When somebody starts shopping, the others the list reaches get a notification ("Alex started shopping Groceries", "At Example Market").
 - A **receipt** is one system: every Finance receipt, however it arrives (uploaded on a list or in Finance, a mail sorted as a receipt, a photo sent to the agent), is matched against the lists its owner reaches. Matches the model is sure of check items off and remember their price at that store; unsure ones wait on the receipt for the person; Undo puts everything back.
 - **Prices** are remembered per item and per store, from receipts and from what people type, and shown over time.
 - When the person's phone says they **arrived at a store** (a place whose OpenStreetMap or given name matches an item's store), they get one notification listing what their lists need there, plus generic items when the place is a grocery shop.
@@ -65,7 +65,7 @@ To see it working: two invented accounts in one circle. The first creates "Groce
 - Decision: shopping is per store across lists. The same thing on two lists stays two rows, one per list, so that each list's own people see only their list; checking one does not check the other.
   Rationale: the maintainer asked about shopping for several lists at once; keeping rows per list keeps sharing exact.
   Date/Author: 2026-10-26, this plan.
-- Decision: a store is a chain name ("Trader Joe's"), compared without case and punctuation, so any branch matches; prices are kept per store name.
+- Decision: a store is a chain name ("Example Market"), compared without case and punctuation, so any branch matches; prices are kept per store name.
   Rationale: what a receipt and OpenStreetMap both give is the name; a branch adds nothing a list needs.
   Date/Author: 2026-10-26, this plan.
 - Decision: an item checked at the store is "in the cart" until the trip is finished (Done), a receipt matches it, or somebody starts a new trip on that list more than six hours later; then it is bought (not needed, last bought now).

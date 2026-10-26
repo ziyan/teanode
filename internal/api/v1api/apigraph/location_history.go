@@ -1867,7 +1867,8 @@ type visitNotice struct {
 // afterLocationChange tells what a stored change did, once it is committed and
 // not before: the people watching the map are told that this person's location
 // changed, the phones of the people it is shared with are told of arrivals and
-// departures, and the places the change made are named. None of it can fail the
+// departures, the person's own phones of what their shopping lists need at a
+// store they arrived at, and the places the change made are named. None of it can fail the
 // change, which is stored.
 func (self *graph) afterLocationChange(ctx context.Context, tx db.Transaction, userId string, notices []visitNotice, madePlaces []*models.Place) {
 	notifier := self.phoneNotifier()
@@ -1885,6 +1886,9 @@ func (self *graph) afterLocationChange(ctx context.Context, tx db.Transaction, u
 			dueAt := visitNoticeDueAt(notice)
 			if !dueAt.After(now) {
 				notifier.NotifyPlaceVisitAt(detached, userId, notice.Visit, notice.IsArrival, notice.HappenedAt)
+				if notice.IsArrival {
+					notifier.NotifyShoppingArrival(detached, userId, notice.Visit, notice.HappenedAt)
+				}
 				continue
 			}
 			time.AfterFunc(dueAt.Sub(now), func() { self.tellVisitNoticeIfKept(detached, notifier, userId, notice) })
@@ -1927,6 +1931,9 @@ func (self *graph) tellVisitNoticeIfKept(ctx context.Context, notifier *agent.Ph
 		return
 	}
 	notifier.NotifyPlaceVisitAt(ctx, userId, visit, notice.IsArrival, notice.HappenedAt)
+	if notice.IsArrival {
+		notifier.NotifyShoppingArrival(ctx, userId, visit, notice.HappenedAt)
+	}
 }
 
 // storedVisit is what storing one reported visit did.

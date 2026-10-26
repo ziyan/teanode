@@ -205,6 +205,12 @@ func (self *Agent) RecordReceipt(ctx context.Context, agentRow *models.Agent, re
 		if stored, err = tx.GetFinanceReceipt(agentRow.ID, stored.ID); err != nil {
 			return err
 		}
+		// A receipt is one system: whatever it is matched to here, it also
+		// checks off what the owner's shopping lists needed. A failure to
+		// queue that is said and never costs the receipt.
+		if err := self.QueueShoppingReceiptMatch(tx, agentRow, stored); err != nil {
+			log.Warningf("cannot queue the shopping match of a receipt: %s", err)
+		}
 		personMatches := stored.ReceiptMatches
 		if strings.TrimSpace(recording.FinanceTransactionID) != "" {
 			err := matchReceiptByHand(tx, agentRow.ID, stored, recording.FinanceTransactionID, "")
