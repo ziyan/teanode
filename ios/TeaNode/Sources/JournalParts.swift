@@ -76,10 +76,14 @@ struct JournalRecordRow: View {
     let title: String
     var detail = ""
     var opening: JournalRecordOpening = .nowhere
+    /// What a tap does, when the screen opens some records itself (a photo
+    /// of the day opens in the viewer over it); else the record is opened in
+    /// the part of the app that shows it.
+    var openRecord: ((JournalRecordOpening) -> Void)?
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        JournalOpenRow(isOpenable: opening.isOpenable, open: { JournalRecordOpener.open(opening, in: app) }) {
+        JournalOpenRow(isOpenable: opening.isOpenable, open: open) {
             HStack(spacing: 12) {
                 Image(systemName: symbolName)
                     .frame(width: 24)
@@ -96,6 +100,14 @@ struct JournalRecordRow: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private func open() {
+        if let openRecord {
+            openRecord(opening)
+        } else {
+            JournalRecordOpener.open(opening, in: app)
+        }
     }
 }
 

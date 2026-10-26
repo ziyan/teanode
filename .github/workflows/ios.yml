@@ -359,7 +359,7 @@ jobs:
           shoot journal-light light large -TeaNodeDemo -TeaNodeTab journal
           shoot journal-dark dark large -TeaNodeDemo -TeaNodeTab journal
           shoot journal-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab journal
-          for journal_screen in journal-day journal-day-words journal-write journal-week journal-month; do
+          for journal_screen in journal-day journal-day-work journal-day-words journal-write journal-week journal-month; do
             shoot "$journal_screen-light" light large -TeaNodeDemo -TeaNodeTab journal -TeaNodeScreen "$journal_screen"
             shoot "$journal_screen-dark" dark large -TeaNodeDemo -TeaNodeTab journal -TeaNodeScreen "$journal_screen"
           done

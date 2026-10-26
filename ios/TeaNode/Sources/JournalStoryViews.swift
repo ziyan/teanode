@@ -72,9 +72,11 @@ struct JournalNarrativeRows: View {
     let narrative: JournalNarrative?
     /// What to say when there is no story and none is being written.
     let emptyText: String
-    /// Whether the story can be asked for again: not for today, which is not
-    /// over.
+    /// Whether the story can be asked for again. Today's can: it is the day
+    /// so far.
     let canWrite: Bool
+    /// What the button says when there is no story yet.
+    var writeNowTitle = String(localized: "Write now")
     let isBusy: Bool
     let open: (JournalRecord) -> Void
     let correct: () -> Void
@@ -110,7 +112,7 @@ struct JournalNarrativeRows: View {
                 .actionColor()
         }
         if canWrite, hasNarrative || !isWriting {
-            Button(hasNarrative ? String(localized: "Write again") : String(localized: "Write now"), systemImage: "arrow.clockwise", action: writeAgain)
+            Button(hasNarrative ? String(localized: "Write again") : writeNowTitle, systemImage: "arrow.clockwise", action: writeAgain)
                 .actionColor()
                 .disabled(isBusy || isWriting)
         }

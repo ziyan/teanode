@@ -238,7 +238,7 @@ struct JournalPeriodScreen: View {
         } header: {
             Text("The days")
         } footer: {
-            Text("Each day is colored by how it was.")
+            Text("Each day shows its first photo, and is colored by how it was.")
         }
     }
 
@@ -254,16 +254,7 @@ struct JournalPeriodScreen: View {
             Button {
                 onOpenDay(day)
             } label: {
-                Text(verbatim: JournalText.dayNumberText(day))
-                    .font(.callout.weight(day == today ? .bold : .regular))
-                    .monospacedDigit()
-                    .frame(maxWidth: .infinity, minHeight: 40)
-                    .background {
-                        if let color = moodColor(of: summary) {
-                            Circle().fill(color.opacity(0.4))
-                        }
-                    }
-                    .contentShape(Rectangle())
+                dayCellFace(day, summary: summary)
             }
             .buttonStyle(.plain)
             .disabled(day > today)
@@ -273,6 +264,37 @@ struct JournalPeriodScreen: View {
         } else {
             Color.clear.frame(minHeight: 40)
         }
+    }
+
+    /// A day of the month: its number on the first photo of the day, or on
+    /// the color of its mood when it has no photo. A day with both has its
+    /// mood as the edge of the photo.
+    private func dayCellFace(_ day: String, summary: JournalDaySummary?) -> some View {
+        let photoId = summary?.shownPhotoId
+        let moodTint = moodColor(of: summary)
+        return ZStack {
+            if let photoId {
+                JournalPhotoImage(photoId: photoId, connection: connection)
+                    .frame(height: 40)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay {
+                        if let moodTint {
+                            RoundedRectangle(cornerRadius: 8).strokeBorder(moodTint, lineWidth: 3)
+                        }
+                    }
+            } else if let moodTint {
+                Circle().fill(moodTint.opacity(0.4))
+            }
+            Text(verbatim: JournalText.dayNumberText(day))
+                .font(.callout.weight(day == today ? .bold : .regular))
+                .monospacedDigit()
+                .padding(.horizontal, photoId == nil ? 0 : 6)
+                .background {
+                    if photoId != nil { Capsule().fill(.ultraThinMaterial) }
+                }
+        }
+        .frame(maxWidth: .infinity, minHeight: 40)
+        .contentShape(Rectangle())
     }
 
     private func moodColor(of summary: JournalDaySummary?) -> Color? {
@@ -346,7 +368,8 @@ struct JournalPeriodScreen: View {
         if totals.stepCount > 0 { rows.append((String(localized: "Steps"), JournalText.countText(totals.stepCount))) }
         if totals.sleepMinutes > 0 { rows.append((String(localized: "Sleep"), JournalText.durationText(minutes: totals.sleepMinutes))) }
         if totals.workoutMinutes > 0 { rows.append((String(localized: "Workouts"), JournalText.durationText(minutes: totals.workoutMinutes))) }
-        if totals.codingSessionCount > 0 { rows.append((String(localized: "Coding sessions"), JournalText.countText(totals.codingSessionCount))) }
+        let workText = JournalText.workText(minutes: totals.codingMinutes, projectCount: totals.projectCount)
+        if !workText.isEmpty { rows.append((String(localized: "Work"), workText)) }
         if totals.meetingCount > 0 { rows.append((String(localized: "Meetings"), JournalText.countText(totals.meetingCount))) }
         if totals.mailReceivedCount > 0 { rows.append((String(localized: "Mail received"), JournalText.countText(totals.mailReceivedCount))) }
         if totals.spentMinorUnits > 0 {
