@@ -1593,6 +1593,9 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 	}
 	var notices []visitNotice
 	var madePlaces []*models.Place
+	// storedArrivedAt is the earliest arrival of a visit the report added or
+	// changed, as stored.
+	var storedArrivedAt *time.Time
 	isChanged := newPointCount > 0
 	for _, reported := range arguments.Visits {
 		stored, err := self.putReportedVisit(tx, user.ID, reported, pauses)
@@ -1614,6 +1617,9 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 			view.UpdatedVisitCount++
 		}
 		isChanged = isChanged || stored.IsNew || stored.IsChanged
+		if (stored.IsNew || stored.IsChanged) && stored.ArrivedAt != nil && (storedArrivedAt == nil || stored.ArrivedAt.Before(*storedArrivedAt)) {
+			storedArrivedAt = stored.ArrivedAt
+		}
 		if stored.Notice != nil {
 			notices = append(notices, *stored.Notice)
 		}
@@ -1632,6 +1638,13 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 	// been in order.
 	if len(arguments.Visits) > 0 {
 		from, until := reportedVisitRange(arguments.Visits)
+		// From the arrival of a visit the report completed, too: a departure
+		// the phone sent late can carry a visit over the visits at other
+		// places since it began, which the range of the report alone would
+		// not reach.
+		if storedArrivedAt != nil && storedArrivedAt.Before(from) {
+			from = *storedArrivedAt
+		}
 		if err := tx.NormalizePlaceVisits(user.ID, from, until); err != nil {
 			return nil, locationFailure(err)
 		}
@@ -1653,6 +1666,9 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 			}
 		}
 	}
+	if err := tellDeparturesWhenTheyEnded(tx, user.ID, notices); err != nil {
+		return nil, err
+	}
 	self.takeNewPlacesAfterCommit(tx, user.ID, len(madePlaces))
 	// A batch the server already had changes nothing, so the people watching
 	// the map are not told to read the same position again.
@@ -1665,6 +1681,28 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 	}
 	view.Pause = describeLocationPause(pause)
 	return view, nil
+}
+
+// tellDeparturesWhenTheyEnded moves each departure notice to when its visit
+// ended as stored. A departure the phone sent late, after visits at other
+// places that began since, was over at the first of them, where
+// NormalizePlaceVisits ended the visit; told by that time, the window of
+// NotifyPlaceVisitAt keeps "left home" from being told hours later.
+func tellDeparturesWhenTheyEnded(tx db.Transaction, userId string, notices []visitNotice) error {
+	for index := range notices {
+		notice := &notices[index]
+		if notice.IsArrival || notice.Visit == nil {
+			continue
+		}
+		current, err := tx.GetPlaceVisitByClientKey(userId, notice.Visit.ClientVisitKey)
+		if err != nil {
+			return err
+		}
+		if current != nil && current.DepartedAt != nil && current.DepartedAt.Before(notice.HappenedAt) {
+			notice.HappenedAt = *current.DepartedAt
+		}
+	}
+	return nil
 }
 
 // reportedVisitRange is the earliest and the latest time the visits of a
@@ -1913,6 +1951,12 @@ type storedVisit struct {
 	// MadePlace is the place the visit made because the person had none there,
 	// nil when it was at a place they had.
 	MadePlace *models.Place
+
+	// ArrivedAt is the arrival of the visit as stored, nil when it has none.
+	// A departure reported alone completes a visit that began before anything
+	// in the report, and visits at other places since that arrival may need
+	// it ended sooner.
+	ArrivedAt *time.Time
 }
 
 // putReportedVisit stores one visit a phone reported, at a place chosen for it
@@ -1987,6 +2031,7 @@ func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported R
 		return nil, locationFailure(err)
 	}
 	stored.IsNew = isNew
+	stored.ArrivedAt = visit.ArrivedAt
 	// known is nil when the key was not known at the lookup but is now: the
 	// visit was stored between the two. That is an update with nothing to say
 	// about a departure.

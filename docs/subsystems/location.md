@@ -85,7 +85,11 @@ visits to one place with a visit at another place between them are not joined,
 and a visit that was joined before the visit between its parts was heard of is
 split again where that visit began. A visit known only by its departure is not
 joined to anything until its arrival is reported. The result is the same as if
-the events had come in order.
+the events had come in order. The times put in order reach back to the arrival
+of every visit the report changed: iOS can report leaving a place's circle
+hours late, and that departure must not carry the visit over the stops made
+since. Its notice is told by when the visit ended
+as stored, which is too long ago to tell.
 
 At the most places a person may have (5000), a visit that would need a new place
 is left out, the rest of the batch is stored, and the answer's
