@@ -476,7 +476,9 @@ type JournalDayView struct {
 	Moments []*JournalMomentView `json:"moments"`
 }
 
-// JournalCodingSessionView is a stretch of work in Claude Code or Codex.
+// JournalCodingSessionView is a day's work in one project with Claude Code or
+// Codex: its stretches (each ended by a pause of half an hour) from the first
+// to the last.
 type JournalCodingSessionView struct {
 	DocumentID string     `json:"documentId"`
 	Title      string     `json:"title"`
@@ -484,6 +486,10 @@ type JournalCodingSessionView struct {
 	Assistant  string     `json:"assistant"`
 	StartedAt  time.Time  `json:"startedAt"`
 	EndedAt    *time.Time `json:"endedAt" graphapi:"nullable"`
+
+	// StretchCount is how many stretches of work it was; DocumentID is the
+	// first one's.
+	StretchCount int `json:"stretchCount"`
 
 	// LinkReason is the agent's one line about it, when it chose it.
 	LinkReason string `json:"linkReason"`
@@ -535,6 +541,10 @@ type JournalMailView struct {
 	// IsChosen says the agent chose it as mattering, with LinkReason.
 	IsChosen   bool   `json:"isChosen"`
 	LinkReason string `json:"linkReason"`
+
+	// RepeatCount is how many messages of the day it stands for: the same
+	// sender and subject again is one line with a count.
+	RepeatCount int `json:"repeatCount"`
 }
 
 // JournalRecordingView is a recording made that day.

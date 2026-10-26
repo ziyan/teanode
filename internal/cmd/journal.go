@@ -719,8 +719,14 @@ func printJournalSections(view *client.JournalDayView) {
 	lines := []string{}
 	for _, session := range view.CodingSessions {
 		line := fmt.Sprintf("%s  %s", journalClock(session.StartedAt), session.Title)
+		if session.EndedAt != nil && journalClock(*session.EndedAt) != journalClock(session.StartedAt) {
+			line = fmt.Sprintf("%s to %s  %s", journalClock(session.StartedAt), journalClock(*session.EndedAt), session.Title)
+		}
 		if session.Directory != "" {
 			line += " (" + session.Directory + ")"
+		}
+		if session.StretchCount > 1 {
+			line += fmt.Sprintf(", %d stretches", session.StretchCount)
 		}
 		if session.LinkReason != "" {
 			line += ": " + session.LinkReason
@@ -751,6 +757,9 @@ func printJournalSections(view *client.JournalDayView) {
 	lines = []string{}
 	for _, mail := range view.Mail {
 		line := fmt.Sprintf("%s  %s: %s", journalClock(mail.ReceivedAt), mail.FromName, mail.Subject)
+		if mail.RepeatCount > 1 {
+			line += fmt.Sprintf(" (%d times)", mail.RepeatCount)
+		}
 		switch {
 		case mail.IsSent:
 			line = fmt.Sprintf("%s  sent: %s", journalClock(mail.ReceivedAt), mail.Subject)

@@ -219,7 +219,11 @@ export function WorkSection({ day, onChanged }: Section) {
           to={pathOf('agent_document', session.documentId)}
           icon={<CodeIcon size={16} />}
           title={session.title}
-          where={[folderName(session.directory), ASSISTANTS[session.assistant] ?? session.assistant]
+          where={[
+            folderName(session.directory),
+            ASSISTANTS[session.assistant] ?? session.assistant,
+            session.stretchCount > 1 ? t('journal.stretches', { count: session.stretchCount }) : '',
+          ]
             .filter(Boolean)
             .join(', ')}
           detail={session.linkReason}
@@ -309,6 +313,9 @@ export function MailSection({ day, onChanged }: Section) {
               <span className="journal-row-title">
                 <strong>{sender}</strong>
                 <Link to={`/mailbox/starred/${encodeURIComponent(message.itemId)}`}>{message.subject}</Link>
+                {message.repeatCount > 1 && (
+                  <span className="muted">{t('journal.repeatCount', { count: message.repeatCount })}</span>
+                )}
               </span>
               <span className="journal-reason">
                 {message.isChosen && message.linkReason ? message.linkReason : t('journal.mailImportant')}

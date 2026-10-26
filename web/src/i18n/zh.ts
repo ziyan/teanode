@@ -7190,6 +7190,8 @@ export const zh: Catalog = {
   'journal.thisWeekOf': '本周，{date}',
   'journal.rangeText': '{from}至{to}',
   'journal.timeRange': '{start}至{end}',
+  'journal.stretches': '{count} 段工作',
+  'journal.repeatCount': '共 {count} 封',
   'journal.durationHours': '{hours} 小时',
   'journal.durationMinutes': '{minutes} 分钟',
   'journal.durationHoursMinutes': '{hours} 小时 {minutes} 分钟',

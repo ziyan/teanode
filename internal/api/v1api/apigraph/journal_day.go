@@ -145,7 +145,7 @@ func describeJournalSections(view *JournalDayView, read *journal.Day, reasons ma
 		endedAt := session.EndedAt
 		view.CodingSessions = append(view.CodingSessions, &JournalCodingSessionView{
 			DocumentID: session.DocumentID, Title: session.Title, Directory: session.Directory, Assistant: session.Assistant,
-			StartedAt: session.StartedAt, EndedAt: &endedAt, LinkReason: reasons["agent_document:"+session.DocumentID],
+			StartedAt: session.StartedAt, EndedAt: &endedAt, StretchCount: session.StretchCount, LinkReason: reasons["agent_document:"+session.DocumentID],
 		})
 	}
 	view.Documents, view.DocumentTotal = []*JournalDocumentView{}, read.DocumentTotal
@@ -174,7 +174,7 @@ func describeJournalSections(view *JournalDayView, read *journal.Day, reasons ma
 		reason, isChosen := reasons["mail:"+mail.ItemID]
 		view.Mail = append(view.Mail, &JournalMailView{
 			ItemID: mail.ItemID, FromName: mail.Counterpart, Subject: mail.Subject, ReceivedAt: mail.ReceivedAt, IsSent: mail.IsSent,
-			IsImportant: mail.IsImportant, IsChosen: isChosen, LinkReason: reason,
+			IsImportant: mail.IsImportant, IsChosen: isChosen, LinkReason: reason, RepeatCount: mail.RepeatCount,
 		})
 	}
 	view.Recordings = []*JournalRecordingView{}

@@ -340,9 +340,14 @@ struct JournalDayScreen: View {
 
     /// "Claude Code, 3 h".
     private func codingDetail(_ session: JournalCodingSession) -> String {
-        guard let started = ServerTime.date(session.startedAt), let ended = ServerTime.date(session.endedAt) else { return session.assistant }
-        let minutes = Int(ended.timeIntervalSince(started) / 60)
-        return minutes > 0 ? session.assistant + ", " + JournalText.durationText(minutes: minutes) : session.assistant
+        var parts = [session.assistant]
+        if let started = ServerTime.date(session.startedAt), let ended = ServerTime.date(session.endedAt) {
+            let minutes = Int(ended.timeIntervalSince(started) / 60)
+            if minutes > 0 { parts.append(JournalText.durationText(minutes: minutes)) }
+        }
+        let stretchCount = session.stretchCount ?? 1
+        if stretchCount > 1 { parts.append(String(localized: "\(stretchCount) stretches of work")) }
+        return parts.joined(separator: ", ")
     }
 
     @ViewBuilder
@@ -361,7 +366,10 @@ struct JournalDayScreen: View {
     }
 
     private func mailDetail(_ message: JournalMail) -> String {
-        message.linkReason.isEmpty ? message.fromName : message.fromName + ": " + message.linkReason
+        var detail = message.linkReason.isEmpty ? message.fromName : message.fromName + ": " + message.linkReason
+        let repeatCount = message.repeatCount ?? 1
+        if repeatCount > 1 { detail += " " + String(localized: "(\(repeatCount) times)") }
+        return detail
     }
 
     // MARK: Who and what the day talked with

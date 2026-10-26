@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"fmt"
 	"math/big"
 	"net/mail"
 	"regexp"
@@ -217,17 +218,34 @@ func (self *dayReader) readDocuments() error {
 	if err != nil {
 		return err
 	}
+	// A day of coding is many stretches (each ended by a pause of half an
+	// hour), and the page reads it as the projects worked on: one session per
+	// assistant, directory and title, from its first stretch to its last.
+	sessionIndexes := map[string]int{}
+	lastStretches := map[string]*models.AgentDocument{}
 	for _, document := range documents {
 		source := self.sources[document.SourceID]
 		if isOtherwiseRead(source) || document.HappenedAt == nil {
 			continue
 		}
 		if assistant := codingAssistantOf(document); assistant != "" {
-			session, err := self.codingSessionOf(document, assistant)
-			if err != nil {
-				return err
+			session := codingSessionOf(document, assistant)
+			key := session.Assistant + "\x00" + session.Directory + "\x00" + session.Title
+			index, isKnown := sessionIndexes[key]
+			if !isKnown {
+				sessionIndexes[key] = len(self.day.CodingSessions)
+				self.day.CodingSessions = append(self.day.CodingSessions, session)
+				lastStretches[key] = document
+				continue
 			}
-			self.day.CodingSessions = append(self.day.CodingSessions, session)
+			grouped := &self.day.CodingSessions[index]
+			grouped.StretchCount++
+			if document.HappenedAt.Before(grouped.StartedAt) {
+				grouped.StartedAt, grouped.DocumentID = *document.HappenedAt, document.ID
+			}
+			if document.HappenedAt.After(*lastStretches[key].HappenedAt) {
+				lastStretches[key] = document
+			}
 			continue
 		}
 		if document.Kind == models.DocumentChat {
@@ -251,27 +269,37 @@ func (self *dayReader) readDocuments() error {
 			self.day.Documents = append(self.day.Documents, entry)
 		}
 	}
+	// Only the last stretch of each session is read for when it ended: the
+	// others end before it.
+	for key, index := range sessionIndexes {
+		last := lastStretches[key]
+		session := &self.day.CodingSessions[index]
+		session.EndedAt = *last.HappenedAt
+		chunks, err := self.transaction.ListAgentChunks(self.agent.ID, last.ID)
+		if err != nil {
+			return err
+		}
+		// The stretch says when it began and the clock of each post; the last
+		// post's clock, counted from the first, is when it ended.
+		if minutes, isFound := postClockSpan(chunks); isFound {
+			session.EndedAt = last.HappenedAt.Add(time.Duration(minutes) * time.Minute)
+		}
+	}
+	sort.SliceStable(self.day.CodingSessions, func(left, right int) bool {
+		return self.day.CodingSessions[left].StartedAt.Before(self.day.CodingSessions[right].StartedAt)
+	})
 	return self.readJournalNotes()
 }
 
-func (self *dayReader) codingSessionOf(document *models.AgentDocument, assistant string) (CodingSession, error) {
+func codingSessionOf(document *models.AgentDocument, assistant string) CodingSession {
 	session := CodingSession{
 		DocumentID: document.ID, Title: metadataText(document, "channel"), Directory: metadataText(document, "directory"),
-		Assistant: assistant, StartedAt: *document.HappenedAt, EndedAt: *document.HappenedAt,
+		Assistant: assistant, StartedAt: *document.HappenedAt, EndedAt: *document.HappenedAt, StretchCount: 1,
 	}
 	if session.Title == "" {
 		session.Title = document.Title
 	}
-	// The unit says when it began and the clock of each post; the last post's
-	// clock, counted from the first, is when the stretch ended.
-	chunks, err := self.transaction.ListAgentChunks(self.agent.ID, document.ID)
-	if err != nil {
-		return session, err
-	}
-	if minutes, isFound := postClockSpan(chunks); isFound {
-		session.EndedAt = session.StartedAt.Add(time.Duration(minutes) * time.Minute)
-	}
-	return session, nil
+	return session
 }
 
 // readJournalNotes finds the person's own dated notes of the day. A note is
@@ -510,6 +538,7 @@ func (self *dayReader) readMail() error {
 		}
 		found = append(found, more...)
 	}
+	found = collapseMail(found)
 	// Past the most, the important ones stay, then the newest.
 	if len(found) > MailMost {
 		sort.SliceStable(found, func(left, right int) bool {
@@ -574,6 +603,33 @@ func (self *dayReader) mailOf(mailboxId string, items []*models.MailboxItem, isS
 		found = append(found, entry)
 	}
 	return found, nil
+}
+
+// collapseMail is the day's messages with each stored message once (one
+// message filed in two folders or mailboxes is one), and with the same sender
+// and subject arriving again folded into the first, counted: a newsletter to
+// two of the person's addresses, or a code sent eleven times, is one line.
+func collapseMail(found []Mail) []Mail {
+	sort.SliceStable(found, func(left, right int) bool { return found[left].ReceivedAt.Before(found[right].ReceivedAt) })
+	seenMailIds := map[string]bool{}
+	firstIndexes := map[string]int{}
+	collapsed := make([]Mail, 0, len(found))
+	for _, entry := range found {
+		if seenMailIds[entry.MailID] {
+			continue
+		}
+		seenMailIds[entry.MailID] = true
+		key := fmt.Sprintf("%t\x00%s\x00%s", entry.IsSent, strings.ToLower(strings.TrimSpace(entry.Counterpart)), strings.TrimSpace(entry.Subject))
+		if index, isKnown := firstIndexes[key]; isKnown {
+			collapsed[index].RepeatCount++
+			collapsed[index].IsImportant = collapsed[index].IsImportant || entry.IsImportant
+			continue
+		}
+		entry.RepeatCount = 1
+		firstIndexes[key] = len(collapsed)
+		collapsed = append(collapsed, entry)
+	}
+	return collapsed
 }
 
 // addressName is the name beside an address in a header, else the address.

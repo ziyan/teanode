@@ -63,12 +63,12 @@ extension Documents {
             choices { \(journalLinkFields) }
             pins { \(journalLinkFields) }
             coverPhotoId
-            codingSessions { documentId title directory assistant startedAt endedAt linkReason }
+            codingSessions { documentId title directory assistant startedAt endedAt stretchCount linkReason }
             documents { documentId title sourceName happenedAt isChosen linkReason }
             documentTotal
             conversations { conversationId title firstAt lastAt messageCount }
             chats { chatId chatName firstAt lastAt messageCount }
-            mail { itemId fromName subject receivedAt isSent isImportant isChosen linkReason }
+            mail { itemId fromName subject receivedAt isSent isImportant isChosen linkReason repeatCount }
             mailTotal
             recordings { recordingId title recordedAt durationMS summary }
             photos { photoId takenAt placeName isVideo }

@@ -127,6 +127,8 @@ export type JournalCodingSession = {
   assistant: string
   startedAt: string
   endedAt: string | null
+  // How many stretches of work (each ended by a pause) the day had in it.
+  stretchCount: number
   linkReason: string
 }
 
@@ -164,6 +166,8 @@ export type JournalMail = {
   isImportant: boolean
   isChosen: boolean
   linkReason: string
+  // How many messages of the day it stands for: the same sender and subject again.
+  repeatCount: number
 }
 
 export type JournalRecording = {
@@ -370,11 +374,11 @@ const DAY_FIELDS =
   ' pins ' +
   LINK_FIELDS +
   ' coverPhotoId ' +
-  'codingSessions { documentId title directory assistant startedAt endedAt linkReason } ' +
+  'codingSessions { documentId title directory assistant startedAt endedAt stretchCount linkReason } ' +
   'documents { documentId title sourceName happenedAt isChosen linkReason } documentTotal ' +
   'conversations { conversationId title firstAt lastAt messageCount } ' +
   'chats { chatId chatName firstAt lastAt messageCount } ' +
-  'mail { itemId fromName subject receivedAt isSent isImportant isChosen linkReason } mailTotal ' +
+  'mail { itemId fromName subject receivedAt isSent isImportant isChosen linkReason repeatCount } mailTotal ' +
   'recordings { recordingId title recordedAt durationMS summary } ' +
   'photos { photoId takenAt placeName isVideo } photoTotal ' +
   'visits { visitId placeId placeName arrivedAt departedAt latitude longitude } ' +

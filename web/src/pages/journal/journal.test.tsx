@@ -117,6 +117,7 @@ function fullDay(overrides: Partial<JournalDay> = {}): JournalDay {
         startedAt: '2026-10-22T09:20:00Z',
         endedAt: '2026-10-22T12:20:00Z',
         linkReason: 'Fixed the flaky upload test.',
+        stretchCount: 3,
       },
     ],
     documents: [
@@ -148,6 +149,7 @@ function fullDay(overrides: Partial<JournalDay> = {}): JournalDay {
         isImportant: true,
         isChosen: false,
         linkReason: '',
+        repeatCount: 1,
       },
     ],
     mailTotal: 44,
@@ -357,7 +359,7 @@ it('shows the sections of a day, each with something to show, and the narrative 
   expect(screen.getByText('Written from 12 things. Each mention opens the thing itself.')).toBeTruthy()
 
   // Work: the session, the chosen document with why, and the rest counted.
-  expect(screen.getByText('sample-app, Claude Code')).toBeTruthy()
+  expect(screen.getByText('sample-app, Claude Code, 3 stretches of work')).toBeTruthy()
   expect(screen.getByText('Chosen: you were asked to decide')).toBeTruthy()
   expect(screen.getByText('3 more documents and messages were left out as routine.')).toBeTruthy()
   expect(screen.queryByText('Lunch order')).toBeNull()

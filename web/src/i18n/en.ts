@@ -7542,6 +7542,8 @@ export const en = {
   'journal.thisWeekOf': 'This week, {date}',
   'journal.rangeText': '{from} to {to}',
   'journal.timeRange': '{start} to {end}',
+  'journal.stretches': '{count} stretches of work',
+  'journal.repeatCount': '{count} times',
   'journal.durationHours': '{hours} h',
   'journal.durationMinutes': '{minutes} min',
   'journal.durationHoursMinutes': '{hours} h {minutes} min',

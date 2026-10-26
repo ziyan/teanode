@@ -7484,6 +7484,8 @@ export const ja: Catalog = {
   'journal.thisWeekOf': '今週、{date}',
   'journal.rangeText': '{from}から{to}',
   'journal.timeRange': '{start}から{end}',
+  'journal.stretches': '{count} 回の作業',
+  'journal.repeatCount': '{count} 通',
   'journal.durationHours': '{hours} 時間',
   'journal.durationMinutes': '{minutes} 分',
   'journal.durationHoursMinutes': '{hours} 時間 {minutes} 分',

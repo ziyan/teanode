@@ -163,9 +163,14 @@ type CodingSession struct {
 	Assistant string
 	StartedAt time.Time
 
-	// EndedAt is when the last post of the stretch was made, the same as
-	// StartedAt for a stretch of one post.
+	// EndedAt is when the last post of the day's last stretch was made, the
+	// same as StartedAt for a stretch of one post.
 	EndedAt time.Time
+
+	// StretchCount is how many stretches of work (each ended by a pause of
+	// half an hour) the day had in this project and title; DocumentID is the
+	// first one's.
+	StretchCount int
 }
 
 // Document is an ingested document of the day that involves the person: work
@@ -226,6 +231,11 @@ type Mail struct {
 	// IsImportant: high priority, needs a reply, or the agent alerted about it
 	// or follows it up.
 	IsImportant bool
+
+	// RepeatCount is how many messages of the day this one stands for: the
+	// same sender and subject arriving again (to another address of the
+	// person's, or a code sent over and over) is one line with a count.
+	RepeatCount int
 }
 
 // Recording is a recording made that day.

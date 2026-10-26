@@ -263,6 +263,9 @@ type JournalCodingSessionView struct {
 	StartedAt  time.Time  `json:"startedAt"`
 	EndedAt    *time.Time `json:"endedAt"`
 
+	// StretchCount is how many stretches of work the day had in it.
+	StretchCount int `json:"stretchCount"`
+
 	// LinkReason is the agent's one line about it, when it chose it.
 	LinkReason string `json:"linkReason"`
 }
@@ -313,6 +316,9 @@ type JournalMailView struct {
 	// IsChosen says the agent chose it as mattering, with LinkReason.
 	IsChosen   bool   `json:"isChosen"`
 	LinkReason string `json:"linkReason"`
+
+	// RepeatCount is how many messages of the day it stands for.
+	RepeatCount int `json:"repeatCount"`
 }
 
 // JournalRecordingView is a recording made that day.
@@ -570,11 +576,11 @@ const (
     mood { ` + journalMoodFields + ` } weather { ` + journalWeatherFields + ` } facts { ` + journalFactsFields + ` }
     narrative { ` + journalNarrativeFields + ` }
     choices { ` + journalLinkFields + ` } pins { ` + journalLinkFields + ` } coverPhotoId
-    codingSessions { documentId title directory assistant startedAt endedAt linkReason }
+    codingSessions { documentId title directory assistant startedAt endedAt stretchCount linkReason }
     documents { documentId title sourceName happenedAt isChosen linkReason } documentTotal
     conversations { conversationId title firstAt lastAt messageCount }
     chats { chatId chatName firstAt lastAt messageCount }
-    mail { itemId fromName subject receivedAt isSent isImportant isChosen linkReason } mailTotal
+    mail { itemId fromName subject receivedAt isSent isImportant isChosen linkReason repeatCount } mailTotal
     recordings { recordingId title recordedAt durationMS summary }
     photos { photoId takenAt placeName isVideo } photoTotal
     visits { visitId placeId placeName arrivedAt departedAt latitude longitude }
