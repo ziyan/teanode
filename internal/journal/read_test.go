@@ -273,11 +273,11 @@ func TestComputeFactsFillsEveryNumberOfTheDay(t *testing.T) {
 			PhotoCount: 2, PhotoCandidateIDs: []string{world.photoIds["morning"], world.photoIds["late"]},
 			PlaceCount: 3, VisitedPlaceIDs: nil,
 			WalkedMeters: 5400, StepCount: 8200, SleepMinutes: 420, WorkoutMinutes: 40,
-			CodingSessionCount: 1, CodingMinutes: 45, MeetingCount: 1, MeetingMinutes: 60,
+			CodingSessionCount: 1, WorkProjectCount: 1, CodingMinutes: 45, MeetingCount: 1, MeetingMinutes: 60,
 			RecordingCount: 1, ConversationCount: 1, ChatMessageCount: 2, MailReceivedCount: 2, MailSentCount: 1, DocumentCount: 2,
 			TransactionCount: 3, SpentMinorUnits: 4567, SpentCurrency: "USD", ShoppingTripCount: 0, MemoryPageCount: 1,
 			HasActivity: true, MainPlaceID: world.officeId, MainPlaceName: "Harbor Office", MainPlaceLatitude: 40.7, MainPlaceLongitude: -74.0,
-			HealthMoodLevel: 4,
+			HealthMoodLevel: 4, FactsVersion: models.JournalFactsVersion,
 		}
 		if len(facts.VisitedPlaceIDs) != 3 || facts.VisitedPlaceIDs[1] != world.harborId || facts.VisitedPlaceIDs[2] != world.officeId {
 			t.Errorf("the places visited, in the order reached: %v", facts.VisitedPlaceIDs)
