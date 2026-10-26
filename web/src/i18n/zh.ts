@@ -6489,6 +6489,11 @@ export const zh: Catalog = {
   'profile.pronounHe': '他',
   'profile.pronounShe': '她',
   'profile.pronounThey': 'TA',
+  'profile.units': '单位',
+  'profile.unitsAutomatic': '自动（根据你的语言和地区）',
+  'profile.unitsMetric': '公制（°C、公里）',
+  'profile.unitsUs': '美制（°F、英里）',
+  'profile.unitsHint': '决定日记以及助手撰写的页面中温度和距离的写法。自动则根据你的语言和地区。',
   'profile.pronounHint':
     '和你同在一个圈子的人能看到它，就像能看到你的名字一样。它决定你在他们那里的称呼（例如儿子或女儿），以及你的助手如何谈到你。',
   'agentDrawer.note.relationshipSet':

@@ -12,16 +12,16 @@ import { Select } from '../../components/select'
 import { PRONOUNS, PRONOUN_LABELS } from '../../lib/relationships'
 import { FaceRecognitionPreferences } from '../photos/people'
 
-const CURRENT_USER = `{ GetCurrentUser { id username name email avatarUrl avatarColorIndex timezone timezoneMode pronoun } }`
+const CURRENT_USER = `{ GetCurrentUser { id username name email avatarUrl avatarColorIndex timezone timezoneMode measurementSystem pronoun } }`
 
 // An account is named by its identifier, and "username" is the name to sign in
 // with from here on. This page used to send the old username as the identity
 // and the new one as "newUsername", which the schema stopped taking: saving
 // the page failed with "unknown argument" and nothing was changed.
 const UPDATE = `
-  mutation ($userId: String!, $username: String, $name: String, $email: String, $timezone: String, $timezoneMode: String, $pronoun: String) {
-    UpdateUser(userId: $userId, username: $username, name: $name, email: $email, timezone: $timezone, timezoneMode: $timezoneMode, pronoun: $pronoun) {
-      id username name email avatarUrl avatarColorIndex timezone timezoneMode pronoun
+  mutation ($userId: String!, $username: String, $name: String, $email: String, $timezone: String, $timezoneMode: String, $measurementSystem: String, $pronoun: String) {
+    UpdateUser(userId: $userId, username: $username, name: $name, email: $email, timezone: $timezone, timezoneMode: $timezoneMode, measurementSystem: $measurementSystem, pronoun: $pronoun) {
+      id username name email avatarUrl avatarColorIndex timezone timezoneMode measurementSystem pronoun
     }
   }`
 
@@ -47,6 +47,7 @@ type User = {
   avatarColorIndex?: number
   timezone?: string
   timezoneMode?: string
+  measurementSystem?: string
   pronoun?: string
 }
 
@@ -66,6 +67,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
   const [editedEmail, setEditedEmail] = useState<string | null>(null)
   const [editedTimezone, setEditedTimezone] = useState<string | null>(null)
   const [editedMode, setEditedMode] = useState<string | null>(null)
+  const [editedMeasurementSystem, setEditedMeasurementSystem] = useState<string | null>(null)
   const [editedPronoun, setEditedPronoun] = useState<string | null>(null)
   const toast = useToast()
   const [busy, setBusy] = useState(false)
@@ -92,6 +94,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
   const email = editedEmail ?? user.email ?? ''
   const timezone = editedTimezone ?? user.timezone ?? ''
   const timezoneMode = editedMode ?? user.timezoneMode ?? 'auto'
+  const measurementSystem = editedMeasurementSystem ?? user.measurementSystem ?? ''
   const pronoun = editedPronoun ?? user.pronoun ?? ''
   const browserZone = (() => {
     try {
@@ -108,6 +111,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
     email.trim() !== (user.email ?? '') ||
     timezone.trim() !== (user.timezone ?? '') ||
     timezoneMode !== (user.timezoneMode || 'auto') ||
+    measurementSystem !== (user.measurementSystem ?? '') ||
     pronoun !== (user.pronoun ?? '')
   const ready = changed && username.trim().length > 0 && !busy
 
@@ -121,6 +125,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
         username: username.trim(),
         timezone: timezoneMode === 'fixed' ? timezone.trim() : '',
         timezoneMode,
+        measurementSystem,
         pronoun,
       })
       setEditedName(null)
@@ -128,6 +133,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
       setEditedEmail(null)
       setEditedTimezone(null)
       setEditedMode(null)
+      setEditedMeasurementSystem(null)
       setEditedPronoun(null)
       toast.done(t('profile.saved'))
       await reload()
@@ -312,6 +318,22 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
             />
           ) : null}
           <p className="muted field-hint">{t('profile.timezoneHint')}</p>
+
+          <label>
+            <span>{t('profile.units')}</span>
+            <Select
+              block
+              value={measurementSystem}
+              label={t('profile.units')}
+              options={[
+                { value: '', label: t('profile.unitsAutomatic') },
+                { value: 'metric', label: t('profile.unitsMetric') },
+                { value: 'us', label: t('profile.unitsUs') },
+              ]}
+              onChange={setEditedMeasurementSystem}
+            />
+          </label>
+          <p className="muted field-hint">{t('profile.unitsHint')}</p>
 
           <label>
             <span>{t('profile.pronoun')}</span>
