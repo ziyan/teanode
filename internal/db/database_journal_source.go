@@ -3,6 +3,8 @@ package db
 import (
 	"database/sql"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // JournalSourceOperation answers, for a person, where their sources of a
@@ -22,10 +24,16 @@ type JournalSourceOperation interface {
 	// because it does not involve the person still counts here), so a day it
 	// names may turn out to have nothing in it; the journal then moves on to
 	// the day before.
-	LatestJournalSourceTimeBefore(userId, agentId string, before time.Time) (*time.Time, error)
+	//
+	// A chat in the agent's documents counts when one of chatNames (the
+	// person's username and the words of their name, lowered) took part in it
+	// and it is an exchange of two posts or more, the rule the journal reads
+	// a chat by; an archive of other people's channels is not the person's
+	// day.
+	LatestJournalSourceTimeBefore(userId, agentId string, chatNames []string, before time.Time) (*time.Time, error)
 }
 
-func (self *transaction) LatestJournalSourceTimeBefore(userId, agentId string, before time.Time) (*time.Time, error) {
+func (self *transaction) LatestJournalSourceTimeBefore(userId, agentId string, chatNames []string, before time.Time) (*time.Time, error) {
 	if userId == "" {
 		return nil, ErrInvalidArguments
 	}
@@ -70,8 +78,9 @@ func (self *transaction) LatestJournalSourceTimeBefore(userId, agentId string, b
 				ORDER BY message."created_at" DESC LIMIT 1)
 			UNION ALL
 			(SELECT "happened_at" FROM "agent_document"
-				WHERE "agent_id" = @agent AND "kind" IN ('chat', 'page', 'post', 'message', 'request')
-				  AND "happened_at" < @before
+				WHERE "agent_id" = @agent AND "kind" = 'chat' AND "happened_at" < @before
+				  AND jsonb_exists_any("metadata"->'participants', (@names)::text[])
+				  AND coalesce(("metadata"->>'posts')::int, 0) >= 2
 				ORDER BY "happened_at" DESC LIMIT 1)
 			UNION ALL
 			(SELECT occurrence."starts_at" FROM "calendar" calendar
@@ -89,7 +98,7 @@ func (self *transaction) LatestJournalSourceTimeBefore(userId, agentId string, b
 				  AND ("summary_day"::timestamp + interval '12 hours') AT TIME ZONE 'UTC' < @before
 				ORDER BY "summary_day" DESC LIMIT 1)
 		) AS "latest_moments"`,
-		map[string]any{"user": userId, "agent": agentId, "before": before.UTC()}).Row().Scan(&latest); err != nil {
+		map[string]any{"user": userId, "agent": agentId, "before": before.UTC(), "names": pq.Array(chatNames)}).Row().Scan(&latest); err != nil {
 		return nil, err
 	}
 	if !latest.Valid {

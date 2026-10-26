@@ -3,7 +3,6 @@ package recordlink
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -46,7 +45,7 @@ func resolvePhoto(transaction db.Transaction, reader Reader, resolved *Resolved)
 	if err != nil {
 		return err
 	}
-	resolved.DashboardPath = "/photos/" + url.PathEscape(photo.ID)
+	resolved.DashboardPath = PhotoPath(photo.ID)
 	switch {
 	case photo.PlaceName != "":
 		resolved.Title = OneLine("Photo at " + photo.PlaceName)
@@ -84,13 +83,12 @@ func resolvePlaceVisit(transaction db.Transaction, reader Reader, resolved *Reso
 		arrived = visit.DepartedAt
 	}
 	// The location page opens on a day and, with a place, on that place.
-	query := url.Values{}
+	day := ""
 	if arrived != nil {
 		resolved.HappenedAt = arrived
-		query.Set("day", arrived.In(zoneOf(transaction, reader.UserID)).Format(dayLayout))
+		day = arrived.In(zoneOf(transaction, reader.UserID)).Format(dayLayout)
 	}
-	query.Set("place", visit.PlaceID)
-	resolved.DashboardPath = "/location?" + query.Encode()
+	resolved.DashboardPath = VisitPath(day, visit.PlaceID)
 	return nil
 }
 
@@ -108,14 +106,7 @@ func resolveAgentDocument(transaction db.Transaction, reader Reader, resolved *R
 		resolved.Title = OneLine(document.ExternalID)
 	}
 	resolved.HappenedAt = document.HappenedAt
-	// A document that names a page of this dashboard (a location day does)
-	// opens there; any other opens the search over what was read, with its
-	// title in it, since a document has no page of its own.
-	if strings.HasPrefix(document.URL, "/") && !strings.HasPrefix(document.URL, "//") {
-		resolved.DashboardPath = document.URL
-	} else {
-		resolved.DashboardPath = "/knowledge?documents=" + url.QueryEscape(resolved.Title)
-	}
+	resolved.DashboardPath = DocumentPath(resolved.Title, document.URL)
 	return nil
 }
 
@@ -154,15 +145,14 @@ func resolveChatMessage(transaction db.Transaction, reader Reader, resolved *Res
 	if err != nil {
 		return err
 	}
-	query := url.Values{}
+	conversationId := ""
 	for _, conversation := range conversations {
 		if conversation.ChatID == chat.ID {
-			query.Set("conversation", conversation.ID)
+			conversationId = conversation.ID
 			break
 		}
 	}
-	query.Set("message", message.ID)
-	resolved.DashboardPath = "/chat?" + query.Encode()
+	resolved.DashboardPath = ChatMessagePath(conversationId, message.ID)
 	if reader.IsAgent && !member.IsAgentReading {
 		resolved.IsWithheld = true
 		return nil
@@ -236,7 +226,7 @@ func resolveCalendarOccurrence(transaction db.Transaction, reader Reader, resolv
 		if object.AllDay {
 			day = startsAt.UTC()
 		}
-		resolved.DashboardPath = "/calendar?event=" + url.QueryEscape(object.ID) + "&on=" + day.Format(dayLayout)
+		resolved.DashboardPath = CalendarOccurrencePath(object.ID, day.Format(dayLayout))
 		if reader.IsAgent && !calendar.AgentGranted {
 			resolved.IsWithheld = true
 			return nil
@@ -269,7 +259,7 @@ func resolveHealthDay(transaction db.Transaction, reader Reader, resolved *Resol
 		unavailable(resolved)
 		return nil
 	}
-	resolved.DashboardPath = "/health?type=" + url.QueryEscape(healthType)
+	resolved.DashboardPath = HealthDayPath(healthType)
 	if reader.IsAgent {
 		choices, err := transaction.GetHealthChoices(reader.UserID)
 		if err != nil && !errors.Is(err, db.ErrNotFound) {
@@ -300,7 +290,7 @@ func resolveNote(transaction db.Transaction, reader Reader, resolved *Resolved) 
 			if item.Deleted || item.Mail == nil {
 				continue
 			}
-			resolved.DashboardPath = "/mailbox/" + url.PathEscape(item.FolderID) + "/" + url.PathEscape(item.ID)
+			resolved.DashboardPath = NotePath(item.FolderID, item.ID)
 			if reader.IsAgent && (mailbox.Agent == nil || !mailbox.Agent.Granted) {
 				resolved.IsWithheld = true
 				return nil
@@ -327,7 +317,7 @@ func resolveIdea(transaction db.Transaction, reader Reader, resolved *Resolved) 
 		unavailable(resolved)
 		return nil
 	}
-	resolved.DashboardPath = "/settings/agent/ideas"
+	resolved.DashboardPath = IdeasPath
 	resolved.Title = OneLine(idea.Headline)
 	createdAt := idea.CreatedAt
 	resolved.HappenedAt = &createdAt
@@ -344,7 +334,7 @@ func resolveGoal(transaction db.Transaction, reader Reader, resolved *Resolved) 
 		unavailable(resolved)
 		return nil
 	}
-	resolved.DashboardPath = "/settings/agent/goals?goal=" + url.QueryEscape(goal.ID)
+	resolved.DashboardPath = GoalPath(goal.ID)
 	resolved.Title = OneLine(goal.GoalTitle)
 	if resolved.Title == "" {
 		resolved.Title = OneLine(goal.Title)

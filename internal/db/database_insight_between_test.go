@@ -17,7 +17,7 @@ func TestAgentConversationActivityBetweenCountsWhatWasSaidInTheStretch(t *testin
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
 
-	var agentId, mainId, namedId, runId string
+	var agentId, mainId, namedId, runId, firstMainMessageId string
 	messageTimes := map[string]time.Time{}
 	zone := time.FixedZone("test", -5*3600)
 	at := func(day, hour, minute int) time.Time { return time.Date(2026, 10, day, hour, minute, 0, 0, zone) }
@@ -43,6 +43,9 @@ func TestAgentConversationActivityBetweenCountsWhatWasSaidInTheStretch(t *testin
 				t.Fatal(err)
 			}
 			messageTimes[message.ID] = when
+			if content == "Good morning" {
+				firstMainMessageId = message.ID
+			}
 		}
 		say(mainId, "user", "Good morning", at(22, 8, 5))
 		say(mainId, "assistant", "Good morning, Ada.", at(22, 8, 6))
@@ -68,6 +71,9 @@ func TestAgentConversationActivityBetweenCountsWhatWasSaidInTheStretch(t *testin
 		}
 		if activity[0].ConversationID != mainId || activity[0].MessageCount != 3 {
 			t.Fatalf("the main conversation had three things said, not a tool result or a bare call: %+v", activity[0])
+		}
+		if activity[0].FirstMessageID != firstMainMessageId {
+			t.Fatalf("the first message of the day opens the conversation: %q, want %q", activity[0].FirstMessageID, firstMainMessageId)
 		}
 		if !activity[0].FirstAt.Equal(at(22, 8, 5)) || !activity[0].LastAt.Equal(at(22, 23, 40)) {
 			t.Fatalf("first and last times of the day: %+v", activity[0])

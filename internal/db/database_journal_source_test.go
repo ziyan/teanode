@@ -59,6 +59,32 @@ func TestLatestJournalSourceTimeBeforeFindsTheNewestOfAllTheSources(t *testing.T
 			t.Fatal(err)
 		}
 		messageId = message.ID
+		source, err := tx.PutAgentSource(&models.AgentKnowledgeSource{
+			AgentID: agent.ID, Kind: models.SourceArchive, Name: "chat records", Enabled: true,
+			Specification: models.AgentKnowledgeSpecification{Computer: "laptop", Path: "~/records", Format: models.FormatRecords},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// A chat the person took part in, and one of other people's, which
+		// is the later of the two and is not the person's day.
+		for _, unit := range []struct {
+			externalId   string
+			participants []any
+			happenedAt   time.Time
+		}{
+			{"mine", []any{"ada", "ben"}, at(14, 9)},
+			{"theirs", []any{"zed", "yan"}, at(19, 9)},
+		} {
+			happenedAt := unit.happenedAt
+			if _, err := tx.PutAgentDocument(&models.AgentDocument{
+				AgentID: agent.ID, SourceID: source.ID, ExternalID: unit.externalId, Kind: models.DocumentChat, Title: unit.externalId,
+				Hash: "hash-" + unit.externalId, HappenedAt: &happenedAt,
+				Metadata: map[string]any{"participants": unit.participants, "posts": 3},
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
 	})
 	dbtest.Exec(t, database, fmt.Sprintf(`UPDATE "mail" SET "received_at" = '%s' WHERE "id" = '%s'`, at(20, 8).Format(time.RFC3339), mailId))
 	dbtest.Exec(t, database, fmt.Sprintf(`UPDATE "recording" SET "recorded_at" = '%s' WHERE "id" = '%s'`, at(18, 15).Format(time.RFC3339), recordingId))
@@ -71,10 +97,11 @@ func TestLatestJournalSourceTimeBeforeFindsTheNewestOfAllTheSources(t *testing.T
 		}{
 			{at(25, 0), ptr(at(20, 8))},
 			{at(20, 8), ptr(at(18, 15))},
-			{at(18, 15), ptr(at(12, 9))},
+			{at(18, 15), ptr(at(14, 9))},
+			{at(14, 9), ptr(at(12, 9))},
 			{at(12, 9), nil},
 		} {
-			found, err := tx.LatestJournalSourceTimeBefore(userId, agentId, step.before)
+			found, err := tx.LatestJournalSourceTimeBefore(userId, agentId, []string{"ada"}, step.before)
 			if err != nil {
 				t.Fatal(err)
 			}

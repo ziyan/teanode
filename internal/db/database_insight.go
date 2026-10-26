@@ -1443,6 +1443,10 @@ type AgentConversationActivity struct {
 	Title          string
 	Summary        string
 	MessageCount   int
+
+	// FirstMessageID is the first message said in the stretch, which is where
+	// a link to the conversation opens it.
+	FirstMessageID string
 	FirstAt        time.Time
 	LastAt         time.Time
 }
@@ -1461,12 +1465,14 @@ func (self *transaction) ListAgentConversationActivityBetween(agentId string, fr
 		Title          string    `gorm:"column:title"`
 		Summary        string    `gorm:"column:summary"`
 		MessageCount   int       `gorm:"column:message_count"`
+		FirstMessageID string    `gorm:"column:first_message_id"`
 		FirstAt        time.Time `gorm:"column:first_at"`
 		LastAt         time.Time `gorm:"column:last_at"`
 	}
 	if err := self.tx.Raw(`
 		SELECT c."id" AS conversation_id, c."title" AS title, c."summary" AS summary,
-		       count(*) AS message_count, min(m."created_at") AS first_at, max(m."created_at") AS last_at
+		       count(*) AS message_count, (array_agg(m."id" ORDER BY m."created_at", m."id"))[1] AS first_message_id,
+		       min(m."created_at") AS first_at, max(m."created_at") AS last_at
 		FROM "agent_conversation" c
 		JOIN "agent_message" m ON m."conversation_id" = c."id"
 		WHERE c."agent_id" = ? AND c."kind" IN ('main', 'named') AND c."last_at" >= ?
@@ -1480,7 +1486,8 @@ func (self *transaction) ListAgentConversationActivityBetween(agentId string, fr
 	for _, row := range rows {
 		activity = append(activity, &AgentConversationActivity{
 			ConversationID: row.ConversationID, Title: row.Title, Summary: row.Summary,
-			MessageCount: row.MessageCount, FirstAt: row.FirstAt.In(time.Local), LastAt: row.LastAt.In(time.Local),
+			MessageCount: row.MessageCount, FirstMessageID: row.FirstMessageID,
+			FirstAt: row.FirstAt.In(time.Local), LastAt: row.LastAt.In(time.Local),
 		})
 	}
 	return activity, nil

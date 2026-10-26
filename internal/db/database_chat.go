@@ -1544,8 +1544,12 @@ func ChatMessageAsAgentMessage(message *models.ChatMessage, conversationId strin
 type ChatActivity struct {
 	ChatID       string
 	MessageCount int
-	FirstAt      time.Time
-	LastAt       time.Time
+
+	// FirstMessageID is the first message said in the stretch, which is where
+	// a link to the chat opens it.
+	FirstMessageID string
+	FirstAt        time.Time
+	LastAt         time.Time
 }
 
 func (self *transaction) ListChatActivityBetween(userId string, from, until time.Time) ([]*ChatActivity, error) {
@@ -1555,13 +1559,15 @@ func (self *transaction) ListChatActivityBetween(userId string, from, until time
 	// Only what the person could read: not before they joined, and not after
 	// they left, the window a chat's own conversation shows them.
 	var rows []struct {
-		ChatID       string    `gorm:"column:chat_id"`
-		MessageCount int       `gorm:"column:message_count"`
-		FirstAt      time.Time `gorm:"column:first_at"`
-		LastAt       time.Time `gorm:"column:last_at"`
+		ChatID         string    `gorm:"column:chat_id"`
+		MessageCount   int       `gorm:"column:message_count"`
+		FirstMessageID string    `gorm:"column:first_message_id"`
+		FirstAt        time.Time `gorm:"column:first_at"`
+		LastAt         time.Time `gorm:"column:last_at"`
 	}
 	if err := self.tx.Raw(`
 		SELECT member."chat_id" AS chat_id, count(*) AS message_count,
+		       (array_agg(message."id" ORDER BY message."created_at", message."id"))[1] AS first_message_id,
 		       min(message."created_at") AS first_at, max(message."created_at") AS last_at
 		FROM "chat_member" member
 		JOIN "chat_message" message ON message."chat_id" = member."chat_id"
@@ -1575,7 +1581,7 @@ func (self *transaction) ListChatActivityBetween(userId string, from, until time
 	activity := make([]*ChatActivity, 0, len(rows))
 	for _, row := range rows {
 		activity = append(activity, &ChatActivity{
-			ChatID: row.ChatID, MessageCount: row.MessageCount,
+			ChatID: row.ChatID, MessageCount: row.MessageCount, FirstMessageID: row.FirstMessageID,
 			FirstAt: row.FirstAt.In(time.Local), LastAt: row.LastAt.In(time.Local),
 		})
 	}

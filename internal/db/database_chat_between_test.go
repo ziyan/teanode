@@ -19,7 +19,7 @@ func TestChatActivityBetweenCountsOnlyWhatThePersonCouldRead(t *testing.T) {
 	zone := time.FixedZone("test", 2*3600)
 	at := func(day, hour, minute int) time.Time { return time.Date(2026, 10, day, hour, minute, 0, 0, zone) }
 	var ada, ben string
-	var chatId string
+	var chatId, firstMessageId string
 	messageTimes := map[string]time.Time{}
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
@@ -49,6 +49,9 @@ func TestChatActivityBetweenCountsOnlyWhatThePersonCouldRead(t *testing.T) {
 			}
 			message := say(t, tx, chat.ID, author, moment.body)
 			messageTimes[message.ID] = moment.when
+			if moment.body == "Lunch?" {
+				firstMessageId = message.ID
+			}
 			if moment.deleted {
 				if _, err := tx.DeleteChatMessage(message.ID); err != nil {
 					t.Fatalf("DeleteChatMessage: %s", err)
@@ -70,6 +73,9 @@ func TestChatActivityBetweenCountsOnlyWhatThePersonCouldRead(t *testing.T) {
 		}
 		if len(activity) != 1 || activity[0].ChatID != chatId || activity[0].MessageCount != 3 {
 			t.Fatalf("three messages were said and left standing that day: %+v", activity)
+		}
+		if activity[0].FirstMessageID != firstMessageId {
+			t.Fatalf("the first message of the day opens the chat: %q, want %q", activity[0].FirstMessageID, firstMessageId)
 		}
 		if !activity[0].FirstAt.Equal(at(22, 11, 30)) || !activity[0].LastAt.Equal(at(22, 22, 5)) {
 			t.Fatalf("first and last: %+v", activity[0])

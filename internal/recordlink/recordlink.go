@@ -229,7 +229,7 @@ func resolveMail(transaction db.Transaction, reader Reader, resolved *Resolved) 
 		unavailable(resolved)
 		return nil
 	}
-	resolved.DashboardPath = "/mailbox/starred/" + item.ID
+	resolved.DashboardPath = MailPath(item.ID)
 	if reader.IsAgent && (mailbox.Agent == nil || !mailbox.Agent.Granted) {
 		resolved.IsWithheld = true
 		return nil
@@ -268,9 +268,9 @@ func resolveCalendarObject(transaction db.Transaction, reader Reader, resolved *
 			return nil
 		}
 		if calendarKind == models.CalendarReminders {
-			resolved.DashboardPath = "/reminders?reminder=" + url.QueryEscape(object.ID)
+			resolved.DashboardPath = ReminderPath(object.ID)
 		} else {
-			resolved.DashboardPath = "/calendar?event=" + url.QueryEscape(object.ID)
+			resolved.DashboardPath = CalendarEventPath(object.ID)
 		}
 		if reader.IsAgent && !calendar.AgentGranted {
 			resolved.IsWithheld = true
@@ -304,7 +304,7 @@ func resolveConversationMessage(transaction db.Transaction, reader Reader, resol
 		unavailable(resolved)
 		return nil
 	}
-	resolved.DashboardPath = "/agent?conversation=" + url.QueryEscape(conversation.ID) + "&message=" + url.QueryEscape(message.ID)
+	resolved.DashboardPath = ConversationMessagePath(conversation.ID, message.ID)
 	resolved.Title = OneLine(conversation.Title)
 	createdAt := message.CreatedAt
 	resolved.HappenedAt = &createdAt
@@ -335,7 +335,7 @@ func resolveFinanceTransaction(transaction db.Transaction, reader Reader, resolv
 		unavailable(resolved)
 		return nil
 	}
-	resolved.DashboardPath = "/finance/transactions?transaction=" + url.QueryEscape(found.ID)
+	resolved.DashboardPath = FinanceTransactionPath(found.ID)
 	if reader.IsAgent {
 		// The source the transaction came from, not any source: switching
 		// one institution off withholds its transactions and no others.
