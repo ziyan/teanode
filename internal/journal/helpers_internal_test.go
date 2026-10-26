@@ -70,8 +70,8 @@ func TestSpreadPhotosTakesEvenlyAndPassesOverScreenshots(t *testing.T) {
 	if spread[0] != "photo-01" || spread[11] <= spread[5] {
 		t.Errorf("spread over the day, in order: %v", spread)
 	}
-	// Few photos are all offered, screenshots too when they are all there is.
-	if few := spreadPhotos(photos[:2], 12); fmt.Sprint(few) != "[photo-00 photo-01]" {
+	// Few photos are all offered, the screenshots after the photos taken.
+	if few := spreadPhotos(photos[:2], 12); fmt.Sprint(few) != "[photo-01 photo-00]" {
 		t.Errorf("few photos: %v", few)
 	}
 	if none := spreadPhotos(nil, 12); none != nil {

@@ -26,6 +26,9 @@ import { RecordKindIcon } from './journalNarrative'
 import { RecordLink } from './journalOpen'
 import { isDashboardPath } from './journalPaths'
 
+// PROJECT_LIMIT is how many projects a day shows before Show all.
+const PROJECT_LIMIT = 5
+
 // The sections down the left of a day: what the person did and what came in,
 // each shown only when the day has something for it, and each linking to the
 // thing itself. Everything is read live from its source by the server, so a
@@ -319,6 +322,9 @@ export function WorkSection({ day, onChanged }: Section) {
     }),
   ]
   const detailLimit = useRowLimit(detailRows.length)
+  // The projects come most worked on first, so the first few say what the
+  // day's work was; the rest wait behind Show all.
+  const projectLimit = useRowLimit(day.workProjects.length, PROJECT_LIMIT)
   if (day.workProjects.length === 0 && detailRows.length === 0) return null
   const summary = [
     day.facts.codingMinutes > 0 ? durationText(day.facts.codingMinutes, t) : '',
@@ -332,9 +338,10 @@ export function WorkSection({ day, onChanged }: Section) {
     <JournalCard title={t('journal.work')} description={summary || undefined} collapseId="work">
       {day.workProjects.length > 0 && (
         <div className="journal-projects">
-          {day.workProjects.map((project) => (
+          {day.workProjects.slice(0, projectLimit.shownCount).map((project) => (
             <ProjectCard key={`${project.name}:${project.documentId}`} project={project} day={day} />
           ))}
+          <ShowAllButton limit={projectLimit} />
         </div>
       )}
       {detailRows.length > 0 && (

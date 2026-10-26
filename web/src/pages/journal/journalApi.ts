@@ -616,6 +616,11 @@ export function dayHeadingText(day: string, language: string): string {
   return new Intl.DateTimeFormat(language, { weekday: 'long', month: 'long', day: 'numeric' }).format(parseDay(day))
 }
 
+// dayCompactText is a day as a narrow bar fits it: Mon, Oct 26.
+export function dayCompactText(day: string, language: string): string {
+  return new Intl.DateTimeFormat(language, { weekday: 'short', month: 'short', day: 'numeric' }).format(parseDay(day))
+}
+
 export function dayShortText(day: string, language: string): string {
   return new Intl.DateTimeFormat(language, { month: 'long', day: 'numeric' }).format(parseDay(day))
 }
@@ -719,6 +724,25 @@ export function durationText(minutes: number, t: Translate): string {
 // the totals of a week, a month or a year: "6 h 10 min, 3 projects". Never the
 // number of sessions, which is how many times the assistant was started and
 // says nothing about the work.
+// workDaysText is how many days of a period had work: the period's projects
+// added up day by day would count one project once a day.
+export function workDaysText(days: { facts: { codingMinutes: number } }[], plural: Plural): string {
+  const count = days.filter((day) => day.facts.codingMinutes > 0).length
+  return count > 0 ? plural(count, { one: 'journal.workDaysOne', other: 'journal.workDaysOther' }) : ''
+}
+
+// periodWorkText is a period's work: its hours, and on how many days.
+export function periodWorkText(
+  totals: { codingMinutes: number },
+  days: { facts: { codingMinutes: number } }[],
+  t: Translate,
+  plural: Plural,
+): string {
+  return [totals.codingMinutes > 0 ? durationText(totals.codingMinutes, t) : '', workDaysText(days, plural)]
+    .filter(Boolean)
+    .join(' ')
+}
+
 export function workText(
   totals: { codingMinutes: number; workProjectCount: number },
   t: Translate,
