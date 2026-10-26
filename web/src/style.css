@@ -21670,3 +21670,1664 @@ button.person-row:focus-visible {
     height: 44px;
   }
 }
+
+/* --- the journal ----------------------------------------------------------
+   One page for each day, and the weeks, months and years above the days. The
+   person's own words and what TeaNode wrote are set in a serif face, so that
+   they read as writing and the rest of the page reads as the dashboard. A
+   mood is one of five colors (--mood-1 to --mood-5 in tokens.css) and is
+   always said in words as well. */
+:root {
+  --journal-serif: 'New York', 'Iowan Old Style', Charter, Georgia, serif;
+}
+
+/* What each part of the page is made of, with a gap between the cards that
+   a card's own bottom margin would double. */
+.journal-main,
+.journal-aside,
+.journal-split-main,
+.journal-split-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.journal-main > .card,
+.journal-aside > .card,
+.journal-split-main > .card,
+.journal-split-side > .card,
+.journal-pair > .card {
+  margin-bottom: 0;
+}
+
+.journal-columns,
+.journal-split {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.journal-main,
+.journal-split-main {
+  flex: 3 1 560px;
+}
+
+.journal-aside,
+.journal-split-side {
+  flex: 2 1 340px;
+}
+
+.journal-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.journal-pair > * {
+  flex: 1 1 300px;
+  min-width: 0;
+}
+
+/* The paper the person's own words sit on: a step off the card, so the words
+   read as a page of their own. */
+.journal-paper {
+  background: color-mix(in srgb, var(--rail) 55%, var(--surface));
+}
+
+.journal-card {
+  min-width: 0;
+}
+
+.journal-card-flush {
+  padding-bottom: var(--space-1);
+}
+
+.journal-title-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.journal-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+.journal-card-foot-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.journal-card-foot .button-quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 13px;
+}
+
+.journal-status {
+  margin: var(--space-3) 0 0;
+  font-size: 13px;
+}
+
+/* Writing: the person's words and the narrative. A line break the person
+   typed stays one. */
+.journal-prose {
+  max-width: var(--measure);
+  font-family: var(--journal-serif);
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+.journal-prose p {
+  margin: 0 0 var(--space-3);
+  white-space: pre-line;
+}
+
+.journal-prose p:last-child {
+  margin-bottom: 0;
+}
+
+.journal-narrative {
+  font-size: 16.5px;
+  line-height: 1.75;
+}
+
+/* A mention in the narrative: the kind's mark and the record's title. In the
+   page's own face, since it is a thing and not part of the sentence. */
+.journal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--surface);
+  color: var(--text);
+  font:
+    550 12.5px/1.6 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  text-decoration: none;
+  vertical-align: 1px;
+}
+
+a.journal-chip:hover {
+  background: var(--sidebar-hover);
+}
+
+.journal-corrections {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.journal-corrections li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--leaf) 12%, var(--surface));
+  font-size: 13px;
+}
+
+.journal-notes {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.journal-notes-label {
+  margin-bottom: var(--space-2);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+.journal-note + .journal-note {
+  margin-top: var(--space-3);
+}
+
+.journal-note-title {
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+/* The original, edited in the writing face and no wider than a line reads. */
+.journal-editor textarea {
+  max-width: var(--measure);
+  font-family: var(--journal-serif);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.journal-editor > label:first-child {
+  display: block;
+  margin-bottom: var(--space-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.journal-how {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.journal-how input {
+  flex: 0 1 280px;
+}
+
+/* --- the controls at the top of a page ------------------------------------ */
+.journal-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.journal-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.journal-stepper .icon-button {
+  text-decoration: none;
+}
+
+.journal-stepper .icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.journal-search {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 220px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-radius: var(--radius-2);
+  background: var(--field);
+  color: var(--muted);
+}
+
+.journal-search input {
+  flex: 1;
+  min-width: 0;
+  padding-left: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* --- mood and weather ----------------------------------------------------- */
+[data-level='1'] {
+  --journal-mood: var(--mood-1);
+}
+[data-level='2'] {
+  --journal-mood: var(--mood-2);
+}
+[data-level='3'] {
+  --journal-mood: var(--mood-3);
+}
+[data-level='4'] {
+  --journal-mood: var(--mood-4);
+}
+[data-level='5'] {
+  --journal-mood: var(--mood-5);
+}
+
+.journal-mood-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--journal-mood, var(--sidebar-hover));
+}
+
+/* A face is an outline; the day's own is filled with its color. */
+.journal-mood-disc {
+  fill: none;
+}
+
+.journal-mood-face {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.journal-mood-face[data-filled='true'][data-level] {
+  color: var(--accent-text);
+}
+
+.journal-mood-face[data-filled='true'][data-level] .journal-mood-disc {
+  fill: var(--journal-mood);
+  stroke: var(--journal-mood);
+}
+
+.journal-glance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.journal-glance > .card {
+  margin-bottom: 0;
+}
+
+.journal-mood-card {
+  flex: 1 1 380px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.journal-mood-faces {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.journal-mood-words {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.journal-field-label {
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.journal-mood-radios {
+  display: flex;
+  gap: 2px;
+}
+
+/* Nothing moves when a face is chosen: the border is there from the start. */
+.journal-mood-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 56px;
+  padding: 6px 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 550;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.journal-mood-pick:hover:not(:disabled) {
+  background: var(--sidebar-hover);
+  color: var(--text);
+}
+
+.journal-mood-pick[aria-checked='true'] {
+  background: var(--sidebar-hover);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.journal-mood-pick[aria-checked='true'] .journal-mood-disc {
+  fill: var(--journal-mood);
+  stroke: var(--journal-mood);
+}
+
+.journal-mood-pick[aria-checked='true'] svg {
+  color: var(--accent-text);
+}
+
+.journal-mood-pick[aria-checked='true'] svg path {
+  stroke: var(--accent-text);
+}
+
+.journal-source-tag {
+  margin-top: 2px;
+}
+
+.journal-clear {
+  margin-top: var(--space-1);
+  font-size: 12px;
+}
+
+.journal-weather-card {
+  flex: 0 1 300px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.journal-weather-icon {
+  display: flex;
+  color: var(--text);
+}
+
+.journal-weather-temperature {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.journal-weather-words {
+  font-size: 13px;
+}
+
+.journal-tiles {
+  margin-bottom: var(--space-4);
+}
+
+.journal-tile {
+  padding: var(--space-3) var(--space-4);
+}
+
+.journal-tile-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.journal-tile .tile-value {
+  margin-top: 2px;
+  font-size: 24px;
+}
+
+.journal-tile .tile-detail {
+  padding-top: 0;
+}
+
+/* --- the lines of a section ----------------------------------------------- */
+.journal-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border);
+}
+
+.journal-row-note {
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.journal-row-icon {
+  flex: 0 0 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-2);
+  background: var(--field);
+  color: var(--muted);
+}
+
+.journal-row-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.journal-row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-3);
+  font-weight: 600;
+}
+
+.journal-row-title a {
+  text-decoration: none;
+}
+
+.journal-row-title a:hover {
+  text-decoration: underline;
+}
+
+.journal-row-where,
+.journal-row-detail,
+.journal-row-time {
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.journal-row-detail {
+  font-size: 14px;
+}
+
+.journal-row-time {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Why the agent chose something, in a few words. */
+.journal-reason {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+  padding: 1px 8px;
+  border-radius: var(--radius-1);
+  background: color-mix(in srgb, var(--leaf) 12%, var(--surface));
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.journal-avatar {
+  flex: 0 0 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--muted);
+  color: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.journal-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 2px;
+  border-radius: var(--radius-2);
+  overflow: hidden;
+}
+
+.journal-photo {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  background: var(--field);
+}
+
+.journal-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.journal-photo-time {
+  position: absolute;
+  left: 6px;
+  bottom: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  /* Over a photograph of any color, so it carries its own ground. */
+  color: #fff;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 45%);
+}
+
+.journal-photo-more {
+  margin: var(--space-2) 0 0;
+  font-size: 12.5px;
+}
+
+.journal-recording {
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border);
+}
+
+.journal-recording-summary {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+
+.journal-table-scroll {
+  overflow-x: auto;
+}
+
+.journal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-body);
+}
+
+.journal-table th {
+  padding: var(--space-2);
+  text-align: left;
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.journal-table td {
+  padding: 10px var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.journal-table th:first-child,
+.journal-table td:first-child {
+  padding-left: 0;
+  white-space: nowrap;
+}
+
+.journal-table th:last-child,
+.journal-table td:last-child {
+  padding-right: 0;
+}
+
+.journal-table td.journal-number,
+.journal-table th.journal-number {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- the column at the right ---------------------------------------------- */
+.journal-map-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.journal-map .location-map {
+  height: 230px;
+}
+
+.journal-map-body {
+  padding: var(--space-3) var(--space-5) var(--space-2);
+}
+
+.journal-map-body .settings-section-head {
+  margin-bottom: var(--space-2);
+}
+
+.journal-visits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.journal-visits li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+
+.journal-visits li > a {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.journal-visit-number {
+  flex: 0 0 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.journal-moments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.journal-moment {
+  display: flex;
+  gap: 10px;
+  margin: 0 -6px;
+  padding: 6px;
+  border-radius: var(--radius-2);
+  color: var(--text);
+  text-decoration: none;
+}
+
+a.journal-moment:hover {
+  background: var(--sidebar-hover);
+}
+
+.journal-moment-time {
+  flex: 0 0 62px;
+  padding-top: 2px;
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.journal-moment-mark {
+  flex: 0 0 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.journal-moment-icon {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.journal-moment-line {
+  flex: 1 1 auto;
+  width: 1px;
+  min-height: 8px;
+  background: var(--border);
+}
+
+.journal-moments li:last-child .journal-moment-line {
+  display: none;
+}
+
+.journal-moment-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 6px;
+}
+
+.journal-moment-title {
+  font-size: var(--text-body);
+  font-weight: 550;
+}
+
+.journal-moment-detail {
+  font-size: 12.5px;
+}
+
+.journal-moment-day {
+  flex: 0 0 40px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* Small drawings of numbers: bars of the hours of a day, and of the days of a
+   week. They stretch to the card, so the bars have no width of their own. */
+.journal-bars {
+  display: block;
+  width: 100%;
+  height: 64px;
+  margin-top: 6px;
+  fill: var(--leaf);
+}
+
+.journal-bars-small {
+  height: 56px;
+}
+
+.journal-bars-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.journal-bars-labels {
+  display: grid;
+  margin-top: 2px;
+  font-size: 11px;
+  text-align: center;
+}
+
+.journal-health-block + .journal-health-block {
+  margin-top: var(--space-4);
+}
+
+.journal-health-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.journal-sleep {
+  display: flex;
+  height: 14px;
+  margin-top: var(--space-2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.journal-sleep-stage {
+  flex-basis: 0;
+}
+
+.journal-sleep-stage.deep,
+.journal-sleep-swatch.deep {
+  background: var(--sleep-deep);
+}
+
+.journal-sleep-stage.core,
+.journal-sleep-swatch.core {
+  background: var(--sleep-core);
+}
+
+.journal-sleep-stage.rem,
+.journal-sleep-swatch.rem {
+  background: var(--sleep-rem);
+}
+
+.journal-sleep-stage.awake,
+.journal-sleep-swatch.awake {
+  background: var(--sleep-awake);
+}
+
+.journal-sleep-stage.inBed,
+.journal-sleep-swatch.inBed {
+  background: var(--border-strong);
+}
+
+.journal-sleep-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--space-4);
+  margin-top: var(--space-2);
+  font-size: var(--text-label);
+}
+
+.journal-sleep-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 2px;
+}
+
+.journal-health-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.journal-health-facts > div {
+  flex: 1 1 140px;
+  display: flex;
+  flex-direction: column;
+}
+
+.journal-event {
+  display: flex;
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.journal-event-bar {
+  flex: 0 0 3px;
+  border-radius: 2px;
+  background: var(--leaf);
+}
+
+/* --- the timeline --------------------------------------------------------- */
+.journal-timeline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-6);
+}
+
+.journal-timeline-main {
+  flex: 3 1 560px;
+  min-width: 0;
+}
+
+.journal-timeline-aside {
+  flex: 1 1 300px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.journal-timeline-aside > .card {
+  margin-bottom: 0;
+}
+
+.journal-week {
+  margin-bottom: 28px;
+}
+
+.journal-week-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px var(--space-4);
+  padding-bottom: 10px;
+}
+
+.journal-week-head h2 {
+  margin: 0;
+  font-size: var(--text-overline);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.journal-week-summary {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--leaf) 12%, var(--surface));
+  font-family: var(--journal-serif);
+  font-size: 15.5px;
+  line-height: 1.6;
+}
+
+.journal-day-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* A day. The headline is the link, stretched over the whole card, and the
+   one button inside it sits above that. */
+.journal-day-card {
+  position: relative;
+  display: flex;
+  gap: 18px;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.journal-day-card:hover {
+  border-color: var(--border-strong);
+}
+
+.journal-day-card.is-today {
+  border-color: var(--leaf);
+  border-style: dashed;
+}
+
+.journal-day-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.journal-day-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-3);
+}
+
+.journal-day-link:focus-visible::after {
+  outline: 2px solid var(--text);
+}
+
+.journal-date-block {
+  flex: 0 0 56px;
+  text-align: center;
+}
+
+.journal-date-weekday {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.journal-date-number {
+  font-size: 30px;
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.journal-mood-badge {
+  display: inline-flex;
+  margin-top: 6px;
+}
+
+.journal-day-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.journal-today-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--leaf);
+}
+
+.journal-today-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--leaf);
+}
+
+.journal-day-headline {
+  margin: 0;
+  font-family: var(--journal-serif);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.journal-excerpt {
+  margin: 6px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-strong);
+  font-family: var(--journal-serif);
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.journal-add-words {
+  position: relative;
+  margin-top: var(--space-2);
+}
+
+.journal-add-words .button {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.journal-day-photos {
+  display: flex;
+  gap: 3px;
+  margin-top: var(--space-3);
+}
+
+.journal-day-photos img,
+.journal-day-photos-more {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-1);
+  object-fit: cover;
+  background: var(--field);
+}
+
+.journal-day-photos-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.journal-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.journal-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.journal-list-foot {
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.journal-pager {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.journal-pager button {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.journal-month-steps {
+  display: inline-flex;
+}
+
+.journal-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.journal-month-weekdays {
+  margin-bottom: 4px;
+  font-size: 11px;
+  text-align: center;
+}
+
+.journal-month-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  border-radius: var(--radius-1);
+  background: var(--sidebar-hover);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.journal-month-day[data-level] {
+  background: var(--journal-mood);
+  color: var(--accent-text);
+}
+
+.journal-month-day.is-today {
+  outline: 2px solid var(--leaf);
+  outline-offset: 1px;
+}
+
+.journal-month-day.is-future {
+  background: transparent;
+}
+
+.journal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px var(--space-3);
+  margin-top: var(--space-3);
+  font-size: 11.5px;
+}
+
+.journal-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.journal-year-ago {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.journal-year-ago img {
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-2);
+  object-fit: cover;
+}
+
+.journal-year-ago .journal-prose {
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.journal-numbers {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px var(--space-4);
+  margin: 0;
+  font-size: var(--text-body);
+}
+
+/* A row of the list is a pair of its own, so the pair can be a keyed
+   element: the grid still lays the words in two columns. */
+.journal-numbers > div {
+  display: contents;
+}
+
+.journal-numbers dd {
+  margin: 0;
+}
+
+.journal-hits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.journal-hits li + li {
+  border-top: 1px solid var(--border);
+}
+
+.journal-hits a {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) 0;
+  text-decoration: none;
+}
+
+.journal-hit-title {
+  font-weight: 600;
+}
+
+.journal-hit-headline {
+  font-family: var(--journal-serif);
+}
+
+.journal-hit-snippet {
+  font-size: 13px;
+}
+
+.journal-evening-time {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin: var(--space-2) 0 var(--space-3);
+}
+
+/* --- a week --------------------------------------------------------------- */
+.journal-week-days {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: var(--space-4);
+}
+
+.journal-day-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+}
+
+a.journal-day-column:hover {
+  border-color: var(--border-strong);
+}
+
+.journal-day-column.is-future {
+  background: var(--rail);
+  min-height: 80px;
+}
+
+.journal-day-column-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.journal-day-column-number {
+  display: block;
+  font-size: 22px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.journal-day-column-photo {
+  display: block;
+  width: 100%;
+  height: 86px;
+  border-radius: var(--radius-2);
+  object-fit: cover;
+}
+
+.journal-day-column-weather {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.journal-day-column-headline {
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+
+.journal-week-numbers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.journal-week-numbers > .card {
+  margin-bottom: 0;
+}
+
+.journal-chart-card {
+  padding: var(--space-4) 18px;
+}
+
+.journal-chart-value {
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.journal-chart-value .muted {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.journal-chart-sleep .journal-bars {
+  fill: var(--sleep-core);
+}
+
+.journal-chart-work .journal-bars {
+  fill: var(--accent);
+}
+
+.journal-chart-spent .journal-bars {
+  fill: var(--warn);
+}
+
+.journal-chart-detail {
+  margin-top: 6px;
+  font-size: var(--text-label);
+}
+
+.journal-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* --- a month -------------------------------------------------------------- */
+.journal-month-table {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  overflow: hidden;
+  background: var(--border);
+}
+
+.journal-month-head,
+.journal-month-cells {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+}
+
+.journal-month-head > div {
+  padding: var(--space-2) 10px;
+  background: var(--rail);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.journal-month-head {
+  margin-bottom: 1px;
+}
+
+.journal-month-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 96px;
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.journal-month-cell.is-outside,
+.journal-month-cell.is-future {
+  background: var(--rail);
+}
+
+a.journal-month-cell:hover {
+  background: var(--sidebar-hover);
+}
+
+.journal-month-photo {
+  display: block;
+  width: 100%;
+  height: 58px;
+  object-fit: cover;
+}
+
+.journal-month-cell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px var(--space-2) 0;
+}
+
+.journal-month-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.journal-month-number.is-today {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.journal-month-cell-marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+}
+
+.journal-month-headline {
+  padding: 2px var(--space-2) var(--space-2);
+  font-size: 12px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.journal-mood-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.journal-mood-bar > span {
+  flex-basis: 0;
+  background: var(--journal-mood);
+}
+
+.journal-mood-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 6px 0 var(--space-4);
+  font-size: var(--text-label);
+}
+
+.journal-chapter {
+  display: flex;
+  gap: var(--space-3);
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+}
+
+/* The year along a line, each chapter as long as it lasted. */
+.journal-chapter-strip {
+  position: relative;
+  height: 34px;
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-2);
+  background: var(--rail);
+  overflow: hidden;
+}
+
+.journal-chapter-strip > span {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  border-radius: 5px;
+  background: var(--mood-2);
+}
+
+.journal-chapter-strip > span[data-index='1'] {
+  background: var(--mood-3);
+}
+
+.journal-chapter-strip > span[data-index='2'] {
+  background: var(--mood-5);
+}
+
+.journal-chapter-strip > span[data-index='3'] {
+  background: var(--mood-4);
+}
+
+.journal-chapter-months {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  margin-bottom: var(--space-2);
+  font-size: 11px;
+}
+
+.journal-chapter-swatch {
+  flex: 0 0 12px;
+  height: 12px;
+  margin-top: 5px;
+  border-radius: 3px;
+  background: var(--mood-2);
+}
+
+.journal-chapter-swatch[data-index='1'] {
+  background: var(--mood-3);
+}
+
+.journal-chapter-swatch[data-index='2'] {
+  background: var(--mood-5);
+}
+
+.journal-chapter-swatch[data-index='3'] {
+  background: var(--mood-4);
+}
+
+/* --- a year --------------------------------------------------------------- */
+.journal-year-months {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.journal-year-month {
+  display: block;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.journal-year-month.is-current {
+  border-color: var(--leaf);
+}
+
+.journal-year-month.is-future {
+  background: var(--rail);
+  color: var(--muted);
+}
+
+a.journal-year-month:hover {
+  border-color: var(--border-strong);
+}
+
+.journal-year-month-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--space-2);
+  font-size: var(--text-body);
+}
+
+.journal-year-month-head .muted {
+  font-size: var(--text-label);
+}
+
+.journal-year-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.journal-year-day {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: var(--sidebar-hover);
+}
+
+.journal-year-day[data-level] {
+  background: var(--journal-mood);
+}
+
+.journal-year-headline {
+  display: block;
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* A phone: the cards stack (their widths are minimums), a month keeps its
+   seven columns and drops what no longer fits in them, and the controls at
+   the top wrap. */
+@media (max-width: 600px) {
+  .journal-day-card {
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .journal-date-block {
+    flex-basis: 44px;
+  }
+
+  .journal-date-number {
+    font-size: 24px;
+  }
+
+  .journal-month-cell {
+    min-height: 44px;
+  }
+
+  .journal-month-photo,
+  .journal-month-headline,
+  .journal-month-high {
+    display: none;
+  }
+
+  .journal-month-cell-head {
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 2px;
+  }
+
+  .journal-month-head > div {
+    padding: var(--space-1) 2px;
+    text-align: center;
+    font-size: 11px;
+    letter-spacing: 0;
+  }
+
+  .journal-mood-pick {
+    width: 52px;
+  }
+
+  .journal-moment-time {
+    flex-basis: 52px;
+  }
+
+  .journal-search {
+    flex: 1 1 100%;
+  }
+}
