@@ -78,16 +78,27 @@ struct ShoppingStoreScreen: View {
             }
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
-            ForEach(sections.aisleGroups) { group in
-                Section {
-                    items(group.items)
-                } header: {
-                    Text(verbatim: ShoppingWords.aisleTitle(group))
+            if layoutName == ShoppingLayoutChoice.pictures.rawValue {
+                // The tiles run on in aisle order without headings, so an
+                // aisle of one item does not leave half a row empty; each tile
+                // says which aisle it is in instead.
+                if !sections.aisleGroups.isEmpty || !sections.anyStoreItems.isEmpty {
+                    Section {
+                        tileGrid(placedTiles(sections))
+                    }
                 }
-            }
-            if !sections.anyStoreItems.isEmpty {
-                Section("Also on the list, any store") {
-                    items(sections.anyStoreItems)
+            } else {
+                ForEach(sections.aisleGroups) { group in
+                    Section {
+                        ForEach(group.items) { item in row(item) }
+                    } header: {
+                        Text(verbatim: ShoppingWords.aisleTitle(group))
+                    }
+                }
+                if !sections.anyStoreItems.isEmpty {
+                    Section("Also on the list, any store") {
+                        ForEach(sections.anyStoreItems) { item in row(item) }
+                    }
                 }
             }
         }
@@ -137,22 +148,32 @@ struct ShoppingStoreScreen: View {
         Binding(get: { list.isIncluded }, set: { isOn in Task { await model.setIncluded(list, isIncluded: isOn) } })
     }
 
-    /// A section's items: a row each, or tiles in a grid that fills the
-    /// section's one row.
-    @ViewBuilder private func items(_ sectionItems: [ShoppingItem]) -> some View {
-        if layoutName == ShoppingLayoutChoice.pictures.rawValue {
-            LazyVGrid(columns: ShoppingLayoutChoice.tileColumns(dynamicTypeSize), spacing: 12) {
-                ForEach(sectionItems) { item in tile(item) }
-            }
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
-        } else {
-            ForEach(sectionItems) { item in row(item) }
+    /// Every item in aisle order, the ones for any store last, each with the
+    /// aisle its tile names.
+    private func placedTiles(_ sections: ShoppingStoreSections) -> [ShoppingPlacedItem] {
+        let anyStoreName = String(localized: "Any store")
+        var placed: [ShoppingPlacedItem] = []
+        for group in sections.aisleGroups {
+            let groupName = ShoppingWords.aisleTitle(group)
+            for item in group.items { placed.append(ShoppingPlacedItem(item: item, groupName: groupName)) }
         }
+        for item in sections.anyStoreItems { placed.append(ShoppingPlacedItem(item: item, groupName: anyStoreName)) }
+        return placed
     }
 
-    private func tile(_ item: ShoppingItem) -> some View {
-        ShoppingStoreItemTile(item: item, isChecked: model.isChecked(item), showsListName: model.includedCount > 1) {
+    /// Tiles in a grid that fills the section's one row.
+    private func tileGrid(_ placed: [ShoppingPlacedItem]) -> some View {
+        LazyVGrid(columns: ShoppingLayoutChoice.tileColumns(dynamicTypeSize), spacing: 12) {
+            ForEach(placed) { entry in tile(entry.item, groupName: entry.groupName) }
+        }
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+    }
+
+    private func tile(_ item: ShoppingItem, groupName: String) -> some View {
+        ShoppingStoreItemTile(
+            item: item, groupName: groupName, isChecked: model.isChecked(item), showsListName: model.includedCount > 1
+        ) {
             Task { await model.toggle(item) }
         }
         .contextMenu {
@@ -303,7 +324,7 @@ struct ShoppingStoreItemRow: View {
                 .frame(minHeight: 44)
                 .contentShape(.rect)
             }
-            .buttonStyle(.borderless)
+            .shoppingWordsButton()
             .accessibilityValue(Text(verbatim: isChecked ? String(localized: "In the cart") : String(localized: "Not in the cart")))
             .accessibilityAddTraits(isChecked ? .isSelected : [])
         }
@@ -339,6 +360,8 @@ struct ShoppingCheckMark: View {
 /// cart or takes it out.
 struct ShoppingStoreItemTile: View {
     let item: ShoppingItem
+    /// The aisle the tile is in; the tiles have no headings.
+    let groupName: String
     let isChecked: Bool
     let showsListName: Bool
     let onToggle: () -> Void
@@ -347,6 +370,10 @@ struct ShoppingStoreItemTile: View {
         VStack(alignment: .leading, spacing: 8) {
             ShoppingPictureView(item: item, size: nil, isZoomable: true)
                 .opacity(isChecked ? 0.6 : 1)
+            Text(verbatim: groupName)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             Button(action: onToggle) {
                 HStack(alignment: .top, spacing: 6) {
                     ShoppingCheckMark(isChecked: isChecked)
@@ -361,10 +388,12 @@ struct ShoppingStoreItemTile: View {
                 }
                 .contentShape(.rect)
             }
-            .buttonStyle(.borderless)
+            .shoppingWordsButton()
             .accessibilityValue(Text(verbatim: isChecked ? String(localized: "In the cart") : String(localized: "Not in the cart")))
             .accessibilityAddTraits(isChecked ? .isSelected : [])
         }
+        // Every tile in a row as tall as the tallest, so their grounds line up.
+        .frame(maxHeight: .infinity, alignment: .top)
         .padding(8)
         .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 16, style: .continuous))
     }

@@ -21848,6 +21848,13 @@ button.person-row:focus-visible {
   min-width: 12rem;
 }
 
+/* A heading, a count with its unit, a price and a day stay on one line:
+   "1 pack" broken over two lines made its row taller than the others. */
+.shopping-table th,
+.shopping-table td:not(.wrap) {
+  white-space: nowrap;
+}
+
 .shopping-table th.shrink,
 .shopping-table td.shrink {
   width: 1%;
@@ -21954,9 +21961,14 @@ button.person-row:focus-visible {
   margin-bottom: 0;
 }
 
-/* On a phone the tabs need the whole width: the switch goes on a line of
-   its own above them, at the end. */
-@media (max-width: 640px) {
+/* In a narrow pane the tabs need the whole width: the switch goes on a line
+   of its own above them, at the end. Measured against the frame rather than
+   the window, since the rail beside it takes a share of a tablet's width. */
+@container mailbox (max-width: 640px) {
+  .shopping-cards {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+
   .shopping-tabs-row {
     flex-wrap: wrap;
     row-gap: var(--space-2);
@@ -21995,21 +22007,11 @@ button.person-row:focus-visible {
   flex: none;
 }
 
-.shopping-card-groups {
-  display: grid;
-  gap: var(--space-5);
-}
-
-.shopping-card-group h4 {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-label);
-  font-weight: 600;
-}
-
-/* Two cards side by side on a phone, as many as fit on a desktop. */
+/* Two cards side by side on a phone, as many as fit on a desktop, a little
+   larger there. */
 .shopping-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: var(--space-3);
   margin: 0;
   padding: 0;
@@ -22043,6 +22045,25 @@ button.person-row:focus-visible {
 .shopping-card-name input[type='checkbox'] {
   flex: none;
   margin-top: 3px;
+}
+
+/* A store and an aisle together can be long: two lines, then cut. */
+.shopping-card-group-name {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.shopping-card-words {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .shopping-card-facts {
@@ -22088,6 +22109,14 @@ button.person-row:focus-visible {
   .dialog.dialog-wide:has(.shopping-picture-field),
   .dialog.dialog-wide:has(.shopping-import-files) {
     max-width: min(640px, calc(100vw - 32px));
+  }
+}
+
+/* On a phone the item dialog's own actions (out of stock, remove) take a
+   line of their own, so Cancel and Save stay together on the next. */
+@media (max-width: 600px) {
+  .dialog:has(.shopping-picture-field) .dialog-actions-other {
+    flex-basis: 100%;
   }
 }
 
@@ -22202,7 +22231,11 @@ button.person-row:focus-visible {
   margin-bottom: var(--space-3);
 }
 
+/* The receipt's line takes the room beside the way back; the buttons go
+   under it once the two do not fit on one line. */
 .shopping-receipt-head p {
+  flex: 1 1 14rem;
+  min-width: 0;
   margin: 0;
 }
 

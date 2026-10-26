@@ -247,6 +247,14 @@ enum ShoppingLayoutChoice: String {
     #endif
 }
 
+/// ShoppingPlacedItem is an item for a tile, with the store or aisle the tile
+/// names, since the tiles run on without headings.
+struct ShoppingPlacedItem: Identifiable {
+    let item: ShoppingItem
+    let groupName: String
+    var id: String { item.id }
+}
+
 /// ShoppingLayoutPicker chooses the layout, in a screen's menu.
 struct ShoppingLayoutPicker: View {
     @Binding var layoutName: String
@@ -361,16 +369,32 @@ struct ShoppingListScreen: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
             }
-            ForEach(groups) { group in
-                Section {
-                    items(group.items)
-                } header: {
-                    Text(verbatim: groupTitle(group))
+            if layoutName == ShoppingLayoutChoice.pictures.rawValue {
+                // The tiles run on in the groups' order without headings, so
+                // a store or aisle of one item does not leave half a row
+                // empty; each tile says where it is instead.
+                if !groups.isEmpty {
+                    Section {
+                        tileGrid(placedToBuy)
+                    }
                 }
-            }
-            if !model.notNeeded.isEmpty {
-                Section("Not needed") {
-                    items(model.notNeeded)
+                if !model.notNeeded.isEmpty {
+                    Section("Not needed") {
+                        tileGrid(placedNotNeeded)
+                    }
+                }
+            } else {
+                ForEach(groups) { group in
+                    Section {
+                        ForEach(group.items) { item in row(item) }
+                    } header: {
+                        Text(verbatim: groupTitle(group))
+                    }
+                }
+                if !model.notNeeded.isEmpty {
+                    Section("Not needed") {
+                        ForEach(model.notNeeded) { item in row(item) }
+                    }
                 }
             }
         }
@@ -390,23 +414,34 @@ struct ShoppingListScreen: View {
         }
     }
 
-    /// A section's items: a row each, or tiles in a grid that fills the
-    /// section's one row.
-    @ViewBuilder private func items(_ sectionItems: [ShoppingItem]) -> some View {
-        if layoutName == ShoppingLayoutChoice.pictures.rawValue {
-            LazyVGrid(columns: ShoppingLayoutChoice.tileColumns(dynamicTypeSize), spacing: 12) {
-                ForEach(sectionItems) { item in tile(item) }
-            }
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
-        } else {
-            ForEach(sectionItems) { item in row(item) }
+    /// The items to buy in the groups' order, each with its group's title.
+    private var placedToBuy: [ShoppingPlacedItem] {
+        var placed: [ShoppingPlacedItem] = []
+        for group in groups {
+            let groupName = groupTitle(group)
+            for item in group.items { placed.append(ShoppingPlacedItem(item: item, groupName: groupName)) }
         }
+        return placed
+    }
+
+    /// The items not needed now, each with its store and aisle.
+    private var placedNotNeeded: [ShoppingPlacedItem] {
+        model.notNeeded.map { item in ShoppingPlacedItem(item: item, groupName: ShoppingWords.listItemPlace(item)) }
+    }
+
+    /// Tiles in a grid that fills a section's one row, each with the store or
+    /// aisle it is under.
+    private func tileGrid(_ placed: [ShoppingPlacedItem]) -> some View {
+        LazyVGrid(columns: ShoppingLayoutChoice.tileColumns(dynamicTypeSize), spacing: 12) {
+            ForEach(placed) { entry in tile(entry.item, groupName: entry.groupName) }
+        }
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
     }
 
     /// A tile has no swipe: Need again and Remove are in its menu.
-    private func tile(_ item: ShoppingItem) -> some View {
-        ShoppingListItemTile(item: item) { editing = item }
+    private func tile(_ item: ShoppingItem, groupName: String) -> some View {
+        ShoppingListItemTile(item: item, groupName: groupName) { editing = item }
             .contextMenu {
                 if item.isNotNeeded {
                     Button("Need again", systemImage: "arrow.uturn.backward") { needingAgain = item }

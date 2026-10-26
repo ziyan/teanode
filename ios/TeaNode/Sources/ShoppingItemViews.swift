@@ -115,7 +115,7 @@ struct ShoppingListItemRow: View {
                 .frame(minHeight: 44)
                 .contentShape(.rect)
             }
-            .buttonStyle(.borderless)
+            .shoppingWordsButton()
         }
     }
 
@@ -136,6 +136,8 @@ struct ShoppingListItemRow: View {
 /// is, what it needs and about what it costs. A tap on the words opens it.
 struct ShoppingListItemTile: View {
     let item: ShoppingItem
+    /// The store or aisle the tile is under; the tiles have no headings.
+    let groupName: String
     let onOpen: () -> Void
 
     var body: some View {
@@ -143,6 +145,10 @@ struct ShoppingListItemTile: View {
             ShoppingPictureView(item: item, size: nil, isZoomable: true)
             Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: groupName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     Text(verbatim: item.itemDescription)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(item.isNotNeeded ? .secondary : .primary)
@@ -162,10 +168,25 @@ struct ShoppingListItemTile: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(.rect)
             }
-            .buttonStyle(.borderless)
+            .shoppingWordsButton()
         }
+        // Every tile in a row as tall as the tallest, so their grounds line up.
+        .frame(maxHeight: .infinity, alignment: .top)
         .padding(8)
         .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 16, style: .continuous))
+    }
+}
+
+extension View {
+    /// The style of a button whose label is an item's words beside other
+    /// buttons in a list row: borderless, so each takes only its own taps
+    /// (a plain button takes the whole row's), with the words in their own
+    /// colors rather than the tint, and lines that wrap kept to the left,
+    /// where a button would center them.
+    func shoppingWordsButton() -> some View {
+        buttonStyle(.borderless)
+            .tint(Color.primary)
+            .multilineTextAlignment(.leading)
     }
 }
 

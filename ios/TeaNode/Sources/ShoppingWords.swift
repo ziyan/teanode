@@ -121,6 +121,13 @@ enum ShoppingWords {
         group.isUnnamed ? String(localized: "Any store") : group.title
     }
 
+    /// Where an item is, for a tile that has no heading above it: its store
+    /// (or any store) and its aisle.
+    static func listItemPlace(_ item: ShoppingItem) -> String {
+        let storeName = item.isForAnyStore ? String(localized: "Any store") : item.storeName
+        return item.aisleName.isEmpty ? storeName : "\(storeName) · \(item.aisleName)"
+    }
+
     /// Whether an item an import found is new or already on the list.
     static func importMark(_ item: ShoppingImportItem) -> String {
         item.isOnList ? String(localized: "On the list") : String(localized: "New")
