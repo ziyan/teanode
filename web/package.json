@@ -49,7 +49,7 @@
   },
   "dependencies": {
     "echarts": "6.1.0",
-    "maplibre-gl": "6.14.0",
+    "maplibre-gl": "6.15.0",
     "tldts": "7.4.19"
   }
 }
