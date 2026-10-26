@@ -74,6 +74,16 @@ struct PreferencesView: View {
                     Text("Shown to the people who share a circle with you, as your name is. It words how you appear to them, such as son or daughter, and how your agent speaks of you.")
                 }
                 Section {
+                    Picker("Units", selection: draft.measurementSystem) {
+                        Text("Automatic (from your language and region)").tag(MeasurementSystem.automatic)
+                        Text("Metric (°C, km)").tag(MeasurementSystem.metric)
+                        Text("US (°F, mi)").tag(MeasurementSystem.us)
+                    }
+                    .pickerStyle(.menu)
+                } footer: {
+                    Text("How temperatures and distances are written for you, in your Journal and in the pages your agent writes for it. Automatic follows your language and region.")
+                }
+                Section {
                     TextField("Username", text: draft.username)
                         .textContentType(.username)
                         .textInputAutocapitalization(.never)

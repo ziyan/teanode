@@ -164,7 +164,7 @@ struct JournalDayScreen: View {
 
     /// "58° / 46°, rain, Riverside".
     private func weatherText(_ weather: JournalWeather) -> String {
-        let line = JournalText.weatherLine(weather)
+        let line = JournalText.weatherLine(weather, measurementSystem: app.measurementSystem)
         return weather.placeName.isEmpty ? line : line + ", " + weather.placeName
     }
 
@@ -275,7 +275,7 @@ struct JournalDayScreen: View {
         let placeCount = journalDay.facts?.placeCount ?? journalDay.visits.count
         let places = String(localized: "\(placeCount) places")
         guard let walkedMeters = journalDay.facts?.walkedMeters, walkedMeters >= 100 else { return places }
-        return places + ", " + String(localized: "\(JournalText.distanceText(meters: walkedMeters)) walked")
+        return places + ", " + String(localized: "\(JournalText.distanceText(meters: walkedMeters, measurementSystem: app.measurementSystem)) walked")
     }
 
     // MARK: What was chosen
@@ -468,7 +468,8 @@ struct JournalDayScreen: View {
     /// "32 min, 1.6 mi".
     private func workoutDetail(_ workout: JournalWorkout) -> String {
         let minutes = JournalText.durationText(minutes: workout.minutes)
-        return workout.meters > 0 ? minutes + ", " + JournalText.distanceText(meters: workout.meters) : minutes
+        guard workout.meters > 0 else { return minutes }
+        return minutes + ", " + JournalText.distanceText(meters: workout.meters, measurementSystem: app.measurementSystem)
     }
 
     // MARK: Money

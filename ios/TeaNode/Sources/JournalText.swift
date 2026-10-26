@@ -120,15 +120,31 @@ enum JournalText {
         }
     }
 
-    /// A temperature in the person's unit, from the server's Celsius.
-    static func temperatureText(celsius: Double) -> String {
-        Measurement(value: celsius, unit: UnitTemperature.celsius)
-            .formatted(.measurement(width: .narrow, usage: .weather, numberFormatStyle: .number.precision(.fractionLength(0))))
+    /// A temperature in the units the person chose, from the server's Celsius.
+    /// Automatic follows the phone's language and region.
+    static func temperatureText(celsius: Double, measurementSystem: MeasurementSystem) -> String {
+        let temperature = Measurement(value: celsius, unit: UnitTemperature.celsius)
+        switch measurementSystem {
+        case .automatic:
+            return temperature.formatted(
+                .measurement(width: .narrow, usage: .weather, numberFormatStyle: .number.precision(.fractionLength(0))))
+        case .metric:
+            return degreesText(temperature.value)
+        case .us:
+            return degreesText(temperature.converted(to: .fahrenheit).value)
+        }
+    }
+
+    /// "58°", the number rounded to a whole degree.
+    private static func degreesText(_ degrees: Double) -> String {
+        degrees.formatted(.number.precision(.fractionLength(0))) + "°"
     }
 
     /// "58° / 46°, rain".
-    static func weatherLine(_ weather: JournalWeather) -> String {
-        let range = temperatureText(celsius: weather.highCelsius) + " / " + temperatureText(celsius: weather.lowCelsius)
+    static func weatherLine(_ weather: JournalWeather, measurementSystem: MeasurementSystem) -> String {
+        let range =
+            temperatureText(celsius: weather.highCelsius, measurementSystem: measurementSystem) + " / "
+            + temperatureText(celsius: weather.lowCelsius, measurementSystem: measurementSystem)
         let name = weatherName(weather.kind)
         return name.isEmpty ? range : range + ", " + name
     }
@@ -266,10 +282,23 @@ enum JournalText {
         return amount.formatted(.currency(code: currency.uppercased()))
     }
 
-    /// "3.4 mi", in the person's unit.
-    static func distanceText(meters: Double) -> String {
-        Measurement(value: meters, unit: UnitLength.meters)
-            .formatted(.measurement(width: .abbreviated, usage: .road, numberFormatStyle: .number.precision(.fractionLength(0...1))))
+    /// "3.4 mi" or "5.4 km", in the units the person chose. Automatic follows
+    /// the phone's language and region.
+    static func distanceText(meters: Double, measurementSystem: MeasurementSystem) -> String {
+        let distance = Measurement(value: meters, unit: UnitLength.meters)
+        switch measurementSystem {
+        case .automatic:
+            return distance.formatted(
+                .measurement(width: .abbreviated, usage: .road, numberFormatStyle: .number.precision(.fractionLength(0...1))))
+        case .metric:
+            // Under a kilometer a walk is said in meters, as the phone does.
+            let shown = meters < 1000 ? distance : distance.converted(to: .kilometers)
+            return shown.formatted(
+                .measurement(width: .abbreviated, usage: .asProvided, numberFormatStyle: .number.precision(.fractionLength(0...1))))
+        case .us:
+            return distance.converted(to: .miles).formatted(
+                .measurement(width: .abbreviated, usage: .asProvided, numberFormatStyle: .number.precision(.fractionLength(0...1))))
+        }
     }
 
     static func countText(_ count: Int) -> String {
@@ -279,12 +308,14 @@ enum JournalText {
     /// The short line a timeline row says under its headline: the high
     /// temperature, then the one number about the day that is most likely to
     /// mean something to the person.
-    static func factsLine(of summary: JournalDaySummary) -> String {
+    static func factsLine(of summary: JournalDaySummary, measurementSystem: MeasurementSystem) -> String {
         var parts: [String] = []
-        if let weather = summary.weather { parts.append(temperatureText(celsius: weather.highCelsius)) }
+        if let weather = summary.weather {
+            parts.append(temperatureText(celsius: weather.highCelsius, measurementSystem: measurementSystem))
+        }
         if let facts = summary.facts {
             if facts.walkedMeters >= 2000 {
-                parts.append(String(localized: "\(distanceText(meters: facts.walkedMeters)) walked"))
+                parts.append(String(localized: "\(distanceText(meters: facts.walkedMeters, measurementSystem: measurementSystem)) walked"))
             } else if facts.photoCount > 0 {
                 parts.append(String(localized: "\(facts.photoCount) photos"))
             } else if facts.spentMinorUnits > 0 {
