@@ -152,13 +152,11 @@ func (self *refresher) computeDay(day string, result *RefreshResult) error {
 func (self *refresher) walkBack(ctx context.Context, yesterday string, result *RefreshResult) error {
 	boundary := yesterday
 	first, err := self.transaction.FirstJournalDay(self.user.ID)
-	switch {
-	case err == nil:
-		if first != "" && first < boundary {
-			boundary = first
-		}
-	default:
+	if err != nil {
 		return err
+	}
+	if first != "" && first < boundary {
+		boundary = first
 	}
 	chatNames := reading.ChatNamesOf(self.user)
 	agentId := ""

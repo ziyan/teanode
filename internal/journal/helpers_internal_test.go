@@ -60,7 +60,9 @@ func TestSpreadPhotosTakesEvenlyAndPassesOverScreenshots(t *testing.T) {
 	}
 	for _, identifier := range spread {
 		var index int
-		fmt.Sscanf(identifier, "photo-%d", &index)
+		if _, err := fmt.Sscanf(identifier, "photo-%d", &index); err != nil {
+			t.Fatalf("%s is not a photo the test made: %s", identifier, err)
+		}
 		if index%3 == 0 {
 			t.Errorf("a screenshot was offered: %s", identifier)
 		}

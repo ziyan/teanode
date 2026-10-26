@@ -104,7 +104,7 @@ func FetchWeather(ctx context.Context, client *http.Client, baseURLs WeatherURLs
 	if err != nil {
 		return nil, fmt.Errorf("journal: asking for the weather: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(response.Body, weatherAnswerMost))
 	if err != nil {
 		return nil, fmt.Errorf("journal: reading the weather: %w", err)
