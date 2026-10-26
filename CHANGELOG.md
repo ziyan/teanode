@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.198.0] - 2026-10-26
+
+### Added
+
+- Location: mute one person's arrived and left notifications for an hour, until tomorrow morning, or until you unmute, on the dashboard, the iPhone app, the command line and through the agent. (#650)
+
+### Changed
+
+- Location: you are no longer told that somebody arrived at or left a place when you were there too, such as arriving home together. (#650)
+
 ## [0.197.0] - 2026-10-25
 
 ### Added
