@@ -65,7 +65,7 @@ func describeJournalFacts(facts models.JournalFacts) *JournalFactsView {
 	return &JournalFactsView{
 		PhotoCount: facts.PhotoCount, PlaceCount: facts.PlaceCount, WalkedMeters: facts.WalkedMeters,
 		StepCount: facts.StepCount, SleepMinutes: facts.SleepMinutes, WorkoutMinutes: facts.WorkoutMinutes,
-		CodingSessionCount: facts.CodingSessionCount, CodingMinutes: facts.CodingMinutes,
+		CodingSessionCount: facts.CodingSessionCount, WorkProjectCount: facts.WorkProjectCount, CodingMinutes: facts.CodingMinutes,
 		MeetingCount: facts.MeetingCount, MeetingMinutes: facts.MeetingMinutes,
 		RecordingCount: facts.RecordingCount, ConversationCount: facts.ConversationCount,
 		ChatMessageCount: facts.ChatMessageCount, MailReceivedCount: facts.MailReceivedCount,

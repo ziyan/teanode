@@ -1444,6 +1444,10 @@ type AgentConversationActivity struct {
 	Summary        string
 	MessageCount   int
 
+	// IsMain is the person's main conversation with their agent, which is
+	// called that and not by a title a turn once gave it.
+	IsMain bool
+
 	// FirstMessageID is the first message said in the stretch, which is where
 	// a link to the conversation opens it.
 	FirstMessageID string
@@ -1464,13 +1468,14 @@ func (self *transaction) ListAgentConversationActivityBetween(agentId string, fr
 		ConversationID string    `gorm:"column:conversation_id"`
 		Title          string    `gorm:"column:title"`
 		Summary        string    `gorm:"column:summary"`
+		Kind           string    `gorm:"column:kind"`
 		MessageCount   int       `gorm:"column:message_count"`
 		FirstMessageID string    `gorm:"column:first_message_id"`
 		FirstAt        time.Time `gorm:"column:first_at"`
 		LastAt         time.Time `gorm:"column:last_at"`
 	}
 	if err := self.tx.Raw(`
-		SELECT c."id" AS conversation_id, c."title" AS title, c."summary" AS summary,
+		SELECT c."id" AS conversation_id, c."title" AS title, c."summary" AS summary, c."kind" AS kind,
 		       count(*) AS message_count, (array_agg(m."id" ORDER BY m."created_at", m."id"))[1] AS first_message_id,
 		       min(m."created_at") AS first_at, max(m."created_at") AS last_at
 		FROM "agent_conversation" c
@@ -1478,14 +1483,14 @@ func (self *transaction) ListAgentConversationActivityBetween(agentId string, fr
 		WHERE c."agent_id" = ? AND c."kind" IN ('main', 'named') AND c."last_at" >= ?
 		  AND m."created_at" >= ? AND m."created_at" < ?
 		  AND (m."role" = 'user' OR (m."role" = 'assistant' AND m."content" <> ''))
-		GROUP BY c."id", c."title", c."summary"
+		GROUP BY c."id", c."title", c."summary", c."kind"
 		ORDER BY min(m."created_at") ASC, c."id" ASC`, agentId, from, from, until).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	activity := make([]*AgentConversationActivity, 0, len(rows))
 	for _, row := range rows {
 		activity = append(activity, &AgentConversationActivity{
-			ConversationID: row.ConversationID, Title: row.Title, Summary: row.Summary,
+			ConversationID: row.ConversationID, Title: row.Title, Summary: row.Summary, IsMain: row.Kind == "main",
 			MessageCount: row.MessageCount, FirstMessageID: row.FirstMessageID,
 			FirstAt: row.FirstAt.In(time.Local), LastAt: row.LastAt.In(time.Local),
 		})

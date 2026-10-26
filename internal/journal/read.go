@@ -112,6 +112,10 @@ type Day struct {
 
 	CodingSessions []CodingSession
 
+	// WorkProjects are the coding sessions and the pull and merge requests of
+	// the day, by project: what the day's work was, before its details.
+	WorkProjects []WorkProject
+
 	Documents     []Document
 	DocumentTotal int
 
@@ -163,9 +167,19 @@ type CodingSession struct {
 	Assistant string
 	StartedAt time.Time
 
-	// EndedAt is when the last post of the stretch was made, the same as
-	// StartedAt for a stretch of one post.
+	// EndedAt is when the last post of the day's last stretch was made, the
+	// same as StartedAt for a stretch of one post.
 	EndedAt time.Time
+
+	// StretchCount is how many stretches of work (each ended by a pause of
+	// half an hour) the day had in this project and title; DocumentID is the
+	// first one's.
+	StretchCount int
+
+	// Spans are when each stretch was worked, which the time worked is added
+	// up from: the time from the first stretch to the last also holds the
+	// pauses between them.
+	Spans [][2]time.Time
 }
 
 // Document is an ingested document of the day that involves the person: work
@@ -190,7 +204,11 @@ type JournalNote struct {
 // it that day.
 type Conversation struct {
 	ConversationID string
+
+	// Title is the conversation's title; the main conversation is called the
+	// main chat (IsMain), whatever title a turn once gave it.
 	Title          string
+	IsMain         bool
 	FirstMessageID string
 	FirstAt        time.Time
 	LastAt         time.Time
@@ -226,6 +244,11 @@ type Mail struct {
 	// IsImportant: high priority, needs a reply, or the agent alerted about it
 	// or follows it up.
 	IsImportant bool
+
+	// RepeatCount is how many messages of the day this one stands for: the
+	// same sender and subject arriving again (to another address of the
+	// person's, or a code sent over and over) is one line with a count.
+	RepeatCount int
 }
 
 // Recording is a recording made that day.

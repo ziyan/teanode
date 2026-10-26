@@ -34,7 +34,7 @@ import {
   parseDay,
   periodPath,
   temperatureText,
-  usesImperialUnits,
+  useIsImperial,
   weekdayIndex,
   weekdayNames,
   weekdayShortText,
@@ -333,7 +333,7 @@ function WeekLookingBack({ period, reload }: { period: JournalPeriod; reload: ()
 // is still a column, so the week keeps its shape.
 function WeekDays({ period }: { period: JournalPeriod }) {
   const { t, language } = useTranslation()
-  const isImperial = usesImperialUnits()
+  const isImperial = useIsImperial()
   const today = browserToday()
   const byDay = new Map(period.days.map((summary) => [summary.day, summary]))
   return (
@@ -623,7 +623,7 @@ function MonthContent({ month }: { month: string }) {
 
 function MonthGrid({ month, period }: { month: string; period: JournalPeriod }) {
   const { t, language } = useTranslation()
-  const isImperial = usesImperialUnits()
+  const isImperial = useIsImperial()
   const today = browserToday()
   const weekStartsOn = weekStartsOnOf(null, language)
   const byDay = new Map(period.days.map((summary) => [summary.day, summary]))
@@ -712,7 +712,7 @@ function MonthGrid({ month, period }: { month: string; period: JournalPeriod }) 
 // under it.
 function MonthMoods({ period }: { period: JournalPeriod }) {
   const { t, plural, language } = useTranslation()
-  const isImperial = usesImperialUnits()
+  const isImperial = useIsImperial()
   const counts = MOOD_LEVELS.map((level) => period.moodCounts[level - 1] ?? 0)
   const total = counts.reduce((sum, count) => sum + count, 0)
   const totals = period.totals

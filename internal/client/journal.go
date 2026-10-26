@@ -230,6 +230,7 @@ type JournalDayView struct {
 	// The day's records, by source. Each list is capped and comes with the
 	// total; a source the caller does not hold is empty and named in
 	// UnavailableSections.
+	WorkProjects        []*JournalWorkProjectView   `json:"workProjects"`
 	CodingSessions      []*JournalCodingSessionView `json:"codingSessions"`
 	Documents           []*JournalDocumentView      `json:"documents"`
 	DocumentTotal       int                         `json:"documentTotal"`
@@ -263,6 +264,9 @@ type JournalCodingSessionView struct {
 	StartedAt  time.Time  `json:"startedAt"`
 	EndedAt    *time.Time `json:"endedAt"`
 
+	// StretchCount is how many stretches of work the day had in it.
+	StretchCount int `json:"stretchCount"`
+
 	// LinkReason is the agent's one line about it, when it chose it.
 	LinkReason string `json:"linkReason"`
 }
@@ -280,11 +284,34 @@ type JournalDocumentView struct {
 	LinkReason string `json:"linkReason"`
 }
 
+// JournalWorkProjectView is one project the person worked on that day.
+type JournalWorkProjectView struct {
+	Name          string                `json:"name"`
+	FirstAt       time.Time             `json:"firstAt"`
+	LastAt        time.Time             `json:"lastAt"`
+	ActiveMinutes int                   `json:"activeMinutes"`
+	StretchCount  int                   `json:"stretchCount"`
+	Topics        []string              `json:"topics"`
+	Shipped       []*JournalShippedView `json:"shipped"`
+	Summary       string                `json:"summary"`
+	DocumentID    string                `json:"documentId"`
+}
+
+// JournalShippedView is a pull request, merge request or commit of the day.
+type JournalShippedView struct {
+	DocumentID string    `json:"documentId"`
+	Title      string    `json:"title"`
+	Address    string    `json:"address"`
+	HappenedAt time.Time `json:"happenedAt"`
+	IsDraft    bool      `json:"isDraft"`
+}
+
 // JournalConversationView is a conversation with the agent that had messages
 // that day.
 type JournalConversationView struct {
 	ConversationID string    `json:"conversationId"`
 	Title          string    `json:"title"`
+	IsMain         bool      `json:"isMain"`
 	FirstAt        time.Time `json:"firstAt"`
 	LastAt         time.Time `json:"lastAt"`
 	MessageCount   int       `json:"messageCount"`
@@ -313,6 +340,9 @@ type JournalMailView struct {
 	// IsChosen says the agent chose it as mattering, with LinkReason.
 	IsChosen   bool   `json:"isChosen"`
 	LinkReason string `json:"linkReason"`
+
+	// RepeatCount is how many messages of the day it stands for.
+	RepeatCount int `json:"repeatCount"`
 }
 
 // JournalRecordingView is a recording made that day.
@@ -570,11 +600,12 @@ const (
     mood { ` + journalMoodFields + ` } weather { ` + journalWeatherFields + ` } facts { ` + journalFactsFields + ` }
     narrative { ` + journalNarrativeFields + ` }
     choices { ` + journalLinkFields + ` } pins { ` + journalLinkFields + ` } coverPhotoId
-    codingSessions { documentId title directory assistant startedAt endedAt linkReason }
+    workProjects { name firstAt lastAt activeMinutes stretchCount topics summary documentId shipped { documentId title address happenedAt isDraft } }
+    codingSessions { documentId title directory assistant startedAt endedAt stretchCount linkReason }
     documents { documentId title sourceName happenedAt isChosen linkReason } documentTotal
-    conversations { conversationId title firstAt lastAt messageCount }
+    conversations { conversationId title isMain firstAt lastAt messageCount }
     chats { chatId chatName firstAt lastAt messageCount }
-    mail { itemId fromName subject receivedAt isSent isImportant isChosen linkReason } mailTotal
+    mail { itemId fromName subject receivedAt isSent isImportant isChosen linkReason repeatCount } mailTotal
     recordings { recordingId title recordedAt durationMS summary }
     photos { photoId takenAt placeName isVideo } photoTotal
     visits { visitId placeId placeName arrivedAt departedAt latitude longitude }

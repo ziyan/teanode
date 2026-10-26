@@ -43,7 +43,7 @@ import {
   isDayText,
   moodLevelOf,
   temperatureText,
-  usesImperialUnits,
+  useIsImperial,
   weatherNameKey,
   wholeNumberText,
   APPLE_HEALTH_MOOD_SOURCE,
@@ -288,9 +288,9 @@ function MoodWords({
 
 function WeatherCard({ day }: { day: JournalDay }) {
   const { t } = useTranslation()
+  const isImperial = useIsImperial()
   const weather = day.weather
   if (!weather) return null
-  const isImperial = usesImperialUnits()
   const name = t(weatherNameKey(weather.weatherKind))
   return (
     <div className="card journal-weather-card">
@@ -325,7 +325,7 @@ type Tile = {
 function FactTiles({ day }: { day: JournalDay }) {
   const { t, plural, language } = useTranslation()
   const { facts } = day
-  const isImperial = usesImperialUnits()
+  const isImperial = useIsImperial()
   const tiles: Tile[] = []
   if (facts.stepCount > 0) {
     tiles.push({

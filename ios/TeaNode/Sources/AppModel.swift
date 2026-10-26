@@ -493,6 +493,13 @@ final class AppModel {
     /// accounts: the name and picture it goes by on its server.
     private(set) var accountProfiles: [String: AccountProfile] = [:]
 
+    /// The units the account in use reads measurements in, from its profile;
+    /// automatic until the profile has been read, which follows the phone.
+    var measurementSystem: MeasurementSystem {
+        guard let account else { return .automatic }
+        return accountProfiles[account.accountKey]?.chosenMeasurementSystem ?? .automatic
+    }
+
     /// Reads an account's profile from its own server, through the connection
     /// kept for it, so an account not in use shows its name and picture too.
     func loadProfile(of chosen: Account) async {
@@ -763,6 +770,9 @@ final class AppModel {
         connection = otherConnections.removeValue(forKey: account.accountKey) ?? Connection(account: account, transport: transport, store: store)
         accounts = (try? store.accounts().accounts) ?? [account]
         if let connection { RecordingUploads.shared.activate(connection: connection) }
+        // The journal writes its temperatures and distances in the units in
+        // the profile, which no screen reads until the account list is open.
+        Task { await loadProfile(of: account) }
         // The widgets read the account in use; one that changed is read again.
         if isChanged { WidgetCenter.shared.reloadAllTimelines() }
         // What the phone noticed belongs to the account that was in use.

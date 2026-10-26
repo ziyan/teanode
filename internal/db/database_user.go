@@ -40,21 +40,22 @@ type UserOperation interface {
 }
 
 type userModel struct {
-	ID             string     `gorm:"column:id;primaryKey"`
-	CreatedAt      time.Time  `gorm:"column:created_at"`
-	ModifiedAt     time.Time  `gorm:"column:modified_at"`
-	Username       string     `gorm:"column:username"`
-	Name           string     `gorm:"column:name"`
-	PasswordHash   *string    `gorm:"column:password_hash"`
-	Email          string     `gorm:"column:email"`
-	DisabledAt     *time.Time `gorm:"column:disabled_at"`
-	Locale         string     `gorm:"column:locale"`
-	LocaleSeen     string     `gorm:"column:locale_seen"`
-	Timezone       string     `gorm:"column:timezone"`
-	TimezoneMode   string     `gorm:"column:timezone_mode"`
-	TimezoneSeenAt *time.Time `gorm:"column:timezone_seen_at"`
-	ContactID      *string    `gorm:"column:contact_id"`
-	Pronoun        *string    `gorm:"column:pronoun"`
+	ID                string     `gorm:"column:id;primaryKey"`
+	CreatedAt         time.Time  `gorm:"column:created_at"`
+	ModifiedAt        time.Time  `gorm:"column:modified_at"`
+	Username          string     `gorm:"column:username"`
+	Name              string     `gorm:"column:name"`
+	PasswordHash      *string    `gorm:"column:password_hash"`
+	Email             string     `gorm:"column:email"`
+	DisabledAt        *time.Time `gorm:"column:disabled_at"`
+	Locale            string     `gorm:"column:locale"`
+	LocaleSeen        string     `gorm:"column:locale_seen"`
+	Timezone          string     `gorm:"column:timezone"`
+	TimezoneMode      string     `gorm:"column:timezone_mode"`
+	TimezoneSeenAt    *time.Time `gorm:"column:timezone_seen_at"`
+	MeasurementSystem string     `gorm:"column:measurement_system"`
+	ContactID         *string    `gorm:"column:contact_id"`
+	Pronoun           *string    `gorm:"column:pronoun"`
 
 	AvatarFileID    *string    `gorm:"column:avatar_file_id"`
 	AvatarUpdatedAt *time.Time `gorm:"column:avatar_updated_at"`
@@ -73,17 +74,18 @@ func (userGroupModel) TableName() string { return "user_group" }
 
 func userFromModel(model *userModel, groupIds []string) *models.User {
 	user := &models.User{
-		ID:           model.ID,
-		CreatedAt:    model.CreatedAt.In(time.Local),
-		ModifiedAt:   model.ModifiedAt.In(time.Local),
-		Username:     model.Username,
-		Name:         model.Name,
-		Email:        model.Email,
-		Locale:       model.Locale,
-		LocaleSeen:   model.LocaleSeen,
-		Timezone:     model.Timezone,
-		TimezoneMode: model.TimezoneMode,
-		GroupIDs:     groupIds,
+		ID:                model.ID,
+		CreatedAt:         model.CreatedAt.In(time.Local),
+		ModifiedAt:        model.ModifiedAt.In(time.Local),
+		Username:          model.Username,
+		Name:              model.Name,
+		Email:             model.Email,
+		Locale:            model.Locale,
+		LocaleSeen:        model.LocaleSeen,
+		Timezone:          model.Timezone,
+		TimezoneMode:      model.TimezoneMode,
+		MeasurementSystem: model.MeasurementSystem,
+		GroupIDs:          groupIds,
 	}
 	if model.ContactID != nil {
 		user.ContactID = *model.ContactID
@@ -117,18 +119,19 @@ func userFromModel(model *userModel, groupIds []string) *models.User {
 
 func userToModel(user *models.User) *userModel {
 	model := &userModel{
-		ID:             user.ID,
-		CreatedAt:      user.CreatedAt,
-		ModifiedAt:     user.ModifiedAt,
-		Username:       user.Username,
-		Name:           user.Name,
-		Email:          user.Email,
-		Locale:         user.Locale,
-		LocaleSeen:     user.LocaleSeen,
-		Timezone:       user.Timezone,
-		TimezoneMode:   user.TimezoneMode,
-		TimezoneSeenAt: user.TimezoneSeenAt,
-		DisabledAt:     user.DisabledAt,
+		ID:                user.ID,
+		CreatedAt:         user.CreatedAt,
+		ModifiedAt:        user.ModifiedAt,
+		Username:          user.Username,
+		Name:              user.Name,
+		Email:             user.Email,
+		Locale:            user.Locale,
+		LocaleSeen:        user.LocaleSeen,
+		Timezone:          user.Timezone,
+		TimezoneMode:      user.TimezoneMode,
+		TimezoneSeenAt:    user.TimezoneSeenAt,
+		MeasurementSystem: user.MeasurementSystem,
+		DisabledAt:        user.DisabledAt,
 	}
 	if user.PasswordHash != "" {
 		hash := user.PasswordHash

@@ -273,6 +273,10 @@ effect, most often a DMARC policy of none.
 Removing stops serving the file. Take the record down as well, or receivers
 keep fetching an address that answers nothing.
 
+### The units you read measurements in
+
+`teanode user update robin --units metric|us|automatic` chooses degrees Celsius and kilometers, degrees Fahrenheit and miles, or (the default) the units your language and region use. The dashboard's Profile page and the app's Profile screen set the same choice, and it decides how the Journal writes temperatures and distances on the dashboard, in the app, in `teanode journal day` and in the pages your agent writes; with `automatic` the command line reads the region of your shell's language (`LANG`), and a language with no region reads as metric. The agent sets it with the `account` tool's `update` and its `measurement_system` argument.
+
 ### A person's picture
 
 `teanode user avatar set|remove` is the picture shown beside a person's name

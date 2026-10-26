@@ -301,16 +301,20 @@ type JournalFactsView struct {
 	SleepMinutes       int     `json:"sleepMinutes"`
 	WorkoutMinutes     int     `json:"workoutMinutes"`
 	CodingSessionCount int     `json:"codingSessionCount"`
-	CodingMinutes      int     `json:"codingMinutes"`
-	MeetingCount       int     `json:"meetingCount"`
-	MeetingMinutes     int     `json:"meetingMinutes"`
-	RecordingCount     int     `json:"recordingCount"`
-	ConversationCount  int     `json:"conversationCount"`
-	ChatMessageCount   int     `json:"chatMessageCount"`
-	MailReceivedCount  int     `json:"mailReceivedCount"`
-	MailSentCount      int     `json:"mailSentCount"`
-	DocumentCount      int     `json:"documentCount"`
-	TransactionCount   int     `json:"transactionCount"`
+
+	// WorkProjectCount is how many projects were worked on (for a period,
+	// added up day by day).
+	WorkProjectCount  int `json:"workProjectCount"`
+	CodingMinutes     int `json:"codingMinutes"`
+	MeetingCount      int `json:"meetingCount"`
+	MeetingMinutes    int `json:"meetingMinutes"`
+	RecordingCount    int `json:"recordingCount"`
+	ConversationCount int `json:"conversationCount"`
+	ChatMessageCount  int `json:"chatMessageCount"`
+	MailReceivedCount int `json:"mailReceivedCount"`
+	MailSentCount     int `json:"mailSentCount"`
+	DocumentCount     int `json:"documentCount"`
+	TransactionCount  int `json:"transactionCount"`
 
 	// SpentMinorUnits is money spent in SpentCurrency's minor units (cents).
 	SpentMinorUnits   int64  `json:"spentMinorUnits"`
@@ -452,6 +456,9 @@ type JournalDayView struct {
 	// The day's records, by source. Each list is capped and comes with the
 	// total; a source the caller does not hold is empty and named in
 	// UnavailableSections.
+	// WorkProjects is the day's work by project, what a person reads first;
+	// CodingSessions and Documents are its details.
+	WorkProjects        []*JournalWorkProjectView   `json:"workProjects"`
 	CodingSessions      []*JournalCodingSessionView `json:"codingSessions"`
 	Documents           []*JournalDocumentView      `json:"documents"`
 	DocumentTotal       int                         `json:"documentTotal"`
@@ -476,7 +483,44 @@ type JournalDayView struct {
 	Moments []*JournalMomentView `json:"moments"`
 }
 
-// JournalCodingSessionView is a stretch of work in Claude Code or Codex.
+// JournalWorkProjectView is one project the person worked on that day: its
+// coding sessions and the pull and merge requests of its repository.
+type JournalWorkProjectView struct {
+	// Name is the repository's or folder's name.
+	Name    string    `json:"name"`
+	FirstAt time.Time `json:"firstAt"`
+	LastAt  time.Time `json:"lastAt"`
+
+	// ActiveMinutes adds up the sessions' spans.
+	ActiveMinutes int `json:"activeMinutes"`
+	StretchCount  int `json:"stretchCount"`
+
+	// Topics are the titles of its sessions, each once.
+	Topics []string `json:"topics"`
+
+	// Shipped are the pull and merge requests of the day.
+	Shipped []*JournalShippedView `json:"shipped"`
+
+	// Summary is what the agent wrote was done in it, once the day is
+	// written; empty before.
+	Summary string `json:"summary"`
+
+	// DocumentID is the project's first session, which a choice names.
+	DocumentID string `json:"documentId"`
+}
+
+// JournalShippedView is a pull request, merge request or commit of the day.
+type JournalShippedView struct {
+	DocumentID string    `json:"documentId"`
+	Title      string    `json:"title"`
+	Address    string    `json:"address"`
+	HappenedAt time.Time `json:"happenedAt"`
+	IsDraft    bool      `json:"isDraft"`
+}
+
+// JournalCodingSessionView is a day's work in one project with Claude Code or
+// Codex: its stretches (each ended by a pause of half an hour) from the first
+// to the last.
 type JournalCodingSessionView struct {
 	DocumentID string     `json:"documentId"`
 	Title      string     `json:"title"`
@@ -484,6 +528,10 @@ type JournalCodingSessionView struct {
 	Assistant  string     `json:"assistant"`
 	StartedAt  time.Time  `json:"startedAt"`
 	EndedAt    *time.Time `json:"endedAt" graphapi:"nullable"`
+
+	// StretchCount is how many stretches of work it was; DocumentID is the
+	// first one's.
+	StretchCount int `json:"stretchCount"`
 
 	// LinkReason is the agent's one line about it, when it chose it.
 	LinkReason string `json:"linkReason"`
@@ -505,11 +553,16 @@ type JournalDocumentView struct {
 // JournalConversationView is a conversation with the agent that had messages
 // that day.
 type JournalConversationView struct {
-	ConversationID string    `json:"conversationId"`
-	Title          string    `json:"title"`
-	FirstAt        time.Time `json:"firstAt"`
-	LastAt         time.Time `json:"lastAt"`
-	MessageCount   int       `json:"messageCount"`
+	ConversationID string `json:"conversationId"`
+
+	// Title is the conversation's title, or "Main chat" for the person's main
+	// conversation (IsMain), which a client may name in its own language.
+	Title  string `json:"title"`
+	IsMain bool   `json:"isMain"`
+
+	FirstAt      time.Time `json:"firstAt"`
+	LastAt       time.Time `json:"lastAt"`
+	MessageCount int       `json:"messageCount"`
 }
 
 // JournalChatView is a circle or group chat that had messages that day.
@@ -535,6 +588,10 @@ type JournalMailView struct {
 	// IsChosen says the agent chose it as mattering, with LinkReason.
 	IsChosen   bool   `json:"isChosen"`
 	LinkReason string `json:"linkReason"`
+
+	// RepeatCount is how many messages of the day it stands for: the same
+	// sender and subject again is one line with a count.
+	RepeatCount int `json:"repeatCount"`
 }
 
 // JournalRecordingView is a recording made that day.

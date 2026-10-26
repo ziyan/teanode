@@ -164,7 +164,7 @@ struct JournalDayScreen: View {
 
     /// "58° / 46°, rain, Riverside".
     private func weatherText(_ weather: JournalWeather) -> String {
-        let line = JournalText.weatherLine(weather)
+        let line = JournalText.weatherLine(weather, measurementSystem: app.measurementSystem)
         return weather.placeName.isEmpty ? line : line + ", " + weather.placeName
     }
 
@@ -275,7 +275,7 @@ struct JournalDayScreen: View {
         let placeCount = journalDay.facts?.placeCount ?? journalDay.visits.count
         let places = String(localized: "\(placeCount) places")
         guard let walkedMeters = journalDay.facts?.walkedMeters, walkedMeters >= 100 else { return places }
-        return places + ", " + String(localized: "\(JournalText.distanceText(meters: walkedMeters)) walked")
+        return places + ", " + String(localized: "\(JournalText.distanceText(meters: walkedMeters, measurementSystem: app.measurementSystem)) walked")
     }
 
     // MARK: What was chosen
@@ -340,9 +340,14 @@ struct JournalDayScreen: View {
 
     /// "Claude Code, 3 h".
     private func codingDetail(_ session: JournalCodingSession) -> String {
-        guard let started = ServerTime.date(session.startedAt), let ended = ServerTime.date(session.endedAt) else { return session.assistant }
-        let minutes = Int(ended.timeIntervalSince(started) / 60)
-        return minutes > 0 ? session.assistant + ", " + JournalText.durationText(minutes: minutes) : session.assistant
+        var parts = [session.assistant]
+        if let started = ServerTime.date(session.startedAt), let ended = ServerTime.date(session.endedAt) {
+            let minutes = Int(ended.timeIntervalSince(started) / 60)
+            if minutes > 0 { parts.append(JournalText.durationText(minutes: minutes)) }
+        }
+        let stretchCount = session.stretchCount ?? 1
+        if stretchCount > 1 { parts.append(String(localized: "\(stretchCount) stretches of work")) }
+        return parts.joined(separator: ", ")
     }
 
     @ViewBuilder
@@ -361,7 +366,10 @@ struct JournalDayScreen: View {
     }
 
     private func mailDetail(_ message: JournalMail) -> String {
-        message.linkReason.isEmpty ? message.fromName : message.fromName + ": " + message.linkReason
+        var detail = message.linkReason.isEmpty ? message.fromName : message.fromName + ": " + message.linkReason
+        let repeatCount = message.repeatCount ?? 1
+        if repeatCount > 1 { detail += " " + String(localized: "(\(repeatCount) times)") }
+        return detail
     }
 
     // MARK: Who and what the day talked with
@@ -460,7 +468,8 @@ struct JournalDayScreen: View {
     /// "32 min, 1.6 mi".
     private func workoutDetail(_ workout: JournalWorkout) -> String {
         let minutes = JournalText.durationText(minutes: workout.minutes)
-        return workout.meters > 0 ? minutes + ", " + JournalText.distanceText(meters: workout.meters) : minutes
+        guard workout.meters > 0 else { return minutes }
+        return minutes + ", " + JournalText.distanceText(meters: workout.meters, measurementSystem: app.measurementSystem)
     }
 
     // MARK: Money

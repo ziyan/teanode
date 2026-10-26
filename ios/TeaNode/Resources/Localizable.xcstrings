@@ -90686,6 +90686,118 @@
           }
         }
       }
+    },
+    "%lld stretches of work": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 回の作業"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 段工作"
+          }
+        }
+      }
+    },
+    "(%lld times)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(%lld 通)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(共 %lld 封)"
+          }
+        }
+      }
+    },
+    "Units": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "単位"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单位"
+          }
+        }
+      }
+    },
+    "Automatic (from your language and region)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動（言語と地域に合わせる）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动（根据你的语言和地区）"
+          }
+        }
+      }
+    },
+    "Metric (°C, km)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メートル法（°C、km）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公制（°C、公里）"
+          }
+        }
+      }
+    },
+    "US (°F, mi)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "米国式（°F、マイル）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "美制（°F、英里）"
+          }
+        }
+      }
+    },
+    "How temperatures and distances are written for you, in your Journal and in the pages your agent writes for it. Automatic follows your language and region.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日記や、エージェントが書くページで、気温や距離をどの単位で表すかを決めます。自動では言語と地域に合わせます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "决定日记以及助手撰写的页面中温度和距离的写法。自动则根据你的语言和地区。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

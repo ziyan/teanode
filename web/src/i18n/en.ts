@@ -6830,6 +6830,12 @@ export const en = {
   'profile.pronounHe': 'He',
   'profile.pronounShe': 'She',
   'profile.pronounThey': 'They',
+  'profile.units': 'Units',
+  'profile.unitsAutomatic': 'Automatic (from your language and region)',
+  'profile.unitsMetric': 'Metric (°C, km)',
+  'profile.unitsUs': 'US (°F, mi)',
+  'profile.unitsHint':
+    'How temperatures and distances are written for you, in your Journal and in the pages your agent writes for it. Automatic follows your language and region.',
   'profile.pronounHint':
     'Shown to the people who share a circle with you, as your name is. It words how you appear to them, such as son or daughter, and how your agent speaks of you.',
   'agentDrawer.note.relationshipSet':
@@ -7748,6 +7754,8 @@ export const en = {
   'journal.thisWeekOf': 'This week, {date}',
   'journal.rangeText': '{from} to {to}',
   'journal.timeRange': '{start} to {end}',
+  'journal.stretches': '{count} stretches of work',
+  'journal.repeatCount': '{count} times',
   'journal.durationHours': '{hours} h',
   'journal.durationMinutes': '{minutes} min',
   'journal.durationHoursMinutes': '{hours} h {minutes} min',

@@ -42,6 +42,11 @@ type JournalOperation interface {
 	// (facts with activity, words or a mood), and how many there are in all.
 	ListJournalDays(userId, fromDay, untilDay string, offset, limit int) ([]*models.JournalDay, int, error)
 
+	// ListJournalDaysCountedBefore is the person's days, newest first, whose
+	// facts were worked out an older way than factsVersion
+	// (models.JournalFactsVersion), at most limit of them.
+	ListJournalDaysCountedBefore(userId string, factsVersion, limit int) ([]string, error)
+
 	// FirstJournalDay is the earliest day with anything in it, empty for
 	// none.
 	FirstJournalDay(userId string) (string, error)
@@ -1366,4 +1371,15 @@ func (self *transaction) forgetJournalLocationCopies(userId string, from, until 
 		arguments = append(arguments, until.UTC().AddDate(0, 0, 1).Format("2006-01-02"))
 	}
 	return self.tx.Exec(query, arguments...).Error
+}
+
+func (self *transaction) ListJournalDaysCountedBefore(userId string, factsVersion, limit int) ([]string, error) {
+	if userId == "" || limit <= 0 {
+		return nil, ErrInvalidArguments
+	}
+	var days []string
+	err := self.tx.Raw(`SELECT to_char("day", 'YYYY-MM-DD') FROM "journal_day"
+		WHERE "user_id" = ? AND "facts_computed_at" IS NOT NULL AND coalesce(("facts"->>'factsVersion')::int, 0) < ?
+		ORDER BY "day" DESC LIMIT ?`, userId, factsVersion, limit).Scan(&days).Error
+	return days, err
 }

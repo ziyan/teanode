@@ -6772,6 +6772,12 @@ export const ja: Catalog = {
   'profile.pronounHe': '彼',
   'profile.pronounShe': '彼女',
   'profile.pronounThey': '性別を指定しない',
+  'profile.units': '単位',
+  'profile.unitsAutomatic': '自動（言語と地域に合わせる）',
+  'profile.unitsMetric': 'メートル法（°C、km）',
+  'profile.unitsUs': '米国式（°F、マイル）',
+  'profile.unitsHint':
+    '日記や、エージェントが書くページで、気温や距離をどの単位で表すかを決めます。自動では言語と地域に合わせます。',
   'profile.pronounHint':
     '同じサークルの人には、名前と同じように表示されます。サークルの人からどう見えるか（息子や娘など）と、エージェントがあなたをどう呼ぶかに使われます。',
   'agentDrawer.note.relationshipSet':
@@ -7691,6 +7697,8 @@ export const ja: Catalog = {
   'journal.thisWeekOf': '今週、{date}',
   'journal.rangeText': '{from}から{to}',
   'journal.timeRange': '{start}から{end}',
+  'journal.stretches': '{count} 回の作業',
+  'journal.repeatCount': '{count} 通',
   'journal.durationHours': '{hours} 時間',
   'journal.durationMinutes': '{minutes} 分',
   'journal.durationHoursMinutes': '{hours} 時間 {minutes} 分',

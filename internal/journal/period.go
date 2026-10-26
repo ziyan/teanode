@@ -159,6 +159,7 @@ func addDays(days []*models.JournalDay) (models.JournalFacts, [5]int) {
 		totals.SleepMinutes += facts.SleepMinutes
 		totals.WorkoutMinutes += facts.WorkoutMinutes
 		totals.CodingSessionCount += facts.CodingSessionCount
+		totals.WorkProjectCount += facts.WorkProjectCount
 		totals.CodingMinutes += facts.CodingMinutes
 		totals.MeetingCount += facts.MeetingCount
 		totals.MeetingMinutes += facts.MeetingMinutes

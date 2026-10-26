@@ -274,11 +274,8 @@ func (self *graph) WriteJournalNarrative(ctx context.Context, arguments JournalT
 	if err != nil {
 		return nil, err
 	}
-	// The day is not over, and what is written about it would be out of date
-	// by tonight.
-	if !target.IsPeriod() && target.Day == journal.Today(principal.User, now) {
-		return nil, fmt.Errorf("%w: today is not over yet; its story can be written tomorrow", api.ErrInvalidArguments)
-	}
+	// Today can be written too, as the day so far; the dream after it ends
+	// writes it again from all of it.
 	if err := tx.RequestJournalNarrative(principal.User.ID, target, journal.Zone(principal.User).String(), now); err != nil {
 		return nil, journalFailure(err)
 	}

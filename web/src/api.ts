@@ -184,6 +184,11 @@ export interface Session {
   avatarUrl?: string | null
   avatarColorIndex?: number
 
+  // The units they read measurements in: metric, us, or empty to follow the
+  // browser's region. Told here so a page that writes a temperature knows it
+  // on its first paint.
+  measurementSystem?: string
+
   // Whether this server offers passkeys. The sign-in form shows the passkey
   // button only when it does.
   passkeysEnabled: boolean
@@ -218,7 +223,7 @@ export interface Permissions {
 // that from the resolver.
 
 const SESSION_FIELDS =
-  '{ authenticated authenticationRequired username name avatarUrl avatarColorIndex passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername services { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isPhotosChosen isAssistantEnabled hasPendingServiceRestart hasCompletedSetup hasModelProvider } }'
+  '{ authenticated authenticationRequired username name avatarUrl avatarColorIndex measurementSystem passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername services { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isPhotosChosen isAssistantEnabled hasPendingServiceRestart hasCompletedSetup hasModelProvider } }'
 
 export async function getSession(): Promise<Session> {
   const data = await graphql<{ GetSession: Session }>(`query { GetSession ${SESSION_FIELDS} }`)

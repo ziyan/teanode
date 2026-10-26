@@ -12,6 +12,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // journalListPageSize is how many days a page of 'teanode journal list' holds.
@@ -326,9 +327,20 @@ func journalMoodLine(mood *client.JournalMoodView) string {
 	return line
 }
 
+// journalUsesUSUnits says whether this person reads Fahrenheit and miles: as
+// their account says, else as the region of the language this shell speaks
+// says, else metric. A token that is no account has no choice to read.
+func journalUsesUSUnits(ctx context.Context, connection *client.Client) bool {
+	measurementSystem := models.MeasurementSystemAutomatic
+	if user, err := client.GetCurrentUser(ctx, connection); err == nil && user != nil {
+		measurementSystem = user.MeasurementSystem
+	}
+	return models.UsesUSUnits(measurementSystem, client.LocalLanguage())
+}
+
 // journalWeatherLine is the weather as one line: its kind, the lows and
-// highs, and the rain.
-func journalWeatherLine(weather *client.JournalWeatherView) string {
+// highs in the units the person reads, and the rain.
+func journalWeatherLine(weather *client.JournalWeatherView, isUSUnits bool) string {
 	if weather == nil {
 		return ""
 	}
@@ -336,7 +348,11 @@ func journalWeatherLine(weather *client.JournalWeatherView) string {
 	if kind == "" {
 		kind = weather.WeatherKind
 	}
-	line := fmt.Sprintf("%s, %.0f to %.0f°C", kind, weather.LowCelsius, weather.HighCelsius)
+	low, high, unit := weather.LowCelsius, weather.HighCelsius, "C"
+	if isUSUnits {
+		low, high, unit = models.FahrenheitFromCelsius(low), models.FahrenheitFromCelsius(high), "F"
+	}
+	line := fmt.Sprintf("%s, %.0f to %.0f°%s", kind, low, high, unit)
 	if weather.PrecipitationMM >= 0.5 {
 		line += fmt.Sprintf(", %.0f mm of rain", weather.PrecipitationMM)
 	}
@@ -647,20 +663,21 @@ func runJournalDay(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(view)
 	}
-	printJournalDay(view)
+	isUSUnits := view.Weather != nil && journalUsesUSUnits(ctx, connection)
+	printJournalDay(view, isUSUnits)
 	return nil
 }
 
 // printJournalDay prints a day: its mood, weather and numbers, your words,
 // the story, what was chosen and pinned, each source in a line or a few, and
 // the moments in the order they happened.
-func printJournalDay(view *client.JournalDayView) {
+func printJournalDay(view *client.JournalDayView, isUSUnits bool) {
 	fmt.Println(forTerminal(journalDayLabel(view.Day, view.IsToday)))
 	fields := [][2]string{}
 	if line := journalMoodLine(view.Mood); line != "" {
 		fields = append(fields, [2]string{"mood", line})
 	}
-	if line := journalWeatherLine(view.Weather); line != "" {
+	if line := journalWeatherLine(view.Weather, isUSUnits); line != "" {
 		fields = append(fields, [2]string{"weather", line})
 	}
 	if line := journalFactsLine(view.Facts); line != "" {
@@ -716,18 +733,49 @@ func journalMoreLine(shown, total int) []string {
 
 // printJournalSections prints each source of a day in a line or a few.
 func printJournalSections(view *client.JournalDayView) {
+	// The day's work is read by project: how long, on what, and what shipped,
+	// with what the agent wrote was done in it once the day is written.
 	lines := []string{}
+	for _, project := range view.WorkProjects {
+		line := fmt.Sprintf("%s to %s  %s", journalClock(project.FirstAt), journalClock(project.LastAt), project.Name)
+		if project.ActiveMinutes > 0 {
+			line += ", " + journalDuration(project.ActiveMinutes)
+		}
+		lines = append(lines, line)
+		if project.Summary != "" {
+			lines = append(lines, "  "+project.Summary)
+		}
+		if len(project.Topics) > 0 {
+			lines = append(lines, "  worked on: "+strings.Join(project.Topics, "; "))
+		}
+		for _, request := range project.Shipped {
+			title := request.Title
+			if request.IsDraft {
+				title += " (draft)"
+			}
+			lines = append(lines, "  shipped: "+title)
+		}
+	}
+	journalSection("Work", lines)
+
+	lines = []string{}
 	for _, session := range view.CodingSessions {
 		line := fmt.Sprintf("%s  %s", journalClock(session.StartedAt), session.Title)
+		if session.EndedAt != nil && journalClock(*session.EndedAt) != journalClock(session.StartedAt) {
+			line = fmt.Sprintf("%s to %s  %s", journalClock(session.StartedAt), journalClock(*session.EndedAt), session.Title)
+		}
 		if session.Directory != "" {
 			line += " (" + session.Directory + ")"
+		}
+		if session.StretchCount > 1 {
+			line += fmt.Sprintf(", %d stretches", session.StretchCount)
 		}
 		if session.LinkReason != "" {
 			line += ": " + session.LinkReason
 		}
 		lines = append(lines, line)
 	}
-	journalSection("Work", lines)
+	journalSection("Coding sessions", lines)
 
 	lines = []string{}
 	for _, document := range view.Documents {
@@ -741,7 +789,11 @@ func printJournalSections(view *client.JournalDayView) {
 
 	lines = []string{}
 	for _, conversation := range view.Conversations {
-		lines = append(lines, fmt.Sprintf("%s  %s, %s", journalClock(conversation.FirstAt), conversation.Title, countWords(conversation.MessageCount, "message")))
+		title := conversation.Title
+		if conversation.IsMain {
+			title = "Main chat"
+		}
+		lines = append(lines, fmt.Sprintf("%s  %s, %s", journalClock(conversation.FirstAt), title, countWords(conversation.MessageCount, "message")))
 	}
 	for _, chat := range view.Chats {
 		lines = append(lines, fmt.Sprintf("%s  %s, %s", journalClock(chat.FirstAt), chat.ChatName, countWords(chat.MessageCount, "message")))
@@ -751,6 +803,9 @@ func printJournalSections(view *client.JournalDayView) {
 	lines = []string{}
 	for _, mail := range view.Mail {
 		line := fmt.Sprintf("%s  %s: %s", journalClock(mail.ReceivedAt), mail.FromName, mail.Subject)
+		if mail.RepeatCount > 1 {
+			line += fmt.Sprintf(" (%d times)", mail.RepeatCount)
+		}
 		switch {
 		case mail.IsSent:
 			line = fmt.Sprintf("%s  sent: %s", journalClock(mail.ReceivedAt), mail.Subject)
@@ -1446,4 +1501,15 @@ func runJournalErase(ctx context.Context, command *cli.Command) error {
 	}
 	fmt.Printf("erased %s, %s and %s\n", countWords(erased.DayCount, "day"), countWords(erased.PeriodCount, "period"), countWords(erased.LinkCount, "link"))
 	return nil
+}
+
+// journalDuration is minutes as a person reads them: "3 h 20 min", "45 min".
+func journalDuration(minutes int) string {
+	switch {
+	case minutes < 60:
+		return fmt.Sprintf("%d min", minutes)
+	case minutes%60 == 0:
+		return fmt.Sprintf("%d h", minutes/60)
+	}
+	return fmt.Sprintf("%d h %d min", minutes/60, minutes%60)
 }

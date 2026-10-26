@@ -23,6 +23,8 @@ func ComputeFacts(day *Day) models.JournalFacts {
 		PhotoCount:         day.PhotoTotal,
 		PhotoCandidateIDs:  append([]string(nil), day.PhotoCandidateIDs...),
 		CodingSessionCount: len(day.CodingSessions),
+		WorkProjectCount:   len(day.WorkProjects),
+		FactsVersion:       models.JournalFactsVersion,
 		CodingMinutes:      codingMinutes(day.CodingSessions),
 		RecordingCount:     len(day.Recordings),
 		ConversationCount:  len(day.Conversations),
@@ -95,6 +97,10 @@ func minutesOfUnion(spans [][2]time.Time) int {
 func codingMinutes(sessions []CodingSession) int {
 	spans := make([][2]time.Time, 0, len(sessions))
 	for _, session := range sessions {
+		if len(session.Spans) > 0 {
+			spans = append(spans, session.Spans...)
+			continue
+		}
 		spans = append(spans, [2]time.Time{session.StartedAt, session.EndedAt})
 	}
 	return minutesOfUnion(spans)

@@ -231,6 +231,9 @@ public struct JournalCodingSession: Codable, Hashable, Sendable, Identifiable {
     public let assistant: String
     public let startedAt: String
     public let endedAt: String?
+    /// How many stretches of work (each ended by a pause) the day had in this
+    /// project; absent from an older server, which sent one stretch a row.
+    public let stretchCount: Int?
     public let linkReason: String
     public var id: String { documentId }
 }
@@ -278,6 +281,9 @@ public struct JournalMail: Codable, Hashable, Sendable, Identifiable {
     public let isImportant: Bool
     public let isChosen: Bool
     public let linkReason: String
+    /// How many messages of the day it stands for: the same sender and
+    /// subject arriving again is one row with a count.
+    public let repeatCount: Int?
     public var id: String { itemId }
 }
 

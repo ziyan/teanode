@@ -13,7 +13,7 @@ import {
   dayOf,
   distanceText,
   durationText,
-  usesImperialUnits,
+  useIsImperial,
   wholeNumberText,
 } from './journalApi'
 import { JournalCard } from './journalParts'
@@ -30,7 +30,7 @@ const hasPosition = (visit: { latitude: number; longitude: number }) => visit.la
 
 export function PlacesCard({ day }: { day: JournalDay }) {
   const { t, plural, language } = useTranslation()
-  const isImperial = usesImperialUnits()
+  const isImperial = useIsImperial()
   const clock = (value: string | null | undefined) => clockText(value, day.timeZone, language)
   const positioned = useMemo(() => day.visits.filter(hasPosition), [day.visits])
   // One mark per place, however many visits it had, and the path through the
@@ -230,7 +230,7 @@ function hasHealth(health: JournalHealth | null): health is JournalHealth {
 
 export function HealthCard({ day }: { day: JournalDay }) {
   const { t, language } = useTranslation()
-  const isImperial = usesImperialUnits()
+  const isImperial = useIsImperial()
   const health = day.health
   if (!hasHealth(health)) return null
   const stepsByHour = health.stepsByHour.length === 24 ? health.stepsByHour : []
