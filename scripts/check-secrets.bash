@@ -110,6 +110,11 @@ readonly ALLOWED_HOSTS=(
   console.anthropic.com
   aistudio.google.com
 
+  # The weather service a journal day's weather comes from: a public service
+  # with a history of every day, which the code that asks it and the journal's
+  # plan have to name.
+  .open-meteo.com
+
   # Where the table of cities that names a photo's place comes from: a public
   # data service, which its license asks to be credited, and which the script
   # that rebuilds the table downloads from.
