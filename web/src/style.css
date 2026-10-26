@@ -21686,6 +21686,14 @@ button.person-row:focus-visible {
   min-width: 0;
 }
 
+/* The words a screen reader says for a column without a heading are placed
+   absolutely; without a positioned box around them they escape the table's
+   own scroll box and widen the whole page on a phone. */
+.shopping-main .table-wrap,
+.dialog .table-wrap {
+  position: relative;
+}
+
 .shopping-lists {
   margin-bottom: 0;
 }
@@ -21865,6 +21873,22 @@ button.person-row:focus-visible {
 
 .shopping-prices {
   margin-top: var(--space-4);
+}
+
+/* The item's dialog and the import's are wide, as their tables need: the
+   general dialog rule caps every dialog at 420px, which put the item's four
+   buttons on two lines and squeezed the price table's headings. On a phone a
+   dialog is the whole screen, as everywhere. */
+@media (min-width: 641px) {
+  .dialog.dialog-wide:has(.shopping-picture-field),
+  .dialog.dialog-wide:has(.shopping-import-files) {
+    max-width: min(640px, calc(100vw - 32px));
+  }
+}
+
+.shopping-price-range {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-label);
 }
 
 .shopping-prices h4 {

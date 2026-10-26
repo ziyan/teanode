@@ -81,7 +81,8 @@ export function ShoppingItemTable({
                 <td className="wrap">
                   <ShoppingItemName item={shoppingItem} />
                 </td>
-                <td>{quantityText(shoppingItem)}</td>
+                {/* A count needed means nothing for an item not needed now. */}
+                <td>{shoppingItem.shoppingItemState === 'not_needed' ? '' : quantityText(shoppingItem)}</td>
                 <td>
                   {priceNumber(shoppingItem.unitPriceAmount) === null
                     ? ''

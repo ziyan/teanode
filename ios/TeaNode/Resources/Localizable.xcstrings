@@ -75406,6 +75406,22 @@
         }
       }
     },
+    "Keep shopping lists, share them, and check items off together": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "買い物リストを持ち、共有して、みんなで購入済みにチェックを入れる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存购物清单，分享清单，并一起勾选已买的商品"
+          }
+        }
+      }
+    },
     "Keep your Health data from the iPhone, and share some of it": {
       "localizations": {
         "ja": {

@@ -42,7 +42,7 @@ import {
   SHOPPING_PATH,
   shoppingListAddress,
   shoppingStoreAddress,
-  shoppingTabOf,
+  isOnShoppingTab,
   ShoppingTab,
   uploadAgentAttachment,
 } from './shoppingItems'
@@ -104,7 +104,7 @@ export function ShoppingListPage() {
   const shoppingList = content.data?.shoppingList ?? null
   const shoppingItems = useMemo(() => content.data?.shoppingItems ?? [], [content.data])
   const counts = useMemo(() => countShoppingTabs(shoppingItems), [shoppingItems])
-  const tabItems = useMemo(() => shoppingItems.filter((item) => shoppingTabOf(item) === tab), [shoppingItems, tab])
+  const tabItems = useMemo(() => shoppingItems.filter((item) => isOnShoppingTab(item, tab)), [shoppingItems, tab])
   const shownItems = tabItems.slice(offset, offset + pageSize)
   useKeepPageInRange(pageIndex, pageSize, content.data ? tabItems.length : null, setPageIndex)
   useBreadcrumbDetail(shoppingList?.listName)

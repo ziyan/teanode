@@ -305,6 +305,7 @@ function PriceHistory({ shoppingItemId }: { shoppingItemId: string }) {
       <h4>{t('shopping.priceOverTime')}</h4>
       {prices.data && list.length === 0 ? <p className="muted">{t('shopping.noPrices')}</p> : null}
       <PriceChart prices={list} />
+      <PriceRange prices={list} />
       {list.length > 0 ? (
         <div className="table-wrap">
           <table>
@@ -338,6 +339,26 @@ function PriceHistory({ shoppingItemId }: { shoppingItemId: string }) {
         </div>
       ) : null}
     </section>
+  )
+}
+
+// PriceRange says in words what the line shows: the lowest and the highest
+// price and the days they span, which the line alone does not.
+function PriceRange({ prices }: { prices: ShoppingItemPrice[] }) {
+  const { t } = useTranslation()
+  const points = pricePoints(prices)
+  if (points.length === 0) return null
+  const amounts = points.map((point) => Number(point.price.unitPriceAmount))
+  const currencyCode = points[0].price.currencyCode
+  return (
+    <p className="muted shopping-price-range">
+      {t('shopping.priceRange', {
+        lowest: formatMoney(Math.min(...amounts), currencyCode),
+        highest: formatMoney(Math.max(...amounts), currencyCode),
+        from: formatDay(points[0].price.observedOn),
+        to: formatDay(points[points.length - 1].price.observedOn),
+      })}
+    </p>
   )
 }
 

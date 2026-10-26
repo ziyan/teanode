@@ -19,17 +19,29 @@ export function isShoppingTab(value: string | null): value is ShoppingTab {
   return SHOPPING_TABS.includes(value as ShoppingTab)
 }
 
-// shoppingTabOf is the tab an item is listed on. An item out of stock is
-// still needed, and is listed on its own tab rather than among those to buy.
-export function shoppingTabOf(item: ShoppingItem): ShoppingTab {
-  if (item.shoppingItemState === 'in_cart') return 'in-cart'
-  if (item.shoppingItemState === 'not_needed') return 'not-needed'
-  return item.outOfStockAt ? 'out-of-stock' : 'to-buy'
+// isOnShoppingTab says whether an item is listed on a tab. An item out of
+// stock is still to buy: it is on To buy, with its mark, and on Out of stock,
+// which shows those alone; so the list's count to buy and the tab's agree.
+export function isOnShoppingTab(item: ShoppingItem, tab: ShoppingTab): boolean {
+  switch (tab) {
+    case 'in-cart':
+      return item.shoppingItemState === 'in_cart'
+    case 'not-needed':
+      return item.shoppingItemState === 'not_needed'
+    case 'out-of-stock':
+      return item.shoppingItemState === 'needed' && Boolean(item.outOfStockAt)
+    default:
+      return item.shoppingItemState === 'needed'
+  }
 }
 
 export function countShoppingTabs(items: ShoppingItem[]): Record<ShoppingTab, number> {
   const counts: Record<ShoppingTab, number> = { 'to-buy': 0, 'in-cart': 0, 'out-of-stock': 0, 'not-needed': 0 }
-  for (const item of items) counts[shoppingTabOf(item)] += 1
+  for (const item of items) {
+    for (const tab of SHOPPING_TABS) {
+      if (isOnShoppingTab(item, tab)) counts[tab] += 1
+    }
+  }
   return counts
 }
 

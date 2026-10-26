@@ -208,12 +208,15 @@ export function ShoppingReceiptMatches({
                       <div className="shopping-item-name">
                         <strong>{line.description}</strong>
                         <div className="muted">
-                          {[
-                            line.quantity && Number(line.quantity) !== 1 ? `${Number(line.quantity)} ×` : '',
-                            line.lineAmount ? formatMoney(Number(line.lineAmount), view.currencyCode) : '',
-                          ]
-                            .filter(Boolean)
-                            .join(' ')}
+                          {/* The line's amount is what all of them cost: "2 for $6.98". */}
+                          {line.quantity && Number(line.quantity) !== 1 && line.lineAmount
+                            ? t('shopping.receiptCountFor', {
+                                count: String(Number(line.quantity)),
+                                amount: formatMoney(Number(line.lineAmount), view.currencyCode),
+                              })
+                            : line.lineAmount
+                              ? formatMoney(Number(line.lineAmount), view.currencyCode)
+                              : ''}
                         </div>
                       </div>
                     </td>

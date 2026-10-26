@@ -10,16 +10,18 @@ import {
   quantityText,
   shoppingListAddress,
   shoppingStoreAddress,
-  shoppingTabOf,
+  isOnShoppingTab,
   storeKeyOf,
 } from './shoppingItems'
 import { shoppingItem } from './shoppingTestSupport'
 
-it('puts an item out of stock on its own tab, though it is still needed', () => {
-  expect(shoppingTabOf(shoppingItem())).toBe('to-buy')
-  expect(shoppingTabOf(shoppingItem({ outOfStockAt: '2030-01-01T00:00:00Z' }))).toBe('out-of-stock')
-  expect(shoppingTabOf(shoppingItem({ shoppingItemState: 'in_cart' }))).toBe('in-cart')
-  expect(shoppingTabOf(shoppingItem({ shoppingItemState: 'not_needed' }))).toBe('not-needed')
+it('keeps an item out of stock among those to buy, and shows it on Out of stock too', () => {
+  const outOfStock = shoppingItem({ outOfStockAt: '2030-01-01T00:00:00Z' })
+  expect(isOnShoppingTab(shoppingItem(), 'to-buy')).toBe(true)
+  expect(isOnShoppingTab(outOfStock, 'to-buy')).toBe(true)
+  expect(isOnShoppingTab(outOfStock, 'out-of-stock')).toBe(true)
+  expect(isOnShoppingTab(shoppingItem({ shoppingItemState: 'in_cart' }), 'in-cart')).toBe(true)
+  expect(isOnShoppingTab(shoppingItem({ shoppingItemState: 'not_needed' }), 'to-buy')).toBe(false)
   expect(
     countShoppingTabs([
       shoppingItem({ id: 'a' }),
@@ -27,7 +29,7 @@ it('puts an item out of stock on its own tab, though it is still needed', () => 
       shoppingItem({ id: 'c', outOfStockAt: '2030-01-01T00:00:00Z' }),
       shoppingItem({ id: 'd', shoppingItemState: 'not_needed' }),
     ]),
-  ).toEqual({ 'to-buy': 2, 'in-cart': 0, 'out-of-stock': 1, 'not-needed': 1 })
+  ).toEqual({ 'to-buy': 3, 'in-cart': 0, 'out-of-stock': 1, 'not-needed': 1 })
 })
 
 it('groups by store, named stores alphabetically and the items for any store last, aisles in the order given', () => {
