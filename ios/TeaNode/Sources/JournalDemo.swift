@@ -55,7 +55,10 @@
             let photoCount: Int
         }
 
-        static let days: [DemoDay] = [
+        // Worked out each time it is read: a stored static array of [String: Any]
+        // is not concurrency-safe, and the demo reads it rarely.
+        static var days: [DemoDay] {
+            [
             DemoDay(
                 daysAgo: 0, moodLevel: nil, moodWords: "", headline: "", wordsExcerpt: "", highCelsius: 16, weatherKind: "clear",
                 facts: ["meetingCount": 2, "stepCount": 3880, "photoCount": 2], photoCount: 2),
@@ -92,6 +95,7 @@
                 daysAgo: 10, moodLevel: 4, moodWords: "", headline: "Design review settled onboarding.", wordsExcerpt: "",
                 highCelsius: 12, weatherKind: "cloudy", facts: ["meetingCount": 5], photoCount: 0),
         ]
+        }
 
         // MARK: Pieces of the answers
 
