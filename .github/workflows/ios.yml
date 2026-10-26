@@ -535,6 +535,11 @@ jobs:
           # Backup paused by the person: the state row says Paused and the button says Resume backup.
           shoot photos-backup-paused-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-paused
           shoot photos-backup-paused-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-paused
+          # Everything backed up but a few files: the row that says how many opens the list of them, with why and what to do.
+          shoot photos-backup-refused-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-refused
+          shoot photos-backup-refused-files-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-refused-files
+          shoot photos-backup-refused-files-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-refused-files
+          shoot photos-backup-refused-files-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-refused-files
           # Backup on for another account: the row in Settings, and the screen it opens.
           shoot settings-photo-backup-other-account-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings-photo-backup-other-account
           shoot photos-backup-other-account-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-other-account

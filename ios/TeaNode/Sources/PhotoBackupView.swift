@@ -320,11 +320,26 @@ struct PhotoBackupContent: View {
             if let lastPassFinishedAt = status.lastPassFinishedAt {
                 LabeledContent("Last finished", value: lastPassFinishedAt.formatted(.relative(presentation: .named)))
             }
+            // Each opens the list of the files, with why each did not go up
+            // and a way to try it again or skip it.
             if status.refusedFileCount > 0 {
-                Label {
-                    Text("\(status.refusedFileCount) files could not be backed up. Back up now tries them again.")
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                NavigationLink {
+                    PhotoBackupRefusedFilesView()
+                } label: {
+                    Label {
+                        Text("\(status.refusedFileCount) files could not be backed up. Back up now tries them again.")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                    }
+                }
+                .fullWidthRowSeparator()
+            }
+            if status.skippedFileCount > 0 {
+                NavigationLink {
+                    PhotoBackupRefusedFilesView()
+                } label: {
+                    Label("\(status.skippedFileCount) files skipped", systemImage: "forward")
+                        .foregroundStyle(.secondary)
                 }
                 .fullWidthRowSeparator()
             }
@@ -472,6 +487,12 @@ private let previewBackground = PhotoBackupStatus(
 #Preview("Uploading in the background, dark") { previewContent(previewBackground).preferredColorScheme(.dark) }
 #Preview("Paused, light") { previewContent(previewPaused) }
 #Preview("Paused, dark") { previewContent(previewPaused).preferredColorScheme(.dark) }
+#Preview("Files not backed up, light") {
+    previewContent(
+        PhotoBackupStatus(
+            phase: .idle, backedUpItemCount: 3912, libraryItemCount: 3912, refusedFileCount: 2, skippedFileCount: 1,
+            lastPassFinishedAt: Date(timeIntervalSinceNow: -43)))
+}
 #Preview("Up to date, light") {
     previewContent(PhotoBackupStatus(phase: .idle, backedUpItemCount: 3912, libraryItemCount: 3912, lastPassFinishedAt: Date(timeIntervalSinceNow: -600)))
 }
