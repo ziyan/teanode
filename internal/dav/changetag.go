@@ -127,7 +127,9 @@ func withChangeTags(body []byte, tags map[string]collectionTag, isAll bool) []by
 			return block
 		}
 		collection, ok := tags[strings.TrimSpace(string(found[1]))]
-		if !ok {
+		// Only a collection the library found: a response with no properties
+		// at all is a refusal, and a refusal is not told anything.
+		if !ok || !bytes.Contains(block, []byte("<propstat")) {
 			return block
 		}
 		answered := []foundProperty{{missing: missingChangeTag, value: `<getctag xmlns="` + changeTagNamespace + `">` + collection.tag + `</getctag>`}}
