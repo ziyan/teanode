@@ -1823,8 +1823,6 @@ func reportedVisitRange(reported []ReportedVisit) (time.Time, time.Time) {
 	return from, until
 }
 
-// reportRange is the earliest and the latest time the positions and the
-// visits of a report give, and whether it gives any.
 // reportTimes are the times a report gives: those of its positions, motion
 // activity and visits, and the arrival of a visit it completed as stored.
 func reportTimes(arguments ReportLocationArguments, storedArrivedAt *time.Time) []time.Time {
@@ -1848,6 +1846,8 @@ func reportTimes(arguments ReportLocationArguments, storedArrivedAt *time.Time) 
 	return times
 }
 
+// reportRange is the earliest and the latest time the positions, the motion
+// activity and the visits of a report give, and whether it gives any.
 func reportRange(arguments ReportLocationArguments) (time.Time, time.Time, bool) {
 	from, until := reportedVisitRange(arguments.Visits)
 	times := make([]time.Time, 0, len(arguments.Points)+len(arguments.Activities))
@@ -2348,16 +2348,29 @@ func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) 
 // either end (a place was forgotten, or visits were erased): the visits on
 // both sides of what was lost get the trip between them, if there was one.
 func rebuildTripsMissingVisit(tx db.Transaction, userId string) error {
-	trips, err := tx.ListTripsMissingVisit(userId, db.TripsMissingVisitMost)
-	if err != nil {
-		return err
+	// A batch at a time until none is left. A rebuild around a trip's start
+	// always replaces that trip, since every window starts before the time
+	// it is built around, so each batch is gone before the next is read;
+	// the bound only stops a mistake from looping.
+	for batch := 0; batch < rebuildMissingVisitBatchesMost; batch++ {
+		trips, err := tx.ListTripsMissingVisit(userId, db.TripsMissingVisitMost)
+		if err != nil || len(trips) == 0 {
+			return err
+		}
+		starts := make([]time.Time, 0, len(trips))
+		for _, trip := range trips {
+			starts = append(starts, trip.StartedAt)
+		}
+		if err := rebuild.AroundTimes(tx, userId, starts); err != nil {
+			return err
+		}
 	}
-	times := make([]time.Time, 0, 2*len(trips))
-	for _, trip := range trips {
-		times = append(times, trip.StartedAt, trip.EndedAt)
-	}
-	return rebuild.AroundTimes(tx, userId, times)
+	return nil
 }
+
+// rebuildMissingVisitBatchesMost bounds the batches rebuildTripsMissingVisit
+// reads: a place visited every day for years leaves a few thousand trips.
+const rebuildMissingVisitBatchesMost = 100
 
 func (self *graph) ForgetPlace(ctx context.Context, arguments ForgetPlaceArguments) (bool, error) {
 	principal, err := self.requireLocationPerson(ctx)

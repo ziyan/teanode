@@ -107,6 +107,36 @@ func TestPositionsAreReadInPagesWithoutLeavingAnyOut(t *testing.T) {
 	})
 }
 
+// Two positions measured at the same instant by two sources, where a page
+// ends between them, are both read, and none twice.
+func TestPositionsSharingAnInstantAtAPageEndAreAllRead(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	userId := dbtest.CreateUser(t, database, "rebuild-page-instant")
+	previous := pointsPageSize
+	pointsPageSize = 2
+	defer func() { pointsPageSize = previous }()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		start := time.Now().Add(-time.Hour).Truncate(time.Second)
+		point := func(minute int, source models.LocationSource) *models.LocationPoint {
+			return &models.LocationPoint{
+				LatitudeDegrees: 40, LongitudeDegrees: -75, AccuracyMeters: 5, MeasuredAt: start.Add(time.Duration(minute) * time.Minute),
+				ReceivedAt: start, LocationSource: source,
+			}
+		}
+		points := []*models.LocationPoint{
+			point(0, models.LocationSourcePhone), point(1, models.LocationSourcePhone), point(1, models.LocationSourceBrowser), point(2, models.LocationSourcePhone),
+		}
+		if _, err := tx.InsertLocationPoints(userId, points); err != nil {
+			t.Fatal(err)
+		}
+		positions, err := positionsBetween(tx, userId, start.Add(-time.Hour), start.Add(time.Hour))
+		if err != nil || len(positions) != 4 {
+			t.Fatalf("all four positions once each: %d %v", len(positions), err)
+		}
+	})
+}
+
 // Times a long way apart are rebuilt apart: the days between are not.
 func TestAroundTimesRebuildsEachRunAndNotTheDaysBetween(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)

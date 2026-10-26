@@ -195,8 +195,6 @@ struct LocationTravelScreen: View {
     /// The kind the periods were read for, so that they are never drawn under
     /// the labels of another.
     @State private var loadedPeriodKind = TravelPeriodKind.week
-    /// The pages back that came back with no period, for the current kind.
-    @State private var emptyPageBacks: Set<Int> = []
     @State private var isLoading = true
     @State private var loadFailedText: String?
 
@@ -206,12 +204,9 @@ struct LocationTravelScreen: View {
     /// The periods to draw: none while those read are for another kind.
     private var shownPeriods: [TravelPeriod] { loadedPeriodKind == periodKind ? periods : [] }
 
-    /// Earlier is offered until twenty pages back, or until this page and the
-    /// one after it (the one the person came from) both came back empty.
-    private var isEarlierOffered: Bool {
-        guard pageBack < Self.pageBackMost else { return false }
-        return !(emptyPageBacks.contains(pageBack) && emptyPageBacks.contains(pageBack - 1))
-    }
+    /// Earlier is offered until twenty pages back: months with no travel are
+    /// no sign that there is none before them.
+    private var isEarlierOffered: Bool { pageBack < Self.pageBackMost }
 
     private struct Page: Equatable {
         let periodKind: TravelPeriodKind
@@ -269,7 +264,6 @@ struct LocationTravelScreen: View {
         .task(id: Page(periodKind: periodKind, pageBack: pageBack)) { await load() }
         .onChange(of: periodKind) {
             periods = []
-            emptyPageBacks = []
             pageBack = 0
         }
     }
@@ -286,11 +280,6 @@ struct LocationTravelScreen: View {
             let read = TravelPeriods.group(totals)
             periods = read
             loadedPeriodKind = requested.periodKind
-            if read.isEmpty {
-                emptyPageBacks.insert(requested.pageBack)
-            } else {
-                emptyPageBacks.remove(requested.pageBack)
-            }
             loadFailedText = nil
             isLoading = false
         } catch {

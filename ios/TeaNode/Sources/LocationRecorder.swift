@@ -347,6 +347,7 @@ final class LocationRecorder {
     /// start of a motion activity queued, so the next read starts there and
     /// leaves out what it already queued.
     private static let lastActivityStartedAtKeyPrefix = "locationLastActivityStartedAt."
+    private static let lastActivityQueriedAtKeyPrefix = "locationLastActivityQueriedAt."
     /// How often motion activity is read when nothing forces it: a read is a
     /// query of what iOS already keeps, and the activities are told with the
     /// next report.
@@ -495,6 +496,7 @@ final class LocationRecorder {
         if let url = outboxURL(accountKey: accountKey) { try? FileManager.default.removeItem(at: url) }
         defaults.removeObject(forKey: LocationPauseTracker.defaultsKey(accountKey: accountKey))
         defaults.removeObject(forKey: Self.lastActivityStartedAtKeyPrefix + accountKey)
+        defaults.removeObject(forKey: Self.lastActivityQueriedAtKeyPrefix + accountKey)
     }
 
     /// Stops sending, and waits for a batch on its way to be answered. Used
@@ -1269,6 +1271,9 @@ final class LocationRecorder {
         motionReadAt = now
         let oldest = now.addingTimeInterval(-MotionActivityReader.lookbackSeconds)
         let defaultsKey = Self.lastActivityStartedAtKeyPrefix + accountKey
+        // An earlier build kept when it last asked instead; that key is no
+        // longer read.
+        defaults.removeObject(forKey: Self.lastActivityQueriedAtKeyPrefix + accountKey)
         let lastStartedAt = defaults.object(forKey: defaultsKey) as? Date
         let from = max(oldest, lastStartedAt ?? oldest)
         guard let activities = await MotionActivityReader.read(from: from, until: now) else { return }
@@ -1278,8 +1283,11 @@ final class LocationRecorder {
         // newest start already queued is the same one, read again.
         let unseen = activities.filter { activity in lastStartedAt.map { activity.startedAt > $0 } ?? true }
         outbox.addActivities(unseen.filter { pauseTracker.isRecordable(pointMeasuredAt: $0.startedAt) })
-        if let newestStartedAt = unseen.map(\.startedAt).max() { defaults.set(newestStartedAt, forKey: defaultsKey) }
-        saveOutbox(isUrgent: false)
+        guard let newestStartedAt = unseen.map(\.startedAt).max() else { return }
+        // Written to the file before the newest start is kept, so that an app
+        // closed in between reads them again rather than losing them.
+        saveOutbox(isUrgent: true)
+        defaults.set(newestStartedAt, forKey: defaultsKey)
     }
 
     /// Sends a batch. If the server calls it invalid without saying which

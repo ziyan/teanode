@@ -53,14 +53,31 @@ var pointsPageSize = 10000
 // before from (or a day before from when there is none): a trip that began
 // before then and was not built, because the person's phone was off, ends in
 // the visit this change brings.
+//
+// When from falls inside a visit that began before it, the person was staying
+// put at from, so nothing the change brings belongs to a trip that ended at
+// that visit's arrival: the window starts at that arrival, and a report
+// during a long stay reads only the stay. No window starts more than the
+// longest trip before from.
 func Around(tx db.Transaction, userId string, from, until time.Time) error {
 	windowStart := from.Add(-defaultLookBack)
-	departure, err := tx.GetLatestVisitDeparture(userId, from)
+	staying, _, err := tx.ListPlaceVisits(userId, db.PlaceVisitFilter{From: &from, Until: &from, LimitCount: 1})
 	if err != nil {
 		return err
 	}
-	if departure != nil {
-		windowStart = *departure
+	if len(staying) > 0 && staying[0].ArrivedAt != nil && staying[0].ArrivedAt.Before(from) {
+		windowStart = *staying[0].ArrivedAt
+	} else {
+		departure, err := tx.GetLatestVisitDeparture(userId, from)
+		if err != nil {
+			return err
+		}
+		if departure != nil {
+			windowStart = *departure
+		}
+	}
+	if earliest := from.Add(-travel.MaximumTripDuration); windowStart.Before(earliest) {
+		windowStart = earliest
 	}
 	return Window(tx, userId, windowStart, until.Add(lookAhead))
 }
@@ -143,15 +160,21 @@ func Window(tx db.Transaction, userId string, windowStart, windowEnd time.Time) 
 }
 
 // positionsBetween reads every position measured in the range, a page at a
-// time, oldest first: none is left out for there being many.
+// time, oldest first: none is left out for there being many. A page starts at
+// the instant the one before ended at, since positions from two sources can
+// share an instant, and the ones already read there are skipped.
 func positionsBetween(tx db.Transaction, userId string, from, until time.Time) ([]travel.Position, error) {
 	var positions []travel.Position
+	readAtBoundary := map[string]bool{}
 	for pageFrom := from; pageFrom.Before(until); {
 		points, err := tx.ListLocationPoints(userId, pageFrom, until, pointsPageSize)
 		if err != nil {
 			return nil, err
 		}
 		for _, point := range points {
+			if readAtBoundary[point.ID] {
+				continue
+			}
 			positions = append(positions, travel.Position{
 				MeasuredAt: point.MeasuredAt, LatitudeDegrees: point.LatitudeDegrees, LongitudeDegrees: point.LongitudeDegrees, AccuracyMeters: point.AccuracyMeters,
 			})
@@ -159,10 +182,20 @@ func positionsBetween(tx db.Transaction, userId string, from, until time.Time) (
 		if len(points) < pointsPageSize {
 			break
 		}
-		// A microsecond, the precision times are stored with: a nanosecond
-		// would be rounded down to the last position, which would be read
-		// again.
-		pageFrom = points[len(points)-1].MeasuredAt.Add(time.Microsecond)
+		last := points[len(points)-1].MeasuredAt
+		if last.Equal(pageFrom) {
+			// A whole page at one instant: there is no telling the rest
+			// apart, so the next page starts after it.
+			pageFrom = last.Add(time.Microsecond)
+			continue
+		}
+		pageFrom = last
+		readAtBoundary = map[string]bool{}
+		for _, point := range points {
+			if point.MeasuredAt.Equal(last) {
+				readAtBoundary[point.ID] = true
+			}
+		}
 	}
 	return positions, nil
 }
