@@ -367,14 +367,10 @@ function WeekDays({ period }: { period: JournalPeriod }) {
                 <span className="journal-date-weekday muted">{weekdayShortText(day, language)}</span>
                 <span className="journal-day-column-number">{Number(day.slice(8, 10))}</span>
               </span>
-              {!isFuture && (
-                <span
-                  role="img"
-                  aria-label={
-                    level > 0 ? t('journal.moodOfDay', { mood: t(MOOD_NAMES[level]) }) : t('journal.noMoodYet')
-                  }
-                >
-                  <MoodFace level={level} size={22} isFilled={level > 0} />
+              {/* A day with no mood shows none: an empty face read as Okay. */}
+              {!isFuture && level > 0 && (
+                <span role="img" aria-label={t('journal.moodOfDay', { mood: t(MOOD_NAMES[level]) })}>
+                  <MoodFace level={level} size={22} />
                 </span>
               )}
             </span>
@@ -583,7 +579,7 @@ function WeekPlaces({ period }: { period: JournalPeriod }) {
   return (
     <JournalCard
       title={t('journal.places')}
-      description={plural(period.totals.placeCount, { one: 'journal.placesOne', other: 'journal.placesOther' })}
+      description={plural(period.totals.placeCount, { one: 'journal.weekPlacesOne', other: 'journal.weekPlacesOther' })}
       collapseId="week-places"
     >
       <div className="journal-chips">

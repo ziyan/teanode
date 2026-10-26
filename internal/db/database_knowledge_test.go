@@ -630,33 +630,42 @@ func TestEveryWordFindsOnlyPassagesWithAllTheWords(test *testing.T) {
 	})
 }
 
-// The ends of documents are their first and last chunk each, and the one
-// chunk of a document of one, read for many documents at once.
-func TestTheEndsOfDocumentsAreTheirFirstAndLastChunks(test *testing.T) {
+// The posts of chat units are each line's clock and author, in the order
+// written across chunks, read for many units at once; a line that only looks
+// like a post with a clock past midnight is not one.
+func TestThePostsOfChatUnitsAreTheirClocksAndAuthors(test *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	defer closeDatabase()
 	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
 		source := knowledgeSource(test, tx)
 		long := knowledgeDocument(test, tx, source, "posts/dev/general.jsonl#long")
-		short := knowledgeDocument(test, tx, source, "posts/dev/general.jsonl#short")
+		quiet := knowledgeDocument(test, tx, source, "posts/dev/general.jsonl#quiet")
 		chunks := []*models.AgentChunk{}
-		for number, text := range []string{"first post", "middle post", "last post"} {
+		for number, text := range []string{
+			"09:05 ada: start the build\n09:06 Claude Code: started\nit runs: slowly",
+			"25:00 ada: not a clock\n10:40 ada: thanks",
+		} {
 			chunks = append(chunks, &models.AgentChunk{Number: number, Text: text})
 		}
 		if err := tx.ReplaceAgentChunks(long, chunks); err != nil {
 			test.Fatal(err)
 		}
-		ends, err := tx.ListAgentChunkEnds(source.AgentID, []string{long.ID, short.ID})
+		if err := tx.ReplaceAgentChunks(quiet, []*models.AgentChunk{{Text: "no posts here"}}); err != nil {
+			test.Fatal(err)
+		}
+		posts, err := tx.ListAgentChunkPosts(source.AgentID, []string{long.ID, quiet.ID})
 		if err != nil {
 			test.Fatal(err)
 		}
-		if got := ends[long.ID]; len(got) != 2 || got[0].Text != "first post" || got[1].Text != "last post" {
-			test.Errorf("the ends of a document of three chunks: %+v", got)
+		got := posts[long.ID]
+		if len(got) != 3 || got[0].ClockMinutes != 9*60+5 || got[0].Author != "ada" ||
+			got[1].Author != "Claude Code" || got[2].ClockMinutes != 10*60+40 || got[2].DocumentID != long.ID {
+			test.Errorf("the posts of a unit of two chunks: %+v", got)
 		}
-		if got := ends[short.ID]; len(got) != 1 {
-			test.Errorf("a document of one chunk has it once: %+v", got)
+		if got := posts[quiet.ID]; len(got) != 0 {
+			test.Errorf("a unit with no posts: %+v", got)
 		}
-		if empty, err := tx.ListAgentChunkEnds(source.AgentID, nil); err != nil || len(empty) != 0 {
+		if empty, err := tx.ListAgentChunkPosts(source.AgentID, nil); err != nil || len(empty) != 0 {
 			test.Errorf("no documents: %v, %v", empty, err)
 		}
 	})

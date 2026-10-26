@@ -120,6 +120,10 @@ To see it working at the end: on a development server with a week of invented da
 - Decision: on the iPhone, Journal sits in More under "Every day", and the person can make it one of their tabs in Edit.
   Date/Author: 2026-10-26, maintainer.
 
+- Decision: a day's time worked is the time the person was at their coding sessions, read from their own posts: each post counts five minutes and runs on to their next post when that came within half an hour. The assistant's posts set when a session ended, not how long the person worked.
+  Rationale: counted from each stretch's first post to its last, an assistant left working on its own, overnight or through a day away from the desk, made that whole time work, close to 24 hours a day. The person's posts are told apart by author, the names they go by in chat.
+  Date/Author: 2026-10-26, agent.
+
 ## Outcomes & Retrospective
 
 Nothing built yet.

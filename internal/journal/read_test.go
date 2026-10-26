@@ -273,7 +273,7 @@ func TestComputeFactsFillsEveryNumberOfTheDay(t *testing.T) {
 			PhotoCount: 2, PhotoCandidateIDs: []string{world.photoIds["morning"], world.photoIds["late"]},
 			PlaceCount: 3, VisitedPlaceIDs: nil,
 			WalkedMeters: 5400, StepCount: 8200, SleepMinutes: 420, WorkoutMinutes: 40,
-			CodingSessionCount: 1, WorkProjectCount: 1, CodingMinutes: 45, MeetingCount: 1, MeetingMinutes: 60,
+			CodingSessionCount: 1, WorkProjectCount: 1, CodingMinutes: 10, MeetingCount: 1, MeetingMinutes: 60,
 			RecordingCount: 1, ConversationCount: 1, ChatMessageCount: 2, MailReceivedCount: 2, MailSentCount: 1, DocumentCount: 2,
 			TransactionCount: 3, SpentMinorUnits: 4567, SpentCurrency: "USD", ShoppingTripCount: 0, MemoryPageCount: 1,
 			HasActivity: true, MainPlaceID: world.officeId, MainPlaceName: "Harbor Office", MainPlaceLatitude: 40.7, MainPlaceLongitude: -74.0,
@@ -346,7 +346,7 @@ func TestMomentsAreInTheOrderTheDayHappened(t *testing.T) {
 		}
 		// A project is one moment, named after its folder; a document that
 		// nobody chose is not one.
-		if coding := byKind[models.RecordAgentDocument]; len(coding) != 1 || coding[0].Title != "harbor" || coding[0].Detail != "45 min" {
+		if coding := byKind[models.RecordAgentDocument]; len(coding) != 1 || coding[0].Title != "harbor" || coding[0].Detail != "10 min" {
 			t.Errorf("document moments: %+v", coding)
 		}
 		if workouts := byKind[models.RecordHealthDay]; len(workouts) != 1 || workouts[0].Title != "Running" || workouts[0].RecordID != "workout@"+worldDay {

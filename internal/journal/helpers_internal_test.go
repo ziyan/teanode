@@ -22,29 +22,37 @@ func TestHealthMoodLevelLaysValenceOnFiveSteps(t *testing.T) {
 	}
 }
 
-func TestPostClockSpanReadsTheClockOfTheFirstAndLastPost(t *testing.T) {
-	chunks := func(texts ...string) []*models.AgentChunk {
-		var found []*models.AgentChunk
-		for _, text := range texts {
-			found = append(found, &models.AgentChunk{Text: text})
+// A stretch ends at its last post by anyone, and the person's time in it is
+// their posts, each run on to their next within half an hour: hours of the
+// assistant working on its own between two of their posts are not theirs.
+func TestStretchTimesCountTheTimeThePersonWasAtIt(t *testing.T) {
+	startedAt := time.Date(2026, 10, 22, 23, 0, 0, 0, time.UTC)
+	post := func(clock, author string) models.AgentChunkPost {
+		parsed, err := time.Parse("15:04", clock)
+		if err != nil {
+			t.Fatal(err)
 		}
-		return found
+		return models.AgentChunkPost{ClockMinutes: parsed.Hour()*60 + parsed.Minute(), Author: author}
 	}
+	minutesOf := func(spans [][2]time.Time) int { return minutesOfUnion(spans) }
 	for name, step := range map[string]struct {
-		chunks  []*models.AgentChunk
-		minutes int
-		isFound bool
+		posts       []models.AgentChunkPost
+		endedAfter  time.Duration
+		personSpans int
+		minutes     int
 	}{
-		"one post":      {chunks("09:00 ada: hello"), 0, true},
-		"three posts":   {chunks("09:00 ada: hello\n09:20 Claude Code: hi\ncontinued\n09:45 ada: bye"), 45, true},
-		"two chunks":    {chunks("09:00 ada: hello", "10:30 ada: later"), 90, true},
-		"over midnight": {chunks("23:50 ada: late\n00:10 ada: later"), 20, true},
-		"no posts":      {chunks("just words"), 0, false},
-		"a bad clock":   {chunks("25:00 ada: x"), 0, false},
+		"no posts":     {nil, 0, 0, 0},
+		"one post":     {[]models.AgentChunkPost{post("23:00", "Ada")}, 0, 1, 5},
+		"a short talk": {[]models.AgentChunkPost{post("23:00", "ada"), post("23:02", "Claude Code"), post("23:20", "ada")}, 20 * time.Minute, 2, 25},
+		"left to work overnight": {[]models.AgentChunkPost{
+			post("23:00", "ada"), post("23:40", "Claude Code"), post("02:10", "Claude Code"), post("06:30", "ada"),
+		}, 7*time.Hour + 30*time.Minute, 2, 10},
+		"only the assistant": {[]models.AgentChunkPost{post("23:00", "Claude Code"), post("23:50", "Claude Code")}, 50 * time.Minute, 0, 0},
 	} {
-		minutes, isFound := postClockSpan(step.chunks)
-		if minutes != step.minutes || isFound != step.isFound {
-			t.Errorf("%s: %d %t, want %d %t", name, minutes, isFound, step.minutes, step.isFound)
+		endedAt, personSpans := stretchTimes(startedAt, step.posts, []string{"ada", "harbor"})
+		if !endedAt.Equal(startedAt.Add(step.endedAfter)) || len(personSpans) != step.personSpans || minutesOf(personSpans) != step.minutes {
+			t.Errorf("%s: ended %s, %d spans of %d minutes; want %s, %d, %d",
+				name, endedAt, len(personSpans), minutesOf(personSpans), startedAt.Add(step.endedAfter), step.personSpans, step.minutes)
 		}
 	}
 }

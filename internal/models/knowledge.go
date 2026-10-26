@@ -509,6 +509,17 @@ type AgentChunk struct {
 	CreatedAt  time.Time `json:"createdAt"`
 }
 
+// AgentChunkPost is one post in a chat unit's text, a line that begins
+// "15:04 author: ": the clock it was written at and who wrote it.
+type AgentChunkPost struct {
+	DocumentID string
+
+	// ClockMinutes is the post's clock as minutes after midnight, in
+	// whatever zone the unit writes its clocks in.
+	ClockMinutes int
+	Author       string
+}
+
 // AgentSymbol is one definition a code file declares.
 type AgentSymbol struct {
 	AgentID    string `json:"agentId"`

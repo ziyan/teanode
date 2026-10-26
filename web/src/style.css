@@ -22403,11 +22403,21 @@ button.person-row:focus-visible {
   white-space: nowrap;
 }
 
-/* The description always takes the line under the title: with a reading
-   width of its own it fitted beside the title on a wide card. */
+/* The description always takes the line under the title. A basis of 100%
+   alone is not enough: the card's paragraphs keep to the reading measure, so
+   the capped paragraph still fitted beside the title on a wide card. An empty
+   item the full width of the header, ordered before it, ends the title's line;
+   the paragraph takes back the row gap the empty line adds. */
+.journal-card-head:has(> p)::after {
+  content: '';
+  flex: 0 0 100%;
+  order: 1;
+}
+
 .journal-card-head p {
   flex: 0 0 100%;
-  margin: 0;
+  order: 2;
+  margin: -4px 0 0;
 }
 
 /* A part of a panel that is folded until asked for. */
@@ -22710,8 +22720,13 @@ a.journal-chip:hover {
   font-size: var(--text-label);
 }
 
-.journal-editor textarea {
+/* The reading measure holds for the whole form, so its buttons end where
+   the text box does rather than at the far edge of a wide card. */
+.journal-editor {
   max-width: var(--measure);
+}
+
+.journal-editor textarea {
   font-family: var(--journal-serif);
   font-size: 16px;
   line-height: 1.6;
@@ -23164,7 +23179,7 @@ a.journal-chip:hover {
 }
 
 .journal-map-body {
-  padding: var(--space-3) var(--space-5) var(--space-2);
+  padding: var(--space-3) var(--card-padding-inline) var(--space-2);
 }
 
 .journal-map-body .journal-card-head:not(.is-alone) {
@@ -24211,6 +24226,12 @@ a.journal-year-month:hover {
     gap: var(--space-1);
   }
 
+  /* On a phone the card pads its own sides, the map included, so the text
+     under the map lines up with every other section without more. */
+  .journal-map-body {
+    padding-inline: 0;
+  }
+
   .journal-day-card {
     gap: var(--space-3);
     padding: var(--space-3) var(--space-4);
@@ -24231,6 +24252,11 @@ a.journal-year-month:hover {
   .journal-month-photo,
   .journal-month-headline,
   .journal-month-high {
+    display: none;
+  }
+
+  /* The cells keep only the mood here, which the legend's colors say. */
+  .journal-legend-sentence {
     display: none;
   }
 

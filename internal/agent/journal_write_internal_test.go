@@ -27,7 +27,14 @@ func inventedDay() *journal.Day {
 			NarrativeCorrections: []models.JournalCorrection{{CorrectionText: "It was Ben, not Sam."}},
 			Weather:              &models.JournalWeather{WeatherCode: 3, HighCelsius: 14, LowCelsius: 8, PlaceName: "Harbor Office"},
 		},
-		CodingSessions: []journal.CodingSession{{DocumentID: "doc1", Title: "Fix the tide chart", Directory: "~/src/harbor", StartedAt: at(9, 0), EndedAt: at(10, 0)}},
+		CodingSessions: []journal.CodingSession{{
+			DocumentID: "doc1", Title: "Fix the tide chart", Directory: "~/src/harbor", StartedAt: at(9, 0), EndedAt: at(10, 0),
+			PersonSpans: [][2]time.Time{{at(9, 0), at(10, 0)}},
+		}},
+		WorkProjects: []journal.WorkProject{{
+			Name: "harbor", FirstAt: at(9, 0), LastAt: at(10, 0), ActiveMinutes: 60, StretchCount: 1,
+			Topics: []string{"Fix the tide chart"}, DocumentID: "doc1",
+		}},
 		Documents:      []journal.Document{{DocumentID: "doc2", Title: "harbor-team: 22 Oct", SourceName: "Harbor chat", HappenedAt: at(10, 30)}},
 		DocumentTotal:  1,
 		Mail: []journal.Mail{
@@ -70,7 +77,7 @@ func TestTheDayPromptCarriesTheOriginalWordsAndTheCorrections(t *testing.T) {
 	}
 	records, candidates, _ := strings.Cut(prompt, "The candidates to choose from")
 	for _, line := range []string{
-		"agent_document:doc1 | 09:00 | Coding session: Fix the tide chart, ~/src/harbor, 1 h",
+		"agent_document:doc1 | 09:00 | Project harbor: 1 h; worked on: Fix the tide chart",
 		"calendar_occurrence:event1@2026-10-22T12:00:00Z | 12:00 | Calendar event: Lunch with Ben, Harbor Cafe",
 		"finance_transaction:transaction1 | 12:50 | Transaction: Harbor Cafe, -18.50 USD",
 		"photo:photo1 | 15:00 | Photos: 2 photos, Harbor Office",
