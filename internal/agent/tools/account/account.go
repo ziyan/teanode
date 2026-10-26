@@ -24,9 +24,9 @@ func init() {
 		return tools.Grouped(append([]*tools.Tool{
 			{
 				Name: "account_get", Family: tools.FamilyAccount, Risk: tools.RiskRead,
-				Description: "The person's own account: name, username, notification address, language, zone, how they are described (pronoun), and their sessions, API tokens and passkeys.",
+				Description: "The person's own account: name, username, notification address, language, zone, units (measurement_system), how they are described (pronoun), and their sessions, API tokens and passkeys.",
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
-					result, err := operator.Execute(ctx, `query { GetCurrentUser { id username name email locale timezone timezoneMode pronoun avatarUrl } ListTokens { id name created expires lastUsed revoked } ListSessions { id current created expires lastUsed ip userAgent } ListPasskeys { id name createdAt } }`, nil)
+					result, err := operator.Execute(ctx, `query { GetCurrentUser { id username name email locale timezone timezoneMode measurementSystem pronoun avatarUrl } ListTokens { id name created expires lastUsed revoked } ListSessions { id current created expires lastUsed ip userAgent } ListPasskeys { id name createdAt } }`, nil)
 					if err != nil {
 						return nil, err
 					}
@@ -47,24 +47,26 @@ func init() {
 					}
 					return tools.RiskWrite
 				},
-				Description: "Change the person's own name, notification address, language, time zone or pronoun. The pronoun (he, she or they, empty to clear it) is how they are described: it words what the people in their circles are to them (a son rather than a child) and how you speak of them. Set it only on their own word, never from their name.",
+				Description: "Change the person's own name, notification address, language, time zone, units or pronoun. The units (measurement_system) are metric for degrees Celsius and kilometers, us for degrees Fahrenheit and miles, or empty to follow their language and region; set them when they say how they read temperatures or distances. The pronoun (he, she or they, empty to clear it) is how they are described: it words what the people in their circles are to them (a son rather than a child) and how you speak of them. Set it only on their own word, never from their name.",
 				Parameters: tools.Object(map[string]any{
-					"name":          tools.StringProperty("what to call them"),
-					"email":         tools.StringProperty("where notifications go"),
-					"locale":        tools.StringProperty("the language of the dashboard: en, ja, zh"),
-					"timezone":      tools.StringProperty("an IANA zone"),
-					"timezone_mode": tools.EnumProperty("follow the browser, or keep the zone", "auto", "fixed"),
-					"pronoun":       tools.StringProperty("how they are described, as they said it: he, she or they; empty to clear it"),
+					"name":               tools.StringProperty("what to call them"),
+					"email":              tools.StringProperty("where notifications go"),
+					"locale":             tools.StringProperty("the language of the dashboard: en, ja, zh"),
+					"timezone":           tools.StringProperty("an IANA zone"),
+					"timezone_mode":      tools.EnumProperty("follow the browser, or keep the zone", "auto", "fixed"),
+					"measurement_system": tools.EnumProperty("the units they read measurements in; empty follows their language and region", "metric", "us", ""),
+					"pronoun":            tools.StringProperty("how they are described, as they said it: he, she or they; empty to clear it"),
 				}),
 				Preview: tools.PreviewOf(func(call struct {
-					Name     *string `json:"name"`
-					Email    *string `json:"email"`
-					Locale   *string `json:"locale"`
-					Timezone *string `json:"timezone"`
-					Pronoun  *string `json:"pronoun"`
+					Name              *string `json:"name"`
+					Email             *string `json:"email"`
+					Locale            *string `json:"locale"`
+					Timezone          *string `json:"timezone"`
+					MeasurementSystem *string `json:"measurement_system"`
+					Pronoun           *string `json:"pronoun"`
 				}) string {
 					changing := []string{}
-					for label, value := range map[string]*string{"name": call.Name, "notification address": call.Email, "language": call.Locale, "time zone": call.Timezone, "pronoun": call.Pronoun} {
+					for label, value := range map[string]*string{"name": call.Name, "notification address": call.Email, "language": call.Locale, "time zone": call.Timezone, "units": call.MeasurementSystem, "pronoun": call.Pronoun} {
 						if value != nil {
 							changing = append(changing, label)
 						}
@@ -77,18 +79,19 @@ func init() {
 				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
-						Name         *string `json:"name"`
-						Email        *string `json:"email"`
-						Locale       *string `json:"locale"`
-						Timezone     *string `json:"timezone"`
-						TimezoneMode *string `json:"timezone_mode"`
-						Pronoun      *string `json:"pronoun"`
+						Name              *string `json:"name"`
+						Email             *string `json:"email"`
+						Locale            *string `json:"locale"`
+						Timezone          *string `json:"timezone"`
+						TimezoneMode      *string `json:"timezone_mode"`
+						MeasurementSystem *string `json:"measurement_system"`
+						Pronoun           *string `json:"pronoun"`
 					}](call)
 					if err != nil {
 						return nil, err
 					}
 					variables := map[string]any{"userId": tools.MustRun(ctx).Owner().ID}
-					for key, value := range map[string]*string{"name": arguments.Name, "email": arguments.Email, "locale": arguments.Locale, "timezone": arguments.Timezone, "timezoneMode": arguments.TimezoneMode, "pronoun": arguments.Pronoun} {
+					for key, value := range map[string]*string{"name": arguments.Name, "email": arguments.Email, "locale": arguments.Locale, "timezone": arguments.Timezone, "timezoneMode": arguments.TimezoneMode, "measurementSystem": arguments.MeasurementSystem, "pronoun": arguments.Pronoun} {
 						if value != nil {
 							variables[key] = *value
 						}
@@ -96,7 +99,7 @@ func init() {
 					if len(variables) == 1 {
 						return nil, fmt.Errorf("nothing to change")
 					}
-					if _, err := operator.Execute(ctx, `mutation ($userId: String!, $name: String, $email: String, $locale: String, $timezone: String, $timezoneMode: String, $pronoun: String) { UpdateUser(userId: $userId, name: $name, email: $email, locale: $locale, timezone: $timezone, timezoneMode: $timezoneMode, pronoun: $pronoun) { id } }`, variables); err != nil {
+					if _, err := operator.Execute(ctx, `mutation ($userId: String!, $name: String, $email: String, $locale: String, $timezone: String, $timezoneMode: String, $measurementSystem: String, $pronoun: String) { UpdateUser(userId: $userId, name: $name, email: $email, locale: $locale, timezone: $timezone, timezoneMode: $timezoneMode, measurementSystem: $measurementSystem, pronoun: $pronoun) { id } }`, variables); err != nil {
 						return nil, err
 					}
 					return tools.TextResult("changed the account"), nil
