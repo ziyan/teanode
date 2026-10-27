@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.200.0] - 2026-10-27
+
+### Added
+
+- A circle's page, on the dashboard and in the iPhone app, shows the circle's albums and the albums shared with everyone in it, and makes a new album for the circle. `teanode photo album list --circle` and the agent list the same albums. (#665)
+
+### Fixed
+
+- Location: visits that were stored covering a trip (a place you had left shown as where you were for hours) are corrected. (#662)
+
 ## [0.199.5] - 2026-10-26
 
 ### Fixed
