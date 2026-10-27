@@ -127,6 +127,9 @@ final class AppModel {
     /// pressed notification, or a link, names them. The screen takes it and
     /// clears it.
     var openedLocationUserId: String?
+    /// The coding session the Coding screen opens on: a pressed notification
+    /// of its question names it. The screen takes it and clears it.
+    var openedCodingTarget: CodingTarget?
     /// The day the Location screen opens on the map of, from a link such as
     /// `/location?day=2030-01-15`. The screen takes it and clears it.
     var openedLocationDay: Date?
@@ -997,6 +1000,13 @@ final class AppModel {
                 // Somebody arrived or left: Location, with them selected.
                 openedLocationUserId = info.locationUserId.isEmpty ? nil : info.locationUserId
                 openedSection = .location
+            } else if info.notificationKind == "herdr_question" {
+                // A coding session asks: Coding, on that session, where its
+                // question is answered.
+                if !info.computer.isEmpty, !info.paneId.isEmpty {
+                    openedCodingTarget = CodingTarget(computer: info.computer, paneId: info.paneId)
+                }
+                openedSection = .coding
             } else if !info.conversationId.isEmpty {
                 openedConversationId = info.conversationId
             }

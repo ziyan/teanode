@@ -61,8 +61,15 @@ session draws for a question, an approval and a plan, and reports them to the
 server. The `herdr` tool, the Herdr sessions card and `teanode computer herdr`
 list sessions, read their history or screen, type into a pane, answer a
 question, watch a session until its turn ends, and open or close one. A
-question is written into the person's main conversation and sent to their
-linked chat app; the answer is pressed only after the screen is read again.
+question is shown where the session is: the Coding page lists the sessions
+that ask first, with the question and its options, and the rail's Coding row
+and the iPhone's Coding row count them. The person's phones are told, as a
+"Questions for you" notification (`herdr_question`, filtered by the phone's
+`question` kind) naming the session and its computer, and tapping it opens
+that session on the iPhone's Coding screen, at its question. Nothing is
+written into a conversation, so the main conversation and the chat apps that
+follow it are not told; conversations from before keep the question cards
+they had. The answer is pressed only after the screen is read again.
 The decision is
 `docs/decisions/20261008-the-agent-works-in-the-persons-herdr-sessions.md`.
 

@@ -59,3 +59,10 @@ herdr`, named in one table that a test checks against all four.
 - TeaNode's reporting hooks change the person's Claude Code settings, so they
   are put in only when the person asks, beside what is there, with a copy of
   the file kept first. They report and decide nothing.
+
+## Later
+
+2026-10-26: a question is no longer written into the main conversation or sent
+to the chat apps. The Coding page and the iPhone's Coding screen show which
+sessions ask and answer them, and the person's phones are told with a
+notification that opens the session there.
