@@ -64,6 +64,9 @@ func (self *transaction) NormalizePlaceVisits(userId string, from, until time.Ti
 	if err != nil {
 		return err
 	}
+	for _, visit := range visits {
+		log.Noticef("DEBUG window %s to %s: %s %s %v %v %s", windowStart, windowEnd, visit.ID, visit.PlaceID, visit.ArrivedAt, visit.DepartedAt, visit.VisitSource)
+	}
 	isMoved, err := self.moveLateDepartures(userId, visits)
 	if err != nil {
 		return err
@@ -165,6 +168,7 @@ func (self *transaction) moveLateDepartures(userId string, visits []placeVisitMo
 				around = other
 			}
 		}
+		log.Noticef("DEBUG late departure %s at %s: around %+v", departure.ID, departure.DepartedAt, around)
 		if around == nil {
 			continue
 		}
