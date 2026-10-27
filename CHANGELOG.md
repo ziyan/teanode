@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.203.1] - 2026-10-27
+
+### Fixed
+
+- A file or picture sent to a Claude Code session from the phone, the dashboard or the command line is sent, instead of being left typed in the session's prompt. (#672)
+- In the iPhone app, an album opened from a circle's page right after the page appears has its title and actions, and a failure to load the circle's albums is shown. (#671)
+
 ## [0.203.0] - 2026-10-27
 
 ### Added
