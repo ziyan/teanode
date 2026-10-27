@@ -1780,6 +1780,19 @@ it('shows the trip between the two visits it joins, with each leg, its distance 
   expect(calls('ListTrips(')[0][1]).toMatchObject({ userId: null })
 })
 
+// A visit known only by its departure is placed at that departure, the
+// moment the trip leaving it starts: the trip still stands above it.
+it('puts a trip above the visit it leaves when that visit has only a departure', async () => {
+  answerWith({ visits: [libraryVisit(), visit({ arrivedAt: null, durationSeconds: null })], trips: [trip()] })
+  renderAt('/location')
+
+  const walk = await screen.findByText('Walk')
+  const library = screen.getByText('Fixture Library')
+  const park = screen.getAllByText('Fixture Park')[0]
+  expect(library.compareDocumentPosition(walk) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(walk.compareDocumentPosition(park) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
 it('reads every page of trips, 200 at a time, and shows them all', async () => {
   answerWith({
     visits: [libraryVisit(), visit()],

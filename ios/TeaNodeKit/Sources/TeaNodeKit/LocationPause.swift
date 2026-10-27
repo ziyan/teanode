@@ -317,6 +317,22 @@ public enum LocationTimelineEntry: Identifiable, Hashable, Sendable {
         case .trip(let trip): trip.startedDate
         }
     }
+
+    /// Whether the first entry goes above the second in a newest-first
+    /// timeline. At the same moment a trip or a pause goes above a visit: a
+    /// visit known only by its departure is placed at that departure, which
+    /// is when the trip leaving it starts.
+    public static func isNewer(_ first: LocationTimelineEntry, than second: LocationTimelineEntry) -> Bool {
+        let firstDate = first.anchorDate ?? .distantPast
+        let secondDate = second.anchorDate ?? .distantPast
+        if firstDate != secondDate { return firstDate > secondDate }
+        return !first.isVisit && second.isVisit
+    }
+
+    private var isVisit: Bool {
+        if case .visit = self { return true }
+        return false
+    }
 }
 
 extension PersonLocation {

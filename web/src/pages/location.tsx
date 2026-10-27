@@ -657,11 +657,13 @@ function LocationContent({ userId }: { userId: string }) {
             ],
       ),
     ].sort((first, second) => new Date(second.startedAt).getTime() - new Date(first.startedAt).getTime())
-    // Each goes right before the first visit that began earlier, so it lands
-    // after the newer rows already placed in front of that visit.
+    // Each goes right before the first visit that began earlier, or at the
+    // same moment: a visit known only by its departure is placed at that
+    // departure, which is when the trip leaving it starts. So it lands after
+    // the newer rows already placed in front of that visit.
     for (const each of inserted) {
       const momentMS = Math.max(new Date(each.startedAt).getTime(), dayStartMS)
-      const index = rows.findIndex((existing) => existing.kind === 'visit' && existing.momentMS < momentMS)
+      const index = rows.findIndex((existing) => existing.kind === 'visit' && existing.momentMS <= momentMS)
       rows.splice(index < 0 ? rows.length : index, 0, each.row(momentMS))
     }
     return rows

@@ -316,6 +316,23 @@ final class LocationTravelTests: XCTestCase {
         XCTAssertEqual(stretch.map(\.id), ["visit:visit-2", "trip:trip-1", "visit:visit-1"])
     }
 
+    // A visit known only by its departure sits at that departure, the moment
+    // the trip leaving it starts: the trip still goes above it.
+    func testATripGoesAboveTheVisitItLeavesWhenThatVisitHasOnlyADeparture() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let place = LocationPlace(id: "place-1", placeName: "Fixture Park", latitudeDegrees: 10.5, longitudeDegrees: 20.5)
+        let visits = [
+            PlaceVisit(id: "visit-1", place: place, arrivedAt: nil, departedAt: "2024-01-02T07:25:50Z", latitudeDegrees: 10.5, longitudeDegrees: 20.5),
+            visit("visit-2", from: "2024-01-02T07:29:37Z", to: "2024-01-02T07:35:52Z"),
+        ]
+        let trips = [trip("trip-1", from: "2024-01-02T07:25:50Z", to: "2024-01-02T07:29:37Z")]
+        let days = LocationDays.group(visits, trips: trips, calendar: calendar)
+        XCTAssertEqual(days[0].entries.map(\.id), ["visit:visit-2", "trip:trip-1", "visit:visit-1"])
+        XCTAssertEqual(
+            LocationDays.entries(visits: visits, pauses: [], trips: trips).map(\.id), ["visit:visit-2", "trip:trip-1", "visit:visit-1"])
+    }
+
     func testATripOfADayWithNoVisitStillMakesTheDay() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))

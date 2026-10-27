@@ -694,7 +694,7 @@ public enum LocationDays {
             let sortedVisits = visitsByDay[day, default: []].sorted { ($0.anchorDate ?? .distantPast) > ($1.anchorDate ?? .distantPast) }
             let entries = (sortedVisits.map { LocationTimelineEntry.visit($0) } + pausesByDay[day, default: []].map { .pause($0) }
                 + tripsByDay[day, default: []].map { .trip($0) })
-                .sorted { ($0.anchorDate ?? .distantPast) > ($1.anchorDate ?? .distantPast) }
+                .sorted(by: LocationTimelineEntry.isNewer)
             return LocationVisitDay(startOfDay: day, visits: sortedVisits, entries: entries)
         }
     }
@@ -704,7 +704,7 @@ public enum LocationDays {
     public static func entries(visits: [PlaceVisit], pauses: [LocationPause], trips: [Trip] = []) -> [LocationTimelineEntry] {
         (visits.map { LocationTimelineEntry.visit($0) } + pauses.map { .pause($0) } + trips.filter { !$0.legs.isEmpty }.map { .trip($0) })
             .filter { $0.anchorDate != nil }
-            .sorted { ($0.anchorDate ?? .distantPast) > ($1.anchorDate ?? .distantPast) }
+            .sorted(by: LocationTimelineEntry.isNewer)
     }
 
     /// A day's path as a map draws it: the positions, and each visit's
