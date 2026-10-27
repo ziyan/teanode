@@ -436,13 +436,16 @@
                 "A \(name) that bent around one day. The early days went to the release branch, with the upload test failing twice, and Thursday the release went out. The walk through [[place_visit:visit-park|the park]] afterward was the best part."
             let months: [Any] = kind == .year ? yearMonths(start) : []
             let chapters: [Any] = kind == .year ? [yearChapter(start)] : []
+            // The dream writes a story the night after the last day it covers:
+            // a period still under way was written last night.
+            let writtenDay = min(end, JournalDays.adding(-1, to: today) ?? today)
             let totals = facts(["photoCount": 49, "placeCount": 11, "walkedMeters": 21700.0, "stepCount": 58210, "sleepMinutes": 2530, "codingSessionCount": 7, "workProjectCount": 4, "codingMinutes": 1170, "meetingCount": 14, "mailReceivedCount": 188, "spentMinorUnits": 31240])
             return [
                 "periodKind": periodKind, "periodStart": start, "periodEnd": end, "isCurrent": start <= today && today <= end,
                 "lookingBack": words(original: "Too much of the week at the desk. Keep Saturdays free.", day: start),
                 "narrative": narrative(
                     headline: "Orchard 2.4 shipped on Thursday. Sleep slipped midweek; the weekend was the best in a month.", text: text,
-                    references: [record("place_visit", "visit-park", title: "Riverside Park", path: "/location?day=\(fullDay)", day: fullDay)], day: end),
+                    references: [record("place_visit", "visit-park", title: "Riverside Park", path: "/location?day=\(fullDay)", day: fullDay)], day: writtenDay),
                 "choices": [
                     [
                         "linkId": "period-link-1", "linkSource": "agent", "linkReason": "The release went out",
