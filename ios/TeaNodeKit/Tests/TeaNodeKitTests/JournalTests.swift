@@ -245,9 +245,6 @@ final class JournalTests: XCTestCase {
         XCTAssertEqual(content.notificationKind, "journalEveningQuestion")
         XCTAssertEqual(content.journalDay, "2026-10-26")
         XCTAssertNil(content.conversationId)
-        // A server that spells the key `day` is read as well.
-        let spelledShort = #"{"notificationKind":"journalEveningQuestion","title":"How was today?","body":"","day":"2026-10-27"}"#
-        XCTAssertEqual(try JSONDecoder().decode(NotificationContent.self, from: Data(spelledShort.utf8)).journalDay, "2026-10-27")
         // And a notification of any other kind has no day.
         let other = #"{"notificationKind":"message","title":"Hello","body":"","conversationId":"c1"}"#
         XCTAssertNil(try JSONDecoder().decode(NotificationContent.self, from: Data(other.utf8)).journalDay)

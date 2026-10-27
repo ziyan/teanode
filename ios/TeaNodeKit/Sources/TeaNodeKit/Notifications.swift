@@ -21,8 +21,7 @@ import Foundation
 /// written YYYY-MM-DD in the person's own calendar. The phone shows it with
 /// five buttons, Awful, Low, Okay, Good and Great, each of which sets that
 /// day's mood without opening the app (SetJournalMood); pressing the
-/// notification itself opens that day in the journal. A server that names the
-/// day `day` is read as well.
+/// notification itself opens that day in the journal.
 public struct NotificationContent: Codable, Equatable, Sendable {
     /// alert, herdr_question, goal_needs_you, speak_first, message,
     /// approval, question, answer, circle, chat, skill_share_call, photo,
@@ -56,54 +55,6 @@ public struct NotificationContent: Codable, Equatable, Sendable {
     public let body: String
     public let buttons: [NotificationButton]?
     public let threadId: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case notificationKind, conversationId, runId, callId, locationUserId, shoppingStoreName, shoppingListId, journalDay
-        case computer, paneId, questionFingerprint, title, body, buttons, threadId
-    }
-
-    private enum SpelledAsDayKeys: String, CodingKey {
-        case day
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        notificationKind = try container.decode(String.self, forKey: .notificationKind)
-        conversationId = try container.decodeIfPresent(String.self, forKey: .conversationId)
-        runId = try container.decodeIfPresent(String.self, forKey: .runId)
-        callId = try container.decodeIfPresent(String.self, forKey: .callId)
-        locationUserId = try container.decodeIfPresent(String.self, forKey: .locationUserId)
-        shoppingStoreName = try container.decodeIfPresent(String.self, forKey: .shoppingStoreName)
-        shoppingListId = try container.decodeIfPresent(String.self, forKey: .shoppingListId)
-        computer = try container.decodeIfPresent(String.self, forKey: .computer)
-        paneId = try container.decodeIfPresent(String.self, forKey: .paneId)
-        questionFingerprint = try container.decodeIfPresent(String.self, forKey: .questionFingerprint)
-        let spelledAsDay = try decoder.container(keyedBy: SpelledAsDayKeys.self)
-        journalDay = try container.decodeIfPresent(String.self, forKey: .journalDay) ?? spelledAsDay.decodeIfPresent(String.self, forKey: .day)
-        title = try container.decode(String.self, forKey: .title)
-        body = try container.decode(String.self, forKey: .body)
-        buttons = try container.decodeIfPresent([NotificationButton].self, forKey: .buttons)
-        threadId = try container.decodeIfPresent(String.self, forKey: .threadId)
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(notificationKind, forKey: .notificationKind)
-        try container.encodeIfPresent(conversationId, forKey: .conversationId)
-        try container.encodeIfPresent(runId, forKey: .runId)
-        try container.encodeIfPresent(callId, forKey: .callId)
-        try container.encodeIfPresent(locationUserId, forKey: .locationUserId)
-        try container.encodeIfPresent(journalDay, forKey: .journalDay)
-        try container.encodeIfPresent(shoppingStoreName, forKey: .shoppingStoreName)
-        try container.encodeIfPresent(shoppingListId, forKey: .shoppingListId)
-        try container.encodeIfPresent(computer, forKey: .computer)
-        try container.encodeIfPresent(paneId, forKey: .paneId)
-        try container.encodeIfPresent(questionFingerprint, forKey: .questionFingerprint)
-        try container.encode(title, forKey: .title)
-        try container.encode(body, forKey: .body)
-        try container.encodeIfPresent(buttons, forKey: .buttons)
-        try container.encodeIfPresent(threadId, forKey: .threadId)
-    }
 }
 
 /// NotificationButton is one action on a notification.
