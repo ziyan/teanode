@@ -56,6 +56,7 @@ func TestLocationParity(test *testing.T) {
 		"ReportLocation":              {"", ""},
 		"SavePlace":                   {"save", "save_place"},
 		"ForgetPlace":                 {"forget", "forget_place"},
+		"ForgetPlaceVisit":            {"forget-visit", "forget_visit"},
 		"CheckIn":                     {"checkin", "check_in"},
 		"EraseLocationHistory":        {"erase", "erase"},
 		"ListSharedLocations":         {"people", "people"},
@@ -196,6 +197,7 @@ func locationServerAnswering(test *testing.T, replacements map[string]string) (*
 			{"placeName":"8 Rue Example","addressText":"8 Rue Example, Exampleton, Testland","latitudeDegrees":40.6,"longitudeDegrees":-75.6,"distanceMeters":2500}]`,
 		"SavePlace":                   place,
 		"ForgetPlace":                 `true`,
+		"ForgetPlaceVisit":            `true`,
 		"CheckIn":                     `{"id":"v3","arrivedAt":"2026-10-17T12:00:00Z","place":` + place + `}`,
 		"EraseLocationHistory":        `{"pointCount":10,"visitCount":2,"placeCount":1}`,
 		"ListSharedLocations":         `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"history"},{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"current"}]`,
@@ -372,6 +374,12 @@ func TestLocationEraseAndForgetNeedForce(test *testing.T) {
 	}
 	if _, err := runLocationCommand(test, server, "forget", "p1", "--force"); err != nil {
 		test.Error(err)
+	}
+	if _, err := runLocationCommand(test, server, "forget-visit", "v1"); err == nil {
+		test.Error("forget-visit without confirmation")
+	}
+	if _, err := runLocationCommand(test, server, "forget-visit", "v1", "--force"); err != nil || called("ForgetPlaceVisit")["placeVisitId"] != "v1" {
+		test.Errorf("forget-visit: %v %v", err, called("ForgetPlaceVisit"))
 	}
 }
 

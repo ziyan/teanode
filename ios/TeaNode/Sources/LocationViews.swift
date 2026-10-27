@@ -85,6 +85,7 @@ struct LocationScreen: View {
     @State private var isAllowingLocation = false
     @State private var drawerDetent = LocationDrawerDetent.half
     @State private var drawerHeaderHeight: CGFloat = 64
+    @State private var barsBottomInset: CGFloat = 0
     @Environment(AppModel.self) private var app
     private let recorder = LocationRecorder.shared
 
@@ -106,15 +107,24 @@ struct LocationScreen: View {
                 // behind it; neither one's size moves the other.
                 Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .overlay(alignment: .bottom) {
-                        LocationDrawer(
-                            detent: $drawerDetent, headerHeight: $drawerHeaderHeight, availableHeight: proxy.size.height,
-                            bottomInset: proxy.safeAreaInsets.bottom
-                        ) {
-                            drawerHeader
-                        } content: {
-                            drawerContent
-                        }
+                    .overlay {
+                        // A layer of its own that reaches the screen's bottom
+                        // edge, under the tab bar, which the drawer runs down
+                        // to from its place below the top bar. Only the bars'
+                        // area: over the keyboard the drawer still rises with
+                        // it.
+                        Color.clear
+                            .ignoresSafeArea(.container, edges: .bottom)
+                            .overlay(alignment: .top) {
+                                LocationDrawer(
+                                    detent: $drawerDetent, headerHeight: $drawerHeaderHeight, availableHeight: proxy.size.height,
+                                    bottomInset: barsBottomInset
+                                ) {
+                                    drawerHeader
+                                } content: {
+                                    drawerContent
+                                }
+                            }
                     }
                     .background {
                         LocationMapHeader(model: model, recorder: recorder, isShowingPeople: isShowingPeople)
@@ -127,6 +137,13 @@ struct LocationScreen: View {
                             .safeAreaPadding(.bottom, proxy.safeAreaInsets.bottom + mapCoveredHeight)
                             .ignoresSafeArea()
                     }
+            }
+            // The tab bar and the home indicator without the keyboard, which
+            // the drawer rises above rather than growing by.
+            .background {
+                Color.clear
+                    .ignoresSafeArea(.keyboard)
+                    .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { barsBottomInset = $0 }
             }
             // The name a pushed screen's back button carries; over the map,
             // as in Find My, the drawer says what is shown.
@@ -508,6 +525,7 @@ struct LocationVisitsList: View {
     let recorder: LocationRecorder
     let showPeople: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var forgettingVisit: PlaceVisit?
 
     var body: some View {
         List {
@@ -534,7 +552,9 @@ struct LocationVisitsList: View {
             ForEach(model.days) { day in
                 Section {
                     ForEach(day.entries) { entry in
-                        LocationTimelineRow(entry: entry, correctLeg: { leg, travelMode in Task { await model.correct(leg, to: travelMode) } })
+                        LocationTimelineRow(
+                            entry: entry, correctLeg: { leg, travelMode in Task { await model.correct(leg, to: travelMode) } },
+                            askToForgetVisit: { visit in forgettingVisit = visit })
                             .onAppear {
                                 if case .visit(let visit) = entry, visit.id == model.visits.last?.id {
                                     Task { await model.loadMoreVisits() }
@@ -574,6 +594,7 @@ struct LocationVisitsList: View {
             }
         }
         .refreshable { await model.load() }
+        .forgetVisitDialog($forgettingVisit) { visit in Task { await model.forget(visit: visit) } }
     }
 }
 
@@ -701,6 +722,7 @@ struct LocationDayScreen: View {
     @State private var loadFailedText: String?
     @State private var isConfirmingErase = false
     @State private var isErasing = false
+    @State private var forgettingVisit: PlaceVisit?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// The day's positions joined through the places visited.
@@ -728,7 +750,9 @@ struct LocationDayScreen: View {
                     List {
                         Section {
                             ForEach(LocationDays.entries(visits: visits, pauses: pauses, trips: trips)) { entry in
-                                LocationTimelineRow(entry: entry, correctLeg: { leg, travelMode in Task { await correct(leg, to: travelMode) } })
+                                LocationTimelineRow(
+                                    entry: entry, correctLeg: { leg, travelMode in Task { await correct(leg, to: travelMode) } },
+                                    askToForgetVisit: { visit in forgettingVisit = visit })
                             }
                         } footer: {
                             OpenStreetMapCredit()
@@ -754,6 +778,7 @@ struct LocationDayScreen: View {
                                 }
                         }
                     }
+                    .forgetVisitDialog($forgettingVisit) { visit in Task { await forget(visit) } }
                     .overlay {
                         if isLoading {
                             ProgressView()
@@ -776,6 +801,14 @@ struct LocationDayScreen: View {
     /// Corrects a leg of the day's trips, then reads the day's trips again.
     private func correct(_ leg: TripLeg, to travelMode: TravelMode?) async {
         guard await model.correct(leg, to: travelMode) else { return }
+        await loadTrips()
+    }
+
+    /// Forgets a visit of the day, then takes it out of the day and reads the
+    /// day's trips again, which were built around it.
+    private func forget(_ visit: PlaceVisit) async {
+        guard await model.forget(visit: visit) else { return }
+        visits.removeAll { $0.id == visit.id }
         await loadTrips()
     }
 

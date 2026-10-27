@@ -167,6 +167,29 @@ func TestVisitsAtOnePlaceAndNamingIt(t *testing.T) {
 	// Somebody else's place is not found, and neither is deleting it.
 	world.refused(t, world.cora, fmt.Sprintf(`mutation { SavePlace(placeId: %q, placeName: "Mine") { id } }`, placeId))
 	world.refused(t, world.cora, fmt.Sprintf(`mutation { ForgetPlace(placeId: %q) }`, placeId))
+
+	// One visit that did not happen goes alone, and only by its person; one
+	// in progress is refused.
+	world.report(t, world.ada, "", visitInput("k3", 40.0, -75.0, ago(30*time.Minute), ""))
+	visits := world.call(t, world.ada, `query { ListLocationVisits { placeVisits { id departedAt } } }`)["ListLocationVisits"].(map[string]any)["placeVisits"].([]any)
+	visitId, openId := "", ""
+	for _, each := range visits {
+		if visit := each.(map[string]any); visit["departedAt"] != nil {
+			visitId = visit["id"].(string)
+		} else {
+			openId = visit["id"].(string)
+		}
+	}
+	if message := world.refused(t, world.ada, fmt.Sprintf(`mutation { ForgetPlaceVisit(placeVisitId: %q) }`, openId)); !strings.Contains(message, "check in") {
+		t.Errorf("a visit in progress is not forgotten, in words: %s", message)
+	}
+	world.refused(t, world.cora, fmt.Sprintf(`mutation { ForgetPlaceVisit(placeVisitId: %q) }`, visitId))
+	world.call(t, world.ada, fmt.Sprintf(`mutation { ForgetPlaceVisit(placeVisitId: %q) }`, visitId))
+	if left := world.call(t, world.ada, `query { ListLocationVisits { placeVisits { id } } }`)["ListLocationVisits"].(map[string]any)["placeVisits"].([]any); len(left) != len(visits)-1 {
+		t.Errorf("one visit is forgotten: %v", left)
+	}
+	world.refused(t, world.ada, fmt.Sprintf(`mutation { ForgetPlaceVisit(placeVisitId: %q) }`, visitId))
+
 	world.call(t, world.ada, fmt.Sprintf(`mutation { ForgetPlace(placeId: %q) }`, placeId))
 	if visits := world.call(t, world.ada, `query { ListLocationVisits { placeVisits { id } } }`)["ListLocationVisits"].(map[string]any)["placeVisits"].([]any); len(visits) != 0 {
 		t.Errorf("a forgotten place takes its visits with it: %v", visits)

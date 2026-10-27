@@ -14,6 +14,7 @@ struct LocationPlaceScreen: View {
     @State private var visits: [PlaceVisit] = []
     @State private var nextVisitOffset: Int?
     @State private var isConfirmingForget = false
+    @State private var forgettingVisit: PlaceVisit?
     @State private var isChangingAddress = false
     @State private var isLoadingVisits = false
     /// Where the person tapped on the map: shown as the new pin until they
@@ -143,6 +144,13 @@ struct LocationPlaceScreen: View {
                     .onAppear {
                         if visit.id == visits.last?.id { Task { await loadVisits() } }
                     }
+                    .swipeActions {
+                        // A visit in progress is ended by a check-in first.
+                        if visit.departedAt != nil {
+                            Button("Forget", systemImage: "trash", role: .destructive) { forgettingVisit = visit }
+                                .tint(.red)
+                        }
+                    }
                 }
                 if isLoadingVisits { ProgressView().frame(maxWidth: .infinity) }
             } header: {
@@ -169,6 +177,7 @@ struct LocationPlaceScreen: View {
                 }
             }
         }
+        .forgetVisitDialog($forgettingVisit) { visit in Task { await forgetVisit(visit) } }
         .navigationTitle(place.shownName)
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $isChangingAddress) {
@@ -300,6 +309,10 @@ struct LocationPlaceScreen: View {
         } else {
             radiusMeters = place.radiusMeters
         }
+    }
+
+    private func forgetVisit(_ visit: PlaceVisit) async {
+        if await model.forget(visit: visit) { visits.removeAll { $0.id == visit.id } }
     }
 
     private func loadVisits() async {

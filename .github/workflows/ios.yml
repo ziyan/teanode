@@ -308,6 +308,7 @@ jobs:
           shoot location-dark dark large -TeaNodeDemo -TeaNodeTab location
           shoot location-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location
           shoot location-full-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-full
+          shoot location-full-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-full
           shoot location-collapsed-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-collapsed
           shoot location-collapsed-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-collapsed
           shoot location-day-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-day

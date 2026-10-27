@@ -417,6 +417,23 @@ final class LocationModel {
         }
     }
 
+    /// Deletes one of the person's own visits, then reads the visits and trips
+    /// again, since a trip that ended or began at the visit is rebuilt.
+    @discardableResult
+    func forget(visit: PlaceVisit) async -> Bool {
+        do {
+            try await connection.forgetPlaceVisit(placeVisitId: visit.id)
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+            return false
+        }
+        visits.removeAll { $0.id == visit.id }
+        await refreshOwn()
+        await readTrips()
+        doneText = String(localized: "Forgot the visit")
+        return true
+    }
+
     /// Where to check in: the phone's position now, from the recorder when it
     /// has a fresh one, else asked of the phone.
     func currentPosition() async -> (latitudeDegrees: Double, longitudeDegrees: Double)? {

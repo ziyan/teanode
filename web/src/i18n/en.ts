@@ -6660,6 +6660,13 @@ export const en = {
   'location.forgetBody': 'This deletes {place} and its visits. It cannot be undone.',
   'location.forgotten': 'Forgot {place}',
   'location.forgetFailed': 'Could not forget the place.',
+  'location.forgetVisit': 'Forget this visit',
+  'location.forgetVisitTitle': 'Forget this visit?',
+  'location.forgetVisitBody':
+    'The visit to {place} from {time} is removed from your history, as if you were never there. The place stays, with its other visits.',
+  'location.visitForgotten': 'Visit forgotten',
+  'location.forgetVisitFailed': 'Could not forget the visit.',
+  'location.visitMenu': 'Actions for the visit to {place}, {time}',
   'location.sharingTitle': 'Share your location',
   'location.shareIntro':
     'The people you share with see you on this map. A circle you share with reaches everyone in it, including people who join later.',

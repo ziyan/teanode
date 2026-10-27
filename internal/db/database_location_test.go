@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -706,6 +707,68 @@ func TestVisitsListNewestFirstWithTheirPlaces(t *testing.T) {
 		}
 		if got := keys(db.PlaceVisitFilter{PlaceID: cafe.ID}); got != "" {
 			t.Errorf("the forgotten place still has visits: %s", got)
+		}
+	})
+}
+
+// Forgetting a visit takes that visit alone; its place goes with it only when
+// no visit is left and the person did not name or label it.
+func TestForgettingAVisitKeepsThePlace(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId := locationUser(t, tx, "location-forget-visit")
+		otherId := locationUser(t, tx, "location-forget-visit-other")
+		office := locationPlace(t, tx, userId, "office", 10.5)
+		pharmacy := locationPlace(t, tx, userId, "pharmacy", 10.6)
+		label := models.PlaceLabelWork
+		if _, err := tx.SavePlace(userId, office.ID, db.PlaceChanges{PlaceLabel: &label}); err != nil {
+			t.Fatalf("SavePlace: %s", err)
+		}
+		put := func(placeId, key string, arrivedMinute, departedMinute int) string {
+			if _, err := tx.PutPlaceVisit(userId, locationVisit(placeId, key, arrivedMinute, departedMinute)); err != nil {
+				t.Fatalf("PutPlaceVisit(%s): %s", key, err)
+			}
+			stored, err := tx.GetPlaceVisitByClientKey(userId, key)
+			if err != nil || stored == nil {
+				t.Fatalf("GetPlaceVisitByClientKey(%s): %v", key, err)
+			}
+			return stored.ID
+		}
+		officeId := put(office.ID, "office", 0, 100)
+		firstPharmacyId := put(pharmacy.ID, "pharmacy", 110, 112)
+		secondPharmacyId := put(pharmacy.ID, "pharmacy-again", 300, 310)
+
+		if err := tx.ForgetPlaceVisit(otherId, firstPharmacyId); !errors.Is(err, db.ErrNotFound) {
+			t.Errorf("somebody else's visit is not found: %v", err)
+		}
+		if err := tx.ForgetPlaceVisit(userId, firstPharmacyId); err != nil {
+			t.Fatalf("ForgetPlaceVisit: %s", err)
+		}
+		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[office 0-100 pharmacy 300-310]"; got != want {
+			t.Errorf("the visits are %s, want %s", got, want)
+		}
+		if _, err := tx.GetPlace(userId, pharmacy.ID); err != nil {
+			t.Errorf("a place with a visit left stays: %v", err)
+		}
+		if err := tx.ForgetPlaceVisit(userId, secondPharmacyId); err != nil {
+			t.Fatalf("ForgetPlaceVisit: %s", err)
+		}
+		if _, err := tx.GetPlace(userId, pharmacy.ID); !errors.Is(err, db.ErrNotFound) {
+			t.Errorf("a place nobody went to and nobody named goes: %v", err)
+		}
+		if err := tx.ForgetPlaceVisit(userId, officeId); err != nil {
+			t.Fatalf("ForgetPlaceVisit: %s", err)
+		}
+		if _, err := tx.GetPlace(userId, office.ID); err != nil {
+			t.Errorf("a labeled place stays with no visit: %v", err)
+		}
+		if err := tx.ForgetPlaceVisit(userId, officeId); !errors.Is(err, db.ErrNotFound) {
+			t.Errorf("a forgotten visit is not found again: %v", err)
+		}
+		openId := put(office.ID, "office-open", 400, -1)
+		if err := tx.ForgetPlaceVisit(userId, openId); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("a visit in progress is not forgotten: %v", err)
 		}
 	})
 }

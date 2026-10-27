@@ -226,6 +226,15 @@ func NewLocationCommand() *cli.Command {
 				Action:    runLocationForget,
 			},
 			{
+				Name:  "forget-visit",
+				Usage: "forget one of your visits that did not happen, such as a stop at a place you only drove past",
+				Description: "The visit is removed from your history and the trips around it are built again; the\n" +
+					"place stays, with its other visits. 'teanode location visits' lists the visit ids.",
+				ArgsUsage: "<visit-id>",
+				Flags:     []cli.Flag{ForceFlag()},
+				Action:    runLocationForgetVisit,
+			},
+			{
 				Name:  "checkin",
 				Usage: "record that you are at a place now",
 				Description: "Give one of your places with --place, or a position with --latitude and --longitude,\n" +
@@ -569,7 +578,12 @@ func runLocationVisits(ctx context.Context, command *cli.Command) error {
 		if visit.PhotoCount != nil && *visit.PhotoCount > 0 {
 			photoCountText = fmt.Sprintf("%d", *visit.PhotoCount)
 		}
-		listed = append(listed, visitRow{visitStartedAt(visit), []string{timeCell(visit.ArrivedAt), left, duration, photoCountText, placeLine(visit.Place), visit.Place.ID}})
+		// Only the person forgets a visit, so only their own carry its id.
+		visitId := ""
+		if userId == "" {
+			visitId = visit.ID
+		}
+		listed = append(listed, visitRow{visitStartedAt(visit), []string{timeCell(visit.ArrivedAt), left, duration, photoCountText, placeLine(visit.Place), visit.Place.ID, visitId}})
 	}
 	for _, pause := range page.Pauses {
 		left, duration := "still paused", ""
@@ -577,14 +591,14 @@ func runLocationVisits(ctx context.Context, command *cli.Command) error {
 			left = timeCell(pause.EndedAt)
 			duration = timeWords(pause.EndedAt.Sub(pause.StartedAt))
 		}
-		listed = append(listed, visitRow{pause.StartedAt, []string{timeCell(&pause.StartedAt), left, duration, "", pauseSpanWords(pause), ""}})
+		listed = append(listed, visitRow{pause.StartedAt, []string{timeCell(&pause.StartedAt), left, duration, "", pauseSpanWords(pause), "", ""}})
 	}
 	sort.SliceStable(listed, func(left, right int) bool { return listed[left].startedAt.After(listed[right].startedAt) })
 	rows := make([][]string, 0, len(listed))
 	for _, row := range listed {
 		rows = append(rows, row.cells)
 	}
-	if err := printTable([]string{"arrived", "left", "duration", "photo count", "place", "place id"}, rows); err != nil {
+	if err := printTable([]string{"arrived", "left", "duration", "photo count", "place", "place id", "visit id"}, rows); err != nil {
 		return err
 	}
 	noteNextPage(page.NextOffset, first)
@@ -1198,6 +1212,24 @@ func runLocationForget(ctx context.Context, command *cli.Command) error {
 	}
 	if err := client.ForgetPlace(ctx, connection, command.Args().First()); err != nil {
 		return describeNotFound(command, err, "the place "+command.Args().First())
+	}
+	fmt.Println("forgotten")
+	return nil
+}
+
+func runLocationForgetVisit(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return usage("usage: teanode location forget-visit <visit-id>; 'teanode location visits' lists them")
+	}
+	if err := confirm(command, "Forgetting this visit removes it from your history, as if you were never there. The place stays."); err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if err := client.ForgetPlaceVisit(ctx, connection, command.Args().First()); err != nil {
+		return describeNotFound(command, err, "the visit "+command.Args().First())
 	}
 	fmt.Println("forgotten")
 	return nil

@@ -58,8 +58,8 @@ struct LocationDrawer<Header: View, Content: View>: View {
     /// The height of the screen between its bars.
     let availableHeight: CGFloat
     /// The height of what lies below the drawer at the bottom of the screen:
-    /// the tab bar and the home indicator. The lists run on under it, as a
-    /// sheet's do, and their last rows scroll up above it.
+    /// the tab bar and the home indicator. The drawer runs on under it, as a
+    /// sheet does.
     let bottomInset: CGFloat
     @ViewBuilder let header: () -> Header
     @ViewBuilder let content: () -> Content
@@ -90,8 +90,9 @@ struct LocationDrawer<Header: View, Content: View>: View {
             }
             .contentShape(.rect)
             .gesture(drag)
+            // The lists keep their last rows above the bars by the safe area
+            // the drawer runs down into.
             content()
-                .safeAreaPadding(.bottom, bottomInset)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .clipped()
                 // Collapsed, the lists are out of sight and out of reach.
@@ -107,7 +108,11 @@ struct LocationDrawer<Header: View, Content: View>: View {
                 .fill(Color(.systemGroupedBackground))
                 .shadow(radius: 4)
         }
-        .ignoresSafeArea(.container, edges: .bottom)
+        // Placed down from the top of the screen between the bars, so at
+        // full height its top meets the top bar and never goes under it,
+        // whatever the bars below it measure. Not asked to ignore the safe
+        // area, which would grow it by the bars' height once more.
+        .padding(.top, availableHeight - shownHeight)
         .animation(.snappy, value: detent)
     }
 

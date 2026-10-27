@@ -6334,6 +6334,13 @@ export const zh: Catalog = {
   'location.forgetBody': '这会删除{place}及其到访记录，且无法撤销。',
   'location.forgotten': '已忘记{place}',
   'location.forgetFailed': '无法忘记这个地点。',
+  'location.forgetVisit': '忘记这次到访',
+  'location.forgetVisitTitle': '忘记这次到访？',
+  'location.forgetVisitBody':
+    '{time} 在{place}的到访会从你的历史记录中移除，就像你从未去过一样。这个地点和它的其他到访会保留。',
+  'location.visitForgotten': '已忘记这次到访',
+  'location.forgetVisitFailed': '无法忘记这次到访。',
+  'location.visitMenu': '到访操作，{place}，{time}',
   'location.sharingTitle': '共享你的位置',
   'location.shareIntro':
     '你共享的对象可以在这张地图上看到你。共享给圈子时，圈子里的所有人都能看到，之后加入的人也能看到。',
@@ -7576,7 +7583,8 @@ export const zh: Catalog = {
   'journal.somethingWrong': '有不对的地方？',
   'journal.removeStory': '移除这篇故事',
   'journal.removeStoryTitle': '移除这篇故事？',
-  'journal.removeStoryBody': '这篇故事会被移除，TeaNode 为它挑选的内容（标记为“已挑选”的记录）也会一起移除。你的更正和你固定的内容会保留，TeaNode 会在之后的梦境运行时重新撰写并重新挑选。',
+  'journal.removeStoryBody':
+    '这篇故事会被移除，TeaNode 为它挑选的内容（标记为“已挑选”的记录）也会一起移除。你的更正和你固定的内容会保留，TeaNode 会在之后的梦境运行时重新撰写并重新挑选。',
   'journal.storyRemoved': '故事已移除',
   'journal.removeStoryFailed': '无法移除故事。',
   'journal.yourCorrection': '你的更正：',

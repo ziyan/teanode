@@ -374,6 +374,7 @@
                 return #"{"data":{"SavePlace":\#(place.json(isAddressTyped: place.isAddressTyped && !isAddressCleared))}}"#
             }
             if query.contains("CheckIn(") { return #"{"data":{"CheckIn":\#(LocationDemo.visits[0].json)}}"# }
+            if query.contains("ForgetPlaceVisit(") { return #"{"data":{"ForgetPlaceVisit":true}}"# }
             if query.contains("ForgetPlace(") { return #"{"data":{"ForgetPlace":true}}"# }
             if query.contains("EraseLocationHistory(") { return #"{"data":{"EraseLocationHistory":{"pointCount":0,"visitCount":0,"placeCount":0}}}"# }
             if query.contains("ReportLocation(") {

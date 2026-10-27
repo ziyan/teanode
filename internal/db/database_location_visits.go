@@ -54,6 +54,12 @@ func (self *transaction) NormalizePlaceVisits(userId string, from, until time.Ti
 	if err := self.moveLateDepartures(userId, visits); err != nil {
 		return err
 	}
+	if visits, err = self.visitsAround(userId, windowStart, windowEnd); err != nil {
+		return err
+	}
+	if err := self.dropPassByDepartures(userId, visits); err != nil {
+		return err
+	}
 
 	// Each split uses up one of the keys a visit was joined from, so this ends.
 	for {
@@ -181,9 +187,7 @@ func (self *transaction) moveLateDepartures(userId string, visits []placeVisitMo
 			continue
 		}
 		owner := &previous[0]
-		if err := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&placeVisitKeyModel{
-			UserID: userId, ClientVisitKey: departure.ClientVisitKey, PlaceVisitID: owner.ID,
-		}).Error; err != nil {
+		if err := self.moveVisitKeys(userId, departure, owner.ID); err != nil {
 			return err
 		}
 		if err := self.tx.Where("\"id\" = ?", departure.ID).Delete(&placeVisitModel{}).Error; err != nil {
@@ -197,6 +201,57 @@ func (self *transaction) moveLateDepartures(userId string, visits []placeVisitMo
 		}
 	}
 	return nil
+}
+
+// dropPassByDepartures takes out each departure from a watched place stored
+// with no arrival that came less than PassByDurationMost after the person's
+// visit before it ended: whatever the person did at the place fits in that
+// time, so it was no stop. iOS tells of leaving a watched place the person
+// only drove through, and of leaving one again a moment after the visit there
+// ended. When the visit before was to the same place, the departure is that
+// visit's own and its key goes to that visit, so that the phone sending it
+// again finds it; otherwise the departure is a pass-by and is deleted, as
+// DeletePassByVisits deletes one with its arrival. A departure iOS visit
+// monitoring reported with no arrival is left alone, since its arrival may
+// still come.
+func (self *transaction) dropPassByDepartures(userId string, visits []placeVisitModel) error {
+	for index := range visits {
+		departure := &visits[index]
+		if departure.ArrivedAt != nil || departure.DepartedAt == nil || departure.VisitSource != string(models.VisitSourceRegion) {
+			continue
+		}
+		var previous []placeVisitModel
+		if err := self.tx.Where("\"user_id\" = ? AND \"id\" <> ? AND \"arrived_at\" IS NOT NULL AND \"departed_at\" <= ? AND \"departed_at\" > ?",
+			userId, departure.ID, *departure.DepartedAt, departure.DepartedAt.Add(-PassByDurationMost)).
+			Order("\"departed_at\" DESC, \"created_at\" DESC, \"id\" DESC").Limit(1).Find(&previous).Error; err != nil {
+			return err
+		}
+		if len(previous) == 0 {
+			continue
+		}
+		if previous[0].PlaceID == departure.PlaceID {
+			if err := self.moveVisitKeys(userId, departure, previous[0].ID); err != nil {
+				return err
+			}
+		}
+		if err := self.tx.Where("\"id\" = ?", departure.ID).Delete(&placeVisitModel{}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// moveVisitKeys gives a visit about to be deleted, its own key and the keys
+// joined into it, to the visit it is taken into, so that the phone sending
+// any of them again finds that visit.
+func (self *transaction) moveVisitKeys(userId string, from *placeVisitModel, toVisitId string) error {
+	if err := self.tx.Model(&placeVisitKeyModel{}).Where("\"user_id\" = ? AND \"place_visit_id\" = ?", userId, from.ID).
+		Update("place_visit_id", toVisitId).Error; err != nil {
+		return err
+	}
+	return self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&placeVisitKeyModel{
+		UserID: userId, ClientVisitKey: from.ClientVisitKey, PlaceVisitID: toVisitId,
+	}).Error
 }
 
 // splitOneOverlappedVisit splits the first visit, in the order they began,
@@ -363,7 +418,8 @@ type VisitRange struct {
 func (self *transaction) ListOverlappedVisitRanges(since time.Time) ([]VisitRange, error) {
 	var ranges []VisitRange
 	// A departure from a watched place with no arrival, inside a visit at
-	// another place, counts too.
+	// another place or less than PassByDurationMost after a visit ended,
+	// counts too.
 	if err := self.tx.Raw(`SELECT overlapped.user_id, min(overlapped.range_from) AS range_from, max(overlapped.range_until) AS range_until
 		FROM (
 			SELECT earlier.user_id, earlier.arrived_at AS range_from, COALESCE(later.departed_at, later.arrived_at) AS range_until
@@ -380,9 +436,17 @@ func (self *transaction) ListOverlappedVisitRanges(since time.Time) ([]VisitRang
 			  AND departure.arrived_at IS NULL AND departure.visit_source = @region
 			  AND departure.departed_at > around.arrived_at
 			  AND (around.departed_at IS NULL OR departure.departed_at < around.departed_at)
+			UNION ALL
+			SELECT previous.user_id, previous.arrived_at AS range_from, departure.departed_at AS range_until
+			FROM "place_visit" departure
+			JOIN "place_visit" previous ON previous.user_id = departure.user_id AND previous.id <> departure.id
+			WHERE departure.arrived_at IS NULL AND departure.visit_source = @region AND departure.departed_at >= @since
+			  AND previous.arrived_at IS NOT NULL AND previous.departed_at <= departure.departed_at
+			  AND previous.departed_at > departure.departed_at - @passBySeconds * interval '1 second'
 		) overlapped
 		GROUP BY overlapped.user_id
-		ORDER BY overlapped.user_id`, sql.Named("since", since), sql.Named("region", string(models.VisitSourceRegion))).Scan(&ranges).Error; err != nil {
+		ORDER BY overlapped.user_id`, sql.Named("since", since), sql.Named("region", string(models.VisitSourceRegion)),
+		sql.Named("passBySeconds", PassByDurationMost.Seconds())).Scan(&ranges).Error; err != nil {
 		return nil, err
 	}
 	return ranges, nil

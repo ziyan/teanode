@@ -38,7 +38,7 @@ func init() {
 			{
 				Name: "location_visits", Family: tools.FamilyGeneral, Risk: tools.RiskRead, Permissions: locationPermissions,
 				Description: "Where the person has been: their visits, newest first, each with the place, when they arrived and left and how long the visit lasted. " +
-					"Their own visits say 'photo_count', how many photos they took during the visit; the photo tool's list with taken_after set to the row's photos_taken_after and taken_before set to its photos_taken_before shows exactly them. " +
+					"Their own visits carry a visit_id, which forget_visit takes, and say 'photo_count', how many photos they took during the visit; the photo tool's list with taken_after set to the row's photos_taken_after and taken_before set to its photos_taken_before shows exactly them. " +
 					"Give a date range for 'last weekend' or 'this week', 'place_id' for one place, or 'place_label' for the places they call home, work and so on. " +
 					"Use it to answer what they did and how long they were there, and to plan a weekend that is not a repeat of the last one: read their recent visits, then search for places that are not among them. " +
 					"With 'person', the visits of somebody who shares their history with the person; not in a chat, where another person's location is not repeated.",
@@ -217,6 +217,20 @@ func init() {
 				Run: runForgetPlace,
 			},
 			{
+				Name: "location_forget_visit", Family: tools.FamilyGeneral, Risk: tools.RiskDestructive, Permissions: locationPermissions,
+				Description: "Forget one of the person's own visits that did not happen, by 'visit_id' from visits: a stop at a place they say they never stopped at, such as a shop they only drove past. " +
+					"The visit is removed from their history and the trips around it are built again; the place stays, with its other visits. " +
+					"A visit still in progress cannot be forgotten: check_in where the person is ends it first. " +
+					"Use it, not save_place, when the person says they were not somewhere: renaming the place would rename every other visit to it. This cannot be undone.",
+				Parameters: tools.Object(map[string]any{
+					"visit_id": tools.StringProperty("the visit's visit_id, from visits"),
+				}, "visit_id"),
+				Preview: func(json.RawMessage) string {
+					return "Forget one of the person's visits, as if they were never there, which cannot be undone"
+				},
+				Run: runForgetVisit,
+			},
+			{
 				Name: "location_check_in", Family: tools.FamilyGeneral, Risk: tools.RiskWrite, Permissions: locationPermissions,
 				Description: "Record that the person is at a place now, which ends the visit in progress. Give 'place_id' for one of their places, " +
 					"or a place that nearby or search found: its place_name, latitude_degrees and longitude_degrees, and its osm_type, osm_id, osm_category and address_text as they were given. " +
@@ -391,6 +405,7 @@ func init() {
 					{Action: "find_address", Tool: "location_find_address"},
 					{Action: "save_place", Tool: "location_save_place"},
 					{Action: "forget_place", Tool: "location_forget_place"},
+					{Action: "forget_visit", Tool: "location_forget_visit"},
 					{Action: "check_in", Tool: "location_check_in"},
 					{Action: "pause", Tool: "location_pause"},
 					{Action: "resume", Tool: "location_resume"},

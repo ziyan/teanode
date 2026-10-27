@@ -6602,6 +6602,13 @@ export const ja: Catalog = {
   'location.forgetBody': '{place}とその訪問を削除します。元に戻せません。',
   'location.forgotten': '{place}を削除しました',
   'location.forgetFailed': '場所を削除できませんでした。',
+  'location.forgetVisit': 'この訪問を削除',
+  'location.forgetVisitTitle': 'この訪問を削除しますか？',
+  'location.forgetVisitBody':
+    '{time} の{place}への訪問は履歴から削除され、行かなかったことになります。場所と、その場所のほかの訪問は残ります。',
+  'location.visitForgotten': '訪問を削除しました',
+  'location.forgetVisitFailed': '訪問を削除できませんでした。',
+  'location.visitMenu': '訪問の操作、{place}、{time}',
   'location.sharingTitle': '位置情報を共有',
   'location.shareIntro':
     '共有した相手は、この地図であなたを見ることができます。サークルと共有すると、そのサークルの全員に届き、あとから参加した人にも届きます。',
@@ -7883,7 +7890,8 @@ export const ja: Catalog = {
   'journal.somethingWrong': '間違いがありますか？',
   'journal.removeStory': 'この物語を削除',
   'journal.removeStoryTitle': 'この物語を削除しますか？',
-  'journal.removeStoryBody': '物語を削除し、TeaNode がそのために選んだもの（「選択済み」の印が付いた記録）も一緒に削除します。あなたの訂正とピン留めは残り、次のドリームで TeaNode が新しい物語を書き、選び直します。',
+  'journal.removeStoryBody':
+    '物語を削除し、TeaNode がそのために選んだもの（「選択済み」の印が付いた記録）も一緒に削除します。あなたの訂正とピン留めは残り、次のドリームで TeaNode が新しい物語を書き、選び直します。',
   'journal.storyRemoved': '物語を削除しました',
   'journal.removeStoryFailed': '物語を削除できませんでした。',
   'journal.yourCorrection': 'あなたの訂正：',

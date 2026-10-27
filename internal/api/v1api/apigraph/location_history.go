@@ -126,6 +126,11 @@ type LocationMutation interface {
 	// Delete a place and every visit to it. Needs location:use.
 	ForgetPlace(ctx context.Context, arguments ForgetPlaceArguments) (bool, error)
 
+	// Delete one of the caller's visits, one that did not happen, such as a
+	// stop at a place they only drove past. The place stays, with its other
+	// visits. Needs location:use.
+	ForgetPlaceVisit(ctx context.Context, arguments ForgetPlaceVisitArguments) (bool, error)
+
 	// Record that the caller is at a place now: one of their own, or a place
 	// found nearby, which becomes one of theirs. Ends the visit in progress
 	// and starts a visit that was recorded by hand. Needs location:use.
@@ -563,6 +568,10 @@ type SavePlaceArguments struct {
 
 type ForgetPlaceArguments struct {
 	PlaceID string `json:"placeId"`
+}
+
+type ForgetPlaceVisitArguments struct {
+	PlaceVisitID string `json:"placeVisitId"`
 }
 
 type CheckInArguments struct {
@@ -1755,7 +1764,7 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 			}
 		}
 	}
-	if err := tellDeparturesWhenTheyEnded(tx, user.ID, notices); err != nil {
+	if notices, err = tellDeparturesWhenTheyEnded(tx, user.ID, notices, now); err != nil {
 		return nil, err
 	}
 	// The trips around each run of the times the report touched, from the
@@ -1785,22 +1794,31 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 // ended as stored. A departure the phone sent late, after visits at other
 // places that began since, was over at the first of them, where
 // NormalizePlaceVisits ended the visit; told by that time, the window of
-// NotifyPlaceVisitAt keeps "left home" from being told hours later.
-func tellDeparturesWhenTheyEnded(tx db.Transaction, userId string, notices []visitNotice) error {
+// NotifyPlaceVisitAt keeps "left home" from being told hours later. A
+// departure NormalizePlaceVisits took out as a pass-by is not told, and nor is
+// one it took into a visit this report did not change (reportedAt is when the
+// report began): that visit's own departure was told when it came.
+func tellDeparturesWhenTheyEnded(tx db.Transaction, userId string, notices []visitNotice, reportedAt time.Time) ([]visitNotice, error) {
+	told := notices[:0]
 	for index := range notices {
-		notice := &notices[index]
+		notice := notices[index]
 		if notice.IsArrival || notice.Visit == nil {
+			told = append(told, notice)
 			continue
 		}
 		current, err := tx.GetPlaceVisitByClientKey(userId, notice.Visit.ClientVisitKey)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if current != nil && current.DepartedAt != nil && current.DepartedAt.Before(notice.HappenedAt) {
+		if current == nil || (current.ID != notice.Visit.ID && current.UpdatedAt.Before(reportedAt)) {
+			continue
+		}
+		if current.DepartedAt != nil && current.DepartedAt.Before(notice.HappenedAt) {
 			notice.HappenedAt = *current.DepartedAt
 		}
+		told = append(told, notice)
 	}
-	return nil
+	return told, nil
 }
 
 // reportedVisitRange is the earliest and the latest time the visits of a
@@ -2395,6 +2413,28 @@ func (self *graph) ForgetPlace(ctx context.Context, arguments ForgetPlaceArgumen
 	}
 	// The trips into and out of the visits that went are left without a
 	// visit; the visits beside them are joined by a trip of their own.
+	if err := rebuildTripsMissingVisit(tx, userId); err != nil {
+		return false, locationFailure(err)
+	}
+	return true, nil
+}
+
+func (self *graph) ForgetPlaceVisit(ctx context.Context, arguments ForgetPlaceVisitArguments) (bool, error) {
+	principal, err := self.requireLocationPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	tx := self.transaction(ctx)
+	userId := principal.User.ID
+	// One change of a person's location at a time, as in ReportLocation.
+	if err := tx.LockLocation(userId); err != nil {
+		return false, err
+	}
+	if err := tx.ForgetPlaceVisit(userId, strings.TrimSpace(arguments.PlaceVisitID)); err != nil {
+		return false, locationFailure(err)
+	}
+	// The trips into and out of the visit are left without it; the visits
+	// beside it are joined by a trip of their own.
 	if err := rebuildTripsMissingVisit(tx, userId); err != nil {
 		return false, locationFailure(err)
 	}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -573,6 +573,28 @@ function namesOf(group: MapPerson[]): string {
   return new Intl.ListFormat(undefined, { type: 'conjunction' }).format(group.map((person) => person.name))
 }
 
+// The gap between the pictures and their list, and between the list and the
+// map's edge.
+const MENU_GAP_PIXELS = 8
+
+type MenuPlacement = { isAbove: boolean; maxHeightPixels: number; shiftPixels: number }
+
+// placeMenu opens a group's list below its pictures, or above them when there
+// is more room there, as tall as that room allows, and moved sideways so that
+// it stays inside the map.
+export function placeMenu(stack: DOMRect, map: DOMRect, menuWidthPixels: number): MenuPlacement {
+  const roomBelow = map.bottom - stack.bottom - 2 * MENU_GAP_PIXELS
+  const roomAbove = stack.top - map.top - 2 * MENU_GAP_PIXELS
+  const isAbove = roomAbove > roomBelow
+  const center = stack.left + stack.width / 2
+  const left = center - menuWidthPixels / 2
+  const right = center + menuWidthPixels / 2
+  let shiftPixels = 0
+  if (left < map.left + MENU_GAP_PIXELS) shiftPixels = map.left + MENU_GAP_PIXELS - left
+  else if (right > map.right - MENU_GAP_PIXELS) shiftPixels = map.right - MENU_GAP_PIXELS - right
+  return { isAbove, maxHeightPixels: Math.max(0, isAbove ? roomAbove : roomBelow), shiftPixels }
+}
+
 // The most pictures a group draws; the rest are a count beside them.
 const MOST_GROUP_PICTURES = 3
 
@@ -593,6 +615,21 @@ function PeopleGroupMarker({
   const shown = people.slice(0, MOST_GROUP_PICTURES)
   const moreCount = people.length - shown.length
   const menuRef = useRef<HTMLUListElement>(null)
+  const [menuPlacement, setMenuPlacement] = useState<MenuPlacement | null>(null)
+
+  // The map cuts off whatever goes past its edges, so the list opens on the
+  // side of the pictures with more room, scrolls when even that is too
+  // short, and moves in from an edge it would go past.
+  useLayoutEffect(() => {
+    const menu = menuRef.current
+    const map = menu?.closest('.location-map')
+    const stack = menu?.previousElementSibling
+    if (!isOpen || !menu || !map || !stack) {
+      setMenuPlacement(null)
+      return
+    }
+    setMenuPlacement(placeMenu(stack.getBoundingClientRect(), map.getBoundingClientRect(), menu.scrollWidth))
+  }, [isOpen, people.length])
 
   // Escape or a press anywhere else puts the list away.
   useEffect(() => {
@@ -637,7 +674,16 @@ function PeopleGroupMarker({
         {moreCount > 0 && <span className="location-marker-stack-more">+{moreCount.toLocaleString()}</span>}
       </button>
       {isOpen && (
-        <ul className="location-marker-menu" role="menu" ref={menuRef}>
+        <ul
+          className={menuPlacement?.isAbove ? 'location-marker-menu is-above' : 'location-marker-menu'}
+          role="menu"
+          ref={menuRef}
+          style={
+            menuPlacement
+              ? { maxHeight: menuPlacement.maxHeightPixels, marginLeft: menuPlacement.shiftPixels }
+              : undefined
+          }
+        >
           {people.map((person) => (
             <li key={person.userId} role="none">
               <button

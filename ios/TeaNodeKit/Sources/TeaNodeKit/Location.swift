@@ -670,6 +670,9 @@ extension Documents {
     public static let forgetPlace = """
         mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }
         """
+    public static let forgetPlaceVisit = """
+        mutation ($placeVisitId: String!) { ForgetPlaceVisit(placeVisitId: $placeVisitId) }
+        """
     public static let checkIn = """
         mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $accuracyMeters: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String) {
           CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, accuracyMeters: $accuracyMeters, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText) {
@@ -720,7 +723,7 @@ extension Documents {
         "location": location, "locationVisits": locationVisits, "locationPlaces": locationPlaces, "nearbyPlaces": nearbyPlaces,
         "searchPlaces": searchPlaces, "searchAddresses": searchAddresses, "locationPoints": locationPoints, "reportLocation": reportLocation,
         "reportLocationWithoutActivities": reportLocationWithoutActivities, "savePlace": savePlace,
-        "forgetPlace": forgetPlace, "checkIn": checkIn, "eraseLocationHistory": eraseLocationHistory, "locationPauses": locationPauses,
+        "forgetPlace": forgetPlace, "forgetPlaceVisit": forgetPlaceVisit, "checkIn": checkIn, "eraseLocationHistory": eraseLocationHistory, "locationPauses": locationPauses,
         "pauseLocation": pauseLocation, "resumeLocation": resumeLocation,
         "muteLocationNotifications": muteLocationNotifications, "unmuteLocationNotifications": unmuteLocationNotifications,
         "sharedLocations": sharedLocations, "locationShares": locationShares, "shareLocation": shareLocation,
@@ -841,6 +844,13 @@ extension Connection {
     public func forgetPlace(placeId: String) async throws {
         struct Answer: Decodable, Sendable { let ForgetPlace: Bool? }
         _ = try await execute(Documents.forgetPlace, variables: ["placeId": .string(placeId)], as: Answer.self)
+    }
+
+    /// Deletes one of the person's own visits, as if they had never been there.
+    /// The place and its other visits stay.
+    public func forgetPlaceVisit(placeVisitId: String) async throws {
+        struct Answer: Decodable, Sendable { let ForgetPlaceVisit: Bool? }
+        _ = try await execute(Documents.forgetPlaceVisit, variables: ["placeVisitId": .string(placeVisitId)], as: Answer.self)
     }
 
     /// Records that the person is at a place now.

@@ -20,7 +20,7 @@ import (
 const (
 	pointFields       = `latitudeDegrees longitudeDegrees accuracyMeters measuredAt locationSource`
 	placeFields       = `id placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmName osmCategory addressText isAddressTyped visitCount lastVisitAt`
-	visitFields       = `arrivedAt departedAt durationSeconds place { ` + placeFields + ` }`
+	visitFields       = `id arrivedAt departedAt durationSeconds place { ` + placeFields + ` }`
 	listedVisitFields = visitFields + ` photoCount photosTakenBefore`
 	pauseFields       = `startedAt endedAt`
 	tripLegFields     = `id startedAt endedAt durationSeconds distanceMeters travelMode detectedTravelMode isTravelModeCorrected detectionSource`
@@ -87,8 +87,9 @@ const (
 	documentSavePlace = `mutation ($placeId: String, $placeName: String, $placeLabel: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $radiusMeters: Float, $addressText: String) {
   SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, radiusMeters: $radiusMeters, addressText: $addressText) { ` + placeFields + ` }
 }`
-	documentForgetPlace = `mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }`
-	documentCheckIn     = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String, $accuracyMeters: Float) {
+	documentForgetPlace      = `mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }`
+	documentForgetPlaceVisit = `mutation ($placeVisitId: String!) { ForgetPlaceVisit(placeVisitId: $placeVisitId) }`
+	documentCheckIn          = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String, $accuracyMeters: Float) {
   CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText, accuracyMeters: $accuracyMeters) { ` + visitFields + ` }
 }`
 	documentPause  = `mutation ($endedAt: DateTime) { PauseLocation(endedAt: $endedAt) { ` + pauseFields + ` } }`
@@ -131,6 +132,7 @@ type placeData struct {
 }
 
 type visitData struct {
+	ID                string     `json:"id"`
 	ArrivedAt         *time.Time `json:"arrivedAt"`
 	DepartedAt        *time.Time `json:"departedAt"`
 	DurationSeconds   *int       `json:"durationSeconds"`
@@ -651,6 +653,10 @@ func runVisits(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		if visit.DurationSeconds != nil {
 			row["visit_duration"] = durationWords(time.Duration(*visit.DurationSeconds) * time.Second)
+		}
+		// Only the person forgets a visit, so only their own carry its id.
+		if userId == nil {
+			row["visit_id"] = visit.ID
 		}
 		if visit.PhotoCount != nil && *visit.PhotoCount > 0 {
 			row["photo_count"] = *visit.PhotoCount
@@ -1206,6 +1212,32 @@ func runForgetPlace(ctx context.Context, call *tools.Call) (*tools.Result, error
 		return nil, err
 	}
 	return tools.JSONResult(map[string]any{"is_forgotten": true, "place_id": place})
+}
+
+// runForgetVisit forgets one of the person's visits that did not happen.
+func runForgetVisit(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	arguments, err := tools.DecodeArguments[struct {
+		VisitID string `json:"visit_id"`
+	}](call)
+	if err != nil {
+		return nil, err
+	}
+	visitId := strings.TrimSpace(arguments.VisitID)
+	if visitId == "" {
+		return nil, fmt.Errorf("which visit? give visit_id, from visits")
+	}
+	if !call.Confirmed {
+		return nil, fmt.Errorf("forget_visit needs the person's confirmation")
+	}
+	here, err := scopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var discard map[string]any
+	if err := here.operations.Execute(ctx, documentForgetPlaceVisit, map[string]any{"placeVisitId": visitId}, &discard); err != nil {
+		return nil, err
+	}
+	return tools.JSONResult(map[string]any{"is_forgotten": true, "visit_id": visitId})
 }
 
 type pauseArguments struct {

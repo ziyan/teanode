@@ -58,10 +58,13 @@ struct LocationPauseRow: View {
 
 /// LocationTimelineRow is a row of a timeline: a visit, which opens its place,
 /// a pause, or a trip. `correctLeg` is given on the person's own timeline,
-/// where a trip's legs can be corrected.
+/// where a trip's legs can be corrected. `askToForgetVisit` is given there
+/// too: it sets the visit the screen's list asks about forgetting
+/// (`forgetVisitDialog`), since a row is rebuilt as the list reloads.
 struct LocationTimelineRow: View {
     let entry: LocationTimelineEntry
     var correctLeg: ((TripLeg, TravelMode?) -> Void)?
+    var askToForgetVisit: ((PlaceVisit) -> Void)?
 
     var body: some View {
         switch entry {
@@ -69,10 +72,33 @@ struct LocationTimelineRow: View {
             NavigationLink(value: LocationRoute.place(visit.place)) {
                 LocationVisitRow(visit: visit)
             }
+            .swipeActions {
+                // A visit in progress is ended by a check-in before it can be
+                // forgotten: the phone would report its end as a visit again.
+                if let askToForgetVisit, visit.departedAt != nil {
+                    Button("Forget", systemImage: "trash", role: .destructive) { askToForgetVisit(visit) }
+                        .tint(.red)
+                }
+            }
         case .pause(let pause):
             LocationPauseRow(pause: pause)
         case .trip(let trip):
             LocationTripRow(trip: trip, correctLeg: correctLeg)
+        }
+    }
+}
+
+extension View {
+    /// Asks whether to forget the visit set, from the list a row of it was
+    /// swiped in, and forgets it on yes.
+    func forgetVisitDialog(_ forgettingVisit: Binding<PlaceVisit?>, forget: @escaping (PlaceVisit) -> Void) -> some View {
+        confirmationDialog(
+            "Forget this visit?", isPresented: Binding(get: { forgettingVisit.wrappedValue != nil }, set: { if !$0 { forgettingVisit.wrappedValue = nil } }),
+            titleVisibility: .visible, presenting: forgettingVisit.wrappedValue
+        ) { chosenVisit in
+            Button("Forget", role: .destructive) { forget(chosenVisit) }
+        } message: { _ in
+            Text("It is removed from your history, as if you were never there. The place stays, with its other visits.")
         }
     }
 }
