@@ -529,3 +529,43 @@ func TestAnOlderPriceDoesNotReplaceTheNewest(t *testing.T) {
 		}
 	})
 }
+
+// A person's trips of a stretch of time are their own, started inside it, and
+// name only the lists they still reach: a share taken back takes its list off
+// the trips made on it.
+func TestShoppingTripsBetweenAreThePersonsOwn(t *testing.T) {
+	t.Parallel()
+	world := newShoppingWorld(t)
+	world.run(t, func(tx db.Transaction) {
+		list := mustCreateShoppingList(t, tx, world.owner.ID, "Groceries")
+		share, err := tx.ShareShoppingList(world.owner.ID, &models.ShoppingListShare{ShoppingListID: list.ID, GranteeCircleID: world.home.ID})
+		if err != nil {
+			t.Fatalf("ShareShoppingList: %s", err)
+		}
+		samTrip, _, err := tx.StartShoppingTrip(world.sam.ID, "Corner Market", []string{list.ID})
+		if err != nil {
+			t.Fatalf("StartShoppingTrip: %s", err)
+		}
+		now := time.Now()
+		trips, err := tx.ListShoppingTripsBetween(world.sam.ID, now.Add(-time.Hour), now.Add(time.Hour))
+		if err != nil || len(trips) != 1 || trips[0].ID != samTrip.ID || len(trips[0].ShoppingListIDs) != 1 {
+			t.Fatalf("sam's trip of the hour: %+v %v", trips, err)
+		}
+		if later, err := tx.ListShoppingTripsBetween(world.sam.ID, now.Add(time.Hour), now.Add(2*time.Hour)); err != nil || len(later) != 0 {
+			t.Fatalf("a trip outside the stretch: %+v %v", later, err)
+		}
+		if owners, err := tx.ListShoppingTripsBetween(world.owner.ID, now.Add(-time.Hour), now.Add(time.Hour)); err != nil || len(owners) != 0 {
+			t.Fatalf("sam's trip on the owner's list is not the owner's: %+v %v", owners, err)
+		}
+		if _, err := tx.GetShoppingTrip(world.owner.ID, samTrip.ID); !errors.Is(err, db.ErrNotFound) {
+			t.Fatalf("the owner read sam's trip: %v", err)
+		}
+		if err := tx.DeleteShoppingListShare(world.owner.ID, share.ID); err != nil {
+			t.Fatalf("DeleteShoppingListShare: %s", err)
+		}
+		trip, err := tx.GetShoppingTrip(world.sam.ID, samTrip.ID)
+		if err != nil || len(trip.ShoppingListIDs) != 0 || trip.StoreName != "Corner Market" {
+			t.Fatalf("a trip on a list no longer shared: %+v %v", trip, err)
+		}
+	})
+}

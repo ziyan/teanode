@@ -86967,38 +86967,6 @@
         }
       }
     },
-    "Shopping trip": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "買い物"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "购物行程"
-          }
-        }
-      }
-    },
-    "%lld of %lld bought": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld/%lld点を購入"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已购买 %lld/%lld"
-          }
-        }
-      }
-    },
     "Sleep stages": {
       "localizations": {
         "ja": {
@@ -91475,18 +91443,242 @@
         }
       }
     },
-    "Week of %@": {
+    "Shopping at %@": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@からの週"
+            "value": "%@で買い物"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@开始的一周"
+            "value": "在%@购物"
+          }
+        }
+      }
+    },
+    "for %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リスト：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清单：%@"
+          }
+        }
+      }
+    },
+    "Pin to this day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この日に固定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定到这一天"
+          }
+        }
+      }
+    },
+    "Pinned to this day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この日に固定しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已固定到这一天"
+          }
+        }
+      }
+    },
+    "Could not pin that to this day.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この日に固定できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法固定到这一天。"
+          }
+        }
+      }
+    },
+    "Removed from this day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この日から削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已从这一天移除"
+          }
+        }
+      }
+    },
+    "Could not remove that from this day.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この日から削除できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法从这一天移除。"
+          }
+        }
+      }
+    },
+    "Remove this story": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このストーリーを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除这个故事"
+          }
+        }
+      }
+    },
+    "Remove this story?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このストーリーを削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除这个故事？"
+          }
+        }
+      }
+    },
+    "TeaNode writes a new one in a later dream. Your corrections are kept.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次のドリームで TeaNode が新しいストーリーを書きます。あなたの訂正は残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 会在之后的某次梦境中重新撰写一个。你的更正会保留。"
+          }
+        }
+      }
+    },
+    "Could not remove the story.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ストーリーを削除できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法移除故事。"
+          }
+        }
+      }
+    },
+    "Search the journal": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ジャーナルを検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索日记"
+          }
+        }
+      }
+    },
+    "Results for “%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」の検索結果"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@”的搜索结果"
+          }
+        }
+      }
+    },
+    "Nothing in your journal has “%@”. Try other words, or part of a word.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ジャーナルに「%@」を含むものはありません。別の言葉か、言葉の一部で試してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日记里没有包含“%@”的内容。换个词试试，或只输入词的一部分。"
+          }
+        }
+      }
+    },
+    "Story removed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ストーリーを削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "故事已移除"
           }
         }
       }

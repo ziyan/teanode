@@ -376,6 +376,8 @@ func newJournalDayInput(day *journal.Day) *journalDayInput {
 			input.add(moment.RecordKind, moment.RecordID, moment.At, "Note they wrote: "+moment.Title, false)
 		case models.RecordHealthDay:
 			input.add(moment.RecordKind, moment.RecordID, moment.At, "Workout: "+described(moment.Title, moment.Detail), false)
+		case models.RecordShoppingTrip:
+			input.add(moment.RecordKind, moment.RecordID, moment.At, described(moment.Title, moment.Detail), false)
 		}
 	}
 	shownTransactions := 0

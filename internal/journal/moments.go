@@ -162,6 +162,17 @@ func Moments(day *Day) []Moment {
 			DashboardPath: recordlink.FinanceTransactionPath(transaction.TransactionID),
 		})
 	}
+	for _, trip := range day.ShoppingTrips {
+		detail := ""
+		if len(trip.ListNames) > 0 {
+			detail = "for " + strings.Join(trip.ListNames, ", ")
+		}
+		moments = append(moments, Moment{
+			At: trip.StartedAt, RecordKind: models.RecordShoppingTrip, RecordID: trip.TripID,
+			Title: recordlink.ShoppingTripTitle(trip.StoreName), Detail: detail,
+			DashboardPath: recordlink.ShoppingTripPath(trip.ShoppingListIDs),
+		})
+	}
 	for _, note := range day.Notes {
 		moments = append(moments, Moment{
 			At: note.ModifiedAt, RecordKind: models.RecordNote, RecordID: note.NoteID,

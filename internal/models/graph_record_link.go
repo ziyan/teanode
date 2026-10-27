@@ -48,17 +48,13 @@ const (
 )
 
 // AgentRecordKinds is every kind, for validation and for the tool's schema.
-//
-// RecordShoppingTrip is not in it yet: the shopping tables, and so the
-// resolver that would check a trip is the person's, are not on this branch.
-// It joins the list with that resolver.
 var AgentRecordKinds = []AgentRecordKind{
 	RecordContact, RecordMail, RecordCalendarEvent, RecordReminder,
 	RecordConversationMessage, RecordFinanceTransaction, RecordFinanceReceipt,
 	RecordRecordingPassage,
 	RecordPhoto, RecordPlaceVisit, RecordAgentDocument, RecordChatMessage,
 	RecordRecording, RecordCalendarOccurrence, RecordHealthDay,
-	RecordNote, RecordIdea, RecordGoal,
+	RecordShoppingTrip, RecordNote, RecordIdea, RecordGoal,
 }
 
 // IsAgentRecordKind says whether a word names a kind.
@@ -132,6 +128,7 @@ var recordRelationsOf = map[AgentRecordKind][]AgentRecordRelation{
 	RecordRecording:          {RecordRelationAttended, RecordRelationMentionedIn, RecordRelationAbout},
 	RecordCalendarOccurrence: {RecordRelationAttended, RecordRelationOrganized, RecordRelationMentionedIn, RecordRelationAbout},
 	RecordHealthDay:          {RecordRelationMentionedIn, RecordRelationAbout},
+	RecordShoppingTrip:       {RecordRelationMentionedIn, RecordRelationAbout},
 	RecordNote:               {RecordRelationMentionedIn, RecordRelationAbout},
 	RecordIdea:               {RecordRelationMentionedIn, RecordRelationAbout},
 	RecordGoal:               {RecordRelationMentionedIn, RecordRelationAbout},

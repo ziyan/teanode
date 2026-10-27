@@ -142,6 +142,8 @@ func ResolveRecord(transaction db.Transaction, reader Reader, recordKind models.
 		err = resolveCalendarOccurrence(transaction, reader, resolved)
 	case models.RecordHealthDay:
 		err = resolveHealthDay(transaction, reader, resolved)
+	case models.RecordShoppingTrip:
+		err = resolveShoppingTrip(transaction, reader, resolved)
 	case models.RecordNote:
 		err = resolveNote(transaction, reader, resolved)
 	case models.RecordIdea:

@@ -29,6 +29,7 @@ const (
 	SectionReminders      = "reminders"
 	SectionTransactions   = "transactions"
 	SectionHealth         = "health"
+	SectionShoppingTrips  = "shoppingTrips"
 	SectionNotes          = "notes"
 	SectionMemoryPages    = "memoryPages"
 )
@@ -62,13 +63,15 @@ type ReadOptions struct {
 	// CanReadCalendar calendar:use (events and reminders), CanReadHealth
 	// health:use, CanReadChats circle:use, and CanReadAgent agent:use, which
 	// the agent's sources need: coding sessions, documents, conversations,
-	// recordings, transactions and the memory pages.
+	// recordings, transactions and the memory pages. CanReadShopping is
+	// shopping:use, for the person's own trips to the shops.
 	CanReadPhotos   bool
 	CanReadLocation bool
 	CanReadCalendar bool
 	CanReadHealth   bool
 	CanReadChats    bool
 	CanReadAgent    bool
+	CanReadShopping bool
 
 	// ShouldReadHealth is false when Health is to be left out although the
 	// person may read it: the agent's dream sets it from the person's switch
@@ -89,7 +92,7 @@ type ReadOptions struct {
 func AllReadOptions() ReadOptions {
 	return ReadOptions{
 		CanReadMail: true, CanReadPhotos: true, CanReadLocation: true, CanReadCalendar: true,
-		CanReadHealth: true, CanReadChats: true, CanReadAgent: true, ShouldReadHealth: true,
+		CanReadHealth: true, CanReadChats: true, CanReadAgent: true, CanReadShopping: true, ShouldReadHealth: true,
 	}
 }
 
@@ -154,6 +157,8 @@ type Day struct {
 
 	// Health is nil when the person has none for the day or it was left out.
 	Health *Health
+
+	ShoppingTrips []ShoppingTrip
 
 	Notes       []Note
 	MemoryPages []MemoryPage
@@ -312,6 +317,17 @@ type Reminder struct {
 	DueAt      *time.Time
 	DoneAt     *time.Time
 	ModifiedAt time.Time
+}
+
+// ShoppingTrip is a trip of the person's to the shops that started that day,
+// with the lists it was for that they still reach.
+type ShoppingTrip struct {
+	TripID          string
+	StoreName       string
+	ShoppingListIDs []string
+	ListNames       []string
+	StartedAt       time.Time
+	FinishedAt      *time.Time
 }
 
 // Transaction is money in or out that day.
@@ -482,6 +498,7 @@ func (self *dayReader) readAll() error {
 		{SectionReminders, self.options.CanReadCalendar, nil},
 		{SectionTransactions, self.isAgentReadable, self.readTransactions},
 		{SectionHealth, isHealthAllowed, self.readHealth},
+		{SectionShoppingTrips, self.options.CanReadShopping, self.readShoppingTrips},
 		{SectionNotes, self.options.CanReadMail, self.readNotes},
 		{SectionMemoryPages, self.isAgentReadable, self.readMemoryPages},
 	}
@@ -529,6 +546,7 @@ func OptionsFor(permissions *models.EffectivePermissions, shouldReadHealth bool)
 		CanReadHealth:    permissions.Has(models.PermissionHealthUse),
 		CanReadChats:     permissions.Has(models.PermissionCircleUse),
 		CanReadAgent:     permissions.Has(models.PermissionAgentUse),
+		CanReadShopping:  permissions.Has(models.PermissionShoppingUse),
 		ShouldReadHealth: shouldReadHealth,
 	}
 }
@@ -547,7 +565,7 @@ func AgentOptionsFor(permissions *models.EffectivePermissions, canAgentReadHealt
 func (self *Day) RecordCount() int {
 	count := len(self.CodingSessions) + self.DocumentTotal + len(self.JournalNotes) + len(self.Conversations) + len(self.Chats) +
 		self.MailReceivedTotal + self.MailSentTotal + len(self.Recordings) + self.PhotoTotal + len(self.Visits) + len(self.Events) +
-		len(self.Reminders) + len(self.Transactions) + len(self.Notes) + len(self.MemoryPages)
+		len(self.Reminders) + len(self.Transactions) + len(self.ShoppingTrips) + len(self.Notes) + len(self.MemoryPages)
 	if self.Health != nil {
 		count += len(self.Health.Workouts)
 	}

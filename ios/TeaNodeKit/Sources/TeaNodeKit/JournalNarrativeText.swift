@@ -116,6 +116,7 @@ public enum JournalRecordOpening: Hashable, Sendable {
         case "finance_transaction", "finance_receipt": return .part("finance")
         case "idea": return .part("ideas")
         case "goal": return .part("goals")
+        case "shopping_trip": return .part("shopping")
         default: break
         }
         let pathParts = dashboardPath.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)

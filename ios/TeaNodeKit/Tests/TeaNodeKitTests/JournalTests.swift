@@ -228,6 +228,176 @@ final class JournalTests: XCTestCase {
         XCTAssertEqual(erased.linkCount, 400)
     }
 
+    // MARK: Shopping trips, pins and choices
+
+    private let tripsJSON = #"""
+        "shoppingTrips":[
+          {"tripId":"trip-1","storeName":"Corner Market","listNames":["Groceries","Household"],"startedAt":"2026-10-22T19:10:00Z","finishedAt":"2026-10-22T19:50:00Z","dashboardPath":"/shopping"},
+          {"tripId":"trip-2","storeName":"","listNames":null,"startedAt":"2026-10-22T12:00:00Z","finishedAt":null,"dashboardPath":"/shopping"}]
+        """#
+
+    private let momentsJSON = #"""
+        "moments":[
+          {"at":"2026-10-22T09:00:00Z","recordKind":"mail","recordId":"m1","title":"Lena: mockups","detail":"","dashboardPath":""},
+          {"at":"2026-10-22T12:00:00Z","recordKind":"shopping_trip","recordId":"trip-2","title":"Shopping","detail":"","dashboardPath":"/shopping"},
+          {"at":"2026-10-22T14:00:00Z","recordKind":"contact","recordId":"c1","title":"Sam","detail":"","dashboardPath":""},
+          {"at":"2026-10-22T19:10:00Z","recordKind":"shopping_trip","recordId":"trip-1","title":"Shopping at Corner Market","detail":"for Groceries and Household","dashboardPath":"/shopping"},
+          {"at":"2026-10-22T20:00:00Z","recordKind":"","recordId":"","title":"Something without a record","detail":"","dashboardPath":""}]
+        """#
+
+    private let pinJSON = #"""
+        "pins":[{"linkId":"pin-1","linkSource":"person","linkReason":"","isHidden":false,
+                 "record":{"recordKind":"contact","recordId":"c1","reference":"contact:c1","title":"Sam","happenedAt":null,"dashboardPath":"","isUnavailable":false}}]
+        """#
+
+    func testShoppingTripsAreDecodedWithTheirStoreAndOpenShopping() async throws {
+        let answer = dayAnswer.replacingOccurrences(of: #""shoppingTrips":[]"#, with: tripsJSON)
+        let (connection, fake) = try connection(answering: answer)
+        let day = try await connection.journalDay("2026-10-22")
+        XCTAssertEqual(day.shoppingTrips.map(\.tripId), ["trip-1", "trip-2"])
+        XCTAssertEqual(day.shoppingTrips[0].storeName, "Corner Market")
+        XCTAssertEqual(day.shoppingTrips[0].listNames, ["Groceries", "Household"])
+        XCTAssertEqual(day.shoppingTrips[0].finishedAt, "2026-10-22T19:50:00Z")
+        // A trip with no store and a null list of lists.
+        XCTAssertEqual(day.shoppingTrips[1].storeName, "")
+        XCTAssertEqual(day.shoppingTrips[1].listNames, [])
+        XCTAssertNil(day.shoppingTrips[1].finishedAt)
+        XCTAssertEqual(day.shoppingTrips[0].opening, .part("shopping"))
+        // The day asks for what the screen reads, and no longer for the counts.
+        let sentQuery = try query(of: XCTUnwrap(fake.sent.first))
+        XCTAssertTrue(sentQuery.contains("shoppingTrips { tripId storeName listNames startedAt finishedAt dashboardPath }"))
+        XCTAssertFalse(sentQuery.contains("boughtCount"))
+        XCTAssertFalse(sentQuery.contains("itemCount"))
+    }
+
+    func testAMomentCanBePinnedUnlessItsRecordIsPinnedOrChosenAlready() async throws {
+        let answer = dayAnswer.replacingOccurrences(of: #""moments":[]"#, with: momentsJSON).replacingOccurrences(of: #""pins":null"#, with: pinJSON)
+        let (connection, _) = try connection(answering: answer)
+        let day = try await connection.journalDay("2026-10-22")
+        XCTAssertEqual(day.placedReferences, ["mail:m1", "contact:c1"])
+        let placed = day.placedReferences
+        // The mail is a choice of the agent, the contact is a pin; the trips
+        // are neither, and a moment with no record has nothing to pin.
+        XCTAssertEqual(day.moments.map { $0.canPin(placedReferences: placed) }, [false, true, false, true, false])
+        XCTAssertEqual(day.moments[1].reference, "shopping_trip:trip-2")
+    }
+
+    func testAChoiceThePersonHidCanBePinnedAgain() async throws {
+        let answer = dayAnswer.replacingOccurrences(of: #""moments":[]"#, with: momentsJSON).replacingOccurrences(of: #""isHidden":false"#, with: #""isHidden":true"#)
+        let (connection, _) = try connection(answering: answer)
+        let day = try await connection.journalDay("2026-10-22")
+        XCTAssertEqual(day.placedReferences, [])
+        XCTAssertTrue(day.moments[0].canPin(placedReferences: day.placedReferences))
+    }
+
+    func testPinningARecordNamesTheDayAndTheRecord() async throws {
+        let answer = #"""
+            {"data":{"PinJournalRecord":{"linkId":"pin-9","linkSource":"person","linkReason":"","isHidden":false,
+              "record":{"recordKind":"shopping_trip","recordId":"trip-1","reference":"shopping_trip:trip-1","title":"Shopping at Corner Market","happenedAt":null,"dashboardPath":"/shopping","isUnavailable":false}}}}
+            """#
+        let (connection, fake) = try connection(answering: answer)
+        let pinned = try await connection.pinJournalRecord(day: "2026-10-22", recordKind: "shopping_trip", recordId: "trip-1")
+        XCTAssertEqual(pinned.linkId, "pin-9")
+        XCTAssertEqual(pinned.linkSource, "person")
+        XCTAssertEqual(pinned.record?.reference, "shopping_trip:trip-1")
+        let request = try XCTUnwrap(fake.sent.first)
+        let sent = try variables(of: request)
+        XCTAssertEqual(sent["day"] as? String, "2026-10-22")
+        XCTAssertEqual(sent["recordKind"] as? String, "shopping_trip")
+        XCTAssertEqual(sent["recordId"] as? String, "trip-1")
+        XCTAssertNil(sent["linkReason"])
+        XCTAssertTrue(try query(of: request).contains("PinJournalRecord("))
+    }
+
+    func testRemovingALinkNamesItAndRefusesAnAnswerThatDidNotRemoveIt() async throws {
+        let (connection, fake) = try connection(answering: #"{"data":{"RemoveJournalLink":true}}"#)
+        try await connection.removeJournalLink(linkId: "pin-9")
+        let request = try XCTUnwrap(fake.sent.first)
+        XCTAssertEqual(try variables(of: request)["linkId"] as? String, "pin-9")
+        XCTAssertTrue(try query(of: request).contains("RemoveJournalLink("))
+        let (refusing, _) = try self.connection(answering: #"{"data":{"RemoveJournalLink":false}}"#)
+        do {
+            try await refusing.removeJournalLink(linkId: "pin-9")
+            XCTFail("a link that was not removed was taken as removed")
+        } catch {
+            XCTAssertEqual(error as? TeaNodeError, TeaNodeError.unreadableAnswer)
+        }
+    }
+
+    func testRemovingAStoryNamesTheDayOrThePeriod() async throws {
+        let (connection, fake) = try connection(answering: #"{"data":{"DeleteJournalNarrative":{"narrativePending":false}}}"#)
+        try await connection.deleteJournalNarrative(for: .day("2026-10-22"))
+        try await connection.deleteJournalNarrative(for: .period(.month, containing: "2026-10-22"))
+        let day = try variables(of: fake.sent[0])
+        XCTAssertEqual(day["day"] as? String, "2026-10-22")
+        XCTAssertNil(day["periodKind"])
+        XCTAssertEqual(try variables(of: fake.sent[1])["periodKind"] as? String, "month")
+        XCTAssertTrue(try query(of: fake.sent[0]).contains("DeleteJournalNarrative("))
+    }
+
+    // MARK: Searching
+
+    func testASearchPageIsDecodedWithItsDaysAndPeriods() async throws {
+        let answer = #"""
+            {"data":{"SearchJournal":{"totalCount":45,"hits":[
+              {"day":"2026-10-22","periodKind":"","headline":"Release day.","snippet":"…walked through the park before the rain."},
+              {"day":"2026-10-19","periodKind":"week","headline":"","snippet":"The walk through the park was the best part."},
+              null]}}}
+            """#
+        let (connection, fake) = try connection(answering: answer)
+        let page = try await connection.searchJournal(query: "park", first: 20, offset: 40)
+        XCTAssertEqual(page.totalCount, 45)
+        XCTAssertEqual(page.hits.map(\.id), ["|2026-10-22", "week|2026-10-19"])
+        XCTAssertNil(page.hits[0].kind)
+        XCTAssertEqual(page.hits[1].kind, .week)
+        XCTAssertEqual(page.hits[0].snippet, "…walked through the park before the rain.")
+        let request = try XCTUnwrap(fake.sent.first)
+        let sent = try variables(of: request)
+        XCTAssertEqual(sent["query"] as? String, "park")
+        XCTAssertEqual(sent["first"] as? Int, 20)
+        XCTAssertEqual(sent["offset"] as? Int, 40)
+        XCTAssertTrue(try query(of: request).contains("SearchJournal("))
+    }
+
+    func testASearchWithNoHitsIsAnEmptyPageAndASearchAnswerOfNothingIsNot() async throws {
+        let (connection, fake) = try connection(answering: #"{"data":{"SearchJournal":{"totalCount":0,"hits":null}}}"#)
+        let page = try await connection.searchJournal(query: "nothing")
+        XCTAssertEqual(page.hits, [])
+        let sent = try variables(of: XCTUnwrap(fake.sent.first))
+        XCTAssertEqual(sent["first"] as? Int, JournalSearch.pageSize)
+        XCTAssertEqual(sent["offset"] as? Int, 0)
+        let (empty, _) = try self.connection(answering: #"{"data":{"SearchJournal":null}}"#)
+        do {
+            _ = try await empty.searchJournal(query: "nothing")
+            XCTFail("a page was read from nothing")
+        } catch {
+            XCTAssertEqual(error as? TeaNodeError, TeaNodeError.unreadableAnswer)
+        }
+    }
+
+    func testTheWordsToSearchForAreTrimmedAndCutToWhatTheServerTakes() {
+        XCTAssertNil(JournalSearch.normalized(""))
+        XCTAssertNil(JournalSearch.normalized("  \n "))
+        XCTAssertEqual(JournalSearch.normalized("  the park \n"), "the park")
+        let long = String(repeating: "a", count: 250)
+        XCTAssertEqual(JournalSearch.normalized(long)?.unicodeScalars.count, JournalSearch.queryCharacterLimit)
+        // Counted as the server counts, in characters of the text and not in
+        // bytes: 200 of a wide character is kept whole.
+        let wide = String(repeating: "公", count: 300)
+        XCTAssertEqual(JournalSearch.normalized(wide), String(repeating: "公", count: 200))
+        // A cut that ends on a space does not keep it.
+        let spaced = String(repeating: "a", count: 199) + " " + "b"
+        XCTAssertEqual(JournalSearch.normalized(spaced), String(repeating: "a", count: 199))
+    }
+
+    func testTheNextPageOfHitsFollowsTheLastWithoutRepeatingAHit() {
+        let first = JournalSearchHit(day: "2026-10-22", periodKind: "", headline: "", snippet: "")
+        let second = JournalSearchHit(day: "2026-10-19", periodKind: "week", headline: "", snippet: "")
+        let third = JournalSearchHit(day: "2026-10-18", periodKind: "", headline: "", snippet: "")
+        XCTAssertEqual(JournalSearch.appending([second, third], to: [first, second]), [first, second, third])
+        XCTAssertEqual(JournalSearch.appending([], to: [first]), [first])
+    }
+
     // MARK: The time zone
 
     func testEveryRequestSaysWhichTimeZoneThePhoneIsIn() async throws {
@@ -381,6 +551,8 @@ final class JournalTests: XCTestCase {
             (Documents.stopJournalTouchUp, "StopJournalTouchUp("), (Documents.correctJournalNarrative, "CorrectJournalNarrative("),
             (Documents.removeJournalCorrection, "RemoveJournalCorrection("), (Documents.writeJournalNarrative, "WriteJournalNarrative("),
             (Documents.updateJournalSettings, "UpdateJournalSettings("), (Documents.eraseJournal, "EraseJournal"),
+            (Documents.deleteJournalNarrative, "DeleteJournalNarrative("), (Documents.pinJournalRecord, "PinJournalRecord("),
+            (Documents.removeJournalLink, "RemoveJournalLink("), (Documents.searchJournal, "SearchJournal("),
         ]
         for (document, name) in names {
             XCTAssertTrue(document.contains(name), name)

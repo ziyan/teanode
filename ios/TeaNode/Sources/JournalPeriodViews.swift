@@ -156,6 +156,7 @@ struct JournalPeriodScreen: View {
                 open: { record in JournalRecordOpener.open(JournalRecordOpening.of(record: record), in: app) },
                 correct: { correcting = JournalCorrectionRequest(target: model.target) },
                 writeAgain: { Task { await model.writeAgain() } },
+                removeStory: { Task { await model.removeNarrative() } },
                 removeCorrection: { index in Task { await model.removeCorrection(at: index) } })
         } header: {
             Text(narrativeTitle)

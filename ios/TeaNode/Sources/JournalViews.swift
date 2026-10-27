@@ -5,13 +5,15 @@ import UIKit
 // The Journal: the person's days, newest first, in weeks. A week has its
 // headline as a row that opens the week; a day opens the day. The menu under
 // the title opens the current week, month or year, the calendar button
-// chooses a day, and the pencil writes about today.
+// chooses a day, the pencil writes about today, and the search field finds the
+// days and periods that hold some words.
 
 /// JournalScreen is the Journal's first screen and the stack that its days
 /// and periods are pushed on.
 struct JournalScreen: View {
     let connection: Connection
     @State private var model: JournalModel
+    @State private var search: JournalSearchModel
     @State private var path: [JournalDestination] = []
     @State private var isChoosingDay = false
     @State private var writing: JournalWriteRequest?
@@ -20,6 +22,7 @@ struct JournalScreen: View {
     init(connection: Connection) {
         self.connection = connection
         _model = State(initialValue: JournalModel(connection: connection))
+        _search = State(initialValue: JournalSearchModel(connection: connection))
     }
 
     var body: some View {
@@ -27,6 +30,8 @@ struct JournalScreen: View {
             content
                 .navigationTitle(JournalText.title)
                 .navigationBarTitleDisplayMode(.large)
+                .searchable(text: $search.query, prompt: Text("Search the journal"))
+                .task(id: search.searchWords) { await search.search() }
                 .toolbarTitleMenu { zoomMenu }
                 .toolbar {
                     MoreBackButton()
@@ -58,6 +63,7 @@ struct JournalScreen: View {
             }
         }
         .toast(done: $model.doneText, problem: $model.problemText)
+        .toast(done: .constant(nil), problem: $search.problemText)
         .task {
             await model.load()
             #if DEBUG
@@ -124,7 +130,9 @@ struct JournalScreen: View {
 
     @ViewBuilder
     private var content: some View {
-        if let loadFailedText = model.loadFailedText {
+        if let searchWords = search.searchWords {
+            JournalSearchResults(model: search, searchWords: searchWords)
+        } else if let loadFailedText = model.loadFailedText {
             LoadFailedView(problemText: loadFailedText) { await model.load() }
         } else if !model.hasLoaded {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -173,12 +181,14 @@ struct JournalScreen: View {
         /// The screens a screenshot names: `-TeaNodeScreen journal-day` (the full
         /// day), `journal-day-work` (the same day from its work, with Details and
         /// the work chat folded), `journal-day-words` (a day with words only),
+        /// `journal-day-shopping` (the same day from its trips to the shops),
         /// `journal-write` (the write sheet over today), `journal-week`,
-        /// `journal-month`.
+        /// `journal-month`, `journal-search` (words typed in the search field).
         private func openDemoScreen() {
             guard DemoServer.isRequested, path.isEmpty else { return }
             switch DemoServer.screen {
-            case "journal-day", "journal-day-work": path = [.day(JournalDemo.fullDay)]
+            case "journal-day", "journal-day-work", "journal-day-shopping": path = [.day(JournalDemo.fullDay)]
+            case "journal-search": search.query = JournalDemo.searchQuery
             case "journal-day-words": path = [.day(JournalDemo.wordsDay)]
             case "journal-week": path = [.period(.week, JournalDemo.fullDay)]
             case "journal-month": path = [.period(.month, JournalDemo.fullDay)]
@@ -187,6 +197,70 @@ struct JournalScreen: View {
             }
         }
     #endif
+}
+
+/// JournalSearchResults is what the Journal shows while words are typed in
+/// its search field: the days and periods that hold them, newest first, a page
+/// at a time. A hit opens its day or its period.
+struct JournalSearchResults: View {
+    let model: JournalSearchModel
+    /// The words typed, as they are searched for.
+    let searchWords: String
+
+    var body: some View {
+        if let failedText = model.failedText, model.searchedQuery == searchWords {
+            LoadFailedView(problemText: failedText) { await model.search(isDebounced: false) }
+        } else if model.hits.isEmpty, model.searchedQuery != searchWords {
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if model.hits.isEmpty {
+            ContentUnavailableView {
+                Label("Nothing matches", systemImage: "magnifyingglass")
+            } description: {
+                Text("Nothing in your journal has “\(searchWords)”. Try other words, or part of a word.")
+            }
+        } else {
+            List {
+                Section {
+                    ForEach(model.hits) { hit in
+                        NavigationLink(value: JournalDestination.of(hit: hit)) {
+                            JournalSearchHitRow(hit: hit)
+                        }
+                        .task { await model.loadMore(after: hit) }
+                    }
+                    if model.isLoadingMore {
+                        ProgressView().frame(maxWidth: .infinity)
+                    }
+                } header: {
+                    Text("Results for “\(model.searchedQuery)”")
+                }
+            }
+        }
+    }
+}
+
+/// JournalSearchHitRow is a hit: the day or period it is, its headline in the
+/// writing face, and the words around the match.
+struct JournalSearchHitRow: View {
+    let hit: JournalSearchHit
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(verbatim: JournalText.searchHitTitle(hit))
+                .font(.headline)
+            if !hit.headline.isEmpty {
+                Text(verbatim: hit.headline)
+                    .fontDesign(.serif)
+                    .lineLimit(2)
+            }
+            if !hit.snippet.isEmpty {
+                Text(verbatim: hit.snippet)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
 }
 
 /// JournalTodayCard is today at the top of the timeline: the weather and what

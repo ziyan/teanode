@@ -316,6 +316,24 @@
                     "record": record("chat_message", "chat-freeze", title: "Release freeze, #platform", hour: 15.9, day: dayText), "isHidden": false,
                 ] as [String: Any]
             ]
+            // The person pinned the design review to the day themselves.
+            view["pins"] = [
+                [
+                    "linkId": "pin-1", "linkSource": "person", "linkReason": "",
+                    "record": record("recording", "recording-review", title: "Design review", path: "/recordings/recording-review", hour: 13, day: dayText),
+                    "isHidden": false,
+                ] as [String: Any]
+            ]
+            view["shoppingTrips"] = [
+                [
+                    "tripId": "trip-1", "storeName": "Corner Market", "listNames": ["Groceries", "Household"], "startedAt": moment(dayText, hour: 19.2),
+                    "finishedAt": moment(dayText, hour: 19.8), "dashboardPath": "/shopping",
+                ] as [String: Any],
+                [
+                    "tripId": "trip-2", "storeName": "", "listNames": ["Hardware"], "startedAt": moment(dayText, hour: 12.2),
+                    "finishedAt": NSNull(), "dashboardPath": "/shopping",
+                ] as [String: Any],
+            ]
             view["transactions"] = [
                 transaction("transaction-1", "Morning Bakery", hour: 8.7, minorUnits: -780, day: dayText),
                 transaction("transaction-2", "Noodle Bar", hour: 12.5, minorUnits: -1420, day: dayText),
@@ -348,9 +366,11 @@
                 moment(dayText, "Woke up", "Slept 6 h 10 min", kind: "health_day", hour: 6.8),
                 moment(dayText, "Release branch for Orchard", "Claude Code, 3 h", kind: "agent_document", hour: 9.3),
                 moment(dayText, "Design review recorded", "1 h 48 min", kind: "recording", hour: 13, identifier: "recording-review", path: "/recordings/recording-review"),
-                moment(dayText, "Asked to decide the freeze", "You chose Monday", kind: "chat_message", hour: 15.9),
+                moment(dayText, "Asked to decide the freeze", "You chose Monday", kind: "chat_message", hour: 15.9, identifier: "chat-freeze"),
                 moment(dayText, "Riverside Park", "11 photos", kind: "place_visit", hour: 17.5, identifier: "visit-park", path: "/location?day=\(dayText)"),
-                moment(dayText, "Groceries checked off", "Corner Market", kind: "shopping_trip", hour: 19.5),
+                moment(
+                    dayText, "Shopping at Corner Market", "for Groceries and Household", kind: "shopping_trip", hour: 19.2, identifier: "trip-1",
+                    path: "/shopping"),
                 moment(dayText, "You wrote in the journal", "", kind: "note", hour: 22.8),
             ]
         }
@@ -472,6 +492,43 @@
             }
         }
 
+        // MARK: Search
+
+        /// The words the screenshot of the search has typed.
+        static let searchQuery = "park"
+
+        /// The days and periods that hold the words, newest first, as a page of
+        /// a search: the demo's own, so every hit names a made-up day.
+        static func searchPage(query: String, first: Int, offset: Int) -> [String: Any] {
+            let lowercasedQuery = query.lowercased()
+            let lake = day(daysAgo: 7)
+            let candidates: [[String: Any]] = [
+                [
+                    "day": fullDay, "periodKind": "", "headline": "Release day: Orchard 2.4 shipped, and the park before the rain.",
+                    "snippet": "…Nothing broke, which felt almost suspicious. Walked home through the park before the rain.",
+                ],
+                [
+                    "day": JournalDays.weekStart(of: fullDay, weekStartsOn: "monday") ?? fullDay, "periodKind": "week",
+                    "headline": "Orchard 2.4 shipped on Thursday. Sleep slipped midweek; the weekend was the best in a month.",
+                    "snippet": "…The walk through the park afterward was the best part.",
+                ],
+                [
+                    "day": lake, "periodKind": "", "headline": "The lake loop, the longest walk since the summer.",
+                    "snippet": "…ended at the park by the lake, where the geese had taken over the benches.",
+                ],
+                [
+                    "day": JournalDays.monthStart(of: lake) ?? lake, "periodKind": "month", "headline": "",
+                    "snippet": "…the park, the lake and the long walks that filled the month.",
+                ],
+            ]
+            let hits = candidates.filter { hit in
+                let headline = hit["headline"] as? String ?? ""
+                let snippet = hit["snippet"] as? String ?? ""
+                return (headline + " " + snippet).lowercased().contains(lowercasedQuery)
+            }
+            return ["hits": Array(hits.dropFirst(max(0, offset)).prefix(max(0, first))), "totalCount": hits.count]
+        }
+
         // MARK: Settings
 
         static func settings(isWeatherOn: Bool = true, isEveningQuestionOn: Bool = true, eveningQuestionTime: String = "21:00") -> [String: Any] {
@@ -514,11 +571,28 @@
             if query.contains("EraseJournal") {
                 return journalJSON("EraseJournal", ["dayCount": 120, "periodCount": 30, "linkCount": 400])
             }
+            if query.contains("SearchJournal(") {
+                let page = JournalDemo.searchPage(
+                    query: variables["query"] as? String ?? "", first: variables["first"] as? Int ?? JournalSearch.pageSize,
+                    offset: variables["offset"] as? Int ?? 0)
+                return journalJSON("SearchJournal", page)
+            }
+            if query.contains("PinJournalRecord(") {
+                let pinned: [String: Any] = [
+                    "linkId": "demo-pin", "linkSource": "person", "linkReason": "", "isHidden": false,
+                    "record": JournalDemo.record(
+                        variables["recordKind"] as? String ?? "", variables["recordId"] as? String ?? "", title: "Pinned"),
+                ]
+                return journalJSON("PinJournalRecord", pinned)
+            }
+            if query.contains("RemoveJournalLink(") {
+                return journalJSON("RemoveJournalLink", true)
+            }
             // The mutations. The days are fixed, so a change is acknowledged and not shown.
             for operation in ["SetJournalWords", "SetJournalMood", "SetJournalLookingBack", "TouchUpJournalWords", "StopJournalTouchUp"] where query.contains("\(operation)(") {
                 return journalJSON(operation, ["day": variables["day"] as? String ?? "", "periodKind": "", "periodStart": "", "words": NSNull(), "lookingBack": NSNull()])
             }
-            for operation in ["CorrectJournalNarrative", "RemoveJournalCorrection", "WriteJournalNarrative"] where query.contains("\(operation)(") {
+            for operation in ["CorrectJournalNarrative", "RemoveJournalCorrection", "WriteJournalNarrative", "DeleteJournalNarrative"] where query.contains("\(operation)(") {
                 return journalJSON(operation, ["narrativePending": false])
             }
             return nil

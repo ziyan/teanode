@@ -441,14 +441,14 @@ type JournalWorkoutView struct {
 	Meters       float64   `json:"meters"`
 }
 
-// JournalShoppingTripView is a trip to the shops that day.
+// JournalShoppingTripView is a trip of the person's to the shops that day.
 type JournalShoppingTripView struct {
-	TripID      string     `json:"tripId"`
-	ListNames   []string   `json:"listNames"`
-	StartedAt   time.Time  `json:"startedAt"`
-	FinishedAt  *time.Time `json:"finishedAt"`
-	BoughtCount int        `json:"boughtCount"`
-	ItemCount   int        `json:"itemCount"`
+	TripID        string     `json:"tripId"`
+	StoreName     string     `json:"storeName"`
+	ListNames     []string   `json:"listNames"`
+	StartedAt     time.Time  `json:"startedAt"`
+	FinishedAt    *time.Time `json:"finishedAt"`
+	DashboardPath string     `json:"dashboardPath"`
 }
 
 // JournalMemoryPageView is a memory page with a fact about that day.
@@ -613,7 +613,7 @@ const (
     reminders { reminderId title dueAt doneAt }
     transactions { transactionId postedOn transactedAt description accountName amountMinorUnits currency }
     health { stepCount stepsByHour sleepMinutes sleepStages { sleepStage minutes } restingHeartRate workouts { sampleId activityType startedAt minutes meters } }
-    shoppingTrips { tripId listNames startedAt finishedAt boughtCount itemCount }
+    shoppingTrips { tripId storeName listNames startedAt finishedAt dashboardPath }
     notes { ` + journalRecordFields + ` } memoryPages { nodeId path title factCount } unavailableSections
     moments { at recordKind recordId title detail dashboardPath }`
 
