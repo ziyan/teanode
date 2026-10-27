@@ -57,6 +57,9 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   // above it add their own crumbs below.
   { prefix: '/journal', trail: [{ label: 'journal.title', to: '/journal' }] },
   { prefix: '/passwords', trail: [{ label: 'passwords.title', to: '/passwords' }] },
+  // A page of its own in the mailbox's rail; a list, a store or a receipt
+  // names itself below it.
+  { prefix: '/shopping', trail: [{ label: 'shopping.title', to: '/shopping' }] },
   { prefix: '/manage/mail', trail: [{ label: 'nav.mail', to: '/manage/mail' }] },
   { prefix: '/manage/queue', trail: [{ label: 'nav.queue', to: '/manage/queue' }] },
   { prefix: '/manage/reports', trail: [{ label: 'nav.reports', to: '/manage/reports' }] },

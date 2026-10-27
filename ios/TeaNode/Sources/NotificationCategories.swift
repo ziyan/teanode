@@ -14,6 +14,8 @@ enum NotificationCategories {
     static let skillShareCall = "skill_share_call"
     static let circle = "circle"
     static let location = "location"
+    static let shopping = "shopping"
+    static let codingQuestion = "herdr_question"
     static let questionPrefix = "question-"
 
     // The journal's evening question. The server sends it as a notification
@@ -70,6 +72,11 @@ enum NotificationCategories {
             UNNotificationCategory(identifier: circle, actions: [openAction], intentIdentifiers: []),
             // Somebody arrived or left: nothing to answer, only Location to open.
             UNNotificationCategory(identifier: location, actions: [openAction], intentIdentifiers: []),
+            // Arrived at a store, or somebody started shopping: only Shopping to open.
+            UNNotificationCategory(identifier: shopping, actions: [openAction], intentIdentifiers: []),
+            // A coding session asks: it is answered on the Coding screen, where
+            // its options are, so Open is the only button.
+            UNNotificationCategory(identifier: codingQuestion, actions: [openAction], intentIdentifiers: []),
             UNNotificationCategory(identifier: journalEveningQuestion, actions: journalMoodActions, intentIdentifiers: []),
         ]
     }
@@ -108,6 +115,10 @@ enum NotificationCategories {
             return fixed.first { $0.identifier == circle }
         case "location":
             return fixed.first { $0.identifier == location }
+        case "shopping":
+            return fixed.first { $0.identifier == shopping }
+        case "herdr_question":
+            return fixed.first { $0.identifier == codingQuestion }
         case journalEveningQuestion:
             return fixed.first { $0.identifier == journalEveningQuestion }
         case "question":
@@ -142,6 +153,13 @@ struct NotificationInfo: Sendable {
     let callId: String
     /// For a location notification, the person who arrived or left.
     let locationUserId: String
+    /// For a shopping notification of arriving at a store, the store.
+    let shoppingStoreName: String
+    /// For a shopping notification that somebody started shopping a list, the list.
+    let shoppingListId: String
+    /// For a coding session's question, the computer and pane of the session.
+    let computer: String
+    let paneId: String
     /// For the journal's evening question, the day it asks about, YYYY-MM-DD.
     let journalDay: String
     /// A question's choices, by the button that gives them.
@@ -156,6 +174,10 @@ struct NotificationInfo: Sendable {
         runId = content.runId ?? ""
         callId = content.callId ?? ""
         locationUserId = content.locationUserId ?? ""
+        shoppingStoreName = content.shoppingStoreName ?? ""
+        shoppingListId = content.shoppingListId ?? ""
+        computer = content.computer ?? ""
+        paneId = content.paneId ?? ""
         journalDay = content.journalDay ?? ""
         var answers: [String: String] = [:]
         for button in content.buttons ?? [] where button.buttonAction.hasPrefix("answer:") {
@@ -172,6 +194,10 @@ struct NotificationInfo: Sendable {
         runId = info["runId"] as? String ?? ""
         callId = info["callId"] as? String ?? ""
         locationUserId = info["locationUserId"] as? String ?? ""
+        shoppingStoreName = info["shoppingStoreName"] as? String ?? ""
+        shoppingListId = info["shoppingListId"] as? String ?? ""
+        computer = info["computer"] as? String ?? ""
+        paneId = info["paneId"] as? String ?? ""
         journalDay = info["journalDay"] as? String ?? info["day"] as? String ?? ""
         answers = info["answers"] as? [String: String] ?? [:]
     }
@@ -179,7 +205,8 @@ struct NotificationInfo: Sendable {
     var dictionary: [String: Any] {
         [
             "accountKey": accountKey, "notificationKind": notificationKind, "conversationId": conversationId, "runId": runId, "callId": callId,
-            "locationUserId": locationUserId, "journalDay": journalDay, "answers": answers,
+            "locationUserId": locationUserId, "shoppingStoreName": shoppingStoreName, "shoppingListId": shoppingListId,
+            "computer": computer, "paneId": paneId, "journalDay": journalDay, "answers": answers,
         ]
     }
 }

@@ -134,11 +134,19 @@ func (self *Fetcher) FetchImage(ctx context.Context, address string) (*Image, er
 	if err != nil {
 		return nil, err
 	}
+	return KeepImage(timed, body)
+}
+
+// KeepImage makes the picture this server keeps from a picture's bytes, as
+// FetchImage does with one it fetched: for a picture a person uploaded, such
+// as a shopping item's. One that is too large or cannot be decoded is
+// ErrNotPicture.
+func KeepImage(ctx context.Context, body []byte) (*Image, error) {
 	select {
 	case imageDecodes <- struct{}{}:
 		defer func() { <-imageDecodes }()
-	case <-timed.Done():
-		return nil, timed.Err()
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 	widthPixels, heightPixels, err := picture.ReadSize(body)
 	if err != nil {

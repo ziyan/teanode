@@ -990,12 +990,14 @@ struct ReceiptRow: View {
 /// charge can be taken off it.
 struct ReceiptDetailView: View {
     @Environment(FinanceModel.self) private var finance
+    @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     let receipt: FinanceReceipt
     /// The charge it was opened from, if any.
     var transactionId: String?
     let onChange: () -> Void
     @State private var isConfirmingDelete = false
+    @State private var isShowingShopping = false
     @State private var memory = InMemoryModel()
 
     var body: some View {
@@ -1071,6 +1073,16 @@ struct ReceiptDetailView: View {
                     .actionColor()
                 }
             }
+            if app.canUseShopping {
+                Section {
+                    Button("See what it did to your lists", systemImage: "cart") { isShowingShopping = true }
+                        .actionColor()
+                } header: {
+                    Text("Shopping lists")
+                } footer: {
+                    Text("A receipt is matched against your shopping lists when it is read.")
+                }
+            }
             InMemorySection(model: memory)
             Section {
                 Button(role: .destructive) {
@@ -1100,6 +1112,9 @@ struct ReceiptDetailView: View {
         .navigationTitle(receipt.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Receipt"))
         .navigationBarTitleDisplayMode(.inline)
         .inMemory(memory, recordKind: "finance_receipt", recordId: receipt.id)
+        .sheet(isPresented: $isShowingShopping) {
+            ShoppingReceiptSheet(connection: finance.connection, financeReceiptId: receipt.id)
+        }
     }
 }
 

@@ -50,6 +50,7 @@ import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/searcheverything"
 	_ "github.com/ziyan/teanode/internal/agent/tools/server"
 	_ "github.com/ziyan/teanode/internal/agent/tools/share"
+	_ "github.com/ziyan/teanode/internal/agent/tools/shopping"
 	_ "github.com/ziyan/teanode/internal/agent/tools/subscription"
 	_ "github.com/ziyan/teanode/internal/agent/tools/todo"
 	_ "github.com/ziyan/teanode/internal/agent/tools/toolsearch"

@@ -1419,6 +1419,7 @@ const SHARE_RECEIVED_WORDS: Record<string, Key> = {
   photo_album: 'agentDrawer.note.shareReceivedPhotoAlbum',
   recording: 'agentDrawer.note.shareReceivedRecording',
   finance: 'agentDrawer.note.shareReceivedFinance',
+  shopping_list: 'agentDrawer.note.shareReceivedShoppingList',
 }
 
 // LEGACY_NOTES is the English each kind was written in before notes had

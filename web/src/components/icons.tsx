@@ -1242,6 +1242,17 @@ export function DumbbellIcon(props: IconProps) {
   )
 }
 
+// A shopping cart: the Shopping page in the rail.
+export function CartIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 4h2.5l2.2 10.2a1 1 0 0 0 1 .8h8.6a1 1 0 0 0 1-.8L20 8H6.2" />
+      <circle cx="9.5" cy="19" r="1.3" />
+      <circle cx="17" cy="19" r="1.3" />
+    </Icon>
+  )
+}
+
 // JournalIcon is a book with a page held open: the Journal.
 export function JournalIcon(props: IconProps) {
   return (

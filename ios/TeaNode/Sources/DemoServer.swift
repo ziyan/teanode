@@ -23,6 +23,10 @@
             if let photoAnswer = Self.photoAnswer(request) {
                 return (photoAnswer, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
             }
+            // So is the picture of a shopping item.
+            if let picture = Self.shoppingPicture(for: request) {
+                return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
             // A person's picture is read from its address, not asked for in GraphQL.
             if let picture = Self.avatarPicture(for: request) {
                 return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
@@ -36,6 +40,8 @@
             if let journalAnswer = Self.journalAnswer(query: query, body: request.httpBody) {
                 // First: its documents name fields (mail, photos, recordings) that the questions below are looked for by.
                 answer = journalAnswer
+            } else if let shoppingAnswer = Self.shoppingAnswer(query: query, body: request.httpBody) {
+                answer = shoppingAnswer
             } else if let linkPreviewAnswer = Self.linkPreviewAnswering(query: query, body: request.httpBody) {
                 answer = linkPreviewAnswer
             } else if let personCardAnswer = Self.personCardAnswering(query: query, body: request.httpBody) {
@@ -798,7 +804,7 @@
         /// check.
         static let session = #"""
             {"data":{"GetSession":{"username":"robin","userId":"robin","manages":true,
-              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","circle:use","photos:use","location:use","health:use","passwords:use","journal:use"],"byDomain":[]},
+              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","circle:use","photos:use","location:use","health:use","passwords:use","shopping:use","journal:use"],"byDomain":[]},
               "impersonatorUsername":null}}}
             """#
 

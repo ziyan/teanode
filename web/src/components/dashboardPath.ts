@@ -94,6 +94,7 @@ const SHOWN_PREFIXES = [
   '/location',
   '/health',
   '/passwords',
+  '/shopping',
   '/journal',
 ]
 

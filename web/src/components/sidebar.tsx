@@ -17,6 +17,7 @@ import {
   LinkIcon,
   ListIcon,
   LocationIcon,
+  CartIcon,
   LockIcon,
   LogoutIcon,
   MailIcon,
@@ -256,6 +257,7 @@ export function Sidebar({
       '/location',
       '/health',
       '/passwords',
+      '/shopping',
       '/circles',
       '/browser',
       '/people',
@@ -579,6 +581,14 @@ export function Sidebar({
                   <span className="sidebar-label">{t('passwords.title')}</span>
                 </NavLink>
               )}
+              {hasPermission(session.permissions, 'shopping:use') && (
+                <NavLink to="/shopping" title={collapsed ? t('shopping.title') : undefined}>
+                  <span className="sidebar-icon">
+                    <CartIcon />
+                  </span>
+                  <span className="sidebar-label">{t('shopping.title')}</span>
+                </NavLink>
+              )}
               {/* What the agent knows and what the person's money did, under
                   the calendar: pages read often, not settings. The mailbox's
                   own settings are with the rest of the person's, in the
@@ -652,6 +662,12 @@ export function Sidebar({
                 <NavLink to="/passwords">
                   <LockIcon />
                   <span className="sidebar-label">{t('passwords.title')}</span>
+                </NavLink>
+              )}
+              {hasPermission(session.permissions, 'shopping:use') && (
+                <NavLink to="/shopping">
+                  <CartIcon />
+                  <span className="sidebar-label">{t('shopping.title')}</span>
                 </NavLink>
               )}
               {session.services?.isContactsEnabled && hasPermission(session.permissions, 'contacts:use') && (

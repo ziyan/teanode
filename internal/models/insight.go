@@ -393,10 +393,11 @@ const AlertMarker = "[alert]"
 // as an alert's words do. It is the only thing a goal says there.
 const GoalNeedsYouMarker = "[goal needs you]"
 
-// HerdrQuestionMarker begins the line a question from one of the person's
-// herdr coding sessions is written under in the main conversation, followed
-// by the computer, the pane and the question's fingerprint, so the drawer
-// can show its options and the next turn can pass the person's answer on.
+// HerdrQuestionMarker began the line a question from one of the person's
+// herdr coding sessions was written under in the main conversation, followed
+// by the computer, the pane and the question's fingerprint. Questions are
+// told to the phone and shown on the Coding page now, and written nowhere;
+// it is kept so the conversations that hold one still read as they did.
 const HerdrQuestionMarker = "[herdr question]"
 
 // HerdrSessionMarker begins the message the agent is woken with when a
@@ -626,8 +627,8 @@ const (
 	NoteCompacting            AgentNoteKind = "compacting"               // the earlier conversation is being folded into a note
 	NoteCompacted             AgentNoteKind = "compacted"                // it was: the detail is the note
 	NoteDepth                 AgentNoteKind = "depth"                    // looked into carefully: the detail is why
-	NoteHerdrAsked            AgentNoteKind = "herdr_asked"              // a coding session's question, for the drawer to draw: JSON
-	NoteHerdrAnswered         AgentNoteKind = "herdr_answered"           // it went, and what it was answered with: JSON
+	NoteHerdrAsked            AgentNoteKind = "herdr_asked"              // a coding session's question, for the drawer to draw: JSON; only in older conversations
+	NoteHerdrAnswered         AgentNoteKind = "herdr_answered"           // it went, and what it was answered with: JSON; only in older conversations
 	NoteCircleInvited         AgentNoteKind = "circle_invited"           // somebody invited the person to a circle: JSON of the inviter's name and the circle's
 	NoteCircleMemberAdded     AgentNoteKind = "circle_member_added"      // an operator put an account in a circle the person administers: JSON of the account's name and the circle's
 	NoteSkillShareCallWaiting AgentNoteKind = "skill_share_call_waiting" // a call of a shared skill waits for the person's approval: JSON naming the call

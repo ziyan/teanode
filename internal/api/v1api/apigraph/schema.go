@@ -71,6 +71,7 @@ type Query interface {
 	RecordingSpeakerQuery
 	RecordingQuery
 	RecordingShareQuery
+	ShoppingQuery
 	PhotoQuery
 	PhotoAlbumQuery
 	PhotoFaceQuery
@@ -140,6 +141,7 @@ type Mutation interface {
 	RecordingSpeakerMutation
 	RecordingMutation
 	RecordingShareMutation
+	ShoppingMutation
 	PhotoMutation
 	PhotoAlbumMutation
 	PhotoFaceMutation
@@ -197,6 +199,7 @@ var _ Mutation = &graph{}
 type Subscription interface {
 	AgentSubscription
 	LocationSubscription
+	ShoppingSubscription
 }
 
 var _ Subscription = &graph{}

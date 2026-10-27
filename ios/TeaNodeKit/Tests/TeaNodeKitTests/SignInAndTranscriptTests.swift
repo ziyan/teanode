@@ -481,6 +481,20 @@ final class NotificationTests: XCTestCase {
             XCTAssertThrowsError(try PayloadKey.open(sealed, key: PayloadKey.make()))
         }
     #endif
+
+    /// A coding session's question names the session it is from, so that
+    /// tapping it opens that session on the Coding screen.
+    func testACodingQuestionNotificationNamesItsSession() throws {
+        let json = #"{"notificationKind":"herdr_question","computer":"laptop","paneId":"p3","questionFingerprint":"fingerprint-1","title":"notes on laptop asks","body":"Run the tests?","buttons":[{"label":"Open","buttonAction":"open"}],"threadId":"herdr_question:laptop:p3"}"#
+        let content = try JSONDecoder().decode(NotificationContent.self, from: Data(json.utf8))
+        XCTAssertEqual(content.notificationKind, "herdr_question")
+        XCTAssertEqual(content.computer, "laptop")
+        XCTAssertEqual(content.paneId, "p3")
+        XCTAssertEqual(content.questionFingerprint, "fingerprint-1")
+        // Any other notification decodes as before, with no session.
+        let other = try JSONDecoder().decode(NotificationContent.self, from: Data(#"{"notificationKind":"message","title":"Tea","body":"Hello"}"#.utf8))
+        XCTAssertNil(other.paneId)
+    }
 }
 
 final class VoiceTests: XCTestCase {

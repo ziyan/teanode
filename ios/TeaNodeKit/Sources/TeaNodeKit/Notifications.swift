@@ -25,7 +25,7 @@ import Foundation
 public struct NotificationContent: Codable, Equatable, Sendable {
     /// alert, herdr_question, goal_needs_you, speak_first, message,
     /// approval, question, answer, circle, chat, skill_share_call, photo,
-    /// location, journalEveningQuestion or test.
+    /// location, shopping, journalEveningQuestion or test.
     public let notificationKind: String
     public let conversationId: String?
     public let runId: String?
@@ -34,6 +34,21 @@ public struct NotificationContent: Codable, Equatable, Sendable {
     /// is (`locationUserId` in `push.Content`), so that tapping it opens
     /// Location with them.
     public let locationUserId: String?
+    /// For a shopping notification of arriving at a store, the store
+    /// (`shoppingStoreName` in `push.Content`), so that tapping it opens
+    /// shopping there.
+    public let shoppingStoreName: String?
+    /// For a shopping notification that somebody started shopping a list,
+    /// the list (`shoppingListId` in `push.Content`), so that tapping it
+    /// opens the list.
+    public let shoppingListId: String?
+    /// For a coding session's question (herdr_question), the computer and
+    /// the pane of the session that asks, and the question's fingerprint
+    /// (`computer`, `paneId` and `questionFingerprint` in `push.Content`),
+    /// so that tapping it opens that session on the Coding screen.
+    public let computer: String?
+    public let paneId: String?
+    public let questionFingerprint: String?
     /// For the journal's evening question, the day it asks about.
     public let journalDay: String?
     public let title: String

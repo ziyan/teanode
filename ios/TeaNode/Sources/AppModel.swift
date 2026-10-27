@@ -40,6 +40,9 @@ final class AppModel {
     /// Whether the person has a computer attached that runs herdr, which is
     /// what the Coding section is for.
     private(set) var hasCodingComputers = false
+    /// Whether the server has said, since launch or the account changed,
+    /// which computers run herdr; until then Coding is neither on nor off.
+    private(set) var hasCodingPresenceBeenRead = false
     /// How many of the person's coding sessions ask something, a question
     /// or an approval: the badge on the tab that holds Coding.
     private(set) var codingAskingCount = 0
@@ -127,6 +130,13 @@ final class AppModel {
     /// pressed notification, or a link, names them. The screen takes it and
     /// clears it.
     var openedLocationUserId: String?
+    /// Where the Shopping screen opens: the store a pressed shopping
+    /// notification of arriving there names, or the list another person
+    /// started shopping. The screen takes it and clears it.
+    var openedShopping: ShoppingPlace?
+    /// The coding session the Coding screen opens on: a pressed notification
+    /// of its question names it. The screen takes it and clears it.
+    var openedCodingTarget: CodingTarget?
     /// The day the Location screen opens on the map of, from a link such as
     /// `/location?day=2030-01-15`. The screen takes it and clears it.
     var openedLocationDay: Date?
@@ -323,6 +333,8 @@ final class AppModel {
             // Only the part: an item's address would say which item, and an
             // address is no reason to open one.
             openedSection = .passwords
+        case "shopping":
+            openedSection = .shopping
         case "settings":
             openedSection = .settings
             if segments.count >= 3, segments[1] == "mailbox", segments[2] == "devices" {
@@ -640,6 +652,10 @@ final class AppModel {
     /// server's passwords:use), as far as the server has said.
     private(set) var canUsePasswords = false
 
+    /// Whether the account may keep shopping lists (the server's
+    /// shopping:use), as far as the server has said.
+    private(set) var canUseShopping = false
+
     /// Whether the permissions of the account in use have been read once
     /// (`canUseLocation` and `canChat` are only true after that). Until
     /// then, a screen that needs one of them is not known to be refused.
@@ -662,6 +678,7 @@ final class AppModel {
             canUseHealth = session.holds("health:use")
             canUseJournal = session.holds("journal:use")
             canUsePasswords = session.holds("passwords:use")
+            canUseShopping = session.holds("shopping:use")
             hasReadPermissions = true
         }
         let canUseCircles = session?.holds("circle:use") ?? false
@@ -703,6 +720,7 @@ final class AppModel {
                 canUseHealth = true
                 canUseJournal = true
                 canUsePasswords = true
+                canUseShopping = true
                 hasReadPermissions = true
                 return
             }
@@ -731,6 +749,7 @@ final class AppModel {
         canUseHealth = false
         canUseJournal = false
         canUsePasswords = false
+        canUseShopping = false
         hasReadPermissions = false
         hasPermissionReadFailed = false
         unreadChatCount = 0
@@ -747,6 +766,7 @@ final class AppModel {
         if isChanged {
             services = nil
             hasCodingComputers = false
+            hasCodingPresenceBeenRead = false
             codingAskingCount = 0
             accessSession = nil
             forgetAccountFacts()
@@ -1023,6 +1043,22 @@ final class AppModel {
                 // Somebody arrived or left: Location, with them selected.
                 openedLocationUserId = info.locationUserId.isEmpty ? nil : info.locationUserId
                 openedSection = .location
+            } else if info.notificationKind == "shopping" {
+                // Arrived at a store, or somebody started shopping a list:
+                // Shopping, at that store or that list.
+                if !info.shoppingStoreName.isEmpty {
+                    openedShopping = .store(info.shoppingStoreName, listIds: [])
+                } else if !info.shoppingListId.isEmpty {
+                    openedShopping = .list(info.shoppingListId)
+                }
+                openedSection = .shopping
+            } else if info.notificationKind == "herdr_question" {
+                // A coding session asks: Coding, on that session, where its
+                // question is answered.
+                if !info.computer.isEmpty, !info.paneId.isEmpty {
+                    openedCodingTarget = CodingTarget(computer: info.computer, paneId: info.paneId)
+                }
+                openedSection = .coding
             } else if info.notificationKind == NotificationCategories.journalEveningQuestion {
                 // The evening question: the day it asks about, in the Journal.
                 openedJournalDay = info.journalDay
@@ -1268,7 +1304,10 @@ extension AppModel {
         PhotosAvailability.isOffered(isServiceEnabled: services?.isPhotosEnabled == true, session: accessSession)
     }
 
-    func noteCodingComputers() { hasCodingComputers = true }
+    func noteCodingComputers() {
+        hasCodingComputers = true
+        hasCodingPresenceBeenRead = true
+    }
 
     /// The Coding section read the sessions: how many ask, at once, rather
     /// than at the next slow ask.
@@ -1281,6 +1320,7 @@ extension AppModel {
             let list = try? await connection.herdrSessions()
         else { return }
         hasCodingComputers = !list.computerNames.isEmpty
+        hasCodingPresenceBeenRead = true
         codingAskingCount = list.sessions.filter(\.isAsking).count
     }
 
@@ -1302,6 +1342,7 @@ extension AppModel {
         case .health: return canUseHealth
         case .journal: return canUseJournal
         case .passwords: return canUsePasswords
+        case .shopping: return canUseShopping
         case .coding: return services.isAssistantEnabled && hasCodingComputers
         case .settings: return true
         }

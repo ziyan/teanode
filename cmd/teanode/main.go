@@ -98,6 +98,7 @@ func main() {
 			cmd.NewFinanceCommand(),
 			cmd.NewRecordingCommand(),
 			cmd.NewPhotoCommand(),
+			cmd.NewShoppingCommand(),
 			cmd.NewSearchCommand(),
 			cmd.NewLinkCommand(),
 			cmd.NewAgentCommand(),

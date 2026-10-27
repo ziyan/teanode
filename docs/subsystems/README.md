@@ -34,6 +34,7 @@ change with it.
 | `notes.md` | Notes from a phone's Notes app, kept in the mailbox over IMAP |
 | `recordings.md` | Meeting recordings: how a transcript is read, and who a recording is shared with and at what level |
 | `photos.md` | The photo library: uploads, processing, descriptions, faces, albums, the iPhone's backup |
+| `shopping.md` | Shopping lists: items and their states, who reaches a list, shopping a store live, receipts checking items off, pictures and the reminder at a store |
 | `finance.md` | Linked institutions, transactions, exchange rates, net worth, budgets and savings targets |
 | `search.md` | One search of a person's words across chats, mail, contacts, photos, memory, documents, recordings, places and finance: the areas, who may search what, time and failure |
 

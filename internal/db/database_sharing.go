@@ -411,6 +411,10 @@ func (self *transaction) ListCircleShareOwners(circleId string) ([]*models.Circl
 		JOIN "agent_finance_account" account ON account.id = share.finance_account_id
 		JOIN "agent" owner_agent ON owner_agent.id = account.agent_id
 		WHERE share.grantee_circle_id = @circle
+		UNION ALL
+		SELECT list.user_id, 'shopping_list' FROM "shopping_list_share" share
+		JOIN "shopping_list" list ON list.id = share.shopping_list_id
+		WHERE share.grantee_circle_id = @circle
 	) shared ORDER BY 1, 2`, sql.Named("circle", circleId)).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
