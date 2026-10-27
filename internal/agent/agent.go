@@ -246,13 +246,10 @@ type Agent struct {
 	// resume.go.
 	startedAt          time.Time
 	hasResumedCutTurns atomic.Bool
-	// herdrTold is when each herdr question was written into the main
-	// conversation, by computer, pane and fingerprint, so a question said
-	// again after a reconnect is written once. Under the background lock.
+	// herdrTold is when each herdr question was told to the person's
+	// phones, by computer, pane and fingerprint, so a question said again
+	// after a reconnect is told once. Under the background lock.
 	herdrTold map[string]time.Time
-	// herdrAnswered are the questions that went while waiting to be
-	// written, so they are not written. Under the background lock.
-	herdrAnswered map[string]bool
 
 	contextsMutex sync.Mutex
 	contextsOpen  int

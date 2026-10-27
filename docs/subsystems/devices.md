@@ -259,10 +259,12 @@ is whose is not known.
 When a question comes or goes, or a watched session finishes, the program
 says so unasked (`type: herdr`), and says it again after every reconnect until
 the server acknowledges it, as background commands' endings are. A question is
-written into the person's main conversation under `[herdr question]`, which
-opens the drawer, shows its options as buttons, and goes on to their chat
-apps; a finished watch wakes the conversation that watched, under
-`[herdr session]`, through the same waker and bounds as background commands.
+told to the person's phones (`herdr_question`, naming the computer, the pane
+and the question's fingerprint, which the app opens on its Coding screen) and
+is acknowledged once told; it is shown and answered on the Coding page and
+screen, and written into no conversation. A finished watch wakes the
+conversation that watched, under `[herdr session]`, through the same waker and
+bounds as background commands.
 
 An answer is pressed as the person would: the option's number for a form, the
 numbers then right for one that takes several, the number then the text then

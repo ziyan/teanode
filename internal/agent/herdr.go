@@ -13,7 +13,7 @@ import (
 	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
-	"github.com/ziyan/teanode/internal/util/security"
+	"github.com/ziyan/teanode/internal/push"
 )
 
 // The person's herdr sessions: the Claude Code and Codex sessions they keep
@@ -24,15 +24,15 @@ import (
 // pressing (internal/computer/herdr.go), so the agent's tool, the dashboard
 // and the command line, which all come through here or ask it directly,
 // get the same answers and the same refusals. What this side adds is the
-// person: a question a session asks is written into their main
-// conversation, which opens the drawer and is sent on to their chat apps,
-// and a session the agent watched wakes the conversation that watched it
-// when it finishes.
+// person: a question a session asks is told to their phones, and opens the
+// session on the iPhone's Coding screen, where it is answered (it is shown on
+// the dashboard's Coding page too), and a session the agent watched wakes the
+// conversation that watched it when it finishes.
 
 const (
-	// herdrQuestionSurface is what a question is said on: like a goal's
-	// call for the person, it opens the drawer.
-	herdrQuestionSurface = "herdr_question"
+	// herdrQuestionNotification is the kind of a phone's notification that a
+	// session asks: the app opens that session on its Coding screen.
+	herdrQuestionNotification = "herdr_question"
 
 	// herdrListWait is how long listing waits for each computer.
 	herdrListWait = 15 * time.Second
@@ -40,12 +40,6 @@ const (
 	// herdrActionWait is how long an action that presses keys and looks
 	// again is waited for.
 	herdrActionWait = 30 * time.Second
-
-	// herdrQuestionTries is how many times a question is tried while a
-	// turn runs in the main conversation, herdrQuestionRetry apart: a day,
-	// unless it is answered first.
-	herdrQuestionTries = 24 * 60 * 4
-	herdrQuestionRetry = 15 * time.Second
 
 	// herdrSettledTurnCount is how many of a finished session's last turns
 	// its wake carries.
@@ -470,24 +464,13 @@ func (self *Agent) ComputerHerdrChanged(agentId string, connection DeviceConnect
 			self.tellHerdrQuestion(agentId, found, &event)
 		}()
 	case computer.HerdrEventKindAnswered:
-		// A question that went needs nothing more here, and one still
-		// waiting for a turn to end before it is written is not written:
-		// its card asks the computer whether it still waits.
-		if event.HerdrSession.Question != nil {
-			self.backgroundMutex.Lock()
-			if self.herdrAnswered == nil {
-				self.herdrAnswered = map[string]bool{}
-			}
-			// Only one still being written: the rest are done with.
-			if toldAt, isKnown := self.herdrTold[herdrToldKey(found.name, &event)]; isKnown && toldAt.IsZero() {
-				self.herdrAnswered[herdrToldKey(found.name, &event)] = true
-			}
-			self.backgroundMutex.Unlock()
-		}
+		// A question that went needs nothing more here: the Coding page and
+		// screen read the session again, and nothing was written anywhere
+		// that would need to say it went.
 		self.waitGroup.Add(1)
 		go func() {
 			defer self.waitGroup.Done()
-			self.noteHerdrAnswered(agentId, found, &event)
+			self.acknowledgeHerdr(self.currentComputer(agentId, found), event.HerdrEventID)
 		}()
 	case computer.HerdrEventKindSettled:
 		self.waitGroup.Add(1)
@@ -500,71 +483,6 @@ func (self *Agent) ComputerHerdrChanged(agentId string, connection DeviceConnect
 		// computer whether it still waits.
 		go self.acknowledgeHerdr(found, event.HerdrEventID)
 	}
-}
-
-// herdrNote is a herdr question's note, as the drawer reads it: which
-// question, by the same computer, pane and fingerprint its marker line
-// names, the session and the question whole when it is asked, and what it
-// was answered with when it goes.
-type herdrNote struct {
-	Computer            string                 `json:"computer"`
-	PaneID              string                 `json:"paneId"`
-	QuestionFingerprint string                 `json:"questionFingerprint"`
-	HerdrSession        *computer.HerdrSession `json:"herdrSession,omitempty"`
-	AnswerText          string                 `json:"answerText,omitempty"`
-}
-
-// herdrNoteOf is the note's detail: the asked note carries the session and
-// its question, the answered note what it was answered with.
-func herdrNoteOf(computerName string, session *computer.HerdrSession, isAsked bool, answerText string) string {
-	note := herdrNote{Computer: computerName, PaneID: session.PaneID, AnswerText: answerText}
-	if session.Question != nil {
-		note.QuestionFingerprint = session.Question.QuestionFingerprint
-	}
-	if isAsked {
-		note.HerdrSession = session
-	}
-	encoded, err := json.Marshal(note)
-	if err != nil {
-		return ""
-	}
-	return string(encoded)
-}
-
-// noteHerdrAnswered writes into the main conversation, as a note nobody
-// reads but the drawer, that a question went, so a drawer opened later
-// draws it answered at once rather than asking the computer first. Notes
-// are not part of what the model is given. It is also published, so a
-// drawer or a phone already showing the question folds it at once, with
-// what it was answered with, rather than offering options that are gone.
-func (self *Agent) noteHerdrAnswered(agentId string, attached *attachedComputer, event *computer.HerdrEvent) {
-	if question := event.HerdrSession.Question; question != nil {
-		detail := herdrNoteOf(attached.name, event.HerdrSession, false, event.AnswerText)
-		var mainConversationId string
-		if err := self.settings.Database.TransactionContext(self.ctx, func(tx db.Transaction) error {
-			main, err := scheduleConversation(tx, agentId, "")
-			if err != nil {
-				return err
-			}
-			mainConversationId = main.ID
-			_, err = tx.AppendAgentMessage(models.NewAgentNote(main.ID, models.NoteHerdrAnswered, detail))
-			return err
-		}); err != nil {
-			log.Warningf("cannot note that the herdr question in %s on %q went: %s", event.HerdrSession.PaneID, attached.name, err)
-			return
-		}
-		// It belongs to no run, as a reaction does not, so it is never
-		// replayed: a drawer that opens later reads the note instead.
-		// Note is the words alone: the detail is carried once, in
-		// NoteDetail, so a long answer does not count twice against what
-		// the relay to the other instances takes.
-		self.publish(Event{
-			Kind: EventNote, ConversationID: mainConversationId, At: time.Now(),
-			Note:     models.NoteText(models.NoteHerdrAnswered, ""),
-			NoteKind: string(models.NoteHerdrAnswered), NoteDetail: detail,
-		}, true)
-	}
-	self.acknowledgeHerdr(self.currentComputer(agentId, attached), event.HerdrEventID)
 }
 
 // acknowledgeHerdr tells the computer the server has heard an event, so it
@@ -582,124 +500,73 @@ func herdrToldKey(computerName string, event *computer.HerdrEvent) string {
 	return computerName + "\x00" + event.HerdrSession.PaneID + "\x00" + event.HerdrSession.Question.QuestionFingerprint
 }
 
-// tellHerdrQuestion writes a session's question into the person's main
-// conversation: a marker line for the transcript's readers and the next
-// turn, then the question in the agent's words, which opens the drawer
-// and goes on to their chat apps. A question said again after a reconnect
-// is written once.
+// tellHerdrQuestion tells the person's phones that a session asks, and
+// nothing more: the question is shown where the session is, on the Coding
+// page and the iPhone's Coding screen, and the notification opens it there.
+// Nothing is written into a conversation, so neither the main conversation
+// nor the chat apps that follow it hear of it. A question said again after a
+// reconnect is told once.
 func (self *Agent) tellHerdrQuestion(agentId string, attached *attachedComputer, event *computer.HerdrEvent) {
 	session := event.HerdrSession
-	if session.Question == nil {
-		self.acknowledgeHerdr(self.currentComputer(agentId, attached), event.HerdrEventID)
-		return
-	}
-	// Each question is held here while it is written, as a zero time, and
-	// as when it was written once it is. One said again meanwhile waits
-	// for the first; one already written is acknowledged again.
-	key := herdrToldKey(attached.name, event)
-	self.backgroundMutex.Lock()
-	if self.herdrTold == nil {
-		self.herdrTold = map[string]time.Time{}
-	}
-	for each, at := range self.herdrTold {
-		if !at.IsZero() && time.Since(at) > 24*time.Hour {
-			delete(self.herdrTold, each)
+	if session.Question != nil {
+		key := herdrToldKey(attached.name, event)
+		self.backgroundMutex.Lock()
+		if self.herdrTold == nil {
+			self.herdrTold = map[string]time.Time{}
 		}
-	}
-	toldAt, isKnown := self.herdrTold[key]
-	if !isKnown {
-		self.herdrTold[key] = time.Time{}
-	}
-	self.backgroundMutex.Unlock()
-	if isKnown {
-		if !toldAt.IsZero() {
-			self.acknowledgeHerdr(self.currentComputer(agentId, attached), event.HerdrEventID)
-		}
-		return
-	}
-	checkIn, said := herdrQuestionCheckIn(attached.name, session), herdrQuestionSaid(attached.name, session)
-	err := errTurnRunning
-	isAnswered := false
-	for try := 0; try < herdrQuestionTries && errors.Is(err, errTurnRunning); try++ {
-		if try > 0 {
-			select {
-			case <-self.ctx.Done():
-				err = self.ctx.Err()
-				continue
-			case <-time.After(herdrQuestionRetry):
-			}
-			self.backgroundMutex.Lock()
-			isAnswered = self.herdrAnswered[key]
-			self.backgroundMutex.Unlock()
-			if isAnswered {
-				// Answered at the keyboard while a turn ran: nothing to tell.
-				break
+		for each, at := range self.herdrTold {
+			if time.Since(at) > 24*time.Hour {
+				delete(self.herdrTold, each)
 			}
 		}
-		err = self.writeHerdrQuestion(agentId, checkIn, said, herdrNoteOf(attached.name, session, true, ""))
-	}
-	self.backgroundMutex.Lock()
-	delete(self.herdrAnswered, key)
-	if err == nil || isAnswered {
-		self.herdrTold[key] = time.Now()
-	} else {
-		delete(self.herdrTold, key)
-	}
-	self.backgroundMutex.Unlock()
-	if isAnswered {
-		self.acknowledgeHerdr(self.currentComputer(agentId, attached), event.HerdrEventID)
-		return
-	}
-	if err != nil {
-		// Not acknowledged: the computer says it again when it next
-		// connects, and it is tried again then.
-		log.Warningf("cannot tell the person of the herdr question in %s on %q yet: %s", session.PaneID, attached.name, err)
-		return
+		_, isKnown := self.herdrTold[key]
+		if !isKnown {
+			self.herdrTold[key] = time.Now()
+		}
+		self.backgroundMutex.Unlock()
+		if !isKnown {
+			self.notifyPhones(agentId, models.NotificationQuestion, herdrQuestionContent(attached.name, session))
+		}
 	}
 	self.acknowledgeHerdr(self.currentComputer(agentId, attached), event.HerdrEventID)
 }
 
-// writeHerdrQuestion writes the two messages into the main conversation,
-// when no turn runs there, and says so on the feed.
-func (self *Agent) writeHerdrQuestion(agentId, checkIn, said, asked string) error {
-	ctx := self.ctx
-	var main *models.AgentConversation
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		main, err = scheduleConversation(tx, agentId, "")
-		return err
-	}); err != nil {
-		return err
+// What a phone is told when a session asks: which session, on which
+// computer, and what kind of question it is.
+var (
+	phraseSessionAsks         = push.Phrase{English: "%s on %s asks", Chinese: "%s（%s）在提问", Japanese: "%s（%s）が質問しています"}
+	phraseSessionAsksApproval = push.Phrase{English: "%s on %s asks for your approval", Chinese: "%s（%s）请求你的批准", Japanese: "%s（%s）が承認を求めています"}
+	phraseSessionAsksPlan     = push.Phrase{English: "%s on %s asks you to approve its plan", Chinese: "%s（%s）请你批准它的计划", Japanese: "%s（%s）が計画の承認を求めています"}
+)
+
+// herdrQuestionContent is the notification of a session's question: the
+// session and its computer as the title, the question as the body (plain,
+// as a lock screen shows it), and the computer, the pane and the question's
+// fingerprint, by which the app opens the session. Its one button opens it:
+// the question is answered on the Coding screen, where its options are.
+func herdrQuestionContent(computerName string, session *computer.HerdrSession) *push.Content {
+	question := session.Question
+	phrase := phraseSessionAsks
+	switch question.HerdrQuestionKind {
+	case computer.HerdrQuestionKindToolApproval:
+		phrase = phraseSessionAsksApproval
+	case computer.HerdrQuestionKindPlanApproval:
+		phrase = phraseSessionAsksPlan
 	}
-	isWritten, err := self.whileNoTurnRuns(main.ID, func() error {
-		return self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-			if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: main.ID, Role: "user", Content: checkIn}); err != nil {
-				return err
-			}
-			if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: main.ID, Role: "assistant", Content: said}); err != nil {
-				return err
-			}
-			// The question whole, for the drawer to draw as the card it is;
-			// a note, so the model is not given it twice.
-			_, err := tx.AppendAgentMessage(models.NewAgentNote(main.ID, models.NoteHerdrAsked, asked))
-			return err
-		})
-	})
-	if err != nil {
-		return err
+	paneName := paneNameOf(session)
+	return &push.Content{
+		NotificationKind:    herdrQuestionNotification,
+		Title:               phrase.In(push.LanguageEnglish, paneName, computerName),
+		Body:                PhoneBody(question.QuestionText),
+		ThreadID:            herdrQuestionNotification + ":" + computerName + ":" + session.PaneID,
+		Computer:            computerName,
+		PaneID:              session.PaneID,
+		QuestionFingerprint: question.QuestionFingerprint,
+		Buttons:             []push.Button{{Label: "Open", ButtonAction: "open"}},
+		Wording: func(content *push.Content, language string) {
+			content.Title = phrase.In(language, paneName, computerName)
+		},
 	}
-	if !isWritten {
-		return errTurnRunning
-	}
-	runId, at := security.NewULID(), time.Now()
-	for sequence, event := range []Event{
-		{Kind: EventAsked, Text: checkIn, Note: herdrQuestionSurface},
-		{Kind: EventMessage, Text: said},
-		{Kind: EventDone},
-	} {
-		event.RunID, event.ConversationID, event.Sequence, event.At = runId, main.ID, sequence, at
-		self.publish(event, true)
-	}
-	return nil
 }
 
 // paneNameOf is a session's pane as the person knows it in herdr, or its
@@ -720,73 +587,6 @@ func codingAgentName(codingAgentKind string) string {
 		return "Codex"
 	}
 	return codingAgentKind
-}
-
-// herdrQuestionCheckIn is the marker line a question is written under. The
-// computer, the pane and the fingerprint follow the marker, for the drawer's
-// card and for the turn that passes the person's answer on. What the
-// session asked comes from its screen, so it is fenced as data.
-func herdrQuestionCheckIn(computerName string, session *computer.HerdrSession) string {
-	question := session.Question
-	var asked strings.Builder
-	asked.WriteString(question.QuestionText + "\n")
-	for _, option := range question.Options {
-		fmt.Fprintf(&asked, "%d. %s\n", option.OptionNumber, option.OptionLabel)
-	}
-	return fmt.Sprintf("%s %s %s %s\n", models.HerdrQuestionMarker, computerName, session.PaneID, question.QuestionFingerprint) +
-		fmt.Sprintf("Nobody asked for this: the %s session in %s (pane %s) on %s (%s) stopped to ask the person something, and you showed it to them, unasked. What it asked:\n",
-			codingAgentName(session.CodingAgentKind), paneNameOf(session), session.PaneID, computerName, session.WorkingDirectory) +
-		fenced(strings.TrimSpace(asked.String())) + "\n" +
-		fmt.Sprintf("If they answer, pass their choice on with the herdr tool's answer (computer %q, pane %q, question_fingerprint %q), with option_numbers and option_labels for the options they chose, or free_text for what they said to type. Never choose for them.",
-			computerName, session.PaneID, question.QuestionFingerprint)
-}
-
-// markdownLinkBreaker takes the link out of what a coding agent drew on its
-// screen: a "](" is the one thing that turns text into a link or a
-// picture, which the drawer or a chat app would follow or fetch. It is
-// broken with a space rather than escaped, since the drawer's markdown and
-// a chat app's read escapes differently and one of them would show the
-// backslash.
-var markdownLinkBreaker = strings.NewReplacer("](", "] (")
-
-// herdrQuestionSaid is the question as the person reads it, in the drawer
-// and in their chat apps. Everything in it that came from the screen is
-// escaped.
-func herdrQuestionSaid(computerName string, session *computer.HerdrSession) string {
-	question := session.Question
-	var said strings.Builder
-	what := "asks"
-	switch question.HerdrQuestionKind {
-	case computer.HerdrQuestionKindToolApproval:
-		what = "asks for your approval"
-	case computer.HerdrQuestionKindPlanApproval:
-		what = "asks you to approve its plan"
-	}
-	// The pane's name says where; the title, when the coding agent set one,
-	// says what it was about. A shell's own title (a prompt, a path) adds
-	// nothing the name does not.
-	about := ""
-	if title := strings.TrimSpace(session.PaneTitle); title != "" && !strings.Contains(title, "@") && !strings.Contains(title, "/") {
-		about = " (" + markdownLinkBreaker.Replace(title) + ")"
-	}
-	fmt.Fprintf(&said, "**%s** in %s on %s%s %s:\n\n", codingAgentName(session.CodingAgentKind),
-		markdownLinkBreaker.Replace(paneNameOf(session)), markdownLinkBreaker.Replace(computerName), about, what)
-	for _, line := range strings.Split(question.QuestionText, "\n") {
-		said.WriteString("> " + markdownLinkBreaker.Replace(line) + "\n")
-	}
-	said.WriteString("\n")
-	for _, option := range question.Options {
-		fmt.Fprintf(&said, "%d. %s", option.OptionNumber, markdownLinkBreaker.Replace(option.OptionLabel))
-		if option.OptionDescription != "" {
-			said.WriteString(": " + markdownLinkBreaker.Replace(option.OptionDescription))
-		}
-		said.WriteString("\n")
-	}
-	if question.IsMultipleChoice {
-		said.WriteString("\nYou may choose several.")
-	}
-	said.WriteString("\nAnswer here, or in the pane.")
-	return said.String()
 }
 
 // wakeForHerdrSettled has a watched session that finished wake the

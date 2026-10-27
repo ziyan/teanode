@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.199.5] - 2026-10-26
+
+### Fixed
+
+- Android calendar apps that sync with sync-collection, such as a phone maker's built-in calendar, now show TeaNode's calendars and their events. (#668)
+
 ## [0.199.4] - 2026-10-26
 
 ### Changed

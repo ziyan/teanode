@@ -15,6 +15,7 @@ enum NotificationCategories {
     static let circle = "circle"
     static let location = "location"
     static let shopping = "shopping"
+    static let codingQuestion = "herdr_question"
     static let questionPrefix = "question-"
 
     // The journal's evening question. The server sends it as a notification
@@ -74,6 +75,9 @@ enum NotificationCategories {
             // Arrived at a store, or somebody started shopping: only Shopping to open.
             UNNotificationCategory(identifier: shopping, actions: [openAction], intentIdentifiers: []),
             UNNotificationCategory(identifier: journalEveningQuestion, actions: journalMoodActions, intentIdentifiers: []),
+            // A coding session asks: it is answered on the Coding screen, where
+            // its options are, so Open is the only button.
+            UNNotificationCategory(identifier: codingQuestion, actions: [openAction], intentIdentifiers: []),
         ]
     }
 
@@ -115,6 +119,8 @@ enum NotificationCategories {
             return fixed.first { $0.identifier == shopping }
         case journalEveningQuestion:
             return fixed.first { $0.identifier == journalEveningQuestion }
+        case "herdr_question":
+            return fixed.first { $0.identifier == codingQuestion }
         case "question":
             let buttons = Array((content.buttons ?? []).prefix(4))
             let actions: [UNNotificationAction] = buttons.map { button in
@@ -153,6 +159,9 @@ struct NotificationInfo: Sendable {
     let shoppingListId: String
     /// For the journal's evening question, the day it asks about, YYYY-MM-DD.
     let journalDay: String
+    /// For a coding session's question, the computer and pane of the session.
+    let computer: String
+    let paneId: String
     /// A question's choices, by the button that gives them.
     let answers: [String: String]
 
@@ -168,6 +177,8 @@ struct NotificationInfo: Sendable {
         shoppingStoreName = content.shoppingStoreName ?? ""
         shoppingListId = content.shoppingListId ?? ""
         journalDay = content.journalDay ?? ""
+        computer = content.computer ?? ""
+        paneId = content.paneId ?? ""
         var answers: [String: String] = [:]
         for button in content.buttons ?? [] where button.buttonAction.hasPrefix("answer:") {
             answers[button.buttonAction] = button.label
@@ -186,13 +197,16 @@ struct NotificationInfo: Sendable {
         shoppingStoreName = info["shoppingStoreName"] as? String ?? ""
         shoppingListId = info["shoppingListId"] as? String ?? ""
         journalDay = info["journalDay"] as? String ?? info["day"] as? String ?? ""
+        computer = info["computer"] as? String ?? ""
+        paneId = info["paneId"] as? String ?? ""
         answers = info["answers"] as? [String: String] ?? [:]
     }
 
     var dictionary: [String: Any] {
         [
             "accountKey": accountKey, "notificationKind": notificationKind, "conversationId": conversationId, "runId": runId, "callId": callId,
-            "locationUserId": locationUserId, "shoppingStoreName": shoppingStoreName, "shoppingListId": shoppingListId, "journalDay": journalDay, "answers": answers,
+            "locationUserId": locationUserId, "shoppingStoreName": shoppingStoreName, "shoppingListId": shoppingListId, "journalDay": journalDay,
+            "computer": computer, "paneId": paneId, "answers": answers,
         ]
     }
 }

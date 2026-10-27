@@ -45,13 +45,21 @@ public struct NotificationContent: Codable, Equatable, Sendable {
     public let shoppingListId: String?
     /// For the journal's evening question, the day it asks about.
     public let journalDay: String?
+    /// For a coding session's question (herdr_question), the computer and
+    /// the pane of the session that asks, and the question's fingerprint
+    /// (`computer`, `paneId` and `questionFingerprint` in `push.Content`),
+    /// so that tapping it opens that session on the Coding screen.
+    public let computer: String?
+    public let paneId: String?
+    public let questionFingerprint: String?
     public let title: String
     public let body: String
     public let buttons: [NotificationButton]?
     public let threadId: String?
 
     private enum CodingKeys: String, CodingKey {
-        case notificationKind, conversationId, runId, callId, locationUserId, journalDay, title, body, buttons, threadId
+        case notificationKind, conversationId, runId, callId, locationUserId, shoppingStoreName, shoppingListId, journalDay
+        case computer, paneId, questionFingerprint, title, body, buttons, threadId
     }
 
     private enum SpelledAsDayKeys: String, CodingKey {
@@ -65,6 +73,11 @@ public struct NotificationContent: Codable, Equatable, Sendable {
         runId = try container.decodeIfPresent(String.self, forKey: .runId)
         callId = try container.decodeIfPresent(String.self, forKey: .callId)
         locationUserId = try container.decodeIfPresent(String.self, forKey: .locationUserId)
+        shoppingStoreName = try container.decodeIfPresent(String.self, forKey: .shoppingStoreName)
+        shoppingListId = try container.decodeIfPresent(String.self, forKey: .shoppingListId)
+        computer = try container.decodeIfPresent(String.self, forKey: .computer)
+        paneId = try container.decodeIfPresent(String.self, forKey: .paneId)
+        questionFingerprint = try container.decodeIfPresent(String.self, forKey: .questionFingerprint)
         let spelledAsDay = try decoder.container(keyedBy: SpelledAsDayKeys.self)
         journalDay = try container.decodeIfPresent(String.self, forKey: .journalDay) ?? spelledAsDay.decodeIfPresent(String.self, forKey: .day)
         title = try container.decode(String.self, forKey: .title)
@@ -81,6 +94,11 @@ public struct NotificationContent: Codable, Equatable, Sendable {
         try container.encodeIfPresent(callId, forKey: .callId)
         try container.encodeIfPresent(locationUserId, forKey: .locationUserId)
         try container.encodeIfPresent(journalDay, forKey: .journalDay)
+        try container.encodeIfPresent(shoppingStoreName, forKey: .shoppingStoreName)
+        try container.encodeIfPresent(shoppingListId, forKey: .shoppingListId)
+        try container.encodeIfPresent(computer, forKey: .computer)
+        try container.encodeIfPresent(paneId, forKey: .paneId)
+        try container.encodeIfPresent(questionFingerprint, forKey: .questionFingerprint)
         try container.encode(title, forKey: .title)
         try container.encode(body, forKey: .body)
         try container.encodeIfPresent(buttons, forKey: .buttons)
