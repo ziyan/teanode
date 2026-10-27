@@ -107,7 +107,7 @@ struct LocationDrawer<Header: View, Content: View>: View {
                 .fill(Color(.systemGroupedBackground))
                 .shadow(radius: 4)
         }
-        .ignoresSafeArea(.container, edges: .bottom)
+        .ignoresSafeArea(edges: .bottom)
         .animation(.snappy, value: detent)
     }
 

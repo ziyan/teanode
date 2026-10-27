@@ -106,15 +106,24 @@ struct LocationScreen: View {
                 // behind it; neither one's size moves the other.
                 Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .overlay(alignment: .bottom) {
-                        LocationDrawer(
-                            detent: $drawerDetent, headerHeight: $drawerHeaderHeight, availableHeight: proxy.size.height,
-                            bottomInset: proxy.safeAreaInsets.bottom
-                        ) {
-                            drawerHeader
-                        } content: {
-                            drawerContent
-                        }
+                    .overlay {
+                        // A layer of its own that reaches the screen's bottom
+                        // edge, under the tab bar, so the drawer is placed on
+                        // that edge and not on the safe area's: a drawer that
+                        // only asked to ignore the safe area stopped at the
+                        // tab bar's top with the map showing below it.
+                        Color.clear
+                            .ignoresSafeArea(edges: .bottom)
+                            .overlay(alignment: .bottom) {
+                                LocationDrawer(
+                                    detent: $drawerDetent, headerHeight: $drawerHeaderHeight, availableHeight: proxy.size.height,
+                                    bottomInset: proxy.safeAreaInsets.bottom
+                                ) {
+                                    drawerHeader
+                                } content: {
+                                    drawerContent
+                                }
+                            }
                     }
                     .background {
                         LocationMapHeader(model: model, recorder: recorder, isShowingPeople: isShowingPeople)
