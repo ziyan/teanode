@@ -163,6 +163,16 @@ it('shows the rest of the name selected after the words, and Tab takes it', () =
   expect(box.value).toBe('journal!')
 })
 
+it('takes a letter typed over the same letter offered as typed', () => {
+  const { box } = renderBox()
+  fireEvent.change(box, { target: { value: 'jo' } })
+  expect(box.value).toBe('journal')
+  fireEvent.keyDown(box, { key: 'u' })
+  expect(box.value).toBe('journal')
+  expect(box.selectionStart).toBe(3)
+  expect(optionNames().pop()).toBe('Search everything for “jou”')
+})
+
 it('removes the completion on Backspace without deleting a letter that was typed', () => {
   const { box } = renderBox()
   fireEvent.change(box, { target: { value: 'jo' } })

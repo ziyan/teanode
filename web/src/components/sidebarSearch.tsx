@@ -357,6 +357,24 @@ export function SidebarSearch({
               // would replace them.
               event.currentTarget.setSelectionRange(shown.length, shown.length)
               break
+            default:
+              // A letter that is the next one offered leaves the box's text as
+              // it was, so no change would say it was typed: it is taken here,
+              // and the rest of the name is offered after it.
+              if (
+                completion !== '' &&
+                event.key.length === 1 &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.altKey &&
+                completion[0].toLowerCase() === event.key.toLowerCase()
+              ) {
+                event.preventDefault()
+                setTyped(typed + event.key)
+                setCompleting(true)
+                setHighlightedIndex(0)
+              }
+              break
             case 'ArrowLeft':
             case 'Home':
               // The caret goes back into the words, not into a name that was
