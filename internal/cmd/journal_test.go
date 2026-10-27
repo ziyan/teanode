@@ -130,6 +130,10 @@ func journalServerFor(test *testing.T, measurementSystem string) (*httptest.Serv
 				if operation == "ReadJournalPeriod" && document.Variables["periodKind"] == "year" {
 					answer = year
 				}
+				// The fixture keeps "Already said." already.
+				if operation == "CorrectJournalNarrative" && document.Variables["correctionText"] == "Already said." {
+					answer = `{"headline":"","narrative":"","references":[],"corrections":[{"correctionText":"Already said."}],"isCorrectionAlreadyKept":true}`
+				}
 				data[operation] = json.RawMessage(answer)
 				lock.Lock()
 				calls[operation] = document.Variables
@@ -545,6 +549,14 @@ func TestJournalCorrectionsAreNumberedFromOne(test *testing.T) {
 		test.Errorf("a correction of a day: %v", variables)
 	}
 	mustContain(test, output, "noted (3 corrections kept for 2026-10-21)")
+	if strings.Contains(output, "already kept") {
+		test.Errorf("a new correction read as one already kept: %s", output)
+	}
+	output, err = runJournalCommand(test, server, "correct", "2026-10-21", "Already", "said.")
+	if err != nil {
+		test.Fatal(err)
+	}
+	mustContain(test, output, "already kept; nothing added (1 correction kept for 2026-10-21)")
 	if _, err := runJournalCommand(test, server, "correct", "Sam was there."); err != nil || called("CorrectJournalNarrative")["day"] != today || called("CorrectJournalNarrative")["correctionText"] != "Sam was there." {
 		test.Errorf("a correction of today: %v, %v", called("CorrectJournalNarrative"), err)
 	}

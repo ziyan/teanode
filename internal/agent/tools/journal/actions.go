@@ -867,7 +867,23 @@ func runCorrect(ctx context.Context, call *tools.Call, here *scope) (*tools.Resu
 	if err := here.operations.Execute(ctx, client.DocumentCorrectJournalNarrative, variables, &result); err != nil {
 		return nil, err
 	}
-	answer := map[string]any{"day": day, "is_corrected": true, "note": "the narrative is being written again with the correction as a fact to follow"}
+	narrative := result.CorrectJournalNarrative
+	if narrative == nil {
+		return nil, errors.New("the server did not answer the correction")
+	}
+	corrections := make([]string, 0, len(narrative.Corrections))
+	for _, correction := range narrative.Corrections {
+		corrections = append(corrections, correction.CorrectionText)
+	}
+	// The answer says what the narrative keeps now, and that the correction
+	// is done: an answer that read the same each time once had a model send
+	// one correction twenty times.
+	answer := map[string]any{"day": day, "is_added": !narrative.IsCorrectionAlreadyKept, "corrections": corrections}
+	if narrative.IsCorrectionAlreadyKept {
+		answer["note"] = "already kept; nothing added. The narrative follows it whenever it is written. Do not send it again."
+	} else {
+		answer["note"] = "kept; the narrative is being written again with it as a fact to follow. The correction is done: do not send it again."
+	}
 	if periodKind != "" {
 		answer["period_kind"] = periodKind
 	}

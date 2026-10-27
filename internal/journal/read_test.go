@@ -491,7 +491,7 @@ func TestInputDigestMovesWithWhatTheNarrativeIsWrittenFrom(t *testing.T) {
 			t.Fatal(err)
 		}
 		changed := digestOf()
-		if err := tx.AddJournalCorrection(world.user.ID, models.JournalTarget{Day: worldDay}, zone, "It was Sam at lunch.", local(22, 0)); err != nil {
+		if _, err := tx.AddJournalCorrection(world.user.ID, models.JournalTarget{Day: worldDay}, zone, "It was Sam at lunch.", local(22, 0)); err != nil {
 			t.Fatal(err)
 		}
 		corrected := digestOf()

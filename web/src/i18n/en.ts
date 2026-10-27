@@ -7952,6 +7952,7 @@ export const en = {
   'journal.correctionPlaceholder': 'It was a 25 minute walk, and a friend came along.',
   'journal.correctionSubmit': 'Write it again',
   'journal.correctionSaved': 'Saved. Writing the story again.',
+  'journal.correctionAlreadyKept': 'That correction is already kept, so nothing was added.',
   'journal.correctionRemoved': 'Removed. Writing the story again.',
   'journal.correctionFailed': 'Could not save the correction.',
   'journal.work': 'What you worked on',

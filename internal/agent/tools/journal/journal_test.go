@@ -471,7 +471,7 @@ func TestSetMoodTakesANameOrANumber(t *testing.T) {
 func TestTouchUpCorrectAndPin(t *testing.T) {
 	operations := &routing{answers: map[string]string{
 		"TouchUpJournalWords":     `{"day":"2026-10-22","words":{"touchUpHow":"shorter","touchUpPending":true}}`,
-		"CorrectJournalNarrative": `{"headline":"x"}`,
+		"CorrectJournalNarrative": `{"headline":"x","corrections":[]}`,
 		"PinJournalRecord":        `{"linkId":"l1","record":{"reference":"mail:m1","title":"Budget"}}`,
 	}}
 	run := aTurnOfAda(operations)
@@ -489,6 +489,31 @@ func TestTouchUpCorrectAndPin(t *testing.T) {
 	}
 	if _, _, err := act(t, run, "pin", `{"record":"nothing"}`); err == nil {
 		t.Errorf("a record that is not kind:id was pinned")
+	}
+}
+
+// A correction's answer lists what the narrative keeps, and says when the
+// words were kept already and nothing was added, so that a model is not left
+// to send them again.
+func TestACorrectionSaysWhatTheNarrativeKeeps(t *testing.T) {
+	kept := `{"corrections":[{"correctionText":"It was Ben, not Sam.","createdAt":"2026-10-22T20:00:00Z"}]`
+	for _, example := range []struct {
+		name, answer string
+		isAdded      bool
+		note         string
+	}{
+		{"added", kept + `,"isCorrectionAlreadyKept":false}`, true, "kept; "},
+		{"already kept", kept + `,"isCorrectionAlreadyKept":true}`, false, "already kept; nothing added"},
+	} {
+		run := aTurnOfAda(&routing{answers: map[string]string{"CorrectJournalNarrative": example.answer}})
+		answer := actJSON(t, run, "correct", `{"day":"2026-10-22","period_kind":"week","correction_text":"It was Ben, not Sam."}`)
+		corrections, _ := answer["corrections"].([]any)
+		note, _ := answer["note"].(string)
+		if answer["is_added"] != example.isAdded || len(corrections) != 1 || corrections[0] != "It was Ben, not Sam." ||
+			!strings.HasPrefix(note, example.note) || !strings.Contains(note, "do not send it again") && !strings.Contains(note, "Do not send it again") ||
+			answer["period_kind"] != "week" {
+			t.Errorf("%s: %v", example.name, answer)
+		}
 	}
 }
 

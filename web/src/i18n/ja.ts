@@ -7894,6 +7894,7 @@ export const ja: Catalog = {
   'journal.correctionPlaceholder': '25分の散歩で、友人が一緒でした。',
   'journal.correctionSubmit': '書き直す',
   'journal.correctionSaved': '保存しました。物語を書き直しています。',
+  'journal.correctionAlreadyKept': 'この訂正はすでに保存されているため、追加していません。',
   'journal.correctionRemoved': '削除しました。物語を書き直しています。',
   'journal.correctionFailed': '訂正を保存できませんでした。',
   'journal.work': '取り組んだこと',

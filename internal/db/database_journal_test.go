@@ -573,7 +573,7 @@ func TestJournalNarrativeReplacesChoicesAndKeepsPinsAndHiddenOnes(t *testing.T) 
 		}
 
 		// A correction survives a deleted narrative; hidden choices and pins too.
-		if err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "It was Sam at lunch.", journalTestAt(12)); err != nil {
+		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "It was Sam at lunch.", journalTestAt(12)); err != nil {
 			t.Fatal(err)
 		}
 		if err := tx.DeleteJournalNarrative(ada.ID, target); err != nil {
@@ -653,21 +653,21 @@ func TestJournalCorrectionsAreLimitedAndAskForANewNarrative(t *testing.T) {
 		if err := tx.RemoveJournalCorrection(ada.ID, target, 0, journalTestAt(8)); !errors.Is(err, db.ErrNotFound) {
 			t.Fatalf("removing a correction of a day with no row: %v", err)
 		}
-		if err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "   ", journalTestAt(8)); !errors.Is(err, db.ErrInvalidArguments) {
+		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "   ", journalTestAt(8)); !errors.Is(err, db.ErrInvalidArguments) {
 			t.Errorf("an empty correction: %v", err)
 		}
-		if err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, strings.Repeat("é", models.JournalCorrectionCharactersMost+1), journalTestAt(8)); !errors.Is(err, db.ErrInvalidArguments) {
+		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, strings.Repeat("é", models.JournalCorrectionCharactersMost+1), journalTestAt(8)); !errors.Is(err, db.ErrInvalidArguments) {
 			t.Errorf("a correction of 501 characters: %v", err)
 		}
-		if err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, strings.Repeat("é", models.JournalCorrectionCharactersMost), journalTestAt(8)); err != nil {
+		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, strings.Repeat("é", models.JournalCorrectionCharactersMost), journalTestAt(8)); err != nil {
 			t.Fatalf("a correction of 500 characters: %v", err)
 		}
 		for index := 1; index < models.JournalCorrectionsMost; index++ {
-			if err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "Correction "+strings.Repeat("x", index), journalTestAt(9)); err != nil {
+			if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "Correction "+strings.Repeat("x", index), journalTestAt(9)); err != nil {
 				t.Fatalf("correction %d: %v", index, err)
 			}
 		}
-		if err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "One too many.", journalTestAt(10)); !errors.Is(err, db.ErrLimitReached) {
+		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "One too many.", journalTestAt(10)); !errors.Is(err, db.ErrLimitReached) {
 			t.Fatalf("the 21st correction: %v", err)
 		}
 		day, _ := tx.GetJournalDay(ada.ID, "2026-03-03")
@@ -685,8 +685,47 @@ func TestJournalCorrectionsAreLimitedAndAskForANewNarrative(t *testing.T) {
 		if len(day.NarrativeCorrections) != 19 || day.NarrativeCorrections[1].CorrectionText != "Correction xx" {
 			t.Errorf("corrections after removing the second: %d", len(day.NarrativeCorrections))
 		}
-		if err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "Room again.", journalTestAt(12)); err != nil {
+		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "Room again.", journalTestAt(12)); err != nil {
 			t.Errorf("a correction after one was removed: %v", err)
+		}
+	})
+}
+
+// A correction the narrative already keeps, the same words but for case and
+// spacing, adds nothing and asks for no writing, even when the narrative
+// keeps as many as it can.
+func TestAJournalCorrectionAlreadyKeptAddsNothing(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ada, _ := journalTestPeople(t, tx)
+		target := models.JournalTarget{PeriodKind: models.JournalPeriodWeek, PeriodStart: "2026-03-02"}
+
+		if isAdded, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "It was Sam at lunch.", journalTestAt(8)); err != nil || !isAdded {
+			t.Fatalf("the first correction: %t, %v", isAdded, err)
+		}
+		writing := models.JournalNarrativeWriting{Headline: "A harbor week", Narrative: "Lunch at the harbor.", InputDigest: "digest"}
+		if err := tx.PutJournalNarrative(ada.ID, target, journalTestZone, writing, journalTestAt(8)); err != nil {
+			t.Fatal(err)
+		}
+		for _, again := range []string{"It was Sam at lunch.", "  it was SAM at\tlunch. "} {
+			if isAdded, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, again, journalTestAt(9)); err != nil || isAdded {
+				t.Errorf("%q again: %t, %v", again, isAdded, err)
+			}
+		}
+		period, _ := tx.GetJournalPeriod(ada.ID, models.JournalPeriodWeek, "2026-03-02")
+		if len(period.NarrativeCorrections) != 1 || !period.NarrativeCorrections[0].CreatedAt.Equal(journalTestAt(8)) || period.NarrativeRequestedAt != nil {
+			t.Fatalf("a week told one thing three times: %d, %v", len(period.NarrativeCorrections), period.NarrativeRequestedAt)
+		}
+
+		for index := 1; index < models.JournalCorrectionsMost; index++ {
+			if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "Correction "+strings.Repeat("x", index), journalTestAt(10)); err != nil {
+				t.Fatalf("correction %d: %v", index, err)
+			}
+		}
+		if isAdded, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "correction XXX", journalTestAt(11)); err != nil || isAdded {
+			t.Errorf("a correction already kept by a full narrative: %t, %v", isAdded, err)
 		}
 	})
 }
@@ -941,7 +980,7 @@ func TestJournalNarrativesWaitingOldestRequestFirst(t *testing.T) {
 		if err := tx.RequestJournalNarrative(ada.ID, month, "", journalTestAt(9)); err != nil {
 			t.Fatal(err)
 		}
-		if err := tx.AddJournalCorrection(ada.ID, older, journalTestZone, "It was a Tuesday.", journalTestAt(10)); err != nil {
+		if _, err := tx.AddJournalCorrection(ada.ID, older, journalTestZone, "It was a Tuesday.", journalTestAt(10)); err != nil {
 			t.Fatal(err)
 		}
 		waiting, err := tx.ListJournalNarrativesWaiting(ada.ID)

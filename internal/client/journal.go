@@ -156,6 +156,10 @@ type JournalNarrativeView struct {
 
 	Corrections []*JournalCorrectionView `json:"corrections"`
 
+	// IsCorrectionAlreadyKept says CorrectJournalNarrative added nothing: the
+	// narrative already keeps those words. Only that mutation asks for it.
+	IsCorrectionAlreadyKept bool `json:"isCorrectionAlreadyKept"`
+
 	// SourceCount is how many records it was written from.
 	SourceCount int `json:"sourceCount"`
 }
@@ -665,7 +669,7 @@ const (
 }`
 
 	DocumentCorrectJournalNarrative = `mutation ($day: String!, $periodKind: String, $correctionText: String!) {
-  CorrectJournalNarrative(day: $day, periodKind: $periodKind, correctionText: $correctionText) { ` + journalNarrativeFields + ` }
+  CorrectJournalNarrative(day: $day, periodKind: $periodKind, correctionText: $correctionText) { ` + journalNarrativeFields + ` isCorrectionAlreadyKept }
 }`
 
 	DocumentRemoveJournalCorrection = `mutation ($day: String!, $periodKind: String, $correctionIndex: Int!) {

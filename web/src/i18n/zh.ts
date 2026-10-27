@@ -7586,6 +7586,7 @@ export const zh: Catalog = {
   'journal.correctionPlaceholder': '那是一次 25 分钟的散步，有一位朋友同行。',
   'journal.correctionSubmit': '重新撰写',
   'journal.correctionSaved': '已保存，正在重新撰写。',
+  'journal.correctionAlreadyKept': '这条更正已经保存过，没有重复添加。',
   'journal.correctionRemoved': '已移除，正在重新撰写。',
   'journal.correctionFailed': '无法保存更正。',
   'journal.work': '你做了什么',

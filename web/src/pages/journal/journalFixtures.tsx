@@ -210,6 +210,8 @@ export type Server = {
   settings?: JournalSettings
   // An operation that fails, by its name, with the message it fails with.
   failures?: Record<string, string>
+  // The narrative keeps the correction sent already.
+  isCorrectionAlreadyKept?: boolean
 }
 
 // answerWith answers every Journal operation from the data given and the
@@ -274,6 +276,9 @@ export function answerWith(server: Server = {}) {
       } as never
     }
     if (document.includes('DeleteJournalNarrative')) return { DeleteJournalNarrative: { headline: '' } } as never
+    if (document.includes('CorrectJournalNarrative')) {
+      return { CorrectJournalNarrative: { isCorrectionAlreadyKept: server.isCorrectionAlreadyKept ?? false } } as never
+    }
     return { Done: { day: asked.day } } as never
   })
 }

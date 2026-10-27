@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 
 import { graphql } from '../../api'
+import { type Language, loadCatalog } from '../../i18n/i18n'
 import type { JournalLink, JournalNarrative } from './journalApi'
 import {
   NO_NARRATIVE,
@@ -243,4 +244,50 @@ it('says when the story could not be removed, and keeps the dialog', async () =>
   fireEvent.click(within(dialog).getByRole('button', { name: 'Remove this story' }))
   expect(await screen.findByText(/the server is busy/)).toBeTruthy()
   expect(screen.getByText('You picked up groceries.')).toBeTruthy()
+})
+
+// What the story's correction asks and answers, in each language.
+const SOMETHING_WRONG: Record<string, string> = { en: 'Something wrong?', zh: '有不对的地方？', ja: '間違いがありますか？' }
+const WRITE_IT_AGAIN: Record<string, string> = { en: 'Write it again', zh: '重新撰写', ja: '書き直す' }
+
+function dialogSubmitName(language: string) {
+  return WRITE_IT_AGAIN[language]
+}
+
+async function openTheCorrectionDialog(language = 'en') {
+  fireEvent.click(await screen.findByRole('button', { name: SOMETHING_WRONG[language] }))
+  return screen.findByRole('dialog')
+}
+
+// A correction the story keeps already adds nothing, and the toast says so in
+// the reader's language rather than that the story is being written again.
+it.each([
+  ['en', 'That correction is already kept, so nothing was added.'],
+  ['zh', '这条更正已经保存过，没有重复添加。'],
+  ['ja', 'この訂正はすでに保存されているため、追加していません。'],
+])('says in %s when a correction is already kept', async (language, toastText) => {
+  // The app loads the reader's catalog before it draws; so does the test.
+  window.localStorage.setItem('teanode.language', language)
+  await loadCatalog(language as Language)
+  try {
+    answerWith({ day: (day) => journalDay(day, { narrative: STORY }), isCorrectionAlreadyKept: true })
+    renderAt(`/journal/${THURSDAY}`)
+    const dialog = await openTheCorrectionDialog(language)
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'The walk was 25 minutes.' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: dialogSubmitName(language) }))
+    await waitFor(() => expect(calls('CorrectJournalNarrative')).toHaveLength(1))
+    expect(await screen.findByText(toastText)).toBeTruthy()
+  } finally {
+    window.localStorage.removeItem('teanode.language')
+  }
+})
+
+it('says a new correction is saved and the story written again', async () => {
+  answerWith({ day: (day) => journalDay(day, { narrative: STORY }) })
+  renderAt(`/journal/${THURSDAY}`)
+  const dialog = await openTheCorrectionDialog()
+  fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'The walk was 25 minutes.' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Write it again' }))
+  expect(await screen.findByText('Saved. Writing the story again.')).toBeTruthy()
+  expect(screen.queryByText(/already kept/)).toBeNull()
 })

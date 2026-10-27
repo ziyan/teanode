@@ -119,7 +119,7 @@ const (
   StopJournalTouchUp(day: $day, periodKind: $periodKind) { day periodKind words { original isTouchUpOn touchedUp } }
 }`
 	correctJournalQuery = `mutation ($day: String!, $periodKind: String, $correctionText: String!) {
-  CorrectJournalNarrative(day: $day, periodKind: $periodKind, correctionText: $correctionText) { narrative narrativePending corrections { correctionText } references { reference title isUnavailable } }
+  CorrectJournalNarrative(day: $day, periodKind: $periodKind, correctionText: $correctionText) { narrative narrativePending corrections { correctionText } references { reference title isUnavailable } isCorrectionAlreadyKept }
 }`
 	removeCorrectionQuery = `mutation ($day: String!, $periodKind: String, $correctionIndex: Int!) {
   RemoveJournalCorrection(day: $day, periodKind: $periodKind, correctionIndex: $correctionIndex) { corrections { correctionText } narrativePending }
@@ -417,8 +417,19 @@ func TestJournalCorrectionsAndWritingTheNarrative(t *testing.T) {
 	if second := asMap(t, references[1]); second["title"] != "" || second["isUnavailable"] != true {
 		t.Errorf("a record that is not ada's: %v", second)
 	}
+	if count := world.journalJobCount(t); count != 1 || narrative["isCorrectionAlreadyKept"] != false {
+		t.Errorf("%d journal jobs after a correction: %v", count, narrative["isCorrectionAlreadyKept"])
+	}
+
+	// The same words again, but for case and spacing, add nothing and ask
+	// for no writing.
+	data = world.run(t, world.ada, correctJournalQuery, map[string]any{"day": "2026-03-04", "correctionText": "it was  Sam at lunch."})
+	narrative = asMap(t, data["CorrectJournalNarrative"])
+	if corrections := asList(t, narrative["corrections"]); narrative["isCorrectionAlreadyKept"] != true || len(corrections) != 1 {
+		t.Errorf("a correction already kept: %v", narrative)
+	}
 	if count := world.journalJobCount(t); count != 1 {
-		t.Errorf("%d journal jobs after a correction", count)
+		t.Errorf("%d journal jobs after a correction already kept", count)
 	}
 
 	world.run(t, world.ada, correctJournalQuery, map[string]any{"day": "2026-03-04", "correctionText": "Second."})
@@ -713,7 +724,7 @@ func TestJournalAnswersTheAgentOnlyWhatItWasGiven(t *testing.T) {
 		}, time.Now()); err != nil {
 			t.Fatal(err)
 		}
-		if err := tx.AddJournalCorrection(world.ada.ID, target, "UTC", "It was at lunch.", time.Now()); err != nil {
+		if _, err := tx.AddJournalCorrection(world.ada.ID, target, "UTC", "It was at lunch.", time.Now()); err != nil {
 			t.Fatal(err)
 		}
 	})
