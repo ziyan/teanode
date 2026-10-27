@@ -342,7 +342,7 @@ const METERS_PER_FOOT = 0.3048
 // travelDistanceText is a distance a person reads, in the units they chose.
 // Metric: meters below a tenth of a kilometer, else kilometers with one decimal
 // (80 m, 0.6 km, 11.8 km, 1,204 km). US: whole feet below a tenth of a mile,
-// else miles with at most one decimal (340 ft, 0.4 mi, 7.3 mi, 748 mi).
+// else miles with at most one decimal (341 ft, 0.4 mi, 7.3 mi, 748.1 mi).
 export function travelDistanceText(distanceMeters: number, isImperial: boolean, language: string): string {
   const format = new Intl.NumberFormat(language, { minimumFractionDigits: 0, maximumFractionDigits: 1 })
   if (isImperial) {

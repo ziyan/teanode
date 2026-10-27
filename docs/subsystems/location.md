@@ -520,11 +520,14 @@ boat or plane (`docs/planning/location-travel-execplan.md` has the reasons).
   command line `teanode location trips`, `travel` and `travel-mode`; the
   location tool's `trips`, `travel_totals` and `travel_mode`.
 - **Units.** The server keeps every distance in meters. Each surface writes
-  it in the units the person's account chose (`measurementSystem`): meters
-  under a tenth of a kilometer, else kilometers with one decimal; in US units
-  feet under a tenth of a mile, else miles. The location tool answers
+  it in the units the person's account chose (`measurementSystem`): in US
+  units feet under a tenth of a mile, else miles; in metric, kilometers with
+  one decimal, and meters under a tenth of a kilometer (under a kilometer on
+  the iPhone, as its Journal does). With the choice left automatic the
+  iPhone follows the phone's region. The location tool answers
   `distance_kilometers`, or `distance_miles` for a person who reads US units,
-  and the same for the path and the totals.
+  and likewise `distance_travelled_miles` for the path and
+  `total_distance_miles` for the totals.
 
 ## Photos taken during a visit
 
