@@ -11,8 +11,10 @@ import type {
   JournalDaySummary,
   JournalFacts,
   JournalNarrative,
+  JournalMoment,
   JournalPeriod,
   JournalSettings,
+  JournalShoppingTrip,
   JournalWords,
 } from './journalApi'
 import { JournalDayPage } from './journalDay'
@@ -172,6 +174,25 @@ export function journalPeriod(
   }
 }
 
+// A trip to the shops with a store, and the moment the day lists it as.
+export const SHOPPING_TRIP: JournalShoppingTrip = {
+  tripId: 'trip-1',
+  storeName: 'Corner Market',
+  listNames: ['Groceries', 'Hardware'],
+  startedAt: '2026-10-22T17:30:00Z',
+  finishedAt: '2026-10-22T18:05:00Z',
+  dashboardPath: '/shopping/stores/store-1',
+}
+
+export const SHOPPING_TRIP_MOMENT: JournalMoment = {
+  at: '2026-10-22T17:30:00Z',
+  recordKind: 'shopping_trip',
+  recordId: 'trip-1',
+  title: 'Shopping at Corner Market',
+  detail: 'for Groceries, Hardware',
+  dashboardPath: '/shopping/stores/store-1',
+}
+
 export const SETTINGS: JournalSettings = {
   isWeatherOn: true,
   isEveningQuestionOn: false,
@@ -233,6 +254,26 @@ export function answerWith(server: Server = {}) {
       return { EraseJournal: { dayCount: 3, periodCount: 1, linkCount: 2 } } as never
     }
     if (document.includes('RemoveJournalLink')) return { RemoveJournalLink: true } as never
+    if (document.includes('PinJournalRecord')) {
+      return {
+        PinJournalRecord: {
+          linkId: 'pin-new',
+          linkSource: 'person',
+          linkReason: '',
+          isHidden: false,
+          record: {
+            recordKind: asked.recordKind,
+            recordId: asked.recordId,
+            reference: `${asked.recordKind}:${asked.recordId}`,
+            title: '',
+            happenedAt: null,
+            dashboardPath: '',
+            isUnavailable: false,
+          },
+        },
+      } as never
+    }
+    if (document.includes('DeleteJournalNarrative')) return { DeleteJournalNarrative: { headline: '' } } as never
     return { Done: { day: asked.day } } as never
   })
 }

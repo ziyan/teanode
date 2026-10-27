@@ -1,8 +1,12 @@
 import { useId, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 
+import { graphql } from '../../api'
+import { PinIcon } from '../../components/icons'
 import { LocationMap, MapPathPoint, MapPlace } from '../../components/locationMap'
 import { Key, useTranslation } from '../../i18n/i18n'
+import { useToast } from '../../components/toast'
+import { Tooltip } from '../../components/tooltip'
 import { workoutName } from '../health/healthApi'
 import { RecordKindIcon } from './journalNarrative'
 import {
@@ -11,6 +15,7 @@ import {
   JournalSleepStage,
   clockText,
   MOMENT_LIMIT,
+  PIN_JOURNAL_RECORD,
   dayOf,
   distanceText,
   durationText,
@@ -135,10 +140,32 @@ function visitTimes(
 
 // MomentsCard is what the day is remembered by, in the order it happened:
 // the first dozen, and the rest on request.
-export function MomentsCard({ day }: { day: JournalDay }) {
+export function MomentsCard({ day, onChanged }: { day: JournalDay; onChanged: () => Promise<void> }) {
   const { t, language } = useTranslation()
+  const toast = useToast()
   const limit = useRowLimit(day.moments.length, MOMENT_LIMIT)
+  // The records already on the day as a pin or as a choice the person has not
+  // hidden: a moment of one of them has nothing left to pin. A hidden choice
+  // can be pinned, and the server then makes it the person's.
+  const placedRecords = useMemo(() => {
+    const found = new Set<string>()
+    for (const pin of day.pins) found.add(`${pin.record.recordKind}:${pin.record.recordId}`)
+    for (const choice of day.choices) {
+      if (!choice.isHidden) found.add(`${choice.record.recordKind}:${choice.record.recordId}`)
+    }
+    return found
+  }, [day.pins, day.choices])
   if (day.moments.length === 0) return null
+
+  async function pin(recordKind: string, recordId: string) {
+    try {
+      await graphql(PIN_JOURNAL_RECORD, { day: day.day, recordKind, recordId })
+      toast.done(t('journal.pinnedToDay'))
+      await onChanged()
+    } catch (caught) {
+      toast.failure(caught, t('journal.pinFailed'))
+    }
+  }
   return (
     <JournalCard title={t('journal.throughTheDay')} description={t('journal.throughTheDayHint')} collapseId="moments">
       <ol className="journal-moments">
@@ -158,14 +185,33 @@ export function MomentsCard({ day }: { day: JournalDay }) {
               </span>
             </>
           )
+          const canPin =
+            moment.recordKind !== '' &&
+            moment.recordId !== '' &&
+            !placedRecords.has(`${moment.recordKind}:${moment.recordId}`)
           return (
-            <li key={`${moment.recordKind}:${moment.recordId}:${index}`}>
+            <li
+              key={`${moment.recordKind}:${moment.recordId}:${index}`}
+              className={canPin ? 'has-pin-action' : undefined}
+            >
               {isDashboardPath(moment.dashboardPath) ? (
                 <RecordLink className="journal-moment" to={moment.dashboardPath}>
                   {content}
                 </RecordLink>
               ) : (
                 <div className="journal-moment">{content}</div>
+              )}
+              {canPin && (
+                <Tooltip label={t('journal.pinToDay')}>
+                  <button
+                    type="button"
+                    className="icon-action journal-moment-pin"
+                    aria-label={`${t('journal.pinToDay')}: ${moment.title}`}
+                    onClick={() => void pin(moment.recordKind, moment.recordId)}
+                  >
+                    <PinIcon size={16} />
+                  </button>
+                </Tooltip>
               )}
             </li>
           )
