@@ -276,3 +276,27 @@ func (self *transaction) DeletePassByVisits(userId string, from, until time.Time
 	}
 	return deletedIds, nil
 }
+
+// VisitRange is a stretch of one person's visits.
+type VisitRange struct {
+	UserID string    `gorm:"column:user_id"`
+	From   time.Time `gorm:"column:range_from"`
+	Until  time.Time `gorm:"column:range_until"`
+}
+
+func (self *transaction) ListOverlappedVisitRanges(since time.Time) ([]VisitRange, error) {
+	var ranges []VisitRange
+	if err := self.tx.Raw(`SELECT earlier.user_id,
+			min(earlier.arrived_at) AS range_from,
+			max(COALESCE(later.departed_at, later.arrived_at)) AS range_until
+		FROM "place_visit" earlier
+		JOIN "place_visit" later ON later.user_id = earlier.user_id AND later.place_id <> earlier.place_id
+		WHERE earlier.arrived_at IS NOT NULL AND earlier.arrived_at >= @since
+		  AND later.arrived_at > earlier.arrived_at
+		  AND (earlier.departed_at IS NULL OR later.arrived_at < earlier.departed_at)
+		GROUP BY earlier.user_id
+		ORDER BY earlier.user_id`, sql.Named("since", since)).Scan(&ranges).Error; err != nil {
+		return nil, err
+	}
+	return ranges, nil
+}
