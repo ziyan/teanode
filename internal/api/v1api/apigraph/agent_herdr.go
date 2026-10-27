@@ -119,7 +119,7 @@ type ReadAgentHerdrScreenArguments struct {
 
 // SendAgentHerdrSessionArguments are the text and where it goes, and the
 // agent's files to send with it: written on the computer, their paths
-// typed after the text.
+// typed before the text.
 type SendAgentHerdrSessionArguments struct {
 	Computer      string   `json:"computer" graphapi:"nullable"`
 	PaneID        string   `json:"paneId"`

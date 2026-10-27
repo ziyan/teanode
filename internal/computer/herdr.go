@@ -49,7 +49,7 @@ import (
 const FeatureHerdr = "herdr"
 
 // FeatureHerdrFiles is files sent with a herdr_send: written on this
-// computer, and their paths typed after the text. A program that predates
+// computer, and their paths typed before the text. A program that predates
 // it would type the text alone.
 const FeatureHerdrFiles = "herdr_files"
 
@@ -199,7 +199,7 @@ type HerdrArguments struct {
 	// Code with --dangerously-skip-permissions, Codex with --yolo.
 	ShouldSkipPermissions bool `json:"shouldSkipPermissions,omitempty"`
 	// HerdrFiles are sent with the text: each is written on this computer
-	// and its path typed after the text, for the coding agent to open.
+	// and its path typed before the text, for the coding agent to open.
 	HerdrFiles []*HerdrFile `json:"herdrFiles,omitempty"`
 }
 
