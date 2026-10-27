@@ -6274,6 +6274,13 @@ export const ja: Catalog = {
   'circles.addressBook.made': 'アドレス帳を作成しました',
   'circles.addressBook.exists': 'このサークルには、メンバー全員が見て変更できるアドレス帳があります。',
   'circles.addressBook.open': 'アドレス帳を開く',
+  'circles.albums.title': '写真',
+  'circles.albums.intro':
+    'このサークルのアルバム（メンバー全員が写真を追加できます）と、ここにいる全員に共有されたアルバムです。',
+  'circles.albums.none':
+    'アルバムはまだありません。このサークル用に作成するか、自分のアルバムからこのサークルに共有してください。',
+  'circles.albums.newAlbum': '新規アルバム',
+  'circles.albums.newAlbumTitle': '{name}の新規アルバム',
   'circles.calendar.rename': 'カレンダーの名前を変更',
   'circles.calendar.renameTitle': '「{name}」のカレンダーの名前を変更',
   'circles.calendar.delete': 'カレンダーを削除',

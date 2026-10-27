@@ -351,7 +351,7 @@ struct PersonCardPhotosView: View {
                 Button {
                     openAlbums()
                 } label: {
-                    PersonCardAlbumRow(album: album, connection: connection)
+                    PhotoAlbumRow(album: album, connection: connection)
                 }
             }
         } else if section.albumsState == .failed {
@@ -454,48 +454,6 @@ struct PersonCardPhotoTile: View {
                 }
                 if let loaded = await PhotoImages.picture(path: path, connection: connection) { picture = loaded }
             }
-    }
-}
-
-/// PersonCardAlbumRow is an album they shared: its cover, its title and how
-/// many photos it holds.
-struct PersonCardAlbumRow: View {
-    let album: PhotoAlbum
-    let connection: Connection
-    @State private var picture: UIImage?
-
-    private let side: CGFloat = 44
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Color(.secondarySystemBackground)
-                .frame(width: side, height: side)
-                .overlay {
-                    if let picture {
-                        Image(uiImage: picture)
-                            .resizable()
-                            .scaledToFill()
-                    }
-                }
-                .clipShape(.rect(cornerRadius: 6))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: album.albumTitle)
-                    .foregroundStyle(.primary)
-                Text("\(album.photoCount) photos")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .contentShape(.rect)
-        .task(id: album.coverPreviewUrl) {
-            guard !album.coverPreviewUrl.isEmpty else {
-                picture = nil
-                return
-            }
-            if let loaded = await PhotoImages.picture(path: album.coverPreviewUrl, connection: connection) { picture = loaded }
-        }
     }
 }
 

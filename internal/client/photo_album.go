@@ -21,7 +21,7 @@ const (
 )
 
 const (
-	DocumentListPhotoAlbums = `query { ListPhotoAlbums ` + photoAlbumSelection + ` }`
+	DocumentListPhotoAlbums = `query ($circleId: String) { ListPhotoAlbums(circleId: $circleId) ` + photoAlbumSelection + ` }`
 
 	DocumentReadPhotoAlbum = `query ($photoAlbumId: String!) { ReadPhotoAlbum(photoAlbumId: $photoAlbumId) ` + photoAlbumSelection + ` }`
 
@@ -54,6 +54,19 @@ func ListPhotoAlbums(ctx context.Context, executor Executor) ([]*models.PhotoAlb
 		ListPhotoAlbums []*models.PhotoAlbum `json:"ListPhotoAlbums"`
 	}
 	if err := executor.Execute(ctx, DocumentListPhotoAlbums, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.ListPhotoAlbums, nil
+}
+
+// ListCirclePhotoAlbums is the albums of one circle the person is in, as its
+// page shows them: the circle's own and those shared with the whole circle,
+// the most recently changed first.
+func ListCirclePhotoAlbums(ctx context.Context, executor Executor, circleId string) ([]*models.PhotoAlbum, error) {
+	var result struct {
+		ListPhotoAlbums []*models.PhotoAlbum `json:"ListPhotoAlbums"`
+	}
+	if err := executor.Execute(ctx, DocumentListPhotoAlbums, map[string]any{"circleId": circleId}, &result); err != nil {
 		return nil, err
 	}
 	return result.ListPhotoAlbums, nil

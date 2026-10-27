@@ -27,6 +27,19 @@ func TestAlbumListPrintsATableOrJSON(test *testing.T) {
 	}
 }
 
+// A circle's albums are asked for by the circle, named by its name or its id.
+func TestAlbumListOfACircleAsksForTheCircle(test *testing.T) {
+	server := newPhotoServer(test)
+	for _, circleNamed := range []string{"Home", "circle-home"} {
+		if _, table, err := server.run(test, "album", "list", "--circle", circleNamed); err != nil || !strings.Contains(table, "Picnic") {
+			test.Fatalf("%v:\n%s", err, table)
+		}
+		if variables := server.variables[len(server.variables)-1]; variables["circleId"] != "circle-home" {
+			test.Fatalf("%s asked with %v", circleNamed, variables)
+		}
+	}
+}
+
 func TestAlbumReadListsTheAlbumsPhotos(test *testing.T) {
 	server := newPhotoServer(test)
 	_, table, err := server.run(test, "album", "read", "album-1", "--limit", "7", "--continue-after", "photo-9")
@@ -243,13 +256,14 @@ func TestACircleNameTwoCirclesHaveIsRefusedByAlbumShareAndCreate(test *testing.T
 	for _, arguments := range [][]string{
 		{"album", "share", "album-1", "Family"},
 		{"album", "create", "Ours", "--circle", "Family"},
+		{"album", "list", "--circle", "Family"},
 	} {
 		if _, _, err := server.run(test, arguments...); err == nil || !strings.Contains(err.Error(), "more than one circle") || !strings.Contains(err.Error(), "circle-one") || !strings.Contains(err.Error(), "circle-two") {
 			test.Errorf("%v was not refused with the ids: %v", arguments, err)
 		}
 	}
 	for _, document := range server.documents {
-		if strings.Contains(document, "SharePhotoAlbum(") || strings.Contains(document, "CreatePhotoAlbum(") {
+		if strings.Contains(document, "SharePhotoAlbum(") || strings.Contains(document, "CreatePhotoAlbum(") || strings.Contains(document, "ListPhotoAlbums(") {
 			test.Fatal("an ambiguous circle name reached the server")
 		}
 	}

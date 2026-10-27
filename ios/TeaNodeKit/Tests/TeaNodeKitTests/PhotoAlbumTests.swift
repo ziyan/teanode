@@ -103,6 +103,14 @@ final class PhotoAlbumTests: XCTestCase {
         XCTAssertEqual(albums.map(\.id), ["a1"])
     }
 
+    func testACirclesAlbumsAreAskedForByTheCircle() async throws {
+        let (connection, fake) = try connection { _ in #"{"data":{"ListPhotoAlbums":[\#(albumJSON)]}}"# }
+        let albums = try await connection.photoAlbums(circleId: "c1")
+        XCTAssertEqual(albums.map(\.id), ["a1"])
+        let sent = try variables(of: try XCTUnwrap(fake.sent.first))
+        XCTAssertEqual(sent["circleId"] as? String, "c1")
+    }
+
     func testThePhotosOfAnAlbumAreAskedForByItsId() async throws {
         let (connection, fake) = try connection { _ in #"{"data":{"ListPhotos":[]}}"# }
         _ = try await connection.photos(inAlbum: "a1", beforePhotoId: "p9")

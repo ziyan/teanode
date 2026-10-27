@@ -271,6 +271,23 @@ struct CircleDetailView: View {
     /// of its own; nil until they are read, and for a person who may not keep
     /// contacts.
     @State private var addressBooks: [AddressBook]?
+    /// The circle's albums and those shared with everyone in it; nil until
+    /// they are read, and for a person who may not keep photos.
+    @State private var albums: [PhotoAlbum]?
+    /// What an album opened from here is read through: it holds the albums
+    /// the person reaches, among which the album screen finds the one opened.
+    @State private var photos: PhotosModel
+    @State private var isNamingAlbum = false
+    @State private var albumTitleText = ""
+    /// Whether the screen was shown before, so that coming back to it reads
+    /// the albums again.
+    @State private var hasAppeared = false
+
+    init(directory: CircleDirectory, circleId: String) {
+        self.directory = directory
+        self.circleId = circleId
+        _photos = State(initialValue: PhotosModel(connection: directory.connection))
+    }
 
     private var circle: PeopleCircle? { directory.circle(circleId) }
 
@@ -278,7 +295,7 @@ struct CircleDetailView: View {
         #if DEBUG
             // `-TeaNodeScreen circle-detail`: scrolled to the invitation waiting for an answer;
             // `circle-detail-operator` the same for somebody who runs the server, with the
-            // row that makes an account above it.
+            // row that makes an account above it; `circle-detail-photos` to the circle's albums.
             ScrollViewReader { scroller in
                 list
                     .task(id: directory.isLoaded) {
@@ -287,6 +304,11 @@ struct CircleDetailView: View {
                         else { return }
                         try? await Task.sleep(for: .seconds(1))
                         withAnimation { scroller.scrollTo(invitation.id, anchor: .bottom) }
+                    }
+                    .task(id: albums != nil) {
+                        guard DemoServer.isRequested, DemoServer.screen == "circle-detail-photos", albums != nil else { return }
+                        try? await Task.sleep(for: .seconds(1))
+                        withAnimation { scroller.scrollTo(Self.newAlbumRowId, anchor: .bottom) }
                     }
             }
         #else
@@ -304,6 +326,7 @@ struct CircleDetailView: View {
                 }
                 membersSection(circle)
                 addressBookSection(circle)
+                albumsSection(circle)
                 if circle.isAdmin {
                     inviteSection(circle)
                     if directory.canManageUsers {
@@ -323,8 +346,25 @@ struct CircleDetailView: View {
         .refreshable {
             await directory.load()
             await readAddressBooks()
+            await readAlbums()
         }
-        .task { await readAddressBooks() }
+        // Read once the server says the person may use them, which it may say
+        // after the screen is first shown.
+        .task(id: AppModel.shared.isSectionAvailable(.contacts)) { await readAddressBooks() }
+        .task(id: AppModel.shared.isSectionAvailable(.photos)) { await readAlbums() }
+        // Again on coming back from an album, whose photos may have changed.
+        .onAppear {
+            if hasAppeared { Task { await readAlbums() } }
+            hasAppeared = true
+        }
+        .alert(circle.map { String(localized: "New album for \($0.name)") } ?? "", isPresented: $isNamingAlbum) {
+            TextField("Title", text: $albumTitleText)
+            Button("Create") {
+                if let circle { Task { await makeAlbum(for: circle) } }
+            }
+            .disabled(PhotoAlbumText.trimmedTitle(albumTitleText).isEmpty)
+            Button("Cancel", role: .cancel) {}
+        }
         .sheet(isPresented: $isRenaming) {
             if let circle {
                 CircleForm(directory: directory, editedCircle: circle)
@@ -480,6 +520,62 @@ struct CircleDetailView: View {
                     Text("Everyone in this circle reads and changes it. Choose it under the title in Contacts.")
                 } else {
                     Text("A list of people that everyone in this circle reads and changes, and that their phones can show as another address book. Your own contacts stay yours.")
+                }
+            }
+        }
+    }
+
+    // MARK: Photos
+
+    /// The id of the row that makes an album, the last of the albums section,
+    /// which a screenshot scrolls to.
+    private static let newAlbumRowId = "circle-new-album"
+
+    private func readAlbums() async {
+        guard AppModel.shared.isSectionAvailable(.photos) else { return }
+        guard let found = try? await directory.connection.photoAlbums(circleId: circleId) else { return }
+        albums = found
+        await photos.reloadAlbums()
+    }
+
+    private func makeAlbum(for circle: PeopleCircle) async {
+        let title = PhotoAlbumText.trimmedTitle(albumTitleText)
+        guard !title.isEmpty else { return }
+        let isMade = await directory.act(saying: String(localized: "Created “\(title)”")) {
+            _ = try await directory.connection.createPhotoAlbum(title: title, circleId: circle.id)
+        }
+        if isMade { await readAlbums() }
+    }
+
+    /// The circle's albums, which every member adds photos to, and the albums
+    /// people shared with everyone in it, each opening as it does in Photos,
+    /// with the way to make another album for the circle, which any member may.
+    @ViewBuilder
+    private func albumsSection(_ circle: PeopleCircle) -> some View {
+        if let albums {
+            Section {
+                ForEach(albums) { album in
+                    NavigationLink {
+                        PhotoAlbumScreen(model: photos, albumId: album.id)
+                    } label: {
+                        PhotoAlbumRow(album: album, connection: directory.connection, isSharerShown: true)
+                    }
+                }
+                Button {
+                    albumTitleText = ""
+                    isNamingAlbum = true
+                } label: {
+                    Label("New album", systemImage: "plus")
+                        .actionColor()
+                }
+                .id(Self.newAlbumRowId)
+            } header: {
+                Text("Photos")
+            } footer: {
+                if albums.isEmpty {
+                    Text("No albums yet. Make one for this circle, or share one of your albums with it from the album.")
+                } else {
+                    Text("This circle's albums, which everyone in it adds photos to, and the albums people shared with everyone here.")
                 }
             }
         }

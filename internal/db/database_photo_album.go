@@ -25,6 +25,12 @@ type PhotoAlbumOperation interface {
 	// the person may do with it.
 	ListPhotoAlbums(userId string) ([]*models.PhotoAlbum, error)
 
+	// ListCirclePhotoAlbums lists, the same way, the albums of one circle the
+	// person is in: the circle's own, and those shared with the whole circle
+	// that the person reaches, their own among them. A circle the person is
+	// not in is not found.
+	ListCirclePhotoAlbums(userId, circleId string) ([]*models.PhotoAlbum, error)
+
 	// GetPhotoAlbum is one album the person reaches at any level.
 	GetPhotoAlbum(userId, photoAlbumId string) (*models.PhotoAlbum, error)
 
@@ -159,11 +165,25 @@ var photoAlbumsQuery = `
 
 // listReachablePhotoAlbums reads the albums the person reaches, or the one
 // they name, newest change first, each marked with whose it is and what the
-// person may do with it.
-func (self *transaction) listReachablePhotoAlbums(userId, photoAlbumId string) ([]*models.PhotoAlbum, error) {
+// person may do with it. With a circle named, it reads only those of the
+// albums that are the circle's.
+func (self *transaction) listReachablePhotoAlbums(userId, photoAlbumId, circleId string) ([]*models.PhotoAlbum, error) {
 	reach, err := self.photoAlbumReach(userId, photoAlbumId)
 	if err != nil {
 		return nil, err
+	}
+	if circleId != "" {
+		var circleAlbumIds []string
+		if err := self.tx.Raw(circlePhotoAlbumIdsQuery, sql.Named("circle", circleId)).Scan(&circleAlbumIds).Error; err != nil {
+			return nil, err
+		}
+		ofCircle := make(map[string]*photoAlbumReach, len(circleAlbumIds))
+		for _, circleAlbumId := range circleAlbumIds {
+			if found := reach[circleAlbumId]; found != nil {
+				ofCircle[circleAlbumId] = found
+			}
+		}
+		reach = ofCircle
 	}
 	photoAlbumIds := make([]string, 0, len(reach))
 	for reachedId := range reach {
@@ -225,14 +245,39 @@ func (self *transaction) ListPhotoAlbums(userId string) ([]*models.PhotoAlbum, e
 	if userId == "" {
 		return nil, ErrNotFound
 	}
-	return self.listReachablePhotoAlbums(userId, "")
+	return self.listReachablePhotoAlbums(userId, "", "")
+}
+
+// circlePhotoAlbumIdsQuery selects the albums of one circle: its own, and
+// those shared with it whose owner is still in it, since a share to a circle
+// reaches nobody once its owner has left.
+const circlePhotoAlbumIdsQuery = `
+SELECT album.id FROM "photo_album" album WHERE album.circle_id = @circle
+UNION
+SELECT share.photo_album_id FROM "photo_album_share" share
+JOIN "photo_album" album ON album.id = share.photo_album_id
+WHERE share.grantee_circle_id = @circle
+  AND EXISTS (SELECT 1 FROM "circle_member" WHERE circle_id = @circle AND user_id = album.user_id)`
+
+func (self *transaction) ListCirclePhotoAlbums(userId, circleId string) ([]*models.PhotoAlbum, error) {
+	if userId == "" || circleId == "" {
+		return nil, ErrNotFound
+	}
+	var members []circleMemberModel
+	if err := self.tx.Where("\"circle_id\" = ? AND \"user_id\" = ?", circleId, userId).Find(&members).Error; err != nil {
+		return nil, err
+	}
+	if len(members) == 0 {
+		return nil, ErrNotFound
+	}
+	return self.listReachablePhotoAlbums(userId, "", circleId)
 }
 
 func (self *transaction) GetPhotoAlbum(userId, photoAlbumId string) (*models.PhotoAlbum, error) {
 	if userId == "" || photoAlbumId == "" {
 		return nil, ErrNotFound
 	}
-	albums, err := self.listReachablePhotoAlbums(userId, photoAlbumId)
+	albums, err := self.listReachablePhotoAlbums(userId, photoAlbumId, "")
 	if err != nil {
 		return nil, err
 	}
