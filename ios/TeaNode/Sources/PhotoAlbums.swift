@@ -332,6 +332,60 @@ struct PhotoAlbumsView: View {
     }
 }
 
+/// PhotoAlbumRow is an album as a list row, on a person's card and on a
+/// circle's page: its cover, its title and how many photos it holds, and, when
+/// isSharerShown, who shared it, the person included, unless it is a circle's
+/// own album.
+struct PhotoAlbumRow: View {
+    let album: PhotoAlbum
+    let connection: Connection
+    var isSharerShown = false
+    @State private var picture: UIImage?
+
+    private let side: CGFloat = 44
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Color(.secondarySystemBackground)
+                .frame(width: side, height: side)
+                .overlay {
+                    if let picture {
+                        Image(uiImage: picture)
+                            .resizable()
+                            .scaledToFill()
+                    }
+                }
+                .clipShape(.rect(cornerRadius: 6))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: album.albumTitle)
+                    .foregroundStyle(.primary)
+                Text("\(album.photoCount) photos")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                if isSharerShown, !album.isCircleAlbum {
+                    HStack(spacing: 4) {
+                        AvatarView(name: album.ownerDisplayName, avatarUrl: album.ownerAvatarUrl, colorIndex: album.ownerAvatarColorIndex, size: 16)
+                        Text(album.ownerDisplayName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .contentShape(.rect)
+        .task(id: album.coverPreviewUrl) {
+            guard !album.coverPreviewUrl.isEmpty else {
+                picture = nil
+                return
+            }
+            if let loaded = await PhotoImages.picture(path: album.coverPreviewUrl, connection: connection) { picture = loaded }
+        }
+    }
+}
+
 /// PhotoAlbumLayout holds the one measure the album grids and the suggestion
 /// cards share, so a card lines up with the edges of the grid under it.
 enum PhotoAlbumLayout {

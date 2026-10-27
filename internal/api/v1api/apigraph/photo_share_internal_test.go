@@ -93,7 +93,7 @@ func TestASharedAlbumIsReadWithoutPlacesUntilTheShareIncludesThem(test *testing.
 	})
 
 	world.ask(benId, photosAllowed, func(ctx context.Context) {
-		albums, err := world.graph.ListPhotoAlbums(ctx)
+		albums, err := world.graph.ListPhotoAlbums(ctx, ListPhotoAlbumsArguments{})
 		if err != nil || len(albums) != 1 || albums[0].ID != albumId || albums[0].IsOwnedByCaller || albums[0].OwnerName != "share-ada" ||
 			albums[0].ShareLevel != models.PhotoAlbumShareLevelView || albums[0].CanCallerContribute || albums[0].CanCallerManage {
 			test.Fatalf("%+v %v", albums, err)
@@ -182,7 +182,7 @@ func TestASharedAlbumIsReadWithoutPlacesUntilTheShareIncludesThem(test *testing.
 		if _, err := world.graph.ListPhotos(ctx, ListPhotosArguments{AlbumID: albumId}); !isNotFoundError(err) {
 			test.Fatalf("%v", err)
 		}
-		if albums, err := world.graph.ListPhotoAlbums(ctx); err != nil || len(albums) != 0 {
+		if albums, err := world.graph.ListPhotoAlbums(ctx, ListPhotoAlbumsArguments{}); err != nil || len(albums) != 0 {
 			test.Fatalf("%v %v", albums, err)
 		}
 	})

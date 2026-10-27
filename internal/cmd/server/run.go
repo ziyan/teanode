@@ -925,6 +925,16 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		scavengeGroup.Wait()
 	})
 
+	// The visits that were stored overlapping before a late departure was
+	// put in order with the visits since it began. Once, at start: visits
+	// put in order overlap none, so after one pass there is nothing left.
+	scavengeGroup.Add(1)
+	go func() {
+		defer deferutil.Recover()
+		defer scavengeGroup.Done()
+		repairOverlappedVisits(scavengeContext, self.database)
+	}()
+
 	// The list headers of mail that arrived before this server read them.
 	// Every message in a mailbox is examined once, in batches, and a pass
 	// that finds nothing costs one query — so this quietly finishes and then

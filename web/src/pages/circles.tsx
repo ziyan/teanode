@@ -8,7 +8,7 @@ import { CalendarRenameDialog } from '../components/calendarRename'
 import { announceCirclesChanged } from '../components/circleInvitations'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
-import { CloseIcon, MoreIcon, PencilIcon, TrashIcon } from '../components/icons'
+import { CloseIcon, MoreIcon, PencilIcon, PlusIcon, TrashIcon } from '../components/icons'
 import { MenuButton } from '../components/menuButton'
 import { SHARE_LEVELS, GrantableLevel } from '../components/calendarShare'
 import { LOCATION_SHARE_LEVELS, LocationShareLevel } from '../components/locationShare'
@@ -18,6 +18,9 @@ import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
 import { personPath, personPhotosAddress } from '../lib/circlePeople'
+import { createPhotoAlbum, listCirclePhotoAlbums } from '../photos/api'
+import { AlbumTitleDialog } from './photos/albumControls'
+import { AlbumCell, albumAddress } from './photos/albums'
 import {
   PRONOUNS,
   PRONOUN_LABELS,
@@ -750,6 +753,15 @@ function CircleDetail() {
     { refresh: false },
   )
 
+  // The circle's albums and those shared with everyone in it, for somebody
+  // who keeps photos.
+  const albums = useQuery(
+    async () => (canUsePhotos ? await listCirclePhotoAlbums(circleId) : []),
+    [canUsePhotos, circleId],
+    { refresh: false },
+  )
+  const [isMakingAlbum, setMakingAlbum] = useState(false)
+
   // How the person is described, which the relationship dialog asks about only
   // when it is not said yet. Null when it could not be read, which asks nothing.
   const ownPerson = useQuery(
@@ -1055,6 +1067,41 @@ function CircleDetail() {
         </SettingsSection>
       )}
 
+      {canUsePhotos && albums.data && (
+        <SettingsSection
+          card
+          title={t('circles.albums.title')}
+          description={t('circles.albums.intro')}
+          action={
+            <div className="row-actions head-icons">
+              <Tooltip label={t('circles.albums.newAlbum')}>
+                <button
+                  type="button"
+                  className="icon-action"
+                  aria-label={t('circles.albums.newAlbum')}
+                  onClick={() => {
+                    clearProblem()
+                    setMakingAlbum(true)
+                  }}
+                >
+                  <PlusIcon size={16} />
+                </button>
+              </Tooltip>
+            </div>
+          }
+        >
+          {albums.data.length === 0 ? (
+            <SettingsEmpty>{t('circles.albums.none')}</SettingsEmpty>
+          ) : (
+            <div className="photo-album-grid">
+              {albums.data.map((album) => (
+                <AlbumCell key={album.id} album={album} circleId={circle.id} />
+              ))}
+            </div>
+          )}
+        </SettingsSection>
+      )}
+
       {isAdmin && (
         <SettingsSection
           card
@@ -1302,6 +1349,28 @@ function CircleDetail() {
             />
           </label>
         </FormDialog>
+      )}
+
+      {isMakingAlbum && (
+        <AlbumTitleDialog
+          title={t('circles.albums.newAlbumTitle', { name: circle.name })}
+          submitLabel={t('common.create')}
+          isBusy={isBusy}
+          error={problem}
+          onSubmit={(albumTitle) => {
+            let createdId = ''
+            void act(
+              async () => {
+                createdId = (await createPhotoAlbum(albumTitle, [], circle.id)).id
+              },
+              t('photos.albumCreated', { title: albumTitle }),
+              true,
+            ).then((isMade) => {
+              if (isMade) navigate(albumAddress(createdId))
+            })
+          }}
+          onClose={() => setMakingAlbum(false)}
+        />
       )}
 
       {isRenamingCalendar && circleCalendar && (

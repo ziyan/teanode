@@ -317,6 +317,9 @@
                 let inLibrary = isEmpty ? 0 : demoPhotos.filter { !$0.isTrashed && !$0.isForeign }.count
                 let trashed = isEmpty ? 0 : demoPhotos.filter(\.isTrashed).count
                 json = #"{"data":{"ReadPhotoLibrary":{"photoCount":\#(inLibrary),"videoCount":3,"favoriteCount":3,"trashedCount":\#(trashed),"usedBytes":412000000,"maximumFileBytes":2000000000,"maximumAccountBytes":50000000000,"trashRetentionDays":30,"isDescriptionAvailable":true,"descriptionUnavailableMessage":"","isFaceRecognitionAvailable":true,"faceRecognitionUnavailableMessage":"","isPhotoFaceRecognitionEnabled":true}}}"#
+            } else if body.contains("ListPhotoAlbums"), variables["circleId"] as? String == "circle-home" {
+                // The Home circle's page: its own album, and two shared with everyone in it.
+                json = #"{"data":{"ListPhotoAlbums":[\#(circleAlbumsJSON)]}}"#
             } else if body.contains("ListPhotoAlbums") {
                 json = #"{"data":{"ListPhotoAlbums":["# + (isEmpty ? [] : demoAlbums).map(albumJSON).joined(separator: ",") + "]}}"
             } else if body.contains("SuggestPhotoAlbums") {

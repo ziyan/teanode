@@ -881,7 +881,7 @@ extension Documents {
         isOwnedByCaller shareLevel canCallerContribute canCallerManage isLocationIncluded
         """
     public static let listPhotoAlbums = """
-        query { ListPhotoAlbums { \(photoAlbumFields) } }
+        query ($circleId: String) { ListPhotoAlbums(circleId: $circleId) { \(photoAlbumFields) } }
         """
     public static let suggestPhotoAlbums = """
         query { SuggestPhotoAlbums { takenAfter takenBefore placeNames albumTitle photoCount samplePhotoIds } }
@@ -1520,6 +1520,14 @@ extension Connection {
     public func photoAlbums() async throws -> [PhotoAlbum] {
         struct Answer: Decodable, Sendable { let ListPhotoAlbums: [PhotoAlbum] }
         return try await execute(Documents.listPhotoAlbums, as: Answer.self).ListPhotoAlbums
+    }
+
+    /// The albums of one circle the person is in, as its page shows them: the
+    /// circle's own and those shared with everyone in it, the one changed most
+    /// recently first.
+    public func photoAlbums(circleId: String) async throws -> [PhotoAlbum] {
+        struct Answer: Decodable, Sendable { let ListPhotoAlbums: [PhotoAlbum] }
+        return try await execute(Documents.listPhotoAlbums, variables: ["circleId": .string(circleId)], as: Answer.self).ListPhotoAlbums
     }
 
     /// The trips and events found in photos that are in no album.
