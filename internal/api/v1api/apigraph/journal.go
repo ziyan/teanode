@@ -690,14 +690,17 @@ type JournalWorkoutView struct {
 	Meters       float64   `json:"meters"`
 }
 
-// JournalShoppingTripView is a trip to the shops that day.
+// JournalShoppingTripView is a trip of the person's to the shops that
+// started that day: the store when they named one, and the lists it was for
+// that they still reach. A trip does not keep what it bought, so it says
+// nothing of it.
 type JournalShoppingTripView struct {
-	TripID      string     `json:"tripId"`
-	ListNames   []string   `json:"listNames"`
-	StartedAt   time.Time  `json:"startedAt"`
-	FinishedAt  *time.Time `json:"finishedAt" graphapi:"nullable"`
-	BoughtCount int        `json:"boughtCount"`
-	ItemCount   int        `json:"itemCount"`
+	TripID        string     `json:"tripId"`
+	StoreName     string     `json:"storeName"`
+	ListNames     []string   `json:"listNames"`
+	StartedAt     time.Time  `json:"startedAt"`
+	FinishedAt    *time.Time `json:"finishedAt" graphapi:"nullable"`
+	DashboardPath string     `json:"dashboardPath"`
 }
 
 // JournalMemoryPageView is a memory page with a fact about that day.

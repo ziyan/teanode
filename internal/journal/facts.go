@@ -32,6 +32,7 @@ func ComputeFacts(day *Day) models.JournalFacts {
 		MailSentCount:      day.MailSentTotal,
 		DocumentCount:      day.DocumentTotal,
 		TransactionCount:   len(day.Transactions),
+		ShoppingTripCount:  len(day.ShoppingTrips),
 		MemoryPageCount:    len(day.MemoryPages),
 	}
 	for _, chat := range day.Chats {
@@ -63,7 +64,7 @@ func hasActivity(day *Day) bool {
 		len(day.Conversations) > 0 || len(day.Chats) > 0 || day.MailReceivedTotal > 0 || day.MailSentTotal > 0 ||
 		len(day.Recordings) > 0 || day.PhotoTotal > 0 || len(day.Visits) > 0 || len(day.Events) > 0 ||
 		len(day.Reminders) > 0 || len(day.Transactions) > 0 || day.Health != nil || len(day.Notes) > 0 ||
-		len(day.MemoryPages) > 0 {
+		len(day.ShoppingTrips) > 0 || len(day.MemoryPages) > 0 {
 		return true
 	}
 	if row := day.Row; row != nil {

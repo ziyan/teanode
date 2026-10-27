@@ -2,6 +2,7 @@ package journal_test
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -496,6 +497,58 @@ func TestInputDigestMovesWithWhatTheNarrativeIsWrittenFrom(t *testing.T) {
 		corrected := digestOf()
 		if changed == base || corrected == changed {
 			t.Error("the words and a correction are inputs")
+		}
+	})
+}
+
+// A day holds the person's own trips to the shops that started on it, with
+// the lists they were for, in its moments and its numbers; a caller without
+// shopping:use has none and is told so.
+func TestReadDayHoldsThePersonsShoppingTrips(t *testing.T) {
+	world, release := newWorld(t)
+	defer release()
+
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		dbtest.GrantPermission(t, tx, world.user.ID, models.PermissionShoppingUse)
+		list, err := tx.CreateShoppingList(world.user.ID, "Groceries")
+		if err != nil {
+			t.Fatal(err)
+		}
+		trip, _, err := tx.StartShoppingTrip(world.user.ID, "Corner Market", []string{list.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now()
+		today := journal.Today(world.user, now)
+		day, err := journal.ReadDay(tx, world.user, world.agent, today, now, journal.AllReadOptions())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(day.ShoppingTrips) != 1 || day.ShoppingTrips[0].TripID != trip.ID || day.ShoppingTrips[0].StoreName != "Corner Market" ||
+			fmt.Sprint(day.ShoppingTrips[0].ListNames) != "[Groceries]" {
+			t.Fatalf("the trip of the day: %+v", day.ShoppingTrips)
+		}
+		if facts := journal.ComputeFacts(day); facts.ShoppingTripCount != 1 || !facts.HasActivity {
+			t.Errorf("the trip in the numbers: %+v", facts)
+		}
+		isMoment := false
+		for _, moment := range journal.Moments(day) {
+			if moment.RecordKind == models.RecordShoppingTrip && moment.RecordID == trip.ID {
+				isMoment = moment.Title == "Shopping at Corner Market" && moment.Detail == "for Groceries" && moment.DashboardPath == "/shopping/lists/"+list.ID
+			}
+		}
+		if !isMoment {
+			t.Errorf("the trip among the moments: %+v", journal.Moments(day))
+		}
+
+		options := journal.AllReadOptions()
+		options.CanReadShopping = false
+		withheld, err := journal.ReadDay(tx, world.user, world.agent, today, now, options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(withheld.ShoppingTrips) != 0 || !slices.Contains(withheld.UnavailableSections, journal.SectionShoppingTrips) {
+			t.Errorf("trips without shopping:use: %+v %v", withheld.ShoppingTrips, withheld.UnavailableSections)
 		}
 	})
 }

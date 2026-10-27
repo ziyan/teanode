@@ -33,7 +33,7 @@ func newJournalWorld(t *testing.T) *journalWorld {
 	t.Helper()
 	world := &journalWorld{healthWorld: newHealthWorld(t)}
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		role, err := tx.CreateRole(&models.Role{Name: "journal role", Permissions: []models.Permission{models.PermissionJournalUse, models.PermissionContactsUse}})
+		role, err := tx.CreateRole(&models.Role{Name: "journal role", Permissions: []models.Permission{models.PermissionJournalUse, models.PermissionContactsUse, models.PermissionShoppingUse}})
 		if err != nil {
 			t.Fatalf("CreateRole: %s", err)
 		}
