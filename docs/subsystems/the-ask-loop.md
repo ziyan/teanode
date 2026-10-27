@@ -125,7 +125,8 @@ Only the calls run together. Everything the loop keeps happens after the
 batch, one call at a time and in the model's order: the tool message in
 the history and in the transcript, the count of identical failures and
 the stop when one is stuck, and the pictures to look at. `runTool` keeps
-nothing on the run for that reason. A panic in a call running beside
+nothing on the run for that reason, apart from what a call that changes
+something answered (below), and such a call always runs alone. A panic in a call running beside
 others answers that call `{"error": "the tool failed"}`; alone, it ends
 the turn as before.
 
@@ -138,6 +139,16 @@ the turn as before.
   named …`.
 - **Read-only.** Re-checked per call, because a tool's risk can depend on its
   arguments.
+- **The same change again.** A call whose risk for its arguments is not
+  `read` is remembered by its tool and its arguments (spacing and key order
+  settled, `repeatedCallKey`) with what it answered. When the same call
+  answers exactly what it answered the time before, the answer gets a line
+  saying the change is done and not to send it again; once it has answered
+  the same twice, a third is not run and answers `repeated_call: ... it was
+  not run again`, before any card. That answer is an error, so three of
+  them stop the turn as a repeated failure does. A call whose answer moved
+  (a click on the next page, keys that printed something new) goes ahead,
+  and reads are never held back.
 - **A chat.** On the surface `chat` (a turn an agent takes in a chat with
   other people; `conversations.md`, Chats) the answer of each round is posted
   to the chat and the calls stay with the owner. A turn the owner allowed

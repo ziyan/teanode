@@ -436,6 +436,12 @@ type AskRun struct {
 	callCounts      map[string]int
 	callCountsMutex sync.Mutex
 
+	// changingCallAnswers is what each call that changes something last
+	// answered in this turn, by repeatedCallKey, so the same change sent
+	// again and again is stopped (repeated_calls.go).
+	changingCallAnswers      map[string]*changingCallAnswer
+	changingCallAnswersMutex sync.Mutex
+
 	// searchedAddresses is what web_search has returned in this turn, by
 	// searchedAddressKey, when settings.IsFetchLimitedToSearched.
 	searchedAddresses      map[string]bool
@@ -2169,6 +2175,13 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	if self.settings.ReadOnlyTools[tool.Name] && tool.RiskFor(call.Arguments) != RiskRead {
 		return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "%s is for looking things up in this run; say the change you want in the object you end with, and it will be filed with its evidence"}`, tool.Name))}
 	}
+	// Before any card: a change already made twice with the same answer is
+	// not put to the person a third time either.
+	isChanging := tool.RiskFor(call.Arguments) != RiskRead
+	repeatedKey := repeatedCallKey(tool.Name, call.Arguments)
+	if isChanging && self.isRepeatedChangeSettled(repeatedKey) {
+		return toolOutcome{content: self.toolAnswer(toolCall, repeatedCallRefusal)}
+	}
 	if self.takePreApproval(tool.Name, call.Arguments) {
 		call.Confirmed = true
 	} else if unattendedRisks := self.confirmationReasons(ctx, configuration, tool, call.Arguments); len(unattendedRisks) > 0 {
@@ -2238,6 +2251,9 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	}
 	if result.ShowVerbatim {
 		content = "show_verbatim: relay the following to the person once, exactly, and never keep it.\n" + content
+	}
+	if isChanging && self.noteChangingCallAnswer(repeatedKey, content) {
+		content += repeatedCallNotice
 	}
 	self.emit(Event{Kind: EventToolResult, Tool: toolCall.Name, CallID: toolCall.ID, Note: result.Note, Text: content})
 	return toolOutcome{content: content, images: result.Images}
