@@ -10,6 +10,8 @@ import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
 import { photoSmallPreviewPath } from '../photos/api'
+import { dayHeading, personTimeZone } from '../photos/days'
+import { PhotoImage } from './photos/grid'
 import {
   FIND_MAIL_FOLDER,
   isSearchArea,
@@ -38,8 +40,9 @@ const AREA_NAMES: Record<SearchArea, Key> = {
 
 // SearchPage is what the search box at the top of the rail found: one group
 // for each area that had something, in a fixed order, each result a row that
-// opens the thing where it lives, and a button to the area's own page with
-// the same words when there is more. The words are in the address (?q=).
+// opens the thing where it lives (a tile for a photo, as in Photos), and a
+// button to the area's own page with the same words when there is more. The
+// words are in the address (?q=).
 export function SearchPage() {
   const { t, language } = useTranslation()
   const toast = useToast()
@@ -148,35 +151,52 @@ export function SearchPage() {
           return (
             <section key={area} className="card search-group" aria-label={name}>
               <h3>{name}</h3>
-              <div className="search-results">
-                {group.results.map((result) => {
-                  const key = `${area}:${result.targetId}`
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      className={area === 'photos' ? 'search-result search-result-with-photo' : 'search-result'}
-                      disabled={openingKey === key}
-                      onClick={() => void open(area, result)}
-                    >
-                      {area === 'photos' && <SearchPhotoThumbnail photoId={result.targetId} />}
-                      <span className="search-result-text">
-                        <span className="search-result-title">{result.titleText || t('search.untitled')}</span>
-                        {result.detailText && <span className="search-result-detail muted">{result.detailText}</span>}
-                      </span>
-                      {hasTime(result.happenedAt) && (
-                        <time
-                          className="search-result-time muted"
-                          dateTime={new Date(result.happenedAt!).toISOString()}
-                          title={formatAbsolute(new Date(result.happenedAt!))}
-                        >
-                          {formatRelative(new Date(result.happenedAt!), language)}
-                        </time>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
+              {area === 'photos' ? (
+                <div className="photo-grid search-photo-grid">
+                  {group.results.map((result) => {
+                    const key = `${area}:${result.targetId}`
+                    return (
+                      <SearchPhotoTile
+                        key={key}
+                        result={result}
+                        isOpening={openingKey === key}
+                        onOpen={() => void open(area, result)}
+                      />
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="search-results">
+                  {group.results.map((result) => {
+                    const key = `${area}:${result.targetId}`
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        className="search-result"
+                        disabled={openingKey === key}
+                        onClick={() => void open(area, result)}
+                      >
+                        <span className="search-result-text">
+                          <span className="search-result-title">
+                            {result.isMain ? t('agentDrawer.main') : result.titleText || t('search.untitled')}
+                          </span>
+                          {result.detailText && <span className="search-result-detail muted">{result.detailText}</span>}
+                        </span>
+                        {hasTime(result.happenedAt) && (
+                          <time
+                            className="search-result-time muted"
+                            dateTime={new Date(result.happenedAt!).toISOString()}
+                            title={formatAbsolute(new Date(result.happenedAt!))}
+                          >
+                            {formatRelative(new Date(result.happenedAt!), language)}
+                          </time>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
               {group.hasMore && (
                 <div className="page-actions page-actions-end">
                   <Link className="button" to={showAllPath(area, words)}>
@@ -192,20 +212,35 @@ export function SearchPage() {
   )
 }
 
-// SearchPhotoThumbnail is the picture of a photo found, before its name: a
-// file name and a date say little about which photo it is. A photo with no
-// preview yet keeps the square, empty.
-function SearchPhotoThumbnail({ photoId }: { photoId: string }) {
-  const [isBroken, setIsBroken] = useState(false)
-  if (isBroken) return <span className="search-result-photo" aria-hidden="true" />
+// SearchPhotoTile is a photo found, as a tile of the Photos page's grid: a file
+// name says nothing about which photo it is, and the picture does. The tile is
+// named by when the photo was taken, as the grid names a photo to a screen
+// reader. A photo with no preview yet keeps the square, empty.
+function SearchPhotoTile({
+  result,
+  isOpening,
+  onOpen,
+}: {
+  result: SearchResult
+  isOpening: boolean
+  onOpen: () => void
+}) {
+  const { t, language } = useTranslation()
+  const label = hasTime(result.happenedAt)
+    ? t('photos.altDateOnly', { date: dayHeading(new Date(result.happenedAt!), language, personTimeZone()) })
+    : t('nav.photos')
   return (
-    <img
-      className="search-result-photo"
-      src={photoSmallPreviewPath(photoId)}
-      alt=""
-      loading="lazy"
-      draggable={false}
-      onError={() => setIsBroken(true)}
-    />
+    <div className="photo-cell">
+      <button
+        type="button"
+        className="photo-open"
+        aria-label={label}
+        title={result.detailText || undefined}
+        disabled={isOpening}
+        onClick={onOpen}
+      >
+        <PhotoImage src={photoSmallPreviewPath(result.targetId)} alt="" />
+      </button>
+    </div>
   )
 }

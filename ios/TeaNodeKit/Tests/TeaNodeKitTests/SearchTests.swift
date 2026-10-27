@@ -49,6 +49,13 @@ final class SearchTests: XCTestCase {
         XCTAssertTrue(results.isEmpty)
     }
 
+    func testTheMainConversationSaysItIsMain() throws {
+        let results = try decode(
+            #"{"words":"a","areas":[{"searchArea":"chats","hasMore":false,"results":[{"searchArea":"chats","targetId":"c1","titleText":"Main chat","detailText":"","isMain":true},{"searchArea":"chats","targetId":"c2","titleText":"Tank cleaning","detailText":""}]}],"failedAreas":[]}"#)
+        let chats = try XCTUnwrap(results.areas.first?.results)
+        XCTAssertEqual(chats.map(\.isMain), [true, false])
+    }
+
     func testAResultWithoutTextsKeepsWhatItHas() throws {
         let results = try decode(#"{"words":"a","areas":[{"searchArea":"contacts","hasMore":false,"results":[{"searchArea":"contacts","targetId":"k1"}]}],"failedAreas":[]}"#)
         let result = try XCTUnwrap(results.areas.first?.results.first)
@@ -97,6 +104,6 @@ final class SearchTests: XCTestCase {
     func testTheQueryAsksForTheWordsAndTheLimit() {
         XCTAssertTrue(Documents.searchEverything.contains("SearchEverything(words: $words, perAreaLimit: $perAreaLimit)"))
         XCTAssertTrue(Documents.searchEverything.contains("failedAreas"))
-        XCTAssertTrue(Documents.searchEverything.contains("results { searchArea targetId titleText detailText happenedAt }"))
+        XCTAssertTrue(Documents.searchEverything.contains("results { searchArea targetId titleText detailText happenedAt isMain }"))
     }
 }

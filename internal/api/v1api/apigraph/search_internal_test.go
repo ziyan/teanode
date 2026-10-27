@@ -172,6 +172,59 @@ func TestSearchFindsTheWordInEveryAreaInTheFixedOrder(test *testing.T) {
 	}
 }
 
+// The person's main conversation has no title of its own, so a match in it is
+// titled as the lists of conversations name it, and says it is the main one;
+// a named conversation keeps its own title.
+func TestSearchTitlesTheMainConversationAsMainChat(test *testing.T) {
+	world := newSearchWorld(test)
+	userId := world.person("search-main-chat", searchEverything...)
+	agent := world.giveAgent(userId, true)
+	var mainId, namedId string
+	dbtest.RunTransactionOn(world.test, world.database, func(tx db.Transaction) {
+		main, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: agent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()})
+		if err != nil {
+			test.Fatal(err)
+		}
+		mainId = main.ID
+		_, err = tx.AppendAgentMessage(&models.AgentMessage{ConversationID: main.ID, Role: "user", Content: "Please remind me about the lanternfish."})
+		if err != nil {
+			test.Fatal(err)
+		}
+		named, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: agent.ID, Kind: models.AgentConversationNamed, Title: "Tank cleaning", LastAt: time.Now().Add(-time.Hour)})
+		if err != nil {
+			test.Fatal(err)
+		}
+		namedId = named.ID
+		_, err = tx.AppendAgentMessage(&models.AgentMessage{ConversationID: named.ID, Role: "user", Content: "How often should the lanternfish tank be cleaned?"})
+		if err != nil {
+			test.Fatal(err)
+		}
+	})
+
+	results, text := world.search("search-main-chat", "lanternfish", 0, "chats")
+	if results == nil {
+		test.Fatal(text)
+	}
+	chats := world.areaOf(results, "chats")
+	if chats == nil || len(chats.Results) != 2 {
+		test.Fatalf("chats: %s", text)
+	}
+	for _, result := range chats.Results {
+		switch result.TargetID {
+		case mainId:
+			if result.TitleText != "Main chat" || !result.IsMain {
+				test.Errorf("the main conversation: title %q, isMain %v, want the title Main chat and isMain", result.TitleText, result.IsMain)
+			}
+		case namedId:
+			if result.TitleText != "Tank cleaning" || result.IsMain {
+				test.Errorf("a named conversation: title %q, isMain %v", result.TitleText, result.IsMain)
+			}
+		default:
+			test.Errorf("an unexpected result %+v", result)
+		}
+	}
+}
+
 // Five a group by default is the server's, one more than is shown is what
 // says there is more, and the areas asked for are the only ones searched.
 func TestSearchKeepsFewResultsPerAreaAndSaysThereIsMore(test *testing.T) {

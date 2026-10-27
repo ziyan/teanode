@@ -34,6 +34,9 @@ public struct SearchResult: Decodable, Identifiable, Hashable, Sendable {
     /// A snippet, a sender, an account.
     public let detailText: String
     public let happenedAt: String?
+    /// Whether this is the person's main conversation, which the app names in
+    /// the person's language, as it does in its list of conversations.
+    public let isMain: Bool
 
     public var id: String { "\(searchArea)/\(targetId)" }
 
@@ -42,16 +45,17 @@ public struct SearchResult: Decodable, Identifiable, Hashable, Sendable {
     /// When it happened, if the server said.
     public var happenedDate: Date? { ServerTime.date(happenedAt) }
 
-    public init(searchArea: String, targetId: String, titleText: String, detailText: String = "", happenedAt: String? = nil) {
+    public init(searchArea: String, targetId: String, titleText: String, detailText: String = "", happenedAt: String? = nil, isMain: Bool = false) {
         self.searchArea = searchArea
         self.targetId = targetId
         self.titleText = titleText
         self.detailText = detailText
         self.happenedAt = happenedAt
+        self.isMain = isMain
     }
 
     private enum CodingKeys: String, CodingKey {
-        case searchArea, targetId, titleText, detailText, happenedAt
+        case searchArea, targetId, titleText, detailText, happenedAt, isMain
     }
 
     /// A missing text is empty rather than a failure, so one odd result does
@@ -63,6 +67,7 @@ public struct SearchResult: Decodable, Identifiable, Hashable, Sendable {
         titleText = try container.decodeIfPresent(String.self, forKey: .titleText) ?? ""
         detailText = try container.decodeIfPresent(String.self, forKey: .detailText) ?? ""
         happenedAt = try container.decodeIfPresent(String.self, forKey: .happenedAt)
+        isMain = try container.decodeIfPresent(Bool.self, forKey: .isMain) ?? false
     }
 
     /// Where the result opens.
@@ -158,7 +163,7 @@ extension Documents {
         query ($words: String!, $perAreaLimit: Int) {
           SearchEverything(words: $words, perAreaLimit: $perAreaLimit) {
             words
-            areas { searchArea hasMore results { searchArea targetId titleText detailText happenedAt } }
+            areas { searchArea hasMore results { searchArea targetId titleText detailText happenedAt isMain } }
             failedAreas
           }
         }

@@ -21035,22 +21035,6 @@ label.checkbox.is-plain > span > .muted {
   gap: 2px;
   min-width: 0;
 }
-/* A photo found shows its picture before its name, and its words sit beside
-   the picture's middle. */
-.search-result-with-photo {
-  align-items: center;
-}
-.search-result-with-photo .search-result-text {
-  flex: 1;
-}
-.search-result-photo {
-  flex: none;
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
-  background: var(--border);
-  object-fit: cover;
-}
 .search-result-title {
   overflow: hidden;
   font-weight: 600;
@@ -21071,6 +21055,20 @@ label.checkbox.is-plain > span > .muted {
   flex: none;
   font-size: var(--text-label);
   white-space: nowrap;
+}
+/* Photos found are tiles of the Photos page's grid (.photo-grid, .photo-cell),
+   a little smaller, so that four fit across a phone and a card on a wide
+   window holds a row of them. */
+.search-photo-grid {
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 2px;
+  border-radius: var(--radius-2);
+  overflow: hidden;
+}
+@media (max-width: 600px) {
+  .search-photo-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 .search-group .page-actions {
   margin-top: var(--space-3);

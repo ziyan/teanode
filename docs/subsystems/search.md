@@ -70,6 +70,14 @@ Five results an area by default, 20 at most. `HasMore` says the area's own
 search finds more; `teanode search` prints the command for it and the agent's
 answer names the area's own tool.
 
+The person's main conversation has no title of its own, so its result is titled
+`Main chat` (`search.MainChatTitle`) and carries `isMain`. The command line and
+the agent show the title; the dashboard and the iPhone app show their own
+translation of it, as their lists of chats do.
+
+The dashboard and the iPhone app draw the photos of a search as a grid of
+pictures, as their Photos pages do, with no file name or time under them.
+
 The words are matched as the areas match them: a `%` or `_` in them means
 itself (`SearchAgentConversations` escapes them like the other searches do).
 Words alone find a name or a phrase, not a paraphrase.

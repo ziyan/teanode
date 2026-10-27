@@ -34,7 +34,14 @@ afterEach(cleanup)
 
 type Group = {
   searchArea: string
-  results: { searchArea: string; targetId: string; titleText: string; detailText: string; happenedAt?: string }[]
+  results: {
+    searchArea: string
+    targetId: string
+    titleText: string
+    detailText: string
+    happenedAt?: string
+    isMain?: boolean
+  }[]
   hasMore: boolean
 }
 
@@ -126,7 +133,6 @@ it('asks for the words with the per-area limit and draws one group per area in t
 it.each([
   ['Seed order chat', '/chat?conversation=conversation-1'],
   ['Seed Merchant', '/contacts?contact=contact-1'],
-  ['Seed tray photo', '/photos/photo-1'],
   ['Garden plan', '/knowledge/projects/garden%20plan'],
   ['notes/seeds.txt', '/knowledge?documents=seed'],
   ['Seed call', '/recordings/recording-1'],
@@ -142,13 +148,42 @@ it.each([
   await waitFor(() => expect(screen.getByTestId('where').textContent).toBe(target))
 })
 
-it('shows the picture of a photo found beside its name, and no picture for anything else', async () => {
+it('shows photos found as tiles of the picture alone, with no file name, and opens one', async () => {
   answer(EVERY_AREA)
   renderAt('/search?q=seed')
-  const photo = (await screen.findByText('Seed tray photo')).closest('button')!
-  expect(photo.querySelector('img')?.getAttribute('src')).toBe('/api/v1/photos/photo-1/previews/small')
-  expect(screen.getByText('Seed order chat').closest('button')!.querySelector('img')).toBeNull()
-  expect(document.querySelectorAll('.search-result-photo')).toHaveLength(1)
+  await screen.findByText('Seed order chat')
+  const photos = screen.getByRole('region', { name: 'Photos' })
+  // The file name and the time are not drawn; the tile is named by the day it was taken.
+  expect(within(photos).queryByText('Seed tray photo')).toBeNull()
+  expect(within(photos).queryByText('About Seed tray photo')).toBeNull()
+  expect(photos.querySelector('time')).toBeNull()
+  const tile = within(photos).getByRole('button', { name: /^Photo taken on .*2031/ })
+  expect(tile.querySelector('img')?.getAttribute('src')).toBe('/api/v1/photos/photo-1/previews/small')
+  expect(tile.querySelector('img')?.getAttribute('alt')).toBe('')
+  expect(tile.textContent).toBe('')
+  expect(photos.querySelectorAll('.photo-grid .photo-cell')).toHaveLength(1)
+  // Nothing else has a picture.
+  expect(document.querySelectorAll('img')).toHaveLength(1)
+  fireEvent.click(tile)
+  await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/photos/photo-1'))
+})
+
+it('names the main conversation as the list of chats does, and a named one by its title', async () => {
+  answer([
+    {
+      searchArea: 'chats',
+      results: [
+        { searchArea: 'chats', targetId: 'conversation-main', titleText: 'Main chat', detailText: '', isMain: true },
+        { searchArea: 'chats', targetId: 'conversation-2', titleText: 'Seed order chat', detailText: '' },
+      ],
+      hasMore: false,
+    },
+  ])
+  renderAt('/search?q=seed')
+  expect(await screen.findByText('Seed order chat')).toBeTruthy()
+  expect(screen.getByText('Main chat')).toBeTruthy()
+  fireEvent.click(screen.getByText('Main chat').closest('button')!)
+  await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/chat?conversation=conversation-main'))
 })
 
 it('opens the mail search when the folder of a message cannot be found', async () => {

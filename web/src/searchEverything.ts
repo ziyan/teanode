@@ -108,6 +108,9 @@ export type SearchResult = {
   titleText: string
   detailText: string
   happenedAt?: string | null
+  // The person's main conversation, which a client names in the person's
+  // language, as it does in its list of conversations.
+  isMain?: boolean
 }
 
 export type SearchAreaResults = {
@@ -131,7 +134,7 @@ export const SEARCH_EVERYTHING = `
       words
       areas {
         searchArea
-        results { searchArea targetId titleText detailText happenedAt }
+        results { searchArea targetId titleText detailText happenedAt isMain }
         hasMore
       }
       failedAreas

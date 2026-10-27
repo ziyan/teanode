@@ -173,7 +173,9 @@ its pull request is opened.
 - Search finds the person's words across chats, mail, contacts, photos, memory,
   documents, recordings, places and finance at once, a few results from each,
   grouped by part. A row opens the item in its part; Show all opens the part
-  with the words in its own search.
+  with the words in its own search. Photos are a grid of pictures with no file
+  name or time under them, and the main conversation is named "Main chat" in the
+  person's language, as the list of chats names it.
 
 ### Sheets and covers belong to the screen
 

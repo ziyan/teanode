@@ -671,17 +671,18 @@
 
         /// What the Search tab finds for the words, as the server answers a
         /// search across everything: one or two invented results from each
-        /// part, with more to be found in mail, photos and finance. Nothing is
-        /// found for words the demo has no results for ("nothing").
+        /// part, five photos (shown as pictures), with more to be found in
+        /// mail, photos and finance. Nothing is found for words the demo has no
+        /// results for ("nothing").
         static func searchEverything(answering body: Data?) -> String {
             let words = requestVariables(body)["words"] as? String ?? ""
             if words.lowercased().contains("nothing") {
                 return #"{"data":{"SearchEverything":{"words":"\#(words)","areas":[],"failedAreas":[]}}}"#
             }
             func at(_ hours: Double) -> String { CalendarDates.text(Date().addingTimeInterval(-hours * 3600)) }
-            func result(_ area: String, _ targetId: String, _ title: String, _ detail: String, _ hours: Double?) -> String {
+            func result(_ area: String, _ targetId: String, _ title: String, _ detail: String, _ hours: Double?, isMain: Bool = false) -> String {
                 let happenedAt = hours.map { #""\#(at($0))""# } ?? "null"
-                return #"{"searchArea":"\#(area)","targetId":"\#(targetId)","titleText":"\#(title)","detailText":"\#(detail)","happenedAt":\#(happenedAt)}"#
+                return #"{"searchArea":"\#(area)","targetId":"\#(targetId)","titleText":"\#(title)","detailText":"\#(detail)","happenedAt":\#(happenedAt),"isMain":\#(isMain)}"#
             }
             func area(_ name: String, hasMore: Bool = false, _ results: [String]) -> String {
                 #"{"searchArea":"\#(name)","hasMore":\#(hasMore),"results":[\#(results.joined(separator: ","))]}"#
@@ -690,6 +691,7 @@
                 area(
                     "chats",
                     [
+                        result("chats", "conversation-main", "Main chat", "Planning a harbor walk and what to pack.", 2, isMain: true),
                         result("chats", "trip", "Weekend trip", "We could walk along the harbor on Saturday.", 5),
                         result("chats", "chat-sam", "Sam", "Found a harbor cafe that opens early.", 30),
                     ]),
@@ -700,7 +702,16 @@
                         result("mail", "m3", "Your order has shipped", "orders@bookshop.example: a harbor guide, arriving tomorrow.", 26),
                     ]),
                 area("contacts", [result("contacts", "shop", "Orders", "orders@bookshop.example", nil)]),
-                area("photos", hasMore: true, [result("photos", "demo-01", "Harbor at sunset", "Riverside Park", 120)]),
+                // Named by a file, which the app does not show: a photo is its picture.
+                area(
+                    "photos", hasMore: true,
+                    [
+                        result("photos", "demo-01", "IMG_4021.jpg", "Riverside Park", 120),
+                        result("photos", "demo-02", "IMG_4020.jpg", "Riverside Park", 121),
+                        result("photos", "demo-05", "IMG_3987.jpg", "", 140),
+                        result("photos", "demo-09", "IMG_3902.jpg", "Harbor Market", 220),
+                        result("photos", "demo-10", "IMG_3899.jpg", "Harbor Market", 224),
+                    ]),
                 area("memory", [result("memory", "travel", "Travel", "Trips taken and planned.", nil)]),
                 area("recordings", [result("recordings", "recording-harbor", "Planning the harbor walk", "Recorded on Tuesday", 96)]),
                 area("places", [result("places", "place-park", "Harbor Park", "Park", nil)]),

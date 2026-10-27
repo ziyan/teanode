@@ -103,6 +103,11 @@ type SearchResultView struct {
 
 	// HappenedAt is when it was said, received, taken or posted.
 	HappenedAt *time.Time `json:"happenedAt" graphapi:"nullable"`
+
+	// IsMain says the result is the caller's main conversation, titled "Main
+	// chat" here. A client that names it in the caller's language shows its
+	// own words for it, as it does in its list of conversations.
+	IsMain bool `json:"isMain"`
 }
 
 // snippetLength is how many characters of a longer text a result shows.
@@ -168,7 +173,7 @@ func (self *graph) SearchEverything(ctx context.Context, arguments SearchEveryth
 		for _, result := range area.Results {
 			areaView.Results = append(areaView.Results, &SearchResultView{
 				SearchArea: result.SearchArea, TargetID: result.TargetID, TitleText: result.TitleText,
-				DetailText: result.DetailText, HappenedAt: result.HappenedAt,
+				DetailText: result.DetailText, HappenedAt: result.HappenedAt, IsMain: result.IsMain,
 			})
 		}
 		view.Areas = append(view.Areas, areaView)
@@ -250,9 +255,16 @@ func (self *graph) searchChats(ctx context.Context, words string, limit int) ([]
 	results := make([]*search.Result, 0, len(conversations))
 	for _, conversation := range conversations {
 		lastAt := conversation.LastAt
+		titleText := strings.TrimSpace(conversation.Title)
+		isMain := conversation.Kind == models.AgentConversationMain
+		if isMain {
+			// The main conversation is named by its place, not by a title,
+			// as the lists of conversations name it.
+			titleText = search.MainChatTitle
+		}
 		results = append(results, &search.Result{
-			TargetID: conversation.ID, TitleText: strings.TrimSpace(conversation.Title),
-			DetailText: snippetOf(conversation.Summary), HappenedAt: &lastAt,
+			TargetID: conversation.ID, TitleText: titleText,
+			DetailText: snippetOf(conversation.Summary), HappenedAt: &lastAt, IsMain: isMain,
 		})
 	}
 	return results, nil
