@@ -907,17 +907,18 @@ it('shows nothing of the journal to somebody without the permission', async () =
 
 // work, folding, and opening records in place
 
-it('shows the work as a card for each project: its time, what was done, what it was about and what was sent for review', async () => {
+it('shows the work as a card for each project: its time, what was done, its sessions and what was sent for review', async () => {
   answerWith({ day: () => fullDay() })
   renderAt('/journal/2026-10-22')
 
   const project = (await screen.findByRole('heading', { name: 'sample-app' })).closest('article') as HTMLElement
   expect(within(project).getByText('2 h 10 min, 9:20 AM to 5:05 PM')).toBeTruthy()
   expect(within(project).getByText('Cut the release branch and fixed the upload test that kept failing.')).toBeTruthy()
-  // Four topics and a count of the rest, never all six.
-  expect(within(project).getByText('Update the changelog')).toBeTruthy()
-  expect(within(project).queryByText('Tidy the build scripts')).toBeNull()
-  expect(within(project).getByText('and 2 more')).toBeTruthy()
+  // The sessions' names are one quiet line: four and a count of the rest, never all six.
+  const sessions = within(project).getByText(/^Sessions: /)
+  expect(sessions.textContent).toContain('Update the changelog')
+  expect(sessions.textContent).not.toContain('Tidy the build scripts')
+  expect(sessions.textContent).toMatch(/ and 2 more$/)
   // Requests open in a new tab, and a draft says so. An address that is not a web page is only words.
   const request = within(project).getByRole('link', { name: 'Fix the flaky upload test' })
   expect(request.getAttribute('href')).toBe('https://git.example.com/sample/sample-app/pulls/12')

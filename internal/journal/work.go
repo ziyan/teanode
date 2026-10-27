@@ -36,6 +36,10 @@ type WorkProject struct {
 	// opened or changed that day.
 	Shipped []Shipped
 
+	// StretchDocumentIDs are its sessions' stretches that day, whose posts say
+	// what was asked for and done.
+	StretchDocumentIDs []string
+
 	// DocumentID is the project's first session, which the agent's choice of
 	// the project (with what was done in it) names; empty for a project that
 	// only has pull requests.
@@ -118,6 +122,7 @@ func workProjects(sessions []CodingSession, shipped map[string][]Shipped) []Work
 			project.LastAt = session.EndedAt
 		}
 		project.personSpans = append(project.personSpans, session.PersonSpans...)
+		project.StretchDocumentIDs = append(project.StretchDocumentIDs, session.StretchDocumentIDs...)
 		project.StretchCount += session.StretchCount
 		if session.Title != "" && !containsFold(project.Topics, session.Title) && !strings.EqualFold(session.Title, name) {
 			project.Topics = append(project.Topics, session.Title)

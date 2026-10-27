@@ -225,7 +225,8 @@ function projectTimeText(
 }
 
 // ProjectCard is what one project was in a day: its name, how long, what the
-// agent wrote was done, what it was about and what was sent for review.
+// agent wrote was done from what was said in its sessions, the sessions'
+// names, and what was sent for review.
 function ProjectCard({ project, day }: { project: JournalWorkProject; day: JournalDay }) {
   const { t, clock } = useDayWords(day)
   const topics = project.topics.filter((topic) => topic.trim() !== '')
@@ -237,15 +238,18 @@ function ProjectCard({ project, day }: { project: JournalWorkProject; day: Journ
       <h4 className="journal-project-name">{project.name}</h4>
       {time && <div className="muted journal-project-time">{time}</div>}
       {project.summary && <p className="journal-project-summary">{project.summary}</p>}
+      {/* The sessions' names are labels kept for weeks, not what was done
+          that day: one quiet line, under what the agent wrote was done. */}
       {shownTopics.length > 0 && (
-        <ul className="journal-project-topics">
-          {shownTopics.map((topic) => (
-            <li key={topic}>{topic}</li>
-          ))}
-          {topics.length > shownTopics.length && (
-            <li className="muted">{t('journal.topicsMore', { count: topics.length - shownTopics.length })}</li>
-          )}
-        </ul>
+        <p className="muted journal-project-sessions">
+          {t('journal.sessionsNamed', {
+            names:
+              shownTopics.join(', ') +
+              (topics.length > shownTopics.length
+                ? ' ' + t('journal.topicsMore', { count: topics.length - shownTopics.length })
+                : ''),
+          })}
+        </p>
       )}
       {project.shipped.length > 0 && (
         <div className="journal-shipped">

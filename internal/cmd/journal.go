@@ -754,7 +754,7 @@ func printJournalSections(view *client.JournalDayView) {
 			lines = append(lines, "  "+project.Summary)
 		}
 		if len(project.Topics) > 0 {
-			lines = append(lines, "  worked on: "+strings.Join(project.Topics, "; "))
+			lines = append(lines, "  sessions: "+strings.Join(project.Topics, "; "))
 		}
 		for _, request := range project.Shipped {
 			title := request.Title

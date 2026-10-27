@@ -195,7 +195,7 @@ func stretchTimes(startedAt time.Time, posts []models.AgentChunkPost, personName
 	for _, post := range posts {
 		postedAt = postedAt.Add(time.Duration((post.ClockMinutes-previousClock+24*60)%(24*60)) * time.Minute)
 		previousClock = post.ClockMinutes
-		if isPersonAuthor(post.Author, personNames) {
+		if IsPersonAuthor(post.Author, personNames) {
 			personTimes = append(personTimes, postedAt)
 		}
 	}
@@ -209,9 +209,9 @@ func stretchTimes(startedAt time.Time, posts []models.AgentChunkPost, personName
 	return postedAt, personSpans
 }
 
-// isPersonAuthor says a post's author is one of the names the person goes by
+// IsPersonAuthor says a post's author is one of the names the person goes by
 // in chat (reading.ChatNamesOf, lowercase).
-func isPersonAuthor(author string, personNames []string) bool {
+func IsPersonAuthor(author string, personNames []string) bool {
 	author = strings.ToLower(strings.TrimSpace(author))
 	for _, name := range personNames {
 		if author == name {
@@ -306,7 +306,9 @@ func (self *dayReader) readDocuments() error {
 	for key, index := range sessionIndexes {
 		session := &self.day.CodingSessions[index]
 		session.PersonSpans = [][2]time.Time{}
+		session.StretchDocumentIDs = session.StretchDocumentIDs[:0]
 		for _, document := range stretches[key] {
+			session.StretchDocumentIDs = append(session.StretchDocumentIDs, document.ID)
 			end, personSpans := stretchTimes(*document.HappenedAt, posts[document.ID], names)
 			session.PersonSpans = append(session.PersonSpans, personSpans...)
 			if end.After(session.EndedAt) {

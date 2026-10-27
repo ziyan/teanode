@@ -77,7 +77,7 @@ func TestTheDayPromptCarriesTheOriginalWordsAndTheCorrections(t *testing.T) {
 	}
 	records, candidates, _ := strings.Cut(prompt, "The candidates to choose from")
 	for _, line := range []string{
-		"agent_document:doc1 | 09:00 | Project harbor: 1 h; worked on: Fix the tide chart",
+		"agent_document:doc1 | 09:00 | Project harbor: 1 h; sessions named: Fix the tide chart",
 		"calendar_occurrence:event1@2026-10-22T12:00:00Z | 12:00 | Calendar event: Lunch with Ben, Harbor Cafe",
 		"finance_transaction:transaction1 | 12:50 | Transaction: Harbor Cafe, -18.50 USD",
 		"photo:photo1 | 15:00 | Photos: 2 photos, Harbor Office",

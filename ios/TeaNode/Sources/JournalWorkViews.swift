@@ -5,8 +5,9 @@ import TeaNodeKit
 // the day in the app's own viewer.
 
 /// JournalWorkProjectRow is one project of the day as one row: its name, how
-/// long it took and when, what the agent wrote was done, what it was about,
-/// and the requests that were sent for review, each opening in the browser.
+/// long it took and when, what the agent wrote was done from what was said in
+/// its sessions, the sessions' names, and the requests that were sent for
+/// review, each opening in the browser.
 struct JournalWorkProjectRow: View {
     let project: JournalWorkProject
     @Environment(\.openURL) private var openURL
@@ -33,21 +34,16 @@ struct JournalWorkProjectRow: View {
 
     private var timeText: String { JournalText.projectTimeText(project) }
 
-    /// The first few topics, and how many more there are.
+    /// The sessions' names, as one quiet line: labels kept for weeks, not
+    /// what was done that day, which the summary above says.
     @ViewBuilder
     private var topicLines: some View {
         let listed = project.shownTopics()
         if !listed.shown.isEmpty {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(listed.shown.enumerated()), id: \.offset) { _, topic in
-                    Text(verbatim: "\u{2022} " + topic)
-                }
-                if listed.hiddenCount > 0 {
-                    Text("and \(listed.hiddenCount) more")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .font(.subheadline)
+            let more = listed.hiddenCount > 0 ? " " + String(localized: "and \(listed.hiddenCount) more") : ""
+            Text("Sessions: \(listed.shown.joined(separator: ", ") + more)")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
     }
 

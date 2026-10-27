@@ -15,7 +15,7 @@ narrative is two to four short paragraphs separated by blank lines. Say what hap
 
 choices are the mail, documents and messages from the candidates list that mattered, at most eight, most important first, each with a reason of a few words ("you were asked to decide", "puts something on your calendar"). Choose only from the candidates. Leave the routine ones out; the page counts them. An empty list is a fine answer.
 
-projects has one entry for each line of the records that begins "Project", with that line's reference, and as reason one or two sentences of at most 200 characters saying what was done in the project that day, from what it worked on and the pull and merge requests: what was built, fixed or decided, not how many sessions or hours. When the project's line says too little to tell, say what it was about in a few words.
+projects has one entry for each line of the records that begins "Project", with that line's reference, and as reason one or two sentences of at most 200 characters saying what was done in the project that day, from what was said in its sessions (below, when there is any) and its pull and merge requests: what was built, fixed or decided, not how many sessions or hours. A session's name is only a label it keeps for weeks; never tell the day from the names. When nothing says what was done, say what it was about in a few words.
 
 coverPhotoId is the id of one photo from the lists, written as it follows "photo:", that would stand for the day, or "" when there is none.
 
@@ -42,7 +42,11 @@ How much there was in all: {{.Totals}}. The lists below show only part of it.
 The records of the day, one to a line as reference | time | what it is.
 
 {{.Records}}
-{{if .Candidates}}
+{{if .WorkTalk}}
+What was said in each project's coding sessions that day: their own requests, and the assistant's report at the end of each stretch of work, with the clock each was written at. This, not the session names, is what the work was: tell the work in the narrative and in each project's reason from it.
+
+{{.WorkTalk}}
+{{end}}{{if .Candidates}}
 The candidates to choose from, in the same form.
 
 {{.Candidates}}

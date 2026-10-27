@@ -133,6 +133,11 @@ type KnowledgeOperation interface {
 	// was ever said at all.
 	ListAgentChunkTexts(agentId string, limit int) (map[string][]string, error)
 
+	// ListAgentDocumentChunkTexts is the chunk texts of these documents, each
+	// document's in order: the transcripts of a day's coding stretches, read
+	// whole at once.
+	ListAgentDocumentChunkTexts(agentId string, documentIds []string) (map[string][]string, error)
+
 	// Chunks.
 	ReplaceAgentChunks(document *models.AgentDocument, chunks []*models.AgentChunk) error
 	GetAgentChunks(agentId string, chunkIds []string) ([]*models.AgentChunk, error)
@@ -853,6 +858,26 @@ func (self *transaction) ListAgentChunkTexts(agentId string, limit int) (map[str
 		return nil, err
 	}
 	texts := map[string][]string{}
+	for _, row := range rows {
+		texts[row.DocumentID] = append(texts[row.DocumentID], row.Text)
+	}
+	return texts, nil
+}
+
+func (self *transaction) ListAgentDocumentChunkTexts(agentId string, documentIds []string) (map[string][]string, error) {
+	texts := map[string][]string{}
+	if len(documentIds) == 0 {
+		return texts, nil
+	}
+	var rows []struct {
+		DocumentID string
+		Text       string
+	}
+	if err := self.tx.Raw(`
+		SELECT "document_id", "text" FROM "agent_chunk"
+		WHERE "agent_id" = ? AND "document_id" IN ? ORDER BY "document_id", "number"`, agentId, documentIds).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
 	for _, row := range rows {
 		texts[row.DocumentID] = append(texts[row.DocumentID], row.Text)
 	}

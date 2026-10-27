@@ -176,6 +176,10 @@ type CodingSession struct {
 	// first one's.
 	StretchCount int
 
+	// StretchDocumentIDs are the stretches, each an ingested document: what
+	// was said in the session that day, for whoever reads it.
+	StretchDocumentIDs []string
+
 	// PersonSpans are when the person was at it, which the time worked is
 	// added up from: each of their posts, run on to their next one when that
 	// came within half an hour. An assistant working on its own for hours

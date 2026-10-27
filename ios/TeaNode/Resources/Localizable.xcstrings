@@ -91458,6 +91458,22 @@
           }
         }
       }
+    },
+    "Sessions: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セッション：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话：%@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
