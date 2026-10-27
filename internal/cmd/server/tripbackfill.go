@@ -14,19 +14,27 @@ import (
 // Each report builds the trips of the days it touches, so trips exist from
 // the day this shipped. The days before have visits and positions but no
 // trips, and a person's distance per week or year would start empty. Once, at
-// start: for each person with visits not yet marked as done
-// (trip_backfill), this builds trips back from their earliest trip, or now,
-// a week at a time, skipping weeks with no visit, and marks them. A start
-// after the first finds nobody.
+// start: for each person with visits not marked as done (trip_backfill) since
+// tripRulesChangedAt, this builds their trips back from now, a week at a
+// time, skipping weeks with no visit, and marks them. A start after the first
+// finds nobody. The same pass builds every past trip again after the rules
+// change, when tripRulesChangedAt moves; a rebuild keeps the ids of trips
+// that come out the same, and corrections are kept apart, so it loses
+// nothing.
 
 // tripBackfillWindow is how much is built in one transaction.
 const tripBackfillWindow = 7 * 24 * time.Hour
+
+// tripRulesChangedAt is when the rules in package travel last changed in a
+// way that changes trips already built. Move it to a moment before the
+// change is deployed whenever they do.
+var tripRulesChangedAt = time.Date(2026, 10, 27, 10, 40, 0, 0, time.UTC)
 
 // backfillTrips builds the trips of past days for every person who needs it.
 func backfillTrips(ctx context.Context, database db.Database) {
 	var userIds []string
 	if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		userIds, err = tx.ListUsersNeedingTripBackfill()
+		userIds, err = tx.ListUsersNeedingTripBackfill(tripRulesChangedAt)
 		return err
 	}); err != nil {
 		if ctx.Err() == nil {
@@ -52,24 +60,11 @@ func backfillTrips(ctx context.Context, database db.Database) {
 	}
 }
 
-// backfillTripsOf builds one person's trips from their earliest trip, or
-// now, back to their earliest visit, a week at a time, each week in its own
-// transaction holding their location lock.
+// backfillTripsOf builds one person's trips from now back to their earliest
+// visit, a week at a time, each week in its own transaction holding their
+// location lock.
 func backfillTripsOf(ctx context.Context, database db.Database, userId string) error {
-	var windowEnd time.Time
-	if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
-		earliest, err := tx.GetEarliestTripStart(userId)
-		if err != nil {
-			return err
-		}
-		windowEnd = time.Now()
-		if earliest != nil {
-			windowEnd = *earliest
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
+	windowEnd := time.Now()
 	for ctx.Err() == nil {
 		isDone := false
 		if err := database.TransactionContext(ctx, func(tx db.Transaction) error {

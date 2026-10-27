@@ -140,10 +140,34 @@ func TestSlowShortTripIsWalk(t *testing.T) {
 	}
 }
 
-func TestFastTripAtFiveMetersPerSecondIsBike(t *testing.T) {
+// Four meters a second is as likely a slow drive as a ride: without motion
+// activity it is a car, for the person to correct.
+func TestFourMetersPerSecondWithoutActivityIsCar(t *testing.T) {
 	trip := onlyTrip(t, BuildTrips(visits(0, 10, 2400), nil, nil))
-	if trip.Legs[0].DetectedTravelMode != TravelModeBike {
+	if trip.Legs[0].DetectedTravelMode != TravelModeCar {
 		t.Fatalf("mode %q", trip.Legs[0].DetectedTravelMode)
+	}
+	activities := []MotionActivity{{StartedAt: at(0), ActivityKind: ActivityKindCycling, ActivityConfidence: ActivityConfidenceHigh}}
+	trip = onlyTrip(t, BuildTrips(visits(0, 10, 2400), nil, activities))
+	if trip.Legs[0].DetectedTravelMode != TravelModeBike {
+		t.Fatalf("with cycling activity, mode %q", trip.Legs[0].DetectedTravelMode)
+	}
+}
+
+// One visit ending the second the next begins, at a neighboring place, is no
+// trip: a few hundred meters in a second is no flight.
+func TestVisitsASecondApartMakeNoTrip(t *testing.T) {
+	visitList := visits(0, 1.0/60, 800)
+	if trips := BuildTrips(visitList, nil, nil); len(trips) != 0 {
+		t.Fatalf("a second apart: %+v", trips)
+	}
+}
+
+// Faster than a car over less than a flight's distance is visit times that
+// are off, not a plane.
+func TestFasterThanACarOverAShortWayIsNoTrip(t *testing.T) {
+	if trips := BuildTrips(visits(0, 2, 20000), nil, nil); len(trips) != 0 {
+		t.Fatalf("20 kilometers in two minutes: %+v", trips)
 	}
 }
 
@@ -330,7 +354,7 @@ func TestLongSilenceGuessedFromSpeedIsNoTrip(t *testing.T) {
 	}
 	// Positions every 15 minutes are no silence.
 	trip := onlyTrip(t, BuildTrips(visits(0, 60, 12000), along(15, 45, 15, 3000, 9000), nil))
-	if trip.Legs[0].DetectedTravelMode != TravelModeBike {
+	if trip.Legs[0].DetectedTravelMode != TravelModeCar {
 		t.Fatalf("mode %q", trip.Legs[0].DetectedTravelMode)
 	}
 }

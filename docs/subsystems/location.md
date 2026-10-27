@@ -451,9 +451,13 @@ boat or plane (`docs/planning/location-travel-execplan.md` has the reasons).
   150 m is no trip. Motion activity cuts the trip into legs where the way
   changes (walking, running, cycling, automotive), merging a leg under a
   minute or 100 m into its neighbor. With motion activity for less than half
-  of the trip, the trip is one leg guessed from its average speed (up to
-  2.2 m/s walk, 5 bike, 75 car, faster plane; 100 km or more at 55 m/s or
-  more is a plane). A trip guessed from speed with more than 30 minutes
+  of the trip, the trip is one leg guessed from its average speed: up to
+  2.2 m/s walk, up to 75 car, and 100 km or more at 55 m/s or more a plane;
+  faster than a car over less is no trip, since the visit times are off.
+  Run and bike are never guessed from speed: with a position every few
+  minutes, a few meters a second is as likely a slow drive. Visits less
+  than a minute apart are no trip (neighboring places, one visit ending as
+  the next begins). A trip guessed from speed with more than 30 minutes
   between two points of its path is no trip, since the phone was off,
   paused or erased then and the time is not time on the way, unless that
   stretch was a flight. A leg cut by motion activity of 100 km or more at

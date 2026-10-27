@@ -400,34 +400,29 @@ func TestTravelTotalsGroupByPeriodInTheTravelersZone(t *testing.T) {
 	})
 }
 
-// The people whose past days need trips are those with a visit before their
-// earliest trip or with visits and no trip.
-func TestPeopleWithVisitsBeforeTheirTripsAreListed(t *testing.T) {
+// The people whose past days need trips are those with visits who were never
+// marked, or were marked before the rules last changed.
+func TestPeopleNotBackfilledUnderTheCurrentRulesAreListed(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		noTripId := locationUser(t, tx, "travel-backfill-none")
-		oldVisitId := locationUser(t, tx, "travel-backfill-old")
+		neverId := locationUser(t, tx, "travel-backfill-never")
+		oldRulesId := locationUser(t, tx, "travel-backfill-old")
 		builtId := locationUser(t, tx, "travel-backfill-built")
-		for _, userId := range []string{noTripId, oldVisitId, builtId} {
+		for _, userId := range []string{neverId, oldRulesId, builtId} {
 			place := locationPlace(t, tx, userId, "Maple Street", 10.1)
 			if _, err := tx.PutPlaceVisit(userId, locationVisit(place.ID, "early", 0, 30)); err != nil {
 				t.Fatalf("PutPlaceVisit: %s", err)
 			}
 		}
-		putTrips(t, tx, oldVisitId, travelTrip(*minutesAfterNine(60), travelLeg(*minutesAfterNine(60), 10, "car", 3000)))
-		putTrips(t, tx, builtId, travelTrip(*minutesAfterNine(-60), travelLeg(*minutesAfterNine(-60), 10, "car", 3000)))
-
-		if start, err := tx.GetEarliestTripStart(noTripId); err != nil || start != nil {
-			t.Errorf("no trips, no start: %v %v", start, err)
-		}
-		if start, err := tx.GetEarliestTripStart(oldVisitId); err != nil || start == nil || !start.Equal(*minutesAfterNine(60)) {
-			t.Errorf("the earliest start: %v %v", start, err)
+		rulesChangedAt := time.Now().Add(-time.Hour)
+		if err := tx.MarkTripsBackfilled(oldRulesId, rulesChangedAt.Add(-time.Minute)); err != nil {
+			t.Fatalf("MarkTripsBackfilled: %s", err)
 		}
 		if err := tx.MarkTripsBackfilled(builtId, time.Now()); err != nil {
 			t.Fatalf("MarkTripsBackfilled: %s", err)
 		}
-		listed, err := tx.ListUsersNeedingTripBackfill()
+		listed, err := tx.ListUsersNeedingTripBackfill(rulesChangedAt)
 		if err != nil {
 			t.Fatalf("ListUsersNeedingTripBackfill: %s", err)
 		}
@@ -435,8 +430,8 @@ func TestPeopleWithVisitsBeforeTheirTripsAreListed(t *testing.T) {
 		for _, userId := range listed {
 			has[userId] = true
 		}
-		if !has[noTripId] || !has[oldVisitId] || has[builtId] {
-			t.Errorf("listed %v: want the people not yet backfilled, not the one marked", listed)
+		if !has[neverId] || !has[oldRulesId] || has[builtId] {
+			t.Errorf("listed %v: want the people never backfilled or backfilled under older rules", listed)
 		}
 	})
 }

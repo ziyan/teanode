@@ -144,11 +144,20 @@ const (
 	MinimumMotionCoverage = 0.5
 
 	// The fastest average speeds, in meters a second, of walking (a brisk
-	// walk), cycling and driving. Faster than the last is a plane. Running is
-	// never guessed from speed: it is too close to a fast walk or a slow bike.
+	// walk) and driving, guessed from speed. Faster than driving over less
+	// than MinimumPlaneDistanceMeters is no trip: the visits' times are off,
+	// not the person flying. Running and cycling are never guessed from
+	// speed: with a position every few minutes and visit times that can be
+	// minutes off, an average of a few meters a second is as likely a slow
+	// drive as a ride, so they come from motion activity or a correction.
 	MaximumWalkSpeedMetersPerSecond = 2.2
-	MaximumBikeSpeedMetersPerSecond = 5
 	MaximumCarSpeedMetersPerSecond  = 75
+
+	// MinimumTripDuration is the shortest trip. Visits less than this apart
+	// are neighboring places the phone moved between at once (one visit
+	// ends the second the next begins), and the distance between them over
+	// that time says nothing of how the person went.
+	MinimumTripDuration = time.Minute
 
 	// MinimumPlaneDistanceMeters and MinimumPlaneSpeedMetersPerSecond are the
 	// size of a stretch guessed from speed that is a plane: at least 100
@@ -267,6 +276,9 @@ func visitOrderTime(visit Visit) time.Time {
 
 func buildTrip(from, to Visit, positions []Position, activities []MotionActivity) (Trip, bool) {
 	startedAt, endedAt := *from.DepartedAt, *to.ArrivedAt
+	if endedAt.Sub(startedAt) < MinimumTripDuration {
+		return Trip{}, false
+	}
 	path := buildPath(from, to, positions)
 	totalMeters := path[len(path)-1].cumulativeMeters
 	if totalMeters < MinimumTripDistanceMeters {
@@ -328,7 +340,7 @@ func travelModeOfPath(path []pathPoint) (TravelMode, bool) {
 	if isPlaneStretch(meters, seconds) {
 		return TravelModePlane, true
 	}
-	return travelModeOfSpeed(meters / seconds), true
+	return travelModeOfSpeed(meters / seconds)
 }
 
 // isPlaneStretch reports whether going the meters in the seconds was a flight.
@@ -535,15 +547,14 @@ func absorb(legs []Leg, index int) []Leg {
 	return mergeLegs(legs)
 }
 
-// travelModeOfSpeed guesses the way of travel from an average speed.
-func travelModeOfSpeed(metersPerSecond float64) TravelMode {
+// travelModeOfSpeed guesses the way of travel from an average speed, below
+// a plane's (isPlaneStretch): walk or car, or none when faster than a car.
+func travelModeOfSpeed(metersPerSecond float64) (TravelMode, bool) {
 	switch {
 	case metersPerSecond <= MaximumWalkSpeedMetersPerSecond:
-		return TravelModeWalk
-	case metersPerSecond <= MaximumBikeSpeedMetersPerSecond:
-		return TravelModeBike
+		return TravelModeWalk, true
 	case metersPerSecond <= MaximumCarSpeedMetersPerSecond:
-		return TravelModeCar
+		return TravelModeCar, true
 	}
-	return TravelModePlane
+	return "", false
 }

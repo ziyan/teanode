@@ -110,13 +110,10 @@ type TravelOperation interface {
 	// times of each are read.
 	ListTripsMissingVisit(userId string, limitCount int) ([]*models.Trip, error)
 
-	// GetEarliestTripStart is when the person's first trip started, or nil
-	// when they have none.
-	GetEarliestTripStart(userId string) (*time.Time, error)
-
 	// ListUsersNeedingTripBackfill lists the people with visits whose past
-	// days have not had their trips built (MarkTripsBackfilled).
-	ListUsersNeedingTripBackfill() ([]string, error)
+	// days have not had their trips built (MarkTripsBackfilled), or had them
+	// built before builtBefore, when the rules that build them last changed.
+	ListUsersNeedingTripBackfill(builtBefore time.Time) ([]string, error)
 
 	// MarkTripsBackfilled writes that the person's past days have had their
 	// trips built.
@@ -743,27 +740,12 @@ func (self *transaction) ListTripsMissingVisit(userId string, limitCount int) ([
 	return trips, nil
 }
 
-func (self *transaction) GetEarliestTripStart(userId string) (*time.Time, error) {
-	if userId == "" {
-		return nil, ErrInvalidArguments
-	}
-	var earliest []time.Time
-	if err := self.tx.Raw(`SELECT "started_at" FROM "trip" WHERE "user_id" = ? ORDER BY "started_at" ASC LIMIT 1`, userId).
-		Scan(&earliest).Error; err != nil {
-		return nil, err
-	}
-	if len(earliest) == 0 {
-		return nil, nil
-	}
-	local := earliest[0].In(time.Local)
-	return &local, nil
-}
-
-func (self *transaction) ListUsersNeedingTripBackfill() ([]string, error) {
+func (self *transaction) ListUsersNeedingTripBackfill(builtBefore time.Time) ([]string, error) {
 	var userIds []string
 	if err := self.tx.Raw(`SELECT DISTINCT visit.user_id FROM "place_visit" visit
-		WHERE NOT EXISTS (SELECT 1 FROM "trip_backfill" backfill WHERE backfill.user_id = visit.user_id)
-		ORDER BY visit.user_id`).Scan(&userIds).Error; err != nil {
+		WHERE NOT EXISTS (SELECT 1 FROM "trip_backfill" backfill
+			WHERE backfill.user_id = visit.user_id AND backfill.backfilled_at >= ?)
+		ORDER BY visit.user_id`, builtBefore).Scan(&userIds).Error; err != nil {
 		return nil, err
 	}
 	return userIds, nil
