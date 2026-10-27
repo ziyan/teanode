@@ -345,17 +345,34 @@ func TestAnAnswerThatIsNotAnObjectIsAskedAgain(t *testing.T) {
 	}
 }
 
-// A day read without Health keeps the Health numbers it already had when its
-// numbers are stored again, and its prompt has none of them nor the mood that
-// came from Apple Health; the person's own words are there.
+// A day the agent writes without Health still stores the Health numbers of
+// the person's page, and its prompt has none of them nor the mood that came
+// from Apple Health; the person's own words are there.
 func TestADayWrittenWithoutHealthKeepsItsStoredHealthNumbers(t *testing.T) {
 	fixture := newJournalFixture(t, nil, models.PermissionJournalUse, models.PermissionAgentUse, models.PermissionHealthUse)
 	day := fixture.dayAgo(2)
 	fixture.words(t, day, "Walked to the shop.")
-	zone := journal.Zone(fixture.run.Owner).String()
+	location := journal.Zone(fixture.run.Owner)
+	zone := location.String()
+	midnight, err := time.ParseInLocation("2006-01-02", day, location)
+	if err != nil {
+		t.Fatal(err)
+	}
 	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
-		facts := models.JournalFacts{StepCount: 8200, SleepMinutes: 430, WalkedMeters: 5400, WorkoutMinutes: 35, HealthMoodLevel: 5, HasActivity: true}
-		if err := tx.PutJournalFacts(fixture.run.Owner.ID, day, zone, facts, time.Now()); err != nil {
+		// What the phone sent of the day: the summaries, a walk and a State
+		// of Mind entry.
+		number := func(value float64) *float64 { return &value }
+		if _, err := tx.UpsertHealthDaySummaries(fixture.run.Owner.ID, []*models.HealthDaySummary{
+			{HealthType: "stepCount", SummaryDay: day, QuantityUnit: "count", SumValue: number(8200), SampleCount: 2, WorkedOutAt: time.Now()},
+			{HealthType: "distanceWalkingRunning", SummaryDay: day, QuantityUnit: "m", SumValue: number(5400), SampleCount: 2, WorkedOutAt: time.Now()},
+			{HealthType: "sleepAnalysis", SummaryDay: day, SampleCount: 3, WorkedOutAt: time.Now(), CategorySecondsJSON: `{"asleep":25800,"awake":600}`},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.InsertHealthSamples(fixture.run.Owner.ID, []*models.HealthSample{
+			{HealthSampleID: "walk", HealthType: "workout", StartedAt: midnight.Add(9 * time.Hour), EndedAt: midnight.Add(9*time.Hour + 35*time.Minute), WorkoutActivityType: "walking"},
+			{HealthSampleID: "mood", HealthType: "stateOfMind", StartedAt: midnight.Add(20 * time.Hour), EndedAt: midnight.Add(20 * time.Hour), SampleMetadataJSON: `{"stateOfMindValence":1}`},
+		}); err != nil {
 			t.Fatal(err)
 		}
 		level := 5
