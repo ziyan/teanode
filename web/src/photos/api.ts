@@ -507,6 +507,10 @@ export async function emptyPhotoTrash(): Promise<number> {
 // photo without having the photo in hand.
 export const photoSmallPreviewPath = (photoId: string) => `/api/v1/photos/${encodeURIComponent(photoId)}/previews/small`
 
+// Where the large preview of a photo is read from, for a page that opens a
+// photo in the lightbox without having the photo in hand.
+export const photoLargePreviewPath = (photoId: string) => `/api/v1/photos/${encodeURIComponent(photoId)}/previews/large`
+
 // Where a file of a photo is downloaded from, to save. The server names the
 // download after the file's own name.
 export const photoFilePath = (photoId: string, photoFileRole: PhotoFileRole) =>

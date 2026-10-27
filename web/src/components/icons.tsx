@@ -1348,3 +1348,115 @@ export function CartIcon(props: IconProps) {
     </Icon>
   )
 }
+
+// JournalIcon is a book with a page held open: the Journal.
+export function JournalIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5Z" />
+      <path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" />
+      <path d="M9 7h7M9 11h5" />
+    </Icon>
+  )
+}
+
+// The mouths of the five faces, awful first. They share one face, so the
+// five read as one scale and not as five drawings.
+const MOOD_MOUTHS = [
+  'M8 17s1.5-2.5 4-2.5 4 2.5 4 2.5',
+  'M8.5 16.2s1.3-1.2 3.5-1.2 3.5 1.2 3.5 1.2',
+  'M8.5 15.2h7',
+  'M8.5 14.4s1.3 1.4 3.5 1.4 3.5-1.4 3.5-1.4',
+  'M8 13.8s1.5 2.7 4 2.7 4-2.7 4-2.7',
+]
+
+// MoodIcon is the face for a mood, 1 (awful) to 5 (great). The disc carries a
+// class so the Journal can fill it with the mood's color when it is chosen;
+// outside that it is an outline like the other icons.
+export function MoodIcon({ level, ...props }: IconProps & { level: number }) {
+  const mouth = MOOD_MOUTHS[Math.min(Math.max(Math.round(level), 1), 5) - 1]
+  return (
+    <Icon {...props}>
+      <circle className="journal-mood-disc" cx="12" cy="12" r="9.5" />
+      <path d="M9 9.6h.01M15 9.6h.01" strokeWidth="3" />
+      <path d={mouth} />
+    </Icon>
+  )
+}
+
+// DocumentIcon is a page with lines of text: an ingested document.
+export function DocumentIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 2v6h6M8 13h8M8 17h5" />
+    </Icon>
+  )
+}
+
+// ActivityIcon is a pulse line: steps and workouts.
+export function ActivityIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </Icon>
+  )
+}
+
+// WeatherIcon draws a day's weather by the word the server gives it: clear,
+// partlyCloudy, cloudy, fog, drizzle, rain, snow, showers or thunderstorm. A
+// word it does not know is a cloud.
+export function WeatherIcon({ kind, ...props }: IconProps & { kind: string }) {
+  switch (kind) {
+    case 'clear':
+      return (
+        <Icon {...props}>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </Icon>
+      )
+    case 'partlyCloudy':
+      return (
+        <Icon {...props}>
+          <path d="M12 2v2M4.9 4.9l1.4 1.4M20 12h2M19.1 4.9l-1.4 1.4M15.9 10.4A4 4 0 0 0 8.1 9" />
+          <path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z" />
+        </Icon>
+      )
+    case 'fog':
+      return (
+        <Icon {...props}>
+          <path d="M17.5 14H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9Z" />
+          <path d="M4 18h16M7 22h10" />
+        </Icon>
+      )
+    case 'drizzle':
+    case 'rain':
+    case 'showers':
+      return (
+        <Icon {...props}>
+          <path d="M16 13a4 4 0 0 0-3.9-5A6 6 0 0 0 4 11.5 3.5 3.5 0 0 0 6.5 18H16a2.5 2.5 0 0 0 0-5Z" />
+          <path d="M8 21l1-2M12 21l1-2M16 21l1-2" />
+        </Icon>
+      )
+    case 'snow':
+      return (
+        <Icon {...props}>
+          <path d="M17.5 15H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9Z" />
+          <path d="M8 19h.01M12 21h.01M16 19h.01" strokeWidth="3" />
+        </Icon>
+      )
+    case 'thunderstorm':
+      return (
+        <Icon {...props}>
+          <path d="M17.5 15H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9Z" />
+          <path d="m12.5 11-3 5h4l-3 5" />
+        </Icon>
+      )
+    default:
+      return (
+        <Icon {...props}>
+          <path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9Z" />
+        </Icon>
+      )
+  }
+}

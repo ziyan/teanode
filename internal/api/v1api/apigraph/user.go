@@ -86,6 +86,11 @@ type User struct {
 	Timezone     string `json:"timezone,omitempty"`
 	TimezoneMode string `json:"timezoneMode,omitempty"`
 
+	// MeasurementSystem is the units they read measurements in: "metric"
+	// (degrees Celsius, kilometers), "us" (degrees Fahrenheit, miles), or
+	// empty to follow their language and region
+	MeasurementSystem string `json:"measurementSystem,omitempty"`
+
 	// How they are described: he, she or they; empty until they say
 	Pronoun string `json:"pronoun,omitempty"`
 
@@ -112,19 +117,20 @@ func describeUser(user *models.User) *User {
 		groupIds = []string{}
 	}
 	return &User{
-		ID:           user.ID,
-		Username:     user.Username,
-		Name:         user.Name,
-		Email:        user.Email,
-		DisabledAt:   user.DisabledAt,
-		HasPassword:  user.PasswordHash != "",
-		Locale:       user.Locale,
-		LocaleSeen:   user.LocaleSeen,
-		Timezone:     user.Timezone,
-		TimezoneMode: user.TimezoneMode,
-		Pronoun:      string(user.Pronoun),
-		GroupIDs:     groupIds,
-		CreatedAt:    user.CreatedAt,
+		ID:                user.ID,
+		Username:          user.Username,
+		Name:              user.Name,
+		Email:             user.Email,
+		DisabledAt:        user.DisabledAt,
+		HasPassword:       user.PasswordHash != "",
+		Locale:            user.Locale,
+		LocaleSeen:        user.LocaleSeen,
+		Timezone:          user.Timezone,
+		TimezoneMode:      user.TimezoneMode,
+		MeasurementSystem: user.MeasurementSystem,
+		Pronoun:           string(user.Pronoun),
+		GroupIDs:          groupIds,
+		CreatedAt:         user.CreatedAt,
 
 		AvatarURL:        avatarUrl(user),
 		AvatarColorIndex: avatar.InitialColorIndex(user.ID),
@@ -283,6 +289,12 @@ type UpdateUserArguments struct {
 	Timezone     *string `json:"timezone"`
 	TimezoneMode *string `json:"timezoneMode"`
 
+	// The units they read measurements in: "metric" (degrees Celsius,
+	// kilometers), "us" (degrees Fahrenheit, miles), or empty to follow their
+	// language and region. Only the numbers shown are converted; the server
+	// keeps metric.
+	MeasurementSystem *string `json:"measurementSystem"`
+
 	// How they are described: he, she or they. Empty clears it. It words
 	// their side of a relationship ("son" rather than "child") and how their
 	// agent speaks of them.
@@ -318,6 +330,12 @@ func (self *graph) UpdateUser(ctx context.Context, arguments UpdateUserArguments
 	if arguments.Username != nil {
 		if err := validateUsername(strings.TrimSpace(*arguments.Username)); err != nil {
 			return nil, err
+		}
+	}
+	var measurementSystem string
+	if arguments.MeasurementSystem != nil {
+		if measurementSystem = strings.TrimSpace(*arguments.MeasurementSystem); !models.IsMeasurementSystem(measurementSystem) {
+			return nil, fmt.Errorf("%w: the measurement system is metric or us, or empty to follow your language and region", api.ErrInvalidArguments)
 		}
 	}
 	var pronoun models.Pronoun
@@ -356,6 +374,9 @@ func (self *graph) UpdateUser(ctx context.Context, arguments UpdateUserArguments
 		}
 		if arguments.TimezoneMode != nil {
 			user.TimezoneMode = strings.TrimSpace(*arguments.TimezoneMode)
+		}
+		if arguments.MeasurementSystem != nil {
+			user.MeasurementSystem = measurementSystem
 		}
 		if arguments.Pronoun != nil {
 			user.Pronoun = pronoun

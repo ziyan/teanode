@@ -1,0 +1,12 @@
+DROP INDEX "recording_owner_recorded";
+DROP INDEX "chat_message_chat_created";
+DELETE FROM "role_permission" WHERE "permission_key" = 'journal:use';
+ALTER TABLE "agent_dream" DROP COLUMN "journal_narratives_refused";
+ALTER TABLE "agent_dream" DROP COLUMN "journal_periods_written";
+ALTER TABLE "agent_dream" DROP COLUMN "journal_days_written";
+ALTER TABLE "user" DROP COLUMN "journal_evening_question_time";
+ALTER TABLE "user" DROP COLUMN "is_journal_evening_question_on";
+ALTER TABLE "user" DROP COLUMN "is_journal_weather_on";
+DROP TABLE "journal_link";
+DROP TABLE "journal_period";
+DROP TABLE "journal_day";

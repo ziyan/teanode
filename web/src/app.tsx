@@ -71,6 +71,21 @@ const LocationPage = lazyPage(async () => ({
 const HealthPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "health" */ './pages/health/healthPage')).HealthPage,
 }))
+const JournalTimelinePage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "journal" */ './pages/journal/journalTimeline')).JournalTimelinePage,
+}))
+const JournalDayPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "journal" */ './pages/journal/journalDay')).JournalDayPage,
+}))
+const JournalWeekPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "journal" */ './pages/journal/journalPeriods')).JournalWeekPage,
+}))
+const JournalMonthPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "journal" */ './pages/journal/journalPeriods')).JournalMonthPage,
+}))
+const JournalYearPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "journal" */ './pages/journal/journalPeriods')).JournalYearPage,
+}))
 const PasswordsPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "passwords" */ './pages/passwords/passwordsPage')).PasswordsPage,
 }))
@@ -568,6 +583,13 @@ export function App() {
                       <Route path="/reminders" element={<CalendarPage />} />
                       <Route path="/location" element={<LocationPage />} />
                       <Route path="/health" element={<HealthPage />} />
+                      {/* The journal: the timeline, a day, and the week, month
+                      and year above the days. A day is /journal/YYYY-MM-DD. */}
+                      <Route path="/journal" element={<JournalTimelinePage />} />
+                      <Route path="/journal/week/:day" element={<JournalWeekPage />} />
+                      <Route path="/journal/month/:month" element={<JournalMonthPage />} />
+                      <Route path="/journal/year/:year" element={<JournalYearPage />} />
+                      <Route path="/journal/:day" element={<JournalDayPage />} />
                       <Route
                         path="/passwords"
                         element={

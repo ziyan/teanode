@@ -160,6 +160,10 @@ final class AppModel {
         #endif
         return .all
     }
+    /// The day the Journal opens on, YYYY-MM-DD, from a link such as
+    /// `/journal/2030-01-15` or from the evening question's notification; empty
+    /// opens the list of days. The screen takes it and clears it.
+    var openedJournalDay: String?
     /// What the Health screen opens on, from a link such as `/health` or
     /// `/health?type=stepCount`. The screen takes it and clears it.
     var openedHealthLink: HealthLink?
@@ -320,6 +324,11 @@ final class AppModel {
                 openedFinancePart = part
             }
             openedSection = .finance
+        case "journal":
+            // /journal/YYYY-MM-DD is a day; the pages of a week, a month and a
+            // year open the list.
+            openedJournalDay = segments.count == 2 && JournalDays.isDayText(segments[1]) ? segments[1] : ""
+            openedSection = .journal
         case "passwords":
             // Only the part: an item's address would say which item, and an
             // address is no reason to open one.
@@ -490,6 +499,13 @@ final class AppModel {
     /// accounts: the name and picture it goes by on its server.
     private(set) var accountProfiles: [String: AccountProfile] = [:]
 
+    /// The units the account in use reads measurements in, from its profile;
+    /// automatic until the profile has been read, which follows the phone.
+    var measurementSystem: MeasurementSystem {
+        guard let account else { return .automatic }
+        return accountProfiles[account.accountKey]?.chosenMeasurementSystem ?? .automatic
+    }
+
     /// Reads an account's profile from its own server, through the connection
     /// kept for it, so an account not in use shows its name and picture too.
     func loadProfile(of chosen: Account) async {
@@ -628,6 +644,10 @@ final class AppModel {
     /// at it (the server's health:use), as far as the server has said.
     private(set) var canUseHealth = false
 
+    /// Whether the account may keep a journal (the server's journal:use), as
+    /// far as the server has said.
+    private(set) var canUseJournal = false
+
     /// Whether the account may keep passwords, passkeys, cards and notes (the
     /// server's passwords:use), as far as the server has said.
     private(set) var canUsePasswords = false
@@ -656,6 +676,7 @@ final class AppModel {
         if let session {
             canUseLocation = session.holds("location:use")
             canUseHealth = session.holds("health:use")
+            canUseJournal = session.holds("journal:use")
             canUsePasswords = session.holds("passwords:use")
             canUseShopping = session.holds("shopping:use")
             hasReadPermissions = true
@@ -697,6 +718,7 @@ final class AppModel {
                 connection = Connection(account: DemoServer.account, transport: transport)
                 canUseLocation = true
                 canUseHealth = true
+                canUseJournal = true
                 canUsePasswords = true
                 canUseShopping = true
                 hasReadPermissions = true
@@ -725,6 +747,7 @@ final class AppModel {
         canChat = false
         canUseLocation = false
         canUseHealth = false
+        canUseJournal = false
         canUsePasswords = false
         canUseShopping = false
         hasReadPermissions = false
@@ -754,6 +777,9 @@ final class AppModel {
         connection = otherConnections.removeValue(forKey: account.accountKey) ?? Connection(account: account, transport: transport, store: store)
         accounts = (try? store.accounts().accounts) ?? [account]
         if let connection { RecordingUploads.shared.activate(connection: connection) }
+        // The journal writes its temperatures and distances in the units in
+        // the profile, which no screen reads until the account list is open.
+        Task { await loadProfile(of: account) }
         // The widgets read the account in use; one that changed is read again.
         if isChanged { WidgetCenter.shared.reloadAllTimelines() }
         // What the phone noticed belongs to the account that was in use.
@@ -1033,6 +1059,10 @@ final class AppModel {
                     openedCodingTarget = CodingTarget(computer: info.computer, paneId: info.paneId)
                 }
                 openedSection = .coding
+            } else if info.notificationKind == NotificationCategories.journalEveningQuestion {
+                // The evening question: the day it asks about, in the Journal.
+                openedJournalDay = info.journalDay
+                openedSection = .journal
             } else if !info.conversationId.isEmpty {
                 openedConversationId = info.conversationId
             }
@@ -1052,6 +1082,12 @@ final class AppModel {
                     _ = try await notifyingConnection.ask(text, in: info.conversationId.isEmpty ? nil : info.conversationId, drawerId: drawerId)
                 }
             default:
+                if info.notificationKind == NotificationCategories.journalEveningQuestion {
+                    // One of the five faces of the evening question.
+                    guard let moodLevel = NotificationCategories.journalMoodLevel(forAction: pressed.actionIdentifier), JournalDays.isDayText(info.journalDay) else { return }
+                    try await notifyingConnection.setJournalMood(day: info.journalDay, moodLevel: moodLevel)
+                    return
+                }
                 guard let answer = info.answers[pressed.actionIdentifier] else { return }
                 try await notifyingConnection.answerQuestion(runId: info.runId, callId: info.callId, answer: answer)
             }
@@ -1059,6 +1095,8 @@ final class AppModel {
             // A reply to a person in a chat went to the chat, not to the agent.
             if info.notificationKind == "chat" {
                 await tell(String(localized: "That did not reach the chat: \(describe(error))"))
+            } else if info.notificationKind == NotificationCategories.journalEveningQuestion {
+                await tell(String(localized: "That did not reach your journal: \(describe(error))"))
             } else {
                 await tell(String(localized: "That did not reach your agent: \(describe(error))"))
             }
@@ -1302,6 +1340,7 @@ extension AppModel {
         case .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
         case .location: return canUseLocation
         case .health: return canUseHealth
+        case .journal: return canUseJournal
         case .passwords: return canUsePasswords
         case .shopping: return canUseShopping
         case .coding: return services.isAssistantEnabled && hasCodingComputers

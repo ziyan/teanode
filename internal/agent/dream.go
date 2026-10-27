@@ -185,6 +185,9 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	// it and never leave a minute for them. What it opens gets its
 	// passages tonight and is read like anything else tomorrow.
 	self.dreamAttachments(ctx, run, budget)
+	// The journal's narratives before the timeline, whose month pages are
+	// written from the journal's months (see dreamTimeline).
+	self.dreamJournal(ctx, run, record, budget)
 	self.dreamTimeline(ctx, run, record, budget)
 	// Half of what is left, so the phases after it still run.
 	budget.consolidateUntil = halfway(ctx, time.Now())
