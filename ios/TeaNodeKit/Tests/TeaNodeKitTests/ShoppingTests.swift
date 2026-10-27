@@ -162,6 +162,36 @@ final class ShoppingTests: XCTestCase {
         XCTAssertEqual(variables["shoppingItemStates"], .array([.string("needed"), .string("in_cart")]))
     }
 
+    func testAStoreKeyKeepsLettersOneScalarAtATime() {
+        XCTAssertEqual(ShoppingStoreKey.key(of: "Example Market #12"), "examplemarket12")
+        // A combining accent is a mark, not a letter, as on the server.
+        XCTAssertEqual(ShoppingStoreKey.key(of: "Cafe\u{301} Corner"), "cafecorner")
+        XCTAssertEqual(ShoppingStoreKey.key(of: "Café Corner"), "cafécorner")
+        // A voiced kana mark written apart is dropped; the kana stays.
+        XCTAssertEqual(ShoppingStoreKey.key(of: "\u{30AB}\u{3099}"), "\u{30AB}")
+    }
+
+    func testAWholeListIsReadPageByPage() async throws {
+        let pages = [
+            [itemJSON("item-1", "Apples"), itemJSON("item-2", "Bread")].joined(separator: ","),
+            itemJSON("item-3", "Soup"),
+        ]
+        let fake = FakeServer { request in
+            let body = try? JSONDecoder().decode([String: JSONValue].self, from: request.httpBody ?? Data())
+            guard case .object(let variables) = body?["variables"], case .number(let offset) = variables["offset"] else { return (400, "") }
+            let items = offset == 0 ? pages[0] : pages[1]
+            return (200, #"{"data":{"GetShoppingList":{"totalCount":3,"shoppingList":{"id":"list-1","listName":"Groceries"},"#
+                + #""shoppingItems":[\#(items)],"shoppingTrips":[]}}}"#)
+        }
+        let account = Account(
+            server: server, clientId: "a-client", accessToken: "tnt_a", refreshToken: "", expiresAt: Date().addingTimeInterval(30 * 86400),
+            username: "robin")
+        let page = try await Connection(account: account, transport: fake).wholeShoppingList(shoppingListId: "list-1", pageSize: 2)
+        XCTAssertEqual(page.shoppingItems.map(\.itemDescription), ["Apples", "Bread", "Soup"])
+        XCTAssertEqual(fake.sent.count, 2)
+        XCTAssertEqual(try sentVariables(fake.sent[1])["offset"], .number(2))
+    }
+
     func testTheStoreViewDecodesItsListsAndWhoIsShopping() throws {
         let json = #"""
             {"storeName":"Example Market","isReminded":false,

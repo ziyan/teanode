@@ -424,6 +424,25 @@ func (self *graph) shoppingPerson(ctx context.Context) (*models.User, error) {
 	return principal.User, nil
 }
 
+// shoppingAgentPerson is the shopping person and their agent, for the
+// operations the model does for them (reading a list, finding a picture,
+// matching a receipt): those spend the server's model budget, so they need
+// agent:use and an agent that is on and not switched off by an operator.
+func (self *graph) shoppingAgentPerson(ctx context.Context, needed string) (*models.User, *models.Agent, error) {
+	user, err := self.shoppingPerson(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	_, owner, err := self.requireAgentPerson(ctx)
+	if errors.Is(err, agent.ErrUnavailable) {
+		return nil, nil, fmt.Errorf("%w: %s needs your agent; turn it on first", api.ErrInvalidArguments, needed)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return user, owner, nil
+}
+
 // announceShopping tells the instances, once the change is committed, that
 // these lists changed, and that they no longer reach endedFor.
 func (self *graph) announceShopping(tx db.Transaction, shoppingListIds []string, endedForUserIds ...string) {
@@ -723,22 +742,17 @@ func (self *graph) PreviewShoppingImport(ctx context.Context, arguments PreviewS
 	var owner *models.Agent
 	shoppingListId := strings.TrimSpace(arguments.ShoppingListID)
 	if err := self.readInPhase(ctx, func(phaseContext context.Context) (err error) {
-		if user, err = self.shoppingPerson(phaseContext); err != nil {
+		if user, owner, err = self.shoppingAgentPerson(phaseContext, "reading a list"); err != nil {
 			return err
 		}
-		tx := self.transaction(phaseContext)
 		if shoppingListId != "" {
-			if _, err := tx.GetShoppingListAccess(user.ID, shoppingListId); err != nil {
+			if _, err := self.transaction(phaseContext).GetShoppingListAccess(user.ID, shoppingListId); err != nil {
 				return translateError(err)
 			}
 		}
-		owner, err = tx.GetAgentByUser(user.ID)
-		return err
+		return nil
 	}); err != nil {
 		return nil, err
-	}
-	if owner == nil {
-		return nil, fmt.Errorf("%w: reading a list needs your agent; set it up first", api.ErrInvalidArguments)
 	}
 	read, err := worker.ReadShoppingList(ctx, owner, user, arguments.ImportText, arguments.AgentAttachmentIDs)
 	if errors.Is(err, agent.ErrUnavailable) {
@@ -1002,15 +1016,17 @@ func (self *graph) AddShoppingItems(ctx context.Context, arguments AddShoppingIt
 	views := make([]*ShoppingItemAddedView, 0, len(stored))
 	queuedCount := 0
 	worker := self.agentWorker()
+	// The pictures are searched on the person's agent, only when they may use
+	// it and it is on, since each search spends the server's model budget.
 	var owner *models.Agent
-	if worker != nil {
+	if principal := api.ContextPrincipal(ctx); worker != nil && principal != nil && principal.Permissions.Has(models.PermissionAgentUse) {
 		if owner, err = tx.GetAgentByUser(user.ID); err != nil {
 			return nil, err
 		}
 	}
 	for index, item := range stored {
 		views = append(views, &ShoppingItemAddedView{ShoppingItem: withPicturePath(item), IsMerged: isMerged[index]})
-		if worker != nil && owner != nil && owner.Enabled && item.PictureFileID == "" && item.PictureSearchedAt == nil && queuedCount < shoppingPicturesQueuedMost {
+		if worker != nil && owner.Active() && item.PictureFileID == "" && item.PictureSearchedAt == nil && queuedCount < shoppingPicturesQueuedMost {
 			if err := worker.QueueShoppingPicture(tx, owner.ID, item.ID); err != nil {
 				return nil, err
 			}
@@ -1076,9 +1092,9 @@ func (self *graph) CheckShoppingItem(ctx context.Context, arguments CheckShoppin
 		return nil, err
 	}
 	tx := self.transaction(ctx)
-	item, startedTrip, err := tx.CheckShoppingItem(user.ID, arguments.ShoppingItemID, arguments.IsChecked, arguments.StoreName)
+	item, startedTrip, changedListIds, err := tx.CheckShoppingItem(user.ID, arguments.ShoppingItemID, arguments.IsChecked, arguments.StoreName)
 	if err == nil && startedTrip != nil {
-		self.announceShopping(tx, startedTrip.ShoppingListIDs)
+		self.announceShopping(tx, uniqueShoppingListIds(startedTrip.ShoppingListIDs, changedListIds))
 		if notifier := self.phoneNotifier(); notifier != nil {
 			detached := context.WithoutCancel(ctx)
 			tx.AfterCommit(func() { notifier.NotifyShoppingStarted(detached, user, startedTrip) })
@@ -1129,7 +1145,7 @@ func (self *graph) RecordShoppingItemPrice(ctx context.Context, arguments Record
 }
 
 func (self *graph) FindShoppingItemPicture(ctx context.Context, arguments ShoppingItemArguments) (bool, error) {
-	user, err := self.shoppingPerson(ctx)
+	user, owner, err := self.shoppingAgentPerson(ctx, "finding a picture")
 	if err != nil {
 		return false, err
 	}
@@ -1144,13 +1160,6 @@ func (self *graph) FindShoppingItemPicture(ctx context.Context, arguments Shoppi
 	}
 	if item.PictureSource == models.ShoppingPictureSourceUpload {
 		return false, fmt.Errorf("%w: the item has a picture somebody gave it; remove that picture first to find one on the web", api.ErrInvalidArguments)
-	}
-	owner, err := tx.GetAgentByUser(user.ID)
-	if err != nil {
-		return false, err
-	}
-	if owner == nil || !owner.Enabled {
-		return false, fmt.Errorf("%w: finding a picture needs your agent; turn it on first", api.ErrInvalidArguments)
 	}
 	if err := worker.QueueShoppingPicture(tx, owner.ID, item.ID); err != nil {
 		return false, err
@@ -1247,7 +1256,7 @@ func (self *graph) FinishShopping(ctx context.Context, arguments FinishShoppingA
 }
 
 func (self *graph) MatchShoppingReceipt(ctx context.Context, arguments ShoppingReceiptArguments) (bool, error) {
-	user, err := self.shoppingPerson(ctx)
+	_, owner, err := self.shoppingAgentPerson(ctx, "matching a receipt")
 	if err != nil {
 		return false, err
 	}
@@ -1256,13 +1265,6 @@ func (self *graph) MatchShoppingReceipt(ctx context.Context, arguments ShoppingR
 		return false, fmt.Errorf("%w: matching a receipt needs the agent, which this server does not run", api.ErrInvalidArguments)
 	}
 	tx := self.transaction(ctx)
-	owner, err := tx.GetAgentByUser(user.ID)
-	if err != nil {
-		return false, err
-	}
-	if owner == nil {
-		return false, api.ErrNotFound
-	}
 	receipt, err := tx.GetFinanceReceipt(owner.ID, arguments.FinanceReceiptID)
 	if err != nil {
 		return false, translateError(err)

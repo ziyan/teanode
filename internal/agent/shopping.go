@@ -57,7 +57,7 @@ type shoppingMatchAnswer struct {
 
 // runMatchShopping is the handler for a receipt's shopping match job.
 func (self *Agent) runMatchShopping(ctx context.Context, run *Run) error {
-	if !self.canThink(run.Configuration()) || self.settings.Registry == nil {
+	if !run.Agent.Active() || !self.canThink(run.Configuration()) || self.settings.Registry == nil {
 		return nil
 	}
 	var receipt *models.FinanceReceipt
@@ -190,6 +190,11 @@ func shoppingPictureQuery(item *models.ShoppingItem) string {
 
 // runShoppingPicture is the handler for an item's picture job.
 func (self *Agent) runShoppingPicture(ctx context.Context, run *Run) error {
+	// An agent switched off since the job was queued spends nothing; the item
+	// stays unsearched, so turning it back on finds the picture then.
+	if !run.Agent.Active() {
+		return nil
+	}
 	var item *models.ShoppingItem
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		item, err = tx.GetShoppingItem(run.Owner.ID, run.Job.SubjectID)

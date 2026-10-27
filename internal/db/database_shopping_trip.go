@@ -284,19 +284,18 @@ func (self *transaction) finishOwnShopping(userId string) (*models.ShoppingTrip,
 // its items in the cart: their open trip gains the list when it does not
 // name it already, and a person with none open (or only one left open long
 // enough to be stale) starts one, which is answered so the others are told.
-func (self *transaction) joinShoppingTrip(userId, storeName, shoppingListId string) (*models.ShoppingTrip, error) {
+func (self *transaction) joinShoppingTrip(userId, storeName, shoppingListId string) (*models.ShoppingTrip, []string, error) {
 	var open shoppingTripModel
 	isFound, err := findOneRow(self.tx.Where("\"user_id\" = ? AND \"finished_at\" IS NULL AND \"started_at\" >= ?",
 		userId, time.Now().Add(-models.ShoppingTripStaleAfter)).Order("\"started_at\" DESC"), &open)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if isFound {
-		return nil, self.tx.Clauses(clause.OnConflict{DoNothing: true}).
+		return nil, nil, self.tx.Clauses(clause.OnConflict{DoNothing: true}).
 			Create(&shoppingTripListModel{ShoppingTripID: open.ID, ShoppingListID: shoppingListId}).Error
 	}
-	trip, _, err := self.StartShoppingTrip(userId, storeName, []string{shoppingListId})
-	return trip, err
+	return self.StartShoppingTrip(userId, storeName, []string{shoppingListId})
 }
 
 func (self *transaction) ListOpenShoppingTrips(userId string) ([]*models.ShoppingTrip, error) {

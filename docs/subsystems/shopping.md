@@ -16,7 +16,10 @@ is what every client uses: the dashboard (`web/src/pages/shopping/`), the
 iPhone app, the command line (`teanode shopping`) and the agent's `shopping`
 tool. `internal/agent/shopping.go` holds the two jobs (matching a receipt,
 finding a picture) and the reading of a pasted or photographed list;
-`internal/agent/shopping_notify.go` the two notifications.
+`internal/agent/shopping_notify.go` the two notifications. Those three spend
+the server's model budget, so they need `agent:use` and an agent that is on
+and not switched off by an operator; a job queued before it was switched off
+does nothing.
 
 ## Lists, items and their states
 
@@ -80,8 +83,9 @@ the notice at the store, starts nothing. `StartShopping` still opens a trip by
 hand, for the command line and the agent. `FinishShopping` is Done: it buys
 what the shopper put in the cart on every list they reach, with no receipt
 needed, and with no trip named it ends the person's own trip, or buys their
-cart when none is open. An item in another person's cart stays in theirs, and
-checking it again does not take it over.
+cart when none is open. An item in another person's cart stays in theirs:
+checking it again does not take it over, and unchecking it (from a screen that
+is behind) leaves it there. Unchecking an item already bought leaves it bought.
 
 The dashboard draws Shopping as the mailbox is drawn: the lists and the stores
 in the column, the open list, store or receipt in the pane, one at a time on a
