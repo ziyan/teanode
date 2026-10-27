@@ -7882,7 +7882,7 @@ export const ja: Catalog = {
   'journal.somethingWrong': '間違いがありますか？',
   'journal.removeStory': 'この物語を削除',
   'journal.removeStoryTitle': 'この物語を削除しますか？',
-  'journal.removeStoryBody': '物語を削除し、カードは空になります。あなたの訂正は残り、次のドリームで TeaNode が新しい物語を書きます。',
+  'journal.removeStoryBody': '物語を削除し、TeaNode がそのために選んだもの（「選択済み」の印が付いた記録）も一緒に削除します。あなたの訂正とピン留めは残り、次のドリームで TeaNode が新しい物語を書き、選び直します。',
   'journal.storyRemoved': '物語を削除しました',
   'journal.removeStoryFailed': '物語を削除できませんでした。',
   'journal.yourCorrection': 'あなたの訂正：',

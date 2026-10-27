@@ -7575,7 +7575,7 @@ export const zh: Catalog = {
   'journal.somethingWrong': '有不对的地方？',
   'journal.removeStory': '移除这篇故事',
   'journal.removeStoryTitle': '移除这篇故事？',
-  'journal.removeStoryBody': '这篇故事会被移除，卡片变为空白。你的更正会保留，TeaNode 会在之后的梦境运行时重新撰写一篇。',
+  'journal.removeStoryBody': '这篇故事会被移除，TeaNode 为它挑选的内容（标记为“已挑选”的记录）也会一起移除。你的更正和你固定的内容会保留，TeaNode 会在之后的梦境运行时重新撰写并重新挑选。',
   'journal.storyRemoved': '故事已移除',
   'journal.removeStoryFailed': '无法移除故事。',
   'journal.yourCorrection': '你的更正：',

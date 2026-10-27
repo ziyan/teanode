@@ -7940,7 +7940,7 @@ export const en = {
   'journal.removeStory': 'Remove this story',
   'journal.removeStoryTitle': 'Remove this story?',
   'journal.removeStoryBody':
-    'The story is taken away and the card goes empty. Your corrections are kept, and TeaNode writes a new story in a later dream.',
+    'The story goes, and with it what TeaNode chose for it, the records marked Chosen. Your corrections and your pins are kept, and TeaNode writes a new story, and chooses again, in a later dream.',
   'journal.storyRemoved': 'Story removed',
   'journal.removeStoryFailed': 'Could not remove the story.',
   'journal.yourCorrection': 'Your correction:',

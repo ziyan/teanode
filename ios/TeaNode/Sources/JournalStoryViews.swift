@@ -130,7 +130,7 @@ struct JournalNarrativeRows: View {
             .confirmationDialog("Remove this story?", isPresented: $isConfirmingRemoval, titleVisibility: .visible) {
                 Button("Remove", role: .destructive, action: removeStory)
             } message: {
-                Text("TeaNode writes a new one in a later dream. Your corrections are kept.")
+                Text("What TeaNode chose for it goes too. Your corrections and pins are kept, and TeaNode writes a new one, and chooses again, in a later dream.")
             }
         }
     }

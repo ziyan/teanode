@@ -198,7 +198,7 @@ it('asks before removing a day story, then removes it and shows the empty card',
   expect(await screen.findByText('You picked up groceries.')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Remove this story' }))
   const dialog = await screen.findByRole('alertdialog', { name: 'Remove this story?' })
-  expect(within(dialog).getByText(/TeaNode writes a new story in a later dream/)).toBeTruthy()
+  expect(within(dialog).getByText(/what TeaNode chose for it, the records marked Chosen/)).toBeTruthy()
   // Nothing is sent until the person confirms.
   expect(calls('DeleteJournalNarrative')).toHaveLength(0)
   fireEvent.click(within(dialog).getByRole('button', { name: 'Remove this story' }))

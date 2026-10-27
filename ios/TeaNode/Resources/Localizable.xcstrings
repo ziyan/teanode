@@ -91107,22 +91107,6 @@
         }
       }
     },
-    "TeaNode writes a new one in a later dream. Your corrections are kept.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "次のドリームで TeaNode が新しいストーリーを書きます。あなたの訂正は残ります。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "TeaNode 会在之后的某次梦境中重新撰写一个。你的更正会保留。"
-          }
-        }
-      }
-    },
     "Could not remove the story.": {
       "localizations": {
         "ja": {
@@ -91679,6 +91663,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "区分步行、跑步、骑行和驾车，让到访之间的行程显示是怎么到达的。没有它，出行方式只能根据速度推测。"
+          }
+        }
+      }
+    },
+    "What TeaNode chose for it goes too. Your corrections and pins are kept, and TeaNode writes a new one, and chooses again, in a later dream.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode がそのために選んだものも削除されます。あなたの訂正とピンは残り、次のドリームで TeaNode が新しいストーリーを書き、選び直します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 为它挑选的内容也会一起移除。你的更正和固定的内容会保留，TeaNode 会在之后的某次梦境中重新撰写并重新挑选。"
           }
         }
       }
