@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"time"
 
+	"gorm.io/gorm/clause"
+
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -61,6 +63,15 @@ func (self *transaction) NormalizePlaceVisits(userId string, from, until time.Ti
 	visits, err := self.visitsAround(userId, windowStart, windowEnd)
 	if err != nil {
 		return err
+	}
+	isMoved, err := self.moveLateDepartures(userId, visits)
+	if err != nil {
+		return err
+	}
+	if isMoved {
+		if visits, err = self.visitsAround(userId, windowStart, windowEnd); err != nil {
+			return err
+		}
 	}
 	now := time.Now()
 	for index := range visits {
@@ -121,6 +132,75 @@ func (self *transaction) NormalizePlaceVisits(userId string, from, until time.Ti
 		}
 	}
 	return nil
+}
+
+// moveLateDepartures moves each departure from a watched place stored with no
+// arrival that the phone noticed while the person was at another place, by a
+// visit there that began before the departure and had not ended by it, and
+// says whether it moved any. iOS can tell of leaving a watched place an hour
+// or more after the person left it. The phone sends such a departure only
+// after its arrival, so one stored without it will not get one: the arrival
+// was refused or taken out since. The person had left by the time the other
+// visit began. When their visit before that one was to the same place, the
+// departure is that visit's own, noticed late, and its key goes to that visit
+// so that the phone sending it again finds it; otherwise the departure moves
+// to when the other visit began. A departure iOS visit monitoring reported
+// with no arrival is left alone, since its arrival may still come.
+func (self *transaction) moveLateDepartures(userId string, visits []placeVisitModel) (bool, error) {
+	isMoved := false
+	now := time.Now()
+	for index := range visits {
+		departure := &visits[index]
+		if departure.ArrivedAt != nil || departure.DepartedAt == nil || departure.VisitSource != string(models.VisitSourceRegion) {
+			continue
+		}
+		var around *placeVisitModel
+		for otherIndex := range visits {
+			other := &visits[otherIndex]
+			if other.PlaceID == departure.PlaceID || other.ArrivedAt == nil || !other.ArrivedAt.Before(*departure.DepartedAt) ||
+				(other.DepartedAt != nil && !other.DepartedAt.After(*departure.DepartedAt)) {
+				continue
+			}
+			if around == nil || other.ArrivedAt.After(*around.ArrivedAt) {
+				around = other
+			}
+		}
+		if around == nil {
+			continue
+		}
+		leftBy := *around.ArrivedAt
+		var previous []placeVisitModel
+		if err := self.tx.Where("\"user_id\" = ? AND \"id\" NOT IN ? AND \"arrived_at\" IS NOT NULL AND \"arrived_at\" < ?",
+			userId, []string{departure.ID, around.ID}, leftBy).
+			Order("\"arrived_at\" DESC, \"created_at\" DESC, \"id\" DESC").Limit(1).Find(&previous).Error; err != nil {
+			return false, err
+		}
+		if len(previous) == 0 || previous[0].PlaceID != departure.PlaceID {
+			if err := self.tx.Model(&placeVisitModel{}).Where("\"id\" = ?", departure.ID).
+				Updates(map[string]any{"departed_at": leftBy, "updated_at": now}).Error; err != nil {
+				return false, err
+			}
+			isMoved = true
+			continue
+		}
+		owner := &previous[0]
+		if err := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&placeVisitKeyModel{
+			UserID: userId, ClientVisitKey: departure.ClientVisitKey, PlaceVisitID: owner.ID,
+		}).Error; err != nil {
+			return false, err
+		}
+		if err := self.tx.Where("\"id\" = ?", departure.ID).Delete(&placeVisitModel{}).Error; err != nil {
+			return false, err
+		}
+		if owner.DepartedAt == nil || owner.DepartedAt.After(leftBy) {
+			if err := self.tx.Model(&placeVisitModel{}).Where("\"id\" = ?", owner.ID).
+				Updates(map[string]any{"departed_at": leftBy, "updated_at": now}).Error; err != nil {
+				return false, err
+			}
+		}
+		isMoved = true
+	}
+	return isMoved, nil
 }
 
 // splitOneOverlappedVisit splits the first visit, in the order they began,
@@ -286,16 +366,27 @@ type VisitRange struct {
 
 func (self *transaction) ListOverlappedVisitRanges(since time.Time) ([]VisitRange, error) {
 	var ranges []VisitRange
-	if err := self.tx.Raw(`SELECT earlier.user_id,
-			min(earlier.arrived_at) AS range_from,
-			max(COALESCE(later.departed_at, later.arrived_at)) AS range_until
-		FROM "place_visit" earlier
-		JOIN "place_visit" later ON later.user_id = earlier.user_id AND later.place_id <> earlier.place_id
-		WHERE earlier.arrived_at IS NOT NULL AND earlier.arrived_at >= @since
-		  AND later.arrived_at > earlier.arrived_at
-		  AND (earlier.departed_at IS NULL OR later.arrived_at < earlier.departed_at)
-		GROUP BY earlier.user_id
-		ORDER BY earlier.user_id`, sql.Named("since", since)).Scan(&ranges).Error; err != nil {
+	// A departure from a watched place with no arrival, inside a visit at
+	// another place, counts too.
+	if err := self.tx.Raw(`SELECT overlapped.user_id, min(overlapped.range_from) AS range_from, max(overlapped.range_until) AS range_until
+		FROM (
+			SELECT earlier.user_id, earlier.arrived_at AS range_from, COALESCE(later.departed_at, later.arrived_at) AS range_until
+			FROM "place_visit" earlier
+			JOIN "place_visit" later ON later.user_id = earlier.user_id AND later.place_id <> earlier.place_id
+			WHERE earlier.arrived_at IS NOT NULL AND earlier.arrived_at >= @since
+			  AND later.arrived_at > earlier.arrived_at
+			  AND (earlier.departed_at IS NULL OR later.arrived_at < earlier.departed_at)
+			UNION ALL
+			SELECT around.user_id, around.arrived_at AS range_from, COALESCE(around.departed_at, departure.departed_at) AS range_until
+			FROM "place_visit" around
+			JOIN "place_visit" departure ON departure.user_id = around.user_id AND departure.place_id <> around.place_id
+			WHERE around.arrived_at IS NOT NULL AND around.arrived_at >= @since
+			  AND departure.arrived_at IS NULL AND departure.visit_source = @region
+			  AND departure.departed_at > around.arrived_at
+			  AND (around.departed_at IS NULL OR departure.departed_at < around.departed_at)
+		) overlapped
+		GROUP BY overlapped.user_id
+		ORDER BY overlapped.user_id`, sql.Named("since", since), sql.Named("region", string(models.VisitSourceRegion))).Scan(&ranges).Error; err != nil {
 		return nil, err
 	}
 	return ranges, nil
