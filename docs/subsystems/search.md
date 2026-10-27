@@ -13,24 +13,42 @@ text search to reuse, and events live in CalDAV objects.
 ## The dashboard's box
 
 The box at the top of the rail (`SidebarSearch`), focused by Control-K or
-Command-K, does two things with the words. As they are typed it offers the
-dashboard's pages whose name has them in it (like Spotlight), and its last row
-searches everything for them. Enter runs the highlighted row: a page is opened,
-the search row opens `/search?q=` with the words.
+Command-K, does two things with the words. As they are typed it offers places
+in the dashboard whose name has them in it (like Spotlight), and its last row
+searches everything for them. Enter runs the highlighted row: a place is
+opened, the search row opens `/search?q=` with the words.
 
-The pages come from `navigablePages` in `components/sidebar.tsx`, which reads
-the rail's own lists and the rule the rail draws a row by (`isItemShown`), so
-the box never offers a page the rail, the account menu or the management side
-would hide: the feature pages, the account's settings, Circles and Sharing, and
-the management pages the person may open. A page is matched by its name in the
-reader's language and by its English name, best match first: the name starts
-with the words, then a word of it does, then the words are somewhere inside
-it; six pages at most.
+The places are three kinds, in this order:
 
-When the top page's name starts with what was typed, the rest of the name is
-shown selected after the words ("jo" shows "journal" with "urnal" selected).
-The next letter replaces it, Backspace removes it, and Tab or the right arrow
-takes it. Escape closes the list, and a second Escape leaves the box.
+- Pages, from `navigablePages` in `components/sidebar.tsx`, which reads the
+  rail's own lists and the rule the rail draws a row by (`isItemShown`), so the
+  box never offers a page the rail, the account menu or the management side
+  would hide: the feature pages, the account's settings, Circles and Sharing,
+  and the management pages the person may open.
+- Tabs of those pages, shown as "Location › Travel". Every page with tabs
+  takes its tabs from `pageTabs.ts` (the page draws its row of tabs from the
+  same list), with the permission or service each tab needs and how the page
+  puts the tab in the address: a `?tab=` or `?view=` parameter, or the end of
+  the path. A tab is the page's own address when it is the one the page opens
+  on. A tab of a page the person may not open is not offered, and neither is a
+  tab behind a permission or service they lack.
+- Folders of the person's current mailbox, shown as "Mailbox › Archive", from
+  the folders the rail was given (`/mailbox/<folder id>`), a system folder
+  under its translated name.
+
+A page is matched by its name in the reader's language and by its English
+name, best match first: the name starts with the words, then a word of it
+does. Letters inside a word never match, so a name typed to be searched for
+does not jump to a page. A tab or a folder is matched by its own name
+("travel"), or by the start of its page's name and then the start of its own
+("loc tr", "journal set", "mail arch"). Pages come before tabs and folders,
+which share one order, and eight rows are offered at most before the last.
+
+When the top row is a page and its name starts with what was typed, the rest of
+the name is shown selected after the words ("jo" shows "journal" with "urnal"
+selected). A tab or a folder is never completed. The next letter replaces the
+offered letters, Backspace removes them, and Tab or the right arrow takes them.
+Escape closes the list, and a second Escape leaves the box.
 
 ## The areas
 

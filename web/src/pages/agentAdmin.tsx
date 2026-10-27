@@ -15,7 +15,8 @@ import { AGENT_PARTS, AgentPart } from './settings/agentParts'
 import { IntegrationsSection } from './settings/integrations'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
-import { Key, useTranslation } from '../i18n/i18n'
+import { useTranslation } from '../i18n/i18n'
+import { AGENT_ADMIN_TABS, shownTabs } from '../pageTabs'
 import { Select } from '../components/select'
 import { hasPermission, useSession } from '../session'
 
@@ -95,34 +96,16 @@ function total(totals: UsageRow['totals']): number {
   return totals.promptTokens + totals.completionTokens + totals.cacheReadTokens + totals.cacheWriteTokens + totals.audioInputTokens
 }
 
-// The tabs of /manage/agent. Everyone's agents and their limits, what they cost,
-// every run any of them made, and the jobs given up on: four subjects that
-// were one long page under the server's tabs.
-const AGENT_TABS: { id: string; label: Key }[] = [
-  { id: 'general', label: 'agentAdmin.tabGeneral' },
-  { id: 'usage', label: 'agentAdmin.tabUsage' },
-  { id: 'runs', label: 'agentAdmin.tabRuns' },
-  { id: 'models', label: 'agentAdmin.tabModels' },
-  { id: 'tools', label: 'agentAdmin.tabTools' },
-  { id: 'skills', label: 'agentAdmin.tabSkills' },
-  { id: 'sources', label: 'agentAdmin.tabSources' },
-]
-
 export function AgentAdminPage() {
   const { t } = useTranslation()
   const toast = useToast()
   const { tab } = useParams()
   const navigate = useNavigate()
   const session = useSession()
-  // Runs are content, and so are behind agent:act rather than the audit
-  // permission the rest of the page needs.
-  // The settings are the operator's, behind server:manage as the rest
-  // of the server's are.
-  const tabs = AGENT_TABS.filter(
-    (candidate) =>
-      (candidate.id !== 'runs' || hasPermission(session.permissions, 'agent:act')) &&
-      (!AGENT_PARTS.includes(candidate.id as AgentPart) || hasPermission(session.permissions, 'server:manage')),
-  )
+  // The tabs of /manage/agent are in pageTabs.ts: everyone's agents and their
+  // limits, what they cost, every run any of them made, and the jobs given up
+  // on. Runs are behind agent:act and the settings behind server:manage.
+  const tabs = shownTabs(AGENT_ADMIN_TABS, { hasPermission: (key) => hasPermission(session.permissions, key) })
   // The job whose runs the Runs tab is narrowed to, from a job given up
   // on: what it tried is the way to see why it failed.
   const [jobRuns, setJobRuns] = useState<string | null>(null)

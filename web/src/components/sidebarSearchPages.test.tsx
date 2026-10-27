@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 
-import type { ServiceCapabilities } from '../api'
+import type { MailboxFolder, ServiceCapabilities } from '../api'
 import { loadCatalog, TranslationProvider } from '../i18n/i18n'
 import { navigablePages } from './sidebar'
 import { SidebarSearch } from './sidebarSearch'
@@ -26,7 +26,11 @@ function Where() {
 }
 
 // The box of a person who holds the given permissions and has a mailbox.
-function renderBox(permissions: string[] = ['journal:use', 'shopping:use'], onSubmitted = vi.fn()) {
+function renderBox(
+  permissions: string[] = ['journal:use', 'shopping:use'],
+  onSubmitted = vi.fn(),
+  folders: MailboxFolder[] = [],
+) {
   const pages = navigablePages({
     permissions: { everywhere: permissions, byDomain: [] },
     services: SERVICES,
@@ -39,7 +43,7 @@ function renderBox(permissions: string[] = ['journal:use', 'shopping:use'], onSu
   render(
     <TranslationProvider>
       <MemoryRouter initialEntries={['/page']}>
-        <SidebarSearch pages={pages} isHidden={false} onReveal={() => {}} onSubmitted={onSubmitted} />
+        <SidebarSearch pages={pages} folders={folders} isHidden={false} onReveal={() => {}} onSubmitted={onSubmitted} />
         <Routes>
           <Route path="*" element={<Where />} />
         </Routes>
@@ -188,4 +192,119 @@ it('closes the list when the box loses focus', () => {
   act(() => box.blur())
   expect(screen.queryByRole('listbox')).toBeNull()
   expect(box.value).toBe('jo')
+})
+
+it('offers a tab of a page by its name, and Enter goes to the tab', () => {
+  const { box, onSubmitted } = renderBox(['location:use'])
+  fireEvent.change(box, { target: { value: 'travel' } })
+  expect(optionNames()).toEqual(['Location › Travel', 'Search everything for “travel”'])
+  // Nothing is completed inside the box: the name shown starts with the page's.
+  expect(box.value).toBe('travel')
+  press(box)
+  expect(screen.getByTestId('where').textContent).toBe('/location?tab=travel')
+  expect(box.value).toBe('')
+  expect(onSubmitted).toHaveBeenCalledTimes(1)
+})
+
+it('offers a tab by the start of its page and the start of the tab', () => {
+  const first = renderBox(['location:use', 'journal:use'])
+  fireEvent.change(first.box, { target: { value: 'loc tr' } })
+  expect(optionNames()).toEqual(['Location › Travel', 'Search everything for “loc tr”'])
+  fireEvent.change(first.box, { target: { value: 'journal set' } })
+  expect(optionNames()).toEqual(['Journal › Settings', 'Search everything for “journal set”'])
+  fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'Journal › Settings' }))
+  expect(screen.getByTestId('where').textContent).toBe('/journal?tab=settings')
+  cleanup()
+  // A tab that is its page's first is the page's own address.
+  const second = renderBox(['journal:use'])
+  fireEvent.change(second.box, { target: { value: 'journal time' } })
+  expect(optionNames()[0]).toBe('Journal › Timeline')
+  press(second.box)
+  expect(screen.getByTestId('where').textContent).toBe('/journal')
+})
+
+it('does not offer the tab of a page the person may not open', () => {
+  const first = renderBox(['journal:use'])
+  fireEvent.change(first.box, { target: { value: 'travel' } })
+  expect(optionNames()).toEqual(['Search everything for “travel”'])
+  cleanup()
+  // A tab behind a permission of its own is left out with it.
+  const second = renderBox(['journal:use'])
+  fireEvent.change(second.box, { target: { value: 'audit' } })
+  expect(optionNames()).toEqual(['Search everything for “audit”'])
+})
+
+it('puts the page before the tabs of the same words', () => {
+  const { box } = renderBox(['journal:use', 'health:use', 'passwords:use'])
+  fireEvent.change(box, { target: { value: 'settings' } })
+  expect(optionNames()).toEqual([
+    'Settings',
+    'Mailbox settings',
+    'Journal › Settings',
+    'Health › Settings',
+    'Passwords › Settings',
+    'Search everything for “settings”',
+  ])
+  // The page is the highlighted row and is completed; a tab is not.
+  expect(screen.getAllByRole('option')[0].getAttribute('aria-selected')).toBe('true')
+  press(box)
+  expect(screen.getByTestId('where').textContent).toBe('/settings/preference')
+})
+
+it('finds a tab by its English name while the language is Chinese', async () => {
+  window.localStorage.setItem('teanode.language', 'zh')
+  await loadCatalog('zh')
+  const { box } = renderBox(['location:use'])
+  fireEvent.change(box, { target: { value: 'location travel' } })
+  expect(optionNames()).toHaveLength(2)
+  press(box)
+  expect(screen.getByTestId('where').textContent).toBe('/location?tab=travel')
+})
+
+const FOLDERS: MailboxFolder[] = [
+  { id: 'folder-inbox', mailboxId: 'box', name: 'INBOX', kind: 'inbox', unread: 0, total: 0 },
+  { id: 'folder-archive', mailboxId: 'box', name: 'Archive', kind: 'archive', unread: 0, total: 0 },
+  { id: 'folder-notes', mailboxId: 'box', name: 'Notes', unread: 0, total: 0 },
+  { id: 'folder-trash', mailboxId: 'box', name: 'Trash', kind: 'trash', unread: 0, total: 0 },
+]
+
+it('offers a folder of the mailbox by its name, and Enter opens it', () => {
+  const { box } = renderBox(undefined, undefined, FOLDERS)
+  fireEvent.change(box, { target: { value: 'arch' } })
+  expect(optionNames()).toEqual(['Mailbox › Archive', 'Search everything for “arch”'])
+  press(box)
+  expect(screen.getByTestId('where').textContent).toBe('/mailbox/folder-archive')
+})
+
+it('finds a folder the person made by its name, and by the mailbox before it', () => {
+  const { box } = renderBox(undefined, undefined, FOLDERS)
+  fireEvent.change(box, { target: { value: 'notes' } })
+  expect(optionNames()).toEqual(['Mailbox › Notes', 'Search everything for “notes”'])
+  fireEvent.change(box, { target: { value: 'mail tr' } })
+  expect(optionNames()).toEqual(['Mailbox › Trash', 'Search everything for “mail tr”'])
+  fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'Mailbox › Trash' }))
+  expect(screen.getByTestId('where').textContent).toBe('/mailbox/folder-trash')
+})
+
+it('finds a system folder by its English name while the language is Chinese', async () => {
+  window.localStorage.setItem('teanode.language', 'zh')
+  await loadCatalog('zh')
+  const { box } = renderBox(undefined, undefined, FOLDERS)
+  fireEvent.change(box, { target: { value: 'inbox' } })
+  expect(optionNames()).toHaveLength(2)
+  press(box)
+  expect(screen.getByTestId('where').textContent).toBe('/mailbox/folder-inbox')
+})
+
+it('offers eight rows at most before the last', () => {
+  const folders: MailboxFolder[] = Array.from({ length: 12 }, (_, index) => ({
+    id: `folder-${index}`,
+    mailboxId: 'box',
+    name: `Receipts ${index}`,
+    unread: 0,
+    total: 0,
+  }))
+  const { box } = renderBox(undefined, undefined, folders)
+  fireEvent.change(box, { target: { value: 'receipts' } })
+  expect(optionNames()).toHaveLength(9)
 })

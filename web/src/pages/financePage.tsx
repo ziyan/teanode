@@ -4,10 +4,11 @@ import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } 
 import { graphql } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { Select } from '../components/select'
-import { TabItem, Tabs } from '../components/tabs'
+import { Tabs } from '../components/tabs'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
+import { FINANCE_TABS } from '../pageTabs'
 import { FinanceAccountsSection } from './finance/financeAccounts'
 import { FinanceBudgetsSection } from './finance/financeBudgets'
 import { usePersonZone } from './finance/financeCommon'
@@ -25,6 +26,8 @@ import { FinanceTransactionsSection } from './finance/financeTransactions'
 // the reporting currency are the agent page's Finance tab.
 export const FINANCE_SETUP_PATH = '/settings/agent/finance'
 
+type Sharer = { userId: string; name: string }
+
 // The Finance page: everything built on what the linked institutions
 // report, in the same operations the command line's teanode finance and
 // the agent's finance tool call. A page of its own in the rail, like
@@ -33,19 +36,7 @@ export const FINANCE_SETUP_PATH = '/settings/agent/finance'
 // place in the address, because a person opens it to answer one question --
 // what did I spend, what am I worth, am I on budget -- and six panels in
 // one scroll made them hunt for it.
-export const FINANCE_SECTIONS: TabItem[] = [
-  { id: 'spending', label: 'finance.tabSpending' },
-  { id: 'transactions', label: 'finance.tabTransactions' },
-  { id: 'receipts', label: 'finance.tabReceipts' },
-  { id: 'taxes', label: 'finance.tabTaxes' },
-  { id: 'accounts', label: 'finance.tabAccounts' },
-  { id: 'budgets', label: 'finance.tabBudgets' },
-  { id: 'net-worth', label: 'finance.tabNetWorth' },
-  { id: 'savings-targets', label: 'finance.tabSavingsTargets' },
-]
-
-type Sharer = { userId: string; name: string }
-
+// The tabs are in pageTabs.ts, so the search box offers the same ones.
 export function FinancePage() {
   const { section } = useParams()
   const navigate = useNavigate()
@@ -126,8 +117,8 @@ export function FinancePage() {
   // first section. Somebody with nothing linked yet still lands here rather
   // than on the agent page: the rail says Finance, and the line under the
   // sections says where linking is.
-  if (!FINANCE_SECTIONS.some((candidate) => candidate.id === section)) {
-    return <Navigate to={`/finance/${FINANCE_SECTIONS[0].id}${location.search}`} replace />
+  if (!FINANCE_TABS.some((candidate) => candidate.id === section)) {
+    return <Navigate to={`/finance/${FINANCE_TABS[0].id}${location.search}`} replace />
   }
   if (!isZoneRead) return <Loading />
   const openSection = (id: string) => navigate(`/finance/${id}`)
@@ -182,7 +173,7 @@ export function FinancePage() {
     <>
       <ErrorMessage error={shared.error} />
       {picker}
-      <Tabs items={FINANCE_SECTIONS} active={section} onSelect={openSection} />
+      <Tabs items={FINANCE_TABS} active={section} onSelect={openSection} />
       {!presence.hasSources ? (
         <div className="finance-pointer">
           <p className="muted">{t('finance.nothingLinkedPointer')}</p>

@@ -1,9 +1,12 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
+import type { MailboxFolder } from '../api'
 import { en } from '../i18n/en'
 import { Key, translate, useTranslation } from '../i18n/i18n'
+import { folderLabel } from '../mailboxes'
 import { FOCUS_SEARCH_EVENT, searchPath } from '../searchEverything'
+import { FolderKindIcon } from './folderIcon'
 import { SearchIcon } from './icons'
 import type { NavigablePage } from './sidebar'
 import { Tooltip } from './tooltip'
@@ -11,8 +14,16 @@ import { Tooltip } from './tooltip'
 // The results page, whose address holds the words.
 const SEARCH_PAGE = '/search'
 
-// How many pages the list offers before its last row.
-const PAGE_SUGGESTION_LIMIT = 6
+// How many rows the list offers before its last row. Six cut off the pages a
+// word names once the tabs came in: "settings" is a page and the Settings tab
+// of three more.
+const SUGGESTION_LIMIT = 8
+
+// The folders of a rail with no mailbox.
+const NO_FOLDERS: MailboxFolder[] = []
+
+// What stands between a page's name and the name of a tab or folder in it.
+const SEPARATOR = ' › '
 
 // How well the words match a label: 0 when the label starts with them, 1 when
 // a word of the label does, and null otherwise. Letters inside a word are no
@@ -24,34 +35,112 @@ function matchRank(label: string, words: string): number | null {
   return null
 }
 
-// suggestPages is the pages whose name the words are in, best match first and
-// in the rail's order within a match. A page is matched by its name in the
-// reader's language and by its English name, so "journal" finds the page
-// whatever the language.
-function suggestPages(
+// A row of the list: a page, or a place inside one (a tab, a mailbox folder).
+type Suggestion = {
+  to: string
+  icon: React.ReactNode
+  // The name in the reader's language, with the page's before it for a place
+  // inside one.
+  label: string
+  isPage: boolean
+}
+
+// How well the words match a place inside a page. Its own name matches as a
+// page's does ("travel"); so do the page's name and the start of the place's,
+// said together ("loc tr", "journal set"), the page's name by its first
+// letters or in full. Both are matched in the reader's language and in
+// English, and the words are cut at each space to find the two halves.
+function matchPlaceRank(pageLabels: string[], placeLabels: string[], words: string): number | null {
+  const ranks: number[] = []
+  const add = (rank: number | null) => {
+    if (rank !== null) ranks.push(rank)
+  }
+  for (const placeLabel of placeLabels) add(matchRank(placeLabel, words))
+  for (const gap of words.matchAll(/\s+/g)) {
+    const pageWords = words.slice(0, gap.index)
+    const placeWords = words.slice(gap.index + gap[0].length)
+    if (pageWords === '' || placeWords === '') continue
+    if (!pageLabels.some((pageLabel) => pageLabel.startsWith(pageWords))) continue
+    for (const placeLabel of placeLabels) add(matchRank(placeLabel, placeWords))
+  }
+  return ranks.length > 0 ? Math.min(...ranks) : null
+}
+
+// suggestRows is the rows the words are in the name of: first the pages, then
+// the tabs of the pages and the folders of the mailbox, each best match first
+// and in the order the rail draws them within a match. A name is matched in
+// the reader's language and in English, so "journal" finds the page whatever
+// the language.
+function suggestRows(
   pages: NavigablePage[],
+  folders: MailboxFolder[],
   words: string,
-  translatePage: (key: Key) => string,
-): { page: NavigablePage; label: string }[] {
+  translateLabel: (key: Key) => string,
+): Suggestion[] {
   const needle = words.trim().toLowerCase()
   if (needle === '') return []
-  return pages
-    .flatMap((page, order) => {
-      const label = translatePage(page.label)
-      const ranks = [matchRank(label.toLowerCase(), needle), matchRank(translate(en, page.label).toLowerCase(), needle)]
-      const rank = Math.min(...ranks.filter((candidate): candidate is number => candidate !== null))
-      return Number.isFinite(rank) ? [{ page, label, rank, order }] : []
+  const translateEnglish = (key: Key) => translate(en, key)
+  const candidates: { suggestion: Suggestion; rank: number | null }[] = []
+  for (const page of pages) {
+    const label = translateLabel(page.label)
+    const ranks = [
+      matchRank(label.toLowerCase(), needle),
+      matchRank(translateEnglish(page.label).toLowerCase(), needle),
+    ]
+    const rank = Math.min(...ranks.filter((candidate): candidate is number => candidate !== null))
+    candidates.push({
+      suggestion: { to: page.to, icon: page.icon, label, isPage: true },
+      rank: Number.isFinite(rank) ? rank : null,
     })
-    .sort((left, right) => left.rank - right.rank || left.order - right.order)
-    .slice(0, PAGE_SUGGESTION_LIMIT)
-    .map(({ page, label }) => ({ page, label }))
+  }
+  const pageLabelsOf = (key: Key) => [translateLabel(key).toLowerCase(), translateEnglish(key).toLowerCase()]
+  for (const page of pages) {
+    const pageLabels = pageLabelsOf(page.label)
+    for (const tab of page.tabs) {
+      const placeLabels = [translateLabel(tab.label).toLowerCase(), translateEnglish(tab.label).toLowerCase()]
+      candidates.push({
+        suggestion: {
+          to: tab.to,
+          icon: page.icon,
+          label: translateLabel(page.label) + SEPARATOR + translateLabel(tab.label),
+          isPage: false,
+        },
+        rank: matchPlaceRank(pageLabels, placeLabels, needle),
+      })
+    }
+  }
+  const mailboxLabels = pageLabelsOf('nav.mailbox')
+  for (const folder of folders) {
+    const name = folderLabel(translateLabel, folder)
+    const placeLabels = [name.toLowerCase(), folderLabel(translateEnglish, folder).toLowerCase()]
+    candidates.push({
+      suggestion: {
+        to: `/mailbox/${folder.id}`,
+        icon: <FolderKindIcon kind={folder.kind} />,
+        label: translateLabel('nav.mailbox') + SEPARATOR + name,
+        isPage: false,
+      },
+      rank: matchPlaceRank(mailboxLabels, placeLabels, needle),
+    })
+  }
+  return candidates
+    .flatMap(({ suggestion, rank }, order) => (rank === null ? [] : [{ suggestion, rank, order }]))
+    .sort(
+      (left, right) =>
+        Number(!left.suggestion.isPage) - Number(!right.suggestion.isPage) ||
+        left.rank - right.rank ||
+        left.order - right.order,
+    )
+    .slice(0, SUGGESTION_LIMIT)
+    .map(({ suggestion }) => suggestion)
 }
 
 // SidebarSearch is the search box at the top of the rail. As the words are
-// typed it offers the dashboard's pages by name, the way Spotlight does, and
-// Enter jumps to the one highlighted; the last row searches the person's
-// chats, mail, contacts and the rest for the words and opens the results, and
-// is what Enter does when no page has the words in its name. Control-K and
+// typed it offers the dashboard's pages by name, the way Spotlight does, then
+// the tabs inside the pages and the folders of the person's mailbox, and Enter
+// jumps to the one highlighted; the last row searches the person's chats,
+// mail, contacts and the rest for the words and opens the results, and is what
+// Enter does when nothing has the words in its name. Control-K and
 // Command-K (and / on a page with no search box of its own) ask for the box
 // through FOCUS_SEARCH_EVENT.
 //
@@ -60,12 +149,15 @@ function suggestPages(
 // once it is there, so the key does what it says wherever the person is.
 export function SidebarSearch({
   pages,
+  folders = NO_FOLDERS,
   isHidden,
   onReveal,
   onSubmitted,
 }: {
-  // The pages the person may open, from navigablePages.
+  // The pages the person may open, with their tabs, from navigablePages.
   pages: NavigablePage[]
+  // The folders of the person's mailbox, as the rail was given them.
+  folders?: MailboxFolder[]
   // Whether the rail is narrowed to icons or is an overlay that is closed.
   isHidden: boolean
   // Widens the rail or opens the overlay.
@@ -102,15 +194,17 @@ export function SidebarSearch({
   const [isComposing, setComposing] = useState(false)
 
   const words = typed.trim()
-  const suggestions = useMemo(() => suggestPages(pages, words, t), [pages, words, t])
+  const suggestions = useMemo(() => suggestRows(pages, folders, words, t), [pages, folders, words, t])
   const isListShown = isFocused && words !== '' && !isListDismissed
   const rowCount = suggestions.length + 1
   const activeIndex = Math.min(highlightedIndex, rowCount - 1)
 
   // The rest of the top page's name when it starts with the typed words. The
   // page's name in the reader's language only: a page found by its English
-  // name in another language has nothing to continue.
-  const topLabel = suggestions[0]?.label ?? ''
+  // name in another language has nothing to continue. A tab or a folder is
+  // not completed: its name starts with the page's, and the box would be
+  // offering words nobody typed.
+  const topLabel = suggestions[0]?.isPage ? suggestions[0].label : ''
   const completion =
     isListShown &&
     isCompleting &&
@@ -157,15 +251,15 @@ export function SidebarSearch({
     focusBox()
   }, [isHidden])
 
-  // Runs a row of the list: a page is opened and the box is emptied, the last
-  // row opens the results for the words.
+  // Runs a row of the list: a page, a tab or a folder is opened and the box is
+  // emptied, the last row opens the results for the words.
   const runRow = (index: number) => {
     if (words === '') return
     const suggestion = suggestions[index]
     setListDismissed(true)
     setCompleting(false)
     if (suggestion) {
-      void navigate(suggestion.page.to)
+      void navigate(suggestion.to)
       setTyped('')
       input.current?.blur()
     } else {
@@ -276,9 +370,9 @@ export function SidebarSearch({
       />
       {isListShown && (
         <div className="sidebar-search-list" id={listId} role="listbox" aria-label={t('search.title')}>
-          {suggestions.map(({ page, label }, index) => (
+          {suggestions.map(({ to, icon, label }, index) => (
             <button
-              key={`${page.to} ${page.label}`}
+              key={`${to} ${label}`}
               id={optionId(index)}
               type="button"
               role="option"
@@ -291,7 +385,7 @@ export function SidebarSearch({
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => runRow(index)}
             >
-              <span className="sidebar-icon">{page.icon}</span>
+              <span className="sidebar-icon">{icon}</span>
               <span className="sidebar-search-label">{label}</span>
             </button>
           ))}

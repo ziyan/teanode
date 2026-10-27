@@ -10,8 +10,9 @@ import { useQuery } from '../components/useQuery'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { useToast } from '../components/toast'
 import { SecretDialog, SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
-import { Tabs, TabItem } from '../components/tabs'
+import { Tabs } from '../components/tabs'
 import { Key, useTranslation } from '../i18n/i18n'
+import { MAILBOX_SETTINGS_TABS } from '../pageTabs'
 import { folderLabel, folderRows, useMailboxes } from '../mailboxes'
 import { FolderKindIcon } from '../components/folderIcon'
 import { RichTextEditor, htmlToText, textToHtml } from '../components/richText'
@@ -31,14 +32,6 @@ import {
 // sends while its owner is away. App passwords join when the IMAP server
 // does, and addresses are managed on the domain: a mailbox is where
 // addresses point, and pointing them is the domain manager's job.
-
-const TABS: TabItem[] = [
-  { id: 'general', label: 'mailboxSettings.tabGeneral' },
-  { id: 'folders', label: 'mailboxSettings.tabFolders' },
-  { id: 'rules', label: 'mailboxSettings.tabRules' },
-  { id: 'autoreply', label: 'mailboxSettings.tabAutoReply' },
-  { id: 'devices', label: 'mailboxSettings.tabDevices' },
-]
 
 const APP_PASSWORDS = `
   query ($mailboxId: String!) {
@@ -104,12 +97,12 @@ export function MailboxSettingsPage() {
   if (!view) {
     return <p className="muted">{t('mailbox.none')}</p>
   }
-  if (!TABS.some((candidate) => candidate.id === tab)) {
+  if (!MAILBOX_SETTINGS_TABS.some((candidate) => candidate.id === tab)) {
     return <Navigate to="/settings/mailbox/general" replace />
   }
   return (
     <>
-      <Tabs items={TABS} active={tab} onSelect={(id) => navigate(`/settings/mailbox/${id}`)} />
+      <Tabs items={MAILBOX_SETTINGS_TABS} active={tab} onSelect={(id) => navigate(`/settings/mailbox/${id}`)} />
       {tab === 'general' && <GeneralTab key={view.mailbox.id} view={view} />}
       {tab === 'folders' && <FoldersTab key={view.mailbox.id} view={view} />}
       {tab === 'rules' && <RulesTab key={view.mailbox.id} view={view} />}

@@ -55,12 +55,13 @@ import { personName } from '../components/personLabel'
 import { RelativeTime } from '../components/relativeTime'
 import { SettingsEmpty, SettingsSection } from '../components/settingsList'
 import { Select } from '../components/select'
-import { Tabs, TabItem } from '../components/tabs'
+import { Tabs } from '../components/tabs'
 import { useToast } from '../components/toast'
 import { TravelModeIcon } from '../components/travelModeIcon'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
 import { personPath } from '../lib/circlePeople'
+import { LOCATION_TABS } from '../pageTabs'
 import { useIsImperial } from './journal/journalApi'
 import { hasPermission, useSession } from '../session'
 
@@ -70,17 +71,9 @@ import { hasPermission, useSession } from '../session'
 // or labeled first; Travel is the distance traveled by each way of travel per
 // day, week, month or year; Sharing is who sees where they are. The tab and the day are in the address.
 
-const TAB_IDS = ['visits', 'places', 'travel', 'sharing'] as const
-type TabID = (typeof TAB_IDS)[number]
-
-const TABS: TabItem[] = [
-  { id: 'visits', label: 'location.tabVisits' },
-  { id: 'places', label: 'location.tabPlaces' },
-  { id: 'travel', label: 'location.tabTravel' },
-  { id: 'sharing', label: 'location.tabSharing' },
-]
+// The tabs are in pageTabs.ts, so the search box offers the same ones.
 // While somebody else is looked at: Sharing is only ever the person's own.
-const OTHERS_TABS = TABS.filter((each) => each.id !== 'sharing')
+const OTHERS_TABS = LOCATION_TABS.filter((each) => each.id !== 'sharing')
 
 // How often the people on the map are read again when the live feed says
 // nothing: a feed that dropped, or a person who moved while it was down.
@@ -266,8 +259,8 @@ function LocationContent({ userId }: { userId: string }) {
   // Somebody else named in the address: their visits and places are shown,
   // and what is the person's own (sharing, checking in) is not offered.
   const isViewingOther = Boolean(parameters.get('person'))
-  const shownTab = TAB_IDS.find((each) => each === requestedTab) ?? 'visits'
-  const tab: TabID = isViewingOther && shownTab === 'sharing' ? 'visits' : shownTab
+  const shownTab = LOCATION_TABS.find((each) => each.id === requestedTab)?.id ?? 'visits'
+  const tab = isViewingOther && shownTab === 'sharing' ? 'visits' : shownTab
   const dayStart = parseDayKey(parameters.get('day'))
   const dayKey = dayStart ? dayKeyOf(dayStart) : null
   const visitsPaging = usePageInAddress()
@@ -1446,7 +1439,7 @@ function LocationContent({ userId }: { userId: string }) {
         />
       )}
 
-      <Tabs items={isViewingOther ? OTHERS_TABS : TABS} active={tab} onSelect={selectTab} />
+      <Tabs items={isViewingOther ? OTHERS_TABS : LOCATION_TABS} active={tab} onSelect={selectTab} />
 
       {tab === 'visits' && (
         <SettingsSection

@@ -43,6 +43,7 @@ import { Logo } from './logo'
 import { useAgentFinancePresence } from '../pages/finance/financePresence'
 import { useHerdrPresence } from './herdrPresence'
 import { useAgentIdentity } from '../agentPreferences'
+import { PAGE_TABS, shownTabs, tabAddress } from '../pageTabs'
 import { matchSettingsSurface, SETTINGS_LANDING, surfacesByCategory } from '../pages/settings/nav'
 import { useFreshness } from './freshness'
 import { Permissions as ApiPermissions } from '../api'
@@ -186,8 +187,11 @@ function isItemShown(item: Item, context: RailContext): boolean {
   )
 }
 
-// A page the search box can jump to.
-export type NavigablePage = { label: Key; to: string; icon: React.ReactNode }
+// A tab of a page the search box can jump into, and where it is.
+export type NavigableTab = { label: Key; to: string }
+
+// A page the search box can jump to, with the tabs of it the person has.
+export type NavigablePage = { label: Key; to: string; icon: React.ReactNode; tabs: NavigableTab[] }
 
 // navigablePages is every page the person could open from the rail, the account
 // menu and the management side, in the order they are drawn there: the
@@ -202,8 +206,16 @@ export function navigablePages(
 ): NavigablePage[] {
   const { permissions, services, hasMailboxRail } = context
   const pages: NavigablePage[] = []
-  const add = (isShown: boolean, label: Key, to: string, icon: React.ReactNode) => {
-    if (isShown) pages.push({ label, to, icon })
+  const tabsOf = (to: string): NavigableTab[] => {
+    const page = PAGE_TABS.find((candidate) => candidate.path === to)
+    if (!page) return []
+    return shownTabs(page.tabs, { hasPermission: (key) => hasPermission(permissions, key), services }).map((tab) => ({
+      label: tab.label,
+      to: tabAddress(page, tab.id),
+    }))
+  }
+  const add = (isShown: boolean, label: Key, to: string, icon: React.ReactNode, hasTabs = true) => {
+    if (isShown) pages.push({ label, to, icon, tabs: hasTabs ? tabsOf(to) : [] })
   }
   const hasJournal = hasPermission(permissions, 'journal:use')
   const hasAgentUse = hasPermission(permissions, 'agent:use')
@@ -273,7 +285,7 @@ export function navigablePages(
   // The rows of the mailbox's rail that are the account's pages (Knowledge,
   // Recordings, Coding, Finance), and then the rest of the account's own.
   for (const item of [...MAILBOX_RAIL_ITEMS, ...ACCOUNT_GROUP.items]) {
-    if (isItemShown(item, context)) pages.push({ label: item.label, to: item.to, icon: item.icon })
+    if (isItemShown(item, context)) add(true, item.label, item.to, item.icon)
   }
   // The account menu's own rows.
   add(true, 'nav.settings', SETTINGS_LANDING, <SettingsIcon />)
@@ -281,9 +293,11 @@ export function navigablePages(
   add(canUseCircles, 'circles.title', '/circles', <PeopleIcon />)
   add(canUseCircles, 'sharing.title', '/sharing', <ShareIcon />)
   const managePath = firstManagementPath(permissions, services)
-  add(managePath !== undefined, 'nav.manage', managePath ?? '', <GridIcon />)
+  // Manage is a door to the first management page, whose tabs are offered with
+  // that page's own row.
+  add(managePath !== undefined, 'nav.manage', managePath ?? '', <GridIcon />, false)
   for (const item of GROUPS.flatMap((group) => group.items)) {
-    if (isItemShown(item, context)) pages.push({ label: item.label, to: item.to, icon: item.icon })
+    if (isItemShown(item, context)) add(true, item.label, item.to, item.icon)
   }
   // A page the rail lists in two places is offered once.
   const seen = new Set<string>()
@@ -494,6 +508,7 @@ export function Sidebar({
         {session.userId && (
           <SidebarSearch
             pages={pages}
+            folders={current?.folders ?? []}
             isHidden={collapsed || (!onToggle && !open)}
             onReveal={() => (collapsed ? onToggle?.() : onOpen?.())}
             onSubmitted={onClose}
