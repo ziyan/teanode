@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.204.1] - 2026-10-27
+
+### Fixed
+
+- Location: distances of trips, travel totals and places found are in miles for people whose account uses US units, on the dashboard, the iPhone app, the command line and through the agent. (#674)
+
 ## [0.204.0] - 2026-10-27
 
 ### Added
