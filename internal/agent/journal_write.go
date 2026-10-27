@@ -202,6 +202,10 @@ type journalDayInput struct {
 
 	Records []journalRecordLine
 
+	// WorkTalk is what was said in the day's coding sessions, project by
+	// project (readJournalWorkTalk); empty when there were none.
+	WorkTalk string
+
 	// allowed is every reference the narrative may mention, candidates is
 	// the references a choice may name, projects the references a project's
 	// summary may name, and photos the ids a cover may be.
@@ -273,7 +277,7 @@ func newJournalDayInput(day *journal.Day) *journalDayInput {
 		}
 		line := fmt.Sprintf("Project %s: %s", project.Name, journalMinutesWords(project.ActiveMinutes))
 		if len(project.Topics) > 0 {
-			line += "; worked on: " + strings.Join(project.Topics, "; ")
+			line += "; sessions named: " + strings.Join(project.Topics, "; ")
 		}
 		if len(project.Shipped) > 0 {
 			titles := make([]string, 0, len(project.Shipped))
@@ -483,6 +487,10 @@ func (self *journalDayInput) prompt(owner *models.User, agent *models.Agent, opt
 		"Mood":         "",
 		"Weather":      "",
 		"Candidates":   "",
+		"WorkTalk":     "",
+	}
+	if strings.TrimSpace(self.WorkTalk) != "" {
+		data["WorkTalk"] = fenced(self.WorkTalk)
 	}
 	if agent != nil {
 		data["Instructions"] = strings.TrimSpace(agent.Instructions)
@@ -735,6 +743,12 @@ func (self *Agent) writeReadJournalDay(ctx context.Context, run *Run, read *jour
 		return self.storeJournalFailure(ctx, run, target, read.TimeZone, "there is nothing on this day to write about yet")
 	}
 	input := newJournalDayInput(read)
+	if err := run.Database().TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+		input.WorkTalk, err = readJournalWorkTalk(transaction, run.Owner, run.Agent, read)
+		return err
+	}); err != nil {
+		return err
+	}
 	prompt, err := input.prompt(run.Owner, run.Agent, access.options())
 	if err != nil {
 		return err
