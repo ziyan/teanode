@@ -6406,7 +6406,7 @@ label .select-value.placeholder {
 .agent-drawer-toggle {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
   z-index: 30;
   display: inline-flex;
   align-items: center;
@@ -7414,6 +7414,8 @@ label .select-value.placeholder {
   gap: 8px;
   align-items: flex-end;
   padding: 10px;
+  /* Above the iPhone's home indicator when the drawer fills the screen. */
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
 }
 
@@ -16442,6 +16444,8 @@ button.herdr-question-head {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
+  /* The last item scrolls up above the iPhone's home indicator. */
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
 }
 
 /* The player that floats over the page while the recording plays: a pause
@@ -16450,7 +16454,7 @@ button.herdr-question-head {
 .recording-floating-player {
   position: fixed;
   left: 50%;
-  bottom: 76px;
+  bottom: calc(76px + env(safe-area-inset-bottom));
   z-index: 29;
   display: flex;
   align-items: center;
@@ -16477,7 +16481,7 @@ button.herdr-question-head {
 .recording-bar {
   position: fixed;
   right: 20px;
-  bottom: 76px;
+  bottom: calc(76px + env(safe-area-inset-bottom));
   z-index: 29;
   display: flex;
   flex-wrap: wrap;
@@ -16554,7 +16558,7 @@ button.herdr-question-head {
 }
 /* The page keeps its last lines clear of the bar. */
 body.has-recording-bar .content {
-  padding-bottom: 140px;
+  padding-bottom: calc(140px + env(safe-area-inset-bottom));
 }
 .recording-turn.live {
   align-items: flex-start;
