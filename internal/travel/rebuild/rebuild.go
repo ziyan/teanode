@@ -40,6 +40,11 @@ const (
 	// apart, so that a report holding two distant days does not rebuild all
 	// the days between.
 	RunGapMost = 48 * time.Hour
+
+	// RunLengthMost is the longest a run of times rebuilt as one window
+	// lasts. Longer runs are split, so that trips a day apart for months
+	// (a place visited daily, then forgotten) are not read in one window.
+	RunLengthMost = 7 * 24 * time.Hour
 )
 
 // pointsPageSize is how many positions are read at a time; a variable so that
@@ -82,25 +87,39 @@ func Around(tx db.Transaction, userId string, from, until time.Time) error {
 	return Window(tx, userId, windowStart, until.Add(lookAhead))
 }
 
-// AroundTimes rebuilds around each run of the times, a run being times with no
-// gap of more than RunGapMost between them.
+// AroundTimes rebuilds around each run of the times (see runsOf).
 func AroundTimes(tx db.Transaction, userId string, times []time.Time) error {
+	for _, run := range runsOf(times) {
+		if err := Around(tx, userId, run.from, run.until); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// timeRun is the first and last of a run of times.
+type timeRun struct {
+	from, until time.Time
+}
+
+// runsOf groups the times into runs, in order: times with no gap of more than
+// RunGapMost between them, a run lasting no more than RunLengthMost.
+func runsOf(times []time.Time) []timeRun {
 	if len(times) == 0 {
 		return nil
 	}
 	times = append([]time.Time(nil), times...)
 	sort.Slice(times, func(first, second int) bool { return times[first].Before(times[second]) })
-	runStart, runEnd := times[0], times[0]
+	runs := []timeRun{{from: times[0], until: times[0]}}
 	for _, at := range times[1:] {
-		if at.Sub(runEnd) > RunGapMost {
-			if err := Around(tx, userId, runStart, runEnd); err != nil {
-				return err
-			}
-			runStart = at
+		current := &runs[len(runs)-1]
+		if at.Sub(current.until) > RunGapMost || at.Sub(current.from) > RunLengthMost {
+			runs = append(runs, timeRun{from: at, until: at})
+			continue
 		}
-		runEnd = at
+		current.until = at
 	}
-	return Around(tx, userId, runStart, runEnd)
+	return runs
 }
 
 // Window rebuilds the trips that start at or after windowStart and before

@@ -11,7 +11,9 @@ import (
 
 // visitsForTest stores home, at the origin, and an office two kilometers
 // north, and a visit to each: the person is at home from arrivedHome to
-// leftHome and at the office from reachedOffice on.
+// leftHome and at the office from reachedOffice on. Motion activity says they
+// walked from leftHome, so that the trip is built however long the phone was
+// silent on the way.
 func visitsForTest(t *testing.T, tx db.Transaction, userId string, arrivedHome, leftHome, reachedOffice time.Time) {
 	t.Helper()
 	home, err := tx.CreatePlace(userId, &models.Place{PlaceName: "Home", IsNamedByPerson: true, LatitudeDegrees: 40, LongitudeDegrees: -75, RadiusMeters: 100})
@@ -29,6 +31,9 @@ func visitsForTest(t *testing.T, tx db.Transaction, userId string, arrivedHome, 
 		if _, err := tx.PutPlaceVisit(userId, visit); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err := tx.PutMotionActivities(userId, []*models.MotionActivity{{StartedAt: leftHome, ActivityKind: "walking", ActivityConfidence: "high"}}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -169,4 +174,33 @@ func TestAroundTimesRebuildsEachRunAndNotTheDaysBetween(t *testing.T) {
 			t.Fatalf("a run around it rebuilds it, and there are no visits: %+v", trips)
 		}
 	})
+}
+
+// Trips a day apart for a month, as a forgotten place visited daily leaves,
+// are rebuilt a week at a time, not in one window of a month.
+func TestRunsOfDailyTimesLastAWeekAtMost(t *testing.T) {
+	day := 24 * time.Hour
+	start := time.Date(2030, 3, 4, 8, 0, 0, 0, time.UTC)
+	var times []time.Time
+	for index := 29; index >= 0; index-- {
+		times = append(times, start.Add(time.Duration(index)*day))
+	}
+	runs := runsOf(times)
+	if len(runs) != 4 {
+		t.Fatalf("got %d runs, want 4: %+v", len(runs), runs)
+	}
+	for index, run := range runs {
+		if run.until.Sub(run.from) > RunLengthMost {
+			t.Fatalf("run %d lasts %s", index, run.until.Sub(run.from))
+		}
+		if index > 0 && !run.from.Equal(runs[index-1].until.Add(day)) {
+			t.Fatalf("run %d starts at %s, after %s", index, run.from, runs[index-1].until)
+		}
+	}
+	if !runs[0].from.Equal(start) || !runs[3].until.Equal(start.Add(29*day)) {
+		t.Fatalf("runs %+v do not cover the times", runs)
+	}
+	if got := runsOf([]time.Time{start, start.Add(3 * day)}); len(got) != 2 {
+		t.Fatalf("a gap of three days splits the run: %+v", got)
+	}
 }

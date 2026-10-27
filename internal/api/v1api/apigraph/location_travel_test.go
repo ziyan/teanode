@@ -171,7 +171,7 @@ func threeVisitDay(t *testing.T, world *locationWorld, at func(minutes float64) 
 		visitInput("stop", 40.02, -75, at(90), at(120)),
 		visitInput("office", 40.05, -75, at(150), ""),
 	}, ",")
-	world.report(t, world.ada, pointInput(40.01, -75, at(75))+","+pointInput(40.035, -75, at(135)), visits)
+	world.report(t, world.ada, pointInput(40.01, -75, at(75))+","+pointInput(40.02, -75, at(105))+","+pointInput(40.035, -75, at(135)), visits)
 }
 
 func tripsWithPlaces(t *testing.T, world *locationWorld, from, until string) []map[string]any {
@@ -257,8 +257,9 @@ func TestForgettingAPlaceBuildsTheTripBetweenItsNeighbors(t *testing.T) {
 	}
 }
 
-// Erasing the middle of a day joins the visits on both sides of it by a trip.
-func TestErasingTheMiddleOfADayBuildsTheTripAcrossIt(t *testing.T) {
+// Erasing the middle of a day takes the trips through it, and builds none
+// across it: with its positions gone, nothing says how the person went.
+func TestErasingTheMiddleOfADayGuessesNoTripAcrossIt(t *testing.T) {
 	world := newLocationWorld(t)
 	base := time.Now().Add(-6 * time.Hour).UTC().Truncate(time.Second)
 	at := func(minutes float64) string {
@@ -267,8 +268,8 @@ func TestErasingTheMiddleOfADayBuildsTheTripAcrossIt(t *testing.T) {
 	threeVisitDay(t, world, at)
 	world.call(t, world.ada, fmt.Sprintf(`mutation { EraseLocationHistory(from: %q, until: %q) { visitCount } }`, at(80), at(130)))
 	trips := tripsWithPlaces(t, world, at(-60), at(300))
-	if len(trips) != 1 || trips[0]["fromPlace"] == nil || trips[0]["toPlace"] == nil {
-		t.Fatalf("one trip across the erased visit: %v", trips)
+	if len(trips) != 0 {
+		t.Fatalf("no trip across the erased hour: %v", trips)
 	}
 }
 
