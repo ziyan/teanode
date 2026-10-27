@@ -531,11 +531,19 @@ struct CircleDetailView: View {
     /// which a screenshot scrolls to.
     private static let newAlbumRowId = "circle-new-album"
 
+    /// Reads the circle's albums, and the albums the album screen looks them
+    /// up in first, so that a row is never shown before the album it opens.
+    /// A failure says so and leaves the list as it was.
     private func readAlbums() async {
         guard AppModel.shared.isSectionAvailable(.photos) else { return }
-        guard let found = try? await directory.connection.photoAlbums(circleId: circleId) else { return }
-        albums = found
-        await photos.reloadAlbums()
+        do {
+            let found = try await directory.connection.photoAlbums(circleId: circleId)
+            await photos.reloadAlbums()
+            albums = found
+        } catch {
+            guard !Task.isCancelled else { return }
+            directory.problemText = AppModel.shared.describe(error)
+        }
     }
 
     private func makeAlbum(for circle: PeopleCircle) async {
