@@ -48,7 +48,10 @@ var authorizing = map[string]bool{
 	// that account does not currently have an enabled agent.
 	// requirePermission(shopping:use), plus the caller's account; every
 	// list and item is then checked by GetShoppingListAccess.
-	"shoppingPerson":        true,
+	"shoppingPerson": true,
+	// shoppingPerson plus requireAgentPerson: the shopping work a model does
+	// needs agent:use and an active agent as well as shopping:use.
+	"shoppingAgentPerson":   true,
 	"recordingAccount":      true,
 	"recordingSpeakerOwner": true,
 	// The same agent permission check in a short transaction, with current
