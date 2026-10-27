@@ -151,11 +151,27 @@ const (
 	MaximumCarSpeedMetersPerSecond  = 75
 
 	// MinimumPlaneDistanceMeters and MinimumPlaneSpeedMetersPerSecond are the
-	// size of a leg that is a plane whatever the activity says, because iOS
-	// reports a plane as driving: it is at least 100 kilometers at an average
-	// of 55 meters a second, which no car holds over that distance.
+	// size of a stretch guessed from speed that is a plane: at least 100
+	// kilometers at an average of 55 meters a second, which no car holds
+	// over that distance.
 	MinimumPlaneDistanceMeters       = 100000
 	MinimumPlaneSpeedMetersPerSecond = 55
+
+	// MinimumPlaneSpeedOverMotionMetersPerSecond is the average speed above
+	// which a leg of at least MinimumPlaneDistanceMeters is a plane whatever
+	// the motion activity says, because iOS reports a plane as driving. It is
+	// above the fastest trains, which iOS reports as driving too.
+	MinimumPlaneSpeedOverMotionMetersPerSecond = 100
+
+	// MaximumPositionGap is the longest time between two points of a trip's
+	// path, its ends included, across which a way can be guessed from speed.
+	// Across a longer one the phone said nothing of where the person was (it
+	// was off, recording was paused, the positions were erased), so the time
+	// is not the time spent on the way: a drive home made during a paused
+	// afternoon would look like a slow walk across all of it. Such a trip is
+	// kept only when that stretch was a flight, the one way of travel a phone
+	// is often silent through.
+	MaximumPositionGap = 30 * time.Minute
 )
 
 // MotionActivity is what the phone said the person was doing from a moment on. It
@@ -265,23 +281,59 @@ func buildTrip(from, to Visit, positions []Position, activities []MotionActivity
 	}
 	legs := motionLegs(path, startedAt, endedAt, activities)
 	if legs == nil {
+		travelMode, isGuessed := travelModeOfPath(path)
+		if !isGuessed {
+			return Trip{}, false
+		}
 		legs = []Leg{{
 			StartedAt:          startedAt,
 			EndedAt:            endedAt,
-			DetectedTravelMode: travelModeOfSpeed(totalMeters / endedAt.Sub(startedAt).Seconds()),
+			DetectedTravelMode: travelMode,
 			DetectionSource:    DetectionSourceSpeed,
 			DistanceMeters:     totalMeters,
 		}}
-	}
-	for index := range legs {
-		seconds := legs[index].EndedAt.Sub(legs[index].StartedAt).Seconds()
-		if legs[index].DistanceMeters >= MinimumPlaneDistanceMeters &&
-			legs[index].DistanceMeters/seconds >= MinimumPlaneSpeedMetersPerSecond {
-			legs[index].DetectedTravelMode = TravelModePlane
+	} else {
+		for index := range legs {
+			seconds := legs[index].EndedAt.Sub(legs[index].StartedAt).Seconds()
+			if legs[index].DistanceMeters >= MinimumPlaneDistanceMeters &&
+				legs[index].DistanceMeters/seconds >= MinimumPlaneSpeedOverMotionMetersPerSecond {
+				legs[index].DetectedTravelMode = TravelModePlane
+			}
 		}
 	}
 	trip.Legs = legs
 	return trip, true
+}
+
+// travelModeOfPath guesses the way of a whole trip from its speed. It
+// guesses none when the path has a gap longer than MaximumPositionGap that
+// was not a flight.
+func travelModeOfPath(path []pathPoint) (TravelMode, bool) {
+	hasLongGap := false
+	for index := 1; index < len(path); index++ {
+		gap := path[index].measuredAt.Sub(path[index-1].measuredAt)
+		if gap <= MaximumPositionGap {
+			continue
+		}
+		if isPlaneStretch(path[index].cumulativeMeters-path[index-1].cumulativeMeters, gap.Seconds()) {
+			return TravelModePlane, true
+		}
+		hasLongGap = true
+	}
+	if hasLongGap {
+		return "", false
+	}
+	first, last := path[0], path[len(path)-1]
+	meters, seconds := last.cumulativeMeters, last.measuredAt.Sub(first.measuredAt).Seconds()
+	if isPlaneStretch(meters, seconds) {
+		return TravelModePlane, true
+	}
+	return travelModeOfSpeed(meters / seconds), true
+}
+
+// isPlaneStretch reports whether going the meters in the seconds was a flight.
+func isPlaneStretch(meters, seconds float64) bool {
+	return meters >= MinimumPlaneDistanceMeters && meters/seconds >= MinimumPlaneSpeedMetersPerSecond
 }
 
 // buildPath is the first visit's coordinates, the positions measured during the

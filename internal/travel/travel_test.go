@@ -306,10 +306,52 @@ func TestModes(t *testing.T) {
 
 func TestVisitsMoreThanThirtyDaysApartMakeNoTrip(t *testing.T) {
 	const thirtyDaysMinutes = 30 * 24 * 60
-	if trips := BuildTrips(visits(0, thirtyDaysMinutes+1, 5000), nil, nil); len(trips) != 0 {
+	// Motion activity says the person walked all the way, so the trip does
+	// not hang on positions.
+	activities := []MotionActivity{{StartedAt: at(0), ActivityKind: ActivityKindWalking, ActivityConfidence: ActivityConfidenceHigh}}
+	if trips := BuildTrips(visits(0, thirtyDaysMinutes+1, 5000), nil, activities); len(trips) != 0 {
 		t.Fatalf("a gap of over thirty days: %+v", trips)
 	}
-	if trips := BuildTrips(visits(0, thirtyDaysMinutes, 5000), nil, nil); len(trips) != 1 {
+	if trips := BuildTrips(visits(0, thirtyDaysMinutes, 5000), nil, activities); len(trips) != 1 {
 		t.Fatalf("a gap of thirty days is still a trip: %+v", trips)
+	}
+}
+
+// Recording paused at one place in the morning and resumed at another in the
+// afternoon: the phone said nothing in between, so how the person went is not
+// known, and the afternoon is not a slow walk.
+func TestLongSilenceGuessedFromSpeedIsNoTrip(t *testing.T) {
+	if trips := BuildTrips(visits(0, 510, 12000), nil, nil); len(trips) != 0 {
+		t.Fatalf("eight and a half hours with no position: %+v", trips)
+	}
+	// Positions for the first stretch, then silence.
+	if trips := BuildTrips(visits(0, 510, 12000), along(1, 20, 1, 100, 3000), nil); len(trips) != 0 {
+		t.Fatalf("a silence after the positions: %+v", trips)
+	}
+	// Positions every 15 minutes are no silence.
+	trip := onlyTrip(t, BuildTrips(visits(0, 60, 12000), along(15, 45, 15, 3000, 9000), nil))
+	if trip.Legs[0].DetectedTravelMode != TravelModeBike {
+		t.Fatalf("mode %q", trip.Legs[0].DetectedTravelMode)
+	}
+}
+
+// A flight is the one way a phone is often silent through: the silence is
+// kept when it was a plane, even when the rest of the trip was slow.
+func TestSilentFlightIsPlane(t *testing.T) {
+	positions := append(along(0, 60, 5, 0, 30000), along(240, 300, 5, 1030000, 1050000)...)
+	trip := onlyTrip(t, BuildTrips(visits(-120, 420, 1050000), positions, nil))
+	if len(trip.Legs) != 1 || trip.Legs[0].DetectedTravelMode != TravelModePlane {
+		t.Fatalf("legs %+v", trip.Legs)
+	}
+}
+
+// iOS reports a fast train as driving. At 70 meters a second over 250
+// kilometers it stays a car, for the person to correct, not a plane.
+func TestFastTrainReportedAsDrivingIsNotPlane(t *testing.T) {
+	activities := []MotionActivity{{StartedAt: at(0), ActivityKind: ActivityKindAutomotive, ActivityConfidence: ActivityConfidenceHigh}}
+	minutes := 250000.0 / 70 / 60
+	trip := onlyTrip(t, BuildTrips(visits(0, minutes, 250000), along(0, minutes, 5, 0, 250000), activities))
+	if len(trip.Legs) != 1 || trip.Legs[0].DetectedTravelMode != TravelModeCar {
+		t.Fatalf("legs %+v", trip.Legs)
 	}
 }

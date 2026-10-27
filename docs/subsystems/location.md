@@ -449,9 +449,14 @@ boat or plane (`docs/planning/location-travel-execplan.md` has the reasons).
   changes (walking, running, cycling, automotive), merging a leg under a
   minute or 100 m into its neighbor. With motion activity for less than half
   of the trip, the trip is one leg guessed from its average speed (up to
-  2.2 m/s walk, 5 bike, 75 car, faster plane). A leg of 100 km or more at
-  55 m/s or more is a plane whatever the phone said. Bus, train and boat are
-  never detected; they come from corrections.
+  2.2 m/s walk, 5 bike, 75 car, faster plane; 100 km or more at 55 m/s or
+  more is a plane). A trip guessed from speed with more than 30 minutes
+  between two points of its path is no trip, since the phone was off,
+  paused or erased then and the time is not time on the way, unless that
+  stretch was a flight. A leg cut by motion activity of 100 km or more at
+  100 m/s or more is a plane, since iOS reports a plane as driving; slower
+  is left as driving, so a fast train is not a plane. Bus, train and boat
+  are never detected; they come from corrections.
 - **When they are built.** Trips are derived, stored in `trip` and
   `trip_leg`, and built again by package `internal/travel/rebuild`: after each
   report, around each run of the times it carries (positions, visit arrivals
