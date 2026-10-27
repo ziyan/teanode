@@ -10,6 +10,28 @@ has, run by its words alone, and what it finds is a few results with a way to
 open them. Calendar events, reminders and todos are not searched: they have no
 text search to reuse, and events live in CalDAV objects.
 
+## The dashboard's box
+
+The box at the top of the rail (`SidebarSearch`), focused by Control-K or
+Command-K, does two things with the words. As they are typed it offers the
+dashboard's pages whose name has them in it (like Spotlight), and its last row
+searches everything for them. Enter runs the highlighted row: a page is opened,
+the search row opens `/search?q=` with the words.
+
+The pages come from `navigablePages` in `components/sidebar.tsx`, which reads
+the rail's own lists and the rule the rail draws a row by (`isItemShown`), so
+the box never offers a page the rail, the account menu or the management side
+would hide: the feature pages, the account's settings, Circles and Sharing, and
+the management pages the person may open. A page is matched by its name in the
+reader's language and by its English name, best match first: the name starts
+with the words, then a word of it does, then the words are somewhere inside
+it; six pages at most.
+
+When the top page's name starts with what was typed, the rest of the name is
+shown selected after the words ("jo" shows "journal" with "urnal" selected).
+The next letter replaces it, Backspace removes it, and Tab or the right arrow
+takes it. Escape closes the list, and a second Escape leaves the box.
+
 ## The areas
 
 The order is fixed, whatever order they finish in. Each is asked for one more

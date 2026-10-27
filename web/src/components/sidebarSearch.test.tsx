@@ -22,7 +22,7 @@ function renderBox(
   const tree = (isHidden: boolean) => (
     <TranslationProvider>
       <MemoryRouter initialEntries={[path]}>
-        <SidebarSearch isHidden={isHidden} onReveal={onReveal} onSubmitted={onSubmitted} />
+        <SidebarSearch pages={[]} isHidden={isHidden} onReveal={onReveal} onSubmitted={onSubmitted} />
         <Routes>
           <Route path="*" element={<Where />} />
         </Routes>
@@ -35,7 +35,7 @@ function renderBox(
 
 it('takes focus, with its words selected, when the search key is pressed', () => {
   renderBox()
-  const box = screen.getByRole('searchbox', { name: 'Search' }) as HTMLInputElement
+  const box = screen.getByRole('combobox', { name: 'Search' }) as HTMLInputElement
   fireEvent.change(box, { target: { value: 'seed tray' } })
   focusSearch()
   expect(document.activeElement).toBe(box)
@@ -45,7 +45,7 @@ it('takes focus, with its words selected, when the search key is pressed', () =>
 
 it('opens the results with the words in the address on Enter, and closes an overlay over them', () => {
   const { onSubmitted } = renderBox()
-  const box = screen.getByRole('searchbox', { name: 'Search' })
+  const box = screen.getByRole('combobox', { name: 'Search' })
   fireEvent.change(box, { target: { value: '  tea garden ' } })
   fireEvent.submit(box.closest('form')!)
   expect(screen.getByTestId('where').textContent).toBe('/search?q=tea+garden')
@@ -54,7 +54,7 @@ it('opens the results with the words in the address on Enter, and closes an over
 
 it('does nothing on Enter with no words', () => {
   const { onSubmitted } = renderBox()
-  const box = screen.getByRole('searchbox', { name: 'Search' })
+  const box = screen.getByRole('combobox', { name: 'Search' })
   fireEvent.change(box, { target: { value: '   ' } })
   fireEvent.submit(box.closest('form')!)
   expect(screen.getByTestId('where').textContent).toBe('/page')
@@ -63,15 +63,15 @@ it('does nothing on Enter with no words', () => {
 
 it('shows the words of the results it is on, and none elsewhere', () => {
   renderBox('/search?q=seed+tray')
-  expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('seed tray')
+  expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('seed tray')
   cleanup()
   renderBox('/page?q=seed+tray')
-  expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('')
+  expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('')
 })
 
 it('lets go of focus on Escape', () => {
   renderBox()
-  const box = screen.getByRole('searchbox')
+  const box = screen.getByRole('combobox')
   box.focus()
   fireEvent.keyDown(box, { key: 'Escape' })
   expect(document.activeElement).not.toBe(box)
@@ -79,11 +79,11 @@ it('lets go of focus on Escape', () => {
 
 it('opens a narrowed rail or a closed overlay first, then takes focus once it is there', () => {
   const { onReveal, show } = renderBox('/page', { isHidden: true })
-  expect(screen.queryByRole('searchbox')).toBeNull()
+  expect(screen.queryByRole('combobox')).toBeNull()
   focusSearch()
   expect(onReveal).toHaveBeenCalledTimes(1)
   show()
-  expect(document.activeElement).toBe(screen.getByRole('searchbox'))
+  expect(document.activeElement).toBe(screen.getByRole('combobox'))
 })
 
 it('is one button when the rail is narrowed, which opens it and asks for the box', () => {
@@ -91,5 +91,5 @@ it('is one button when the rail is narrowed, which opens it and asks for the box
   fireEvent.click(screen.getByRole('button', { name: 'Search' }))
   expect(onReveal).toHaveBeenCalledTimes(1)
   show()
-  expect(document.activeElement).toBe(screen.getByRole('searchbox'))
+  expect(document.activeElement).toBe(screen.getByRole('combobox'))
 })

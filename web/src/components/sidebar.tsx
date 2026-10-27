@@ -28,6 +28,8 @@ import {
   ServerIcon,
   ServiceIcon,
   SetupIcon,
+  SettingsIcon,
+  ShareIcon,
   ShieldIcon,
   SmartphoneIcon,
   SparkIcon,
@@ -41,7 +43,7 @@ import { Logo } from './logo'
 import { useAgentFinancePresence } from '../pages/finance/financePresence'
 import { useHerdrPresence } from './herdrPresence'
 import { useAgentIdentity } from '../agentPreferences'
-import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
+import { matchSettingsSurface, SETTINGS_LANDING, surfacesByCategory } from '../pages/settings/nav'
 import { useFreshness } from './freshness'
 import { Permissions as ApiPermissions } from '../api'
 import { hasAnywhere, hasPermission, useSession } from '../session'
@@ -159,6 +161,140 @@ const GROUPS: Group[] = [
   },
 ]
 
+// What decides whether a row is shown: the person's permissions and the
+// server's services, whether they have a mailbox, and the two answers the rail
+// has to ask for (finance and coding).
+type RailContext = {
+  permissions: ApiPermissions | undefined | null
+  services?: ServiceCapabilities
+  hasMailbox: boolean
+  isFinanceShown: boolean
+  hasCoding: boolean
+}
+
+// isItemShown is the rule the rail draws a row by, kept apart from the
+// component so the search box offers exactly the pages the rail shows.
+function isItemShown(item: Item, context: RailContext): boolean {
+  const { permissions, services } = context
+  return (
+    isPathAvailable(item.to, services) &&
+    (item.to !== '/recordings' || hasPermission(permissions, 'agent:use')) &&
+    (item.shownWhen !== 'finance' || context.isFinanceShown) &&
+    (item.shownWhen !== 'coding' || (context.hasCoding && hasPermission(permissions, 'agent:use'))) &&
+    (item.shownWhen !== 'mailbox' || context.hasMailbox) &&
+    (!item.anyOf || item.anyOf.some((key) => hasPermission(permissions, key) || hasAnywhere(permissions, key)))
+  )
+}
+
+// A page the search box can jump to.
+export type NavigablePage = { label: Key; to: string; icon: React.ReactNode }
+
+// navigablePages is every page the person could open from the rail, the account
+// menu and the management side, in the order they are drawn there: the
+// feature pages first, then their own settings, then the management pages.
+// The account's and the management lists are the rail's own (ACCOUNT_GROUP,
+// MAILBOX_RAIL_ITEMS, GROUPS) through the same isItemShown. The feature rows
+// are written out in Sidebar's markup, in two shapes (the mailbox's rail and
+// the rail of somebody with no mailbox), so they are repeated here with
+// those conditions; a row added to either shape is added here too.
+export function navigablePages(
+  context: RailContext & { hasMailboxRail: boolean; isAgentAvailable: boolean },
+): NavigablePage[] {
+  const { permissions, services, hasMailboxRail } = context
+  const pages: NavigablePage[] = []
+  const add = (isShown: boolean, label: Key, to: string, icon: React.ReactNode) => {
+    if (isShown) pages.push({ label, to, icon })
+  }
+  const hasJournal = hasPermission(permissions, 'journal:use')
+  const hasAgentUse = hasPermission(permissions, 'agent:use')
+  if (hasMailboxRail) {
+    add(context.isAgentAvailable, 'nav.chats', '/chat', <ChatIcon />)
+    add(hasJournal, 'journal.title', '/journal', <JournalIcon />)
+    add(true, 'nav.mailbox', '/mailbox', <MailIcon />)
+    add(true, 'mailbox.folder.starred', '/mailbox/starred', <FolderKindIcon kind="starred" />)
+    add(true, 'mailbox.newMessage', '/mailbox/compose', <ComposeIcon />)
+    add(true, 'nav.subscriptions', '/mailbox/subscriptions', <ListIcon />)
+    add(services?.isContactsEnabled !== false, 'nav.contacts', '/contacts', <UserIcon />)
+    add(
+      services?.isCalendarEnabled !== false || services?.isRemindersEnabled === true,
+      'nav.calendar',
+      '/calendar',
+      <CalendarIcon />,
+    )
+    add(
+      services?.isPhotosEnabled === true && hasPermission(permissions, 'photos:use'),
+      'nav.photos',
+      '/photos',
+      <PictureIcon />,
+    )
+    add(hasPermission(permissions, 'location:use'), 'location.title', '/location', <LocationIcon />)
+    add(hasPermission(permissions, 'health:use'), 'health.title', '/health', <HeartIcon />)
+    add(hasPermission(permissions, 'passwords:use'), 'passwords.title', '/passwords', <LockIcon />)
+    add(hasPermission(permissions, 'shopping:use'), 'shopping.title', '/shopping', <CartIcon />)
+  } else {
+    const hasAssistant = services?.isAssistantEnabled === true && hasAgentUse
+    add(hasAssistant, 'nav.chats', '/chat', <ChatIcon />)
+    add(hasJournal, 'journal.title', '/journal', <JournalIcon />)
+    add(hasAssistant, 'knowledge.title', '/knowledge', <GridIcon />)
+    add(hasAgentUse, 'recordings.title', '/recordings', <RecordIcon />)
+    add(
+      services?.isCalendarEnabled === true && hasPermission(permissions, 'calendar:use'),
+      'nav.calendar',
+      '/calendar',
+      <CalendarIcon />,
+    )
+    add(
+      services?.isRemindersEnabled === true &&
+        hasPermission(permissions, 'calendar:use') &&
+        services.isCalendarEnabled !== true,
+      'services.remindersLabel',
+      '/reminders',
+      <CalendarIcon />,
+    )
+    add(hasPermission(permissions, 'location:use'), 'location.title', '/location', <LocationIcon />)
+    add(hasPermission(permissions, 'health:use'), 'health.title', '/health', <HeartIcon />)
+    add(hasPermission(permissions, 'passwords:use'), 'passwords.title', '/passwords', <LockIcon />)
+    add(hasPermission(permissions, 'shopping:use'), 'shopping.title', '/shopping', <CartIcon />)
+    add(
+      services?.isContactsEnabled === true && hasPermission(permissions, 'contacts:use'),
+      'nav.contacts',
+      '/contacts',
+      <UserIcon />,
+    )
+    add(context.hasCoding && hasAgentUse, 'nav.coding', '/coding', <CodeIcon />)
+    add(
+      services?.isPhotosEnabled === true && hasPermission(permissions, 'photos:use'),
+      'nav.photos',
+      '/photos',
+      <PictureIcon />,
+    )
+    add(context.isFinanceShown, 'finance.title', '/finance', <WalletIcon />)
+  }
+  // The rows of the mailbox's rail that are the account's pages (Knowledge,
+  // Recordings, Coding, Finance), and then the rest of the account's own.
+  for (const item of [...MAILBOX_RAIL_ITEMS, ...ACCOUNT_GROUP.items]) {
+    if (isItemShown(item, context)) pages.push({ label: item.label, to: item.to, icon: item.icon })
+  }
+  // The account menu's own rows.
+  add(true, 'nav.settings', SETTINGS_LANDING, <SettingsIcon />)
+  const canUseCircles = hasPermission(permissions, 'circle:use')
+  add(canUseCircles, 'circles.title', '/circles', <PeopleIcon />)
+  add(canUseCircles, 'sharing.title', '/sharing', <ShareIcon />)
+  const managePath = firstManagementPath(permissions, services)
+  add(managePath !== undefined, 'nav.manage', managePath ?? '', <GridIcon />)
+  for (const item of GROUPS.flatMap((group) => group.items)) {
+    if (isItemShown(item, context)) pages.push({ label: item.label, to: item.to, icon: item.icon })
+  }
+  // A page the rail lists in two places is offered once.
+  const seen = new Set<string>()
+  return pages.filter((page) => {
+    const identity = `${page.to} ${page.label}`
+    if (seen.has(identity)) return false
+    seen.add(identity)
+    return true
+  })
+}
+
 const STORAGE_KEY = 'teanode.sidebar.collapsed'
 
 // The single mobile boundary. Everything that switches between the two
@@ -273,12 +409,13 @@ export function Sidebar({
   // server anyway; hiding it is the courtesy of not offering a door that
   // does not open. A group with no rows left is not drawn at all.
   // Finance is a row only for somebody who has finance, or whom somebody
-  // shares finance with, asked only while a rail that can hold it is the one
-  // shown.
-  const finance = useAgentFinancePresence(inAccount || inMailbox)
+  // shares finance with. Asked whenever somebody is signed in, whichever rail
+  // is shown, because the search box offers the page from the management rail
+  // too.
+  const finance = useAgentFinancePresence(Boolean(session.userId))
   // Coding is a row only where a computer reports herdr, asked under the
   // same condition.
-  const coding = useHerdrPresence((inAccount || inMailbox) && hasPermission(session.permissions, 'agent:use'))
+  const coding = useHerdrPresence(Boolean(session.userId) && hasPermission(session.permissions, 'agent:use'))
   const hasCoding = coding.isPresent
   // The Coding row counts the sessions that ask something, as the mail rows
   // count what is unread: a number there is a question waiting.
@@ -288,14 +425,21 @@ export function Sidebar({
         {coding.askingCount}
       </span>
     ) : null
-  const permitted = (item: Item) =>
-    isPathAvailable(item.to, session.services) &&
-    (item.to !== '/recordings' || hasPermission(session.permissions, 'agent:use')) &&
-    (item.shownWhen !== 'finance' || finance.isShown === true || finance.isShared) &&
-    (item.shownWhen !== 'coding' || (hasCoding === true && hasPermission(session.permissions, 'agent:use'))) &&
-    (item.shownWhen !== 'mailbox' || hasMailbox) &&
-    (!item.anyOf ||
-      item.anyOf.some((key) => hasPermission(session.permissions, key) || hasAnywhere(session.permissions, key)))
+  const railContext: RailContext = {
+    permissions: session.permissions,
+    services: session.services,
+    hasMailbox,
+    isFinanceShown: finance.isShown === true || finance.isShared,
+    hasCoding: hasCoding === true,
+  }
+  const permitted = (item: Item) => isItemShown(item, railContext)
+  // What the search box offers: the pages the rail, the account menu and the
+  // management side would show this person.
+  const pages = navigablePages({
+    ...railContext,
+    hasMailboxRail: Boolean(current),
+    isAgentAvailable: agent.isAvailable,
+  })
   const accountGroup: Group = {
     ...ACCOUNT_GROUP,
     items: ACCOUNT_GROUP.items.filter((item) => !(hasMailbox && item.rail === 'mailbox')),
@@ -349,6 +493,7 @@ export function Sidebar({
             mail or photos of its own to look through. */}
         {session.userId && (
           <SidebarSearch
+            pages={pages}
             isHidden={collapsed || (!onToggle && !open)}
             onReveal={() => (collapsed ? onToggle?.() : onOpen?.())}
             onSubmitted={onClose}

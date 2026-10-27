@@ -27,7 +27,8 @@ function pageSearch(): HTMLInputElement | null {
   return Array.from(boxes).find((box) => box.offsetParent !== null && !box.disabled) ?? null
 }
 
-// Control-K, or Command-K on a Mac: the search across everything.
+// Control-K, or Command-K on a Mac: the rail's box, which finds a page by name
+// or searches across everything.
 function isSearchEverythingKey(event: KeyboardEvent): boolean {
   return event.key.toLowerCase() === 'k' && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey
 }
@@ -40,8 +41,9 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
 //
 // Control-K and Command-K, which the shortcut sets leave alone because a key
 // with a modifier belongs to the browser, are the one exception: they focus
-// the search box at the top of the rail from anywhere, a box included, as they
-// do in the programs people take the key from.
+// the box at the top of the rail from anywhere, a box included, as they do in
+// the programs people take the key from. That box jumps to a page by name as
+// well as searching everything (SidebarSearch).
 //
 // Each place is offered only to somebody the rail would offer it to, so the
 // list never names a page the reader cannot open.
