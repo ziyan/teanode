@@ -21686,3 +21686,589 @@ button.person-row:focus-visible {
     height: 44px;
   }
 }
+
+/* --- shopping lists -------------------------------------------------------
+   The Shopping page: the person's lists beside what is open (a list, a store
+   or a receipt). On a phone the lists become a strip above it that scrolls
+   sideways, and the tables stay tables inside a box that scrolls. */
+/* The page is the mailbox's frame and panes (.mailbox-frame, .mailbox,
+   .mailbox-list, .mailbox-pane); what is here is the rows in the column and
+   the parts of the pane only Shopping has. */
+.shopping-list-toolbar {
+  justify-content: flex-start;
+}
+
+.shopping-list-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.shopping-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.shopping-rows-heading {
+  margin: 0;
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+/* A list or a store in the column: its name with how many are needed at
+   the end, and under the name who it is shared with. */
+.shopping-row-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px var(--space-2);
+  align-items: baseline;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  color: inherit;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.shopping-row-link:hover {
+  background: var(--field);
+}
+
+.shopping-row-link.active {
+  background: var(--sidebar-hover);
+}
+
+.shopping-row-name {
+  overflow: hidden;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shopping-row-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.shopping-row-meta {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The pane scrolls on its own, as the mailbox's reading side does, so the
+   column keeps its place while a long list is scrolled. */
+.shopping-pane {
+  overflow-y: auto;
+}
+
+/* The words a screen reader says for a column without a heading are placed
+   absolutely; without a positioned box around them they escape the table's
+   own scroll box and widen the whole page on a phone. */
+.shopping-pane .table-wrap,
+.dialog .table-wrap {
+  position: relative;
+}
+
+/* Back to the column only where the column is not beside the pane. */
+.shopping-pane-back {
+  display: none;
+  flex: none;
+}
+
+@container mailbox (max-width: 860px) {
+  .shopping-pane-back {
+    display: inline-flex;
+  }
+}
+
+@supports not (container-type: inline-size) {
+  @media (max-width: 860px) {
+    .shopping-pane-back {
+      display: inline-flex;
+    }
+  }
+}
+
+.shopping-home {
+  padding: var(--space-3) 0;
+}
+
+.shopping-home h3 {
+  margin-top: 0;
+}
+
+.shopping-list-card {
+  min-width: 0;
+}
+
+.shopping-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.shopping-list-summary {
+  flex: 1;
+  min-width: 0;
+}
+
+.shopping-list-summary p {
+  margin: 0 0 var(--space-1);
+}
+
+.shopping-trip-line {
+  font-weight: 550;
+}
+
+.shopping-list-actions {
+  margin-top: var(--space-3);
+}
+
+.shopping-table {
+  min-width: 560px;
+}
+
+.shopping-table td.wrap {
+  min-width: 12rem;
+}
+
+/* A heading, a count with its unit, a price and a day stay on one line:
+   "1 pack" broken over two lines made its row taller than the others. */
+.shopping-table th,
+.shopping-table td:not(.wrap) {
+  white-space: nowrap;
+}
+
+.shopping-table th.shrink,
+.shopping-table td.shrink {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/* The store and aisle a run of items is under: a band across the table. */
+.shopping-group-row th {
+  padding: var(--space-2) 10px;
+  background: var(--field);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+.shopping-table td {
+  vertical-align: middle;
+}
+
+.shopping-item-name {
+  min-width: 0;
+}
+
+.shopping-item-description {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.shopping-item-name .muted {
+  font-size: var(--text-label);
+}
+
+/* An item in the cart is crossed out, and keeps its place in the table. */
+.shopping-row.is-in-cart .shopping-item-description strong {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.shopping-picture {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  object-fit: cover;
+}
+
+.shopping-picture-large {
+  width: 96px;
+  height: 96px;
+  border-radius: var(--radius-2);
+}
+
+.shopping-picture-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--field);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.shopping-picture-large.shopping-picture-empty {
+  font-size: 32px;
+}
+
+/* A picture across the top of a card in the pictures view: square, the
+   whole product shown rather than cropped, on the field color so a picture
+   with its own white ground still reads as a tile. */
+.shopping-picture-card {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  object-fit: contain;
+  background: var(--field);
+}
+
+.shopping-picture-card.shopping-picture-empty {
+  font-size: 48px;
+}
+
+.shopping-card .picture-opener {
+  width: 100%;
+}
+
+/* The tabs of a list and the layout switch on one line, the switch at the
+   end; the line under the tabs runs under both. */
+.shopping-tabs-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.shopping-tabs-row .tabs {
+  flex: 1;
+  min-width: 0;
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+/* In a narrow pane the tabs need the whole width: the switch goes on a line
+   of its own above them, at the end. Measured against the frame rather than
+   the window, since the rail beside it takes a share of a tablet's width. */
+@container mailbox (max-width: 640px) {
+  .shopping-cards {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+
+  .shopping-tabs-row {
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+  }
+
+  .shopping-tabs-row .tabs {
+    flex-basis: 100%;
+  }
+
+  .shopping-tabs-row .shopping-view-switch {
+    order: -1;
+    margin-left: auto;
+  }
+}
+
+/* The store's list buttons and the layout switch share a line, the switch
+   at the end. */
+.shopping-view-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.shopping-view-bar .shopping-list-toggles {
+  margin-bottom: 0;
+}
+
+.shopping-view-bar .shopping-view-switch {
+  margin-left: auto;
+}
+
+.shopping-view-switch {
+  flex: none;
+}
+
+/* Two cards side by side on a phone, as many as fit on a desktop, a little
+   larger there. */
+.shopping-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shopping-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+}
+
+.shopping-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+}
+
+.shopping-card-name {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.shopping-card-name input[type='checkbox'] {
+  flex: none;
+  margin-top: 3px;
+}
+
+/* A store and an aisle together can be long: two lines, then cut. */
+.shopping-card-group-name {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.shopping-card-words {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.shopping-card-facts {
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+/* The buttons sit at the foot of the card, so a row of cards lines its
+   buttons up whatever the names above them take. */
+.shopping-card-actions {
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: var(--space-1);
+}
+
+.shopping-card.is-in-cart .shopping-item-description strong {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.shopping-picture-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.shopping-picture-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.shopping-prices {
+  margin-top: var(--space-4);
+}
+
+/* The item's dialog and the import's are wide, as their tables need: the
+   general dialog rule caps every dialog at 420px, which put the item's four
+   buttons on two lines and squeezed the price table's headings. On a phone a
+   dialog is the whole screen, as everywhere. */
+@media (min-width: 641px) {
+  .dialog.dialog-wide:has(.shopping-picture-field),
+  .dialog.dialog-wide:has(.shopping-import-files) {
+    max-width: min(640px, calc(100vw - 32px));
+  }
+}
+
+/* On a phone the item dialog's own actions (out of stock, remove) take a
+   line of their own, so Cancel and Save stay together on the next. */
+@media (max-width: 600px) {
+  .dialog:has(.shopping-picture-field) .dialog-actions-other {
+    flex-basis: 100%;
+  }
+}
+
+.shopping-price-range {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-label);
+}
+
+.shopping-prices h4 {
+  margin: 0 0 var(--space-2);
+}
+
+.shopping-price-chart {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  height: auto;
+  margin-bottom: var(--space-3);
+}
+
+.shopping-price-chart polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.shopping-price-chart circle {
+  fill: var(--accent);
+}
+
+.shopping-import-files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.shopping-import-files button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.shopping-import-file {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 4px 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  font-size: var(--text-label);
+}
+
+.shopping-share-heading {
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.shopping-shares {
+  margin-bottom: var(--space-3);
+}
+
+.shopping-share-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.shopping-share-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The lists on the store screen, switched on and off. */
+.shopping-list-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.shopping-list-toggle {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.shopping-list-toggle.is-included {
+  border-color: var(--text);
+  background: var(--sidebar-hover);
+  color: var(--text);
+}
+
+.tab-count {
+  margin-left: var(--space-1);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.shopping-receipt-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+/* The receipt's line takes the room beside the way back; the buttons go
+   under it once the two do not fit on one line. */
+.shopping-receipt-head p {
+  flex: 1 1 14rem;
+  min-width: 0;
+  margin: 0;
+}
+
+.shopping-receipt-add-to {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.shopping-receipt-matches {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.shopping-receipt-matches li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+}
+
+.shopping-receipt-other {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.shopping-receipt-section {
+  margin-top: var(--space-4);
+}
+
+.shopping-receipt-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}

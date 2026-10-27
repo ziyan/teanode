@@ -130,6 +130,10 @@ final class AppModel {
     /// pressed notification, or a link, names them. The screen takes it and
     /// clears it.
     var openedLocationUserId: String?
+    /// Where the Shopping screen opens: the store a pressed shopping
+    /// notification of arriving there names, or the list another person
+    /// started shopping. The screen takes it and clears it.
+    var openedShopping: ShoppingPlace?
     /// The coding session the Coding screen opens on: a pressed notification
     /// of its question names it. The screen takes it and clears it.
     var openedCodingTarget: CodingTarget?
@@ -320,6 +324,8 @@ final class AppModel {
             // Only the part: an item's address would say which item, and an
             // address is no reason to open one.
             openedSection = .passwords
+        case "shopping":
+            openedSection = .shopping
         case "settings":
             openedSection = .settings
             if segments.count >= 3, segments[1] == "mailbox", segments[2] == "devices" {
@@ -626,6 +632,10 @@ final class AppModel {
     /// server's passwords:use), as far as the server has said.
     private(set) var canUsePasswords = false
 
+    /// Whether the account may keep shopping lists (the server's
+    /// shopping:use), as far as the server has said.
+    private(set) var canUseShopping = false
+
     /// Whether the permissions of the account in use have been read once
     /// (`canUseLocation` and `canChat` are only true after that). Until
     /// then, a screen that needs one of them is not known to be refused.
@@ -647,6 +657,7 @@ final class AppModel {
             canUseLocation = session.holds("location:use")
             canUseHealth = session.holds("health:use")
             canUsePasswords = session.holds("passwords:use")
+            canUseShopping = session.holds("shopping:use")
             hasReadPermissions = true
         }
         let canUseCircles = session?.holds("circle:use") ?? false
@@ -687,6 +698,7 @@ final class AppModel {
                 canUseLocation = true
                 canUseHealth = true
                 canUsePasswords = true
+                canUseShopping = true
                 hasReadPermissions = true
                 return
             }
@@ -714,6 +726,7 @@ final class AppModel {
         canUseLocation = false
         canUseHealth = false
         canUsePasswords = false
+        canUseShopping = false
         hasReadPermissions = false
         hasPermissionReadFailed = false
         unreadChatCount = 0
@@ -1004,6 +1017,15 @@ final class AppModel {
                 // Somebody arrived or left: Location, with them selected.
                 openedLocationUserId = info.locationUserId.isEmpty ? nil : info.locationUserId
                 openedSection = .location
+            } else if info.notificationKind == "shopping" {
+                // Arrived at a store, or somebody started shopping a list:
+                // Shopping, at that store or that list.
+                if !info.shoppingStoreName.isEmpty {
+                    openedShopping = .store(info.shoppingStoreName, listIds: [])
+                } else if !info.shoppingListId.isEmpty {
+                    openedShopping = .list(info.shoppingListId)
+                }
+                openedSection = .shopping
             } else if info.notificationKind == "herdr_question" {
                 // A coding session asks: Coding, on that session, where its
                 // question is answered.
@@ -1281,6 +1303,7 @@ extension AppModel {
         case .location: return canUseLocation
         case .health: return canUseHealth
         case .passwords: return canUsePasswords
+        case .shopping: return canUseShopping
         case .coding: return services.isAssistantEnabled && hasCodingComputers
         case .settings: return true
         }

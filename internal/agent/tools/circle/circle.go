@@ -384,7 +384,7 @@ func init() {
 					"leave the circle, and not passwords, which their owner removes), by its kind and the share_id from sharing. The owner is not " +
 					"told and has to share again for the person to have it back. Only on the person's word.",
 				Parameters: tools.Object(map[string]any{
-					"share_kind": tools.EnumProperty("what the share is of", "calendar", "location", "health", "memory_page", "photo_album", "recording", "skill"),
+					"share_kind": tools.EnumProperty("what the share is of", "calendar", "location", "health", "memory_page", "photo_album", "recording", "skill", "shopping_list"),
 					"share_id":   tools.StringProperty("the share, from sharing"),
 				}, "share_kind", "share_id"),
 				PreviewIn: declineSharePreview,

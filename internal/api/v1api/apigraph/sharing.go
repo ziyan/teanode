@@ -198,6 +198,8 @@ func (self *graph) canListShareKind(ctx context.Context, principal *api.Principa
 		return requireFinanceNotAgent(ctx) == nil && canUse(models.PermissionAgentUse)
 	case models.ShareKindPasswords:
 		return canUse(models.PermissionPasswordsUse)
+	case models.ShareKindShopping:
+		return canUse(models.PermissionShoppingUse)
 	}
 	return false
 }
@@ -303,6 +305,14 @@ func (self *graph) sharesMadeBy(tx db.Transaction, user *models.User, shareKind 
 		}
 	case models.ShareKindPasswords:
 		return tx.ListPasswordSharesBy(user.ID)
+	case models.ShareKindShopping:
+		shares, err := tx.ListShoppingListSharesBy(user.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, share := range shares {
+			rows = append(rows, shoppingShareRow(share))
+		}
 	}
 	return rows, nil
 }
@@ -382,6 +392,14 @@ func (self *graph) sharesReachingFor(tx db.Transaction, user *models.User, share
 		}
 	case models.ShareKindPasswords:
 		return tx.ListPasswordSharesReaching(user.ID)
+	case models.ShareKindShopping:
+		shares, err := tx.ListShoppingListSharesReaching(user.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, share := range shares {
+			rows = append(rows, shoppingShareRow(share))
+		}
 	}
 	return rows, nil
 }
@@ -408,6 +426,17 @@ func financeShareRow(share *models.FinanceShare) *models.ShareRow {
 		GranteeUserID: share.GranteeUserID, GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName,
 		GranteeCircleID: share.GranteeCircleID, GranteeCircleName: share.GranteeCircleName,
 		ShareLevel: string(share.FinanceShareLevel), CreatedAt: share.CreatedAt,
+	}
+}
+
+// shoppingShareRow is a share of a shopping list as a row of the list, for
+// the same reason as recordingShareRow. A list is shared whole, with no level.
+func shoppingShareRow(share *models.ShoppingListShare) *models.ShareRow {
+	return &models.ShareRow{
+		ShareKind: models.ShareKindShopping, ShareID: share.ID, SubjectID: share.ShoppingListID, SubjectName: share.ListName,
+		OwnerUserID: share.OwnerUserID, OwnerUsername: share.OwnerUsername, OwnerName: share.OwnerName,
+		GranteeUserID: share.GranteeUserID, GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName,
+		GranteeCircleID: share.GranteeCircleID, GranteeCircleName: share.GranteeCircleName, CreatedAt: share.CreatedAt,
 	}
 }
 
@@ -609,10 +638,14 @@ func (self *graph) DeclineShare(ctx context.Context, arguments DeclineShareArgum
 		if err := tx.DeclineFinanceShare(user.ID, shareId); err != nil {
 			return false, translateError(err)
 		}
+	case models.ShareKindShopping:
+		if err := tx.DeclineShoppingListShare(user.ID, shareId); err != nil {
+			return false, translateError(err)
+		}
 	case models.ShareKindPasswords:
 		return false, fmt.Errorf("%w: passwords shared with you are removed by the person who shared them, on their Passwords page", api.ErrInvalidArguments)
 	default:
-		return false, fmt.Errorf("%w: the kind is calendar, location, health, memory_page, photo_album, recording, finance or skill", api.ErrInvalidArguments)
+		return false, fmt.Errorf("%w: the kind is calendar, location, health, memory_page, photo_album, recording, finance, skill or shopping_list", api.ErrInvalidArguments)
 	}
 	log.Noticef("%s declined a share of %s", user.Username, shareKind)
 	return true, nil

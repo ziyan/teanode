@@ -72,10 +72,15 @@ const (
 	// or leaving a place they named or labeled. It opens the app on Location
 	// with that person.
 	NotificationLocation = "location"
+
+	// NotificationShopping is what the person's shopping lists need at a
+	// store they just arrived at, and somebody starting to shop a list the
+	// person shares. It opens the app on Shopping, at that store or list.
+	NotificationShopping = "shopping"
 )
 
 // NotificationKinds is every kind, in the order a person chooses among them.
-var NotificationKinds = []string{NotificationMessage, NotificationApproval, NotificationQuestion, NotificationAnswer, NotificationCircle, NotificationChat, NotificationSkillShareCall, NotificationPhoto, NotificationLocation}
+var NotificationKinds = []string{NotificationMessage, NotificationApproval, NotificationQuestion, NotificationAnswer, NotificationCircle, NotificationChat, NotificationSkillShareCall, NotificationPhoto, NotificationLocation, NotificationShopping}
 
 // Wants reports whether the phone takes a kind of notification.
 func (self *AgentPhone) Wants(notificationKind string) bool {

@@ -58,6 +58,7 @@
                 madeShareJSON(kind: "recording", id: "demo-share-7", subjectId: "demo-recording", subjectName: "Weekly planning", level: "transcript", granteeUserId: "sam", createdAt: "2026-09-17T08:00:00Z"),
                 madeShareJSON(kind: "finance", id: "demo-share-8", subjectId: "demo-account", subjectName: "Everyday checking", subjectMask: "0001", level: "spending", granteeCircleName: "Home", createdAt: "2026-09-17T08:30:00Z"),
                 madeShareJSON(kind: "skill", id: "demo-share-6", subjectId: "groceries", subjectName: "groceries", scopes: ["order"], granteeUserId: "sam", createdAt: "2026-09-17T09:00:00Z"),
+                madeShareJSON(kind: "shopping_list", id: "demo-share-9", subjectId: "list-groceries", subjectName: "Groceries", granteeCircleName: "Home", createdAt: "2026-09-17T10:00:00Z"),
                 madeShareJSON(kind: "passwords", id: "", itemCount: 3, granteeUserId: "sam", createdAt: "2026-09-18T09:00:00Z"),
             ]
         }
@@ -72,6 +73,7 @@
                 receivedShareJSON(kind: "recording", id: "demo-share-17", subjectId: "demo-recording-sam", subjectName: "Team standup", level: "summary", ownerUserId: "sam", canDecline: true, createdAt: "2026-09-06T12:00:00Z"),
                 receivedShareJSON(kind: "finance", id: "demo-share-18", subjectId: "demo-account-alex", subjectName: "Joint checking", subjectMask: "7788", level: "balance", ownerUserId: "alex", circleName: "Home", canDecline: false, createdAt: "2026-09-06T13:00:00Z"),
                 receivedShareJSON(kind: "skill", id: "demo-share-16", subjectId: "taxi", subjectName: "taxi", scopes: ["book"], ownerUserId: "jordan", canDecline: true, createdAt: "2026-09-07T09:00:00Z"),
+                receivedShareJSON(kind: "shopping_list", id: "demo-share-19", subjectId: "list-party", subjectName: "Party supplies", ownerUserId: "sam", canDecline: true, createdAt: "2026-09-07T10:00:00Z"),
                 receivedShareJSON(kind: "passwords", id: "", itemCount: 2, ownerUserId: "sam", canDecline: false, createdAt: "2026-09-08T09:00:00Z"),
             ]
         }

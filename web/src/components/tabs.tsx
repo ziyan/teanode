@@ -22,6 +22,8 @@ export type TabItem = {
   // arriving from the first dot does not end in a page of tabs and no reason.
   marked?: boolean
   markedLabel?: string
+  // How many things the tab holds, said after its name.
+  count?: number
 }
 
 export function Tabs({
@@ -35,7 +37,7 @@ export function Tabs({
   onSelect: (id: string) => void
   actions?: React.ReactNode
 }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const strip = useRef<HTMLDivElement>(null)
   const [overflow, setOverflow] = useState({ hasMoreBefore: false, hasMoreAfter: false })
 
@@ -45,7 +47,7 @@ export function Tabs({
   // whenever the row or the window changes width, and whenever a tab does:
   // a change of language or a web font arriving widens the labels without
   // touching the row's own width, and the fade stayed as it was before.
-  const labelsKey = items.map((item) => t(item.label)).join('\u0000')
+  const labelsKey = items.map((item) => t(item.label) + (item.count ?? '')).join('\u0000')
   useEffect(() => {
     const row = strip.current
     if (!row) {
@@ -142,6 +144,7 @@ export function Tabs({
             onClick={() => onSelect(item.id)}
           >
             {t(item.label)}
+            {item.count !== undefined && <span className="tab-count">{item.count.toLocaleString(language)}</span>}
             {item.marked && (
               <span className="tab-dot">
                 <span className="visually-hidden">{item.markedLabel ?? ''}</span>

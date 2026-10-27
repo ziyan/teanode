@@ -84,6 +84,8 @@ export function PhonesPage() {
         return t('phones.kind.photo')
       case 'location':
         return t('phones.kind.location')
+      case 'shopping':
+        return t('phones.kind.shopping')
     }
     return kind
   }

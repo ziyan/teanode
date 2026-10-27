@@ -146,6 +146,7 @@ so one command serves a person and a script.
 | `template` | a domain's message templates, with `render` |
 | `layout` | the frames templates are rendered inside |
 | `photo` | your library of photos and videos: `list`, `read`, `describe`, `upload`, `download`, `favorite`, `set-date` (correct when a photo was taken), `search-places`, `set-location` and `remove-location` (where it was taken), `trash`, `restore`, `retry`, `save` (keep a photo of a shared album, or a file of a conversation), `delete`, `empty-trash`, `library`, `album` for named sets of photos, with sharing, and `people` and `faces` for the people found in them; see below |
+| `shopping` | your shopping lists: `lists`, `show`, `create`, `add` (items, or a list read from a file or pictures), `check`, `store` and `shop` for the store, `receipt` for what a receipt did, and the rest; see below |
 | `finance` | linked institutions, transactions, trades, net worth, budgets and savings targets; see below |
 | `search` | your words across chats, mail, contacts, photos, memory, documents, recordings, places and finance at once; see below |
 | `link` | web links as the dashboard and the app show them: `link preview --conversation <id> <url>...`; see below |
@@ -781,6 +782,53 @@ keeps nothing on disk. Run again
 after it was interrupted, it starts the interrupted file over (the library
 does not list a half-sent upload), and the server deletes the part it was left
 with after a week of silence.
+
+### Shopping lists (teanode shopping)
+
+Your shopping lists: the same operations as the dashboard's Shopping page, the
+iPhone app and the agent's `shopping` tool, and named after them (the tool's
+`not_needed` is `teanode shopping not-needed`). It needs the `shopping:use`
+permission. Each command that prints data takes `--json`. A list is named by
+its name (case does not matter) or its id; a name more than one list has is
+refused with their ids. Items are named by the id `show` and `store` print. The
+live view of a list changing is the dashboard's and the app's; a command reads
+once.
+
+A list is a catalog: an item that was bought stays on it as `not needed`, with
+its picture, store and prices, and `need` brings it back with a count. Everybody a
+list is shared with can add, change and check off items, shop and
+upload receipts; only the owner shares it further or deletes it. Store names
+are compared without case or punctuation, so `Example Market` and
+`example-market` are one store.
+
+| Command | What it does |
+| --- | --- |
+| `teanode shopping lists` | the lists you reach, yours first: id, name, how many items are needed, in the cart and not needed, whose it is, whether it is shared and whether you are reminded on arriving at a store |
+| `teanode shopping show LIST [--state needed\|in_cart\|not_needed]... [--limit N] [--offset N]` | one list and its items in the order the list keeps them (by aisle), and who is shopping it now. `--state` keeps the items in those states, every state by default. A page is 200 items, at most 500; a full page says on standard error where to continue |
+| `teanode shopping item ITEM-ID` | one item: its details, count, store, aisle, state, latest price and where its picture came from |
+| `teanode shopping create NAME` / `rename LIST NAME` | make a list, or give one another name |
+| `teanode shopping delete LIST` | delete one of your own lists with its items and prices, for everybody it is shared with. It asks first, or takes `--force`; it cannot be undone |
+| `teanode shopping share LIST USERNAME\|CIRCLE` | share one of your lists with somebody who shares a circle with you (`teanode circle people`) or with everyone in a circle you are in, as `calendar share` names its target. It asks first, or takes `--force`. Sharing again changes nothing |
+| `teanode shopping shares LIST` / `unshare SHARE-ID` | who one of your lists is shared with, with the id `unshare` takes. `unshare` asks first, or takes `--force`, and takes the list away from that person or circle |
+| `teanode shopping remind LIST [--off]` / `store-remind STORE [--off]` | whether your phone tells you what a list needs, or what your lists need at one store, when you arrive at a store: on by default, `--off` stops it |
+| `teanode shopping add LIST ITEM... [--store NAME] [--aisle NAME] [--quantity N] [--unit UNIT] [--details WORDS] [--store-brand] [--price AMOUNT] [--currency CODE]` | add items, each with the flags given. An item already on the list (the same description and store, compared loosely) is merged into: its count becomes the larger of the two and the new details are added, so adding the same list twice does not double it. A picture of each new item is searched for on its own |
+| `teanode shopping add LIST (--from-file FILE\|-) [--picture FILE]...` | read a list into items: the text in a file (`-` is standard input), or pictures and screenshots of a list. The server's model reads it, so it needs the assistant to be on and, for pictures, a model that reads them. It prints what was read, which items merge into items already on the list and what the section headings and the store became, then asks before adding, or takes `--force` |
+| `teanode shopping import-preview [LIST] (--from-file FILE\|-) [--picture FILE]...` | the reading alone: nothing is added. With a list it says which items would merge |
+| `teanode shopping edit ITEM-ID [--description WORDS] [--details WORDS] [--store NAME] [--aisle NAME] [--quantity N] [--unit UNIT] [--store-brand \| --not-store-brand]` | change an item; only what you name changes, and `--store ""` makes it an item for any store |
+| `teanode shopping remove ITEM-ID...` | take items off their lists for good, with their prices and pictures, at most 100 at once. It asks first, or takes `--force`. To keep an item in the catalog use `not-needed` |
+| `teanode shopping check ITEM-ID... [--store NAME]` / `uncheck ITEM-ID...` | put items in the cart, or back to needed. The first one starts your trip, at `--store` (the item's store by default), and tells the others the list reaches. An item stays in the cart until you are done, a receipt matches it, or a new trip starts on its list more than six hours later; then it is bought |
+| `teanode shopping need ITEM-ID... [--quantity N]` / `not-needed ITEM-ID...` | need items again with a count (1 by default), or mark them bought or not wanted now |
+| `teanode shopping out-of-stock ITEM-ID [--store NAME] [--in-stock]` | say a store had none of an item (the item's own store by default), or that it is in stock again |
+| `teanode shopping price ITEM-ID PRICE [--store NAME] [--on DAY] [--currency CODE]` / `prices ITEM-ID` | remember the price of one that you saw, and list the prices remembered, newest first, from receipts and from people |
+| `teanode shopping picture ITEM-ID` / `set-picture ITEM-ID FILE` | search the web for another picture of an item, which arrives in a minute or so; or give it a picture of your own, or take its picture away with `--remove` |
+| `teanode shopping stores` / `store STORE [--list LIST]... [--this-store-only]` | the stores your items are for, with how many are needed at each; and the store screen: what to get at one store across your lists, by aisle, each item saying which list it is on, and who is shopping there. The items for any store are listed too unless `--this-store-only` |
+| `teanode shopping trips` | who is shopping now, on the lists you reach |
+| `teanode shopping shop LIST... [--store NAME]` / `done [TRIP-ID]` | start shopping a store for some lists by hand, which tells the others the lists reach (checking an item does it too), and finish: what you put in the cart is bought, no receipt needed. `done` alone ends your own trip, or buys your cart when no trip is open |
+| `teanode shopping receipt FINANCE-RECEIPT-ID` | what a receipt did to your lists: each item line with the items it was matched to (applied, or proposed and waiting) and the match ids, and what is still needed at that store. Every Finance receipt is matched to your lists on its own, wherever it came from |
+| `teanode shopping match-receipt FINANCE-RECEIPT-ID` | match a receipt again, for one read before the list had its items. It is queued, and `receipt` shows the result a minute later |
+| `teanode shopping decide MATCH-ID apply\|dismiss` | apply a match the matcher was unsure of, which checks the item off and remembers its price, or dismiss one; dismissing an applied match undoes it |
+| `teanode shopping match-line ITEM-ID FINANCE-RECEIPT-LINE-ID` / `add-from-receipt FINANCE-RECEIPT-LINE-ID LIST` | tie a receipt line to an item by hand, or put a receipt line on a list as an item |
+| `teanode shopping undo-receipt FINANCE-RECEIPT-ID` | put everything a receipt changed back as it was: items back to needed with their old counts, and the prices it wrote forgotten |
 
 ### teanode hook
 

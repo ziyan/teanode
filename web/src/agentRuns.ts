@@ -47,6 +47,12 @@ export const RUN_KINDS = [
   'follow_up_sweep',
   // The weekly look at what is on near the person.
   'nearby',
+  // A receipt matched against the shopping lists.
+  'match_shopping',
+  // A picture found for a shopping list item.
+  'shopping_picture',
+  // A pasted or photographed list read into items.
+  'shopping_import',
 ]
 
 // runKindLabel is a run's kind in the reader's words. A kind this dashboard
