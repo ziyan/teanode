@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -125,4 +126,22 @@ func TestAShoppingListIsSharedAndCheckedOffLive(t *testing.T) {
 		t.Error("ben's screen was not told the list is gone from him")
 	}
 	world.refused(t, world.ben, fmt.Sprintf(`query { GetShoppingList(shoppingListId: %q) { totalCount } }`, listId))
+}
+
+// Finding a picture and matching a receipt spend the server's model budget,
+// so a person who may keep lists but not use the agent is refused them
+// before anything is queued.
+func TestTheModelsShoppingWorkNeedsTheAgent(t *testing.T) {
+	world := newShoppingWorld(t)
+	listId := world.call(t, world.ada, `mutation { CreateShoppingList(listName: "Groceries") { id } }`)["CreateShoppingList"].(map[string]any)["id"].(string)
+	added := world.call(t, world.ada, fmt.Sprintf(`mutation { AddShoppingItems(shoppingListId: %q, shoppingItems: [{itemDescription: "Soup"}]) { shoppingItem { id } } }`, listId))["AddShoppingItems"].([]any)
+	soupId := added[0].(map[string]any)["shoppingItem"].(map[string]any)["id"].(string)
+	for _, query := range []string{
+		fmt.Sprintf(`mutation { FindShoppingItemPicture(shoppingItemId: %q) }`, soupId),
+		`mutation { MatchShoppingReceipt(financeReceiptId: "receipt-01") }`,
+	} {
+		if message := world.refused(t, world.ada, query); strings.Contains(message, "does not run") {
+			t.Errorf("%s was refused only for the missing agent worker, not for the person: %s", query, message)
+		}
+	}
 }

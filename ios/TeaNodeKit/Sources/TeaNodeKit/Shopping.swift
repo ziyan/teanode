@@ -170,10 +170,21 @@ public enum ShoppingMoney {
 
 /// ShoppingStoreKey is how stores are compared: a chain's name without case,
 /// spaces or punctuation, so any branch matches. The server computes the same
-/// key for a trip's `storeKey`.
+/// key for a trip's `storeKey`. It keeps letters and decimal digits one
+/// Unicode scalar at a time, as the server does per rune, so a name typed
+/// with a combining accent or a voiced kana mark gets the server's key.
 public enum ShoppingStoreKey {
     public static func key(of storeName: String) -> String {
-        String(storeName.lowercased().filter { $0.isLetter || $0.isNumber })
+        var kept = String.UnicodeScalarView()
+        for scalar in storeName.lowercased().unicodeScalars {
+            switch scalar.properties.generalCategory {
+            case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter, .decimalNumber:
+                kept.append(scalar)
+            default:
+                continue
+            }
+        }
+        return String(kept)
     }
 }
 
@@ -395,6 +406,13 @@ public struct ShoppingListPage: Decodable, Hashable, Sendable {
     public let shoppingItems: [ShoppingItem]
     public let shoppingTrips: [ShoppingTrip]
     public let totalCount: Int
+
+    public init(shoppingList: ShoppingList?, shoppingItems: [ShoppingItem], shoppingTrips: [ShoppingTrip], totalCount: Int) {
+        self.shoppingList = shoppingList
+        self.shoppingItems = shoppingItems
+        self.shoppingTrips = shoppingTrips
+        self.totalCount = totalCount
+    }
 
     public init(from decoder: Decoder) throws {
         let fields = try ShoppingFields(decoder)
@@ -1232,6 +1250,21 @@ extension Connection {
         ]
         if !states.isEmpty { variables["shoppingItemStates"] = .array(states.map { .string($0.rawValue) }) }
         return try await execute(Documents.shoppingList, variables: variables, as: Answer.self).GetShoppingList
+    }
+
+    /// A whole list, read in pages of pageSize items until totalCount, since
+    /// the screen groups and counts every item it has.
+    public func wholeShoppingList(
+        shoppingListId: String, states: [ShoppingItemState] = [], pageSize: Int = 500
+    ) async throws -> ShoppingListPage {
+        let first = try await shoppingList(shoppingListId: shoppingListId, states: states, pageSize: pageSize)
+        var items = first.shoppingItems
+        while items.count < first.totalCount {
+            let next = try await shoppingList(shoppingListId: shoppingListId, states: states, offset: items.count, pageSize: pageSize)
+            if next.shoppingItems.isEmpty { break }
+            items += next.shoppingItems
+        }
+        return ShoppingListPage(shoppingList: first.shoppingList, shoppingItems: items, shoppingTrips: first.shoppingTrips, totalCount: first.totalCount)
     }
 
     public func shoppingItem(shoppingItemId: String) async throws -> ShoppingItem {

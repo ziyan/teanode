@@ -168,7 +168,7 @@ final class ShoppingListModel {
 
     func load() async {
         do {
-            let page = try await connection.shoppingList(shoppingListId: listId)
+            let page = try await connection.wholeShoppingList(shoppingListId: listId)
             if let read = page.shoppingList {
                 list = read
                 isReminded = read.isReminded
