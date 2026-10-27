@@ -1285,6 +1285,10 @@ func runJournalCorrect(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(narrative)
 	}
+	if narrative.IsCorrectionAlreadyKept {
+		fmt.Printf("already kept; nothing added (%s kept for %s)\n", countWords(len(narrative.Corrections), "correction"), journalTargetWords(day, periodKind))
+		return nil
+	}
 	fmt.Printf("noted (%s kept for %s); the story is being written again\n", countWords(len(narrative.Corrections), "correction"), journalTargetWords(day, periodKind))
 	return nil
 }

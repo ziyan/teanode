@@ -274,9 +274,12 @@ export function NarrativeCard({
           onClose={() => setIsCorrecting(false)}
           onSubmit={(correctionText) =>
             run(async () => {
-              await graphql(CORRECT_JOURNAL_NARRATIVE, { ...targetVariables(target), correctionText })
+              const answer = await graphql<{ CorrectJournalNarrative: { isCorrectionAlreadyKept: boolean } }>(CORRECT_JOURNAL_NARRATIVE, {
+                ...targetVariables(target),
+                correctionText,
+              })
               setIsCorrecting(false)
-              toast.done(t('journal.correctionSaved'))
+              toast.done(t(answer.CorrectJournalNarrative.isCorrectionAlreadyKept ? 'journal.correctionAlreadyKept' : 'journal.correctionSaved'))
               await onChanged()
             }, t('journal.correctionFailed'))
           }

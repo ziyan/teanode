@@ -90,7 +90,9 @@ type JournalMutation interface {
 	// Adds the caller's correction to a day's or a period's narrative and
 	// writes the narrative again now, in the background (narrativePending);
 	// every later writing keeps to it. At most 20 corrections of at most 500
-	// characters each. Needs journal:use.
+	// characters each. Words the narrative already keeps, but for case and
+	// spacing, add nothing and write nothing (isCorrectionAlreadyKept).
+	// Needs journal:use.
 	CorrectJournalNarrative(ctx context.Context, arguments CorrectJournalNarrativeArguments) (*JournalNarrativeView, error)
 
 	// Removes one correction, by its place in the list, and writes the
@@ -381,6 +383,10 @@ type JournalNarrativeView struct {
 	Failure string `json:"failure"`
 
 	Corrections []*JournalCorrectionView `json:"corrections"`
+
+	// IsCorrectionAlreadyKept says CorrectJournalNarrative added nothing: the
+	// narrative already keeps those words. False in every other answer.
+	IsCorrectionAlreadyKept bool `json:"isCorrectionAlreadyKept"`
 
 	// SourceCount is how many records it was written from.
 	SourceCount int `json:"sourceCount"`

@@ -126,9 +126,10 @@ type JournalOperation interface {
 	DeleteJournalNarrative(userId string, target models.JournalTarget) error
 
 	// AddJournalCorrection adds a correction to a target's narrative and marks
-	// it waiting to be written. ErrLimitReached past
-	// models.JournalCorrectionsMost.
-	AddJournalCorrection(userId string, target models.JournalTarget, timeZone, correctionText string, at time.Time) error
+	// it waiting to be written. A correction the narrative already keeps, the
+	// same words but for case and spacing, adds nothing and isAdded is false.
+	// ErrLimitReached past models.JournalCorrectionsMost.
+	AddJournalCorrection(userId string, target models.JournalTarget, timeZone, correctionText string, at time.Time) (isAdded bool, err error)
 
 	// RemoveJournalCorrection removes the correction at correctionIndex and
 	// marks the target waiting to be written. ErrNotFound for an index that
@@ -997,26 +998,42 @@ func (self *transaction) DeleteJournalNarrative(userId string, target models.Jou
 	return self.tx.Exec(`DELETE FROM "journal_link" WHERE "`+ownerColumn+`" = ? AND "link_source" = 'agent' AND NOT "is_hidden"`, ownerIds[0]).Error
 }
 
-func (self *transaction) AddJournalCorrection(userId string, target models.JournalTarget, timeZone, correctionText string, at time.Time) error {
+func (self *transaction) AddJournalCorrection(userId string, target models.JournalTarget, timeZone, correctionText string, at time.Time) (bool, error) {
 	subject, err := newJournalSubject(userId, target)
 	if err != nil {
-		return err
+		return false, err
 	}
 	correctionText = strings.TrimSpace(correctionText)
 	if correctionText == "" || utf8.RuneCountInString(correctionText) > models.JournalCorrectionCharactersMost || hasNullCharacter(correctionText) {
-		return fmt.Errorf("%w: a correction is 1 to %d characters", ErrInvalidArguments, models.JournalCorrectionCharactersMost)
+		return false, fmt.Errorf("%w: a correction is 1 to %d characters", ErrInvalidArguments, models.JournalCorrectionCharactersMost)
 	}
 	if _, err := subject.ensure(self.tx, userId, target, timeZone, at); err != nil {
-		return err
+		return false, err
 	}
 	corrections, err := self.lockJournalCorrections(subject)
 	if err != nil {
-		return err
+		return false, err
+	}
+	// Saying the same thing again changes nothing the writer reads, so it
+	// is not kept twice and the narrative is not asked for again.
+	if slices.ContainsFunc(corrections, func(correction models.JournalCorrection) bool {
+		return sameJournalCorrection(correction.CorrectionText, correctionText)
+	}) {
+		return false, nil
 	}
 	if len(corrections) >= models.JournalCorrectionsMost {
-		return limitReached("a narrative keeps at most %d corrections; remove one first", models.JournalCorrectionsMost)
+		return false, limitReached("a narrative keeps at most %d corrections; remove one first", models.JournalCorrectionsMost)
 	}
-	return self.storeJournalCorrections(subject, append(corrections, models.JournalCorrection{CorrectionText: correctionText, CreatedAt: at}), at)
+	if err := self.storeJournalCorrections(subject, append(corrections, models.JournalCorrection{CorrectionText: correctionText, CreatedAt: at}), at); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// sameJournalCorrection says two corrections are the same words, but for case
+// and spacing.
+func sameJournalCorrection(first, second string) bool {
+	return strings.EqualFold(strings.Join(strings.Fields(first), " "), strings.Join(strings.Fields(second), " "))
 }
 
 func (self *transaction) RemoveJournalCorrection(userId string, target models.JournalTarget, correctionIndex int, at time.Time) error {

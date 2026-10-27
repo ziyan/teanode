@@ -497,7 +497,7 @@ export const STOP_JOURNAL_TOUCH_UP = `mutation ($day: String!, $periodKind: Stri
 }`
 
 export const CORRECT_JOURNAL_NARRATIVE = `mutation ($day: String!, $periodKind: String, $correctionText: String!) {
-  CorrectJournalNarrative(day: $day, periodKind: $periodKind, correctionText: $correctionText) { headline }
+  CorrectJournalNarrative(day: $day, periodKind: $periodKind, correctionText: $correctionText) { isCorrectionAlreadyKept }
 }`
 
 export const REMOVE_JOURNAL_CORRECTION = `mutation ($day: String!, $periodKind: String, $correctionIndex: Int!) {

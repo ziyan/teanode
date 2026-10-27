@@ -116,7 +116,7 @@ func init() {
 			{
 				Name: "journal_correct", Family: tools.FamilyGeneral, Risk: tools.RiskWrite, Permissions: journalPermissions,
 				Description: "Tell a day's narrative (or a period's, when period_kind is given) what is wrong with it, in the person's words (\"it was Sam at lunch, not a colleague\"). " +
-					"It is kept as a fact every later writing must follow, and the narrative is written again at once. Only in a conversation the person started.",
+					"It is kept as a fact every later writing must follow, and the narrative is written again at once. Send each correction once: the answer lists what the narrative keeps, and words it already keeps add nothing. Only in a conversation the person started.",
 				Parameters: tools.Object(map[string]any{
 					"day":             dayProperty,
 					"correction_text": tools.StringProperty("what is wrong, as the person said it, at most 500 characters"),

@@ -239,13 +239,21 @@ func (self *graph) CorrectJournalNarrative(ctx context.Context, arguments Correc
 	if correctionText == "" || utf8.RuneCountInString(correctionText) > models.JournalCorrectionCharactersMost {
 		return nil, fmt.Errorf("%w: a correction is 1 to %d characters", api.ErrInvalidArguments, models.JournalCorrectionCharactersMost)
 	}
-	if err := tx.AddJournalCorrection(principal.User.ID, target, journal.Zone(principal.User).String(), correctionText, now); err != nil {
+	isAdded, err := tx.AddJournalCorrection(principal.User.ID, target, journal.Zone(principal.User).String(), correctionText, now)
+	if err != nil {
 		return nil, journalFailure(err)
 	}
-	if err := enqueueJournalJob(tx, principal.User.ID); err != nil {
+	if isAdded {
+		if err := enqueueJournalJob(tx, principal.User.ID); err != nil {
+			return nil, err
+		}
+	}
+	view, err := storedJournalNarrativeView(ctx, tx, principal, target, now)
+	if err != nil {
 		return nil, err
 	}
-	return storedJournalNarrativeView(ctx, tx, principal, target, now)
+	view.IsCorrectionAlreadyKept = !isAdded
+	return view, nil
 }
 
 func (self *graph) RemoveJournalCorrection(ctx context.Context, arguments RemoveJournalCorrectionArguments) (*JournalNarrativeView, error) {

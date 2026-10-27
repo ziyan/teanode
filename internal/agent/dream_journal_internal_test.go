@@ -72,7 +72,7 @@ func TestTheDreamWritesAStaleDayAgainAndNoOther(t *testing.T) {
 	}
 
 	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
-		if err := tx.AddJournalCorrection(fixture.run.Owner.ID, models.JournalTarget{Day: first}, journal.Zone(fixture.run.Owner).String(), "It was a Tuesday.", time.Now()); err != nil {
+		if _, err := tx.AddJournalCorrection(fixture.run.Owner.ID, models.JournalTarget{Day: first}, journal.Zone(fixture.run.Owner).String(), "It was a Tuesday.", time.Now()); err != nil {
 			t.Fatal(err)
 		}
 	})
