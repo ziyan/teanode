@@ -95,7 +95,8 @@ pass-by) after the person's visit before it ended was no stop: whatever they
 did at the place fits in that time. It is taken into that visit when that was
 to the same place (iOS can tell of leaving a circle again a moment after the
 visit ended), and otherwise deleted as a pass-by (a place on the way that iOS
-told of leaving with no arrival). The result is the same as if
+told of leaving with no arrival). Neither sends a "left" notice: the visit it
+went into told its own departure when it came. The result is the same as if
 the events had come in order. The times put in order reach back to the arrival
 of every visit the report changed: iOS can report leaving a place's circle
 hours late, and that departure must not carry the visit over the stops made
@@ -399,10 +400,9 @@ happen, such as a stop at a shop they only drove past: the location journal
 documents of its days go, the trips around it are built again, and the place
 stays, unless no visit to it is left and the person neither named nor
 labeled it. A visit in progress is refused, since the phone would report its
-end as a visit again; a check-in where the person is ends it first. A
-departure the visits were put in order without, a pass-by or one taken into
-a visit whose own departure was already told, sends no "left" notice. The agent is told to use it, not to rename the place, when the
-person says they were not somewhere.
+end as a visit again; a check-in where the person is ends it first. The agent
+is told to use it, not to rename the place, when the person says they were not
+somewhere.
 
 What it cannot remove is what the agent already learned from those days: the
 facts and month pages the dream filed from the journal stay in its memory until

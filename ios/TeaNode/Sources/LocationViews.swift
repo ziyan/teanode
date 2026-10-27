@@ -85,6 +85,7 @@ struct LocationScreen: View {
     @State private var isAllowingLocation = false
     @State private var drawerDetent = LocationDrawerDetent.half
     @State private var drawerHeaderHeight: CGFloat = 64
+    @State private var barsBottomInset: CGFloat = 0
     @Environment(AppModel.self) private var app
     private let recorder = LocationRecorder.shared
 
@@ -119,7 +120,7 @@ struct LocationScreen: View {
                             .overlay(alignment: .bottom) {
                                 LocationDrawer(
                                     detent: $drawerDetent, headerHeight: $drawerHeaderHeight, availableHeight: proxy.size.height,
-                                    bottomInset: proxy.safeAreaInsets.bottom
+                                    bottomInset: barsBottomInset
                                 ) {
                                     drawerHeader
                                 } content: {
@@ -138,6 +139,13 @@ struct LocationScreen: View {
                             .safeAreaPadding(.bottom, proxy.safeAreaInsets.bottom + mapCoveredHeight)
                             .ignoresSafeArea()
                     }
+            }
+            // The tab bar and the home indicator without the keyboard, which
+            // the drawer rises above rather than growing by.
+            .background {
+                Color.clear
+                    .ignoresSafeArea(.keyboard)
+                    .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { barsBottomInset = $0 }
             }
             // The name a pushed screen's back button carries; over the map,
             // as in Find My, the drawer says what is shown.

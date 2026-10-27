@@ -168,7 +168,9 @@ func TestVisitsAtOnePlaceAndNamingIt(t *testing.T) {
 	world.refused(t, world.cora, fmt.Sprintf(`mutation { SavePlace(placeId: %q, placeName: "Mine") { id } }`, placeId))
 	world.refused(t, world.cora, fmt.Sprintf(`mutation { ForgetPlace(placeId: %q) }`, placeId))
 
-	// One visit that did not happen goes alone, and only by its person.
+	// One visit that did not happen goes alone, and only by its person; one
+	// in progress is refused.
+	world.report(t, world.ada, "", visitInput("k3", 40.0, -75.0, ago(30*time.Minute), ""))
 	visits := world.call(t, world.ada, `query { ListLocationVisits { placeVisits { id departedAt } } }`)["ListLocationVisits"].(map[string]any)["placeVisits"].([]any)
 	visitId, openId := "", ""
 	for _, each := range visits {
@@ -178,10 +180,8 @@ func TestVisitsAtOnePlaceAndNamingIt(t *testing.T) {
 			openId = visit["id"].(string)
 		}
 	}
-	if openId != "" {
-		if message := world.refused(t, world.ada, fmt.Sprintf(`mutation { ForgetPlaceVisit(placeVisitId: %q) }`, openId)); !strings.Contains(message, "check in") {
-			t.Errorf("a visit in progress is not forgotten, in words: %s", message)
-		}
+	if message := world.refused(t, world.ada, fmt.Sprintf(`mutation { ForgetPlaceVisit(placeVisitId: %q) }`, openId)); !strings.Contains(message, "check in") {
+		t.Errorf("a visit in progress is not forgotten, in words: %s", message)
 	}
 	world.refused(t, world.cora, fmt.Sprintf(`mutation { ForgetPlaceVisit(placeVisitId: %q) }`, visitId))
 	world.call(t, world.ada, fmt.Sprintf(`mutation { ForgetPlaceVisit(placeVisitId: %q) }`, visitId))
