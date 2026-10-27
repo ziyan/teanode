@@ -324,6 +324,32 @@ func resolveIdea(transaction db.Transaction, reader Reader, resolved *Resolved) 
 	return nil
 }
 
+// resolveShoppingTrip finds one of the person's own trips. A trip somebody
+// else made on a list they share is theirs to tell, not this reader's.
+func resolveShoppingTrip(transaction db.Transaction, reader Reader, resolved *Resolved) error {
+	trip, err := transaction.GetShoppingTrip(reader.UserID, resolved.RecordID)
+	if errors.Is(err, db.ErrNotFound) {
+		unavailable(resolved)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	resolved.DashboardPath = ShoppingTripPath(trip.ShoppingListIDs)
+	resolved.Title = ShoppingTripTitle(trip.StoreName)
+	startedAt := trip.StartedAt
+	resolved.HappenedAt = &startedAt
+	return nil
+}
+
+// ShoppingTripTitle is a trip's title: the store, when the shopper named it.
+func ShoppingTripTitle(storeName string) string {
+	if storeName == "" {
+		return "Shopping"
+	}
+	return OneLine("Shopping at " + storeName)
+}
+
 func resolveGoal(transaction db.Transaction, reader Reader, resolved *Resolved) error {
 	// A goal is the agent's conversation of its own kind.
 	goal, err := transaction.GetAgentConversation(resolved.RecordID)

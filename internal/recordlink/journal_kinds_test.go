@@ -346,9 +346,39 @@ func TestANoteIsItsNewestVersionInAGrantedMailbox(t *testing.T) {
 	})
 }
 
-// A shopping trip cannot be linked yet: its tables are not here.
-func TestAShoppingTripIsNotALinkableKindYet(t *testing.T) {
-	if models.IsAgentRecordKind(models.RecordShoppingTrip) {
-		t.Fatal("a shopping trip has no resolver, so it is not in the list of kinds a page can link")
-	}
+// A shopping trip is found for the person who made it, and opens the list it
+// was for; nobody else finds it.
+func TestAShoppingTripIsItsShoppersOwn(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		alice, bob := aPerson(t, tx, "journal-alice"), aPerson(t, tx, "journal-bob")
+		dbtest.GrantPermission(t, tx, alice.user.ID, models.PermissionShoppingUse)
+		list, err := tx.CreateShoppingList(alice.user.ID, "Groceries")
+		if err != nil {
+			t.Fatal(err)
+		}
+		trip, _, err := tx.StartShoppingTrip(alice.user.ID, "Corner Market", []string{list.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !models.IsAgentRecordKind(models.RecordShoppingTrip) {
+			t.Fatal("a shopping trip is a kind a page can link")
+		}
+		for _, reader := range []recordlink.Reader{alice.person, alice.robot} {
+			resolved := resolve(t, tx, reader, models.RecordShoppingTrip, trip.ID)
+			if !resolved.IsReadable() || resolved.Title != "Shopping at Corner Market" || resolved.DashboardPath != "/shopping/lists/"+list.ID || resolved.HappenedAt == nil {
+				t.Errorf("the shopper's own trip: %+v", resolved)
+			}
+		}
+		for _, reader := range []recordlink.Reader{bob.person, bob.robot} {
+			if resolved := resolve(t, tx, reader, models.RecordShoppingTrip, trip.ID); !resolved.IsUnavailable || resolved.Title != "" {
+				t.Errorf("another person's trip is not found: %+v", resolved)
+			}
+		}
+		if resolved := resolve(t, tx, alice.person, models.RecordShoppingTrip, "trip-missing"); !resolved.IsUnavailable {
+			t.Errorf("a trip that is gone: %+v", resolved)
+		}
+	})
 }

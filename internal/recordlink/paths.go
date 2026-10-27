@@ -82,6 +82,15 @@ func NotePath(folderId, itemId string) string {
 	return "/mailbox/" + url.PathEscape(folderId) + "/" + url.PathEscape(itemId)
 }
 
+// ShoppingTripPath opens the list a trip was for, or Shopping when it was for
+// none the reader still reaches. The dashboard has no page for a trip.
+func ShoppingTripPath(shoppingListIds []string) string {
+	if len(shoppingListIds) == 0 {
+		return "/shopping"
+	}
+	return "/shopping/lists/" + url.PathEscape(shoppingListIds[0])
+}
+
 // GoalPath opens a goal.
 func GoalPath(conversationId string) string {
 	return "/settings/agent/goals?goal=" + url.QueryEscape(conversationId)

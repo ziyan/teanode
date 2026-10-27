@@ -635,8 +635,9 @@ export function MoneySection({ day }: { day: JournalDay }) {
   )
 }
 
-// ShoppingSection is the trips to the shops, with how much of the list was
-// checked off.
+// ShoppingSection is the person's trips to the shops that started that day:
+// the store when they named one, the lists the trip was for, and the trip's
+// own page.
 export function ShoppingSection({ day }: { day: JournalDay }) {
   const { t, clock } = useDayWords(day)
   const limit = useRowLimit(day.shoppingTrips.length)
@@ -646,9 +647,12 @@ export function ShoppingSection({ day }: { day: JournalDay }) {
       {day.shoppingTrips.slice(0, limit.shownCount).map((trip) => (
         <Row
           key={trip.tripId}
+          to={isDashboardPath(trip.dashboardPath) ? trip.dashboardPath : undefined}
           icon={<RecordKindIcon recordKind="shopping_trip" size={16} />}
-          title={trip.listNames.join(', ') || t('journal.shopping')}
-          detail={t('journal.shoppingChecked', { bought: trip.boughtCount, count: trip.itemCount })}
+          title={trip.storeName ? t('journal.shoppingAt', { storeName: trip.storeName }) : t('journal.shopping')}
+          detail={
+            trip.listNames.length > 0 ? t('journal.shoppingFor', { listNames: trip.listNames.join(', ') }) : undefined
+          }
           time={clock(trip.startedAt)}
         />
       ))}

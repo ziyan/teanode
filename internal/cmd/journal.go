@@ -905,7 +905,14 @@ func printJournalSections(view *client.JournalDayView) {
 
 	lines = []string{}
 	for _, trip := range view.ShoppingTrips {
-		lines = append(lines, fmt.Sprintf("%s  %s, %d of %d bought", journalClock(trip.StartedAt), strings.Join(trip.ListNames, ", "), trip.BoughtCount, trip.ItemCount))
+		line := journalClock(trip.StartedAt) + "  Shopping"
+		if trip.StoreName != "" {
+			line += " at " + trip.StoreName
+		}
+		if len(trip.ListNames) > 0 {
+			line += ", for " + strings.Join(trip.ListNames, ", ")
+		}
+		lines = append(lines, line)
 	}
 	journalSection("Shopping", lines)
 

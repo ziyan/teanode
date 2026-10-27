@@ -1086,6 +1086,36 @@ func minorUnits(amount, currencyCode string) int64 {
 	return rounded.Int64()
 }
 
+// readShoppingTrips reads the person's own trips that started that day. A
+// list on a trip is named only while the person still reaches it.
+func (self *dayReader) readShoppingTrips() error {
+	trips, err := self.transaction.ListShoppingTripsBetween(self.user.ID, self.day.From, self.day.Until)
+	if err != nil || len(trips) == 0 {
+		return err
+	}
+	lists, err := self.transaction.ListShoppingLists(self.user.ID)
+	if err != nil {
+		return err
+	}
+	listNames := map[string]string{}
+	for _, list := range lists {
+		listNames[list.ID] = list.ListName
+	}
+	for _, trip := range trips {
+		entry := ShoppingTrip{
+			TripID: trip.ID, StoreName: trip.StoreName, ShoppingListIDs: trip.ShoppingListIDs, ListNames: []string{},
+			StartedAt: trip.StartedAt, FinishedAt: trip.FinishedAt,
+		}
+		for _, listId := range trip.ShoppingListIDs {
+			if name := listNames[listId]; name != "" {
+				entry.ListNames = append(entry.ListNames, name)
+			}
+		}
+		self.day.ShoppingTrips = append(self.day.ShoppingTrips, entry)
+	}
+	return nil
+}
+
 func (self *dayReader) readNotes() error {
 	mailboxes, err := self.transaction.ListMailboxes(self.user.ID)
 	if err != nil {

@@ -52,6 +52,12 @@ enum JournalDestination: Hashable {
         if let periodKind = zoom.periodKind { return .period(periodKind, day) }
         return .day(day)
     }
+
+    /// Where a search hit opens: its day, or its week, month or year.
+    static func of(hit: JournalSearchHit) -> JournalDestination {
+        guard let periodKind = hit.kind else { return .day(hit.day) }
+        return .period(periodKind, hit.day)
+    }
 }
 
 enum JournalText {
@@ -275,6 +281,36 @@ enum JournalText {
     static func weekRangeText(periodStart: String, periodEnd: String) -> String {
         guard let start = JournalDays.date(periodStart), let end = JournalDays.date(periodEnd) else { return "" }
         return (start..<end).formatted(.interval.month(.wide).day())
+    }
+
+    // MARK: Shopping and search
+
+    /// "Shopping at Corner Market", or "Shopping" for a trip with no store.
+    static func shoppingTitle(storeName: String) -> String {
+        let trimmed = storeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? String(localized: "Shopping") : String(localized: "Shopping at \(trimmed)")
+    }
+
+    /// "7:10 PM to 7:50 PM" and, under it, "for Groceries and Household".
+    static func shoppingDetail(_ trip: JournalShoppingTrip) -> String {
+        var lines: [String] = []
+        let times = timeRangeText(from: trip.startedAt, until: trip.finishedAt)
+        if !times.isEmpty { lines.append(times) }
+        if !trip.listNames.isEmpty {
+            let listText = trip.listNames.formatted(.list(type: .and))
+            lines.append(String(localized: "for \(listText)"))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// The title of a search hit: its day, or its week, month or year.
+    static func searchHitTitle(_ hit: JournalSearchHit) -> String {
+        guard let periodKind = hit.kind else { return longDayText(hit.day) }
+        switch periodKind {
+        case .week: return weekTitle(weekStart: hit.day)
+        case .month: return monthText(hit.day)
+        case .year: return yearText(hit.day)
+        }
     }
 
     // MARK: Times and amounts
