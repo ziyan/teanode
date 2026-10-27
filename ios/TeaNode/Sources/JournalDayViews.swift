@@ -40,7 +40,8 @@ struct JournalDayScreen: View {
 
     var body: some View {
         content
-            .navigationTitle(JournalText.longDayText(model.day))
+            .navigationTitle(JournalText.dayTitle(model.day))
+            .navigationSubtitle(JournalText.daySubtitle(model.day, today: today))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarTitleMenu { zoomMenu }
             .toolbar {

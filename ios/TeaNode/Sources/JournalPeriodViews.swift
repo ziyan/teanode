@@ -43,6 +43,7 @@ struct JournalPeriodScreen: View {
     var body: some View {
         content
             .navigationTitle(JournalText.periodTitle(periodKind: periodKind, periodStart: shownStart))
+            .navigationSubtitle(JournalText.periodSubtitle(periodKind: periodKind, periodStart: shownStart))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarTitleMenu { zoomMenu }
             .toolbar {

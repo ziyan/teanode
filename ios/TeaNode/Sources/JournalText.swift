@@ -234,13 +234,41 @@ enum JournalText {
         String(localized: "Week of \(monthDayText(weekStart))")
     }
 
-    /// The title of a period page.
+    /// "Saturday", the title of a day's page, with the date under it
+    /// (daySubtitle). The bar keeps a title centered only while it fits
+    /// beside the day-before and day-after buttons, and a whole date such as
+    /// "Wednesday, September 30" does not, so it would sit centered on some
+    /// days and to the left on others.
+    static func dayTitle(_ day: String) -> String {
+        guard let date = JournalDays.date(day) else { return day }
+        return date.formatted(.dateTime.weekday(.wide))
+    }
+
+    /// "October 24" under a day's title, with the year when it is not this
+    /// year's.
+    static func daySubtitle(_ day: String, today: String) -> String {
+        guard let date = JournalDays.date(day) else { return "" }
+        if day.prefix(4) == today.prefix(4) { return monthDayText(day) }
+        return date.formatted(.dateTime.month(.wide).day().year())
+    }
+
+    /// The title of a period page: "Week", "October 2026" or "2026". A week's
+    /// days go under it (periodSubtitle), for the same reason as a day's date.
     static func periodTitle(periodKind: JournalPeriodKind, periodStart: String) -> String {
         switch periodKind {
-        case .week: weekTitle(weekStart: periodStart)
+        case .week: String(localized: "Week")
         case .month: monthText(periodStart)
         case .year: yearText(periodStart)
         }
+    }
+
+    /// "Oct 19 to 25" under a week's title; nothing under a month's or a
+    /// year's, whose titles say it all.
+    static func periodSubtitle(periodKind: JournalPeriodKind, periodStart: String) -> String {
+        guard periodKind == .week, let start = JournalDays.date(periodStart),
+            let end = JournalDays.adding(6, to: periodStart).flatMap({ JournalDays.date($0) })
+        else { return "" }
+        return (start..<end).formatted(.interval.month(.abbreviated).day())
     }
 
     /// "October 19 to 25", the days a week covers.
