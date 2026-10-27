@@ -1216,6 +1216,7 @@ final class LocationRecorder {
             guard !isReportingHeld, let connection = AppModel.shared.connection, connection.accountKey == outbox.accountKey else { return }
             let accountKey = connection.accountKey
             while outbox.accountKey == accountKey, AppModel.shared.connection === connection, !outbox.isEmpty, !isReportingHeld {
+                outbox.removeTooOld()
                 let batch = outbox.nextBatch()
                 do {
                     try await sendSplittingInvalid(batch, over: connection)

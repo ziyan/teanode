@@ -378,6 +378,27 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
             && isNotTooFarAhead(activity.startedAt, now: now)
     }
 
+    /// The longest a time may be before now when it is sent. The server
+    /// refuses more than 400 days; a day less leaves room for the phone's
+    /// clock being behind its.
+    public static let pastSecondsMost = 399.0 * 24 * 3600
+
+    /// Whether a time is further back than the server takes.
+    private static func isTooOld(_ date: Date?, now: Date) -> Bool {
+        guard let date else { return false }
+        return now.timeIntervalSince(date) > pastSecondsMost
+    }
+
+    /// Takes out what has waited so long that the server would now refuse it
+    /// (more than 400 days back), so that a phone offline that long does not
+    /// send batches the server refuses whole. Entries are queued as they
+    /// happen, so this is checked before sending, not when queueing.
+    public mutating func removeTooOld(now: Date = Date()) {
+        points.removeAll { Self.isTooOld($0.measuredAt, now: now) }
+        visits.removeAll { Self.isTooOld($0.arrivedAt, now: now) || Self.isTooOld($0.departedAt, now: now) }
+        activities.removeAll { Self.isTooOld($0.startedAt, now: now) }
+    }
+
     /// Queues a position, unless the server would refuse it (not on the
     /// earth, a negative accuracy, a time more than a day ahead): it would
     /// refuse the whole batch for it.
