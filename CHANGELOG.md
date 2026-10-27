@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.206.0] - 2026-10-27
+
+### Added
+
+- Location: forget one visit that did not happen, such as a stop at a shop you only drove past, on the dashboard, the iPhone app, the command line and through the agent. (#679)
+
+### Fixed
+
+- Location: driving past a place you have been to no longer records a stop there when your phone tells only of leaving it. (#679)
+- iPhone: the Location drawer reaches the bottom of the screen, and pulled up it no longer goes under the buttons at the top. (#679)
+
 ## [0.205.1] - 2026-10-27
 
 ### Fixed
