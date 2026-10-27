@@ -6339,6 +6339,12 @@ export const en = {
   'circles.addressBook.made': 'Address book made',
   'circles.addressBook.exists': 'This circle has an address book that everyone in it reads and changes.',
   'circles.addressBook.open': 'Open the address book',
+  'circles.albums.title': 'Photos',
+  'circles.albums.intro':
+    "This circle's albums, which everyone in it adds photos to, and the albums people shared with everyone here.",
+  'circles.albums.none': 'No albums yet. Make one for this circle, or share one of your albums with it from the album.',
+  'circles.albums.newAlbum': 'New album',
+  'circles.albums.newAlbumTitle': 'New album for {name}',
   'circles.calendar.rename': 'Rename the calendar',
   'circles.calendar.renameTitle': 'Rename the calendar of {name}',
   'circles.calendar.delete': 'Delete the calendar',

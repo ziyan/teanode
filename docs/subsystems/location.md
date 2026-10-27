@@ -89,7 +89,10 @@ the events had come in order. The times put in order reach back to the arrival
 of every visit the report changed: iOS can report leaving a place's circle
 hours late, and that departure must not carry the visit over the stops made
 since. Its notice is told by when the visit ended
-as stored, which is too long ago to tell.
+as stored, which is too long ago to tell. Visits stored overlapping before that
+are put in order once when the server starts (`repairOverlappedVisits`, the last
+90 days): it finds each person with a visit that began inside one of theirs at
+another place, and a start after the first finds nothing.
 
 At the most places a person may have (5000), a visit that would need a new place
 is left out, the rest of the batch is stored, and the answer's
