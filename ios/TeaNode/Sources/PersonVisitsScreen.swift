@@ -15,6 +15,8 @@ final class PersonVisitsModel {
     private(set) var visits: [PlaceVisit] = []
     /// The pauses that overlap the day, which show among the visits.
     private(set) var pauses: [LocationPause] = []
+    /// The trips between their visits that day.
+    private(set) var trips: [Trip] = []
     private(set) var places: [LocationPlace] = []
     /// The positions of the day shown, oldest first, read only for a map
     /// that draws them.
@@ -43,8 +45,8 @@ final class PersonVisitsModel {
     /// Whether the day shown is today, whose path grows as they move.
     var isShowingToday: Bool { day == Calendar.current.startOfDay(for: Date()) }
 
-    /// The day's visits and pauses together, newest first.
-    var entries: [LocationTimelineEntry] { LocationDays.entries(visits: visits, pauses: pauses) }
+    /// The day's visits, pauses and trips together, newest first.
+    var entries: [LocationTimelineEntry] { LocationDays.entries(visits: visits, pauses: pauses, trips: trips) }
 
     /// Whether the day can move later: not past today.
     var canMoveLater: Bool { day < Calendar.current.startOfDay(for: Date()) }
@@ -68,11 +70,14 @@ final class PersonVisitsModel {
             let placePage = try await connection.locationPlaces(userId: userId, limitCount: LocationModel.placePageSize)
             // A server that cannot list pauses has none to show.
             let pauseList = (try? await connection.locationPauses(userId: userId, from: window.from, until: window.until)) ?? []
+            // A server that cannot list trips has none to show.
+            let tripList = await fetchTrips(connection: connection, userId: userId, from: window.from, until: window.until) ?? []
             let pointList = try await isPathRead ? connection.locationPoints(userId: userId, from: window.from, until: window.until) : []
             // Another day was chosen while this was read.
             guard day == requestedDay else { return }
             visits = visitPage.placeVisits
             pauses = pauseList
+            trips = tripList
             places = placePage.places
             points = pointList
             readDay = requestedDay
@@ -151,10 +156,20 @@ struct PersonVisitsList: View {
                     switch entry {
                     case .visit(let visit): LocationVisitRow(visit: visit)
                     case .pause(let pause): LocationPauseRow(pause: pause)
+                    case .trip(let trip): LocationTripRow(trip: trip, correctLeg: nil)
                     }
                 }
             } header: {
                 Text(verbatim: LocationText.dayTitle(model.day)).font(.headline).textCase(nil)
+            }
+            Section {
+                NavigationLink {
+                    LocationTravelScreen(connection: model.connection, userId: model.userId)
+                } label: {
+                    Label("Travel", systemImage: "figure.walk")
+                        .foregroundStyle(.primary)
+                        .frame(minHeight: 44)
+                }
             }
             if !model.places.isEmpty {
                 Section("Places") {

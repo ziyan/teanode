@@ -147,16 +147,18 @@ type LocationOperation interface {
 	// open ends at the arrival of the next visit, a visit whose departure runs
 	// past the arrival of the next visit at another place ends at that
 	// arrival, a joined visit that has a visit at another place begin inside
-	// it is split in two there, and visits to one place less than ten minutes
-	// apart with nothing between them are joined. Call it once the visits of a
-	// report are stored.
+	// it is split in two there, a departure from a watched place with no
+	// arrival noticed inside a visit at another place moves to before that
+	// visit, and visits to one place less than ten minutes apart with nothing
+	// between them are joined. Call it once the visits of a report are stored.
 	NormalizePlaceVisits(userId string, from, until time.Time) error
 
 	// ListOverlappedVisitRanges finds the people with a visit that began
 	// after the arrival of a visit of theirs at another place and before it
-	// ended, among visits that began since the instant, and for each the
-	// range from the first such visit's arrival to the end of the last one,
-	// for NormalizePlaceVisits. Visits put in order overlap none.
+	// ended, or a departure from a watched place with no arrival inside such a
+	// visit, among visits that began since the instant, and for each the range
+	// from the first such visit's arrival to the end of the last one, for
+	// NormalizePlaceVisits. Visits put in order overlap none.
 	ListOverlappedVisitRanges(since time.Time) ([]VisitRange, error)
 
 	// EndOpenPlaceVisit sets the departure of the visit in progress and answers
@@ -175,7 +177,8 @@ type LocationOperation interface {
 	// range (all of them when both ends are nil), and then the places left
 	// with no visit that the person neither named nor labeled. Pauses that
 	// began in the range and are over go too; the pause in effect stays, so
-	// erasing does not resume recording. It deletes in
+	// erasing does not resume recording. Trips, legs, motion activity and
+	// corrections of the way of travel that started in the range go too. It deletes in
 	// the same transaction the location journal documents of the days the
 	// range touches, with their chunks, since those say where the person was
 	// as plainly as the visits did. Anything the agent already learned from
@@ -1501,6 +1504,10 @@ func (self *transaction) EraseLocationHistory(userId string, from, until *time.T
 	// The gaps in recording are as much a part of where the person was as the
 	// visits, so the ones that are over go with them.
 	if err := self.deleteEndedLocationPauses(userId, from, until, time.Now()); err != nil {
+		return 0, 0, 0, err
+	}
+	// How the person got between places says where they were too.
+	if err := self.deleteTravelHistory(userId, from, until); err != nil {
 		return 0, 0, 0, err
 	}
 	pointResult := points.Delete(&locationPointModel{})

@@ -15,6 +15,8 @@ struct LocationSetupList: View {
     let isShowingPeople: Bool
     /// Starts the permission flow: When In Use, then Always.
     let allowLocation: () -> Void
+    /// Asks for Motion & Fitness, or opens Settings once the person answered.
+    let allowMotion: () -> Void
     /// Opens the screen of everyone sharing.
     let showPeople: () -> Void
     @State private var isWorking = false
@@ -31,6 +33,15 @@ struct LocationSetupList: View {
                     title: String(localized: "Allow location"),
                     detail: String(localized: "First while you use the app, then Always, so your visits are recorded when it is closed."),
                     symbolName: "location", isDone: setup.isPermissionDone, isEnabled: !isWorking, action: allowLocation)
+                if recorder.isMotionAvailable {
+                    LocationSetupRow(
+                        title: String(localized: "Allow Motion & Fitness"),
+                        detail: recorder.isAuthorizedToLocate
+                            ? String(localized: "Tells walking, running, cycling and driving apart, so your trips show how you got there. You can skip this.")
+                            : String(localized: "Allow location first."),
+                        symbolName: "figure.walk.motion", isDone: recorder.isMotionAuthorized,
+                        isEnabled: !isWorking && recorder.isAuthorizedToLocate, action: allowMotion)
+                }
                 LocationSetupRow(
                     title: String(localized: "This is home"),
                     detail: recorder.isAuthorizedToLocate

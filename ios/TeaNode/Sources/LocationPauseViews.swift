@@ -57,9 +57,11 @@ struct LocationPauseRow: View {
 }
 
 /// LocationTimelineRow is a row of a timeline: a visit, which opens its place,
-/// or a pause.
+/// a pause, or a trip. `correctLeg` is given on the person's own timeline,
+/// where a trip's legs can be corrected.
 struct LocationTimelineRow: View {
     let entry: LocationTimelineEntry
+    var correctLeg: ((TripLeg, TravelMode?) -> Void)?
 
     var body: some View {
         switch entry {
@@ -69,6 +71,8 @@ struct LocationTimelineRow: View {
             }
         case .pause(let pause):
             LocationPauseRow(pause: pause)
+        case .trip(let trip):
+            LocationTripRow(trip: trip, correctLeg: correctLeg)
         }
     }
 }

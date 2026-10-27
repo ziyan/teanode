@@ -8,6 +8,7 @@ enum LocationRoute: Hashable {
     case place(LocationPlace)
     case people
     case settings
+    case travel
 }
 
 /// LocationSegment is what the drawer over the map shows, chosen at the top
@@ -106,7 +107,10 @@ struct LocationScreen: View {
                 Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(alignment: .bottom) {
-                        LocationDrawer(detent: $drawerDetent, headerHeight: $drawerHeaderHeight, availableHeight: proxy.size.height) {
+                        LocationDrawer(
+                            detent: $drawerDetent, headerHeight: $drawerHeaderHeight, availableHeight: proxy.size.height,
+                            bottomInset: proxy.safeAreaInsets.bottom
+                        ) {
                             drawerHeader
                         } content: {
                             drawerContent
@@ -160,6 +164,7 @@ struct LocationScreen: View {
                 case .place(let place): LocationPlaceScreen(model: model, place: place)
                 case .people: LocationPeopleScreen(model: model)
                 case .settings: LocationSettingsView(model: model)
+                case .travel: LocationTravelScreen(connection: model.connection)
                 }
             }
         }
@@ -224,6 +229,16 @@ struct LocationScreen: View {
         }
     }
 
+    /// The setup's Motion & Fitness row: iOS asks the first time; once the
+    /// person has answered, only Settings can change it.
+    private func allowMotion() {
+        if recorder.isMotionUndecided {
+            recorder.askForMotionAuthorization()
+        } else {
+            LocationSettingsView.openSettings()
+        }
+    }
+
     /// Opens the screen of everyone sharing, from the row that says how many.
     private func showPeople() {
         path.append(.people)
@@ -268,7 +283,8 @@ struct LocationScreen: View {
                 .contentMargins(.top, 0, for: .scrollContent)
         } else if model.isSetupShown {
             LocationSetupList(
-                model: model, recorder: recorder, isShowingPeople: isShowingPeople, allowLocation: allowLocation, showPeople: showPeople)
+                model: model, recorder: recorder, isShowingPeople: isShowingPeople, allowLocation: allowLocation,
+                allowMotion: allowMotion, showPeople: showPeople)
                 .contentMargins(.top, 0, for: .scrollContent)
         } else {
             content.contentMargins(.top, 0, for: .scrollContent)
@@ -294,7 +310,8 @@ struct LocationScreen: View {
         /// The screens a screenshot names: `-TeaNodeScreen location-day`,
         /// `location-places`, `location-place`, `location-settings`,
         /// `location-sharing`, `location-paused` (the person and somebody sharing have paused),
-        /// `location-settings-paused`, `location-person`, `location-person-muted` (the same with
+        /// `location-settings-paused`, `location-travel` (the Travel screen at
+        /// Week), `location-person`, `location-person-muted` (the same with
         /// the person's notices muted until later today), `location-person-card` (the
         /// same with the person's card over the map, which the app shell
         /// brings up), `location-people` (more
@@ -315,6 +332,7 @@ struct LocationScreen: View {
             case "location-place", "location-address":
                 if let place = model.places.first(where: { $0.id == LocationDemo.parkPlaceId }) { path = [.place(place)] }
             case "location-settings", "location-settings-paused": path = [.settings]
+            case "location-travel": path = [.travel]
             case "location-full", "location-paused": drawerDetent = .full
             case "location-collapsed": drawerDetent = .collapsed
             default: break
@@ -494,6 +512,13 @@ struct LocationVisitsList: View {
     var body: some View {
         List {
             LocationPeopleSection(model: model, showPeople: showPeople)
+            Section {
+                NavigationLink(value: LocationRoute.travel) {
+                    Label("Travel", systemImage: "figure.walk")
+                        .foregroundStyle(.primary)
+                        .frame(minHeight: 44)
+                }
+            }
             if model.days.isEmpty {
                 // Under the people, not over them as an overlay would be.
                 Section {
@@ -509,7 +534,7 @@ struct LocationVisitsList: View {
             ForEach(model.days) { day in
                 Section {
                     ForEach(day.entries) { entry in
-                        LocationTimelineRow(entry: entry)
+                        LocationTimelineRow(entry: entry, correctLeg: { leg, travelMode in Task { await model.correct(leg, to: travelMode) } })
                             .onAppear {
                                 if case .visit(let visit) = entry, visit.id == model.visits.last?.id {
                                     Task { await model.loadMoreVisits() }
@@ -670,6 +695,7 @@ struct LocationDayScreen: View {
     @State private var points: [LocationPoint] = []
     @State private var visits: [PlaceVisit] = []
     @State private var pauses: [LocationPause] = []
+    @State private var trips: [Trip] = []
     @State private var position = MapCameraPosition.automatic
     @State private var isLoading = true
     @State private var loadFailedText: String?
@@ -701,8 +727,8 @@ struct LocationDayScreen: View {
                 } else {
                     List {
                         Section {
-                            ForEach(LocationDays.entries(visits: visits, pauses: pauses)) { entry in
-                                LocationTimelineRow(entry: entry)
+                            ForEach(LocationDays.entries(visits: visits, pauses: pauses, trips: trips)) { entry in
+                                LocationTimelineRow(entry: entry, correctLeg: { leg, travelMode in Task { await correct(leg, to: travelMode) } })
                             }
                         } footer: {
                             OpenStreetMapCredit()
@@ -731,16 +757,31 @@ struct LocationDayScreen: View {
                     .overlay {
                         if isLoading {
                             ProgressView()
-                        } else if visits.isEmpty && pauses.isEmpty {
+                        } else if visits.isEmpty && pauses.isEmpty && trips.isEmpty {
                             ContentUnavailableView("No visits this day", systemImage: "mappin.and.ellipse")
                         }
                     }
+                    // On under the tab bar to the bottom of the screen, as a
+                    // list on its own goes, its last rows scrolling up above it.
+                    .safeAreaPadding(.bottom, proxy.safeAreaInsets.bottom)
+                    .ignoresSafeArea(.container, edges: .bottom)
                 }
             }
         }
         .navigationTitle(LocationText.dayTitle(day))
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+    }
+
+    /// Corrects a leg of the day's trips, then reads the day's trips again.
+    private func correct(_ leg: TripLeg, to travelMode: TravelMode?) async {
+        guard await model.correct(leg, to: travelMode) else { return }
+        await loadTrips()
+    }
+
+    private func loadTrips() async {
+        let window = LocationDays.window(of: day)
+        if let read = await fetchTrips(connection: model.connection, from: window.from, until: window.until) { trips = read }
     }
 
     private func erase() async {
@@ -758,8 +799,10 @@ struct LocationDayScreen: View {
             async let readVisits = model.connection.locationVisits(from: window.from, until: window.until, limitCount: 200)
             async let readPoints = model.points(on: day)
             async let readPauses = model.pauses(from: window.from, until: window.until)
+            async let readTrips = fetchTrips(connection: model.connection, from: window.from, until: window.until)
             let (page, read) = try await (readVisits, readPoints)
             visits = page.placeVisits
+            trips = await readTrips ?? []
             pauses = await readPauses
             points = read
             loadFailedText = nil

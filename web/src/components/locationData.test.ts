@@ -9,6 +9,8 @@ import {
   placeSubtitle,
   placeTitle,
   tomorrowMorning,
+  travelDistanceText,
+  travelRange,
 } from './locationData'
 import type { FoundPlace } from './locationData'
 
@@ -109,5 +111,37 @@ describe("a day's path", () => {
       range,
     )
     expect(path).toEqual([at(4)])
+  })
+})
+
+describe('travelDistanceText', () => {
+  it('writes meters below a tenth of a kilometer and kilometers with one decimal above', () => {
+    expect(travelDistanceText(80, 'en')).toBe('80 m')
+    expect(travelDistanceText(600, 'en')).toBe('0.6 km')
+    expect(travelDistanceText(11800, 'en')).toBe('11.8 km')
+    expect(travelDistanceText(3000, 'en')).toBe('3 km')
+    expect(travelDistanceText(1204000, 'en')).toBe('1,204 km')
+  })
+})
+
+describe('travelRange', () => {
+  const now = new Date(2030, 2, 6, 15, 30)
+  it('ends the newest page of days after today and covers fourteen days', () => {
+    expect(travelRange('day', 0, now)).toEqual({
+      from: new Date(2030, 1, 21).toISOString(),
+      until: new Date(2030, 2, 7).toISOString(),
+    })
+  })
+  it('starts weeks on Monday', () => {
+    expect(travelRange('week', 0, now)).toEqual({
+      from: new Date(2029, 11, 17).toISOString(),
+      until: new Date(2030, 2, 11).toISOString(),
+    })
+  })
+  it('covers twelve months and five years, and a later page ends where the earlier began', () => {
+    expect(travelRange('month', 0, now).until).toBe(new Date(2030, 3, 1).toISOString())
+    expect(travelRange('month', 0, now).from).toBe(new Date(2029, 3, 1).toISOString())
+    expect(travelRange('year', 0, now).from).toBe(new Date(2026, 0, 1).toISOString())
+    expect(travelRange('year', 1, now).until).toBe(travelRange('year', 0, now).from)
   })
 })

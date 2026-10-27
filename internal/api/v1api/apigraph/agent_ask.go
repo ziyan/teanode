@@ -17,6 +17,7 @@ import (
 	"github.com/ziyan/teanode/internal/avatar"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/travel/rebuild"
 )
 
 // Ask: the person talking to their agent. A turn is started here, runs in
@@ -1234,8 +1235,11 @@ func (self *graph) keepBrowserLocation(ctx context.Context, principal *api.Princ
 			LatitudeDegrees: answer.LatitudeDegrees, LongitudeDegrees: answer.LongitudeDegrees, AccuracyMeters: answer.AccuracyMeters,
 			MeasuredAt: measuredAt, LocationSource: models.LocationSourceBrowser,
 		}})
-		newPointCount, err = tx.InsertLocationPoints(principal.User.ID, kept)
-		return err
+		if newPointCount, err = tx.InsertLocationPoints(principal.User.ID, kept); err != nil || newPointCount == 0 {
+			return err
+		}
+		// The trip it falls in, if any, takes it in, as after a phone's report.
+		return rebuild.Around(tx, principal.User.ID, measuredAt, measuredAt)
 	}); err != nil {
 		log.Warningf("cannot keep the location the browser gave: %s", err)
 		return
