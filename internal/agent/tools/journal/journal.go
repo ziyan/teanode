@@ -18,8 +18,9 @@
 // Health section, the Health numbers among a day's facts, the workouts among
 // its moments, and a mood that came from Apple Health.
 //
-// The journal is read only in the person's own conversation, never in a chat
-// with other people, since it holds what they wrote for themselves.
+// The journal is read only in a conversation the person started themselves,
+// never in a chat with other people nor in a run a mail, a schedule or a
+// background task began, since it holds what they wrote for themselves.
 package journal
 
 import (

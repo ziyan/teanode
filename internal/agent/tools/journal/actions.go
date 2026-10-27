@@ -35,11 +35,11 @@ const (
 // themselves.
 const elsewhereWords = "The journal is read and written only in the person's own conversation, not in a chat with other people."
 
-// unattendedWords is the whole answer of every action that changes the
-// journal in a run the person did not start: an inbound mail, a schedule, a
-// goal, a dream or a background task is steered by content the person did not
-// write, and the journal is theirs.
-const unattendedWords = "The journal is changed only in a conversation the person started themselves, not in a run that a mail, a schedule or a background task began. They can ask you directly."
+// unattendedWords is the whole answer of every action in a run the person
+// did not start: an inbound mail, a schedule, a goal, a dream or a background
+// task is steered by content the person did not write, and the journal is
+// theirs, to read as much as to change.
+const unattendedWords = "The journal is read and changed only in a conversation the person started themselves, not in a run that a mail, a schedule or a background task began. They can ask you directly."
 
 // scope is what every action needs: the run, the person's zone and now.
 type scope struct {
@@ -97,8 +97,8 @@ func (self *scope) day(name, value string, fallbackDaysAgo int) (string, error) 
 	return parsed.Format(time.DateOnly), nil
 }
 
-// withReadGate runs an action that reads, except in a run whose answer goes to
-// a chat with other people.
+// withReadGate runs an action that reads, only in a run the person started,
+// and not in a chat with other people.
 func withReadGate(run func(ctx context.Context, call *tools.Call, here *scope) (*tools.Result, error)) func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	return func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		here, err := scopeOf(ctx)
@@ -107,6 +107,9 @@ func withReadGate(run func(ctx context.Context, call *tools.Call, here *scope) (
 		}
 		if tools.IsAnsweringInChat(here.run) {
 			return tools.TextResult("%s", elsewhereWords), nil
+		}
+		if !tools.IsStartedByPerson(here.run) {
+			return tools.TextResult("%s", unattendedWords), nil
 		}
 		result, err := run(ctx, call, here)
 		if result != nil {

@@ -346,10 +346,10 @@ func TestDaysAndSearchPage(t *testing.T) {
 	}
 }
 
-// A change is made only in a conversation the person started. A run that a
-// mail, a schedule, a dream or a background task began is told so and sends
-// nothing; nor does a chat with other people.
-func TestAWriteIsRefusedInARunThePersonDidNotStart(t *testing.T) {
+// A change is made, and the journal read, only in a conversation the person
+// started. A run that a mail, a schedule, a dream or a background task began
+// is told so and sends nothing; nor does a chat with other people.
+func TestTheJournalIsRefusedInARunThePersonDidNotStart(t *testing.T) {
 	for action, arguments := range map[string]string{
 		"add_words": `{"text":"Went swimming."}`, "set_mood": `{"mood":"good"}`, "touch_up": `{"how":"shorter"}`,
 		"correct": `{"correction_text":"It was Ben."}`, "pin": `{"record":"mail:m1"}`,
@@ -372,14 +372,28 @@ func TestAWriteIsRefusedInARunThePersonDidNotStart(t *testing.T) {
 			t.Errorf("%s sent %v from a run the person did not start", action, operations.operation)
 		}
 	}
-	// Reading is not refused to a background run, but not into a chat room.
+	// Nor is the journal read there: a mail or a schedule could steer the
+	// run into telling somebody else what the person wrote for themselves.
 	operations := &routing{answers: map[string]string{"ReadJournalDay": harborDay(), "ReadHealthSettings": switchOff}}
-	if _, _, err := act(t, &fakeRun{operations: operations, isHeadless: true}, "day", `{}`); err != nil {
-		t.Errorf("a background run could not read: %s", err)
+	for name, run := range map[string]*fakeRun{
+		"a background run": {operations: operations, isHeadless: true},
+		"a mail's run":     {operations: operations},
+	} {
+		content, _, err := act(t, run, "day", `{}`)
+		if err != nil || !strings.Contains(content, "conversation the person started") {
+			t.Errorf("%s read the journal: %q %v", name, content, err)
+		}
 	}
-	content, _, _ := act(t, &fakeRun{operations: operations, isInChat: true}, "day", `{}`)
+	content, _, _ := act(t, &fakeRun{operations: operations, isStartedByPerson: true, isInChat: true}, "day", `{}`)
 	if !strings.Contains(content, "own conversation") {
 		t.Errorf("a chat room was given the journal: %q", content)
+	}
+	if len(operations.operation) != 0 {
+		t.Errorf("a refused read sent %v", operations.operation)
+	}
+	// The person's own turn reads it.
+	if _, _, err := act(t, aTurnOfAda(operations), "day", `{}`); err != nil || len(operations.operation) == 0 {
+		t.Errorf("the person's own turn could not read: %v %v", err, operations.operation)
 	}
 }
 
