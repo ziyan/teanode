@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.205.0] - 2026-10-27
+
+### Added
+
+- Control-K offers the dashboard's pages, the tabs inside them and your mail folders by name as you type, and Enter jumps to the one highlighted; the last row still searches everything. (#682)
+
+### Fixed
+
+- The agent no longer repeats the same change over and over in one turn: a change that answered the same twice is not made a third time. (#680)
+- Search everything shows the photos it finds as pictures rather than file names, on the dashboard and the iPhone. (#683)
+- A match in your main chat is titled Main chat in search everything. (#683)
+
 ## [0.204.1] - 2026-10-27
 
 ### Fixed
