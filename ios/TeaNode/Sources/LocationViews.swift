@@ -109,15 +109,13 @@ struct LocationScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay {
                         // A layer of its own that reaches the screen's bottom
-                        // edge, under the tab bar, so the drawer is placed on
-                        // that edge and not on the safe area's: a drawer that
-                        // only asked to ignore the safe area stopped at the
-                        // tab bar's top with the map showing below it.
-                        // Only the bars' area: over the keyboard the drawer
-                        // still rises with it.
+                        // edge, under the tab bar, which the drawer runs down
+                        // to from its place below the top bar. Only the bars'
+                        // area: over the keyboard the drawer still rises with
+                        // it.
                         Color.clear
                             .ignoresSafeArea(.container, edges: .bottom)
-                            .overlay(alignment: .bottom) {
+                            .overlay(alignment: .top) {
                                 LocationDrawer(
                                     detent: $drawerDetent, headerHeight: $drawerHeaderHeight, availableHeight: proxy.size.height,
                                     bottomInset: barsBottomInset
