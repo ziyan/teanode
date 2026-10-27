@@ -40,6 +40,9 @@ final class AppModel {
     /// Whether the person has a computer attached that runs herdr, which is
     /// what the Coding section is for.
     private(set) var hasCodingComputers = false
+    /// Whether the server has said, since launch or the account changed,
+    /// which computers run herdr; until then Coding is neither on nor off.
+    private(set) var hasCodingPresenceBeenRead = false
     /// How many of the person's coding sessions ask something, a question
     /// or an approval: the badge on the tab that holds Coding.
     private(set) var codingAskingCount = 0
@@ -763,6 +766,7 @@ final class AppModel {
         if isChanged {
             services = nil
             hasCodingComputers = false
+            hasCodingPresenceBeenRead = false
             codingAskingCount = 0
             accessSession = nil
             forgetAccountFacts()
@@ -1300,7 +1304,10 @@ extension AppModel {
         PhotosAvailability.isOffered(isServiceEnabled: services?.isPhotosEnabled == true, session: accessSession)
     }
 
-    func noteCodingComputers() { hasCodingComputers = true }
+    func noteCodingComputers() {
+        hasCodingComputers = true
+        hasCodingPresenceBeenRead = true
+    }
 
     /// The Coding section read the sessions: how many ask, at once, rather
     /// than at the next slow ask.
@@ -1313,6 +1320,7 @@ extension AppModel {
             let list = try? await connection.herdrSessions()
         else { return }
         hasCodingComputers = !list.computerNames.isEmpty
+        hasCodingPresenceBeenRead = true
         codingAskingCount = list.sessions.filter(\.isAsking).count
     }
 
