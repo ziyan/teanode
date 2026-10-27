@@ -56,6 +56,7 @@ func repairOverlappedVisits(ctx context.Context, database db.Database) {
 			log.Warningf("failed to put in order the visits of user %s from %s to %s: %s", visitRange.UserID, visitRange.From, visitRange.Until, err)
 			continue
 		}
+		log.Noticef("put in order the visits of user %s from %s to %s", visitRange.UserID, visitRange.From, visitRange.Until)
 		repairedCount++
 	}
 	if repairedCount > 0 {
