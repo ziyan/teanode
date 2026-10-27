@@ -298,13 +298,24 @@ struct LocationTravelPeriodRow: View {
     /// The symbol's column grows with the text, so a wide symbol at a large
     /// text size does not run into the name.
     @ScaledMetric(relativeTo: .body) private var symbolColumnWidth: CGFloat = 28
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// A name and its distance side by side, or the distance under the name
+    /// at the accessibility sizes, where side by side they wrap into each
+    /// other.
+    private var nameAndDistanceLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
+            nameAndDistanceLayout {
                 Text(verbatim: LocationText.title(of: period, kind: periodKind))
                     .font(.headline)
-                Spacer(minLength: 8)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Spacer(minLength: 8)
+                }
                 Text(verbatim: LocationText.distance(period.distanceMeters))
                     .font(.headline)
             }
@@ -315,10 +326,14 @@ struct LocationTravelPeriodRow: View {
                         .foregroundStyle(.secondary)
                         .frame(width: symbolColumnWidth)
                         .accessibilityHidden(true)
-                    Text(verbatim: LocationText.travelModeTitle(total.travelMode))
-                    Spacer(minLength: 8)
-                    Text(verbatim: LocationText.distance(total.distanceMeters))
-                        .foregroundStyle(.secondary)
+                    nameAndDistanceLayout {
+                        Text(verbatim: LocationText.travelModeTitle(total.travelMode))
+                        if !dynamicTypeSize.isAccessibilitySize {
+                            Spacer(minLength: 8)
+                        }
+                        Text(verbatim: LocationText.distance(total.distanceMeters))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .font(.subheadline)
                 .accessibilityElement(children: .combine)
