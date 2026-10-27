@@ -14,6 +14,7 @@ enum NotificationCategories {
     static let skillShareCall = "skill_share_call"
     static let circle = "circle"
     static let location = "location"
+    static let codingQuestion = "herdr_question"
     static let questionPrefix = "question-"
 
     /// The categories known before any notification arrives. A question's
@@ -40,6 +41,9 @@ enum NotificationCategories {
             UNNotificationCategory(identifier: circle, actions: [openAction], intentIdentifiers: []),
             // Somebody arrived or left: nothing to answer, only Location to open.
             UNNotificationCategory(identifier: location, actions: [openAction], intentIdentifiers: []),
+            // A coding session asks: it is answered on the Coding screen, where
+            // its options are, so Open is the only button.
+            UNNotificationCategory(identifier: codingQuestion, actions: [openAction], intentIdentifiers: []),
         ]
     }
 
@@ -77,6 +81,8 @@ enum NotificationCategories {
             return fixed.first { $0.identifier == circle }
         case "location":
             return fixed.first { $0.identifier == location }
+        case "herdr_question":
+            return fixed.first { $0.identifier == codingQuestion }
         case "question":
             let buttons = Array((content.buttons ?? []).prefix(4))
             let actions: [UNNotificationAction] = buttons.map { button in
@@ -109,6 +115,9 @@ struct NotificationInfo: Sendable {
     let callId: String
     /// For a location notification, the person who arrived or left.
     let locationUserId: String
+    /// For a coding session's question, the computer and pane of the session.
+    let computer: String
+    let paneId: String
     /// A question's choices, by the button that gives them.
     let answers: [String: String]
 
@@ -121,6 +130,8 @@ struct NotificationInfo: Sendable {
         runId = content.runId ?? ""
         callId = content.callId ?? ""
         locationUserId = content.locationUserId ?? ""
+        computer = content.computer ?? ""
+        paneId = content.paneId ?? ""
         var answers: [String: String] = [:]
         for button in content.buttons ?? [] where button.buttonAction.hasPrefix("answer:") {
             answers[button.buttonAction] = button.label
@@ -136,13 +147,15 @@ struct NotificationInfo: Sendable {
         runId = info["runId"] as? String ?? ""
         callId = info["callId"] as? String ?? ""
         locationUserId = info["locationUserId"] as? String ?? ""
+        computer = info["computer"] as? String ?? ""
+        paneId = info["paneId"] as? String ?? ""
         answers = info["answers"] as? [String: String] ?? [:]
     }
 
     var dictionary: [String: Any] {
         [
             "accountKey": accountKey, "notificationKind": notificationKind, "conversationId": conversationId, "runId": runId, "callId": callId,
-            "locationUserId": locationUserId, "answers": answers,
+            "locationUserId": locationUserId, "computer": computer, "paneId": paneId, "answers": answers,
         ]
     }
 }
