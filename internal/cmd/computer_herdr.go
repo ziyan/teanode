@@ -70,7 +70,7 @@ func newComputerHerdrCommand() *cli.Command {
 				Name:      "send",
 				Usage:     "type text into a session and press enter; one at work reads it in its turn",
 				ArgsUsage: "<pane> <text>",
-				Flags: []cli.Flag{computerFlag, &cli.StringSliceFlag{Name: "attach", Usage: "a file to hand the session with the text, written on its computer and its path typed after the text; repeatable"},
+				Flags: []cli.Flag{computerFlag, &cli.StringSliceFlag{Name: "attach", Usage: "a file to hand the session with the text, written on its computer and its path typed before the text; repeatable"},
 					JSONFlag()},
 				Action: runComputerHerdrSend,
 			},
