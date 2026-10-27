@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.202.0] - 2026-10-27
+
+### Added
+
+- Journal: a page for each day linking what happened, with your words, mood and the weather, a story TeaNode writes in its dreams, and weeks, months and years to zoom out to. On the dashboard, the iPhone app, the command line (`teanode journal`) and for the agent. (#666)
+- Units: choose metric or US units for your account; the journal's weather and distances follow it. (#666)
+
 ## [0.201.0] - 2026-10-27
 
 ### Added
