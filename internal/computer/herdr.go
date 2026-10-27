@@ -49,7 +49,7 @@ import (
 const FeatureHerdr = "herdr"
 
 // FeatureHerdrFiles is files sent with a herdr_send: written on this
-// computer, and their paths typed after the text. A program that predates
+// computer, and their paths typed before the text. A program that predates
 // it would type the text alone.
 const FeatureHerdrFiles = "herdr_files"
 
@@ -199,7 +199,7 @@ type HerdrArguments struct {
 	// Code with --dangerously-skip-permissions, Codex with --yolo.
 	ShouldSkipPermissions bool `json:"shouldSkipPermissions,omitempty"`
 	// HerdrFiles are sent with the text: each is written on this computer
-	// and its path typed after the text, for the coding agent to open.
+	// and its path typed before the text, for the coding agent to open.
 	HerdrFiles []*HerdrFile `json:"herdrFiles,omitempty"`
 }
 
@@ -1113,18 +1113,27 @@ func (self *Herdr) send(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 	}
 	text := strings.TrimSpace(arguments.Text)
 	var filePaths []string
+	isEnterPressedAgain := false
 	if len(arguments.HerdrFiles) > 0 {
 		filePaths, err = self.writeSentFiles(arguments.HerdrFiles)
 		if err != nil {
 			return nil, err
 		}
-		text = strings.TrimSpace(text + " " + herdrFileMentions(session.CodingAgentKind, filePaths))
+		var mentions string
+		mentions, isEnterPressedAgain = herdrFileMentions(session.CodingAgentKind, filePaths, text != "")
+		text = strings.TrimSpace(mentions + " " + text)
 	}
 	err = self.client.call(ctx, "agent.prompt", map[string]any{"target": session.PaneID, "text": text}, nil)
 	// A prompt is typed into the pane too: its kept screen is old now.
 	self.client.noteTyped(session.PaneID)
 	if err != nil {
 		return nil, fmt.Errorf("the text may not have been typed into %s; look at its screen before sending again: %w", session.named(), err)
+	}
+	if isEnterPressedAgain {
+		time.Sleep(herdrKeyGap)
+		if err := self.client.sendKeys(ctx, session.PaneID, []string{"enter"}); err != nil {
+			return nil, fmt.Errorf("the files were typed into %s but may not have been sent; look at its screen: %w", session.named(), err)
+		}
 	}
 	return &HerdrSendResult{HerdrSession: session, IsSent: true, FilePaths: filePaths}, nil
 }
@@ -1189,19 +1198,48 @@ func herdrSentFileName(fileName string, index int) string {
 	return name
 }
 
-// herdrFileMentions are the paths as the coding agent opens them unasked.
-// Claude Code asks before it reads a file outside its directory, but not
-// one named with @, which it reads into the message; Codex reads a path
-// as it is.
-func herdrFileMentions(codingAgentKind string, filePaths []string) string {
-	mentions := make([]string, 0, len(filePaths))
-	for _, path := range filePaths {
-		if codingAgentKind == CodingAgentKindClaude {
-			path = "@" + path
-		}
-		mentions = append(mentions, path)
+// herdrFileMentions are the paths as the coding agent opens them unasked,
+// to go before the person's words, and whether enter is pressed again after
+// the prompt. Codex reads a path as it is. Claude Code asks before it reads
+// a file outside its directory, but not one named with @, which it reads
+// into the message. A prompt that ends with an @ name leaves Claude Code's
+// list of files to pick from open, and the enter after it picks one rather
+// than sending, so the names go first; with no words after them, enter is
+// pressed again. One that ends with an @ picture never finishes pasting, so
+// pictures sent alone go as their paths, which Claude Code attaches as
+// pictures; pictures sent with other files go first, ahead of the @ names
+// of the rest.
+func herdrFileMentions(codingAgentKind string, filePaths []string, hasText bool) (string, bool) {
+	if codingAgentKind != CodingAgentKindClaude {
+		return strings.Join(filePaths, " "), false
 	}
-	return strings.Join(mentions, " ")
+	pictures := make([]string, 0, len(filePaths))
+	others := make([]string, 0, len(filePaths))
+	for _, path := range filePaths {
+		if isHerdrPicture(path) {
+			pictures = append(pictures, path)
+		} else {
+			others = append(others, path)
+		}
+	}
+	if !hasText && len(others) == 0 {
+		return strings.Join(pictures, " "), false
+	}
+	mentions := make([]string, 0, len(filePaths))
+	for _, path := range append(pictures, others...) {
+		mentions = append(mentions, "@"+path)
+	}
+	return strings.Join(mentions, " "), !hasText
+}
+
+// isHerdrPicture says whether Claude Code attaches the file at the path as
+// a picture when the path is pasted alone.
+func isHerdrPicture(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp":
+		return true
+	}
+	return false
 }
 
 func (self *Herdr) wait(ctx context.Context, arguments *HerdrArguments) (*HerdrWaitResult, error) {
