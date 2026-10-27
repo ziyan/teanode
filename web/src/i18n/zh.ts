@@ -6283,7 +6283,7 @@ export const zh: Catalog = {
   'location.checkInNoPosition': '浏览器没有告知你的位置。请允许此网站使用位置，然后再试一次。',
   'location.checkedIn': '已在{place}签到',
   'location.checkInFailed': '无法签到。',
-  'location.metersAway': '距离 {distance} 米',
+  'location.distanceAway': '距离 {distance}',
   'location.tabVisits': '到访',
   'location.tabPlaces': '地点',
   'location.tabSharing': '共享',

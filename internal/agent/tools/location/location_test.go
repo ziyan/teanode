@@ -948,6 +948,41 @@ func TestTripsOfAnotherPersonCarryNoLegIDs(t *testing.T) {
 	}
 }
 
+// usUnitsRun is a run for a person whose account reads US units.
+type usUnitsRun struct{ *fakeRun }
+
+func (self usUnitsRun) Owner() *models.User {
+	return &models.User{Username: "ada", Timezone: "UTC", MeasurementSystem: models.MeasurementSystemUS}
+}
+
+// A person who reads miles is answered in miles, by keys that say so.
+func TestDistancesAreInMilesForAPersonWhoReadsThem(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListTrips": tripsAnswer,
+		"ListTravelTotals": `[{"periodStartDay":"2026-10-12","travelMode":"walk","distanceMeters":640,"durationSeconds":600,"legCount":1},
+			{"periodStartDay":"2026-10-12","travelMode":"bus","distanceMeters":11800,"durationSeconds":1500,"legCount":1}]`,
+	}}
+	run := usUnitsRun{runOf(operations)}
+	answer, _, err := act(t, run, "trips", `{"day":"2026-10-17"}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trip := answer["trips"].([]any)[0].(map[string]any)
+	walk := trip["legs"].([]any)[0].(map[string]any)
+	if trip["distance_miles"] != 7.7 || trip["distance_kilometers"] != nil || trip["distance_meters"] != float64(12440) || walk["distance_miles"] != 0.4 {
+		t.Errorf("the trip in miles: %v", trip)
+	}
+	answer, _, err = act(t, run, "travel_totals", `{}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	period := answer["periods"].([]any)[0].(map[string]any)
+	byMode, _ := period["distance_miles_by_travel_mode"].(map[string]any)
+	if byMode["walk"] != 0.4 || byMode["bus"] != 7.3 || period["total_distance_miles"] != 7.7 {
+		t.Errorf("the totals in miles: %v", period)
+	}
+}
+
 // travel_totals defaults to weeks over the last 12, and answers a row per
 // period, newest first, with the kilometers of each way and the total.
 func TestTravelTotalsAreAddedUpPerPeriod(t *testing.T) {

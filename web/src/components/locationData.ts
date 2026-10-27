@@ -336,14 +336,21 @@ export const TRAVEL_PERIODS: TravelPeriod[] = ['day', 'week', 'month', 'year']
 // months of weeks, a year of months, five years.
 export const TRAVEL_PERIOD_COUNTS: Record<TravelPeriod, number> = { day: 14, week: 12, month: 12, year: 5 }
 
-// travelDistanceText is a distance a person reads: meters below a tenth of a
-// kilometer, else kilometers with one decimal (0.6 km, 11.8 km, 1,204 km).
-export function travelDistanceText(distanceMeters: number, language: string): string {
+const METERS_PER_MILE = 1609.344
+const METERS_PER_FOOT = 0.3048
+
+// travelDistanceText is a distance a person reads, in the units they chose.
+// Metric: meters below a tenth of a kilometer, else kilometers with one decimal
+// (80 m, 0.6 km, 11.8 km, 1,204 km). US: whole feet below a tenth of a mile,
+// else miles with at most one decimal (341 ft, 0.4 mi, 7.3 mi, 748.1 mi).
+export function travelDistanceText(distanceMeters: number, isImperial: boolean, language: string): string {
+  const format = new Intl.NumberFormat(language, { minimumFractionDigits: 0, maximumFractionDigits: 1 })
+  if (isImperial) {
+    if (distanceMeters < METERS_PER_MILE / 10) return `${Math.round(distanceMeters / METERS_PER_FOOT)} ft`
+    return `${format.format(distanceMeters / METERS_PER_MILE)} mi`
+  }
   if (distanceMeters < 100) return `${Math.round(distanceMeters)} m`
-  const kilometers = new Intl.NumberFormat(language, { minimumFractionDigits: 0, maximumFractionDigits: 1 }).format(
-    distanceMeters / 1000,
-  )
-  return `${kilometers} km`
+  return `${format.format(distanceMeters / 1000)} km`
 }
 
 // periodStartOf is the first day of the period holding a day, on the browser's

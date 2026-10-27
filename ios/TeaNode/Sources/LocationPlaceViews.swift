@@ -21,6 +21,7 @@ struct LocationPlaceScreen: View {
     @State private var tappedCoordinate: CLLocationCoordinate2D?
     @State private var isMoving = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var app
 
     init(model: LocationModel, place: LocationPlace) {
         self.model = model
@@ -236,7 +237,7 @@ struct LocationPlaceScreen: View {
         // reading is; the live reading is already no older than 60 s.
         guard reading.accuracyMeters >= 0, reading.accuracyMeters <= LocationText.roughAccuracyMeters else {
             let roughness = reading.accuracyMeters >= 0
-                ? LocationText.distance(reading.accuracyMeters.rounded()) : String(localized: "an unknown distance")
+                ? LocationText.distance(reading.accuracyMeters.rounded(), measurementSystem: app.measurementSystem) : String(localized: "an unknown distance")
             model.problemText = String(
                 localized: "Your iPhone can only place you within \(roughness) right now. Try again outside, or tap the map where the place is.")
             return
@@ -320,6 +321,7 @@ struct LocationPlaceScreen: View {
 struct CheckInSheet: View {
     let model: LocationModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var app
     @State private var nearbyPlaces: [FoundPlace]?
     @State private var position: (latitudeDegrees: Double, longitudeDegrees: Double)?
     /// How precise the phone says the position is; negative when it could not tell.
@@ -462,7 +464,7 @@ struct CheckInSheet: View {
     /// Nil when the phone did not say.
     private var precisionText: String? {
         guard let positionAccuracyMeters, positionAccuracyMeters >= 0 else { return nil }
-        let withinText = String(localized: "Within \(LocationText.distance(positionAccuracyMeters.rounded()))")
+        let withinText = String(localized: "Within \(LocationText.distance(positionAccuracyMeters.rounded(), measurementSystem: app.measurementSystem))")
         guard positionAccuracyMeters > LocationText.roughAccuracyMeters else { return withinText }
         return String(localized: "\(withinText). The phone could only find you roughly.")
     }
@@ -470,7 +472,7 @@ struct CheckInSheet: View {
     /// The kind of place it is and how far away, such as "Cafe · 40 m".
     private func details(of foundPlace: FoundPlace) -> String {
         let categoryName = LocationText.category(foundPlace.osmCategory)
-        let distanceText = LocationText.distance(foundPlace.distanceMeters)
+        let distanceText = LocationText.distance(foundPlace.distanceMeters, measurementSystem: app.measurementSystem)
         return categoryName.isEmpty ? distanceText : String(localized: "\(categoryName) · \(distanceText)")
     }
 

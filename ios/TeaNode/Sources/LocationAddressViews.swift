@@ -12,6 +12,7 @@ import TeaNodeKit
 /// position) the screen says where to get one instead.
 struct LocationAddressScreen: View {
     let model: LocationModel
+    @Environment(AppModel.self) private var app
     /// The place whose address is being changed, so the matches come nearest
     /// first to it. Nil in the setup, which has no place yet.
     var placeId: String?
@@ -59,7 +60,7 @@ struct LocationAddressScreen: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(verbatim: match.chosenAddressText).foregroundStyle(Color(.label))
                                 if match.distanceMeters > 0 {
-                                    Text(verbatim: LocationText.distance(match.distanceMeters))
+                                    Text(verbatim: LocationText.distance(match.distanceMeters, measurementSystem: app.measurementSystem))
                                         .font(.subheadline)
                                         .foregroundStyle(Color(.secondaryLabel))
                                 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/place"
 )
 
@@ -175,11 +176,13 @@ type foundData struct {
 	IsNamedByPerson  bool    `json:"isNamedByPerson"`
 }
 
-// scope is what every action needs: the run, the person's zone and now.
+// scope is what every action needs: the run, the person's zone and units,
+// and now.
 type scope struct {
 	run        tools.Run
 	operations tools.Operations
 	where      *time.Location
+	isUSUnits  bool
 	now        time.Time
 }
 
@@ -188,7 +191,7 @@ func scopeOf(ctx context.Context) (*scope, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &scope{run: run, operations: run.Operations(), where: tools.Location(run.Owner()), now: time.Now()}, nil
+	return &scope{run: run, operations: run.Operations(), where: tools.Location(run.Owner()), isUSUnits: run.Owner().UsesUSUnits(), now: time.Now()}, nil
 }
 
 // untrusted marks an answer carrying place names, which OpenStreetMap or
@@ -796,7 +799,7 @@ func runPath(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		answer["first_at"] = points[0].MeasuredAt.In(here.where).Format("15:04:05")
 		answer["last_at"] = points[len(points)-1].MeasuredAt.In(here.where).Format("15:04:05")
-		answer["distance_travelled_kilometers"] = roundTo(travelledMeters/1000, 2)
+		answer["distance_travelled_"+here.distanceUnit()] = roundTo(here.distanceIn(travelledMeters), 2)
 		sampled := make([]map[string]any, 0, pathPointsMost)
 		for _, index := range sampleIndexes(len(points), pathPointsMost) {
 			sampled = append(sampled, map[string]any{
@@ -1635,20 +1638,38 @@ type travelTotalData struct {
 	LegCount        int     `json:"legCount"`
 }
 
-// kilometers is a distance in meters as kilometers with one decimal.
-func kilometers(distanceMeters float64) float64 {
-	return roundTo(distanceMeters/1000, 1)
+// distanceUnit is the unit the person reads a distance in, as the key of an
+// answer says it: kilometers, or miles when their account says US units.
+func (self *scope) distanceUnit() string {
+	if self.isUSUnits {
+		return "miles"
+	}
+	return "kilometers"
+}
+
+// distanceIn is a distance in meters in the person's unit.
+func (self *scope) distanceIn(distanceMeters float64) float64 {
+	if self.isUSUnits {
+		return models.MilesFromMeters(distanceMeters)
+	}
+	return distanceMeters / 1000
+}
+
+// roundedDistance is a distance in meters in the person's unit, with one
+// decimal.
+func (self *scope) roundedDistance(distanceMeters float64) float64 {
+	return roundTo(self.distanceIn(distanceMeters), 1)
 }
 
 // legRow is a leg as the model reads it. The leg id is only given for the
 // person's own trips, since only the person corrects a leg.
-func legRow(leg *tripLegData, isOwn bool) map[string]any {
+func (self *scope) legRow(leg *tripLegData, isOwn bool) map[string]any {
 	row := map[string]any{
-		"travel_mode":         leg.TravelMode,
-		"distance_kilometers": kilometers(leg.DistanceMeters),
-		"distance_meters":     math.Round(leg.DistanceMeters),
-		"leg_duration":        durationWords(time.Duration(leg.DurationSeconds) * time.Second),
-		"is_corrected":        leg.IsTravelModeCorrected,
+		"travel_mode":                     leg.TravelMode,
+		"distance_" + self.distanceUnit(): self.roundedDistance(leg.DistanceMeters),
+		"distance_meters":                 math.Round(leg.DistanceMeters),
+		"leg_duration":                    durationWords(time.Duration(leg.DurationSeconds) * time.Second),
+		"is_corrected":                    leg.IsTravelModeCorrected,
 	}
 	if leg.IsTravelModeCorrected {
 		row["detected_travel_mode"] = leg.DetectedTravelMode
@@ -1760,11 +1781,11 @@ func runTrips(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	for index := range result.ListTrips.Trips {
 		trip := &result.ListTrips.Trips[index]
 		row := map[string]any{
-			"started":             here.timeText(&trip.StartedAt),
-			"ended":               here.timeText(&trip.EndedAt),
-			"trip_duration":       durationWords(time.Duration(trip.DurationSeconds) * time.Second),
-			"distance_kilometers": kilometers(trip.DistanceMeters),
-			"distance_meters":     math.Round(trip.DistanceMeters),
+			"started":                         here.timeText(&trip.StartedAt),
+			"ended":                           here.timeText(&trip.EndedAt),
+			"trip_duration":                   durationWords(time.Duration(trip.DurationSeconds) * time.Second),
+			"distance_" + here.distanceUnit(): here.roundedDistance(trip.DistanceMeters),
+			"distance_meters":                 math.Round(trip.DistanceMeters),
 		}
 		if trip.FromPlace != nil {
 			row["from_place"] = placeDisplayName(trip.FromPlace)
@@ -1776,7 +1797,7 @@ func runTrips(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		legs := make([]map[string]any, 0, len(trip.Legs))
 		for legIndex := range trip.Legs {
-			legs = append(legs, legRow(&trip.Legs[legIndex], userId == nil))
+			legs = append(legs, here.legRow(&trip.Legs[legIndex], userId == nil))
 		}
 		row["legs"] = legs
 		rows = append(rows, row)
@@ -1885,12 +1906,12 @@ func runTravelTotals(ctx context.Context, call *tools.Call) (*tools.Result, erro
 		sum := periods[periodStartDay]
 		byMode := map[string]any{}
 		for mode, meters := range sum.byMode {
-			byMode[mode] = kilometers(meters.(float64))
+			byMode[mode] = here.roundedDistance(meters.(float64))
 		}
 		rows = append(rows, map[string]any{
-			"period_start_day":                   periodStartDay,
-			"distance_kilometers_by_travel_mode": byMode,
-			"total_distance_kilometers":          kilometers(sum.totalMeters),
+			"period_start_day": periodStartDay,
+			"distance_" + here.distanceUnit() + "_by_travel_mode": byMode,
+			"total_distance_" + here.distanceUnit():               here.roundedDistance(sum.totalMeters),
 		})
 	}
 	return tools.JSONResult(map[string]any{"timezone": here.where.String(), "period": period, "periods": rows})
@@ -1929,7 +1950,7 @@ func runTravelMode(ctx context.Context, call *tools.Call) (*tools.Result, error)
 	if err := here.operations.Execute(ctx, documentSetTripLegTravelMode, variables, &result); err != nil {
 		return nil, err
 	}
-	row := legRow(&result.SetTripLegTravelMode, true)
+	row := here.legRow(&result.SetTripLegTravelMode, true)
 	row["timezone"] = here.where.String()
 	row["started"] = here.timeText(&result.SetTripLegTravelMode.StartedAt)
 	return tools.JSONResult(row)

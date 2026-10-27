@@ -134,6 +134,7 @@ struct PhotoLocationChoices: View {
     @Binding var isConfirmingRemoval: Bool
     let onChoose: (PhotoPlace) -> Void
     let onRemove: () -> Void
+    @Environment(AppModel.self) private var app
 
     private var removalQuestion: LocalizedStringKey {
         photoCount == 1 ? LocalizedStringKey("Remove the location of this photo?") : LocalizedStringKey("Remove the location of these photos?")
@@ -209,7 +210,7 @@ struct PhotoLocationChoices: View {
     /// same, where each is.
     private func secondaryText(of place: PhotoPlace) -> String? {
         if let distanceKilometers = place.distanceKilometers {
-            return LocationText.distance(distanceKilometers * 1_000)
+            return LocationText.distance(distanceKilometers * 1_000, measurementSystem: app.measurementSystem)
         }
         guard places.filter({ $0.placeName == place.placeName }).count > 1 else { return nil }
         return String(format: "%.2f, %.2f", place.latitude, place.longitude)
@@ -252,6 +253,7 @@ struct PhotoChangeLocationButton: View {
                 .navigationTitle("Change location")
                 .navigationBarTitleDisplayMode(.inline)
             }
+            .environment(AppModel.shared)
         }
     }
 

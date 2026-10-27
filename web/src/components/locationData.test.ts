@@ -116,11 +116,20 @@ describe("a day's path", () => {
 
 describe('travelDistanceText', () => {
   it('writes meters below a tenth of a kilometer and kilometers with one decimal above', () => {
-    expect(travelDistanceText(80, 'en')).toBe('80 m')
-    expect(travelDistanceText(600, 'en')).toBe('0.6 km')
-    expect(travelDistanceText(11800, 'en')).toBe('11.8 km')
-    expect(travelDistanceText(3000, 'en')).toBe('3 km')
-    expect(travelDistanceText(1204000, 'en')).toBe('1,204 km')
+    expect(travelDistanceText(80, false, 'en')).toBe('80 m')
+    expect(travelDistanceText(600, false, 'en')).toBe('0.6 km')
+    expect(travelDistanceText(11800, false, 'en')).toBe('11.8 km')
+    expect(travelDistanceText(3000, false, 'en')).toBe('3 km')
+    expect(travelDistanceText(1204000, false, 'en')).toBe('1,204 km')
+  })
+
+  it('writes whole feet below a tenth of a mile and miles with at most one decimal above, for US units', () => {
+    expect(travelDistanceText(104, true, 'en')).toBe('341 ft')
+    expect(travelDistanceText(160, true, 'en')).toBe('525 ft')
+    expect(travelDistanceText(161, true, 'en')).toBe('0.1 mi')
+    expect(travelDistanceText(11800, true, 'en')).toBe('7.3 mi')
+    expect(travelDistanceText(16093.44, true, 'en')).toBe('10 mi')
+    expect(travelDistanceText(1204000, true, 'en')).toBe('748.1 mi')
   })
 })
 

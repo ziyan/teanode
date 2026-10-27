@@ -142,7 +142,8 @@ func NewLocationCommand() *cli.Command {
 				Name:  "travel",
 				Usage: "how far you traveled by each way of travel, per day, week, month or year",
 				Description: "A leg counts in the period it started in. Weeks start on Monday. Distances are in\n" +
-					"kilometers. Without --from and --until it lists the last 12 periods.",
+					"kilometers, or miles when your account reads US units. Without --from and --until\n" +
+					"it lists the last 12 periods.",
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "by", Usage: "the period: day, week, month or year", Value: "week"},
@@ -975,18 +976,14 @@ func foundPlaceLine(found *client.FoundPlace) string {
 	return mapName
 }
 
-func foundPlaceRows(found []*client.FoundPlace) [][]string {
+func foundPlaceRows(found []*client.FoundPlace, isUSUnits bool) [][]string {
 	rows := make([][]string, 0, len(found))
 	for _, each := range found {
 		yours := ""
 		if each.PlaceID != nil {
 			yours = *each.PlaceID
 		}
-		distance := fmt.Sprintf("%.0f m", each.DistanceMeters)
-		if each.DistanceMeters >= 1000 {
-			distance = fmt.Sprintf("%.1f km", each.DistanceMeters/1000)
-		}
-		rows = append(rows, []string{foundPlaceLine(each), each.OSMCategory, distance, yours})
+		rows = append(rows, []string{foundPlaceLine(each), each.OSMCategory, distanceWords(each.DistanceMeters, isUSUnits), yours})
 	}
 	return rows
 }
@@ -1018,7 +1015,7 @@ func runLocationNearby(ctx context.Context, command *cli.Command) error {
 		fmt.Println("nothing named there")
 		return nil
 	}
-	return printTable([]string{"place", "kind", "distance", "your place"}, foundPlaceRows(found))
+	return printTable([]string{"place", "kind", "distance", "your place"}, foundPlaceRows(found, usesUSUnits(ctx, connection)))
 }
 
 func runLocationSearch(ctx context.Context, command *cli.Command) error {
@@ -1053,22 +1050,19 @@ func runLocationSearch(ctx context.Context, command *cli.Command) error {
 		fmt.Println("nothing found")
 		return nil
 	}
-	if err := printTable([]string{"place", "kind", "distance", "your place"}, foundPlaceRows(page.FoundPlaces)); err != nil {
+	if err := printTable([]string{"place", "kind", "distance", "your place"}, foundPlaceRows(page.FoundPlaces, usesUSUnits(ctx, connection))); err != nil {
 		return err
 	}
 	noteNextPage(page.NextOffset, first)
 	return nil
 }
 
-func addressRows(found []*client.FoundPlace) [][]string {
+func addressRows(found []*client.FoundPlace, isUSUnits bool) [][]string {
 	rows := make([][]string, 0, len(found))
 	for _, each := range found {
 		distance := "-"
 		if each.DistanceMeters > 0 {
-			distance = fmt.Sprintf("%.0f m", each.DistanceMeters)
-			if each.DistanceMeters >= 1000 {
-				distance = fmt.Sprintf("%.1f km", each.DistanceMeters/1000)
-			}
+			distance = distanceWords(each.DistanceMeters, isUSUnits)
 		}
 		rows = append(rows, []string{each.AddressText, fmt.Sprintf("%.5f", each.LatitudeDegrees), fmt.Sprintf("%.5f", each.LongitudeDegrees), distance})
 	}
@@ -1108,7 +1102,7 @@ func runLocationAddresses(ctx context.Context, command *cli.Command) error {
 		fmt.Println("no address found; try fewer words, or the street and the city")
 		return nil
 	}
-	return printTable([]string{"address", "latitude", "longitude", "distance"}, addressRows(found))
+	return printTable([]string{"address", "latitude", "longitude", "distance"}, addressRows(found, usesUSUnits(ctx, connection)))
 }
 
 func runLocationSave(ctx context.Context, command *cli.Command) error {
@@ -1185,7 +1179,7 @@ func runLocationSave(ctx context.Context, command *cli.Command) error {
 	if words != "" {
 		if len(otherMatches) > 0 {
 			fmt.Println("if that was the wrong address, rerun with --latitude, --longitude and --address-text from one of these:")
-			return printTable([]string{"address", "latitude", "longitude", "distance"}, addressRows(otherMatches))
+			return printTable([]string{"address", "latitude", "longitude", "distance"}, addressRows(otherMatches, usesUSUnits(ctx, connection)))
 		}
 	}
 	return nil
@@ -1418,11 +1412,6 @@ func travelModeWords() string {
 	return strings.Join(travelModes, ", ")
 }
 
-// kilometersWords is a distance in meters as kilometers with one decimal.
-func kilometersWords(distanceMeters float64) string {
-	return fmt.Sprintf("%.1f km", distanceMeters/1000)
-}
-
 // tripSpanWords is when a trip happened: both ends with the day when it
 // started on one and ended on another.
 func tripSpanWords(trip *client.Trip) string {
@@ -1435,10 +1424,10 @@ func tripSpanWords(trip *client.Trip) string {
 
 // tripLegWords is the legs of a trip as "walk 0.6 km, car 11.8 km", marking a
 // way that was corrected, as the dashboard does.
-func tripLegWords(trip *client.Trip) string {
+func tripLegWords(trip *client.Trip, isUSUnits bool) string {
 	words := make([]string, 0, len(trip.Legs))
 	for _, leg := range trip.Legs {
-		each := leg.TravelMode + " " + kilometersWords(leg.DistanceMeters)
+		each := leg.TravelMode + " " + distanceWords(leg.DistanceMeters, isUSUnits)
 		if leg.IsTravelModeCorrected {
 			each += " (corrected)"
 		}
@@ -1533,6 +1522,7 @@ func runLocationTrips(ctx context.Context, command *cli.Command) error {
 		fmt.Println("no trips in that range")
 		return nil
 	}
+	isUSUnits := usesUSUnits(ctx, connection)
 	rows := make([][]string, 0, len(page.Trips))
 	for _, trip := range page.Trips {
 		fromName, toName := "somewhere", "somewhere"
@@ -1543,8 +1533,8 @@ func runLocationTrips(ctx context.Context, command *cli.Command) error {
 			toName = placeLine(trip.ToPlace)
 		}
 		rows = append(rows, []string{
-			tripSpanWords(trip), fromName + " to " + toName, kilometersWords(trip.DistanceMeters),
-			timeWords(time.Duration(trip.DurationSeconds) * time.Second), tripLegWords(trip), tripLegIDWords(trip),
+			tripSpanWords(trip), fromName + " to " + toName, distanceWords(trip.DistanceMeters, isUSUnits),
+			timeWords(time.Duration(trip.DurationSeconds) * time.Second), tripLegWords(trip, isUSUnits), tripLegIDWords(trip),
 		})
 	}
 	if err := printTable([]string{"time", "route", "distance", "duration", "legs", "leg ids"}, rows); err != nil {
@@ -1646,6 +1636,7 @@ func runLocationTravel(ctx context.Context, command *cli.Command) error {
 		fmt.Println("no travel in that range")
 		return nil
 	}
+	isUSUnits := usesUSUnits(ctx, connection)
 	// One row per period, one column per way of travel that appears.
 	distances := map[string]map[string]float64{}
 	isModeUsed := map[string]bool{}
@@ -1686,7 +1677,7 @@ func runLocationTravel(ctx context.Context, command *cli.Command) error {
 		for _, mode := range modes {
 			cell := ""
 			if meters, isFound := distances[periodStartDay][mode]; isFound {
-				cell = kilometersWords(meters)
+				cell = distanceWords(meters, isUSUnits)
 			}
 			row = append(row, cell)
 		}
@@ -1702,11 +1693,11 @@ func runLocationTravel(ctx context.Context, command *cli.Command) error {
 		if isOtherUsed {
 			cell := ""
 			if isOtherFound {
-				cell = kilometersWords(otherMeters)
+				cell = distanceWords(otherMeters, isUSUnits)
 			}
 			row = append(row, cell)
 		}
-		rows = append(rows, append(row, kilometersWords(totalMeters)))
+		rows = append(rows, append(row, distanceWords(totalMeters, isUSUnits)))
 	}
 	return printTable(headers, rows)
 }

@@ -53,8 +53,8 @@ extension LocationText {
     }
 
     /// How far and how long a leg was, such as "11.8 km · 18 min".
-    static func summary(of leg: TripLeg) -> String {
-        String(localized: "\(distance(leg.distanceMeters)) · \(duration(.seconds(leg.durationSeconds)))")
+    static func summary(of leg: TripLeg, measurementSystem: MeasurementSystem) -> String {
+        String(localized: "\(distance(leg.distanceMeters, measurementSystem: measurementSystem)) · \(duration(.seconds(leg.durationSeconds)))")
     }
 
     /// What a period of the Travel screen is called: the day, "Week of Oct
@@ -116,6 +116,7 @@ struct LocationTripLegLine: View {
     /// The symbol's column grows with the text, so a wide symbol at a large
     /// text size does not run into the name.
     @ScaledMetric(relativeTo: .body) private var symbolColumnWidth: CGFloat = 28
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         HStack(spacing: 12) {
@@ -127,7 +128,7 @@ struct LocationTripLegLine: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: LocationText.travelModeTitle(leg.travelMode))
                     .foregroundStyle(.primary)
-                Text(verbatim: LocationText.summary(of: leg))
+                Text(verbatim: LocationText.summary(of: leg, measurementSystem: app.measurementSystem))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -299,6 +300,7 @@ struct LocationTravelPeriodRow: View {
     /// text size does not run into the name.
     @ScaledMetric(relativeTo: .body) private var symbolColumnWidth: CGFloat = 28
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(AppModel.self) private var app
 
     /// A name and its distance side by side, or the distance under the name
     /// at the accessibility sizes, where side by side they wrap into each
@@ -316,7 +318,7 @@ struct LocationTravelPeriodRow: View {
                 if !dynamicTypeSize.isAccessibilitySize {
                     Spacer(minLength: 8)
                 }
-                Text(verbatim: LocationText.distance(period.distanceMeters))
+                Text(verbatim: LocationText.distance(period.distanceMeters, measurementSystem: app.measurementSystem))
                     .font(.headline)
             }
             ForEach(period.totals, id: \.travelMode) { total in
@@ -331,7 +333,7 @@ struct LocationTravelPeriodRow: View {
                         if !dynamicTypeSize.isAccessibilitySize {
                             Spacer(minLength: 8)
                         }
-                        Text(verbatim: LocationText.distance(total.distanceMeters))
+                        Text(verbatim: LocationText.distance(total.distanceMeters, measurementSystem: app.measurementSystem))
                             .foregroundStyle(.secondary)
                     }
                 }

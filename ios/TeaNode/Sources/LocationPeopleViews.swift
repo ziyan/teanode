@@ -164,11 +164,12 @@ struct LocationPersonRow: View {
     let isSelected: Bool
     var isHighlightedWhenChosen = false
     let action: () -> Void
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         LocationPeopleRowLabel(
             person: person, nameText: person.displayName, whereText: LocationText.whereText(of: person),
-            distanceText: LocationText.distanceText(from: own, to: person), isSelected: isSelected,
+            distanceText: LocationText.distanceText(from: own, to: person, measurementSystem: app.measurementSystem), isSelected: isSelected,
             isHighlightedWhenChosen: isHighlightedWhenChosen, action: action
         )
         .accessibilityHint(isSelected ? Text("Shown on the map") : Text("Shows them on the map"))
