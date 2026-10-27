@@ -432,6 +432,9 @@ struct ConversationFollowing: ViewModifier {
             }
             .environment(\.openURL, OpenURLAction { address in app.route(address) })
             .environment(\.pictureConversationId, model.conversationId)
+            // What a message's card opens is shown here, not by the card, which the
+            // list of messages lets go of once it is far from the screen.
+            .messagePresentations()
             .onChange(of: app.askingAbout, initial: true) { _, reference in
                 // A mail asked about elsewhere becomes what the next message
                 // refers to.

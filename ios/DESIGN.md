@@ -175,6 +175,24 @@ its pull request is opened.
   grouped by part. A row opens the item in its part; Show all opens the part
   with the words in its own search.
 
+### Sheets and covers belong to the screen
+
+- A `.sheet`, `.fullScreenCover` or `.popover` is attached to the `List`, the
+  `Form` or the screen's root, never to a `Section`, a row, a `ForEach`'s
+  content, a lazy stack's content, or what a `Menu`, `contextMenu` or
+  `swipeActions` builds. A list builds its sections and rows again when its
+  data changes, a swipe closes or a row scrolls away, and a sheet attached to
+  one opens and closes at once, or closes while the person is in it.
+- The row only says which item it is about: it sets an item on its screen
+  (`@State var renaming: Account?`), and the screen presents with
+  `sheet(item:)` or `confirmationDialog(presenting:)`.
+- A card shown in a lazy list of its own, such as a conversation's messages,
+  owns no sheet either: it hands the tap to the screen
+  (`MessagePresentations` in a conversation).
+- `make check-presentations` (part of `make lint-ci`) fails on the cases it
+  can see within one file. A presentation with a reason to sit where it is
+  says so on the line before: `// check-presentations: allow, <why>`.
+
 ## The iPad
 
 The same app runs on the iPad, and a screen is designed once for both. What

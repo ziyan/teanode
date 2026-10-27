@@ -9,6 +9,7 @@ import { useIsDesktop } from '../components/sidebar'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
+import { photoSmallPreviewPath } from '../photos/api'
 import {
   FIND_MAIL_FOLDER,
   isSearchArea,
@@ -154,10 +155,11 @@ export function SearchPage() {
                     <button
                       key={key}
                       type="button"
-                      className="search-result"
+                      className={area === 'photos' ? 'search-result search-result-with-photo' : 'search-result'}
                       disabled={openingKey === key}
                       onClick={() => void open(area, result)}
                     >
+                      {area === 'photos' && <SearchPhotoThumbnail photoId={result.targetId} />}
                       <span className="search-result-text">
                         <span className="search-result-title">{result.titleText || t('search.untitled')}</span>
                         {result.detailText && <span className="search-result-detail muted">{result.detailText}</span>}
@@ -187,5 +189,23 @@ export function SearchPage() {
         })
       )}
     </div>
+  )
+}
+
+// SearchPhotoThumbnail is the picture of a photo found, before its name: a
+// file name and a date say little about which photo it is. A photo with no
+// preview yet keeps the square, empty.
+function SearchPhotoThumbnail({ photoId }: { photoId: string }) {
+  const [isBroken, setIsBroken] = useState(false)
+  if (isBroken) return <span className="search-result-photo" aria-hidden="true" />
+  return (
+    <img
+      className="search-result-photo"
+      src={photoSmallPreviewPath(photoId)}
+      alt=""
+      loading="lazy"
+      draggable={false}
+      onError={() => setIsBroken(true)}
+    />
   )
 }
