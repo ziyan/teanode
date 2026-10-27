@@ -2,10 +2,10 @@ import Foundation
 
 // Everything the person shares and everything shared with them, in one list,
 // across calendar, location, Health, memory pages, photo albums, recordings,
-// finance accounts, skills and passwords: the same operations the dashboard's
-// Sharing page, the command line and the circle tool use. Stopping a share is
-// the kind's own operation; what is new here is declining a share that was made
-// to the person by name.
+// finance accounts, skills, passwords and shopping lists: the same operations
+// the dashboard's Sharing page, the command line and the circle tool use.
+// Stopping a share is the kind's own operation; what is new here is declining a
+// share that was made to the person by name.
 
 /// SharingKind is what a share is of. The server names them with these words.
 public enum SharingKind: String, CaseIterable, Sendable {
@@ -18,6 +18,7 @@ public enum SharingKind: String, CaseIterable, Sendable {
     case finance
     case skill
     case passwords
+    case shoppingList = "shopping_list"
 }
 
 /// SharingMade is one share the person made: of what, with whom, at what level.
@@ -216,6 +217,7 @@ extension Connection {
         case .recording: try await unshareRecording(shareId: share.shareId)
         case .finance: try await unshareFinanceAccount(shareId: share.shareId)
         case .skill: try await unshareSkill(shareId: share.shareId)
+        case .shoppingList: try await unshareShoppingList(shoppingListShareId: share.shareId)
         case .passwords: throw SharingError.passwordsAreStoppedOnTheirOwnScreen
         }
     }

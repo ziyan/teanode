@@ -506,6 +506,7 @@ func TestEveryKindOfShareIsEndedWhenACircleStopsMakingItPossible(t *testing.T) {
 		"password_share":        "endPasswordSharesOutsideCircles",
 		"photo_album_share":     "endPhotoAlbumSharesOutsideCircles",
 		"recording_share":       "endRecordingSharesOutsideCircles",
+		"shopping_list_share":   "endShoppingSharesOutsideCircles",
 		"skill_share":           "endSkillSharesOutsideCircles",
 		// Not a share: the log of the calls made through a skill share, which
 		// keeps the grantee after the share is gone.

@@ -3,12 +3,17 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { graphql } from '../../api'
+import { SessionProvider } from '../../session'
 import { uploadFiles } from '../../upload'
 import { FinanceReceipt, FinanceTransaction, ReceiptMatchCandidate } from './financeApi'
 import { FinanceReceiptListSection } from './financeReceiptList'
 
 const toast = vi.hoisted(() => ({ done: vi.fn(), failed: vi.fn(), failure: vi.fn() }))
-vi.mock('../../api', () => ({ graphql: vi.fn(), askAgentAbout: vi.fn() }))
+vi.mock('../../api', () => ({
+  graphql: vi.fn(),
+  askAgentAbout: vi.fn(),
+  subscribe: vi.fn(() => () => undefined),
+}))
 vi.mock('../../i18n/i18n', () => ({
   useTranslation: () => ({
     t: (key: string, values?: Record<string, string>) => (values ? `${key} ${JSON.stringify(values)}` : key),
@@ -222,6 +227,58 @@ describe('the Receipts section', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'common.close' }))
     await waitFor(() => expect(shownSearch).not.toContain('receipt='))
     expect(shownSearch).toContain('page=3')
+  })
+
+  it('shows what the receipt did to the shopping lists for a person who uses them, linking to the full view', async () => {
+    answer(() => [hardwareReceipt])
+    const finance = execute.getMockImplementation()!
+    execute.mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
+      if (document.includes('ListShoppingLists'))
+        return { ListShoppingLists: [{ id: 'list-1', listName: 'Groceries' }] }
+      if (document.includes('ListShoppingReceiptMatches')) {
+        return {
+          ListShoppingReceiptMatches: {
+            financeReceiptId: 'receipt-hardware',
+            merchantName: 'Birch Street Hardware',
+            purchasedOn: '2026-06-02',
+            totalAmount: '12.5',
+            currencyCode: 'USD',
+            shoppingReceiptLines: [],
+            stillNeededItems: [],
+          },
+        }
+      }
+      return finance(document, variables)
+    })
+    render(
+      <SessionProvider
+        value={{
+          authenticated: true,
+          authenticationRequired: true,
+          username: 'person',
+          passkeysEnabled: false,
+          permissions: { everywhere: ['shopping:use'], byDomain: [] },
+        }}
+      >
+        <MemoryRouter initialEntries={['/finance/receipts?receipt=receipt-hardware']}>
+          <FinanceReceiptListSection />
+        </MemoryRouter>
+      </SessionProvider>,
+    )
+    const dialog = await screen.findByRole('alertdialog', { name: 'Birch Street Hardware' })
+    expect(await within(dialog).findByText('shopping.receiptSection')).toBeTruthy()
+    expect(within(dialog).getByRole('link', { name: 'shopping.receiptFullView' }).getAttribute('href')).toBe(
+      '/shopping/receipts/receipt-hardware',
+    )
+    expect(calledWith('ListShoppingReceiptMatches')).toContainEqual({ financeReceiptId: 'receipt-hardware' })
+  })
+
+  it('leaves the shopping lists out of the receipt for a person without shopping:use', async () => {
+    answer(() => [hardwareReceipt])
+    renderSection('/finance/receipts?receipt=receipt-hardware')
+    const dialog = await screen.findByRole('alertdialog', { name: 'Birch Street Hardware' })
+    expect(within(dialog).queryByText('shopping.receiptSection')).toBeNull()
+    expect(calledWith('ListShoppingReceiptMatches')).toHaveLength(0)
   })
 
   it('lists receipts with their check, what they explain and their source', async () => {

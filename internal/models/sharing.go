@@ -24,12 +24,13 @@ const (
 	ShareKindRecording  ShareKind = "recording"
 	ShareKindFinance    ShareKind = "finance"
 	ShareKindPasswords  ShareKind = "passwords"
+	ShareKindShopping   ShareKind = "shopping_list"
 )
 
 // ShareKinds is every kind, in the order the Sharing page lists them.
 var ShareKinds = []ShareKind{
 	ShareKindCalendar, ShareKindLocation, ShareKindHealth, ShareKindMemoryPage,
-	ShareKindPhotoAlbum, ShareKindRecording, ShareKindFinance, ShareKindSkill, ShareKindPasswords,
+	ShareKindPhotoAlbum, ShareKindRecording, ShareKindFinance, ShareKindSkill, ShareKindPasswords, ShareKindShopping,
 }
 
 // IsValid reports whether this is one of the kinds.
@@ -229,6 +230,7 @@ var shareKindNouns = map[ShareKind]string{
 	ShareKindFinance:    "finance",
 	ShareKindSkill:      "skills",
 	ShareKindPasswords:  "passwords",
+	ShareKindShopping:   "shopping lists",
 }
 
 // ShareReceivedText is a share_received note in English: "Alex shared their
@@ -261,6 +263,8 @@ func ShareReceivedText(note *ShareReceivedNote) string {
 		return withLevel(note.SharerName + " shared the recording " + note.ShareSubject + " with you")
 	case ShareKindFinance:
 		return withLevel(note.SharerName + " shared a finance account with you")
+	case ShareKindShopping:
+		return note.SharerName + " shared the shopping list " + note.ShareSubject + " with you"
 	}
 	return note.SharerName + " shared something with you"
 }

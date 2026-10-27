@@ -248,7 +248,7 @@ export const PHOTO_DOCUMENTS = {
   DeletePhotos: 'mutation ($photoIds: [String!]!) { DeletePhotos(photoIds: $photoIds) }',
   EmptyPhotoTrash: 'mutation { EmptyPhotoTrash }',
   RetryPhotoProcessing: 'mutation ($photoIds: [String!]!) { RetryPhotoProcessing(photoIds: $photoIds) }',
-  ListPhotoAlbums: `query { ListPhotoAlbums { ${PHOTO_ALBUM_FIELDS} } }`,
+  ListPhotoAlbums: `query ($circleId: String) { ListPhotoAlbums(circleId: $circleId) { ${PHOTO_ALBUM_FIELDS} } }`,
   SuggestPhotoAlbums:
     'query { SuggestPhotoAlbums { takenAfter takenBefore placeNames albumTitle photoCount samplePhotoIds } }',
   ReadPhotoAlbum: `query ($photoAlbumId: String!) { ReadPhotoAlbum(photoAlbumId: $photoAlbumId) { ${PHOTO_ALBUM_FIELDS} } }`,
@@ -516,6 +516,13 @@ export const photoFilePath = (photoId: string, photoFileRole: PhotoFileRole) =>
 
 export async function listPhotoAlbums(signal?: AbortSignal): Promise<PhotoAlbum[]> {
   const answer = await graphql<{ ListPhotoAlbums: PhotoAlbum[] }>(PHOTO_DOCUMENTS.ListPhotoAlbums, {}, signal)
+  return answer.ListPhotoAlbums
+}
+
+// The albums of one circle the person is in, as its page shows them: the
+// circle's own and those shared with everyone in it.
+export async function listCirclePhotoAlbums(circleId: string, signal?: AbortSignal): Promise<PhotoAlbum[]> {
+  const answer = await graphql<{ ListPhotoAlbums: PhotoAlbum[] }>(PHOTO_DOCUMENTS.ListPhotoAlbums, { circleId }, signal)
   return answer.ListPhotoAlbums
 }
 

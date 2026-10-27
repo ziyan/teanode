@@ -6,6 +6,28 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.201.0] - 2026-10-27
+
+### Added
+
+- Shopping lists on the dashboard, in the iPhone app, with `teanode shopping` and through the agent: named lists shared with a circle or a person, checked off live at the store across several lists, items with pictures (a pictures layout, and a lightbox to see one close up) and prices over time, Done without a receipt, import from pasted text or a screenshot, a reminder on arriving at a store, and every receipt checking off what it bought. (#661)
+
+## [0.200.1] - 2026-10-27
+
+### Changed
+
+- A coding session's question no longer appears in the main chat or the linked chat apps. Your phone is told instead, and tapping the notification opens the session on the Coding screen, where you answer it. (#669)
+
+## [0.200.0] - 2026-10-27
+
+### Added
+
+- A circle's page, on the dashboard and in the iPhone app, shows the circle's albums and the albums shared with everyone in it, and makes a new album for the circle. `teanode photo album list --circle` and the agent list the same albums. (#665)
+
+### Fixed
+
+- Location: visits that were stored covering a trip (a place you had left shown as where you were for hours) are corrected. (#662)
+
 ## [0.199.5] - 2026-10-26
 
 ### Fixed

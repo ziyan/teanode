@@ -239,13 +239,10 @@ type Agent struct {
 	// resume.go.
 	startedAt          time.Time
 	hasResumedCutTurns atomic.Bool
-	// herdrTold is when each herdr question was written into the main
-	// conversation, by computer, pane and fingerprint, so a question said
-	// again after a reconnect is written once. Under the background lock.
+	// herdrTold is when each herdr question was told to the person's
+	// phones, by computer, pane and fingerprint, so a question said again
+	// after a reconnect is told once. Under the background lock.
 	herdrTold map[string]time.Time
-	// herdrAnswered are the questions that went while waiting to be
-	// written, so they are not written. Under the background lock.
-	herdrAnswered map[string]bool
 
 	contextsMutex sync.Mutex
 	contextsOpen  int
@@ -350,6 +347,8 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobCategorize, self.runCategorize)
 	self.Register(models.AgentJobStatementImport, self.runStatementImport)
 	self.Register(models.AgentJobReadReceipt, self.runReadReceipt)
+	self.Register(models.AgentJobMatchShopping, self.runMatchShopping)
+	self.Register(models.AgentJobShoppingPicture, self.runShoppingPicture)
 	self.Register(models.AgentJobDescribePhoto, self.runDescribePhoto)
 	self.Register(models.AgentJobTaxDocument, self.runReadTaxDocument)
 	self.Register(models.AgentJobTaxMail, self.runTaxMail)

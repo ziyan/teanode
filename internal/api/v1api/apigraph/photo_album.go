@@ -15,7 +15,7 @@ import (
 // marked with whose it is and what the person may do with it. The photos of
 // one album are ListPhotos with its albumId.
 type PhotoAlbumQuery interface {
-	ListPhotoAlbums(context.Context) ([]*models.PhotoAlbum, error)
+	ListPhotoAlbums(context.Context, ListPhotoAlbumsArguments) ([]*models.PhotoAlbum, error)
 	ReadPhotoAlbum(context.Context, PhotoAlbumArguments) (*models.PhotoAlbum, error)
 	SuggestPhotoAlbums(context.Context, SuggestPhotoAlbumsArguments) ([]*models.PhotoAlbumSuggestion, error)
 
@@ -45,6 +45,14 @@ type PhotoAlbumMutation interface {
 	// RemovePhotoAlbumShare takes one share back; the photos its grantees put
 	// in the album leave it with their access.
 	RemovePhotoAlbumShare(context.Context, PhotoAlbumShareArguments) (bool, error)
+}
+
+// ListPhotoAlbumsArguments narrows the albums to one circle's.
+type ListPhotoAlbumsArguments struct {
+	// CircleID lists only the circle's own albums and the albums shared with
+	// the whole circle, the person's own among them, as the circle's page
+	// shows them. The person must be in the circle.
+	CircleID string `json:"circleId" graphapi:"nullable"`
 }
 
 // PhotoAlbumArguments names one album.
@@ -108,12 +116,17 @@ func withCoverAddresses(albums ...*models.PhotoAlbum) {
 	}
 }
 
-func (self *graph) ListPhotoAlbums(ctx context.Context) ([]*models.PhotoAlbum, error) {
+func (self *graph) ListPhotoAlbums(ctx context.Context, arguments ListPhotoAlbumsArguments) ([]*models.PhotoAlbum, error) {
 	principal, err := self.requirePhotosPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
-	albums, err := self.transaction(ctx).ListPhotoAlbums(principal.User.ID)
+	var albums []*models.PhotoAlbum
+	if circleId := strings.TrimSpace(arguments.CircleID); circleId != "" {
+		albums, err = self.transaction(ctx).ListCirclePhotoAlbums(principal.User.ID, circleId)
+	} else {
+		albums, err = self.transaction(ctx).ListPhotoAlbums(principal.User.ID)
+	}
 	if err != nil {
 		return nil, translateError(err)
 	}

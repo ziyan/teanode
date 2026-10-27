@@ -21,7 +21,7 @@ enum AppSectionGroup: String, CaseIterable, Identifiable, Hashable {
     /// The parts under the heading, in the order they are listed.
     var sections: [AppSection] {
         switch self {
-        case .everyDay: [.agent, .mail, .photos, .calendar, .contacts, .location, .health, .passwords]
+        case .everyDay: [.agent, .mail, .photos, .calendar, .contacts, .location, .health, .passwords, .shopping]
         case .work: [.coding, .knowledge, .recordings]
         case .plans: [.goals, .ideas]
         case .money: [.finance]

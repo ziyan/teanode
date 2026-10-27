@@ -266,6 +266,17 @@ func (self *Agent) RecordReceipt(ctx context.Context, agentRow *models.Agent, re
 	if err != nil {
 		return nil, err
 	}
+	// A receipt is one system: whatever it is matched to here, it also
+	// checks off what the owner's shopping lists needed. That is queued once
+	// the receipt is kept, in a transaction of its own, so a failure is said
+	// and never costs the receipt.
+	if recorded.FinanceReceipt != nil {
+		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+			return self.QueueShoppingReceiptMatch(tx, agentRow, recorded.FinanceReceipt)
+		}); err != nil {
+			log.Warningf("cannot queue the shopping match of a receipt: %s", err)
+		}
+	}
 	return recorded, nil
 }
 

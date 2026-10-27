@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/config"
 )
 
 func init() {
@@ -39,38 +40,29 @@ func init() {
 	})
 }
 
-type webSearchArguments struct {
-	Query     string `json:"query"`
-	Count     int    `json:"count"`
-	Freshness string `json:"freshness"`
-	Site      string `json:"site"`
+// Result is one page a search found.
+type Result struct {
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+	Age         string `json:"age"`
 }
 
-func runWebSearch(ctx context.Context, call *tools.Call) (*tools.Result, error) {
-	arguments, err := tools.DecodeArguments[webSearchArguments](call)
-	if err != nil {
-		return nil, err
-	}
-	run, err := tools.RunFrom(ctx)
-	if err != nil {
-		return nil, err
-	}
-	configuration := run.Configuration()
-	search := configuration.Agent.Search
+// Search asks the configured search service for pages about query: count of
+// them (5 when zero, 20 at most), as fresh as freshness says (day, week,
+// month, year, or anything when empty). The web_search tool and the server's
+// own jobs (finding a shopping item's picture) both ask through it.
+func Search(ctx context.Context, search config.AgentSearch, query string, count int, freshness string) ([]Result, error) {
 	if search.Kind == "" || search.APIKey == "" {
 		return nil, fmt.Errorf("no search service is configured on this server")
 	}
 	if search.Kind != "brave" {
 		return nil, fmt.Errorf("the search service %q is not supported", search.Kind)
 	}
-	query := strings.TrimSpace(arguments.Query)
+	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, fmt.Errorf("nothing to search for")
 	}
-	if site := strings.TrimSpace(arguments.Site); site != "" {
-		query += " site:" + site
-	}
-	count := arguments.Count
 	if count <= 0 {
 		count = 5
 	}
@@ -78,7 +70,7 @@ func runWebSearch(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 		count = 20
 	}
 	values := url.Values{"q": {query}, "count": {strconv.Itoa(count)}}
-	if freshness := map[string]string{"day": "pd", "week": "pw", "month": "pm", "year": "py"}[arguments.Freshness]; freshness != "" {
+	if freshness := map[string]string{"day": "pd", "week": "pw", "month": "pm", "year": "py"}[freshness]; freshness != "" {
 		values.Set("freshness", freshness)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.search.brave.com/res/v1/web/search?"+values.Encode(), nil)
@@ -98,17 +90,45 @@ func runWebSearch(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	}
 	var decoded struct {
 		Web struct {
-			Results []struct {
-				Title       string `json:"title"`
-				URL         string `json:"url"`
-				Description string `json:"description"`
-				Age         string `json:"age"`
-			} `json:"results"`
+			Results []Result `json:"results"`
 		} `json:"web"`
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&decoded); err != nil {
 		return nil, err
 	}
+	return decoded.Web.Results, nil
+}
+
+type webSearchArguments struct {
+	Query     string `json:"query"`
+	Count     int    `json:"count"`
+	Freshness string `json:"freshness"`
+	Site      string `json:"site"`
+}
+
+func runWebSearch(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	arguments, err := tools.DecodeArguments[webSearchArguments](call)
+	if err != nil {
+		return nil, err
+	}
+	run, err := tools.RunFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	configuration := run.Configuration()
+	query := strings.TrimSpace(arguments.Query)
+	if query == "" {
+		return nil, fmt.Errorf("nothing to search for")
+	}
+	if site := strings.TrimSpace(arguments.Site); site != "" {
+		query += " site:" + site
+	}
+	found, err := Search(ctx, configuration.Agent.Search, query, arguments.Count, arguments.Freshness)
+	if err != nil {
+		return nil, err
+	}
+	decoded := struct{ Web struct{ Results []Result } }{}
+	decoded.Web.Results = found
 	results := make([]map[string]any, 0, len(decoded.Web.Results))
 	for _, entry := range decoded.Web.Results {
 		results = append(results, map[string]any{"title": entry.Title, "url": entry.URL, "description": entry.Description, "age": entry.Age})

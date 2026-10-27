@@ -191,6 +191,13 @@ const (
 	// picture does, so a copy can be kept for a day.
 	PathLinkPreviewImage = Prefix + "/link-preview/image/{imageFileId}"
 
+	// PathShoppingPicture is the picture of an item on a shopping list, kept
+	// scaled down: found on the web by the agent or uploaded by a person.
+	// Served to anybody the item's list reaches. The name of the picture's
+	// file goes on the address as ?v=, so a changed picture has a new
+	// address and the old one can be kept for a day.
+	PathShoppingPicture = Prefix + "/shopping/pictures/{shoppingItemId}"
+
 	// A setup profile for an iPhone or a Mac, downloaded once. The address
 	// is the credential: Safari opens it without the person's session, and
 	// it works for five minutes.
@@ -263,6 +270,12 @@ func SenderLogoPath(domain string) string {
 // LinkPreviewImagePath is PathLinkPreviewImage with its parameter filled in.
 func LinkPreviewImagePath(imageFileId string) string {
 	return Prefix + "/link-preview/image/" + url.PathEscape(imageFileId)
+}
+
+// ShoppingPicturePath is PathShoppingPicture with its parameter filled in,
+// and the picture's file named so that a new picture has a new address.
+func ShoppingPicturePath(shoppingItemId, pictureFileId string) string {
+	return Prefix + "/shopping/pictures/" + url.PathEscape(shoppingItemId) + "?v=" + url.QueryEscape(pictureFileId)
 }
 
 // AgentDocumentFilePath is PathAgentDocumentFile with its parameter filled

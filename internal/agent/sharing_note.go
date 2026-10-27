@@ -115,6 +115,7 @@ var (
 		models.ShareKindSkill:      {Chinese: "%s与你共享了TA的“%s”技能", Japanese: "%sさんがスキル「%s」を共有しました"},
 		models.ShareKindPhotoAlbum: {Chinese: "%s与你共享了相簿“%s”", Japanese: "%sさんがアルバム「%s」を共有しました"},
 		models.ShareKindRecording:  {Chinese: "%s与你共享了录音“%s”", Japanese: "%sさんが録音「%s」を共有しました"},
+		models.ShareKindShopping:   {Chinese: "%s与你共享了购物清单“%s”", Japanese: "%sさんが買い物リスト「%s」を共有しました"},
 	}
 	phraseSharedSomething = push.Phrase{Chinese: "%s与你共享了内容", Japanese: "%sさんが共有しました"}
 
@@ -154,6 +155,7 @@ var (
 		models.ShareKindFinance:    {Chinese: "财务账户", Japanese: "金融口座"},
 		models.ShareKindSkill:      {Chinese: "技能", Japanese: "スキル"},
 		models.ShareKindPasswords:  {Chinese: "密码", Japanese: "パスワード"},
+		models.ShareKindShopping:   {Chinese: "购物清单", Japanese: "買い物リスト"},
 	}
 	phraseListSeparator     = push.Phrase{English: ", ", Chinese: "、", Japanese: "、"}
 	phraseListLastSeparator = push.Phrase{English: " and ", Chinese: "和", Japanese: "と"}

@@ -74,6 +74,21 @@ const HealthPage = lazyPage(async () => ({
 const PasswordsPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "passwords" */ './pages/passwords/passwordsPage')).PasswordsPage,
 }))
+const ShoppingLayout = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "shopping" */ './pages/shopping/shoppingLayout')).ShoppingLayout,
+}))
+const ShoppingHome = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "shopping" */ './pages/shopping/shoppingLayout')).ShoppingHome,
+}))
+const ShoppingListPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "shopping" */ './pages/shopping/shoppingList')).ShoppingListPage,
+}))
+const ShoppingStorePage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "shopping" */ './pages/shopping/shoppingStore')).ShoppingStorePage,
+}))
+const ShoppingReceiptPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "shopping" */ './pages/shopping/shoppingReceipt')).ShoppingReceiptPage,
+}))
 const MailDetailPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "operations" */ './pages/mailDetail')).MailDetailPage,
 }))
@@ -561,6 +576,14 @@ export function App() {
                           </RouteErrorBoundary>
                         }
                       />
+                      {/* A list, a store and a receipt are inside one layout, which
+                      holds the person's lists beside them. */}
+                      <Route element={<ShoppingLayout />}>
+                        <Route path="/shopping" element={<ShoppingHome />} />
+                        <Route path="/shopping/lists/:shoppingListId" element={<ShoppingListPage />} />
+                        <Route path="/shopping/stores/:storeName" element={<ShoppingStorePage />} />
+                        <Route path="/shopping/receipts/:financeReceiptId" element={<ShoppingReceiptPage />} />
+                      </Route>
                       <Route path="/mailbox/contacts" element={<AddressBookPage />} />
                       <Route path="/mailbox/calendar" element={<CalendarPage />} />
                       <Route path="/mailbox/subscriptions" element={<MailboxSubscriptionsPage />} />

@@ -232,6 +232,13 @@ struct CodingScreen: View {
                 }
             }
             .refreshable { await model.load() }
+            // A pressed notification of a session's question opens it here, on
+            // the question, over whatever was open.
+            .onChange(of: app.openedCodingTarget, initial: true) { _, target in
+                guard let target else { return }
+                app.openedCodingTarget = nil
+                path = NavigationPath([target])
+            }
             // The badge on the tab that holds Coding counts what asks, from each
             // read here too, so an answered question leaves it at once.
             .onChange(of: model.list.map { $0.sessions.filter(\.isAsking).count }) { _, askingCount in

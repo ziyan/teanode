@@ -57,9 +57,20 @@ func albumIdOf(asked *arguments, operation string) (string, error) {
 }
 
 func albumList(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
-	albums, err := client.ListPhotoAlbums(ctx, current.Operations())
-	if err != nil {
-		return nil, err
+	var albums []*models.PhotoAlbum
+	if circleTyped := strings.TrimSpace(asked.Circle); circleTyped != "" {
+		circleId, _, err := circleNamed(ctx, current.Operations(), circleTyped)
+		if err != nil {
+			return nil, err
+		}
+		if albums, err = client.ListCirclePhotoAlbums(ctx, current.Operations(), circleId); err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		if albums, err = client.ListPhotoAlbums(ctx, current.Operations()); err != nil {
+			return nil, err
+		}
 	}
 	location := tools.Location(current.Owner())
 	rows := make([]map[string]any, 0, len(albums))

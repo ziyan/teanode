@@ -24,7 +24,16 @@ import { hasPermission, useSession } from '../session'
 // one place") says what is listed and what is left out.
 
 export type ShareKind =
-  'calendar' | 'location' | 'health' | 'memory_page' | 'photo_album' | 'recording' | 'finance' | 'skill' | 'passwords'
+  | 'calendar'
+  | 'location'
+  | 'health'
+  | 'memory_page'
+  | 'photo_album'
+  | 'recording'
+  | 'finance'
+  | 'skill'
+  | 'passwords'
+  | 'shopping_list'
 
 export type SharingMade = {
   shareKind: ShareKind
@@ -86,6 +95,7 @@ const SET_HEALTH_SHARE = `mutation ($granteeUserId: String, $granteeCircleId: St
 }`
 const UNSHARE_RECORDING = `mutation ($recordingShareId: String!) { UnshareRecording(recordingShareId: $recordingShareId) }`
 const UNSHARE_FINANCE_ACCOUNT = `mutation ($shareId: String!) { UnshareFinanceAccount(shareId: $shareId) }`
+const UNSHARE_SHOPPING_LIST = `mutation ($shoppingListShareId: String!) { UnshareShoppingList(shoppingListShareId: $shoppingListShareId) }`
 const DECLINE_SHARE = `mutation ($shareKind: String!, $shareId: String!) { DeclineShare(shareKind: $shareKind, shareId: $shareId) }`
 
 const KIND_NAMES: Record<ShareKind, Key> = {
@@ -98,6 +108,7 @@ const KIND_NAMES: Record<ShareKind, Key> = {
   finance: 'sharing.kind.finance',
   skill: 'sharing.kind.skill',
   passwords: 'sharing.kind.passwords',
+  shopping_list: 'sharing.kind.shoppingList',
 }
 
 const SHARE_KINDS = Object.keys(KIND_NAMES) as ShareKind[]
@@ -173,6 +184,10 @@ function managerAddress(
       return '/settings/agent/connections'
     case 'passwords':
       return '/passwords'
+    // A list is shared whole, with no level, and opens in the Shopping page
+    // for whoever it reaches.
+    case 'shopping_list':
+      return `/shopping/lists/${encodeURIComponent(subjectId)}`
   }
 }
 
@@ -361,6 +376,9 @@ function SharedByYou({ shares, reload }: { shares: SharingMade[]; reload: () => 
         break
       case 'finance':
         work = graphql(UNSHARE_FINANCE_ACCOUNT, { shareId: share.shareId })
+        break
+      case 'shopping_list':
+        work = graphql(UNSHARE_SHOPPING_LIST, { shoppingListShareId: share.shareId })
         break
       default:
         return

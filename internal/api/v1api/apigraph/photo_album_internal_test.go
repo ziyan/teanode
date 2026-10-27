@@ -27,7 +27,7 @@ func TestPhotoAlbumOperationsMakeFillRenameAndDeleteAnAlbum(test *testing.T) {
 	allowed := []models.Permission{models.PermissionPhotosUse}
 
 	world.ask(ownerId, allowed, func(ctx context.Context) {
-		if albums, err := world.graph.ListPhotoAlbums(ctx); err != nil || albums == nil || len(albums) != 0 {
+		if albums, err := world.graph.ListPhotoAlbums(ctx, ListPhotoAlbumsArguments{}); err != nil || albums == nil || len(albums) != 0 {
 			test.Fatalf("no albums should be an empty list: %v %v", albums, err)
 		}
 		album, err := world.graph.CreatePhotoAlbum(ctx, CreatePhotoAlbumArguments{AlbumTitle: " Picnic ", PhotoIDs: []string{first.ID, second.ID}})
@@ -37,7 +37,7 @@ func TestPhotoAlbumOperationsMakeFillRenameAndDeleteAnAlbum(test *testing.T) {
 		// The cover is the one photo that has a small preview, addressed the
 		// way the photo's own preview is.
 		wantCover := api.PhotoPreviewPath(first.ID, "small") + "?v=" + strconv.FormatInt(first.UpdatedAt.Unix(), 10)
-		listed, err := world.graph.ListPhotoAlbums(ctx)
+		listed, err := world.graph.ListPhotoAlbums(ctx, ListPhotoAlbumsArguments{})
 		if err != nil || len(listed) != 1 || listed[0].CoverPreviewURL != wantCover || listed[0].CoverPhotoID != nil {
 			test.Fatalf("listed %+v %v (want the cover %s)", listed, err, wantCover)
 		}
@@ -132,7 +132,7 @@ func TestAnotherPersonsAlbumAndPhotosAreNotFound(test *testing.T) {
 		}
 	})
 	world.ask(otherId, allowed, func(ctx context.Context) {
-		if albums, err := world.graph.ListPhotoAlbums(ctx); err != nil || len(albums) != 0 {
+		if albums, err := world.graph.ListPhotoAlbums(ctx, ListPhotoAlbumsArguments{}); err != nil || len(albums) != 0 {
 			test.Fatalf("the other sees %v %v", albums, err)
 		}
 		for name, err := range map[string]error{
@@ -183,7 +183,10 @@ func TestPhotoAlbumOperationsRefuseWithoutThePermissionOrTheService(test *testin
 	world := newPhotoWorld(test)
 	userId := world.person("album-refused", models.PermissionCalendarUse)
 	calls := map[string]func(ctx context.Context) error{
-		"list": func(ctx context.Context) error { _, err := world.graph.ListPhotoAlbums(ctx); return err },
+		"list": func(ctx context.Context) error {
+			_, err := world.graph.ListPhotoAlbums(ctx, ListPhotoAlbumsArguments{})
+			return err
+		},
 		"read": func(ctx context.Context) error {
 			_, err := world.graph.ReadPhotoAlbum(ctx, PhotoAlbumArguments{PhotoAlbumID: "x"})
 			return err

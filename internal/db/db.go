@@ -114,6 +114,12 @@ type Database interface {
 	NotifyLocationEvent(userId string, endedForUserIds ...string) error
 	ListenLocationEvents(ctx context.Context) (<-chan string, error)
 
+	// NotifyShoppingEvent and ListenShoppingEvents are the same for a
+	// shopping list having changed: the payload is a ShoppingEvent holding
+	// the list's id, and the ids of people who could read it until now.
+	NotifyShoppingEvent(shoppingListId string, endedForUserIds ...string) error
+	ListenShoppingEvents(ctx context.Context) (<-chan string, error)
+
 	// NotifyAgentCommand and ListenAgentCommands are the same for a word
 	// to a turn — stop, an answer, a decision on a card — from an instance
 	// that is not running it.
@@ -207,6 +213,7 @@ type Transaction interface {
 	PageShareOperation
 	SkillShareOperation
 	RecordingShareOperation
+	ShoppingOperation
 	ChatOperation
 	ChatAgentOperation
 	AuditOperation

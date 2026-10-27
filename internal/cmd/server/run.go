@@ -925,13 +925,15 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		scavengeGroup.Wait()
 	})
 
-	// The trips of days recorded before trips were built. Once, at start:
-	// every report builds the trips of the days it touches, so after one
-	// pass there is nothing left.
+	// The visits that were stored overlapping before a late departure was
+	// put in order with the visits since it began, then the trips of days
+	// recorded before trips were built, from the visits put in order. Once,
+	// at start: after one pass each has nothing left.
 	scavengeGroup.Add(1)
 	go func() {
 		defer deferutil.Recover()
 		defer scavengeGroup.Done()
+		repairOverlappedVisits(scavengeContext, self.database)
 		backfillTrips(scavengeContext, self.database)
 	}()
 

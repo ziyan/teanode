@@ -372,6 +372,17 @@ jobs:
           for passwords_screen in passwords-card passwords-agent-login passwords-shared-login passwords-deleted passwords-generator passwords-intro passwords-setup; do
             shoot "$passwords_screen-light" light large -TeaNodeDemo -TeaNodeTab passwords -TeaNodeScreen "$passwords_screen"
           done
+          # Shopping (docs/planning/shopping-lists-execplan.md): the lists, one list at home and the store being
+          # shopped (each as rows and as pictures), an item's sheet and the import sheet (the last two over the
+          # list), each in light, dark and the largest text.
+          shoot shopping-light light large -TeaNodeDemo -TeaNodeTab shopping
+          shoot shopping-dark dark large -TeaNodeDemo -TeaNodeTab shopping
+          shoot shopping-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab shopping
+          for shopping_screen in shopping-list shopping-list-pictures shopping-store shopping-store-pictures shopping-item shopping-import; do
+            shoot "$shopping_screen-light" light large -TeaNodeDemo -TeaNodeTab shopping -TeaNodeScreen "$shopping_screen"
+            shoot "$shopping_screen-dark" dark large -TeaNodeDemo -TeaNodeTab shopping -TeaNodeScreen "$shopping_screen"
+            shoot "$shopping_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab shopping -TeaNodeScreen "$shopping_screen"
+          done
           shoot recordings-light light large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-dark dark large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings
@@ -612,9 +623,9 @@ jobs:
           # The circles feature (docs/planning/circles-and-chats-execplan.md),
           # each screen in light, dark and the largest text. Circles, a
           # circle's page as its admin and as somebody who also runs the
-          # server, the offer to join a circle, the picture on the profile, and
+          # server, its albums, the offer to join a circle, the picture on the profile, and
           # the sheet and the card of a shared skill: Settings pushes them.
-          for circles_screen in circles circle-detail circle-detail-operator circle-relationship circle-join-offer settings-picture skill-share-sheet skill-share-call; do
+          for circles_screen in circles circle-detail circle-detail-operator circle-detail-photos circle-relationship circle-join-offer settings-picture skill-share-sheet skill-share-call; do
             shoot "$circles_screen-light" light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"

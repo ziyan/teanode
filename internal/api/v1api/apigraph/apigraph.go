@@ -108,6 +108,10 @@ type graph struct {
 	// the maps open on this instance (location_events.go); mapLimits is what
 	// one account may fetch of the map a minute (location_map.go).
 	locationEvents locationEventHub
+
+	// shoppingEvents is the one listener for shopping list changes, fanned
+	// out to the lists open on this instance.
+	shoppingEvents shoppingEventHub
 	mapLimitsOnce  sync.Once
 	mapLimitsValue *ratelimit.Registry
 
@@ -210,6 +214,7 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	// The picture of a link preview, fetched from the linked page once and
 	// served from here (link_preview.go).
 	router.Path(api.PathLinkPreviewImage).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.linkPreviewImageView)
+	router.Path(api.PathShoppingPicture).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.shoppingPictureView)
 	// The map style host's files, fetched here for the signed-in browser
 	// (location_map.go).
 	router.PathPrefix(api.PathMap + "/").Methods(http.MethodGet).HandlerFunc(self.mapView)

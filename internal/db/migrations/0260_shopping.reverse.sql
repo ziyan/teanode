@@ -1,0 +1,10 @@
+DELETE FROM "role_permission" WHERE "permission_key" = 'shopping:use';
+DROP TABLE "shopping_trip_list";
+DROP TABLE "shopping_trip";
+DROP TABLE "shopping_receipt_match";
+DROP TABLE "shopping_item_price";
+DROP TABLE "shopping_item";
+DROP TABLE "shopping_store_mute";
+DROP TABLE "shopping_list_reminder_mute";
+DROP TABLE "shopping_list_share";
+DROP TABLE "shopping_list";

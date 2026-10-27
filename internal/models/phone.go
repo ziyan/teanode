@@ -43,12 +43,13 @@ type AgentPhone struct {
 // Kinds of notification a phone may receive.
 const (
 	// NotificationMessage is the agent saying something on its own: an
-	// alert, a coding session's question, a goal that needs the person, the
-	// agent starting a conversation.
+	// alert, a goal that needs the person, the agent starting a conversation.
 	NotificationMessage = "message"
 	// NotificationApproval is a card waiting for the person's approval.
 	NotificationApproval = "approval"
-	// NotificationQuestion is the agent asking the person something.
+	// NotificationQuestion is the agent asking the person something, and one
+	// of their coding sessions asking (which opens the session on the
+	// iPhone's Coding screen).
 	NotificationQuestion = "question"
 	// NotificationAnswer is an answer finished after the person left: to
 	// something asked from the app, or asked in the main conversation on
@@ -71,10 +72,15 @@ const (
 	// or leaving a place they named or labeled. It opens the app on Location
 	// with that person.
 	NotificationLocation = "location"
+
+	// NotificationShopping is what the person's shopping lists need at a
+	// store they just arrived at, and somebody starting to shop a list the
+	// person shares. It opens the app on Shopping, at that store or list.
+	NotificationShopping = "shopping"
 )
 
 // NotificationKinds is every kind, in the order a person chooses among them.
-var NotificationKinds = []string{NotificationMessage, NotificationApproval, NotificationQuestion, NotificationAnswer, NotificationCircle, NotificationChat, NotificationSkillShareCall, NotificationPhoto, NotificationLocation}
+var NotificationKinds = []string{NotificationMessage, NotificationApproval, NotificationQuestion, NotificationAnswer, NotificationCircle, NotificationChat, NotificationSkillShareCall, NotificationPhoto, NotificationLocation, NotificationShopping}
 
 // Wants reports whether the phone takes a kind of notification.
 func (self *AgentPhone) Wants(notificationKind string) bool {
