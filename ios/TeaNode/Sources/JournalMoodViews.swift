@@ -54,8 +54,47 @@ struct JournalMoodPicker: View {
     let chosenLevel: JournalMoodLevel?
     let choose: (JournalMoodLevel) -> Void
     @ScaledMetric(relativeTo: .body) private var faceSize = 36.0
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        // Five faces side by side do not fit at the accessibility sizes, so
+        // each mood is a row of its own there, its face beside its name.
+        if dynamicTypeSize.isAccessibilitySize {
+            stacked
+        } else {
+            sideBySide
+        }
+    }
+
+    private var stacked: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(JournalMoodLevel.allCases) { level in
+                Button {
+                    choose(level)
+                } label: {
+                    HStack(spacing: 12) {
+                        JournalMoodFace(level: level, isColored: chosenLevel == nil || chosenLevel == level)
+                            .frame(width: 44, height: 44)
+                        Text(JournalText.moodName(level))
+                            .foregroundStyle(chosenLevel == level ? .primary : .secondary)
+                        Spacer(minLength: 0)
+                        if chosenLevel == level {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.tint)
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(JournalText.moodName(level))
+                .accessibilityAddTraits(chosenLevel == level ? .isSelected : [])
+            }
+        }
+        .sensoryFeedback(.selection, trigger: chosenLevel?.rawValue)
+    }
+
+    private var sideBySide: some View {
         HStack(alignment: .top, spacing: 0) {
             ForEach(JournalMoodLevel.allCases) { level in
                 Button {

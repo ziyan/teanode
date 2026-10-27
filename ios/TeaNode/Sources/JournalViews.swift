@@ -201,12 +201,21 @@ struct JournalTodayCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Today").font(.headline)
-                Spacer()
-                Text(verbatim: JournalText.longDayText(today))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            // The date goes under the title when the two do not fit on a line.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Today").font(.headline)
+                    Spacer()
+                    Text(verbatim: JournalText.longDayText(today))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Today").font(.headline)
+                    Text(verbatim: JournalText.longDayText(today))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
             if let soFarText {
                 Text(verbatim: soFarText)
