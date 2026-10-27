@@ -222,6 +222,10 @@ readonly ALLOWED_HOSTS=(
   .keepachangelog.com
   .unicode.org
   .w3.org
+  # The XML namespace of the CalDAV and CardDAV change tag (getctag), which a
+  # PROPFIND answer must name word for word. A namespace, not a host anything
+  # connects to.
+  .calendarserver.org
 
   # A program inside the ClamAV image, named by the compose health check. It
   # ends in a real TLD but is a file on a container, not a host.
