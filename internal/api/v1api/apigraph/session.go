@@ -107,6 +107,12 @@ type SessionState struct {
 	// Which of the twelve avatar colors the caller's initial is drawn on
 	// when they have no picture; zero for nobody
 	AvatarColorIndex int `json:"avatarColorIndex"`
+
+	// MeasurementSystem is the units the caller reads measurements in:
+	// "metric", "us", or empty to follow their language and region. Told
+	// here with the name, so a page that writes a temperature knows it on
+	// the first paint.
+	MeasurementSystem string `json:"measurementSystem,omitempty"`
 }
 
 func (self *graph) sessionState(ctx context.Context) *SessionState {
@@ -133,6 +139,7 @@ func (self *graph) sessionState(ctx context.Context) *SessionState {
 		if principal.User != nil {
 			state.AvatarURL = avatarUrl(principal.User)
 			state.AvatarColorIndex = avatar.InitialColorIndex(principal.User.ID)
+			state.MeasurementSystem = principal.User.MeasurementSystem
 		}
 	}
 	return state
@@ -165,6 +172,7 @@ func (self *graph) signedInAs(ctx context.Context, username string) *SessionStat
 				state.Manages = principal.Permissions.Manages()
 				state.AvatarURL = avatarUrl(user)
 				state.AvatarColorIndex = avatar.InitialColorIndex(user.ID)
+				state.MeasurementSystem = user.MeasurementSystem
 			}
 		}
 	}

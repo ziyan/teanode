@@ -95,6 +95,7 @@ const SHOWN_PREFIXES = [
   '/health',
   '/passwords',
   '/shopping',
+  '/journal',
 ]
 
 // shownPath is a path the agent asked the dashboard to show, or null: under

@@ -37,6 +37,8 @@ func jobTimeout(jobKind models.AgentJobKind) time.Duration {
 		return categorizeLongest
 	case models.AgentJobRecordingSummary:
 		return recordingSummaryLongest
+	case models.AgentJobJournal:
+		return journalLongest
 	default:
 		return 10 * time.Minute
 	}

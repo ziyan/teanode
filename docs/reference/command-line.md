@@ -147,6 +147,7 @@ so one command serves a person and a script.
 | `layout` | the frames templates are rendered inside |
 | `photo` | your library of photos and videos: `list`, `read`, `describe`, `upload`, `download`, `favorite`, `set-date` (correct when a photo was taken), `search-places`, `set-location` and `remove-location` (where it was taken), `trash`, `restore`, `retry`, `save` (keep a photo of a shared album, or a file of a conversation), `delete`, `empty-trash`, `library`, `album` for named sets of photos, with sharing, and `people` and `faces` for the people found in them; see below |
 | `shopping` | your shopping lists: `lists`, `show`, `create`, `add` (items, or a list read from a file or pictures), `check`, `store` and `shop` for the store, `receipt` for what a receipt did, and the rest; see below |
+| `journal` | a page for each day, with your words and mood and your agent's story of it, and the weeks, months and years above the days; see below |
 | `finance` | linked institutions, transactions, trades, net worth, budgets and savings targets; see below |
 | `search` | your words across chats, mail, contacts, photos, memory, documents, recordings, places and finance at once; see below |
 | `link` | web links as the dashboard and the app show them: `link preview --conversation <id> <url>...`; see below |
@@ -271,6 +272,10 @@ effect, most often a DMARC policy of none.
 
 Removing stops serving the file. Take the record down as well, or receivers
 keep fetching an address that answers nothing.
+
+### The units you read measurements in
+
+`teanode user update robin --units metric|us|automatic` chooses degrees Celsius and kilometers, degrees Fahrenheit and miles, or (the default) the units your language and region use. The dashboard's Profile page and the app's Profile screen set the same choice, and it decides how the Journal writes temperatures and distances on the dashboard, in the app, in `teanode journal day` and in the pages your agent writes; with `automatic` the command line reads the region of your shell's language (`LANG`), and a language with no region reads as metric. The agent sets it with the `account` tool's `update` and its `measurement_system` argument.
 
 ### A person's picture
 
@@ -829,6 +834,38 @@ are compared without case or punctuation, so `Example Market` and
 | `teanode shopping decide MATCH-ID apply\|dismiss` | apply a match the matcher was unsure of, which checks the item off and remembers its price, or dismiss one; dismissing an applied match undoes it |
 | `teanode shopping match-line ITEM-ID FINANCE-RECEIPT-LINE-ID` / `add-from-receipt FINANCE-RECEIPT-LINE-ID LIST` | tie a receipt line to an item by hand, or put a receipt line on a list as an item |
 | `teanode shopping undo-receipt FINANCE-RECEIPT-ID` | put everything a receipt changed back as it was: items back to needed with their old counts, and the prices it wrote forgotten |
+
+### teanode journal
+
+A page for each day of your life: the same operations as the Journal page on
+the dashboard and in the iPhone app, and named after them. A journal day links
+to everything that happened in it, read from where it is kept (coding sessions,
+mail, photos, places, events, money, Health and the rest; a section you have no
+permission for is left out and named), and keeps what only the journal has: your
+words, your mood, the weather, and the story your agent writes about the day
+while it dreams. Your words are yours: your agent never changes them, the story
+is written apart from them, and a touched-up version of your words never
+replaces your original. Each takes `--json`. A day is written `2026-10-22`, or
+`today` or `yesterday`, and is today when left out; `week`, `month` and `year`
+take any day in the period (weeks start as your calendar starts them, on Monday
+when it says nothing). A journal is not written ahead: a day after today is
+refused.
+
+| Command | What it does |
+| --- | --- |
+| `teanode journal [list] [--from DAY] [--until DAY] [--page N]` | your days, the newest first, 14 to a page: the day, its mood, and its headline, or the start of your words when the story is not written. Only days with something in them are listed; it says on standard error where the next page starts |
+| `teanode journal day [DAY]` | one day whole. The mood (marked when it came from Apple Health), the weather, the day's numbers, your words (when touching up is on, the touched-up version first and then `Original`), the headline and story with each mention replaced by the record's title (a record you can no longer see reads as such), your corrections numbered from 1, the records your agent chose with its reason and the ones you pinned (each with the link id `unlink` takes), then each source in a line or a few (work, documents, conversations, mail, recordings, photos, places, calendar, reminders, money, Health, shopping, notes, memory), and the day in the order it happened. A section you hold no permission for is named at the end |
+| `teanode journal week\|month\|year [DAY]` | the period that holds the day: its story, your looking back, the records chosen, the totals and how many days had each mood, and its days (a year prints its months and chapters instead) |
+| `teanode journal search TEXT [--page N]` | days and periods whose words, touched-up words, headline or story hold the text in any case, newest first, 20 to a page, each with the words around the match |
+| `teanode journal write [DAY] (--text TEXT \| --file FILE \| -) [--append]` | write your words for a day: they replace the day's words, or with `--append` follow them after a blank line. The text comes from exactly one of `--text`, `--file` or standard input (`-`). The command reads the day first and sends the time its words were last saved, so a save made meanwhile on the dashboard or the phone is refused as a conflict instead of being lost; replacing words that were there says so on standard error. When touching up is on for the day, the touched-up version is made again from the new words |
+| `teanode journal mood [DAY] awful\|low\|okay\|good\|great\|none [--words WORDS]` | your mood for a day, five levels and a few words; `none` takes it away. A mood you choose replaces one that came from Apple Health, and one from Apple Health never replaces yours |
+| `teanode journal look-back week\|month\|year [DAY] (--text TEXT \| --file FILE \| -)` | your own looking back on a week, month or year, with the same conflict check |
+| `teanode journal touch-up [DAY] [--period week\|month\|year] [--how WHAT]`, `touch-up [DAY] --off` | have your words, or your looking back, touched up. Your original stays and is the only text you change; the touched-up version is shown first and made again whenever the original changes, within a minute or so. `--how` says what to change (`shorter`, `fix the grammar`), and asking again without it keeps the last instruction. `--off` stops and deletes the touched-up text. Words that are empty are refused |
+| `teanode journal correct [DAY] [--period ...] TEXT`, `uncorrect [DAY] [--period ...] N` | tell your agent what its story got wrong, in your words (`It was Sam at lunch`): the correction is kept with the day, given to every later telling as a fact to keep to, and the story is written again at once. At most 20 corrections of 500 characters; `uncorrect` takes back the one numbered N in `journal day`, counting from 1, and writes the story again. The first word of a correction is a day only when words follow it |
+| `teanode journal rewrite [DAY] [--period ...]`, `forget-narrative [DAY] [--period ...]` | have the story written again now (also how to ask for a day older than the 92 days your agent writes back to on its own; it is then kept written like a recent one; today cannot be written), or delete the story and headline (a later dream writes it again, except for a day older than that; your corrections stay) |
+| `teanode journal pin DAY KIND:ID [--reason WHY]`, `unlink LINK-ID` | pin one of your records to a day, named as the day shows it (`mail:3f9a`, `contact:81c2`); it has to be a record you can read, and one that is not yours or is not there is not found. `unlink` takes a pin off, or hides one of your agent's choices, which stays hidden so that a later dream does not choose it again |
+| `teanode journal settings [--weather on\|off] [--evening-question on\|off] [--evening-question-time HH:MM]` | whether the weather of your days is fetched (from a weather service, at the coordinates of the place you spent most of the day, rounded to about 11 km; a day with no place has none), and whether and when TeaNode asks `How was today?` in the evening (on by default, at 21:00). With no flag it shows them, the day your weeks start on, how far back stories are written on their own, and the provider your agent's model is run by: what it reads of your journal, your words included, goes there |
+| `teanode journal erase --yes` | erase your whole journal: every day, week, month and year with your words, moods, weather, stories, corrections and pins, and the memory pages made from the month stories. Nothing they linked to is touched. It asks first, and cannot be undone (`--yes` or `--force` skips the question) |
 
 ### teanode hook
 

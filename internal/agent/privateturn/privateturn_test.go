@@ -53,7 +53,7 @@ func TestTurnsRunFromOneMessageOfThePersonToTheNext(t *testing.T) {
 }
 
 func TestToolNamesAreThePrivateTools(t *testing.T) {
-	if got := ToolNames(); !slices.Equal(got, []string{"health", "passwords"}) {
+	if got := ToolNames(); !slices.Equal(got, []string{"health", "passwords", "journal"}) {
 		t.Errorf("ToolNames = %v", got)
 	}
 }

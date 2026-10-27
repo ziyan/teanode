@@ -1,5 +1,14 @@
 import Foundation
 
+/// MeasurementSystem is the units the person reads measurements in. Automatic
+/// follows the phone's language and region and is sent as empty; metric is
+/// degrees Celsius and kilometers; us is degrees Fahrenheit and miles.
+public enum MeasurementSystem: String, CaseIterable, Hashable, Sendable {
+    case automatic = ""
+    case metric
+    case us
+}
+
 /// AccountProfile is the person's own account: what to call them, what they
 /// sign in with, where the server writes to them, and their time zone.
 public struct AccountProfile: Codable, Hashable, Sendable {
@@ -18,10 +27,13 @@ public struct AccountProfile: Codable, Hashable, Sendable {
     /// How the person says they are described: he, she or they; empty or
     /// absent until they say.
     public let pronoun: String?
+    /// The units the person reads measurements in: metric, us, or empty or
+    /// absent to follow the phone's language and region.
+    public let measurementSystem: String?
 
     public init(
         id: String, username: String, name: String? = nil, email: String? = nil, timezone: String? = nil, timezoneMode: String? = nil,
-        avatarUrl: String? = nil, avatarColorIndex: Int? = nil, pronoun: String? = nil
+        avatarUrl: String? = nil, avatarColorIndex: Int? = nil, pronoun: String? = nil, measurementSystem: String? = nil
     ) {
         self.id = id
         self.username = username
@@ -32,6 +44,12 @@ public struct AccountProfile: Codable, Hashable, Sendable {
         self.avatarUrl = avatarUrl
         self.avatarColorIndex = avatarColorIndex
         self.pronoun = pronoun
+        self.measurementSystem = measurementSystem
+    }
+
+    /// The units as the server keeps them, where empty or unknown is automatic.
+    public var chosenMeasurementSystem: MeasurementSystem {
+        MeasurementSystem(rawValue: measurementSystem ?? "") ?? .automatic
     }
 
     /// The pronoun as the server keeps it, where empty or unknown is not set.
@@ -69,6 +87,7 @@ public struct ProfileDraft: Hashable, Sendable {
     public var timezone: String
     public var timezoneMode: AccountProfile.TimezoneMode
     public var pronoun: PersonPronoun
+    public var measurementSystem: MeasurementSystem
 
     public init(_ profile: AccountProfile) {
         self.profile = profile
@@ -78,6 +97,7 @@ public struct ProfileDraft: Hashable, Sendable {
         timezone = profile.timezone ?? ""
         timezoneMode = profile.chosenTimezoneMode
         pronoun = profile.chosenPronoun
+        measurementSystem = profile.chosenMeasurementSystem
     }
 
     /// Whether saving changes what the person signs in with, which is asked
@@ -87,7 +107,7 @@ public struct ProfileDraft: Hashable, Sendable {
     public var hasChanges: Bool {
         isRenaming || trimmedText(name) != (profile.name ?? "") || trimmedText(email) != (profile.email ?? "")
             || trimmedText(timezone) != (profile.timezone ?? "") || timezoneMode != profile.chosenTimezoneMode
-            || pronoun != profile.chosenPronoun
+            || pronoun != profile.chosenPronoun || measurementSystem != profile.chosenMeasurementSystem
     }
 
     public var canSave: Bool { hasChanges && !trimmedText(username).isEmpty }
@@ -108,6 +128,7 @@ public struct ProfileDraft: Hashable, Sendable {
             "userId": .string(profile.id), "name": .string(trimmedText(name)), "email": .string(trimmedText(email)),
             "username": .string(trimmedText(username)), "timezone": .string(timezoneMode == .fixed ? trimmedText(timezone) : ""),
             "timezoneMode": .string(timezoneMode.rawValue), "pronoun": .string(pronoun.rawValue),
+            "measurementSystem": .string(measurementSystem.rawValue),
         ]
     }
 }
@@ -246,7 +267,7 @@ public struct PasskeyPolicy: Codable, Hashable, Sendable {
 extension Documents {
     /// What every read and change of the person's own account answers with.
     static let accountProfileFields = """
-        id username name email avatarUrl avatarColorIndex timezone timezoneMode pronoun
+        id username name email avatarUrl avatarColorIndex timezone timezoneMode pronoun measurementSystem
         """
     public static let accountProfile = """
         query { GetCurrentUser { \(accountProfileFields) } }
@@ -258,10 +279,10 @@ extension Documents {
         mutation { RemoveUserAvatar { \(accountProfileFields) } }
         """
     public static let updateAccountProfile = """
-        mutation ($userId: String!, $username: String, $name: String, $email: String, $timezone: String, $timezoneMode: String, $pronoun: String) {
+        mutation ($userId: String!, $username: String, $name: String, $email: String, $timezone: String, $timezoneMode: String, $pronoun: String, $measurementSystem: String) {
           UpdateUser(
             userId: $userId, username: $username, name: $name, email: $email, timezone: $timezone, timezoneMode: $timezoneMode,
-            pronoun: $pronoun
+            pronoun: $pronoun, measurementSystem: $measurementSystem
           ) {
             \(accountProfileFields)
           }

@@ -37,7 +37,10 @@
             }
             let query = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let answer: String
-            if let shoppingAnswer = Self.shoppingAnswer(query: query, body: request.httpBody) {
+            if let journalAnswer = Self.journalAnswer(query: query, body: request.httpBody) {
+                // First: its documents name fields (mail, photos, recordings) that the questions below are looked for by.
+                answer = journalAnswer
+            } else if let shoppingAnswer = Self.shoppingAnswer(query: query, body: request.httpBody) {
                 answer = shoppingAnswer
             } else if let linkPreviewAnswer = Self.linkPreviewAnswering(query: query, body: request.httpBody) {
                 answer = linkPreviewAnswer
@@ -801,7 +804,7 @@
         /// check.
         static let session = #"""
             {"data":{"GetSession":{"username":"robin","userId":"robin","manages":true,
-              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","circle:use","photos:use","location:use","health:use","passwords:use","shopping:use"],"byDomain":[]},
+              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","circle:use","photos:use","location:use","health:use","passwords:use","shopping:use","journal:use"],"byDomain":[]},
               "impersonatorUsername":null}}}
             """#
 

@@ -32,7 +32,7 @@ const PhoneKeyBytes = 32
 type Content struct {
 	// NotificationKind is what this is: alert, herdr_question,
 	// goal_needs_you, speak_first, approval, question, answer, circle, chat,
-	// skill_share_call, photo, location, shopping or test.
+	// skill_share_call, photo, location, shopping, journalEveningQuestion or test.
 	NotificationKind string `json:"notificationKind"`
 
 	ConversationID string `json:"conversationId,omitempty"`
@@ -47,6 +47,12 @@ type Content struct {
 	// or the list somebody started shopping.
 	ShoppingStoreName string `json:"shoppingStoreName,omitempty"`
 	ShoppingListID    string `json:"shoppingListId,omitempty"`
+
+	// JournalDay is, for the journal's evening question, the day it asks
+	// about, written YYYY-MM-DD in the person's own calendar. The phone puts
+	// five mood buttons on the notification and sets that day's mood from the
+	// one pressed.
+	JournalDay string `json:"journalDay,omitempty"`
 
 	Title string `json:"title"`
 	Body  string `json:"body"`

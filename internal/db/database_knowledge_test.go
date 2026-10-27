@@ -629,3 +629,69 @@ func TestEveryWordFindsOnlyPassagesWithAllTheWords(test *testing.T) {
 		}
 	})
 }
+
+// The chunk texts of documents come back per document in order, for many at
+// once, and none for none.
+func TestTheChunkTextsOfDocumentsAreInOrder(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		source := knowledgeSource(test, tx)
+		first := knowledgeDocument(test, tx, source, "posts/dev/general.jsonl#first")
+		second := knowledgeDocument(test, tx, source, "posts/dev/general.jsonl#second")
+		if err := tx.ReplaceAgentChunks(first, []*models.AgentChunk{{Number: 0, Text: "one"}, {Number: 1, Text: "two"}}); err != nil {
+			test.Fatal(err)
+		}
+		if err := tx.ReplaceAgentChunks(second, []*models.AgentChunk{{Number: 0, Text: "three"}}); err != nil {
+			test.Fatal(err)
+		}
+		texts, err := tx.ListAgentDocumentChunkTexts(source.AgentID, []string{first.ID, second.ID})
+		if err != nil || strings.Join(texts[first.ID], " ") != "one two" || strings.Join(texts[second.ID], " ") != "three" {
+			test.Errorf("the texts: %v, %v", texts, err)
+		}
+		if empty, err := tx.ListAgentDocumentChunkTexts(source.AgentID, nil); err != nil || len(empty) != 0 {
+			test.Errorf("no documents: %v, %v", empty, err)
+		}
+	})
+}
+
+// The posts of chat units are each line's clock and author, in the order
+// written across chunks, read for many units at once; a line that only looks
+// like a post with a clock past midnight is not one.
+func TestThePostsOfChatUnitsAreTheirClocksAndAuthors(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		source := knowledgeSource(test, tx)
+		long := knowledgeDocument(test, tx, source, "posts/dev/general.jsonl#long")
+		quiet := knowledgeDocument(test, tx, source, "posts/dev/general.jsonl#quiet")
+		chunks := []*models.AgentChunk{}
+		for number, text := range []string{
+			"09:05 ada: start the build\n09:06 Claude Code: started\nit runs: slowly",
+			"25:00 ada: not a clock\n10:40 ada: thanks",
+		} {
+			chunks = append(chunks, &models.AgentChunk{Number: number, Text: text})
+		}
+		if err := tx.ReplaceAgentChunks(long, chunks); err != nil {
+			test.Fatal(err)
+		}
+		if err := tx.ReplaceAgentChunks(quiet, []*models.AgentChunk{{Text: "no posts here"}}); err != nil {
+			test.Fatal(err)
+		}
+		posts, err := tx.ListAgentChunkPosts(source.AgentID, []string{long.ID, quiet.ID})
+		if err != nil {
+			test.Fatal(err)
+		}
+		got := posts[long.ID]
+		if len(got) != 3 || got[0].ClockMinutes != 9*60+5 || got[0].Author != "ada" ||
+			got[1].Author != "Claude Code" || got[2].ClockMinutes != 10*60+40 || got[2].DocumentID != long.ID {
+			test.Errorf("the posts of a unit of two chunks: %+v", got)
+		}
+		if got := posts[quiet.ID]; len(got) != 0 {
+			test.Errorf("a unit with no posts: %+v", got)
+		}
+		if empty, err := tx.ListAgentChunkPosts(source.AgentID, nil); err != nil || len(empty) != 0 {
+			test.Errorf("no documents: %v, %v", empty, err)
+		}
+	})
+}

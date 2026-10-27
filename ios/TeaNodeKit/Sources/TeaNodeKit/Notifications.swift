@@ -15,9 +15,17 @@ import Foundation
 
 /// NotificationContent is what a notification says, as the server encrypts
 /// it for this phone (`push.Content` in internal/push/payload.go).
+///
+/// The evening question of the journal (a notificationKind of
+/// "journalEveningQuestion") is sent with the day it asks about, `journalDay`,
+/// written YYYY-MM-DD in the person's own calendar. The phone shows it with
+/// five buttons, Awful, Low, Okay, Good and Great, each of which sets that
+/// day's mood without opening the app (SetJournalMood); pressing the
+/// notification itself opens that day in the journal.
 public struct NotificationContent: Codable, Equatable, Sendable {
     /// alert, herdr_question, goal_needs_you, speak_first, message,
-    /// approval, question, answer, circle, chat, skill_share_call, photo, location, shopping or test.
+    /// approval, question, answer, circle, chat, skill_share_call, photo,
+    /// location, shopping, journalEveningQuestion or test.
     public let notificationKind: String
     public let conversationId: String?
     public let runId: String?
@@ -41,6 +49,8 @@ public struct NotificationContent: Codable, Equatable, Sendable {
     public let computer: String?
     public let paneId: String?
     public let questionFingerprint: String?
+    /// For the journal's evening question, the day it asks about.
+    public let journalDay: String?
     public let title: String
     public let body: String
     public let buttons: [NotificationButton]?

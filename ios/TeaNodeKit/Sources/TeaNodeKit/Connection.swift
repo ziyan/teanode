@@ -151,6 +151,9 @@ public actor Connection {
         var request = request
         let token = try await accessToken()
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        // The server learns the person's time zone from what their devices
+        // send, since a journal day is a calendar day in it.
+        request.setValue(Self.shownTimeZone(), forHTTPHeaderField: Self.timeZoneHeader)
         let (data, response) = try await transport.send(request)
         guard response.statusCode == 401 else {
             return (data, response)
@@ -197,6 +200,16 @@ public actor Connection {
     /// dashboard's does: the server writes the person's notifications in it,
     /// and what the agent says when they have set no language of their own.
     static let languageHeader = "X-Language"
+
+    /// The header that says which time zone the phone is in, as the
+    /// dashboard's does.
+    static let timeZoneHeader = "X-Timezone"
+
+    /// The phone's time zone, named as the server names zones: an IANA
+    /// identifier such as Europe/Paris.
+    static func shownTimeZone(timeZone: TimeZone = .current) -> String {
+        timeZone.identifier
+    }
 
     /// The language the app is shown in, named as the dashboard names its
     /// own: en, zh or ja. iOS picks it among the app's languages from the

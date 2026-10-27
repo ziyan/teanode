@@ -18,6 +18,36 @@ enum NotificationCategories {
     static let codingQuestion = "herdr_question"
     static let questionPrefix = "question-"
 
+    // The journal's evening question. The server sends it as a notification
+    // of kind journalEveningQuestion (NotificationContent) carrying the day it
+    // asks about as journalDay, written YYYY-MM-DD. It is shown with five
+    // buttons, Awful to Great, which set that day's mood in the background,
+    // without opening the app. Pressing the notification itself opens the day.
+    static let journalEveningQuestion = "journalEveningQuestion"
+    static let journalMoodActionPrefix = "journalMood"
+
+    /// The mood, 1 (awful) to 5 (great), that a button of the evening
+    /// question stands for; nil for any other button.
+    static func journalMoodLevel(forAction actionIdentifier: String) -> Int? {
+        guard actionIdentifier.hasPrefix(journalMoodActionPrefix), let level = Int(actionIdentifier.dropFirst(journalMoodActionPrefix.count)),
+            (1...5).contains(level)
+        else { return nil }
+        return level
+    }
+
+    /// The five buttons of the evening question, the mood's name on each.
+    private static var journalMoodActions: [UNNotificationAction] {
+        let names = [
+            String(localized: "Awful"), String(localized: "Low"), String(localized: "Okay"), String(localized: "Good"), String(localized: "Great"),
+        ]
+        return names.enumerated().map { index, name in
+            // No options: pressing one is answered without opening the app or
+            // unlocking the phone, since a mood is not private enough to ask
+            // for the passcode.
+            UNNotificationAction(identifier: journalMoodActionPrefix + String(index + 1), title: name, options: [])
+        }
+    }
+
     /// The categories known before any notification arrives. A question's
     /// choices are not known in advance, so its category is made when it
     /// arrives (category(for:)).
@@ -47,6 +77,7 @@ enum NotificationCategories {
             // A coding session asks: it is answered on the Coding screen, where
             // its options are, so Open is the only button.
             UNNotificationCategory(identifier: codingQuestion, actions: [openAction], intentIdentifiers: []),
+            UNNotificationCategory(identifier: journalEveningQuestion, actions: journalMoodActions, intentIdentifiers: []),
         ]
     }
 
@@ -88,6 +119,8 @@ enum NotificationCategories {
             return fixed.first { $0.identifier == shopping }
         case "herdr_question":
             return fixed.first { $0.identifier == codingQuestion }
+        case journalEveningQuestion:
+            return fixed.first { $0.identifier == journalEveningQuestion }
         case "question":
             let buttons = Array((content.buttons ?? []).prefix(4))
             let actions: [UNNotificationAction] = buttons.map { button in
@@ -127,6 +160,8 @@ struct NotificationInfo: Sendable {
     /// For a coding session's question, the computer and pane of the session.
     let computer: String
     let paneId: String
+    /// For the journal's evening question, the day it asks about, YYYY-MM-DD.
+    let journalDay: String
     /// A question's choices, by the button that gives them.
     let answers: [String: String]
 
@@ -143,6 +178,7 @@ struct NotificationInfo: Sendable {
         shoppingListId = content.shoppingListId ?? ""
         computer = content.computer ?? ""
         paneId = content.paneId ?? ""
+        journalDay = content.journalDay ?? ""
         var answers: [String: String] = [:]
         for button in content.buttons ?? [] where button.buttonAction.hasPrefix("answer:") {
             answers[button.buttonAction] = button.label
@@ -162,6 +198,7 @@ struct NotificationInfo: Sendable {
         shoppingListId = info["shoppingListId"] as? String ?? ""
         computer = info["computer"] as? String ?? ""
         paneId = info["paneId"] as? String ?? ""
+        journalDay = info["journalDay"] as? String ?? info["day"] as? String ?? ""
         answers = info["answers"] as? [String: String] ?? [:]
     }
 
@@ -169,7 +206,7 @@ struct NotificationInfo: Sendable {
         [
             "accountKey": accountKey, "notificationKind": notificationKind, "conversationId": conversationId, "runId": runId, "callId": callId,
             "locationUserId": locationUserId, "shoppingStoreName": shoppingStoreName, "shoppingListId": shoppingListId,
-            "computer": computer, "paneId": paneId, "answers": answers,
+            "computer": computer, "paneId": paneId, "journalDay": journalDay, "answers": answers,
         ]
     }
 }

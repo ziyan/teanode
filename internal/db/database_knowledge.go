@@ -133,10 +133,21 @@ type KnowledgeOperation interface {
 	// was ever said at all.
 	ListAgentChunkTexts(agentId string, limit int) (map[string][]string, error)
 
+	// ListAgentDocumentChunkTexts is the chunk texts of these documents, each
+	// document's in order: the transcripts of a day's coding stretches, read
+	// whole at once.
+	ListAgentDocumentChunkTexts(agentId string, documentIds []string) (map[string][]string, error)
+
 	// Chunks.
 	ReplaceAgentChunks(document *models.AgentDocument, chunks []*models.AgentChunk) error
 	GetAgentChunks(agentId string, chunkIds []string) ([]*models.AgentChunk, error)
 	ListAgentChunks(agentId, documentId string) ([]*models.AgentChunk, error)
+
+	// ListAgentChunkPosts is the posts of each of these chat units in the
+	// order they were written: the clock and author of every line that begins
+	// "15:04 author: ", found by the database so that a day of transcripts is
+	// not read to know who wrote when.
+	ListAgentChunkPosts(agentId string, documentIds []string) (map[string][]models.AgentChunkPost, error)
 
 	// HasAgentChunks says whether a document has any passages: whether
 	// anything was read out of it.
@@ -853,6 +864,26 @@ func (self *transaction) ListAgentChunkTexts(agentId string, limit int) (map[str
 	return texts, nil
 }
 
+func (self *transaction) ListAgentDocumentChunkTexts(agentId string, documentIds []string) (map[string][]string, error) {
+	texts := map[string][]string{}
+	if len(documentIds) == 0 {
+		return texts, nil
+	}
+	var rows []struct {
+		DocumentID string
+		Text       string
+	}
+	if err := self.tx.Raw(`
+		SELECT "document_id", "text" FROM "agent_chunk"
+		WHERE "agent_id" = ? AND "document_id" IN ? ORDER BY "document_id", "number"`, agentId, documentIds).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		texts[row.DocumentID] = append(texts[row.DocumentID], row.Text)
+	}
+	return texts, nil
+}
+
 func (self *transaction) ListAgentDocumentsBetween(agentId string, kinds []models.AgentDocumentKind, from, until time.Time, limit int) ([]*models.AgentDocument, error) {
 	if limit <= 0 {
 		limit = 2000
@@ -935,6 +966,36 @@ func (self *transaction) HasAgentChunks(agentId, documentId string) (bool, error
 
 func (self *transaction) ListAgentChunks(agentId, documentId string) ([]*models.AgentChunk, error) {
 	return self.chunksFrom(self.tx.Where(`"agent_id" = ? AND "document_id" = ?`, agentId, documentId).Order(`"number" ASC`))
+}
+
+func (self *transaction) ListAgentChunkPosts(agentId string, documentIds []string) (map[string][]models.AgentChunkPost, error) {
+	posts := map[string][]models.AgentChunkPost{}
+	if len(documentIds) == 0 {
+		return posts, nil
+	}
+	var rows []struct {
+		DocumentID string
+		Hour       int
+		Minute     int
+		Author     string
+	}
+	if err := self.tx.Raw(`
+		SELECT "chunk"."document_id", "post"."match"[1]::int AS "hour", "post"."match"[2]::int AS "minute", "post"."match"[3] AS "author"
+		FROM "agent_chunk" AS "chunk",
+			regexp_matches("chunk"."text", '^(\d{1,2}):(\d{2}) ([^:\n]{1,80}): ', 'gn') WITH ORDINALITY AS "post"("match", "position")
+		WHERE "chunk"."agent_id" = ? AND "chunk"."document_id" IN ?
+		ORDER BY "chunk"."document_id", "chunk"."number", "post"."position"`, agentId, documentIds).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if row.Hour > 23 || row.Minute > 59 {
+			continue
+		}
+		posts[row.DocumentID] = append(posts[row.DocumentID], models.AgentChunkPost{
+			DocumentID: row.DocumentID, ClockMinutes: row.Hour*60 + row.Minute, Author: row.Author,
+		})
+	}
+	return posts, nil
 }
 
 // SearchAgentChunks finds chunks by words.
