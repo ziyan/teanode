@@ -43,12 +43,13 @@ type AgentPhone struct {
 // Kinds of notification a phone may receive.
 const (
 	// NotificationMessage is the agent saying something on its own: an
-	// alert, a coding session's question, a goal that needs the person, the
-	// agent starting a conversation.
+	// alert, a goal that needs the person, the agent starting a conversation.
 	NotificationMessage = "message"
 	// NotificationApproval is a card waiting for the person's approval.
 	NotificationApproval = "approval"
-	// NotificationQuestion is the agent asking the person something.
+	// NotificationQuestion is the agent asking the person something, and one
+	// of their coding sessions asking (which opens the session on the
+	// iPhone's Coding screen).
 	NotificationQuestion = "question"
 	// NotificationAnswer is an answer finished after the person left: to
 	// something asked from the app, or asked in the main conversation on

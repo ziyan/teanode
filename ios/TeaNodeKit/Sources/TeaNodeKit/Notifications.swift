@@ -34,6 +34,13 @@ public struct NotificationContent: Codable, Equatable, Sendable {
     /// the list (`shoppingListId` in `push.Content`), so that tapping it
     /// opens the list.
     public let shoppingListId: String?
+    /// For a coding session's question (herdr_question), the computer and
+    /// the pane of the session that asks, and the question's fingerprint
+    /// (`computer`, `paneId` and `questionFingerprint` in `push.Content`),
+    /// so that tapping it opens that session on the Coding screen.
+    public let computer: String?
+    public let paneId: String?
+    public let questionFingerprint: String?
     public let title: String
     public let body: String
     public let buttons: [NotificationButton]?

@@ -91,6 +91,24 @@ func newPhoneFixture(t *testing.T) *phoneFixture {
 	return fixture
 }
 
+// sayOnItsOwn writes into the main conversation something the agent says
+// unasked, as an alert does: a marker line nobody wrote, then its words.
+func (self *phoneFixture) sayOnItsOwn(t *testing.T, said string) {
+	t.Helper()
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		main, err := scheduleConversation(tx, self.agent.ID, "")
+		if err != nil {
+			t.Fatalf("scheduleConversation: %s", err)
+		}
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: main.ID, Role: "user", Content: models.AlertMarker + " a message showed something"}); err != nil {
+			t.Fatalf("AppendAgentMessage: %s", err)
+		}
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: main.ID, Role: "assistant", Content: said}); err != nil {
+			t.Fatalf("AppendAgentMessage: %s", err)
+		}
+	})
+}
+
 // read decrypts what a notification says, as the phone would.
 func (self *phoneFixture) read(t *testing.T, delivery *push.Delivery) *push.Content {
 	t.Helper()
@@ -105,9 +123,7 @@ func (self *phoneFixture) read(t *testing.T, delivery *push.Delivery) *push.Cont
 // once, however many times the loop looks; what it said before does not.
 func TestThePhoneIsToldWhatTheAgentSaysOnItsOwnOnce(t *testing.T) {
 	fixture := newPhoneFixture(t)
-	if err := fixture.worker.writeHerdrQuestion(fixture.agent.ID, "[herdr question] a pane asks", "Claude Code asks whether to deploy now.", "a pane asks"); err != nil {
-		t.Fatalf("writeHerdrQuestion: %s", err)
-	}
+	fixture.sayOnItsOwn(t, "Claude Code asks whether to deploy now.")
 	later := time.Now().Add(time.Minute)
 	fixture.worker.pushOwnTurns(context.Background(), later)
 	fixture.worker.pushOwnTurns(context.Background(), later)
@@ -130,9 +146,7 @@ func TestAPhoneIsToldOnlyWhatItChose(t *testing.T) {
 			t.Fatalf("UpdateAgentPhoneSettings: %s", err)
 		}
 	})
-	if err := fixture.worker.writeHerdrQuestion(fixture.agent.ID, "[herdr question] a pane asks", "A question nobody asked to hear about.", "a pane asks"); err != nil {
-		t.Fatalf("writeHerdrQuestion: %s", err)
-	}
+	fixture.sayOnItsOwn(t, "A question nobody asked to hear about.")
 	fixture.worker.pushOwnTurns(context.Background(), time.Now().Add(time.Minute))
 	if sent := fixture.relay.to("sealed:a-registration"); len(sent) != 0 {
 		t.Errorf("a phone that wants approvals only was sent %d messages", len(sent))
@@ -166,9 +180,7 @@ func TestASignedOutPhoneIsNotSentTo(t *testing.T) {
 	if _, err := fixture.database.RevokeClientTokens(fixture.owner.ID, "a-phone-client", time.Now()); err != nil {
 		t.Fatalf("RevokeClientTokens: %s", err)
 	}
-	if err := fixture.worker.writeHerdrQuestion(fixture.agent.ID, "[herdr question] a pane asks", "Said after the phone was signed out.", "a pane asks"); err != nil {
-		t.Fatalf("writeHerdrQuestion: %s", err)
-	}
+	fixture.sayOnItsOwn(t, "Said after the phone was signed out.")
 	fixture.worker.pushOwnTurns(context.Background(), time.Now().Add(time.Minute))
 	if sent := fixture.relay.to("sealed:a-registration"); len(sent) != 0 {
 		t.Errorf("a signed-out phone was sent %d notifications", len(sent))
@@ -377,9 +389,7 @@ func TestAPhoneBodyLeavesOutWhatIsHidden(t *testing.T) {
 func TestAPhoneIsToldNothingHidden(t *testing.T) {
 	fixture := newPhoneFixture(t)
 	said := "See [the invoice](mail:01abc) first.\n<!--suggestions:[\"Pay it\",\"Not now\"]-->"
-	if err := fixture.worker.writeHerdrQuestion(fixture.agent.ID, "[herdr question] a pane asks", said, "a pane asks"); err != nil {
-		t.Fatalf("writeHerdrQuestion: %s", err)
-	}
+	fixture.sayOnItsOwn(t, said)
 	fixture.worker.pushOwnTurns(context.Background(), time.Now().Add(time.Minute))
 
 	run := &AskRun{agent: fixture.worker, settings: &AskSettings{Agent: fixture.agent, Surface: "ios", Conversation: &models.AgentConversation{ID: "side-1"}}}

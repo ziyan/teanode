@@ -278,6 +278,9 @@ struct MainView: View {
             .onChange(of: app.hasReadPermissions) {
                 retryPendingSection()
             }
+            .onChange(of: app.hasCodingPresenceBeenRead) {
+                retryPendingSection()
+            }
             .onChange(of: horizontalSizeClass) {
                 adaptToSizeClass()
             }
@@ -491,6 +494,9 @@ struct MainView: View {
                 pendingSection = section
             } else {
                 app.openedLinkText = String(localized: "\(section.title) is off")
+                // A session a notification asked for is not opened later,
+                // when the person goes to Coding for something else.
+                if section == .coding { app.openedCodingTarget = nil }
             }
         } else if tabBarSections.contains(section), isTabShown(section) {
             tab = .section(section)
@@ -504,7 +510,9 @@ struct MainView: View {
     private func isStillUnknown(_ section: AppSection) -> Bool {
         switch section {
         case .location, .health, .passwords, .shopping: !app.hasReadPermissions
-        case .coding: false
+        // A notification can open the app before it has asked which
+        // computers run herdr.
+        case .coding: app.services == nil || (app.services?.isAssistantEnabled == true && !app.hasCodingPresenceBeenRead)
         default: app.services == nil
         }
     }

@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.200.1] - 2026-10-27
+
+### Changed
+
+- A coding session's question no longer appears in the main chat or the linked chat apps. Your phone is told instead, and tapping the notification opens the session on the Coding screen, where you answer it. (#669)
+
 ## [0.200.0] - 2026-10-27
 
 ### Added
