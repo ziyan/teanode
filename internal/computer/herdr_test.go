@@ -330,7 +330,9 @@ func TestFilesSentWithTextAreWrittenAndNamedTheWayEachAgentOpensThem(t *testing.
 	}
 
 	// Claude Code asks before it reads a path outside its directory, but
-	// not one named with @; a space in a name would end the path.
+	// not one named with @; a space in a name would end the path. The names
+	// go before the words, since a prompt that ends with one leaves Claude
+	// Code's list of files open and the enter picks from it.
 	sent, err := RunHerdr(ctx, herdr, "herdr_send", &HerdrArguments{PaneID: "w1:p1", Text: "what is wrong here?",
 		HerdrFiles: []*HerdrFile{{FileName: "error screen.png", FileContent: []byte("picture")}, {FileName: "../notes.txt", FileContent: []byte("notes")}}})
 	if err != nil {
@@ -356,9 +358,33 @@ func TestFilesSentWithTextAreWrittenAndNamedTheWayEachAgentOpensThem(t *testing.
 	if filepath.Base(codexPath) != "file-1" {
 		t.Errorf("unnamed file written as %s", codexPath)
 	}
-	_, _, prompted := fake.recorded()
-	if want := []string{"what is wrong here? @" + filePaths[0] + " @" + filePaths[1], codexPath}; !slices.Equal(prompted, want) {
+	// Pictures alone go as their paths, which Claude Code attaches; an @
+	// picture at the end never finishes pasting.
+	sent, err = RunHerdr(ctx, herdr, "herdr_send", &HerdrArguments{PaneID: "w1:p1",
+		HerdrFiles: []*HerdrFile{{FileName: "before.png", FileContent: []byte("x")}, {FileName: "after.JPG", FileContent: []byte("y")}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	picturePaths := sent.(*HerdrSendResult).FilePaths
+	// Other files alone end with an @ name, so enter is pressed again; the
+	// pictures among them go first.
+	sent, err = RunHerdr(ctx, herdr, "herdr_send", &HerdrArguments{PaneID: "w1:p1",
+		HerdrFiles: []*HerdrFile{{FileName: "notes.txt", FileContent: []byte("x")}, {FileName: "screen.png", FileContent: []byte("y")}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mixedPaths := sent.(*HerdrSendResult).FilePaths
+	pressed, _, prompted := fake.recorded()
+	if want := []string{
+		"@" + filePaths[0] + " @" + filePaths[1] + " what is wrong here?",
+		codexPath,
+		picturePaths[0] + " " + picturePaths[1],
+		"@" + mixedPaths[1] + " @" + mixedPaths[0],
+	}; !slices.Equal(prompted, want) {
 		t.Errorf("prompted %q, want %q", prompted, want)
+	}
+	if !slices.Equal(pressed, []string{"enter"}) {
+		t.Errorf("pressed %q, want one enter after the files sent alone", pressed)
 	}
 	// Nothing is written for a session that asks.
 	before, _ := os.ReadDir(filepath.Join(home, herdrSentFilesPath))
