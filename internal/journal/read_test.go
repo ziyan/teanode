@@ -224,6 +224,79 @@ func TestReadDayLeavesOutWhatTheCallerMayNotRead(t *testing.T) {
 	})
 }
 
+// The agent reads only what the person gave it: the mailboxes granted to it
+// (their mail and notes), the calendars given to it, the chats it may
+// remember, and the transactions of the finance sources that are on. The
+// person reads all of it.
+func TestReadDayGivesTheAgentOnlyWhatThePersonGaveIt(t *testing.T) {
+	world, release := newWorld(t)
+	defer release()
+
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		agentOptions := journal.AllReadOptions()
+		agentOptions.IsReadByAgent = true
+		day := readWorldDay(t, tx, world, agentOptions)
+		if len(day.Mail) != 0 || day.MailReceivedTotal != 0 || len(day.Notes) != 0 || len(day.Events) != 0 || len(day.Reminders) != 0 || len(day.Chats) != 0 {
+			t.Errorf("the agent read what it was not given: %d mail, %d notes, %d events, %d reminders, %d chats",
+				len(day.Mail), len(day.Notes), len(day.Events), len(day.Reminders), len(day.Chats))
+		}
+		if len(day.Transactions) == 0 || len(day.Photos) == 0 || len(day.Visits) == 0 {
+			t.Errorf("the agent lost what is its own to read: %d transactions, %d photos, %d visits", len(day.Transactions), len(day.Photos), len(day.Visits))
+		}
+		if len(day.UnavailableSections) != 0 {
+			t.Errorf("nothing is unavailable, only not given: %v", day.UnavailableSections)
+		}
+
+		mailboxes, err := tx.ListMailboxes(world.user.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, mailbox := range mailboxes {
+			if _, err := tx.UpdateMailbox(mailbox.ID, func(updated *models.Mailbox) error {
+				updated.Agent = &models.AgentMailbox{Granted: true}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		calendars, err := tx.ListCalendars(world.user.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, calendar := range calendars {
+			calendar.AgentGranted = true
+			if _, err := tx.UpdateCalendar(calendar); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := tx.SetChatAgentReading(world.chatId, world.user.ID, true); err != nil {
+			t.Fatal(err)
+		}
+		sources, err := tx.ListAgentSources(world.agent.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, source := range sources {
+			if source.Name == "bank" {
+				source.Enabled = false
+				if _, err := tx.PutAgentSource(source); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		given := readWorldDay(t, tx, world, agentOptions)
+		whole := readWorldDay(t, tx, world, journal.AllReadOptions())
+		if len(given.Mail) != len(whole.Mail) || len(given.Notes) != len(whole.Notes) || len(given.Events) != len(whole.Events) ||
+			len(given.Reminders) != len(whole.Reminders) || len(given.Chats) != len(whole.Chats) || len(whole.Mail) == 0 || len(whole.Chats) == 0 {
+			t.Errorf("what was given: %d/%d mail, %d/%d notes, %d/%d events, %d/%d reminders, %d/%d chats", len(given.Mail), len(whole.Mail),
+				len(given.Notes), len(whole.Notes), len(given.Events), len(whole.Events), len(given.Reminders), len(whole.Reminders), len(given.Chats), len(whole.Chats))
+		}
+		if len(given.Transactions) != 0 || len(whole.Transactions) == 0 {
+			t.Errorf("a finance source switched off: the agent read %d, the person %d", len(given.Transactions), len(whole.Transactions))
+		}
+	})
+}
+
 // The stored row and the links ride along with the day, and the day is cut
 // in the zone it was made in.
 func TestReadDayCarriesTheRowAndTheLinks(t *testing.T) {

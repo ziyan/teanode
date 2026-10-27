@@ -1,10 +1,12 @@
 package apigraph
 
 import (
+	"context"
 	"errors"
 	"regexp"
 	"time"
 
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/journal"
 	"github.com/ziyan/teanode/internal/models"
@@ -34,21 +36,24 @@ type journalRecordResolver struct {
 	reader      recordlink.Reader
 	hasAgent    bool
 
-	// permissions, when set, are the caller's: a record of a source the caller
-	// may not read anywhere else is unavailable here too, so that a mention in
-	// a narrative cannot show what the caller's role does not reach. Reading a
-	// whole day sets it.
+	// permissions are the caller's: a record of a source the caller may not
+	// read anywhere else is unavailable here too, so that a mention in a
+	// narrative cannot show what the caller's role does not reach.
 	permissions *models.EffectivePermissions
 }
 
-func newJournalRecordResolver(tx db.Transaction, userId string) (*journalRecordResolver, error) {
-	found, err := tx.GetAgentByUser(userId)
+// newJournalRecordResolver is the resolver for a caller: the person, or the
+// agent (its tool, or a command it runs as the person), which is withheld
+// the records of what the person did not give it.
+func newJournalRecordResolver(ctx context.Context, tx db.Transaction, principal *api.Principal) (*journalRecordResolver, error) {
+	found, err := tx.GetAgentByUser(principal.User.ID)
 	if err != nil {
 		return nil, err
 	}
-	resolver := &journalRecordResolver{transaction: tx}
+	resolver := &journalRecordResolver{transaction: tx, permissions: principal.Permissions}
 	if found != nil {
-		resolver.reader, resolver.hasAgent = recordlink.Reader{UserID: userId, AgentID: found.ID}, true
+		resolver.reader = recordlink.Reader{UserID: principal.User.ID, AgentID: found.ID, IsAgent: isJournalReadByAgent(ctx)}
+		resolver.hasAgent = true
 	}
 	return resolver, nil
 }
@@ -59,7 +64,7 @@ func newJournalRecordResolver(tx db.Transaction, userId string) (*journalRecordR
 // failing the whole page.
 func (self *journalRecordResolver) resolve(recordKind models.AgentRecordKind, recordId string) *recordlink.Resolved {
 	unavailable := &recordlink.Resolved{RecordKind: recordKind, RecordID: recordId, IsUnavailable: true}
-	if !self.hasAgent || (self.permissions != nil && !isJournalKindReadable(self.permissions, recordKind)) {
+	if !self.hasAgent || !isJournalKindReadable(self.permissions, recordKind) {
 		return unavailable
 	}
 	resolved, err := recordlink.ResolveRecord(self.transaction, self.reader, recordKind, recordId, models.AgentRecordDetail{}, 0, 0)
@@ -111,7 +116,8 @@ func journalWeekStartOf(tx db.Transaction, userId string) (string, error) {
 }
 
 // storedJournalDayView is a day as the journal keeps it.
-func storedJournalDayView(tx db.Transaction, user *models.User, row *models.JournalDay, now time.Time) (*JournalDayView, error) {
+func storedJournalDayView(ctx context.Context, tx db.Transaction, principal *api.Principal, row *models.JournalDay, now time.Time) (*JournalDayView, error) {
+	user := principal.User
 	today := journal.Today(user, now)
 	weekStart, err := journalWeekStartOf(tx, user.ID)
 	if err != nil {
@@ -125,7 +131,7 @@ func storedJournalDayView(tx db.Transaction, user *models.User, row *models.Jour
 	if err != nil {
 		return nil, err
 	}
-	resolver, err := newJournalRecordResolver(tx, user.ID)
+	resolver, err := newJournalRecordResolver(ctx, tx, principal)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +155,8 @@ func storedJournalDayView(tx db.Transaction, user *models.User, row *models.Jour
 }
 
 // storedJournalPeriodView is a period as the journal keeps it.
-func storedJournalPeriodView(tx db.Transaction, user *models.User, row *models.JournalPeriod, now time.Time) (*JournalPeriodView, error) {
+func storedJournalPeriodView(ctx context.Context, tx db.Transaction, principal *api.Principal, row *models.JournalPeriod, now time.Time) (*JournalPeriodView, error) {
+	user := principal.User
 	today := journal.Today(user, now)
 	weekStart, err := journalWeekStartOf(tx, user.ID)
 	if err != nil {
@@ -159,7 +166,7 @@ func storedJournalPeriodView(tx db.Transaction, user *models.User, row *models.J
 	if err != nil {
 		return nil, err
 	}
-	resolver, err := newJournalRecordResolver(tx, user.ID)
+	resolver, err := newJournalRecordResolver(ctx, tx, principal)
 	if err != nil {
 		return nil, err
 	}
@@ -184,8 +191,9 @@ func storedJournalPeriodView(tx db.Transaction, user *models.User, row *models.J
 
 // storedJournalNarrativeView is the narrative of a day or a period, or an
 // empty one when nothing was ever kept for it.
-func storedJournalNarrativeView(tx db.Transaction, user *models.User, target models.JournalTarget, now time.Time) (*JournalNarrativeView, error) {
-	resolver, err := newJournalRecordResolver(tx, user.ID)
+func storedJournalNarrativeView(ctx context.Context, tx db.Transaction, principal *api.Principal, target models.JournalTarget, now time.Time) (*JournalNarrativeView, error) {
+	user := principal.User
+	resolver, err := newJournalRecordResolver(ctx, tx, principal)
 	if err != nil {
 		return nil, err
 	}

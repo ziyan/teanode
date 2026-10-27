@@ -1,6 +1,8 @@
 package apigraph
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -31,7 +33,7 @@ func newJournalWorld(t *testing.T) *journalWorld {
 	t.Helper()
 	world := &journalWorld{healthWorld: newHealthWorld(t)}
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		role, err := tx.CreateRole(&models.Role{Name: "journal role", Permissions: []models.Permission{models.PermissionJournalUse}})
+		role, err := tx.CreateRole(&models.Role{Name: "journal role", Permissions: []models.Permission{models.PermissionJournalUse, models.PermissionContactsUse}})
 		if err != nil {
 			t.Fatalf("CreateRole: %s", err)
 		}
@@ -695,5 +697,94 @@ func TestJournalClientDocumentsMatchTheSchema(t *testing.T) {
 		for _, failure := range validation.Errors {
 			t.Errorf("%s is not valid against the schema: %s", name, failure.Message)
 		}
+	}
+}
+
+// The agent, through its tool or a command it runs as the person, is withheld
+// the records of what the person did not give it (here a contact in an
+// address book not given to it), may not pin them, and may not take back what
+// is the person's to take back. The person reads and does all of it.
+func TestJournalAnswersTheAgentOnlyWhatItWasGiven(t *testing.T) {
+	world := newJournalWorld(t)
+	target := models.JournalTarget{Day: "2026-03-04"}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := tx.PutJournalNarrative(world.ada.ID, target, "UTC", models.JournalNarrativeWriting{
+			Headline: "Harbor day", Narrative: fmt.Sprintf("Ada met [[contact:%s|Sam]].", world.adaContact.ID), InputDigest: "digest",
+		}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.AddJournalCorrection(world.ada.ID, target, "UTC", "It was at lunch.", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	})
+	call := func(isAgent bool, run func(ctx context.Context) error) error {
+		var err error
+		dbtest.RunTransactionOn(t, world.database, func(transaction db.Transaction) {
+			ctx := api.ContextWithTransaction(api.ContextWithPrincipal(t.Context(), &api.Principal{
+				User: world.ada, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionJournalUse}, {Permission: models.PermissionContactsUse}}),
+			}), transaction)
+			if isAgent {
+				ctx = db.ContextWithAuditPrincipal(ctx, db.AuditPrincipal{ActorKind: models.AuditActorAgent, UserID: world.ada.ID})
+			}
+			err = run(ctx)
+		})
+		return err
+	}
+	referenceOf := func(isAgent bool) *JournalRecordView {
+		var narrative *JournalNarrativeView
+		if err := call(isAgent, func(ctx context.Context) (err error) {
+			narrative, err = world.graph.CorrectJournalNarrative(ctx, CorrectJournalNarrativeArguments{Day: target.Day, CorrectionText: "And a swim."})
+			return err
+		}); err != nil || len(narrative.References) != 1 {
+			t.Fatalf("a correction as the agent %t: %v %v", isAgent, narrative, err)
+		}
+		return narrative.References[0]
+	}
+	if reference := referenceOf(false); reference.Title != "Sam Harbor" || reference.IsUnavailable {
+		t.Errorf("the person reads their contact: %+v", reference)
+	}
+	if reference := referenceOf(true); reference.Title != "" || !reference.IsUnavailable {
+		t.Errorf("the agent read a contact of an address book it was not given: %+v", reference)
+	}
+	pin := func(isAgent bool) error {
+		return call(isAgent, func(ctx context.Context) error {
+			_, err := world.graph.PinJournalRecord(ctx, PinJournalRecordArguments{Day: target.Day, RecordKind: "contact", RecordID: world.adaContact.ID})
+			return err
+		})
+	}
+	if err := pin(true); !errors.Is(err, api.ErrNotFound) {
+		t.Errorf("the agent pinned a contact it was not given: %v", err)
+	}
+	if err := pin(false); err != nil {
+		t.Errorf("the person pins their contact: %v", err)
+	}
+
+	for name, run := range map[string]func(ctx context.Context) error{
+		"remove a correction": func(ctx context.Context) error {
+			_, err := world.graph.RemoveJournalCorrection(ctx, RemoveJournalCorrectionArguments{Day: target.Day})
+			return err
+		},
+		"remove a pin": func(ctx context.Context) error {
+			_, err := world.graph.RemoveJournalLink(ctx, RemoveJournalLinkArguments{LinkID: "any"})
+			return err
+		},
+		"remove a narrative": func(ctx context.Context) error {
+			_, err := world.graph.DeleteJournalNarrative(ctx, JournalTargetArguments{Day: target.Day})
+			return err
+		},
+		"stop a touch-up": func(ctx context.Context) error {
+			_, err := world.graph.StopJournalTouchUp(ctx, JournalTargetArguments{Day: target.Day})
+			return err
+		},
+	} {
+		if err := call(true, run); !errors.Is(err, api.ErrPermissionDenied) {
+			t.Errorf("the agent could %s: %v", name, err)
+		}
+	}
+	if err := call(false, func(ctx context.Context) error {
+		_, err := world.graph.DeleteJournalNarrative(ctx, JournalTargetArguments{Day: target.Day})
+		return err
+	}); err != nil {
+		t.Errorf("the person removes a narrative: %v", err)
 	}
 }

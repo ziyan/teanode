@@ -73,9 +73,9 @@ type journalCounts struct {
 	refusedCount   int
 }
 
-// journalAccess is what the person may read of their own journal day on the
-// agent's behalf: their permissions, and whether they let the agent read
-// their Health.
+// journalAccess is what the agent may read of the person's journal day: the
+// person's permissions, only from what they gave the agent (journal.
+// AgentOptionsFor), and Health when they let the agent read it.
 type journalAccess struct {
 	permissions        *models.EffectivePermissions
 	canAgentReadHealth bool
@@ -99,21 +99,13 @@ func readJournalAccess(transaction db.Transaction, userId string) (*journalAcces
 }
 
 func (self *journalAccess) options() journal.ReadOptions {
-	return journal.OptionsFor(self.permissions, self.canAgentReadHealth)
+	return journal.AgentOptionsFor(self.permissions, self.canAgentReadHealth)
 }
 
-// journalFactsToStore is the numbers to keep after a day was read without
-// Health: the ones just worked out, with the Health numbers the row already
-// had, since a read that left Health out knows nothing of them.
-func journalFactsToStore(computed models.JournalFacts, read *journal.Day, canAgentReadHealth bool) models.JournalFacts {
-	if canAgentReadHealth || read.Row == nil {
-		return computed
-	}
-	stored := read.Row.Facts
-	computed.StepCount, computed.SleepMinutes, computed.WalkedMeters = stored.StepCount, stored.SleepMinutes, stored.WalkedMeters
-	computed.WorkoutMinutes, computed.HealthMoodLevel = stored.WorkoutMinutes, stored.HealthMoodLevel
-	computed.HasActivity = computed.HasActivity || stored.HasActivity
-	return computed
+// personOptions is what the person's own page reads of the day, which the
+// day's stored numbers are counted from.
+func (self *journalAccess) personOptions() journal.ReadOptions {
+	return journal.OptionsFor(self.permissions, true)
 }
 
 var journalMoodNames = map[int]string{
@@ -777,7 +769,13 @@ func (self *Agent) writeReadJournalDay(ctx context.Context, run *Run, read *jour
 		if err := transaction.PutJournalNarrative(run.Owner.ID, target, read.TimeZone, *writing, now); err != nil {
 			return err
 		}
-		return transaction.PutJournalFacts(run.Owner.ID, read.Day, read.TimeZone, journalFactsToStore(journal.ComputeFacts(read), read, access.canAgentReadHealth), now)
+		// The numbers are the person's page's, counted from all of the day,
+		// not from the part of it the agent was given.
+		whole, err := journal.ReadDay(transaction, run.Owner, run.Agent, read.Day, now, access.personOptions())
+		if err != nil {
+			return err
+		}
+		return transaction.PutJournalFacts(run.Owner.ID, read.Day, read.TimeZone, journal.ComputeFacts(whole), now)
 	}); err != nil {
 		return err
 	}

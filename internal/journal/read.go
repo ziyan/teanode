@@ -75,6 +75,13 @@ type ReadOptions struct {
 	// for the agent to read Health (CanAgentReadHealth). The person's own page
 	// sets it true.
 	ShouldReadHealth bool
+
+	// IsReadByAgent says the agent reads the day (a dream, a job, its tool, a
+	// command it runs as the person): it reads only what the person gave it,
+	// the mailboxes and the calendars granted to it, the chats the person lets
+	// it remember, and the transactions of the finance sources that are on.
+	// The person's own page reads everything their permissions reach.
+	IsReadByAgent bool
 }
 
 // AllReadOptions lets the caller read everything, as a test or a person who
@@ -512,7 +519,7 @@ func (self *Day) zone() *time.Location {
 
 // OptionsFor is the sections a person's permissions let them read.
 // shouldReadHealth is false for a read the agent makes of a person who has
-// not let it read their Health.
+// not let it read their Health. AgentOptionsFor is the agent's read.
 func OptionsFor(permissions *models.EffectivePermissions, shouldReadHealth bool) ReadOptions {
 	return ReadOptions{
 		CanReadMail:      permissions.Has(models.PermissionMailRead),
@@ -524,6 +531,15 @@ func OptionsFor(permissions *models.EffectivePermissions, shouldReadHealth bool)
 		CanReadAgent:     permissions.Has(models.PermissionAgentUse),
 		ShouldReadHealth: shouldReadHealth,
 	}
+}
+
+// AgentOptionsFor is what the agent reads of a person's day: what the
+// person's permissions reach, only from what they gave the agent, and Health
+// only when canAgentReadHealth.
+func AgentOptionsFor(permissions *models.EffectivePermissions, canAgentReadHealth bool) ReadOptions {
+	options := OptionsFor(permissions, canAgentReadHealth)
+	options.IsReadByAgent = true
+	return options
 }
 
 // RecordCount is how many records the day was read from, the lists that are

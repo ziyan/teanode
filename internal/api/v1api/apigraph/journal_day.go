@@ -105,11 +105,10 @@ func (self *graph) ReadJournalDay(ctx context.Context, arguments ReadJournalDayA
 	if err != nil {
 		return nil, err
 	}
-	resolver, err := newJournalRecordResolver(tx, principal.User.ID)
+	resolver, err := newJournalRecordResolver(ctx, tx, principal)
 	if err != nil {
 		return nil, err
 	}
-	resolver.permissions = principal.Permissions
 
 	row := journalDayRow(read)
 	choices, pins := resolver.describeLinks(read.Links)
@@ -305,11 +304,10 @@ func (self *graph) ReadJournalPeriod(ctx context.Context, arguments ReadJournalP
 	if period.Start > period.Today {
 		return nil, api.ErrNotFound
 	}
-	resolver, err := newJournalRecordResolver(tx, principal.User.ID)
+	resolver, err := newJournalRecordResolver(ctx, tx, principal)
 	if err != nil {
 		return nil, err
 	}
-	resolver.permissions = principal.Permissions
 	return describeJournalPeriod(period, resolver), nil
 }
 

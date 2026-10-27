@@ -381,6 +381,12 @@ func cutCharacters(text string, most int) string {
 	return string(runes[:most])
 }
 
+// isMailboxGiven says the reader may read a mailbox: the person reads all of
+// theirs, the agent the ones granted to it.
+func (self *dayReader) isMailboxGiven(mailbox *models.Mailbox) bool {
+	return !self.options.IsReadByAgent || (mailbox.Agent != nil && mailbox.Agent.Granted)
+}
+
 func (self *dayReader) readConversations() error {
 	activity, err := self.transaction.ListAgentConversationActivityBetween(self.agent.ID, self.day.From, self.day.Until)
 	if err != nil {
@@ -421,7 +427,15 @@ func (self *dayReader) readChats() error {
 		}
 	}
 	for _, chat := range activity {
-		name, err := self.chatName(chat.ChatID)
+		found, err := self.transaction.GetChat(chat.ChatID)
+		if err != nil {
+			return err
+		}
+		// The agent reads a chat only while the person lets it remember it.
+		if self.options.IsReadByAgent && (found == nil || found.Member(self.user.ID) == nil || !found.Member(self.user.ID).IsAgentReading) {
+			continue
+		}
+		name, err := self.chatName(found)
 		if err != nil {
 			return err
 		}
@@ -435,10 +449,9 @@ func (self *dayReader) readChats() error {
 
 // chatName is what the person calls a chat: a group's title, a circle's name
 // for its chat, else the other people in it.
-func (self *dayReader) chatName(chatId string) (string, error) {
-	chat, err := self.transaction.GetChat(chatId)
-	if err != nil || chat == nil {
-		return "Chat", err
+func (self *dayReader) chatName(chat *models.Chat) (string, error) {
+	if chat == nil {
+		return "Chat", nil
 	}
 	if title := strings.TrimSpace(chat.Title); title != "" {
 		return title, nil
@@ -520,6 +533,9 @@ func (self *dayReader) readMail() error {
 	}
 	var found []Mail
 	for _, mailbox := range mailboxes {
+		if !self.isMailboxGiven(mailbox) {
+			continue
+		}
 		folders, err := self.transaction.ListFolders(mailbox.ID, nil)
 		if err != nil {
 			return err
@@ -831,6 +847,10 @@ func (self *dayReader) readCalendar() error {
 	dateFrom := time.Date(self.dayDate().Year(), self.dayDate().Month(), self.dayDate().Day(), 0, 0, 0, 0, time.UTC)
 	dateUntil := dateFrom.AddDate(0, 0, 1)
 	for _, found := range calendars {
+		// The agent reads only the calendars the person gave it.
+		if self.options.IsReadByAgent && !found.AgentGranted {
+			continue
+		}
 		if found.CalendarKind == models.CalendarReminders {
 			if err := self.readReminders(found, dateFrom, dateUntil); err != nil {
 				return err
@@ -981,6 +1001,9 @@ func (self *dayReader) readTransactions() error {
 		return err
 	}
 	accountNames := map[string]string{}
+	// isAccountGiven is, by account, whether the agent may read its
+	// transactions: the finance source it came from is on.
+	isAccountGiven := map[string]bool{}
 	for _, found := range page.FinanceTransactions {
 		isOnDay := found.PostedOn == self.day.Day
 		if found.TransactedAt != nil {
@@ -995,10 +1018,19 @@ func (self *dayReader) readTransactions() error {
 			if err != nil {
 				return err
 			}
+			isGiven := false
 			if account != nil {
 				name = account.AccountName
+				source, err := self.transaction.GetAgentSource(self.agent.ID, account.SourceID)
+				if err != nil {
+					return err
+				}
+				isGiven = source != nil && source.Enabled
 			}
-			accountNames[found.FinanceAccountID] = name
+			accountNames[found.FinanceAccountID], isAccountGiven[found.FinanceAccountID] = name, isGiven
+		}
+		if self.options.IsReadByAgent && !isAccountGiven[found.FinanceAccountID] {
+			continue
 		}
 		description := strings.TrimSpace(found.MerchantName)
 		if description == "" {
@@ -1060,6 +1092,9 @@ func (self *dayReader) readNotes() error {
 		return err
 	}
 	for _, mailbox := range mailboxes {
+		if !self.isMailboxGiven(mailbox) {
+			continue
+		}
 		items, err := self.transaction.ListNoteItemsBetween(mailbox.ID, self.day.From, self.day.Until)
 		if err != nil {
 			return err

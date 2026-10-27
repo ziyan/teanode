@@ -128,7 +128,7 @@ func (self *graph) SetJournalWords(ctx context.Context, arguments SetJournalWord
 	if err != nil {
 		return nil, err
 	}
-	return storedJournalDayView(tx, principal.User, journal.ShownDay(row, options), now)
+	return storedJournalDayView(ctx, tx, principal, journal.ShownDay(row, options), now)
 }
 
 func (self *graph) SetJournalMood(ctx context.Context, arguments SetJournalMoodArguments) (*JournalDayView, error) {
@@ -153,7 +153,7 @@ func (self *graph) SetJournalMood(ctx context.Context, arguments SetJournalMoodA
 	if err != nil {
 		return nil, err
 	}
-	return storedJournalDayView(tx, principal.User, journal.ShownDay(row, options), now)
+	return storedJournalDayView(ctx, tx, principal, journal.ShownDay(row, options), now)
 }
 
 func (self *graph) SetJournalLookingBack(ctx context.Context, arguments SetJournalLookingBackArguments) (*JournalPeriodView, error) {
@@ -184,7 +184,7 @@ func (self *graph) SetJournalLookingBack(ctx context.Context, arguments SetJourn
 			return nil, err
 		}
 	}
-	return storedJournalPeriodView(tx, principal.User, row, now)
+	return storedJournalPeriodView(ctx, tx, principal, row, now)
 }
 
 func (self *graph) TouchUpJournalWords(ctx context.Context, arguments TouchUpJournalWordsArguments) (*JournalTouchUpView, error) {
@@ -209,6 +209,9 @@ func (self *graph) TouchUpJournalWords(ctx context.Context, arguments TouchUpJou
 func (self *graph) StopJournalTouchUp(ctx context.Context, arguments JournalTargetArguments) (*JournalTouchUpView, error) {
 	principal, err := self.requireJournalPerson(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseJournalAgent(ctx); err != nil {
 		return nil, err
 	}
 	tx := self.transaction(ctx)
@@ -242,12 +245,15 @@ func (self *graph) CorrectJournalNarrative(ctx context.Context, arguments Correc
 	if err := enqueueJournalJob(tx, principal.User.ID); err != nil {
 		return nil, err
 	}
-	return storedJournalNarrativeView(tx, principal.User, target, now)
+	return storedJournalNarrativeView(ctx, tx, principal, target, now)
 }
 
 func (self *graph) RemoveJournalCorrection(ctx context.Context, arguments RemoveJournalCorrectionArguments) (*JournalNarrativeView, error) {
 	principal, err := self.requireJournalPerson(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseJournalAgent(ctx); err != nil {
 		return nil, err
 	}
 	now, tx := time.Now(), self.transaction(ctx)
@@ -261,7 +267,7 @@ func (self *graph) RemoveJournalCorrection(ctx context.Context, arguments Remove
 	if err := enqueueJournalJob(tx, principal.User.ID); err != nil {
 		return nil, err
 	}
-	return storedJournalNarrativeView(tx, principal.User, target, now)
+	return storedJournalNarrativeView(ctx, tx, principal, target, now)
 }
 
 func (self *graph) WriteJournalNarrative(ctx context.Context, arguments JournalTargetArguments) (*JournalNarrativeView, error) {
@@ -282,12 +288,15 @@ func (self *graph) WriteJournalNarrative(ctx context.Context, arguments JournalT
 	if err := enqueueJournalJob(tx, principal.User.ID); err != nil {
 		return nil, err
 	}
-	return storedJournalNarrativeView(tx, principal.User, target, now)
+	return storedJournalNarrativeView(ctx, tx, principal, target, now)
 }
 
 func (self *graph) DeleteJournalNarrative(ctx context.Context, arguments JournalTargetArguments) (*JournalNarrativeView, error) {
 	principal, err := self.requireJournalPerson(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseJournalAgent(ctx); err != nil {
 		return nil, err
 	}
 	now, tx := time.Now(), self.transaction(ctx)
@@ -298,7 +307,7 @@ func (self *graph) DeleteJournalNarrative(ctx context.Context, arguments Journal
 	if err := tx.DeleteJournalNarrative(principal.User.ID, target); err != nil {
 		return nil, journalFailure(err)
 	}
-	return storedJournalNarrativeView(tx, principal.User, target, now)
+	return storedJournalNarrativeView(ctx, tx, principal, target, now)
 }
 
 func (self *graph) PinJournalRecord(ctx context.Context, arguments PinJournalRecordArguments) (*JournalLinkView, error) {
@@ -324,11 +333,12 @@ func (self *graph) PinJournalRecord(ctx context.Context, arguments PinJournalRec
 	if found == nil {
 		return nil, api.ErrNotFound
 	}
-	resolved, err := recordlink.ResolveRecord(tx, recordlink.Reader{UserID: principal.User.ID, AgentID: found.ID}, recordKind, recordId, models.AgentRecordDetail{}, 0, 0)
+	reader := recordlink.Reader{UserID: principal.User.ID, AgentID: found.ID, IsAgent: isJournalReadByAgent(ctx)}
+	resolved, err := recordlink.ResolveRecord(tx, reader, recordKind, recordId, models.AgentRecordDetail{}, 0, 0)
 	if err != nil {
 		return nil, journalFailure(err)
 	}
-	if !resolved.IsReadable() {
+	if !resolved.IsReadable() || !isJournalKindReadable(principal.Permissions, recordKind) {
 		return nil, api.ErrNotFound
 	}
 	link, err := tx.PinJournalRecord(principal.User.ID, target.Day, journal.Zone(principal.User).String(), recordKind, recordId, arguments.LinkReason, now)
@@ -343,6 +353,9 @@ func (self *graph) RemoveJournalLink(ctx context.Context, arguments RemoveJourna
 	if err != nil {
 		return false, err
 	}
+	if err := refuseJournalAgent(ctx); err != nil {
+		return false, err
+	}
 	if err := self.transaction(ctx).RemoveJournalLink(principal.User.ID, strings.TrimSpace(arguments.LinkID)); err != nil {
 		return false, journalFailure(err)
 	}
@@ -354,8 +367,8 @@ func (self *graph) UpdateJournalSettings(ctx context.Context, arguments UpdateJo
 	if err != nil {
 		return nil, err
 	}
-	if db.PrincipalFromContext(ctx).ActorKind == models.AuditActorAgent {
-		return nil, fmt.Errorf("%w: %s", api.ErrPermissionDenied, journalTheAgentMayNot)
+	if err := refuseJournalAgent(ctx); err != nil {
+		return nil, err
 	}
 	tx := self.transaction(ctx)
 	settings, err := tx.GetJournalSettings(principal.User.ID)
@@ -385,8 +398,8 @@ func (self *graph) EraseJournal(ctx context.Context) (*EraseJournalView, error) 
 	if err != nil {
 		return nil, err
 	}
-	if db.PrincipalFromContext(ctx).ActorKind == models.AuditActorAgent {
-		return nil, fmt.Errorf("%w: %s", api.ErrPermissionDenied, journalTheAgentMayNot)
+	if err := refuseJournalAgent(ctx); err != nil {
+		return nil, err
 	}
 	dayCount, periodCount, linkCount, err := self.transaction(ctx).EraseJournal(principal.User.ID)
 	if err != nil {
@@ -397,8 +410,20 @@ func (self *graph) EraseJournal(ctx context.Context) (*EraseJournalView, error) 
 
 // journalTheAgentMayNot is why a command the agent runs on the person's
 // computer, which arrives with the person's own token, is refused what is the
-// person's alone: erasing the journal and changing what they decided about it.
-const journalTheAgentMayNot = "only the person can erase their journal or change its settings, not the agent"
+// person's alone: erasing the journal, changing what they decided about it,
+// and taking back what they asked for or kept (a correction, a pin, a
+// narrative, a touch-up).
+const journalTheAgentMayNot = "only the person can do this to their journal, not the agent: erase it, change its settings, " +
+	"or remove a correction, a pin, a narrative or a touch-up"
+
+// refuseJournalAgent refuses a call that is the person's alone when the agent
+// makes it.
+func refuseJournalAgent(ctx context.Context) error {
+	if isJournalReadByAgent(ctx) {
+		return fmt.Errorf("%w: %s", api.ErrPermissionDenied, journalTheAgentMayNot)
+	}
+	return nil
+}
 
 // refuseJournalWordsTheAgentWouldRemove keeps the rule that the person's words
 // are theirs for a command the agent runs as the person: it may add to the
