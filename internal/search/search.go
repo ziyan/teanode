@@ -69,7 +69,19 @@ type Result struct {
 	DetailText string `json:"detailText"`
 
 	HappenedAt *time.Time `json:"happenedAt,omitempty"`
+
+	// IsMain says the result is the person's main conversation, whose
+	// TitleText is MainChatTitle. The dashboard and the iPhone app name the
+	// main conversation in the person's language everywhere else, so they
+	// show their own words for it; the command line and the agent show the
+	// title.
+	IsMain bool `json:"isMain"`
 }
+
+// MainChatTitle is the title of the person's main conversation. It is never
+// stored: the conversation has no title of its own, and every list names it
+// "Main chat" (the journal gives it this title too).
+const MainChatTitle = "Main chat"
 
 // AreaResults is one area's results.
 type AreaResults struct {

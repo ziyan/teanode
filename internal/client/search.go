@@ -15,6 +15,7 @@ type SearchResult struct {
 	TitleText  string     `json:"titleText"`
 	DetailText string     `json:"detailText"`
 	HappenedAt *time.Time `json:"happenedAt"`
+	IsMain     bool       `json:"isMain"`
 }
 
 // SearchArea is one area's results.
@@ -35,7 +36,7 @@ const DocumentSearchEverything = `query ($words: String!, $perAreaLimit: Int, $a
   SearchEverything(words: $words, perAreaLimit: $perAreaLimit, areas: $areas) {
     words
     failedAreas
-    areas { searchArea hasMore results { searchArea targetId titleText detailText happenedAt } }
+    areas { searchArea hasMore results { searchArea targetId titleText detailText happenedAt isMain } }
   }
 }`
 

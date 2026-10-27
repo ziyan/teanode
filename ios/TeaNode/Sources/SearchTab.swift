@@ -202,7 +202,8 @@ struct SearchPhotosRow: View {
     }
 }
 
-/// SearchAreaSection is one part's results under the part's name.
+/// SearchAreaSection is one part's results under the part's name. Photos are
+/// a grid of pictures, as in Photos; everything else is rows.
 struct SearchAreaSection: View {
     let area: SearchArea
     let areaResults: SearchAreaResults
@@ -212,14 +213,18 @@ struct SearchAreaSection: View {
 
     var body: some View {
         Section {
-            ForEach(Array(areaResults.results.enumerated()), id: \.offset) { _, result in
-                if case .nowhere = result.opening {
-                    SearchResultRow(result: result)
-                } else {
-                    Button {
-                        onOpen(result, words)
-                    } label: {
+            if area == .photos {
+                SearchPhotoGrid(results: areaResults.results, words: words, onOpen: onOpen)
+            } else {
+                ForEach(Array(areaResults.results.enumerated()), id: \.offset) { _, result in
+                    if case .nowhere = result.opening {
                         SearchResultRow(result: result)
+                    } else {
+                        Button {
+                            onOpen(result, words)
+                        } label: {
+                            SearchResultRow(result: result)
+                        }
                     }
                 }
             }
@@ -237,31 +242,62 @@ struct SearchAreaSection: View {
     }
 }
 
+/// SearchPhotoGrid is the photos found, as pictures a few across and nothing
+/// under them: a file name says little about which photo it is. A tap opens
+/// the photo, with the words that found it.
+struct SearchPhotoGrid: View {
+    let results: [SearchResult]
+    let words: String
+    let onOpen: (SearchResult, String) -> Void
+
+    private static let spacing: CGFloat = 4
+
+    var body: some View {
+        // Four across on a phone held upright, more on a wider screen.
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: Self.spacing)], spacing: Self.spacing) {
+            ForEach(results.filter { !$0.targetId.isEmpty }) { result in
+                Button {
+                    onOpen(result, words)
+                } label: {
+                    SearchPhotoThumbnail(photoId: result.targetId)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(accessibilityText(of: result))
+            }
+        }
+        .padding(.vertical, Self.spacing)
+    }
+
+    /// What a screen reader says for a tile: it is a photo, and the day it
+    /// was taken.
+    private func accessibilityText(of result: SearchResult) -> String {
+        var parts = [String(localized: "Photo")]
+        if let happenedDate = result.happenedDate { parts.append(happenedDate.formatted(date: .complete, time: .omitted)) }
+        return parts.joined(separator: ", ")
+    }
+}
+
 /// SearchResultRow is one thing found: what it is called, a line from it, and
 /// when it happened.
 struct SearchResultRow: View {
     let result: SearchResult
 
-    var body: some View {
-        if result.area == .photos {
-            // A file name and a date say little about which photo it is.
-            HStack(spacing: 12) {
-                SearchPhotoThumbnail(photoId: result.targetId)
-                words
-            }
-        } else {
-            words
-        }
+    /// The result's name: the main conversation is named in the person's
+    /// language, as the list of chats names it; anything else by its title,
+    /// or by its line when it has no title.
+    private var shownTitle: String {
+        if result.isMain { return String(localized: "Main chat") }
+        return result.titleText.isEmpty ? result.detailText : result.titleText
     }
 
-    private var words: some View {
+    var body: some View {
         // In the text's colors, which a button would otherwise draw green: a
         // result is a place to go, not an action (ios/DESIGN.md).
         VStack(alignment: .leading, spacing: 2) {
-            Text(result.titleText.isEmpty ? result.detailText : result.titleText)
+            Text(shownTitle)
                 .foregroundStyle(Color.primary)
                 .lineLimit(2)
-            if !result.titleText.isEmpty, !result.detailText.isEmpty {
+            if result.isMain || !result.titleText.isEmpty, !result.detailText.isEmpty {
                 Text(result.detailText)
                     .font(.subheadline)
                     .foregroundStyle(Color.secondary)
@@ -278,17 +314,16 @@ struct SearchResultRow: View {
     }
 }
 
-/// SearchPhotoThumbnail is the picture of a photo found, before its name. A
-/// photo with no preview yet keeps the square, empty.
+/// SearchPhotoThumbnail is the picture of a photo found, a square that fills
+/// the width it is given. A photo with no preview yet keeps the square, empty.
 struct SearchPhotoThumbnail: View {
     let photoId: String
     @Environment(AppModel.self) private var app
     @State private var picture: UIImage?
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(Color(.tertiarySystemFill))
-            .frame(width: 48, height: 48)
+        Color(.tertiarySystemFill)
+            .aspectRatio(1, contentMode: .fit)
             .overlay {
                 if let picture {
                     Image(uiImage: picture)
@@ -297,7 +332,7 @@ struct SearchPhotoThumbnail: View {
                 }
             }
             .clipShape(.rect(cornerRadius: 8, style: .continuous))
-            .accessibilityHidden(true)
+            .contentShape(.rect)
             .task(id: photoId) {
                 picture = await app.picture("/api/v1/photos/\(photoId)/previews/small")
             }
