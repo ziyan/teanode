@@ -159,7 +159,7 @@ struct PasswordsRecoveryKeyScreen: View {
         }
         .navigationTitle("Recovery key")
         .navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom) {
+        .safeAreaBar(edge: .bottom) {
             PasswordsPrimaryButton(buttonTitle: String(localized: "Done"), isWorking: isFinishing, isEnabled: isSaved) {
                 Task { await finish() }
             }
@@ -174,7 +174,8 @@ struct PasswordsRecoveryKeyScreen: View {
 }
 
 /// PasswordsPrimaryButton is a screen's one prominent action, full width at
-/// the bottom, outside the list.
+/// the bottom, outside the list. It floats over the list, which scrolls on
+/// under it to the bottom of the screen; a screen puts it in a safe area bar.
 struct PasswordsPrimaryButton: View {
     let buttonTitle: String
     var isWorking = false
@@ -193,7 +194,6 @@ struct PasswordsPrimaryButton: View {
         .controlSize(.large)
         .disabled(!isEnabled || isWorking)
         .padding()
-        .background(Color(.systemGroupedBackground))
     }
 }
 
@@ -265,7 +265,7 @@ struct PasswordsUnlockScreen: View {
         .navigationTitle(PasswordsWords.title)
         .navigationBarTitleDisplayMode(.inline)
         .onSubmit { Task { await unlock() } }
-        .safeAreaInset(edge: .bottom) {
+        .safeAreaBar(edge: .bottom) {
             PasswordsPrimaryButton(buttonTitle: String(localized: "Unlock"), isWorking: isWorking, isEnabled: !typedText.isEmpty) {
                 Task { await unlock() }
             }

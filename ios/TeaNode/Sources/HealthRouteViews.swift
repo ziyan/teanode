@@ -36,6 +36,10 @@ struct HealthRouteScreen: View {
                             ProgressView()
                         }
                     }
+                    // On under the tab bar to the bottom of the screen, as a
+                    // list on its own goes, its last rows scrolling up above it.
+                    .safeAreaPadding(.bottom, proxy.safeAreaInsets.bottom)
+                    .ignoresSafeArea(.container, edges: .bottom)
                 }
             }
         }

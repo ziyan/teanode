@@ -107,7 +107,10 @@ struct LocationScreen: View {
                 Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(alignment: .bottom) {
-                        LocationDrawer(detent: $drawerDetent, headerHeight: $drawerHeaderHeight, availableHeight: proxy.size.height) {
+                        LocationDrawer(
+                            detent: $drawerDetent, headerHeight: $drawerHeaderHeight, availableHeight: proxy.size.height,
+                            bottomInset: proxy.safeAreaInsets.bottom
+                        ) {
                             drawerHeader
                         } content: {
                             drawerContent
@@ -758,6 +761,10 @@ struct LocationDayScreen: View {
                             ContentUnavailableView("No visits this day", systemImage: "mappin.and.ellipse")
                         }
                     }
+                    // On under the tab bar to the bottom of the screen, as a
+                    // list on its own goes, its last rows scrolling up above it.
+                    .safeAreaPadding(.bottom, proxy.safeAreaInsets.bottom)
+                    .ignoresSafeArea(.container, edges: .bottom)
                 }
             }
         }
