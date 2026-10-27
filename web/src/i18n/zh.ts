@@ -7359,6 +7359,7 @@ export const zh: Catalog = {
   'journal.projectsOne': '1 个项目',
   'journal.projectsOther': '{count} 个项目',
   'journal.topicsMore': '另有 {count} 项',
+  'journal.sessionsNamed': '会话：{names}',
   'journal.shippedRequests': '拉取请求和合并请求',
   'journal.draftTag': '草稿',
   'journal.workDetails': '详情',

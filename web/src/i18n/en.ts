@@ -7717,6 +7717,7 @@ export const en = {
   'journal.projectsOne': '1 project',
   'journal.projectsOther': '{count} projects',
   'journal.topicsMore': 'and {count} more',
+  'journal.sessionsNamed': 'Sessions: {names}',
   'journal.shippedRequests': 'Pull and merge requests',
   'journal.draftTag': 'Draft',
   'journal.workDetails': 'Details',

@@ -274,7 +274,7 @@ func TestJournalDayPrintsEverything(test *testing.T) {
 		"Your corrections\n  1. It was Sam at lunch.\n  2. Not a colleague.\n",
 		"TeaNode chose\n  mail:m1: Lease renewal (asked her to decide) (link l1)\n  mail:m2: Newsletter [hidden] (link l2)\n",
 		"You pinned\n  contact:c1: Sam Harbor (lunch) (link l3)\n",
-		"Work\n  09:05 to 10:40  site, 1 h 35 min\n    Fixed the login page on small screens.\n    worked on: Fix the login page\n    shipped: fix: the login page fits a phone\n",
+		"Work\n  09:05 to 10:40  site, 1 h 35 min\n    Fixed the login page on small screens.\n    sessions: Fix the login page\n    shipped: fix: the login page fits a phone\n",
 		"Coding sessions\n  09:05 to 10:40  Fix the login page (~/code/site)\n",
 		"Documents\n  11:00  Release plan (Work chat): you were asked to decide\n  and 37 more\n",
 		"Conversations\n  07:30  Packing list, 6 messages\n  18:00  Home, 1 message\n",

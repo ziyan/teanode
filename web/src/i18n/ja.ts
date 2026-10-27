@@ -7659,6 +7659,7 @@ export const ja: Catalog = {
   'journal.projectsOne': '1プロジェクト',
   'journal.projectsOther': '{count}プロジェクト',
   'journal.topicsMore': 'ほか{count}件',
+  'journal.sessionsNamed': 'セッション：{names}',
   'journal.shippedRequests': 'プルリクエストとマージリクエスト',
   'journal.draftTag': '下書き',
   'journal.workDetails': '詳細',

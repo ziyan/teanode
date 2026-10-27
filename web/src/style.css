@@ -21908,36 +21908,10 @@ button.person-row:focus-visible {
   line-height: 1.6;
 }
 
-.journal-project-topics {
-  list-style: none;
+.journal-project-sessions {
   margin: var(--space-2) 0 0;
-  padding: 0;
-  font-size: var(--text-body);
+  font-size: var(--text-label);
   line-height: 1.5;
-}
-
-.journal-project-topics li {
-  position: relative;
-  padding-left: 14px;
-}
-
-.journal-project-topics li + li {
-  margin-top: 2px;
-}
-
-.journal-project-topics li::before {
-  content: '';
-  position: absolute;
-  top: 0.62em;
-  left: 3px;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--muted);
-}
-
-.journal-project-topics li.muted::before {
-  display: none;
 }
 
 .journal-shipped {
