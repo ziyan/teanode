@@ -98,6 +98,11 @@ func TestADepartureNoticedLateIsNotAVisitInsideAnother(t *testing.T) {
 
 		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office", 0, 200))
 		putAndNormalize(t, tx, userId, locationVisit(home.ID, "home", 225, -1))
+		// The phone also tells of coming into home's circle, which joins the
+		// visit home; a visit begun at the late departure would split it.
+		homeCircle := locationVisit(home.ID, "home-circle", 320, -1)
+		homeCircle.VisitSource = models.VisitSourceRegion
+		putAndNormalize(t, tx, userId, homeCircle)
 		putAndNormalize(t, tx, userId, regionDeparture("office-circle", 300))
 		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[office 0-200 home 225-open]"; got != want {
 			t.Errorf("the visits are %s, want %s", got, want)

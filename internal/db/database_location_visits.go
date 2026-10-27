@@ -45,6 +45,16 @@ func (self *transaction) NormalizePlaceVisits(userId string, from, until time.Ti
 	}
 	windowStart, windowEnd := from.Add(-placeVisitJoinGap), until.Add(placeVisitJoinGap)
 
+	// A departure noticed late would otherwise split the visit it was noticed
+	// in, as if a visit had begun there.
+	visits, err := self.visitsAround(userId, windowStart, windowEnd)
+	if err != nil {
+		return err
+	}
+	if err := self.moveLateDepartures(userId, visits); err != nil {
+		return err
+	}
+
 	// Each split uses up one of the keys a visit was joined from, so this ends.
 	for {
 		visits, err := self.visitsAround(userId, windowStart, windowEnd)
@@ -60,21 +70,8 @@ func (self *transaction) NormalizePlaceVisits(userId string, from, until time.Ti
 		}
 	}
 
-	visits, err := self.visitsAround(userId, windowStart, windowEnd)
-	if err != nil {
+	if visits, err = self.visitsAround(userId, windowStart, windowEnd); err != nil {
 		return err
-	}
-	for _, visit := range visits {
-		log.Noticef("DEBUG window %s to %s: %s %s %v %v %s", windowStart, windowEnd, visit.ID, visit.PlaceID, visit.ArrivedAt, visit.DepartedAt, visit.VisitSource)
-	}
-	isMoved, err := self.moveLateDepartures(userId, visits)
-	if err != nil {
-		return err
-	}
-	if isMoved {
-		if visits, err = self.visitsAround(userId, windowStart, windowEnd); err != nil {
-			return err
-		}
 	}
 	now := time.Now()
 	for index := range visits {
@@ -139,18 +136,16 @@ func (self *transaction) NormalizePlaceVisits(userId string, from, until time.Ti
 
 // moveLateDepartures moves each departure from a watched place stored with no
 // arrival that the phone noticed while the person was at another place, by a
-// visit there that began before the departure and had not ended by it, and
-// says whether it moved any. iOS can tell of leaving a watched place an hour
-// or more after the person left it. The phone sends such a departure only
-// after its arrival, so one stored without it will not get one: the arrival
-// was refused or taken out since. The person had left by the time the other
-// visit began. When their visit before that one was to the same place, the
+// visit there that began before the departure and had not ended by it. iOS
+// can tell of leaving a watched place an hour or more after the person left
+// it. The phone sends such a departure only after its arrival, so one stored
+// without it will not get one: the arrival was refused or taken out since.
+// The person had left by the time the other visit began. When their visit before that one was to the same place, the
 // departure is that visit's own, noticed late, and its key goes to that visit
 // so that the phone sending it again finds it; otherwise the departure moves
 // to when the other visit began. A departure iOS visit monitoring reported
 // with no arrival is left alone, since its arrival may still come.
-func (self *transaction) moveLateDepartures(userId string, visits []placeVisitModel) (bool, error) {
-	isMoved := false
+func (self *transaction) moveLateDepartures(userId string, visits []placeVisitModel) error {
 	now := time.Now()
 	for index := range visits {
 		departure := &visits[index]
@@ -168,7 +163,6 @@ func (self *transaction) moveLateDepartures(userId string, visits []placeVisitMo
 				around = other
 			}
 		}
-		log.Noticef("DEBUG late departure %s at %s: around %+v", departure.ID, departure.DepartedAt, around)
 		if around == nil {
 			continue
 		}
@@ -177,34 +171,32 @@ func (self *transaction) moveLateDepartures(userId string, visits []placeVisitMo
 		if err := self.tx.Where("\"user_id\" = ? AND \"id\" NOT IN ? AND \"arrived_at\" IS NOT NULL AND \"arrived_at\" < ?",
 			userId, []string{departure.ID, around.ID}, leftBy).
 			Order("\"arrived_at\" DESC, \"created_at\" DESC, \"id\" DESC").Limit(1).Find(&previous).Error; err != nil {
-			return false, err
+			return err
 		}
 		if len(previous) == 0 || previous[0].PlaceID != departure.PlaceID {
 			if err := self.tx.Model(&placeVisitModel{}).Where("\"id\" = ?", departure.ID).
 				Updates(map[string]any{"departed_at": leftBy, "updated_at": now}).Error; err != nil {
-				return false, err
+				return err
 			}
-			isMoved = true
 			continue
 		}
 		owner := &previous[0]
 		if err := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&placeVisitKeyModel{
 			UserID: userId, ClientVisitKey: departure.ClientVisitKey, PlaceVisitID: owner.ID,
 		}).Error; err != nil {
-			return false, err
+			return err
 		}
 		if err := self.tx.Where("\"id\" = ?", departure.ID).Delete(&placeVisitModel{}).Error; err != nil {
-			return false, err
+			return err
 		}
 		if owner.DepartedAt == nil || owner.DepartedAt.After(leftBy) {
 			if err := self.tx.Model(&placeVisitModel{}).Where("\"id\" = ?", owner.ID).
 				Updates(map[string]any{"departed_at": leftBy, "updated_at": now}).Error; err != nil {
-				return false, err
+				return err
 			}
 		}
-		isMoved = true
 	}
-	return isMoved, nil
+	return nil
 }
 
 // splitOneOverlappedVisit splits the first visit, in the order they began,
