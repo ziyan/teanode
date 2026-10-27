@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { graphql } from '../../api'
-import { FormDialog } from '../../components/dialog'
+import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import {
   ActivityIcon,
   CalendarIcon,
@@ -28,6 +28,7 @@ import {
   CORRECTION_MOST_CHARACTERS,
   CORRECTION_MOST_COUNT,
   CORRECT_JOURNAL_NARRATIVE,
+  DELETE_JOURNAL_NARRATIVE,
   JournalNarrative,
   JournalRecord,
   JournalTarget,
@@ -148,6 +149,7 @@ export function NarrativeCard({
   const { t, language } = useTranslation()
   const toast = useToast()
   const [isCorrecting, setIsCorrecting] = useState(false)
+  const [isRemoving, setIsRemoving] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
   const hasStory = narrative.narrative.trim() !== ''
 
@@ -223,6 +225,9 @@ export function NarrativeCard({
               <button type="button" className="button-quiet" onClick={() => setIsCorrecting(true)}>
                 {t('journal.somethingWrong')}
               </button>
+              <button type="button" className="button-quiet" onClick={() => setIsRemoving(true)}>
+                {t('journal.removeStory')}
+              </button>
             </span>
           </div>
         </>
@@ -244,6 +249,23 @@ export function NarrativeCard({
       )}
       {narrative.failure && !narrative.narrativePending && (
         <p className="muted journal-status">{t('journal.narrativeRefused', { reason: narrative.failure })}</p>
+      )}
+      {isRemoving && (
+        <ConfirmDialog
+          title={t('journal.removeStoryTitle')}
+          body={t('journal.removeStoryBody')}
+          confirmLabel={t('journal.removeStory')}
+          busy={isBusy}
+          onConfirm={() =>
+            void run(async () => {
+              await graphql(DELETE_JOURNAL_NARRATIVE, targetVariables(target))
+              setIsRemoving(false)
+              toast.done(t('journal.storyRemoved'))
+              await onChanged()
+            }, t('journal.removeStoryFailed'))
+          }
+          onClose={() => setIsRemoving(false)}
+        />
       )}
       {isCorrecting && (
         <CorrectionDialog

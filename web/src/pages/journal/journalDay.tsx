@@ -176,7 +176,7 @@ function DayBody({ day, onChanged }: { day: JournalDay; onChanged: () => Promise
         </div>
         <aside className="journal-aside">
           <PlacesCard day={day} />
-          <MomentsCard day={day} />
+          <MomentsCard day={day} onChanged={onChanged} />
           <HealthCard day={day} />
           <CalendarCard day={day} />
         </aside>

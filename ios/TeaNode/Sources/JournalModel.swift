@@ -233,6 +233,32 @@ final class JournalDayModel {
             try await connection.removeJournalCorrection(for: .day(day), correctionIndex: index)
         }
     }
+
+    /// Takes the story away. The corrections stay, and a later dream writes
+    /// a new one.
+    func removeNarrative() async {
+        let isRemoved = await change(orSay: String(localized: "Could not remove the story.")) {
+            try await connection.deleteJournalNarrative(for: .day(day))
+        }
+        if isRemoved { doneText = String(localized: "Story removed") }
+    }
+
+    /// Pins the record of a moment of the day to the day.
+    func pin(_ moment: JournalMoment) async {
+        let isPinned = await change(orSay: String(localized: "Could not pin that to this day.")) {
+            _ = try await connection.pinJournalRecord(day: day, recordKind: moment.recordKind, recordId: moment.recordId)
+        }
+        if isPinned { doneText = String(localized: "Pinned to this day") }
+    }
+
+    /// Takes a pin off the day, or hides a choice of the agent, which the
+    /// server keeps hidden.
+    func remove(_ link: JournalLink) async {
+        let isRemoved = await change(orSay: String(localized: "Could not remove that from this day.")) {
+            try await connection.removeJournalLink(linkId: link.linkId)
+        }
+        if isRemoved { doneText = String(localized: "Removed from this day") }
+    }
 }
 
 /// JournalPeriodModel is one week, month or year of the journal.
@@ -318,6 +344,87 @@ final class JournalPeriodModel {
     func removeCorrection(at index: Int) async {
         await change(orSay: String(localized: "Could not remove that correction.")) {
             try await connection.removeJournalCorrection(for: target, correctionIndex: index)
+        }
+    }
+
+    func removeNarrative() async {
+        let isRemoved = await change(orSay: String(localized: "Could not remove the story.")) {
+            try await connection.deleteJournalNarrative(for: target)
+        }
+        if isRemoved { doneText = String(localized: "Story removed") }
+    }
+}
+
+/// JournalSearchModel is a search of the journal: the words typed, and the
+/// days and periods that hold them, a page at a time, newest first.
+@MainActor
+@Observable
+final class JournalSearchModel {
+    let connection: Connection
+
+    /// The words as typed, which the search field edits.
+    var query = ""
+    private(set) var hits: [JournalSearchHit] = []
+    private(set) var totalCount = 0
+    /// The words the hits were found for, empty before the first read.
+    private(set) var searchedQuery = ""
+    private(set) var isLoadingMore = false
+    private(set) var failedText: String?
+    var problemText: String?
+
+    init(connection: Connection) {
+        self.connection = connection
+    }
+
+    /// The words to search for: the typed words trimmed and cut to what the
+    /// server takes; nil while there are none.
+    var searchWords: String? { JournalSearch.normalized(query) }
+
+    var canLoadMore: Bool { hits.count < totalCount }
+
+    /// Reads the first page for the words typed, a moment after the last
+    /// key. Words already read are not read again unless the read failed.
+    func search(isDebounced: Bool = true) async {
+        guard let words = searchWords else {
+            hits = []
+            totalCount = 0
+            searchedQuery = ""
+            failedText = nil
+            return
+        }
+        if words == searchedQuery, failedText == nil { return }
+        if isDebounced {
+            do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+        }
+        do {
+            let page = try await connection.searchJournal(query: words)
+            // The person may have typed more while this was read.
+            guard words == searchWords else { return }
+            hits = page.hits
+            totalCount = page.totalCount
+            searchedQuery = words
+            failedText = nil
+        } catch {
+            guard !Task.isCancelled, words == searchWords else { return }
+            hits = []
+            totalCount = 0
+            searchedQuery = words
+            failedText = error.loadProblemText
+        }
+    }
+
+    /// Reads the next page when the last hit on the screen comes into view.
+    func loadMore(after hit: JournalSearchHit) async {
+        guard hit.id == hits.last?.id, canLoadMore, !isLoadingMore, let words = searchWords, words == searchedQuery else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        do {
+            let page = try await connection.searchJournal(query: words, offset: hits.count)
+            guard words == searchWords else { return }
+            hits = JournalSearch.appending(page.hits, to: hits)
+            totalCount = page.totalCount
+        } catch {
+            if !Task.isCancelled { problemText = error.loadProblemText }
         }
     }
 }

@@ -452,15 +452,24 @@ public struct JournalHealth: Codable, Hashable, Sendable {
     @JournalList public var workouts: [JournalWorkout]
 }
 
-/// JournalShoppingTrip is a trip to the shops that day.
+/// JournalShoppingTrip is a trip to the shops that day. It does not keep
+/// what was bought, so it says nothing of it.
 public struct JournalShoppingTrip: Codable, Hashable, Sendable, Identifiable {
     public let tripId: String
+    /// The store, when the person named one; empty for none.
+    public let storeName: String
+    /// The lists it was for that the person still reaches.
     @JournalList public var listNames: [String]
     public let startedAt: String
     public let finishedAt: String?
-    public let boughtCount: Int
-    public let itemCount: Int
+    /// Where the dashboard opens it.
+    public let dashboardPath: String
     public var id: String { tripId }
+
+    /// Where the app takes the person: the Shopping part.
+    public var opening: JournalRecordOpening {
+        JournalRecordOpening.of(recordKind: "shopping_trip", recordId: tripId, dashboardPath: dashboardPath)
+    }
 }
 
 /// JournalMemoryPage is a memory page with a fact about that day.
@@ -482,6 +491,15 @@ public struct JournalMoment: Codable, Hashable, Sendable, Identifiable {
     public let dashboardPath: String
 
     public var id: String { "\(at)|\(recordKind)|\(recordId)" }
+
+    /// How a day's pins and choices name the record: kind:id.
+    public var reference: String { "\(recordKind):\(recordId)" }
+
+    /// Whether the moment can be pinned to its day: it names a record, and
+    /// the record is not among the day's placedReferences already.
+    public func canPin(placedReferences: Set<String>) -> Bool {
+        !recordKind.isEmpty && !recordId.isEmpty && !placedReferences.contains(reference)
+    }
 }
 
 /// JournalDay is one day whole.
@@ -529,6 +547,20 @@ public struct JournalDay: Codable, Hashable, Sendable {
     /// Whether the touched-up version or the narrative is being made.
     public var isPending: Bool {
         (words?.touchUpPending ?? false) || (narrative?.narrativePending ?? false)
+    }
+
+    /// The records already on the day as a pin, or as a choice the person has
+    /// not hidden: a moment of one of them has nothing left to pin. A hidden
+    /// choice can be pinned, and the server then makes it the person's.
+    public var placedReferences: Set<String> {
+        var references: Set<String> = []
+        for link in pins {
+            if let record = link.record { references.insert(record.reference) }
+        }
+        for link in choices where !link.isHidden {
+            if let record = link.record { references.insert(record.reference) }
+        }
+        return references
     }
 }
 
@@ -610,6 +642,60 @@ public struct JournalErased: Codable, Hashable, Sendable {
     public let linkCount: Int
 }
 
+
+// MARK: Search
+
+/// JournalSearchHit is a day or a period whose words, headline or story hold
+/// what was searched for.
+public struct JournalSearchHit: Codable, Hashable, Sendable, Identifiable {
+    /// The day, or the first day of the period.
+    public let day: String
+    /// "week", "month" or "year" for a period; empty for a day.
+    public let periodKind: String
+    public let headline: String
+    /// The matching words with some around them.
+    public let snippet: String
+
+    public var id: String { periodKind + "|" + day }
+
+    /// The kind of period, or nil for a day.
+    public var kind: JournalPeriodKind? { JournalPeriodKind(rawValue: periodKind) }
+}
+
+/// JournalSearchPage is a page of hits, newest first.
+public struct JournalSearchPage: Codable, Hashable, Sendable {
+    @JournalList public var hits: [JournalSearchHit]
+    /// How many hits there are in all, of which the pages read so far are
+    /// some.
+    public let totalCount: Int
+}
+
+/// JournalSearch is what the server takes of a search.
+public enum JournalSearch {
+    /// How many hits one read brings.
+    public static let pageSize = 20
+    /// The longest search the server answers, in characters (Unicode scalars,
+    /// as the server counts them).
+    public static let queryCharacterLimit = 200
+
+    /// The words to search for: trimmed, and cut to the longest the server
+    /// takes; nil when there is nothing to search for.
+    public static func normalized(_ typedText: String) -> String? {
+        let trimmed = typedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard trimmed.unicodeScalars.count > queryCharacterLimit else { return trimmed }
+        let cut = String(String.UnicodeScalarView(trimmed.unicodeScalars.prefix(queryCharacterLimit)))
+        // The cut may leave a space at its end.
+        return cut.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The hits read so far followed by the next page's, without one the
+    /// pages share (a day written between two reads moves the rest down).
+    public static func appending(_ page: [JournalSearchHit], to hits: [JournalSearchHit]) -> [JournalSearchHit] {
+        let known = Set(hits.map(\.id))
+        return hits + page.filter { !known.contains($0.id) }
+    }
+}
 
 // MARK: Long lists
 

@@ -87,6 +87,9 @@ func InputDigest(day *Day) string {
 	for _, transaction := range day.Transactions {
 		add("finance_transaction", transaction.TransactionID, transaction.AmountMinorUnits, transaction.Currency, optionalTime(transaction.TransactedAt))
 	}
+	for _, trip := range day.ShoppingTrips {
+		add("shopping_trip", trip.TripID, trip.StoreName, optionalTime(trip.FinishedAt), strings.Join(trip.ListNames, ","))
+	}
 	for _, note := range day.Notes {
 		add("note", note.NoteID, note.ModifiedAt)
 	}

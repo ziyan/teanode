@@ -142,6 +142,17 @@ To see it working at the end: on a development server with a week of invented da
   Rationale: a slow weather service held a transaction open for minutes and kept the tick from claiming jobs for everybody.
   Date/Author: 2026-10-27, review.
 
+- Decision: a journal day shows the person's own trips to the shops (the store, the lists, when), not what each trip bought. An item keeps only when it was last bought, which the next trip overwrites, so a count for an older day would be wrong; a trip opens the first list it was for. A trip somebody else made on a shared list is theirs to tell.
+  Date/Author: 2026-10-27, follow-ups after the journal merged.
+
+- Decision: the dashboard and the iPhone pin a record from the day's "Through the day" list, the one place every record of the day is listed once, and both remove a story, a pin or a choice where it is shown; the iPhone searches the journal as the dashboard does.
+  Rationale: the command line and the tool had pins, removing a story and search; the screens did not.
+  Date/Author: 2026-10-27, follow-ups after the journal merged.
+
+- Decision: the weather and the evening question are on by default for every account, those made before the journal included. The weather sends the day's main place to Open-Meteo; the person can turn either off in the journal's settings.
+  Rationale: the maintainer: "Default with weather and question on".
+  Date/Author: 2026-10-27, the maintainer.
+
 ## Outcomes & Retrospective
 
 Nothing built yet.
@@ -166,7 +177,7 @@ TeaNode is one Go server (`cmd/`, `internal/`) with a PostgreSQL database, a Rea
 - Reminders: calendar objects in a reminders calendar, by due and done time. New: a range filter on `ListReminders`.
 - Money: `agent_finance_transaction.posted_on` (a date) and `transacted_at` (a time, when known); `ListFinanceTransactions`; receipts by `purchased_on`.
 - Health: `health_day_summary` by `summary_day` (the phone's calendar day) per type; `ListHealthPeriods`; workouts as samples of type `workout`.
-- Shopping: `shopping_trip.started_at` to `finished_at` and the items bought, once the shopping lists branch (`feat/shopping-lists`, pull request 661) has merged. New: `ListShoppingTripsBetween`.
+- Shopping: the person's own trips by `shopping_trip.started_at`, with the lists they were for that the person still reaches (`ListShoppingTripsBetween`, `GetShoppingTrip`). A trip does not keep what it bought, so the day says nothing of it.
 - Memory: facts with `happened_at` that day (`ListAgentFactsBetween`, `internal/db/database_graph.go`) and the pages they belong to.
 - Notes, ideas, goals: by created or modified time. New range filters.
 

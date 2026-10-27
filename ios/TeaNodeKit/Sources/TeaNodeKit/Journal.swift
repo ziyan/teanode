@@ -88,7 +88,7 @@ extension Documents {
               restingHeartRate
               workouts { sampleId activityType startedAt minutes meters }
             }
-            shoppingTrips { tripId listNames startedAt finishedAt boughtCount itemCount }
+            shoppingTrips { tripId storeName listNames startedAt finishedAt dashboardPath }
             notes { \(journalRecordFields) }
             memoryPages { nodeId path title factCount }
             unavailableSections
@@ -163,6 +163,29 @@ extension Documents {
     public static let writeJournalNarrative = """
         mutation ($day: String!, $periodKind: String) {
           WriteJournalNarrative(day: $day, periodKind: $periodKind) { narrativePending }
+        }
+        """
+    public static let deleteJournalNarrative = """
+        mutation ($day: String!, $periodKind: String) {
+          DeleteJournalNarrative(day: $day, periodKind: $periodKind) { narrativePending }
+        }
+        """
+    public static let pinJournalRecord = """
+        mutation ($day: String!, $recordKind: String!, $recordId: String!, $linkReason: String) {
+          PinJournalRecord(day: $day, recordKind: $recordKind, recordId: $recordId, linkReason: $linkReason) { \(journalLinkFields) }
+        }
+        """
+    public static let removeJournalLink = """
+        mutation ($linkId: String!) {
+          RemoveJournalLink(linkId: $linkId)
+        }
+        """
+    public static let searchJournal = """
+        query ($query: String!, $first: Int, $offset: Int) {
+          SearchJournal(query: $query, first: $first, offset: $offset) {
+            hits { day periodKind headline snippet }
+            totalCount
+          }
         }
         """
     public static let updateJournalSettings = """
@@ -329,6 +352,55 @@ extension Connection {
             let WriteJournalNarrative: Saved?
         }
         _ = try await execute(Documents.writeJournalNarrative, variables: target.variables, as: Answer.self)
+    }
+
+    /// Removes the story of a day or a period. The corrections stay, and the
+    /// next dream writes a new story.
+    public func deleteJournalNarrative(for target: JournalTarget) async throws {
+        struct Answer: Decodable, Sendable {
+            struct Saved: Decodable, Sendable {}
+            let DeleteJournalNarrative: Saved?
+        }
+        _ = try await execute(Documents.deleteJournalNarrative, variables: target.variables, as: Answer.self)
+    }
+
+    // MARK: Pins and choices
+
+    /// Pins a record to a day, and answers the pin. A record already pinned
+    /// there is answered as it is; a choice of the agent becomes the
+    /// person's, and is shown again if they had hidden it.
+    @discardableResult
+    public func pinJournalRecord(day: String, recordKind: String, recordId: String, linkReason: String? = nil) async throws -> JournalLink {
+        struct Answer: Decodable, Sendable { let PinJournalRecord: JournalLink? }
+        var variables: [String: JSONValue] = ["day": .string(day), "recordKind": .string(recordKind), "recordId": .string(recordId)]
+        if let linkReason { variables["linkReason"] = .string(linkReason) }
+        guard let pinned = try await execute(Documents.pinJournalRecord, variables: variables, as: Answer.self).PinJournalRecord else {
+            throw TeaNodeError.unreadableAnswer
+        }
+        return pinned
+    }
+
+    /// Takes a pin off its day, or hides one of the agent's choices, which
+    /// the server then keeps hidden.
+    public func removeJournalLink(linkId: String) async throws {
+        struct Answer: Decodable, Sendable { let RemoveJournalLink: Bool? }
+        guard try await execute(Documents.removeJournalLink, variables: ["linkId": .string(linkId)], as: Answer.self).RemoveJournalLink == true else {
+            throw TeaNodeError.unreadableAnswer
+        }
+    }
+
+    // MARK: Searching
+
+    /// A page of the days and periods whose words, headline or story hold the
+    /// query, newest first. The query is as the server takes it: 1 to
+    /// JournalSearch.queryCharacterLimit characters.
+    public func searchJournal(query: String, first: Int = JournalSearch.pageSize, offset: Int = 0) async throws -> JournalSearchPage {
+        struct Answer: Decodable, Sendable { let SearchJournal: JournalSearchPage? }
+        let variables: [String: JSONValue] = ["query": .string(query), "first": .number(Double(first)), "offset": .number(Double(offset))]
+        guard let page = try await execute(Documents.searchJournal, variables: variables, as: Answer.self).SearchJournal else {
+            throw TeaNodeError.unreadableAnswer
+        }
+        return page
     }
 
     // MARK: Settings

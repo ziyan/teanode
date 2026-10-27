@@ -28,6 +28,7 @@ var journalKindPermission = map[models.AgentRecordKind]models.Permission{
 	models.RecordPhoto:               models.PermissionPhotosUse,
 	models.RecordPlaceVisit:          models.PermissionLocationUse,
 	models.RecordHealthDay:           models.PermissionHealthUse,
+	models.RecordShoppingTrip:        models.PermissionShoppingUse,
 	models.RecordChatMessage:         models.PermissionCircleUse,
 	models.RecordConversationMessage: models.PermissionAgentUse,
 	models.RecordAgentDocument:       models.PermissionAgentUse,
@@ -232,8 +233,13 @@ func describeJournalSections(view *JournalDayView, read *journal.Day, reasons ma
 		})
 	}
 	view.Health = describeJournalHealth(read.Health)
-	// Shopping trips wait for the shopping lists to be here.
 	view.ShoppingTrips = []*JournalShoppingTripView{}
+	for _, trip := range read.ShoppingTrips {
+		view.ShoppingTrips = append(view.ShoppingTrips, &JournalShoppingTripView{
+			TripID: trip.TripID, StoreName: trip.StoreName, ListNames: trip.ListNames, StartedAt: trip.StartedAt, FinishedAt: trip.FinishedAt,
+			DashboardPath: recordlink.ShoppingTripPath(trip.ShoppingListIDs),
+		})
+	}
 	view.Notes = []*JournalRecordView{}
 	for _, note := range read.Notes {
 		modifiedAt := note.ModifiedAt

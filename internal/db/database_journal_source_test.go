@@ -19,7 +19,7 @@ func TestLatestJournalSourceTimeBeforeFindsTheNewestOfAllTheSources(t *testing.T
 
 	zone := time.FixedZone("test", 0)
 	at := func(day, hour int) time.Time { return time.Date(2026, 10, day, hour, 0, 0, 0, zone) }
-	var userId, agentId, mailId, recordingId, messageId string
+	var userId, agentId, mailId, recordingId, messageId, tripId string
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		owner := newCircleTestUser(t, tx, "sources-ada")
@@ -59,6 +59,16 @@ func TestLatestJournalSourceTimeBeforeFindsTheNewestOfAllTheSources(t *testing.T
 			t.Fatal(err)
 		}
 		messageId = message.ID
+		dbtest.GrantPermission(t, tx, owner.ID, models.PermissionShoppingUse)
+		list, err := tx.CreateShoppingList(owner.ID, "Groceries")
+		if err != nil {
+			t.Fatal(err)
+		}
+		trip, _, err := tx.StartShoppingTrip(owner.ID, "Corner Market", []string{list.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tripId = trip.ID
 		source, err := tx.PutAgentSource(&models.AgentKnowledgeSource{
 			AgentID: agent.ID, Kind: models.SourceArchive, Name: "chat records", Enabled: true,
 			Specification: models.AgentKnowledgeSpecification{Computer: "laptop", Path: "~/records", Format: models.FormatRecords},
@@ -89,6 +99,8 @@ func TestLatestJournalSourceTimeBeforeFindsTheNewestOfAllTheSources(t *testing.T
 	dbtest.Exec(t, database, fmt.Sprintf(`UPDATE "mail" SET "received_at" = '%s' WHERE "id" = '%s'`, at(20, 8).Format(time.RFC3339), mailId))
 	dbtest.Exec(t, database, fmt.Sprintf(`UPDATE "recording" SET "recorded_at" = '%s' WHERE "id" = '%s'`, at(18, 15).Format(time.RFC3339), recordingId))
 	dbtest.Exec(t, database, fmt.Sprintf(`UPDATE "agent_message" SET "created_at" = '%s' WHERE "id" = '%s'`, at(12, 9).Format(time.RFC3339), messageId))
+	dbtest.Exec(t, database, fmt.Sprintf(`UPDATE "shopping_trip" SET "started_at" = '%s', "finished_at" = '%s' WHERE "id" = '%s'`,
+		at(10, 17).Format(time.RFC3339), at(10, 18).Format(time.RFC3339), tripId))
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		for _, step := range []struct {
@@ -99,7 +111,8 @@ func TestLatestJournalSourceTimeBeforeFindsTheNewestOfAllTheSources(t *testing.T
 			{at(20, 8), ptr(at(18, 15))},
 			{at(18, 15), ptr(at(14, 9))},
 			{at(14, 9), ptr(at(12, 9))},
-			{at(12, 9), nil},
+			{at(12, 9), ptr(at(10, 17))},
+			{at(10, 17), nil},
 		} {
 			found, err := tx.LatestJournalSourceTimeBefore(userId, agentId, []string{"ada"}, step.before)
 			if err != nil {

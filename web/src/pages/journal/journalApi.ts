@@ -267,11 +267,12 @@ export type JournalHealth = {
 
 export type JournalShoppingTrip = {
   tripId: string
+  // Empty when the person named no store.
+  storeName: string
   listNames: string[]
   startedAt: string
   finishedAt: string | null
-  boughtCount: number
-  itemCount: number
+  dashboardPath: string
 }
 
 export type JournalMemoryPage = { nodeId: string; path: string; title: string; factCount: number }
@@ -423,7 +424,7 @@ const DAY_FIELDS =
   'transactions { transactionId postedOn transactedAt description accountName amountMinorUnits currency } ' +
   'health { stepCount stepsByHour sleepMinutes sleepStages { sleepStage minutes } restingHeartRate ' +
   'workouts { sampleId activityType startedAt minutes meters } } ' +
-  'shoppingTrips { tripId listNames startedAt finishedAt boughtCount itemCount } ' +
+  'shoppingTrips { tripId storeName listNames startedAt finishedAt dashboardPath } ' +
   'notes ' +
   RECORD_FIELDS +
   ' memoryPages { nodeId path title factCount } unavailableSections ' +
@@ -505,6 +506,14 @@ export const REMOVE_JOURNAL_CORRECTION = `mutation ($day: String!, $periodKind: 
 
 export const WRITE_JOURNAL_NARRATIVE = `mutation ($day: String!, $periodKind: String) {
   WriteJournalNarrative(day: $day, periodKind: $periodKind) { headline }
+}`
+
+export const DELETE_JOURNAL_NARRATIVE = `mutation ($day: String!, $periodKind: String) {
+  DeleteJournalNarrative(day: $day, periodKind: $periodKind) { headline }
+}`
+
+export const PIN_JOURNAL_RECORD = `mutation ($day: String!, $recordKind: String!, $recordId: String!, $linkReason: String) {
+  PinJournalRecord(day: $day, recordKind: $recordKind, recordId: $recordId, linkReason: $linkReason) ${LINK_FIELDS}
 }`
 
 export const REMOVE_JOURNAL_LINK = `mutation ($linkId: String!) { RemoveJournalLink(linkId: $linkId) }`

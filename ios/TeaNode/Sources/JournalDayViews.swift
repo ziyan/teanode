@@ -187,12 +187,19 @@ struct JournalDayScreen: View {
                     }
                 }
                 .refreshable { await model.load() }
-                // `-TeaNodeScreen journal-day-work` photographs the day from its work.
+                // `-TeaNodeScreen journal-day-work` photographs the day from its work,
+                // and `journal-day-shopping` from its trips to the shops.
                 .task(id: model.hasLoaded) {
                     #if DEBUG
-                        guard model.hasLoaded, DemoServer.isRequested, DemoServer.screen == "journal-day-work" else { return }
+                        guard model.hasLoaded, DemoServer.isRequested else { return }
+                        let sectionId: String
+                        switch DemoServer.screen {
+                        case "journal-day-work": sectionId = Self.workSectionId
+                        case "journal-day-shopping": sectionId = Self.shoppingSectionId
+                        default: return
+                        }
                         try? await Task.sleep(for: .milliseconds(400))
-                        proxy.scrollTo(Self.workSectionId, anchor: .top)
+                        proxy.scrollTo(sectionId, anchor: .top)
                     #endif
                 }
             }
@@ -203,6 +210,8 @@ struct JournalDayScreen: View {
 
     /// Names the work section, for the screenshot that starts there.
     private static let workSectionId = "journal-work"
+    /// Names the shopping section, for the screenshot that starts there.
+    private static let shoppingSectionId = "journal-shopping"
 
     // MARK: How the day was
 
@@ -280,6 +289,7 @@ struct JournalDayScreen: View {
                 open: { record in openRecord(JournalRecordOpening.of(record: record), in: journalDay) },
                 correct: { correcting = JournalCorrectionRequest(target: .day(model.day)) },
                 writeAgain: { Task { await model.writeAgain() } },
+                removeStory: { Task { await model.removeNarrative() } },
                 removeCorrection: { index in Task { await model.removeCorrection(at: index) } })
         } header: {
             Text("The day, as TeaNode saw it")
@@ -322,14 +332,36 @@ struct JournalDayScreen: View {
     // MARK: Through the day
 
     private func momentsSection(_ journalDay: JournalDay) -> some View {
-        Section {
+        let placedReferences = journalDay.placedReferences
+        return Section {
             ForEach(shown(journalDay.moments, list: "moments", limit: JournalRows.momentLimit)) { moment in
-                JournalMomentRow(moment: moment, openRecord: { opening in openRecord(opening, in: journalDay) })
+                momentRow(moment, canPin: moment.canPin(placedReferences: placedReferences), in: journalDay)
             }
             showAllRow(journalDay.moments, list: "moments", limit: JournalRows.momentLimit)
         } header: {
             Text("Through the day")
         }
+    }
+
+    /// A moment of the day. One whose record is not on the day as a pin or a
+    /// choice can be pinned to it, by a swipe or from its menu.
+    private func momentRow(_ moment: JournalMoment, canPin: Bool, in journalDay: JournalDay) -> some View {
+        JournalMomentRow(moment: moment, openRecord: { opening in openRecord(opening, in: journalDay) })
+            .swipeActions(edge: .trailing) {
+                if canPin { pinButton(moment) }
+            }
+            .contextMenu {
+                if canPin { pinButton(moment) }
+            }
+    }
+
+    private func pinButton(_ moment: JournalMoment) -> some View {
+        Button {
+            Task { await model.pin(moment) }
+        } label: {
+            Label("Pin to this day", systemImage: "pin")
+        }
+        .tint(.accentColor)
     }
 
     // MARK: Places
@@ -369,17 +401,22 @@ struct JournalDayScreen: View {
 
     /// The choices and pins of kinds the sections below do not show already:
     /// a chosen mail is among the mail that mattered, and a chosen document
-    /// is among the work.
+    /// is among the work, each removable there. A pin or a choice whose
+    /// record is gone is listed here, so that it can be removed.
     private func chosenLinks(_ journalDay: JournalDay) -> [JournalLink] {
         let choices = journalDay.choices.filter { link in
-            guard !link.isHidden, let record = link.record, !record.isUnavailable else { return false }
-            return record.recordKind != "mail" && record.recordKind != "agent_document"
+            guard !link.isHidden, let record = link.record else { return false }
+            return record.isUnavailable || (record.recordKind != "mail" && record.recordKind != "agent_document")
         }
-        let pins = journalDay.pins.filter { link in
-            guard let record = link.record else { return false }
-            return !record.isUnavailable
+        return choices + journalDay.pins.filter { $0.record != nil }
+    }
+
+    /// The agent's choice of a record that a section below shows, which the
+    /// person can remove there; nil when the agent did not choose it.
+    private func choice(of recordKind: String, _ recordId: String, in journalDay: JournalDay) -> JournalLink? {
+        journalDay.choices.first { link in
+            !link.isHidden && link.record?.recordKind == recordKind && link.record?.recordId == recordId
         }
-        return choices + pins
     }
 
     @ViewBuilder
@@ -389,9 +426,19 @@ struct JournalDayScreen: View {
             Section {
                 ForEach(shown(links, list: "chosen")) { link in
                     if let record = link.record {
-                        JournalRecordRow(
-                            symbolName: JournalText.symbol(forRecordKind: record.recordKind), title: record.title, detail: link.linkReason,
-                            opening: JournalRecordOpening.of(record: record), openRecord: { opening in openRecord(opening, in: journalDay) })
+                        if record.isUnavailable {
+                            JournalRecordRow(
+                                symbolName: JournalText.symbol(forRecordKind: record.recordKind), title: String(localized: "No longer available"),
+                                detail: link.linkReason)
+                                .swipeActions(edge: .trailing) { removeButton(link) }
+                                .contextMenu { removeButton(link) }
+                        } else {
+                            JournalRecordRow(
+                                symbolName: JournalText.symbol(forRecordKind: record.recordKind), title: record.title, detail: link.linkReason,
+                                opening: JournalRecordOpening.of(record: record), openRecord: { opening in openRecord(opening, in: journalDay) })
+                                .swipeActions(edge: .trailing) { removeButton(link) }
+                                .contextMenu { removeButton(link) }
+                        }
                     }
                 }
                 showAllRow(links, list: "chosen")
@@ -399,6 +446,17 @@ struct JournalDayScreen: View {
                 Text("Chosen for this day")
             }
         }
+    }
+
+    /// Takes a pin off the day, or hides a choice of the agent: both are
+    /// removed the same way.
+    private func removeButton(_ link: JournalLink) -> some View {
+        Button(role: .destructive) {
+            Task { await model.remove(link) }
+        } label: {
+            Label("Remove", systemImage: "trash")
+        }
+        .tint(.red)
     }
 
     // MARK: Work and mail
@@ -428,9 +486,16 @@ struct JournalDayScreen: View {
                         }
                         showAllRow(journalDay.codingSessions, list: "sessions")
                         ForEach(shown(chosen, list: "documents")) { document in
+                            let link = choice(of: "agent_document", document.documentId, in: journalDay)
                             JournalRecordRow(
                                 symbolName: "doc.text", title: document.title,
                                 detail: document.linkReason.isEmpty ? document.sourceName : document.linkReason)
+                                .swipeActions(edge: .trailing) {
+                                    if let link { removeButton(link) }
+                                }
+                                .contextMenu {
+                                    if let link { removeButton(link) }
+                                }
                         }
                         showAllRow(chosen, list: "documents")
                     } label: {
@@ -502,8 +567,15 @@ struct JournalDayScreen: View {
         if !mattered.isEmpty {
             Section {
                 ForEach(shown(mattered, list: "mail")) { message in
+                    let link = message.isChosen ? choice(of: "mail", message.itemId, in: journalDay) : nil
                     JournalRecordRow(
                         symbolName: "envelope", title: message.subject, detail: mailDetail(message), opening: .mailItem(message.itemId))
+                        .swipeActions(edge: .trailing) {
+                            if let link { removeButton(link) }
+                        }
+                        .contextMenu {
+                            if let link { removeButton(link) }
+                        }
                 }
                 showAllRow(mattered, list: "mail")
             } header: {
@@ -686,17 +758,19 @@ struct JournalDayScreen: View {
 
     // MARK: Shopping
 
+    /// The day's trips to the shops, each opening Shopping.
     private func shoppingSection(_ journalDay: JournalDay) -> some View {
         Section {
             ForEach(shown(journalDay.shoppingTrips, list: "shopping")) { trip in
                 JournalRecordRow(
-                    symbolName: "cart", title: trip.listNames.isEmpty ? String(localized: "Shopping trip") : trip.listNames.joined(separator: ", "),
-                    detail: String(localized: "\(trip.boughtCount) of \(trip.itemCount) bought"))
+                    symbolName: "cart", title: JournalText.shoppingTitle(storeName: trip.storeName), detail: JournalText.shoppingDetail(trip),
+                    opening: trip.opening, openRecord: { opening in openRecord(opening, in: journalDay) })
             }
             showAllRow(journalDay.shoppingTrips, list: "shopping")
         } header: {
             Text("Shopping")
         }
+        .id(Self.shoppingSectionId)
     }
 
     // MARK: Knowledge

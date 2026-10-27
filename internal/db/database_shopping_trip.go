@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,6 +35,16 @@ type ShoppingTripOperation interface {
 	// ListOpenShoppingTrips are the trips open now on the lists the person
 	// reaches, theirs included, newest first, each with who is shopping.
 	ListOpenShoppingTrips(userId string) ([]*models.ShoppingTrip, error)
+
+	// ListShoppingTripsBetween are the person's own trips that started in
+	// [from, until), oldest first, each naming only the lists the person
+	// still reaches: the trips of a journal day. Past shoppingTripsOfADayMost
+	// it keeps the latest ones, which a day's story is likelier to be about.
+	ListShoppingTripsBetween(userId string, from, until time.Time) ([]*models.ShoppingTrip, error)
+
+	// GetShoppingTrip is one of the person's own trips, naming only the lists
+	// they still reach. ErrNotFound when it is somebody else's or gone.
+	GetShoppingTrip(userId, shoppingTripId string) (*models.ShoppingTrip, error)
 }
 
 type shoppingTripModel struct {
@@ -296,6 +307,62 @@ func (self *transaction) joinShoppingTrip(userId, storeName, shoppingListId stri
 			Create(&shoppingTripListModel{ShoppingTripID: open.ID, ShoppingListID: shoppingListId}).Error
 	}
 	return self.StartShoppingTrip(userId, storeName, []string{shoppingListId})
+}
+
+// shoppingTripsOfADayMost bounds the trips one day reads; nobody shops a
+// hundred times a day, so only a client starting trips in a loop reaches it.
+const shoppingTripsOfADayMost = 100
+
+func (self *transaction) ListShoppingTripsBetween(userId string, from, until time.Time) ([]*models.ShoppingTrip, error) {
+	var rows []shoppingTripModel
+	if err := self.tx.Where(`"user_id" = ? AND "started_at" >= ? AND "started_at" < ?`, userId, from, until).
+		Order("\"started_at\" DESC, \"id\" DESC").Limit(shoppingTripsOfADayMost).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	slices.Reverse(rows)
+	return self.ownShoppingTripsOf(userId, rows)
+}
+
+func (self *transaction) GetShoppingTrip(userId, shoppingTripId string) (*models.ShoppingTrip, error) {
+	var rows []shoppingTripModel
+	if err := self.tx.Where(`"user_id" = ? AND "id" = ?`, userId, shoppingTripId).Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, ErrNotFound
+	}
+	trips, err := self.ownShoppingTripsOf(userId, rows)
+	if err != nil {
+		return nil, err
+	}
+	return trips[0], nil
+}
+
+// ownShoppingTripsOf reads the person's own trips, each naming only the
+// lists they still reach: a list unshared since is no longer theirs to see.
+func (self *transaction) ownShoppingTripsOf(userId string, rows []shoppingTripModel) ([]*models.ShoppingTrip, error) {
+	trips, err := self.shoppingTripsOf(rows)
+	if err != nil || len(trips) == 0 {
+		return trips, err
+	}
+	listIds, err := self.reachableShoppingListIds(userId)
+	if err != nil {
+		return nil, err
+	}
+	isReachable := map[string]bool{}
+	for _, id := range listIds {
+		isReachable[id] = true
+	}
+	for _, trip := range trips {
+		visible := []string{}
+		for _, id := range trip.ShoppingListIDs {
+			if isReachable[id] {
+				visible = append(visible, id)
+			}
+		}
+		trip.ShoppingListIDs = visible
+	}
+	return trips, nil
 }
 
 func (self *transaction) ListOpenShoppingTrips(userId string) ([]*models.ShoppingTrip, error) {

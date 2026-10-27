@@ -15,8 +15,8 @@ type JournalSourceOperation interface {
 	// LatestJournalSourceTimeBefore is the latest time before the given one at
 	// which any of the sources a journal day reads has something of the
 	// person's: a photo, a visit, a mail, a recording, a message with the
-	// agent or in a chat, a document, a calendar event, a transaction or a
-	// Health day. Nil when there is nothing earlier. It is how the journal
+	// agent or in a chat, a document, a calendar event, a transaction, a
+	// Health day or a trip of theirs to the shops. Nil when there is nothing earlier. It is how the journal
 	// walks back over past days without trying every empty one: the day it
 	// finds is the next to work out.
 	//
@@ -97,6 +97,10 @@ func (self *transaction) LatestJournalSourceTimeBefore(userId, agentId string, c
 				WHERE "user_id" = @user AND "summary_day" <= ((@before)::timestamptz AT TIME ZONE 'UTC')::date
 				  AND ("summary_day"::timestamp + interval '12 hours') AT TIME ZONE 'UTC' < @before
 				ORDER BY "summary_day" DESC LIMIT 1)
+			UNION ALL
+			(SELECT "started_at" FROM "shopping_trip"
+				WHERE "user_id" = @user AND "started_at" < @before
+				ORDER BY "started_at" DESC LIMIT 1)
 		) AS "latest_moments"`,
 		map[string]any{"user": userId, "agent": agentId, "before": before.UTC(), "names": pq.Array(chatNames)}).Row().Scan(&latest); err != nil {
 		return nil, err
