@@ -398,7 +398,10 @@ swipe on the iPhone) removes one of the person's own visits that did not
 happen, such as a stop at a shop they only drove past: the location journal
 documents of its days go, the trips around it are built again, and the place
 stays, unless no visit to it is left and the person neither named nor
-labeled it. The agent is told to use it, not to rename the place, when the
+labeled it. A visit in progress is refused, since the phone would report its
+end as a visit again; a check-in where the person is ends it first. A
+departure the visits were put in order without, a pass-by or one taken into
+a visit whose own departure was already told, sends no "left" notice. The agent is told to use it, not to rename the place, when the
 person says they were not somewhere.
 
 What it cannot remove is what the agent already learned from those days: the

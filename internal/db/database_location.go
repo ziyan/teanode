@@ -92,7 +92,9 @@ type LocationOperation interface {
 	// ForgetPlaceVisit deletes one of the person's visits, one they say did
 	// not happen, and with it the location journal documents of the days it
 	// was on. The place stays, unless no visit to it is left and the person
-	// neither named nor labeled it. ErrNotFound unless it is the person's.
+	// neither named nor labeled it. ErrNotFound unless it is the person's;
+	// ErrInvalidArguments for a visit in progress, which the phone would
+	// report the end of as a visit again.
 	ForgetPlaceVisit(userId, placeVisitId string) error
 
 	// ListPlaces pages the person's places, each with its number of visits and
@@ -960,13 +962,13 @@ func (self *transaction) ForgetPlaceVisit(userId, placeVisitId string) error {
 		}
 		return err
 	}
+	if visit.DepartedAt == nil {
+		return fmt.Errorf("%w: a visit in progress cannot be forgotten, since the phone would report it again when you leave; "+
+			"check in where you are, which ends it, and forget it then", ErrInvalidArguments)
+	}
 	// The journal of the days the visit was on names the place.
 	visitStartedAt := visitStart(&visit)
-	visitEndedAt := time.Now()
-	if visit.DepartedAt != nil {
-		visitEndedAt = *visit.DepartedAt
-	}
-	if err := self.deleteLocationDayDocuments(userId, &visitStartedAt, &visitEndedAt); err != nil {
+	if err := self.deleteLocationDayDocuments(userId, &visitStartedAt, visit.DepartedAt); err != nil {
 		return err
 	}
 	if err := self.tx.Where("\"id\" = ?", visit.ID).Delete(&placeVisitModel{}).Error; err != nil {

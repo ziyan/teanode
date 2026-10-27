@@ -19787,6 +19787,12 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   min-width: 0;
 }
 
+/* As wide as the menu button beside the other visits. */
+.location-visit-menu-space {
+  flex: none;
+  width: 28px;
+}
+
 .location-row.is-selected {
   border-color: var(--leaf);
   background: color-mix(in srgb, var(--leaf) 10%, var(--surface));

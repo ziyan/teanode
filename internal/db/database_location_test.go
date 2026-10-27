@@ -766,6 +766,10 @@ func TestForgettingAVisitKeepsThePlace(t *testing.T) {
 		if err := tx.ForgetPlaceVisit(userId, officeId); !errors.Is(err, db.ErrNotFound) {
 			t.Errorf("a forgotten visit is not found again: %v", err)
 		}
+		openId := put(office.ID, "office-open", 400, -1)
+		if err := tx.ForgetPlaceVisit(userId, openId); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("a visit in progress is not forgotten: %v", err)
+		}
 	})
 }
 

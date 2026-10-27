@@ -144,17 +144,12 @@ struct LocationPlaceScreen: View {
                     .onAppear {
                         if visit.id == visits.last?.id { Task { await loadVisits() } }
                     }
-                    .confirmationDialog(
-                        "Forget this visit?", isPresented: Binding(get: { forgettingVisit?.id == visit.id }, set: { if !$0 { forgettingVisit = nil } }),
-                        titleVisibility: .visible, presenting: forgettingVisit
-                    ) { chosenVisit in
-                        Button("Forget", role: .destructive) { Task { await forgetVisit(chosenVisit) } }
-                    } message: { _ in
-                        Text("It is removed from your history, as if you were never there. The place stays, with its other visits.")
-                    }
                     .swipeActions {
-                        Button("Forget", systemImage: "trash", role: .destructive) { forgettingVisit = visit }
-                            .tint(.red)
+                        // A visit in progress is ended by a check-in first.
+                        if visit.departedAt != nil {
+                            Button("Forget", systemImage: "trash", role: .destructive) { forgettingVisit = visit }
+                                .tint(.red)
+                        }
                     }
                 }
                 if isLoadingVisits { ProgressView().frame(maxWidth: .infinity) }
@@ -182,6 +177,7 @@ struct LocationPlaceScreen: View {
                 }
             }
         }
+        .forgetVisitDialog($forgettingVisit) { visit in Task { await forgetVisit(visit) } }
         .navigationTitle(place.shownName)
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $isChangingAddress) {

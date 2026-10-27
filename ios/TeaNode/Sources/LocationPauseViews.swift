@@ -58,13 +58,13 @@ struct LocationPauseRow: View {
 
 /// LocationTimelineRow is a row of a timeline: a visit, which opens its place,
 /// a pause, or a trip. `correctLeg` is given on the person's own timeline,
-/// where a trip's legs can be corrected. `forgetVisit` is given there too: it
-/// is asked to delete the visit, after the row has confirmed with the person.
+/// where a trip's legs can be corrected. `askToForgetVisit` is given there
+/// too: it sets the visit the screen's list asks about forgetting
+/// (`forgetVisitDialog`), since a row is rebuilt as the list reloads.
 struct LocationTimelineRow: View {
     let entry: LocationTimelineEntry
     var correctLeg: ((TripLeg, TravelMode?) -> Void)?
-    var forgetVisit: ((PlaceVisit) -> Void)?
-    @State private var forgettingVisit: PlaceVisit?
+    var askToForgetVisit: ((PlaceVisit) -> Void)?
 
     var body: some View {
         switch entry {
@@ -72,17 +72,11 @@ struct LocationTimelineRow: View {
             NavigationLink(value: LocationRoute.place(visit.place)) {
                 LocationVisitRow(visit: visit)
             }
-            .confirmationDialog(
-                "Forget this visit?", isPresented: Binding(get: { forgettingVisit?.id == visit.id }, set: { if !$0 { forgettingVisit = nil } }),
-                titleVisibility: .visible, presenting: forgettingVisit
-            ) { chosenVisit in
-                Button("Forget", role: .destructive) { forgetVisit?(chosenVisit) }
-            } message: { _ in
-                Text("It is removed from your history, as if you were never there. The place stays, with its other visits.")
-            }
             .swipeActions {
-                if forgetVisit != nil {
-                    Button("Forget", systemImage: "trash", role: .destructive) { forgettingVisit = visit }
+                // A visit in progress is ended by a check-in before it can be
+                // forgotten: the phone would report its end as a visit again.
+                if let askToForgetVisit, visit.departedAt != nil {
+                    Button("Forget", systemImage: "trash", role: .destructive) { askToForgetVisit(visit) }
                         .tint(.red)
                 }
             }
@@ -90,6 +84,21 @@ struct LocationTimelineRow: View {
             LocationPauseRow(pause: pause)
         case .trip(let trip):
             LocationTripRow(trip: trip, correctLeg: correctLeg)
+        }
+    }
+}
+
+extension View {
+    /// Asks whether to forget the visit set, from the list a row of it was
+    /// swiped in, and forgets it on yes.
+    func forgetVisitDialog(_ forgettingVisit: Binding<PlaceVisit?>, forget: @escaping (PlaceVisit) -> Void) -> some View {
+        confirmationDialog(
+            "Forget this visit?", isPresented: Binding(get: { forgettingVisit.wrappedValue != nil }, set: { if !$0 { forgettingVisit.wrappedValue = nil } }),
+            titleVisibility: .visible, presenting: forgettingVisit.wrappedValue
+        ) { chosenVisit in
+            Button("Forget", role: .destructive) { forget(chosenVisit) }
+        } message: { _ in
+            Text("It is removed from your history, as if you were never there. The place stays, with its other visits.")
         }
     }
 }

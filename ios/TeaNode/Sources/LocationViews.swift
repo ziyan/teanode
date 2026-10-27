@@ -112,8 +112,10 @@ struct LocationScreen: View {
                         // that edge and not on the safe area's: a drawer that
                         // only asked to ignore the safe area stopped at the
                         // tab bar's top with the map showing below it.
+                        // Only the bars' area: over the keyboard the drawer
+                        // still rises with it.
                         Color.clear
-                            .ignoresSafeArea(edges: .bottom)
+                            .ignoresSafeArea(.container, edges: .bottom)
                             .overlay(alignment: .bottom) {
                                 LocationDrawer(
                                     detent: $drawerDetent, headerHeight: $drawerHeaderHeight, availableHeight: proxy.size.height,
@@ -517,6 +519,7 @@ struct LocationVisitsList: View {
     let recorder: LocationRecorder
     let showPeople: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var forgettingVisit: PlaceVisit?
 
     var body: some View {
         List {
@@ -545,7 +548,7 @@ struct LocationVisitsList: View {
                     ForEach(day.entries) { entry in
                         LocationTimelineRow(
                             entry: entry, correctLeg: { leg, travelMode in Task { await model.correct(leg, to: travelMode) } },
-                            forgetVisit: { visit in Task { await model.forget(visit: visit) } })
+                            askToForgetVisit: { visit in forgettingVisit = visit })
                             .onAppear {
                                 if case .visit(let visit) = entry, visit.id == model.visits.last?.id {
                                     Task { await model.loadMoreVisits() }
@@ -585,6 +588,7 @@ struct LocationVisitsList: View {
             }
         }
         .refreshable { await model.load() }
+        .forgetVisitDialog($forgettingVisit) { visit in Task { await model.forget(visit: visit) } }
     }
 }
 
@@ -712,6 +716,7 @@ struct LocationDayScreen: View {
     @State private var loadFailedText: String?
     @State private var isConfirmingErase = false
     @State private var isErasing = false
+    @State private var forgettingVisit: PlaceVisit?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// The day's positions joined through the places visited.
@@ -741,7 +746,7 @@ struct LocationDayScreen: View {
                             ForEach(LocationDays.entries(visits: visits, pauses: pauses, trips: trips)) { entry in
                                 LocationTimelineRow(
                                     entry: entry, correctLeg: { leg, travelMode in Task { await correct(leg, to: travelMode) } },
-                                    forgetVisit: { visit in Task { await forget(visit) } })
+                                    askToForgetVisit: { visit in forgettingVisit = visit })
                             }
                         } footer: {
                             OpenStreetMapCredit()
@@ -767,6 +772,7 @@ struct LocationDayScreen: View {
                                 }
                         }
                     }
+                    .forgetVisitDialog($forgettingVisit) { visit in Task { await forget(visit) } }
                     .overlay {
                         if isLoading {
                             ProgressView()

@@ -1764,7 +1764,7 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 			}
 		}
 	}
-	if err := tellDeparturesWhenTheyEnded(tx, user.ID, notices); err != nil {
+	if notices, err = tellDeparturesWhenTheyEnded(tx, user.ID, notices, now); err != nil {
 		return nil, err
 	}
 	// The trips around each run of the times the report touched, from the
@@ -1794,22 +1794,31 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 // ended as stored. A departure the phone sent late, after visits at other
 // places that began since, was over at the first of them, where
 // NormalizePlaceVisits ended the visit; told by that time, the window of
-// NotifyPlaceVisitAt keeps "left home" from being told hours later.
-func tellDeparturesWhenTheyEnded(tx db.Transaction, userId string, notices []visitNotice) error {
+// NotifyPlaceVisitAt keeps "left home" from being told hours later. A
+// departure NormalizePlaceVisits took out as a pass-by is not told, and nor is
+// one it took into a visit this report did not change (reportedAt is when the
+// report began): that visit's own departure was told when it came.
+func tellDeparturesWhenTheyEnded(tx db.Transaction, userId string, notices []visitNotice, reportedAt time.Time) ([]visitNotice, error) {
+	told := notices[:0]
 	for index := range notices {
-		notice := &notices[index]
+		notice := notices[index]
 		if notice.IsArrival || notice.Visit == nil {
+			told = append(told, notice)
 			continue
 		}
 		current, err := tx.GetPlaceVisitByClientKey(userId, notice.Visit.ClientVisitKey)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if current != nil && current.DepartedAt != nil && current.DepartedAt.Before(notice.HappenedAt) {
+		if current == nil || (current.ID != notice.Visit.ID && current.UpdatedAt.Before(reportedAt)) {
+			continue
+		}
+		if current.DepartedAt != nil && current.DepartedAt.Before(notice.HappenedAt) {
 			notice.HappenedAt = *current.DepartedAt
 		}
+		told = append(told, notice)
 	}
-	return nil
+	return told, nil
 }
 
 // reportedVisitRange is the earliest and the latest time the visits of a

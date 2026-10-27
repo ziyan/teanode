@@ -220,6 +220,7 @@ func init() {
 				Name: "location_forget_visit", Family: tools.FamilyGeneral, Risk: tools.RiskDestructive, Permissions: locationPermissions,
 				Description: "Forget one of the person's own visits that did not happen, by 'visit_id' from visits: a stop at a place they say they never stopped at, such as a shop they only drove past. " +
 					"The visit is removed from their history and the trips around it are built again; the place stays, with its other visits. " +
+					"A visit still in progress cannot be forgotten: check_in where the person is ends it first. " +
 					"Use it, not save_place, when the person says they were not somewhere: renaming the place would rename every other visit to it. This cannot be undone.",
 				Parameters: tools.Object(map[string]any{
 					"visit_id": tools.StringProperty("the visit's visit_id, from visits"),

@@ -187,9 +187,7 @@ func (self *transaction) moveLateDepartures(userId string, visits []placeVisitMo
 			continue
 		}
 		owner := &previous[0]
-		if err := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&placeVisitKeyModel{
-			UserID: userId, ClientVisitKey: departure.ClientVisitKey, PlaceVisitID: owner.ID,
-		}).Error; err != nil {
+		if err := self.moveVisitKeys(userId, departure, owner.ID); err != nil {
 			return err
 		}
 		if err := self.tx.Where("\"id\" = ?", departure.ID).Delete(&placeVisitModel{}).Error; err != nil {
@@ -232,9 +230,7 @@ func (self *transaction) dropPassByDepartures(userId string, visits []placeVisit
 			continue
 		}
 		if previous[0].PlaceID == departure.PlaceID {
-			if err := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&placeVisitKeyModel{
-				UserID: userId, ClientVisitKey: departure.ClientVisitKey, PlaceVisitID: previous[0].ID,
-			}).Error; err != nil {
+			if err := self.moveVisitKeys(userId, departure, previous[0].ID); err != nil {
 				return err
 			}
 		}
@@ -243,6 +239,19 @@ func (self *transaction) dropPassByDepartures(userId string, visits []placeVisit
 		}
 	}
 	return nil
+}
+
+// moveVisitKeys gives a visit about to be deleted, its own key and the keys
+// joined into it, to the visit it is taken into, so that the phone sending
+// any of them again finds that visit.
+func (self *transaction) moveVisitKeys(userId string, from *placeVisitModel, toVisitId string) error {
+	if err := self.tx.Model(&placeVisitKeyModel{}).Where("\"user_id\" = ? AND \"place_visit_id\" = ?", userId, from.ID).
+		Update("place_visit_id", toVisitId).Error; err != nil {
+		return err
+	}
+	return self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&placeVisitKeyModel{
+		UserID: userId, ClientVisitKey: from.ClientVisitKey, PlaceVisitID: toVisitId,
+	}).Error
 }
 
 // splitOneOverlappedVisit splits the first visit, in the order they began,

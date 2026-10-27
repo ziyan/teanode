@@ -1632,7 +1632,13 @@ function LocationContent({ userId }: { userId: string }) {
                         </span>
                         <span className="muted location-row-meta">{visitDurationText(row.visit, t)}</span>
                       </button>
-                      {!isReadOnly && (
+                      {/* A visit in progress is ended by a check-in before it
+                          can be forgotten, so it has no menu; the space keeps
+                          the rows' times in one column. */}
+                      {!isReadOnly && !row.visit.departedAt && (
+                        <span className="location-visit-menu-space" aria-hidden="true" />
+                      )}
+                      {!isReadOnly && row.visit.departedAt && (
                         <MenuButton
                           className="icon-action"
                           label={t('location.visitMenu', {

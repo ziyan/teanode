@@ -7,6 +7,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // lateDepartureDay is a morning at home, then stops elsewhere that iOS
@@ -75,12 +76,18 @@ func TestALateDepartureIsToldByWhenTheVisitEnded(t *testing.T) {
 		if err != nil || home == nil {
 			t.Fatalf("GetPlaceVisitByClientKey: %v %s", home, err)
 		}
-		notices := []visitNotice{{Visit: home, IsArrival: false, HappenedAt: lateDeparture}}
-		if err := tellDeparturesWhenTheyEnded(tx, world.ada.ID, notices); err != nil {
+		notices, err := tellDeparturesWhenTheyEnded(tx, world.ada.ID, []visitNotice{{Visit: home, IsArrival: false, HappenedAt: lateDeparture}}, time.Now())
+		if err != nil {
 			t.Fatalf("tellDeparturesWhenTheyEnded: %s", err)
 		}
-		if want := base.Add(48 * time.Minute); !notices[0].HappenedAt.Equal(want) {
-			t.Errorf("the departure is told at %s, not when the visit ended, %s", notices[0].HappenedAt, want)
+		if want := base.Add(48 * time.Minute); len(notices) != 1 || !notices[0].HappenedAt.Equal(want) {
+			t.Errorf("the departure is told when the visit ended, %s: %+v", want, notices)
+		}
+
+		// A departure taken out as a pass-by is not told at all.
+		gone := &models.PlaceVisit{ID: "gone", ClientVisitKey: "region-passed-by"}
+		if notices, err := tellDeparturesWhenTheyEnded(tx, world.ada.ID, []visitNotice{{Visit: gone, HappenedAt: lateDeparture}}, time.Now()); err != nil || len(notices) != 0 {
+			t.Errorf("a departure with no visit left is not told: %+v %v", notices, err)
 		}
 	})
 }
