@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.205.1] - 2026-10-27
+
+### Fixed
+
+- Sending a journal correction the story already keeps no longer adds a second copy. The agent, the command line and the dashboard all say it was already kept. (#681)
+
 ## [0.205.0] - 2026-10-27
 
 ### Added
