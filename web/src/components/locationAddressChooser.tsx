@@ -2,8 +2,9 @@ import { useState } from 'react'
 
 import { graphql } from '../api'
 import { useTranslation } from '../i18n/i18n'
+import { useIsImperial } from '../pages/journal/journalApi'
 import { ConfirmDialog } from './dialog'
-import { FoundPlace } from './locationData'
+import { FoundPlace, travelDistanceText } from './locationData'
 
 const SEARCH_ADDRESSES = `query ($query: String!, $placeId: String) {
   SearchAddresses(query: $query, placeId: $placeId) {
@@ -41,7 +42,8 @@ export function LocationAddressChooser({
   placeId?: string
   onClose: () => void
 }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
+  const isImperial = useIsImperial()
   const [queryText, setQueryText] = useState('')
   const [matches, setMatches] = useState<FoundPlace[] | null>(null)
   // The words the matches are for; the input may have been changed since.
@@ -120,7 +122,9 @@ export function LocationAddressChooser({
                   </span>
                   {match.distanceMeters > 0 && (
                     <span className="muted location-row-meta">
-                      {t('location.metersAway', { distance: Math.round(match.distanceMeters) })}
+                      {t('location.distanceAway', {
+                        distance: travelDistanceText(match.distanceMeters, isImperial, language),
+                      })}
                     </span>
                   )}
                 </button>

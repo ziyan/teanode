@@ -6609,7 +6609,7 @@ export const en = {
   'location.checkInNoPosition': 'Your browser did not say where you are. Allow location for this site and try again.',
   'location.checkedIn': 'Checked in at {place}',
   'location.checkInFailed': 'Could not check in.',
-  'location.metersAway': '{distance} m away',
+  'location.distanceAway': '{distance} away',
   'location.tabVisits': 'Visits',
   'location.tabPlaces': 'Places',
   'location.tabSharing': 'Sharing',

@@ -6551,7 +6551,7 @@ export const ja: Catalog = {
     'ブラウザーが現在地を知らせませんでした。このサイトに位置情報を許可してから、もう一度お試しください。',
   'location.checkedIn': '{place}にチェックインしました',
   'location.checkInFailed': 'チェックインできませんでした。',
-  'location.metersAway': '{distance} m 先',
+  'location.distanceAway': '{distance} 先',
   'location.tabVisits': '訪問',
   'location.tabPlaces': '場所',
   'location.tabSharing': '共有',

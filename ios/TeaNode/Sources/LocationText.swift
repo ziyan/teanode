@@ -233,18 +233,40 @@ enum LocationText {
     }
 
     /// How far somebody sharing is from the person: "Nearby" within 200 m,
-    /// else the distance as a road sign would give it; nil without both
+    /// else the distance in the units the person chose; nil without both
     /// positions.
-    static func distanceText(from own: PersonLocation?, to person: PersonLocation) -> String? {
+    static func distanceText(from own: PersonLocation?, to person: PersonLocation, measurementSystem: MeasurementSystem) -> String? {
         guard let ownPoint = own?.latestPoint, let point = person.latestPoint else { return nil }
         let meters = CLLocation(latitude: ownPoint.latitudeDegrees, longitude: ownPoint.longitudeDegrees)
             .distance(from: CLLocation(latitude: point.latitudeDegrees, longitude: point.longitudeDegrees))
         if meters < 200 { return String(localized: "Nearby") }
-        return distance(meters)
+        return distance(meters, measurementSystem: measurementSystem)
     }
 
-    static func distance(_ meters: Double) -> String {
-        Measurement(value: meters, unit: UnitLength.meters).formatted(.measurement(width: .abbreviated, usage: .road))
+    /// "11.8 km" or "7.3 mi", in the units the person chose. Automatic follows
+    /// the phone's language and region. Metric says meters under a kilometer
+    /// and US says feet under a tenth of a mile, as a road sign would.
+    static func distance(_ meters: Double, measurementSystem: MeasurementSystem) -> String {
+        let distance = Measurement(value: meters, unit: UnitLength.meters)
+        let fractionStyle: FloatingPointFormatStyle<Double> = .number.precision(.fractionLength(0...1))
+        let wholeStyle: FloatingPointFormatStyle<Double> = .number.precision(.fractionLength(0))
+        switch measurementSystem {
+        case .automatic:
+            return distance.formatted(.measurement(width: .abbreviated, usage: .road))
+        case .metric:
+            if meters < 1000 {
+                return distance.formatted(.measurement(width: .abbreviated, usage: .asProvided, numberFormatStyle: wholeStyle))
+            }
+            return distance.converted(to: .kilometers).formatted(
+                .measurement(width: .abbreviated, usage: .asProvided, numberFormatStyle: fractionStyle))
+        case .us:
+            if meters < 160.9344 {
+                return distance.converted(to: .feet).formatted(
+                    .measurement(width: .abbreviated, usage: .asProvided, numberFormatStyle: wholeStyle))
+            }
+            return distance.converted(to: .miles).formatted(
+                .measurement(width: .abbreviated, usage: .asProvided, numberFormatStyle: fractionStyle))
+        }
     }
 
     static func radius(_ meters: Double) -> String {

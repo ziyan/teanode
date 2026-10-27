@@ -281,7 +281,12 @@ function AddressProbe() {
   )
 }
 
-function renderAt(entry: string, options: { canUsePhotos?: boolean; earlierEntries?: string[] } = {}) {
+// The person here chose metric units unless a test says otherwise, so the distances read the same in
+// any browser region.
+function renderAt(
+  entry: string,
+  options: { canUsePhotos?: boolean; earlierEntries?: string[]; measurementSystem?: string } = {},
+) {
   const earlierEntries = options.earlierEntries ?? []
   return render(
     <TranslationProvider>
@@ -292,6 +297,7 @@ function renderAt(entry: string, options: { canUsePhotos?: boolean; earlierEntri
             authenticated: true,
             authenticationRequired: true,
             username: 'person-a-login',
+            measurementSystem: options.measurementSystem ?? 'metric',
             passkeysEnabled: false,
             permissions: {
               everywhere: ['location:use', 'circle:use', ...(options.canUsePhotos ? ['photos:use'] : [])],
@@ -1934,6 +1940,27 @@ it('shows the trips of somebody else without a menu to correct them', async () =
   expect(await screen.findByText('0.6 km · 8 min')).toBeTruthy()
   expect(calls('ListTrips(')[0][1]).toMatchObject({ userId: 'person-b' })
   expect(screen.queryByRole('button', { name: /Change the way of travel/ })).toBeNull()
+})
+
+it('writes the distances of the trips and the travel table in miles for a person who chose US units', async () => {
+  answerWith({
+    visits: [libraryVisit(), visit()],
+    trips: [trip()],
+    travelTotals: [total({ distanceMeters: 11800 }), total({ travelMode: 'car', distanceMeters: 20000, legCount: 2 })],
+  })
+  renderAt('/location', { measurementSystem: 'us' })
+
+  expect(await screen.findByText('0.4 mi · 8 min')).toBeTruthy()
+  expect(screen.getByText('7.3 mi · 18 min')).toBeTruthy()
+  expect(screen.queryByText(/ km/)).toBeNull()
+  cleanup()
+
+  renderAt('/location?tab=travel', { measurementSystem: 'us' })
+  fireEvent.click(await screen.findByRole('button', { name: 'Week' }))
+  const newest = within(await screen.findByRole('row', { name: /Week of Mar 4/ }))
+  expect(newest.getByText('7.3 mi')).toBeTruthy()
+  expect(newest.getByText('12.4 mi')).toBeTruthy()
+  expect(newest.getByText('19.8 mi')).toBeTruthy()
 })
 
 it('lists the travel of each week with a column for each way that has any distance', async () => {

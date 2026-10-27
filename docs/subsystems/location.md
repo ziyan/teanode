@@ -439,7 +439,8 @@ shows, today at first; today's path grows as they move. The maps draw the
 line through the day's visits too, at each arrival and departure in time
 order, since a phone in the background sends few positions on the way. `teanode location path` prints it on the command
 line, and the agent's `location_path` answers the number of positions, the first
-and last time, the distance travelled in kilometers and up to 60 positions
+and last time, the distance travelled in kilometers (miles for a person who reads US
+units) and up to 60 positions
 evenly spread, with `is_truncated` saying some were left out.
 
 ## Trips and ways of travel
@@ -518,6 +519,12 @@ boat or plane (`docs/planning/location-travel-execplan.md` has the reasons).
   on one's own) and Travel tab; the iPhone's day list and Travel screen; the
   command line `teanode location trips`, `travel` and `travel-mode`; the
   location tool's `trips`, `travel_totals` and `travel_mode`.
+- **Units.** The server keeps every distance in meters. Each surface writes
+  it in the units the person's account chose (`measurementSystem`): meters
+  under a tenth of a kilometer, else kilometers with one decimal; in US units
+  feet under a tenth of a mile, else miles. The location tool answers
+  `distance_kilometers`, or `distance_miles` for a person who reads US units,
+  and the same for the path and the totals.
 
 ## Photos taken during a visit
 

@@ -55,7 +55,7 @@ func init() {
 			},
 			{
 				Name: "location_path", Family: tools.FamilyGeneral, Risk: tools.RiskRead, Permissions: locationPermissions,
-				Description: "The path of one day: how many positions the person's phone reported, the first and last time, how far they travelled in kilometers (the distances between one position and the next, added up), " +
+				Description: "The path of one day: how many positions the person's phone reported, the first and last time, how far they travelled (the distances between one position and the next, added up) in distance_travelled_kilometers, or distance_travelled_miles for a person whose account reads US units, " +
 					"and up to 60 of the positions, evenly spread, each with its time, latitude_degrees and longitude_degrees; 'is_truncated' says some were left out. " +
 					"'day' is YYYY-MM-DD in the person's own time zone, today by default. Use it for where they went through the day between their visits. " +
 					"With 'person', the path of somebody who shares their history with the person; not in a chat, where another person's location is not repeated.",
@@ -67,7 +67,7 @@ func init() {
 			},
 			{
 				Name: "location_trips", Family: tools.FamilyGeneral, Risk: tools.RiskRead, Permissions: locationPermissions,
-				Description: "How the person got from place to place: their trips, newest first, each the travel between leaving one place and arriving at the next, with where from and to, when, how far (distance_kilometers, with one decimal, and distance_meters) and how long, " +
+				Description: "How the person got from place to place: their trips, newest first, each the travel between leaving one place and arriving at the next, with where from and to, when, how far (distance_kilometers with one decimal, or distance_miles for a person whose account reads US units, and distance_meters) and how long, " +
 					"and its legs, each with its way of travel (walk, run, bike, car, bus, train, boat or plane), distance and duration. " +
 					"The way is worked out from the phone's motion activity, or from speed and distance without it; bus, train and boat are never worked out, only set by the person with travel_mode, and a leg says is_corrected when the way is the person's. " +
 					"Each of the person's own legs has a trip_leg_id, which travel_mode takes. " +
@@ -86,7 +86,7 @@ func init() {
 			{
 				Name: "location_travel_totals", Family: tools.FamilyGeneral, Risk: tools.RiskRead, Permissions: locationPermissions,
 				Description: "How far the person traveled by each way of travel (walk, run, bike, car, bus, train, boat, plane), added up per day, week, month or year, newest period first, " +
-					"each row with its period_start_day, the distance in kilometers for each way and the total. " +
+					"each row with its period_start_day, the distance for each way and the total, in kilometers, or in miles for a person whose account reads US units. " +
 					"'period' is day, week (starting Monday), month or year, week by default; 'from' and 'until' default to the last 12 periods. A leg counts in the period it started in. " +
 					"Use it for 'how far did I walk this month' or 'how much did I drive last year'. " +
 					"With 'person', the totals of somebody who shares their history with the person; not in a chat, where another person's location is not repeated.",

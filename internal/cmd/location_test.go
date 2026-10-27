@@ -212,6 +212,7 @@ func locationServerAnswering(test *testing.T, replacements map[string]string) (*
 			{"periodStartDay":"2026-10-12","travelMode":"bus","distanceMeters":11800,"durationSeconds":1500,"legCount":1},
 			{"periodStartDay":"2026-10-05","travelMode":"car","distanceMeters":2000,"durationSeconds":300,"legCount":1}]`,
 		"SetTripLegTravelMode": `{"id":"leg2","startedAt":"2026-10-17T08:15:00Z","endedAt":"2026-10-17T08:40:00Z","durationSeconds":1500,"distanceMeters":11800,"travelMode":"bus","detectedTravelMode":"car","isTravelModeCorrected":true,"detectionSource":"motion"}`,
+		"GetCurrentUser":       `{"id":"u-ada","username":"ada","measurementSystem":"metric"}`,
 		"ListLocationPoints":   `[{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":12,"measuredAt":"2026-10-17T10:00:00Z","locationSource":"phone"}]`,
 	}
 	for operation, answer := range replacements {
@@ -885,6 +886,47 @@ func TestLocationTravelListsDistancePerWay(test *testing.T) {
 	}
 	if _, err := runLocationCommand(test, server, "travel", "--person", "ben", "--json"); err != nil || called("ListTravelTotals")["period"] != "week" || called("ListTravelTotals")["userId"] != "u-ben" {
 		test.Errorf("week is the default: %v %v", called("ListTravelTotals"), err)
+	}
+}
+
+// A person whose account reads US units sees trips, travel and places found
+// in miles, and in feet for a short way.
+func TestLocationDistancesAreInMilesForAPersonWhoReadsThem(test *testing.T) {
+	server, _ := locationServerAnswering(test, map[string]string{"GetCurrentUser": `{"id":"u-ada","username":"ada","measurementSystem":"us"}`})
+	output, err := runLocationCommand(test, server, "trips", "--day", "2026-10-17")
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(output, "7.7 mi") || !strings.Contains(output, "walk 0.4 mi, bus 7.3 mi (corrected)") || strings.Contains(output, "km") {
+		test.Errorf("the trip in miles: %q", output)
+	}
+	if output, err = runLocationCommand(test, server, "travel"); err != nil || !strings.Contains(output, "7.7 mi") || !strings.Contains(output, "1.2 mi") {
+		test.Errorf("the totals in miles: %q %v", output, err)
+	}
+	if output, err = runLocationCommand(test, server, "nearby"); err != nil || !strings.Contains(output, "49 ft") || !strings.Contains(output, "295 ft") {
+		test.Errorf("a short way in feet: %q %v", output, err)
+	}
+}
+
+// distanceWords writes meters under a tenth of a kilometer and feet under a
+// tenth of a mile, else kilometers or miles with one decimal.
+func TestDistanceWordsFollowTheUnits(test *testing.T) {
+	for _, scenario := range []struct {
+		distanceMeters float64
+		isUSUnits      bool
+		want           string
+	}{
+		{40, false, "40 m"},
+		{640, false, "0.6 km"},
+		{12440, false, "12.4 km"},
+		{40, true, "131 ft"},
+		{160, true, "525 ft"},
+		{170, true, "0.1 mi"},
+		{12440, true, "7.7 mi"},
+	} {
+		if got := distanceWords(scenario.distanceMeters, scenario.isUSUnits); got != scenario.want {
+			test.Errorf("%v meters, US units %v: %q, not %q", scenario.distanceMeters, scenario.isUSUnits, got, scenario.want)
+		}
 	}
 }
 

@@ -61,6 +61,7 @@ import { TravelModeIcon } from '../components/travelModeIcon'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
 import { personPath } from '../lib/circlePeople'
+import { useIsImperial } from './journal/journalApi'
 import { hasPermission, useSession } from '../session'
 
 // Where the person is and has been, and who shares it with them: a map, the
@@ -258,6 +259,7 @@ async function readLinkedPlace(userId: string | null, placeId: string): Promise<
 
 function LocationContent({ userId }: { userId: string }) {
   const { t, plural, language } = useTranslation()
+  const isImperial = useIsImperial()
   const toast = useToast()
   const [parameters, setParameters] = useSearchParams()
   const requestedTab = parameters.get('tab')
@@ -1547,7 +1549,7 @@ function LocationContent({ userId }: { userId: string }) {
                           <span>
                             <strong>{travelModeName(leg.travelMode)}</strong>{' '}
                             <span className="muted">
-                              {travelDistanceText(leg.distanceMeters, language)} ·{' '}
+                              {travelDistanceText(leg.distanceMeters, isImperial, language)} ·{' '}
                               {durationText(leg.durationSeconds, t)}
                             </span>
                             {leg.isTravelModeCorrected && (
@@ -1790,10 +1792,12 @@ function LocationContent({ userId }: { userId: string }) {
                       <th scope="row">{travelPeriodText(each.periodStartDay)}</th>
                       {travelTable.modes.map((travelMode) => (
                         <td key={travelMode} className="numeric">
-                          {each.distances[travelMode] ? travelDistanceText(each.distances[travelMode], language) : '-'}
+                          {each.distances[travelMode]
+                            ? travelDistanceText(each.distances[travelMode], isImperial, language)
+                            : '-'}
                         </td>
                       ))}
-                      <td className="numeric">{travelDistanceText(each.totalMeters, language)}</td>
+                      <td className="numeric">{travelDistanceText(each.totalMeters, isImperial, language)}</td>
                     </tr>
                   ))}
                 </tbody>

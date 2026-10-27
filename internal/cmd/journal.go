@@ -328,17 +328,6 @@ func journalMoodLine(mood *client.JournalMoodView) string {
 	return line
 }
 
-// journalUsesUSUnits says whether this person reads Fahrenheit and miles: as
-// their account says, else as the region of the language this shell speaks
-// says, else metric. A token that is no account has no choice to read.
-func journalUsesUSUnits(ctx context.Context, connection *client.Client) bool {
-	measurementSystem := models.MeasurementSystemAutomatic
-	if user, err := client.GetCurrentUser(ctx, connection); err == nil && user != nil {
-		measurementSystem = user.MeasurementSystem
-	}
-	return models.UsesUSUnits(measurementSystem, client.LocalLanguage())
-}
-
 // journalWeatherLine is the weather as one line: its kind, the lows and
 // highs in the units the person reads, and the rain.
 func journalWeatherLine(weather *client.JournalWeatherView, isUSUnits bool) string {
@@ -671,7 +660,7 @@ func runJournalDay(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(view)
 	}
-	isUSUnits := view.Weather != nil && journalUsesUSUnits(ctx, connection)
+	isUSUnits := view.Weather != nil && usesUSUnits(ctx, connection)
 	printJournalDay(view, isUSUnits)
 	return nil
 }

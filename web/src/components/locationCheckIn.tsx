@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 
 import { graphql } from '../api'
 import { useTranslation } from '../i18n/i18n'
+import { useIsImperial } from '../pages/journal/journalApi'
 import { COARSE_ACCURACY_METERS, readFreshBrowserLocation, UNUSABLE_ACCURACY_METERS } from './browserLocation'
 import { ConfirmDialog } from './dialog'
 import { LocationAddressChooser } from './locationAddressChooser'
-import { FoundPlace, foundPlaceNamed, placeSubtitle, placeTitle } from './locationData'
+import { FoundPlace, foundPlaceNamed, placeSubtitle, placeTitle, travelDistanceText } from './locationData'
 import { PlaceLabelIcon } from './placeLabelIcon'
 import { useToast } from './toast'
 
@@ -46,7 +47,8 @@ type SearchPage = { foundPlaces: FoundPlace[]; nextOffset: number | null }
 // retry from inside it. A failed search or check-in is shown in the dialog,
 // which stays, since the words can be changed and the press tried again.
 export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () => void; onCheckedIn: () => void }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
+  const isImperial = useIsImperial()
   const toast = useToast()
   const [position, setPosition] = useState<Position | null>(null)
   const [accuracyMeters, setAccuracyMeters] = useState<number | null>(null)
@@ -263,7 +265,9 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
                     )}
                   </span>
                   <span className="muted location-row-meta">
-                    {t('location.metersAway', { distance: Math.round(foundPlace.distanceMeters) })}
+                    {t('location.distanceAway', {
+                      distance: travelDistanceText(foundPlace.distanceMeters, isImperial, language),
+                    })}
                   </span>
                 </button>
               ))}
