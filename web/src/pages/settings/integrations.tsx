@@ -4,7 +4,7 @@ import { graphql } from '../../api'
 import { ErrorMessage, Loading, SaveRow, Tag, useSaySaved } from '../../components/common'
 import { Select } from '../../components/select'
 import { useQuery } from '../../components/useQuery'
-import { Key, useTranslation } from '../../i18n/i18n'
+import { useTranslation } from '../../i18n/i18n'
 import { AGENT_SELECTION, Agent, AgentForm } from './agentSettings'
 import type { AgentPart } from './agentParts'
 import {
@@ -245,6 +245,7 @@ type Settings = {
 // for, and the two about outgoing mail sat far apart from each other. Grouped
 // by the question each answers: how mail leaves, where messages are kept, how
 // certificates are obtained, and what inspects a message on the way in.
+// The Server page's tabs for these are INTEGRATION_TABS in pageTabs.ts.
 export type Section =
   | 'identity'
   | 'mail'
@@ -258,26 +259,6 @@ export type Section =
   | 'sessions'
   | 'sso'
   | 'agent'
-
-// The tabs these four are, for the Server page to render along with the rest
-// of its own. Here rather than there because this file is what knows which
-// forms exist.
-export const INTEGRATION_SECTIONS: { id: Section; label: Key }[] = [
-  { id: 'identity', label: 'serverSettings.tabIdentity' },
-  { id: 'mail', label: 'serverSettings.tabMail' },
-  { id: 'sending', label: 'integrations.tabSending' },
-  { id: 'listeners', label: 'serverSettings.tabListeners' },
-  { id: 'certificates', label: 'serverSettings.tabCertificates' },
-  { id: 'storage', label: 'integrations.tabStorage' },
-  { id: 'resolver', label: 'serverSettings.tabResolver' },
-  { id: 'scanning', label: 'integrations.tabScanning' },
-  // Its own tab rather than a card under Scanning: the spam filter has an
-  // engine to choose and four parts to switch, and beside the antivirus's
-  // host and port it was the one card on the page that needed reading.
-  { id: 'spam', label: 'integrations.tabSpam' },
-  { id: 'sessions', label: 'serverSettings.tabSessions' },
-  { id: 'sso', label: 'integrations.tabSso' },
-]
 
 // IntegrationsSection edits one group of the optional services: how outgoing
 // mail leaves, the object store, the DNS solver, or the two scanners.

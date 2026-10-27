@@ -41,6 +41,7 @@ import { useQuery } from '../components/useQuery'
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { useTranslation } from '../i18n/i18n'
+import { AGENT_FINANCE_TAB, AGENT_TABS, shownTabs } from '../pageTabs'
 import { useSession } from '../session'
 import { useMailboxes } from '../mailboxes'
 import { Select } from '../components/select'
@@ -212,31 +213,18 @@ function messageOf(caught: unknown): string {
   return caught instanceof Error ? caught.message : String(caught)
 }
 
-// The tabs of /settings/agent, and the path a person can be sent to. One
-// scroll of fourteen cards meant scrolling past a mailbox's policies to
-// reach what the agent remembered; the subjects here are the
-// questions somebody opens this page with. Mail is what it may reach in
-// the person's mailboxes; Sources is everywhere else it reads.
-const AGENT_TABS: TabItem[] = [
-  { id: 'overview', label: 'agent.tabOverview' },
-  { id: 'ideas', label: 'agent.tabIdeas' },
-  { id: 'goals', label: 'agent.tabGoals' },
-  { id: 'alerts', label: 'agent.tabAlerts' },
-  { id: 'mail', label: 'agent.tabMail' },
-  { id: 'sources', label: 'agent.tabSources' },
-  { id: 'memory', label: 'agent.tabMemory' },
-  { id: 'dreams', label: 'agent.tabDreams' },
-  { id: 'schedules', label: 'agent.tabSchedules' },
-  { id: 'connections', label: 'agent.tabConnections' },
-  { id: 'activity', label: 'agent.tabActivity' },
-]
-
+// The tabs of /settings/agent are AGENT_TABS in pageTabs.ts, and each is a path
+// a person can be sent to. One scroll of fourteen cards meant scrolling past a
+// mailbox's policies to reach what the agent remembered; the subjects there
+// are the questions somebody opens this page with. Mail is what it may reach
+// in the person's mailboxes; Sources is everywhere else it reads.
+//
 // The same tabs with Finance among them, beside Sources: the institutions
 // it reads are places it reads too, and the tab is there only when there is
 // something to link through or something linked already. It holds only the
 // setup; what the institutions report is on the Finance page.
 const AGENT_TABS_WITH_FINANCE: TabItem[] = AGENT_TABS.flatMap((item) =>
-  item.id === 'sources' ? [item, { id: 'finance', label: 'agent.tabFinance' }] : [item],
+  item.id === 'sources' ? [item, AGENT_FINANCE_TAB] : [item],
 )
 
 export function AgentPage() {
@@ -323,9 +311,7 @@ export function AgentPage() {
   // named in the query and only Connections holds the card that finishes
   // it. The query is carried over either way: it is the code and the state
   // the server sent back, and dropping it lost the connection silently.
-  const tabs = (finance.isShown ? AGENT_TABS_WITH_FINANCE : AGENT_TABS).filter(
-    (candidate) => candidate.id !== 'mail' || session.services?.isMailboxEnabled !== false,
-  )
+  const tabs = shownTabs(finance.isShown ? AGENT_TABS_WITH_FINANCE : AGENT_TABS, { services: session.services })
   // A link to Finance waits for the answer to whether there is one, rather
   // than being sent to the first tab while the question is in flight.
   if (tab === 'finance' && finance.isShown === null) return <Loading />

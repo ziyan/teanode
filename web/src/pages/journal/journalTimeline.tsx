@@ -19,10 +19,11 @@ import {
 } from '../../components/icons'
 import { Pager, usePageInAddress } from '../../components/pager'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
-import { TabItem, Tabs } from '../../components/tabs'
+import { Tabs } from '../../components/tabs'
 import { useQuery } from '../../components/useQuery'
 import { Tooltip } from '../../components/tooltip'
 import { Key, useTranslation } from '../../i18n/i18n'
+import { JOURNAL_TABS } from '../../pageTabs'
 import { photoSmallPreviewPath } from '../../photos/api'
 import { hasPermission, useSession } from '../../session'
 import {
@@ -74,11 +75,6 @@ import { JournalCard, MoodDot, MoodFace, browserToday, weekStartsOnOf } from './
 // week so far. At the top, the way into a day, week, month or year, the search
 // and writing today. In Settings, what the journal keeps and does.
 
-const TABS: TabItem[] = [
-  { id: 'timeline', label: 'journal.tabTimeline' },
-  { id: 'settings', label: 'journal.tabSettings' },
-]
-
 export function JournalTimelinePage() {
   const session = useSession()
   const { t } = useTranslation()
@@ -124,7 +120,7 @@ function TimelineContent() {
         }
       />
       <Tabs
-        items={TABS}
+        items={JOURNAL_TABS}
         active={tab}
         onSelect={(id) => changeParameters({ tab: id === 'timeline' ? null : id, q: null, page: null })}
       />

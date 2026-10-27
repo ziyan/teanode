@@ -148,5 +148,5 @@ it('searches the page on /, and everything through the rail when the page has no
 it('lists the search key under anywhere', () => {
   renderAt('/page')
   fireEvent.keyDown(document.body, { key: '?', shift: true, shiftKey: true })
-  expect(screen.getByText('Search everything')).toBeTruthy()
+  expect(screen.getByText('Go to a page, or search everything')).toBeTruthy()
 })

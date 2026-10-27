@@ -1,7 +1,7 @@
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { Tabs } from '../components/tabs'
-import { Key } from '../i18n/i18n'
+import { ACCESS_TABS, shownTabs } from '../pageTabs'
 import { hasPermission, useSession } from '../session'
 import { AuditTab } from './access/audit'
 import { GroupsTab } from './access/groups'
@@ -16,14 +16,9 @@ import { UsersTab } from './access/users'
 // four tabs into a page about TLS and spam. They are their own row in the
 // rail now, beside Domains and Server, and /server is what the server is
 // rather than who may use it.
-type Tab = { id: string; label: Key; permissions: string[] }
-
-const TABS: Tab[] = [
-  { id: 'users', label: 'access.users.tab', permissions: ['user:manage', 'group:manage'] },
-  { id: 'groups', label: 'access.groups.tab', permissions: ['user:manage', 'group:manage'] },
-  { id: 'roles', label: 'server.tabRoles', permissions: ['role:manage', 'group:manage'] },
-  { id: 'audit', label: 'server.tabAudit', permissions: ['audit:read'] },
-]
+//
+// The tabs are in pageTabs.ts, with the permission each wants, so the search
+// box offers the same ones.
 
 export function AccessPage() {
   // In the path rather than in state, so a tab can be linked to, survives a
@@ -32,9 +27,7 @@ export function AccessPage() {
   const navigate = useNavigate()
   const session = useSession()
 
-  const permitted = TABS.filter((candidate) =>
-    candidate.permissions.some((key) => hasPermission(session.permissions, key)),
-  )
+  const permitted = shownTabs(ACCESS_TABS, { hasPermission: (key) => hasPermission(session.permissions, key) })
   if (permitted.length === 0) {
     return <Navigate to="/" replace />
   }

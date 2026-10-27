@@ -6,10 +6,11 @@ import { ErrorMessage, Loading } from '../../components/common'
 import { ArrowLeftIcon } from '../../components/icons'
 import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
-import { TabItem, Tabs } from '../../components/tabs'
+import { Tabs } from '../../components/tabs'
 import { useToast } from '../../components/toast'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
+import { HEALTH_TABS } from '../../pageTabs'
 import { hasPermission, useSession } from '../../session'
 import { HealthTypePanel } from './healthChart'
 import {
@@ -37,11 +38,6 @@ import { HealthTypeList, groupByCategory } from './healthTypes'
 //
 // In the address: tab (Settings), person, type, range, period, route (the
 // workout whose route is open), and the page of readings.
-
-const TABS: TabItem[] = [
-  { id: 'data', label: 'health.tabData' },
-  { id: 'settings', label: 'health.tabSettings' },
-]
 
 type Sharer = { userId: string; name: string }
 
@@ -213,7 +209,11 @@ function HealthContent({ userId }: { userId: string }) {
       )}
 
       {ownerUserId === null && (
-        <Tabs items={TABS} active={tab} onSelect={(id) => changeParameters({ tab: id === 'data' ? null : id })} />
+        <Tabs
+          items={HEALTH_TABS}
+          active={tab}
+          onSelect={(id) => changeParameters({ tab: id === 'data' ? null : id })}
+        />
       )}
 
       {tab === 'settings' ? (

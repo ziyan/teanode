@@ -8,11 +8,12 @@ import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog } from '../components/dialog'
 import { TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsSection } from '../components/settingsList'
-import { TabItem, Tabs } from '../components/tabs'
+import { Tabs } from '../components/tabs'
 import { useToast } from '../components/toast'
 import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
+import { SHARING_TABS } from '../pageTabs'
 import { personPath } from '../lib/circlePeople'
 import { accountLabel } from './finance/financeCommon'
 import { hasPermission, useSession } from '../session'
@@ -206,11 +207,6 @@ export function SharingPage() {
   return <SharingTabs />
 }
 
-const TABS: TabItem[] = [
-  { id: 'by-you', label: 'sharing.byYou' },
-  { id: 'with-you', label: 'sharing.withYou' },
-]
-
 function SharingTabs() {
   const { t } = useTranslation()
   const { tab } = useParams()
@@ -221,7 +217,7 @@ function SharingTabs() {
   )
 
   // A path that names no tab lands on the first.
-  if (tab !== undefined && !TABS.some((candidate) => candidate.id === tab)) {
+  if (tab !== undefined && !SHARING_TABS.some((candidate) => candidate.id === tab)) {
     return <Navigate to="/sharing" replace />
   }
   const active = (tab ?? 'by-you') as Tab
@@ -234,7 +230,11 @@ function SharingTabs() {
         </Link>
       </PageHeadingActions>
 
-      <Tabs items={TABS} active={active} onSelect={(id) => navigate(id === 'by-you' ? '/sharing' : `/sharing/${id}`)} />
+      <Tabs
+        items={SHARING_TABS}
+        active={active}
+        onSelect={(id) => navigate(id === 'by-you' ? '/sharing' : `/sharing/${id}`)}
+      />
 
       {loading && !data && <Loading />}
       <ErrorMessage error={error} />

@@ -4,10 +4,11 @@ import { useSearchParams } from 'react-router-dom'
 import { graphql } from '../../api'
 import { ErrorMessage, Loading } from '../../components/common'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
-import { TabItem, Tabs } from '../../components/tabs'
+import { Tabs } from '../../components/tabs'
 import { useToast } from '../../components/toast'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
+import { PASSWORDS_TABS } from '../../pageTabs'
 import { hasPermission, useSession } from '../../session'
 import { PasswordsSetup, READ_PASSWORDS_SETUP } from './passwordsApi'
 import { PasswordsItems } from './passwordsItems'
@@ -27,11 +28,6 @@ import { PasswordsUnlock } from './passwordsUnlock'
 // a new item), kind, deleted (Recently deleted) and page. The search text and
 // the folder name are decrypted values, so they are kept out of the address
 // (browser history and request logs) and live in the page's state.
-
-const TABS: TabItem[] = [
-  { id: 'items', label: 'passwords.tabItems' },
-  { id: 'settings', label: 'passwords.tabSettings' },
-]
 
 // How often an open Passwords reads what other devices changed, and gives the
 // people who set up Passwords since an item was shared the key to it.
@@ -190,7 +186,7 @@ function PasswordsContent({ userId }: { userId: string }) {
       {data && data.isSetUp && (
         <>
           <Tabs
-            items={TABS}
+            items={PASSWORDS_TABS}
             active={tab}
             onSelect={(id) => changeParameters({ tab: id === 'items' ? null : id, item: null, edit: null, new: null })}
           />

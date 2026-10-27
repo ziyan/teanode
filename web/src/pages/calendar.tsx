@@ -11,12 +11,13 @@ import { CalendarRenameDialog } from '../components/calendarRename'
 import { CalendarShareDialog } from '../components/calendarShare'
 import { ChevronLeftIcon, ChevronRightIcon, EyeIcon, LockIcon, PencilIcon, TrashIcon } from '../components/icons'
 import { Tooltip } from '../components/tooltip'
-import { TabItem, Tabs } from '../components/tabs'
+import { Tabs } from '../components/tabs'
 import { RemindersView } from '../components/reminders'
 import { useQuery } from '../components/useQuery'
 import { useToast } from '../components/toast'
 import type { WeekStart } from '../components/weekdayButtons'
 import { useTranslation } from '../i18n/i18n'
+import { CALENDAR_TABS, shownTabs } from '../pageTabs'
 import { InMemory } from '../memoryLinks'
 import {
   describeRepeat,
@@ -151,11 +152,6 @@ const REPEAT_PRESETS: RepeatPreset[] = ['never', 'daily', 'weekdays', 'weekly', 
 // week five, the week seven -- all the same drawing, differing only in how
 // many days it starts from and how many it shows.
 const COLUMNS: Partial<Record<View, number>> = { day: 1, workweek: 5, week: 7 }
-
-// The order the views are offered in: widest span to narrowest, then the list,
-// then the reminders list beside the calendar, which a phone keeps in its
-// Reminders app and which is kept here too.
-const VIEWS: View[] = ['month', 'week', 'workweek', 'day', 'agenda', 'reminders']
 
 // How tall an hour is drawn, in pixels, and where the grid opens.
 //
@@ -956,14 +952,7 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
           domain pages use: five of them is what a tab strip is for, and it
           scrolls sideways on a narrow screen rather than being cut off. */}
       <Tabs
-        items={VIEWS.filter((candidate) =>
-          candidate === 'reminders'
-            ? serviceCapabilities?.isRemindersEnabled !== false
-            : serviceCapabilities?.isCalendarEnabled !== false,
-        ).map((which) => ({
-          id: which,
-          label: `calendar.view${which[0].toUpperCase()}${which.slice(1)}` as TabItem['label'],
-        }))}
+        items={shownTabs(CALENDAR_TABS, { services: serviceCapabilities })}
         active={view}
         onSelect={(id) => move({ view: id as View })}
       />

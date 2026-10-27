@@ -1,10 +1,11 @@
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
-import { Tabs } from '../components/tabs'
+import { TabItem, Tabs } from '../components/tabs'
 import { useFreshness } from '../components/freshness'
-import { Key, useTranslation } from '../i18n/i18n'
+import { useTranslation } from '../i18n/i18n'
+import { INTEGRATION_TABS, SERVER_TABS, shownTabs } from '../pageTabs'
 import { hasPermission, useSession } from '../session'
-import { INTEGRATION_SECTIONS, IntegrationsSection, Section } from './settings/integrations'
+import { IntegrationsSection, Section } from './settings/integrations'
 import { ServerAboutPage } from './settings/server'
 import { SetupPage } from './serviceSetup'
 
@@ -20,13 +21,8 @@ import { SetupPage } from './serviceSetup'
 // upgrade waiting for it, which is what the dot in the rail is pointing at.
 // Then Setup, which says what is still missing, and then the services in the
 // order mail moves through them.
-type Tab = { id: string; label: Key; marked?: boolean; markedLabel?: string }
-
-const SERVER_TABS: Tab[] = [
-  { id: 'about', label: 'server.tabAbout' },
-  { id: 'setup', label: 'server.tabSetup' },
-  ...INTEGRATION_SECTIONS,
-]
+//
+// The tabs are in pageTabs.ts, so the search box offers the same ones.
 
 export function ServerPage() {
   // In the path rather than in state, so a tab can be linked to, survives a
@@ -40,12 +36,11 @@ export function ServerPage() {
 
   // The rail's dot says "there is something on the Server page"; this one
   // says which tab it is on.
-  const TABS: Tab[] = hasPermission(session.permissions, 'server:manage')
-    ? SERVER_TABS.filter(
-        (candidate) =>
-          session.services?.isMailRoutingEnabled !== false ||
-          !['mail', 'sending', 'resolver', 'scanning', 'spam'].includes(candidate.id),
-      ).map((candidate) =>
+  const TABS: TabItem[] = hasPermission(session.permissions, 'server:manage')
+    ? shownTabs(SERVER_TABS, {
+        hasPermission: (key) => hasPermission(session.permissions, key),
+        services: session.services,
+      }).map((candidate) =>
         candidate.id === 'about' && upgradeAvailable
           ? { ...candidate, marked: true, markedLabel: t('nav.upgradeAvailable') }
           : candidate,
@@ -67,7 +62,7 @@ export function ServerPage() {
 
       {tab === 'setup' && <SetupPage />}
       {tab === 'about' && <ServerAboutPage />}
-      {INTEGRATION_SECTIONS.some((candidate) => candidate.id === tab) &&
+      {INTEGRATION_TABS.some((candidate) => candidate.id === tab) &&
         hasPermission(session.permissions, 'server:manage') && <IntegrationsSection section={tab as Section} />}
     </>
   )
