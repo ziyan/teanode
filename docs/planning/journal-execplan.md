@@ -149,6 +149,10 @@ To see it working at the end: on a development server with a week of invented da
   Rationale: the command line and the tool had pins, removing a story and search; the screens did not.
   Date/Author: 2026-10-27, follow-ups after the journal merged.
 
+- Decision: the weather and the evening question are on by default for every account, those made before the journal included. The weather sends the day's main place to Open-Meteo; the person can turn either off in the journal's settings.
+  Rationale: the maintainer: "Default with weather and question on".
+  Date/Author: 2026-10-27, the maintainer.
+
 ## Outcomes & Retrospective
 
 Nothing built yet.
