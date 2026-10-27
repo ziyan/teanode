@@ -247,6 +247,6 @@ func (self *Agent) monthPageFromJournal(tx db.Transaction, run *Run, period *mod
 		builder.WriteString("**" + headline + "**\n\n")
 	}
 	builder.WriteString(strings.TrimSpace(narrative))
-	fmt.Fprintf(&builder, "\n\nThis is the journal's account of the month, written to %s as \"you\". The journal page is /journal/month/%s.", personName(run.Owner), from.Format("2006-01"))
+	fmt.Fprintf(&builder, "\n\nThis is the journal's account of the month, written to %s as \"you\". %s", personName(run.Owner), models.JournalMonthPageSentence(from.Format("2006-01")))
 	return builder.String()
 }

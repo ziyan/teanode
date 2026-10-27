@@ -989,6 +989,11 @@ func (self *transaction) DeleteJournalNarrative(userId string, target models.Jou
 	if _, err := subject.update(self.tx, setClause, time.Now()); err != nil {
 		return err
 	}
+	if target.PeriodKind == models.JournalPeriodMonth {
+		if err := self.forgetJournalMonthPages(userId, target.PeriodStart); err != nil {
+			return err
+		}
+	}
 	return self.tx.Exec(`DELETE FROM "journal_link" WHERE "`+ownerColumn+`" = ? AND "link_source" = 'agent' AND NOT "is_hidden"`, ownerIds[0]).Error
 }
 
@@ -1338,7 +1343,80 @@ func (self *transaction) EraseJournal(userId string) (dayCount, periodCount, lin
 		err = erasedPeriods.Error
 		return
 	}
+	if err = self.forgetJournalMonthPages(userId, ""); err != nil {
+		return
+	}
 	return int(erasedDays.RowsAffected), int(erasedPeriods.RowsAffected), int(linkTotal), nil
+}
+
+// forgetJournalMonthPages removes the memory pages the dreams made from the
+// journal's narratives of months: of the month that starts on monthStart
+// (YYYY-MM-DD), or of every month when it is empty. A page the timeline wrote
+// itself stays.
+func (self *transaction) forgetJournalMonthPages(userId, monthStart string) error {
+	agent, err := self.GetAgentByUser(userId)
+	if err != nil || agent == nil {
+		return err
+	}
+	// Every month's sentence begins as the empty month's does.
+	pattern := "%" + likeEscaped(strings.TrimSuffix(models.JournalMonthPageSentence(""), ".")) + "%"
+	if monthStart != "" {
+		if len(monthStart) < len("2006-01") {
+			return ErrInvalidArguments
+		}
+		pattern = "%" + likeEscaped(models.JournalMonthPageSentence(monthStart[:len("2006-01")]))
+	}
+	var paths []string
+	if err := self.tx.Raw(`SELECT "path" FROM "agent_node" WHERE "agent_id" = ? AND "kind" = ? AND "summary" LIKE ?`,
+		agent.ID, models.NodePeriod, pattern).Scan(&paths).Error; err != nil {
+		return err
+	}
+	for _, path := range paths {
+		if _, err := self.DeleteAgentNode(agent.ID, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// forgetJournalNarrativesOf takes away what the agent wrote from data that is
+// being erased: the narratives, headlines and the reasons of its choices of
+// the days dayCondition picks (on the day's row, named d), and the narratives
+// and chapters of the weeks, months and years those days are in, with the
+// memory pages made of those months. The person's words, moods, corrections
+// and pins stay. Dreams write the recent ones again from what is left, and an
+// older one when the person asks. It runs before the facts dayCondition reads
+// are cleared.
+func (self *transaction) forgetJournalNarrativesOf(userId, dayCondition string, arguments ...any) error {
+	now := time.Now()
+	daysOf := `SELECT d."id" FROM "journal_day" AS d WHERE d."user_id" = ? AND (` + dayCondition + `)`
+	daysArguments := append([]any{userId}, arguments...)
+	if err := self.tx.Exec(`DELETE FROM "journal_link" WHERE "journal_day_id" IN (`+daysOf+`) AND "link_source" = 'agent' AND NOT "is_hidden"`,
+		daysArguments...).Error; err != nil {
+		return err
+	}
+	var months []string
+	if err := self.tx.Raw(`UPDATE "journal_period" AS p SET "headline" = '', "narrative" = '', "narrative_written_at" = NULL, "narrative_input_digest" = '',
+		"narrative_failure" = '', "chapters" = '[]'::jsonb, "modified_at" = ?
+		WHERE p."user_id" = ? AND (p."narrative" <> '' OR p."headline" <> '') AND EXISTS (
+			SELECT 1 FROM "journal_day" AS d WHERE d."user_id" = p."user_id" AND (`+dayCondition+`)
+			AND d."day" >= p."period_start" AND d."day" < p."period_start" + CASE p."period_kind"
+				WHEN 'week' THEN interval '7 days' WHEN 'month' THEN interval '1 month' ELSE interval '1 year' END)
+		RETURNING CASE WHEN p."period_kind" = 'month' THEN to_char(p."period_start", 'YYYY-MM-DD') ELSE '' END`,
+		append([]any{now, userId}, arguments...)...).Scan(&months).Error; err != nil {
+		return err
+	}
+	for _, month := range months {
+		if month == "" {
+			continue
+		}
+		if err := self.forgetJournalMonthPages(userId, month); err != nil {
+			return err
+		}
+	}
+	return self.tx.Exec(`UPDATE "journal_day" SET "headline" = '', "narrative" = '', "narrative_written_at" = NULL, "narrative_input_digest" = '',
+		"narrative_failure" = '', "modified_at" = ?
+		WHERE "id" IN (`+daysOf+`) AND ("narrative" <> '' OR "headline" <> '')`, append([]any{now}, daysArguments...)...).Error
 }
 
 // forgetJournalHealthCopies takes out of a person's journal days what came
@@ -1346,6 +1424,14 @@ func (self *transaction) EraseJournal(userId string) (dayCount, periodCount, lin
 // Erasing Health erases what the journal kept of it too; the next refresh
 // counts again from what Health still holds.
 func (self *transaction) forgetJournalHealthCopies(userId string) error {
+	// What was written from Health goes with it: the narratives of the days
+	// that had any of it.
+	if err := self.forgetJournalNarrativesOf(userId, `coalesce((d."facts"->>'stepCount')::numeric, 0) > 0
+		OR coalesce((d."facts"->>'sleepMinutes')::numeric, 0) > 0 OR coalesce((d."facts"->>'workoutMinutes')::numeric, 0) > 0
+		OR coalesce((d."facts"->>'walkedMeters')::numeric, 0) > 0 OR coalesce((d."facts"->>'healthMoodLevel')::numeric, 0) > 0
+		OR d."mood_source" = 'health'`); err != nil {
+		return err
+	}
 	return self.tx.Exec(`UPDATE "journal_day" SET
 		"facts" = "facts" - 'stepCount' - 'sleepMinutes' - 'workoutMinutes' - 'walkedMeters' - 'healthMoodLevel',
 		"mood_level" = CASE WHEN "mood_source" = 'health' THEN NULL ELSE "mood_level" END,
@@ -1364,13 +1450,24 @@ func (self *transaction) forgetJournalLocationCopies(userId string, from, until 
 		"weather" = CASE WHEN "weather" IS NULL THEN NULL ELSE "weather" - 'placeName' END
 		WHERE "user_id" = ?`
 	arguments := []any{userId}
+	// What was written from where the person was goes with it: the
+	// narratives of the days in the range that had a place.
+	condition := `(coalesce((d."facts"->>'placeCount')::numeric, 0) > 0 OR coalesce(d."facts"->>'mainPlaceId', '') <> '')`
+	var conditionArguments []any
 	if from != nil {
 		query += ` AND "day" >= ?`
+		condition += ` AND d."day" >= ?`
 		arguments = append(arguments, from.UTC().AddDate(0, 0, -1).Format("2006-01-02"))
+		conditionArguments = append(conditionArguments, from.UTC().AddDate(0, 0, -1).Format("2006-01-02"))
 	}
 	if until != nil {
 		query += ` AND "day" <= ?`
+		condition += ` AND d."day" <= ?`
 		arguments = append(arguments, until.UTC().AddDate(0, 0, 1).Format("2006-01-02"))
+		conditionArguments = append(conditionArguments, until.UTC().AddDate(0, 0, 1).Format("2006-01-02"))
+	}
+	if err := self.forgetJournalNarrativesOf(userId, condition, conditionArguments...); err != nil {
+		return err
 	}
 	return self.tx.Exec(query, arguments...).Error
 }

@@ -992,3 +992,127 @@ func TestErasingHealthOrPlacesErasesTheJournalsCopies(t *testing.T) {
 		}
 	})
 }
+
+// What the agent wrote from erased data goes with it: erasing Health takes
+// the narratives of the days that had Health, and of the week and the month
+// they are in, with the memory page made of that month, and leaves a day
+// without Health, the person's words and a page the timeline wrote itself.
+// Removing a month's narrative, or erasing the journal, takes its page too.
+func TestErasingDataForgetsWhatWasWrittenFromIt(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ada, _ := journalTestPeople(t, tx)
+		agent, err := tx.CreateAgent(&models.Agent{UserID: ada.ID, Enabled: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		write := func(target models.JournalTarget, narrative string) {
+			t.Helper()
+			writing := models.JournalNarrativeWriting{Headline: "A headline", Narrative: narrative, InputDigest: "digest",
+				Choices: []*models.JournalLink{{RecordKind: models.RecordMail, RecordID: "mail-1", LinkReason: "a reason"}}}
+			if err := tx.PutJournalNarrative(ada.ID, target, journalTestZone, writing, journalTestAt(9)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		page := func(path, summary string) {
+			t.Helper()
+			if _, err := tx.PutAgentNode(&models.AgentNode{AgentID: agent.ID, Path: path, Kind: models.NodePeriod, Summary: summary}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		healthy := models.JournalFacts{HasActivity: true, StepCount: 8000, PhotoCount: 1}
+		if err := tx.PutJournalFacts(ada.ID, "2026-03-03", journalTestZone, healthy, journalTestAt(8)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.SetJournalWords(ada.ID, "2026-03-03", journalTestZone, "My own words.", nil, journalTestAt(8)); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.PutJournalFacts(ada.ID, "2026-02-10", journalTestZone, models.JournalFacts{HasActivity: true, PhotoCount: 2}, journalTestAt(8)); err != nil {
+			t.Fatal(err)
+		}
+		write(models.JournalTarget{Day: "2026-03-03"}, "Eight thousand steps.")
+		write(models.JournalTarget{Day: "2026-02-10"}, "Two photos.")
+		write(models.JournalTarget{PeriodKind: models.JournalPeriodWeek, PeriodStart: "2026-03-02"}, "A week of walks.")
+		write(models.JournalTarget{PeriodKind: models.JournalPeriodMonth, PeriodStart: "2026-03-01"}, "A month of walks.")
+		write(models.JournalTarget{PeriodKind: models.JournalPeriodMonth, PeriodStart: "2026-02-01"}, "A month of photos.")
+		page("time/2026/03", "A month of walks. "+models.JournalMonthPageSentence("2026-03"))
+		page("time/2026/02", "A month of photos. "+models.JournalMonthPageSentence("2026-02"))
+		page("time/2025/12", "A month the timeline wrote.")
+
+		if _, err := tx.EraseHealthData(ada.ID, ""); err != nil {
+			t.Fatal(err)
+		}
+		day, err := tx.GetJournalDay(ada.ID, "2026-03-03")
+		if err != nil || day.Narrative != "" || day.Headline != "" || day.NarrativeInputDigest != "" || day.Words != "My own words." {
+			t.Fatalf("the day with Health: %+v, %v", day, err)
+		}
+		if links, _ := tx.ListJournalLinks(ada.ID, day.ID, ""); len(links) != 0 {
+			t.Errorf("the agent's choices of the day with Health stayed: %d", len(links))
+		}
+		if other, _ := tx.GetJournalDay(ada.ID, "2026-02-10"); other == nil || other.Narrative != "Two photos." {
+			t.Errorf("a day without Health lost its narrative: %+v", other)
+		}
+		if week, _ := tx.GetJournalPeriod(ada.ID, models.JournalPeriodWeek, "2026-03-02"); week == nil || week.Narrative != "" {
+			t.Errorf("the week of the day with Health kept its narrative: %+v", week)
+		}
+		if month, _ := tx.GetJournalPeriod(ada.ID, models.JournalPeriodMonth, "2026-02-01"); month == nil || month.Narrative != "A month of photos." {
+			t.Errorf("a month without Health lost its narrative: %+v", month)
+		}
+		if node, _ := tx.GetAgentNode(agent.ID, "time/2026/03"); node != nil {
+			t.Errorf("the page of a forgotten month stayed: %q", node.Summary)
+		}
+		if node, _ := tx.GetAgentNode(agent.ID, "time/2026/02"); node == nil {
+			t.Errorf("the page of a month that kept its narrative went")
+		}
+
+		if err := tx.DeleteJournalNarrative(ada.ID, models.JournalTarget{PeriodKind: models.JournalPeriodMonth, PeriodStart: "2026-02-01"}); err != nil {
+			t.Fatal(err)
+		}
+		if node, _ := tx.GetAgentNode(agent.ID, "time/2026/02"); node != nil {
+			t.Errorf("the page of a removed narrative stayed: %q", node.Summary)
+		}
+
+		page("time/2026/01", "A month of snow. "+models.JournalMonthPageSentence("2026-01"))
+		if _, _, _, err := tx.EraseJournal(ada.ID); err != nil {
+			t.Fatal(err)
+		}
+		if node, _ := tx.GetAgentNode(agent.ID, "time/2026/01"); node != nil {
+			t.Errorf("a page made from the journal outlived the journal: %q", node.Summary)
+		}
+		if node, _ := tx.GetAgentNode(agent.ID, "time/2025/12"); node == nil {
+			t.Errorf("the page the timeline wrote went with the journal")
+		}
+	})
+}
+
+// Erasing where the person went in a range forgets the narratives of the days
+// in it that had a place, and no others.
+func TestErasingPlacesForgetsTheNarrativesOfTheDaysInTheRange(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ada, _ := journalTestPeople(t, tx)
+		for _, day := range []string{"2026-03-03", "2026-03-20"} {
+			if err := tx.PutJournalFacts(ada.ID, day, journalTestZone, models.JournalFacts{HasActivity: true, PlaceCount: 1, MainPlaceID: "place-1"}, journalTestAt(8)); err != nil {
+				t.Fatal(err)
+			}
+			writing := models.JournalNarrativeWriting{Headline: "At the harbor", Narrative: "A morning at the harbor.", InputDigest: "digest"}
+			if err := tx.PutJournalNarrative(ada.ID, models.JournalTarget{Day: day}, journalTestZone, writing, journalTestAt(9)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		from, until := time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC), time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC)
+		if _, _, _, err := tx.EraseLocationHistory(ada.ID, &from, &until); err != nil {
+			t.Fatal(err)
+		}
+		if day, _ := tx.GetJournalDay(ada.ID, "2026-03-03"); day == nil || day.Narrative != "" || day.Facts.MainPlaceID != "" {
+			t.Errorf("the day in the range: %+v", day)
+		}
+		if day, _ := tx.GetJournalDay(ada.ID, "2026-03-20"); day == nil || day.Narrative == "" || day.Facts.MainPlaceID == "" {
+			t.Errorf("a day outside the range: %+v", day)
+		}
+	})
+}

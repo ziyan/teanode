@@ -214,6 +214,14 @@ type JournalFacts struct {
 // work by the person's own posts.
 const JournalFactsVersion = 5
 
+// JournalMonthPageSentence ends the memory page made from the journal's
+// narrative of a month (month is YYYY-MM): it says where the month is in the
+// journal, and tells the page apart from one the timeline wrote, so that the
+// page goes when the narrative does.
+func JournalMonthPageSentence(month string) string {
+	return "The journal page is /journal/month/" + month + "."
+}
+
 // JournalPeriod is a week, a month or a year of a person's journal.
 type JournalPeriod struct {
 	ID         string            `json:"id"`
