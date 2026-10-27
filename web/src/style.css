@@ -21033,6 +21033,12 @@ label.checkbox.is-plain > span > .muted {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The words searched for are what the row says, so they wrap rather than
+   being cut short in a rail too narrow for them. */
+.sidebar-search-everything .sidebar-search-label {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 760px) {
   /* The overlay is never narrowed to icons. */
   .sidebar.collapsed .sidebar-search {

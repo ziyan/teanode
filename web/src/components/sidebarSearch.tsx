@@ -301,7 +301,11 @@ export function SidebarSearch({
             role="option"
             tabIndex={-1}
             aria-selected={suggestions.length === activeIndex}
-            className={suggestions.length === activeIndex ? 'sidebar-search-row active' : 'sidebar-search-row'}
+            className={
+              suggestions.length === activeIndex
+                ? 'sidebar-search-row sidebar-search-everything active'
+                : 'sidebar-search-row sidebar-search-everything'
+            }
             onMouseEnter={() => setHighlightedIndex(suggestions.length)}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => runRow(suggestions.length)}
