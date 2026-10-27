@@ -60,10 +60,54 @@ func init() {
 					"'day' is YYYY-MM-DD in the person's own time zone, today by default. Use it for where they went through the day between their visits. " +
 					"With 'person', the path of somebody who shares their history with the person; not in a chat, where another person's location is not repeated.",
 				Parameters: tools.Object(map[string]any{
-					"day":    tools.StringProperty("the day, as YYYY-MM-DD in the person's own time zone; today by default"),
+					"day":    dayProperty,
 					"person": personProperty,
 				}),
 				Run: runPath,
+			},
+			{
+				Name: "location_trips", Family: tools.FamilyGeneral, Risk: tools.RiskRead, Permissions: locationPermissions,
+				Description: "How the person got from place to place: their trips, newest first, each the travel between leaving one place and arriving at the next, with where from and to, when, how far (distance_kilometers, with one decimal, and distance_meters) and how long, " +
+					"and its legs, each with its way of travel (walk, run, bike, car, bus, train, boat or plane), distance and duration. " +
+					"The way is worked out from the phone's motion activity, or from speed and distance without it; bus, train and boat are never worked out, only set by the person with travel_mode, and a leg says is_corrected when the way is the person's. " +
+					"Each of the person's own legs has a trip_leg_id, which travel_mode takes. " +
+					"Give 'day', or 'from' and 'until' for 'last weekend'; today by default. Use it to answer how they got somewhere, how long it took, and how far they walked or drove that day. " +
+					"With 'person', the trips of somebody who shares their history with the person; not in a chat, where another person's location is not repeated.",
+				Parameters: tools.Object(map[string]any{
+					"day":    dayProperty,
+					"from":   fromProperty,
+					"until":  untilProperty,
+					"person": personProperty,
+					"limit":  limitProperty,
+					"offset": offsetProperty,
+				}),
+				Run: runTrips,
+			},
+			{
+				Name: "location_travel_totals", Family: tools.FamilyGeneral, Risk: tools.RiskRead, Permissions: locationPermissions,
+				Description: "How far the person traveled by each way of travel (walk, run, bike, car, bus, train, boat, plane), added up per day, week, month or year, newest period first, " +
+					"each row with its period_start_day, the distance in kilometers for each way and the total. " +
+					"'period' is day, week (starting Monday), month or year, week by default; 'from' and 'until' default to the last 12 periods. A leg counts in the period it started in. " +
+					"Use it for 'how far did I walk this month' or 'how much did I drive last year'. " +
+					"With 'person', the totals of somebody who shares their history with the person; not in a chat, where another person's location is not repeated.",
+				Parameters: tools.Object(map[string]any{
+					"period": tools.StringProperty("day, week, month or year; week by default"),
+					"from":   fromProperty,
+					"until":  untilProperty,
+					"person": personProperty,
+				}),
+				Run: runTravelTotals,
+			},
+			{
+				Name: "location_travel_mode", Family: tools.FamilyGeneral, Risk: tools.RiskWrite, Permissions: locationPermissions,
+				Description: "Correct the way of travel of one leg of one of the person's own trips, such as a leg worked out as a car that was a bus. " +
+					"'trip_leg_id' is the leg's trip_leg_id from trips and 'travel_mode' is walk, run, bike, car, bus, train, boat or plane; leave 'travel_mode' empty to take the correction off, so the leg is counted as it was worked out. " +
+					"The correction stays when the trip is rebuilt. It answers the leg as it is counted now.",
+				Parameters: tools.Object(map[string]any{
+					"trip_leg_id": tools.StringProperty("the leg, by the trip_leg_id that trips gave"),
+					"travel_mode": tools.StringProperty("walk, run, bike, car, bus, train, boat or plane; empty to take the correction off"),
+				}, "trip_leg_id"),
+				Run: runTravelMode,
 			},
 			{
 				Name: "location_places", Family: tools.FamilyGeneral, Risk: tools.RiskRead, Permissions: locationPermissions,
@@ -330,7 +374,7 @@ func init() {
 			// sixth of them, for a question few turns ask.
 			tools.Group{
 				Name: "location", Family: tools.FamilyGeneral,
-				Description: "Where the person is and where they have been: their position now, their visits to places and how long each lasted, the path of a day, the places they named or labeled, " +
+				Description: "Where the person is and where they have been: their position now, their visits to places and how long each lasted, the path of a day, how they traveled between places (trips, and the distance by each way of travel per day, week, month or year), the places they named or labeled, " +
 					"places OpenStreetMap knows near them, sharing where they are with their circles, pausing it for a while, and muting the notices when somebody sharing with them arrives or leaves. Place names come from OpenStreetMap unless the person named the place.",
 				Guidance: "Location is the person's own and private; use it when the answer depends on where they are or have been, and say plainly what you used. " +
 					"In a chat with other people only the person's own location is read: another person's is never repeated into a chat.",
@@ -338,6 +382,9 @@ func init() {
 					{Action: "now", Tool: "location_now"},
 					{Action: "visits", Tool: "location_visits"},
 					{Action: "path", Tool: "location_path"},
+					{Action: "trips", Tool: "location_trips"},
+					{Action: "travel_totals", Tool: "location_travel_totals"},
+					{Action: "travel_mode", Tool: "location_travel_mode"},
 					{Action: "places", Tool: "location_places"},
 					{Action: "nearby", Tool: "location_nearby"},
 					{Action: "search", Tool: "location_search"},
@@ -375,6 +422,7 @@ var (
 	latitudeProperty    = tools.NumberProperty("latitude in degrees; for nearby and search at the person's last reported position unless given")
 	longitudeProperty   = tools.NumberProperty("longitude in degrees, with latitude_degrees")
 	radiusProperty      = tools.NumberProperty("meters: how far to look (150 by default and 1000 at most for nearby, 5000 and 50000 for search), or for save_place how far from its center counts as being there (25 to 2000, 75 for a new place)")
+	dayProperty         = tools.StringProperty("the day, as YYYY-MM-DD in the person's own time zone; today by default")
 	personProperty      = tools.StringProperty("the username of somebody who shares their location with the person, from people; leave out for the person's own")
 )
 

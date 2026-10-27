@@ -259,7 +259,7 @@ func ReadAgentHerdrScreen(ctx context.Context, connection *Client, computer, pan
 // SendAgentHerdrSession types text into a session and presses enter; a
 // session at work takes it as a message in its turn. The agent's files
 // named by attachmentIds are written on the computer and their paths typed
-// after the text.
+// before the text.
 func SendAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId, text string, attachmentIds []string) (*AgentHerdrSession, error) {
 	var result struct {
 		SendAgentHerdrSession *AgentHerdrSession `json:"SendAgentHerdrSession"`

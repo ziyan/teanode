@@ -6,6 +6,19 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.203.0] - 2026-10-27
+
+### Added
+
+- Location: trips between the places you go, each part sorted into walk, run, bike, car, bus, train, boat or plane, which you can correct, and how far you traveled each way by day, week, month and year, on the dashboard, the iPhone app, the command line and through the agent. The iPhone app asks for Motion & Fitness in Location setup to tell walking, cycling and driving apart. (#667)
+
+## [0.202.0] - 2026-10-27
+
+### Added
+
+- Journal: a page for each day linking what happened, with your words, mood and the weather, a story TeaNode writes in its dreams, and weeks, months and years to zoom out to. On the dashboard, the iPhone app, the command line (`teanode journal`) and for the agent. (#666)
+- Units: choose metric or US units for your account; the journal's weather and distances follow it. (#666)
+
 ## [0.201.0] - 2026-10-27
 
 ### Added

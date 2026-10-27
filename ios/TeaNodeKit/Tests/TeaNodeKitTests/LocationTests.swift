@@ -454,6 +454,22 @@ final class LocationTests: XCTestCase {
         XCTAssertTrue(outbox.isEmpty)
     }
 
+    func testWhatWaitedPast400DaysIsTakenOutBeforeSending() {
+        let queuedAt = Date()
+        var outbox = LocationOutbox(accountKey: "account")
+        outbox.addPoint(ReportedPoint(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, measuredAt: queuedAt))
+        outbox.addVisit(
+            ReportedVisit(
+                clientVisitKey: "key", latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, arrivedAt: queuedAt, departedAt: nil,
+                visitSource: "visit"))
+        outbox.addActivities([ReportedActivity(startedAt: queuedAt, activityKind: "walking", activityConfidence: "low")])
+        // A day to spare for the phone's clock.
+        outbox.removeTooOld(now: queuedAt.addingTimeInterval(398 * 86_400))
+        XCTAssertFalse(outbox.points.isEmpty || outbox.visits.isEmpty || outbox.activities.isEmpty)
+        outbox.removeTooOld(now: queuedAt.addingTimeInterval(400 * 86_400))
+        XCTAssertTrue(outbox.isEmpty)
+    }
+
     func testABatchTheServerCallsInvalidIsSplitUntilTheOneEntryIsFound() throws {
         func point(_ index: Int) -> ReportedPoint {
             ReportedPoint(sequence: index, latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, measuredAt: Date())

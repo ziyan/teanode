@@ -258,8 +258,8 @@ func TestWritesAndTheirRisks(t *testing.T) {
 	merged := tools.Build().Get("location")
 	risks := map[string]tools.Risk{
 		"now": tools.RiskRead, "visits": tools.RiskRead, "path": tools.RiskRead, "places": tools.RiskRead, "nearby": tools.RiskRead, "search": tools.RiskRead, "find_address": tools.RiskRead,
-		"people": tools.RiskRead, "shares": tools.RiskRead, "set_up": tools.RiskRead,
-		"save_place": tools.RiskWrite, "check_in": tools.RiskWrite, "unshare": tools.RiskWrite, "pause": tools.RiskWrite, "mute": tools.RiskWrite, "unmute": tools.RiskWrite,
+		"people": tools.RiskRead, "shares": tools.RiskRead, "set_up": tools.RiskRead, "trips": tools.RiskRead, "travel_totals": tools.RiskRead,
+		"save_place": tools.RiskWrite, "check_in": tools.RiskWrite, "unshare": tools.RiskWrite, "pause": tools.RiskWrite, "travel_mode": tools.RiskWrite, "mute": tools.RiskWrite, "unmute": tools.RiskWrite,
 		"forget_place": tools.RiskDestructive, "erase": tools.RiskDestructive, "share": tools.RiskGranting, "resume": tools.RiskGranting,
 	}
 	for action, want := range risks {
@@ -870,5 +870,138 @@ func TestVisitsAreListedWithThePausesOfTheRange(t *testing.T) {
 	forAPlace := &routing{answers: operations.answers}
 	if answer, _, err = act(t, runOf(forAPlace), "visits", `{"place_id":"p1"}`, false); err != nil || answer["pauses"] != nil || forAPlace.sent["ListLocationPauses"] != nil {
 		t.Errorf("a pause belongs to no place: %v %v", answer, err)
+	}
+}
+
+const tripsAnswer = `{"nextOffset":null,"trips":[{"id":"t1","startedAt":"2026-10-17T08:05:00Z","endedAt":"2026-10-17T08:40:00Z","durationSeconds":2100,"distanceMeters":12440,
+	"fromPlace":{"id":"p1","placeName":"Maple Park","placeLabel":"home","isNamedByPerson":false},"toPlace":null,
+	"legs":[{"id":"leg1","startedAt":"2026-10-17T08:05:00Z","endedAt":"2026-10-17T08:15:00Z","durationSeconds":600,"distanceMeters":640,"travelMode":"walk","detectedTravelMode":"walk","isTravelModeCorrected":false,"detectionSource":"motion"},
+		{"id":"leg2","startedAt":"2026-10-17T08:15:00Z","endedAt":"2026-10-17T08:40:00Z","durationSeconds":1500,"distanceMeters":11800,"travelMode":"bus","detectedTravelMode":"car","isTravelModeCorrected":true,"detectionSource":"motion"}]}]}`
+
+// trips asks for a day in the person's zone, and answers each trip with its
+// places, kilometers with one decimal and its legs, the person's own with the
+// leg id that travel_mode takes.
+func TestTripsAreReadByDayWithTheirLegs(t *testing.T) {
+	operations := &routing{answers: map[string]string{"ListTrips": tripsAnswer}}
+	answer, result, err := act(t, runOf(operations), "trips", `{"day":"2026-10-17"}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := operations.sent["ListTrips"]
+	if sent["from"] != "2026-10-17T00:00:00Z" || sent["until"] != "2026-10-18T00:00:00Z" || sent["userId"] != nil {
+		t.Errorf("the day in the person's zone: %v", sent)
+	}
+	trips := answer["trips"].([]any)
+	trip := trips[0].(map[string]any)
+	if trip["started"] != "2026-10-17 08:05" || trip["distance_kilometers"] != 12.4 || trip["distance_meters"] != float64(12440) || trip["from_place"] != "Home" || trip["to_place"] != nil {
+		t.Errorf("the trip: %v", trip)
+	}
+	legs := trip["legs"].([]any)
+	walk, bus := legs[0].(map[string]any), legs[1].(map[string]any)
+	if walk["travel_mode"] != "walk" || walk["distance_kilometers"] != 0.6 || walk["trip_leg_id"] != "leg1" || walk["is_corrected"] != false || walk["detected_travel_mode"] != nil {
+		t.Errorf("the walk: %v", walk)
+	}
+	if bus["travel_mode"] != "bus" || bus["is_corrected"] != true || bus["detected_travel_mode"] != "car" || bus["leg_duration"] != "25 minutes" {
+		t.Errorf("the bus: %v", bus)
+	}
+	if answer["has_more"] != false || !result.Untrusted {
+		t.Errorf("a place name is data: %v", answer)
+	}
+
+	if _, _, err := act(t, runOf(operations), "trips", `{"day":"2026-10-17","from":"2026-10-16"}`, false); err == nil {
+		t.Error("a day and a range together should be refused")
+	}
+	if _, _, err := act(t, runOf(operations), "trips", `{"day":"yesterday"}`, false); err == nil {
+		t.Error("a day nobody can read should be refused")
+	}
+	if _, _, err := act(t, runOf(operations), "trips", `{"from":"2026-10-17","until":"2026-10-16"}`, false); err == nil {
+		t.Error("a range backwards should be refused")
+	}
+	if _, _, err := act(t, runOf(operations), "trips", `{"from":"2026-10-10","until":"2026-10-12","limit":5,"offset":10}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if sent := operations.sent["ListTrips"]; sent["from"] != "2026-10-10T00:00:00Z" || sent["limitCount"] != float64(5) && sent["limitCount"] != 5 {
+		t.Errorf("the range and the page: %v", sent)
+	}
+}
+
+// Another person's trips are read at the history level and carry no leg ids,
+// since only the person corrects a leg.
+func TestTripsOfAnotherPersonCarryNoLegIDs(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListSharedLocations": `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"history"},{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"current"}]`,
+		"ListTrips":           tripsAnswer,
+	}}
+	answer, _, err := act(t, runOf(operations), "trips", `{"person":"ben"}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leg := answer["trips"].([]any)[0].(map[string]any)["legs"].([]any)[0].(map[string]any)
+	if operations.sent["ListTrips"]["userId"] != "u-ben" || leg["trip_leg_id"] != nil {
+		t.Errorf("ben's trips, without leg ids: %v %v", operations.sent["ListTrips"], leg)
+	}
+	if _, _, err := act(t, runOf(operations), "trips", `{"person":"cleo"}`, false); err == nil || !strings.Contains(err.Error(), "only where they are now") {
+		t.Errorf("somebody sharing only now: %v", err)
+	}
+	if _, _, err := act(t, unattendedRun{runOf(operations)}, "travel_totals", `{"person":"ben"}`, false); err == nil {
+		t.Error("another person's totals are not read in a run the person did not start")
+	}
+}
+
+// travel_totals defaults to weeks over the last 12, and answers a row per
+// period, newest first, with the kilometers of each way and the total.
+func TestTravelTotalsAreAddedUpPerPeriod(t *testing.T) {
+	operations := &routing{answers: map[string]string{"ListTravelTotals": `[
+		{"periodStartDay":"2026-10-05","travelMode":"car","distanceMeters":2040,"durationSeconds":300,"legCount":1},
+		{"periodStartDay":"2026-10-12","travelMode":"walk","distanceMeters":640,"durationSeconds":600,"legCount":1},
+		{"periodStartDay":"2026-10-12","travelMode":"bus","distanceMeters":11800,"durationSeconds":1500,"legCount":1}]`}}
+	answer, _, err := act(t, runOf(operations), "travel_totals", `{}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := operations.sent["ListTravelTotals"]
+	from, fromErr := time.Parse(time.RFC3339, fmt.Sprint(sent["from"]))
+	if sent["period"] != "week" || fromErr != nil || from.Weekday() != time.Monday || time.Since(from) < 11*7*24*time.Hour || time.Since(from) > 12*7*24*time.Hour {
+		t.Errorf("the last 12 weeks, from a Monday: %v", sent)
+	}
+	periods := answer["periods"].([]any)
+	newest := periods[0].(map[string]any)
+	byMode := newest["distance_kilometers_by_travel_mode"].(map[string]any)
+	if len(periods) != 2 || newest["period_start_day"] != "2026-10-12" || byMode["walk"] != 0.6 || byMode["bus"] != 11.8 || newest["total_distance_kilometers"] != 12.4 {
+		t.Errorf("newest first with the total: %v", periods)
+	}
+	if periods[1].(map[string]any)["period_start_day"] != "2026-10-05" {
+		t.Errorf("then the one before: %v", periods)
+	}
+
+	if _, _, err := act(t, runOf(operations), "travel_totals", `{"period":"month","from":"2026-01-01","until":"2026-10-01"}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if sent := operations.sent["ListTravelTotals"]; sent["period"] != "month" || sent["from"] != "2026-01-01T00:00:00Z" {
+		t.Errorf("the range given: %v", sent)
+	}
+	if _, _, err := act(t, runOf(operations), "travel_totals", `{"period":"fortnight"}`, false); err == nil {
+		t.Error("a period nobody has should be refused")
+	}
+}
+
+// travel_mode sends the leg and the way, none to take the correction off, and
+// refuses a way nobody has before anything is sent.
+func TestTravelModeSetsAndClearsAWay(t *testing.T) {
+	operations := &routing{answers: map[string]string{"SetTripLegTravelMode": `{"id":"leg2","startedAt":"2026-10-17T08:15:00Z","endedAt":"2026-10-17T08:40:00Z","durationSeconds":1500,"distanceMeters":11800,"travelMode":"bus","detectedTravelMode":"car","isTravelModeCorrected":true,"detectionSource":"motion"}`}}
+	answer, _, err := act(t, runOf(operations), "travel_mode", `{"trip_leg_id":"leg2","travel_mode":"Bus"}`, false)
+	sent := operations.sent["SetTripLegTravelMode"]
+	if err != nil || sent["tripLegId"] != "leg2" || sent["travelMode"] != "bus" || answer["travel_mode"] != "bus" || answer["is_corrected"] != true {
+		t.Errorf("setting: %v %v %v", answer, sent, err)
+	}
+	if _, _, err := act(t, runOf(operations), "travel_mode", `{"trip_leg_id":"leg2","travel_mode":""}`, false); err != nil || operations.sent["SetTripLegTravelMode"]["travelMode"] != nil {
+		t.Errorf("clearing sends no way: %v %v", operations.sent["SetTripLegTravelMode"], err)
+	}
+	refused := &routing{answers: operations.answers}
+	if _, _, err := act(t, runOf(refused), "travel_mode", `{"trip_leg_id":"leg2","travel_mode":"rocket"}`, false); err == nil || refused.sent["SetTripLegTravelMode"] != nil {
+		t.Errorf("a way nobody has: %v", err)
+	}
+	if _, _, err := act(t, runOf(refused), "travel_mode", `{"travel_mode":"bus"}`, false); err == nil {
+		t.Error("a leg is needed")
 	}
 }

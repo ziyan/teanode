@@ -57,6 +57,10 @@ struct LocationDrawer<Header: View, Content: View>: View {
     @Binding var headerHeight: CGFloat
     /// The height of the screen between its bars.
     let availableHeight: CGFloat
+    /// The height of what lies below the drawer at the bottom of the screen:
+    /// the tab bar and the home indicator. The lists run on under it, as a
+    /// sheet's do, and their last rows scroll up above it.
+    let bottomInset: CGFloat
     @ViewBuilder let header: () -> Header
     @ViewBuilder let content: () -> Content
     @GestureState private var dragTranslation: CGFloat = 0
@@ -87,21 +91,23 @@ struct LocationDrawer<Header: View, Content: View>: View {
             .contentShape(.rect)
             .gesture(drag)
             content()
+                .safeAreaPadding(.bottom, bottomInset)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .clipped()
                 // Collapsed, the lists are out of sight and out of reach.
                 .accessibilityHidden(detent == .collapsed)
         }
-        .frame(height: shownHeight, alignment: .top)
+        // Down to the bottom of the screen, under the tab bar, as a sheet
+        // goes.
+        .frame(height: shownHeight + bottomInset, alignment: .top)
         .frame(maxWidth: .infinity)
-        // The grouped gray of the lists in it, running on under the tab bar as
-        // a sheet's does.
+        // The grouped gray of the lists in it.
         .background {
             UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28, style: .continuous)
                 .fill(Color(.systemGroupedBackground))
                 .shadow(radius: 4)
-                .ignoresSafeArea(edges: .bottom)
         }
+        .ignoresSafeArea(.container, edges: .bottom)
         .animation(.snappy, value: detent)
     }
 

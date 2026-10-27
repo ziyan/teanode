@@ -486,7 +486,7 @@ export interface HerdrDraft {
 }
 
 // HerdrSendForm types into a session: text, and files to hand it, which are
-// written on its computer with their paths typed after the text. The box
+// written on its computer with their paths typed before the text. The box
 // grows with what is typed and is drawn with the agent drawer's classes; it
 // sends on Enter and takes a new line on Shift with Enter, as the drawer's
 // does. onSent is told the session as it stands after. The draft is kept here

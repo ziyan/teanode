@@ -278,9 +278,14 @@ them out of storage, at most ten and 32 MiB together, and only a program that
 names the `herdr_files` feature is sent them. The program writes each into a
 directory of its own send under `~/.cache/teanode/herdr-files/`, its name kept
 to letters, digits, dots, dashes and underscores, clears out sends older than
-a week, and types the paths after the text. For Claude Code each path is
+a week, and types the paths before the text. For Claude Code each path is
 named with `@`: it asks before it reads a file outside its directory, but
-reads one named that way into the message unasked. Codex reads a plain path.
+reads one named that way into the message unasked. A prompt that ends with an
+`@` name leaves Claude Code's list of files open, and the enter picks a file
+rather than sending, so files sent with no words are followed by a second
+enter. Pictures sent alone go as plain paths instead, which Claude Code
+attaches as pictures (an `@` picture at the end never finishes pasting), and
+with other files they go first. Codex reads a plain path.
 
 `open` starts Claude Code or Codex in a directory: in a new tab of the
 workspace named after the directory when there is one, labeled with the

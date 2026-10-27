@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/travel/rebuild"
 )
 
 // Putting in order the visits that were stored overlapping.
@@ -15,8 +16,9 @@ import (
 // visit over the stops made since, and the stored visits still overlap.
 //
 // Once, at start: this finds each person with a visit that began inside a
-// visit of theirs at another place and puts that stretch in order, the same
-// way a report does. Visits put in order overlap none, so a start after the
+// visit of theirs at another place, or a departure from a watched place
+// noticed inside one, and puts that stretch in order, the same way a report
+// does, and builds its trips again. Visits put in order overlap none, so a start after the
 // first finds nothing and costs one query.
 
 // visitRepairDays is how far back the look reaches, by arrival.
@@ -45,11 +47,16 @@ func repairOverlappedVisits(ctx context.Context, database db.Database) {
 			if err := tx.LockLocation(visitRange.UserID); err != nil {
 				return err
 			}
-			return tx.NormalizePlaceVisits(visitRange.UserID, visitRange.From, visitRange.Until)
+			if err := tx.NormalizePlaceVisits(visitRange.UserID, visitRange.From, visitRange.Until); err != nil {
+				return err
+			}
+			// The trips between the visits put in order are built again.
+			return rebuild.Around(tx, visitRange.UserID, visitRange.From, visitRange.Until)
 		}); err != nil {
 			log.Warningf("failed to put in order the visits of user %s from %s to %s: %s", visitRange.UserID, visitRange.From, visitRange.Until, err)
 			continue
 		}
+		log.Noticef("put in order the visits of user %s from %s to %s", visitRange.UserID, visitRange.From, visitRange.Until)
 		repairedCount++
 	}
 	if repairedCount > 0 {

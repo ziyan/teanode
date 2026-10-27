@@ -262,6 +262,7 @@
         /// What the Location screens ask, or nil for any other question.
         static func locationAnswer(query: String, body: Data?) -> String? {
             let variables = requestVariables(body)
+            if let travelAnswer = travelAnswer(query: query, body: body) { return travelAnswer }
             // `-TeaNodeScreen location-setup`: the server has no position yet.
             let isSetupScreen = screen == "location-setup"
             if query.contains("GetLocation("), let userId = variables["userId"] as? String {

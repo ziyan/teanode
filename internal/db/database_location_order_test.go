@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -25,7 +26,11 @@ func visitSpansOf(t *testing.T, tx db.Transaction, userId string) []string {
 		if visit.DepartedAt != nil {
 			departure = fmt.Sprint(int(visit.DepartedAt.Sub(locationDay).Minutes()))
 		}
-		spans = append(spans, fmt.Sprintf("%s %d-%s", visit.Place.PlaceName, int(visit.ArrivedAt.Sub(locationDay).Minutes()), departure))
+		arrival := "unknown"
+		if visit.ArrivedAt != nil {
+			arrival = fmt.Sprint(int(visit.ArrivedAt.Sub(locationDay).Minutes()))
+		}
+		spans = append(spans, fmt.Sprintf("%s %s-%s", visit.Place.PlaceName, arrival, departure))
 	}
 	return spans
 }
@@ -68,6 +73,66 @@ func TestAnArrivalDeliveredLateKeepsALaterVisitToTheSamePlaceWhole(t *testing.T)
 		got := fmt.Sprint(visitSpansOf(t, tx, userId))
 		if want := "[home 0-300 home 630-900 gym 930-open]"; got != want {
 			t.Errorf("the visits are %s, want %s", got, want)
+		}
+	})
+}
+
+// A departure from a watched place that the phone noticed long after the
+// person had arrived somewhere else is the end of their visit before, which
+// keeps its own departure; one stored inside a visit elsewhere before this was
+// put in order, after a visit at a third place, moves to before the visit it
+// was noticed in.
+func TestADepartureNoticedLateIsNotAVisitInsideAnother(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId := locationUser(t, tx, "location-late-departure")
+		home := locationPlace(t, tx, userId, "home", 10.5)
+		office := locationPlace(t, tx, userId, "office", 10.6)
+		gym := locationPlace(t, tx, userId, "gym", 10.7)
+		regionDeparture := func(key string, departedMinute int) *models.PlaceVisit {
+			visit := locationVisit(office.ID, key, -1, departedMinute)
+			visit.VisitSource = models.VisitSourceRegion
+			return visit
+		}
+
+		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office", 0, 200))
+		putAndNormalize(t, tx, userId, locationVisit(home.ID, "home", 225, -1))
+		// The phone also tells of coming into home's circle, which joins the
+		// visit home; a visit begun at the late departure would split it.
+		homeCircle := locationVisit(home.ID, "home-circle", 320, -1)
+		homeCircle.VisitSource = models.VisitSourceRegion
+		putAndNormalize(t, tx, userId, homeCircle)
+		putAndNormalize(t, tx, userId, regionDeparture("office-circle", 300))
+		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[office 0-200 home 225-open]"; got != want {
+			t.Errorf("the visits are %s, want %s", got, want)
+		}
+		found, err := tx.GetPlaceVisitByClientKey(userId, "office-circle")
+		if err != nil || found == nil || found.ArrivedAt == nil || !found.ArrivedAt.Equal(*minutesAfterNine(0)) {
+			t.Errorf("the late departure's key finds the visit to the office: %+v %v", found, err)
+		}
+		putAndNormalize(t, tx, userId, locationVisit(home.ID, "home", -1, 900))
+		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[office 0-200 home 225-900]"; got != want {
+			t.Errorf("the visits are %s, want %s", got, want)
+		}
+
+		putAndNormalize(t, tx, userId, locationVisit(gym.ID, "gym", 1000, 1100))
+		putAndNormalize(t, tx, userId, locationVisit(home.ID, "home-again", 1130, 1500))
+		if _, err := tx.PutPlaceVisit(userId, regionDeparture("office-circle-again", 1200)); err != nil {
+			t.Fatalf("PutPlaceVisit: %s", err)
+		}
+		if ranges, err := tx.ListOverlappedVisitRanges(locationDay.Add(-time.Hour)); err != nil || len(ranges) != 1 || ranges[0].UserID != userId {
+			t.Errorf("the departure inside the visit home is found to put in order: %+v %v", ranges, err)
+		}
+		if err := tx.NormalizePlaceVisits(userId, *minutesAfterNine(1130), *minutesAfterNine(1500)); err != nil {
+			t.Fatalf("NormalizePlaceVisits: %s", err)
+		}
+		found, err = tx.GetPlaceVisitByClientKey(userId, "office-circle-again")
+		if err != nil || found == nil || found.ArrivedAt != nil || found.DepartedAt == nil || !found.DepartedAt.Equal(*minutesAfterNine(1130)) {
+			t.Errorf("the departure after a visit elsewhere moves to the arrival home: %+v %v", found, err)
+		}
+		if ranges, err := tx.ListOverlappedVisitRanges(locationDay.Add(-time.Hour)); err != nil || len(ranges) != 0 {
+			t.Errorf("visits put in order still overlap: %+v %v", ranges, err)
 		}
 	})
 }
