@@ -71,7 +71,9 @@ final class JournalNarrativeTests: XCTestCase {
         XCTAssertEqual(JournalRecordOpening.of(recordKind: "finance_transaction", recordId: "t1", dashboardPath: "/finance"), .part("finance"))
         XCTAssertEqual(JournalRecordOpening.of(recordKind: "idea", recordId: "i1", dashboardPath: ""), .part("ideas"))
         XCTAssertEqual(JournalRecordOpening.of(recordKind: "goal", recordId: "g1", dashboardPath: ""), .part("goals"))
-        XCTAssertEqual(JournalRecordOpening.of(recordKind: "shopping_trip", recordId: "s1", dashboardPath: "/shopping"), .nowhere)
+        XCTAssertEqual(JournalRecordOpening.of(recordKind: "shopping_trip", recordId: "s1", dashboardPath: "/shopping"), .part("shopping"))
+        // The part is by the app's own name for it, which the app opens.
+        XCTAssertEqual(JournalRecordOpening.of(recordKind: "shopping_trip", recordId: "s1", dashboardPath: ""), .part("shopping"))
         XCTAssertEqual(JournalRecordOpening.of(recordKind: "chat_message", recordId: "x", dashboardPath: ""), .nowhere)
         XCTAssertFalse(JournalRecordOpening.nowhere.isOpenable)
     }

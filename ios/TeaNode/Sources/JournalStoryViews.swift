@@ -67,7 +67,7 @@ struct JournalWordsRows: View {
 /// JournalNarrativeRows is what TeaNode wrote: the story with the records it
 /// mentions, when it was written and from how much, what the person said was
 /// wrong with it (each to take back), and the buttons to say something is
-/// wrong or to have it written again.
+/// wrong, to have it written again or to remove it.
 struct JournalNarrativeRows: View {
     let narrative: JournalNarrative?
     /// What to say when there is no story and none is being written.
@@ -81,7 +81,9 @@ struct JournalNarrativeRows: View {
     let open: (JournalRecord) -> Void
     let correct: () -> Void
     let writeAgain: () -> Void
+    let removeStory: () -> Void
     let removeCorrection: (Int) -> Void
+    @State private var isConfirmingRemoval = false
 
     private var hasNarrative: Bool { narrative?.hasNarrative ?? false }
     private var isWriting: Bool { narrative?.narrativePending ?? false }
@@ -115,6 +117,21 @@ struct JournalNarrativeRows: View {
             Button(hasNarrative ? String(localized: "Write again") : writeNowTitle, systemImage: "arrow.clockwise", action: writeAgain)
                 .actionColor()
                 .disabled(isBusy || isWriting)
+        }
+        if hasNarrative {
+            Button(role: .destructive) {
+                isConfirmingRemoval = true
+            } label: {
+                Label("Remove this story", systemImage: "trash")
+            }
+            .tint(.red)
+            .actionColor(isDestructive: true)
+            .disabled(isBusy || isWriting)
+            .confirmationDialog("Remove this story?", isPresented: $isConfirmingRemoval, titleVisibility: .visible) {
+                Button("Remove", role: .destructive, action: removeStory)
+            } message: {
+                Text("TeaNode writes a new one in a later dream. Your corrections are kept.")
+            }
         }
     }
 

@@ -354,16 +354,18 @@ jobs:
             shoot "$health_settings_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$health_settings_screen"
             shoot "$health_settings_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$health_settings_screen"
           done
-          # Journal: the timeline (today's card, then the weeks), a whole day, a day with only the person's
-          # words, the write sheet, a week, a month, and the settings.
+          # Journal: the timeline (today's card, then the weeks), a whole day (and from its work and its trips
+          # to the shops), a day with only the person's words, the write sheet, a week, a month, a search with
+          # results, and the settings.
           shoot journal-light light large -TeaNodeDemo -TeaNodeTab journal
           shoot journal-dark dark large -TeaNodeDemo -TeaNodeTab journal
           shoot journal-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab journal
-          for journal_screen in journal-day journal-day-work journal-day-words journal-write journal-week journal-month; do
+          for journal_screen in journal-day journal-day-work journal-day-shopping journal-day-words journal-write journal-week journal-month journal-search; do
             shoot "$journal_screen-light" light large -TeaNodeDemo -TeaNodeTab journal -TeaNodeScreen "$journal_screen"
             shoot "$journal_screen-dark" dark large -TeaNodeDemo -TeaNodeTab journal -TeaNodeScreen "$journal_screen"
           done
           shoot journal-day-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab journal -TeaNodeScreen journal-day
+          shoot journal-search-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab journal -TeaNodeScreen journal-search
           shoot journal-settings-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen journal-settings
           shoot journal-settings-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen journal-settings
           # Passwords: the list, a login (with its one-time code, a site and a passkey), a card, the agent's
