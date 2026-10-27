@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.204.0] - 2026-10-27
+
+### Added
+
+- Journal: a day shows your trips to the shops; on the dashboard you can pin anything from the day's timeline to it and remove a story; the iPhone app searches your journal, pins and removes things on a day, and removes a story. (#673)
+
 ## [0.203.1] - 2026-10-27
 
 ### Fixed
