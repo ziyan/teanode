@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.201.0] - 2026-10-27
+
+### Added
+
+- Shopping lists on the dashboard, in the iPhone app, with `teanode shopping` and through the agent: named lists shared with a circle or a person, checked off live at the store across several lists, items with pictures (a pictures layout, and a lightbox to see one close up) and prices over time, Done without a receipt, import from pasted text or a screenshot, a reminder on arriving at a store, and every receipt checking off what it bought. (#661)
+
 ## [0.200.1] - 2026-10-27
 
 ### Changed
