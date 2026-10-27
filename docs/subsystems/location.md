@@ -90,7 +90,12 @@ stored without an arrival will not get one. When it was noticed while the
 person was already at another place (iOS can tell of leaving a circle an hour
 late), it is the end of the person's visit before that one if that visit was to
 the same place, which keeps its own departure, and otherwise it moves to when
-the visit elsewhere began. The result is the same as if
+the visit elsewhere began. One that came less than three minutes (the longest
+pass-by) after the person's visit before it ended was no stop: whatever they
+did at the place fits in that time. It is taken into that visit when that was
+to the same place (iOS can tell of leaving a circle again a moment after the
+visit ended), and otherwise deleted as a pass-by (a place on the way that iOS
+told of leaving with no arrival). The result is the same as if
 the events had come in order. The times put in order reach back to the arrival
 of every visit the report changed: iOS can report leaving a place's circle
 hours late, and that departure must not carry the visit over the stops made
@@ -98,8 +103,9 @@ since. Its notice is told by when the visit ended
 as stored, which is too long ago to tell. Visits stored overlapping before that
 are put in order once when the server starts (`repairOverlappedVisits`, the last
 90 days): it finds each person with a visit, or a departure from a place's
-circle, inside one of theirs at another place, puts it in order and builds its
-trips again, and a start after the first finds nothing.
+circle inside one of theirs at another place or moments after one ended, puts
+it in order and builds its trips again, and a start after the first finds
+nothing.
 
 At the most places a person may have (5000), a visit that would need a new place
 is left out, the rest of the batch is stored, and the answer's
@@ -386,6 +392,14 @@ that the person did not name or label.
 Places they named or labeled stay. In the same transaction it deletes the
 location journal documents for those days, with their chunks. `ForgetPlace`
 removes one place and its visits and rewrites the journal for those days.
+`ForgetPlaceVisit` (`teanode location forget-visit`, the tool's
+`forget_visit`, Forget this visit on a visit's menu on the dashboard and its
+swipe on the iPhone) removes one of the person's own visits that did not
+happen, such as a stop at a shop they only drove past: the location journal
+documents of its days go, the trips around it are built again, and the place
+stays, unless no visit to it is left and the person neither named nor
+labeled it. The agent is told to use it, not to rename the place, when the
+person says they were not somewhere.
 
 What it cannot remove is what the agent already learned from those days: the
 facts and month pages the dream filed from the journal stay in its memory until

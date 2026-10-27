@@ -224,6 +224,7 @@ function answerWith(shown: {
     }
     if (document.includes('ListTravelTotals(')) return { ListTravelTotals: shown.travelTotals ?? [] } as never
     if (document.includes('SetTripLegTravelMode(')) return { SetTripLegTravelMode: { id: 'leg-car' } } as never
+    if (document.includes('ForgetPlaceVisit(')) return { ForgetPlaceVisit: true } as never
     if (document.includes('ListLocationPoints')) return { ListLocationPoints: [] } as never
     if (document.includes('ListLocationPauses')) return { ListLocationPauses: shown.pauses ?? [] } as never
     if (document.includes('PauseLocation(')) {
@@ -2026,4 +2027,52 @@ it('offers the Travel tab on a person who shares their history', async () => {
 
   expect(await screen.findByText('Travel of Person B')).toBeTruthy()
   expect(calls('ListTravelTotals(')[0][1]).toMatchObject({ userId: 'person-b' })
+})
+
+it('forgets one of the own visits after asking, and reads the visits and trips again', async () => {
+  answerWith({ visits: [libraryVisit(), visit()], trips: [trip()] })
+  renderAt('/location')
+
+  const menus = await screen.findAllByRole('button', { name: /^Actions for the visit to Fixture Park/ })
+  expect(menus).toHaveLength(1)
+  const visitsBefore = calls('ListLocationVisits').length
+  const tripsBefore = calls('ListTrips(').length
+  fireEvent.click(menus[0])
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Forget this visit' }))
+
+  const dialog = await screen.findByRole('alertdialog')
+  expect(within(dialog).getByText('Forget this visit?')).toBeTruthy()
+  expect(dialog.textContent).toContain('The visit to Fixture Park from ')
+  expect(dialog.textContent).toContain('The place stays, with its other visits.')
+  expect(calls('ForgetPlaceVisit(')).toHaveLength(0)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Forget' }))
+
+  await waitFor(() => expect(calls('ForgetPlaceVisit(')).toHaveLength(1))
+  expect(calls('ForgetPlaceVisit(')[0][1]).toEqual({ placeVisitId: 'visit-one' })
+  expect(await screen.findByText('Visit forgotten')).toBeTruthy()
+  await waitFor(() => expect(calls('ListLocationVisits').length).toBeGreaterThan(visitsBefore))
+  await waitFor(() => expect(calls('ListTrips(').length).toBeGreaterThan(tripsBefore))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+})
+
+it('keeps the visit when the person cancels forgetting it', async () => {
+  answerWith({ visits: [visit()] })
+  renderAt('/location')
+
+  fireEvent.click(await screen.findByRole('button', { name: /^Actions for the visit to Fixture Park/ }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Forget this visit' }))
+  const dialog = await screen.findByRole('alertdialog')
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  expect(calls('ForgetPlaceVisit(')).toHaveLength(0)
+})
+
+it('offers no way to forget the visits of a person who shares their history', async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW], visits: [visit()] })
+  renderAt('/location?person=person-b')
+
+  expect(await screen.findByText('Visits of Person B')).toBeTruthy()
+  await screen.findByText('Fixture Park')
+  expect(screen.queryByRole('button', { name: /^Actions for the visit to/ })).toBeNull()
 })

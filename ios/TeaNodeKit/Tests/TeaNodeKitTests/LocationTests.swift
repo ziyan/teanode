@@ -173,6 +173,12 @@ final class LocationTests: XCTestCase {
         XCTAssertEqual(try sentVariables(fake.sent[3]), ["placeId": .string("place-1")])
     }
 
+    func testForgetsOneVisitByItsID() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"ForgetPlaceVisit":true}}"#)
+        try await connection.forgetPlaceVisit(placeVisitId: "visit-1")
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["placeVisitId": .string("visit-1")])
+    }
+
     func testSavesAnAddressWithItsPosition() async throws {
         let (connection, fake) = connection(answering: #"{"data":{"SavePlace":\#(placeAnswer)}}"#)
         try await connection.savePlace(

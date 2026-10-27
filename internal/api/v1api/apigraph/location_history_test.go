@@ -167,6 +167,17 @@ func TestVisitsAtOnePlaceAndNamingIt(t *testing.T) {
 	// Somebody else's place is not found, and neither is deleting it.
 	world.refused(t, world.cora, fmt.Sprintf(`mutation { SavePlace(placeId: %q, placeName: "Mine") { id } }`, placeId))
 	world.refused(t, world.cora, fmt.Sprintf(`mutation { ForgetPlace(placeId: %q) }`, placeId))
+
+	// One visit that did not happen goes alone, and only by its person.
+	visits := world.call(t, world.ada, `query { ListLocationVisits { placeVisits { id } } }`)["ListLocationVisits"].(map[string]any)["placeVisits"].([]any)
+	visitId := visits[0].(map[string]any)["id"].(string)
+	world.refused(t, world.cora, fmt.Sprintf(`mutation { ForgetPlaceVisit(placeVisitId: %q) }`, visitId))
+	world.call(t, world.ada, fmt.Sprintf(`mutation { ForgetPlaceVisit(placeVisitId: %q) }`, visitId))
+	if left := world.call(t, world.ada, `query { ListLocationVisits { placeVisits { id } } }`)["ListLocationVisits"].(map[string]any)["placeVisits"].([]any); len(left) != len(visits)-1 {
+		t.Errorf("one visit is forgotten: %v", left)
+	}
+	world.refused(t, world.ada, fmt.Sprintf(`mutation { ForgetPlaceVisit(placeVisitId: %q) }`, visitId))
+
 	world.call(t, world.ada, fmt.Sprintf(`mutation { ForgetPlace(placeId: %q) }`, placeId))
 	if visits := world.call(t, world.ada, `query { ListLocationVisits { placeVisits { id } } }`)["ListLocationVisits"].(map[string]any)["placeVisits"].([]any); len(visits) != 0 {
 		t.Errorf("a forgotten place takes its visits with it: %v", visits)

@@ -14,6 +14,7 @@ struct LocationPlaceScreen: View {
     @State private var visits: [PlaceVisit] = []
     @State private var nextVisitOffset: Int?
     @State private var isConfirmingForget = false
+    @State private var forgettingVisit: PlaceVisit?
     @State private var isChangingAddress = false
     @State private var isLoadingVisits = false
     /// Where the person tapped on the map: shown as the new pin until they
@@ -142,6 +143,18 @@ struct LocationPlaceScreen: View {
                     .accessibilityElement(children: .combine)
                     .onAppear {
                         if visit.id == visits.last?.id { Task { await loadVisits() } }
+                    }
+                    .confirmationDialog(
+                        "Forget this visit?", isPresented: Binding(get: { forgettingVisit?.id == visit.id }, set: { if !$0 { forgettingVisit = nil } }),
+                        titleVisibility: .visible, presenting: forgettingVisit
+                    ) { chosenVisit in
+                        Button("Forget", role: .destructive) { Task { await forgetVisit(chosenVisit) } }
+                    } message: { _ in
+                        Text("It is removed from your history, as if you were never there. The place stays, with its other visits.")
+                    }
+                    .swipeActions {
+                        Button("Forget", systemImage: "trash", role: .destructive) { forgettingVisit = visit }
+                            .tint(.red)
                     }
                 }
                 if isLoadingVisits { ProgressView().frame(maxWidth: .infinity) }
@@ -300,6 +313,10 @@ struct LocationPlaceScreen: View {
         } else {
             radiusMeters = place.radiusMeters
         }
+    }
+
+    private func forgetVisit(_ visit: PlaceVisit) async {
+        if await model.forget(visit: visit) { visits.removeAll { $0.id == visit.id } }
     }
 
     private func loadVisits() async {

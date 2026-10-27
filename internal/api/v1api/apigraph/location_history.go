@@ -126,6 +126,11 @@ type LocationMutation interface {
 	// Delete a place and every visit to it. Needs location:use.
 	ForgetPlace(ctx context.Context, arguments ForgetPlaceArguments) (bool, error)
 
+	// Delete one of the caller's visits, one that did not happen, such as a
+	// stop at a place they only drove past. The place stays, with its other
+	// visits. Needs location:use.
+	ForgetPlaceVisit(ctx context.Context, arguments ForgetPlaceVisitArguments) (bool, error)
+
 	// Record that the caller is at a place now: one of their own, or a place
 	// found nearby, which becomes one of theirs. Ends the visit in progress
 	// and starts a visit that was recorded by hand. Needs location:use.
@@ -563,6 +568,10 @@ type SavePlaceArguments struct {
 
 type ForgetPlaceArguments struct {
 	PlaceID string `json:"placeId"`
+}
+
+type ForgetPlaceVisitArguments struct {
+	PlaceVisitID string `json:"placeVisitId"`
 }
 
 type CheckInArguments struct {
@@ -2395,6 +2404,28 @@ func (self *graph) ForgetPlace(ctx context.Context, arguments ForgetPlaceArgumen
 	}
 	// The trips into and out of the visits that went are left without a
 	// visit; the visits beside them are joined by a trip of their own.
+	if err := rebuildTripsMissingVisit(tx, userId); err != nil {
+		return false, locationFailure(err)
+	}
+	return true, nil
+}
+
+func (self *graph) ForgetPlaceVisit(ctx context.Context, arguments ForgetPlaceVisitArguments) (bool, error) {
+	principal, err := self.requireLocationPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	tx := self.transaction(ctx)
+	userId := principal.User.ID
+	// One change of a person's location at a time, as in ReportLocation.
+	if err := tx.LockLocation(userId); err != nil {
+		return false, err
+	}
+	if err := tx.ForgetPlaceVisit(userId, strings.TrimSpace(arguments.PlaceVisitID)); err != nil {
+		return false, locationFailure(err)
+	}
+	// The trips into and out of the visit are left without it; the visits
+	// beside it are joined by a trip of their own.
 	if err := rebuildTripsMissingVisit(tx, userId); err != nil {
 		return false, locationFailure(err)
 	}

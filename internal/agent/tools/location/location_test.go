@@ -260,14 +260,14 @@ func TestWritesAndTheirRisks(t *testing.T) {
 		"now": tools.RiskRead, "visits": tools.RiskRead, "path": tools.RiskRead, "places": tools.RiskRead, "nearby": tools.RiskRead, "search": tools.RiskRead, "find_address": tools.RiskRead,
 		"people": tools.RiskRead, "shares": tools.RiskRead, "set_up": tools.RiskRead, "trips": tools.RiskRead, "travel_totals": tools.RiskRead,
 		"save_place": tools.RiskWrite, "check_in": tools.RiskWrite, "unshare": tools.RiskWrite, "pause": tools.RiskWrite, "travel_mode": tools.RiskWrite, "mute": tools.RiskWrite, "unmute": tools.RiskWrite,
-		"forget_place": tools.RiskDestructive, "erase": tools.RiskDestructive, "share": tools.RiskGranting, "resume": tools.RiskGranting,
+		"forget_place": tools.RiskDestructive, "forget_visit": tools.RiskDestructive, "erase": tools.RiskDestructive, "share": tools.RiskGranting, "resume": tools.RiskGranting,
 	}
 	for action, want := range risks {
 		if got := merged.RiskFor(json.RawMessage(`{"action":"` + action + `"}`)); got != want {
 			t.Errorf("%s is %s, want %s", action, got, want)
 		}
 	}
-	for _, action := range []string{"save_place", "forget_place", "check_in", "erase", "share", "unshare", "resume"} {
+	for _, action := range []string{"save_place", "forget_place", "forget_visit", "check_in", "erase", "share", "unshare", "resume"} {
 		if line := merged.PreviewLine(context.Background(), json.RawMessage(`{"action":"`+action+`"}`)); strings.TrimSpace(line) == "" || strings.Contains(line, `":`) {
 			t.Errorf("%s: the card says %q", action, line)
 		}
@@ -276,6 +276,7 @@ func TestWritesAndTheirRisks(t *testing.T) {
 	operations := &routing{answers: map[string]string{
 		"SavePlace":            `{"id":"p1","placeName":"Grandma's","placeLabel":"family","radiusMeters":75,"isNamedByPerson":true}`,
 		"ForgetPlace":          `true`,
+		"ForgetPlaceVisit":     `true`,
 		"EraseLocationHistory": `{"pointCount":3,"visitCount":1,"placeCount":0}`,
 	}}
 	answer, _, err := act(t, runOf(operations), "save_place", `{"place_id":"p1","place_name":"Grandma's","place_label":"family"}`, false)
@@ -295,6 +296,12 @@ func TestWritesAndTheirRisks(t *testing.T) {
 	}
 	if _, _, err := act(t, runOf(operations), "forget_place", `{"place_id":"p1"}`, true); err != nil {
 		t.Error(err)
+	}
+	if _, _, err := act(t, runOf(operations), "forget_visit", `{"visit_id":"v1"}`, false); err == nil || !strings.Contains(err.Error(), "confirmation") {
+		t.Errorf("forget_visit unconfirmed: %v", err)
+	}
+	if answer, _, err := act(t, runOf(operations), "forget_visit", `{"visit_id":"v1"}`, true); err != nil || answer["is_forgotten"] != true || operations.sent["ForgetPlaceVisit"]["placeVisitId"] != "v1" {
+		t.Errorf("forget_visit: %v %v %v", answer, operations.sent["ForgetPlaceVisit"], err)
 	}
 	if _, _, err := act(t, runOf(operations), "erase", `{}`, false); err == nil {
 		t.Error("erase unconfirmed")

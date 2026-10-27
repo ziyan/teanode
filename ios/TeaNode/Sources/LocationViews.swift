@@ -534,7 +534,9 @@ struct LocationVisitsList: View {
             ForEach(model.days) { day in
                 Section {
                     ForEach(day.entries) { entry in
-                        LocationTimelineRow(entry: entry, correctLeg: { leg, travelMode in Task { await model.correct(leg, to: travelMode) } })
+                        LocationTimelineRow(
+                            entry: entry, correctLeg: { leg, travelMode in Task { await model.correct(leg, to: travelMode) } },
+                            forgetVisit: { visit in Task { await model.forget(visit: visit) } })
                             .onAppear {
                                 if case .visit(let visit) = entry, visit.id == model.visits.last?.id {
                                     Task { await model.loadMoreVisits() }
@@ -728,7 +730,9 @@ struct LocationDayScreen: View {
                     List {
                         Section {
                             ForEach(LocationDays.entries(visits: visits, pauses: pauses, trips: trips)) { entry in
-                                LocationTimelineRow(entry: entry, correctLeg: { leg, travelMode in Task { await correct(leg, to: travelMode) } })
+                                LocationTimelineRow(
+                                    entry: entry, correctLeg: { leg, travelMode in Task { await correct(leg, to: travelMode) } },
+                                    forgetVisit: { visit in Task { await forget(visit) } })
                             }
                         } footer: {
                             OpenStreetMapCredit()
@@ -776,6 +780,14 @@ struct LocationDayScreen: View {
     /// Corrects a leg of the day's trips, then reads the day's trips again.
     private func correct(_ leg: TripLeg, to travelMode: TravelMode?) async {
         guard await model.correct(leg, to: travelMode) else { return }
+        await loadTrips()
+    }
+
+    /// Forgets a visit of the day, then takes it out of the day and reads the
+    /// day's trips again, which were built around it.
+    private func forget(_ visit: PlaceVisit) async {
+        guard await model.forget(visit: visit) else { return }
+        visits.removeAll { $0.id == visit.id }
         await loadTrips()
     }
 

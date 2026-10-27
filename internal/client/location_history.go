@@ -239,7 +239,8 @@ const (
   }
 }`
 
-	DocumentForgetPlace = `mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }`
+	DocumentForgetPlace      = `mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }`
+	DocumentForgetPlaceVisit = `mutation ($placeVisitId: String!) { ForgetPlaceVisit(placeVisitId: $placeVisitId) }`
 
 	DocumentCheckIn = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String, $accuracyMeters: Float) {
   CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText, accuracyMeters: $accuracyMeters) {
@@ -610,6 +611,15 @@ func ForgetPlace(ctx context.Context, connection *Client, placeId string) error 
 		ForgetPlace bool `json:"ForgetPlace"`
 	}
 	return connection.Execute(ctx, DocumentForgetPlace, map[string]any{"placeId": placeId}, &result)
+}
+
+// ForgetPlaceVisit deletes one of the caller's visits, one that did not
+// happen; the place stays.
+func ForgetPlaceVisit(ctx context.Context, connection *Client, placeVisitId string) error {
+	var result struct {
+		ForgetPlaceVisit bool `json:"ForgetPlaceVisit"`
+	}
+	return connection.Execute(ctx, DocumentForgetPlaceVisit, map[string]any{"placeVisitId": placeVisitId}, &result)
 }
 
 // CheckInAt is where to check in: one of the caller's places, or a place that

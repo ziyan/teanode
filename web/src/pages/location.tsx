@@ -138,6 +138,7 @@ const SAVE_PLACE = `mutation ($placeId: String, $placeName: String, $placeLabel:
     latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, addressText: $addressText) { id }
 }`
 const FORGET_PLACE = `mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }`
+const FORGET_PLACE_VISIT = `mutation ($placeVisitId: String!) { ForgetPlaceVisit(placeVisitId: $placeVisitId) }`
 const LIST_PAUSES = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
   ListLocationPauses(userId: $userId, from: $from, until: $until) { ${PAUSE_FIELDS} }
 }`
@@ -301,6 +302,7 @@ function LocationContent({ userId }: { userId: string }) {
   const [isReadingBrowser, setIsReadingBrowser] = useState(false)
   const [editingPlace, setEditingPlace] = useState<Place | null>(null)
   const [forgettingPlace, setForgettingPlace] = useState<Place | null>(null)
+  const [forgettingVisit, setForgettingVisit] = useState<PlaceVisit | null>(null)
   const [addressPlace, setAddressPlace] = useState<Place | null>(null)
   // What the person is asked to erase: one day, or everything.
   const [erasing, setErasing] = useState<{ range: DayRange | null } | null>(null)
@@ -1612,23 +1614,47 @@ function LocationContent({ userId }: { userId: string }) {
                   </div>
                 ) : (
                   <>
-                    <button
-                      type="button"
-                      className={row.visit.place.id === selectedPlaceId ? 'location-row is-selected' : 'location-row'}
-                      onClick={() => {
-                        setSelectedPlaceId(row.visit.place.id)
-                        setSelectedUserId(null)
-                      }}
-                    >
-                      <span className="location-row-icon">
-                        <PlaceLabelIcon placeLabel={row.visit.place.placeLabel} />
-                      </span>
-                      <span className="location-row-body">
-                        <strong>{placeTitle(row.visit.place, t)}</strong>
-                        <span className="muted">{rangeText(row.visit)}</span>
-                      </span>
-                      <span className="muted location-row-meta">{visitDurationText(row.visit, t)}</span>
-                    </button>
+                    <div className="location-visit-row">
+                      <button
+                        type="button"
+                        className={row.visit.place.id === selectedPlaceId ? 'location-row is-selected' : 'location-row'}
+                        onClick={() => {
+                          setSelectedPlaceId(row.visit.place.id)
+                          setSelectedUserId(null)
+                        }}
+                      >
+                        <span className="location-row-icon">
+                          <PlaceLabelIcon placeLabel={row.visit.place.placeLabel} />
+                        </span>
+                        <span className="location-row-body">
+                          <strong>{placeTitle(row.visit.place, t)}</strong>
+                          <span className="muted">{rangeText(row.visit)}</span>
+                        </span>
+                        <span className="muted location-row-meta">{visitDurationText(row.visit, t)}</span>
+                      </button>
+                      {!isReadOnly && (
+                        <MenuButton
+                          className="icon-action"
+                          label={t('location.visitMenu', {
+                            place: placeTitle(row.visit.place, t),
+                            time: rangeText(row.visit),
+                          })}
+                          icon={<MoreIcon size={16} />}
+                          render={(close) => (
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                close()
+                                setForgettingVisit(row.visit)
+                              }}
+                            >
+                              {t('location.forgetVisit')}
+                            </button>
+                          )}
+                        />
+                      )}
+                    </div>
                     {photoStrip(row.visit)}
                   </>
                 )}
@@ -1912,6 +1938,32 @@ function LocationContent({ userId }: { userId: string }) {
               if (!isDone) return
               if (selectedPlaceId === forgettingPlace.id) setSelectedPlaceId(null)
               setForgettingPlace(null)
+            })
+          }
+        />
+      )}
+
+      {forgettingVisit && (
+        <ConfirmDialog
+          title={t('location.forgetVisitTitle')}
+          body={t('location.forgetVisitBody', {
+            place: placeTitle(forgettingVisit.place, t),
+            time: rangeText(forgettingVisit),
+          })}
+          confirmLabel={t('location.forget')}
+          busy={isBusy}
+          error={dialogProblem}
+          onClose={() => {
+            setDialogProblem(null)
+            setForgettingVisit(null)
+          }}
+          onConfirm={() =>
+            void act(
+              () => graphql(FORGET_PLACE_VISIT, { placeVisitId: forgettingVisit.id }),
+              t('location.visitForgotten'),
+              t('location.forgetVisitFailed'),
+            ).then((isDone) => {
+              if (isDone) setForgettingVisit(null)
             })
           }
         />

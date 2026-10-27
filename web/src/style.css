@@ -19774,6 +19774,19 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   margin-bottom: 0;
 }
 
+/* A visit and its menu side by side: the visit takes the width. */
+.location-visit-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.location-visit-row > .location-row {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
 .location-row.is-selected {
   border-color: var(--leaf);
   background: color-mix(in srgb, var(--leaf) 10%, var(--surface));
