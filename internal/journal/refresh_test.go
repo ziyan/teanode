@@ -28,6 +28,11 @@ func (self *weatherCalls) fetch(ctx context.Context, latitude, longitude float64
 	return &models.JournalWeather{WeatherCode: 3, HighCelsius: 14, LowCelsius: 8, FetchedAt: time.Now()}, nil
 }
 
+// inThe is the test's own transaction, for RefreshWeather.
+func inThe(tx db.Transaction) journal.InTransaction {
+	return func(run func(transaction db.Transaction) error) error { return run(tx) }
+}
+
 func grantEverything(t *testing.T, tx db.Transaction, world *world) {
 	t.Helper()
 	dbtest.GrantPermission(t, tx, world.user.ID, models.PermissionMailRead, models.PermissionPhotosUse, models.PermissionLocationUse,
@@ -47,7 +52,11 @@ func TestRefreshStoresFactsMoodsAndWeatherAndWalksBack(t *testing.T) {
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
 		grantEverything(t, tx, world)
 
-		result, err := journal.Refresh(context.Background(), tx, world.user, world.agent, now, weather.fetch)
+		result, err := journal.Refresh(context.Background(), tx, world.user, world.agent, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		weatherResult, err := journal.RefreshWeather(context.Background(), inThe(tx), world.user, now, weather.fetch)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -56,8 +65,8 @@ func TestRefreshStoresFactsMoodsAndWeatherAndWalksBack(t *testing.T) {
 		if result.DaysComputedCount != 3 || result.OlderDaysComputedCount != 1 || result.OldestDay != "2026-10-21" || !result.IsBackfillComplete {
 			t.Errorf("the walk: %+v", result)
 		}
-		if result.MoodsFilledCount != 1 || result.WeatherFetchedCount != 2 || result.WeatherFailedCount != 0 {
-			t.Errorf("mood and weather: %+v", result)
+		if result.MoodsFilledCount != 1 || weatherResult.WeatherFetchedCount != 2 || weatherResult.WeatherFailedCount != 0 {
+			t.Errorf("mood and weather: %+v %+v", result, weatherResult)
 		}
 
 		day, err := tx.GetJournalDay(world.user.ID, worldDay)
@@ -89,12 +98,16 @@ func TestRefreshStoresFactsMoodsAndWeatherAndWalksBack(t *testing.T) {
 		}
 
 		// The same hour again changes nothing and asks nothing.
-		again, err := journal.Refresh(context.Background(), tx, world.user, world.agent, now, weather.fetch)
+		again, err := journal.Refresh(context.Background(), tx, world.user, world.agent, now)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if again.OlderDaysComputedCount != 0 || !again.IsBackfillComplete || again.WeatherFetchedCount != 0 || again.MoodsFilledCount != 0 || len(weather.calls) != 2 {
-			t.Errorf("the second refresh: %+v %v", again, weather.calls)
+		weatherAgain, err := journal.RefreshWeather(context.Background(), inThe(tx), world.user, now, weather.fetch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if again.OlderDaysComputedCount != 0 || !again.IsBackfillComplete || weatherAgain.WeatherFetchedCount != 0 || again.MoodsFilledCount != 0 || len(weather.calls) != 2 {
+			t.Errorf("the second refresh: %+v %+v %v", again, weatherAgain, weather.calls)
 		}
 
 		// A period adds the days up.
@@ -134,7 +147,11 @@ func TestRefreshLeavesThePersonsMoodAndHonorsTheWeatherSwitch(t *testing.T) {
 			t.Fatal(err)
 		}
 		failing := &weatherCalls{failOnDays: map[string]bool{worldDay: true}}
-		result, err := journal.Refresh(context.Background(), tx, world.user, world.agent, now, failing.fetch)
+		result, err := journal.Refresh(context.Background(), tx, world.user, world.agent, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		weatherResult, err := journal.RefreshWeather(context.Background(), inThe(tx), world.user, now, failing.fetch)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -147,8 +164,8 @@ func TestRefreshLeavesThePersonsMoodAndHonorsTheWeatherSwitch(t *testing.T) {
 		}
 		// Yesterday's weather failed; it is asked for again, by the forecast
 		// too since it is recent, and the day before's was kept.
-		if result.WeatherFailedCount != 1 || result.WeatherFetchedCount != 1 || day.Weather != nil {
-			t.Errorf("one day failed: %+v", result)
+		if weatherResult.WeatherFailedCount != 1 || weatherResult.WeatherFetchedCount != 1 || day.Weather != nil {
+			t.Errorf("one day failed: %+v", weatherResult)
 		}
 		forecastAsked := false
 		for _, call := range failing.calls {
@@ -165,12 +182,12 @@ func TestRefreshLeavesThePersonsMoodAndHonorsTheWeatherSwitch(t *testing.T) {
 			t.Fatal(err)
 		}
 		quiet := &weatherCalls{}
-		result, err = journal.Refresh(context.Background(), tx, world.user, world.agent, now, quiet.fetch)
-		if err != nil || len(quiet.calls) != 0 || result.WeatherFetchedCount != 0 {
-			t.Errorf("weather is off: %+v %v %v", result, quiet.calls, err)
+		weatherResult, err = journal.RefreshWeather(context.Background(), inThe(tx), world.user, now, quiet.fetch)
+		if err != nil || len(quiet.calls) != 0 || weatherResult.WeatherFetchedCount != 0 {
+			t.Errorf("weather is off: %+v %v %v", weatherResult, quiet.calls, err)
 		}
 		// And a nil fetcher is no weather at all.
-		if _, err := journal.Refresh(context.Background(), tx, world.user, world.agent, now, nil); err != nil {
+		if _, err := journal.RefreshWeather(context.Background(), inThe(tx), world.user, now, nil); err != nil {
 			t.Error(err)
 		}
 	})
@@ -183,8 +200,35 @@ func TestRefreshStopsWhenTheContextIsOver(t *testing.T) {
 		grantEverything(t, tx, world)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		if _, err := journal.Refresh(ctx, tx, world.user, world.agent, later(1, 0), nil); !errors.Is(err, context.Canceled) {
+		if _, err := journal.Refresh(ctx, tx, world.user, world.agent, later(1, 0)); !errors.Is(err, context.Canceled) {
 			t.Errorf("a refresh that is told to stop does: %v", err)
+		}
+	})
+}
+
+// An answer of the weather service is not kept for a day whose place was
+// erased while the service was asked.
+func TestRefreshWeatherDropsAnAnswerForAPlaceErasedMeanwhile(t *testing.T) {
+	world, release := newWorld(t)
+	defer release()
+	now := later(1, 0)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		grantEverything(t, tx, world)
+		if _, err := journal.Refresh(context.Background(), tx, world.user, world.agent, now); err != nil {
+			t.Fatal(err)
+		}
+		erasing := func(ctx context.Context, latitude, longitude float64, day, timeZone string, isForecast bool) (*models.JournalWeather, error) {
+			if err := tx.PutJournalFacts(world.user.ID, day, timeZone, models.JournalFacts{HasActivity: true}, now); err != nil {
+				return nil, err
+			}
+			return &models.JournalWeather{WeatherCode: 3, FetchedAt: time.Now()}, nil
+		}
+		if _, err := journal.RefreshWeather(context.Background(), inThe(tx), world.user, now, erasing); err != nil {
+			t.Fatal(err)
+		}
+		day, err := tx.GetJournalDay(world.user.ID, worldDay)
+		if err != nil || day.Weather != nil {
+			t.Errorf("the weather of a place no longer there was kept: %+v %v", day, err)
 		}
 	})
 }

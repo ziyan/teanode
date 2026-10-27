@@ -9,6 +9,7 @@ import (
 	"github.com/ziyan/teanode/internal/journal"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/push"
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 // What the worker's tick does for the journal without a model: every hour it
@@ -43,27 +44,50 @@ var (
 )
 
 // refreshJournals brings the journal numbers of every active person who keeps
-// a journal up to date, at most once an hour. It makes no model call.
+// a journal up to date, at most once an hour, in the background: reading a
+// person's days and asking the weather service take minutes, and the tick
+// must go on claiming jobs. It makes no model call.
 func (self *Agent) refreshJournals(ctx context.Context, now time.Time) {
-	if now.Sub(self.lastJournalRefresh) < journalRefreshEvery {
+	if now.Sub(self.lastJournalRefresh) < journalRefreshEvery || !self.refreshingJournals.CompareAndSwap(false, true) {
 		return
 	}
 	self.lastJournalRefresh = now
-	for _, person := range self.journalPeople(ctx) {
-		refreshContext, cancel := context.WithTimeout(ctx, journalRefreshTimeout)
-		var result journal.RefreshResult
-		err := self.settings.Database.TransactionContext(refreshContext, func(transaction db.Transaction) (err error) {
-			result, err = journal.Refresh(refreshContext, transaction, person.owner, person.agent, now, self.journalWeather)
-			return err
-		})
-		cancel()
-		if err != nil {
-			log.Warningf("cannot refresh the journal of agent %q: %s", person.agent.ID, err)
-			continue
+	self.waitGroup.Add(1)
+	go func() {
+		defer deferutil.Recover()
+		defer self.waitGroup.Done()
+		defer self.refreshingJournals.Store(false)
+		for _, person := range self.journalPeople(ctx) {
+			if ctx.Err() != nil {
+				return
+			}
+			self.refreshJournal(ctx, person, now)
 		}
-		if result.WeatherFailedCount > 0 {
-			log.Debugf("the weather service had no answer for %d days of agent %q", result.WeatherFailedCount, person.agent.ID)
-		}
+	}()
+}
+
+// refreshJournal brings one person's numbers up to date in one transaction,
+// then the weather, whose requests are made outside any transaction.
+func (self *Agent) refreshJournal(ctx context.Context, person journalPerson, now time.Time) {
+	refreshContext, cancel := context.WithTimeout(ctx, journalRefreshTimeout)
+	defer cancel()
+	if err := self.settings.Database.TransactionContext(refreshContext, func(transaction db.Transaction) error {
+		_, err := journal.Refresh(refreshContext, transaction, person.owner, person.agent, now)
+		return err
+	}); err != nil {
+		log.Warningf("cannot refresh the journal of agent %q: %s", person.agent.ID, err)
+		return
+	}
+	inTransaction := func(run func(transaction db.Transaction) error) error {
+		return self.settings.Database.TransactionContext(refreshContext, run)
+	}
+	result, err := journal.RefreshWeather(refreshContext, inTransaction, person.owner, now, self.journalWeather)
+	if err != nil {
+		log.Warningf("cannot keep the weather of agent %q: %s", person.agent.ID, err)
+		return
+	}
+	if result.WeatherFailedCount > 0 {
+		log.Debugf("the weather service had no answer for %d days of agent %q", result.WeatherFailedCount, person.agent.ID)
 	}
 }
 

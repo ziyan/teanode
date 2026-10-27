@@ -71,6 +71,7 @@ func TestTheWorkerRefreshesTheJournalsOfThoseWhoKeepOne(t *testing.T) {
 	fixture.words(t, today, "marker")
 	now := time.Now()
 	fixture.worker.refreshJournals(t.Context(), now)
+	fixture.worker.waitGroup.Wait()
 	if row := fixture.day(t, today); row.FactsComputedAt == nil || !row.Facts.HasActivity {
 		t.Errorf("the numbers of today were not stored: %+v", row)
 	}

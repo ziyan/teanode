@@ -167,6 +167,10 @@ type Agent struct {
 	checkingPrices  atomic.Bool
 	namingPlaces    atomic.Bool
 
+	// refreshingJournals is set while the journals' numbers are brought up
+	// to date in the background.
+	refreshingJournals atomic.Bool
+
 	// presence is who has a dashboard open; see presence.go.
 	presence *Presence
 
