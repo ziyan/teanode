@@ -63,7 +63,7 @@
                 daysAgo: 0, moodLevel: nil, moodWords: "", headline: "", wordsExcerpt: "", highCelsius: 16, weatherKind: "clear",
                 facts: ["meetingCount": 2, "stepCount": 3880, "photoCount": 2], photoCount: 2),
             DemoDay(
-                daysAgo: 1, moodLevel: 4, moodWords: "", headline: "A slow Sunday: soup, laundry and a long call.", wordsExcerpt: "",
+                daysAgo: 1, moodLevel: 4, moodWords: "", headline: "A slow day: soup, laundry and a long call.", wordsExcerpt: "",
                 highCelsius: 16, weatherKind: "partlyCloudy", facts: ["sleepMinutes": 480, "photoCount": 4], photoCount: 4),
             DemoDay(
                 daysAgo: 2, moodLevel: 3, moodWords: "", headline: "",
@@ -422,6 +422,9 @@
 
         // MARK: A week, a month, a year
 
+        /// The headline of the period that holds the release day.
+        static let releaseHeadline = "Orchard 2.4 shipped. Sleep slipped before it; the walk after was the best in a month."
+
         static func periodView(periodKind: String, anchorDay: String) -> [String: Any] {
             let kind = JournalPeriodKind(rawValue: periodKind) ?? .week
             let start = JournalDays.periodStart(of: anchorDay, periodKind: kind, weekStartsOn: "monday") ?? anchorDay
@@ -452,8 +455,14 @@
             var moodCounts = [0, 0, 0, 0, 0]
             for level in moods where (1...5).contains(level) { moodCounts[level - 1] += 1 }
             let name = periodKind == "week" ? "week" : periodKind == "month" ? "month" : "year"
+            // The days move with today, so the stories name no weekday, and
+            // only the period that holds the release day tells of it.
+            let holdsTheRelease = start <= fullDay && fullDay <= end
+            let headline = holdsTheRelease ? releaseHeadline : "A quiet \(name): rain, a sorted shelf and early nights."
             let text =
-                "A \(name) that bent around one day. The early days went to the release branch, with the upload test failing twice, and Thursday the release went out. The walk through [[place_visit:visit-park|the park]] afterward was the best part."
+                holdsTheRelease
+                ? "A \(name) that bent around one day. The early days went to the release branch, with the upload test failing twice, and then the release went out. The walk through [[place_visit:visit-park|the park]] afterward was the best part."
+                : "A \(name) without much in it. Rain kept you in, the shelf finally got sorted, and most evenings ended early."
             let months: [Any] = kind == .year ? yearMonths(start) : []
             let chapters: [Any] = kind == .year ? [yearChapter(start)] : []
             // The dream writes a story the night after the last day it covers:
@@ -464,14 +473,16 @@
                 "periodKind": periodKind, "periodStart": start, "periodEnd": end, "isCurrent": start <= today && today <= end,
                 "lookingBack": words(original: "Too much of the week at the desk. Keep Saturdays free.", day: start),
                 "narrative": narrative(
-                    headline: "Orchard 2.4 shipped on Thursday. Sleep slipped midweek; the weekend was the best in a month.", text: text,
-                    references: [record("place_visit", "visit-park", title: "Riverside Park", path: "/location?day=\(fullDay)", day: fullDay)], day: writtenDay),
-                "choices": [
-                    [
-                        "linkId": "period-link-1", "linkSource": "agent", "linkReason": "The release went out",
-                        "record": record("agent_document", "document-1", title: "Orchard 2.4 release notes", day: fullDay), "isHidden": false,
-                    ] as [String: Any]
-                ],
+                    headline: headline, text: text,
+                    references: holdsTheRelease ? [record("place_visit", "visit-park", title: "Riverside Park", path: "/location?day=\(fullDay)", day: fullDay)] : [],
+                    day: writtenDay),
+                "choices": holdsTheRelease
+                    ? [
+                        [
+                            "linkId": "period-link-1", "linkSource": "agent", "linkReason": "The release went out",
+                            "record": record("agent_document", "document-1", title: "Orchard 2.4 release notes", day: fullDay), "isHidden": false,
+                        ] as [String: Any]
+                    ] : [[String: Any]](),
                 "days": daySummaries,
                 "months": months, "totals": totals, "moodCounts": moodCounts, "dayCount": daySummaries.count, "chapters": chapters,
             ]
@@ -509,7 +520,7 @@
                 ],
                 [
                     "day": JournalDays.weekStart(of: fullDay, weekStartsOn: "monday") ?? fullDay, "periodKind": "week",
-                    "headline": "Orchard 2.4 shipped on Thursday. Sleep slipped midweek; the weekend was the best in a month.",
+                    "headline": releaseHeadline,
                     "snippet": "…The walk through the park afterward was the best part.",
                 ],
                 [
