@@ -121,11 +121,13 @@ func TestHealthSummaryDefaultsAndColumns(test *testing.T) {
 		test.Errorf("the table: %q", output)
 	}
 
-	if _, err := runHealthCommand(test, server, "summary", "stepCount", "--since", "7d", "--to", "2026-10-19", "--period", "week"); err != nil {
+	// The end of the range is a day after its start, whatever today is.
+	tomorrow := time.Now().AddDate(0, 0, 1).Format(time.DateOnly)
+	if _, err := runHealthCommand(test, server, "summary", "stepCount", "--since", "7d", "--to", tomorrow, "--period", "week"); err != nil {
 		test.Fatal(err)
 	}
 	variables = called("ReadHealthSummary")
-	if variables["period"] != "week" || variables["toDay"] != "2026-10-19" || variables["fromDay"] != time.Now().AddDate(0, 0, -7).Format(time.DateOnly) {
+	if variables["period"] != "week" || variables["toDay"] != tomorrow || variables["fromDay"] != time.Now().AddDate(0, 0, -7).Format(time.DateOnly) {
 		test.Errorf("the range asked for: %v", variables)
 	}
 }
