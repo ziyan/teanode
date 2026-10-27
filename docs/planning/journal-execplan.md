@@ -128,6 +128,20 @@ To see it working at the end: on a development server with a week of invented da
   Rationale: counted from each stretch's first post to its last, an assistant left working on its own, overnight or through a day away from the desk, made that whole time work, close to 24 hours a day. The person's posts are told apart by author, the names they go by in chat.
   Date/Author: 2026-10-26, agent.
 
+- Decision: the agent reads a day only from what the person gave it: the mailboxes granted to it (their mail and notes), the calendars given to it, the chats the person lets it remember, and the transactions of the finance sources that are on. That holds for its dreams and jobs, its tool and a command it runs as the person, in the records a narrative mentions and the records it may pin. The person's own page reads all of it, and the stored numbers are counted from all of it.
+  Rationale: review found the dream reading every mailbox, calendar and chat, so a person who gave the agent only a work mailbox still had private senders and subjects in the prompt and the narrative.
+  Date/Author: 2026-10-27, review.
+
+- Decision: erasing Health, or where the person went, also forgets what was written from it: the narratives, headlines and the agent's choices of the days that had any of it, the narratives of the weeks, months and years around them, and the memory pages made of those months. Removing a month's narrative, or erasing the journal, removes its memory page. Dreams write the recent ones again from what is left. The person's words, moods, corrections and pins stay.
+  Date/Author: 2026-10-27, review.
+
+- Decision: the journal tool reads the journal only in a run the person started, as it writes. A mail or a schedule could otherwise steer the agent into telling somebody else what the person wrote for themselves. A command the agent runs as the person may not remove a correction, a pin or a narrative, or stop a touch-up, as it may not erase the journal.
+  Date/Author: 2026-10-27, review.
+
+- Decision: the hourly refresh runs in the background beside the tick, and the weather service is asked between two transactions, never inside one; an answer is kept only while the day still has no weather and the same main place.
+  Rationale: a slow weather service held a transaction open for minutes and kept the tick from claiming jobs for everybody.
+  Date/Author: 2026-10-27, review.
+
 ## Outcomes & Retrospective
 
 Nothing built yet.
