@@ -876,8 +876,7 @@ func runCorrect(ctx context.Context, call *tools.Call, here *scope) (*tools.Resu
 		corrections = append(corrections, correction.CorrectionText)
 	}
 	// The answer says what the narrative keeps now, and that the correction
-	// is done: an answer that read the same each time once had a model send
-	// one correction twenty times.
+	// is done: a model that cannot see a change land tends to send it again.
 	answer := map[string]any{"day": day, "is_added": !narrative.IsCorrectionAlreadyKept, "corrections": corrections}
 	if narrative.IsCorrectionAlreadyKept {
 		answer["note"] = "already kept; nothing added. The narrative follows it whenever it is written. Do not send it again."
