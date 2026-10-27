@@ -795,6 +795,19 @@ it('reads the browser position at once when the permission is already granted', 
   Object.defineProperty(navigator, 'permissions', { configurable: true, value: undefined })
 })
 
+it('draws the person once when the browser position stands in for a visit with no position', async () => {
+  answerWith({ own: { latestPoint: null, openVisit: visit({ departedAt: null }) } })
+  stubBrowserPosition()
+  Object.defineProperty(navigator, 'permissions', {
+    configurable: true,
+    value: { query: async () => ({ state: 'granted' }) },
+  })
+  renderAt('/location')
+
+  await waitFor(() => expect(screen.getByTestId('map').getAttribute('data-people')).toBe('Person A'))
+  Object.defineProperty(navigator, 'permissions', { configurable: true, value: undefined })
+})
+
 it('does not draw the browser position for a person who has a position recorded', async () => {
   answerWith({})
   stubBrowserPosition()

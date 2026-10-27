@@ -19720,7 +19720,14 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   background: var(--surface);
   box-shadow: var(--shadow-raised);
   list-style: none;
+  overflow-y: auto;
   transform: translateX(-50%);
+}
+
+/* Opened above the pictures, where the map has more room. */
+.location-marker-menu.is-above {
+  top: auto;
+  bottom: calc(100% + var(--space-1));
 }
 
 .location-marker-menu button {

@@ -724,6 +724,9 @@ function LocationContent({ userId }: { userId: string }) {
         // Somebody who paused has no pin, whatever the page last read of
         // them: the person's own is still where their phone last was.
         if (view.pause && view.shareLevel !== 'owner') return []
+        // The browser's position is the person's pin when it is drawn, not a
+        // second one beside the place their visit is at.
+        if (view.shareLevel === 'owner' && hasNoOwnPosition && browserPosition) return []
         // Where they are: their latest position, or, for somebody who shares
         // the place they are at and not their position, the middle of that
         // place, as the iPhone's map draws them.
