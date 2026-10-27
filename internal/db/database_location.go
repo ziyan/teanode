@@ -89,6 +89,12 @@ type LocationOperation interface {
 	// same transaction. ErrNotFound unless it is the person's.
 	ForgetPlace(userId, placeId string) error
 
+	// ForgetPlaceVisit deletes one of the person's visits, one they say did
+	// not happen, and with it the location journal documents of the days it
+	// was on. The place stays, unless no visit to it is left and the person
+	// neither named nor labeled it. ErrNotFound unless it is the person's.
+	ForgetPlaceVisit(userId, placeVisitId string) error
+
 	// ListPlaces pages the person's places, each with its number of visits and
 	// the time of the last one: labeled places first, then the ones the
 	// person named, then the rest, each group by last visit. nextOffset is
@@ -149,14 +155,17 @@ type LocationOperation interface {
 	// arrival, a joined visit that has a visit at another place begin inside
 	// it is split in two there, a departure from a watched place with no
 	// arrival noticed inside a visit at another place moves to before that
-	// visit, and visits to one place less than ten minutes apart with nothing
+	// visit, one that came less than PassByDurationMost after the visit before
+	// it ended is taken out (into that visit when it was to the same place),
+	// and visits to one place less than ten minutes apart with nothing
 	// between them are joined. Call it once the visits of a report are stored.
 	NormalizePlaceVisits(userId string, from, until time.Time) error
 
 	// ListOverlappedVisitRanges finds the people with a visit that began
 	// after the arrival of a visit of theirs at another place and before it
 	// ended, or a departure from a watched place with no arrival inside such a
-	// visit, among visits that began since the instant, and for each the range
+	// visit or less than PassByDurationMost after a visit ended, among visits
+	// that began since the instant, and for each the range
 	// from the first such visit's arrival to the end of the last one, for
 	// NormalizePlaceVisits. Visits put in order overlap none.
 	ListOverlappedVisitRanges(since time.Time) ([]VisitRange, error)
@@ -940,6 +949,41 @@ func (self *transaction) ForgetPlace(userId, placeId string) error {
 		return err
 	}
 	return self.tx.Where("\"id\" = ? AND \"user_id\" = ?", placeId, userId).Delete(&placeModel{}).Error
+}
+
+func (self *transaction) ForgetPlaceVisit(userId, placeVisitId string) error {
+	var visit placeVisitModel
+	if err := lockRow(self.tx, &visit, placeVisitId); err != nil || visit.UserID != userId {
+		// Somebody else's visit is no visit at all.
+		if err == nil {
+			err = ErrNotFound
+		}
+		return err
+	}
+	// The journal of the days the visit was on names the place.
+	visitStartedAt := visitStart(&visit)
+	visitEndedAt := time.Now()
+	if visit.DepartedAt != nil {
+		visitEndedAt = *visit.DepartedAt
+	}
+	if err := self.deleteLocationDayDocuments(userId, &visitStartedAt, &visitEndedAt); err != nil {
+		return err
+	}
+	if err := self.tx.Where("\"id\" = ?", visit.ID).Delete(&placeVisitModel{}).Error; err != nil {
+		return err
+	}
+	// A place nobody went to, that the person did not name or label, was
+	// only ever a guess from where they were; the lock is taken as
+	// EraseLocationHistory takes it.
+	var place placeModel
+	if err := lockRow(self.tx, &place, visit.PlaceID); err != nil {
+		return err
+	}
+	if place.ID == "" || place.IsNamedByPerson || place.PlaceLabel != "" {
+		return nil
+	}
+	return self.tx.Where(`"id" = ? AND NOT EXISTS (SELECT 1 FROM "place_visit" WHERE "place_visit"."place_id" = "place"."id")`, place.ID).
+		Delete(&placeModel{}).Error
 }
 
 func (self *transaction) ListPlaces(userId string, filter PlaceFilter) ([]*models.Place, int, error) {
