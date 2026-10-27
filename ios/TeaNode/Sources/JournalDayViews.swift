@@ -401,17 +401,22 @@ struct JournalDayScreen: View {
 
     /// The choices and pins of kinds the sections below do not show already:
     /// a chosen mail is among the mail that mattered, and a chosen document
-    /// is among the work.
+    /// is among the work, each removable there. A pin or a choice whose
+    /// record is gone is listed here, so that it can be removed.
     private func chosenLinks(_ journalDay: JournalDay) -> [JournalLink] {
         let choices = journalDay.choices.filter { link in
-            guard !link.isHidden, let record = link.record, !record.isUnavailable else { return false }
-            return record.recordKind != "mail" && record.recordKind != "agent_document"
+            guard !link.isHidden, let record = link.record else { return false }
+            return record.isUnavailable || (record.recordKind != "mail" && record.recordKind != "agent_document")
         }
-        let pins = journalDay.pins.filter { link in
-            guard let record = link.record else { return false }
-            return !record.isUnavailable
+        return choices + journalDay.pins.filter { $0.record != nil }
+    }
+
+    /// The agent's choice of a record that a section below shows, which the
+    /// person can remove there; nil when the agent did not choose it.
+    private func choice(of recordKind: String, _ recordId: String, in journalDay: JournalDay) -> JournalLink? {
+        journalDay.choices.first { link in
+            !link.isHidden && link.record?.recordKind == recordKind && link.record?.recordId == recordId
         }
-        return choices + pins
     }
 
     @ViewBuilder
@@ -421,11 +426,19 @@ struct JournalDayScreen: View {
             Section {
                 ForEach(shown(links, list: "chosen")) { link in
                     if let record = link.record {
-                        JournalRecordRow(
-                            symbolName: JournalText.symbol(forRecordKind: record.recordKind), title: record.title, detail: link.linkReason,
-                            opening: JournalRecordOpening.of(record: record), openRecord: { opening in openRecord(opening, in: journalDay) })
-                            .swipeActions(edge: .trailing) { removeButton(link) }
-                            .contextMenu { removeButton(link) }
+                        if record.isUnavailable {
+                            JournalRecordRow(
+                                symbolName: JournalText.symbol(forRecordKind: record.recordKind), title: String(localized: "No longer available"),
+                                detail: link.linkReason)
+                                .swipeActions(edge: .trailing) { removeButton(link) }
+                                .contextMenu { removeButton(link) }
+                        } else {
+                            JournalRecordRow(
+                                symbolName: JournalText.symbol(forRecordKind: record.recordKind), title: record.title, detail: link.linkReason,
+                                opening: JournalRecordOpening.of(record: record), openRecord: { opening in openRecord(opening, in: journalDay) })
+                                .swipeActions(edge: .trailing) { removeButton(link) }
+                                .contextMenu { removeButton(link) }
+                        }
                     }
                 }
                 showAllRow(links, list: "chosen")
@@ -473,9 +486,16 @@ struct JournalDayScreen: View {
                         }
                         showAllRow(journalDay.codingSessions, list: "sessions")
                         ForEach(shown(chosen, list: "documents")) { document in
+                            let link = choice(of: "agent_document", document.documentId, in: journalDay)
                             JournalRecordRow(
                                 symbolName: "doc.text", title: document.title,
                                 detail: document.linkReason.isEmpty ? document.sourceName : document.linkReason)
+                                .swipeActions(edge: .trailing) {
+                                    if let link { removeButton(link) }
+                                }
+                                .contextMenu {
+                                    if let link { removeButton(link) }
+                                }
                         }
                         showAllRow(chosen, list: "documents")
                     } label: {
@@ -547,8 +567,15 @@ struct JournalDayScreen: View {
         if !mattered.isEmpty {
             Section {
                 ForEach(shown(mattered, list: "mail")) { message in
+                    let link = message.isChosen ? choice(of: "mail", message.itemId, in: journalDay) : nil
                     JournalRecordRow(
                         symbolName: "envelope", title: message.subject, detail: mailDetail(message), opening: .mailItem(message.itemId))
+                        .swipeActions(edge: .trailing) {
+                            if let link { removeButton(link) }
+                        }
+                        .contextMenu {
+                            if let link { removeButton(link) }
+                        }
                 }
                 showAllRow(mattered, list: "mail")
             } header: {
