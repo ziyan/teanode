@@ -1,6 +1,6 @@
 import { isPathAvailable } from '../services'
 import type { ServiceCapabilities } from '../api'
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { Key, useTranslation } from '../i18n/i18n'
@@ -309,6 +309,25 @@ export function navigablePages(
   })
 }
 
+// How wide the rail's scrollbar is, kept on the rail as
+// --sidebar-scrollbar-width so the search box above the rows can leave the
+// same room on its right and its edges stay over the rows'. A scrollbar that
+// floats over the rows, as on a phone or a Mac, is 0.
+function useScrollbarWidth(navigation: React.RefObject<HTMLElement | null>, rail: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const navigationElement = navigation.current
+    const railElement = rail.current
+    if (!navigationElement || !railElement || typeof ResizeObserver === 'undefined') return
+    // The content box narrows when a scrollbar appears, so this hears it.
+    const observer = new ResizeObserver(() => {
+      const scrollbarWidth = navigationElement.offsetWidth - navigationElement.clientWidth
+      railElement.style.setProperty('--sidebar-scrollbar-width', `${scrollbarWidth}px`)
+    })
+    observer.observe(navigationElement)
+    return () => observer.disconnect()
+  }, [navigation, rail])
+}
+
 const STORAGE_KEY = 'teanode.sidebar.collapsed'
 
 // The single mobile boundary. Everything that switches between the two
@@ -378,6 +397,9 @@ export function Sidebar({
   const mailboxes = useMailboxes()
   const session = useSession()
   const agent = useAgentIdentity()
+  const railRef = useRef<HTMLElement>(null)
+  const navigationRef = useRef<HTMLElement>(null)
+  useScrollbarWidth(navigationRef, railRef)
 
   // Somebody whose only permission is over their own mailbox has no
   // management side, and a person with no mailbox at all (the console, or a
@@ -472,7 +494,10 @@ export function Sidebar({
           is dismissed. Tapping the page you can see is the gesture people
           already try. */}
       {open && <div className="scrim" onClick={onClose} aria-hidden="true" />}
-      <aside className={['sidebar', collapsed ? 'collapsed' : '', open ? 'open' : ''].filter(Boolean).join(' ')}>
+      <aside
+        ref={railRef}
+        className={['sidebar', collapsed ? 'collapsed' : '', open ? 'open' : ''].filter(Boolean).join(' ')}
+      >
         {/* The product belongs at the top of its own navigation, not on the bar
             across the page: the bar says where you are, and the rail says what
             this is. Collapsed, the mark stays and the word goes. */}
@@ -515,7 +540,7 @@ export function Sidebar({
           />
         )}
 
-        <nav onClick={onClose}>
+        <nav ref={navigationRef} onClick={onClose}>
           {/* The way back out. First, and on its own, because it is the one
               row that changes what the rail is showing rather than where in
               it you are. */}
