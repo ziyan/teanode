@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.207.1] - 2026-10-28
+
+### Fixed
+
+- On an iPad, the app calls the device an iPad instead of an iPhone, and Passwords says Touch ID on a device with a fingerprint sensor. (#688)
+
 ## [0.207.0] - 2026-10-28
 
 ### Added
