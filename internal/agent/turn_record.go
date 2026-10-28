@@ -91,7 +91,10 @@ func (self *Agent) recordTurn(run *AskRun) {
 	// As the database keeps it, so that two turns compare their starts the
 	// same way here and there.
 	now := time.Now().Truncate(time.Microsecond)
+	// Under the lock the heartbeat reads it with.
+	self.runsMutex.Lock()
 	run.recordedAt = now
+	self.runsMutex.Unlock()
 	if err := self.settings.Database.TransactionContext(self.ctx, func(tx db.Transaction) error {
 		return tx.PutAgentTurn(&models.AgentTurn{
 			RunID: run.ID, ConversationID: run.settings.Conversation.ID, Instance: self.settings.Instance,
@@ -167,7 +170,12 @@ func (self *AskRun) waitForTurnsElsewhere() bool {
 	hasSaidQueued := false
 	for {
 		isBehind := false
-		for _, turn := range self.agent.turnsElsewhere(self.ctx, self.settings.Conversation.ID) {
+		elsewhere := self.agent.turnsElsewhere(self.ctx, self.settings.Conversation.ID)
+		// Stopped while asking: the answer is no answer.
+		if self.ctx.Err() != nil {
+			return false
+		}
+		for _, turn := range elsewhere {
 			if turn.StartedAt.Before(self.recordedAt) || turn.StartedAt.Equal(self.recordedAt) && turn.RunID < self.ID {
 				isBehind = true
 				break

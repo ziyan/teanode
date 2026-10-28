@@ -518,6 +518,9 @@ func (self *Agent) queueLocationJournals(ctx context.Context, now time.Time) {
 			continue
 		}
 		if !isFree {
+			// Another instance wrote it lately: look again soon rather than
+			// in an hour.
+			self.lastLocationJournal = now.Add(-locationJournalEvery + sweepRetry)
 			continue
 		}
 		writtenCount, err := self.writeLocationJournal(ctx, agent, owner, now)

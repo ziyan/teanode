@@ -121,6 +121,12 @@ func (self *Bucket) Rate() float64 {
 
 // Wait for availability.
 func (self *Bucket) Wait(count int64) {
+	if self.remote != nil {
+		// A shared bucket says nothing of how long to wait. Said loudly, so
+		// that a caller written for a bucket here does not quietly stop
+		// waiting.
+		log.Errorf("the shared limit %q cannot be waited for; the tokens were taken without a wait", self.remote.key)
+	}
 	if duration := self.Take(count); duration > 0 {
 		time.Sleep(duration)
 	}
@@ -191,6 +197,10 @@ func (self *Bucket) takeAvailable(now time.Time, count int64) int64 {
 // that turned out not to count.
 func (self *Bucket) Give(count int64) {
 	if self.remote != nil {
+		// Tokens a shared bucket gave cannot be put back. Said loudly, so
+		// that a caller that gives back on success is not mistaken for one
+		// that works.
+		log.Errorf("the shared limit %q cannot be given tokens back; %d stay spent", self.remote.key, count)
 		return
 	}
 	self.mutex.Lock()

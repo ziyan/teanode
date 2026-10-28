@@ -15,9 +15,10 @@ import (
 // one another; with the full interval the turn taken by one a moment before
 // another's would be refused to that one, which would then wait another whole
 // interval for its next try.
-// scavengeRetry is how soon a sweep another instance had the turn of is tried
-// again.
-const scavengeRetry = 10 * time.Minute
+// sweepRetry is how soon a sweep another instance had the turn of is tried
+// again: an instance restarted more often than the sweep's interval would
+// otherwise never be the one to run it.
+const sweepRetry = 10 * time.Minute
 
 func takeSweep(tx db.Transaction, sweepName string, interval time.Duration, now time.Time) (bool, error) {
 	return tx.TakeThrottle("agent-sweep:"+sweepName, interval-interval/10, now)

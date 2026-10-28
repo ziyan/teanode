@@ -24,8 +24,9 @@ func TestASecondInstanceUnderOneNameIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the first instance did not get its name: %s", err)
 	}
-	if _, err := holdInstanceName(ctx, database, "teanode-1"); err == nil || !strings.Contains(err.Error(), "INSTANCE_ID") {
-		t.Fatalf("a second instance under the same name was not refused: %v", err)
+	if _, err := holdInstanceName(ctx, database, "teanode-1"); err == nil || !strings.Contains(err.Error(), "INSTANCE_ID") ||
+		!strings.Contains(err.Error(), "a session from") {
+		t.Fatalf("a second instance under the same name was not refused, saying who holds it: %v", err)
 	}
 	other, err := holdInstanceName(ctx, database, "teanode-2")
 	if err != nil {

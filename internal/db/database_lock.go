@@ -90,3 +90,26 @@ func releaseSessionLock(connection *sql.Conn, key int64) func() {
 		_ = connection.Close()
 	}
 }
+
+// DescribeSessionLockHolder says who holds a session lock, as the database
+// sees the session: its client address and when it connected. Empty when
+// nobody holds it, or the database will not say.
+//
+// A host that lost power can leave its session open in the database for a
+// long while, and the lock with it, until the database notices the connection
+// is gone; this is how a start refused for it can say so.
+func (self *database) DescribeSessionLockHolder(ctx context.Context, key int64) (string, error) {
+	var holders []struct {
+		ClientAddress string
+		BackendStart  time.Time
+	}
+	// An advisory lock on one 64-bit key is kept as its two halves.
+	err := self.db.WithContext(ctx).Raw(`SELECT coalesce(host(activity.client_addr), 'a local socket') AS client_address, activity.backend_start AS backend_start
+		FROM pg_locks lock JOIN pg_stat_activity activity ON activity.pid = lock.pid
+		WHERE lock.locktype = 'advisory' AND lock.granted AND lock.objsubid = 1
+			AND lock.classid = ((?::bigint >> 32) & 4294967295)::oid AND lock.objid = (?::bigint & 4294967295)::oid`, key, key).Scan(&holders).Error
+	if err != nil || len(holders) == 0 {
+		return "", err
+	}
+	return fmt.Sprintf("a session from %s, connected %s", holders[0].ClientAddress, holders[0].BackendStart.Format(time.RFC3339)), nil
+}

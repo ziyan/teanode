@@ -76,6 +76,12 @@ func (self *Agent) resumeCutTurnsOnce(ctx context.Context) {
 	var cutTurns []*models.AgentTurn
 	cutAtByConversation := map[string]time.Time{}
 	for _, turn := range claimed {
+		// Taken for lost because this instance was too slow to say it was
+		// running (a stalled database), but it is: the heartbeat writes it
+		// back, and carrying it on would answer twice.
+		if turn.Instance == self.settings.Instance && self.isTurnRunningHere(turn.ConversationID) {
+			continue
+		}
 		cutAt := turnCutMoment(turn, now)
 		if now.Sub(cutAt) > resumeWindow {
 			continue

@@ -159,6 +159,10 @@ type dbStore struct {
 	// database; nil while it is kept in it.
 	secretFile *SecretFile
 
+	// reloadMutex makes one Reload at a time, so that a slow one cannot
+	// keep an older version after a quicker one kept a newer.
+	reloadMutex sync.Mutex
+
 	mutex   sync.RWMutex
 	current *Configuration
 	version int64
@@ -249,9 +253,17 @@ func (self *dbStore) Filename() string {
 }
 
 func (self *dbStore) Reload() error {
+	self.reloadMutex.Lock()
+	defer self.reloadMutex.Unlock()
 	rows, err := self.database.LoadConfiguration()
 	if err != nil {
 		return err
+	}
+	// The version held is the one stored: nothing changed, and nobody is
+	// told it did. A reload asked for to be sure of the newest (a sign-in's
+	// refresh token, a certificate) costs a read and no more.
+	if current, version := self.snapshot(); current != nil && rows.Version == version {
+		return nil
 	}
 	configuration, err := FromRows(rows, self.secretFile)
 	if err != nil {

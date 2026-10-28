@@ -107,6 +107,7 @@ type Database interface {
 	LockSession(ctx context.Context, key int64) (func(), error)
 	TryLockSession(ctx context.Context, key int64) (func(), bool, error)
 	WhileLocked(ctx context.Context, key int64, work func(context.Context) error) (bool, error)
+	DescribeSessionLockHolder(ctx context.Context, key int64) (string, error)
 
 	NotifyAgentEvent(payload string) error
 	ListenAgentEvents(ctx context.Context) (<-chan string, error)

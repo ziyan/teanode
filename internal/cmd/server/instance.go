@@ -38,8 +38,14 @@ func holdInstanceName(ctx context.Context, database db.Database, instanceName st
 			return release, nil
 		}
 		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("another instance named %q is running against this database. Every instance "+
-				"needs a name of its own: set %sINSTANCE_ID to tell them apart", instanceName, bootstrap.Prefix)
+			holder, err := database.DescribeSessionLockHolder(ctx, key)
+			if err != nil || holder == "" {
+				holder = "a session the database would not describe"
+			}
+			return nil, fmt.Errorf("another instance named %q is running against this database (it holds the name: %s). "+
+				"Every instance needs a name of its own: set %sINSTANCE_ID to tell them apart. If that instance is gone, "+
+				"its machine having lost power say, the database lets go of the name once it notices the connection is "+
+				"dead, or when that session is ended with pg_terminate_backend", instanceName, holder, bootstrap.Prefix)
 		}
 		log.Noticef("waiting for the instance named %q to stop before starting under its name", instanceName)
 		select {

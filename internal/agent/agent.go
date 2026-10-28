@@ -782,7 +782,7 @@ func (self *Agent) scavenge(ctx context.Context, now time.Time) {
 			// Another instance swept lately: look again in a few minutes
 			// rather than an hour, or an instance restarted more often
 			// than that would never be the one to sweep.
-			self.lastScavenge = now.Add(-time.Hour + scavengeRetry)
+			self.lastScavenge = now.Add(-time.Hour + sweepRetry)
 			return err
 		}
 		if _, err := tx.ScavengeAgentConversations(models.AgentConversationRun, now.Add(-runs)); err != nil {

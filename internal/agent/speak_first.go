@@ -200,11 +200,16 @@ func (self *Agent) dueSpeakFirstReason(ctx context.Context, tx db.Transaction, a
 // isTurnRunning says whether a turn is in flight in a conversation, here or
 // on another instance.
 func (self *Agent) isTurnRunning(conversationId string) bool {
+	return self.isTurnRunningHere(conversationId) || self.isTurnRunningElsewhere(conversationId)
+}
+
+// isTurnRunningHere says whether a turn is in flight in a conversation on this
+// instance.
+func (self *Agent) isTurnRunningHere(conversationId string) bool {
 	self.runsMutex.Lock()
+	defer self.runsMutex.Unlock()
 	latest := self.latest[conversationId]
-	isRunningHere := latest != nil && !latest.isFinished()
-	self.runsMutex.Unlock()
-	return isRunningHere || self.isTurnRunningElsewhere(conversationId)
+	return latest != nil && !latest.isFinished()
 }
 
 // whileNoTurnRuns does work holding the lock Ask starts turns under, when
