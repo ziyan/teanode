@@ -170,6 +170,20 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           -quiet
 
+      # The UI test that turns the iPad on its side, for its sideways
+      # screens. Only the machine that photographs the iPad needs it.
+      - name: Build the test that turns the iPad
+        if: matrix.shard == 3
+        working-directory: ios
+        run: >
+          xcodebuild build-for-testing
+          -project TeaNode.xcodeproj
+          -scheme TeaNodeTurn
+          -destination "id=$IPAD"
+          -derivedDataPath build
+          CODE_SIGNING_ALLOWED=NO
+          -quiet
+
       # What the screens look like, for the review ios/DESIGN.md asks for:
       # the connect screen, and a conversation of invented data from the
       # debug build's demo server, in light, dark and the largest text size.
@@ -739,6 +753,32 @@ jobs:
           shoot store-ipad/2-mail light large -TeaNodeDemo -TeaNodeTab mail -TeaNodeScreen mail-inbox
           shoot store-ipad/3-calendar light large -TeaNodeDemo -TeaNodeTab calendar
           shoot store-ipad/4-goals light large -TeaNodeDemo -TeaNodeTab goals
+          xcrun simctl status_bar "$device" clear
+
+          # The iPad on its side, turned by the one UI test (ios/TeaNodeTurn),
+          # which is the only thing that can turn a simulator. A screenshot of
+          # a turned simulator may come out as the screen's upright pixels,
+          # so a picture taller than wide is turned to read the right way up.
+          xcodebuild test-without-building -project TeaNode.xcodeproj -scheme TeaNodeTurn \
+            -destination "id=$device" -derivedDataPath build CODE_SIGNING_ALLOWED=NO -quiet
+          shoot_sideways() {
+            shoot "$@"
+            file="screenshots/$1.png"
+            width=$(sips -g pixelWidth "$file" | awk '/pixelWidth/ {print $2}')
+            height=$(sips -g pixelHeight "$file" | awk '/pixelHeight/ {print $2}')
+            if [ "$width" -lt "$height" ]; then
+              sips -r 90 "$file" >/dev/null
+            fi
+          }
+          shoot_sideways ipad-sideways-chats-light light large -TeaNodeDemo -TeaNodeTab agent
+          shoot_sideways ipad-sideways-conversation-light light large -TeaNodeDemo -TeaNodeScreen conversation
+          shoot_sideways ipad-sideways-conversation-dark dark large -TeaNodeDemo -TeaNodeScreen conversation
+          shoot_sideways ipad-sideways-mail-light light large -TeaNodeDemo -TeaNodeTab mail -TeaNodeScreen mail-inbox
+          shoot_sideways ipad-sideways-photos-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
+          shoot_sideways ipad-sideways-location-light light large -TeaNodeDemo -TeaNodeTab location
+          shoot_sideways ipad-sideways-calendar-dark dark large -TeaNodeDemo -TeaNodeTab calendar
+          shoot_sideways ipad-sideways-search-results-light light large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results
+          shoot_sideways ipad-sideways-calendar-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar
 
       - name: Keep the screenshots
         if: always()

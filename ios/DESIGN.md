@@ -218,8 +218,15 @@ Only the tabs also ask whether the device is an iPad, as below.
   confirmation) needs an anchor: attach a confirmation to its control, and give
   a share sheet presented from code a source view and rectangle.
 - The iPad turns every way: what decides is the width of the window, not the
-  way the iPad is held. CI photographs it upright only, since an iPad app that
-  turns every way follows how the simulator is held and cannot turn itself.
+  way the iPad is held. CI photographs it upright, then on its side
+  (`ipad-sideways-*`): an app cannot turn itself, so one UI test
+  (`TeaNodeTurn`) turns the simulator, and it stays turned.
+- Held upright, the window is too narrow for the sidebar beside the page, and
+  the system lays it over the page and dims it. So it starts hidden there,
+  shown with the button at the top, as in Apple's own apps; on its side it
+  starts beside the page. After that it stays where the person puts it.
+- The sidebar's names are drawn by the system, which wraps them at the
+  largest text sizes; the app has no say in the sidebar's width or lines.
 
 ## Motion and feel
 
