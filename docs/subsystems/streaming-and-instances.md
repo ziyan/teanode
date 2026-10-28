@@ -129,12 +129,57 @@ again.
 - **Nothing is kept.** A listener that reconnects has lost what was said while
   it was away; the transcript is the record.
 
-Words back to a run — stop, answer a question, decide a card — travel on
+Words back to a run (stop, answer a question, decide a card) travel on
 `agent_command`. The instance that holds the run applies them. Ownership is
 checked before anything is sent: the run is either here, where its conversation
-is checked directly, or it is one this instance has heard of through the feed
-within the last hour, whose conversation is then looked up and checked against
-the caller's own agent.
+is checked directly, or it is one this instance knows to be running elsewhere,
+heard of through the feed within the last hour or found in `agent_turn`, whose
+conversation is then looked up and checked against the caller's own agent.
+
+**Every running turn is recorded** in `agent_turn` (`internal/agent/turn_record.go`):
+its run, its conversation, the instance running it, and when that instance
+last said it was still running it (every thirty seconds). From that record:
+
+- **One turn at a time holds across instances.** A turn waits, with the
+  queued note, for one that began before it in the same conversation on
+  another instance. What a person writes while their turn runs on another
+  instance is answered after that turn, not handed to it as it would be on
+  the same instance.
+- **Is a turn running** (speak first, goals, alerts and statements writing
+  into a conversation) is asked of every instance.
+- **Stopping every run of a conversation** (deleting it, a chat app's
+  `/stop`) stops the ones on other instances too, over `agent_command`.
+- **A cut turn is carried on once.** An instance that stops with a turn in
+  flight marks it cut; a turn whose instance has not been heard of for ninety
+  seconds is lost with it. Whichever instance claims the record first carries
+  the conversation on, and only if the conversation still ends unanswered.
+
+**A run can be read from any instance.** Each instance keeps what it hears of
+the other instances' runs through the feed, the first 500 events of each, and
+`ReadAgentRun` and `AgentRunEvents` read a run running elsewhere from that.
+Its pieces of text are joined and its sequences sparse, as described above.
+
+**Who is looking crosses too.** A report from the dashboard or the app
+(`ReportAgentPresence`) reaches one instance, which records it and passes it
+on over `presence_event`; the others record it as their own. A chat message
+is sent to a phone only when nobody is reading that chat on any instance.
+
+**Background work is one instance's.** A sweep that every instance runs on
+its own clock takes a lock or a turn first: `db.Database.WhileLocked` holds an
+advisory lock (named with `db.LockKey`) for the length of a long pass, and
+`tx.TakeThrottle` gives the turn of something that happens at most once in a
+while to one instance (the `throttle` table): notifications not told twice
+within their interval, hourly recomputations, the object store sweep. The
+limits that guard a password (signing in, a mail program's password,
+unlocking the vault) count in one bucket for all instances
+(`rate_limit_bucket`).
+
+**Each instance has a name of its own**, `TEANODE_INSTANCE_ID` or the host's
+name. The server holds a lock on its name while it runs, and a second process
+with the same name waits thirty seconds for it and then refuses to start,
+because two instances with one name drop each other's events and put each
+other's jobs back in the queue. Migrations are applied by one instance at a
+time.
 
 The job queue claims rows with `FOR UPDATE SKIP LOCKED`, and a claim that goes
 stale after fifteen minutes returns to the queue. A chat app's bot is claimed
@@ -144,31 +189,23 @@ the same way on its own row, renewed every thirty seconds for ninety.
 
 This is the important list.
 
-- **Who is looking is local.** The dashboard and the app report each minute
-  whether they are shown (`ReportAgentPresence`), to the instance their
-  request reached, with the conversation each shows, into one `agent.Presence`
-  shared by the chat hub and the agent. A chat message is sent to a phone unless
-  its person is looking at that chat as that instance knows it, so behind a
-  load balancer a person may be sent what they were reading on another
-  instance.
-- **A run is local.** Reading a run's events, or polling it, only works on the
-  instance running it. Only stop, answer, resolve and locate have a way across.
-- **The one-turn-at-a-time rule is local.** Two instances can run two turns of
-  one conversation at once.
 - **Attached tabs and attached computers are local**, held in memory by the
   instance holding the websocket. A turn that lands elsewhere cannot see them,
-  and their tools are left out of the round.
+  and their tools are left out of the round. Watching or taking over a tab
+  needs the dashboard and the extension on one instance. Work that reads a
+  person's computer (a watch, a source on it) is left for the instance it is
+  attached to.
 - **Connected server sessions and headless browser contexts are local**, and
   the browser context cap is counted per instance.
-- **Concurrency is per instance**, as the configuration says.
-- **The describer takes no claim**, so two instances can title the same
-  conversation and pay for both calls.
-- **Stopping every run of a conversation is local**, which is what deleting a
-  conversation and a chat app's `/stop` both use.
+- **Concurrency is per instance**, as the configuration says, and so are the
+  limits that guard no password (chat messages, link previews, map tiles).
+- **The prompt kept between turns is per instance**, so a conversation whose
+  turns land on different instances pays for its history again.
+- **What was relayed while a listener reconnected is lost**, as above.
 
-A deployment behind a load balancer wants session affinity for the dashboard
-and the command line, or turns will be started on one instance and polled on
-another.
+A deployment behind a load balancer still wants session affinity for the
+browser extension and the computer daemon, so that what they attach is where
+the person's turns run.
 
 ## The surfaces
 

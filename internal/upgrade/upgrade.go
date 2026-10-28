@@ -215,6 +215,11 @@ type manager struct {
 	// happens.
 	applying sync.Mutex
 
+	// applyLock, when set, is taken for the whole of an upgrade across the
+	// instances sharing a database; see WithApplyLock. applying is the same
+	// protection inside this process.
+	applyLock ApplyLock
+
 	waitGroup sync.WaitGroup
 	loop      periodic.Periodic
 	ctx       context.Context
@@ -246,9 +251,28 @@ func newClient() *http.Client {
 	}
 }
 
+// ApplyLock takes the lock that lets one instance at a time install an
+// upgrade, without waiting: isLocked is false, and release nil, when another
+// instance holds it. The instances sharing one database restart one after
+// another that way, rather than all in the same minute.
+type ApplyLock func(ctx context.Context) (release func(), isLocked bool, err error)
+
+// Option changes how New builds the manager.
+type Option func(*manager)
+
+// WithApplyLock makes an upgrade take the lock first, and keep it until the
+// process has restarted into the new binary: the other instances find it held
+// at their next tick and wait. Without one, an upgrade needs no permission
+// from anybody, which is right for one instance.
+func WithApplyLock(lock ApplyLock) Option {
+	return func(self *manager) {
+		self.applyLock = lock
+	}
+}
+
 // New builds the manager. It does not reach the network; the first check
 // happens on the loop.
-func New(configuration config.Store, restarter *api.Restarter, upgradeDirectory string) (Manager, error) {
+func New(configuration config.Store, restarter *api.Restarter, upgradeDirectory string, options ...Option) (Manager, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		// Not fatal. A server that cannot find its own binary can still say
@@ -272,6 +296,9 @@ func New(configuration config.Store, restarter *api.Restarter, upgradeDirectory 
 		status: Status{
 			Current: version.Version(),
 		},
+	}
+	for _, option := range options {
+		option(self)
 	}
 	self.ctx, self.cancel = context.WithCancel(context.Background())
 
@@ -485,6 +512,12 @@ func (self *manager) spinOnce(_ context.Context) error {
 		if !errors.Is(err, ErrNotApplicable) && !errors.Is(err, ErrAlreadyRunning) {
 			self.failed()
 		}
+		if errors.Is(err, ErrAlreadyRunning) {
+			// Somebody is on it, here or on another instance, and this is the
+			// ordinary answer for as long as their download lasts.
+			log.Infof("not installing %s automatically: %s", status.Latest, err)
+			return nil
+		}
 		log.Errorf("automatic upgrade to %s failed: %s", status.Latest, err)
 		return nil
 	}
@@ -552,6 +585,11 @@ func (self *manager) Start(expected string) (Status, error) {
 		// is. apply puts the status back if it fails; a success is followed
 		// by the restart, which this process does not return from.
 		if err := self.apply(self.ctx, expected); err != nil {
+			if errors.Is(err, ErrAlreadyRunning) {
+				// Marked as upgrading above, before this goroutine ran, and
+				// apply left the status alone because it never began.
+				self.markFailed(err)
+			}
 			log.Errorf("upgrade failed: %s", err)
 		}
 	}()

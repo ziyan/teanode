@@ -64,3 +64,52 @@ func TestRepairOverlappedVisitsEndsAVisitAtTheFirstStopElsewhere(test *testing.T
 		}
 	})
 }
+
+// A start while another instance is putting visits in order does nothing.
+func TestRepairOverlappedVisitsLeavesThePassToTheInstanceHoldingIt(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	test.Cleanup(closeDatabase)
+	userId := dbtest.CreateUser(test, database, "visit-repair-held")
+	base := time.Now().Add(-8 * time.Hour).Truncate(time.Second)
+	minutes := func(count int) *time.Time {
+		at := base.Add(time.Duration(count) * time.Minute)
+		return &at
+	}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		home, err := transaction.CreatePlace(userId, &models.Place{PlaceName: "Home", IsNamedByPerson: true, LatitudeDegrees: 40, LongitudeDegrees: -75, RadiusMeters: 100})
+		if err != nil {
+			test.Fatal(err)
+		}
+		away, err := transaction.CreatePlace(userId, &models.Place{PlaceName: "Away", IsNamedByPerson: true, LatitudeDegrees: 40.16, LongitudeDegrees: -75, RadiusMeters: 100})
+		if err != nil {
+			test.Fatal(err)
+		}
+		for _, visit := range []*models.PlaceVisit{
+			{PlaceID: home.ID, ClientVisitKey: "home", VisitSource: models.VisitSourceRegion, ArrivedAt: minutes(0), DepartedAt: minutes(217), LatitudeDegrees: 40, LongitudeDegrees: -75},
+			{PlaceID: away.ID, ClientVisitKey: "away", VisitSource: models.VisitSourceVisit, ArrivedAt: minutes(48), DepartedAt: minutes(136), LatitudeDegrees: 40.16, LongitudeDegrees: -75, AccuracyMeters: 20},
+		} {
+			if _, err := transaction.PutPlaceVisit(userId, visit); err != nil {
+				test.Fatal(err)
+			}
+		}
+	})
+
+	release, isLocked, err := database.TryLockSession(context.Background(), db.LockKey("visit:repair"))
+	if err != nil || !isLocked {
+		test.Fatalf("the lock was not free: %v %v", isLocked, err)
+	}
+	repairOverlappedVisits(context.Background(), database)
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if ranges, err := transaction.ListOverlappedVisitRanges(base.Add(-time.Hour)); err != nil || len(ranges) != 1 {
+			test.Errorf("the pass ran while another instance held the lock: %+v %v", ranges, err)
+		}
+	})
+
+	release()
+	repairOverlappedVisits(context.Background(), database)
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if ranges, err := transaction.ListOverlappedVisitRanges(base.Add(-time.Hour)); err != nil || len(ranges) != 0 {
+			test.Errorf("the pass did not run once the lock was free: %+v %v", ranges, err)
+		}
+	})
+}

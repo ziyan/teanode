@@ -88,6 +88,13 @@ type Settings struct {
 	// what the spool did before there were mailboxes.
 	Keep func(ctx context.Context, id string) (bool, error)
 
+	// TakeMirrorSweep says whether this instance sweeps the object store now,
+	// given how often a sweep is wanted: true for one instance in each
+	// interval, whichever it is, because every instance lists the whole bucket
+	// and one sweep of it does for all. Nil means always, which is right for
+	// one instance.
+	TakeMirrorSweep func(ctx context.Context, interval time.Duration) (bool, error)
+
 	// S3 mirrors messages to an object store as well. Optional; when nil no
 	// AWS client is constructed.
 	S3 *S3Settings

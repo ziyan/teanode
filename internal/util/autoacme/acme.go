@@ -282,7 +282,22 @@ func (self *manager) cleanupAcme(ctx context.Context, urls []string) {
 // backing up the configuration backs up everything that matters. Losing it is
 // survivable — the server simply registers again — but registration is rate
 // limited, so it is worth keeping.
+//
+// With several instances sharing the configuration, two that start with no key
+// must not each make one. A key is only made under the ordering lock, which
+// the caller holds (ordering is the only way here), and the stored key is read
+// again after taking it, so the second instance finds the first one's.
 func (self *manager) loadOrCreateAccountKey() (crypto.Signer, error) {
+	if self.settings.LoadAccountKey != nil {
+		stored, err := self.settings.LoadAccountKey()
+		if err != nil {
+			return nil, fmt.Errorf("autoacme: cannot read the stored account key: %w", err)
+		}
+		if strings.TrimSpace(stored) != "" {
+			self.settings.AccountKey = stored
+		}
+	}
+
 	if encoded := strings.TrimSpace(self.settings.AccountKey); encoded != "" {
 		block, _ := pem.Decode([]byte(encoded))
 		if block == nil {

@@ -48,6 +48,28 @@ func (self *manager) Apply(ctx context.Context, expected string) error {
 // across handing the work to a goroutine, which is why the lock is not taken
 // in here.
 func (self *manager) apply(ctx context.Context, expected string) (err error) {
+	isRestarting := false
+
+	// Before anything is said on the status: an instance turned away has not
+	// begun, and the one that has is the one to say so. The lock is let go on
+	// every way out but a success, which is followed by the restart. The
+	// connection holding it closes when the process does, and until then the
+	// other instances wait for their next tick.
+	if self.applyLock != nil {
+		release, isLocked, lockErr := self.applyLock(ctx)
+		if lockErr != nil {
+			return fmt.Errorf("upgrade: cannot tell whether another instance is installing an upgrade: %w", lockErr)
+		}
+		if !isLocked {
+			return fmt.Errorf("%w: another instance is installing one", ErrAlreadyRunning)
+		}
+		defer func() {
+			if !isRestarting {
+				release()
+			}
+		}()
+	}
+
 	// Said on the status, not only in the log, so that a dashboard opened
 	// while the scheduled loop is downloading shows what is happening rather
 	// than a button that answers "an upgrade is already running".
@@ -175,6 +197,7 @@ func (self *manager) apply(ctx context.Context, expected string) (err error) {
 	}
 
 	log.Noticef("upgraded to %s; restarting into it", found.version())
+	isRestarting = true
 	self.restarter.Request()
 	return nil
 }

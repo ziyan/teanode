@@ -137,6 +137,12 @@ func (self *codex) onRotated(rotated func(refreshToken string)) {
 	self.signIn.rotated = rotated
 }
 
+// shareSignIn has the sign-in keep its refresh token with the other
+// instances through a store; see SignInStore.
+func (self *codex) shareSignIn(provider string, store SignInStore) {
+	self.signIn.share(provider, store)
+}
+
 // refreshToken is the refresh token held now.
 func (self *codex) refreshToken() string {
 	return self.signIn.current()

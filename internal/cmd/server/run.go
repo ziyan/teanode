@@ -40,6 +40,7 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/mx"
 	"github.com/ziyan/teanode/internal/photo"
+	"github.com/ziyan/teanode/internal/place"
 	"github.com/ziyan/teanode/internal/recording"
 	"github.com/ziyan/teanode/internal/scheduling"
 	"github.com/ziyan/teanode/internal/spamfilter"
@@ -201,8 +202,14 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, strin
 
 	// A server that predates roles and groups gets them now, with every
 	// existing account an administrator, so that nobody can do less than
-	// they could the day before.
-	if err := database.Transaction(func(tx db.Transaction) error {
+	// they could the day before. Under a lock that waits, because these list
+	// and then create: two instances starting together would each find
+	// nothing and try to create the same roles and mailboxes.
+	releaseSeed, err := database.LockSession(ctx, db.LockKey("seed"))
+	if err != nil {
+		return "", "", fmt.Errorf("cannot take the lock for seeding: %w", err)
+	}
+	err = database.Transaction(func(tx db.Transaction) error {
 		if _, err := access.EnsureSeeded(tx); err != nil {
 			return err
 		}
@@ -220,7 +227,9 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, strin
 			log.Noticef("created a mailbox for %d users who had none", made)
 		}
 		return nil
-	}); err != nil {
+	})
+	releaseSeed()
+	if err != nil {
 		return "", "", err
 	}
 	configuration = store.Current()
@@ -247,11 +256,20 @@ func openDatabase(bootstrapped *bootstrap.Bootstrap) (db.Database, func(), error
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := migrate(database, bootstrapped.UpgradeDirectory); err != nil {
+	releaseInstanceName, err := holdInstanceName(context.Background(), database, bootstrapped.InstanceID)
+	if err != nil {
 		closeDatabase()
 		return nil, nil, err
 	}
-	return database, closeDatabase, nil
+	closeAll := func() {
+		releaseInstanceName()
+		closeDatabase()
+	}
+	if err := migrateOneAtATime(context.Background(), database, bootstrapped.UpgradeDirectory); err != nil {
+		closeAll()
+		return nil, nil, err
+	}
+	return database, closeAll, nil
 }
 
 // server holds everything constructed for one run, so that shutdown can undo
@@ -328,17 +346,18 @@ type server struct {
 }
 
 // authLimiter is the one limiter every way of presenting a credential
-// counts against — the submission listener, IMAP, the send endpoint — built
-// once so that every connection counts against the same buckets. Nil when
-// either setting is zero, which is how an operator turns the limit off.
+// counts against (the submission listener, IMAP, the send endpoint), built
+// once so that every connection counts against the same buckets, and kept in
+// the database so that every instance does too. Nil when either setting is
+// zero, which is how an operator turns the limit off.
 func (self *server) authLimiter(configuration *config.Configuration) *ratelimit.Registry {
 	self.authLimiterOnce.Do(func() {
 		if configuration.SMTP.AuthRateLimit > 0 && configuration.SMTP.AuthRateBurst > 0 {
-			self.credentialLimiter = ratelimit.NewRegistry(
+			self.credentialLimiter = ratelimit.NewSharedRegistry(
+				"credential",
 				float64(configuration.SMTP.AuthRateLimit)/60.0,
 				int64(configuration.SMTP.AuthRateBurst),
-				authLimiterAddresses,
-				time.Hour,
+				ratelimit.Through(self.database.TransactionContext),
 			)
 		}
 	})
@@ -392,6 +411,16 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 	if err := self.listen(configuration); err != nil {
 		return nil, err
 	}
+
+	// The place provider's policy is one request a second in all, not per
+	// instance, so the instances take their turns from one bucket.
+	place.SetClusterLimit(func(ctx context.Context) (isTaken bool, err error) {
+		err = self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			isTaken, err = tx.TakeRateLimitToken("place:lookup", 1, 1, time.Now())
+			return err
+		})
+		return isTaken, err
+	})
 
 	domains, err := self.listDomains()
 	if err != nil {
@@ -561,6 +590,47 @@ func (self *server) openCertificates(configuration *config.Configuration, domain
 			Certificate: configuration.TLS.ACME.Certificate,
 			PrivateKey:  configuration.TLS.ACME.PrivateKey,
 		}},
+		// Several instances share one account and one set of certificates:
+		// a challenge is answered by whichever instance the authority's
+		// request reaches, one instance orders at a time, and each serves
+		// what another saved.
+		ChallengeStore: &acmeChallengeStore{database: self.database},
+		WhileOrdering: func(ctx context.Context, work func(context.Context) error) (bool, error) {
+			return self.database.WhileLocked(ctx, db.LockKey("acme:order"), work)
+		},
+		LoadAccountKey: func() (string, error) {
+			// Under the order lock, and the copy in memory may be seconds
+			// behind the one another instance just saved.
+			if err := self.store.Reload(); err != nil {
+				return "", err
+			}
+			return self.store.Current().TLS.ACME.AccountKey, nil
+		},
+		LoadCertificate: func(key string) (string, string, error) {
+			if key == serverCertificateKey {
+				// Read afresh: the copy in memory is seconds behind, and a
+				// certificate another instance saved a moment ago would be
+				// ordered again.
+				if err := self.store.Reload(); err != nil {
+					return "", "", err
+				}
+				acme := self.store.Current().TLS.ACME
+				return acme.Certificate, acme.PrivateKey, nil
+			}
+			var certificate, privateKey string
+			err := self.database.Transaction(func(tx db.Transaction) error {
+				domain, err := tx.GetDomain(key)
+				if err != nil || domain == nil {
+					return err
+				}
+				certificate, privateKey = domain.TLS.Certificate, domain.TLS.PrivateKey
+				return nil
+			})
+			if errors.Is(err, db.ErrNotFound) {
+				return "", "", nil
+			}
+			return certificate, privateKey, err
+		},
 		SaveAccountKey: func(key string) error {
 			return self.store.Update(func(configuration *config.Configuration) error {
 				configuration.TLS.ACME.AccountKey = key
@@ -716,6 +786,15 @@ func (self *server) openStorage(configuration *config.Configuration) error {
 		Keep: func(_ context.Context, id string) (bool, error) {
 			return self.database.MailExists(id)
 		},
+		// Every instance lists the whole bucket when it sweeps, so one of
+		// them sweeps it in each interval.
+		TakeMirrorSweep: func(ctx context.Context, interval time.Duration) (isTaken bool, err error) {
+			err = self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+				isTaken, err = tx.TakeThrottle("storage:sweep", interval, time.Now())
+				return err
+			})
+			return isTaken, err
+		},
 	}
 	if configuration.Storage.S3.Enabled {
 		settings.S3 = &storage.S3Settings{
@@ -787,9 +866,15 @@ func (self *server) openStorage(configuration *config.Configuration) error {
 		if configuration.Services.IsEnabled(models.ServicePhotos) {
 			photos := photo.New(self.database, files, self.store.Current)
 			// Temporary copies of videos are made inside the data directory,
-			// which an earlier run may have left files in.
+			// in a directory of this instance's own, which an earlier run of
+			// this instance may have left files in. Another instance on the
+			// same volume keeps its own and is left alone.
+			photos.UseInstanceName(self.instance)
 			if err := photos.PrepareWorkDirectory(); err != nil {
 				log.Warningf("cannot prepare the photo work directory: %s", err)
+			}
+			if err := photos.ForgetStoppedInstances(self.isInstanceRunning); err != nil {
+				log.Warningf("cannot clear the photo work directories of stopped instances: %s", err)
 			}
 			var photoGroup sync.WaitGroup
 			// Deleting what the library no longer needs: parts of uploads
@@ -912,8 +997,27 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	// stay forever. Hourly, because what it removes is measured in days.
 	scavengeContext, stopScavenging := context.WithCancel(context.Background())
 	var scavengeGroup sync.WaitGroup
-	scavenger := periodic.New(scavengeContext, &scavengeGroup, func(context.Context) error {
-		return authenticator.Scavenge()
+	scavenger := periodic.New(scavengeContext, &scavengeGroup, func(ctx context.Context) error {
+		if err := authenticator.Scavenge(); err != nil {
+			return err
+		}
+		// The turns taken of things done once in a while, the buckets of the
+		// limits that every instance counts together, and the long tool
+		// results held for result_more are rows too. No interval in use is
+		// longer than a month (a watch may look as rarely as it likes, and
+		// one rarer than that looks again a little early), no refill longer
+		// than a day, and a result is read on for half an hour.
+		return self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+			now := time.Now()
+			if _, err := tx.DeleteThrottlesTakenBefore(now.Add(-31 * 24 * time.Hour)); err != nil {
+				return err
+			}
+			if _, err := tx.DeleteRateLimitBucketsRefilledBefore(now.Add(-24 * time.Hour)); err != nil {
+				return err
+			}
+			_, err := tx.DeleteMcpHeldResultsStoredBefore(now.Add(-time.Hour))
+			return err
+		})
 	}, &periodic.Settings{
 		Interval: time.Hour,
 		Name:     "web:scavenge",
@@ -1011,7 +1115,11 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	// and this deployment can — installing it. Built after the restarter,
 	// because an upgrade ends in a restart and a manager with nothing to ask
 	// for one would swap a binary and leave the old one running.
-	upgrader, err := upgrade.New(self.store, self.restarter, self.upgradeDirectory)
+	// One instance installs at a time: the others find the lock held until
+	// that one has restarted, instead of all restarting in the same minute.
+	upgrader, err := upgrade.New(self.store, self.restarter, self.upgradeDirectory, upgrade.WithApplyLock(func(ctx context.Context) (func(), bool, error) {
+		return self.database.TryLockSession(ctx, db.LockKey("upgrade:apply"))
+	}))
 	if err != nil {
 		return err
 	}
@@ -1036,6 +1144,21 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	})
 	if err != nil {
 		return fmt.Errorf("cannot create the API: %w", err)
+	}
+	// An arrival or departure that waits before it is told is kept in the
+	// database, and told by whichever instance claims it when it is due.
+	if teller, ok := apiComponent.(interface {
+		TellDueVisitNotices(context.Context, time.Time) error
+	}); ok {
+		var visitNoticeGroup sync.WaitGroup
+		visitNotices := periodic.New(context.Background(), &visitNoticeGroup, func(ctx context.Context) error {
+			return teller.TellDueVisitNotices(ctx, time.Now())
+		}, &periodic.Settings{Interval: 15 * time.Second, Name: "location:visit-notices"})
+		visitNotices.Start()
+		self.onClose(func() {
+			visitNotices.Stop()
+			visitNoticeGroup.Wait()
+		})
 	}
 
 	// Contacts over CardDAV, mounted before the dashboard's catch-all so
@@ -1159,11 +1282,6 @@ const smtpConnectionsAtOnce = 1000
 // parallel has a few more.
 const connectionsPerAddressAtOnce = 32
 
-// authLimiterAddresses caps how many addresses the submission limiter keeps
-// buckets for at once. Bounded because the key is a remote address and there
-// are more of those than there is memory.
-const authLimiterAddresses = 8192
-
 // startupOnly names the parts of the configuration that are read once, when
 // the process builds what it needs, and are not re-read afterwards. Changing
 // one takes a restart.
@@ -1186,13 +1304,39 @@ func startupOnly(configuration *config.Configuration) map[string]any {
 		// number to let an ingest run beside a dream did nothing until a
 		// restart, and the status line said none was owed.
 		"agent.limits.concurrency": configuration.Agent.Limits.Concurrency,
-		"tls":                      configuration.TLS,
-		"smtp.relay":               configuration.SMTP.Relay,
-		"storage":                  configuration.Storage,
-		"server.dataDirectory":     configuration.Server.DataDirectory,
-		"antivirus":                configuration.Antivirus,
-		"antispam":                 configuration.Antispam,
-		"geoip":                    configuration.GeoIP,
+		// The certificate and the keys a renewal writes are left out, because
+		// every renewal, by whichever instance made it, would otherwise ask
+		// every instance for a restart; see withoutRenewal.
+		"tls":        withoutRenewal(configuration.TLS),
+		"smtp.relay": configuration.SMTP.Relay,
+		// The mail listeners and the exchange are built with these once.
+		// The dashboard's own limit on a message to send reads the size
+		// live, but the listeners keep the one they started with.
+		"smtp.disableSend":           configuration.SMTP.DisableSend,
+		"smtp.maxMessageSize":        configuration.SMTP.MaxMessageSize,
+		"smtp.maxRecipientsIncoming": configuration.SMTP.MaxRecipientsIncoming,
+		"smtp.maxRecipientsOutgoing": configuration.SMTP.MaxRecipientsOutgoing,
+		"smtp.trustedSenders":        configuration.SMTP.TrustedSenders,
+		"smtp.greylistDelay":         configuration.SMTP.GreylistDelay,
+		"smtp.requireReverseDns":     configuration.SMTP.RequireReverseDNS,
+		// The limiter every way of presenting a credential counts against
+		// is built once (authLimiter).
+		"smtp.authRateLimit": configuration.SMTP.AuthRateLimit,
+		"smtp.authRateBurst": configuration.SMTP.AuthRateBurst,
+		// The verifier is built with the nameserver and the interval once.
+		"dns.nameserver":    configuration.DNS.Nameserver,
+		"dns.checkInterval": configuration.DNS.CheckInterval,
+		// The store of half-finished passkey ceremonies is chosen once.
+		"passkey.redis": configuration.Passkey.Redis,
+		// The name is in the greeting the mail listeners say and in the
+		// exchange's settings. The prompt and the passkey fallback read it
+		// live.
+		"server.name":          configuration.Server.Name,
+		"storage":              configuration.Storage,
+		"server.dataDirectory": configuration.Server.DataDirectory,
+		"antivirus":            configuration.Antivirus,
+		"antispam":             configuration.Antispam,
+		"geoip":                configuration.GeoIP,
 		// Read once when the checker is built. Enabled, automatic and window
 		// are re-read every time the loop wakes and are deliberately not
 		// here: changing those takes effect without a restart, and listing
@@ -1200,6 +1344,18 @@ func startupOnly(configuration *config.Configuration) map[string]any {
 		// asking, because the pending list is only ever appended to.
 		"upgrade.checkInterval": configuration.Upgrade.CheckInterval,
 	}
+}
+
+// withoutRenewal is the TLS settings as a restart would see them change. The
+// certificate, its private key and the account key of the certificate
+// authority are left out: whichever instance renews the certificate writes
+// them into the shared configuration, and the others take the new one up
+// without a restart.
+func withoutRenewal(settings config.TLS) config.TLS {
+	settings.ACME.Certificate = ""
+	settings.ACME.PrivateKey = ""
+	settings.ACME.AccountKey = ""
+	return settings
 }
 
 // withoutRefreshTokens is the providers as a restart would see them change.
@@ -1218,20 +1374,19 @@ func withoutRefreshTokens(providers []config.AgentProvider) []config.AgentProvid
 // warnOnStartupOnlyChanges says which of those changed, once per change.
 func (self *server) warnOnStartupOnlyChanges() func() {
 	running := encodeSections(startupOnly(self.store.Current()))
+	// A reload can come from more than one goroutine: the poll, and a
+	// provider's sign-in that reads the newest refresh token under its lock.
+	var runningMutex sync.Mutex
 
 	return self.store.Subscribe(func(configuration *config.Configuration) {
 		current := encodeSections(startupOnly(configuration))
 
-		var changed []string
-		for name, encoded := range current {
-			if running[name] != encoded {
-				changed = append(changed, name)
-			}
-		}
+		runningMutex.Lock()
+		defer runningMutex.Unlock()
+		changed := changedSections(running, current)
 		if len(changed) == 0 {
 			return
 		}
-		sort.Strings(changed)
 
 		// The new values are adopted as the ones to compare against, so that
 		// this is said once for a change rather than on every reload
@@ -1243,6 +1398,24 @@ func (self *server) warnOnStartupOnlyChanges() func() {
 			plural(len(changed), "is", "are"),
 			plural(len(changed), "it", "them"))
 	})
+}
+
+// changedStartupOnly names the startup-only settings that differ between two
+// configurations.
+func changedStartupOnly(before, after *config.Configuration) []string {
+	return changedSections(encodeSections(startupOnly(before)), encodeSections(startupOnly(after)))
+}
+
+// changedSections names the sections whose encoding differs, sorted.
+func changedSections(running, current map[string]string) []string {
+	var changed []string
+	for name, encoded := range current {
+		if running[name] != encoded {
+			changed = append(changed, name)
+		}
+	}
+	sort.Strings(changed)
+	return changed
 }
 
 func encodeSections(sections map[string]any) map[string]string {

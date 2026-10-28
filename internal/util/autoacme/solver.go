@@ -2,7 +2,6 @@ package autoacme
 
 import (
 	"context"
-	"crypto/tls"
 
 	"golang.org/x/crypto/acme"
 )
@@ -12,7 +11,6 @@ import (
 // talking to a certificate authority.
 type acmeClient interface {
 	HTTP01ChallengeResponse(token string) (string, error)
-	TLSALPN01ChallengeCert(token, domain string, options ...acme.CertOption) (tls.Certificate, error)
 	DNS01ChallengeRecord(token string) (string, error)
 }
 

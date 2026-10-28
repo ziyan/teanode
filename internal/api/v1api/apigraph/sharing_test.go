@@ -545,42 +545,35 @@ func TestOwnersAreNotToldAgainWhenAMemberWasInTheCircleAlready(test *testing.T) 
 	}
 }
 
-// A notice is counted as sent once it is committed, not before: one that was
-// not written does not stop the next from telling, and the cache holds a
-// bounded number of shares, dropping the oldest when all are fresh.
-func TestTheShareNoticeCacheCountsANoticeOnlyWhenRecorded(test *testing.T) {
-	var cache shareNoticeCache
-	now := time.Now()
-	if !cache.isDue("share", "reader", now) {
-		test.Fatal("a share nobody was told of was not due")
-	}
-	// Asking does not count the person as told.
-	if !cache.isDue("share", "reader", now) {
-		test.Fatal("asking whether a notice was due counted it as sent")
-	}
-	cache.record("share", "reader", now)
-	if cache.isDue("share", "reader", now.Add(shareNoticeInterval-time.Second)) {
-		test.Error("a person was told again within the interval")
-	}
-	if !cache.isDue("share", "reader", now.Add(shareNoticeInterval)) {
-		test.Error("a person was not told again after the interval")
-	}
-	if !cache.isDue("share", "another", now) || !cache.isDue("other share", "reader", now) {
-		test.Error("a notice of another share or to another person was held back")
+// A person is told of a share once an interval, counted in the database so that
+// the instance a request reaches does not matter: the turn is a row, a notice
+// inside the interval is not told, one after it is, and another share or
+// another person has a turn of its own.
+func TestAShareNoticeIsToldOncePerIntervalAcrossInstances(test *testing.T) {
+	world := newSharingWorld(test)
+	benNotes := func() []string { return world.notesOf(test, world.ben, models.NoteShareReceived) }
+	throttleCount := func() string {
+		return dbtest.QueryString(test, world.database, `SELECT count(*) FROM throttle WHERE throttle_key LIKE 'share-notice:%'`)
 	}
 
-	for index := 0; index < shareNoticeCacheLimit+10; index++ {
-		cache.record(fmt.Sprintf("share %d", index), "reader", now.Add(time.Duration(index)*time.Millisecond))
+	world.share(test, world.ada, world.adaCalendar, userGrantee(world.ben), "titles")
+	world.share(test, world.ada, world.adaCalendar, userGrantee(world.ben), "details")
+	world.share(test, world.ada, world.adaCalendar, userGrantee(world.ben), "busy")
+	world.share(test, world.ada, world.adaCalendar, userGrantee(world.ben), "details")
+	if got := benNotes(); len(got) != 2 {
+		test.Fatalf("a widening back to a level told within the interval told ben %q", got)
 	}
-	if len(cache.sentAt) > shareNoticeCacheLimit {
-		test.Errorf("the cache holds %d shares", len(cache.sentAt))
+	if got := throttleCount(); got != "2" {
+		test.Fatalf("%s turns were taken for two notices", got)
 	}
-	last := shareNoticeCacheLimit + 9
-	if cache.isDue(fmt.Sprintf("share %d", last), "reader", now.Add(time.Second)) {
-		test.Error("the newest notice was forgotten")
-	}
-	if !cache.isDue("share 0", "reader", now.Add(time.Second)) {
-		test.Error("the oldest notice was kept while the newest were dropped")
+
+	// Another instance has nothing in memory to tell the difference by; only
+	// time moves the turn, here by the turns having been taken long ago.
+	dbtest.Exec(test, world.database, `UPDATE throttle SET taken_at = taken_at - interval '11 minutes'`)
+	world.share(test, world.ada, world.adaCalendar, userGrantee(world.ben), "busy")
+	world.share(test, world.ada, world.adaCalendar, userGrantee(world.ben), "details")
+	if got := benNotes(); len(got) != 3 || got[2] != "Share-ada shared their calendar with you (details)" {
+		test.Fatalf("a widening after the interval told ben %q", got)
 	}
 }
 

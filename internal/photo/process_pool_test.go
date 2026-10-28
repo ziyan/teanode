@@ -13,10 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/faces"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/photo"
 )
 
 // gateFaceReader stands in for the program that finds faces, which processing
@@ -330,6 +332,64 @@ func TestThePreparedWorkDirectoryIsEmptiedOfWhatAnEarlierRunLeft(test *testing.T
 	}
 	if info, err := os.Stat(fixture.workDirectory); err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
 		test.Fatalf("%v %v", info, err)
+	}
+}
+
+// Instances on one host share a data directory. Starting one must empty only
+// its own work directory, not the copies another is working on.
+func TestPreparingTheWorkDirectoryLeavesAnotherInstancesCopiesAlone(test *testing.T) {
+	fixture := newFixture(test)
+	other := photo.New(fixture.database, fixture.files, func() *config.Configuration { return fixture.configuration })
+	other.SetWorkDirectory(fixture.workDirectory)
+	other.UseInstanceName("instance-b")
+	fixture.store.UseInstanceName("instance-a")
+
+	for _, instanceName := range []string{"instance-a", "instance-b"} {
+		leftover := filepath.Join(fixture.workDirectory, instanceName, "photo-1")
+		if err := os.MkdirAll(leftover, 0o700); err != nil {
+			test.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(leftover, "source"), []byte("a video that was being made"), 0o600); err != nil {
+			test.Fatal(err)
+		}
+	}
+	if err := fixture.store.PrepareWorkDirectory(); err != nil {
+		test.Fatal(err)
+	}
+	if entries, err := os.ReadDir(filepath.Join(fixture.workDirectory, "instance-a")); err != nil || len(entries) != 0 {
+		test.Fatalf("the starting instance's own directory is emptied: %v %v", entries, err)
+	}
+	if _, err := os.Stat(filepath.Join(fixture.workDirectory, "instance-b", "photo-1", "source")); err != nil {
+		test.Fatalf("the other instance's copy is kept: %v", err)
+	}
+}
+
+// The directories of instances that are not running, and what an older
+// version left loose, are removed; a running instance's are kept.
+func TestTheWorkDirectoriesOfStoppedInstancesAreRemoved(test *testing.T) {
+	fixture := newFixture(test)
+	fixture.store.UseInstanceName("instance-a")
+	for _, instanceName := range []string{"instance-a", "instance-b", "instance-gone"} {
+		if err := os.MkdirAll(filepath.Join(fixture.workDirectory, instanceName, "photo-1"), 0o700); err != nil {
+			test.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(fixture.workDirectory, "loose-copy"), []byte("left by an older version"), 0o600); err != nil {
+		test.Fatal(err)
+	}
+	if err := fixture.store.ForgetStoppedInstances(func(instanceName string) bool { return instanceName == "instance-b" }); err != nil {
+		test.Fatal(err)
+	}
+	entries, err := os.ReadDir(fixture.workDirectory)
+	if err != nil {
+		test.Fatal(err)
+	}
+	var names []string
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	if len(names) != 2 || names[0] != "instance-a" || names[1] != "instance-b" {
+		test.Fatalf("this instance's and the running one's are kept, and nothing else: %v", names)
 	}
 }
 

@@ -206,9 +206,8 @@ type Authenticator interface {
 // How many login attempts one address may make. A person retries a handful of
 // times; a program does not stop.
 const (
-	loginAttemptsPerMinute   = 10
-	loginAttemptBurst        = 20
-	loginAddressesRemembered = 4096
+	loginAttemptsPerMinute = 10
+	loginAttemptBurst      = 20
 )
 
 // CredentialStore is where sessions and tokens live.
@@ -242,6 +241,11 @@ type authenticator struct {
 	// password hash is bcrypt, so each attempt already costs the attacker
 	// time — but it costs this server the same time, which is the reason to
 	// refuse early rather than to rely on the hash being slow.
+	//
+	// It is counted in the database, by every instance together. Counted in
+	// each instance's memory, running several would give a guesser that many
+	// times the tries. If the database cannot be reached the attempt is
+	// refused: a sign-in cannot be checked then either.
 	loginLimiter *ratelimit.Registry
 }
 
@@ -276,7 +280,7 @@ func NewAuthenticator(configuration config.Store, database CredentialStore) (Aut
 		// Ten attempts a minute after an initial twenty. A person who has
 		// forgotten which password they used will not notice; a program
 		// working through a list will not get far.
-		loginLimiter: ratelimit.NewRegistry(loginAttemptsPerMinute/60.0, loginAttemptBurst, loginAddressesRemembered, time.Hour),
+		loginLimiter: ratelimit.NewSharedRegistry("sign-in", loginAttemptsPerMinute/60.0, loginAttemptBurst, ratelimit.Through(database.TransactionContext)),
 	}, nil
 }
 
@@ -662,7 +666,19 @@ func (self *authenticator) CreateFirstUser(ctx context.Context, username, passwo
 
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		// Re-checked inside the transaction, because two people could reach
-		// a fresh server at the same moment and only one may win.
+		// a fresh server at the same moment and only one may win. Counting
+		// is not enough on its own: two transactions count before either
+		// has created its user, and both see none. The lock lets one at a
+		// time through, on this instance or any other sharing the database,
+		// and the one that does not get it is answered as if it had come
+		// second.
+		isLocked, err := tx.TryAdvisoryLock(db.LockKey("first-user"))
+		if err != nil {
+			return err
+		}
+		if !isLocked {
+			return ErrAccountExists
+		}
 		count, err := tx.CountUsers()
 		if err != nil {
 			return err

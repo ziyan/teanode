@@ -1,8 +1,12 @@
 package autoacme
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/asn1"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,8 +18,7 @@ import (
 // without a certificate authority. The values it returns are not real key
 // authorizations; the solvers only move them around.
 type fakeACMEClient struct {
-	certificate tls.Certificate
-	err         error
+	err error
 }
 
 func (self *fakeACMEClient) HTTP01ChallengeResponse(token string) (string, error) {
@@ -23,13 +26,6 @@ func (self *fakeACMEClient) HTTP01ChallengeResponse(token string) (string, error
 		return "", self.err
 	}
 	return "response-for-" + token, nil
-}
-
-func (self *fakeACMEClient) TLSALPN01ChallengeCert(token, domain string, options ...acme.CertOption) (tls.Certificate, error) {
-	if self.err != nil {
-		return tls.Certificate{}, self.err
-	}
-	return self.certificate, nil
 }
 
 func (self *fakeACMEClient) DNS01ChallengeRecord(token string) (string, error) {
@@ -51,7 +47,7 @@ func challengesFor(domains ...string) []Challenge {
 }
 
 func TestHTTP01SolverServesAndForgets(t *testing.T) {
-	solver := newHttp01Solver()
+	solver := newHttp01Solver(newMemoryChallengeStore())
 	client := &fakeACMEClient{}
 	challenges := challengesFor("mail.example.com")
 
@@ -102,14 +98,14 @@ func TestHTTP01SolverServesAndForgets(t *testing.T) {
 }
 
 func TestTLSALPN01SolverHoldsChallengeCertificates(t *testing.T) {
-	solver := newTlsalpn01Solver()
-	client := &fakeACMEClient{certificate: tls.Certificate{Certificate: [][]byte{{1, 2, 3}}}}
+	solver := newTlsalpn01Solver(newMemoryChallengeStore())
+	client := &fakeACMEClient{}
 	challenges := challengesFor("mail.example.com")
 
 	if solver.Type() != "tls-alpn-01" {
 		t.Fatalf("solver type is %q", solver.Type())
 	}
-	if _, ok := solver.certificateFor("mail.example.com"); ok {
+	if _, ok := solver.certificateFor(context.Background(), "mail.example.com"); ok {
 		t.Fatal("there should be no challenge certificate before presenting")
 	}
 	if err := solver.Present(context.Background(), client, challenges); err != nil {
@@ -118,22 +114,45 @@ func TestTLSALPN01SolverHoldsChallengeCertificates(t *testing.T) {
 
 	// Server names arrive lowercased in practice, but not always.
 	for _, name := range []string{"mail.example.com", "MAIL.EXAMPLE.COM"} {
-		certificate, ok := solver.certificateFor(name)
+		certificate, ok := solver.certificateFor(context.Background(), name)
 		if !ok {
 			t.Fatalf("no challenge certificate for %q", name)
 		}
-		if len(certificate.Certificate) != 1 || certificate.Certificate[0][0] != 1 {
-			t.Errorf("wrong challenge certificate for %q", name)
+		leaf, err := x509.ParseCertificate(certificate.Certificate[0])
+		if err != nil {
+			t.Fatalf("the challenge certificate for %q cannot be parsed: %s", name, err)
+		}
+		if err := leaf.VerifyHostname("mail.example.com"); err != nil {
+			t.Errorf("the challenge certificate for %q does not name the domain: %s", name, err)
+		}
+		// The extension carries the hash of the key authorization the client
+		// built for the token.
+		digest := sha256.Sum256([]byte("response-for-token-mail.example.com"))
+		wantValue, err := asn1.Marshal(digest[:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var isFound bool
+		for _, extension := range leaf.Extensions {
+			if extension.Id.Equal(acmeIdentifierExtension) {
+				isFound = true
+				if !extension.Critical || !bytes.Equal(extension.Value, wantValue) {
+					t.Errorf("the acmeIdentifier extension is wrong: critical %v, value %x, want %x", extension.Critical, extension.Value, wantValue)
+				}
+			}
+		}
+		if !isFound {
+			t.Errorf("the challenge certificate for %q has no acmeIdentifier extension", name)
 		}
 	}
-	if _, ok := solver.certificateFor("other.example.com"); ok {
+	if _, ok := solver.certificateFor(context.Background(), "other.example.com"); ok {
 		t.Error("a name with no outstanding challenge should not get a certificate")
 	}
 
 	if err := solver.CleanUp(context.Background(), challenges); err != nil {
 		t.Fatalf("failed to clean up: %s", err)
 	}
-	if _, ok := solver.certificateFor("mail.example.com"); ok {
+	if _, ok := solver.certificateFor(context.Background(), "mail.example.com"); ok {
 		t.Error("the challenge certificate should be gone after cleanup")
 	}
 }

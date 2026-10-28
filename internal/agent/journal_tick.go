@@ -48,7 +48,13 @@ var (
 // person's days and asking the weather service take minutes, and the tick
 // must go on claiming jobs. It makes no model call.
 func (self *Agent) refreshJournals(ctx context.Context, now time.Time) {
-	if now.Sub(self.lastJournalRefresh) < journalRefreshEvery || !self.refreshingJournals.CompareAndSwap(false, true) {
+	// lastJournalRefresh is read and written only while refreshingJournals
+	// is held, since the refresh writes it from its own goroutine.
+	if !self.refreshingJournals.CompareAndSwap(false, true) {
+		return
+	}
+	if now.Sub(self.lastJournalRefresh) < journalRefreshEvery {
+		self.refreshingJournals.Store(false)
 		return
 	}
 	self.lastJournalRefresh = now
@@ -57,26 +63,43 @@ func (self *Agent) refreshJournals(ctx context.Context, now time.Time) {
 		defer deferutil.Recover()
 		defer self.waitGroup.Done()
 		defer self.refreshingJournals.Store(false)
+		isAnyRefused := false
 		for _, person := range self.journalPeople(ctx) {
 			if ctx.Err() != nil {
 				return
 			}
-			self.refreshJournal(ctx, person, now)
+			if !self.refreshJournal(ctx, person, now) {
+				isAnyRefused = true
+			}
+		}
+		if isAnyRefused {
+			self.lastJournalRefresh = now.Add(-journalRefreshEvery + sweepRetry)
 		}
 	}()
 }
 
 // refreshJournal brings one person's numbers up to date in one transaction,
-// then the weather, whose requests are made outside any transaction.
-func (self *Agent) refreshJournal(ctx context.Context, person journalPerson, now time.Time) {
+// then the weather, whose requests are made outside any transaction. It says
+// false when another instance had the turn, to be tried again soon.
+func (self *Agent) refreshJournal(ctx context.Context, person journalPerson, now time.Time) bool {
 	refreshContext, cancel := context.WithTimeout(ctx, journalRefreshTimeout)
 	defer cancel()
-	if err := self.settings.Database.TransactionContext(refreshContext, func(transaction db.Transaction) error {
-		_, err := journal.Refresh(refreshContext, transaction, person.owner, person.agent, now)
+	isFree := false
+	if err := self.settings.Database.TransactionContext(refreshContext, func(transaction db.Transaction) (err error) {
+		// An hour for the whole server: the weather is asked from a service
+		// that is not ours, and the numbers are written the same by any
+		// instance.
+		if isFree, err = takeSweep(transaction, "journal-refresh:"+person.agent.ID, journalRefreshEvery, now); err != nil || !isFree {
+			return err
+		}
+		_, err = journal.Refresh(refreshContext, transaction, person.owner, person.agent, now)
 		return err
 	}); err != nil {
 		log.Warningf("cannot refresh the journal of agent %q: %s", person.agent.ID, err)
-		return
+		return true
+	}
+	if !isFree {
+		return false
 	}
 	inTransaction := func(run func(transaction db.Transaction) error) error {
 		return self.settings.Database.TransactionContext(refreshContext, run)
@@ -84,11 +107,12 @@ func (self *Agent) refreshJournal(ctx context.Context, person journalPerson, now
 	result, err := journal.RefreshWeather(refreshContext, inTransaction, person.owner, now, self.journalWeather)
 	if err != nil {
 		log.Warningf("cannot keep the weather of agent %q: %s", person.agent.ID, err)
-		return
+		return true
 	}
 	if result.WeatherFailedCount > 0 {
 		log.Debugf("the weather service had no answer for %d days of agent %q", result.WeatherFailedCount, person.agent.ID)
 	}
+	return true
 }
 
 // journalPerson is an active agent and the person it is for, who may keep a
@@ -157,6 +181,14 @@ func (self *Agent) askJournalEveningQuestion(ctx context.Context, agent *models.
 	var day string
 	var phones []*models.AgentPhone
 	err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		// Every instance asks. One at a time per person, so that two do not
+		// both find the day not yet asked and both tell the phones; the
+		// instance that finds another in the middle of it leaves it to that
+		// one, whose job row then says the day was asked.
+		isLocked, err := transaction.TryAdvisoryLock(db.LockKey("journal-evening:" + agent.ID))
+		if err != nil || !isLocked {
+			return err
+		}
 		settings, err := transaction.GetJournalSettings(owner.ID)
 		if err != nil || !settings.IsEveningQuestionOn {
 			return err

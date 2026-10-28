@@ -859,6 +859,35 @@ func (self *graph) ListAllAgentRuns(ctx context.Context, arguments ListAgentRuns
 	return &AgentRunPage{Runs: summaries, Total: total}, nil
 }
 
+// subscribeAgentRun follows a run of the caller's agent: the run itself when
+// it runs here, or what this instance heard of it from the one running it.
+func (self *graph) subscribeAgentRun(ctx context.Context, worker *agent.Agent, runId string, found *models.Agent) (<-chan agent.Event, func(), error) {
+	if run := worker.FindRun(runId); run != nil {
+		if run.Conversation().AgentID != found.ID {
+			return nil, nil, api.ErrNotFound
+		}
+		events, unsubscribe := run.Subscribe()
+		return events, unsubscribe, nil
+	}
+	conversationId, events, unsubscribe, ok := worker.SubscribeForeignRun(runId)
+	if !ok {
+		return nil, nil, api.ErrNotFound
+	}
+	var conversation *models.AgentConversation
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		conversation, err = tx.GetAgentConversation(conversationId)
+		return err
+	}); err != nil {
+		unsubscribe()
+		return nil, nil, err
+	}
+	if conversation == nil || conversation.AgentID != found.ID {
+		unsubscribe()
+		return nil, nil, api.ErrNotFound
+	}
+	return events, unsubscribe, nil
+}
+
 func (self *graph) ReadAgentRun(ctx context.Context, arguments ReadAgentRunArguments) (*AgentRunView, error) {
 	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
@@ -867,18 +896,17 @@ func (self *graph) ReadAgentRun(ctx context.Context, arguments ReadAgentRunArgum
 	if self.settings.Agent == nil {
 		return nil, agent.ErrUnavailable
 	}
-	run := self.agentWorker().FindRun(arguments.RunID)
-	if run == nil || run.Conversation().AgentID != found.ID {
-		return nil, api.ErrNotFound
+	events, unsubscribe, err := self.subscribeAgentRun(ctx, self.agentWorker(), arguments.RunID, found)
+	if err != nil {
+		return nil, err
 	}
-	events, unsubscribe := run.Subscribe()
 	defer unsubscribe()
 	wait := time.Duration(arguments.Wait) * time.Second
 	if wait > 25*time.Second {
 		wait = 25 * time.Second
 	}
 	deadline := time.After(wait)
-	view := &AgentRunView{RunID: run.ID, Events: []*agent.Event{}}
+	view := &AgentRunView{RunID: arguments.RunID, Events: []*agent.Event{}}
 	for {
 		select {
 		case event, ok := <-events:
@@ -1574,11 +1602,10 @@ func (self *graph) AgentRunEvents(ctx context.Context, arguments ReadAgentRunArg
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	run := worker.FindRun(arguments.RunID)
-	if run == nil || run.Conversation().AgentID != found.ID {
-		return nil, api.ErrNotFound
+	events, unsubscribe, err := self.subscribeAgentRun(ctx, worker, arguments.RunID, found)
+	if err != nil {
+		return nil, err
 	}
-	events, unsubscribe := run.Subscribe()
 	channel := make(chan *agent.Event)
 	go func() {
 		defer close(channel)

@@ -293,32 +293,65 @@ func (self *Agent) personToken(ctx context.Context, agentId string, server *conf
 	if !tokens.Expired(time.Now()) {
 		return tokens.AccessToken, nil
 	}
-	if tokens.RefreshToken == "" {
-		return "", fmt.Errorf("the authorization for %s has expired; connect it again", server.Name)
-	}
-	settings := self.OAuthSettings(server, "")
-	if tokens.ClientID != "" {
-		// The client these tokens were issued to, which for a server that
-		// publishes none is the one registered when they authorized.
-		settings.ClientID = tokens.ClientID
-	}
-	refreshed, err := mcp.Refresh(ctx, settings, tokens.RefreshToken)
-	if err != nil {
-		return "", err
-	}
-	encoded, _ := json.Marshal(refreshed)
-	sealed, err := self.SealSecret(string(encoded))
-	if err != nil {
-		return "", err
-	}
+	return self.refreshPersonToken(ctx, agentId, server)
+}
+
+// refreshPersonToken refreshes the person's tokens for a server, holding the
+// connection's row for as long as it takes. Two turns, on this instance or
+// another, that find the tokens expired together would each refresh with the
+// same refresh token, and a server that issues a new refresh token each time
+// revokes the one the second used. The one that waits for the row reads the
+// tokens the first wrote and, finding them fresh, uses those.
+func (self *Agent) refreshPersonToken(ctx context.Context, agentId string, server *config.AgentMCPServer) (string, error) {
+	var accessToken string
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		connection, err := tx.LockAgentConnection(agentId, server.Name)
+		if err != nil {
+			return err
+		}
+		if connection == nil || connection.Status != models.ConnectionConnected {
+			return fmt.Errorf("the person has not connected %s", server.Name)
+		}
+		opened, err := self.OpenSecret(connection.Tokens)
+		if err != nil {
+			return err
+		}
+		var tokens mcp.Tokens
+		if err := json.Unmarshal([]byte(opened), &tokens); err != nil {
+			return fmt.Errorf("the stored tokens are unreadable: %w", err)
+		}
+		if !tokens.Expired(time.Now()) {
+			accessToken = tokens.AccessToken
+			return nil
+		}
+		if tokens.RefreshToken == "" {
+			return fmt.Errorf("the authorization for %s has expired; connect it again", server.Name)
+		}
+		settings := self.OAuthSettings(server, "")
+		if tokens.ClientID != "" {
+			// The client these tokens were issued to, which for a server that
+			// publishes none is the one registered when they authorized.
+			settings.ClientID = tokens.ClientID
+		}
+		refreshed, err := mcp.Refresh(ctx, settings, tokens.RefreshToken)
+		if err != nil {
+			return err
+		}
+		encoded, _ := json.Marshal(refreshed)
+		sealed, err := self.SealSecret(string(encoded))
+		if err != nil {
+			return err
+		}
 		connection.Tokens = sealed
-		_, err := tx.PutAgentConnection(connection)
-		return err
+		if _, err := tx.PutAgentConnection(connection); err != nil {
+			return err
+		}
+		accessToken = refreshed.AccessToken
+		return nil
 	}); err != nil {
 		return "", err
 	}
-	return refreshed.AccessToken, nil
+	return accessToken, nil
 }
 
 // connection is the session with a server as a person, discovered and

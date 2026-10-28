@@ -197,8 +197,15 @@ func (self *Agent) dueSpeakFirstReason(ctx context.Context, tx db.Transaction, a
 	return "", nil
 }
 
-// isTurnRunning says whether a turn is in flight in a conversation.
+// isTurnRunning says whether a turn is in flight in a conversation, here or
+// on another instance.
 func (self *Agent) isTurnRunning(conversationId string) bool {
+	return self.isTurnRunningHere(conversationId) || self.isTurnRunningElsewhere(conversationId)
+}
+
+// isTurnRunningHere says whether a turn is in flight in a conversation on this
+// instance.
+func (self *Agent) isTurnRunningHere(conversationId string) bool {
 	self.runsMutex.Lock()
 	defer self.runsMutex.Unlock()
 	latest := self.latest[conversationId]
@@ -210,7 +217,13 @@ func (self *Agent) isTurnRunning(conversationId string) bool {
 // the work writes into the conversation is then never written between a
 // turn's opening message and its answer. The work is kept short, since
 // every turn waits on the lock meanwhile.
+//
+// A turn on another instance is looked for first, outside the lock, so a
+// turn it begins meanwhile can still land between; the window is one query.
 func (self *Agent) whileNoTurnRuns(conversationId string, work func() error) (bool, error) {
+	if self.isTurnRunningElsewhere(conversationId) {
+		return false, nil
+	}
 	self.runsMutex.Lock()
 	defer self.runsMutex.Unlock()
 	if latest := self.latest[conversationId]; latest != nil && !latest.isFinished() {

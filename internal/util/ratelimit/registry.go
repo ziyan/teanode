@@ -36,6 +36,11 @@ type Registry struct {
 	// made once so that its tokens are spent across calls.
 	overflow *Bucket
 
+	// shared is set for a registry whose buckets are counted in the database
+	// by every instance (NewSharedRegistry), and the members below are then
+	// unused.
+	shared *shared
+
 	mutex   sync.Mutex
 	buckets map[string]*entry
 
@@ -72,6 +77,9 @@ func (self *Registry) Allow(key string) bool {
 // For returns the bucket for key, creating it if this is the first time the
 // key has been seen.
 func (self *Registry) For(key string) *Bucket {
+	if self.shared != nil {
+		return self.shared.bucket(key)
+	}
 	now := time.Now()
 
 	self.mutex.Lock()

@@ -2,8 +2,10 @@ package apigraph
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
@@ -25,58 +27,12 @@ import (
 // forth would otherwise be a notification for every tap.
 const shareNoticeInterval = 10 * time.Minute
 
-// shareNoticeCacheLimit is how many shares the cache remembers at most.
-const shareNoticeCacheLimit = 4096
-
-// shareNoticeCache remembers when each person was last told each share. It is
-// kept in memory: a restart forgets it, which costs one extra notice, and
-// another instance of the server does not share it.
-type shareNoticeCache struct {
-	mutex  sync.Mutex
-	sentAt map[string]time.Time
-}
-
-func shareNoticeKey(shareKey, toldUserId string) string {
-	return shareKey + "\x00" + toldUserId
-}
-
-// isDue says whether the person may be told about the share now: they were not
-// told it in the last shareNoticeInterval.
-func (self *shareNoticeCache) isDue(shareKey, toldUserId string, now time.Time) bool {
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	last, isKept := self.sentAt[shareNoticeKey(shareKey, toldUserId)]
-	return !isKept || now.Sub(last) >= shareNoticeInterval
-}
-
-// record counts the person as told about the share. It is called once the note
-// is committed, so a note that failed to write, or a transaction that rolled
-// back, does not stop the next attempt from telling them.
-func (self *shareNoticeCache) record(shareKey, toldUserId string, now time.Time) {
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	if self.sentAt == nil {
-		self.sentAt = map[string]time.Time{}
-	}
-	key := shareNoticeKey(shareKey, toldUserId)
-	if _, isKept := self.sentAt[key]; !isKept && len(self.sentAt) >= shareNoticeCacheLimit {
-		for oldKey, last := range self.sentAt {
-			if now.Sub(last) >= shareNoticeInterval {
-				delete(self.sentAt, oldKey)
-			}
-		}
-		// Still full of fresh entries: the oldest goes.
-		if len(self.sentAt) >= shareNoticeCacheLimit {
-			oldestKey, oldestAt := "", now
-			for oldKey, last := range self.sentAt {
-				if oldestKey == "" || last.Before(oldestAt) {
-					oldestKey, oldestAt = oldKey, last
-				}
-			}
-			delete(self.sentAt, oldestKey)
-		}
-	}
-	self.sentAt[key] = now
+// shareNoticeThrottleKey is the throttle a person's notice of a share is taken
+// from. The share key holds free text and separator bytes, which a key column
+// cannot, so it goes in as a digest.
+func shareNoticeThrottleKey(shareKey, toldUserId string) string {
+	digest := sha256.Sum256([]byte(shareKey))
+	return "share-notice:" + hex.EncodeToString(digest[:]) + ":" + toldUserId
 }
 
 // permissionToUseShare is the permission a person needs to read a kind of
@@ -131,6 +87,9 @@ func (self *graph) tellAboutShare(ctx context.Context, sharer *models.User, note
 	shareKey := strings.Join(append([]string{sharer.ID, string(note.ShareKind), note.ShareSubjectID, note.ShareSubject, note.ShareLevel}, note.ShareScopes...), "\x00")
 	notifier := self.phoneNotifier()
 	now := time.Now()
+	// In one order, so that two shares at once take their turns' rows in
+	// the same order and do not wait on each other.
+	sort.Strings(toldUserIds)
 	for _, toldUserId := range toldUserIds {
 		if toldUserId == sharer.ID {
 			continue
@@ -149,14 +108,19 @@ func (self *graph) tellAboutShare(ctx context.Context, sharer *models.User, note
 		if permissions == nil || !permissions.Has(permissionToUseShare(note.ShareKind)) {
 			continue
 		}
-		if !self.shareNotices.isDue(shareKey, toldUserId, now) {
+		// Taken in this transaction, whichever instance the request that
+		// told them last reached, and given back if the note is not written.
+		isDue, err := tx.TakeThrottle(shareNoticeThrottleKey(shareKey, toldUserId), shareNoticeInterval, now)
+		if err != nil {
+			return err
+		}
+		if !isDue {
 			continue
 		}
 		agentId, err := agent.NoteSharing(tx, toldUserId, models.NoteShareReceived, detail)
 		if err != nil {
 			return err
 		}
-		tx.AfterCommit(func() { self.shareNotices.record(shareKey, toldUserId, now) })
 		if notifier != nil && agentId != "" {
 			tx.AfterCommit(func() { notifier.NotifySharing(agentId, models.NoteShareReceived, detail) })
 		}

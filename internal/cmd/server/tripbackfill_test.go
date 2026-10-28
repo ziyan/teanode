@@ -106,3 +106,40 @@ func TestBackfillTripsBuildsAgainAfterTheRulesChange(test *testing.T) {
 		}
 	})
 }
+
+// A start while another instance is on the pass does nothing: it finds the
+// lock held and leaves the work to that instance, which builds them once.
+func TestBackfillTripsLeavesThePassToTheInstanceHoldingIt(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	test.Cleanup(closeDatabase)
+	userId := dbtest.CreateUser(test, database, "trip-backfill-held")
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		home, err := transaction.CreatePlace(userId, &models.Place{PlaceName: "Home", IsNamedByPerson: true, LatitudeDegrees: 40, LongitudeDegrees: -75, RadiusMeters: 100})
+		if err != nil {
+			test.Fatal(err)
+		}
+		start := time.Now().AddDate(0, 0, -2).Truncate(time.Second)
+		if _, err := transaction.PutPlaceVisit(userId, &models.PlaceVisit{PlaceID: home.ID, ClientVisitKey: "home", VisitSource: models.VisitSourceVisit, ArrivedAt: &start, LatitudeDegrees: 40, LongitudeDegrees: -75}); err != nil {
+			test.Fatal(err)
+		}
+	})
+
+	release, isLocked, err := database.TryLockSession(context.Background(), db.LockKey("trip:backfill"))
+	if err != nil || !isLocked {
+		test.Fatalf("the lock was not free: %v %v", isLocked, err)
+	}
+	backfillTrips(context.Background(), database)
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if userIds, err := transaction.ListUsersNeedingTripBackfill(tripRulesChangedAt); err != nil || len(userIds) != 1 {
+			test.Errorf("the pass ran while another instance held the lock: %v %v", userIds, err)
+		}
+	})
+
+	release()
+	backfillTrips(context.Background(), database)
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if userIds, err := transaction.ListUsersNeedingTripBackfill(tripRulesChangedAt); err != nil || len(userIds) != 0 {
+			test.Errorf("the pass did not run once the lock was free: %v %v", userIds, err)
+		}
+	})
+}

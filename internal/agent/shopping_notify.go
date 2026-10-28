@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -31,32 +30,12 @@ const (
 	shoppingArrivalNamesMost = 5
 )
 
-// shoppingNotices remembers whom this instance told what, and when, so the
-// same reminder is not sent twice in a row. A restart forgets it, which costs
-// at most one repeated notice.
-type shoppingNotices struct {
-	mutex  sync.Mutex
-	toldAt map[string]time.Time
-}
-
-// claim says whether the notice named by key may be sent now, and marks it
-// sent when it may.
-func (self *shoppingNotices) claim(key string, interval time.Duration, now time.Time) bool {
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	if self.toldAt == nil {
-		self.toldAt = map[string]time.Time{}
-	}
-	for each, toldAt := range self.toldAt {
-		if now.Sub(toldAt) >= shoppingArrivalInterval {
-			delete(self.toldAt, each)
-		}
-	}
-	if toldAt, isTold := self.toldAt[key]; isTold && now.Sub(toldAt) < interval {
-		return false
-	}
-	self.toldAt[key] = now
-	return true
+// claimShoppingNotice says whether the notice named by key may be sent now,
+// and marks it sent when it may, in the transaction that decides to send it.
+// The last time each was sent is a row of the throttle table, so that the
+// same reminder is sent once however many instances the server runs on.
+func claimShoppingNotice(tx db.Transaction, key string, interval time.Duration, now time.Time) (bool, error) {
+	return tx.TakeThrottle("shopping-notice:"+key, interval, now)
 }
 
 // groceryCategories are the OpenStreetMap categories of a place where things
@@ -153,15 +132,19 @@ func (self *PhoneNotifier) NotifyShoppingArrival(ctx context.Context, userId str
 			return err
 		}
 		agentId = agent.ID
+		isFree, err := claimShoppingNotice(tx, "arrival "+userId+" "+visit.PlaceID, shoppingArrivalInterval, time.Now())
+		if err != nil {
+			return err
+		}
+		if !isFree {
+			items = nil
+		}
 		return nil
 	}); err != nil {
 		log.Warningf("cannot work out what the shopping lists need at a store: %s", err)
 		return
 	}
 	if len(items) == 0 || agentId == "" {
-		return
-	}
-	if !self.shoppingNotices.claim("arrival "+userId+" "+visit.PlaceID, shoppingArrivalInterval, time.Now()) {
 		return
 	}
 	listOrder := []string{}
@@ -230,12 +213,20 @@ func (self *PhoneNotifier) NotifyShoppingStarted(ctx context.Context, shopper *m
 				}
 			}
 		}
+		now := time.Now()
 		for readerId := range listNames {
 			agent, err := tx.GetAgentByUser(readerId)
 			if err != nil {
 				return err
 			}
-			if agent != nil {
+			if agent == nil {
+				continue
+			}
+			isFree, err := claimShoppingNotice(tx, fmt.Sprintf("started %s %s", shopper.ID, readerId), shoppingStartedInterval, now)
+			if err != nil {
+				return err
+			}
+			if isFree {
 				agentIds[readerId] = agent.ID
 			}
 		}
@@ -244,10 +235,9 @@ func (self *PhoneNotifier) NotifyShoppingStarted(ctx context.Context, shopper *m
 		log.Warningf("cannot work out who to tell about somebody shopping: %s", err)
 		return
 	}
-	now := time.Now()
 	for readerId, names := range listNames {
 		agentId := agentIds[readerId]
-		if agentId == "" || !self.shoppingNotices.claim(fmt.Sprintf("started %s %s", shopper.ID, readerId), shoppingStartedInterval, now) {
+		if agentId == "" {
 			continue
 		}
 		listWords := strings.Join(names, ", ")

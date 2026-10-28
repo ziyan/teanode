@@ -76,8 +76,9 @@ type graph struct {
 	ceremonies ceremony.Store
 
 	// mcpResults holds the rest of a tool's long answer over MCP until the
-	// caller reads on with result_more; see agent_mcp.go. Nil in a test that
-	// built the graph by hand, where each request holds its own.
+	// caller reads on with result_more, in the database, so the next request
+	// may reach any instance; see agent_mcp.go. Nil in a test that built the
+	// graph by hand.
 	mcpResults *mcpserve.ResultStore
 
 	// photoStoreValue is the photo library's store, made by photoStore the
@@ -89,15 +90,6 @@ type graph struct {
 	// for a few seconds, so that the listing and the count a page asks for
 	// together call the embedding model once.
 	photoSearchMeanings photoSearchMeaningCache
-
-	// photoAddNotices remembers when each reader was last told that photos
-	// were added to an album, so that one person adding photos one after
-	// another is one notification (photo_album_share.go).
-	photoAddNotices photoAddNoticeCache
-
-	// shareNotices remembers when each person was last told that something
-	// was shared with them (sharing_notice.go).
-	shareNotices shareNoticeCache
 
 	// chatLimits are what one person may do in chats a minute on this
 	// instance; made the first time they are wanted (chat.go).
@@ -144,7 +136,7 @@ func New(database db.Database, configuration config.Store, messages storage.Stor
 		ceremonies:    ceremonies,
 		settings:      settings,
 		started:       time.Now(),
-		mcpResults:    mcpserve.NewResultStore(),
+		mcpResults:    mcpserve.NewResultStore(database),
 	}
 
 	graphApi := graphapi.New()

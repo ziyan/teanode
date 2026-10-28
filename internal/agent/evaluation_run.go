@@ -48,6 +48,13 @@ func (self *Agent) queueEvaluating(ctx context.Context, now time.Time) {
 			continue
 		}
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+			// Every instance asks, and the question and the queueing are
+			// one step: an instance that finds another in the middle of it
+			// leaves the agent to that one.
+			isLocked, err := tx.TryAdvisoryLock(evaluationLockKey(agent))
+			if err != nil || !isLocked {
+				return err
+			}
 			isDue, err := evaluationDue(tx, agent, now)
 			if err != nil || !isDue {
 				return err
@@ -58,6 +65,12 @@ func (self *Agent) queueEvaluating(ctx context.Context, now time.Time) {
 			log.Warningf("cannot say whether agent %q is due an evaluation: %s", agent.ID, err)
 		}
 	}
+}
+
+// evaluationLockKey is the lock held while deciding whether an agent is due a
+// run and queueing it, for the transaction that does.
+func evaluationLockKey(agent *models.Agent) int64 {
+	return db.LockKey("agent:evaluation:" + agent.ID)
 }
 
 // evaluationDue says whether an agent should be graded now: it has
@@ -100,6 +113,15 @@ func evaluationDue(tx db.Transaction, agent *models.Agent, now time.Time) (bool,
 // fills it; one already queued or running is left to run, and is what is
 // returned.
 func (self *Agent) QueueEvaluation(tx db.Transaction, agent *models.Agent) (*models.AgentEvaluationRun, error) {
+	// Two callers, on this instance or another, would each find no job and
+	// each start a run. A caller that already holds the lock holds it again.
+	isLocked, err := tx.TryAdvisoryLock(evaluationLockKey(agent))
+	if err != nil {
+		return nil, err
+	}
+	if !isLocked {
+		return nil, fmt.Errorf("a run of the memory check is being queued for agent %q; try again", agent.ID)
+	}
 	jobs, err := tx.ListAgentJobs(&db.AgentJobFilter{
 		AgentID:  agent.ID,
 		Kinds:    []models.AgentJobKind{models.AgentJobEvaluate},

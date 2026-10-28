@@ -134,6 +134,7 @@ func (self *Hub) Start() {
 		defer self.waitGroup.Done()
 		self.runRelay()
 	}()
+	self.relayPresence()
 	payloads, err := self.settings.Database.ListenChatEvents(self.ctx)
 	if err != nil {
 		log.Warningf("chats cannot hear the other instances: %s", err)
@@ -149,6 +150,53 @@ func (self *Hub) Start() {
 				continue
 			}
 			self.deliver(received.Event)
+		}
+	}()
+}
+
+// relayedPresence is a presence report on its way between instances.
+type relayedPresence struct {
+	Instance string               `json:"instance"`
+	Report   agent.PresenceReport `json:"report"`
+}
+
+// relayPresence passes the presence reports made here to the other
+// instances and records theirs, so that a chat is not sent to the phone of
+// somebody reading it through another instance. The hub does it rather than
+// the agent because a server with no model has no agent, and chats still
+// need to know.
+func (self *Hub) relayPresence() {
+	payloads, err := self.settings.Database.ListenPresenceEvents(self.ctx)
+	if err != nil {
+		log.Warningf("presence cannot be heard from the other instances: %s", err)
+		return
+	}
+	var lastWarning time.Time
+	var warningMutex sync.Mutex
+	self.settings.Presence.RelayReports(func(report agent.PresenceReport) {
+		payload, err := json.Marshal(relayedPresence{Instance: self.settings.Instance, Report: report})
+		if err != nil {
+			return
+		}
+		if err := self.settings.Database.NotifyPresenceEvent(string(payload)); err != nil {
+			warningMutex.Lock()
+			defer warningMutex.Unlock()
+			if time.Since(lastWarning) > time.Minute {
+				lastWarning = time.Now()
+				log.Warningf("presence cannot be told to the other instances: %s", err)
+			}
+		}
+	})
+	self.waitGroup.Add(1)
+	go func() {
+		defer deferutil.Recover()
+		defer self.waitGroup.Done()
+		for payload := range payloads {
+			var received relayedPresence
+			if err := json.Unmarshal([]byte(payload), &received); err != nil || received.Instance == self.settings.Instance {
+				continue
+			}
+			self.settings.Presence.ApplyRelayed(received.Report, time.Now())
 		}
 	}()
 }

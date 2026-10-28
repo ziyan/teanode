@@ -1,6 +1,8 @@
 package db
 
 import (
+	"slices"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -22,6 +24,19 @@ type SpamOperation interface {
 	// written back, because two instances may be learning at the same time
 	// and a read-modify-write would lose one of them.
 	LearnSpamTokens(deltas []models.SpamTokenDelta) error
+
+	// LearnSpamMail teaches the classifier one message, and is idempotent:
+	// marking a message the way it is already marked does nothing, and
+	// changing its label takes back what the previous label added and adds
+	// the new one. The label is read, the counts applied and the label
+	// written in one transaction under a lock on the message, so that two
+	// instances marking the same message at once count it once.
+	LearnSpamMail(mailId, label string, tokens []string) error
+
+	// ForgetSpamMail takes back what LearnSpamMail added for a message, in
+	// one transaction under the same lock. A message never marked is left
+	// alone.
+	ForgetSpamMail(mailId string, tokens []string) error
 
 	// LoadSpamTokens reads the counts for the tokens of one message. Tokens
 	// that have never been seen are absent from the result rather than zero,
@@ -53,6 +68,13 @@ type SpamOperation interface {
 
 	// SaveSpamRuleSet replaces one channel's stored rules.
 	SaveSpamRuleSet(ruleSet *models.SpamRuleSet) error
+
+	// RecordSpamRuleSetCounts writes how much of a channel's rules this
+	// server could run, and nothing else about the set: the rules stay as
+	// they are. Only while the stored set is still at the version the counts
+	// were worked out from, so that a newer import is not marked with the
+	// counts of the one before it.
+	RecordSpamRuleSetCounts(channel, version string, rulesLoaded, rulesSkipped int) error
 
 	// ListSpamRuleSets is what the dashboard shows: every channel, with how
 	// much of it this server could use.
@@ -91,30 +113,119 @@ func (self *database) LearnSpamTokens(deltas []models.SpamTokenDelta) error {
 	if len(deltas) == 0 {
 		return nil
 	}
-	now := time.Now().UTC()
 	return self.db.Transaction(func(tx *gorm.DB) error {
-		for _, delta := range deltas {
-			if delta.Token == "" {
-				continue
-			}
-			model := &spamTokenModel{
-				Token:      delta.Token,
-				SpamCount:  delta.SpamCount,
-				HamCount:   delta.HamCount,
-				ModifiedAt: now,
-			}
-			if err := tx.Clauses(clause.OnConflict{
-				Columns: []clause.Column{{Name: "token"}},
-				DoUpdates: clause.Assignments(map[string]any{
-					"spam_count":  gorm.Expr(`"spam_token"."spam_count" + ?`, delta.SpamCount),
-					"ham_count":   gorm.Expr(`"spam_token"."ham_count" + ?`, delta.HamCount),
-					"modified_at": now,
-				}),
-			}).Create(model).Error; err != nil {
-				return err
-			}
+		return learnSpamTokens(tx, deltas)
+	})
+}
+
+// learnSpamTokens applies deltas inside a transaction. In token order, so that
+// two transactions touching the same tokens take their row locks in the same
+// order and neither waits for the other while holding what it wants.
+func learnSpamTokens(tx *gorm.DB, deltas []models.SpamTokenDelta) error {
+	ordered := slices.Clone(deltas)
+	slices.SortFunc(ordered, func(first, second models.SpamTokenDelta) int {
+		return strings.Compare(first.Token, second.Token)
+	})
+	now := time.Now().UTC()
+	for _, delta := range ordered {
+		if delta.Token == "" {
+			continue
 		}
-		return nil
+		model := &spamTokenModel{
+			Token:      delta.Token,
+			SpamCount:  delta.SpamCount,
+			HamCount:   delta.HamCount,
+			ModifiedAt: now,
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "token"}},
+			DoUpdates: clause.Assignments(map[string]any{
+				"spam_count":  gorm.Expr(`"spam_token"."spam_count" + ?`, delta.SpamCount),
+				"ham_count":   gorm.Expr(`"spam_token"."ham_count" + ?`, delta.HamCount),
+				"modified_at": now,
+			}),
+		}).Create(model).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// lockSpamTraining takes the lock that makes the marking of one message one
+// transaction at a time, even on two instances, until the transaction ends.
+func lockSpamTraining(tx *gorm.DB, mailId string) error {
+	return tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, "spam-training:"+mailId).Error
+}
+
+func (self *database) LearnSpamMail(mailId, label string, tokens []string) error {
+	if mailId == "" || (label != models.SpamTrainingLabelSpam && label != models.SpamTrainingLabelHam) {
+		return ErrInvalidArguments
+	}
+	return self.db.Transaction(func(tx *gorm.DB) error {
+		if err := lockSpamTraining(tx, mailId); err != nil {
+			return err
+		}
+		var existing spamTrainingModel
+		result := tx.Where("mail_id = ?", mailId).Limit(1).Find(&existing)
+		if result.Error != nil {
+			return result.Error
+		}
+		hasExisting := result.RowsAffected > 0
+		if hasExisting && existing.Label == label {
+			return nil
+		}
+		deltas := make([]models.SpamTokenDelta, 0, len(tokens))
+		for _, token := range tokens {
+			delta := models.SpamTokenDelta{Token: token}
+			if label == models.SpamTrainingLabelSpam {
+				delta.SpamCount = 1
+			} else {
+				delta.HamCount = 1
+			}
+			// Re-labeled: take back what the previous label contributed.
+			if hasExisting {
+				if existing.Label == models.SpamTrainingLabelSpam {
+					delta.SpamCount--
+				} else {
+					delta.HamCount--
+				}
+			}
+			deltas = append(deltas, delta)
+		}
+		if err := learnSpamTokens(tx, deltas); err != nil {
+			return err
+		}
+		return setSpamTraining(tx, &models.SpamTraining{MailID: mailId, Label: label})
+	})
+}
+
+func (self *database) ForgetSpamMail(mailId string, tokens []string) error {
+	if mailId == "" {
+		return ErrInvalidArguments
+	}
+	return self.db.Transaction(func(tx *gorm.DB) error {
+		if err := lockSpamTraining(tx, mailId); err != nil {
+			return err
+		}
+		var existing spamTrainingModel
+		result := tx.Where("mail_id = ?", mailId).Limit(1).Find(&existing)
+		if result.Error != nil || result.RowsAffected == 0 {
+			return result.Error
+		}
+		deltas := make([]models.SpamTokenDelta, 0, len(tokens))
+		for _, token := range tokens {
+			delta := models.SpamTokenDelta{Token: token}
+			if existing.Label == models.SpamTrainingLabelSpam {
+				delta.SpamCount = -1
+			} else {
+				delta.HamCount = -1
+			}
+			deltas = append(deltas, delta)
+		}
+		if err := learnSpamTokens(tx, deltas); err != nil {
+			return err
+		}
+		return tx.Where("mail_id = ?", mailId).Delete(&spamTrainingModel{}).Error
 	})
 }
 
@@ -162,6 +273,10 @@ func (self *database) GetSpamTraining(mailId string) (*models.SpamTraining, erro
 }
 
 func (self *database) SetSpamTraining(training *models.SpamTraining) error {
+	return setSpamTraining(self.db, training)
+}
+
+func setSpamTraining(tx *gorm.DB, training *models.SpamTraining) error {
 	now := time.Now().UTC()
 	model := &spamTrainingModel{
 		MailID:     training.MailID,
@@ -169,7 +284,7 @@ func (self *database) SetSpamTraining(training *models.SpamTraining) error {
 		CreatedAt:  now,
 		ModifiedAt: now,
 	}
-	return self.db.Clauses(clause.OnConflict{
+	return tx.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "mail_id"}},
 		DoUpdates: clause.Assignments(map[string]any{
 			"label":       training.Label,
@@ -279,6 +394,12 @@ func (self *database) SaveSpamRuleSet(ruleSet *models.SpamRuleSet) error {
 			"error":         model.Error,
 		}),
 	}).Create(model).Error
+}
+
+func (self *database) RecordSpamRuleSetCounts(channel, version string, rulesLoaded, rulesSkipped int) error {
+	return self.db.Model(&spamRuleSetModel{}).
+		Where("channel = ? AND version = ?", channel, version).
+		Updates(map[string]any{"rules_loaded": rulesLoaded, "rules_skipped": rulesSkipped}).Error
 }
 
 func (self *database) ListSpamRuleSets() ([]*models.SpamRuleSet, error) {

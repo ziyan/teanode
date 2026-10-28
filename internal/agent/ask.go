@@ -395,6 +395,11 @@ func (self *AskRun) sayNote(kind models.AgentNoteKind, detail string) {
 
 // AskRun is one turn in flight.
 type AskRun struct {
+	// recordedAt is when the run was recorded as running (turn_record.go),
+	// zero for one that was not: a run steered into another, or one with no
+	// database to record it in.
+	recordedAt time.Time
+
 	// explanation records why recall carried what it did, when asked for
 	// (see ExplainRecall); nil on a turn.
 	explanation *RecallExplanation
@@ -698,6 +703,9 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 		self.latest[settings.Conversation.ID] = run
 	}
 	self.runsMutex.Unlock()
+	if run.steeredInto == nil {
+		self.recordTurn(run)
+	}
 	self.waitGroup.Add(1)
 	// A turn is the model's own instructions carried out against a stranger's
 	// mail, over tools that reach servers this program did not write. It is
@@ -712,7 +720,7 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 }
 
 // StopConversation ends every run of a conversation, for the conversation
-// being deleted under them.
+// being deleted under them, here and on the other instances.
 func (self *Agent) StopConversation(conversationId string) {
 	self.runsMutex.Lock()
 	var running []*AskRun
@@ -725,6 +733,7 @@ func (self *Agent) StopConversation(conversationId string) {
 	for _, run := range running {
 		run.Stop()
 	}
+	self.stopTurnsElsewhere(conversationId)
 }
 
 // FindRun is a run in flight or recently finished, or nil.
@@ -1087,6 +1096,7 @@ func (self *AskRun) finish() {
 	self.mutex.Unlock()
 	// A turn that ended without saying so still ends what follows it.
 	self.followLiveActivities(EventDone, time.Now())
+	self.agent.forgetTurn(self)
 	close(self.done)
 	self.cancel()
 	go self.agent.forgetRun(self.ID)
@@ -1119,6 +1129,12 @@ func (self *AskRun) loop() {
 			self.emit(Event{Kind: EventDone})
 			return
 		}
+	}
+	// And for one that began before it on another instance.
+	if !self.waitForTurnsElsewhere() {
+		self.sayNote(models.NoteStopped, "")
+		self.emit(Event{Kind: EventDone})
+		return
 	}
 	// The search of the person's files and chat needs nothing the depth
 	// judgement decides: begun now, it runs while the judgement does.

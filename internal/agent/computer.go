@@ -75,6 +75,13 @@ type ComputerIdentity struct {
 // under the same name replaces the first, and a different name is another
 // computer beside it.
 func (self *Agent) AttachComputer(agentId string, connection DeviceConnection, identity ComputerIdentity) {
+	self.attachComputerHere(agentId, connection, identity)
+	// The other instances are told where the socket is (see
+	// computer_attachment.go).
+	self.recordComputerAttachment(agentId, identity.Name)
+}
+
+func (self *Agent) attachComputerHere(agentId string, connection DeviceConnection, identity ComputerIdentity) {
 	name, system, home, terminal := identity.Name, identity.System, identity.Home, identity.Terminal
 	self.computersMutex.Lock()
 	defer self.computersMutex.Unlock()
@@ -100,14 +107,23 @@ func (self *Agent) AttachComputer(agentId string, connection DeviceConnection, i
 // DetachComputer forgets a person's computer, if this connection is the one
 // attached under its name.
 func (self *Agent) DetachComputer(agentId string, connection DeviceConnection) {
+	for _, name := range self.detachComputerHere(agentId, connection) {
+		self.recordComputerAttachment(agentId, name)
+	}
+}
+
+func (self *Agent) detachComputerHere(agentId string, connection DeviceConnection) []string {
 	self.computersMutex.Lock()
 	defer self.computersMutex.Unlock()
+	var detached []string
 	for name, computer := range self.computers[agentId] {
 		if connection == nil || computer.connection == connection {
 			computer.drop()
 			delete(self.computers[agentId], name)
+			detached = append(detached, name)
 		}
 	}
+	return detached
 }
 
 // ComputerAnswered is a computer answering a request.

@@ -41,8 +41,18 @@ const (
 
 // fetchSenderLogos looks up the domains that have not been asked about lately
 // and stores what they publish, including publishing nothing. It returns how
-// many were looked at.
+// many were looked at. One instance looks at a time: an instance that finds
+// another at it looks at none, and tries again at its next turn.
 func fetchSenderLogos(ctx context.Context, database db.Database, nameserver string) (int, error) {
+	lookedAtCount := 0
+	_, err := database.WhileLocked(ctx, db.LockKey("mailbox:logos"), func(ctx context.Context) (err error) {
+		lookedAtCount, err = fetchSenderLogosBatch(ctx, database, nameserver)
+		return err
+	})
+	return lookedAtCount, err
+}
+
+func fetchSenderLogosBatch(ctx context.Context, database db.Database, nameserver string) (int, error) {
 	var domains []string
 	if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
 		found, err := tx.ListSenderDomainsWithoutLogo(time.Now().Add(-logoLifetime), logoBatch)

@@ -30,7 +30,18 @@ const (
 
 // backfillMailLists reads one batch. It returns the number of messages
 // examined, so the caller can tell "there was work" from "there was none".
+// Only one instance reads a batch at a time: an instance that finds another
+// reading one examines nothing, and tries again at its next turn.
 func backfillMailLists(ctx context.Context, database db.Database, store storage.Storage) (int, error) {
+	examinedCount := 0
+	_, err := database.WhileLocked(ctx, db.LockKey("mailbox:lists"), func(ctx context.Context) (err error) {
+		examinedCount, err = backfillMailListsBatch(ctx, database, store)
+		return err
+	})
+	return examinedCount, err
+}
+
+func backfillMailListsBatch(ctx context.Context, database db.Database, store storage.Storage) (int, error) {
 	var ids []string
 	if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
 		found, err := tx.ListMailNeedingList(listBackfillBatch)

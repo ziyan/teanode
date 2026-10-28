@@ -622,3 +622,47 @@ func TestDistanceAndPositions(t *testing.T) {
 		}
 	}
 }
+
+// With a limit the instances share, a caller whose own turn has come also
+// waits for the shared limit to give it one.
+func TestTheLimiterWaitsForTheLimitTheInstancesShare(t *testing.T) {
+	t.Parallel()
+
+	askedCount := 0
+	limit := &limiter{interval: time.Millisecond, takeClusterTurn: func(context.Context) (bool, error) {
+		askedCount++
+		return askedCount >= 3, nil
+	}}
+	if err := limit.wait(context.Background()); err != nil {
+		t.Fatalf("wait: %s", err)
+	}
+	if askedCount != 3 {
+		t.Errorf("the shared limit was asked %d times, want 3", askedCount)
+	}
+}
+
+// A shared limit that never gives a turn refuses the request as busy, after
+// the longest wait.
+func TestTheLimiterIsBusyWhenTheSharedLimitIsNeverFree(t *testing.T) {
+	t.Parallel()
+
+	limit := &limiter{interval: time.Millisecond, maximumWait: 500 * time.Millisecond, takeClusterTurn: func(context.Context) (bool, error) {
+		return false, nil
+	}}
+	if err := limit.wait(context.Background()); !errors.Is(err, ErrProviderBusy) {
+		t.Fatalf("wait gave %v, want the provider is busy", err)
+	}
+}
+
+// A shared limit that cannot be asked does not stop the request: the
+// instance's own spacing still holds.
+func TestTheLimiterGoesAheadWhenTheSharedLimitCannotBeAsked(t *testing.T) {
+	t.Parallel()
+
+	limit := &limiter{interval: time.Millisecond, takeClusterTurn: func(context.Context) (bool, error) {
+		return false, errors.New("the database is away")
+	}}
+	if err := limit.wait(context.Background()); err != nil {
+		t.Fatalf("wait: %s", err)
+	}
+}

@@ -223,7 +223,7 @@ type Agent struct {
 	// foreignRuns are the runs heard of through the feed that other
 	// instances run, by run id.
 	foreignMutex sync.Mutex
-	foreignRuns  map[string]foreignRun
+	foreignRuns  map[string]*foreignRun
 
 	// computers are the computers people attached with `teanode computer`.
 	computersMutex sync.Mutex
@@ -245,11 +245,6 @@ type Agent struct {
 	// lastSkillShareSweep is when the calls of shared skills that waited
 	// out their day were last looked for.
 	lastSkillShareSweep time.Time
-	// startedAt is when Start ran, and hasResumedCutTurns that the
-	// conversations a restart cut short have been looked at; see
-	// resume.go.
-	startedAt          time.Time
-	hasResumedCutTurns atomic.Bool
 	// herdrTold is when each herdr question was told to the person's
 	// phones, by computer, pane and fingerprint, so a question said again
 	// after a reconnect is told once. Under the background lock.
@@ -407,8 +402,14 @@ func (self *Agent) Start() {
 	// small server has; maintaining one as the rows come in costs a tenth
 	// of a millisecond each. So the order matters, and this is where it
 	// is settled.
-	if err := self.EnsureVectorIndexes(self.ctx); err != nil {
+	//
+	// One instance builds them: an index built twice at once costs the
+	// memory twice, and the instance that finds another building leaves it
+	// to that one.
+	if isBuilding, err := self.settings.Database.WhileLocked(self.ctx, db.LockKey("vector-indexes"), self.EnsureVectorIndexes); err != nil {
 		log.Warningf("cannot build the vector indexes: %s", err)
+	} else if !isBuilding {
+		log.Noticef("another instance is building the vector indexes")
 	}
 	// What this instance held when it last stopped is not running now.
 	// Left to the stale-claim rule it would sit a quarter of an hour,
@@ -423,7 +424,6 @@ func (self *Agent) Start() {
 	}); err != nil {
 		log.Warningf("cannot put back the jobs held before the restart: %s", err)
 	}
-	self.startedAt = time.Now()
 	self.worker = periodic.New(self.ctx, &self.waitGroup, self.tick, &periodic.Settings{
 		Interval: self.settings.Tick,
 		Name:     "agent:worker",
@@ -695,7 +695,7 @@ func (self *Agent) execute(job *models.AgentJob, now time.Time) {
 	outcome := outcomeForJob(job, err, now.Add(time.Since(startedAt)))
 	if outcome.JobStatus == models.AgentJobDead {
 		log.Errorf("%s job %s gave up after %d failures: %s", job.Kind, job.ID, outcome.FailureCount, outcome.ErrorMessage)
-	} else if err != nil {
+	} else if err != nil && !isQuietDeferral(err) {
 		log.Noticef("%s job %s returned to the queue after %d failures: %s", job.Kind, job.ID, outcome.FailureCount, outcome.ErrorMessage)
 	}
 	completionContext, cancelCompletion := context.WithTimeout(context.WithoutCancel(ctx), jobCompletionTimeout)
@@ -774,6 +774,17 @@ func (self *Agent) scavenge(ctx context.Context, now time.Time) {
 		corrections = 90 * 24 * time.Hour
 	}
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		// Once an hour for the whole server, not once an hour for each
+		// instance: the sweep deletes uploads from storage, which two
+		// instances at once would do twice.
+		isFree, err := takeSweep(tx, "scavenge", time.Hour, now)
+		if err != nil || !isFree {
+			// Another instance swept lately: look again in a few minutes
+			// rather than an hour, or an instance restarted more often
+			// than that would never be the one to sweep.
+			self.lastScavenge = now.Add(-time.Hour + sweepRetry)
+			return err
+		}
 		if _, err := tx.ScavengeAgentConversations(models.AgentConversationRun, now.Add(-runs)); err != nil {
 			return err
 		}

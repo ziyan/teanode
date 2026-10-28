@@ -198,6 +198,16 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 	if source.Kind == models.SourceRecording {
 		return self.runRecordingIngest(ctx, run, source)
 	}
+	// A computer attached to another instance is that instance's to read,
+	// which claims the job when it next asks. The source is not marked as
+	// waiting for a computer that is there.
+	if source.Kind == models.SourceComputer || source.Kind == models.SourceArchive {
+		if self.computerNamed(source.AgentID, source.Specification.Computer) == nil {
+			if instance := self.computerElsewhere(ctx, source.AgentID, source.Specification.Computer); instance != "" {
+				return elsewhereDeferral(instance)
+			}
+		}
+	}
 
 	counts := db.SourceCounts{
 		Documents: source.DocumentCount,

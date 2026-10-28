@@ -28,7 +28,8 @@ type presenceReport struct {
 
 // Presence is who has a dashboard or the app open, kept in memory and
 // nowhere else: a restart forgets it until each open tab or app reports
-// again, within a minute. The agent speaks first only to somebody who is
+// again, within a minute. Each report is passed to the other instances too
+// (RelayReports), so every instance knows what every tab said. The agent speaks first only to somebody who is
 // there to read it, offers an idea only to somebody who has gone quiet, and
 // tells a phone what nobody is there to see.
 //
@@ -46,6 +47,33 @@ type Presence struct {
 	// minute: somebody who has just switched their agent on, and whose page
 	// reloaded after the restart that took, is greeted while they are there.
 	hasArrival bool
+
+	// relayReport, when set, is handed every report made here, for the
+	// other instances: a person's tab reports to whichever instance its
+	// request reaches, and a phone is told what they are reading unless
+	// every instance knows they are reading it.
+	relayReport func(PresenceReport)
+}
+
+// PresenceReport is one report as it travels between instances.
+type PresenceReport struct {
+	UserID         string `json:"userId"`
+	ReporterID     string `json:"reporterId"`
+	IsVisible      bool   `json:"isVisible"`
+	IdleSeconds    int    `json:"idleSeconds"`
+	ConversationID string `json:"conversationId,omitempty"`
+}
+
+// RelayReports has every report made here handed to relay as well.
+func (self *Presence) RelayReports(relay func(PresenceReport)) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.relayReport = relay
+}
+
+// ApplyRelayed records a report another instance was given, as of now.
+func (self *Presence) ApplyRelayed(report PresenceReport, now time.Time) {
+	self.record(report.UserID, report.ReporterID, report.IsVisible, report.IdleSeconds, report.ConversationID, now)
 }
 
 // NewPresence is a Presence with nobody in it.
@@ -60,6 +88,19 @@ func NewPresence() *Presence {
 // is not taken to hide a visible one that reported lately, since it cannot
 // say which tab it is.
 func (self *Presence) Report(userId, reporterId string, isVisible bool, idleSeconds int, conversationId string, now time.Time) {
+	if userId == "" {
+		return
+	}
+	self.record(userId, reporterId, isVisible, idleSeconds, conversationId, now)
+	self.mutex.Lock()
+	relay := self.relayReport
+	self.mutex.Unlock()
+	if relay != nil {
+		relay(PresenceReport{UserID: userId, ReporterID: reporterId, IsVisible: isVisible, IdleSeconds: idleSeconds, ConversationID: conversationId})
+	}
+}
+
+func (self *Presence) record(userId, reporterId string, isVisible bool, idleSeconds int, conversationId string, now time.Time) {
 	if userId == "" {
 		return
 	}

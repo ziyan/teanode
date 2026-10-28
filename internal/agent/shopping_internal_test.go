@@ -137,18 +137,30 @@ func TestTheArrivalReminderNamesAFewItemsOfEachList(t *testing.T) {
 
 // The same notice is claimed once in its interval, and again after it.
 func TestAShoppingNoticeIsClaimedOncePerInterval(t *testing.T) {
-	var notices shoppingNotices
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	claim := func(key string, now time.Time) bool {
+		t.Helper()
+		var isClaimed bool
+		if err := database.Transaction(func(tx db.Transaction) (err error) {
+			isClaimed, err = claimShoppingNotice(tx, key, time.Hour, now)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return isClaimed
+	}
 	now := time.Now()
-	if !notices.claim("arrival one", time.Hour, now) {
+	if !claim("arrival one", now) {
 		t.Fatal("the first notice was not claimed")
 	}
-	if notices.claim("arrival one", time.Hour, now.Add(30*time.Minute)) {
+	if claim("arrival one", now.Add(30*time.Minute)) {
 		t.Error("the same notice was claimed again within its interval")
 	}
-	if !notices.claim("arrival two", time.Hour, now.Add(30*time.Minute)) {
+	if !claim("arrival two", now.Add(30*time.Minute)) {
 		t.Error("another notice was refused")
 	}
-	if !notices.claim("arrival one", time.Hour, now.Add(2*time.Hour)) {
+	if !claim("arrival one", now.Add(2*time.Hour)) {
 		t.Error("the notice was refused after its interval")
 	}
 }

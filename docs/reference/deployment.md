@@ -313,12 +313,30 @@ one download through Redis. Uncomment the
 `TEANODE_S3_*` block in `.env`, set `passkey.redis.address`, and give each
 instance its own `TEANODE_INSTANCE_ID`.
 
+Each instance needs a name of its own. Without `TEANODE_INSTANCE_ID` it takes
+the host's name, and the compose file runs on the host's network, so two
+containers on one machine would have the same one. An instance holds its name
+while it runs: a second process started under a name in use waits thirty
+seconds for the first to stop and then refuses to start, saying so. A restart
+or a deploy that stops the old container before starting the new one is not
+held up.
+
+Everything else the instances have to agree on is in PostgreSQL: which turn of
+the agent runs where, who is looking at which chat, the answers to a
+certificate authority's challenges, the limits on guessing a password, and
+which instance does each piece of background work. Migrations are applied by
+one instance at a time, and an automatic upgrade is installed by one instance
+at a time. What still belongs to one instance is in
+`docs/subsystems/streaming-and-instances.md`: the browser extension and the
+computer daemon attach to one instance, so a load balancer should keep each
+of their connections, and the person's dashboard, on one instance.
+
 The object store is the part that matters: without it each instance can only
 read the messages it handled itself.
 
 Set `storage.mode` to `shared` and clear `storage.directory` as well. A directory
 beside an object
-store holds only the messages the instance that handled them wrote — no
+store holds only the messages the instance that handled them wrote: no
 instance has all of them, reads fall through to the store anyway, and every
 machine keeps a copy of somebody's mail that nothing else needs. Empty, and
 nothing is written to the machines at all. What it costs is that the store

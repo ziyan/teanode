@@ -194,20 +194,49 @@ func (self *Store) findWaitingFaces(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		large, err := self.readLargePreview(ctx, photo)
-		if err != nil {
-			if ctx.Err() == nil {
-				self.noteFaceFailure(photo.ID)
-				log.Warningf("cannot read the large preview of photo %s to find its faces: %s", photo.ID, err)
-			}
-			continue
-		}
-		if err := self.readAndKeepFaces(ctx, reader, photo, large); err != nil && ctx.Err() == nil && !errors.Is(err, errPhotoGone) {
-			self.noteFaceFailure(photo.ID)
-			log.Warningf("cannot find the faces in photo %s: %s", photo.ID, err)
+		// Reading a picture takes seconds, too long to hold a row lock for, so
+		// the photo is claimed with an advisory lock on its id for as long as
+		// it is read: an instance that lists the same photos meanwhile skips
+		// the ones another is reading instead of reading them again.
+		if _, err := self.database.WhileLocked(ctx, db.LockKey("photo:faces:"+photo.ID), func(ctx context.Context) error {
+			self.findWaitingFacesOf(ctx, reader, photo)
+			return nil
+		}); err != nil && ctx.Err() == nil {
+			log.Warningf("cannot claim photo %s to find its faces: %s", photo.ID, err)
 		}
 	}
 	return nil
+}
+
+// findWaitingFacesOf reads the faces of one photo that findWaitingFaces holds
+// the claim on, unless another instance found them between the listing and
+// the claim.
+func (self *Store) findWaitingFacesOf(ctx context.Context, reader faces.Reader, photo *models.Photo) {
+	var current *models.Photo
+	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+		current, err = transaction.GetPhoto(photo.UserID, photo.ID)
+		return err
+	}); err != nil {
+		if ctx.Err() == nil && !errors.Is(err, db.ErrNotFound) {
+			log.Warningf("cannot tell whether the faces of photo %s were found: %s", photo.ID, err)
+		}
+		return
+	}
+	if current.FacesFoundAt != nil {
+		return
+	}
+	large, err := self.readLargePreview(ctx, photo)
+	if err != nil {
+		if ctx.Err() == nil {
+			self.noteFaceFailure(photo.ID)
+			log.Warningf("cannot read the large preview of photo %s to find its faces: %s", photo.ID, err)
+		}
+		return
+	}
+	if err := self.readAndKeepFaces(ctx, reader, photo, large); err != nil && ctx.Err() == nil && !errors.Is(err, errPhotoGone) {
+		self.noteFaceFailure(photo.ID)
+		log.Warningf("cannot find the faces in photo %s: %s", photo.ID, err)
+	}
 }
 
 // readLargePreview reads a photo's stored large preview and decodes it.

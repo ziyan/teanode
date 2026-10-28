@@ -12,6 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/mcp"
 )
 
@@ -51,7 +53,9 @@ func longText() string {
 // that agree with what was read. It returns what was read, unwrapped.
 func readToTheEnd(t *testing.T, catalog *longCatalog) string {
 	t.Helper()
-	client := mcp.NewClient(&pipe{server: New("teanode", "v1", catalog)})
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	client := mcp.NewClient(&pipe{server: New("teanode", "v1", catalog).WithResults(NewResultStore(database), "reader")})
 	if _, err := client.Initialize(context.Background(), "test", "0"); err != nil {
 		t.Fatalf("initialize: %s", err)
 	}
@@ -164,7 +168,9 @@ func TestAShortResultIsNotPaged(t *testing.T) {
 // An id that was never handed out, or one held for somebody else, is not
 // found, and the answer says to make the original call again.
 func TestAnUnknownResultIdSaysToCallAgain(t *testing.T) {
-	results := NewResultStore()
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	results := NewResultStore(database)
 	whole := strings.Repeat("x", 2*ResultCharacters)
 	owner := mcp.NewClient(&pipe{server: New("teanode", "v1", &longCatalog{text: whole}).WithResults(results, "owner")})
 	stranger := mcp.NewClient(&pipe{server: New("teanode", "v1", &longCatalog{}).WithResults(results, "stranger")})
@@ -190,34 +196,119 @@ func TestAnUnknownResultIdSaysToCallAgain(t *testing.T) {
 	}
 }
 
+// The call that reads on may reach another instance: two stores on one
+// database are two instances. One holds the result and the other reads on,
+// to the end, as if it had held it.
+func TestAnotherStoreOnTheSameDatabaseReadsOn(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	whole := longText()
+	first := mcp.NewClient(&pipe{server: New("teanode", "v1", &longCatalog{text: whole}).WithResults(NewResultStore(database), "caller")})
+	second := mcp.NewClient(&pipe{server: New("teanode", "v1", &longCatalog{}).WithResults(NewResultStore(database), "caller")})
+	for _, client := range []*mcp.Client{first, second} {
+		if _, err := client.Initialize(context.Background(), "test", "0"); err != nil {
+			t.Fatalf("initialize: %s", err)
+		}
+	}
+	text, _ := callText(t, first, "long", map[string]any{})
+	var read strings.Builder
+	for pageCount := 0; ; pageCount++ {
+		if pageCount > 10 {
+			t.Fatal("the pages never ended")
+		}
+		match := moreLinePattern.FindStringSubmatch(text)
+		if match == nil {
+			read.WriteString(text)
+			break
+		}
+		read.WriteString(strings.TrimSuffix(text, match[0]))
+		offset, _ := strconv.Atoi(match[3])
+		text, _ = callText(t, second, resultMoreName, map[string]any{"result_id": match[2], "offset": offset})
+	}
+	if read.String() != whole {
+		t.Fatalf("reading on in another store gave back %d bytes of %d, or different ones", read.Len(), len(whole))
+	}
+}
+
+// With no store to hold it in, a long answer still goes back whole in its
+// first page and says that the rest is too long to hold, with no id to read on.
+func TestALongResultWithNoStoreSaysItCannotBeHeld(t *testing.T) {
+	client := mcp.NewClient(&pipe{server: New("teanode", "v1", &longCatalog{text: longText()})})
+	if _, err := client.Initialize(context.Background(), "test", "0"); err != nil {
+		t.Fatalf("initialize: %s", err)
+	}
+	text, _ := callText(t, client, "long", map[string]any{})
+	if !strings.Contains(text, "too many for this server to hold for later") || moreLinePattern.MatchString(text) {
+		t.Fatalf("a long answer with no store said %q", text[len(text)-120:])
+	}
+}
+
+// Text a database cannot store (a NUL byte, invalid UTF-8) is held changed,
+// and the pages read on from it still agree with the first page's offset.
+func TestTextADatabaseCannotStoreIsStillPaged(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	whole := strings.Repeat("a\x00b\xff line\n", ResultCharacters/4)
+	client := mcp.NewClient(&pipe{server: New("teanode", "v1", &longCatalog{text: whole}).WithResults(NewResultStore(database), "caller")})
+	if _, err := client.Initialize(context.Background(), "test", "0"); err != nil {
+		t.Fatalf("initialize: %s", err)
+	}
+	text, _ := callText(t, client, "long", map[string]any{})
+	match := moreLinePattern.FindStringSubmatch(text)
+	if match == nil {
+		t.Fatalf("a long answer did not say how to read on: %q", text[len(text)-100:])
+	}
+	offset, _ := strconv.Atoi(match[3])
+	next, isError := callText(t, client, resultMoreName, map[string]any{"result_id": match[2], "offset": offset})
+	if isError || !utf8.ValidString(next) || strings.Contains(next, "\x00") || !strings.HasPrefix(next, "a b") {
+		t.Fatalf("the next page was %q (isError %v)", next[:40], isError)
+	}
+}
+
+// heldResultCount is how many of holder's results the database holds.
+func heldResultCount(t *testing.T, database db.Database, holder string) int {
+	t.Helper()
+	count, err := strconv.Atoi(dbtest.QueryString(t, database, `SELECT count(*) FROM mcp_held_result WHERE holder = '`+holder+`'`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
 // A result is held for half an hour, a few for each caller, and no more than
 // the store's whole bound across callers.
 func TestHeldResultsExpireAndAreBounded(t *testing.T) {
-	results := NewResultStore()
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	ctx := context.Background()
+	results := NewResultStore(database)
 	clock := time.Date(2030, 1, 1, 9, 0, 0, 0, time.UTC)
 	results.now = func() time.Time { return clock }
 
-	first := results.keep(&heldResult{holder: "owner", text: "first"})
+	first := results.keep(ctx, &heldResult{holder: "owner", text: "first"})
+	if _, ok, err := results.find(ctx, "owner", first); !ok || err != nil {
+		t.Fatalf("a result just held was not found: %v", err)
+	}
 	clock = clock.Add(resultHeldFor + time.Second)
-	if _, ok := results.find("owner", first); ok {
+	if _, ok, _ := results.find(ctx, "owner", first); ok {
 		t.Fatal("a result was still held after it expired")
 	}
 
 	var ids []string
 	for index := 0; index < resultsPerHolder+2; index++ {
 		clock = clock.Add(time.Second)
-		ids = append(ids, results.keep(&heldResult{holder: "owner", text: "text " + strconv.Itoa(index)}))
+		ids = append(ids, results.keep(ctx, &heldResult{holder: "owner", text: "text " + strconv.Itoa(index)}))
 	}
-	if _, ok := results.find("owner", ids[0]); ok {
+	if _, ok, _ := results.find(ctx, "owner", ids[0]); ok {
 		t.Fatal("the oldest of too many results was still held")
 	}
-	if _, ok := results.find("owner", ids[len(ids)-1]); !ok {
+	if _, ok, _ := results.find(ctx, "owner", ids[len(ids)-1]); !ok {
 		t.Fatal("the newest result was not held")
 	}
-	if heldCount, _ := results.heldBy("owner"); heldCount != resultsPerHolder {
+	if heldCount := heldResultCount(t, database, "owner"); heldCount != resultsPerHolder {
 		t.Fatalf("%d results were held for one caller, not %d", heldCount, resultsPerHolder)
 	}
-	if id := results.keep(&heldResult{holder: "owner", text: strings.Repeat("x", heldBytesPerHolder+1)}); id != "" {
+	if id := results.keep(ctx, &heldResult{holder: "owner", text: strings.Repeat("x", heldBytesPerHolder+1)}); id != "" {
 		t.Fatal("a result larger than one caller may hold was held")
 	}
 }
@@ -225,27 +316,30 @@ func TestHeldResultsExpireAndAreBounded(t *testing.T) {
 // One caller's long answers push out that caller's own oldest, by bytes as
 // well as by count, and never another caller's.
 func TestOneCallerCannotPushOutAnothersResults(t *testing.T) {
-	results := NewResultStore()
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	ctx := context.Background()
+	results := NewResultStore(database)
 	clock := time.Date(2030, 1, 1, 9, 0, 0, 0, time.UTC)
 	results.now = func() time.Time { return clock }
 
-	other := results.keep(&heldResult{holder: "other", text: "the other caller's result"})
+	other := results.keep(ctx, &heldResult{holder: "other", text: "the other caller's result"})
 	large := strings.Repeat("x", heldBytesPerHolder/3+1)
 	var ids []string
 	for index := 0; index < 6; index++ {
 		clock = clock.Add(time.Second)
-		ids = append(ids, results.keep(&heldResult{holder: "owner", text: large}))
+		ids = append(ids, results.keep(ctx, &heldResult{holder: "owner", text: large}))
 	}
-	if heldCount, heldByteCount := results.heldBy("owner"); heldByteCount > heldBytesPerHolder || heldCount != 2 {
-		t.Fatalf("one caller held %d results of %d bytes, past %d", heldCount, heldByteCount, heldBytesPerHolder)
+	if heldCount := heldResultCount(t, database, "owner"); heldCount != 2 {
+		t.Fatalf("one caller held %d results of %d bytes each, past %d", heldCount, len(large), heldBytesPerHolder)
 	}
-	if _, ok := results.find("owner", ids[0]); ok {
+	if _, ok, _ := results.find(ctx, "owner", ids[0]); ok {
 		t.Fatal("the caller's oldest result was kept over its newest")
 	}
-	if _, ok := results.find("owner", ids[len(ids)-1]); !ok {
+	if _, ok, _ := results.find(ctx, "owner", ids[len(ids)-1]); !ok {
 		t.Fatal("the caller's newest result was not held")
 	}
-	if _, ok := results.find("other", other); !ok {
+	if _, ok, _ := results.find(ctx, "other", other); !ok {
 		t.Fatal("one caller's results pushed out another's")
 	}
 }

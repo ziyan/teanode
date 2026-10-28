@@ -12,9 +12,11 @@
 // the first page, a line saying how to read on, and result_more, which this
 // package lists and answers itself, for the rest. See results.go.
 //
-// Nothing here knows about HTTP, about a database, or about what a tool
-// is: it takes one decoded JSON-RPC message and gives back the message to
-// send in reply, and asks a Tools for the catalog and for the work. A
+// Nothing here knows about HTTP or about what a tool is, and the only thing
+// it asks of the database is to hold the rest of a long result for
+// result_more: it takes one decoded JSON-RPC message and gives back the
+// message to send in reply, and asks a Tools for the catalog and for the
+// work. A
 // transport wraps it -- the HTTP one in internal/api/v1api/apimcp, the
 // standard input and output one in the command line -- and both get the
 // same protocol.
@@ -87,12 +89,12 @@ type Server struct {
 }
 
 // New builds a server that says it is called name, at version, offering
-// what tools holds. It holds long results in a store of its own, which
-// lasts as long as it does; WithResults shares one across servers.
+// what tools holds. It holds no long results until WithResults gives it a
+// store: past one answer's budget it says the rest is too long to hold.
 func New(name, version string, tools Tools) *Server {
 	return &Server{
 		name: name, version: version, tools: tools,
-		results: NewResultStore(), resultCharacters: ResultCharacters,
+		resultCharacters: ResultCharacters,
 	}
 }
 
@@ -201,11 +203,11 @@ func (self *Server) call(ctx context.Context, request *mcp.Request) *mcp.Respons
 	if parameters.Name == resultMoreName {
 		// Already a page, and holding it again would only hand out a
 		// second id for the same text.
-		text, isError = self.resultMore(parameters.Arguments)
+		text, isError = self.resultMore(ctx, parameters.Arguments)
 	} else if answer, err := self.tools.Call(ctx, parameters.Name, parameters.Arguments); err != nil {
-		text, isError = self.paged(Answer{Text: err.Error()}, true), true
+		text, isError = self.paged(ctx, Answer{Text: err.Error()}, true), true
 	} else {
-		text, images = self.paged(answer, false), answer.Images
+		text, images = self.paged(ctx, answer, false), answer.Images
 	}
 	content := []mcp.Content{{Type: "text", Text: text}}
 	for _, image := range images {

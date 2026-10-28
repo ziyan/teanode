@@ -255,6 +255,22 @@ func (self *database) ListenShoppingEvents(ctx context.Context) (<-chan string, 
 	return self.listen(ctx, ShoppingEventChannel)
 }
 
+// PresenceEventChannel carries a person's tab's or phone's report that it is
+// shown (agent.PresenceReport as JSON, with the instance that was given it),
+// so that every instance knows who is looking at what.
+const PresenceEventChannel = "presence_event"
+
+// NotifyPresenceEvent tells every instance of a report.
+func (self *database) NotifyPresenceEvent(payload string) error {
+	return self.db.Exec("SELECT pg_notify(?, ?)", PresenceEventChannel, payload).Error
+}
+
+// ListenPresenceEvents delivers the payload of every report any instance
+// tells.
+func (self *database) ListenPresenceEvents(ctx context.Context) (<-chan string, error) {
+	return self.listen(ctx, PresenceEventChannel)
+}
+
 // listenConnectWait is how long listen waits for the LISTEN to be in place
 // before handing back the channel regardless: the listener keeps trying on
 // its own, and whoever is waiting has a poll to fall back on.

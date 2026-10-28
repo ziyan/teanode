@@ -27,6 +27,17 @@ type memoryStore struct {
 	roles     []*models.Role
 	groups    []*models.Group
 	mailboxes []*models.Mailbox
+
+	// buckets are the rate limit buckets, and locks the advisory locks held
+	// by a transaction that has not ended, both as the database keeps them
+	// for every instance sharing it.
+	buckets map[string]*memoryBucket
+	locks   map[int64]bool
+}
+
+type memoryBucket struct {
+	tokenCount float64
+	refilledAt time.Time
 }
 
 type storedCredential struct {
@@ -384,7 +395,15 @@ func (self *memoryStore) CountUsers() (int64, error) {
 }
 
 func (self *memoryStore) TransactionContext(_ context.Context, function func(db.Transaction) error) error {
-	return function(&memoryTransaction{store: self})
+	transaction := &memoryTransaction{store: self}
+	defer func() {
+		self.mutex.Lock()
+		defer self.mutex.Unlock()
+		for _, key := range transaction.lockKeys {
+			delete(self.locks, key)
+		}
+	}()
+	return function(transaction)
 }
 
 // memoryTransaction is the handful of writes the authenticator makes, over
@@ -392,7 +411,64 @@ func (self *memoryStore) TransactionContext(_ context.Context, function func(db.
 // panics, which is the point.
 type memoryTransaction struct {
 	db.Transaction
-	store *memoryStore
+	store    *memoryStore
+	lockKeys []int64
+}
+
+// TryAdvisoryLock holds the lock until the transaction ends.
+func (self *memoryTransaction) TryAdvisoryLock(key int64) (bool, error) {
+	self.store.mutex.Lock()
+	defer self.store.mutex.Unlock()
+	if self.store.locks[key] {
+		return false, nil
+	}
+	if self.store.locks == nil {
+		self.store.locks = map[int64]bool{}
+	}
+	self.store.locks[key] = true
+	self.lockKeys = append(self.lockKeys, key)
+	return true, nil
+}
+
+// refilledTokenCount is what a bucket holds at a time, a full bucket for a
+// key never taken from.
+func (self *memoryStore) refilledTokenCount(limiterKey string, ratePerSecond float64, capacity int64, now time.Time) float64 {
+	bucket, isFound := self.buckets[limiterKey]
+	if !isFound {
+		return float64(capacity)
+	}
+	return min(float64(capacity), bucket.tokenCount+max(0, now.Sub(bucket.refilledAt).Seconds())*ratePerSecond)
+}
+
+func (self *memoryTransaction) TakeRateLimitToken(limiterKey string, ratePerSecond float64, capacity int64, now time.Time) (bool, error) {
+	self.store.mutex.Lock()
+	defer self.store.mutex.Unlock()
+	tokenCount := self.store.refilledTokenCount(limiterKey, ratePerSecond, capacity, now)
+	if tokenCount < 1 {
+		return false, nil
+	}
+	if self.store.buckets == nil {
+		self.store.buckets = map[string]*memoryBucket{}
+	}
+	self.store.buckets[limiterKey] = &memoryBucket{tokenCount: tokenCount - 1, refilledAt: now}
+	return true, nil
+}
+
+func (self *memoryTransaction) SpendRateLimitTokens(limiterKey string, ratePerSecond float64, capacity, tokenCount int64, now time.Time) error {
+	self.store.mutex.Lock()
+	defer self.store.mutex.Unlock()
+	refilled := self.store.refilledTokenCount(limiterKey, ratePerSecond, capacity, now)
+	if self.store.buckets == nil {
+		self.store.buckets = map[string]*memoryBucket{}
+	}
+	self.store.buckets[limiterKey] = &memoryBucket{tokenCount: max(float64(-capacity), refilled-float64(tokenCount)), refilledAt: now}
+	return nil
+}
+
+func (self *memoryTransaction) CountRateLimitTokens(limiterKey string, ratePerSecond float64, capacity int64, now time.Time) (float64, error) {
+	self.store.mutex.Lock()
+	defer self.store.mutex.Unlock()
+	return self.store.refilledTokenCount(limiterKey, ratePerSecond, capacity, now), nil
 }
 
 func (self *memoryTransaction) GetUser(userId string) (*models.User, error) {

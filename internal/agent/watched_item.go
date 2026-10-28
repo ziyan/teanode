@@ -180,7 +180,14 @@ func (self *Agent) queueWatching(ctx context.Context, now time.Time) {
 				}
 				self.markWatchLookedAt(key, now)
 				if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-					_, err := self.Enqueue(tx, models.AgentJobWatch, agent.ID, "", watchSubject(skill.Name, watch.Name))
+					// One instance in the database's name queues the look,
+					// whichever have the computer: each would otherwise
+					// queue its own once the job before it had finished.
+					isFree, err := tx.TakeThrottle("watch-look:"+agent.ID+":"+watchSubject(skill.Name, watch.Name), watch.EveryDuration(), now)
+					if err != nil || !isFree {
+						return err
+					}
+					_, err = self.Enqueue(tx, models.AgentJobWatch, agent.ID, "", watchSubject(skill.Name, watch.Name))
 					return err
 				}); err != nil {
 					log.Warningf("cannot queue a look by %s for agent %q: %s", watchSubject(skill.Name, watch.Name), agent.ID, err)
@@ -190,8 +197,10 @@ func (self *Agent) queueWatching(ctx context.Context, now time.Time) {
 	}
 }
 
-// watchLookedAt is when a look was last queued for a person's watch, and
-// markWatchLookedAt says it was now.
+// watchLookedAt is when this instance last asked for a look to be queued for
+// a person's watch, and markWatchLookedAt says it was now. It only spares the
+// database the question every minute: the throttle in the database is what
+// holds the instances to one look per interval.
 func (self *Agent) watchLookedAt(key string) (time.Time, bool) {
 	self.watchMutex.Lock()
 	defer self.watchMutex.Unlock()
@@ -276,6 +285,11 @@ func (self *Agent) runWatch(ctx context.Context, run *Run) error {
 	}
 	running, where := self.watchRunning(ctx, run, skill, watch)
 	if running == nil {
+		// A computer attached to another instance is that instance's to look
+		// through, which claims the job when it next asks.
+		if instance := self.computerElsewhere(ctx, run.Agent.ID, self.reachOf(ctx, run.Agent.ID, models.AgentReachSkill, skill.Name)); instance != "" {
+			return elsewhereDeferral(instance)
+		}
 		return nil // the next look, once the computer is attached
 	}
 	location := Location(run.Owner)

@@ -10,7 +10,7 @@ import (
 	"github.com/op/go-logging"
 )
 
-var log = logging.MustGetLogger("ratelimit") //nolint:unused
+var log = logging.MustGetLogger("ratelimit")
 
 const (
 	KiloBytes = 1 << 10
@@ -36,6 +36,10 @@ type Bucket struct {
 
 	// current tick
 	tick int64
+
+	// remote is set for a bucket of a shared registry, which keeps its tokens
+	// in the database and ignores every member above.
+	remote *sharedBucket
 
 	// protect all members
 	mutex sync.Mutex
@@ -96,6 +100,9 @@ func (self *Bucket) ResetRate(rate float64, capacity int64) {
 
 // Capacity returns the capacity of the bucket.
 func (self *Bucket) Capacity() int64 {
+	if self.remote != nil {
+		return self.remote.capacity
+	}
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
@@ -103,6 +110,9 @@ func (self *Bucket) Capacity() int64 {
 }
 
 func (self *Bucket) Rate() float64 {
+	if self.remote != nil {
+		return self.remote.rate
+	}
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
@@ -111,6 +121,12 @@ func (self *Bucket) Rate() float64 {
 
 // Wait for availability.
 func (self *Bucket) Wait(count int64) {
+	if self.remote != nil {
+		// A shared bucket says nothing of how long to wait. Said loudly, so
+		// that a caller written for a bucket here does not quietly stop
+		// waiting.
+		log.Errorf("the shared limit %q cannot be waited for; the tokens were taken without a wait", self.remote.key)
+	}
 	if duration := self.Take(count); duration > 0 {
 		time.Sleep(duration)
 	}
@@ -118,6 +134,12 @@ func (self *Bucket) Wait(count int64) {
 
 // Take from bucket immediately.
 func (self *Bucket) Take(count int64) time.Duration {
+	if self.remote != nil {
+		// Into debt, as a bucket here goes: the wait is the next caller's,
+		// and it is not known here how long another instance's would be.
+		self.remote.spend(count)
+		return 0
+	}
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
@@ -146,6 +168,9 @@ func (self *Bucket) take(now time.Time, count int64) time.Duration {
 }
 
 func (self *Bucket) TakeAvailable(count int64) int64 {
+	if self.remote != nil {
+		return self.remote.takeUpTo(count)
+	}
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
@@ -171,6 +196,13 @@ func (self *Bucket) takeAvailable(now time.Time, count int64) int64 {
 // Give puts tokens back, up to the capacity: for a token taken for something
 // that turned out not to count.
 func (self *Bucket) Give(count int64) {
+	if self.remote != nil {
+		// Tokens a shared bucket gave cannot be put back. Said loudly, so
+		// that a caller that gives back on success is not mistaken for one
+		// that works.
+		log.Errorf("the shared limit %q cannot be given tokens back; %d stay spent", self.remote.key, count)
+		return
+	}
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
@@ -190,6 +222,9 @@ func (self *Bucket) Allow() bool {
 }
 
 func (self *Bucket) Available() int64 {
+	if self.remote != nil {
+		return self.remote.available()
+	}
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 

@@ -14,10 +14,9 @@ func (self *Agent) EmbedOverviewSectionsOfTheMostImportant(ctx context.Context, 
 	return self.embedOverviewSections(ctx, agent, limit, pageCount)
 }
 
-// ResumeCutTurns is the look at the conversations a restart cut short, as
-// of a start at startedAt.
-func (self *Agent) ResumeCutTurns(ctx context.Context, startedAt time.Time) {
-	self.resumeCutTurns(ctx, startedAt)
+// ResumeCutTurns is the look at the turns that were cut short.
+func (self *Agent) ResumeCutTurns(ctx context.Context) {
+	self.resumeCutTurnsOnce(ctx)
 }
 
 // SetStopGrace is how long Stop waits for the turns people are reading,

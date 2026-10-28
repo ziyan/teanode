@@ -507,6 +507,22 @@ func (self *Agent) queueLocationJournals(ctx context.Context, now time.Time) {
 		if owner == nil {
 			continue
 		}
+		// Once an hour for the whole server: every instance looks at the same
+		// days and would read the same visits and write the same texts.
+		var isFree bool
+		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			isFree, err = takeSweep(tx, "location-journal:"+agent.ID, locationJournalEvery, now)
+			return err
+		}); err != nil {
+			log.Warningf("cannot say whether another instance writes the location journal for agent %q: %s", agent.ID, err)
+			continue
+		}
+		if !isFree {
+			// Another instance wrote it lately: look again soon rather than
+			// in an hour.
+			self.lastLocationJournal = now.Add(-locationJournalEvery + sweepRetry)
+			continue
+		}
 		writtenCount, err := self.writeLocationJournal(ctx, agent, owner, now)
 		if err != nil {
 			log.Warningf("cannot write the location journal for agent %q: %s", agent.ID, err)

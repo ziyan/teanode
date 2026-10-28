@@ -15,6 +15,9 @@
 package v1api
 
 import (
+	"context"
+	"time"
+
 	"github.com/gorilla/mux"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -42,6 +45,7 @@ var log = logging.MustGetLogger("v1api") //nolint:unused
 
 type v1 struct {
 	components []web.Component
+	graph      web.Component
 }
 
 // New builds every component of version 1.
@@ -93,7 +97,14 @@ func New(
 		return nil, err
 	}
 
-	return &v1{components: []web.Component{graph, send, raw, pictures, signOn, discovery, relay}}, nil
+	return &v1{components: []web.Component{graph, send, raw, pictures, signOn, discovery, relay}, graph: graph}, nil
+}
+
+// TellDueVisitNotices tells the arrivals and departures that waited and are
+// now due (apigraph.TellDueVisitNotices). Every instance runs it; each notice
+// is claimed by one.
+func (self *v1) TellDueVisitNotices(ctx context.Context, now time.Time) error {
+	return apigraph.TellDueVisitNotices(ctx, self.graph, now)
 }
 
 func (self *v1) AddRoutes(router *mux.Router) error {
