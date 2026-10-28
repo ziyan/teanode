@@ -150,6 +150,7 @@ struct JournalScreen: View {
                 }
             }
             .refreshable { await model.load(isRefreshing: true) }
+            .readableListWidth()
         }
     }
 

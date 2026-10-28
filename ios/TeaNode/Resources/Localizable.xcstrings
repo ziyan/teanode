@@ -40999,18 +40999,18 @@
         }
       }
     },
-    "Talk to your agent from your phone.": {
+    "Talk to your agent wherever you are.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "スマートフォンからエージェントと話せます。"
+            "value": "どこにいてもエージェントと話せます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在手机上和你的助手交谈。"
+            "value": "随时随地和你的助手交谈。"
           }
         }
       }

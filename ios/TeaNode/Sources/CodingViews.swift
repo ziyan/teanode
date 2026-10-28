@@ -682,6 +682,9 @@ struct CodingSessionView: View {
                 }
                 questionCard(session)
             }
+            // Lines of a width that reads well on a wide screen, as the
+            // chat's; the scroll view itself still runs from edge to edge.
+            .readableWidth()
             .padding(.horizontal)
             .padding(.vertical, 12)
         }
@@ -828,6 +831,8 @@ struct CodingSessionView: View {
         ) {
             Task { await send(session) }
         }
+        // As wide as the transcript above it, not the whole window.
+        .readableWidth()
     }
 
     // MARK: Reading
@@ -1260,6 +1265,9 @@ struct CodingComposer: View {
                         .frame(minWidth: 44, minHeight: 44)
                     }
                     .disabled(!canSend)
+                    // Return is a new line; Command-Return sends, from a
+                    // keyboard on the iPad.
+                    .keyboardShortcut(.return, modifiers: .command)
                     .accessibilityLabel(isSending ? Text("Sending…") : Text("Send"))
                 }
                 // The icons sit in circles of a fixed size; past this size

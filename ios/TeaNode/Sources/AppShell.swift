@@ -358,6 +358,9 @@ struct MainView: View {
         // menu was pinned, rather than a bar of tabs along the top.
         .defaultAdaptableTabBarPlacement(.sidebar)
         .tabBarMinimizeBehavior(.onScrollDown)
+        .background {
+            if isWide { SidebarHiddenWhenUpright() }
+        }
         .modifier(PhotoScaleAccessory(isShown: !isWide && app.isPhotoScaleOffered, scale: Bindable(app).photoScale))
         .environment(\.symbolVariants, .none)
     }
@@ -511,7 +514,9 @@ struct MainView: View {
     /// Whether the server has yet to say if the account has a part.
     private func isStillUnknown(_ section: AppSection) -> Bool {
         switch section {
-        case .location, .health, .passwords, .shopping, .journal: !app.hasReadPermissions
+        // Their tabs are only shown once the services are read too, which
+        // can be after the permissions.
+        case .location, .health, .passwords, .shopping, .journal: app.services == nil || !app.hasReadPermissions
         // A notification can open the app before it has asked which
         // computers run herdr.
         case .coding: app.services == nil || (app.services?.isAssistantEnabled == true && !app.hasCodingPresenceBeenRead)
@@ -1034,6 +1039,42 @@ struct AgentOffView: View {
                 Label("Open Settings", systemImage: "gearshape")
             }
             .buttonStyle(.borderedProminent)
+        }
+    }
+}
+
+/// Starts the iPad's sidebar hidden when the window opens taller than it is
+/// wide. There the system lays the sidebar over the page and dims it, so the
+/// page the app opened on would be behind it; the button at the top shows it,
+/// as in Apple's own apps held upright. A wider window keeps it beside the
+/// page. Only the first appearance is decided here: after that the sidebar is
+/// where the person put it. SwiftUI has no way to say this, so it is said to
+/// the UIKit tab bar controller the TabView is drawn with.
+private struct SidebarHiddenWhenUpright: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {}
+
+    final class Controller: UIViewController {
+        private var hasDecided = false
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            guard !hasDecided, let window = view.window else { return }
+            hasDecided = true
+            guard window.bounds.width < window.bounds.height,
+                let tabBarController = Self.tabBarController(in: window.rootViewController)
+            else { return }
+            tabBarController.sidebar.isHidden = true
+        }
+
+        private static func tabBarController(in controller: UIViewController?) -> UITabBarController? {
+            guard let controller else { return nil }
+            if let found = controller as? UITabBarController { return found }
+            for child in controller.children {
+                if let found = tabBarController(in: child) { return found }
+            }
+            return nil
         }
     }
 }

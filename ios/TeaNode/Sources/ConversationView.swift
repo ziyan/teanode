@@ -899,6 +899,9 @@ struct MessageActionsView: View {
                     actions
                 }
             }
+            // In the chat's column on a wide screen, so the message stays
+            // near where it was rather than at the window's edge.
+            .readableWidth()
             .padding(.horizontal)
             .scaleEffect(isShown ? 1 : 0.94, anchor: isPerson ? .trailing : .leading)
             .opacity(isShown ? 1 : 0)
@@ -2491,6 +2494,9 @@ struct Composer: View {
                             .frame(minWidth: 44, minHeight: 44)
                         }
                         .disabled(!model.canSend)
+                        // Return is a new line; Command-Return sends, from a
+                        // keyboard on the iPad.
+                        .keyboardShortcut(.return, modifiers: .command)
                         .accessibilityLabel(model.isSending ? Text("Sending…") : Text("Send"))
                     }
                 }

@@ -126,6 +126,7 @@ struct JournalPeriodScreen: View {
                 }
             }
             .refreshable { await model.load() }
+            .readableListWidth()
         } else {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }

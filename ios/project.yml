@@ -284,8 +284,30 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         LOCALIZATION_PREFERS_STRING_CATALOGS: YES
 
+  # One UI test, which turns the simulator on its side for CI's photographs
+  # of the iPad held sideways (.github/workflows/ios.yml). Not in the app.
+  TeaNodeTurn:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - TeaNodeTurn
+    dependencies:
+      - target: TeaNode
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER).turn
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+
 schemes:
   TeaNode:
     build:
       targets:
         TeaNode: all
+  TeaNodeTurn:
+    build:
+      targets:
+        TeaNodeTurn: [testing]
+    test:
+      targets:
+        - TeaNodeTurn
