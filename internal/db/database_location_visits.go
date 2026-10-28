@@ -60,6 +60,12 @@ func (self *transaction) NormalizePlaceVisits(userId string, from, until time.Ti
 	if err := self.dropPassByDepartures(userId, visits); err != nil {
 		return err
 	}
+	if visits, err = self.visitsAround(userId, windowStart, windowEnd); err != nil {
+		return err
+	}
+	if err := self.dropVisitsInsideOthers(userId, visits); err != nil {
+		return err
+	}
 
 	// Each split uses up one of the keys a visit was joined from, so this ends.
 	for {
@@ -239,6 +245,59 @@ func (self *transaction) dropPassByDepartures(userId string, visits []placeVisit
 		}
 	}
 	return nil
+}
+
+// dropVisitsInsideOthers takes out each visit the phone told of that lasted
+// less than PassByDurationMost and began and ended inside the person's visit
+// at another place: they were at that place the whole time, so it was no
+// stop. iOS visit monitoring can tell of a visit of no length a short way
+// from where the person is, and the visit around it would otherwise be ended
+// there. A check-in is the person's own word and is kept. The place a visit
+// iOS told of made goes with it unless the person kept it; a watched place
+// stays, since the phone tells of it again.
+func (self *transaction) dropVisitsInsideOthers(userId string, visits []placeVisitModel) error {
+	for index := range visits {
+		visit := &visits[index]
+		if visit.ArrivedAt == nil || visit.DepartedAt == nil || visit.DepartedAt.Sub(*visit.ArrivedAt) >= PassByDurationMost ||
+			(visit.VisitSource != string(models.VisitSourceVisit) && visit.VisitSource != string(models.VisitSourceRegion)) {
+			continue
+		}
+		isInside := false
+		for _, other := range visits {
+			if other.ID != visit.ID && other.PlaceID != visit.PlaceID && other.ArrivedAt != nil &&
+				!other.ArrivedAt.After(*visit.ArrivedAt) && (other.DepartedAt == nil || !other.DepartedAt.Before(*visit.DepartedAt)) {
+				isInside = true
+				break
+			}
+		}
+		if !isInside {
+			continue
+		}
+		if err := self.tx.Where("\"id\" = ?", visit.ID).Delete(&placeVisitModel{}).Error; err != nil {
+			return err
+		}
+		if visit.VisitSource == string(models.VisitSourceVisit) {
+			if err := self.deleteGuessedPlaceIfUnvisited(visit.PlaceID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// deleteGuessedPlaceIfUnvisited deletes a place nobody went to that the
+// person did not name or label: it was only ever a guess from where they
+// were. The lock is taken as EraseLocationHistory takes it.
+func (self *transaction) deleteGuessedPlaceIfUnvisited(placeId string) error {
+	var place placeModel
+	if err := lockRow(self.tx, &place, placeId); err != nil {
+		return err
+	}
+	if place.ID == "" || place.IsNamedByPerson || place.PlaceLabel != "" {
+		return nil
+	}
+	return self.tx.Where(`"id" = ? AND NOT EXISTS (SELECT 1 FROM "place_visit" WHERE "place_visit"."place_id" = "place"."id")`, place.ID).
+		Delete(&placeModel{}).Error
 }
 
 // moveVisitKeys gives a visit about to be deleted, its own key and the keys

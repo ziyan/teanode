@@ -159,7 +159,10 @@ type LocationOperation interface {
 	// arrival noticed inside a visit at another place moves to before that
 	// visit, one that came less than PassByDurationMost after the visit before
 	// it ended is taken out (into that visit when it was to the same place),
-	// and visits to one place less than ten minutes apart with nothing
+	// a visit from the phone shorter than PassByDurationMost that began and
+	// ended inside a visit at another place is taken out (with the place iOS
+	// made for it, unless the person named or labeled it), and visits to one
+	// place less than ten minutes apart with nothing
 	// between them are joined. Call it once the visits of a report are stored.
 	NormalizePlaceVisits(userId string, from, until time.Time) error
 
@@ -974,18 +977,7 @@ func (self *transaction) ForgetPlaceVisit(userId, placeVisitId string) error {
 	if err := self.tx.Where("\"id\" = ?", visit.ID).Delete(&placeVisitModel{}).Error; err != nil {
 		return err
 	}
-	// A place nobody went to, that the person did not name or label, was
-	// only ever a guess from where they were; the lock is taken as
-	// EraseLocationHistory takes it.
-	var place placeModel
-	if err := lockRow(self.tx, &place, visit.PlaceID); err != nil {
-		return err
-	}
-	if place.ID == "" || place.IsNamedByPerson || place.PlaceLabel != "" {
-		return nil
-	}
-	return self.tx.Where(`"id" = ? AND NOT EXISTS (SELECT 1 FROM "place_visit" WHERE "place_visit"."place_id" = "place"."id")`, place.ID).
-		Delete(&placeModel{}).Error
+	return self.deleteGuessedPlaceIfUnvisited(visit.PlaceID)
 }
 
 func (self *transaction) ListPlaces(userId string, filter PlaceFilter) ([]*models.Place, int, error) {

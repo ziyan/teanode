@@ -96,7 +96,12 @@ did at the place fits in that time. It is taken into that visit when that was
 to the same place (iOS can tell of leaving a circle again a moment after the
 visit ended), and otherwise deleted as a pass-by (a place on the way that iOS
 told of leaving with no arrival). Neither sends a "left" notice: the visit it
-went into told its own departure when it came. The result is the same as if
+went into told its own departure when it came. A visit shorter than three
+minutes that began and ended inside the person's visit at another place is
+deleted too, since they were at that place the whole time (iOS visit
+monitoring can tell of a visit of no length a short way from where the person
+is), with the place iOS made for it unless the person named or labeled it; a
+check-in is kept. The result is the same as if
 the events had come in order. The times put in order reach back to the arrival
 of every visit the report changed: iOS can report leaving a place's circle
 hours late, and that departure must not carry the visit over the stops made
