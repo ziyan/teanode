@@ -187,6 +187,7 @@ struct JournalDayScreen: View {
                     }
                 }
                 .refreshable { await model.load() }
+                .readableListWidth()
                 // `-TeaNodeScreen journal-day-work` photographs the day from its work,
                 // and `journal-day-shopping` from its trips to the shops.
                 .task(id: model.hasLoaded) {

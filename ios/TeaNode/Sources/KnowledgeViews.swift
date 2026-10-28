@@ -463,6 +463,7 @@ struct KnowledgePageView: View {
                 historySection
             }
         }
+        .readableListWidth()
         .navigationTitle(model.page?.node.map { $0.isSelf ? (app.account?.username ?? $0.shownName) : $0.shownName } ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .overlay {

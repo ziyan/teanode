@@ -193,6 +193,30 @@ struct ReadableWidth: ViewModifier {
 extension View {
     /// Content kept to a width that reads well, centered; see ReadableWidth.
     func readableWidth() -> some View { modifier(ReadableWidth()) }
+
+    /// A list's rows kept to a width that reads well; see ReadableListWidth.
+    func readableListWidth() -> some View { modifier(ReadableListWidth()) }
+}
+
+/// ReadableListWidth is ReadableWidth for a list: the list keeps the whole
+/// width, so it scrolls and keeps its background from edge to edge, and only
+/// its rows are kept to the readable width, through its content margins.
+struct ReadableListWidth: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var widthPoints: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .contentMargins(.horizontal, marginPoints, for: .scrollContent)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { widthPoints = $0 }
+    }
+
+    /// The margin each side that leaves the readable width in the middle, or
+    /// nil for the list's own margins where the window is not wide.
+    private var marginPoints: CGFloat? {
+        guard horizontalSizeClass == .regular, widthPoints > ReadableWidth.maximumWidth else { return nil }
+        return (widthPoints - ReadableWidth.maximumWidth) / 2
+    }
 }
 
 /// TagLabelStyle draws a small label that tells a row's state, such as

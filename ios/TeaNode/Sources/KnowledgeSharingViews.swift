@@ -185,6 +185,7 @@ struct SharedKnowledgePageView: View {
                 SharedKnowledgeSections(page: page, openingOwnerUserId: ownerUserId)
             }
         }
+        .readableListWidth()
         .navigationTitle(page?.shownName ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .overlay {

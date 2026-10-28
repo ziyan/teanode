@@ -596,6 +596,7 @@ struct ShoppingListScreen: View {
             .foregroundStyle(Color.accentColor)
             .accessibilityLabel(Text("Add an item"))
         }
+        .readableWidth()
         .padding(.horizontal)
         .padding(.bottom, 8)
         // Floating buttons stop growing before they cover the items under them.

@@ -212,8 +212,11 @@ Only the tabs also ask whether the device is an iPad, as below.
 - A screen is laid out for whatever width it is given, from about 400 to 1000
   points. Lists, forms and grids adapt by themselves. Text that is read in
   lines, such as a conversation or a mail, is kept to 720 points and
-  centered with `readableWidth()`; a screen with a wide canvas, such as a map
-  or the photos, fills the width.
+  centered with `readableWidth()`; a list that is read, such as a journal
+  day or a knowledge page, keeps its rows to that width with
+  `readableListWidth()`, and a full-width button floating over a list is
+  kept to it too. A screen with a wide canvas, such as a map or the photos,
+  fills the width.
 - Anything that the system shows as a popover on the iPad (a share sheet, a
   confirmation) needs an anchor: attach a confirmation to its control, and give
   a share sheet presented from code a source view and rectangle.
