@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.207.0] - 2026-10-28
+
+### Added
+
+- Command-Return sends a message from a keyboard on the iPad. (#686)
+
+### Fixed
+
+- On the iPad held upright, the app opens on the page with the tabs along the top, the sidebar a button away. (#686)
+- Opening Location, Health, Passwords, Shopping or Journal on the iPad as the app starts opens it instead of saying it is off. (#686)
+- On the iPad, coding sessions, recording transcripts, subscriptions, release notes, documents, the journal and knowledge pages keep their lines to a readable width; Location's lists are a panel at the side of the map; the sign-in form is centered. (#686)
+
 ## [0.206.2] - 2026-10-28
 
 ### Fixed
