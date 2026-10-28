@@ -204,7 +204,8 @@ extension View {
 ///
 /// A list's content margins count from the edge of the window, under the
 /// sidebar beside it, while the list's own frame starts beside the sidebar;
-/// so the leading margin adds what the sidebar covers.
+/// so the leading margin adds where the frame starts. The frame's safe area
+/// already counts the sidebar too, so it is not added again.
 struct ReadableListWidth: ViewModifier {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var placement = ReadableListPlacement()
@@ -212,12 +213,9 @@ struct ReadableListWidth: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contentMargins(.leading, leadingMarginPoints, for: .scrollContent)
-            .contentMargins(.trailing, trailingMarginPoints, for: .scrollContent)
+            .contentMargins(.trailing, sideMarginPoints, for: .scrollContent)
             .onGeometryChange(for: ReadableListPlacement.self) { proxy in
-                ReadableListPlacement(
-                    coveredLeadingPoints: proxy.frame(in: .global).minX + proxy.safeAreaInsets.leading,
-                    coveredTrailingPoints: proxy.safeAreaInsets.trailing,
-                    shownWidthPoints: proxy.size.width - proxy.safeAreaInsets.leading - proxy.safeAreaInsets.trailing)
+                ReadableListPlacement(coveredLeadingPoints: proxy.frame(in: .global).minX, shownWidthPoints: proxy.size.width)
             } action: { placement = $0 }
     }
 
@@ -229,15 +227,12 @@ struct ReadableListWidth: ViewModifier {
     }
 
     private var leadingMarginPoints: CGFloat? { sideMarginPoints.map { $0 + placement.coveredLeadingPoints } }
-
-    private var trailingMarginPoints: CGFloat? { sideMarginPoints.map { $0 + placement.coveredTrailingPoints } }
 }
 
 /// ReadableListPlacement is where a list is shown in its window: how much of
-/// each side something else covers, and the width left between them.
+/// its leading side something else covers, and the width left beside it.
 struct ReadableListPlacement: Equatable {
     var coveredLeadingPoints: CGFloat = 0
-    var coveredTrailingPoints: CGFloat = 0
     var shownWidthPoints: CGFloat = 0
 }
 
