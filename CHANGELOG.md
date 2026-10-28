@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.206.1] - 2026-10-28
+
+### Fixed
+
+- The search box at the top of the dashboard's side menu lines up with the menu rows. (#685)
+
 ## [0.206.0] - 2026-10-27
 
 ### Added
