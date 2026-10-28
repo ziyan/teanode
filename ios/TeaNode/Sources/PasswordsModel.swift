@@ -145,6 +145,12 @@ final class PasswordsModel {
         return PasswordsKeychainKeyStore.isBiometryAvailable
     }
 
+    /// Face ID, or Touch ID on a device with a fingerprint sensor.
+    var biometryName: String { PasswordsKeychainKeyStore.biometryName }
+
+    /// The symbol for `biometryName`.
+    var biometrySymbolName: String { PasswordsKeychainKeyStore.biometrySymbolName }
+
     /// The folders the items are in, by name.
     var folders: [String] {
         Set(items.map(\.folder).filter { !$0.isEmpty }).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
@@ -313,9 +319,9 @@ final class PasswordsModel {
             // the person types the passphrase this once.
             if PasswordsKeychainKeyStore.isKeptKeyLost(by: keyStoreError) { await forgetKeptKey() }
             problemText = PasswordsWords.problemText(
-                keyStoreError, orSay: String(localized: "Face ID could not open Passwords. Type your passphrase instead."))
+                keyStoreError, orSay: String(localized: "\(biometryName) could not open Passwords. Type your passphrase instead."))
         } catch {
-            problemText = PasswordsWords.problemText(error, orSay: String(localized: "Face ID could not open Passwords. Type your passphrase instead."))
+            problemText = PasswordsWords.problemText(error, orSay: String(localized: "\(biometryName) could not open Passwords. Type your passphrase instead."))
         }
     }
 
@@ -326,7 +332,7 @@ final class PasswordsModel {
         let unlocked = try await session.unlock(passphrase: passphrase)
         try await keyStore.save(accountKey: unlocked.accountKey, signInAccountKey: connection.accountKey)
         setFaceIDKept(true)
-        doneText = String(localized: "Face ID will open Passwords on this iPhone.")
+        doneText = String(localized: "\(biometryName) will open Passwords on this iPhone.")
     }
 
     func disableFaceID() async {
@@ -341,7 +347,7 @@ final class PasswordsModel {
         } catch {
             setFaceIDKept(false)
             problemText = PasswordsWords.problemText(
-                error, orSay: String(localized: "Face ID could not be set up. You can still use your passphrase."))
+                error, orSay: String(localized: "\(biometryName) could not be set up. You can still use your passphrase."))
         }
     }
 

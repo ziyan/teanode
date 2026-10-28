@@ -131,15 +131,15 @@ struct AutoFillLockedView: View {
     @ObservedObject var model: AutoFillModel
 
     var body: some View {
-        AutoFillMessageScreen(buttonTitle: "Unlock with Face ID", buttonAction: { model.unlockTapped() }) {
-            Image(systemName: "faceid")
+        AutoFillMessageScreen(buttonTitle: "Unlock with \(PasswordsKeychainKeyStore.biometryName)", buttonAction: { model.unlockTapped() }) {
+            Image(systemName: PasswordsKeychainKeyStore.biometrySymbolName)
                 .font(.largeTitle)
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text("Passwords is locked")
                 .font(.headline)
-            Text("Unlock Passwords with Face ID to fill your logins, passkeys and one-time codes.")
+            Text("Unlock Passwords with \(PasswordsKeychainKeyStore.biometryName) to fill your logins, passkeys and one-time codes.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

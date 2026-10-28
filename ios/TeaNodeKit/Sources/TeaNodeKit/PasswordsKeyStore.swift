@@ -101,6 +101,34 @@ public actor PasswordsMemoryKeyStore: PasswordsKeyStore {
             return LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &problem)
         }
 
+        /// The biometry this device has, by the name Settings gives it: Touch ID
+        /// on an iPad or iPhone with a fingerprint sensor, Face ID otherwise.
+        public static var biometryName: String {
+            switch biometryType {
+            case .touchID: "Touch ID"
+            case .opticID: "Optic ID"
+            default: "Face ID"
+            }
+        }
+
+        /// The SF Symbol for `biometryName`.
+        public static var biometrySymbolName: String {
+            switch biometryType {
+            case .touchID: "touchid"
+            case .opticID: "opticid"
+            default: "faceid"
+            }
+        }
+
+        /// The sensor this device has, known even before a face or finger is
+        /// enrolled.
+        private static var biometryType: LABiometryType {
+            let context = LAContext()
+            var problem: NSError?
+            _ = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &problem)
+            return context.biometryType
+        }
+
         /// Whether this phone can check that the person holding it is its owner:
         /// Face ID, Touch ID or, failing those, the passcode. False only on a phone
         /// with no passcode at all.

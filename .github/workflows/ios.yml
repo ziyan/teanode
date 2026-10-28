@@ -718,12 +718,24 @@ jobs:
           SHARD_COUNT=1 SHARD=0
           xcrun simctl status_bar "$device" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 --operatorName ""
           mkdir -p screenshots/store
-          shoot store/1-conversation light large -TeaNodeDemo -TeaNodeScreen conversation
-          shoot store/2-mail light large -TeaNodeDemo -TeaNodeTab mail -TeaNodeScreen mail-inbox
-          shoot store/3-calendar light large -TeaNodeDemo -TeaNodeTab calendar
-          shoot store/4-goals light large -TeaNodeDemo -TeaNodeTab goals
-          shoot store/5-chats dark large -TeaNodeDemo -TeaNodeTab agent
-          shoot store/6-conversation-dark dark large -TeaNodeDemo -TeaNodeScreen conversation
+          # Ten at most, the first ones the most seen.
+          store_screens=(
+            "01-conversation|-TeaNodeScreen conversation"
+            "02-mail|-TeaNodeTab mail -TeaNodeScreen mail-inbox"
+            "03-calendar|-TeaNodeTab calendar"
+            "04-photos|-TeaNodeTab photos -TeaNodeScreen photos-library"
+            "05-location|-TeaNodeTab location"
+            "06-journal|-TeaNodeTab journal"
+            "07-recording|-TeaNodeTab recordings -TeaNodeScreen recording-transcript"
+            "08-passwords|-TeaNodeTab passwords"
+            "09-shopping|-TeaNodeTab shopping -TeaNodeScreen shopping-list"
+          )
+          for store_screen in "${store_screens[@]}"; do
+            # The arguments are words with no spaces in them.
+            # shellcheck disable=SC2086
+            shoot "store/${store_screen%%|*}" light large -TeaNodeDemo ${store_screen#*|}
+          done
+          shoot store/10-conversation-dark dark large -TeaNodeDemo -TeaNodeScreen conversation
 
           # The iPad: the same tabs, as the sidebar's tab bar with the parts that are under More
           # on the phone in groups, upright. The phone is shut down
@@ -793,6 +805,7 @@ jobs:
             "agent-usage|-TeaNodeTab settings -TeaNodeScreen agent-usage"
             "circles|-TeaNodeTab settings -TeaNodeScreen circles"
             "photos-backup-on|-TeaNodeTab settings -TeaNodeScreen photos-backup-on"
+            "passwords-settings|-TeaNodeTab passwords -TeaNodeScreen passwords-settings"
           )
           shoot ipad-connect-light light large
           for ipad_screen in "${ipad_screens[@]}"; do
@@ -810,10 +823,11 @@ jobs:
           # The App Store's iPad set, upright, with the same status bar.
           xcrun simctl status_bar "$device" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 --operatorName ""
           mkdir -p screenshots/store-ipad
-          shoot store-ipad/1-conversation light large -TeaNodeDemo -TeaNodeScreen conversation
-          shoot store-ipad/2-mail light large -TeaNodeDemo -TeaNodeTab mail -TeaNodeScreen mail-inbox
-          shoot store-ipad/3-calendar light large -TeaNodeDemo -TeaNodeTab calendar
-          shoot store-ipad/4-goals light large -TeaNodeDemo -TeaNodeTab goals
+          for store_screen in "${store_screens[@]}"; do
+            # shellcheck disable=SC2086
+            shoot "store-ipad/${store_screen%%|*}" light large -TeaNodeDemo ${store_screen#*|}
+          done
+          shoot store-ipad/10-conversation-dark dark large -TeaNodeDemo -TeaNodeScreen conversation
           xcrun simctl status_bar "$device" clear
 
           # The iPad on its side, turned by the one UI test (ios/TeaNodeTurn),
