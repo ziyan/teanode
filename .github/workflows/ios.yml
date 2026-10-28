@@ -735,17 +735,78 @@ jobs:
           xcrun simctl boot "$device"
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" "$app"
-          shoot ipad-chats-light light large -TeaNodeDemo -TeaNodeTab agent
+          # The iPad's screens, a few of each part, upright then on its
+          # side: the name of the picture, then what opens the screen.
+          ipad_screens=(
+            "chats|-TeaNodeTab agent"
+            "conversation|-TeaNodeScreen conversation"
+            "conversation-long-message|-TeaNodeScreen conversation-long-message"
+            "chat-group|-TeaNodeScreen chat-group"
+            "chat-link|-TeaNodeScreen chat-link"
+            "person-card|-TeaNodeTab agent -TeaNodeScreen person-card"
+            "mail|-TeaNodeTab mail"
+            "mail-inbox|-TeaNodeTab mail -TeaNodeScreen mail-inbox"
+            "search|-TeaNodeTab search"
+            "search-results|-TeaNodeTab search -TeaNodeScreen search-results"
+            "calendar|-TeaNodeTab calendar"
+            "calendar-day|-TeaNodeTab calendar -TeaNodeScreen calendar-day"
+            "calendar-sheet|-TeaNodeTab calendar -TeaNodeScreen calendar-sheet"
+            "calendar-find-time|-TeaNodeTab calendar -TeaNodeScreen calendar-find-time"
+            "contacts|-TeaNodeTab contacts"
+            "person-card-contact|-TeaNodeTab contacts -TeaNodeScreen person-card-contact"
+            "location|-TeaNodeTab location"
+            "location-full|-TeaNodeTab location -TeaNodeScreen location-full"
+            "location-day|-TeaNodeTab location -TeaNodeScreen location-day"
+            "location-place|-TeaNodeTab location -TeaNodeScreen location-place"
+            "location-person-card|-TeaNodeTab location -TeaNodeScreen location-person-card"
+            "location-travel|-TeaNodeTab location -TeaNodeScreen location-travel"
+            "health|-TeaNodeTab health"
+            "health-steps|-TeaNodeTab health -TeaNodeScreen health-steps"
+            "journal|-TeaNodeTab journal"
+            "journal-day|-TeaNodeTab journal -TeaNodeScreen journal-day"
+            "journal-week|-TeaNodeTab journal -TeaNodeScreen journal-week"
+            "passwords|-TeaNodeTab passwords"
+            "passwords-login|-TeaNodeTab passwords -TeaNodeScreen passwords-login"
+            "shopping|-TeaNodeTab shopping"
+            "shopping-list|-TeaNodeTab shopping -TeaNodeScreen shopping-list"
+            "recordings|-TeaNodeTab recordings"
+            "recording-transcript|-TeaNodeTab recordings -TeaNodeScreen recording-transcript"
+            "coding|-TeaNodeTab coding -TeaNodeScreen coding"
+            "coding-session|-TeaNodeTab coding -TeaNodeScreen coding-session"
+            "knowledge-records|-TeaNodeTab knowledge -TeaNodeScreen knowledge-records"
+            "knowledge-shared-page|-TeaNodeTab knowledge -TeaNodeScreen knowledge-shared-page"
+            "finance|-TeaNodeTab finance"
+            "spending|-TeaNodeTab finance -TeaNodeScreen spending-groups"
+            "net-worth-chosen|-TeaNodeTab finance -TeaNodeScreen net-worth-chosen"
+            "finance-receipt-entry|-TeaNodeTab finance -TeaNodeScreen finance-receipt-entry"
+            "ideas|-TeaNodeTab ideas"
+            "goals|-TeaNodeTab goals"
+            "photos-library|-TeaNodeTab photos -TeaNodeScreen photos-library"
+            "photos-viewer|-TeaNodeTab photos -TeaNodeScreen photos-viewer"
+            "photos-viewer-info|-TeaNodeTab photos -TeaNodeScreen photos-viewer-info"
+            "photos-albums|-TeaNodeTab photos -TeaNodeScreen photos-albums"
+            "photos-people|-TeaNodeTab photos -TeaNodeScreen photos-people"
+            "photos-share|-TeaNodeTab photos -TeaNodeScreen photos-share"
+            "settings|-TeaNodeTab settings -TeaNodeScreen settings"
+            "agent-settings|-TeaNodeTab settings -TeaNodeScreen agent-settings"
+            "devices|-TeaNodeTab settings -TeaNodeScreen devices"
+            "agent-usage|-TeaNodeTab settings -TeaNodeScreen agent-usage"
+            "circles|-TeaNodeTab settings -TeaNodeScreen circles"
+            "photos-backup-on|-TeaNodeTab settings -TeaNodeScreen photos-backup-on"
+          )
+          shoot ipad-connect-light light large
+          for ipad_screen in "${ipad_screens[@]}"; do
+            # The arguments are words with no spaces in them.
+            # shellcheck disable=SC2086
+            shoot "ipad-${ipad_screen%%|*}-light" light large -TeaNodeDemo ${ipad_screen#*|}
+          done
           shoot ipad-chats-dark dark large -TeaNodeDemo -TeaNodeTab agent
-          shoot ipad-conversation-light light large -TeaNodeDemo -TeaNodeScreen conversation
           shoot ipad-conversation-dark dark large -TeaNodeDemo -TeaNodeScreen conversation
           shoot ipad-mail-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeScreen mail-inbox
-          shoot ipad-contacts-light light large -TeaNodeDemo -TeaNodeTab contacts
-          shoot ipad-search-results-light light large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results
+          shoot ipad-location-dark dark large -TeaNodeDemo -TeaNodeTab location
           shoot ipad-search-results-dark dark large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results
-          shoot ipad-photos-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
-          shoot ipad-location-light light large -TeaNodeDemo -TeaNodeTab location
           shoot ipad-calendar-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar
+          shoot ipad-settings-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings
           # The App Store's iPad set, upright, with the same status bar.
           xcrun simctl status_bar "$device" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 --operatorName ""
           mkdir -p screenshots/store-ipad
@@ -757,8 +818,9 @@ jobs:
 
           # The iPad on its side, turned by the one UI test (ios/TeaNodeTurn),
           # which is the only thing that can turn a simulator. A screenshot of
-          # a turned simulator may come out as the screen's upright pixels,
-          # so a picture taller than wide is turned to read the right way up.
+          # a turned simulator comes out as the screen's upright pixels, with
+          # the picture's top at its right, so it is turned a quarter
+          # anticlockwise to read the right way up.
           xcodebuild test-without-building -project TeaNode.xcodeproj -scheme TeaNodeTurn \
             -destination "id=$device" -derivedDataPath build CODE_SIGNING_ALLOWED=NO -quiet
           shoot_sideways() {
@@ -767,17 +829,17 @@ jobs:
             width=$(sips -g pixelWidth "$file" | awk '/pixelWidth/ {print $2}')
             height=$(sips -g pixelHeight "$file" | awk '/pixelHeight/ {print $2}')
             if [ "$width" -lt "$height" ]; then
-              sips -r 90 "$file" >/dev/null
+              sips -r 270 "$file" >/dev/null
             fi
           }
-          shoot_sideways ipad-sideways-chats-light light large -TeaNodeDemo -TeaNodeTab agent
-          shoot_sideways ipad-sideways-conversation-light light large -TeaNodeDemo -TeaNodeScreen conversation
+          shoot_sideways ipad-sideways-connect-light light large
+          for ipad_screen in "${ipad_screens[@]}"; do
+            # shellcheck disable=SC2086
+            shoot_sideways "ipad-sideways-${ipad_screen%%|*}-light" light large -TeaNodeDemo ${ipad_screen#*|}
+          done
           shoot_sideways ipad-sideways-conversation-dark dark large -TeaNodeDemo -TeaNodeScreen conversation
-          shoot_sideways ipad-sideways-mail-light light large -TeaNodeDemo -TeaNodeTab mail -TeaNodeScreen mail-inbox
-          shoot_sideways ipad-sideways-photos-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
-          shoot_sideways ipad-sideways-location-light light large -TeaNodeDemo -TeaNodeTab location
+          shoot_sideways ipad-sideways-location-dark dark large -TeaNodeDemo -TeaNodeTab location
           shoot_sideways ipad-sideways-calendar-dark dark large -TeaNodeDemo -TeaNodeTab calendar
-          shoot_sideways ipad-sideways-search-results-light light large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results
           shoot_sideways ipad-sideways-calendar-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar
 
       - name: Keep the screenshots
