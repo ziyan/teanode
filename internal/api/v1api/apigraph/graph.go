@@ -92,7 +92,7 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 
 	prepared, rejected := self.prepareGraphRequest(&data)
 	if rejected != nil {
-		writeGraphResult(response, rejected)
+		writeGraphResult(response, rejected, nil)
 		return
 	}
 
@@ -125,7 +125,7 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 	impersonator, err := self.impersonatorOf(request, user)
 	if errors.Is(err, api.ErrNotLoggedIn) {
 		writeGraphResult(response, &graphql.Result{Errors: gqlerrors.FormatErrors(
-			fmt.Errorf("%w: you may no longer be signed in as this account", api.ErrNotLoggedIn))})
+			fmt.Errorf("%w: you may no longer be signed in as this account", api.ErrNotLoggedIn))}, nil)
 		return
 	}
 	if err != nil {
@@ -153,14 +153,13 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 	// one request.
 	if err == nil && username == "" && countRootFields(prepared.AST, operation) > maximumAnonymousRootFieldCount {
 		writeGraphResult(response, &graphql.Result{Errors: gqlerrors.FormatErrors(
-			fmt.Errorf("sign in to ask for more than %d things in one request", maximumAnonymousRootFieldCount))})
+			fmt.Errorf("sign in to ask for more than %d things in one request", maximumAnonymousRootFieldCount))}, nil)
 		return
 	}
 	if err == nil && (operation.Operation == "query" || hasOnlyTransactionFreeMutations(operation)) {
 		prepared.Context = context.WithValue(ctx, queryExecutionKey{}, &queryExecution{Username: username, User: user, Impersonator: impersonator, CredentialKind: api.CredentialKindFromRequest(request)})
 		result := graphql.Execute(prepared)
-		afterResponse.startWriteDeadline(response)
-		writeGraphResult(response, result)
+		writeGraphResult(response, result, afterResponse)
 		return
 	}
 
@@ -186,16 +185,27 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 		http.Error(response, fmt.Sprintf("failed to execute request: %s", err), http.StatusInternalServerError)
 		return
 	}
-	afterResponse.startWriteDeadline(response)
-	writeGraphResult(response, result)
+	writeGraphResult(response, result, afterResponse)
 }
 
-func writeGraphResult(response http.ResponseWriter, result *graphql.Result) {
+// writeGraphResult encodes the answer, then starts the write deadline the
+// request asked for (none when afterResponse is nil) and writes it. Encoding a
+// large answer can take seconds on a slow server, which must not be taken from
+// the time the reader has to receive it.
+func writeGraphResult(response http.ResponseWriter, result *graphql.Result, afterResponse *afterResponse) {
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		log.Errorf("failed to encode response: %s", err)
+		http.Error(response, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
+	if afterResponse != nil {
+		afterResponse.startWriteDeadline(response)
+	}
 	response.Header().Set("Content-Type", mime.FormatMediaType("application/json", map[string]string{"charset": "utf-8"}))
 	response.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(response).Encode(result); err != nil {
-		log.Errorf("failed to encode response: %s", err)
-		return
+	if _, err := response.Write(append(encoded, '\n')); err != nil {
+		log.Errorf("failed to write response: %s", err)
 	}
 }
 

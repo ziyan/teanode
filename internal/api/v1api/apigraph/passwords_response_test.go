@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/graphql-go/graphql"
+
 	"github.com/ziyan/teanode/internal/api"
 )
 
@@ -45,6 +47,41 @@ func TestTheListWriteDeadlineStartsWhenWritingBegins(test *testing.T) {
 	}
 	if earliest := writingBegins.Add(passwordsListWriteTimeout); response.writeDeadlines[0].Before(earliest) {
 		test.Fatalf("the deadline %v is before %v, the write timeout after the writing began", response.writeDeadlines[0], earliest)
+	}
+}
+
+// timedMarshaler is an answer that notes when its encoding ended.
+type timedMarshaler struct {
+	encodingEnded time.Time
+}
+
+func (self *timedMarshaler) MarshalJSON() ([]byte, error) {
+	time.Sleep(20 * time.Millisecond)
+	self.encodingEnded = time.Now()
+	return []byte(`"sealed"`), nil
+}
+
+// The deadline also starts after the answer is encoded: encoding a large list
+// on a slow server took most of the deadline, and the reader lost the answer
+// moments after it began to arrive.
+func TestTheListWriteDeadlineStartsAfterEncoding(test *testing.T) {
+	test.Parallel()
+
+	response := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	ctx := api.ContextWithResponse(context.Background(), response)
+	ctx, holder := contextWithAfterResponse(ctx)
+	limitPasswordsListWrite(ctx)
+
+	answer := &timedMarshaler{}
+	writeGraphResult(response, &graphql.Result{Data: answer}, holder)
+	if len(response.writeDeadlines) != 1 {
+		test.Fatalf("got %d deadlines, want one", len(response.writeDeadlines))
+	}
+	if earliest := answer.encodingEnded.Add(passwordsListWriteTimeout); response.writeDeadlines[0].Before(earliest) {
+		test.Fatalf("the deadline %v is before %v, the write timeout after encoding ended", response.writeDeadlines[0], earliest)
+	}
+	if body := response.Body.String(); body != "{\"data\":\"sealed\"}\n" {
+		test.Fatalf("the answer written: %q", body)
 	}
 }
 
