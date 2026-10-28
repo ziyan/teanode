@@ -43,6 +43,19 @@ enum LocationDrawerDetent: CaseIterable {
     }
 }
 
+/// LocationDrawerSidePanel is the drawer's size on a wide screen, where it is
+/// a panel at the leading side, as in Maps, and the map stays in sight beside
+/// it, rather than a sheet across the bottom.
+enum LocationDrawerSidePanel {
+    static let widthPoints: CGFloat = 400
+
+    /// How far the panel stands from the screen's leading edge.
+    static let marginPoints: CGFloat = 16
+
+    /// How much of the map's width the panel covers, with its margin.
+    static var coveredWidthPoints: CGFloat { widthPoints + marginPoints }
+}
+
 /// LocationDrawer is the panel over the map that holds Location's lists, as
 /// Find My holds its people: it opens at half the screen, and its grabber
 /// drags it up to the whole screen or down to its header, or steps it with a
@@ -64,6 +77,7 @@ struct LocationDrawer<Header: View, Content: View>: View {
     @ViewBuilder let header: () -> Header
     @ViewBuilder let content: () -> Content
     @GestureState private var dragTranslation: CGFloat = 0
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var restingHeight: CGFloat {
         detent.height(availableHeight: availableHeight, headerHeight: headerHeight)
@@ -113,6 +127,9 @@ struct LocationDrawer<Header: View, Content: View>: View {
         // whatever the bars below it measure. Not asked to ignore the safe
         // area, which would grow it by the bars' height once more.
         .padding(.top, availableHeight - shownHeight)
+        .frame(maxWidth: horizontalSizeClass == .regular ? LocationDrawerSidePanel.widthPoints : .infinity)
+        .padding(.leading, horizontalSizeClass == .regular ? LocationDrawerSidePanel.marginPoints : 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .animation(.snappy, value: detent)
     }
 

@@ -88,6 +88,7 @@ struct LocationScreen: View {
     @State private var barsBottomInset: CGFloat = 0
     @Environment(AppModel.self) private var app
     private let recorder = LocationRecorder.shared
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     init(connection: Connection, segment: Binding<LocationSegment>) {
         _model = State(initialValue: LocationModel(connection: connection))
@@ -100,9 +101,13 @@ struct LocationScreen: View {
                 // The map keeps its middle above the drawer up to half the
                 // screen; over that the map is covered, and a smaller part
                 // left showing would only move it.
-                let mapCoveredHeight = min(
+                // On a wide screen the drawer is a panel at the side
+                // (LocationDrawer), and the map keeps its middle beside it.
+                let isSidePanel = horizontalSizeClass == .regular
+                let mapCoveredHeight = isSidePanel ? 0 : min(
                     drawerDetent.height(availableHeight: proxy.size.height, headerHeight: drawerHeaderHeight),
                     LocationDrawerDetent.half.height(availableHeight: proxy.size.height, headerHeight: drawerHeaderHeight))
+                let mapCoveredWidth = isSidePanel ? LocationDrawerSidePanel.coveredWidthPoints : 0
                 // The drawer sits on the bottom of the screen and the map
                 // behind it; neither one's size moves the other.
                 Color.clear
@@ -135,6 +140,7 @@ struct LocationScreen: View {
                             // controls and its logo in the part left showing.
                             .safeAreaPadding(.top, proxy.safeAreaInsets.top)
                             .safeAreaPadding(.bottom, proxy.safeAreaInsets.bottom + mapCoveredHeight)
+                            .safeAreaPadding(.leading, proxy.safeAreaInsets.leading + mapCoveredWidth)
                             .ignoresSafeArea()
                     }
             }

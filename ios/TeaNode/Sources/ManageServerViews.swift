@@ -1474,6 +1474,7 @@ private struct ReleaseNotesView: View {
         ScrollView {
             MarkdownView(text: notes)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .readableWidth()
                 .padding()
         }
         .navigationTitle(Text("What changed in \(version)"))

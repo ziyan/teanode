@@ -455,6 +455,8 @@ struct RecordingBubbleView: View {
         }
         .frame(maxWidth: .infinity, alignment: bubble.isAccountOwner ? .trailing : .leading)
         .padding(bubble.isAccountOwner ? .leading : .trailing, bubble.isAccountOwner ? 56 : 40)
+        // The two sides as near as in the chat on a wide screen.
+        .readableWidth()
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
     }

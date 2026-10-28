@@ -18,6 +18,7 @@ struct ConnectView: View {
     @FocusState private var isServerFocused: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.webAuthenticationSession) private var webAuthenticationSession
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var isServerEmpty: Bool {
         serverText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -32,7 +33,7 @@ struct ConnectView: View {
                             .font(.largeTitle)
                             .foregroundStyle(.tint)
                             .accessibilityHidden(true)
-                        Text("Talk to your agent from your phone.")
+                        Text("Talk to your agent wherever you are.")
                             .font(.title2)
                             .bold()
                         Text("Sign in to your TeaNode server.")
@@ -110,7 +111,12 @@ struct ConnectView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // On a wide screen a form of a phone's width in the middle,
+                // not an address field and a button across the whole window.
+                .frame(maxWidth: horizontalSizeClass == .regular ? 480 : .infinity)
+                .frame(maxWidth: .infinity)
                 .padding()
+                .padding(.top, horizontalSizeClass == .regular ? 48 : 0)
                 .disabled(isConnecting)
             }
             .scrollDismissesKeyboard(.interactively)

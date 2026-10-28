@@ -1430,6 +1430,7 @@ struct DocumentReader: View {
                     ProgressView()
                 }
             }
+            .readableWidth()
             .padding()
         }
         .navigationTitle(extract?.title ?? "")
