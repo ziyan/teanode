@@ -20,6 +20,11 @@ import (
 // measured in days, so there is nothing to gain from sweeping often.
 const sweepInterval = time.Hour
 
+// mirrorSweepInterval is how often the object store is swept by one instance
+// or another. A little under sweepInterval, so that the instance that swept
+// last time is not turned away by the clock when its next hour comes.
+const mirrorSweepInterval = sweepInterval - 5*time.Minute
+
 type filesystem struct {
 	settings *Settings
 
@@ -222,6 +227,9 @@ func (self *filesystem) sweepOnce(ctx context.Context) error {
 
 	if self.settings.Directory == "" {
 		// Nothing local to walk; the store's own sweep is the whole of it.
+		if !self.isMirrorSweepMine(ctx) {
+			return nil
+		}
 		removed, err := self.mirror.Sweep(ctx, cutoff, self.settings.Keep)
 		if err != nil {
 			return err
@@ -287,7 +295,7 @@ func (self *filesystem) sweepOnce(ctx context.Context) error {
 	// it handled, while the bucket has what every instance handled. Deleting
 	// only alongside a local file would leave another instance's messages
 	// there forever.
-	if self.mirror != nil {
+	if self.mirror != nil && self.isMirrorSweepMine(ctx) {
 		mirrorRemoved, err := self.mirror.Sweep(ctx, cutoff, self.settings.Keep)
 		if err != nil {
 			// Not fatal. The local sweep already ran, and the next one will
@@ -299,6 +307,24 @@ func (self *filesystem) sweepOnce(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// isMirrorSweepMine says whether this instance is the one that sweeps the
+// object store this time. It lists the whole bucket, so with several
+// instances sharing one it is done by one of them each interval and not by
+// all. A turn that cannot be asked for is not taken: the next hour asks again.
+func (self *filesystem) isMirrorSweepMine(ctx context.Context) bool {
+	if self.settings.TakeMirrorSweep == nil {
+		return true
+	}
+	isMine, err := self.settings.TakeMirrorSweep(ctx, mirrorSweepInterval)
+	if err != nil {
+		if ctx.Err() == nil {
+			log.Warningf("cannot tell whether another instance is sweeping the object store: %s", err)
+		}
+		return false
+	}
+	return isMine
 }
 
 // terminated makes sure every header ends with CRLF.

@@ -148,6 +148,8 @@ func (self *Agent) startFeed() {
 	if self.settings.Database == nil {
 		return
 	}
+	self.startTurnRecords()
+	self.startComputerAttachments()
 	self.relayMutex.Lock()
 	self.relaying = true
 	self.relayWake = make(chan struct{}, 1)
@@ -174,7 +176,7 @@ func (self *Agent) startFeed() {
 			// A title or a reaction is of no run, and there is no run of
 			// it to stop or answer.
 			if received.Event.RunID != "" {
-				self.noteForeignRun(received.Event.RunID, received.Event.ConversationID)
+				self.noteForeignEvent(received.Event)
 			}
 			self.publish(received.Event, false)
 		}

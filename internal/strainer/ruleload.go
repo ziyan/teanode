@@ -143,7 +143,10 @@ func (self *Strainer) refreshRules(ctx context.Context) {
 	// are left alone.
 	if len(sets) == 1 && (sets[0].RulesLoaded != loaded || sets[0].RulesSkipped != skipped) {
 		sets[0].RulesLoaded, sets[0].RulesSkipped = loaded, skipped
-		if err := self.database.SaveSpamRuleSet(sets[0]); err != nil {
+		// Only the counts, and only while the stored set is the version they
+		// were worked out from: writing the whole set back from this copy
+		// overwrote an import made meanwhile with the rules before it.
+		if err := self.database.RecordSpamRuleSetCounts(sets[0].Channel, sets[0].Version, loaded, skipped); err != nil {
 			log.Warningf("could not record how much of %s loaded: %s", sets[0].Channel, err)
 		}
 	}

@@ -37,6 +37,15 @@ func (self *fakeRuleStore) SaveSpamRuleSet(set *models.SpamRuleSet) error {
 	return nil
 }
 
+func (self *fakeRuleStore) RecordSpamRuleSetCounts(channel, version string, rulesLoaded, rulesSkipped int) error {
+	self.saves++
+	if set, ok := self.sets[channel]; ok && set.Version == version {
+		set.RulesLoaded, set.RulesSkipped = rulesLoaded, rulesSkipped
+	}
+	return nil
+}
+func (self *fakeRuleStore) LearnSpamMail(string, string, []string) error  { return nil }
+func (self *fakeRuleStore) ForgetSpamMail(string, []string) error         { return nil }
 func (self *fakeRuleStore) LearnSpamTokens([]models.SpamTokenDelta) error { return nil }
 func (self *fakeRuleStore) LoadSpamTokens([]string) (map[string]models.SpamTokenCount, error) {
 	return nil, nil

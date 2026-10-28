@@ -113,7 +113,8 @@ func (self *graph) photoBasicPerson(response http.ResponseWriter, request *http.
 	// Looked at before the password is checked and spent only on a failure,
 	// so that guessing runs the budget down and is then turned away before
 	// any hashing is done, and a phone uploading a thousand photos with the
-	// right password never touches it.
+	// right password never spends it (the count it reads is remembered for
+	// a second, so neither does it ask the database for each photo).
 	var from string
 	if self.settings != nil && self.settings.AuthLimiter != nil {
 		from = ratelimit.AddressKey(api.RemoteAddress(request, self.config.Current().Server.TrustedProxies))

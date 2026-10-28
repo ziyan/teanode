@@ -24,12 +24,15 @@ import (
 // ones it leaves alone.
 
 type resumeWorld struct {
-	database db.Database
-	worker   *agent.Agent
-	owner    *models.User
-	found    *models.Agent
-	requests *[]map[string]any
-	model    *httptest.Server
+	// conversations are the ones made in this world, each recorded as having
+	// a turn cut in it at the next look.
+	conversations []*models.AgentConversation
+	database      db.Database
+	worker        *agent.Agent
+	owner         *models.User
+	found         *models.Agent
+	requests      *[]map[string]any
+	model         *httptest.Server
 }
 
 func newResumeWorld(t *testing.T) *resumeWorld {
@@ -89,6 +92,7 @@ func (self *resumeWorld) conversation(t *testing.T, kind models.AgentConversatio
 			}
 		}
 	})
+	self.conversations = append(self.conversations, conversation)
 	return conversation
 }
 
@@ -101,11 +105,22 @@ func (self *resumeWorld) messages(t *testing.T, conversationId string) []*models
 	return messages
 }
 
-// resume is the look at the start of the server, two minutes after the
-// messages were written unless a moment is given, and waits for the turns
-// it begins.
-func (self *resumeWorld) resume(startedAt time.Time) {
-	self.worker.ResumeCutTurns(context.Background(), startedAt)
+// resume records a turn cut at cutAt in every conversation of the world,
+// as a server stopping with them in flight does, then looks for the turns
+// to carry on, and waits for the ones it begins.
+func (self *resumeWorld) resume(t *testing.T, cutAt time.Time) {
+	t.Helper()
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		for index, conversation := range self.conversations {
+			if err := tx.PutAgentTurn(&models.AgentTurn{
+				RunID: fmt.Sprintf("cut-%d-%d", cutAt.UnixNano(), index), ConversationID: conversation.ID, Instance: "stopped",
+				StartedAt: conversation.CreatedAt, HeartbeatAt: cutAt, CutAt: &cutAt,
+			}); err != nil {
+				t.Fatalf("PutAgentTurn: %s", err)
+			}
+		}
+	})
+	self.worker.ResumeCutTurns(context.Background())
 	self.worker.Wait()
 }
 
@@ -131,7 +146,7 @@ func TestARestartCarriesOnTheTurnItCut(t *testing.T) {
 	)
 
 	startedAt := time.Now().Add(2 * time.Minute)
-	world.resume(startedAt)
+	world.resume(t, startedAt)
 
 	messages := world.messages(t, cut.ID)
 	if len(messages) != 5 || messages[3].Role != "user" || !strings.HasPrefix(messages[3].Content, models.RestartResumeMarker) {
@@ -154,7 +169,7 @@ func TestARestartCarriesOnTheTurnItCut(t *testing.T) {
 	}
 
 	// A second start finds the conversation answered.
-	world.resume(startedAt.Add(time.Minute))
+	world.resume(t, startedAt.Add(time.Minute))
 	if world.modelCalls() != 1 || len(world.messages(t, cut.ID)) != 5 {
 		t.Fatalf("a second start does not carry it on twice: %d calls, %+v", world.modelCalls(), world.messages(t, cut.ID))
 	}
@@ -171,7 +186,7 @@ func TestARestartDoesNotCarryOnACarriedOnTurnAgain(t *testing.T) {
 		&models.AgentMessage{Role: "assistant", ToolCalls: []models.AgentToolCall{{ID: "call_1", Name: "datetime", Arguments: "{}"}}},
 		&models.AgentMessage{Role: "tool", ToolCallID: "call_1", Name: "datetime", Content: "{}"},
 	)
-	world.resume(time.Now().Add(time.Minute))
+	world.resume(t, time.Now().Add(time.Minute))
 	if world.modelCalls() != 0 {
 		t.Fatalf("a turn that was already carried on is not carried on again: %d calls", world.modelCalls())
 	}
@@ -184,7 +199,7 @@ func TestARestartAnswersAMessageItCutBeforeTheFirstRound(t *testing.T) {
 	cut := world.conversation(t, models.AgentConversationMain,
 		&models.AgentMessage{Role: "user", Content: "Remind me what I asked for."},
 	)
-	world.resume(time.Now().Add(time.Minute))
+	world.resume(t, time.Now().Add(time.Minute))
 	if messages := world.messages(t, cut.ID); len(messages) != 3 || !strings.HasPrefix(messages[1].Content, models.RestartResumeMarker) {
 		t.Fatalf("the message was answered: %+v", messages)
 	}
@@ -226,7 +241,7 @@ func TestARestartLeavesAlonePeopleWhoWereNotWaiting(t *testing.T) {
 	for name, conversation := range untouched {
 		counts[name] = len(world.messages(t, conversation.ID))
 	}
-	world.resume(time.Now().Add(2 * time.Minute))
+	world.resume(t, time.Now().Add(2*time.Minute))
 	for name, conversation := range untouched {
 		if got := len(world.messages(t, conversation.ID)); got != counts[name] {
 			t.Errorf("the %s conversation was written to: %d messages, was %d", name, got, counts[name])
@@ -246,7 +261,7 @@ func TestARestartLeavesATurnTwentyMinutesOldAlone(t *testing.T) {
 		&models.AgentMessage{Role: "assistant", ToolCalls: []models.AgentToolCall{{ID: "call_1", Name: "datetime", Arguments: "{}"}}},
 		&models.AgentMessage{Role: "tool", ToolCallID: "call_1", Name: "datetime", Content: "{}"},
 	)
-	world.resume(time.Now().Add(20 * time.Minute))
+	world.resume(t, time.Now().Add(20*time.Minute))
 	if world.modelCalls() != 0 || len(world.messages(t, cut.ID)) != 3 {
 		t.Fatalf("nothing was written: %d calls, %+v", world.modelCalls(), world.messages(t, cut.ID))
 	}
@@ -261,7 +276,7 @@ func TestARestartCarriesOnTheNewestFewConversations(t *testing.T) {
 			&models.AgentMessage{Role: "user", Content: fmt.Sprintf("Question %d", index)},
 		))
 	}
-	world.resume(time.Now().Add(time.Minute))
+	world.resume(t, time.Now().Add(time.Minute))
 	for index, conversation := range conversations {
 		isResumed := len(world.messages(t, conversation.ID)) > 1
 		if want := index >= 2; isResumed != want {
@@ -282,7 +297,7 @@ func TestARestartLeavesAnAgentThatIsOffAlone(t *testing.T) {
 			t.Fatalf("UpdateAgent: %s", err)
 		}
 	})
-	world.resume(time.Now().Add(time.Minute))
+	world.resume(t, time.Now().Add(time.Minute))
 	if world.modelCalls() != 0 || len(world.messages(t, cut.ID)) != 1 {
 		t.Fatalf("an agent that is off says nothing: %d calls", world.modelCalls())
 	}

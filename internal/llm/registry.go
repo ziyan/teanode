@@ -95,7 +95,20 @@ func Open(configuration *config.Agent) (*Registry, error) {
 type signedInService interface {
 	adoptRefreshToken(refreshToken string)
 	onRotated(rotated func(refreshToken string))
+	shareSignIn(provider string, store SignInStore)
 	refreshToken() string
+}
+
+// ShareSignIns has every signed-in provider keep its sign-in with the other
+// instances through a store, instead of handing rotated refresh tokens to
+// KeepRefreshTokens: a refresh takes the provider's lock, looks at what
+// another instance stored first, and stores what it gets before letting go.
+func (self *Registry) ShareSignIns(store SignInStore) {
+	for name, entry := range self.providers {
+		if signer, isSignedIn := entry.service.(signedInService); isSignedIn {
+			signer.shareSignIn(name, store)
+		}
+	}
 }
 
 // AdoptRefreshToken hands a signed-in provider a refresh token the

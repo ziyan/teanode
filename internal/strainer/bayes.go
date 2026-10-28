@@ -300,61 +300,15 @@ func Learn(database db.SpamOperation, mailId, label string, headers []string, bo
 			label, models.SpamTrainingLabelSpam, models.SpamTrainingLabelHam)
 	}
 
-	existing, err := database.GetSpamTraining(mailId)
-	if err != nil {
-		return err
-	}
-	if existing != nil && existing.Label == label {
-		return nil
-	}
-
+	// One transaction in the database, under a lock on the message: the
+	// label read, the counts changed and the label written are not three
+	// commits two marks of one message could interleave between.
 	tokens := tokenize(&spamfilter.Message{Headers: headers, Body: body})
-	deltas := make([]models.SpamTokenDelta, 0, len(tokens))
-	for _, token := range tokens {
-		delta := models.SpamTokenDelta{Token: token}
-		if label == models.SpamTrainingLabelSpam {
-			delta.SpamCount = 1
-		} else {
-			delta.HamCount = 1
-		}
-		// Re-labeled: take back what the previous label contributed.
-		if existing != nil {
-			if existing.Label == models.SpamTrainingLabelSpam {
-				delta.SpamCount--
-			} else {
-				delta.HamCount--
-			}
-		}
-		deltas = append(deltas, delta)
-	}
-
-	if err := database.LearnSpamTokens(deltas); err != nil {
-		return err
-	}
-	return database.SetSpamTraining(&models.SpamTraining{MailID: mailId, Label: label})
+	return database.LearnSpamMail(mailId, label, tokens)
 }
 
 // Forget undoes what Learn did for one message.
 func Forget(database db.SpamOperation, mailId string, headers []string, body []byte) error {
-	existing, err := database.GetSpamTraining(mailId)
-	if err != nil || existing == nil {
-		return err
-	}
-
 	tokens := tokenize(&spamfilter.Message{Headers: headers, Body: body})
-	deltas := make([]models.SpamTokenDelta, 0, len(tokens))
-	for _, token := range tokens {
-		delta := models.SpamTokenDelta{Token: token}
-		if existing.Label == models.SpamTrainingLabelSpam {
-			delta.SpamCount = -1
-		} else {
-			delta.HamCount = -1
-		}
-		deltas = append(deltas, delta)
-	}
-
-	if err := database.LearnSpamTokens(deltas); err != nil {
-		return err
-	}
-	return database.DeleteSpamTraining(mailId)
+	return database.ForgetSpamMail(mailId, tokens)
 }

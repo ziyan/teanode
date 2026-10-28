@@ -627,12 +627,18 @@ func (self *transaction) ListOccurrences(calendarId string, from, until time.Tim
 // reach the horizon never stops running out however often it is worked out,
 // so without this it came straight back and held up every other account's --
 // the same jam by a different road.
+//
+// The events are locked until the transaction ends, and the ones another
+// transaction holds are left out: another instance extending them, or a
+// person saving one meanwhile, whose edit a write of the whole row from this
+// earlier copy would otherwise overwrite. The caller writes them in the same
+// transaction.
 func (self *transaction) ListCalendarObjectsRunningOut(before, since time.Time, limit int) ([]*models.CalendarObject, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	var found []calendarObjectModel
-	if err := self.tx.Where(
+	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Where(
 		"\"recurring\" AND (\"indexed_until\" IS NULL OR \"indexed_until\" < ?)"+
 			" AND (\"indexed_at\" IS NULL OR \"indexed_at\" < ?)", before, since).
 		Order("\"indexed_until\" ASC NULLS FIRST").Limit(limit).Find(&found).Error; err != nil {

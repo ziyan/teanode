@@ -16,6 +16,11 @@ type ConnectionOperation interface {
 	// server.
 	PutAgentConnection(connection *models.AgentConnection) (*models.AgentConnection, error)
 	GetAgentConnection(agentId, serverName string) (*models.AgentConnection, error)
+	// LockAgentConnection is GetAgentConnection that also locks the row until
+	// the transaction ends, waiting for another transaction that holds it: for
+	// a caller that reads the connection, does something that must not be done
+	// twice at once, and writes it back (refreshing the tokens).
+	LockAgentConnection(agentId, serverName string) (*models.AgentConnection, error)
 	ListAgentConnections(agentId string) ([]*models.AgentConnection, error)
 	DeleteAgentConnection(agentId, serverName string) error
 	DeleteAgentConnections(agentId string) (int64, error)
@@ -71,6 +76,17 @@ func (self *transaction) PutAgentConnection(connection *models.AgentConnection) 
 func (self *transaction) GetAgentConnection(agentId, serverName string) (*models.AgentConnection, error) {
 	var found []agentConnectionModel
 	if err := self.tx.Where("\"agent_id\" = ? AND \"server_name\" = ?", agentId, serverName).Limit(1).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return found[0].toModel(), nil
+}
+
+func (self *transaction) LockAgentConnection(agentId, serverName string) (*models.AgentConnection, error) {
+	var found []agentConnectionModel
+	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("\"agent_id\" = ? AND \"server_name\" = ?", agentId, serverName).Limit(1).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	if len(found) == 0 {

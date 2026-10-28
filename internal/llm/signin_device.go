@@ -60,13 +60,85 @@ type DeviceSignIn struct {
 	result *SignInResult
 }
 
-// BeginDeviceSignIn asks the service for a one-time code.
-func BeginDeviceSignIn(ctx context.Context, kind string) (*DeviceSignIn, error) {
+// DeviceSignInEndpoints are the service a code is asked of and redeemed at.
+type DeviceSignInEndpoints struct {
+	Issuer   string
+	ClientId string
+	TokenUrl string
+
+	// Client is what talks to the service; nil means a plain one.
+	Client *http.Client
+}
+
+// DeviceSignInEndpointsFor is where a provider kind signs in.
+func DeviceSignInEndpointsFor(kind string) (*DeviceSignInEndpoints, error) {
 	switch kind {
 	case config.AgentProviderKindCodex:
-		return beginDeviceSignIn(ctx, codexIssuer, codexClientId, codexTokenUrl, nil)
+		return &DeviceSignInEndpoints{Issuer: codexIssuer, ClientId: codexClientId, TokenUrl: codexTokenUrl}, nil
 	}
 	return nil, fmt.Errorf("llm: %q is not a provider kind that signs in", kind)
+}
+
+// BeginDeviceSignIn asks the service for a one-time code.
+func BeginDeviceSignIn(ctx context.Context, kind string) (*DeviceSignIn, error) {
+	endpoints, err := DeviceSignInEndpointsFor(kind)
+	if err != nil {
+		return nil, err
+	}
+	return BeginDeviceSignInAt(ctx, endpoints)
+}
+
+// BeginDeviceSignInAt asks the service at the endpoints for a one-time code.
+func BeginDeviceSignInAt(ctx context.Context, endpoints *DeviceSignInEndpoints) (*DeviceSignIn, error) {
+	return beginDeviceSignIn(ctx, endpoints.Issuer, endpoints.ClientId, endpoints.TokenUrl, endpoints.Client)
+}
+
+// DeviceSignInRecord is what a sign-in waiting for its code needs kept so
+// that another instance can wait on it: the code and its page are what the
+// person was shown, and the rest is what the service asks for when polled.
+type DeviceSignInRecord struct {
+	UserCode            string
+	VerificationAddress string
+	DeviceAuthID        string
+	Interval            time.Duration
+	ExpiresAt           time.Time
+}
+
+// Record is what to keep of a sign-in so that ResumeDeviceSignIn can rebuild
+// it on another instance.
+func (self *DeviceSignIn) Record() DeviceSignInRecord {
+	return DeviceSignInRecord{
+		UserCode: self.UserCode, VerificationAddress: self.VerificationAddress,
+		DeviceAuthID: self.deviceAuthId, Interval: self.interval, ExpiresAt: self.ExpiresAt,
+	}
+}
+
+// ResumeDeviceSignIn rebuilds a sign-in begun elsewhere from its record. The
+// service it was begun at is the one of the endpoints, as it was for the
+// instance that began it.
+func ResumeDeviceSignIn(endpoints *DeviceSignInEndpoints, record DeviceSignInRecord) (*DeviceSignIn, error) {
+	if record.DeviceAuthID == "" || record.UserCode == "" {
+		return nil, errors.New("llm: a sign-in to resume needs its code")
+	}
+	client := endpoints.Client
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+	interval := record.Interval
+	if interval <= 0 {
+		interval = deviceSignInInterval
+	}
+	return &DeviceSignIn{
+		UserCode:            record.UserCode,
+		VerificationAddress: record.VerificationAddress,
+		ExpiresAt:           record.ExpiresAt,
+		issuer:              endpoints.Issuer,
+		clientId:            endpoints.ClientId,
+		tokenUrl:            endpoints.TokenUrl,
+		deviceAuthId:        record.DeviceAuthID,
+		interval:            interval,
+		http:                client,
+	}, nil
 }
 
 func beginDeviceSignIn(ctx context.Context, issuer, clientId, tokenUrl string, client *http.Client) (*DeviceSignIn, error) {

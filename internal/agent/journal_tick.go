@@ -71,11 +71,21 @@ func (self *Agent) refreshJournals(ctx context.Context, now time.Time) {
 func (self *Agent) refreshJournal(ctx context.Context, person journalPerson, now time.Time) {
 	refreshContext, cancel := context.WithTimeout(ctx, journalRefreshTimeout)
 	defer cancel()
-	if err := self.settings.Database.TransactionContext(refreshContext, func(transaction db.Transaction) error {
-		_, err := journal.Refresh(refreshContext, transaction, person.owner, person.agent, now)
+	isFree := false
+	if err := self.settings.Database.TransactionContext(refreshContext, func(transaction db.Transaction) (err error) {
+		// An hour for the whole server: the weather is asked from a service
+		// that is not ours, and the numbers are written the same by any
+		// instance.
+		if isFree, err = takeSweep(transaction, "journal-refresh:"+person.agent.ID, journalRefreshEvery, now); err != nil || !isFree {
+			return err
+		}
+		_, err = journal.Refresh(refreshContext, transaction, person.owner, person.agent, now)
 		return err
 	}); err != nil {
 		log.Warningf("cannot refresh the journal of agent %q: %s", person.agent.ID, err)
+		return
+	}
+	if !isFree {
 		return
 	}
 	inTransaction := func(run func(transaction db.Transaction) error) error {
@@ -157,6 +167,14 @@ func (self *Agent) askJournalEveningQuestion(ctx context.Context, agent *models.
 	var day string
 	var phones []*models.AgentPhone
 	err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		// Every instance asks. One at a time per person, so that two do not
+		// both find the day not yet asked and both tell the phones; the
+		// instance that finds another in the middle of it leaves it to that
+		// one, whose job row then says the day was asked.
+		isLocked, err := transaction.TryAdvisoryLock(db.LockKey("journal-evening:" + agent.ID))
+		if err != nil || !isLocked {
+			return err
+		}
 		settings, err := transaction.GetJournalSettings(owner.ID)
 		if err != nil || !settings.IsEveningQuestionOn {
 			return err

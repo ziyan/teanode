@@ -665,16 +665,16 @@ func isLockTimeout(err error) bool {
 	return errors.As(err, &failure) && failure.Code == "55P03"
 }
 
-// passwordsLimiters are the limits on one person's use of Passwords, kept in
-// memory for this instance, as the sign-in limits are. Each is a bucket for
-// each person and kind of credential (passwordsLimitKey), so that what a
-// program holding a stolen token does cannot use up what the person's own
-// taps on a screen may do.
+// passwordsLimiters are the limits on one person's use of Passwords that are
+// kept in memory for this instance, as the abuse limits elsewhere are. Each is
+// a bucket for each person and kind of credential (passwordsLimitKey), so that
+// what a program holding a stolen token does cannot use up what the person's
+// own taps on a screen may do.
+//
+// The limit on wrong proofs is not here: it guards the passphrase, so it is
+// counted in the database by every instance together (checkPasswordsProof).
 type passwordsLimiters struct {
 	once sync.Once
-
-	// unlock holds the wrong proofs given in a row.
-	unlock *ratelimit.Registry
 
 	// writes holds the writes made.
 	writes *ratelimit.Registry
@@ -687,8 +687,6 @@ type passwordsLimiters struct {
 
 func (self *graph) passwordsLimiters() *passwordsLimiters {
 	self.passwordsLimits.once.Do(func() {
-		self.passwordsLimits.unlock = ratelimit.NewRegistry(
-			passwordUnlockFailuresPerHour/3600.0, passwordUnlockFailuresBurst, 20000, time.Hour)
 		self.passwordsLimits.writes = ratelimit.NewRegistry(
 			passwordWritesPerHour/3600.0, passwordWritesBurst, 20000, time.Hour)
 	})
@@ -891,19 +889,35 @@ func requirePasswordsSetUp(tx db.Transaction, userId string) (*models.PasswordSe
 	return setup, nil
 }
 
+// passwordsUnlockLockWait is how long a try waits for the tries ahead of it.
+const passwordsUnlockLockWait = 10 * time.Second
+
 // checkPasswordsProof is the one place a proof is checked, for unlocking and
-// for the changes that need one. A try costs a token, taken before the proof is
-// looked at, so that many tries at once cannot all be judged before the first
-// wrong one is counted. A right proof (or a failure that says nothing about the
-// proof) gives the token back; a wrong one keeps it and is written to the audit
-// log. Without a token the caller is told to wait, and that is written to the
-// audit log too. The tries are counted for the person's taps and for every
-// other credential separately, so that wrong proofs from a stolen token cannot
-// lock the person out of their own dashboard.
-func (self *graph) checkPasswordsProof(tx db.Transaction, principal *api.Principal, proof string, isRecoveryKey bool) error {
+// for the changes that need one. Only a wrong proof costs a try: it is written
+// to the audit log and spends a token. A right proof (or a failure that says
+// nothing about the proof) costs nothing. Without a token the caller is told
+// to wait, and that is written to the audit log too. The tries are counted for
+// the person's taps and for every other credential separately, so that wrong
+// proofs from a stolen token cannot lock the person out of their own
+// dashboard.
+//
+// The tokens are in the database, so every instance counts the same ones: a
+// guesser gets the same ten tries however many instances there are. The tries
+// of one person are let through one at a time, by a lock held until the
+// request's transaction ends, so that many tries at once cannot all be judged
+// before the first wrong one is counted. A database that cannot be reached
+// refuses the try.
+func (self *graph) checkPasswordsProof(ctx context.Context, tx db.Transaction, principal *api.Principal, proof string, isRecoveryKey bool) error {
 	userId := principal.User.ID
-	bucket := self.passwordsLimiters().unlock.For(passwordsLimitKey(principal))
-	if !bucket.Allow() {
+	limiterKey := "passwords-unlock:" + passwordsLimitKey(principal)
+	if err := waitForPasswordsUnlockTurn(ctx, tx, limiterKey); err != nil {
+		return err
+	}
+	remainingTokenCount, err := tx.CountRateLimitTokens(limiterKey, passwordUnlockFailuresPerHour/3600.0, passwordUnlockFailuresBurst, time.Now())
+	if err != nil {
+		return err
+	}
+	if remainingTokenCount < 1 {
 		// A try turned away is written down too: a run of them is what a
 		// guess at the passphrase looks like from outside.
 		if err := tx.RecordPasswordsUnlockRefused(userId, isRecoveryKey); err != nil {
@@ -913,15 +927,16 @@ func (self *graph) checkPasswordsProof(tx db.Transaction, principal *api.Princip
 	}
 	isRight, err := tx.CheckPasswordsProof(userId, proof, isRecoveryKey)
 	if err != nil {
-		bucket.Give(1)
 		if errors.Is(err, db.ErrNotFound) {
 			return fmt.Errorf("%w: %s", api.ErrNotFound, passwordsNotSetUpSentence)
 		}
 		return err
 	}
 	if isRight {
-		bucket.Give(1)
 		return nil
+	}
+	if _, err := tx.TakeRateLimitToken(limiterKey, passwordUnlockFailuresPerHour/3600.0, passwordUnlockFailuresBurst, time.Now()); err != nil {
+		return err
 	}
 	if err := tx.RecordPasswordsUnlockFailure(userId, isRecoveryKey); err != nil {
 		return err
@@ -930,6 +945,37 @@ func (self *graph) checkPasswordsProof(tx db.Transaction, principal *api.Princip
 		return fmt.Errorf("%w: %s", api.ErrInvalidCredential, passwordsWrongRecoveryKeySentence)
 	}
 	return fmt.Errorf("%w: %s", api.ErrInvalidCredential, passwordsWrongPassphraseSentence)
+}
+
+// waitForPasswordsUnlockTurn takes the lock on one person's tries (and kind of
+// credential) for the rest of the transaction, waiting for the tries ahead of
+// it, which may be running on another instance. A try that waits longer than
+// passwordsUnlockLockWait is turned away.
+func waitForPasswordsUnlockTurn(ctx context.Context, tx db.Transaction, limiterKey string) error {
+	lockKey := db.LockKey(limiterKey)
+	deadline := time.Now().Add(passwordsUnlockLockWait)
+	// From a few milliseconds, which is how long a try ahead takes, to a
+	// tenth of a second: many tries waiting at once do not each ask the
+	// database two hundred times a second.
+	pause := 5 * time.Millisecond
+	for {
+		isLocked, err := tx.TryAdvisoryLock(lockKey)
+		if err != nil {
+			return err
+		}
+		if isLocked {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return api.ErrTooManyRequests
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pause):
+		}
+		pause = min(2*pause, 100*time.Millisecond)
+	}
 }
 
 func validatePasswordsSecrets(accountKey, proofHash string) error {
@@ -1008,7 +1054,7 @@ func (self *graph) UnlockPasswords(ctx context.Context, arguments UnlockPassword
 	tx := self.transaction(ctx)
 	// The audit event of a wrong proof, or of a try turned away, is written in
 	// the request's transaction, which commits whatever the answer is.
-	if err := self.checkPasswordsProof(tx, principal, arguments.Proof, isRecoveryKey); err != nil {
+	if err := self.checkPasswordsProof(ctx, tx, principal, arguments.Proof, isRecoveryKey); err != nil {
 		return nil, err
 	}
 	if err := tx.RecordPasswordsUnlocked(principal.User.ID, isRecoveryKey); err != nil {
@@ -1041,7 +1087,7 @@ func (self *graph) ChangePasswordsPassphrase(ctx context.Context, arguments Chan
 		return nil, err
 	}
 	tx := self.transaction(ctx)
-	if err := self.checkPasswordsProof(tx, principal, input.Proof, input.IsRecoveryKey != nil && *input.IsRecoveryKey); err != nil {
+	if err := self.checkPasswordsProof(ctx, tx, principal, input.Proof, input.IsRecoveryKey != nil && *input.IsRecoveryKey); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ChangePasswordsPassphrase(principal.User.ID, &models.PasswordPassphraseChange{
@@ -1066,7 +1112,7 @@ func (self *graph) ReplacePasswordsRecoveryKey(ctx context.Context, arguments Re
 		return nil, err
 	}
 	tx := self.transaction(ctx)
-	if err := self.checkPasswordsProof(tx, principal, input.Proof, false); err != nil {
+	if err := self.checkPasswordsProof(ctx, tx, principal, input.Proof, false); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ReplacePasswordsRecoveryKey(principal.User.ID, input.AccountKeyByRecoveryKey, input.RecoveryKeyProofHash); err != nil {

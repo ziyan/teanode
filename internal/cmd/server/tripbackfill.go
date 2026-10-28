@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -31,7 +32,18 @@ const tripBackfillWindow = 7 * 24 * time.Hour
 var tripRulesChangedAt = time.Date(2026, 10, 27, 10, 40, 0, 0, time.UTC)
 
 // backfillTrips builds the trips of past days for every person who needs it.
+// One instance at a time does the pass, whichever instance started first: the
+// others find the lock held and leave the work to it.
 func backfillTrips(ctx context.Context, database db.Database) {
+	if _, err := database.WhileLocked(ctx, db.LockKey("trip:backfill"), func(ctx context.Context) error {
+		backfillAllTrips(ctx, database)
+		return nil
+	}); err != nil && ctx.Err() == nil {
+		log.Warningf("failed to take the lock for building the past trips: %s", err)
+	}
+}
+
+func backfillAllTrips(ctx context.Context, database db.Database) {
 	var userIds []string
 	if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		userIds, err = tx.ListUsersNeedingTripBackfill(tripRulesChangedAt)
@@ -62,8 +74,27 @@ func backfillTrips(ctx context.Context, database db.Database) {
 
 // backfillTripsOf builds one person's trips from now back to their earliest
 // visit, a week at a time, each week in its own transaction holding their
-// location lock.
+// location lock. It first looks again, under that lock, whether the person
+// still needs it, because their trips may have been built since the list was
+// made.
 func backfillTripsOf(ctx context.Context, database db.Database, userId string) error {
+	isNeeded := false
+	if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
+		if err := tx.LockLocation(userId); err != nil {
+			return err
+		}
+		userIds, err := tx.ListUsersNeedingTripBackfill(tripRulesChangedAt)
+		if err != nil {
+			return err
+		}
+		isNeeded = slices.Contains(userIds, userId)
+		return nil
+	}); err != nil {
+		return err
+	}
+	if !isNeeded {
+		return nil
+	}
 	windowEnd := time.Now()
 	for ctx.Err() == nil {
 		isDone := false

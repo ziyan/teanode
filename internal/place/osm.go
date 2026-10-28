@@ -216,9 +216,10 @@ func FailureSentence(err error) string {
 
 // limiter spaces requests out. Both providers use the one in sharedLimiter, so
 // that the limit holds for the process whichever of them is asked and however
-// many people are being named at once. The limit is per server instance: each
-// instance of a multi-instance deployment has its own limiter, so n instances
-// send up to n requests a second to the provider.
+// many people are being named at once. The spacing is kept per server
+// instance, and, once SetClusterLimit has been called, a turn is also taken
+// from a limit the instances share, so that n instances send the provider one
+// request a second between them rather than n.
 type limiter struct {
 	mutex         sync.Mutex
 	interval      time.Duration
@@ -227,10 +228,30 @@ type limiter struct {
 	// maximumWait is the longest a caller waits for its turn; zero is
 	// maximumRequestWait.
 	maximumWait time.Duration
+
+	// takeClusterTurn says whether this instance may make a request now under
+	// the limit all instances share. Nil when there is no database to share
+	// it through.
+	takeClusterTurn func(ctx context.Context) (bool, error)
 }
 
 // sharedLimiter is the process-wide limiter.
 var sharedLimiter = &limiter{interval: requestInterval}
+
+// SetClusterLimit makes every provider take its turn from a limit shared by
+// all instances, through take: true when this instance may make a request now.
+// The provider's policy is one request a second in total, not per instance.
+func SetClusterLimit(take func(ctx context.Context) (bool, error)) {
+	sharedLimiter.mutex.Lock()
+	defer sharedLimiter.mutex.Unlock()
+	sharedLimiter.takeClusterTurn = take
+}
+
+// clusterTurnPollInterval is how often a caller whose own turn has come asks
+// again for a turn under the shared limit. Short, because the shared bucket
+// refills at the same second the own spacing keeps, and a turn asked for a
+// few milliseconds early is refused only by those milliseconds.
+const clusterTurnPollInterval = 50 * time.Millisecond
 
 // wait returns when the caller may make a request, with ErrProviderBusy at once
 // if its turn is more than the longest wait away, or with the context's error
@@ -240,6 +261,59 @@ var sharedLimiter = &limiter{interval: requestInterval}
 // the last one in line; a caller in the middle leaves a gap, which is the safe
 // side of a limit.
 func (self *limiter) wait(ctx context.Context) error {
+	startedAt := time.Now()
+	if err := self.waitForOwnTurn(ctx); err != nil {
+		return err
+	}
+	return self.waitForClusterTurn(ctx, startedAt)
+}
+
+// waitForClusterTurn is the wait for the limit the instances share, after this
+// instance's own turn has come. It gives up with ErrProviderBusy after the
+// longest wait, as the own turn does. A database that cannot be asked lets the
+// request go: the own turn has spaced it, and a provider lookup is not worth
+// refusing over a database that is failing for other reasons.
+//
+// The longest wait counts from when the caller began waiting for its own
+// turn, so that the two waits together are no longer than one.
+func (self *limiter) waitForClusterTurn(ctx context.Context, startedAt time.Time) error {
+	self.mutex.Lock()
+	take := self.takeClusterTurn
+	maximumWait := self.maximumWait
+	self.mutex.Unlock()
+	if take == nil {
+		return nil
+	}
+	if maximumWait == 0 {
+		maximumWait = maximumRequestWait
+	}
+	giveUpAt := startedAt.Add(maximumWait)
+	for {
+		isTaken, err := take(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			log.Debugf("could not take a turn under the shared limit on the place provider: %s", err)
+			return nil
+		}
+		if isTaken {
+			return nil
+		}
+		if !time.Now().Add(clusterTurnPollInterval).Before(giveUpAt) {
+			return ErrProviderBusy
+		}
+		timer := time.NewTimer(clusterTurnPollInterval)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		}
+	}
+}
+
+func (self *limiter) waitForOwnTurn(ctx context.Context) error {
 	self.mutex.Lock()
 	now := time.Now()
 	allowedAt := self.lastRequestAt.Add(self.interval)

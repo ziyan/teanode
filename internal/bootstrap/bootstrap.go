@@ -296,9 +296,20 @@ func (self *Bootstrap) parseDatabaseUrl(value string) error {
 // already assigns, and it is stable for the life of a pod or a compose
 // service. It is not stable across a rescheduled pod, which is the case for
 // setting the variable explicitly — to the StatefulSet ordinal, say.
+//
+// Two instances with one name would each take the other's events and commands
+// for its own and drop them, and a start would put the other's running jobs
+// back in the queue. A container on the host's network has the host's name, so
+// two of them on one machine would have the same default: the server holds a
+// lock on its name while it runs and will not start under one in use (see
+// holdInstanceName in internal/cmd/server).
+//
+// A name set to nothing is the same as one not set. The name is written into
+// rows and statements, so anything but letters, digits, dots, dashes and
+// underscores in it becomes a dash.
 func (self *Bootstrap) loadInstanceId() error {
 	value, ok := lookup("INSTANCE_ID")
-	if !ok {
+	if !ok || value == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
 			return fmt.Errorf("bootstrap: no %sINSTANCE_ID and this host has no name: %w", Prefix, err)
@@ -317,8 +328,23 @@ func (self *Bootstrap) loadInstanceId() error {
 			instanceIdLength, value, Prefix)
 	}
 
+	if cleaned := strings.Map(func(character rune) rune {
+		if isInstanceIdCharacter(character) {
+			return character
+		}
+		return '-'
+	}, value); cleaned != value {
+		log.Warningf("the instance name %q has characters other than letters, digits, dots, dashes and underscores; using %q", value, cleaned)
+		value = cleaned
+	}
+
 	self.InstanceID = value
 	return nil
+}
+
+func isInstanceIdCharacter(character rune) bool {
+	return character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' ||
+		character >= '0' && character <= '9' || character == '.' || character == '-' || character == '_'
 }
 
 // seedVariables is every variable that can go into a database with no

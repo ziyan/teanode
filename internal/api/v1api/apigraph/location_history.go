@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -18,6 +19,7 @@ import (
 	"github.com/ziyan/teanode/internal/place"
 	"github.com/ziyan/teanode/internal/travel"
 	"github.com/ziyan/teanode/internal/travel/rebuild"
+	"github.com/ziyan/teanode/internal/web"
 )
 
 // Where a person is and where they have been: the positions their phone and
@@ -2001,6 +2003,32 @@ type visitNotice struct {
 func (self *graph) afterLocationChange(ctx context.Context, tx db.Transaction, userId string, notices []visitNotice, madePlaces []*models.Place) {
 	notifier := self.phoneNotifier()
 	detached := context.WithoutCancel(ctx)
+	now := time.Now()
+	// A notice that waits is stored in this transaction, so that a restart,
+	// or another instance, still tells it (TellDueVisitNotices). The rest are
+	// told at once, below, once the change is committed.
+	noticesToTellNow := []visitNotice{}
+	for _, notice := range notices {
+		if notifier == nil {
+			break
+		}
+		dueAt := visitNoticeDueAt(notice)
+		if !dueAt.After(now) {
+			noticesToTellNow = append(noticesToTellNow, notice)
+			continue
+		}
+		stored := &db.LocationVisitNotice{
+			UserID: userId, ClientVisitKey: notice.Visit.ClientVisitKey, IsArrival: notice.IsArrival,
+			HappenedAt: notice.HappenedAt, DueAt: dueAt,
+		}
+		// Under a savepoint: a notice that cannot be stored is lost, as one
+		// was when the server restarted, and does not fail the change.
+		if err := tx.TransactionContext(ctx, func(nested db.Transaction) error {
+			return nested.CreateLocationVisitNotice(stored, now)
+		}); err != nil {
+			log.Warningf("cannot store a visit notice to tell later: %s", err)
+		}
+	}
 	tx.AfterCommit(func() {
 		if err := self.database.NotifyLocationEvent(userId); err != nil {
 			log.Warningf("cannot tell the listeners that a location changed: %s", err)
@@ -2009,17 +2037,11 @@ func (self *graph) afterLocationChange(ctx context.Context, tx db.Transaction, u
 		if notifier == nil {
 			return
 		}
-		now := time.Now()
-		for _, notice := range notices {
-			dueAt := visitNoticeDueAt(notice)
-			if !dueAt.After(now) {
-				notifier.NotifyPlaceVisitAt(detached, userId, notice.Visit, notice.IsArrival, notice.HappenedAt)
-				if notice.IsArrival {
-					notifier.NotifyShoppingArrival(detached, userId, notice.Visit, notice.HappenedAt)
-				}
-				continue
+		for _, notice := range noticesToTellNow {
+			notifier.NotifyPlaceVisitAt(detached, userId, notice.Visit, notice.IsArrival, notice.HappenedAt)
+			if notice.IsArrival {
+				notifier.NotifyShoppingArrival(detached, userId, notice.Visit, notice.HappenedAt)
 			}
-			time.AfterFunc(dueAt.Sub(now), func() { self.tellVisitNoticeIfKept(detached, notifier, userId, notice) })
 		}
 	})
 }
@@ -2028,8 +2050,8 @@ func (self *graph) afterLocationChange(ctx context.Context, tx db.Transaction, u
 // visit from a place's circle may still be a pass-by, which a later report
 // deletes, until it has lasted db.PassByDurationMost: its arrival is told
 // then, and a departure before then a second later, so the two are told in
-// order. A notice that waits is lost if the server restarts before it is
-// told.
+// order. A notice that waits is stored (location_visit_notice) and told by
+// TellDueVisitNotices, on whichever instance gets to it first.
 func visitNoticeDueAt(notice visitNotice) time.Time {
 	visit := notice.Visit
 	if visit == nil || visit.VisitSource != models.VisitSourceRegion {
@@ -2044,24 +2066,89 @@ func visitNoticeDueAt(notice visitNotice) time.Time {
 	return visit.ArrivedAt.Add(db.PassByDurationMost + time.Second)
 }
 
+// visitNoticeClaimLife is how long a claimed visit notice is left to the
+// instance that claimed it. One claimed longer ago than this was not told, or
+// not deleted, by an instance that stopped, and is claimed again.
+const visitNoticeClaimLife = 5 * time.Minute
+
+// visitNoticeClaimLimit is how many visit notices one call of
+// TellDueVisitNotices claims.
+const visitNoticeClaimLimit = 100
+
+// TellDueVisitNotices tells the arrivals and departures that waited out
+// db.PassByDurationMost and are due at now, on the graph component New made.
+// A function rather than a method of the graph, whose exported methods are
+// the operations anybody may call.
+func TellDueVisitNotices(ctx context.Context, component web.Component, now time.Time) error {
+	built, isGraph := component.(*graph)
+	if !isGraph {
+		return fmt.Errorf("apigraph: not the graph")
+	}
+	return built.tellDueVisitNotices(ctx, now)
+}
+
+// tellDueVisitNotices tells the arrivals and departures that waited out
+// db.PassByDurationMost and are due at now, unless their visit was deleted as
+// a pass-by meanwhile. Each notice is claimed by one instance, which tells it
+// and then forgets it; the server calls this every few seconds on every
+// instance.
+func (self *graph) tellDueVisitNotices(ctx context.Context, now time.Time) error {
+	var claimed []*db.LocationVisitNotice
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		claimed, err = tx.ClaimDueLocationVisitNotices(visitNoticeClaimLimit, visitNoticeClaimLife, now)
+		return err
+	}); err != nil {
+		return err
+	}
+	// In the order they fell due, so that an arrival is told before the
+	// departure a second after it.
+	sort.SliceStable(claimed, func(first, second int) bool {
+		if !claimed[first].DueAt.Equal(claimed[second].DueAt) {
+			return claimed[first].DueAt.Before(claimed[second].DueAt)
+		}
+		return claimed[first].ID < claimed[second].ID
+	})
+	notifier := self.phoneNotifier()
+	for _, stored := range claimed {
+		if notifier != nil {
+			if err := self.tellVisitNoticeIfKept(ctx, notifier, stored.UserID, visitNotice{
+				Visit:      &models.PlaceVisit{ClientVisitKey: stored.ClientVisitKey},
+				IsArrival:  stored.IsArrival,
+				HappenedAt: stored.HappenedAt,
+			}); err != nil {
+				// Left claimed: the claim runs out and it is told then.
+				log.Warningf("cannot read a visit to tell of it: %s", err)
+				continue
+			}
+		}
+		if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+			return tx.DeleteLocationVisitNotice(stored.ID)
+		}); err != nil {
+			log.Warningf("cannot forget a visit notice that was told: %s", err)
+		}
+	}
+	return nil
+}
+
 // tellVisitNoticeIfKept tells a notice that waited, unless its visit was
-// deleted as a pass-by meanwhile.
-func (self *graph) tellVisitNoticeIfKept(ctx context.Context, notifier *agent.PhoneNotifier, userId string, notice visitNotice) {
+// deleted as a pass-by meanwhile. An error is a visit that could not be read,
+// and nothing was told.
+func (self *graph) tellVisitNoticeIfKept(ctx context.Context, notifier *agent.PhoneNotifier, userId string, notice visitNotice) error {
 	var visit *models.PlaceVisit
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		visit, err = tx.GetPlaceVisitByClientKey(userId, notice.Visit.ClientVisitKey)
 		return err
 	}); err != nil {
-		log.Warningf("cannot read a visit to tell of it: %s", err)
-		return
+		return err
 	}
 	if visit == nil {
-		return
+		return nil
 	}
 	notifier.NotifyPlaceVisitAt(ctx, userId, visit, notice.IsArrival, notice.HappenedAt)
 	if notice.IsArrival {
 		notifier.NotifyShoppingArrival(ctx, userId, visit, notice.HappenedAt)
 	}
+	return nil
 }
 
 // storedVisit is what storing one reported visit did.

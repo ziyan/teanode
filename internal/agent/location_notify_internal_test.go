@@ -163,29 +163,38 @@ func TestTheSameArrivalIsToldOnceInTenMinutes(t *testing.T) {
 
 // claim is the rule itself, on a clock the test sets.
 func TestAPlaceVisitNoticeIsClaimedOncePerOwnerPlaceReceiverAndDirection(t *testing.T) {
-	var notices placeVisitNotices
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	claim := func(ownerUserId, placeId, receiverUserId string, isArrival bool, now time.Time) bool {
+		t.Helper()
+		var isClaimed bool
+		if err := database.Transaction(func(tx db.Transaction) (err error) {
+			isClaimed, err = claimPlaceVisitNotice(tx, ownerUserId, placeId, receiverUserId, isArrival, now)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return isClaimed
+	}
 	start := time.Date(2030, 1, 2, 9, 0, 0, 0, time.UTC)
-	if !notices.claim("owner", "place", "receiver", true, start) {
+	if !claim("owner", "place", "receiver", true, start) {
 		t.Fatal("the first is told")
 	}
-	if notices.claim("owner", "place", "receiver", true, start.Add(9*time.Minute)) {
+	if claim("owner", "place", "receiver", true, start.Add(9*time.Minute)) {
 		t.Error("the same again within ten minutes is not")
 	}
-	for name, claimed := range map[string]bool{
-		"the other direction": notices.claim("owner", "place", "receiver", false, start.Add(time.Minute)),
-		"another receiver":    notices.claim("owner", "place", "another", true, start.Add(time.Minute)),
-		"another place":       notices.claim("owner", "elsewhere", "receiver", true, start.Add(time.Minute)),
-		"another owner":       notices.claim("someone", "place", "receiver", true, start.Add(time.Minute)),
+	for name, isClaimed := range map[string]bool{
+		"the other direction": claim("owner", "place", "receiver", false, start.Add(time.Minute)),
+		"another receiver":    claim("owner", "place", "another", true, start.Add(time.Minute)),
+		"another place":       claim("owner", "elsewhere", "receiver", true, start.Add(time.Minute)),
+		"another owner":       claim("someone", "place", "receiver", true, start.Add(time.Minute)),
 	} {
-		if !claimed {
+		if !isClaimed {
 			t.Errorf("%s is told", name)
 		}
 	}
-	if !notices.claim("owner", "place", "receiver", true, start.Add(10*time.Minute)) {
+	if !claim("owner", "place", "receiver", true, start.Add(10*time.Minute)) {
 		t.Error("after ten minutes it is told again")
-	}
-	if len(notices.toldAt) > 5 {
-		t.Errorf("the notices held grow without bound: %d", len(notices.toldAt))
 	}
 }
 

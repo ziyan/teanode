@@ -53,6 +53,11 @@ type Store struct {
 	// photo-work directory inside the server's data directory.
 	workPath string
 
+	// instanceName, when set, makes the work directory one of this instance's
+	// own inside workPath: instances on one host share a data directory, and
+	// the start of one must not empty the copies another is working on.
+	instanceName string
+
 	// claimPollInterval is how long a worker with nothing to claim waits
 	// before it looks again, while another worker is still busy.
 	claimPollInterval time.Duration
@@ -87,12 +92,25 @@ func New(database db.Database, files storage.StreamFiles, configuration func() *
 // memory.
 const workDirectoryName = "photo-work"
 
-// workDirectory is where temporary copies of files are made.
+// UseInstanceName gives this instance a work directory of its own inside the
+// shared one, named after the instance. It is called before
+// PrepareWorkDirectory.
+func (self *Store) UseInstanceName(instanceName string) {
+	self.instanceName = instanceName
+}
+
+// workDirectory is where temporary copies of files are made: the photo-work
+// directory, and inside it a directory of this instance's own once the
+// instance has a name.
 func (self *Store) workDirectory() string {
-	if self.workPath != "" {
-		return self.workPath
+	directory := self.workPath
+	if directory == "" {
+		directory = filepath.Join(self.configuration().DataDirectory(), workDirectoryName)
 	}
-	return filepath.Join(self.configuration().DataDirectory(), workDirectoryName)
+	if self.instanceName == "" || self.instanceName == "." || self.instanceName == ".." {
+		return directory
+	}
+	return filepath.Join(directory, filepath.Base(self.instanceName))
 }
 
 // prepareWorkDirectory makes sure the work directory is there and says where it
@@ -107,8 +125,9 @@ func (self *Store) prepareWorkDirectory() (string, error) {
 
 // PrepareWorkDirectory makes the work directory and empties it of what an
 // earlier run left: nothing in it is wanted once the process that made it has
-// gone. It is called once, when the server starts, before any photo is
-// processed.
+// gone. Only this instance's own directory is emptied, because another
+// instance on the same volume may be working in its own. It is called once,
+// when the server starts, before any photo is processed.
 func (self *Store) PrepareWorkDirectory() error {
 	directory, err := self.prepareWorkDirectory()
 	if err != nil {
@@ -121,6 +140,31 @@ func (self *Store) PrepareWorkDirectory() error {
 	for _, entry := range entries {
 		if err := os.RemoveAll(filepath.Join(directory, entry.Name())); err != nil {
 			return fmt.Errorf("the work directory could not be emptied: %w", err)
+		}
+	}
+	return nil
+}
+
+// ForgetStoppedInstances removes, beside this instance's work directory, the
+// directories of instances that are not running, and what an older version
+// left loose in the shared one. An instance named after a container that a
+// deploy replaced never comes back to empty its own. isRunning says whether an
+// instance of a name is running now.
+func (self *Store) ForgetStoppedInstances(isRunning func(instanceName string) bool) error {
+	if self.instanceName == "" {
+		return nil
+	}
+	shared := filepath.Dir(self.workDirectory())
+	entries, err := os.ReadDir(shared)
+	if err != nil {
+		return fmt.Errorf("the work directory could not be read: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.Name() == filepath.Base(self.instanceName) || entry.IsDir() && isRunning(entry.Name()) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(shared, entry.Name())); err != nil {
+			return fmt.Errorf("the work directory of a stopped instance could not be removed: %w", err)
 		}
 	}
 	return nil

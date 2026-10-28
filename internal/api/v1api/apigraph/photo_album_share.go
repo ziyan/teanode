@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
@@ -319,38 +318,6 @@ func (self *graph) SavePhotoToLibrary(ctx context.Context, arguments PhotoArgume
 // added to one album: once, and then not again until it has been this long.
 const photoAddNoticeInterval = 10 * time.Minute
 
-// photoAddNoticeCache remembers when each reader was last told about each
-// album, so that a person adding photos one after another is one notification.
-// It is kept in memory: a restart forgets it, which costs one extra
-// notification, and another instance of the server does not share it.
-type photoAddNoticeCache struct {
-	mutex  sync.Mutex
-	sentAt map[string]time.Time
-}
-
-// take says whether the reader may be told about the album now, and if so
-// counts them as told.
-func (self *photoAddNoticeCache) take(photoAlbumId, readerUserId string, now time.Time) bool {
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	if self.sentAt == nil {
-		self.sentAt = map[string]time.Time{}
-	}
-	key := photoAlbumId + "\x00" + readerUserId
-	if last, isKept := self.sentAt[key]; isKept && now.Sub(last) < photoAddNoticeInterval {
-		return false
-	}
-	if len(self.sentAt) >= 4096 {
-		for oldKey, last := range self.sentAt {
-			if now.Sub(last) >= photoAddNoticeInterval {
-				delete(self.sentAt, oldKey)
-			}
-		}
-	}
-	self.sentAt[key] = now
-	return true
-}
-
 // notifyPhotosAdded tells the phones of everybody else who reads the album
 // that photos were added to it, once the change has committed: "Ana added 6
 // photos to Family". A reader is told at most once per album every ten
@@ -370,6 +337,7 @@ func (self *graph) notifyPhotosAdded(ctx context.Context, adder *models.User, al
 		return
 	}
 	agentIds := map[string]string{}
+	now := time.Now()
 	for _, readerUserId := range readerUserIds {
 		if readerUserId == adder.ID {
 			continue
@@ -380,6 +348,16 @@ func (self *graph) notifyPhotosAdded(ctx context.Context, adder *models.User, al
 		}
 		reader, err := transaction.GetAgentByUser(readerUserId)
 		if err != nil || reader == nil {
+			continue
+		}
+		// Taken in this transaction, whichever instance told them last, and
+		// given back if the change does not commit.
+		isDue, err := transaction.TakeThrottle("photo-add-notice:"+album.ID+":"+readerUserId, photoAddNoticeInterval, now)
+		if err != nil {
+			log.Warningf("cannot tell whether a reader was told about a photo album lately: %s", err)
+			return
+		}
+		if !isDue {
 			continue
 		}
 		agentIds[readerUserId] = reader.ID
@@ -405,11 +383,8 @@ func (self *graph) notifyPhotosAdded(ctx context.Context, adder *models.User, al
 		},
 	}
 	transaction.AfterCommit(func() {
-		now := time.Now()
-		for readerUserId, agentId := range agentIds {
-			if self.photoAddNotices.take(album.ID, readerUserId, now) {
-				notifier.NotifyPhones(agentId, models.NotificationPhoto, content)
-			}
+		for _, agentId := range agentIds {
+			notifier.NotifyPhones(agentId, models.NotificationPhoto, content)
 		}
 	})
 }

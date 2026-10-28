@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/security"
@@ -340,8 +341,12 @@ func (self *transaction) ModifyDeliveries(deliveryIds []string, modifier func([]
 	if len(deliveryIds) == 0 {
 		return nil, nil
 	}
+	// Locked for the rest of the transaction, in id order so that two
+	// instances changing overlapping sets take turns without waiting on each
+	// other, because the modifier works from what was read and the whole row
+	// is saved back: a change made in between would be written over.
 	var existingModels []deliveryModel
-	if err := self.tx.Model(&deliveryModel{}).Where(deliveryIds).Find(&existingModels).Error; err != nil {
+	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Model(&deliveryModel{}).Where(deliveryIds).Order("\"id\" ASC").Find(&existingModels).Error; err != nil {
 		return nil, err
 	}
 	existingModelsMap := make(map[string]deliveryModel)

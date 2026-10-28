@@ -236,6 +236,41 @@ func TestInstanceIDIsTruncatedToWhatTheColumnHolds(t *testing.T) {
 	}
 }
 
+// An instance name set to nothing is the hostname, as if it were not set: an
+// empty name is shared by every instance it is given to.
+func TestAnEmptyInstanceIDIsTheHostname(t *testing.T) {
+	clearEnvironment(t)
+	t.Setenv("TEANODE_DATABASE_URL", "postgres://teanode:teanode@postgres:5432/teanode?sslmode=disable")
+	t.Setenv("TEANODE_INSTANCE_ID", " ")
+
+	loaded, err := bootstrap.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostname, err := os.Hostname()
+	if err != nil {
+		t.Skip("this host has no name")
+	}
+	if loaded.InstanceID == "" || !strings.HasSuffix(hostname, loaded.InstanceID) {
+		t.Errorf("expected the hostname %q, got %q", hostname, loaded.InstanceID)
+	}
+}
+
+// The name goes into rows and statements, so a quote in it becomes a dash.
+func TestAnInstanceIDWithAQuoteIsCleaned(t *testing.T) {
+	clearEnvironment(t)
+	t.Setenv("TEANODE_DATABASE_URL", "postgres://teanode:teanode@postgres:5432/teanode?sslmode=disable")
+	t.Setenv("TEANODE_INSTANCE_ID", "teanode'2")
+
+	loaded, err := bootstrap.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.InstanceID != "teanode-2" {
+		t.Errorf("expected teanode-2, got %q", loaded.InstanceID)
+	}
+}
+
 // TestDefaultsAlone is the shortest possible deployment: one variable.
 func TestDefaultsAlone(t *testing.T) {
 	clearEnvironment(t)

@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -74,43 +73,18 @@ func wasThereToo(tx db.Transaction, receiverUserId string, visitPlace *models.Pl
 	return distanceMeters <= reachMeters+min(latest.AccuracyMeters, placeVisitTogetherMarginMeters), nil
 }
 
-// placeVisitNotices remembers when each arrival or departure was last told.
-// It is in memory and per instance, and that is enough: a report reaches one
-// instance, and the repeats this guards against are the same phone crossing a
-// place's edge several times within minutes, which reach the same instance in
-// a row. A repeat that lands on another instance, or just after a restart, is
-// one extra notification, not a wrong one. Nothing is stored for it.
-type placeVisitNotices struct {
-	mutex sync.Mutex
-	// toldAt is keyed by the owner, place, receiver and direction.
-	toldAt map[string]time.Time
-}
-
-// claim says whether this notice may be sent at the time, and remembers it if
-// so. It forgets the notices old enough to be sent again as it goes, so the
-// map holds only the last ten minutes.
-func (self *placeVisitNotices) claim(ownerUserId, placeId, receiverUserId string, isArrival bool, now time.Time) bool {
+// claimPlaceVisitNotice says whether an arrival or departure may be told now,
+// and marks it told if so, in the transaction that decides to tell it: a
+// notice whose transaction rolls back is not marked. The last time each was
+// told is a row of the throttle table, so that a phone flickering at the edge
+// of a place is told once however many instances the server runs on, and a
+// restart forgets nothing.
+func claimPlaceVisitNotice(tx db.Transaction, ownerUserId, placeId, receiverUserId string, isArrival bool, now time.Time) (bool, error) {
 	direction := "left"
 	if isArrival {
 		direction = "arrived"
 	}
-	key := ownerUserId + "\x00" + placeId + "\x00" + receiverUserId + "\x00" + direction
-
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	if self.toldAt == nil {
-		self.toldAt = map[string]time.Time{}
-	}
-	for each, toldAt := range self.toldAt {
-		if now.Sub(toldAt) >= placeVisitNoticeInterval {
-			delete(self.toldAt, each)
-		}
-	}
-	if _, isRecent := self.toldAt[key]; isRecent {
-		return false
-	}
-	self.toldAt[key] = now
-	return true
+	return tx.TakeThrottle("place-visit-notice:"+direction+":"+ownerUserId+":"+placeId+":"+receiverUserId, placeVisitNoticeInterval, now)
 }
 
 // placeVisitLabelWords is how a labeled place the person did not name is
@@ -205,9 +179,9 @@ func (self *PhoneNotifier) NotifyPlaceVisitAt(ctx context.Context, ownerUserId s
 	}
 	place := visit.Place
 	var owner *models.User
+	// grantees is the receivers to tell: those left after the muted, the ones
+	// who were there too, the shares made later and the notices told lately.
 	var grantees []*db.LocationGrantee
-	// silenced is the receivers who muted the owner or were there too.
-	silenced := map[string]bool{}
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		// Nobody is told of an arrival or a departure inside a pause, or while
 		// the person is paused: a notice of where they just were, a few
@@ -229,17 +203,20 @@ func (self *PhoneNotifier) NotifyPlaceVisitAt(ctx context.Context, ownerUserId s
 		if owner, err = tx.GetUser(ownerUserId); err != nil || owner == nil {
 			return err
 		}
-		if grantees, err = tx.ListLocationGrantees(ownerUserId); err != nil {
+		allGrantees, err := tx.ListLocationGrantees(ownerUserId)
+		if err != nil {
 			return err
 		}
 		muters, err := tx.ListLocationNotificationMuters(ownerUserId, now)
 		if err != nil {
 			return err
 		}
+		// silenced is the receivers who muted the owner or were there too.
+		silenced := map[string]bool{}
 		for _, muter := range muters {
 			silenced[muter] = true
 		}
-		for _, grantee := range grantees {
+		for _, grantee := range allGrantees {
 			if silenced[grantee.UserID] || happenedAt.Before(grantee.SharedAt) {
 				continue
 			}
@@ -247,7 +224,17 @@ func (self *PhoneNotifier) NotifyPlaceVisitAt(ctx context.Context, ownerUserId s
 			if err != nil {
 				return err
 			}
-			silenced[grantee.UserID] = isThere
+			if isThere {
+				silenced[grantee.UserID] = true
+				continue
+			}
+			isFree, err := claimPlaceVisitNotice(tx, ownerUserId, place.ID, grantee.UserID, isArrival, now)
+			if err != nil {
+				return err
+			}
+			if isFree {
+				grantees = append(grantees, grantee)
+			}
 		}
 		return nil
 	}); err != nil {
@@ -258,12 +245,6 @@ func (self *PhoneNotifier) NotifyPlaceVisitAt(ctx context.Context, ownerUserId s
 		return
 	}
 	for _, grantee := range grantees {
-		if happenedAt.Before(grantee.SharedAt) || silenced[grantee.UserID] {
-			continue
-		}
-		if !self.placeVisitNotices.claim(ownerUserId, place.ID, grantee.UserID, isArrival, now) {
-			continue
-		}
 		self.NotifyPhones(grantee.AgentID, models.NotificationLocation, &push.Content{
 			NotificationKind: models.NotificationLocation,
 			Title:            PhoneBody(owner.DisplayName()),

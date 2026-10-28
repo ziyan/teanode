@@ -91,8 +91,18 @@ func backfillNotes(ctx context.Context, database db.Database, store storage.Stor
 
 // backfillAllNotes runs batches until one finds nothing, or the server
 // stops. A batch that fails is tried again a minute later rather than given
-// up on until the next start.
+// up on until the next start. One instance does it at a time; another that
+// finds the lock held leaves the work to it.
 func backfillAllNotes(ctx context.Context, database db.Database, store storage.Storage, isEnabled ...func() bool) {
+	if _, err := database.WhileLocked(ctx, db.LockKey("mailbox:notes"), func(ctx context.Context) error {
+		backfillNotesUntilDone(ctx, database, store, isEnabled...)
+		return nil
+	}); err != nil && ctx.Err() == nil {
+		log.Warningf("failed to take the lock for looking for notes among stored messages: %s", err)
+	}
+}
+
+func backfillNotesUntilDone(ctx context.Context, database db.Database, store storage.Storage, isEnabled ...func() bool) {
 	lastMailId := ""
 	for ctx.Err() == nil {
 		if len(isEnabled) > 0 && !isEnabled[0]() {

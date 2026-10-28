@@ -696,7 +696,7 @@ func TestPhotosAddedToASharedAlbumAreAnnouncedOncePerTenMinutes(test *testing.T)
 		}
 	}
 	photos := []*models.Photo{}
-	for index := 0; index < 3; index++ {
+	for index := 0; index < 4; index++ {
 		photos = append(photos, world.storePhoto(adaId, "photo-"+strconv.Itoa(index), "p.jpg", []byte("original "+strconv.Itoa(index)), nil))
 	}
 	var albumId string
@@ -731,14 +731,12 @@ func TestPhotosAddedToASharedAlbumAreAnnouncedOncePerTenMinutes(test *testing.T)
 	if sent := relay.settled(2); len(sent) != 1 {
 		test.Fatalf("a second notification within ten minutes: %d in all", len(sent))
 	}
-	// And the interval is ten minutes.
-	var notices photoAddNoticeCache
-	now := time.Now()
-	if !notices.take("album", "reader", now) || notices.take("album", "reader", now.Add(photoAddNoticeInterval-time.Second)) || !notices.take("album", "reader", now.Add(photoAddNoticeInterval)) {
-		test.Fatal("a reader is told once an interval")
-	}
-	if !notices.take("album", "another", now) || !notices.take("other album", "reader", now) {
-		test.Fatal("the interval is per reader and per album")
+	// And a reader is told again once the interval has passed, counted in the
+	// database whichever instance told them last.
+	dbtest.Exec(test, world.database, `UPDATE throttle SET taken_at = taken_at - interval '11 minutes' WHERE throttle_key LIKE 'photo-add-notice:%'`)
+	add(photos[3].ID)
+	if sent := relay.settled(2); len(sent) != 2 {
+		test.Fatalf("no notification after the interval: %d in all", len(sent))
 	}
 }
 

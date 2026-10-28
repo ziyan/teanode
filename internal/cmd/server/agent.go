@@ -1,11 +1,14 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/ziyan/teanode/internal/api"
+	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/channel"
 	"github.com/ziyan/teanode/internal/channel/discord"
 	"github.com/ziyan/teanode/internal/channel/telegram"
@@ -102,11 +105,78 @@ func (self *server) openAgentWorker(configuration *config.Configuration) error {
 
 // keepSignIns ties the signed-in providers' refresh tokens to the
 // configuration both ways: a token the service rotates is written back, so
-// the sign-in survives a restart, and a token the configuration is given --
-// a new sign-in from the dashboard -- is adopted by the running provider.
+// the sign-in survives a restart and the other instances hear of it, and a
+// token the configuration is given -- a new sign-in from the dashboard, or a
+// rotation another instance made -- is adopted by the running provider.
 func (self *server) keepSignIns(registry *llm.Registry) {
-	registry.KeepRefreshTokens(func(provider, refreshToken string) {
-		err := self.store.Update(func(configuration *config.Configuration) error {
+	registry.ShareSignIns(&signInStore{configurationStore: self.store, database: self.database})
+	self.onClose(self.store.Subscribe(func(configuration *config.Configuration) {
+		for _, provider := range configuration.Agent.Providers {
+			if provider.Kind == config.AgentProviderKindCodex {
+				registry.AdoptRefreshToken(provider.Name, provider.RefreshToken)
+			}
+		}
+	}))
+}
+
+// signInLockWait is how long a refresh waits for another instance's.
+const signInLockWait = time.Minute
+
+// signInStore is where the instances of one server keep a provider's sign-in
+// between them: the refresh token in the configuration, the access token in
+// the database beside it, and a database lock that makes one instance refresh
+// at a time. See llm.SignInStore.
+type signInStore struct {
+	configurationStore config.Store
+	database           db.Database
+}
+
+func (self *signInStore) WhileLocked(ctx context.Context, provider string, work func(context.Context) error) error {
+	// A turn's context may have no deadline, and an instance stuck holding
+	// the lock should cost the others a failed request, not a hung one.
+	waitContext, cancel := context.WithTimeout(ctx, signInLockWait)
+	defer cancel()
+	release, err := self.database.LockSession(waitContext, db.LockKey("llm-sign-in:"+provider))
+	if err != nil {
+		return err
+	}
+	defer release()
+	return work(ctx)
+}
+
+func (self *signInStore) LoadRefreshToken(_ context.Context, provider string) (string, error) {
+	// The copy in memory is as old as the last time the configuration was
+	// polled, which is what the lock is there to get past.
+	if err := self.configurationStore.Reload(); err != nil {
+		return "", err
+	}
+	declared := self.configurationStore.Current().Agent.Provider(provider)
+	if declared == nil {
+		return "", nil
+	}
+	return declared.RefreshToken, nil
+}
+
+func (self *signInStore) LoadAccessToken(ctx context.Context, provider string) (*llm.SignInAccessToken, error) {
+	var stored *db.AgentProviderAccessToken
+	err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		stored, err = tx.GetAgentProviderAccessToken(provider)
+		return err
+	})
+	if errors.Is(err, db.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &llm.SignInAccessToken{AccessToken: stored.AccessToken, ForRefreshToken: stored.ForRefreshToken, ExpiresAt: stored.ExpiresAt}, nil
+}
+
+func (self *signInStore) Save(ctx context.Context, provider, refreshToken string, accessToken *llm.SignInAccessToken) error {
+	// Unchanged is the common case where the service does not rotate, and a
+	// write wakes every other instance to reload the configuration.
+	if declared := self.configurationStore.Current().Agent.Provider(provider); declared == nil || declared.RefreshToken != refreshToken {
+		err := self.configurationStore.Update(func(configuration *config.Configuration) error {
 			for index := range configuration.Agent.Providers {
 				if configuration.Agent.Providers[index].Name == provider {
 					configuration.Agent.Providers[index].RefreshToken = refreshToken
@@ -115,18 +185,16 @@ func (self *server) keepSignIns(registry *llm.Registry) {
 			return nil
 		})
 		if err != nil {
-			log.Warningf("the %s provider was given a new refresh token and it could not be kept; it will need signing in again after a restart: %s", provider, err)
-			return
+			return err
 		}
 		log.Noticef("kept the new refresh token of the %s provider", provider)
+	}
+	return self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		return tx.PutAgentProviderAccessToken(&db.AgentProviderAccessToken{
+			ProviderName: provider, AccessToken: accessToken.AccessToken,
+			ForRefreshToken: accessToken.ForRefreshToken, ExpiresAt: accessToken.ExpiresAt,
+		})
 	})
-	self.onClose(self.store.Subscribe(func(configuration *config.Configuration) {
-		for _, provider := range configuration.Agent.Providers {
-			if provider.Kind == config.AgentProviderKindCodex {
-				registry.AdoptRefreshToken(provider.Name, provider.RefreshToken)
-			}
-		}
-	}))
 }
 
 // keepPlanUsage writes down what each plan says of its allowance, and hands

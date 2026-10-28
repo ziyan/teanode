@@ -2,34 +2,32 @@ package agent
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/security"
 )
 
 // A restart can end a turn a person is waiting on: a deploy cancels the
 // runs in flight (Stop), and the conversation is left ending on their
 // message or on a tool's result, with no answer, until they type "try
-// again". At the first look after a start, such a conversation is carried
-// on by a turn the agent starts for itself.
+// again". Such a conversation is carried on by a turn the agent starts for
+// itself, on whichever instance claims the cut turn first: the one that
+// restarted, or another that is still running.
 
 const (
 	// resumeWindow is how far back a turn may have been cut short and
 	// still be carried on. Beyond it the person has long since asked
 	// again or stopped waiting, and an answer out of the blue would be
-	// noise. It is also how long after a start the look may still run.
+	// noise.
 	resumeWindow = 15 * time.Minute
 
 	// resumeMostPerAgent is how many conversations one agent carries on
-	// at a start, newest first: a restart cuts a few turns, never dozens.
+	// in one look: a restart cuts a few turns, never dozens.
 	resumeMostPerAgent = 3
-
-	// resumeConversations is how many of an agent's newest conversations
-	// are looked at. The ones recent enough to have been cut are the
-	// first few.
-	resumeConversations = 50
 
 	// resumeTailMessages is how many of a conversation's last messages
 	// are read to find the message the turn opened with.
@@ -55,106 +53,160 @@ const resumeMessage = models.RestartResumeMarker + " The server restarted while 
 	"Carry on from where you were, using what the transcript above already shows. Do not repeat a tool call whose result is already there. " +
 	"A call you made with no result shown may or may not have run: look before you repeat anything that changes something. When you have what you need, answer the person's last message."
 
-// resumeCutTurnsOnce looks, once per start, at the conversations the
-// restart cut short. It waits for the way to act as a person, which the
-// API sets after the worker starts, and gives up when the window since the
-// start has passed.
+// resumeCutTurnsOnce carries on the turns that were cut short: those an
+// instance stopped with, this one or another, and those whose instance went
+// away without saying so (turn_record.go). Each cut turn is claimed by one
+// instance, so a turn is carried on once however many instances look.
 func (self *Agent) resumeCutTurnsOnce(ctx context.Context) {
-	if self.startedAt.IsZero() || self.hasResumedCutTurns.Load() || self.operations == nil {
-		return
-	}
-	if !self.hasResumedCutTurns.CompareAndSwap(false, true) {
-		return
-	}
-	if time.Since(self.startedAt) > resumeWindow {
-		return
-	}
-	self.resumeCutTurns(ctx, self.startedAt)
-}
-
-// resumeCutTurns starts, for each agent, a turn in each of its few newest
-// conversations that a start at startedAt found cut short, and returns once
-// they are started rather than finished.
-func (self *Agent) resumeCutTurns(ctx context.Context, startedAt time.Time) {
 	configuration := self.settings.Configuration()
-	if self.settings.Registry == nil || self.operations == nil || !FeatureAllowed(configuration, "ask") {
+	if self.settings.Database == nil || self.settings.Registry == nil || self.operations == nil || !FeatureAllowed(configuration, "ask") {
 		return
 	}
-	var agents []*models.Agent
+	now := time.Now()
+	var claimed []*models.AgentTurn
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		agents, err = tx.ListAgents(nil)
+		claimed, err = tx.ClaimCutAgentTurns(now.Add(-turnStaleAfter), resumeClaimMost)
 		return err
 	}); err != nil {
-		log.Warningf("cannot list the agents whose turns a restart cut short: %s", err)
+		log.Warningf("cannot read the turns a restart cut short: %s", err)
 		return
 	}
-	for _, agent := range agents {
-		if !agent.Active() {
+	// A conversation once, as of the last of its turns that was cut, and
+	// the newest first, for the few of each agent that are carried on.
+	var cutTurns []*models.AgentTurn
+	cutAtByConversation := map[string]time.Time{}
+	for _, turn := range claimed {
+		cutAt := turnCutMoment(turn, now)
+		if now.Sub(cutAt) > resumeWindow {
 			continue
 		}
-		self.resumeCutTurnsOf(ctx, agent, startedAt)
+		previous, isKept := cutAtByConversation[turn.ConversationID]
+		if !isKept {
+			cutTurns = append(cutTurns, turn)
+		}
+		if !isKept || cutAt.After(previous) {
+			cutAtByConversation[turn.ConversationID] = cutAt
+		}
+	}
+	sort.SliceStable(cutTurns, func(first, second int) bool {
+		firstCutAt := cutAtByConversation[cutTurns[first].ConversationID]
+		secondCutAt := cutAtByConversation[cutTurns[second].ConversationID]
+		if !firstCutAt.Equal(secondCutAt) {
+			return firstCutAt.After(secondCutAt)
+		}
+		return cutTurns[first].StartedAt.After(cutTurns[second].StartedAt)
+	})
+	resumedCountByAgent := map[string]int{}
+	for _, turn := range cutTurns {
+		self.resumeCutTurn(ctx, turn.ConversationID, cutAtByConversation[turn.ConversationID], resumedCountByAgent)
 	}
 }
 
-func (self *Agent) resumeCutTurnsOf(ctx context.Context, agent *models.Agent, startedAt time.Time) {
+// resumeClaimMost is how many cut turns one look claims: a restart cuts a
+// few turns, never dozens, and what is left is claimed by the next look.
+const resumeClaimMost = 20
+
+// turnCutMoment is when a turn was cut: when its instance said so, or, for
+// one whose instance went away without saying so, the latest it can have
+// been running, but not later than now.
+func turnCutMoment(turn *models.AgentTurn, now time.Time) time.Time {
+	if turn.CutAt != nil {
+		return *turn.CutAt
+	}
+	cutAt := turn.HeartbeatAt.Add(turnStaleAfter)
+	if cutAt.After(now) {
+		return now
+	}
+	return cutAt
+}
+
+// resumeCutTurn starts the turn that carries on one conversation's cut turn,
+// unless a turn already runs in it, or it does not end in a turn that was
+// cut off before it answered. It returns once the turn is started rather
+// than finished.
+func (self *Agent) resumeCutTurn(ctx context.Context, conversationId string, cutAt time.Time, resumedCountByAgent map[string]int) {
 	configuration := self.settings.Configuration()
+	runId := security.NewULID()
+	now := time.Now()
+	var agent *models.Agent
 	var owner *models.User
-	var cut []*models.AgentConversation
+	var conversation *models.AgentConversation
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		// Two instances that claimed two cut turns of one conversation
+		// take turns here, and the second finds the first one's turn.
+		isLocked, err := tx.TryAdvisoryLock(db.LockKey("agent:resume:" + conversationId))
+		if err != nil || !isLocked {
+			return err
+		}
+		live, err := tx.ListLiveAgentTurns(conversationId, now.Add(-turnStaleAfter))
+		if err != nil || len(live) > 0 {
+			return err
+		}
+		if conversation, err = tx.GetAgentConversation(conversationId); err != nil || conversation == nil {
+			return err
+		}
+		if conversation.ArchivedAt != nil || conversation.Kind != models.AgentConversationMain && conversation.Kind != models.AgentConversationNamed {
+			return nil
+		}
+		if agent, err = tx.GetAgent(conversation.AgentID); err != nil || agent == nil || !agent.Active() {
+			agent = nil
+			return err
+		}
+		if resumedCountByAgent[agent.ID] >= resumeMostPerAgent {
+			agent = nil
+			return nil
+		}
 		if owner, err = tx.GetUser(agent.UserID); err != nil || owner == nil {
 			return err
 		}
 		// Out of budget, the turn would only fail and write a note about
 		// it: nothing is better than that.
-		if err := RequireBudget(tx, configuration, agent, owner, startedAt); err != nil {
+		if err := RequireBudget(tx, configuration, agent, owner, now); err != nil {
 			owner = nil
 			return nil
 		}
-		conversations, err := tx.ListAgentConversations(agent.ID, []models.AgentConversationKind{models.AgentConversationMain, models.AgentConversationNamed}, &db.Options{Limit: resumeConversations})
-		if err != nil {
+		isCut, err := isTurnCutShort(tx, conversation, cutAt)
+		if err != nil || !isCut {
+			owner = nil
 			return err
 		}
-		for _, conversation := range conversations {
-			// Newest first, so the first one too old is the end of them.
-			if conversation.LastAt.Before(startedAt.Add(-resumeWindow)) {
-				break
-			}
-			if conversation.ArchivedAt != nil || self.isTurnRunning(conversation.ID) {
-				continue
-			}
-			isCut, err := isTurnCutShort(tx, conversation, startedAt)
-			if err != nil {
-				return err
-			}
-			if isCut {
-				cut = append(cut, conversation)
-			}
-			if len(cut) == resumeMostPerAgent {
-				break
-			}
-		}
-		return nil
+		// Recorded before it is started, in the same transaction, so that
+		// the next instance to look finds it running.
+		return tx.PutAgentTurn(&models.AgentTurn{
+			RunID: runId, ConversationID: conversationId, Instance: self.settings.Instance,
+			StartedAt: now, HeartbeatAt: now,
+		})
 	}); err != nil {
-		log.Warningf("cannot look for the turns a restart cut short for agent %q: %s", agent.ID, err)
+		log.Warningf("cannot look at the turn a restart cut short in conversation %q: %s", conversationId, err)
 		return
 	}
-	if owner == nil || len(cut) == 0 {
+	if agent == nil || owner == nil {
 		return
 	}
+	resumedCountByAgent[agent.ID]++
 	operations, err := self.operations(ctx, owner)
 	if err != nil {
 		log.Warningf("cannot act as %q to carry on a turn a restart cut short: %s", owner.Username, err)
+		self.forgetTurnRecord(runId)
 		return
 	}
-	for _, conversation := range cut {
-		if _, err := self.Ask(&AskSettings{
-			Agent: agent, Owner: owner, Operations: operations, Conversation: conversation,
-			Message: resumeMessage, Surface: resumeSurface,
-		}); err != nil {
-			log.Warningf("cannot carry on the turn a restart cut short in conversation %q: %s", conversation.ID, err)
-			continue
-		}
-		log.Noticef("carrying on the turn a restart cut short in conversation %q", conversation.ID)
+	if _, err := self.Ask(&AskSettings{
+		Agent: agent, Owner: owner, Operations: operations, Conversation: conversation,
+		Message: resumeMessage, Surface: resumeSurface, RunID: runId,
+	}); err != nil {
+		log.Warningf("cannot carry on the turn a restart cut short in conversation %q: %s", conversationId, err)
+		self.forgetTurnRecord(runId)
+		return
+	}
+	log.Noticef("carrying on the turn a restart cut short in conversation %q", conversationId)
+}
+
+// forgetTurnRecord forgets a turn recorded for a run that was never started.
+func (self *Agent) forgetTurnRecord(runId string) {
+	if err := self.settings.Database.TransactionContext(context.WithoutCancel(self.ctx), func(tx db.Transaction) error {
+		return tx.DeleteAgentTurn(runId)
+	}); err != nil {
+		log.Warningf("cannot forget the turn %q: %s", runId, err)
 	}
 }
 

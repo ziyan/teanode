@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -28,6 +29,15 @@ const visitRepairDays = 90
 // one person at a time, each holding that person's location lock so that a
 // report arriving meanwhile waits for it.
 func repairOverlappedVisits(ctx context.Context, database db.Database) {
+	if _, err := database.WhileLocked(ctx, db.LockKey("visit:repair"), func(ctx context.Context) error {
+		repairAllOverlappedVisits(ctx, database)
+		return nil
+	}); err != nil && ctx.Err() == nil {
+		log.Warningf("failed to take the lock for putting visits in order: %s", err)
+	}
+}
+
+func repairAllOverlappedVisits(ctx context.Context, database db.Database) {
 	var ranges []db.VisitRange
 	if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		ranges, err = tx.ListOverlappedVisitRanges(time.Now().AddDate(0, 0, -visitRepairDays))
@@ -43,17 +53,36 @@ func repairOverlappedVisits(ctx context.Context, database db.Database) {
 		if ctx.Err() != nil {
 			return
 		}
+		isRepaired := false
 		if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
+			isRepaired = false
 			if err := tx.LockLocation(visitRange.UserID); err != nil {
 				return err
 			}
-			if err := tx.NormalizePlaceVisits(visitRange.UserID, visitRange.From, visitRange.Until); err != nil {
+			// A report that arrived while this waited for the lock may have put
+			// the visits in order already, so look again and work on what is
+			// left.
+			currentRanges, err := tx.ListOverlappedVisitRanges(time.Now().AddDate(0, 0, -visitRepairDays))
+			if err != nil {
 				return err
 			}
+			index := slices.IndexFunc(currentRanges, func(currentRange db.VisitRange) bool {
+				return currentRange.UserID == visitRange.UserID
+			})
+			if index < 0 {
+				return nil
+			}
+			if err := tx.NormalizePlaceVisits(visitRange.UserID, currentRanges[index].From, currentRanges[index].Until); err != nil {
+				return err
+			}
+			isRepaired = true
 			// The trips between the visits put in order are built again.
-			return rebuild.Around(tx, visitRange.UserID, visitRange.From, visitRange.Until)
+			return rebuild.Around(tx, visitRange.UserID, currentRanges[index].From, currentRanges[index].Until)
 		}); err != nil {
 			log.Warningf("failed to put in order the visits of user %s from %s to %s: %s", visitRange.UserID, visitRange.From, visitRange.Until, err)
+			continue
+		}
+		if !isRepaired {
 			continue
 		}
 		log.Noticef("put in order the visits of user %s from %s to %s", visitRange.UserID, visitRange.From, visitRange.Until)

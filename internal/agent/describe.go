@@ -80,6 +80,21 @@ func (self *Agent) describeDue(ctx context.Context, now time.Time) {
 		if ctx.Err() != nil {
 			return
 		}
+		// Claimed by the conversation, in the database: every instance lists
+		// the same quiet conversations, and each would pay a model call to
+		// name the same one. A call that fails is not made again for as long
+		// as a conversation rests before it is described.
+		var isClaimed bool
+		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			isClaimed, err = tx.TakeThrottle("describe:"+conversation.ID, describeQuiet, now)
+			return err
+		}); err != nil {
+			log.Warningf("cannot claim conversation %q to describe: %s", conversation.ID, err)
+			continue
+		}
+		if !isClaimed {
+			continue
+		}
 		if _, err := self.describeConversation(ctx, conversation); err != nil {
 			log.Warningf("cannot describe conversation %q: %s", conversation.ID, err)
 		}

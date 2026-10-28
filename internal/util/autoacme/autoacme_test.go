@@ -2,6 +2,7 @@ package autoacme
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"testing"
 
@@ -157,9 +158,8 @@ func TestGetCertificateServesALPNChallenge(t *testing.T) {
 		_ = instance.Close()
 	}()
 
-	challengeCertificate := tls.Certificate{Certificate: [][]byte{{9, 9, 9}}}
 	solver := instance.alpnSolver
-	if err := solver.Present(t.Context(), &fakeACMEClient{certificate: challengeCertificate}, challengesFor("mail.example.com")); err != nil {
+	if err := solver.Present(t.Context(), &fakeACMEClient{}, challengesFor("mail.example.com")); err != nil {
 		t.Fatalf("failed to present: %s", err)
 	}
 
@@ -170,8 +170,9 @@ func TestGetCertificateServesALPNChallenge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get the challenge certificate: %s", err)
 	}
-	if len(certificate.Certificate) != 1 || certificate.Certificate[0][0] != 9 {
-		t.Error("the handshake did not receive the challenge certificate")
+	leaf, err := x509.ParseCertificate(certificate.Certificate[0])
+	if err != nil || leaf.VerifyHostname("mail.example.com") != nil {
+		t.Errorf("the handshake did not receive the challenge certificate: %v", err)
 	}
 
 	// An ordinary client on the same name must not get the challenge

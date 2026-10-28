@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/faces"
@@ -410,4 +411,41 @@ func TestAFacePictureIsASquareAroundTheFaceWithMargin(test *testing.T) {
 	if decoded, err = jpeg.Decode(bytes.NewReader(encoded)); err != nil || decoded.Bounds().Dx() != 60 || decoded.Bounds().Dy() != 60 {
 		test.Fatalf("%v %v", decoded.Bounds(), err)
 	}
+}
+
+// Two instances finding the faces of the photos that waited do not both read
+// the one photo: the one that is reading it holds a claim on it, and the other
+// goes on to the next.
+func TestTwoInstancesDoNotReadTheFacesOfOnePhotoTwice(test *testing.T) {
+	fixture := newFixture(test)
+	fixture.store.SetFaceReader(nil, errors.New("faces are unavailable: the program was not found"))
+	fixture.sendPicture("waiting photo", 0)
+	fixture.process()
+	if fixture.facesFoundAt("waiting photo") != "never" {
+		test.Fatal("the photo's faces were found without a program")
+	}
+
+	other := photo.New(fixture.database, fixture.files, func() *config.Configuration { return fixture.configuration })
+	other.SetWorkDirectory(fixture.workDirectory)
+
+	release := make(chan struct{})
+	holding := newGateFaceReader()
+	holding.hold = func(int) <-chan struct{} { return release }
+	fixture.store.SetFaceReader(holding, nil)
+	reading := newGateFaceReader()
+	other.SetFaceReader(reading, nil)
+
+	finished := make(chan error, 1)
+	go func() { finished <- fixture.store.Process(test.Context(), 4) }()
+	waitForReading(test, holding)
+
+	// The other instance's pass finds the photo claimed and reads nothing.
+	if err := other.Process(test.Context(), 4); err != nil {
+		test.Fatal(err)
+	}
+	if reading.callCount != 0 {
+		test.Errorf("the other instance read %d photos another was reading", reading.callCount)
+	}
+	close(release)
+	waitForPass(test, finished)
 }

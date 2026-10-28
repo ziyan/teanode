@@ -107,3 +107,46 @@ func TestASignInWithACodeThatCannotFinishSaysSo(test *testing.T) {
 		test.Errorf("an expired code answered %v", err)
 	}
 }
+
+// A sign-in kept as a record is rebuilt on another instance and waits on the
+// same code at the same service.
+func TestASignInIsResumedFromItsRecord(test *testing.T) {
+	test.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		switch request.URL.Path {
+		case "/api/accounts/deviceauth/usercode":
+			_, _ = io.WriteString(writer, `{"device_auth_id":"an-id","user_code":"ABCD-1234","interval":"3"}`)
+		case "/api/accounts/deviceauth/token":
+			if !strings.Contains(string(body), `"device_auth_id":"an-id"`) || !strings.Contains(string(body), `"user_code":"ABCD-1234"`) {
+				test.Errorf("it polled with %s", body)
+			}
+			_, _ = io.WriteString(writer, `{"authorization_code":"a-code","code_verifier":"a-verifier"}`)
+		case "/oauth/token":
+			_, _ = io.WriteString(writer, `{"refresh_token":"a-refresh-token"}`)
+		}
+	}))
+	defer server.Close()
+
+	endpoints := &DeviceSignInEndpoints{Issuer: server.URL, ClientId: "a-client", TokenUrl: server.URL + "/oauth/token", Client: server.Client()}
+	started, err := BeginDeviceSignInAt(context.Background(), endpoints)
+	if err != nil {
+		test.Fatal(err)
+	}
+	resumed, err := ResumeDeviceSignIn(endpoints, started.Record())
+	if err != nil {
+		test.Fatal(err)
+	}
+	if resumed.UserCode != started.UserCode || resumed.VerificationAddress != started.VerificationAddress ||
+		!resumed.ExpiresAt.Equal(started.ExpiresAt) || resumed.interval != 3*time.Second {
+		test.Errorf("it resumed as %+v from %+v", resumed, started)
+	}
+	result, err := resumed.Wait(context.Background())
+	if err != nil || result.RefreshToken != "a-refresh-token" {
+		test.Errorf("it finished as %+v, %v", result, err)
+	}
+	if _, err := ResumeDeviceSignIn(endpoints, DeviceSignInRecord{}); err == nil {
+		test.Error("a record with no code was resumed")
+	}
+}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -65,18 +66,46 @@ type AgentProviderSignInView struct {
 // has not been entered yet: short enough to sit inside a request.
 const finishWait = 25 * time.Second
 
-// providerSignIn is a sign-in waiting for its code, held in the memory of
-// the instance that began it: it lives fifteen minutes and holds nothing
-// worth keeping.
-type providerSignIn struct {
-	provider string
-	started  *llm.DeviceSignIn
+// deviceSignInEndpointsFor is where a provider kind signs in. A variable so
+// that a test can sign in at a service of its own.
+var deviceSignInEndpointsFor = llm.DeviceSignInEndpointsFor
+
+// finishing holds the sign-ins this instance is waiting on, so that a second
+// finish of the same one waits for the first rather than redeeming its code
+// again: a code is redeemed once.
+var finishing = struct {
+	sync.Mutex
+	byID map[string]*finishingSignIn
+}{byID: map[string]*finishingSignIn{}}
+
+type finishingSignIn struct {
+	mutex sync.Mutex
+
+	// callerCount is how many finishes hold or wait for the mutex, so that
+	// the entry goes when the last of them is done.
+	callerCount int
 }
 
-var providerSignIns = struct {
-	sync.Mutex
-	waiting map[string]*providerSignIn
-}{waiting: map[string]*providerSignIn{}}
+func lockFinishing(signInId string) func() {
+	finishing.Lock()
+	entry := finishing.byID[signInId]
+	if entry == nil {
+		entry = &finishingSignIn{}
+		finishing.byID[signInId] = entry
+	}
+	entry.callerCount++
+	finishing.Unlock()
+	entry.mutex.Lock()
+	return func() {
+		entry.mutex.Unlock()
+		finishing.Lock()
+		entry.callerCount--
+		if entry.callerCount == 0 {
+			delete(finishing.byID, signInId)
+		}
+		finishing.Unlock()
+	}
+}
 
 func (self *graph) BeginAgentProviderSignIn(ctx context.Context, arguments BeginAgentProviderSignInArguments) (*AgentProviderSignInView, error) {
 	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
@@ -89,7 +118,11 @@ func (self *graph) BeginAgentProviderSignIn(ctx context.Context, arguments Begin
 	if declared := self.config.Current().Agent.Provider(provider); declared != nil && declared.Kind != config.AgentProviderKindCodex {
 		return nil, fmt.Errorf("the provider %q takes a key, not a sign-in", provider)
 	}
-	started, err := llm.BeginDeviceSignIn(ctx, config.AgentProviderKindCodex)
+	endpoints, err := deviceSignInEndpointsFor(config.AgentProviderKindCodex)
+	if err != nil {
+		return nil, err
+	}
+	started, err := llm.BeginDeviceSignInAt(ctx, endpoints)
 	if err != nil {
 		return nil, err
 	}
@@ -98,14 +131,18 @@ func (self *graph) BeginAgentProviderSignIn(ctx context.Context, arguments Begin
 		return nil, err
 	}
 	signInId := hex.EncodeToString(identifier)
-	providerSignIns.Lock()
-	for id, waiting := range providerSignIns.waiting {
-		if time.Now().After(waiting.started.ExpiresAt) {
-			delete(providerSignIns.waiting, id)
-		}
+	// Kept in the database rather than in this process, because the page
+	// asks again on whichever instance its next request reaches.
+	record := started.Record()
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		return tx.CreateAgentProviderSignIn(&db.AgentProviderSignIn{
+			ID: signInId, ProviderName: provider, UserCode: record.UserCode,
+			VerificationAddress: record.VerificationAddress, DeviceAuthID: record.DeviceAuthID,
+			PollInterval: record.Interval, ExpiresAt: record.ExpiresAt,
+		}, time.Now())
+	}); err != nil {
+		return nil, err
 	}
-	providerSignIns.waiting[signInId] = &providerSignIn{provider: provider, started: started}
-	providerSignIns.Unlock()
 	return &AgentProviderSignInView{
 		SignInID: signInId, Provider: provider, UserCode: started.UserCode,
 		VerificationAddress: started.VerificationAddress, ExpiresAt: started.ExpiresAt,
@@ -117,34 +154,55 @@ func (self *graph) FinishAgentProviderSignIn(ctx context.Context, arguments Fini
 		return nil, err
 	}
 	signInId := strings.TrimSpace(arguments.SignInID)
-	providerSignIns.Lock()
-	waiting := providerSignIns.waiting[signInId]
-	providerSignIns.Unlock()
-	if waiting == nil {
-		return nil, errors.New("that sign-in is not waiting here any more; start it again")
+	unlock := lockFinishing(signInId)
+	defer unlock()
+
+	var waiting *db.AgentProviderSignIn
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		waiting, err = tx.GetAgentProviderSignIn(signInId)
+		return err
+	}); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return nil, errors.New("that sign-in is not waiting any more; start it again")
+		}
+		return nil, err
+	}
+	endpoints, err := deviceSignInEndpointsFor(config.AgentProviderKindCodex)
+	if err != nil {
+		return nil, err
+	}
+	started, err := llm.ResumeDeviceSignIn(endpoints, llm.DeviceSignInRecord{
+		UserCode: waiting.UserCode, VerificationAddress: waiting.VerificationAddress,
+		DeviceAuthID: waiting.DeviceAuthID, Interval: waiting.PollInterval, ExpiresAt: waiting.ExpiresAt,
+	})
+	if err != nil {
+		return nil, err
 	}
 	view := &AgentProviderSignInView{
-		SignInID: signInId, Provider: waiting.provider, UserCode: waiting.started.UserCode,
-		VerificationAddress: waiting.started.VerificationAddress, ExpiresAt: waiting.started.ExpiresAt,
+		SignInID: signInId, Provider: waiting.ProviderName, UserCode: started.UserCode,
+		VerificationAddress: started.VerificationAddress, ExpiresAt: started.ExpiresAt,
 	}
 	waitContext, cancel := context.WithTimeout(ctx, finishWait)
 	defer cancel()
-	result, err := waiting.started.Wait(waitContext)
+	result, err := started.Wait(waitContext)
 	if errors.Is(err, llm.ErrSignInPending) {
 		return view, nil
 	}
-	providerSignIns.Lock()
-	delete(providerSignIns.waiting, signInId)
-	providerSignIns.Unlock()
+	// Finished, or expired, or refused: either way it is not waiting any more.
+	if deleteErr := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		return tx.DeleteAgentProviderSignIn(signInId)
+	}); deleteErr != nil {
+		log.Warningf("the finished sign-in of the %s provider could not be forgotten: %s", waiting.ProviderName, deleteErr)
+	}
 	if err != nil {
 		return nil, err
 	}
 	if err := self.config.Update(func(configuration *config.Configuration) error {
-		return keepSignIn(configuration, waiting.provider, result)
+		return keepSignIn(configuration, waiting.ProviderName, result)
 	}); err != nil {
 		return nil, err
 	}
-	log.Noticef("%s signed the %s provider in (plan %q)", api.ContextAuthenticatedUsername(ctx), waiting.provider, result.Plan)
+	log.Noticef("%s signed the %s provider in (plan %q)", api.ContextAuthenticatedUsername(ctx), waiting.ProviderName, result.Plan)
 	view.IsSignedIn, view.Account, view.Plan = true, result.Account, result.Plan
 	return view, nil
 }

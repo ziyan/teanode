@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS "agent_computer_attachment";
+DROP TABLE IF EXISTS "location_visit_notice";
+DROP TABLE IF EXISTS "agent_provider_access_token";
+DROP TABLE IF EXISTS "agent_provider_sign_in";
+DROP TABLE IF EXISTS "mcp_held_result";
+DROP TABLE IF EXISTS "acme_challenge";
+DROP TABLE IF EXISTS "agent_turn";
+DROP TABLE IF EXISTS "rate_limit_bucket";
+DROP TABLE IF EXISTS "throttle";

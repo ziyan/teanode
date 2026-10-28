@@ -1,17 +1,22 @@
 package mcpserve
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
+	"github.com/op/go-logging"
+
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/mcp"
 )
+
+var log = logging.MustGetLogger("mcpserve")
 
 // ResultCharacters is how much of a tool's text one answer carries, in
 // bytes. Past it the rest is held here and read with result_more.
@@ -60,13 +65,13 @@ func WrapUntrusted(text string) string {
 }
 
 // ResultStore holds the long results of tool calls so that the rest of one
-// can be read a page at a time. One is shared by every request a process
-// answers; it is memory only, and a restart forgets what it held.
+// can be read a page at a time. They are rows of mcp_held_result, not memory,
+// because the call that reads on may reach another instance of the server than
+// the one that held the result, or the same one after a restart. Every store
+// on one database sees the same results.
 type ResultStore struct {
-	mutex      sync.Mutex
-	held       map[string]*heldResult
-	totalBytes int
-	now        func() time.Time
+	database db.Database
+	now      func() time.Time
 }
 
 // heldResult is one tool's whole text, whose it is, and what kind of
@@ -77,98 +82,64 @@ type heldResult struct {
 	// isUntrusted is text from outside, which every page wraps.
 	isUntrusted bool
 	// isError is a tool's failure, which every page is marked as.
-	isError  bool
-	storedAt time.Time
+	isError bool
 }
 
-// NewResultStore is an empty store.
-func NewResultStore() *ResultStore {
-	return &ResultStore{held: map[string]*heldResult{}, now: time.Now}
+// NewResultStore is a store that holds results in database.
+func NewResultStore(database db.Database) *ResultStore {
+	return &ResultStore{database: database, now: time.Now}
 }
 
 // keep holds a result for its holder and returns the id it is read back by,
-// or "" when it is larger than one caller may hold.
-func (self *ResultStore) keep(result *heldResult) string {
+// or "" when it is larger than one caller may hold, there is no store, or the
+// database could not hold it. A text the database cannot store is changed
+// first, in the held result as well: a NUL byte becomes a space and invalid
+// UTF-8 the replacement character, so the offsets of the pages are those of
+// the text that is stored.
+func (self *ResultStore) keep(ctx context.Context, result *heldResult) string {
+	if self == nil || self.database == nil {
+		return ""
+	}
+	result.text = strings.ToValidUTF8(strings.ReplaceAll(result.text, "\x00", " "), "\uFFFD")
 	if len(result.text) > heldBytesPerHolder {
 		return ""
 	}
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	self.forgetExpired()
-	for {
-		heldCount, heldByteCount := self.heldBy(result.holder)
-		if heldCount < resultsPerHolder && heldByteCount+len(result.text) <= heldBytesPerHolder {
-			break
-		}
-		self.forgetOldest(result.holder)
-	}
-	for self.totalBytes+len(result.text) > heldBytes && len(self.held) > 0 {
-		self.forgetOldest("")
-	}
 	id := newResultId()
-	result.storedAt = self.now()
-	self.held[id] = result
-	self.totalBytes += len(result.text)
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		return tx.KeepMcpHeldResult(&db.McpHeldResult{
+			ID: id, Holder: result.holder, ResultText: result.text,
+			IsUntrusted: result.isUntrusted, IsError: result.isError,
+		}, db.McpHeldResultLimits{
+			HeldFor:              resultHeldFor,
+			ResultCountPerHolder: resultsPerHolder,
+			ByteCountPerHolder:   heldBytesPerHolder,
+			ByteCount:            heldBytes,
+		}, self.now())
+	}); err != nil {
+		log.Warningf("cannot hold a long tool result for result_more: %s", err)
+		return ""
+	}
 	return id
 }
 
 // find is the result held under id for holder. Another caller's id is not
-// found, the same as one that never existed.
-func (self *ResultStore) find(holder, id string) (*heldResult, bool) {
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	self.forgetExpired()
-	result, ok := self.held[id]
-	if !ok || result.holder != holder {
-		return nil, false
+// found, the same as one that never existed. It returns an error only when
+// the database could not be asked.
+func (self *ResultStore) find(ctx context.Context, holder, id string) (*heldResult, bool, error) {
+	if self == nil || self.database == nil {
+		return nil, false, nil
 	}
-	return result, true
-}
-
-func (self *ResultStore) forgetExpired() {
-	cutoff := self.now().Add(-resultHeldFor)
-	for id, result := range self.held {
-		if result.storedAt.Before(cutoff) {
-			self.forget(id)
-		}
+	var found *db.McpHeldResult
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		found, err = tx.FindMcpHeldResult(holder, id, self.now().Add(-resultHeldFor))
+		return err
+	}); err != nil {
+		return nil, false, err
 	}
-}
-
-// heldBy is how many results holder has held, and how many bytes they are.
-func (self *ResultStore) heldBy(holder string) (int, int) {
-	heldCount, heldByteCount := 0, 0
-	for _, result := range self.held {
-		if result.holder == holder {
-			heldCount++
-			heldByteCount += len(result.text)
-		}
+	if found == nil {
+		return nil, false, nil
 	}
-	return heldCount, heldByteCount
-}
-
-// forgetOldest forgets holder's oldest result, or the oldest of anybody's
-// when holder is empty.
-func (self *ResultStore) forgetOldest(holder string) {
-	oldestId := ""
-	var oldest *heldResult
-	for id, result := range self.held {
-		if holder != "" && result.holder != holder {
-			continue
-		}
-		if oldest == nil || result.storedAt.Before(oldest.storedAt) {
-			oldestId, oldest = id, result
-		}
-	}
-	if oldest != nil {
-		self.forget(oldestId)
-	}
-}
-
-func (self *ResultStore) forget(id string) {
-	if result, ok := self.held[id]; ok {
-		self.totalBytes -= len(result.text)
-		delete(self.held, id)
-	}
+	return &heldResult{holder: found.Holder, text: found.ResultText, isUntrusted: found.IsUntrusted, isError: found.IsError}, true, nil
 }
 
 // newResultId is an id nobody can guess, so that one caller cannot read
@@ -229,7 +200,7 @@ func (self *Server) page(id string, result *heldResult, offset int) string {
 
 // paged is a tool's answer as one response carries it: whole when it fits,
 // otherwise its first page, with the rest held for result_more.
-func (self *Server) paged(answer Answer, isError bool) string {
+func (self *Server) paged(ctx context.Context, answer Answer, isError bool) string {
 	result := &heldResult{holder: self.holder, text: answer.Text, isUntrusted: answer.IsUntrusted, isError: isError}
 	whole := answer.Text
 	if answer.IsUntrusted {
@@ -238,7 +209,7 @@ func (self *Server) paged(answer Answer, isError bool) string {
 	if len(whole) <= self.resultCharacters {
 		return whole
 	}
-	return self.page(self.results.keep(result), result, 0)
+	return self.page(self.results.keep(ctx, result), result, 0)
 }
 
 // resultMoreTool is how result_more is listed.
@@ -264,7 +235,7 @@ func resultMoreTool() mcp.Tool {
 // resultMore reads on in a held result, and says whether the result was a
 // failure: a page of one is marked as the first page was. A call that
 // cannot be answered is a failure of its own.
-func (self *Server) resultMore(arguments []byte) (string, bool) {
+func (self *Server) resultMore(ctx context.Context, arguments []byte) (string, bool) {
 	var parameters struct {
 		ResultID string `json:"result_id"`
 		Offset   int    `json:"offset"`
@@ -273,10 +244,14 @@ func (self *Server) resultMore(arguments []byte) (string, bool) {
 		return fmt.Sprintf("%s takes result_id and offset", resultMoreName), true
 	}
 	resultId := strings.TrimSpace(parameters.ResultID)
-	result, ok := self.results.find(self.holder, resultId)
+	result, ok, err := self.results.find(ctx, self.holder, resultId)
+	if err != nil {
+		log.Warningf("cannot read a held tool result for result_more: %s", err)
+		return fmt.Sprintf("cannot read result %q just now: try the call again", resultId), true
+	}
 	if !ok {
 		return fmt.Sprintf("no result %q is held: results are held for 30 minutes, a few at a time, "+
-			"and not across a restart; make the original call again", resultId), true
+			"make the original call again", resultId), true
 	}
 	if parameters.Offset < 0 || parameters.Offset > len(result.text) {
 		return fmt.Sprintf("offset %d is outside the result, whose offsets run from 0 to %d; "+

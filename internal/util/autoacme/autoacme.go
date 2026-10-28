@@ -102,10 +102,37 @@ type Settings struct {
 	// senders do not.
 	Certificates []CertificateRequest
 
+	// LoadCertificate returns the certificate and private key currently kept
+	// for a request key, in PEM, empty when none is kept. It is how an
+	// instance learns that another instance has renewed: the manager calls it
+	// on every tick, before deciding whether to order, and serves a stored
+	// certificate that expires later than the one it holds. Without it the
+	// manager only knows the certificate it was started with.
+	LoadCertificate func(key string) (certificate, privateKey string, err error)
+
 	// SaveCertificate is called with each newly issued certificate, and the
 	// key of the request it satisfies, so the caller can keep it. Without it
 	// a restart obtains another one, which works but spends rate limit.
 	SaveCertificate func(key, certificate, privateKey string) error
+
+	// ChallengeStore keeps the answers to challenges where every instance can
+	// read them. Nil keeps them in this process, which is right only when a
+	// single instance runs, because the authority's request may be made to
+	// another one.
+	ChallengeStore ChallengeStore
+
+	// WhileOrdering runs work holding a lock that only one instance holds at
+	// a time, and says whether it ran: false, with nothing done, when another
+	// instance holds it. Ordering and creating the account key happen inside
+	// it, so that instances that are all due do not all order. Nil runs the
+	// work at once, which is right only when a single instance runs.
+	WhileOrdering func(ctx context.Context, work func(ctx context.Context) error) (didRun bool, err error)
+
+	// LoadAccountKey returns the account key currently kept, in PEM, empty
+	// when none is kept. It is read again under the ordering lock before a
+	// new key is generated, so that two instances starting with none do not
+	// each make one. Nil never looks again.
+	LoadAccountKey func() (string, error)
 
 	// function to get route53 zone id
 	Route53ZoneID string
@@ -174,6 +201,14 @@ type manager struct {
 	// use, and nil otherwise. The caller mounts its handler.
 	httpSolver *http01Solver
 
+	// obtain orders a certificate from the authority. It is a field so that a
+	// test can stand in for the authority.
+	obtain func(ctx context.Context, hosts []string, challenge string) (*tls.Certificate, error)
+
+	// challengeStore is where the answers to challenges are kept, shared with
+	// the other instances when the caller gave one.
+	challengeStore ChallengeStore
+
 	waitGroup sync.WaitGroup
 	periodic  periodic.Periodic
 }
@@ -196,7 +231,11 @@ func newManager(settings *Settings) (*manager, error) {
 	if len(settings.Certificates) == 0 {
 		return nil, ErrNoHosts
 	}
-	self := &manager{settings: settings}
+	self := &manager{settings: settings, challengeStore: settings.ChallengeStore}
+	if self.challengeStore == nil {
+		self.challengeStore = newMemoryChallengeStore()
+	}
+	self.obtain = self.requestAcmeCertificate
 	for _, request := range settings.Certificates {
 		if len(request.Hosts) == 0 {
 			return nil, ErrNoHosts
@@ -252,10 +291,10 @@ func (self *manager) solverFor(challenge string) (Solver, error) {
 	var solver Solver
 	switch challenge {
 	case "http-01":
-		self.httpSolver = newHttp01Solver()
+		self.httpSolver = newHttp01Solver(self.challengeStore)
 		solver = self.httpSolver
 	case "tls-alpn-01":
-		self.alpnSolver = newTlsalpn01Solver()
+		self.alpnSolver = newTlsalpn01Solver(self.challengeStore)
 		solver = self.alpnSolver
 	case "dns-01":
 		solver = newRoute53Solver(self.settings)
@@ -280,7 +319,11 @@ func (self *manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificat
 		if self.alpnSolver == nil {
 			return nil, ErrInvalidClientHello
 		}
-		certificate, ok := self.alpnSolver.certificateFor(hello.ServerName)
+		ctx := hello.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		certificate, ok := self.alpnSolver.certificateFor(ctx, hello.ServerName)
 		if !ok {
 			log.Warningf("received a tls-alpn-01 handshake for %q with no challenge outstanding", hello.ServerName)
 			return nil, ErrInvalidClientHello
@@ -383,6 +426,43 @@ func (self *manager) spinOnce(ctx context.Context) error {
 	// states themselves are only written under the lock, below.
 	states := self.certificateStates()
 
+	// Adopt what another instance has renewed before deciding anything, on
+	// every tick, so that every instance serves the renewed certificate
+	// without a restart.
+	self.adoptStoredCertificates(states)
+
+	isAnyDue := false
+	for _, state := range states {
+		if self.shouldRequestCertificate(state) {
+			isAnyDue = true
+			break
+		}
+	}
+	if !isAnyDue {
+		return nil
+	}
+
+	// Only one instance orders at a time. The others are not failing when
+	// they find it taken: they adopt what it obtains on their next tick.
+	if self.settings.WhileOrdering == nil {
+		return self.orderDueCertificates(ctx, states)
+	}
+	didRun, err := self.settings.WhileOrdering(ctx, func(ctx context.Context) error {
+		return self.orderDueCertificates(ctx, states)
+	})
+	if err == nil && !didRun {
+		log.Debugf("another instance is ordering certificates")
+	}
+	return err
+}
+
+// orderDueCertificates orders each certificate that is due. It runs holding
+// the ordering lock when there is one, so it reads the stored certificates
+// again first: another instance may have ordered between the check and the
+// lock.
+func (self *manager) orderDueCertificates(ctx context.Context, states []*certificateState) error {
+	self.adoptStoredCertificates(states)
+
 	var failed error
 	for _, state := range states {
 		if !self.shouldRequestCertificate(state) {
@@ -409,6 +489,47 @@ func (self *manager) spinOnce(ctx context.Context) error {
 		}
 	}
 	return failed
+}
+
+// adoptStoredCertificates reads each certificate as the other instances may
+// have saved it, and serves it when it is valid for the names and expires
+// later than the one held (or the one held cannot be used).
+func (self *manager) adoptStoredCertificates(states []*certificateState) {
+	if self.settings.LoadCertificate == nil {
+		return
+	}
+	for _, state := range states {
+		storedCertificate, storedPrivateKey, err := self.settings.LoadCertificate(state.key)
+		if err != nil {
+			log.Warningf("failed to read the stored certificate for %v: %s", state.hosts, err)
+			continue
+		}
+		stored, err := decodeCertificate(storedCertificate, storedPrivateKey)
+		if err != nil || !usable(stored) {
+			continue
+		}
+		storedExpiry, err := validateCertificate(stored, state.hosts)
+		if err != nil {
+			continue
+		}
+
+		self.certificateMutex.Lock()
+		isNewer := true
+		if usable(state.certificate) {
+			// An error here means the certificate held is no good, and any
+			// valid stored one is better.
+			if heldExpiry, err := validateCertificate(state.certificate, state.hosts); err == nil {
+				isNewer = storedExpiry.After(heldExpiry)
+			}
+		}
+		if isNewer {
+			state.certificate = stored
+			state.failures = 0
+			state.nextAttempt = time.Time{}
+			log.Noticef("serving the certificate for %v that another instance obtained", state.hosts)
+		}
+		self.certificateMutex.Unlock()
+	}
 }
 
 // requestBackoff is how long to wait after a failed attempt, doubling each
@@ -454,7 +575,7 @@ func (self *manager) shouldRequestCertificate(state *certificateState) bool {
 }
 
 func (self *manager) requestCertificate(ctx context.Context, state *certificateState) error {
-	certificate, err := self.requestAcmeCertificate(ctx, state.hosts, state.challenge)
+	certificate, err := self.obtain(ctx, state.hosts, state.challenge)
 	if err == nil {
 		_, err = validateCertificate(certificate, state.hosts)
 		if err != nil {

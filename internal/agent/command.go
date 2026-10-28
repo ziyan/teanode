@@ -14,9 +14,10 @@ import (
 // feed. The word is applied here when the run is here, and said to the
 // other instances otherwise, as a notification the running one applies.
 //
-// An instance remembers the turns it has heard of through the feed — the
-// run and its conversation — so it can tell whose a run is before it
-// forwards a word about it.
+// An instance remembers the turns it has heard of through the feed, the
+// run and its conversation, so it can tell whose a run is before it
+// forwards a word about it; one it has not heard of is in the record of the
+// turns that are running (turn_record.go).
 
 // RunCommand is one word to a run.
 type RunCommand struct {
@@ -53,6 +54,8 @@ const foreignRunFor = time.Hour
 type foreignRun struct {
 	conversationId string
 	heard          time.Time
+	// log is the run's events as heard here (foreign_run.go).
+	log *foreignRunLog
 }
 
 // Apply gives the run the word here. It says whether anything was
@@ -94,28 +97,37 @@ func (self *Agent) Forward(command RunCommand) error {
 
 // ForeignRun is the conversation of a run another instance is running,
 // as heard through the feed, and whether it is known at all.
+//
+// A run this instance has not heard of, because it began before this
+// instance started or has been quiet, is found in the record of the turns
+// that are running.
 func (self *Agent) ForeignRun(runId string) (string, bool) {
 	self.foreignMutex.Lock()
-	defer self.foreignMutex.Unlock()
-	known, ok := self.foreignRuns[runId]
-	return known.conversationId, ok
+	known := self.foreignRuns[runId]
+	self.foreignMutex.Unlock()
+	if known != nil {
+		return known.conversationId, true
+	}
+	return self.recordedRunElsewhere(runId)
 }
 
-// noteForeignRun remembers a run heard of through the feed, and forgets
-// the ones not heard of for a while.
-func (self *Agent) noteForeignRun(runId, conversationId string) {
+// noteForeignEvent remembers a run heard of through the feed, with the
+// event heard, and forgets the ones not heard of for a while.
+func (self *Agent) noteForeignEvent(event Event) {
 	self.foreignMutex.Lock()
 	defer self.foreignMutex.Unlock()
 	if self.foreignRuns == nil {
-		self.foreignRuns = map[string]foreignRun{}
+		self.foreignRuns = map[string]*foreignRun{}
 	}
 	now := time.Now()
-	for id, known := range self.foreignRuns {
-		if now.Sub(known.heard) > foreignRunFor {
-			delete(self.foreignRuns, id)
-		}
+	self.forgetForeignRuns(now)
+	known := self.foreignRuns[event.RunID]
+	if known == nil {
+		known = &foreignRun{conversationId: event.ConversationID}
+		self.foreignRuns[event.RunID] = known
 	}
-	self.foreignRuns[runId] = foreignRun{conversationId: conversationId, heard: now}
+	known.heard = now
+	self.keepForeignEvent(known, event)
 }
 
 // listenCommands applies the words the other instances say about the

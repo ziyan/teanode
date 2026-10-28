@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ziyan/teanode/internal/util/aggregate"
+	"time"
 
 	"github.com/op/go-logging"
+
+	"github.com/ziyan/teanode/internal/util/aggregate"
 )
 
 var log = logging.MustGetLogger("db")
@@ -99,6 +101,13 @@ type Database interface {
 	// ListenAgentEvents delivers what the others said, until the context
 	// ends. The payload is the instance's to shape; what a slow listener
 	// misses is not kept.
+	// LockSession, TryLockSession and WhileLocked hold an advisory lock
+	// across transactions, on a connection of their own: what makes a long
+	// sweep, or a name, one instance's at a time (see LockKey).
+	LockSession(ctx context.Context, key int64) (func(), error)
+	TryLockSession(ctx context.Context, key int64) (func(), bool, error)
+	WhileLocked(ctx context.Context, key int64, work func(context.Context) error) (bool, error)
+
 	NotifyAgentEvent(payload string) error
 	ListenAgentEvents(ctx context.Context) (<-chan string, error)
 
@@ -119,6 +128,11 @@ type Database interface {
 	// the list's id, and the ids of people who could read it until now.
 	NotifyShoppingEvent(shoppingListId string, endedForUserIds ...string) error
 	ListenShoppingEvents(ctx context.Context) (<-chan string, error)
+
+	// NotifyPresenceEvent and ListenPresenceEvents carry what a person's
+	// tabs and phones report about being shown, to every instance.
+	NotifyPresenceEvent(payload string) error
+	ListenPresenceEvents(ctx context.Context) (<-chan string, error)
 
 	// NotifyAgentCommand and ListenAgentCommands are the same for a word
 	// to a turn — stop, an answer, a decision on a card — from an instance
@@ -188,6 +202,14 @@ type Transaction interface {
 	// TryAdvisoryLock takes an advisory lock for the rest of the
 	// transaction, or says another transaction holds it.
 	TryAdvisoryLock(key int64) (bool, error)
+
+	ThrottleOperation
+	AcmeChallengeOperation
+	McpHeldResultOperation
+	LocationVisitNoticeOperation
+	AgentProviderSignInOperation
+	AgentTurnOperation
+	AgentComputerAttachmentOperation
 
 	DomainOperation
 	AliasOperation
@@ -289,4 +311,16 @@ type Transaction interface {
 	ReportOperation
 	LayoutOperation
 	TemplateOperation
+}
+
+// ThrottleOperation is what every instance counts together: the turns of
+// something that happens at most once in a while, and the token buckets of
+// the limits that guard a password.
+type ThrottleOperation interface {
+	TakeThrottle(throttleKey string, interval time.Duration, now time.Time) (bool, error)
+	DeleteThrottlesTakenBefore(before time.Time) (int64, error)
+	TakeRateLimitToken(limiterKey string, ratePerSecond float64, capacity int64, now time.Time) (bool, error)
+	SpendRateLimitTokens(limiterKey string, ratePerSecond float64, capacity, tokenCount int64, now time.Time) error
+	CountRateLimitTokens(limiterKey string, ratePerSecond float64, capacity int64, now time.Time) (float64, error)
+	DeleteRateLimitBucketsRefilledBefore(before time.Time) (int64, error)
 }
