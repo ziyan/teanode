@@ -137,3 +137,33 @@ func TestARunWokenByAnAgentsScheduleSaysSo(t *testing.T) {
 		t.Error("a subagent of the agent's schedule")
 	}
 }
+
+// A program the person connected over MCP is theirs to act for them, though it
+// is not their tap: a teanode_ask turn and a direct tool call both count, and
+// nothing else does.
+func TestAProgramThePersonConnectedOverMCPActsForThem(t *testing.T) {
+	asked := &AskRun{settings: &AskSettings{Surface: "mcp", Message: "what did I write today?"}}
+	if !asked.IsCalledByPersonsProgram() || !tools.IsStartedByPersonOrProgram(asked) {
+		t.Error("a teanode_ask turn")
+	}
+	if asked.IsStartedByPerson() {
+		t.Error("a teanode_ask turn is not the person's tap")
+	}
+	if !(&directRun{surface: "mcp"}).IsCalledByPersonsProgram() {
+		t.Error("a direct tool call over MCP")
+	}
+	for _, surface := range []string{"drawer", "telegram", "mail", "schedule", "goal", "background", ""} {
+		if (&AskRun{settings: &AskSettings{Surface: surface, Message: "x"}}).IsCalledByPersonsProgram() {
+			t.Errorf("a turn on %q is not a program's", surface)
+		}
+	}
+	if (&AskRun{settings: &AskSettings{Surface: "mcp", Message: "x", IsOperatorActingAsPerson: true}}).IsCalledByPersonsProgram() {
+		t.Error("an operator acting as the person")
+	}
+	if (&AskRun{settings: &AskSettings{Surface: "mcp", Message: "x", isUnattended: true}}).IsCalledByPersonsProgram() {
+		t.Error("an unattended turn")
+	}
+	if (&AskRun{settings: &AskSettings{Surface: "mcp", Message: models.ScheduleMarker + " the schedule is due"}}).IsCalledByPersonsProgram() {
+		t.Error("the agent's own turn")
+	}
+}

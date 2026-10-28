@@ -138,6 +138,10 @@ To see it working at the end: on a development server with a week of invented da
 - Decision: the journal tool reads the journal only in a run the person started, as it writes. A mail or a schedule could otherwise steer the agent into telling somebody else what the person wrote for themselves. A command the agent runs as the person may not remove a correction, a pin or a narrative, or stop a touch-up, as it may not erase the journal.
   Date/Author: 2026-10-27, review.
 
+- Decision: a program the person connected over MCP reads and writes the journal as their own turn does, for example another agent writing today's words. It holds a credential only the person could have given it, so it acts for them; a mail, a schedule and a chat with other people are still refused.
+  Rationale: the person uses other agents over MCP to keep their journal, and a refusal there read as a bug.
+  Date/Author: 2026-10-28, the person.
+
 - Decision: the hourly refresh runs in the background beside the tick, and the weather service is asked between two transactions, never inside one; an answer is kept only while the day still has no weather and the same main place.
   Rationale: a slow weather service held a transaction open for minutes and kept the tick from claiming jobs for everybody.
   Date/Author: 2026-10-27, review.

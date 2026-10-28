@@ -64,6 +64,9 @@ type fakeRun struct {
 	isStartedByPerson bool
 	isHeadless        bool
 	isInChat          bool
+
+	// isCalledByProgram is a call from a program Ada connected over MCP.
+	isCalledByProgram bool
 }
 
 func (self *fakeRun) Headless() bool                       { return self.isHeadless }
@@ -71,6 +74,7 @@ func (self *fakeRun) CanAsk() bool                         { return !self.isHead
 func (self *fakeRun) Surface() string                      { return "" }
 func (self *fakeRun) IsStartedByPerson() bool              { return self.isStartedByPerson }
 func (self *fakeRun) IsAnsweringInChat() bool              { return self.isInChat }
+func (self *fakeRun) IsCalledByPersonsProgram() bool       { return self.isCalledByProgram }
 func (self *fakeRun) Operations() tools.Operations         { return self.operations }
 func (self *fakeRun) Configuration() *config.Configuration { return config.Default() }
 func (self *fakeRun) Owner() *models.User {
@@ -447,6 +451,31 @@ func TestAppendedOnlyEverAdds(t *testing.T) {
 	}
 	if _, err := appended("something", " \n "); err == nil {
 		t.Errorf("empty words were added")
+	}
+}
+
+// A program the person connected over MCP acts for them: it reads the
+// journal and writes in it, as their own turn does. In a chat room it is still
+// refused.
+func TestAProgramThePersonConnectedReadsAndWritesTheJournal(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ReadJournalDay": harborDay(), "ReadHealthSettings": switchOff, "SetJournalMood": `{}`,
+	}}
+	program := &fakeRun{operations: operations, isCalledByProgram: true}
+	if _, _, err := act(t, program, "day", `{}`); err != nil {
+		t.Fatalf("the program could not read: %s", err)
+	}
+	if _, isRead := operations.called("ReadJournalDay"); !isRead {
+		t.Errorf("the program's read was refused: %v", operations.operation)
+	}
+	actJSON(t, program, "set_mood", `{"day":"2026-10-22","mood":"good"}`)
+	if _, isSet := operations.called("SetJournalMood"); !isSet {
+		t.Errorf("the program's mood was refused: %v", operations.operation)
+	}
+	refused := &routing{answers: map[string]string{"ReadJournalDay": harborDay(), "ReadHealthSettings": switchOff}}
+	content, _, _ := act(t, &fakeRun{operations: refused, isCalledByProgram: true, isInChat: true}, "day", `{}`)
+	if !strings.Contains(content, "own conversation") || len(refused.operation) != 0 {
+		t.Errorf("a chat room was given the journal through a program: %q %v", content, refused.operation)
 	}
 }
 
