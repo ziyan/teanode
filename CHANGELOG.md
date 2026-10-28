@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.206.2] - 2026-10-28
+
+### Fixed
+
+- Running more than one instance against one database: each instance must have its own name (a second one under a name in use refuses to start); background work, notifications and certificate orders happen once rather than once per instance; the limits on guessing a password count across instances; and an agent turn is never run twice in one conversation or carried on twice after a restart. (#684)
+
 ## [0.206.1] - 2026-10-28
 
 ### Fixed
