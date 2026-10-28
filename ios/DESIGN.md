@@ -228,6 +228,10 @@ Only the tabs also ask whether the device is an iPad, as below.
   the system lays it over the page and dims it. So it starts hidden there,
   shown with the button at the top, as in Apple's own apps; on its side it
   starts beside the page. After that it stays where the person puts it.
+- A string about the device in the person's hand ("Set up on this iPhone")
+  gets an iPad wording in the String Catalog, varied by device, in every
+  language. Face ID is named by the device's own biometry
+  (`PasswordsKeychainKeyStore.biometryName`), since many iPads have Touch ID.
 - The sidebar's names are drawn by the system, which wraps them at the
   largest text sizes; the app has no say in the sidebar's width or lines.
 

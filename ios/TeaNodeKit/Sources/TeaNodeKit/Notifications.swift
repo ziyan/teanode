@@ -211,7 +211,7 @@ public struct PushRelay: Sendable {
         struct Refused: Decodable { let errorMessage: String }
         guard response.statusCode == 200 else {
             let reason = (try? JSONDecoder().decode(Refused.self, from: data))?.errorMessage
-            throw TeaNodeError.refused(reason ?? "The notification relay refused this phone.")
+            throw TeaNodeError.refused(reason ?? "The notification relay refused this device.")
         }
         guard let registered = try? JSONDecoder().decode(Registered.self, from: data) else {
             throw TeaNodeError.unreadableAnswer

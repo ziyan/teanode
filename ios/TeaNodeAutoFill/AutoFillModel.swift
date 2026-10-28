@@ -267,7 +267,7 @@ final class AutoFillModel: ObservableObject {
         } catch {
             guard isStillCurrent(generation) else { return .superseded }
             if let keyStoreError = error as? PasswordsKeyStoreError, keyStoreError == .canceled { return .notGiven(problemText: nil) }
-            return .notGiven(problemText: String(localized: "Face ID did not unlock Passwords. Try again."))
+            return .notGiven(problemText: String(localized: "\(PasswordsKeychainKeyStore.biometryName) did not unlock Passwords. Try again."))
         }
         // The request ended while Face ID was open: keep nothing it opened.
         guard isStillCurrent(generation) else { return .superseded }

@@ -71,7 +71,7 @@ struct PasswordsSettingsScreen: View {
         } header: {
             Text("Lock")
         } footer: {
-            Text("Passwords locks itself after this long without use. It asks for your passphrase or Face ID again.")
+            Text("Passwords locks itself after this long without use. It asks for your passphrase or \(model.biometryName) again.")
         }
     }
 
@@ -89,7 +89,7 @@ struct PasswordsSettingsScreen: View {
     private var faceIDSection: some View {
         Section {
             Toggle(
-                "Open with Face ID",
+                "Open with \(model.biometryName)",
                 isOn: Binding(
                     get: { model.hasFaceIDKey },
                     set: { isOn in
@@ -104,11 +104,11 @@ struct PasswordsSettingsScreen: View {
             .disabled(!model.canUseFaceID && !model.hasFaceIDKey)
         } footer: {
             if model.canUseFaceID {
-                Text("Face ID opens Passwords on this iPhone without the passphrase. Only this iPhone keeps the key, and it is removed if you change the faces or fingers Face ID knows.")
+                Text("\(model.biometryName) opens Passwords on this iPhone without the passphrase. Only this iPhone keeps the key, and it is removed if you change the faces or fingers \(model.biometryName) knows.")
             } else if model.hasFaceIDKey {
-                Text("Face ID is not set up on this iPhone any more. Turn this off to go back to your passphrase.")
+                Text("\(model.biometryName) is not set up on this iPhone any more. Turn this off to go back to your passphrase.")
             } else {
-                Text("Face ID is not set up on this iPhone.")
+                Text("\(model.biometryName) is not set up on this iPhone.")
             }
         }
     }
@@ -116,8 +116,8 @@ struct PasswordsSettingsScreen: View {
     private var faceIDSheet: some View {
         PasswordsConfirmPassphraseSheet(
             model: model,
-            sheetTitle: String(localized: "Open with Face ID"),
-            explanation: String(localized: "Type your passphrase once so this iPhone can keep the key behind Face ID."),
+            sheetTitle: String(localized: "Open with \(model.biometryName)"),
+            explanation: String(localized: "Type your passphrase once so this iPhone can keep the key behind \(model.biometryName)."),
             actionTitle: String(localized: "Turn on")
         ) { passphrase in
             try await model.enableFaceID(passphrase: passphrase)

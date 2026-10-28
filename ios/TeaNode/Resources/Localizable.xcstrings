@@ -308,15 +308,57 @@
     "%@ did not accept the sign-in it gave this phone.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ は、このスマートフォンに渡したばかりのサインインを受け付けませんでした。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ は、このiPadに渡したばかりのサインインを受け付けませんでした。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ は、このスマートフォンに渡したばかりのサインインを受け付けませんでした。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 不接受它刚给这部手机的登录。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ 不接受它刚给这台 iPad 的登录。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ 不接受它刚给这部手机的登录。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ did not accept the sign-in it gave this iPad."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ did not accept the sign-in it gave this phone."
+                }
+              }
+            }
           }
         }
       }
@@ -5662,15 +5704,57 @@
     "Days are counted on this iPhone's clock, so a photo taken in another time zone can fall on a neighboring day.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "日付はこの iPhone の時刻で数えるため、別のタイムゾーンで撮影した写真は前後の日になることがあります。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "日付はこの iPad の時刻で数えるため、別のタイムゾーンで撮影した写真は前後の日になることがあります。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "日付はこの iPhone の時刻で数えるため、別のタイムゾーンで撮影した写真は前後の日になることがあります。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "日期按这部 iPhone 的时间计算，因此在其他时区拍摄的照片可能会落在相邻的一天。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "日期按这台 iPad 的时间计算，因此在其他时区拍摄的照片可能会落在相邻的一天。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "日期按这部 iPhone 的时间计算，因此在其他时区拍摄的照片可能会落在相邻的一天。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Days are counted on this iPad's clock, so a photo taken in another time zone can fall on a neighboring day."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Days are counted on this iPhone's clock, so a photo taken in another time zone can fall on a neighboring day."
+                }
+              }
+            }
           }
         }
       }
@@ -5946,15 +6030,57 @@
     "Turn on photo backup to copy this iPhone's photos here, or add photos on the dashboard.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone の写真をここにコピーするには、写真のバックアップをオンにするか、ダッシュボードから写真を追加してください。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPad の写真をここにコピーするには、写真のバックアップをオンにするか、ダッシュボードから写真を追加してください。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPhone の写真をここにコピーするには、写真のバックアップをオンにするか、ダッシュボードから写真を追加してください。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "开启照片备份，把这部 iPhone 上的照片复制到这里，或在控制台添加照片。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "开启照片备份，把这台 iPad 上的照片复制到这里，或在控制台添加照片。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "开启照片备份，把这部 iPhone 上的照片复制到这里，或在控制台添加照片。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Turn on photo backup to copy this iPad's photos here, or add photos on the dashboard."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Turn on photo backup to copy this iPhone's photos here, or add photos on the dashboard."
+                }
+              }
+            }
           }
         }
       }
@@ -8532,15 +8658,57 @@
     "Add mail, calendars and contacts to this iPhone": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "メール、カレンダー、連絡先をこの iPhone に追加"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "メール、カレンダー、連絡先をこの iPad に追加"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "メール、カレンダー、連絡先をこの iPhone に追加"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "把邮件、日历和联系人添加到这台 iPhone"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "把邮件、日历和联系人添加到这台 iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "把邮件、日历和联系人添加到这台 iPhone"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Add mail, calendars and contacts to this iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Add mail, calendars and contacts to this iPhone"
+                }
+              }
+            }
           }
         }
       }
@@ -9780,15 +9948,57 @@
     "Answers to what you asked from the phone": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "スマートフォンから尋ねたことへの答え"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "iPadから尋ねたことへの答え"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "スマートフォンから尋ねたことへの答え"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在手机上提问的回答"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "在 iPad 上提问的回答"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "在手机上提问的回答"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Answers to what you asked from the iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Answers to what you asked from the phone"
+                }
+              }
+            }
           }
         }
       }
@@ -13684,15 +13894,57 @@
     "Connect this phone to your TeaNode server with a code from its dashboard.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ダッシュボードのコードで、このスマートフォンを TeaNode サーバーに接続します。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ダッシュボードのコードで、このiPadを TeaNode サーバーに接続します。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ダッシュボードのコードで、このスマートフォンを TeaNode サーバーに接続します。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "用控制台上的连接码，把这部手机连接到你的 TeaNode 服务器。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "用控制台上的连接码，把这台 iPad 连接到你的 TeaNode 服务器。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "用控制台上的连接码，把这部手机连接到你的 TeaNode 服务器。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Connect this iPad to your TeaNode server with a code from its dashboard."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Connect this phone to your TeaNode server with a code from its dashboard."
+                }
+              }
+            }
           }
         }
       }
@@ -18228,15 +18480,57 @@
     "Every browser signed in to this account is signed out and has to sign in again. This iPhone stays connected.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このアカウントにサインインしているすべてのブラウザーがサインアウトされ、もう一度サインインが必要になります。この iPhone は接続したままです。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このアカウントにサインインしているすべてのブラウザーがサインアウトされ、もう一度サインインが必要になります。この iPad は接続したままです。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このアカウントにサインインしているすべてのブラウザーがサインアウトされ、もう一度サインインが必要になります。この iPhone は接続したままです。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此账号下已登录的所有浏览器都会被登出，需要重新登录。这部 iPhone 保持连接。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "此账号下已登录的所有浏览器都会被登出，需要重新登录。这台 iPad 保持连接。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "此账号下已登录的所有浏览器都会被登出，需要重新登录。这部 iPhone 保持连接。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Every browser signed in to this account is signed out and has to sign in again. This iPad stays connected."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Every browser signed in to this account is signed out and has to sign in again. This iPhone stays connected."
+                }
+              }
+            }
           }
         }
       }
@@ -21556,15 +21850,57 @@
     "Import from iPhone": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPhone から読み込む"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "iPad から読み込む"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "iPhone から読み込む"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "从 iPhone 导入"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "从 iPad 导入"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "从 iPhone 导入"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Import from iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Import from iPhone"
+                }
+              }
+            }
           }
         }
       }
@@ -26980,15 +27316,57 @@
     "No contacts on this iPhone": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone に連絡先がありません"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPad に連絡先がありません"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPhone に連絡先がありません"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这部 iPhone 上没有联系人"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这台 iPad 上没有联系人"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这部 iPhone 上没有联系人"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "No contacts on this iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "No contacts on this iPhone"
+                }
+              }
+            }
           }
         }
       }
@@ -29252,15 +29630,57 @@
     "Notifications off on this phone": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この電話では通知がオフ"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このiPadでは通知がオフ"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この電話では通知がオフ"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此手机的通知已关闭"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "此 iPad 的通知已关闭"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "此手机的通知已关闭"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Notifications off on this iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Notifications off on this phone"
+                }
+              }
+            }
           }
         }
       }
@@ -29796,15 +30216,57 @@
     "Only have this phone? Open your dashboard in Safari, copy the code's link, and paste it here.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このスマートフォンしかない場合は、Safari でダッシュボードを開き、コードのリンクをコピーしてここに貼り付けてください。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このiPadしかない場合は、Safari でダッシュボードを開き、コードのリンクをコピーしてここに貼り付けてください。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このスマートフォンしかない場合は、Safari でダッシュボードを開き、コードのリンクをコピーしてここに貼り付けてください。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "只有这部手机？在 Safari 中打开控制台，复制二维码的链接，然后粘贴到这里。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "只有这台 iPad？在 Safari 中打开控制台，复制二维码的链接，然后粘贴到这里。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "只有这部手机？在 Safari 中打开控制台，复制二维码的链接，然后粘贴到这里。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Only have this iPad? Open your dashboard in Safari, copy the code's link, and paste it here."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Only have this phone? Open your dashboard in Safari, copy the code's link, and paste it here."
+                }
+              }
+            }
           }
         }
       }
@@ -29812,15 +30274,57 @@
     "Only have this phone? Sign in with your password, or open your dashboard in Safari, copy the code's link, and paste it here.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この電話しかない場合は、パスワードでサインインするか、Safari でダッシュボードを開いてコードのリンクをコピーし、ここに貼り付けてください。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このiPadしかない場合は、パスワードでサインインするか、Safari でダッシュボードを開いてコードのリンクをコピーし、ここに貼り付けてください。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この電話しかない場合は、パスワードでサインインするか、Safari でダッシュボードを開いてコードのリンクをコピーし、ここに貼り付けてください。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "只有这台手机？用密码登录，或在 Safari 中打开控制台，复制代码的链接并粘贴到这里。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "只有这台 iPad？用密码登录，或在 Safari 中打开控制台，复制代码的链接并粘贴到这里。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "只有这台手机？用密码登录，或在 Safari 中打开控制台，复制代码的链接并粘贴到这里。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Only have this iPad? Sign in with your password, or open your dashboard in Safari, copy the code's link, and paste it here."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Only have this phone? Sign in with your password, or open your dashboard in Safari, copy the code's link, and paste it here."
+                }
+              }
+            }
           }
         }
       }
@@ -34330,15 +34834,57 @@
     "Remove this phone?": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このスマートフォンを削除しますか？"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このiPadを削除しますか？"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このスマートフォンを削除しますか？"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "移除这部手机？"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "移除这台 iPad？"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "移除这部手机？"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Remove this iPad?"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Remove this phone?"
+                }
+              }
+            }
           }
         }
       }
@@ -41229,15 +41775,57 @@
     "Tell this phone about": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このスマートフォンに知らせる内容"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このiPadに知らせる内容"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このスマートフォンに知らせる内容"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "通知这部手机的内容"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "通知这台 iPad 的内容"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "通知这部手机的内容"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Tell this iPad about"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Tell this phone about"
+                }
+              }
+            }
           }
         }
       }
@@ -41469,15 +42057,57 @@
     "That notification came from an account that is no longer on this phone.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この通知は、このスマートフォンにはもうないアカウントからのものです。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この通知は、このiPadにはもうないアカウントからのものです。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この通知は、このスマートフォンにはもうないアカウントからのものです。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这条通知来自一个已不在这部手机上的账户。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这条通知来自一个已不在这台 iPad 上的账户。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这条通知来自一个已不在这部手机上的账户。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "That notification came from an account that is no longer on this iPad."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "That notification came from an account that is no longer on this phone."
+                }
+              }
+            }
           }
         }
       }
@@ -42781,15 +43411,57 @@
     "The server did not sign this phone in.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サーバーはこの電話をサインインさせませんでした。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "サーバーはこのiPadをサインインさせませんでした。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "サーバーはこの電話をサインインさせませんでした。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "服务器没有让这台手机登录。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "服务器没有让这台 iPad 登录。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "服务器没有让这台手机登录。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "The server did not sign this iPad in."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "The server did not sign this phone in."
+                }
+              }
+            }
           }
         }
       }
@@ -43165,15 +43837,57 @@
     "This account has no mailbox to set up on the phone.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このアカウントには電話で設定できるメールボックスがありません。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このアカウントにはiPadで設定できるメールボックスがありません。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このアカウントには電話で設定できるメールボックスがありません。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这个账户没有可以在手机上设置的邮箱。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这个账户没有可以在 iPad 上设置的邮箱。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这个账户没有可以在手机上设置的邮箱。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This account has no mailbox to set up on the iPad."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This account has no mailbox to set up on the phone."
+                }
+              }
+            }
           }
         }
       }
@@ -43421,15 +44135,57 @@
     "This iPhone": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPhone"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这部 iPhone"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这台 iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这部 iPhone"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This iPhone"
+                }
+              }
+            }
           }
         }
       }
@@ -43437,15 +44193,57 @@
     "This iPhone is signed out at once, and has to be connected again to come back.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone はすぐにサインアウトされ、戻すには再度接続が必要です。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPad はすぐにサインアウトされ、戻すには再度接続が必要です。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPhone はすぐにサインアウトされ、戻すには再度接続が必要です。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这部 iPhone 会立即登出，需要重新连接才能恢复。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这台 iPad 会立即登出，需要重新连接才能恢复。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这部 iPhone 会立即登出，需要重新连接才能恢复。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This iPad is signed out at once, and has to be connected again to come back."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This iPhone is signed out at once, and has to be connected again to come back."
+                }
+              }
+            }
           }
         }
       }
@@ -43693,15 +44491,57 @@
     "This phone is already connected to %@.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このスマートフォンはすでに %@ に接続されています。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このiPadはすでに %@ に接続されています。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このスマートフォンはすでに %@ に接続されています。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这部手机已经连接到 %@。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这台 iPad 已经连接到 %@。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这部手机已经连接到 %@。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This iPad is already connected to %@."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This phone is already connected to %@."
+                }
+              }
+            }
           }
         }
       }
@@ -43709,15 +44549,57 @@
     "This phone is connected to %@. To connect it to %@, sign out in Settings first.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このスマートフォンは %1$@ に接続されています。%2$@ に接続するには、先に「設定」でログアウトしてください。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このiPadは %1$@ に接続されています。%2$@ に接続するには、先に「設定」でログアウトしてください。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このスマートフォンは %1$@ に接続されています。%2$@ に接続するには、先に「設定」でログアウトしてください。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这部手机已连接到 %1$@。要连接到 %2$@，请先在“设置”中退出登录。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这台 iPad 已连接到 %1$@。要连接到 %2$@，请先在“设置”中退出登录。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这部手机已连接到 %1$@。要连接到 %2$@，请先在“设置”中退出登录。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This iPad is connected to %@. To connect it to %@, sign out in Settings first."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This phone is connected to %@. To connect it to %@, sign out in Settings first."
+                }
+              }
+            }
           }
         }
       }
@@ -43725,15 +44607,57 @@
     "This phone stops talking to your agent until you connect it again.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "もう一度接続するまで、このスマートフォンからエージェントと話せなくなります。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "もう一度接続するまで、このiPadからエージェントと話せなくなります。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "もう一度接続するまで、このスマートフォンからエージェントと話せなくなります。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这部手机将无法与助手交谈，直到你重新连接。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这台 iPad 将无法与助手交谈，直到你重新连接。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这部手机将无法与助手交谈，直到你重新连接。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This iPad stops talking to your agent until you connect it again."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This phone stops talking to your agent until you connect it again."
+                }
+              }
+            }
           }
         }
       }
@@ -43741,15 +44665,57 @@
     "This phone will be signed in as %@, and can do anything you can do on the dashboard.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このスマートフォンは %@ としてサインインし、ダッシュボードでできることはすべてできるようになります。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このiPadは %@ としてサインインし、ダッシュボードでできることはすべてできるようになります。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このスマートフォンは %@ としてサインインし、ダッシュボードでできることはすべてできるようになります。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这部手机将以 %@ 的身份登录，可以做你在控制台上能做的任何事。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这台 iPad 将以 %@ 的身份登录，可以做你在控制台上能做的任何事。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这部手机将以 %@ 的身份登录，可以做你在控制台上能做的任何事。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This iPad will be signed in as %@, and can do anything you can do on the dashboard."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This phone will be signed in as %@, and can do anything you can do on the dashboard."
+                }
+              }
+            }
           }
         }
       }
@@ -44237,15 +45203,57 @@
     "To manage what this phone is told about, open Phones under Agent on your dashboard.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このスマートフォンに届く通知は、ダッシュボードの「エージェント」の「スマートフォン」で管理できます。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このiPadに届く通知は、ダッシュボードの「エージェント」の「スマートフォン」で管理できます。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このスマートフォンに届く通知は、ダッシュボードの「エージェント」の「スマートフォン」で管理できます。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "要管理这部手机接收哪些通知，请在控制台的“助手”下打开“手机”。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "要管理这台 iPad 接收哪些通知，请在控制台的“助手”下打开“手机”。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "要管理这部手机接收哪些通知，请在控制台的“助手”下打开“手机”。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "To manage what this iPad is told about, open Phones under Agent on your dashboard."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "To manage what this phone is told about, open Phones under Agent on your dashboard."
+                }
+              }
+            }
           }
         }
       }
@@ -44253,15 +45261,57 @@
     "To manage what this phone is told about, open Settings, then Devices, on your dashboard.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この電話に届く通知を管理するには、ダッシュボードの「設定」から「デバイス」を開いてください。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このiPadに届く通知を管理するには、ダッシュボードの「設定」から「デバイス」を開いてください。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この電話に届く通知を管理するには、ダッシュボードの「設定」から「デバイス」を開いてください。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "要管理这部手机收到哪些通知，请在控制台打开“设置”中的“设备”。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "要管理这台 iPad 收到哪些通知，请在控制台打开“设置”中的“设备”。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "要管理这部手机收到哪些通知，请在控制台打开“设置”中的“设备”。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "To manage what this iPad is told about, open Settings, then Devices, on your dashboard."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "To manage what this phone is told about, open Settings, then Devices, on your dashboard."
+                }
+              }
+            }
           }
         }
       }
@@ -45773,15 +46823,57 @@
     "Use it if you have lost a device. This iPhone stays connected.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "端末をなくしたときに使ってください。この iPhone は接続したままです。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "端末をなくしたときに使ってください。この iPad は接続したままです。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "端末をなくしたときに使ってください。この iPhone は接続したままです。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "设备丢失时可以这样做。这部 iPhone 保持连接。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "设备丢失时可以这样做。这台 iPad 保持连接。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "设备丢失时可以这样做。这部 iPhone 保持连接。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Use it if you have lost a device. This iPad stays connected."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Use it if you have lost a device. This iPhone stays connected."
+                }
+              }
+            }
           }
         }
       }
@@ -51389,15 +52481,57 @@
     "On this phone": {
       "localizations": {
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在此手机上"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "在此 iPad 上"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "在此手机上"
+                }
+              }
+            }
           }
         },
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この端末"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この端末"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この端末"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "On this iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "On this phone"
+                }
+              }
+            }
           }
         }
       }
@@ -51469,15 +52603,57 @@
     "Remove from this phone": {
       "localizations": {
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "从此手机移除"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "从此 iPad 移除"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "从此手机移除"
+                }
+              }
+            }
           }
         },
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この端末から削除"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この端末から削除"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この端末から削除"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Remove from this iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Remove from this phone"
+                }
+              }
+            }
           }
         }
       }
@@ -51517,15 +52693,57 @@
     "Audio stays on this phone until the server verifies the upload. Recorded speech is source material, never instructions to your agent.": {
       "localizations": {
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "服务器验证上传之前，音频会保留在此手机上。录音内容是资料，不是给助手的指令。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "服务器验证上传之前，音频会保留在此 iPad 上。录音内容是资料，不是给助手的指令。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "服务器验证上传之前，音频会保留在此手机上。录音内容是资料，不是给助手的指令。"
+                }
+              }
+            }
           }
         },
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サーバーがアップロードを検証するまで音声はこの端末に残ります。録音された発言は資料であり、エージェントへの指示ではありません。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "サーバーがアップロードを検証するまで音声はこの端末に残ります。録音された発言は資料であり、エージェントへの指示ではありません。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "サーバーがアップロードを検証するまで音声はこの端末に残ります。録音された発言は資料であり、エージェントへの指示ではありません。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Audio stays on this iPad until the server verifies the upload. Recorded speech is source material, never instructions to your agent."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Audio stays on this phone until the server verifies the upload. Recorded speech is source material, never instructions to your agent."
+                }
+              }
+            }
           }
         }
       }
@@ -53949,21 +55167,57 @@
     "Some local recordings have a different or unverified owner. They are kept on this phone and will not be uploaded automatically.": {
       "localizations": {
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Some local recordings have a different or unverified owner. They are kept on this phone and will not be uploaded automatically."
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Some local recordings have a different or unverified owner. They are kept on this iPad and will not be uploaded automatically."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Some local recordings have a different or unverified owner. They are kept on this phone and will not be uploaded automatically."
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "部分本机录音属于其他或尚未验证的账户。这些录音保留在手机上，不会自动上传。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "部分本机录音属于其他或尚未验证的账户。这些录音保留在 iPad 上，不会自动上传。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "部分本机录音属于其他或尚未验证的账户。这些录音保留在手机上，不会自动上传。"
+                }
+              }
+            }
           }
         },
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "一部のローカル録音は別の所有者か未確認の所有者に属しています。端末に保持し、自動でアップロードしません。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "一部のローカル録音は別の所有者か未確認の所有者に属しています。端末に保持し、自動でアップロードしません。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "一部のローカル録音は別の所有者か未確認の所有者に属しています。端末に保持し、自動でアップロードしません。"
+                }
+              }
+            }
           }
         }
       }
@@ -53971,21 +55225,57 @@
     "Recording on this phone": {
       "localizations": {
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recording on this phone"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Recording on this iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Recording on this phone"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在此手机上录音"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在此 iPad 上录音"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在此手机上录音"
+                }
+              }
+            }
           }
         },
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この端末の録音"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この端末の録音"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この端末の録音"
+                }
+              }
+            }
           }
         }
       }
@@ -54629,15 +55919,57 @@
     "Choose only the services you want on this iPhone. Calendar, Reminders and Contacts do not need a mailbox.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このiPhoneで使うサービスだけを選んでください。カレンダー、リマインダー、連絡先にメールボックスは不要です。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このiPadで使うサービスだけを選んでください。カレンダー、リマインダー、連絡先にメールボックスは不要です。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このiPhoneで使うサービスだけを選んでください。カレンダー、リマインダー、連絡先にメールボックスは不要です。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "仅选择要在此 iPhone 上使用的服务。日历、提醒事项和联系人无需邮箱。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "仅选择要在此 iPad 上使用的服务。日历、提醒事项和联系人无需邮箱。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "仅选择要在此 iPhone 上使用的服务。日历、提醒事项和联系人无需邮箱。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Choose only the services you want on this iPad. Calendar, Reminders and Contacts do not need a mailbox."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Choose only the services you want on this iPhone. Calendar, Reminders and Contacts do not need a mailbox."
+                }
+              }
+            }
           }
         }
       }
@@ -54645,15 +55977,57 @@
     "Set up on this iPhone": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このiPhoneで設定"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このiPadで設定"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "このiPhoneで設定"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在此 iPhone 上设置"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "在此 iPad 上设置"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "在此 iPhone 上设置"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Set up on this iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Set up on this iPhone"
+                }
+              }
+            }
           }
         }
       }
@@ -54917,15 +56291,57 @@
     "Everyone should know you are recording. TeaNode stays silent and keeps the audio on this phone until the server verifies the upload.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録音していることを全員が知っている状態にしてください。TeaNode は音を出さず、サーバーがアップロードを確認するまで音声をこのiPhoneに保存します。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "録音していることを全員が知っている状態にしてください。TeaNode は音を出さず、サーバーがアップロードを確認するまで音声をこのiPadに保存します。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "録音していることを全員が知っている状態にしてください。TeaNode は音を出さず、サーバーがアップロードを確認するまで音声をこのiPhoneに保存します。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请让所有人都知道你正在录音。TeaNode 不会出声，音频会保留在这部手机上，直到服务器确认上传完成。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "请让所有人都知道你正在录音。TeaNode 不会出声，音频会保留在这台 iPad 上，直到服务器确认上传完成。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "请让所有人都知道你正在录音。TeaNode 不会出声，音频会保留在这部手机上，直到服务器确认上传完成。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Everyone should know you are recording. TeaNode stays silent and keeps the audio on this iPad until the server verifies the upload."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Everyone should know you are recording. TeaNode stays silent and keeps the audio on this phone until the server verifies the upload."
+                }
+              }
+            }
           }
         }
       }
@@ -55189,15 +56605,57 @@
     "Removed from this phone.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この端末から削除しました。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この端末から削除しました。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この端末から削除しました。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已从此手机移除。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已从此 iPad 移除。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已从此手机移除。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Removed from this iPad."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Removed from this phone."
+                }
+              }
+            }
           }
         }
       }
@@ -57197,15 +58655,57 @@
     "Back up this iPhone": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone をバックアップ"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPad をバックアップ"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPhone をバックアップ"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "备份这部 iPhone"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "备份这台 iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "备份这部 iPhone"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Back up this iPad"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Back up this iPhone"
+                }
+              }
+            }
           }
         }
       }
@@ -57229,15 +58729,57 @@
     "This iPhone stops backing up and its backup password is revoked. Photos already on TeaNode stay there.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone はバックアップを停止し、バックアップ用パスワードは取り消されます。すでに TeaNode にある写真はそのまま残ります。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPad はバックアップを停止し、バックアップ用パスワードは取り消されます。すでに TeaNode にある写真はそのまま残ります。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPhone はバックアップを停止し、バックアップ用パスワードは取り消されます。すでに TeaNode にある写真はそのまま残ります。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这部 iPhone 将停止备份，其备份密码会被撤销。已经在 TeaNode 上的照片会保留。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这台 iPad 将停止备份，其备份密码会被撤销。已经在 TeaNode 上的照片会保留。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这部 iPhone 将停止备份，其备份密码会被撤销。已经在 TeaNode 上的照片会保留。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This iPad stops backing up and its backup password is revoked. Photos already on TeaNode stay there."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This iPhone stops backing up and its backup password is revoked. Photos already on TeaNode stay there."
+                }
+              }
+            }
           }
         }
       }
@@ -57245,15 +58787,57 @@
     "Photos and videos on this iPhone are copied to your TeaNode server. Deleting a photo on this iPhone does not delete it from TeaNode.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone の写真とビデオは TeaNode サーバーにコピーされます。この iPhone で写真を削除しても、TeaNode からは削除されません。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPad の写真とビデオは TeaNode サーバーにコピーされます。この iPad で写真を削除しても、TeaNode からは削除されません。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPhone の写真とビデオは TeaNode サーバーにコピーされます。この iPhone で写真を削除しても、TeaNode からは削除されません。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这部 iPhone 上的照片和视频会复制到你的 TeaNode 服务器。在这部 iPhone 上删除照片不会把它从 TeaNode 中删除。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这台 iPad 上的照片和视频会复制到你的 TeaNode 服务器。在这台 iPad 上删除照片不会把它从 TeaNode 中删除。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这部 iPhone 上的照片和视频会复制到你的 TeaNode 服务器。在这部 iPhone 上删除照片不会把它从 TeaNode 中删除。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Photos and videos on this iPad are copied to your TeaNode server. Deleting a photo on this iPad does not delete it from TeaNode."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Photos and videos on this iPhone are copied to your TeaNode server. Deleting a photo on this iPhone does not delete it from TeaNode."
+                }
+              }
+            }
           }
         }
       }
@@ -57527,15 +59111,57 @@
     "Photo backup tries again when you open TeaNode, when the network is back, or while the phone charges.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "TeaNode を開いたとき、ネットワークが戻ったとき、または充電中に、写真のバックアップが再試行されます。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "TeaNode を開いたとき、ネットワークが戻ったとき、または充電中に、写真のバックアップが再試行されます。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "TeaNode を開いたとき、ネットワークが戻ったとき、または充電中に、写真のバックアップが再試行されます。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开 TeaNode、网络恢复或手机充电时，照片备份会再次尝试。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "打开 TeaNode、网络恢复或 iPad 充电时，照片备份会再次尝试。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "打开 TeaNode、网络恢复或手机充电时，照片备份会再次尝试。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Photo backup tries again when you open TeaNode, when the network is back, or while the iPad charges."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Photo backup tries again when you open TeaNode, when the network is back, or while the phone charges."
+                }
+              }
+            }
           }
         }
       }
@@ -57543,15 +59169,57 @@
     "The server did not accept this iPhone's backup password.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サーバーがこの iPhone のバックアップ用パスワードを受け付けませんでした。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "サーバーがこの iPad のバックアップ用パスワードを受け付けませんでした。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "サーバーがこの iPhone のバックアップ用パスワードを受け付けませんでした。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "服务器不接受这部 iPhone 的备份密码。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "服务器不接受这台 iPad 的备份密码。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "服务器不接受这部 iPhone 的备份密码。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "The server did not accept this iPad's backup password."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "The server did not accept this iPhone's backup password."
+                }
+              }
+            }
           }
         }
       }
@@ -57682,17 +59350,41 @@
       "localizations": {
         "en": {
           "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld file waits until you open TeaNode or the phone charges overnight. A photo kept in iCloud or a large video waits this way."
+            "device": {
+              "ipad": {
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld file waits until you open TeaNode or the iPad charges overnight. A photo kept in iCloud or a large video waits this way."
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld files wait until you open TeaNode or the iPad charges overnight. Photos kept in iCloud and large videos wait this way."
+                      }
+                    }
+                  }
                 }
               },
               "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld files wait until you open TeaNode or the phone charges overnight. Photos kept in iCloud and large videos wait this way."
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld file waits until you open TeaNode or the phone charges overnight. A photo kept in iCloud or a large video waits this way."
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld files wait until you open TeaNode or the phone charges overnight. Photos kept in iCloud and large videos wait this way."
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -57700,17 +59392,41 @@
         },
         "ja": {
           "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld 個のファイルは、TeaNode を開くか、夜間に充電されるまで待機します。iCloud にある写真や大きなビデオはこのように待機します。"
+            "device": {
+              "ipad": {
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld 個のファイルは、TeaNode を開くか、夜間に充電されるまで待機します。iCloud にある写真や大きなビデオはこのように待機します。"
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld 個のファイルは、TeaNode を開くか、夜間に充電されるまで待機します。iCloud にある写真や大きなビデオはこのように待機します。"
+                      }
+                    }
+                  }
                 }
               },
               "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld 個のファイルは、TeaNode を開くか、夜間に充電されるまで待機します。iCloud にある写真や大きなビデオはこのように待機します。"
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld 個のファイルは、TeaNode を開くか、夜間に充電されるまで待機します。iCloud にある写真や大きなビデオはこのように待機します。"
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld 個のファイルは、TeaNode を開くか、夜間に充電されるまで待機します。iCloud にある写真や大きなビデオはこのように待機します。"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -57718,17 +59434,41 @@
         },
         "zh-Hans": {
           "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "有 %lld 个文件要等到你打开 TeaNode，或手机在夜间充电时才会发送。存放在 iCloud 的照片和较大的视频会这样等待。"
+            "device": {
+              "ipad": {
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "有 %lld 个文件要等到你打开 TeaNode，或 iPad 在夜间充电时才会发送。存放在 iCloud 的照片和较大的视频会这样等待。"
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "有 %lld 个文件要等到你打开 TeaNode，或 iPad 在夜间充电时才会发送。存放在 iCloud 的照片和较大的视频会这样等待。"
+                      }
+                    }
+                  }
                 }
               },
               "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "有 %lld 个文件要等到你打开 TeaNode，或手机在夜间充电时才会发送。存放在 iCloud 的照片和较大的视频会这样等待。"
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "有 %lld 个文件要等到你打开 TeaNode，或手机在夜间充电时才会发送。存放在 iCloud 的照片和较大的视频会这样等待。"
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "有 %lld 个文件要等到你打开 TeaNode，或手机在夜间充电时才会发送。存放在 iCloud 的照片和较大的视频会这样等待。"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -58821,15 +60561,57 @@
     "Calendars you hide here stay hidden on this phone only.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ここで非表示にしたカレンダーは、このiPhoneでのみ非表示になります。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ここで非表示にしたカレンダーは、このiPadでのみ非表示になります。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ここで非表示にしたカレンダーは、このiPhoneでのみ非表示になります。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在此隐藏的日历只会在这部手机上隐藏。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "在此隐藏的日历只会在这台 iPad 上隐藏。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "在此隐藏的日历只会在这部手机上隐藏。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Calendars you hide here stay hidden on this iPad only."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Calendars you hide here stay hidden on this phone only."
+                }
+              }
+            }
           }
         }
       }
@@ -62677,15 +64459,57 @@
     "This iPhone's photos are backed up to a different account. Sign in as that account to turn it off.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone の写真は別のアカウントにバックアップされています。オフにするには、そのアカウントでサインインしてください。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPad の写真は別のアカウントにバックアップされています。オフにするには、そのアカウントでサインインしてください。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPhone の写真は別のアカウントにバックアップされています。オフにするには、そのアカウントでサインインしてください。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这部 iPhone 的照片备份到了另一个账户。请以该账户登录以将其关闭。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这台 iPad 的照片备份到了另一个账户。请以该账户登录以将其关闭。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这部 iPhone 的照片备份到了另一个账户。请以该账户登录以将其关闭。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This iPad's photos are backed up to a different account. Sign in as that account to turn it off."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This iPhone's photos are backed up to a different account. Sign in as that account to turn it off."
+                }
+              }
+            }
           }
         }
       }
@@ -65349,15 +67173,57 @@
     "%@. The phone could only find you roughly.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@。iPhoneではおおよその位置しか分かりませんでした。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@。iPadではおおよその位置しか分かりませんでした。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@。iPhoneではおおよその位置しか分かりませんでした。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@。手机只能大致确定你的位置。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@。iPad 只能大致确定你的位置。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@。手机只能大致确定你的位置。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@. The iPad could only find you roughly."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@. The phone could only find you roughly."
+                }
+              }
+            }
           }
         }
       }
@@ -65573,15 +67439,57 @@
     "The phone could not tell where it is.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "現在地を取得できませんでした。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "現在地を取得できませんでした。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "現在地を取得できませんでした。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "手机无法确定自己的位置。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "iPad 无法确定自己的位置。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "手机无法确定自己的位置。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "The iPad could not tell where it is."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "The phone could not tell where it is."
+                }
+              }
+            }
           }
         }
       }
@@ -65589,15 +67497,57 @@
     "The phone could not tell where it is. Check that location is allowed for TeaNode, then try again.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "現在地を取得できませんでした。TeaNode に位置情報が許可されているか確認して、もう一度お試しください。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "現在地を取得できませんでした。TeaNode に位置情報が許可されているか確認して、もう一度お試しください。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "現在地を取得できませんでした。TeaNode に位置情報が許可されているか確認して、もう一度お試しください。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "手机无法确定自己的位置。请确认已允许 TeaNode 使用定位，然后重试。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "iPad 无法确定自己的位置。请确认已允许 TeaNode 使用定位，然后重试。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "手机无法确定自己的位置。请确认已允许 TeaNode 使用定位，然后重试。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "The iPad could not tell where it is. Check that location is allowed for TeaNode, then try again."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "The phone could not tell where it is. Check that location is allowed for TeaNode, then try again."
+                }
+              }
+            }
           }
         }
       }
@@ -67347,15 +69297,57 @@
     "Your iPhone can only place you within %@ right now. Try again outside, or tap the map where the place is.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPhone は今、%@ 以内までしか現在地を特定できません。屋外でもう一度試すか、地図で場所をタップしてください。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "iPad は今、%@ 以内までしか現在地を特定できません。屋外でもう一度試すか、地図で場所をタップしてください。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "iPhone は今、%@ 以内までしか現在地を特定できません。屋外でもう一度試すか、地図で場所をタップしてください。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPhone 目前只能把你定位在 %@ 范围内。请到室外再试一次，或在地图上点按该地点的位置。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "iPad 目前只能把你定位在 %@ 范围内。请到室外再试一次，或在地图上点按该地点的位置。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "iPhone 目前只能把你定位在 %@ 范围内。请到室外再试一次，或在地图上点按该地点的位置。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Your iPad can only place you within %@ right now. Try again outside, or tap the map where the place is."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Your iPhone can only place you within %@ right now. Try again outside, or tap the map where the place is."
+                }
+              }
+            }
           }
         }
       }
@@ -67379,15 +69371,57 @@
     "The server did not take what this phone noticed, so recording has stopped: %@": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サーバーがこの iPhone の記録を受け付けなかったため、記録を止めました：%@"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "サーバーがこの iPad の記録を受け付けなかったため、記録を止めました：%@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "サーバーがこの iPhone の記録を受け付けなかったため、記録を止めました：%@"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "服务器没有接收这部手机记下的内容，所以记录已停止：%@"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "服务器没有接收这台 iPad 记下的内容，所以记录已停止：%@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "服务器没有接收这部手机记下的内容，所以记录已停止：%@"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "The server did not take what this iPad noticed, so recording has stopped: %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "The server did not take what this phone noticed, so recording has stopped: %@"
+                }
+              }
+            }
           }
         }
       }
@@ -75537,15 +77571,57 @@
     "Set in the Health app on your iPhone, and shown here as the app copied it. Change them there.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPhone の「ヘルスケア」App で設定したものを、アプリがコピーした内容のまま表示しています。変更はそちらで行ってください。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "iPad の「ヘルスケア」App で設定したものを、アプリがコピーした内容のまま表示しています。変更はそちらで行ってください。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "iPhone の「ヘルスケア」App で設定したものを、アプリがコピーした内容のまま表示しています。変更はそちらで行ってください。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在 iPhone 的“健康”App 中设置，此处显示的是应用复制的内容。如需修改，请在那里修改。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "在 iPad 的“健康”App 中设置，此处显示的是应用复制的内容。如需修改，请在那里修改。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "在 iPhone 的“健康”App 中设置，此处显示的是应用复制的内容。如需修改，请在那里修改。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Set in the Health app on your iPad, and shown here as the app copied it. Change them there."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Set in the Health app on your iPhone, and shown here as the app copied it. Change them there."
+                }
+              }
+            }
           }
         }
       }
@@ -78746,130 +80822,298 @@
         }
       }
     },
-    "Face ID could not be set up. You can still use your passphrase.": {
+    "%@ could not be set up. You can still use your passphrase.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Face ID を設定できませんでした。パスフレーズは引き続き使えます。"
+            "value": "%@ を設定できませんでした。パスフレーズは引き続き使えます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法设置 Face ID。你仍可使用口令。"
+            "value": "无法设置 %@。你仍可使用口令。"
           }
         }
       }
     },
-    "Face ID could not open Passwords. Type your passphrase instead.": {
+    "%@ could not open Passwords. Type your passphrase instead.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Face ID でパスワードを開けませんでした。代わりにパスフレーズを入力してください。"
+            "value": "%@ でパスワードを開けませんでした。代わりにパスフレーズを入力してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Face ID 未能打开“密码”。请改为输入口令。"
+            "value": "%@ 未能打开“密码”。请改为输入口令。"
           }
         }
       }
     },
-    "Face ID did not open Passwords. Type your passphrase instead.": {
+    "%@ did not open Passwords. Type your passphrase instead.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Face ID でパスワードを開けませんでした。代わりにパスフレーズを入力してください。"
+            "value": "%@ でパスワードを開けませんでした。代わりにパスフレーズを入力してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Face ID 未能打开“密码”。请改为输入口令。"
+            "value": "%@ 未能打开“密码”。请改为输入口令。"
           }
         }
       }
     },
-    "Face ID did not unlock Passwords. Try again.": {
+    "%@ did not unlock Passwords. Try again.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Face ID でパスワードのロックを解除できませんでした。もう一度お試しください。"
+            "value": "%@ でパスワードのロックを解除できませんでした。もう一度お試しください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Face ID 未能解锁密码。请重试。"
+            "value": "%@ 未能解锁密码。请重试。"
           }
         }
       }
     },
-    "Face ID is not set up on this iPhone.": {
+    "%@ is not set up on this iPhone.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone では Face ID が設定されていません。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPad では %@ が設定されていません。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPhone では %@ が設定されていません。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这部 iPhone 上尚未设置 Face ID。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这台 iPad 上尚未设置 %@。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这部 iPhone 上尚未设置 %@。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ is not set up on this iPad."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ is not set up on this iPhone."
+                }
+              }
+            }
           }
         }
       }
     },
-    "Face ID opens Passwords on this iPhone without the passphrase. Only this iPhone keeps the key, and it is removed if you change the faces or fingers Face ID knows.": {
+    "%@ opens Passwords on this iPhone without the passphrase. Only this iPhone keeps the key, and it is removed if you change the faces or fingers %@ knows.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Face ID で、この iPhone ではパスフレーズなしでパスワードを開けます。キーはこの iPhone だけに保存され、Face ID の登録を変更すると削除されます。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$@ で、この iPad ではパスフレーズなしでパスワードを開けます。キーはこの iPad だけに保存され、%2$@ の登録を変更すると削除されます。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$@ で、この iPhone ではパスフレーズなしでパスワードを開けます。キーはこの iPhone だけに保存され、%2$@ の登録を変更すると削除されます。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Face ID 可在这部 iPhone 上免输口令打开“密码”。密钥只保存在这部 iPhone 上，如果你更改了 Face ID 识别的面容，它会被移除。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$@ 可在这台 iPad 上免输口令打开“密码”。密钥只保存在这台 iPad 上，如果你更改了 %2$@ 识别的面容或指纹，它会被移除。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$@ 可在这部 iPhone 上免输口令打开“密码”。密钥只保存在这部 iPhone 上，如果你更改了 %2$@ 识别的面容或指纹，它会被移除。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ opens Passwords on this iPad without the passphrase. Only this iPad keeps the key, and it is removed if you change the faces or fingers %@ knows."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ opens Passwords on this iPhone without the passphrase. Only this iPhone keeps the key, and it is removed if you change the faces or fingers %@ knows."
+                }
+              }
+            }
           }
         }
       }
     },
-    "Face ID opens Passwords on this iPhone, so you type the passphrase only on other devices.": {
+    "%@ opens Passwords on this iPhone, so you type the passphrase only on other devices.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Face ID でこの iPhone のパスワードを開くので、パスフレーズの入力はほかのデバイスだけで済みます。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ でこの iPad のパスワードを開くので、パスフレーズの入力はほかのデバイスだけで済みます。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ でこの iPhone のパスワードを開くので、パスフレーズの入力はほかのデバイスだけで済みます。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Face ID 会在这部 iPhone 上打开“密码”，所以只有在其他设备上才需要输入口令。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ 会在这台 iPad 上打开“密码”，所以只有在其他设备上才需要输入口令。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ 会在这部 iPhone 上打开“密码”，所以只有在其他设备上才需要输入口令。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ opens Passwords on this iPad, so you type the passphrase only on other devices."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ opens Passwords on this iPhone, so you type the passphrase only on other devices."
+                }
+              }
+            }
           }
         }
       }
     },
-    "Face ID will open Passwords on this iPhone.": {
+    "%@ will open Passwords on this iPhone.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone で Face ID によりパスワードを開けるようになりました。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPad で %@ によりパスワードを開けるようになりました。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPhone で %@ によりパスワードを開けるようになりました。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Face ID 现在可在这部 iPhone 上打开“密码”。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ 现在可在这台 iPad 上打开“密码”。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ 现在可在这部 iPhone 上打开“密码”。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ will open Passwords on this iPad."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ will open Passwords on this iPhone."
+                }
+              }
+            }
           }
         }
       }
@@ -78973,15 +81217,57 @@
     "If you forget your passphrase, this key opens Passwords instead. It is shown only now. Copy it or share it, and keep it somewhere safe that is not this iPhone.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "パスフレーズを忘れたときは、このキーでパスワードを開けます。表示されるのは今回だけです。コピーまたは共有して、この iPhone 以外の安全な場所に保管してください。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "パスフレーズを忘れたときは、このキーでパスワードを開けます。表示されるのは今回だけです。コピーまたは共有して、この iPad 以外の安全な場所に保管してください。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "パスフレーズを忘れたときは、このキーでパスワードを開けます。表示されるのは今回だけです。コピーまたは共有して、この iPhone 以外の安全な場所に保管してください。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "如果你忘记了口令，可以用此密钥打开“密码”。它只显示这一次。请复制或分享它，并保存在这部 iPhone 以外的安全地方。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "如果你忘记了口令，可以用此密钥打开“密码”。它只显示这一次。请复制或分享它，并保存在这台 iPad 以外的安全地方。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "如果你忘记了口令，可以用此密钥打开“密码”。它只显示这一次。请复制或分享它，并保存在这部 iPhone 以外的安全地方。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "If you forget your passphrase, this key opens Passwords instead. It is shown only now. Copy it or share it, and keep it somewhere safe that is not this iPad."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "If you forget your passphrase, this key opens Passwords instead. It is shown only now. Copy it or share it, and keep it somewhere safe that is not this iPhone."
+                }
+              }
+            }
           }
         }
       }
@@ -79578,18 +81864,18 @@
         }
       }
     },
-    "Open with Face ID": {
+    "Open with %@": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Face ID で開く"
+            "value": "%@ で開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "用 Face ID 打开"
+            "value": "用 %@ 打开"
           }
         }
       }
@@ -79725,15 +82011,57 @@
     "Passwords could not be brought up to date. What this iPhone has is shown.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "パスワードを最新にできませんでした。この iPhone にある内容を表示しています。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "パスワードを最新にできませんでした。この iPad にある内容を表示しています。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "パスワードを最新にできませんでした。この iPhone にある内容を表示しています。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法更新“密码”，显示的是这部 iPhone 上已有的内容。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "无法更新“密码”，显示的是这台 iPad 上已有的内容。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "无法更新“密码”，显示的是这部 iPhone 上已有的内容。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Passwords could not be brought up to date. What this iPad has is shown."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Passwords could not be brought up to date. What this iPhone has is shown."
+                }
+              }
+            }
           }
         }
       }
@@ -79914,18 +82242,18 @@
         }
       }
     },
-    "Passwords locks itself after this long without use. It asks for your passphrase or Face ID again.": {
+    "Passwords locks itself after this long without use. It asks for your passphrase or %@ again.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "この時間使わないと、パスワードは自動でロックされます。再び開くにはパスフレーズか Face ID が必要です。"
+            "value": "この時間使わないと、パスワードは自動でロックされます。再び開くにはパスフレーズか %@ が必要です。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "闲置这么久后“密码”会自动锁定，再次使用时需要输入口令或使用 Face ID。"
+            "value": "闲置这么久后“密码”会自动锁定，再次使用时需要输入口令或使用 %@。"
           }
         }
       }
@@ -79965,15 +82293,57 @@
     "Passwords will ask for your passphrase on this iPhone.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone では、パスワードを開くときにパスフレーズを求めます。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPad では、パスワードを開くときにパスフレーズを求めます。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPhone では、パスワードを開くときにパスフレーズを求めます。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在这部 iPhone 上，“密码”将需要输入口令。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "在这台 iPad 上，“密码”将需要输入口令。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "在这部 iPhone 上，“密码”将需要输入口令。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Passwords will ask for your passphrase on this iPad."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Passwords will ask for your passphrase on this iPhone."
+                }
+              }
+            }
           }
         }
       }
@@ -80602,18 +82972,60 @@
         }
       }
     },
-    "This iPhone cannot keep the key behind Face ID. Set a passcode and Face ID in Settings first.": {
+    "This iPhone cannot keep the key behind %@. Set a passcode and %@ in Settings first.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone ではキーを Face ID の背後に保管できません。先に「設定」でパスコードと Face ID を設定してください。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPad ではキーを %1$@ の背後に保管できません。先に「設定」でパスコードと %2$@ を設定してください。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPhone ではキーを %1$@ の背後に保管できません。先に「設定」でパスコードと %2$@ を設定してください。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这部 iPhone 无法把密钥保存在 Face ID 之后。请先在“设置”中设置锁屏密码和 Face ID。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这台 iPad 无法把密钥保存在 %1$@ 之后。请先在“设置”中设置锁屏密码和 %2$@。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这部 iPhone 无法把密钥保存在 %1$@ 之后。请先在“设置”中设置锁屏密码和 %2$@。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This iPad cannot keep the key behind %@. Set a passcode and %@ in Settings first."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This iPhone cannot keep the key behind %@. Set a passcode and %@ in Settings first."
+                }
+              }
+            }
           }
         }
       }
@@ -80714,18 +83126,60 @@
         }
       }
     },
-    "Type your passphrase once so this iPhone can keep the key behind Face ID.": {
+    "Type your passphrase once so this iPhone can keep the key behind %@.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "パスフレーズを1回入力すると、この iPhone がキーを Face ID の背後に保管できます。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "パスフレーズを1回入力すると、この iPad がキーを %@ の背後に保管できます。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "パスフレーズを1回入力すると、この iPhone がキーを %@ の背後に保管できます。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请输入一次口令，这部 iPhone 才能把密钥保存在 Face ID 之后。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "请输入一次口令，这台 iPad 才能把密钥保存在 %@ 之后。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "请输入一次口令，这部 iPhone 才能把密钥保存在 %@ 之后。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Type your passphrase once so this iPad can keep the key behind %@."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Type your passphrase once so this iPhone can keep the key behind %@."
+                }
+              }
+            }
           }
         }
       }
@@ -80810,66 +83264,66 @@
         }
       }
     },
-    "Unlock Passwords with Face ID to fill your logins, passkeys and one-time codes.": {
+    "Unlock Passwords with %@ to fill your logins, passkeys and one-time codes.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Face ID でパスワードのロックを解除すると、ログイン情報、パスキー、ワンタイムコードを入力できます。"
+            "value": "%@ でパスワードのロックを解除すると、ログイン情報、パスキー、ワンタイムコードを入力できます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "用 Face ID 解锁密码，即可填充你的登录信息、通行密钥和一次性验证码。"
+            "value": "用 %@ 解锁密码，即可填充你的登录信息、通行密钥和一次性验证码。"
           }
         }
       }
     },
-    "Unlock with Face ID": {
+    "Unlock with %@": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Face ID でロック解除"
+            "value": "%@ でロック解除"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用 Face ID 解锁"
+            "value": "使用 %@ 解锁"
           }
         }
       }
     },
-    "Use Face ID": {
+    "Use %@": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Face ID を使う"
+            "value": "%@ を使う"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用 Face ID"
+            "value": "使用 %@"
           }
         }
       }
     },
-    "Use Face ID next time": {
+    "Use %@ next time": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "次回から Face ID を使う"
+            "value": "次回から %@ を使う"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "下次使用 Face ID"
+            "value": "下次使用 %@"
           }
         }
       }
@@ -81054,17 +83508,41 @@
       "localizations": {
         "en": {
           "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld item could not be opened on this iPhone. It may have been saved by a newer version of TeaNode."
+            "device": {
+              "ipad": {
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld item could not be opened on this iPad. It may have been saved by a newer version of TeaNode."
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld items could not be opened on this iPad. They may have been saved by a newer version of TeaNode."
+                      }
+                    }
+                  }
                 }
               },
               "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld items could not be opened on this iPhone. They may have been saved by a newer version of TeaNode."
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld item could not be opened on this iPhone. It may have been saved by a newer version of TeaNode."
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld items could not be opened on this iPhone. They may have been saved by a newer version of TeaNode."
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -81072,17 +83550,41 @@
         },
         "ja": {
           "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld 件の項目をこの iPhone で開けませんでした。新しいバージョンの TeaNode で保存された可能性があります。"
+            "device": {
+              "ipad": {
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld 件の項目をこの iPad で開けませんでした。新しいバージョンの TeaNode で保存された可能性があります。"
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld 件の項目をこの iPad で開けませんでした。新しいバージョンの TeaNode で保存された可能性があります。"
+                      }
+                    }
+                  }
                 }
               },
               "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld 件の項目をこの iPhone で開けませんでした。新しいバージョンの TeaNode で保存された可能性があります。"
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld 件の項目をこの iPhone で開けませんでした。新しいバージョンの TeaNode で保存された可能性があります。"
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld 件の項目をこの iPhone で開けませんでした。新しいバージョンの TeaNode で保存された可能性があります。"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -81090,17 +83592,41 @@
         },
         "zh-Hans": {
           "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "有 %lld 个项目无法在这部 iPhone 上打开。它们可能由更新版本的 TeaNode 保存。"
+            "device": {
+              "ipad": {
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "有 %lld 个项目无法在这台 iPad 上打开。它们可能由更新版本的 TeaNode 保存。"
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "有 %lld 个项目无法在这台 iPad 上打开。它们可能由更新版本的 TeaNode 保存。"
+                      }
+                    }
+                  }
                 }
               },
               "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "有 %lld 个项目无法在这部 iPhone 上打开。它们可能由更新版本的 TeaNode 保存。"
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "有 %lld 个项目无法在这部 iPhone 上打开。它们可能由更新版本的 TeaNode 保存。"
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "有 %lld 个项目无法在这部 iPhone 上打开。它们可能由更新版本的 TeaNode 保存。"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -81304,18 +83830,60 @@
         }
       }
     },
-    "Face ID is not set up on this iPhone any more. Turn this off to go back to your passphrase.": {
+    "%@ is not set up on this iPhone any more. Turn this off to go back to your passphrase.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone では Face ID が設定されていません。オフにすると、パスフレーズで開けるようになります。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPad では %@ が設定されていません。オフにすると、パスフレーズで開けるようになります。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この iPhone では %@ が設定されていません。オフにすると、パスフレーズで開けるようになります。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这台 iPhone 上已没有设置 Face ID。关闭此项即可改用口令。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这台 iPad 上已没有设置 %@。关闭此项即可改用口令。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "这台 iPhone 上已没有设置 %@。关闭此项即可改用口令。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ is not set up on this iPad any more. Turn this off to go back to your passphrase."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ is not set up on this iPhone any more. Turn this off to go back to your passphrase."
+                }
+              }
+            }
           }
         }
       }
@@ -81531,15 +84099,57 @@
     "This item needs a new key. This iPhone gave it one a moment ago, so it waits before giving another.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この項目には新しいキーが必要です。この iPhone は先ほど設定したばかりなので、しばらく待ってから次を設定します。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この項目には新しいキーが必要です。この iPad は先ほど設定したばかりなので、しばらく待ってから次を設定します。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この項目には新しいキーが必要です。この iPhone は先ほど設定したばかりなので、しばらく待ってから次を設定します。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此项目需要新密钥。这部 iPhone 刚刚生成过一个，所以要等一会儿再生成下一个。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "此项目需要新密钥。这台 iPad 刚刚生成过一个，所以要等一会儿再生成下一个。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "此项目需要新密钥。这部 iPhone 刚刚生成过一个，所以要等一会儿再生成下一个。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This item needs a new key. This iPad gave it one a moment ago, so it waits before giving another."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "This item needs a new key. This iPhone gave it one a moment ago, so it waits before giving another."
+                }
+              }
+            }
           }
         }
       }
@@ -81627,15 +84237,57 @@
     "It is removed from Passwords and from this iPhone, and cannot be brought back.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "パスワードとこの iPhone から削除され、元に戻せません。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "パスワードとこの iPad から削除され、元に戻せません。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "パスワードとこの iPhone から削除され、元に戻せません。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "它会从“密码”和这部 iPhone 中移除，且无法恢复。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "它会从“密码”和这台 iPad 中移除，且无法恢复。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "它会从“密码”和这部 iPhone 中移除，且无法恢复。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "It is removed from Passwords and from this iPad, and cannot be brought back."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "It is removed from Passwords and from this iPhone, and cannot be brought back."
+                }
+              }
+            }
           }
         }
       }
@@ -81691,15 +84343,57 @@
     "%@ is removed from Passwords and from this iPhone, and cannot be brought back.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@はパスワードとこの iPhone から削除され、元に戻せません。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@はパスワードとこの iPad から削除され、元に戻せません。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@はパスワードとこの iPhone から削除され、元に戻せません。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@会从“密码”和这部 iPhone 中移除，且无法恢复。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@会从“密码”和这台 iPad 中移除，且无法恢复。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@会从“密码”和这部 iPhone 中移除，且无法恢复。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ is removed from Passwords and from this iPad, and cannot be brought back."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%@ is removed from Passwords and from this iPhone, and cannot be brought back."
+                }
+              }
+            }
           }
         }
       }
@@ -81867,15 +84561,57 @@
     "Each person who has set up Passwords gets this item's key, sealed on this iPhone for their key only. Only you can change the item.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「パスワード」を設定した人には、この iPhone でその人のキー専用に封じたこの項目のキーが渡されます。項目を変更できるのはあなただけです。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "「パスワード」を設定した人には、この iPad でその人のキー専用に封じたこの項目のキーが渡されます。項目を変更できるのはあなただけです。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "「パスワード」を設定した人には、この iPhone でその人のキー専用に封じたこの項目のキーが渡されます。項目を変更できるのはあなただけです。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每位已设置“密码”的成员都会获得此项目的密钥，由这部 iPhone 仅针对其密钥加密封存。只有你可以更改此项目。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "每位已设置“密码”的成员都会获得此项目的密钥，由这台 iPad 仅针对其密钥加密封存。只有你可以更改此项目。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "每位已设置“密码”的成员都会获得此项目的密钥，由这部 iPhone 仅针对其密钥加密封存。只有你可以更改此项目。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Each person who has set up Passwords gets this item's key, sealed on this iPad for their key only. Only you can change the item."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Each person who has set up Passwords gets this item's key, sealed on this iPhone for their key only. Only you can change the item."
+                }
+              }
+            }
           }
         }
       }
@@ -82005,15 +84741,57 @@
     "Some people are waiting for this item, or it needs a new key. This iPhone has not shared it before, so it waits for you.": {
       "localizations": {
         "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この項目を待っている人がいるか、新しいキーが必要です。この iPhone はこの項目をまだ共有していないため、あなたの操作を待っています。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この項目を待っている人がいるか、新しいキーが必要です。この iPad はこの項目をまだ共有していないため、あなたの操作を待っています。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "この項目を待っている人がいるか、新しいキーが必要です。この iPhone はこの項目をまだ共有していないため、あなたの操作を待っています。"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "有人在等待此项目，或者它需要新的密钥。这部 iPhone 以前没有共享过它，所以要等你来操作。"
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有人在等待此项目，或者它需要新的密钥。这台 iPad 以前没有共享过它，所以要等你来操作。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有人在等待此项目，或者它需要新的密钥。这部 iPhone 以前没有共享过它，所以要等你来操作。"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "device": {
+              "ipad": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Some people are waiting for this item, or it needs a new key. This iPad has not shared it before, so it waits for you."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Some people are waiting for this item, or it needs a new key. This iPhone has not shared it before, so it waits for you."
+                }
+              }
+            }
           }
         }
       }

@@ -151,9 +151,9 @@ struct PasswordsRecoveryKeyScreen: View {
             PasswordsRecoveryKeySections(model: model, recoveryKeyText: model.recoveryKeyText ?? "", isSaved: $isSaved)
             if model.canUseFaceID {
                 Section {
-                    Toggle("Use Face ID next time", isOn: $shouldRemember)
+                    Toggle("Use \(model.biometryName) next time", isOn: $shouldRemember)
                 } footer: {
-                    Text("Face ID opens Passwords on this iPhone, so you type the passphrase only on other devices.")
+                    Text("\(model.biometryName) opens Passwords on this iPhone, so you type the passphrase only on other devices.")
                 }
             }
         }
@@ -240,12 +240,12 @@ struct PasswordsUnlockScreen: View {
             }
             if !isUsingRecoveryKey, model.canUseFaceID, !model.hasFaceIDKey {
                 Section {
-                    Toggle("Use Face ID next time", isOn: $shouldRemember)
+                    Toggle("Use \(model.biometryName) next time", isOn: $shouldRemember)
                 }
             }
             Section {
                 if model.hasFaceIDKey {
-                    Button("Use Face ID", systemImage: "faceid") {
+                    Button("Use \(model.biometryName)", systemImage: model.biometrySymbolName) {
                         Task { await model.unlockWithFaceID() }
                     }
                     .actionColor()

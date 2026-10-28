@@ -109,8 +109,8 @@ enum PasswordsWords {
 
     private static func text(for error: PasswordsKeyStoreError, orSay fallback: String) -> String {
         switch error {
-        case .canceled: String(localized: "Face ID did not open Passwords. Type your passphrase instead.")
-        case .unavailable: String(localized: "This iPhone cannot keep the key behind Face ID. Set a passcode and Face ID in Settings first.")
+        case .canceled: String(localized: "\(PasswordsKeychainKeyStore.biometryName) did not open Passwords. Type your passphrase instead.")
+        case .unavailable: String(localized: "This iPhone cannot keep the key behind \(PasswordsKeychainKeyStore.biometryName). Set a passcode and \(PasswordsKeychainKeyStore.biometryName) in Settings first.")
         case .failed: fallback
         }
     }

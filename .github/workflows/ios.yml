@@ -793,6 +793,7 @@ jobs:
             "agent-usage|-TeaNodeTab settings -TeaNodeScreen agent-usage"
             "circles|-TeaNodeTab settings -TeaNodeScreen circles"
             "photos-backup-on|-TeaNodeTab settings -TeaNodeScreen photos-backup-on"
+            "passwords-settings|-TeaNodeTab passwords -TeaNodeScreen passwords-settings"
           )
           shoot ipad-connect-light light large
           for ipad_screen in "${ipad_screens[@]}"; do
