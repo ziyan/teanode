@@ -201,22 +201,44 @@ extension View {
 /// ReadableListWidth is ReadableWidth for a list: the list keeps the whole
 /// width, so it scrolls and keeps its background from edge to edge, and only
 /// its rows are kept to the readable width, through its content margins.
+///
+/// A list's content margins count from the edge of the window, under the
+/// sidebar beside it, while the list's own frame starts beside the sidebar;
+/// so the leading margin adds what the sidebar covers.
 struct ReadableListWidth: ViewModifier {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var widthPoints: CGFloat = 0
+    @State private var placement = ReadableListPlacement()
 
     func body(content: Content) -> some View {
         content
-            .contentMargins(.horizontal, marginPoints, for: .scrollContent)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { widthPoints = $0 }
+            .contentMargins(.leading, leadingMarginPoints, for: .scrollContent)
+            .contentMargins(.trailing, trailingMarginPoints, for: .scrollContent)
+            .onGeometryChange(for: ReadableListPlacement.self) { proxy in
+                ReadableListPlacement(
+                    coveredLeadingPoints: proxy.frame(in: .global).minX + proxy.safeAreaInsets.leading,
+                    coveredTrailingPoints: proxy.safeAreaInsets.trailing,
+                    shownWidthPoints: proxy.size.width - proxy.safeAreaInsets.leading - proxy.safeAreaInsets.trailing)
+            } action: { placement = $0 }
     }
 
-    /// The margin each side that leaves the readable width in the middle, or
+    /// The margin each side of the readable width within what is shown, or
     /// nil for the list's own margins where the window is not wide.
-    private var marginPoints: CGFloat? {
-        guard horizontalSizeClass == .regular, widthPoints > ReadableWidth.maximumWidth else { return nil }
-        return (widthPoints - ReadableWidth.maximumWidth) / 2
+    private var sideMarginPoints: CGFloat? {
+        guard horizontalSizeClass == .regular, placement.shownWidthPoints > ReadableWidth.maximumWidth else { return nil }
+        return (placement.shownWidthPoints - ReadableWidth.maximumWidth) / 2
     }
+
+    private var leadingMarginPoints: CGFloat? { sideMarginPoints.map { $0 + placement.coveredLeadingPoints } }
+
+    private var trailingMarginPoints: CGFloat? { sideMarginPoints.map { $0 + placement.coveredTrailingPoints } }
+}
+
+/// ReadableListPlacement is where a list is shown in its window: how much of
+/// each side something else covers, and the width left between them.
+struct ReadableListPlacement: Equatable {
+    var coveredLeadingPoints: CGFloat = 0
+    var coveredTrailingPoints: CGFloat = 0
+    var shownWidthPoints: CGFloat = 0
 }
 
 /// TagLabelStyle draws a small label that tells a row's state, such as
