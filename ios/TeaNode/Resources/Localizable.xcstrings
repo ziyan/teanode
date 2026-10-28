@@ -59351,6 +59351,24 @@
         "en": {
           "variations": {
             "device": {
+              "iphone": {
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld file waits until you open TeaNode or the phone charges overnight. A photo kept in iCloud or a large video waits this way."
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld files wait until you open TeaNode or the phone charges overnight. Photos kept in iCloud and large videos wait this way."
+                      }
+                    }
+                  }
+                }
+              },
               "ipad": {
                 "variations": {
                   "plural": {
@@ -59370,21 +59388,9 @@
                 }
               },
               "other": {
-                "variations": {
-                  "plural": {
-                    "one": {
-                      "stringUnit": {
-                        "state": "translated",
-                        "value": "%lld file waits until you open TeaNode or the phone charges overnight. A photo kept in iCloud or a large video waits this way."
-                      }
-                    },
-                    "other": {
-                      "stringUnit": {
-                        "state": "translated",
-                        "value": "%lld files wait until you open TeaNode or the phone charges overnight. Photos kept in iCloud and large videos wait this way."
-                      }
-                    }
-                  }
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld files wait until you open TeaNode or the phone charges overnight. Photos kept in iCloud and large videos wait this way."
                 }
               }
             }
@@ -59393,6 +59399,24 @@
         "ja": {
           "variations": {
             "device": {
+              "iphone": {
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld 個のファイルは、TeaNode を開くか、夜間に充電されるまで待機します。iCloud にある写真や大きなビデオはこのように待機します。"
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld 個のファイルは、TeaNode を開くか、夜間に充電されるまで待機します。iCloud にある写真や大きなビデオはこのように待機します。"
+                      }
+                    }
+                  }
+                }
+              },
               "ipad": {
                 "variations": {
                   "plural": {
@@ -59412,21 +59436,9 @@
                 }
               },
               "other": {
-                "variations": {
-                  "plural": {
-                    "one": {
-                      "stringUnit": {
-                        "state": "translated",
-                        "value": "%lld 個のファイルは、TeaNode を開くか、夜間に充電されるまで待機します。iCloud にある写真や大きなビデオはこのように待機します。"
-                      }
-                    },
-                    "other": {
-                      "stringUnit": {
-                        "state": "translated",
-                        "value": "%lld 個のファイルは、TeaNode を開くか、夜間に充電されるまで待機します。iCloud にある写真や大きなビデオはこのように待機します。"
-                      }
-                    }
-                  }
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 個のファイルは、TeaNode を開くか、夜間に充電されるまで待機します。iCloud にある写真や大きなビデオはこのように待機します。"
                 }
               }
             }
@@ -59435,6 +59447,24 @@
         "zh-Hans": {
           "variations": {
             "device": {
+              "iphone": {
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "有 %lld 个文件要等到你打开 TeaNode，或手机在夜间充电时才会发送。存放在 iCloud 的照片和较大的视频会这样等待。"
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "有 %lld 个文件要等到你打开 TeaNode，或手机在夜间充电时才会发送。存放在 iCloud 的照片和较大的视频会这样等待。"
+                      }
+                    }
+                  }
+                }
+              },
               "ipad": {
                 "variations": {
                   "plural": {
@@ -59454,21 +59484,9 @@
                 }
               },
               "other": {
-                "variations": {
-                  "plural": {
-                    "one": {
-                      "stringUnit": {
-                        "state": "translated",
-                        "value": "有 %lld 个文件要等到你打开 TeaNode，或手机在夜间充电时才会发送。存放在 iCloud 的照片和较大的视频会这样等待。"
-                      }
-                    },
-                    "other": {
-                      "stringUnit": {
-                        "state": "translated",
-                        "value": "有 %lld 个文件要等到你打开 TeaNode，或手机在夜间充电时才会发送。存放在 iCloud 的照片和较大的视频会这样等待。"
-                      }
-                    }
-                  }
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有 %lld 个文件要等到你打开 TeaNode，或手机在夜间充电时才会发送。存放在 iCloud 的照片和较大的视频会这样等待。"
                 }
               }
             }
@@ -83509,6 +83527,24 @@
         "en": {
           "variations": {
             "device": {
+              "iphone": {
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld item could not be opened on this iPhone. It may have been saved by a newer version of TeaNode."
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld items could not be opened on this iPhone. They may have been saved by a newer version of TeaNode."
+                      }
+                    }
+                  }
+                }
+              },
               "ipad": {
                 "variations": {
                   "plural": {
@@ -83528,21 +83564,9 @@
                 }
               },
               "other": {
-                "variations": {
-                  "plural": {
-                    "one": {
-                      "stringUnit": {
-                        "state": "translated",
-                        "value": "%lld item could not be opened on this iPhone. It may have been saved by a newer version of TeaNode."
-                      }
-                    },
-                    "other": {
-                      "stringUnit": {
-                        "state": "translated",
-                        "value": "%lld items could not be opened on this iPhone. They may have been saved by a newer version of TeaNode."
-                      }
-                    }
-                  }
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld items could not be opened on this iPhone. They may have been saved by a newer version of TeaNode."
                 }
               }
             }
@@ -83551,6 +83575,24 @@
         "ja": {
           "variations": {
             "device": {
+              "iphone": {
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld 件の項目をこの iPhone で開けませんでした。新しいバージョンの TeaNode で保存された可能性があります。"
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "%lld 件の項目をこの iPhone で開けませんでした。新しいバージョンの TeaNode で保存された可能性があります。"
+                      }
+                    }
+                  }
+                }
+              },
               "ipad": {
                 "variations": {
                   "plural": {
@@ -83570,21 +83612,9 @@
                 }
               },
               "other": {
-                "variations": {
-                  "plural": {
-                    "one": {
-                      "stringUnit": {
-                        "state": "translated",
-                        "value": "%lld 件の項目をこの iPhone で開けませんでした。新しいバージョンの TeaNode で保存された可能性があります。"
-                      }
-                    },
-                    "other": {
-                      "stringUnit": {
-                        "state": "translated",
-                        "value": "%lld 件の項目をこの iPhone で開けませんでした。新しいバージョンの TeaNode で保存された可能性があります。"
-                      }
-                    }
-                  }
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目をこの iPhone で開けませんでした。新しいバージョンの TeaNode で保存された可能性があります。"
                 }
               }
             }
@@ -83593,6 +83623,24 @@
         "zh-Hans": {
           "variations": {
             "device": {
+              "iphone": {
+                "variations": {
+                  "plural": {
+                    "one": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "有 %lld 个项目无法在这部 iPhone 上打开。它们可能由更新版本的 TeaNode 保存。"
+                      }
+                    },
+                    "other": {
+                      "stringUnit": {
+                        "state": "translated",
+                        "value": "有 %lld 个项目无法在这部 iPhone 上打开。它们可能由更新版本的 TeaNode 保存。"
+                      }
+                    }
+                  }
+                }
+              },
               "ipad": {
                 "variations": {
                   "plural": {
@@ -83612,21 +83660,9 @@
                 }
               },
               "other": {
-                "variations": {
-                  "plural": {
-                    "one": {
-                      "stringUnit": {
-                        "state": "translated",
-                        "value": "有 %lld 个项目无法在这部 iPhone 上打开。它们可能由更新版本的 TeaNode 保存。"
-                      }
-                    },
-                    "other": {
-                      "stringUnit": {
-                        "state": "translated",
-                        "value": "有 %lld 个项目无法在这部 iPhone 上打开。它们可能由更新版本的 TeaNode 保存。"
-                      }
-                    }
-                  }
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有 %lld 个项目无法在这部 iPhone 上打开。它们可能由更新版本的 TeaNode 保存。"
                 }
               }
             }
