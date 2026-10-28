@@ -2,8 +2,7 @@ package ratelimit
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"strings"
 	"sync"
 	"time"
 )
@@ -34,8 +33,8 @@ func Through[Transaction TokenStore](run func(context.Context, func(Transaction)
 // refused when it does not answer.
 const sharedTimeout = 5 * time.Second
 
-// sharedKeyLongest is the longest key kept as it is. The column holds 512
-// characters, and a key made of a name somebody typed can be any length.
+// sharedKeyLongest is the longest key kept. The column holds 512 characters,
+// and a key made of a name somebody typed can be any length.
 const sharedKeyLongest = 400
 
 // shared is the part of a Registry whose buckets live in the database. Every
@@ -130,8 +129,11 @@ type sharedBucket struct {
 func (self *shared) bucket(key string) *Bucket {
 	name := self.name + ":" + key
 	if len(name) > sharedKeyLongest {
-		digest := sha256.Sum256([]byte(key))
-		name = self.name + "#" + hex.EncodeToString(digest[:])
+		// Every key a caller makes is short (an address, a username of at
+		// most 64 characters, an account's id); a longer one is a name
+		// somebody typed that is nobody's, and sharing a bucket with
+		// another such name costs nobody anything.
+		name = strings.ToValidUTF8(name[:sharedKeyLongest], "")
 	}
 	return &Bucket{remote: &sharedBucket{shared: self, key: name}}
 }

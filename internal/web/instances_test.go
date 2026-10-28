@@ -6,7 +6,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/web"
@@ -27,16 +29,35 @@ func TestInstancesShareTheSignInLimit(t *testing.T) {
 		t.Fatalf("failed to build the second authenticator: %s", err)
 	}
 
-	// The burst is twenty. Alternating, neither instance alone reaches it.
-	const attemptCount = 20
-	for attempt := 1; attempt <= attemptCount; attempt++ {
-		authenticator := first
-		if attempt%2 == 0 {
-			authenticator = second
-		}
+	// One wrong try on each instance is counted in the bucket they share.
+	for name, authenticator := range map[string]web.Authenticator{"first": first, "second": second} {
 		if err := attemptLogin(t, authenticator, "203.0.113.20", "wrong"); !errors.Is(err, web.ErrInvalidCredentials) {
-			t.Fatalf("attempt %d returned %v, want invalid credentials", attempt, err)
+			t.Fatalf("the %s instance returned %v, want invalid credentials", name, err)
 		}
+	}
+	if err := credentials.TransactionContext(context.Background(), func(tx db.Transaction) error {
+		left, err := tx.CountRateLimitTokens("sign-in:203.0.113.20", 10.0/60, 20, time.Now())
+		// Two taken from twenty, give or take what refilled while the two
+		// passwords were checked, which is slow under the race detector.
+		if err == nil && left > 19 {
+			t.Errorf("%f tries left after one on each instance, want about 18", left)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The rest spent, as by tries through any instance, neither instance lets
+	// another try through. A refusal comes before any password is checked, so
+	// nothing refills meanwhile.
+	if err := credentials.TransactionContext(context.Background(), func(tx db.Transaction) error {
+		for {
+			isTaken, err := tx.TakeRateLimitToken("sign-in:203.0.113.20", 10.0/60, 20, time.Now())
+			if err != nil || !isTaken {
+				return err
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
 	}
 	for name, authenticator := range map[string]web.Authenticator{"first": first, "second": second} {
 		if err := attemptLogin(t, authenticator, "203.0.113.20", "wrong"); !errors.Is(err, web.ErrTooManyAttempts) {
