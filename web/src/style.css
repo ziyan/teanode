@@ -20977,11 +20977,13 @@ label.checkbox.is-plain > span > .muted {
 
 /* The search box at the top of the rail, between the mark and the rows. The
    rail is the narrow column, so the box takes its width and is the global
-   input in every other respect. Narrowed to icons it is one icon button. */
+   input in every other respect. Narrowed to icons it is one icon button. Its
+   sides are the rows' 8px margin, and on the right the rows' scrollbar too, so
+   the box and the row you are on line up. */
 .sidebar-search {
   position: relative;
   flex: 0 0 auto;
-  padding: 0 12px var(--space-2);
+  padding: 0 calc(8px + var(--sidebar-scrollbar-width, 0px)) var(--space-2) 8px;
 }
 .sidebar-search input[type='search'] {
   font-size: 13px;
@@ -21016,8 +21018,8 @@ label.checkbox.is-plain > span > .muted {
 .sidebar-search-list {
   position: absolute;
   top: calc(100% - var(--space-2) + 2px);
-  right: 12px;
-  left: 12px;
+  right: calc(8px + var(--sidebar-scrollbar-width, 0px));
+  left: 8px;
   z-index: 20;
   display: flex;
   flex-direction: column;
@@ -21069,7 +21071,7 @@ label.checkbox.is-plain > span > .muted {
   /* The overlay is never narrowed to icons. */
   .sidebar.collapsed .sidebar-search {
     display: block;
-    padding: 0 12px var(--space-2);
+    padding: 0 calc(8px + var(--sidebar-scrollbar-width, 0px)) var(--space-2) 8px;
   }
 }
 
