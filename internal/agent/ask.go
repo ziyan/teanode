@@ -2778,6 +2778,10 @@ func (self *AskRun) goalLines(ctx context.Context) []string {
 	var lines []string
 	if conversation.IsGoal() && conversation.Goal != "" {
 		lines = append(lines, fmt.Sprintf("This is the conversation of a goal you keep at in the background, %q: %s It is %s.", goalTitleOf(conversation), conversation.Goal, conversation.GoalState))
+		// A short word from the person here ("keep tracking it") is about
+		// this goal: another goal, a schedule or a page left open in their
+		// browser is not what "it" means just because it is in view.
+		lines = append(lines, "What the person writes in this conversation is about this goal unless they name something else; your other goals and schedules have conversations of their own.")
 		if note := strings.TrimSpace(conversation.GoalNote); note != "" {
 			lines = append(lines, "Where it stands: "+note)
 		}

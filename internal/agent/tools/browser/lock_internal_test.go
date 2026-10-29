@@ -361,6 +361,11 @@ func TestTheOverlayAndTheTabsResultHideWhatWasFilled(test *testing.T) {
 	if !strings.Contains(overlay, "<tab>") || strings.Contains(overlay, "Tr0ub4") || !strings.Contains(overlay, "[hidden]") {
 		test.Fatalf("the overlay: %s", overlay)
 	}
+	// The page is not offered as what the person means: it is often one a
+	// schedule left there.
+	if strings.Contains(overlay, "has attached their own browser tab") || !strings.Contains(overlay, "not a sign of what they are asking about") {
+		test.Fatalf("the overlay presents the page as the person's: %s", overlay)
+	}
 	// The headless browser's own tabs answer.
 	headless, _ := found.headlessRun(test, shopAddress)
 	headless.tab = run.tab
