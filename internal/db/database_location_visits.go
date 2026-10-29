@@ -63,6 +63,12 @@ func (self *transaction) NormalizePlaceVisits(userId string, from, until time.Ti
 	if visits, err = self.visitsAround(userId, windowStart, windowEnd); err != nil {
 		return err
 	}
+	if err := self.joinDeparturesToTheirVisits(userId, visits); err != nil {
+		return err
+	}
+	if visits, err = self.visitsAround(userId, windowStart, windowEnd); err != nil {
+		return err
+	}
 	if err := self.dropVisitsInsideOthers(userId, visits); err != nil {
 		return err
 	}
@@ -239,6 +245,42 @@ func (self *transaction) dropPassByDepartures(userId string, visits []placeVisit
 			if err := self.moveVisitKeys(userId, departure, previous[0].ID); err != nil {
 				return err
 			}
+		}
+		if err := self.tx.Where("\"id\" = ?", departure.ID).Delete(&placeVisitModel{}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// joinDeparturesToTheirVisits takes each departure stored with no arrival
+// into the person's visit to the same place that ended less than
+// PassByDurationMost before or after it, when that visit is the latest of
+// theirs to begin before the departure: it is that visit's end, told twice.
+// iOS visit monitoring can tell of leaving a place on its own as well as with
+// the whole visit, a moment apart. The visit keeps its own departure, and the
+// departure's key goes to it, so that the phone sending it again finds it.
+func (self *transaction) joinDeparturesToTheirVisits(userId string, visits []placeVisitModel) error {
+	for index := range visits {
+		departure := &visits[index]
+		if departure.ArrivedAt != nil || departure.DepartedAt == nil {
+			continue
+		}
+		var previous []placeVisitModel
+		if err := self.tx.Where("\"user_id\" = ? AND \"id\" <> ? AND \"arrived_at\" IS NOT NULL AND \"arrived_at\" < ?",
+			userId, departure.ID, *departure.DepartedAt).
+			Order("\"arrived_at\" DESC, \"created_at\" DESC, \"id\" DESC").Limit(1).Find(&previous).Error; err != nil {
+			return err
+		}
+		// A visit that ended at the departure itself was ended by it, as the
+		// next visit to begin: its own departure is not known yet, and the
+		// departure may be the end of a later visit whose arrival has not come.
+		if len(previous) == 0 || previous[0].PlaceID != departure.PlaceID || previous[0].DepartedAt == nil ||
+			previous[0].DepartedAt.Equal(*departure.DepartedAt) || previous[0].DepartedAt.Sub(*departure.DepartedAt).Abs() >= PassByDurationMost {
+			continue
+		}
+		if err := self.moveVisitKeys(userId, departure, previous[0].ID); err != nil {
+			return err
 		}
 		if err := self.tx.Where("\"id\" = ?", departure.ID).Delete(&placeVisitModel{}).Error; err != nil {
 			return err
@@ -478,7 +520,8 @@ func (self *transaction) ListOverlappedVisitRanges(since time.Time) ([]VisitRang
 	var ranges []VisitRange
 	// A departure from a watched place with no arrival, inside a visit at
 	// another place or less than PassByDurationMost after a visit ended,
-	// counts too.
+	// counts too, and so does any departure with no arrival less than
+	// PassByDurationMost from the end of a visit to its place.
 	if err := self.tx.Raw(`SELECT overlapped.user_id, min(overlapped.range_from) AS range_from, max(overlapped.range_until) AS range_until
 		FROM (
 			SELECT earlier.user_id, earlier.arrived_at AS range_from, COALESCE(later.departed_at, later.arrived_at) AS range_until
@@ -502,6 +545,15 @@ func (self *transaction) ListOverlappedVisitRanges(since time.Time) ([]VisitRang
 			WHERE departure.arrived_at IS NULL AND departure.visit_source = @region AND departure.departed_at >= @since
 			  AND previous.arrived_at IS NOT NULL AND previous.departed_at <= departure.departed_at
 			  AND previous.departed_at > departure.departed_at - @passBySeconds * interval '1 second'
+			UNION ALL
+			SELECT own.user_id, own.arrived_at AS range_from, GREATEST(own.departed_at, departure.departed_at) AS range_until
+			FROM "place_visit" departure
+			JOIN "place_visit" own ON own.user_id = departure.user_id AND own.place_id = departure.place_id
+			WHERE departure.arrived_at IS NULL AND departure.departed_at >= @since
+			  AND own.arrived_at IS NOT NULL AND own.arrived_at < departure.departed_at
+			  AND own.departed_at > departure.departed_at - @passBySeconds * interval '1 second'
+			  AND own.departed_at < departure.departed_at + @passBySeconds * interval '1 second'
+			  AND own.departed_at <> departure.departed_at
 		) overlapped
 		GROUP BY overlapped.user_id
 		ORDER BY overlapped.user_id`, sql.Named("since", since), sql.Named("region", string(models.VisitSourceRegion)),

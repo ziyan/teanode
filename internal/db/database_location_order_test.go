@@ -242,6 +242,52 @@ func TestAMomentsVisitInsideAnotherIsNoStop(t *testing.T) {
 	})
 }
 
+// A departure with no arrival a moment from the end of the visit before it,
+// to the same place, is that visit's end told twice, whichever comes first.
+func TestADepartureToldTwiceIsOneVisit(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId := locationUser(t, tx, "location-departure-twice")
+		office := locationPlace(t, tx, userId, "office", 10.5)
+		cafe := locationPlace(t, tx, userId, "cafe", 10.6)
+		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office-morning", 0, 60))
+		putAndNormalize(t, tx, userId, locationVisit(cafe.ID, "cafe", 62, 70))
+		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office-afternoon", 72, -1))
+		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office-departure", -1, 299))
+		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office-afternoon", 72, 300))
+		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[office 0-60 cafe 62-70 office 72-300]"; got != want {
+			t.Errorf("the visits are %s, want %s", got, want)
+		}
+		// The phone sending the departure again finds the visit.
+		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office-departure", -1, 299))
+		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[office 0-60 cafe 62-70 office 72-299]"; got != want {
+			t.Errorf("the visits are %s, want %s", got, want)
+		}
+
+		// One stored before this was put in order is found at start, and one
+		// after the visit ended that came a moment later is that visit's too.
+		if _, err := tx.PutPlaceVisit(userId, locationVisit(office.ID, "office-departure-again", -1, 301)); err != nil {
+			t.Fatalf("PutPlaceVisit: %s", err)
+		}
+		if ranges, err := tx.ListOverlappedVisitRanges(locationDay.Add(-time.Hour)); err != nil || len(ranges) != 1 || ranges[0].UserID != userId {
+			t.Errorf("the departure told twice is found to put in order: %+v %v", ranges, err)
+		}
+		if err := tx.NormalizePlaceVisits(userId, *minutesAfterNine(72), *minutesAfterNine(301)); err != nil {
+			t.Fatalf("NormalizePlaceVisits: %s", err)
+		}
+		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[office 0-60 cafe 62-70 office 72-299]"; got != want {
+			t.Errorf("the visits are %s, want %s", got, want)
+		}
+
+		// A departure long after the visit ended is not that visit's.
+		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office-evening-departure", -1, 400))
+		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[office 0-60 cafe 62-70 office 72-299 office unknown-400]"; got != want {
+			t.Errorf("the visits are %s, want %s", got, want)
+		}
+	})
+}
+
 // Whatever order the reports of four stays arrive in, one at a time, the
 // visits are the ones the person had.
 func TestVisitsDeliveredInAnyOrderEndUpAsTheyWereInOrder(t *testing.T) {

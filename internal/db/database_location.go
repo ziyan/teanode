@@ -159,7 +159,9 @@ type LocationOperation interface {
 	// arrival noticed inside a visit at another place moves to before that
 	// visit, one that came less than PassByDurationMost after the visit before
 	// it ended is taken out (into that visit when it was to the same place),
-	// a visit from the phone shorter than PassByDurationMost that began and
+	// any departure with no arrival less than PassByDurationMost from the end
+	// of the visit before it to the same place is taken into that visit, as
+	// the same departure told twice, a visit from the phone shorter than PassByDurationMost that began and
 	// ended inside a visit at another place is taken out (with the place iOS
 	// made for it, unless the person named or labeled it), and visits to one
 	// place less than ten minutes apart with nothing
@@ -169,7 +171,9 @@ type LocationOperation interface {
 	// ListOverlappedVisitRanges finds the people with a visit that began
 	// after the arrival of a visit of theirs at another place and before it
 	// ended, or a departure from a watched place with no arrival inside such a
-	// visit or less than PassByDurationMost after a visit ended, among visits
+	// visit or less than PassByDurationMost after a visit ended, or any
+	// departure with no arrival less than PassByDurationMost from the end of
+	// a visit to its place, among visits
 	// that began since the instant, and for each the range
 	// from the first such visit's arrival to the end of the last one, for
 	// NormalizePlaceVisits. Visits put in order overlap none.
