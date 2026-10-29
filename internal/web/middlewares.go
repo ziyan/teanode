@@ -191,7 +191,7 @@ func MakeForwarderMiddleware(forwarderKey string) Middleware {
 func MakeSecurityHeadersMiddleware(inlineScriptHashes []string, trustedProxies func() []string) Middleware {
 	policy := securityPolicy(inlineScriptHashes, "connect-src 'self'")
 	commandLinePolicy := securityPolicy(inlineScriptHashes, "connect-src 'self' "+CommandLineConnectSources)
-	drawerPolicy := strings.Replace(policy, "frame-ancestors 'none'", "frame-ancestors *", 1)
+	drawerPolicy := strings.Replace(policy, "frame-ancestors 'none'", "frame-ancestors chrome-extension:", 1)
 	financeLinkPolicy := financeLinkSecurityPolicy(inlineScriptHashes)
 
 	return func(handler http.Handler) http.Handler {
@@ -242,13 +242,12 @@ func MakeSecurityHeadersMiddleware(inlineScriptHashes []string, trustedProxies f
 // sign in. The client names the same path.
 const CommandLinePagePath = "/cli"
 
-// DrawerPagePath is the dashboard's agent drawer on a page of its own, for
-// the browser extension to frame into whatever site the person is on. It
-// may be framed by any origin: framed without the token the extension
-// hands it, it shows nothing and can do nothing, and the session cookie
-// (SameSite=Lax) is not sent to a cross-site frame. A page on another host
-// of the same site would get the cookie; a server that serves other
-// people's pages on a sibling host should keep that in mind.
+// DrawerPagePath is the dashboard's agent drawer on a page of its own, for the
+// browser extension's side panel to frame. Only a page of an extension may
+// frame it (frame-ancestors chrome-extension:): no website does any more, so
+// none is allowed to. Framed without the token the side panel posts to it, it
+// shows nothing and can do nothing, and the drawer itself takes that token
+// only from a chrome-extension:// parent (web/src/handedToken.ts).
 const DrawerPagePath = "/drawer"
 
 // FinanceLinkPagePath is the dashboard page that opens Plaid's linking

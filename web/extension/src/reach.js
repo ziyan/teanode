@@ -131,12 +131,10 @@ const CDP_CONTEXT_PARAMETERS = ['contextId', 'uniqueContextId', 'executionContex
 
 // cdpParametersRefusal says why the parameters of an allowed method are not
 // sent, or '' when they are. Two things reach past the page the tab shows,
-// into the frames in it. The panel the extension puts on a page is the
-// dashboard's drawer, a frame of the server's origin, and a frame of the same
-// site shares the tab's process, so the protocol can see into it: pierce reads
-// the documents of frames and the shadow roots the panel sits in, and an
-// execution context runs script in a frame's own world. Neither is the page
-// the person attached.
+// into the frames in it. A frame of the server's origin shares the tab's
+// process, so the protocol can see into it: pierce reads the documents of
+// frames and their shadow roots, and an execution context runs script in a
+// frame's own world. Neither is the page the person attached.
 export function cdpParametersRefusal(method, params) {
   const given = params && typeof params === 'object' ? params : {}
   if (given.pierce === true) {
@@ -223,10 +221,10 @@ export function fetchRefusal(address, base, serverOrigin) {
 
 // What the agent is shown of the requests the tab made.
 //
-// The panel is a frame of the server's origin, and a frame of the same site is
-// in the tab's process, so its requests, with the Authorization header that
-// signs the person in, are among the page's network events. What a page asks
-// other sites for is what the agent watches the network for, and is shown.
+// A frame of the server's origin shares the tab's process, so its requests,
+// with the Authorization header that signs the person in, are among the page's
+// network events. What a page asks other sites for is what the agent watches
+// the network for, and is shown.
 //
 // The worker keeps few events, and a page that makes many pushes a
 // connection's first events out of them while its later ones, which can carry
@@ -344,149 +342,4 @@ export function pageRefusal(action, tab, serverOrigin) {
   if (!tab) return ''
   if (isOwnPage(tab.url, serverOrigin) || isOwnPage(tab.pendingUrl, serverOrigin)) return OWN_PAGES_REFUSAL
   return ''
-}
-
-// The person's own TeaNode panel.
-//
-// panel.js puts the dashboard's drawer, signed in as the person, in a frame on
-// the page the extension's button was pressed on. Input the DevTools protocol
-// dispatches is real input, as the person's own hardware sends it, so a click
-// the agent dispatches at the place where that frame is lands inside TeaNode
-// itself, and the server cannot tell it from the person's tap. A page script
-// cannot do this to a frame of another origin, so only the protocol's input
-// needs the line, and a script that clicks, hovers, types or chooses in an
-// element is kept off elements the panel covers for the same reason: the
-// person would see a click land under the panel.
-export const PANEL_REFUSAL = "The agent does not click inside the person's TeaNode panel."
-export const PANEL_KEYS_REFUSAL =
-  "The agent does not type while the person's TeaNode panel has focus, since the keys would go into it."
-export const PANEL_ELEMENT_REFUSAL =
-  "The agent does not click inside the person's TeaNode panel, and that element is under it. Ask the person to move or close the panel, or scroll the page so the element is clear of it."
-
-// panelProbe runs in the page, in the extension's own world, and says where
-// the panel is now: whether it is showing, its box in the viewport's
-// coordinates (which are the protocol's), and whether the frame in it has
-// focus. It is read at the moment of the action rather than reported when the
-// panel moved, since a page can move its parts by a style rule that no event
-// announces. It is self-contained: nothing from this file is in scope there.
-// An element the page renamed is still found, as panel.js keeps it in its
-// world; a panel put on the page before that was done is found by its id.
-export function panelProbe() {
-  const host = window.__teanodePanel || document.getElementById('teanode-agent-panel')
-  if (!host || !host.isConnected) return { isOpen: false }
-  const box = host.getBoundingClientRect()
-  const isShowing = box.width > 0 && box.height > 0 && window.getComputedStyle(host).visibility !== 'hidden'
-  if (!isShowing) return { isOpen: false }
-  return {
-    isOpen: true,
-    left: box.left,
-    top: box.top,
-    right: box.right,
-    bottom: box.bottom,
-    hasFocus: document.activeElement === host,
-  }
-}
-
-// isInsidePanel says a point, in the viewport's coordinates, is in the panel.
-function isInsidePanel(x, y, panel) {
-  return x >= panel.left && x <= panel.right && y >= panel.top && y <= panel.bottom
-}
-
-// overlapsPanel says a box (a DOMRect or the like) touches the panel.
-export function overlapsPanel(box, panel) {
-  if (!panel || !panel.isOpen) return false
-  return box.left <= panel.right && box.right >= panel.left && box.top <= panel.bottom && box.bottom >= panel.top
-}
-
-const POINT_METHODS = new Set([
-  'Input.dispatchMouseEvent',
-  'Input.synthesizeTapGesture',
-  'Input.synthesizeScrollGesture',
-])
-const KEY_METHODS = new Set(['Input.dispatchKeyEvent', 'Input.insertText'])
-
-// panelRefusal says why a DevTools input call is not sent while the panel is
-// where it is, or '' when it is: a point inside the panel, or keys while its
-// frame has focus. Methods that are not input are not about the panel.
-export function panelRefusal(method, params, panel) {
-  if (!panel || !panel.isOpen || typeof method !== 'string' || !method.startsWith('Input.')) return ''
-  if (KEY_METHODS.has(method)) return panel.hasFocus ? PANEL_KEYS_REFUSAL : ''
-  const given = params && typeof params === 'object' ? params : {}
-  let points
-  if (POINT_METHODS.has(method)) points = [given]
-  else if (method === 'Input.dispatchTouchEvent') points = Array.isArray(given.touchPoints) ? given.touchPoints : []
-  else return PANEL_REFUSAL
-  for (const point of points) {
-    const x = point && point.x
-    const y = point && point.y
-    // A point that is not a pair of numbers is one the browser refuses too.
-    if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y))
-      return 'x and y must be numbers'
-    if (isInsidePanel(x, y, panel)) return PANEL_REFUSAL
-  }
-  return ''
-}
-
-// Handing the person's sign-in token to the panel's frame.
-//
-// The token used to be written into the frame's address, and an address is
-// readable: the iframe element's src attribute keeps it, and the DevTools
-// protocol reads attributes through the closed shadow root the panel sits in.
-// It is now handed over by the worker, in the frame's own world, and appears
-// in no address, attribute, storage or message:
-//
-//   1. panel.js frames /drawer?handoff=<nonce>, the nonce made in its own
-//      world, which the page around it cannot read.
-//   2. isPanelFrame, run in every frame of the tab, says which is the one
-//      with that nonce, whose parent is the page the panel is on, on the
-//      server's origin. It carries no secret, and it only finds the frame: a
-//      frame keeps its id when it is navigated, so it is not the guard.
-//   3. handOverToken, run in that frame alone, in the frame's own world,
-//      checks where it is running, in the same call that uses the token, and
-//      only if it is the panel's own drawer (the server's origin, /drawer,
-//      this panel's nonce, a child of the top page) calls the function the
-//      drawer page leaves on its window for the purpose. The check cannot be
-//      a call of its own: between two calls the page around the panel, or the
-//      agent, can navigate the frame, and the token would go to whatever is
-//      there, in a world where that page can define the function itself. The
-//      page around the frame cannot call into a frame of another origin, and
-//      the drawer takes the token once.
-//
-// Both are self-contained: nothing from this file is in scope where they run.
-
-// HAND_TOKEN_FUNCTION is the name of the function the drawer page leaves on
-// its window. web/src/handedToken.ts has the same name, and a test keeps the
-// two equal.
-export const HAND_TOKEN_FUNCTION = '__teanodeHandToken'
-
-export function isPanelFrame(serverOrigin, nonce) {
-  try {
-    return (
-      window !== window.top &&
-      window.parent === window.top &&
-      location.origin === serverOrigin &&
-      location.pathname === '/drawer' &&
-      new URLSearchParams(location.search).get('handoff') === nonce
-    )
-  } catch {
-    return false
-  }
-}
-
-export function handOverToken(token, serverOrigin, nonce) {
-  // Where this is running, read before anything else is touched. The location
-  // cannot be replaced by a page, so what it says is where the code is.
-  try {
-    const isPanel =
-      window !== window.top &&
-      window.parent === window.top &&
-      location.origin === serverOrigin &&
-      location.pathname === '/drawer' &&
-      new URLSearchParams(location.search).get('handoff') === nonce
-    if (!isPanel) return false
-    const hand = window.__teanodeHandToken
-    return typeof hand === 'function' ? hand(token) === true : false
-  } catch {
-    return false
-  }
 }

@@ -8,9 +8,9 @@ import "sync"
 //
 // The tab's network events arrive in windows, and a page can push a
 // request's first events out of the window while the request goes on: a
-// WebSocket opened by the panel's frame, whose Authorization header is in a
-// later frame event, is no longer recognized as a request to the server
-// once its creation event is gone. So a request is shown only when its
+// WebSocket opened by a frame of the server's origin, whose Authorization
+// header is in a later frame event, is no longer recognized as a request to
+// the server once its creation event is gone. So a request is shown only when its
 // creation was seen, and what was never seen created is not shown.
 //
 // A session is one debugging session of one tab in the extension; its key

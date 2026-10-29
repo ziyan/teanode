@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { RedirectKeepingQuery } from './components/redirectKeepingQuery'
 
 import { Session, framedDrawer, getSession, logout, signInWithToken } from './api'
-import { forgetHandedToken, offerHandedToken, peekHandedToken, whenTokenIsHanded } from './handedToken'
+import { forgetHandedToken, listenForHandedToken, peekHandedToken, whenTokenIsHanded } from './handedToken'
 import { LoginPage } from './pages/login'
 import { AuthorizePage } from './pages/authorize'
 import { ConnectPage } from './pages/connect'
@@ -37,9 +37,10 @@ import { RouteErrorBoundary } from './components/errorBoundary'
 import { ServiceGate } from './components/serviceGate'
 import { Tooltip } from './components/tooltip'
 
-// Ready for the extension's worker as soon as the bundle runs, before the page
-// has rendered anything to wait for.
-if (framedDrawer) offerHandedToken()
+// Ready for the extension's side panel as soon as the bundle runs, before the
+// page has rendered anything to wait for: it posts the token once the frame
+// has loaded.
+if (framedDrawer) listenForHandedToken()
 
 // The pages somebody may never open are fetched when they do. What is left in
 // the first download is the shell, the way in, and the two pages a session
@@ -279,12 +280,10 @@ export function App() {
   const [session, setSession] = useState<Session | null>(null)
   const location = useLocation()
 
-  // The drawer on a page of its own, framed by the browser extension into
-  // whatever site the person is on. It has no session: it signs in with the
-  // token the extension's worker hands it (see handedToken.ts), which is in
-  // no address, attribute or message the page around the frame could read,
-  // and takes no token from a message, since the page around it is its
-  // parent too.
+  // The drawer on a page of its own, framed by the browser extension's side
+  // panel. It has no session: it signs in with the token the side panel posts
+  // to it (see handedToken.ts), which is in no address, and which it takes
+  // only from a chrome-extension:// parent, once.
   const framed = framedDrawer
   const [framedToken, setFramedToken] = useState(() => {
     if (!framed) return ''
@@ -296,6 +295,14 @@ export function App() {
     if (!framed) return
     if (framedToken) {
       forgetHandedToken()
+      return
+    }
+    // The token may have come between the first render and this effect, with
+    // nobody yet waiting for it: it is kept, and taken from there.
+    const handed = peekHandedToken()
+    if (handed) {
+      signInWithToken(handed)
+      setFramedToken(handed)
       return
     }
     return whenTokenIsHanded((token) => {
@@ -331,7 +338,7 @@ export function App() {
     void refresh()
   }, [refresh, framed, framedToken])
 
-  // The panel around the frame is told who this drawer is signed in as,
+  // The side panel around the frame is told who this drawer is signed in as,
   // so that it can tell a frame somebody else navigated. Told to the
   // page framing it and no other: the browser names that page's origin.
   useEffect(() => {

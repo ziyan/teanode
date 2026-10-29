@@ -1,9 +1,10 @@
 // The passkey question. A website asked this browser for a passkey and the
-// extension stopped to ask, in a window of its own that the website can
+// extension stopped to ask, in the toolbar button's dropdown (or a window of
+// its own when the page is not the one in front), which the website can
 // neither draw over nor click: "Save a passkey for example.com as ada?" or
 // "Sign in to example.com with your passkey?". "Use the browser instead" hands
-// the request back to the browser's own passkeys. Closing the window answers
-// as a refusal. If Passwords is locked, the window unlocks it first instead of
+// the request back to the browser's own passkeys. Closing the dropdown or the
+// window answers as a refusal. If Passwords is locked, the window unlocks it first instead of
 // failing quietly.
 
 import { PromptInfo } from './messages'
@@ -12,6 +13,14 @@ import { ask, AskError, clear, element, errorText } from './pageDom'
 const root = document.getElementById('app') as HTMLElement
 const promptId = new URLSearchParams(window.location.search).get('id') ?? ''
 const statusLine = element('div', { className: 'status', role: 'status' })
+
+// The port says to the service worker that the question is on screen; it
+// closing (the dropdown or the window going away) is the refusal. The worker
+// closes the question through it once it is answered.
+const port = chrome.runtime.connect({ name: 'passwords-prompt' })
+port.onMessage.addListener((message: { promptMessageKind?: string }) => {
+  if (message && message.promptMessageKind === 'close') window.close()
+})
 
 function say(text: string, tone: '' | 'bad' = '') {
   statusLine.textContent = text
@@ -63,7 +72,7 @@ function hostOfOrigin(origin: string): string {
   }
 }
 
-// Cancel closes the window, which answers the website as a refusal.
+// Cancel closes the question, which answers the website as a refusal.
 function makeCancelButton(): HTMLButtonElement {
   const button = element('button', { type: 'button' }, 'Cancel')
   button.addEventListener('click', () => window.close())
