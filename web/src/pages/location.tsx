@@ -1150,7 +1150,8 @@ function LocationContent({ userId }: { userId: string }) {
     return t('location.timeSince', { from: timeOf(pause.startedAt) })
   }
 
-  // The pictures taken during a visit, under its row: up to four, and the
+  // The pictures taken during a visit, in its row under the place's name: up
+  // to four, and the
   // number of the rest when there are more. They open the Photos library over
   // the visit's own window of time.
   function photoStrip(visit: PlaceVisit) {
@@ -1609,11 +1610,17 @@ function LocationContent({ userId }: { userId: string }) {
                     <span className="muted location-row-meta">{pauseLengthText(row.pause)}</span>
                   </div>
                 ) : (
-                  <>
-                    <div className="location-visit-row">
+                  <div
+                    className={
+                      row.visit.place.id === selectedPlaceId
+                        ? 'location-row location-visit is-selected'
+                        : 'location-row location-visit'
+                    }
+                  >
+                    <div className="location-visit-head">
                       <button
                         type="button"
-                        className={row.visit.place.id === selectedPlaceId ? 'location-row is-selected' : 'location-row'}
+                        className="location-visit-select"
                         onClick={() => {
                           setSelectedPlaceId(row.visit.place.id)
                           setSelectedUserId(null)
@@ -1658,7 +1665,7 @@ function LocationContent({ userId }: { userId: string }) {
                       )}
                     </div>
                     {photoStrip(row.visit)}
-                  </>
+                  </div>
                 )}
               </Fragment>
             )
