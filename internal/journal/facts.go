@@ -100,7 +100,27 @@ func codingMinutes(sessions []CodingSession) int {
 	for _, session := range sessions {
 		spans = append(spans, session.PersonSpans...)
 	}
-	return minutesOfUnion(spans)
+	return workedMinutes(spans)
+}
+
+// workedMinutes is the minutes of the person's spans (each begun by one of
+// their posts) when a post also counts until their next post in any session,
+// if that comes within personPauseMost. Someone running sessions side by side
+// is at work between a post in one and a post in another, though each
+// session on its own shows a long pause.
+func workedMinutes(spans [][2]time.Time) int {
+	starts := make([]time.Time, 0, len(spans))
+	for _, span := range spans {
+		starts = append(starts, span[0])
+	}
+	sort.Slice(starts, func(left, right int) bool { return starts[left].Before(starts[right]) })
+	bridged := append([][2]time.Time{}, spans...)
+	for index := 0; index+1 < len(starts); index++ {
+		if pause := starts[index+1].Sub(starts[index]); pause > 0 && pause <= personPauseMost {
+			bridged = append(bridged, [2]time.Time{starts[index], starts[index+1]})
+		}
+	}
+	return minutesOfUnion(bridged)
 }
 
 // meetings counts the events with a time that were not called off, and

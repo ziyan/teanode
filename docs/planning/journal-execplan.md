@@ -128,6 +128,10 @@ To see it working at the end: on a development server with a week of invented da
   Rationale: counted from each stretch's first post to its last, an assistant left working on its own, overnight or through a day away from the desk, made that whole time work, close to 24 hours a day. The person's posts are told apart by author, the names they go by in chat.
   Date/Author: 2026-10-26, agent.
 
+- Decision: the next post that a post runs on to may be in any of the day's sessions, not only its own.
+  Rationale: the person runs several sessions side by side and moves between them, so each session alone shows pauses of more than half an hour while they were at work the whole time. Counted one session at a time, a day of about seven hours came out under five.
+  Date/Author: 2026-10-28, agent.
+
 - Decision: the agent reads a day only from what the person gave it: the mailboxes granted to it (their mail and notes), the calendars given to it, the chats the person lets it remember, and the transactions of the finance sources that are on. That holds for its dreams and jobs, its tool and a command it runs as the person, in the records a narrative mentions and the records it may pin. The person's own page reads all of it, and the stored numbers are counted from all of it.
   Rationale: review found the dream reading every mailbox, calendar and chat, so a person who gave the agent only a work mailbox still had private senders and subjects in the prompt and the narrative.
   Date/Author: 2026-10-27, review.
