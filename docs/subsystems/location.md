@@ -84,7 +84,8 @@ runs past the arrival of the next visit at another place ends at that arrival,
 visits to one place with a visit at another place between them are not joined,
 and a visit that was joined before the visit between its parts was heard of is
 split again where that visit began. A visit known only by its departure is not
-joined to anything until its arrival is reported. A departure from a place's
+joined to anything until its arrival is reported, unless it is the end of a
+visit told twice (below). A departure from a place's
 circle is the exception: the phone sends it only after its arrival, so one
 stored without an arrival will not get one. When it was noticed while the
 person was already at another place (iOS can tell of leaving a circle an hour
@@ -96,7 +97,16 @@ did at the place fits in that time. It is taken into that visit when that was
 to the same place (iOS can tell of leaving a circle again a moment after the
 visit ended), and otherwise deleted as a pass-by (a place on the way that iOS
 told of leaving with no arrival). Neither sends a "left" notice: the visit it
-went into told its own departure when it came. The result is the same as if
+went into told its own departure when it came. A visit shorter than three
+minutes that began and ended inside the person's visit at another place is
+deleted too, since they were at that place the whole time (iOS visit
+monitoring can tell of a visit of no length a short way from where the person
+is), with the place iOS made for it unless the person named or labeled it; a
+check-in is kept. Any departure with no arrival less than three minutes from
+the end of the person's visit before it, to the same place, is that visit's end
+told twice and is taken into it, which keeps its own departure (iOS visit
+monitoring can tell of leaving a place on its own as well as with the whole
+visit). The result is the same as if
 the events had come in order. The times put in order reach back to the arrival
 of every visit the report changed: iOS can report leaving a place's circle
 hours late, and that departure must not carry the visit over the stops made

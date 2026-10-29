@@ -2979,8 +2979,8 @@ pre.message-text {
        controls. This rule used to put the top back to --space-6, which let
        the card start level with the controls, so on every phone they sat on
        its top edge: the login form, /cli and approving a program alike. */
-    padding: max(56px, calc(env(safe-area-inset-top) + 48px)) max(16px, env(safe-area-inset-right))
-      var(--space-6) max(16px, env(safe-area-inset-left));
+    padding: max(56px, calc(env(safe-area-inset-top) + 48px)) max(16px, env(safe-area-inset-right)) var(--space-6)
+      max(16px, env(safe-area-inset-left));
   }
 
   /* Scrolled away with the page rather than fixed over it. A card taller
@@ -3504,7 +3504,8 @@ body,
     align-items: center;
   }
 
-  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > div:first-child {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child)
+    > div:first-child {
     display: contents;
   }
 
@@ -3514,13 +3515,16 @@ body,
     margin: 0;
   }
 
-  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > div:first-child > p {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child)
+    > div:first-child
+    > p {
     grid-row: 2;
     grid-column: 1 / -1;
     margin-top: 4px;
   }
 
-  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > :is(button, .head-icons, .menu-button) {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child)
+    > :is(button, .head-icons, .menu-button) {
     grid-row: 1;
     grid-column: 2;
     margin-left: 0;
@@ -6820,7 +6824,6 @@ label .select-value.placeholder {
   margin: 4px 8px 8px;
 }
 
-
 .background-menu-head .background-stop {
   margin-left: auto;
 }
@@ -6966,7 +6969,6 @@ label .select-value.placeholder {
   padding: 0 6px;
   font-size: 11px;
 }
-
 
 /* The whole command, however long: a command can be pages of pipeline,
    so it scrolls in a box of its own rather than pushing the output out of
@@ -11463,7 +11465,6 @@ main.content:has(> .knowledge-frame) {
   }
 }
 
-
 /* Nothing of its own: the box and the ways in share a row, which is what
    the mail list does and what the shared toolbar already arranges. The box
    took a row to itself for a while, because as a question and a phrase the
@@ -11526,7 +11527,6 @@ main.content:has(> .knowledge-frame) {
   flex: none;
   align-self: flex-start;
 }
-
 
 /* The back button is where the chevron on the row that led here was, so
    the two read as the same door from both sides. */
@@ -14925,7 +14925,6 @@ button.idea-history-title {
   margin-left: 2px;
 }
 
-
 /* The line under the months chart: the chosen month's income, spending and
    what was left, folding onto more lines on a phone. */
 .finance-month-flow {
@@ -15531,7 +15530,6 @@ button.idea-history-title {
 .finance-receipt-lines {
   font-size: 13px;
 }
-
 
 .finance-receipt-lines th,
 .finance-receipt-lines td {
@@ -16257,25 +16255,60 @@ button.herdr-question-head {
   -webkit-line-clamp: 2;
 }
 
-.recording-original { display: flex; flex-direction: column; gap: var(--space-2); }
-.recording-player { display: block; width: 100%; max-height: 65vh; }
-.recording-player[hidden] { display: none; }
+.recording-original {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.recording-player {
+  display: block;
+  width: 100%;
+  max-height: 65vh;
+}
+.recording-player[hidden] {
+  display: none;
+}
 /* The one player: a play button, the time, a scrubber along the recording's
    whole timeline, and its length. The range input lies over the drawn track,
    invisible, so a drag, a tap and the arrow keys all reach it. */
-.recording-player-controls { display: flex; align-items: center; gap: var(--space-2); }
-.recording-player-time { font-size: 13px; font-variant-numeric: tabular-nums; min-width: 2.75rem; }
-.recording-player-time:last-child { text-align: right; }
-.recording-scrubber { position: relative; flex: 1; min-width: 0; height: 28px; }
+.recording-player-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.recording-player-time {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.75rem;
+}
+.recording-player-time:last-child {
+  text-align: right;
+}
+.recording-scrubber {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+}
 .recording-scrubber-track {
   position: absolute;
   inset: 11px 0;
   border-radius: 3px;
   background: var(--border-strong);
 }
-.recording-scrubber-fill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--accent); }
+.recording-scrubber-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--accent);
+}
 /* Time between two pieces that nobody captured, which the player skips. */
-.recording-scrubber-gap { position: absolute; top: -2px; bottom: -2px; background: var(--surface); }
+.recording-scrubber-gap {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  background: var(--surface);
+}
 .recording-scrubber-thumb {
   position: absolute;
   top: 50%;
@@ -16286,7 +16319,11 @@ button.herdr-question-head {
   background: var(--accent);
   box-shadow: 0 0 0 2px var(--surface);
 }
-.recording-scrubber:focus-within .recording-scrubber-thumb { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--border-strong); }
+.recording-scrubber:focus-within .recording-scrubber-thumb {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--border-strong);
+}
 .recording-scrubber input[type='range'] {
   position: absolute;
   inset: 0;
@@ -16296,7 +16333,9 @@ button.herdr-question-head {
   opacity: 0;
   cursor: pointer;
 }
-.recording-progress { width: 100%; }
+.recording-progress {
+  width: 100%;
+}
 
 /* --- a recording as a conversation -----------------------------------------
    The bubbles are the agent chat's own (`.agent-line user` for the account
@@ -17012,7 +17051,6 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 .herdr-onscreen.reserved {
   background: none;
 }
-
 
 /* The transcript, or the screen, with the button that switches between
    them floating over its top right corner. */
@@ -18791,7 +18829,6 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   }
 }
 
-
 /* Chats in the drawer: a conversation with people in it. The person's own
    messages are the bubbles they always were, on the right; everybody
    else's are on the left with a picture, and a name above the first of a run. */
@@ -19781,17 +19818,66 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   margin-bottom: 0;
 }
 
-/* A visit and its menu side by side: the visit takes the width. */
-.location-visit-row {
-  display: flex;
-  align-items: flex-start;
+/* A visit is one card holding the place, its menu and its pictures, as a trip
+   holds its legs and their menus. The place is a button of its own, since the
+   menu and the pictures cannot sit inside a button, and it reaches over the
+   whole card, so a press anywhere on the card but on them selects the place
+   and the card shows the hover and the focus, not a box inside it. */
+.location-visit {
+  position: relative;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--space-2);
 }
 
-.location-visit-row > .location-row {
+.location-visit:has(.location-visit-select:hover) {
+  background: var(--sidebar-hover);
+}
+
+.location-visit:has(.location-visit-select:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.location-visit .menu-button {
+  z-index: 1;
+}
+
+.location-visit-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 38px;
+}
+
+.location-visit-select {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   flex: 1 1 auto;
-  width: auto;
   min-width: 0;
+  padding: 0;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.location-visit-select:hover:not(:disabled) {
+  background: none;
+}
+
+.location-visit-select:focus-visible {
+  outline: none;
+}
+
+.location-visit-select::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
 }
 
 /* As wide as the menu button beside the other visits. */
@@ -19865,17 +19951,19 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   font-size: var(--text-label);
 }
 
-/* The pictures taken during a visit, under its row, starting under the
-   place's name: one line of at most five squares, which grow smaller together
-   on a narrow screen rather than wrap the count onto a line of its own. */
+/* The pictures taken during a visit, in its card under the place's name: one
+   line of at most five squares, which grow smaller together on a narrow screen
+   rather than wrap the count onto a line of its own. */
 .location-visit-photos {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 56px));
   gap: var(--space-2);
-  margin: 0 0 var(--space-3) calc(var(--space-3) + 28px + var(--space-3) + 1px);
+  margin: 0 0 var(--space-1) calc(28px + var(--space-3));
 }
 
 .location-visit-photo {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -20233,7 +20321,6 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   background: var(--sidebar-hover);
 }
 
-
 /* --- photos, the second look ------------------------------------------------
    One toolbar under one strip of tabs, rows that say what they are, and a hit
    area a thumb can find. */
@@ -20542,7 +20629,6 @@ label.checkbox.is-plain > span > .muted {
     height: 44px;
   }
 }
-
 
 .location-here {
   display: flex;
@@ -22392,7 +22478,6 @@ button.person-row:focus-visible {
   font-size: var(--text-label);
   font-variant-numeric: tabular-nums;
 }
-
 
 /* --- the journal ----------------------------------------------------------
    One page for each day, and the weeks, months and years above the days. The

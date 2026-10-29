@@ -1,6 +1,7 @@
 package db_test
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -184,6 +185,105 @@ func TestADepartureMomentsAfterAVisitIsNoStop(t *testing.T) {
 		}
 		if ranges, err := tx.ListOverlappedVisitRanges(locationDay.Add(-time.Hour)); err != nil || len(ranges) != 0 {
 			t.Errorf("visits put in order still need it: %+v %v", ranges, err)
+		}
+	})
+}
+
+// A visit of no length the phone tells of a short way off, in the middle of
+// a visit at another place, is no stop and does not end that visit; the place
+// it made is taken out with it, and a check-in there is kept.
+func TestAMomentsVisitInsideAnotherIsNoStop(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId := locationUser(t, tx, "location-visit-inside")
+		school := locationPlace(t, tx, userId, "school", 10.5)
+		corner := locationPlace(t, tx, userId, "corner", 10.6)
+		office := locationPlace(t, tx, userId, "office", 10.7)
+		label := models.PlaceLabelSchool
+		if _, err := tx.SavePlace(userId, school.ID, db.PlaceChanges{PlaceLabel: &label}); err != nil {
+			t.Fatalf("SavePlace: %s", err)
+		}
+		schoolVisit := locationVisit(school.ID, "school", 0, -1)
+		schoolVisit.VisitSource = models.VisitSourceRegion
+		putAndNormalize(t, tx, userId, schoolVisit)
+		putAndNormalize(t, tx, userId, locationVisit(corner.ID, "corner", 1, 1))
+		schoolDeparture := locationVisit(school.ID, "school", -1, 8)
+		schoolDeparture.VisitSource = models.VisitSourceRegion
+		putAndNormalize(t, tx, userId, schoolDeparture)
+		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office", 30, -1))
+		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[school 0-8 office 30-open]"; got != want {
+			t.Errorf("the visits are %s, want %s", got, want)
+		}
+		if found, err := tx.GetPlace(userId, corner.ID); !errors.Is(err, db.ErrNotFound) {
+			t.Errorf("the place the moment's visit made is taken out: %+v %v", found, err)
+		}
+
+		// One stored before this was put in order is found at start, and a
+		// check-in inside another visit is the person's own word.
+		if _, err := tx.PutPlaceVisit(userId, locationVisit(office.ID, "office-moment", 2, 3)); err != nil {
+			t.Fatalf("PutPlaceVisit: %s", err)
+		}
+		if ranges, err := tx.ListOverlappedVisitRanges(locationDay.Add(-time.Hour)); err != nil || len(ranges) != 1 || ranges[0].UserID != userId {
+			t.Errorf("the visit inside another is found to put in order: %+v %v", ranges, err)
+		}
+		if err := tx.NormalizePlaceVisits(userId, *minutesAfterNine(0), *minutesAfterNine(8)); err != nil {
+			t.Fatalf("NormalizePlaceVisits: %s", err)
+		}
+		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[school 0-8 office 30-open]"; got != want {
+			t.Errorf("the visits are %s, want %s", got, want)
+		}
+		checkIn := locationVisit(office.ID, "office-check-in", 4, 5)
+		checkIn.VisitSource = models.VisitSourceCheckIn
+		putAndNormalize(t, tx, userId, checkIn)
+		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[school 0-4 office 4-5 office 30-open]"; got != want {
+			t.Errorf("the visits are %s, want %s", got, want)
+		}
+	})
+}
+
+// A departure with no arrival a moment from the end of the visit before it,
+// to the same place, is that visit's end told twice, whichever comes first.
+func TestADepartureToldTwiceIsOneVisit(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId := locationUser(t, tx, "location-departure-twice")
+		office := locationPlace(t, tx, userId, "office", 10.5)
+		cafe := locationPlace(t, tx, userId, "cafe", 10.6)
+		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office-morning", 0, 60))
+		putAndNormalize(t, tx, userId, locationVisit(cafe.ID, "cafe", 62, 70))
+		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office-afternoon", 72, -1))
+		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office-departure", -1, 299))
+		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office-afternoon", 72, 300))
+		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[office 0-60 cafe 62-70 office 72-300]"; got != want {
+			t.Errorf("the visits are %s, want %s", got, want)
+		}
+		// The phone sending the departure again finds the visit.
+		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office-departure", -1, 299))
+		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[office 0-60 cafe 62-70 office 72-299]"; got != want {
+			t.Errorf("the visits are %s, want %s", got, want)
+		}
+
+		// One stored before this was put in order is found at start, and one
+		// after the visit ended that came a moment later is that visit's too.
+		if _, err := tx.PutPlaceVisit(userId, locationVisit(office.ID, "office-departure-again", -1, 301)); err != nil {
+			t.Fatalf("PutPlaceVisit: %s", err)
+		}
+		if ranges, err := tx.ListOverlappedVisitRanges(locationDay.Add(-time.Hour)); err != nil || len(ranges) != 1 || ranges[0].UserID != userId {
+			t.Errorf("the departure told twice is found to put in order: %+v %v", ranges, err)
+		}
+		if err := tx.NormalizePlaceVisits(userId, *minutesAfterNine(72), *minutesAfterNine(301)); err != nil {
+			t.Fatalf("NormalizePlaceVisits: %s", err)
+		}
+		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[office 0-60 cafe 62-70 office 72-299]"; got != want {
+			t.Errorf("the visits are %s, want %s", got, want)
+		}
+
+		// A departure long after the visit ended is not that visit's.
+		putAndNormalize(t, tx, userId, locationVisit(office.ID, "office-evening-departure", -1, 400))
+		if got, want := fmt.Sprint(visitSpansOf(t, tx, userId)), "[office 0-60 cafe 62-70 office 72-299 office unknown-400]"; got != want {
+			t.Errorf("the visits are %s, want %s", got, want)
 		}
 	})
 }
