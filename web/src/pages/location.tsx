@@ -1150,10 +1150,9 @@ function LocationContent({ userId }: { userId: string }) {
     return t('location.timeSince', { from: timeOf(pause.startedAt) })
   }
 
-  // The pictures taken during a visit, in its row under the place's name: up
-  // to four, and the
-  // number of the rest when there are more. They open the Photos library over
-  // the visit's own window of time.
+  // The pictures taken during a visit, in its card under the place's name: up
+  // to four, and the number of the rest when there are more. They open the
+  // Photos library over the visit's own window of time.
   function photoStrip(visit: PlaceVisit) {
     const photos = visit.photos ?? []
     if (!visit.photoCount || photos.length === 0 || !visit.arrivedAt) return null

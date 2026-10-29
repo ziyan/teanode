@@ -161,11 +161,12 @@ type LocationOperation interface {
 	// it ended is taken out (into that visit when it was to the same place),
 	// any departure with no arrival less than PassByDurationMost from the end
 	// of the visit before it to the same place is taken into that visit, as
-	// the same departure told twice, a visit from the phone shorter than PassByDurationMost that began and
-	// ended inside a visit at another place is taken out (with the place iOS
-	// made for it, unless the person named or labeled it), and visits to one
-	// place less than ten minutes apart with nothing
-	// between them are joined. Call it once the visits of a report are stored.
+	// the same departure told twice, a visit from the phone shorter than
+	// PassByDurationMost that began and ended inside a visit at another place
+	// is taken out (with the place iOS made for it, unless the person named or
+	// labeled it), and visits to one place less than ten minutes apart with
+	// nothing between them are joined. Call it once the visits of a report are
+	// stored.
 	NormalizePlaceVisits(userId string, from, until time.Time) error
 
 	// ListOverlappedVisitRanges finds the people with a visit that began
