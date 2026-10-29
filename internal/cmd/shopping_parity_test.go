@@ -42,6 +42,7 @@ func TestShoppingParity(test *testing.T) {
 		"ListShoppingReceiptMatches":     {[]string{"receipt"}, []string{"receipt"}},
 		"ListShoppingStoreItems":         {[]string{"store"}, []string{"store"}},
 		"ListShoppingStores":             {[]string{"stores"}, []string{"stores"}},
+		"ListWatchedStores":              {[]string{"watched-stores"}, []string{"watched_stores"}},
 		"PreviewShoppingImport":          {[]string{"import-preview"}, []string{"import_preview"}},
 		"AddShoppingItemFromReceiptLine": {[]string{"add-from-receipt"}, []string{"add_from_receipt"}},
 		"AddShoppingItems":               {[]string{"add"}, []string{"add_items"}},
@@ -142,6 +143,7 @@ func TestShoppingParity(test *testing.T) {
 		"isAnyStoreIncluded": "this-store-only", "importText": "from-file", "agentAttachmentIds": "picture", "isReminded": "off",
 		"itemDescription": "description", "itemDetails": "details", "isStoreBrand": "store-brand", "aisleName": "aisle",
 		"neededQuantity": "quantity", "quantityUnit": "unit", "isOutOfStock": "in-stock", "observedOn": "on", "currencyCode": "currency",
+		"latitudeDegrees": "latitude", "longitudeDegrees": "longitude",
 	}
 	propertyNames := map[string]string{
 		"shoppingListId": "list_id", "shoppingListIds": "list_ids", "shoppingItemId": "item_id", "shoppingItemIds": "item_ids",
@@ -182,6 +184,8 @@ func TestShoppingParity(test *testing.T) {
 		"DecideShoppingReceiptMatch.isApplied.command":              "apply or dismiss is an argument of the subcommand",
 		"SetShoppingItemPicture.agentAttachmentId.command":          "the picture is a file argument of the subcommand, uploaded by it",
 		"SetShoppingItemPicture.agentAttachmentId.tool":             "the tool has no set-picture action: an agent has no file of the person's to give",
+		"ListWatchedStores.latitudeDegrees.tool":                    "the tool answers around where the person was last reported to be, which is where their phone watches",
+		"ListWatchedStores.longitudeDegrees.tool":                   "the tool answers around where the person was last reported to be, which is where their phone watches",
 	}
 	for operation, names := range table {
 		var argumentsType reflect.Type
