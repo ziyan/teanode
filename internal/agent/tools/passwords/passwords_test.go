@@ -518,6 +518,32 @@ func TestARunThatContentStartedUsesNothing(test *testing.T) {
 	}
 }
 
+// programRun is a call from a program the person connected over MCP, which
+// other tools let act for the person.
+type programRun struct{ *fakeRun }
+
+func (self programRun) IsCalledByPersonsProgram() bool { return true }
+
+// Passwords keeps every secret to a turn the person typed: a program they
+// connected over MCP, which reads their journal and the locations shared with
+// them, reads no note, lists no item and signs in to nothing.
+func TestAProgramThePersonConnectedUsesNoPassword(test *testing.T) {
+	found := newWorld(test)
+	run := programRun{&fakeRun{database: found.database, owner: found.ada, secret: serverSecret, surface: "mcp", isHeadless: true, isStartedByOthers: true}}
+	for _, action := range []string{"list", "read_note"} {
+		content, _ := mustAct(test, run, action, fmt.Sprintf(`{"item_id":%q}`, found.grantedNote))
+		if strings.Contains(content, "padlock") || strings.Contains(content, "Example shop") {
+			test.Errorf("a program, %s: %s", action, content)
+		}
+	}
+	if err := CheckSignInHere(run); err == nil {
+		test.Error("a program signed in")
+	}
+	if found.lastUsedAt(test, found.grantedNote) {
+		test.Error("a program's refused read was recorded as a use")
+	}
+}
+
 // A run woken by a schedule the agent wrote is told so, and how the person
 // opens it: the same words from every action and from the browser's sign-in
 // check, and no item text. Any other run content started keeps the general
