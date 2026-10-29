@@ -65,3 +65,29 @@ func TestADaysWorkIsReadByProject(test *testing.T) {
 		test.Errorf("the other projects: %+v", projects[1:])
 	}
 }
+
+// Sessions run side by side: each shows the person's posts forty minutes
+// apart, more than a pause, but between them the person posted in the other,
+// so the whole hour is worked.
+func TestTimeBetweenPostsInSessionsSideBySideIsWorked(test *testing.T) {
+	at := func(hour, minute int) time.Time { return time.Date(2026, 10, 22, hour, minute, 0, 0, time.UTC) }
+	posts := func(times ...time.Time) [][2]time.Time {
+		var spans [][2]time.Time
+		for _, posted := range times {
+			spans = append(spans, [2]time.Time{posted, posted.Add(personPostLeast)})
+		}
+		return spans
+	}
+	sessions := []CodingSession{
+		{DocumentID: "first", Directory: "~/src/harbor", PersonSpans: posts(at(9, 0), at(9, 40))},
+		{DocumentID: "second", Directory: "~/src/harbor/.claude/worktrees/tides", PersonSpans: posts(at(9, 20), at(10, 0))},
+		{DocumentID: "third", Directory: "~/work/tide-bridge", PersonSpans: posts(at(15, 0))},
+	}
+	if minutes := codingMinutes(sessions); minutes != 65+5 {
+		test.Fatalf("the day's time worked is %d minutes, want 70: 9:00 to 10:05 and one post at 15:00", minutes)
+	}
+	projects := workProjects(sessions, nil)
+	if projects[0].Name != "harbor" || projects[0].ActiveMinutes != 65 {
+		test.Fatalf("harbor, worked in two sessions side by side: %+v", projects[0])
+	}
+}

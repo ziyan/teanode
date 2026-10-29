@@ -23,8 +23,9 @@ type WorkProject struct {
 	LastAt  time.Time
 
 	// ActiveMinutes adds up when the person was at its sessions
-	// (CodingSession.PersonSpans): not the stretch from the first session to
-	// the last, nor an assistant working on its own.
+	// (CodingSession.PersonSpans, bridged between sessions by workedMinutes):
+	// not the stretch from the first session to the last, nor an assistant
+	// working on its own.
 	ActiveMinutes int
 	StretchCount  int
 
@@ -143,7 +144,7 @@ func workProjects(sessions []CodingSession, shipped map[string][]Shipped) []Work
 		}
 	}
 	for index := range projects {
-		projects[index].ActiveMinutes = minutesOfUnion(projects[index].personSpans)
+		projects[index].ActiveMinutes = workedMinutes(projects[index].personSpans)
 	}
 	// The page reads the day's work from the top: the projects that took the
 	// most time come first, then the ones with the most shipped, then the

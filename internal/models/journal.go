@@ -211,8 +211,9 @@ type JournalFacts struct {
 // up when the counting changes, so that the days already counted are counted
 // again: 2 counts work by project, 3 measures each stretch from its own
 // first and last post, 4 puts the photos taken before screenshots, 5 counts
-// work by the person's own posts, 6 counts the trips to the shops.
-const JournalFactsVersion = 6
+// work by the person's own posts, 6 counts the trips to the shops, 7 counts
+// the time between posts in sessions run side by side.
+const JournalFactsVersion = 7
 
 // JournalMonthPageSentence ends the memory page made from the journal's
 // narrative of a month (month is YYYY-MM): it says where the month is in the
