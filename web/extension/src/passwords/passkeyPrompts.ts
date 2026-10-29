@@ -1,9 +1,10 @@
-// The questions a passkey ceremony asks the person, each in a window of the
-// extension's own (a popup window, so a page can neither draw over it nor
-// click it). "Save a passkey for example.com as ada?" for a new passkey,
+// The questions a passkey ceremony asks the person, each in a page of the
+// extension's own: the toolbar button's dropdown when the page that asked is
+// the one in front, else a small window (either way a page can neither draw
+// over it nor click it). "Save a passkey for example.com as ada?" for a new passkey,
 // "Sign in to example.com with your passkey?" for a sign-in; both with "Use
 // the browser instead", which hands the request back to the browser. The
-// registry here keeps what each open window is waiting for; background.ts
+// registry here keeps what each open question is waiting for; background.ts
 // decides what an answer does.
 
 import type {
@@ -30,7 +31,11 @@ export interface PendingPrompt {
   // userVerification is what the site asked for. "required" is answered only
   // after the person typed the passphrase (shortly before at the latest).
   userVerification: UserVerificationRequirement
+  // windowId is the question's window, when it is in one; port is the
+  // connection the question's page keeps open while it is on screen, in the
+  // dropdown or the window.
   windowId: number | null
+  port: { postMessage(message: unknown): void; disconnect(): void } | null
   context: PageContext
   creation: { request: PasskeyCreationRequest } | null
   assertion: { request: PasskeyAssertionRequest } | null
@@ -69,7 +74,7 @@ export class PasskeyPrompts {
   }
 
   // settle ends the prompt with the reply the page gets. It returns the
-  // prompt so the caller can close its window; a prompt already settled
+  // prompt so the caller can close its dropdown or window; a prompt already settled
   // returns null and does nothing.
   settle(id: string, reply: PasskeyReply): PendingPrompt | null {
     const prompt = this.byId.get(id)

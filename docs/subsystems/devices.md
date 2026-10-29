@@ -348,23 +348,19 @@ a page or a `chrome-extension://` one. The server refuses first, so a server
 deploy closes this without anyone reloading the extension; the extension holds
 the same lines against where the tab is at the moment of the action.
 
-The panel the extension's button puts on a page is the dashboard's drawer,
-signed in as the person. Input the protocol dispatches is real input, so a
-click at the place where that frame is would land in TeaNode itself. The
-extension therefore reads where the panel is at the moment of each `Input.`
-call (the server cannot see it) and refuses a mouse, touch, tap or scroll
-gesture whose point is inside it, and keys while its frame has focus; the
-script actions `click`, `hover`, `type` and `select` refuse an element the
-panel covers. The person moves or closes the panel to let the agent at what is
-under it.
-
-The panel is also a frame of the server's origin, signed in with the person's
-token, and a frame of the same site is in the tab's process, so what the
-protocol can read of the page it can read of the frame. The token is therefore
-in no address: the panel frames `/drawer?handoff=<nonce>`, a nonce made in the
-extension's own world, and the worker finds that frame by the nonce and calls
-the function the drawer page leaves on its window (`handedToken.ts`) in the
-frame's own world, once. The protocol is also kept from what reads through
+The extension's chat is Chrome's side panel, beside the page and not a box
+on it, so it covers nothing and the agent has no region of the page to keep out
+of. The side panel is a page of the extension that frames the dashboard's
+drawer (`/drawer`), signed in as the person. The token is in no address: once
+the frame has loaded, the side panel posts it to the frame with the server's
+origin as the target origin, and the drawer takes it once, and only when its one
+ancestor is a `chrome-extension://` origin, the message came from that parent
+window and carries the same origin (`handedToken.ts`). A website can never be an
+extension origin, and the server serves `/drawer` with `frame-ancestors
+chrome-extension:`, so no website can frame it. The worker answers the side
+panel's requests (the token, attach, detach) only for `sidepanel.html` itself,
+never for a content script or another page of the extension. The protocol is
+also kept from what reads through
 frames: no `pierce`, no execution context or frame named in a call, no
 `DOMSnapshot`, `Page.captureSnapshot` or `Page.getFrameTree`, and what the tab
 watched leaves out every request to the server's host, whose Authorization

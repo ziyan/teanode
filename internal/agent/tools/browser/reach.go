@@ -127,12 +127,10 @@ var cdpContextParameters = []string{"contextId", "uniqueContextId", "executionCo
 
 // cdpParametersRefusal says why the parameters of an allowed method are not
 // sent, or "" when they are. Two things reach past the page the tab shows,
-// into the frames in it. The panel the extension puts on a page is the
-// dashboard's drawer, a frame of this server's origin, and a frame of the
-// same site shares the tab's process, so the protocol can see into it:
-// pierce reads the documents of frames and the shadow roots the panel sits
-// in, and an execution context runs script in a frame's own world. Neither
-// is the page the person attached.
+// into the frames in it. A frame of this server's origin shares the tab's
+// process, so the protocol can see into it: pierce reads the documents of
+// frames and their shadow roots, and an execution context runs script in a
+// frame's own world. Neither is the page the person attached.
 func cdpParametersRefusal(method string, params map[string]any) string {
 	if pierce, _ := params["pierce"].(bool); pierce {
 		return fmt.Sprintf("%s is not sent with pierce: reading through frames and shadow roots reaches past the page this tab shows", method)
@@ -532,11 +530,11 @@ func requestBodyRefusal(tab tools.Tab, method string, params map[string]any, own
 	return ""
 }
 
-// showForeignRequests is what the agent is shown of the tab's events. The
-// panel is a frame of the server's origin, and a frame of the same site is
-// in the tab's process, so its requests, with the Authorization header that
-// signs the person in, are among the page's. What a page asks other sites
-// for is what the agent watches the network for, and is shown.
+// showForeignRequests is what the agent is shown of the tab's events. A frame
+// of the server's origin shares the tab's process, so its requests, with the
+// Authorization header that signs the person in, are among the page's. What a
+// page asks other sites for is what the agent watches the network for, and is
+// shown.
 //
 // A network event is shown only when the ledger saw its request created,
 // with an address that is not the server's: ids are learned from the

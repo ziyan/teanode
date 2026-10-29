@@ -5,18 +5,9 @@
 // sent a message (sender.tab, sender.url, sender.frameId), never from what the
 // message says about itself.
 
-import type { FieldRole } from './fieldDetection'
 import type { LoginSummary, OwnerKeyChangeAnswer } from './openedKeys'
 
 // --- from a content script ---------------------------------------------
-
-export type SuggestionAnswer =
-  // Nothing to offer: signed out, Passwords not set up, or nothing for this site.
-  | { suggestionState: 'none' }
-  | { suggestionState: 'locked'; host: string }
-  | { suggestionState: 'logins'; host: string; logins: LoginSummary[] }
-  // A new password field while Passwords is open: offer a generated one.
-  | { suggestionState: 'generate'; host: string }
 
 export interface CapturedLoginMessage {
   type: 'passwords:captured'
@@ -25,8 +16,10 @@ export interface CapturedLoginMessage {
   isNewPassword: boolean
 }
 
-export interface BarOffer {
-  // 'unlock': Passwords is locked; the button opens the window to unlock.
+// SaveOffer is what the dropdown offers for the login captured in a tab, which
+// the toolbar button is marked for: save it, update the saved password, or
+// (Passwords being locked) unlock first to see which.
+export interface SaveOffer {
   offerAction: 'save' | 'update' | 'unlock'
   host: string
   userName: string
@@ -43,22 +36,14 @@ export interface FillFieldsMessage {
   userName: string
   password: string
   oneTimeCode: string
-}
-
-export interface ShowBarMessage {
-  type: 'passwords:show-bar'
-  offer: BarOffer
+  // newPassword is a password the generator made in the dropdown.
+  newPassword: string
 }
 
 export type ContentRequest =
-  | { type: 'passwords:suggest'; role: FieldRole }
-  | { type: 'passwords:fill'; itemId: string }
-  | { type: 'passwords:fill-code'; itemId: string }
-  | { type: 'passwords:generate' }
+  | { type: 'passwords:field-focused' }
   | CapturedLoginMessage
   | { type: 'passwords:page-ready'; hasPasswordField: boolean }
-  | { type: 'passwords:bar-answer'; barAnswer: 'save' | 'dismiss' | 'unlock' }
-  | { type: 'passwords:open-popup' }
   | { type: 'passwords:passkey-cancel' }
   | {
       type: 'passwords:passkey'
@@ -79,22 +64,24 @@ export interface PopupState {
   isSetUp: boolean
   isUnlocked: boolean
   serverOrigin: string
-  // The page the popup was opened for, when it was opened for one.
+  // The page the dropdown fills: the frame of its tab that holds the sign-in
+  // form (frameId), and its host.
+  frameId: number
   frameHost: string
   topHost: string
   isFrameCrossOrigin: boolean
   hasPendingSave: boolean
-  pendingSave: { host: string; userName: string } | null
+  pendingSave: { host: string; userName: string; offerAction: 'save' | 'update' | 'unlock' } | null
 }
 
-// OtherSiteQuestion is what the window asks before it fills a login into a
+// OtherSiteQuestion is what the dropdown asks before it fills a login into a
 // page the login is not saved for ("Fill <name> into <site>? It is saved for
 // <its sites>."). The answer to it is sent back with the origin, so that a
 // page that moved in the meantime is not filled on the strength of a yes
 // given for another.
 export interface OtherSiteQuestion {
   loginName: string
-  // origin is the origin (scheme, host and port) of the page the window would
+  // origin is the origin (scheme, host and port) of the page the dropdown would
   // fill into, written whole so that a different scheme or port is seen.
   origin: string
   // savedSites are the origins the login is saved for, written the same way;
@@ -117,7 +104,7 @@ export interface SearchAnswer {
   others: LoginSummary[]
   // ownerKeyChanges are the owners whose key changed and whose notice was not
   // dismissed, with the safety code before and now and the person's own, for
-  // the window to show. Their shared logins are listed like any other.
+  // the dropdown to show. Their shared logins are listed like any other.
   ownerKeyChanges: OwnerKeyChangeAnswer[]
 }
 
@@ -138,10 +125,11 @@ export type PopupRequest =
       // a login that is not saved for it into (see OtherSiteQuestion).
       confirmedOtherSiteOrigin?: string
     } & FrameTarget)
+  | ({ type: 'passwords:fill-generated'; password: string } & FrameTarget)
   | ({ type: 'passwords:save-pending' } & Pick<FrameTarget, 'tabId'>)
+  | ({ type: 'passwords:dismiss-pending' } & Pick<FrameTarget, 'tabId'>)
   | { type: 'passwords:dismiss-owner-key'; ownerUserId: string }
   | { type: 'passwords:open-dashboard' }
-  | { type: 'passwords:open-popup-window' }
   | { type: 'passwords:prompt-info'; promptId: string }
   | {
       type: 'passwords:prompt-decide'

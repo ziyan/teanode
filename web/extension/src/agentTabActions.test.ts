@@ -394,12 +394,9 @@ describe('a tab showing a document the agent filled', () => {
     expect((await act('snapshot', {})).ok).toBe(true)
     // What the worker says about the document is not what the caller says.
     expect((await act('click', { ref: 4, isFilledDocument: false })).ok).toBe(true)
-    // Only the calls that carry the action to the page; the one that looks for
-    // the person's panel on it has no arguments.
-    const sentArgs = executeScript.mock.calls
-      .map((call) => (call as unknown as [{ args?: [string, Record<string, unknown>] }])[0].args)
-      .filter((args) => args !== undefined)
-      .map((args) => args[1])
+    const sentArgs = executeScript.mock.calls.map(
+      (call) => (call as unknown as [{ args: [string, Record<string, unknown>] }])[0].args[1],
+    )
     expect(sentArgs.map((each) => each.isFilledDocument)).toEqual([true, true])
   })
 
@@ -485,7 +482,7 @@ describe('a site the agent ran a script on', () => {
     // A page of a website, a content script, and another page of the extension.
     for (const sender of [
       { id: 'extension-id', frameId: 0, url: 'https://shop.example.test/', tab: { id: 3 } },
-      { id: 'extension-id', frameId: 0, url: 'chrome-extension://extension-id/suggestion.html' },
+      { id: 'extension-id', frameId: 0, url: 'chrome-extension://extension-id/sidepanel.html' },
       { id: 'another-extension', frameId: 0, url: 'chrome-extension://extension-id/options.html' },
       { id: 'extension-id', frameId: 2, url: 'chrome-extension://extension-id/options.html' },
     ]) {

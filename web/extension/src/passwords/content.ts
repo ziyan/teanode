@@ -1,31 +1,21 @@
 // The content script: runs in every frame of every page, in the extension's
 // isolated world (the page cannot see its variables or call its functions).
-// It watches for a sign-in field to be focused and offers a suggestion under
-// it in a frame of the extension's own page, fills a login on a click in that
-// frame, notices a sign-in form being sent so the extension can offer to save
-// it, and carries passkey requests from the page's own world (passkeyOverride)
-// to the service worker.
+// It tells the service worker which frame holds the sign-in field the person
+// focused, fills a login there when the person picks one in the toolbar
+// button's dropdown, notices a sign-in form being sent so the dropdown can
+// offer to save it, and carries passkey requests from the page's own world
+// (passkeyOverride) to the service worker.
 //
-// What it will not do: show anything on page load, offer a suggestion under a
-// field a person cannot see, fill into a hidden field, act on a choice unless
-// the frame is checked to be really in front of the person, or fill from a
-// frame on another origin than the page around it without that being asked
-// of the person in the frame.
+// It draws nothing on the page: everything the person sees and chooses is in
+// the extension's own dropdown, which no website can cover or click. It never
+// fills a hidden field.
 
-import {
-  FieldRole,
-  findLoginScope,
-  isFieldVisible,
-  readSubmittedLogin,
-  roleOfFocusedField,
-  setFieldValue,
-} from './fieldDetection'
+import { FieldRole, isFieldVisible, readSubmittedLogin, roleOfFocusedField } from './fieldDetection'
 import { fillSignInForm, findFormToFill, foreignFillActionHost } from './fillForm'
-import { FrameMessage, HostedFrame } from './hostedFrame'
 import { normalizeHost } from './hosts'
 import { trust } from './pageDom'
 import { isUserActive } from './userActivation'
-import type { BarOffer, FillFieldsMessage, ShowBarMessage, SuggestionAnswer } from './messages'
+import type { FillFieldsMessage } from './messages'
 import { PASSKEY_CHANNEL } from './passkeyOverride'
 
 // --- talking to the service worker --------------------------------------
@@ -69,192 +59,29 @@ function frameFacts(): { isCrossOrigin: boolean; topHost: string } {
   }
 }
 
-// --- the suggestion under a field ---------------------------------------
+// --- which frame holds the sign-in form ---------------------------------
 
-let suggestion: HostedFrame | null = null
-let suggestionField: HTMLInputElement | null = null
+// lastLoginField is the sign-in field the person last focused in this frame:
+// the form a fill from the button's dropdown goes into.
 let lastLoginField: HTMLInputElement | null = null
-let suggestionCount = 0
-// fieldToSkip is a field the extension itself has just given the focus back
-// to, which must not open the suggestion again.
-let fieldToSkip: HTMLInputElement | null = null
 
-function closeSuggestion() {
-  suggestionCount += 1
-  suggestion?.close()
-  suggestion = null
-  suggestionField = null
-}
-
-// returnToField closes the suggestion and puts the keyboard focus back on the
-// field it was drawn under.
-function returnToField() {
-  const field = suggestionField
-  closeSuggestion()
-  if (!field || !field.isConnected) return
-  fieldToSkip = field
-  field.focus({ preventScroll: true })
-  fieldToSkip = null
-}
-
-function isRoleOffered(role: FieldRole): boolean {
+function isRoleFilled(role: FieldRole): boolean {
   return role === 'userName' || role === 'currentPassword' || role === 'newPassword' || role === 'oneTimeCode'
 }
 
-async function showSuggestion(field: HTMLInputElement, role: FieldRole) {
-  closeSuggestion()
-  if (isOpaqueOrigin()) return
-  const turn = suggestionCount
-  const answer = await send<SuggestionAnswer>({ type: 'passwords:suggest', role })
-  // The focus moved on while the service worker was thinking.
-  if (turn !== suggestionCount || !answer || answer.suggestionState === 'none') return
-  if (!field.isConnected || !isFieldVisible(field) || field.ownerDocument.activeElement !== field) return
-  const facts = { ...frameFacts(), formActionHost: foreignFillActionHost(field) }
-  const hosted = new HostedFrame(document, {
-    page: 'suggestion.html',
-    widthPixels: Math.max(260, Math.min(field.getBoundingClientRect().width, 360)),
-    heightPixels: 96,
-    anchor: field,
-    title: 'TeaNode Passwords',
-    onMessage: (message) => void onSuggestionMessage(hosted, message, answer, role, facts),
-    onClose: () => {
-      if (hosted === suggestion) closeSuggestion()
-    },
-  })
-  suggestion = hosted
-  suggestionField = field
-  hosted.show()
-}
-
-interface SuggestionFacts {
-  isCrossOrigin: boolean
-  topHost: string
-  formActionHost: string
-}
-
-async function onSuggestionMessage(
-  hosted: HostedFrame,
-  message: FrameMessage,
-  answer: SuggestionAnswer,
-  role: FieldRole,
-  facts: SuggestionFacts,
-) {
-  if (hosted !== suggestion) return
-  const frameMessageKind = message.frameMessageKind
-  if (frameMessageKind === 'ready') {
-    hosted.send({
-      frameMessageKind: 'render',
-      answer,
-      role,
-      host: normalizeHost(window.location.href),
-      ...facts,
-    })
-    return
-  }
-  if (frameMessageKind === 'size' && typeof message.heightPixels === 'number') {
-    hosted.resize(message.heightPixels)
-    return
-  }
-  if (frameMessageKind === 'close') {
-    closeSuggestion()
-    return
-  }
-  if (frameMessageKind === 'escape' || frameMessageKind === 'leave') {
-    returnToField()
-    return
-  }
-  // Everything below acts on a click the frame reports. The frame said it was
-  // trusted and visible; the page around it is asked as well.
-  const check = hosted.check()
-  if (!check.isShown) {
-    closeSuggestion()
-    return
-  }
-  const field = suggestionField
-  if (!field || !field.isConnected) return
-  if (frameMessageKind === 'unlock') {
-    await send({ type: 'passwords:open-popup' })
-    closeSuggestion()
-    return
-  }
-  // A frame on another origin than its page, or a form that sends to another
-  // host than the page's own, is filled only after the frame asked the person
-  // and they said yes. The form is looked at again now: it may have changed.
-  // A password the generator makes is not a stored secret and goes only into
-  // the focused new-password field, so it needs no confirmation.
-  const needsConfirmation = facts.isCrossOrigin || foreignFillActionHost(field) !== ''
-  if (needsConfirmation && frameMessageKind !== 'generate' && message.isConfirmed !== true) return
-  if (frameMessageKind === 'choose' && typeof message.itemId === 'string') {
-    const isCode = role === 'oneTimeCode'
-    const secrets = await send<{ userName?: string; password?: string; oneTimeCode?: string; error?: string }>({
-      type: isCode ? 'passwords:fill-code' : 'passwords:fill',
-      itemId: message.itemId,
-    })
-    closeSuggestion()
-    if (!secrets || secrets.error) return
-    if (isCode) fillSignInForm(field, { oneTimeCode: secrets.oneTimeCode })
-    else fillSignInForm(field, { userName: secrets.userName, password: secrets.password })
-    return
-  }
-  if (frameMessageKind === 'generate') {
-    const generated = await send<{ password?: string; error?: string }>({ type: 'passwords:generate' })
-    closeSuggestion()
-    if (!generated || !generated.password) return
-    // The password field and its confirmation get the same one.
-    const scope = findLoginScope(field)
-    const newFields = scope.newPasswordFields.length > 0 ? scope.newPasswordFields : [field]
-    for (const newField of newFields) setFieldValue(newField, generated.password)
-  }
-}
-
+// A sign-in field getting the focus tells the service worker which frame of
+// the tab holds the form, so the dropdown, opened from the toolbar where the
+// page no longer has the focus, fills that frame. It carries nothing typed.
 document.addEventListener(
   'focusin',
   (event) => {
     const target = event.composedPath()[0]
-    if (!(target instanceof HTMLInputElement)) {
-      closeSuggestion()
-      return
-    }
+    if (!(target instanceof HTMLInputElement) || isOpaqueOrigin()) return
     const role = roleOfFocusedField(target)
-    if (!role || !isRoleOffered(role)) {
-      closeSuggestion()
-      return
-    }
+    if (!role || !isRoleFilled(role)) return
+    if (target === lastLoginField) return
     lastLoginField = target
-    if (target === fieldToSkip) return
-    // A page's script can focus a field; only a key or a click the person
-    // just made counts as asking for a suggestion.
-    if (!isUserActive()) {
-      closeSuggestion()
-      return
-    }
-    void showSuggestion(target, role)
-  },
-  true,
-)
-
-document.addEventListener(
-  'pointerdown',
-  (event) => {
-    const target = event.composedPath()[0]
-    // A press anywhere on the page but the field itself closes the suggestion.
-    // A press inside the frame never reaches this document.
-    if (suggestion && target !== suggestionField) closeSuggestion()
-    // A press on a field that already has the focus makes no focus event (a
-    // page that focuses its sign-in field when it loads, say); the press is
-    // the person asking for the suggestion.
-    if (
-      trust.isTrusted(event) &&
-      target instanceof HTMLInputElement &&
-      target === target.ownerDocument.activeElement &&
-      target !== suggestionField
-    ) {
-      const role = roleOfFocusedField(target)
-      if (role && isRoleOffered(role)) {
-        lastLoginField = target
-        void showSuggestion(target, role)
-      }
-    }
+    void send({ type: 'passwords:field-focused' })
   },
   true,
 )
@@ -262,21 +89,6 @@ document.addEventListener(
 document.addEventListener(
   'keydown',
   (event) => {
-    if (event.key === 'Escape' && suggestion) closeSuggestion()
-    // Down arrow in the field moves into the suggestion, whose first choice
-    // gets the focus; Enter there fills, Escape comes back to the field.
-    if (
-      event.key === 'ArrowDown' &&
-      trust.isTrusted(event) &&
-      suggestion &&
-      suggestionField &&
-      event.composedPath()[0] === suggestionField
-    ) {
-      event.preventDefault()
-      suggestion.focusFrame()
-      suggestion.send({ frameMessageKind: 'focus' })
-      return
-    }
     if (
       event.key === 'Enter' &&
       trust.isTrusted(event) &&
@@ -289,80 +101,7 @@ document.addEventListener(
   true,
 )
 
-function keepFramesInPlace() {
-  if (suggestion) {
-    if (suggestionField && (!suggestionField.isConnected || !isFieldVisible(suggestionField))) closeSuggestion()
-    else suggestion.reposition()
-  }
-  bar?.reposition()
-}
-window.addEventListener('scroll', keepFramesInPlace, true)
-window.addEventListener('resize', keepFramesInPlace)
-
 // --- saving after a sign-in ----------------------------------------------
-
-let bar: HostedFrame | null = null
-
-function closeBar() {
-  bar?.close()
-  bar = null
-}
-
-async function showBar(offer: BarOffer) {
-  if (!isTopFrame || isOpaqueOrigin()) return
-  closeBar()
-  const hosted = new HostedFrame(document, {
-    page: 'bar.html',
-    widthPixels: 380,
-    heightPixels: 120,
-    anchor: null,
-    title: 'TeaNode Passwords',
-    onMessage: (message) => void onBarMessage(hosted, message, offer),
-    onClose: () => {
-      if (hosted === bar) closeBar()
-    },
-  })
-  bar = hosted
-  hosted.show()
-}
-
-async function onBarMessage(hosted: HostedFrame, message: FrameMessage, offer: BarOffer) {
-  if (hosted !== bar) return
-  const frameMessageKind = message.frameMessageKind
-  if (frameMessageKind === 'ready') {
-    hosted.send({ frameMessageKind: 'render', offer })
-    return
-  }
-  if (frameMessageKind === 'size' && typeof message.heightPixels === 'number') {
-    hosted.resize(message.heightPixels)
-    return
-  }
-  if (frameMessageKind === 'close' || frameMessageKind === 'escape' || frameMessageKind === 'leave') {
-    closeBar()
-    return
-  }
-  if (
-    frameMessageKind !== 'answer' ||
-    (message.barAnswer !== 'save' && message.barAnswer !== 'dismiss' && message.barAnswer !== 'unlock')
-  )
-    return
-  if (!hosted.check().isShown) {
-    closeBar()
-    return
-  }
-  const result = await send<{ saveOutcome?: string; error?: string }>({
-    type: 'passwords:bar-answer',
-    barAnswer: message.barAnswer,
-  })
-  if (message.barAnswer !== 'save') {
-    closeBar()
-    return
-  }
-  hosted.send({ frameMessageKind: 'result', saveOutcome: result?.saveOutcome ?? 'error', error: result?.error ?? '' })
-  if (result?.saveOutcome === 'saved' || result?.saveOutcome === 'updated' || result?.saveOutcome === 'unchanged') {
-    setTimeout(closeBar, 1800)
-  }
-}
 
 let isWatchingForSignIn = false
 
@@ -386,7 +125,8 @@ function captureSubmission(scope: ParentNode, focused?: HTMLInputElement) {
 }
 
 // watchForSignInEnd is for a page that signs in without leaving: when its
-// password field is gone, the service worker is asked whether to offer a save.
+// password field is gone, the service worker is told, and marks the button
+// with the offer to save.
 function watchForSignInEnd() {
   if (isWatchingForSignIn || !isTopFrame) return
   isWatchingForSignIn = true
@@ -400,8 +140,7 @@ function watchForSignInEnd() {
     clearInterval(timer)
     isWatchingForSignIn = false
     if (hasPasswordField) return
-    const answer = await send<{ offer: BarOffer | null }>({ type: 'passwords:page-ready', hasPasswordField: false })
-    if (answer?.offer) void showBar(answer.offer)
+    void send({ type: 'passwords:page-ready', hasPasswordField: false })
   }, 1000)
 }
 
@@ -447,14 +186,9 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (
     return false
   }
   if (message.type === 'passwords:frame-facts') {
-    // What the popup and the keyboard shortcut tell the person about this
-    // frame: every page above it is looked at, not only the top one.
+    // What the dropdown tells the person about this frame: every page above
+    // it is looked at, not only the top one.
     sendResponse(frameFacts())
-    return false
-  }
-  if (message.type === 'passwords:show-bar') {
-    void showBar((message as ShowBarMessage).offer)
-    sendResponse({})
     return false
   }
   if (message.type === 'passwords:fill-fields') {
@@ -471,7 +205,8 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (
       return false
     }
     // A form that sends to another host than the page's own gets the login
-    // only if the person was told so and said yes.
+    // only if the person was told so and said yes. A password the generator
+    // just made is not a stored secret, and the worker sends it confirmed.
     const formActionHost = foreignFillActionHost(anchor)
     if (formActionHost !== '' && fields.isForeignActionConfirmed !== true) {
       sendResponse({ filledCount: 0, foreignActionHost: formActionHost })
@@ -482,6 +217,7 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (
         userName: fields.userName,
         password: fields.password,
         oneTimeCode: fields.oneTimeCode,
+        newPassword: fields.newPassword,
       }),
     })
     return false
