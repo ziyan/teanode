@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.207.3] - 2026-10-29
+
+### Fixed
+
+- Location: a stop of no length that the iPhone reported near where you already were no longer shows as a visit with its own place, and the trip after it starts from the place you really left. (#687)
+- Location: leaving a place that the iPhone reported twice no longer shows the place twice, and the trip after it is no longer missing. (#687)
+- Location: on the dashboard, a visit's menu and pictures sit inside its card. (#687)
+
 ## [0.207.2] - 2026-10-29
 
 ### Changed
