@@ -55,9 +55,10 @@ public enum LocationVisitKey {
         return "visit:\(place):d\(Int((departedAt ?? Date()).timeIntervalSince1970))"
     }
 
-    /// A visit to a place the person named, begun when they came in.
-    public static func region(placeId: String, arrivedAt: Date) -> String {
-        "region:\(placeId):a\(Int(arrivedAt.timeIntervalSince1970))"
+    /// A visit to a watched place, begun when they came in, named by what the
+    /// monitor knows the place by (`WatchedPlace.identifier`).
+    public static func region(identifier: String, arrivedAt: Date) -> String {
+        "region:\(identifier):a\(Int(arrivedAt.timeIntervalSince1970))"
     }
 }
 
@@ -155,10 +156,13 @@ public struct ReportedVisit: Codable, Hashable, Sendable {
     public let visitSource: String
     /// For "region": the place that was watched.
     public let placeId: String?
+    /// For "region": the store's branch that was watched, when it was one,
+    /// so that the server finds or makes the person's place for it.
+    public let storeBranch: WatchedStoreBranch?
 
     public init(
         sequence: Int = 0, clientVisitKey: String, latitudeDegrees: Double, longitudeDegrees: Double, accuracyMeters: Double, arrivedAt: Date?,
-        departedAt: Date?, visitSource: String, placeId: String? = nil
+        departedAt: Date?, visitSource: String, placeId: String? = nil, storeBranch: WatchedStoreBranch? = nil
     ) {
         self.sequence = sequence
         self.clientVisitKey = clientVisitKey
@@ -169,6 +173,7 @@ public struct ReportedVisit: Codable, Hashable, Sendable {
         self.departedAt = departedAt
         self.visitSource = visitSource
         self.placeId = placeId
+        self.storeBranch = storeBranch
     }
 
     var variables: JSONValue {
@@ -179,6 +184,12 @@ public struct ReportedVisit: Codable, Hashable, Sendable {
         if let arrivedAt { fields["arrivedAt"] = .string(CalendarDates.text(arrivedAt)) }
         if let departedAt { fields["departedAt"] = .string(CalendarDates.text(departedAt)) }
         if let placeId { fields["placeId"] = .string(placeId) }
+        if let storeBranch {
+            fields["osmType"] = .string(storeBranch.osmType)
+            fields["osmId"] = .number(Double(storeBranch.osmId))
+            fields["osmName"] = .string(storeBranch.osmName)
+            fields["osmCategory"] = .string(storeBranch.osmCategory)
+        }
         return .object(fields)
     }
 }
@@ -277,19 +288,28 @@ public struct LocationBatch: Sendable, Equatable {
     }
 }
 
-/// OpenRegionVisit is a visit to a place the person named that has begun and
-/// not ended, kept so a departure after the app was closed finds its arrival.
+/// OpenRegionVisit is a visit to a watched place that has begun and not
+/// ended, kept so a departure after the app was closed finds its arrival.
 public struct OpenRegionVisit: Codable, Hashable, Sendable {
     public let clientVisitKey: String
     public let latitudeDegrees: Double
     public let longitudeDegrees: Double
     public let arrivedAt: Date
+    /// The place it is at, and the store's branch when it was one. Kept
+    /// before stores were watched, the place is the key it is kept under.
+    public let placeId: String?
+    public let storeBranch: WatchedStoreBranch?
 
-    public init(clientVisitKey: String, latitudeDegrees: Double, longitudeDegrees: Double, arrivedAt: Date) {
+    public init(
+        clientVisitKey: String, latitudeDegrees: Double, longitudeDegrees: Double, arrivedAt: Date, placeId: String? = nil,
+        storeBranch: WatchedStoreBranch? = nil
+    ) {
         self.clientVisitKey = clientVisitKey
         self.latitudeDegrees = latitudeDegrees
         self.longitudeDegrees = longitudeDegrees
         self.arrivedAt = arrivedAt
+        self.placeId = placeId
+        self.storeBranch = storeBranch
     }
 }
 
@@ -315,7 +335,8 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
     public private(set) var visits: [ReportedVisit] = []
     /// The motion activities, oldest first, one for each start time.
     public private(set) var activities: [ReportedActivity] = []
-    /// The visits begun and not ended, by the place they are at.
+    /// The visits begun and not ended, by what the monitor knows their
+    /// place by (`WatchedPlace.identifier`).
     public private(set) var openRegionVisits: [String: OpenRegionVisit] = [:]
 
     public init(accountKey: String? = nil) { self.accountKey = accountKey }
@@ -441,44 +462,47 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
         if activities.count > Self.activityCountMost { activities.removeFirst(activities.count - Self.activityCountMost) }
     }
 
-    /// Notes that the person came into a place they named, and queues the
+    /// Notes that the person came into a watched place, and queues the
     /// arrival. If they are already counted as there, the departure was not
     /// seen (monitoring was off, or the phone was off), so that visit is
     /// ended at this arrival and a new one begins; leaving it open would
     /// hide every later arrival.
     @discardableResult
-    public mutating func arrive(placeId: String, latitudeDegrees: Double, longitudeDegrees: Double, at date: Date) -> Bool {
-        depart(placeId: placeId, at: date)
-        let key = LocationVisitKey.region(placeId: placeId, arrivedAt: date)
-        openRegionVisits[placeId] = OpenRegionVisit(
-            clientVisitKey: key, latitudeDegrees: latitudeDegrees, longitudeDegrees: longitudeDegrees, arrivedAt: date)
+    public mutating func arrive(at place: WatchedPlace, at date: Date) -> Bool {
+        depart(identifier: place.identifier, at: date)
+        let key = LocationVisitKey.region(identifier: place.identifier, arrivedAt: date)
+        openRegionVisits[place.identifier] = OpenRegionVisit(
+            clientVisitKey: key, latitudeDegrees: place.latitudeDegrees, longitudeDegrees: place.longitudeDegrees, arrivedAt: date,
+            placeId: place.placeId, storeBranch: place.storeBranch)
         addVisit(
             ReportedVisit(
-                clientVisitKey: key, latitudeDegrees: latitudeDegrees, longitudeDegrees: longitudeDegrees, accuracyMeters: 0, arrivedAt: date,
-                departedAt: nil, visitSource: "region", placeId: placeId))
+                clientVisitKey: key, latitudeDegrees: place.latitudeDegrees, longitudeDegrees: place.longitudeDegrees, accuracyMeters: 0,
+                arrivedAt: date, departedAt: nil, visitSource: "region", placeId: place.placeId, storeBranch: place.storeBranch))
         return true
     }
 
-    /// Notes that the person went out of a place they named, and queues the
+    /// Notes that the person went out of a watched place, and queues the
     /// departure under the key of the arrival. Does nothing if no arrival was
     /// seen.
     @discardableResult
-    public mutating func depart(placeId: String, at date: Date) -> Bool {
-        guard let open = openRegionVisits.removeValue(forKey: placeId) else { return false }
+    public mutating func depart(identifier: String, at date: Date) -> Bool {
+        guard let open = openRegionVisits.removeValue(forKey: identifier) else { return false }
+        // Kept before stores were watched, the key is the place.
+        let placeId = open.placeId ?? (open.storeBranch == nil ? identifier : nil)
         addVisit(
             ReportedVisit(
                 clientVisitKey: open.clientVisitKey, latitudeDegrees: open.latitudeDegrees, longitudeDegrees: open.longitudeDegrees,
-                accuracyMeters: 0, arrivedAt: nil, departedAt: date, visitSource: "region", placeId: placeId))
+                accuracyMeters: 0, arrivedAt: nil, departedAt: date, visitSource: "region", placeId: placeId, storeBranch: open.storeBranch))
         return true
     }
 
     /// Forgets the visits begun, for a place that is no longer watched.
-    public mutating func forgetOpenRegionVisit(placeId: String) { openRegionVisits[placeId] = nil }
+    public mutating func forgetOpenRegionVisit(identifier: String) { openRegionVisits[identifier] = nil }
 
     /// Ends every visit begun, as of a date: when monitoring stops, nothing
     /// will say the person left.
     public mutating func departEverywhere(at date: Date) {
-        for placeId in openRegionVisits.keys.sorted() { depart(placeId: placeId, at: date) }
+        for identifier in openRegionVisits.keys.sorted() { depart(identifier: identifier, at: date) }
     }
 
     /// Throws away what waits to be sent in a range (with neither end, all of
@@ -593,32 +617,96 @@ public struct LocationRetryGate: Sendable, Equatable {
     public mutating func didSucceed() { lastFailedAt = nil }
 }
 
+/// WatchedStoreBranch is the OpenStreetMap object of a store's branch the
+/// phone watches, as the server found it (`WatchedStore`).
+public struct WatchedStoreBranch: Codable, Hashable, Sendable {
+    public let osmType: String
+    public let osmId: Int64
+    public let osmName: String
+    public let osmCategory: String
+
+    public init(osmType: String, osmId: Int64, osmName: String, osmCategory: String) {
+        self.osmType = osmType
+        self.osmId = osmId
+        self.osmName = osmName
+        self.osmCategory = osmCategory
+    }
+}
+
 /// WatchedPlace is a place the phone asks iOS to tell it about the person
-/// entering and leaving.
-public struct WatchedPlace: Hashable, Sendable {
-    public let placeId: String
+/// entering and leaving: one of the person's own, or a branch of a store
+/// their lists need something from.
+public struct WatchedPlace: Codable, Hashable, Sendable {
+    /// What the monitor knows it by: the place's id, or "store:" and the map
+    /// object for a store's branch, which stays the same once the person has
+    /// a place there.
+    public let identifier: String
+    public let placeId: String?
     public let latitudeDegrees: Double
     public let longitudeDegrees: Double
     public let radiusMeters: Double
+    public let storeBranch: WatchedStoreBranch?
 
+    /// One of the person's own places.
     public init(placeId: String, latitudeDegrees: Double, longitudeDegrees: Double, radiusMeters: Double) {
+        identifier = placeId
         self.placeId = placeId
         self.latitudeDegrees = latitudeDegrees
         self.longitudeDegrees = longitudeDegrees
         self.radiusMeters = radiusMeters
+        storeBranch = nil
+    }
+
+    /// A store's branch, with the person's place for it when they have one.
+    public init(store: WatchedStore) {
+        identifier = Self.storeIdentifier(osmType: store.osmType, osmId: store.osmId)
+        placeId = store.placeId
+        latitudeDegrees = store.latitudeDegrees
+        longitudeDegrees = store.longitudeDegrees
+        radiusMeters = max(store.radiusMeters, LocationPlaceWatch.radiusMetersLeast)
+        storeBranch = WatchedStoreBranch(osmType: store.osmType, osmId: store.osmId, osmName: store.placeName, osmCategory: store.osmCategory)
+    }
+
+    /// What the monitor knows only from its own record, when iOS launched the
+    /// app for an event before the places were read again and none was kept:
+    /// a store's branch is told by its map object alone.
+    public init(identifier: String, latitudeDegrees: Double, longitudeDegrees: Double, radiusMeters: Double) {
+        self.identifier = identifier
+        self.latitudeDegrees = latitudeDegrees
+        self.longitudeDegrees = longitudeDegrees
+        self.radiusMeters = radiusMeters
+        if let (osmType, osmId) = Self.storeObject(identifier) {
+            placeId = nil
+            storeBranch = WatchedStoreBranch(osmType: osmType, osmId: osmId, osmName: "", osmCategory: "")
+        } else {
+            placeId = identifier
+            storeBranch = nil
+        }
+    }
+
+    public static func storeIdentifier(osmType: String, osmId: Int64) -> String { "store:\(osmType):\(osmId)" }
+
+    static func storeObject(_ identifier: String) -> (String, Int64)? {
+        let parts = identifier.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[0] == "store", !parts[1].isEmpty, let osmId = Int64(parts[2]) else { return nil }
+        return (String(parts[1]), osmId)
     }
 }
 
 /// LocationPlaceWatch chooses which places are watched. iOS allows twenty
-/// regions at a time; the person's labeled and named places are the ones
-/// that matter to them, so those nearest to where they last were are watched,
+/// regions at a time. The branches of the stores the person's lists need
+/// something from take up to `storeCountMost` of them, and the person's
+/// labeled and named places nearest to where they last were take the rest,
 /// each at least 100 meters wide, since a smaller circle is not reliably
-/// noticed.
+/// noticed. A branch that is one of those places is watched as the place.
 public enum LocationPlaceWatch {
     public static let countMost = 20
+    public static let storeCountMost = 6
     public static let radiusMetersLeast = 100.0
 
-    public static func choose(from places: [LocationPlace], nearLatitudeDegrees: Double?, nearLongitudeDegrees: Double?) -> [WatchedPlace] {
+    public static func choose(
+        from places: [LocationPlace], stores: [WatchedStore] = [], nearLatitudeDegrees: Double?, nearLongitudeDegrees: Double?
+    ) -> [WatchedPlace] {
         let candidates = places.filter {
             $0.isOfPersonsOwn && LocationGeometry.isOnEarth(latitudeDegrees: $0.latitudeDegrees, longitudeDegrees: $0.longitudeDegrees)
         }
@@ -631,11 +719,21 @@ public enum LocationPlaceWatch {
             // With no position yet, the labeled ones first: home and work.
             ordered = candidates.sorted { ($0.label != nil ? 0 : 1, $0.id) < ($1.label != nil ? 0 : 1, $1.id) }
         }
-        return ordered.prefix(countMost).map {
+        let branches = stores.filter {
+            LocationGeometry.isOnEarth(latitudeDegrees: $0.latitudeDegrees, longitudeDegrees: $0.longitudeDegrees)
+        }.prefix(storeCountMost)
+        let own = ordered.prefix(countMost - branches.count).map {
             WatchedPlace(
                 placeId: $0.id, latitudeDegrees: $0.latitudeDegrees, longitudeDegrees: $0.longitudeDegrees,
                 radiusMeters: max($0.radiusMeters, radiusMetersLeast))
         }
+        let ownIds = Set(own.compactMap(\.placeId))
+        var seen = Set<String>()
+        let watchedBranches = branches.map(WatchedPlace.init(store:)).filter { branch in
+            guard seen.insert(branch.identifier).inserted else { return false }
+            return branch.placeId.map { !ownIds.contains($0) } ?? true
+        }
+        return own + watchedBranches
     }
 
     private static func distance(_ place: LocationPlace, _ latitudeDegrees: Double, _ longitudeDegrees: Double) -> Double {

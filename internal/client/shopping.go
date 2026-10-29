@@ -45,6 +45,8 @@ const (
 
 	DocumentListOpenShoppingTrips = `query { ListOpenShoppingTrips ` + shoppingTripSelection + ` }`
 
+	DocumentListWatchedStores = `query ($latitudeDegrees: Float, $longitudeDegrees: Float) { ListWatchedStores(latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees) { storeName storeKey placeName osmType osmId osmCategory latitudeDegrees longitudeDegrees radiusMeters distanceMeters placeId } }`
+
 	DocumentListShoppingItemPrices = `query ($shoppingItemId: String!) { ListShoppingItemPrices(shoppingItemId: $shoppingItemId) ` + shoppingPriceSelection + ` }`
 
 	DocumentListShoppingReceiptMatches = `query ($financeReceiptId: String!) { ListShoppingReceiptMatches(financeReceiptId: $financeReceiptId) { financeReceiptId merchantName purchasedOn totalAmount currencyCode shoppingReceiptLines { financeReceiptLineId lineNumber description quantity lineAmount shoppingReceiptMatches { shoppingReceiptMatch ` + shoppingReceiptMatchSelection + ` shoppingItem ` + shoppingItemSelection + ` } } stillNeededItems ` + shoppingItemSelection + ` } }`
@@ -321,6 +323,39 @@ func ListShoppingStores(ctx context.Context, executor Executor) ([]*models.Shopp
 		return nil, err
 	}
 	return result.ListShoppingStores, nil
+}
+
+// WatchedStore is one branch of a store the phone watches, so that walking in
+// is an arrival there.
+type WatchedStore struct {
+	StoreName        string  `json:"storeName"`
+	StoreKey         string  `json:"storeKey"`
+	PlaceName        string  `json:"placeName"`
+	OSMType          string  `json:"osmType"`
+	OSMID            int64   `json:"osmId"`
+	OSMCategory      string  `json:"osmCategory"`
+	LatitudeDegrees  float64 `json:"latitudeDegrees"`
+	LongitudeDegrees float64 `json:"longitudeDegrees"`
+	RadiusMeters     float64 `json:"radiusMeters"`
+	DistanceMeters   float64 `json:"distanceMeters"`
+	PlaceID          string  `json:"placeId"`
+}
+
+// ListWatchedStores are the branches near a position (where the caller was
+// last reported to be when nil) of the stores their lists need something
+// from, as the phone watches them.
+func ListWatchedStores(ctx context.Context, executor Executor, latitudeDegrees, longitudeDegrees *float64) ([]*WatchedStore, error) {
+	variables := map[string]any{}
+	if latitudeDegrees != nil && longitudeDegrees != nil {
+		variables["latitudeDegrees"], variables["longitudeDegrees"] = *latitudeDegrees, *longitudeDegrees
+	}
+	var result struct {
+		ListWatchedStores []*WatchedStore `json:"ListWatchedStores"`
+	}
+	if err := executor.Execute(ctx, DocumentListWatchedStores, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.ListWatchedStores, nil
 }
 
 // ListShoppingStoreItems is the store screen: what to get at one store across
