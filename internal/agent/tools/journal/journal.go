@@ -1,6 +1,7 @@
 // Package journal is what the agent can do with the person's journal: read a
 // day, a week, a month or a year of it, list and search its days, and, in a
-// conversation the person started, add to their words, set their mood, ask for
+// conversation the person started or for a program they connected over MCP,
+// add to their words, set their mood, ask for
 // their words to be touched up, tell a narrative what is wrong with it, and
 // pin a record to a day.
 //
@@ -18,9 +19,10 @@
 // Health section, the Health numbers among a day's facts, the workouts among
 // its moments, and a mood that came from Apple Health.
 //
-// The journal is read only in a conversation the person started themselves,
-// never in a chat with other people nor in a run a mail, a schedule or a
-// background task began, since it holds what they wrote for themselves.
+// The journal is read and changed only in a conversation the person started
+// themselves or by a program they connected over MCP with a credential of
+// their own, never in a chat with other people nor in a run a mail, a schedule
+// or a background task began, since it holds what they wrote for themselves.
 package journal
 
 import (
@@ -82,7 +84,7 @@ func init() {
 				Name: "journal_add_words", Family: tools.FamilyGeneral, Risk: tools.RiskWrite, Permissions: journalPermissions,
 				Description: "Add the person's own words to the end of a day's words, after a blank line, or to their looking back on a week, a month or a year when period_kind is given. " +
 					"Only what the person told you to write, as they said it, never your own summary of the day. It only adds: it never replaces or removes what is written, and it refuses to. " +
-					"Only in a conversation the person started. Today by default.",
+					"Only in a conversation the person started, or for a program they connected over MCP. Today by default.",
 				Parameters: tools.Object(map[string]any{
 					"day":         dayProperty,
 					"text":        tools.StringProperty("the words to add, as the person said them"),
@@ -93,7 +95,7 @@ func init() {
 			{
 				Name: "journal_set_mood", Family: tools.FamilyGeneral, Risk: tools.RiskWrite, Permissions: journalPermissions,
 				Description: "Set a day's mood to what the person says it was: awful, low, okay, good or great (or 1 to 5), with optional words of theirs. " +
-					"Never guess a mood from their mail or messages. Only in a conversation the person started. Today by default.",
+					"Never guess a mood from their mail or messages. Only in a conversation the person started, or for a program they connected over MCP. Today by default.",
 				Parameters: tools.Object(map[string]any{
 					"day":        dayProperty,
 					"mood":       tools.StringProperty("awful, low, okay, good or great, or 1 (awful) to 5 (great)"),
@@ -105,7 +107,7 @@ func init() {
 				Name: "journal_touch_up", Family: tools.FamilyGeneral, Risk: tools.RiskWrite, Permissions: journalPermissions,
 				Description: "Ask for a day's words (or a period's looking back, when period_kind is given) to be touched up, optionally saying how (shorter, fix the grammar, warmer). " +
 					"The touched-up version is made from the original, shown beside it and never replaces it; it is ready in a moment. Turning touching up off is the person's own, on the page. " +
-					"Only in a conversation the person started. Today by default.",
+					"Only in a conversation the person started, or for a program they connected over MCP. Today by default.",
 				Parameters: tools.Object(map[string]any{
 					"day":         dayProperty,
 					"how":         tools.StringProperty("what to change, in the person's words; the last instruction is kept when left out"),
@@ -116,7 +118,7 @@ func init() {
 			{
 				Name: "journal_correct", Family: tools.FamilyGeneral, Risk: tools.RiskWrite, Permissions: journalPermissions,
 				Description: "Tell a day's narrative (or a period's, when period_kind is given) what is wrong with it, in the person's words (\"it was Sam at lunch, not a colleague\"). " +
-					"It is kept as a fact every later writing must follow, and the narrative is written again at once. Send each correction once: the answer lists what the narrative keeps, and words it already keeps add nothing. Only in a conversation the person started.",
+					"It is kept as a fact every later writing must follow, and the narrative is written again at once. Send each correction once: the answer lists what the narrative keeps, and words it already keeps add nothing. Only in a conversation the person started, or for a program they connected over MCP.",
 				Parameters: tools.Object(map[string]any{
 					"day":             dayProperty,
 					"correction_text": tools.StringProperty("what is wrong, as the person said it, at most 500 characters"),
@@ -127,7 +129,7 @@ func init() {
 			{
 				Name: "journal_pin", Family: tools.FamilyGeneral, Risk: tools.RiskWrite, Permissions: journalPermissions,
 				Description: "Pin a record to a day of the journal, as the person asks (\"put this in today's journal\"). The record is named kind:id, as the journal and other tools give it " +
-					"(mail:..., photo:..., agent_document:..., calendar_occurrence:..., finance_transaction:...). Only in a conversation the person started. Today by default.",
+					"(mail:..., photo:..., agent_document:..., calendar_occurrence:..., finance_transaction:...). Only in a conversation the person started, or for a program they connected over MCP. Today by default.",
 				Parameters: tools.Object(map[string]any{
 					"day":    dayProperty,
 					"record": tools.StringProperty("the record as kind:id"),

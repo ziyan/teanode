@@ -109,6 +109,25 @@ func IsStartedByPerson(run Run) bool {
 	return ok && starting.IsStartedByPerson()
 }
 
+// ProgramCalling is a run that can say whether a program the person
+// connected over the Model Context Protocol called it, with a credential only
+// they could have given it: a token they made, or an app they approved. Such
+// a program acts for them, as they would at a screen, though it is not their
+// tap.
+type ProgramCalling interface {
+	IsCalledByPersonsProgram() bool
+}
+
+// IsStartedByPersonOrProgram says the person started the run, or a program
+// they connected over MCP called it. A run that cannot say is neither.
+func IsStartedByPersonOrProgram(run Run) bool {
+	if IsStartedByPerson(run) {
+		return true
+	}
+	calling, ok := run.(ProgramCalling)
+	return ok && calling.IsCalledByPersonsProgram()
+}
+
 // ResultCharactersOf is how much of a tool's result a run keeps, in bytes,
 // as the run measures it.
 func ResultCharactersOf(run Run) int {

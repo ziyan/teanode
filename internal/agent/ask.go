@@ -859,6 +859,19 @@ func (self *AskRun) IsStartedByPerson() bool {
 	return false
 }
 
+// IsCalledByPersonsProgram says a program the person connected over MCP asked
+// this turn (teanode_ask) with a credential of their own (tools.ProgramCalling).
+// A subagent is its parent's.
+func (self *AskRun) IsCalledByPersonsProgram() bool {
+	if parent := self.settings.confirmVia; parent != nil {
+		return parent.IsCalledByPersonsProgram()
+	}
+	if self.settings.isUnattended || self.settings.IsOperatorActingAsPerson {
+		return false
+	}
+	return self.settings.Surface == "mcp" && !models.IsOwnTurn(self.settings.Message)
+}
+
 // IsWokenByAgentsSchedule says a schedule the agent wrote woke this run, so that
 // Passwords can tell the person to open the schedule and save it themselves.
 // A subagent is its parent's.

@@ -66,6 +66,11 @@ func (self *directRun) Storage() storage.Storage     { return self.agent.setting
 func (self *directRun) Surface() string              { return self.surface }
 func (self *directRun) Offered() []*tools.Tool       { return self.offered }
 
+// IsCalledByPersonsProgram is true for a call over MCP: the credential the
+// program holds is one only the person could have given it
+// (tools.ProgramCalling).
+func (self *directRun) IsCalledByPersonsProgram() bool { return self.surface == "mcp" }
+
 func (self *directRun) Configuration() *config.Configuration {
 	return self.agent.settings.Configuration()
 }
@@ -261,6 +266,7 @@ var (
 	_ tools.Remembering        = (*directRun)(nil)
 	_ tools.Linking            = (*directRun)(nil)
 	_ tools.ResultBudgeting    = (*directRun)(nil)
+	_ tools.ProgramCalling     = (*directRun)(nil)
 )
 
 // SharedLink is a full address that opens one file with no sign-in
