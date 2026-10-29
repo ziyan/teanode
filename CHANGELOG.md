@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.207.2] - 2026-10-29
+
+### Changed
+
+- A program you connected over MCP can read and write your journal, as your own conversation does. (#689)
+
+### Fixed
+
+- A large Passwords list on a slow server is no longer cut off a moment after it starts arriving: the time to receive it now starts once it is ready to send. (#690)
+- Answering a goal in its own conversation no longer makes the agent work on a different goal whose page was left open in your browser. (#691)
+- The journal's time worked no longer comes out short on a day spent in several coding sessions at once: the time between your messages in different sessions now counts. (#692)
+
 ## [0.207.1] - 2026-10-28
 
 ### Fixed
