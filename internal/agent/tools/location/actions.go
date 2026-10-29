@@ -242,19 +242,21 @@ var errOthersInChat = errors.New("another person's location is not repeated into
 	"the person can ask in a private conversation with you instead")
 
 // errOthersNotByPerson is what an action answers when it is asked for
-// somebody else's location in a run the person did not start: an inbound
-// mail, a webhook or a schedule the agent wrote is steered by content the
-// person did not write, and could have it read out to whoever wrote it.
+// somebody else's location in a run neither the person nor a program they
+// connected over MCP started: an inbound mail, a webhook or a schedule the
+// agent wrote is steered by content the person did not write, and could have
+// it read out to whoever wrote it.
 var errOthersNotByPerson = errors.New("another person's location is read only in a conversation the person started themselves, " +
-	"not in a run that a mail, a webhook or a schedule of yours began: the person can ask you directly instead")
+	"or by a program they connected over MCP, not in a run that a mail, a webhook or a schedule of yours began: the person can ask you directly instead")
 
 // checkOthersAllowed is nil when this run may read somebody else's location:
-// the person started it, and its words do not go to a chat.
+// the person or a program they connected over MCP started it, and its words
+// do not go to a chat.
 func (self *scope) checkOthersAllowed() error {
 	if tools.IsAnsweringInChat(self.run) {
 		return errOthersInChat
 	}
-	if !tools.IsStartedByPerson(self.run) {
+	if !tools.IsStartedByPersonOrProgram(self.run) {
 		return errOthersNotByPerson
 	}
 	return nil
@@ -263,7 +265,8 @@ func (self *scope) checkOthersAllowed() error {
 // personId is the account of somebody who shares their location with the
 // person, by username; empty is the person's own. With doesNeedHistory, somebody
 // who shares only where they are now is refused in those words. In a chat
-// turn, or a run the person did not start, nobody else's location is read.
+// turn, or a run neither the person nor their program started, nobody else's
+// location is read.
 func (self *scope) personId(ctx context.Context, username string, doesNeedHistory bool) (*string, error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
