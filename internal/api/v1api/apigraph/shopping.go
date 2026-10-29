@@ -48,6 +48,11 @@ type ShoppingQuery interface {
 	// The trips open now on the lists the caller reaches.
 	ListOpenShoppingTrips(ctx context.Context) ([]*models.ShoppingTrip, error)
 
+	// The branches near a position of the stores the caller's lists need
+	// something from, with reminders on, for the phone to watch: at most two
+	// of each store and six in all, nearest first. Needs location:use too.
+	ListWatchedStores(ctx context.Context, arguments ListWatchedStoresArguments) ([]*WatchedStoreView, error)
+
 	// An item's prices, newest first.
 	ListShoppingItemPrices(ctx context.Context, arguments ShoppingItemArguments) ([]*models.ShoppingItemPrice, error)
 

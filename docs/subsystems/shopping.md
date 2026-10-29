@@ -167,6 +167,20 @@ list they muted, for an arrival more than fifteen minutes old, or twice within
 three hours at one place. Each person a list reaches chooses the reminder for
 themselves.
 
+An arrival comes from iOS visit monitoring, which can take a stop beside a
+place the person is already at for part of that visit, or from a watched
+circle. So the phone also watches the stores: `ListWatchedStores` gives it the
+branches near it of each store the person's lists need something from, with
+reminders on, at most two of a store and six in all, nearest first, each on a
+circle of 100 m. The branches are found by the store's name on the map within
+25 km, keep only those the map names as that store, and are kept in memory for
+twelve hours by store and by a cell of a tenth of a degree, for every account.
+Walking in is a region visit at that branch (docs/subsystems/location.md), whose
+arrival is told once it has lasted the three minutes that tell a stop from a
+pass-by, with the reminder. Items for any store are not watched for: they come
+with a store's reminder at a grocery shop. `teanode shopping watched-stores`
+and the tool's `watched_stores` say what is watched.
+
 ## The agent
 
 The `shopping` tool has one action per operation. Adding, changing and checking

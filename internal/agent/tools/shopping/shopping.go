@@ -55,6 +55,10 @@ func init() {
 				tools.Object(map[string]any{"store_name": storeNameProperty, "list_ids": listIDsProperty, "is_any_store_included": isAnyStoreIncludedProperty, "offset": offsetProperty, "page_size": pageSizeProperty}, "store_name"), runStore),
 			read("shopping_trips", "Who is shopping now, on the lists the person reaches: the shopper, the store and since when.",
 				nil, runTrips),
+			read("shopping_watched_stores", "The branches the person's phone watches, near where they were last reported to be, of the stores their lists need something from with reminders on: "+
+				"walking into one is a visit there and brings the store's reminder. At most two branches of a store and six in all, nearest first, each with its distance and the person's place for it when they have one. "+
+				"Use it when the person asks why a store did not remind them. It needs Location as well as shopping lists.",
+				nil, runWatchedStores),
 			read("shopping_prices", "The prices remembered for one item, newest first, each with its store, day and where it came from (a receipt or somebody typing it). A page at a time.",
 				tools.Object(map[string]any{"item_id": itemIDProperty, "offset": offsetProperty, "page_size": pageSizeProperty}, "item_id"), runPrices),
 			read("shopping_receipt", "What a Finance receipt did to the person's lists: each item line with the items it was matched to (applied, or proposed and waiting for a decision) and what is still needed at that store. Any Finance receipt is matched on its own when it arrives. A page of lines at a time.",
@@ -160,6 +164,7 @@ func init() {
 					{Action: "stores", Tool: "shopping_stores"},
 					{Action: "store", Tool: "shopping_store"},
 					{Action: "trips", Tool: "shopping_trips"},
+					{Action: "watched_stores", Tool: "shopping_watched_stores"},
 					{Action: "prices", Tool: "shopping_prices"},
 					{Action: "receipt", Tool: "shopping_receipt"},
 					{Action: "import_preview", Tool: "shopping_import_preview"},

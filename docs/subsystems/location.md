@@ -35,7 +35,7 @@ person's own, and none of it on the person's agent's say:
 - **Visits** (`place_visit`): a place, an arrival, a departure (none while the
   person is still there), the accuracy, and where it came from (`visit` for
   iOS visit monitoring, `region` for entering or leaving a place the person
-  named, `check_in`, `browser`).
+  named or a store's branch the phone watches, `check_in`, `browser`).
 
 ## How a visit is made and joined
 
@@ -47,6 +47,15 @@ the position (a place the person has whose radius, widened by the accuracy,
 contains it), or at the place a region event watched, or at a new place made for
 it. A new place is named after its nearest city from a table built into the
 server and is named properly right after the report is stored (see below).
+
+The phone watches up to twenty circles, iOS's limit for an app: up to six are
+the nearest branches of the stores the person's shopping lists need something
+from (`ListWatchedStores`, docs/subsystems/shopping.md), and the person's named
+and labeled places nearest to them take the rest. A region event at a branch
+names its OpenStreetMap object (`osmType`, `osmId`, `osmName`, `osmCategory`)
+instead of a place when the person has none there; it is at their place for
+that object, else the place holding the position, else a new place named as
+the map names the branch, so its arrival is the store's at once.
 
 iOS reports a visit it noticed again with its departure, and with a position it
 has made more exact; the phone's key is made from the position, so the departure
