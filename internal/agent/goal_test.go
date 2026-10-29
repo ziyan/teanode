@@ -260,6 +260,12 @@ func TestGoalThatWaitsResumesOnThePersonsTurn(t *testing.T) {
 		t.Fatalf("Ask: %s", err)
 	}
 	collect(run)
+	// What the person says in a goal's conversation is read as about the goal.
+	requests := *world.requests
+	system := requests[len(requests)-1]["messages"].([]any)[0].(map[string]any)["content"].(string)
+	if !strings.Contains(system, "What the person writes in this conversation is about this goal") {
+		t.Fatalf("the person's turn should be told their words are about the goal: %s", system)
+	}
 	resumed := world.read(t)
 	if resumed.GoalState != models.GoalWorking || resumed.GoalNextAt == nil {
 		t.Fatalf("the person's turn should start the goal again: %+v", resumed)

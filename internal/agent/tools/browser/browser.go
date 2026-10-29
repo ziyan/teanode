@@ -417,7 +417,9 @@ func browserTarget(ref int, selector string) devtools.Target {
 }
 
 // browserOverlay says the person's browser is there to use: a tab attached,
-// or connected with none, when one of those is so.
+// or connected with none, when one of those is so. The page the tab shows is
+// often one a schedule or a goal of the agent's left there, so the overlay
+// does not present it as what the person is looking at.
 func browserOverlay(ctx context.Context) string {
 	run := tools.MustRun(ctx)
 	attached := tabOf(run)
@@ -428,7 +430,7 @@ func browserOverlay(ctx context.Context) string {
 		return "<tab>\nThe person's own browser is connected through the extension, with no tab of theirs attached. Browse for them there: open a page with target tab and action open, and it opens in their browser, in a TeaNode tab group, signed in as they are, and your actions go to it. Anything they will want to see or carry on with -- a cart, a booking, a form, an account, a search they asked you to do -- is done there: the headless browser is a separate session they never see, and a cart filled in it is not theirs. The headless browser is only for a quick read of a public page they did not ask to see. Say which page you are opening. What you do there is done as them: say what you are about to do before you do something they cannot undo, and never place an order, pay or send anything without their word.\n</tab>"
 	}
 	title, address := attached.Filled().Scrub(attached.Title()), attached.Filled().Scrub(attached.URL())
-	return fmt.Sprintf("<tab>\nThe person has attached their own browser tab: %q at %s. It carries their session; use target tab rather than the headless browser while it is attached, which is a separate session they never see. You may open more tabs beside it (open), which sit in a TeaNode group on their screen; tabs lists them, switch chooses which one your actions go to, close closes one you opened. It is signed in as they are, so what you do there is done as them: say what you are about to do before you do something they cannot undo. The DevTools protocol is there too (cdp): real mouse and keyboard events, and what the page asks the network for.\n</tab>", title, address)
+	return fmt.Sprintf("<tab>\nThe person's own browser is connected through the extension, and the tab your actions go to shows %q at %s. That may be a tab they attached or a page you left there in another run, so it is not a sign of what they are asking about: their words say that. It carries their session; use target tab rather than the headless browser while it is attached, which is a separate session they never see. You may open more tabs beside it (open), which sit in a TeaNode group on their screen; tabs lists them, switch chooses which one your actions go to, close closes one you opened. It is signed in as they are, so what you do there is done as them: say what you are about to do before you do something they cannot undo. The DevTools protocol is there too (cdp): real mouse and keyboard events, and what the page asks the network for.\n</tab>", title, address)
 }
 
 // runBrowserOnTab carries a browser action to the person's tab. A tab the
