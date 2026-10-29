@@ -208,13 +208,14 @@ Calls arrive marked confirmed. A harness asks its own person before it runs a
 tool, and there is no card this server could show that would reach them; the
 credential they handed the harness is what says they meant it.
 
-A call here is not the person's tap (`IsStartedByPerson` is false), so a tool
-that keeps something to a turn the person started refuses it: Passwords,
-another person's location, and recordings other people shared. The journal is
-the exception: a program the person connected acts for them
-(`tools.IsStartedByPersonOrProgram`, true for a direct call and for a
-`teanode_ask` turn), so it reads and writes their journal. A turn in a chat
-with other people is still refused.
+A call here is not the person's tap (`IsStartedByPerson` is false), but a
+program the person connected acts for them: it holds a credential only they
+could have given it (`tools.IsStartedByPersonOrProgram`, true for a direct call
+and for a `teanode_ask` turn). So it reads and writes their journal, reads the
+location of the people who share theirs with the person, and reads the
+recordings other people shared with them. A turn in a chat with other people is
+still refused all three. Passwords is the exception: it keeps every secret to a
+turn the person typed, and refuses a program.
 
 Anything a tool marks untrusted is wrapped before it goes back, the way the
 conversation loop wraps it. The harness hands it to a model of its own, which

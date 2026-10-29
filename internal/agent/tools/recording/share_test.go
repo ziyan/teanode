@@ -15,10 +15,14 @@ import (
 type sharingRun struct {
 	*recordingTestRun
 	isStartedByPerson, isAnsweringInChat bool
+
+	// isCalledByProgram is a call from a program the person connected over MCP.
+	isCalledByProgram bool
 }
 
-func (self *sharingRun) IsStartedByPerson() bool { return self.isStartedByPerson }
-func (self *sharingRun) IsAnsweringInChat() bool { return self.isAnsweringInChat }
+func (self *sharingRun) IsStartedByPerson() bool        { return self.isStartedByPerson }
+func (self *sharingRun) IsAnsweringInChat() bool        { return self.isAnsweringInChat }
+func (self *sharingRun) IsCalledByPersonsProgram() bool { return self.isCalledByProgram }
 
 // answeringOperations answers each document by the operation it names.
 type answeringOperations struct {
@@ -60,7 +64,7 @@ const sharedRecordingAnswer = `{"recordingId":"r1","ownerUserId":"u1","ownerUser
 	{"segmentStartMS":1000,"segmentEndMS":2000,"speakerName":"Alex","transcriptText":"Agreed.","isFiller":false}]}`
 
 // Another person's recording is read only in a conversation the person
-// started, and what comes back is marked as shared and as untrusted, so that
+// started or by a program they connected over MCP, and what comes back is marked as shared and as untrusted, so that
 // the run that files what the conversation taught does not write it down.
 func TestSharedRecordingsAreReadOnlyInAConversationThePersonStarted(test *testing.T) {
 	answers := map[string]string{
@@ -68,16 +72,19 @@ func TestSharedRecordingsAreReadOnlyInAConversationThePersonStarted(test *testin
 		"ListSharedRecordings": `[{"recordingId":"r1","ownerUsername":"alex","recordingTitle":"Standup","recordingShareLevel":"summary","speakerNames":[],"passages":[]}]`,
 	}
 	for name, allowed := range map[string]struct {
-		isStartedByPerson, isAnsweringInChat, isAllowed bool
+		isStartedByPerson, isAnsweringInChat, isCalledByProgram, isAllowed bool
 	}{
-		"a conversation the person started":  {true, false, true},
-		"a chat of several":                  {true, true, false},
-		"a dream or a background run":        {false, false, false},
-		"a background run answering in chat": {false, true, false},
+		"a conversation the person started":  {true, false, false, true},
+		"a chat of several":                  {true, true, false, false},
+		"a dream or a background run":        {false, false, false, false},
+		"a background run answering in chat": {false, true, false, false},
+		"a program the person connected":     {false, false, true, true},
+		"a program's turn in a chat":         {false, true, true, false},
 	} {
 		for _, operation := range []string{"shared", "read-shared"} {
 			test.Run(name+" "+operation, func(test *testing.T) {
 				run, operations := newSharingRun(allowed.isStartedByPerson, allowed.isAnsweringInChat, answers)
+				run.isCalledByProgram = allowed.isCalledByProgram
 				result, err := callRecording(run, `{"operation":"`+operation+`","recording_id":"r1"}`)
 				if !allowed.isAllowed {
 					if err == nil || result != nil {
