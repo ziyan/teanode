@@ -35,11 +35,10 @@ function locationHeaders(): Record<string, string> {
   return headers
 }
 
-// A page framed by another site — the drawer the browser extension puts
-// on whatever page the person is on — has no session cookie of this
-// origin to send. It signs in with the token the extension posts to it,
-// sent as an Authorization header on every call and in the websocket's
-// first message.
+// A page framed by the browser extension's side panel (the drawer) has no
+// session cookie of this origin to send. It signs in with the token the side
+// panel posts to it, sent as an Authorization header on every call and in the
+// websocket's first message.
 let bearerToken = ''
 
 export function signInWithToken(token: string) {
@@ -47,7 +46,7 @@ export function signInWithToken(token: string) {
 }
 
 // framedDrawer says whether this document is the drawer framed by the
-// browser extension into another site, decided once when it loaded: a
+// browser extension's side panel, decided once when it loaded: a
 // route change never turns the frame into the whole dashboard.
 export const framedDrawer =
   typeof window !== 'undefined' && window.self !== window.top && window.location.pathname === '/drawer'

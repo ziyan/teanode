@@ -1,41 +1,17 @@
 // @vitest-environment-options {"url": "https://shop.example.test/sign-in"}
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { FRAME_CONNECT_KIND, FRAME_MESSAGE_CHANNEL } from './frameChannel'
 import { PASSKEY_CHANNEL } from './passkeyOverride'
 import { giveLayout } from './testLayout'
 
 // The content script is loaded afresh for each test, with the browser's
 // extension APIs stood in for. The service worker is a function that answers
-// the messages the script sends; the suggestion frame is played by the test,
-// through the channel the script hands it.
+// the messages the script sends.
 
 let sendMessage: ReturnType<typeof vi.fn>
 let runtimeListener: (message: any, sender: any, sendResponse: (answer: unknown) => void) => unknown
 let isActive: boolean
 let isTrusted: boolean
 let registered: { target: EventTarget; type: string; listener: EventListenerOrEventListenerObject; capture: boolean }[]
-let frameConnect: { load: () => void; posted: unknown[][] }
-let contentEnd: MessagePort | null
-let frameMessages: Record<string, unknown>[]
-
-const loginAnswer = {
-  suggestionState: 'logins',
-  host: 'shop.example.test',
-  logins: [{ id: 'one', name: 'Shop', userName: 'ada' }],
-}
-
-function answerFor(message: Record<string, unknown>): unknown {
-  switch (message.type) {
-    case 'passwords:suggest':
-      return loginAnswer
-    case 'passwords:fill':
-      return { userName: 'ada', password: 'hunter2-plaintext' }
-    case 'passwords:fill-code':
-      return { oneTimeCode: '123456' }
-    default:
-      return {}
-  }
-}
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10))
 const sentTypes = () => sendMessage.mock.calls.map(([message]) => message.type)
@@ -55,22 +31,19 @@ beforeEach(async () => {
   registered = []
   isActive = true
   isTrusted = true
-  contentEnd = null
-  frameMessages = []
-  frameConnect = { load: () => {}, posted: [] }
   trackListeners(document)
   trackListeners(window)
   document.body.innerHTML = `<form id="login" action="/session">
     <input id="user" type="text" autocomplete="username">
     <input id="pass" type="password" autocomplete="current-password">
+    <input id="note" type="text" name="note">
     <button type="submit" id="go">Sign in</button>
   </form>`
-  document.documentElement.querySelectorAll(':scope > div').forEach((each) => each.remove())
   Object.defineProperty(window.navigator, 'userActivation', {
     configurable: true,
     get: () => ({ isActive, hasBeenActive: isActive }),
   })
-  sendMessage = vi.fn(async (message: Record<string, unknown>) => answerFor(message))
+  sendMessage = vi.fn(async () => ({}))
   vi.stubGlobal('chrome', {
     runtime: {
       id: 'ext',
@@ -83,23 +56,6 @@ beforeEach(async () => {
       },
     },
   })
-  // The frame's window is a stand-in that hands the test what was posted to
-  // it; its load event is fired by the test.
-  const frameWindow = { postMessage: (...args: unknown[]) => frameConnect.posted.push(args) }
-  vi.spyOn(HTMLIFrameElement.prototype, 'contentWindow', 'get').mockReturnValue(frameWindow as unknown as Window)
-  const addIframeListener = HTMLIFrameElement.prototype.addEventListener
-  vi.spyOn(HTMLIFrameElement.prototype, 'addEventListener').mockImplementation(function (
-    this: HTMLIFrameElement,
-    type: string,
-    listener: any,
-    options?: any,
-  ) {
-    if (type === 'load') frameConnect.load = () => listener(new Event('load'))
-    addIframeListener.call(this, type, listener, options)
-  } as typeof HTMLIFrameElement.prototype.addEventListener)
-  vi.spyOn(HTMLIFrameElement.prototype, 'focus').mockImplementation(() => {})
-  // Nothing is drawn in front of the frame.
-  ;(document as any).elementsFromPoint = () => [document.documentElement.lastElementChild]
   const pageDom = await import('./pageDom')
   vi.spyOn(pageDom.trust, 'isTrusted').mockImplementation(() => isTrusted)
   await import('./content')
@@ -107,9 +63,6 @@ beforeEach(async () => {
 
 afterEach(() => {
   for (const { target, type, listener, capture } of registered) target.removeEventListener(type, listener, capture)
-  contentEnd?.close()
-  document.documentElement.querySelectorAll(':scope > div').forEach((each) => each.remove())
-  delete (document as any).elementsFromPoint
   delete (window.navigator as any).userActivation
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -119,175 +72,30 @@ function field(id: string): HTMLInputElement {
   return document.getElementById(id) as HTMLInputElement
 }
 
-// connectFrame plays the frame: it loads, takes the channel the script posted
-// to it, and says it is ready.
-async function connectFrame() {
-  frameConnect.load()
-  const [message, origin, transfer] = frameConnect.posted[0] as [Record<string, unknown>, string, MessagePort[]]
-  expect(message).toEqual({ channel: FRAME_MESSAGE_CHANNEL, frameMessageKind: FRAME_CONNECT_KIND })
-  // The extension's fixed origin, not the dynamic one the frame's address names.
-  expect(origin).toBe('chrome-extension://ext')
-  contentEnd = transfer[0]
-  contentEnd.onmessage = (event) => frameMessages.push(event.data)
-  contentEnd.postMessage({ frameMessageKind: 'ready' })
-  await settle()
-  await settle()
-}
+describe('a sign-in field getting the focus', () => {
+  it('tells the service worker this frame holds the form, once for each field, with nothing typed', async () => {
+    field('user').focus()
+    field('pass').focus()
+    field('pass').blur()
+    field('pass').focus()
+    await settle()
+    expect(sendMessage.mock.calls.map(([message]) => message)).toEqual([
+      { type: 'passwords:field-focused' },
+      { type: 'passwords:field-focused' },
+    ])
+  })
 
-async function showSuggestion(id = 'user') {
-  field(id).focus()
-  await settle()
-  await connectFrame()
-}
+  it('says nothing for a field that is no sign-in field', async () => {
+    field('note').focus()
+    await settle()
+    expect(countOf('passwords:field-focused')).toBe(0)
+  })
 
-describe('showing the suggestion', () => {
-  it('asks for one when a field gets the focus right after a key or a click', async () => {
+  it('draws nothing on the page', async () => {
+    const before = document.documentElement.innerHTML
     field('user').focus()
     await settle()
-    expect(countOf('passwords:suggest')).toBe(1)
-    expect(document.documentElement.querySelector(':scope > div')).not.toBeNull()
-  })
-
-  it('shows nothing when a script focused the field with nobody touching anything', async () => {
-    isActive = false
-    field('user').focus()
-    await settle()
-    expect(countOf('passwords:suggest')).toBe(0)
-    expect(document.documentElement.querySelector(':scope > div')).toBeNull()
-  })
-
-  it('shows one when the person presses on a field that already has the focus', async () => {
-    isActive = false
-    field('user').focus()
-    await settle()
-    expect(countOf('passwords:suggest')).toBe(0)
-    field('user').dispatchEvent(new Event('pointerdown', { bubbles: true }))
-    await settle()
-    expect(countOf('passwords:suggest')).toBe(1)
-  })
-
-  it('does not take a press a script made for the person pressing', async () => {
-    isActive = false
-    isTrusted = false
-    field('user').focus()
-    field('user').dispatchEvent(new Event('pointerdown', { bubbles: true }))
-    await settle()
-    expect(countOf('passwords:suggest')).toBe(0)
-  })
-
-  it('is not shown to a frame that never answers', async () => {
-    vi.useFakeTimers()
-    field('user').focus()
-    await vi.advanceTimersByTimeAsync(5)
-    frameConnect.load()
-    await vi.advanceTimersByTimeAsync(3500)
-    expect(document.documentElement.querySelector(':scope > div')).toBeNull()
-    vi.useRealTimers()
-  })
-})
-
-describe('filling from the suggestion', () => {
-  it('fills what the service worker hands over, after the frame reports a click', async () => {
-    await showSuggestion()
-    expect(frameMessages.map((message) => message.frameMessageKind)).toEqual(['render'])
-    contentEnd?.postMessage({ frameMessageKind: 'choose', itemId: 'one', isConfirmed: false })
-    await settle()
-    await settle()
-    expect(field('user').value).toBe('ada')
-    expect(field('pass').value).toBe('hunter2-plaintext')
-  })
-
-  it('renders the frame only when the frame says it is ready, with the facts of the form', async () => {
-    field('login').setAttribute('action', 'https://collect.example.test/session')
-    await showSuggestion()
-    const rendered = await new Promise<Record<string, unknown>>((resolve) => {
-      contentEnd!.onmessage = (event) => resolve(event.data)
-      contentEnd!.postMessage({ frameMessageKind: 'ready' })
-    })
-    expect(rendered).toMatchObject({
-      frameMessageKind: 'render',
-      formActionHost: 'collect.example.test',
-      isCrossOrigin: false,
-      host: 'shop.example.test',
-    })
-  })
-
-  it('fills a form that sends elsewhere only after the person said yes in the frame', async () => {
-    field('login').setAttribute('action', 'https://collect.example.test/session')
-    await showSuggestion()
-    contentEnd?.postMessage({ frameMessageKind: 'choose', itemId: 'one', isConfirmed: false })
-    await settle()
-    await settle()
-    expect(countOf('passwords:fill')).toBe(0)
-    expect(field('pass').value).toBe('')
-    contentEnd?.postMessage({ frameMessageKind: 'choose', itemId: 'one', isConfirmed: true })
-    await settle()
-    await settle()
-    expect(countOf('passwords:fill')).toBe(1)
-    expect(field('pass').value).toBe('hunter2-plaintext')
-  })
-
-  it('reads the form action from the attribute, not from a field named action', async () => {
-    document.getElementById('login')!.insertAdjacentHTML('beforeend', '<input name="action" value="x">')
-    field('login').setAttribute('action', 'https://collect.example.test/session')
-    await showSuggestion()
-    contentEnd?.postMessage({ frameMessageKind: 'choose', itemId: 'one', isConfirmed: false })
-    await settle()
-    await settle()
-    expect(countOf('passwords:fill')).toBe(0)
-  })
-
-  it('does nothing for a click when something is drawn over the frame', async () => {
-    await showSuggestion()
-    ;(document as any).elementsFromPoint = () => [document.body]
-    contentEnd?.postMessage({ frameMessageKind: 'choose', itemId: 'one', isConfirmed: false })
-    await settle()
-    await settle()
-    expect(countOf('passwords:fill')).toBe(0)
-    expect(document.documentElement.querySelector(':scope > div')).toBeNull()
-  })
-})
-
-describe('the keyboard', () => {
-  it('moves the focus into the frame on the down arrow, from the field with the suggestion open', async () => {
-    await showSuggestion()
-    const event = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
-    field('user').dispatchEvent(event)
-    await settle()
-    expect(event.defaultPrevented).toBe(true)
-    expect(HTMLIFrameElement.prototype.focus).toHaveBeenCalled()
-    expect(frameMessages.map((message) => message.frameMessageKind)).toContain('focus')
-  })
-
-  it('ignores a down arrow a script pressed, and one in another field', async () => {
-    await showSuggestion()
-    isTrusted = false
-    field('user').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-    isTrusted = true
-    field('pass').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-    await settle()
-    expect(HTMLIFrameElement.prototype.focus).not.toHaveBeenCalled()
-  })
-
-  it('closes the suggestion and gives the focus back to the field on Escape in the frame, without opening it again', async () => {
-    await showSuggestion()
-    expect(countOf('passwords:suggest')).toBe(1)
-    contentEnd?.postMessage({ frameMessageKind: 'escape' })
-    await settle()
-    await settle()
-    expect(document.documentElement.querySelector(':scope > div')).toBeNull()
-    expect(document.activeElement).toBe(field('user'))
-    expect(countOf('passwords:suggest')).toBe(1)
-  })
-
-  it('does the same when the person tabs out of the frame', async () => {
-    await showSuggestion()
-    contentEnd?.postMessage({ frameMessageKind: 'leave' })
-    await settle()
-    await settle()
-    expect(document.documentElement.querySelector(':scope > div')).toBeNull()
-    expect(document.activeElement).toBe(field('user'))
-    expect(countOf('passwords:suggest')).toBe(1)
+    expect(document.documentElement.innerHTML).toBe(before)
   })
 })
 
@@ -341,7 +149,7 @@ describe('remembering a sign-in', () => {
   })
 })
 
-describe('filling from the window', () => {
+describe('filling from the dropdown', () => {
   const fields = {
     type: 'passwords:fill-fields',
     origin: 'https://shop.example.test',
@@ -349,6 +157,7 @@ describe('filling from the window', () => {
     userName: 'ada',
     password: 'hunter2-plaintext',
     oneTimeCode: '',
+    newPassword: '',
   }
 
   function ask(message: Record<string, unknown>) {
@@ -450,11 +259,10 @@ describe('a sandboxed document', () => {
     delete (window as any).origin
   })
 
-  it('is offered nothing, and remembers no sign-in', async () => {
+  it('says nothing about its fields, and remembers no sign-in', async () => {
     field('user').focus()
     await settle()
-    expect(countOf('passwords:suggest')).toBe(0)
-    expect(document.documentElement.querySelector(':scope > div')).toBeNull()
+    expect(countOf('passwords:field-focused')).toBe(0)
     field('user').value = 'ada'
     field('pass').value = 'hunter2-plaintext'
     field('login').dispatchEvent(new Event('submit', { bubbles: true }))
@@ -471,6 +279,7 @@ describe('a sandboxed document', () => {
           userName: 'ada',
           password: 'hunter2-plaintext',
           oneTimeCode: '',
+          newPassword: '',
         },
         { id: 'ext' },
         resolve,
@@ -493,16 +302,30 @@ describe('a sandboxed document', () => {
 })
 
 describe('a generated password', () => {
-  it('is let through without the confirmation a stored login needs, in a form that sends elsewhere', async () => {
-    field('login').setAttribute('action', 'https://collect.example.test/session')
-    await showSuggestion()
-    sendMessage.mockImplementation(async (message: Record<string, unknown>) =>
-      message.type === 'passwords:generate' ? { password: 'generated-example' } : answerFor(message),
-    )
-    contentEnd?.postMessage({ frameMessageKind: 'generate' })
-    await settle()
-    await settle()
-    expect(countOf('passwords:generate')).toBe(1)
-    expect(field('user').value).toBe('generated-example')
+  const fields = {
+    type: 'passwords:fill-fields',
+    origin: 'https://shop.example.test',
+    isForeignActionConfirmed: true,
+    userName: '',
+    password: '',
+    oneTimeCode: '',
+    newPassword: 'generated-example',
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = `<form id="signup" action="/account">
+      <input id="user" type="text" autocomplete="username">
+      <input id="new" type="password" autocomplete="new-password">
+      <input id="again" type="password" autocomplete="new-password">
+    </form>`
+  })
+
+  it('goes into the new password field and its confirmation, and nowhere else', async () => {
+    field('new').focus()
+    const answer = await new Promise<any>((resolve) => runtimeListener(fields, { id: 'ext' }, resolve))
+    expect(answer).toEqual({ filledCount: 2 })
+    expect(field('new').value).toBe('generated-example')
+    expect(field('again').value).toBe('generated-example')
+    expect(field('user').value).toBe('')
   })
 })

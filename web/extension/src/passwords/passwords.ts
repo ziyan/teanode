@@ -1,11 +1,17 @@
-// The Passwords window: a small popup window the extension opens from the
-// suggestion, the keyboard shortcut, the context menu or the options page. It
-// unlocks Passwords, lists the logins for the page it was opened for first and
-// all of them after, fills a login into that page, copies a password, user
-// name or one-time code, makes a password, and locks again. Everything it
-// shows is asked of the service worker, which opens the items for the
-// moment and lets them go; this page keeps no secret beyond what is on the
-// screen while it is open.
+// The toolbar button's dropdown: what a press on the TeaNode button, the
+// keyboard shortcut or the context menu opens. It unlocks Passwords, lists the
+// logins saved for the page in front (its search field starts with the page's
+// host; clearing it lists every login), fills one into that page with Enter or
+// a click, copies a password, user name or one-time code, offers to save a
+// login just typed, makes a password, and locks again. Its first button opens
+// the chat with the agent in the browser's side panel. Everything it shows is
+// asked of the service worker, which opens the items for the moment and lets
+// them go; this page keeps no secret beyond what is on the screen while it is
+// open.
+//
+// Chrome draws the dropdown hanging from the button, where no website can
+// cover or click it. Where it cannot (a window without a toolbar), the same
+// page opens in a small window, with the tab it is for in its address.
 
 import { DEFAULT_PASSWORD_OPTIONS, generatePassword, MAXIMUM_PASSWORD_LENGTH } from '../../../src/passwords/generator'
 import { FillInTabAnswer, OtherSiteQuestion, PopupState, SearchAnswer } from './messages'
@@ -14,13 +20,41 @@ import type { LoginSummary, OwnerKeyChangeAnswer } from './openedKeys'
 
 const root = document.getElementById('app') as HTMLElement
 const parameters = new URLSearchParams(window.location.search)
-const tabId = parameters.has('tab') ? Number(parameters.get('tab')) : undefined
-const frameId = parameters.has('frame') ? Number(parameters.get('frame')) : undefined
-const target = tabId === undefined ? {} : { tabId, frameId: frameId ?? 0 }
+// tabId is the tab the dropdown fills, frameId the frame in it that holds the
+// sign-in form, which the service worker works out (see frameToFill).
+let tabId: number | undefined = parameters.has('tab') ? Number(parameters.get('tab')) : undefined
+let frameId: number | undefined
+// windowId is this browser window, read on opening: the side panel must be
+// opened in the same moment as the press that asks for it, with no wait.
+let windowId: number | undefined
 
 const statusLine = element('div', { className: 'status', role: 'status' })
+// query is what the search field holds; it starts as the page's host the
+// first time the logins are shown (hasQueryStarted).
 let query = ''
+let hasQueryStarted = false
 let timer: ReturnType<typeof setInterval> | null = null
+
+async function findTab() {
+  try {
+    const current = await chrome.windows.getCurrent()
+    windowId = current.id
+  } catch {
+    // Not in a browser window.
+  }
+  if (tabId !== undefined) return
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (tab && typeof tab.id === 'number') tabId = tab.id
+  } catch {
+    // No tab in front.
+  }
+}
+
+function target(): { tabId?: number; frameId?: number } {
+  if (tabId === undefined) return {}
+  return frameId === undefined ? { tabId } : { tabId, frameId }
+}
 
 function say(text: string, tone: '' | 'good' | 'bad' = '') {
   statusLine.textContent = text
@@ -32,12 +66,26 @@ function stopTimer() {
   timer = null
 }
 
+// openChat opens the chat with the agent in the side panel of this window and
+// closes the dropdown. The side panel is the extension's own page, beside the
+// website rather than on it.
+function openChat() {
+  const opening = windowId === undefined ? chrome.sidePanel.open({}) : chrome.sidePanel.open({ windowId })
+  opening.then(
+    () => window.close(),
+    (error: unknown) => say(errorText(error), 'bad'),
+  )
+}
+
 function header(popupState: PopupState | null): HTMLElement {
+  const chat = element('button', { type: 'button', className: 'chat' }, 'Chat with TeaNode')
+  chat.addEventListener('click', openChat)
   const bar = element(
     'div',
     { className: 'header' },
     element('img', { className: 'mark', src: 'icons/icon48.png', alt: '', width: 22, height: 22 }),
-    element('strong', {}, 'TeaNode Passwords'),
+    element('strong', {}, 'TeaNode'),
+    chat,
   )
   if (popupState?.isUnlocked) {
     const lock = element('button', { type: 'button', className: 'quiet' }, 'Lock')
@@ -55,7 +103,8 @@ async function refresh() {
   clear(root)
   let popupState: PopupState
   try {
-    popupState = await ask<PopupState>({ type: 'passwords:state', ...target })
+    popupState = await ask<PopupState>({ type: 'passwords:state', ...target() })
+    if (tabId !== undefined) frameId = popupState.frameId
   } catch (error) {
     root.append(header(null), element('p', { className: 'status bad' }, errorText(error)))
     return
@@ -145,42 +194,107 @@ async function showLogins(popupState: PopupState) {
       ),
     )
   }
-  const search = element('input', { type: 'search', placeholder: 'Search all logins', value: query, spellcheck: false })
+  // The search field starts with the page's host, which lists the logins
+  // saved for the page and no other; clearing it lists all of them. The host
+  // is selected, so typing replaces it.
+  if (!hasQueryStarted) {
+    query = popupState.frameHost
+    hasQueryStarted = true
+  }
+  const search = element('input', {
+    type: 'search',
+    placeholder: 'Search all logins',
+    value: query,
+    spellcheck: false,
+  })
+  search.setAttribute('aria-label', 'Search logins')
   search.addEventListener('input', () => {
     query = search.value
     void loadList()
   })
+  // The keyboard works from the search field: the first login is chosen,
+  // the arrows choose another, and Enter fills the chosen one.
+  search.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      choose(chosenIndex + (event.key === 'ArrowDown' ? 1 : -1))
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      const chosen = choices[chosenIndex]
+      if (chosen) void guarded(() => fillInTab(chosen.login, 'login', false))
+    }
+  })
   const listArea = element('div', { className: 'list-area' })
-  root.append(search, listArea, generatorSection(), statusLine)
+  root.append(search, listArea, generatorSection(popupState), statusLine)
+  search.focus()
+  search.select()
+  // choices are the rows that can be filled, in the order shown; chosenIndex
+  // is the one Enter fills.
+  let choices: { login: LoginSummary; row: HTMLElement }[] = []
+  let chosenIndex = 0
+  function choose(index: number) {
+    if (choices.length === 0) return
+    chosenIndex = Math.max(0, Math.min(choices.length - 1, index))
+    choices.forEach((choice, each) => {
+      choice.row.classList.toggle('is-chosen', each === chosenIndex)
+      choice.row.setAttribute('aria-selected', String(each === chosenIndex))
+    })
+    choices[chosenIndex].row.scrollIntoView({ block: 'nearest' })
+  }
+  // listTurn is the search last asked for: an answer to an older one, which
+  // can arrive after a newer one while somebody types, is dropped.
+  let listTurn = 0
   async function loadList() {
+    const turn = ++listTurn
     let answer: SearchAnswer
     try {
-      answer = await ask<SearchAnswer>({ type: 'passwords:search', query, ...target })
+      answer = await ask<SearchAnswer>({ type: 'passwords:search', query, ...target() })
     } catch (error) {
       if (error instanceof AskError && error.errorCode === 'locked') return void refresh()
       say(errorText(error), 'bad')
       return
     }
+    if (turn !== listTurn) return
     clear(listArea)
+    choices = []
+    chosenIndex = 0
+    const canFill = tabId !== undefined && popupState.frameHost !== ''
+    const addList = (logins: LoginSummary[]) => {
+      const list = element('div', { className: 'list', role: 'listbox' })
+      for (const login of logins) {
+        const row = loginRow(login, popupState)
+        if (canFill) choices.push({ login, row })
+        list.append(row)
+      }
+      return list
+    }
     // A changed key comes first: after up to 100 logins nobody would reach it.
     for (const change of answer.ownerKeyChanges) listArea.append(ownerKeyChangeCard(change, loadList))
+    const isThisSiteAsked =
+      popupState.frameHost !== '' && query.trim().toLowerCase() === popupState.frameHost.toLowerCase()
     if (answer.forThisSite.length > 0) {
-      listArea.append(
-        element('h2', {}, `For ${popupState.frameHost || 'this site'}`),
-        loginList(answer.forThisSite, popupState),
-      )
+      listArea.append(element('h2', {}, `For ${popupState.frameHost || 'this site'}`), addList(answer.forThisSite))
     }
     if (answer.others.length > 0) {
       listArea.append(
-        element('h2', {}, answer.forThisSite.length > 0 ? 'All other logins' : 'All logins'),
-        loginList(answer.others, popupState),
+        element('h2', {}, answer.forThisSite.length > 0 ? 'Other logins' : query ? 'Logins' : 'All logins'),
+        addList(answer.others),
       )
     }
     if (answer.forThisSite.length === 0 && answer.others.length === 0) {
-      listArea.append(element('p', { className: 'muted' }, query ? 'Nothing matches.' : 'There are no logins yet.'))
-    } else if (query && answer.others.length === 0) {
-      listArea.append(element('p', { className: 'muted' }, 'No other logins match.'))
+      listArea.append(
+        element(
+          'p',
+          { className: 'muted' },
+          isThisSiteAsked
+            ? `No login is saved for ${popupState.frameHost}. Clear the search to see every login.`
+            : query
+              ? 'Nothing matches.'
+              : 'There are no logins yet.',
+        ),
+      )
     }
+    choose(0)
   }
   await loadList()
 }
@@ -246,8 +360,20 @@ function codeText(safetyCode: string): HTMLElement {
     : element('span', { className: 'code' }, safetyCode)
 }
 
-function pendingSaveCard(pending: { host: string; userName: string }): HTMLElement {
-  const save = element('button', { type: 'button', className: 'primary' }, 'Save')
+function pendingSaveCard(pending: NonNullable<PopupState['pendingSave']>): HTMLElement {
+  const save = element(
+    'button',
+    { type: 'button', className: 'primary' },
+    pending.offerAction === 'update' ? 'Update' : 'Save',
+  )
+  const notNow = element('button', { type: 'button' }, 'Not now')
+  notNow.addEventListener('click', () => {
+    notNow.disabled = true
+    void guarded(async () => {
+      await ask({ type: 'passwords:dismiss-pending', tabId })
+      void refresh()
+    })
+  })
   save.addEventListener('click', async () => {
     save.disabled = true
     try {
@@ -269,16 +395,14 @@ function pendingSaveCard(pending: { host: string; userName: string }): HTMLEleme
   return element(
     'div',
     { className: 'card' },
-    element('strong', {}, 'Save the login you just used?'),
+    element(
+      'strong',
+      {},
+      pending.offerAction === 'update' ? 'Update the saved password?' : 'Save the login you just used?',
+    ),
     element('div', { className: 'muted' }, pending.userName ? `${pending.userName} on ${pending.host}` : pending.host),
-    element('div', { className: 'actions' }, save),
+    element('div', { className: 'actions' }, save, notNow),
   )
-}
-
-function loginList(logins: LoginSummary[], popupState: PopupState): HTMLElement {
-  const list = element('div', { className: 'list' })
-  for (const login of logins) list.append(loginRow(login, popupState))
-  return list
 }
 
 async function guarded<Result>(work: () => Promise<Result>): Promise<Result | undefined> {
@@ -297,7 +421,7 @@ async function guarded<Result>(work: () => Promise<Result>): Promise<Result | un
 function loginRow(login: LoginSummary, popupState: PopupState): HTMLElement {
   const row = element(
     'div',
-    { className: 'row' },
+    { className: 'row', role: 'option' },
     element('div', { className: 'name' }, login.name || login.siteAddress),
     login.userName ? element('div', { className: 'detail' }, login.userName) : null,
     // A login somebody else owns says whose it is.
@@ -320,7 +444,7 @@ function loginRow(login: LoginSummary, popupState: PopupState): HTMLElement {
   return row
 }
 
-// fillInTab fills the page the window was opened for. A form that sends what
+// fillInTab fills the page the dropdown is for. A form that sends what
 // is typed to another host than the page's own is filled only after the
 // person is told so and presses the button that says to go on. A login that
 // is not saved for the page is filled only after the person is asked and says
@@ -359,7 +483,8 @@ async function fillInTab(
     )
   }
   say('Filled.', 'good')
-  setTimeout(() => window.close(), 500)
+  // Closing hands the keyboard back to the page, in the field just filled.
+  setTimeout(() => window.close(), 300)
 }
 
 let otherSiteCard: HTMLElement | null = null
@@ -441,7 +566,7 @@ async function showCode(login: LoginSummary, area: HTMLElement, popupState: Popu
 
 // --- the generator -----------------------------------------------------------
 
-function generatorSection(): HTMLElement {
+function generatorSection(popupState: PopupState): HTMLElement {
   const length = element('input', {
     type: 'number',
     min: '8',
@@ -459,6 +584,25 @@ function generatorSection(): HTMLElement {
   const output = element('input', { type: 'text', readOnly: true, spellcheck: false })
   const make = element('button', { type: 'button' }, 'Generate')
   const copyButton = element('button', { type: 'button' }, 'Copy password')
+  // Fill puts it into the page's new password field and its confirmation.
+  const fill = element('button', { type: 'button' }, 'Fill')
+  fill.hidden = tabId === undefined || popupState.frameHost === ''
+  fill.addEventListener(
+    'click',
+    () =>
+      void guarded(async () => {
+        if (output.value === '' || tabId === undefined) return say('Generate a password first.', 'bad')
+        const answer = await ask<FillInTabAnswer>({
+          type: 'passwords:fill-generated',
+          password: output.value,
+          tabId,
+          frameId: frameId ?? 0,
+        })
+        if (answer.filledCount === 0) return say('No new password field was found on the page.', 'bad')
+        await ask({ type: 'passwords:copy-text', text: output.value })
+        say('Filled, and copied in case the page asks for it again.', 'good')
+      }),
+  )
   make.addEventListener('click', () => {
     try {
       output.value = generatePassword({
@@ -491,13 +635,13 @@ function generatorSection(): HTMLElement {
       element('label', { className: 'field' }, element('span', {}, 'Length'), length),
       element('div', { className: 'actions' }, letters.label, digits.label, symbols.label, lookAlikes.label),
       output,
-      element('div', { className: 'actions' }, make, copyButton),
+      element('div', { className: 'actions' }, make, copyButton, fill),
     ),
   )
   return section
 }
 
-// --- the foot of the window -------------------------------------------------
+// --- the foot of the dropdown -----------------------------------------------
 
 const dashboardLink = element('button', { type: 'button' }, 'Open Passwords on the dashboard')
 dashboardLink.addEventListener('click', () => void ask({ type: 'passwords:open-dashboard' }))
@@ -505,7 +649,7 @@ const foot = element('div', { className: 'page' }, dashboardLink)
 document.body.append(foot)
 
 // Chrome gives the fill shortcut only when the extension is installed, and
-// only if no other extension holds it then. Without one the window says so
+// only if no other extension holds it then. Without one the dropdown says so
 // and opens the page where it is set.
 async function sayIfShortcutMissing() {
   const commands = (await chrome.commands.getAll()) as { name?: string; shortcut?: string }[]
@@ -524,4 +668,4 @@ async function sayIfShortcutMissing() {
 }
 void sayIfShortcutMissing().catch(() => {})
 
-void refresh()
+void findTab().then(refresh)

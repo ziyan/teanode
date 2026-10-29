@@ -1,0 +1,147 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TeaNode</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --background: #ffffff;
+        --border: #e7e7e4;
+        --text: #18181b;
+        --muted: #6f6f76;
+        --accent: #1f1f22;
+        --accent-text: #ffffff;
+        --leaf: #729d39;
+        --hover: #efefec;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --background: #141416;
+          --border: #2a2a2e;
+          --text: #f4f4f5;
+          --muted: #a0a0a8;
+          --accent: #f4f4f5;
+          --accent-text: #18181b;
+          --leaf: #9fca63;
+          --hover: #17171a;
+        }
+      }
+      :root[data-theme='dark'] {
+        --background: #141416;
+        --border: #2a2a2e;
+        --text: #f4f4f5;
+        --muted: #a0a0a8;
+        --accent: #f4f4f5;
+        --accent-text: #18181b;
+        --leaf: #9fca63;
+        --hover: #17171a;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        background: var(--background);
+        color: var(--text);
+        font:
+          13px/1.4 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px 6px 12px;
+        border-bottom: 1px solid var(--border);
+        user-select: none;
+      }
+      .mark {
+        width: 18px;
+        height: 18px;
+        display: block;
+        flex: 0 0 auto;
+      }
+      .mark svg {
+        display: block;
+        width: 18px;
+        height: 18px;
+      }
+      .name {
+        font-weight: 600;
+        flex: 1;
+      }
+      button {
+        font: inherit;
+        font-weight: 550;
+        padding: 4px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--background);
+        color: var(--text);
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        background: var(--hover);
+      }
+      button:disabled {
+        color: var(--muted);
+        cursor: default;
+      }
+      button.primary {
+        background: var(--accent);
+        color: var(--accent-text);
+        border-color: var(--accent);
+      }
+      #frame-box {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+      }
+      iframe {
+        flex: 1;
+        border: 0;
+        width: 100%;
+        height: 100%;
+        background: var(--background);
+      }
+      #message {
+        padding: 16px 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      #message[hidden],
+      button[hidden] {
+        display: none;
+      }
+      #message-text {
+        margin: 0;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bar">
+      <span class="mark" id="mark"></span>
+      <span class="name">TeaNode</span>
+      <button id="attach" type="button" hidden>Attach this tab</button>
+    </div>
+    <div id="message" hidden>
+      <p id="message-text"></p>
+      <button id="options" type="button" class="primary" hidden>Open the extension options</button>
+    </div>
+    <div id="frame-box"></div>
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

@@ -859,48 +859,38 @@ site's.
 
 ## The agent's input and the person's autofill
 
-- **The gap.** The agent's real input (the DevTools protocol's mouse events)
-  looks to a page like the person's: it can click a field, open the suggestion
-  frame and click a row, and the fill that follows is read back from the field
-  with `Runtime.evaluate`, an item the agent may not use. Audited in Chrome 154
-  against the built extension.
+- **The gap, and how it closed.** The agent's real input (the DevTools
+  protocol's mouse events) looks to a page like the person's. While the
+  extension drew a suggestion under sign-in fields, the agent could click a
+  field, click a row in it, and read the fill back with `Runtime.evaluate`, an
+  item the agent may not use (audited in Chrome 154). The extension now draws
+  nothing into pages: a fill starts only in the toolbar button's dropdown, which
+  is not in the tab, so the agent's input cannot reach it.
 - **The rule.** `web/extension/src/agentActivity.ts` records, per tab, the time of
   the agent's last command (`background.js` notes every `act` on a tab, and the
   tab it opens, before it is done, so any input it sends is noted before the page
   can ask for a fill because of it) and the time of the person's last input (what
   the dashboard sends while they hold a tab they took over, which the server
-  passes on only then). `passwords/background.ts` answers a page's
-  `passwords:suggest`, `fill`, `fill-code`, `generate`, `captured` and the bar's
-  `save` as if there were nothing to offer, or with "The agent is working in this
-  tab", while the agent's last command in that tab is less than 60 seconds old,
-  unless the person's input is newer than that command and under 10 seconds old.
-  The times are kept in the session storage, so a stopped worker does not forget
-  them. The window's own list (the person clicking Fill in the extension window)
-  is not affected.
+  passes on only then). `passwords/background.ts` keeps nothing a page sends as
+  `passwords:captured` (a sign-in the agent typed would otherwise be offered to
+  the person as theirs to save), and refuses the dropdown's generated-password
+  fill with "The agent is working in this tab", while the agent's last command
+  in that tab is less than 60 seconds old, unless the person's input is newer
+  than that command and under 10 seconds old. The times are kept in the session
+  storage, so a stopped worker does not forget them. The dropdown's own list
+  (the person pressing Enter or Fill there) is not affected.
 - **Not "while attached".** The debugger stays attached for ten idle minutes, but
   every input the agent can send is itself a command, and is noted first, so the
   minute after the last command is what matters. Refusing for the whole of an idle
   attachment would only have stopped the person's autofill in a tab for ten
   minutes after the agent was last there.
-- **Proved in Chrome 154** (`scenario_autofill`): with the check off the agent's
-  two clicks fill the field and `Runtime.evaluate` reads
-  `{user: "ada", password: ...}` back; with it on both are empty. With a take-over
-  (`cast` then `pointer` messages) the person's click on the row fills, and the
-  agent's next click on the same row does not.
-- **The suggestion frame and the dynamic address.** With `use_dynamic_url` in the
-  manifest, `chrome.runtime.getURL` names a dynamic id while the frame's document
-  is at the fixed one, so the connect message addressed to the frame's address was
-  never delivered and the suggestion stayed empty. It is now addressed to
-  `chrome-extension://<fixed id>` (`frameOriginOf`), and the manifest no longer
-  asks for dynamic addresses: in Chrome 154 the debugger is detached from the tab
-  (`target_closed`) the moment such a frame opens in it, which ended the
-  take-over's stream and the agent's debugging session at the person's first click
-  into a field. The cost is that a page can tell the extension is installed (by
-  asking for a frame page it knows the id of); it cannot read anything from the
-  frame, which takes only the channel the content script hands it.
-- **Words.** A changed key of an owner shows as a notice in the window, not a
+- **No pages a website can load.** With nothing drawn into websites, the
+  manifest lists no web-accessible resources, so a page can no longer tell the
+  extension is installed by asking for one of its pages, and no page of the
+  extension can be framed by a website.
+- **Words.** A changed key of an owner shows as a notice in the dropdown, not a
   button that gates use: that owner's shared items keep opening with the new key,
-  and the window can show both codes for comparing. The question before filling a
+  and the dropdown can show both codes for comparing. The question before filling a
   login into another site names the whole origin of the page and of each saved site, so a
   different scheme or port is seen.
 - **Evaluate runs through the debugger.** `inPage` once built a function from
@@ -933,24 +923,20 @@ equal; `docs/subsystems/devices.md` has the whole account).
   person's own tap. The server refuses first, so a deploy closes it before anyone
   reloads the extension, and the extension refuses again against where the tab is
   at that moment.
-- **No input into the person's TeaNode panel.** The panel the extension puts on a
-  page is the dashboard's drawer, signed in as the person. The extension refuses a
-  mouse, touch, tap or scroll gesture whose point is inside it, keys while its
-  frame has focus, and `click`, `hover`, `type` and `select` on an element it
-  covers. Its sign-in token is handed to its frame once, by the extension, and is
-  in no address. The protocol is also kept from reading through frames (`pierce`,
-  a named context or frame, `DOMSnapshot`, `Page.captureSnapshot`,
-  `Page.getFrameTree`).
-- **Nothing filled or suggested in a tab the agent is driving.** The extension
-  records the time of the agent's last command in each tab
-  (`web/extension/src/agentActivity.ts`) and, for 60 seconds after it, answers a
-  page's request for a suggestion, a fill, a code, a generated password, a captured
-  login or a save as if there were nothing to offer, unless the person holds the
-  tab and their own input is newer than the agent's command and under 10 seconds
-  old. The agent's real input looks to a page like the person's: it could click a
-  field, open the suggestion frame, click a row, and read the fill back with
-  `Runtime.evaluate`. This is separate from the agent's own fill actions, which
-  the lock, the origin check and the scripted-site rule govern.
+- **No reading through frames.** The extension's chat is Chrome's side panel,
+  beside the page, so nothing of it is in a tab. The protocol is still kept from
+  reading through frames (`pierce`, a named context or frame, `DOMSnapshot`,
+  `Page.captureSnapshot`, `Page.getFrameTree`), and the side panel's sign-in token
+  is posted to its frame once, by the extension's own page, and is in no address.
+- **Nothing remembered in a tab the agent is driving.** The extension draws
+  nothing into pages, so a fill starts only in the toolbar button's dropdown,
+  outside the tab, where the agent's input cannot reach. It records the time of
+  the agent's last command in each tab (`web/extension/src/agentActivity.ts`)
+  and, for 60 seconds after it, keeps no sign-in the page reports and fills no
+  generated password into it, unless the person holds the tab and their own
+  input is newer than the agent's command and under 10 seconds old. This is
+  separate from the agent's own fill actions, which the lock, the origin check
+  and the scripted-site rule govern.
 
 ## On the devices
 
