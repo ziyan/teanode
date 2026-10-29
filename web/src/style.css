@@ -19820,11 +19820,27 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 
 /* A visit is one card holding the place, its menu and its pictures, as a trip
    holds its legs and their menus. The place is a button of its own, since the
-   menu and the pictures cannot sit inside a button. */
+   menu and the pictures cannot sit inside a button, and it reaches over the
+   whole card, so a press anywhere on the card but on them selects the place
+   and the card shows the hover and the focus, not a box inside it. */
 .location-visit {
+  position: relative;
   flex-direction: column;
   align-items: stretch;
   gap: var(--space-2);
+}
+
+.location-visit:has(.location-visit-select:hover) {
+  background: var(--sidebar-hover);
+}
+
+.location-visit:has(.location-visit-select:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.location-visit .menu-button {
+  z-index: 1;
 }
 
 .location-visit-head {
@@ -19847,6 +19863,21 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   color: inherit;
   font: inherit;
   cursor: pointer;
+}
+
+.location-visit-select:hover:not(:disabled) {
+  background: none;
+}
+
+.location-visit-select:focus-visible {
+  outline: none;
+}
+
+.location-visit-select::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
 }
 
 /* As wide as the menu button beside the other visits. */
@@ -19931,6 +19962,8 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 }
 
 .location-visit-photo {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
