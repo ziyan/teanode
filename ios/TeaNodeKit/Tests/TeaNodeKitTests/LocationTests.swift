@@ -665,6 +665,50 @@ final class LocationTests: XCTestCase {
         XCTAssertEqual(watched.last?.placeId, "a-place-from-the-map")
     }
 
+    private func watchedBranch(_ osmId: Int64, latitude: Double) -> WatchedPlace { WatchedPlace(store: store(osmId, latitude: latitude)) }
+
+    func testACircleWithAnOpenVisitStaysWatchedWhenTheServerNoLongerListsIt() {
+        let chosen = [WatchedPlace(placeId: "home", latitudeDegrees: 10.5, longitudeDegrees: 20.5, radiusMeters: 100)]
+        let inTheStore = watchedBranch(5, latitude: 10.52)
+        let watched = LocationPlaceWatch.keepOpen(chosen, open: [inTheStore], nearLatitudeDegrees: 10.5, nearLongitudeDegrees: 20.5)
+        XCTAssertEqual(watched.map(\.identifier), ["home", "store:node:5"])
+        // Listed again, it is not watched twice.
+        let listed = LocationPlaceWatch.keepOpen(chosen + [inTheStore], open: [inTheStore], nearLatitudeDegrees: 10.5, nearLongitudeDegrees: 20.5)
+        XCTAssertEqual(listed.map(\.identifier), ["home", "store:node:5"])
+        // With no visit open, nothing is kept beyond the chosen.
+        XCTAssertEqual(LocationPlaceWatch.keepOpen(chosen, open: [], nearLatitudeDegrees: nil, nearLongitudeDegrees: nil).map(\.identifier), ["home"])
+    }
+
+    func testTheOpenCirclesStayWhenTheyPushTheWatchPastTwentyAndTheFarthestOthersGo() {
+        let chosen = (0..<20).map {
+            WatchedPlace(placeId: "named-\($0)", latitudeDegrees: 10.5 + Double($0) * 0.01, longitudeDegrees: 20.5, radiusMeters: 100)
+        }
+        // One open visit at a circle far from the person, and one at a store
+        // no longer listed.
+        let far = chosen[19]
+        let inTheStore = watchedBranch(5, latitude: 11.5)
+        let watched = LocationPlaceWatch.keepOpen(chosen, open: [far, inTheStore], nearLatitudeDegrees: 10.5, nearLongitudeDegrees: 20.5)
+        XCTAssertEqual(watched.count, LocationPlaceWatch.countMost)
+        XCTAssertTrue(watched.contains { $0.identifier == "named-19" })
+        XCTAssertTrue(watched.contains { $0.identifier == "store:node:5" })
+        // Of the nineteen others, the farthest is dropped.
+        XCTAssertFalse(watched.contains { $0.identifier == "named-18" })
+        XCTAssertTrue(watched.contains { $0.identifier == "named-17" })
+        XCTAssertTrue(watched.contains { $0.identifier == "named-0" })
+    }
+
+    func testWithNoPositionTheLastChosenGoFirstWhenTheOpenCirclesNeedRoom() {
+        let chosen = (0..<20).map {
+            WatchedPlace(placeId: "named-\($0)", latitudeDegrees: 10.5 + Double($0) * 0.01, longitudeDegrees: 20.5, radiusMeters: 100)
+        }
+        let watched = LocationPlaceWatch.keepOpen(
+            chosen, open: [watchedBranch(5, latitude: 10.5)], nearLatitudeDegrees: nil, nearLongitudeDegrees: nil)
+        XCTAssertEqual(watched.count, LocationPlaceWatch.countMost)
+        XCTAssertEqual(watched.last?.identifier, "store:node:5")
+        XCTAssertTrue(watched.contains { $0.identifier == "named-18" })
+        XCTAssertFalse(watched.contains { $0.identifier == "named-19" })
+    }
+
     func testAVisitToAStoresBranchNamesItsMapObject() throws {
         var outbox = LocationOutbox(accountKey: "account")
         let arrived = date("2024-01-02T17:00:00Z")

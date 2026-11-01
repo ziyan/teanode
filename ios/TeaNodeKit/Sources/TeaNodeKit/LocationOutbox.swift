@@ -736,6 +736,48 @@ public enum LocationPlaceWatch {
         return own + watchedBranches
     }
 
+    /// The places to watch once the circles of the visits still open are
+    /// kept. A circle is the only thing that says the person left, so one with
+    /// an open visit stays watched when the server no longer lists it (the
+    /// last item was checked off in the store), until its exit closes the
+    /// visit. When the open ones push the watch past `countMost`, the others
+    /// farthest from where the person last was are dropped, or the last
+    /// chosen ones when no position is known.
+    public static func keepOpen(
+        _ chosen: [WatchedPlace], open: [WatchedPlace], nearLatitudeDegrees: Double?, nearLongitudeDegrees: Double?
+    ) -> [WatchedPlace] {
+        let openIdentifiers = Set(open.map(\.identifier))
+        let chosenIdentifiers = Set(chosen.map(\.identifier))
+        var seen = Set<String>()
+        let unlisted = open.filter { !chosenIdentifiers.contains($0.identifier) && seen.insert($0.identifier).inserted }
+        let keptOpen = chosen.filter { openIdentifiers.contains($0.identifier) } + unlisted
+        let others = chosen.enumerated().filter { !openIdentifiers.contains($0.element.identifier) }
+        let room = max(0, countMost - keptOpen.count)
+        let keptOthers: [(offset: Int, element: WatchedPlace)]
+        if others.count <= room {
+            keptOthers = others
+        } else if let nearLatitudeDegrees, let nearLongitudeDegrees {
+            // The nearest first, the order they were chosen in between equals.
+            keptOthers = Array(
+                others.sorted { first, second in
+                    let firstDistance = distance(first.element, nearLatitudeDegrees, nearLongitudeDegrees)
+                    let secondDistance = distance(second.element, nearLatitudeDegrees, nearLongitudeDegrees)
+                    return firstDistance != secondDistance ? firstDistance < secondDistance : first.offset < second.offset
+                }.prefix(room))
+        } else {
+            keptOthers = Array(others.prefix(room))
+        }
+        let keptOtherIdentifiers = Set(keptOthers.map(\.element.identifier))
+        let keptChosen = chosen.filter { openIdentifiers.contains($0.identifier) || keptOtherIdentifiers.contains($0.identifier) }
+        return Array((keptChosen + unlisted).prefix(countMost))
+    }
+
+    private static func distance(_ place: WatchedPlace, _ latitudeDegrees: Double, _ longitudeDegrees: Double) -> Double {
+        LocationGeometry.distanceMeters(
+            fromLatitudeDegrees: latitudeDegrees, fromLongitudeDegrees: longitudeDegrees, toLatitudeDegrees: place.latitudeDegrees,
+            toLongitudeDegrees: place.longitudeDegrees)
+    }
+
     private static func distance(_ place: LocationPlace, _ latitudeDegrees: Double, _ longitudeDegrees: Double) -> Double {
         LocationGeometry.distanceMeters(
             fromLatitudeDegrees: latitudeDegrees, fromLongitudeDegrees: longitudeDegrees, toLatitudeDegrees: place.latitudeDegrees,

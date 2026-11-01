@@ -137,6 +137,13 @@ func watchedStoreQuery(storeName string) string {
 	return strings.TrimSpace(strings.NewReplacer("’", "'", "‘", "'").Replace(storeName))
 }
 
+// watchedStoreCacheKey is what a search is kept under: the words the provider
+// is searched with and the cell, so that two spellings of a store, which the
+// provider may answer differently, do not share one answer.
+func watchedStoreCacheKey(storeName string, cellLatitude, cellLongitude float64) string {
+	return fmt.Sprintf("%s\n%.1f %.1f", watchedStoreQuery(storeName), cellLatitude, cellLongitude)
+}
+
 // ListWatchedStores waits on the place provider, so it reads in phases of
 // its own (isModelBackedQuery), as SearchPlaces does.
 func (self *graph) ListWatchedStores(ctx context.Context, arguments ListWatchedStoresArguments) ([]*WatchedStoreView, error) {
@@ -207,11 +214,15 @@ func (self *graph) ListWatchedStores(ctx context.Context, arguments ListWatchedS
 	now := time.Now()
 	views := []*WatchedStoreView{}
 	for _, store := range wanted {
-		cacheKey := fmt.Sprintf("%s %.1f %.1f", store.storeKey, cellLatitude, cellLongitude)
+		cacheKey := watchedStoreCacheKey(store.storeName, cellLatitude, cellLongitude)
 		found, isKept := self.watchedStores.get(cacheKey, now)
 		if !isKept {
-			if err := self.allowPlaceLookup(userId); err != nil {
-				return nil, err
+			// The person's searches for a place are limited, and these stores
+			// are searched without their asking: when the limit is reached,
+			// the branches found so far are still worth giving, and the rest
+			// are searched for the next time.
+			if self.allowPlaceLookup(userId) != nil {
+				break
 			}
 			if found, err = provider.Search(ctx, watchedStoreQuery(store.storeName), searchLatitude, searchLongitude, searchRadiusMeters, watchedStoreFoundMost); err != nil {
 				return nil, placeProviderFailure(err)

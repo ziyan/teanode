@@ -2333,7 +2333,10 @@ func (self *graph) placeForReportedVisit(tx db.Transaction, userId string, repor
 	if reported.OSMID != nil {
 		osmId = *reported.OSMID
 	}
-	isStoreBranch := osmType != "" && osmId != 0 && models.VisitSource(reported.VisitSource) == models.VisitSourceRegion
+	// A branch with no name is not told apart from any place, since the
+	// name is how its place is read as a store.
+	osmName := strings.TrimSpace(reported.OSMName)
+	isStoreBranch := osmType != "" && osmId != 0 && osmName != "" && models.VisitSource(reported.VisitSource) == models.VisitSourceRegion
 	if isStoreBranch {
 		reference := db.OSMReference{OSMType: osmType, OSMID: osmId}
 		own, err := tx.FindPlaceIDsByOSM(userId, []db.OSMReference{reference})
@@ -2352,8 +2355,21 @@ func (self *graph) placeForReportedVisit(tx db.Transaction, userId string, repor
 	// A branch inside a larger place of the person's (a shopping center they
 	// labeled) is a place of its own, or its arrival would remind of nothing:
 	// the place holding it is taken only when it is that store.
-	if found != nil && (!isStoreBranch || isPlaceOfStore(found, reported.OSMName)) {
+	if found != nil && (!isStoreBranch || isPlaceOfStore(found, osmName)) {
 		return found, false, nil
+	}
+	// A place the map has not named yet, at the branch, is the branch: a
+	// second place beside it would split the visits.
+	if found != nil && isStoreBranch && isUnnamedPlaceAt(found, reported.LatitudeDegrees, reported.LongitudeDegrees) {
+		err := tx.SetPlaceNamed(found.ID, nil, &db.NamedPlace{
+			PlaceName: osmName, OSMType: osmType, OSMID: osmId, OSMCategory: strings.TrimSpace(reported.OSMCategory),
+			AddressText: found.AddressText,
+		}, "", time.Now())
+		if err != nil {
+			return nil, false, locationFailure(err)
+		}
+		adopted, err := tx.GetPlace(userId, found.ID)
+		return adopted, false, err
 	}
 	if err := self.requireNewPlaceAllowance(userId); err != nil {
 		return nil, false, err
@@ -2364,7 +2380,7 @@ func (self *graph) placeForReportedVisit(tx db.Transaction, userId string, repor
 	}
 	// Named as the map names the branch, so that its arrival is the store's
 	// at once, before the provider would be asked about the place.
-	if osmName := strings.TrimSpace(reported.OSMName); isStoreBranch && osmName != "" {
+	if isStoreBranch {
 		now := time.Now()
 		toMake.PlaceName, toMake.OSMType, toMake.OSMID, toMake.OSMName = osmName, osmType, osmId, osmName
 		toMake.OSMCategory, toMake.NamedAt = strings.TrimSpace(reported.OSMCategory), &now
@@ -2385,6 +2401,14 @@ func isPlaceOfStore(found *models.Place, osmName string) bool {
 	storeName, _ := agent.ShoppingStoreOfPlace(found)
 	storeKey := models.ShoppingStoreKey(storeName)
 	return storeKey != "" && storeKey == models.ShoppingStoreKey(osmName)
+}
+
+// isUnnamedPlaceAt says a place has neither a name the person gave it, nor a
+// label, nor an OpenStreetMap object, and is centered within a branch's
+// circle of the position, so that it can be taken for the branch.
+func isUnnamedPlaceAt(found *models.Place, latitudeDegrees, longitudeDegrees float64) bool {
+	return !found.IsNamedByPerson && found.PlaceLabel == "" && found.OSMType == "" && found.OSMID == 0 &&
+		place.DistanceMeters(found.LatitudeDegrees, found.LongitudeDegrees, latitudeDegrees, longitudeDegrees) <= watchedStoreRadiusMeters
 }
 
 func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) (*PlaceView, error) {

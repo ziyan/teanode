@@ -195,3 +195,115 @@ func TestAVisitToAWatchedBranchIsAtThatStore(t *testing.T) {
 		t.Errorf("the visit names the place: %v", visits[0])
 	}
 }
+
+// The map is searched without the person asking, so the limit on their
+// searches must not turn the query into an error: the branches already found
+// are given, and the stores not yet searched wait for the next time.
+func TestWatchedStoresGiveWhatWasFoundWhenTheSearchLimitIsReached(t *testing.T) {
+	world, searches := newStoreWatchWorld(t)
+	listId := world.call(t, world.ada, `mutation { CreateShoppingList(listName: "Groceries") { id } }`)["CreateShoppingList"].(map[string]any)["id"].(string)
+	world.call(t, world.ada, fmt.Sprintf(`mutation { AddShoppingItems(shoppingListId: %q, shoppingItems: [
+		{itemDescription: "Soup", storeName: "Example Market"},
+		{itemDescription: "Beans", storeName: "Example Market"}
+	]) { isMerged } }`, listId))
+	if branches := world.call(t, world.ada, watchedStoresQuery)["ListWatchedStores"].([]any); len(branches) != 2 {
+		t.Fatalf("the two branches in reach: %v", branches)
+	}
+
+	// Another store is wanted now and cannot be searched for: the first
+	// store's branches are given all the same.
+	world.call(t, world.ada, fmt.Sprintf(`mutation { AddShoppingItems(shoppingListId: %q, shoppingItems: [{itemDescription: "Rice", storeName: "Other Market"}]) { isMerged } }`, listId))
+	for world.graph.allowPlaceLookup(world.ada.ID) == nil {
+	}
+	branches := world.call(t, world.ada, watchedStoresQuery)["ListWatchedStores"].([]any)
+	if len(branches) != 2 {
+		t.Errorf("the branches found so far are given: %v", branches)
+	}
+	if got := searches(); len(got) != 1 {
+		t.Errorf("only the first search was made: %v", got)
+	}
+}
+
+// With nothing found yet and no search left, the answer is no branches, not
+// an error.
+func TestWatchedStoresAreNoneWhenTheSearchLimitIsReachedFirst(t *testing.T) {
+	world, searches := newStoreWatchWorld(t)
+	listId := world.call(t, world.ada, `mutation { CreateShoppingList(listName: "Groceries") { id } }`)["CreateShoppingList"].(map[string]any)["id"].(string)
+	world.call(t, world.ada, fmt.Sprintf(`mutation { AddShoppingItems(shoppingListId: %q, shoppingItems: [{itemDescription: "Soup", storeName: "Example Market"}]) { isMerged } }`, listId))
+	for world.graph.allowPlaceLookup(world.ada.ID) == nil {
+	}
+	if branches := world.call(t, world.ada, watchedStoresQuery)["ListWatchedStores"].([]any); len(branches) != 0 {
+		t.Errorf("no search was left: %v", branches)
+	}
+	if got := searches(); len(got) != 0 {
+		t.Errorf("the map was asked past the limit: %v", got)
+	}
+}
+
+// Two spellings of a store are searched for as spelled, so they are kept
+// apart; the typographic apostrophe is the one difference the search does
+// not keep, since it is made plain before the provider is asked.
+func TestWatchedStoreSearchesAreKeptByTheWordsSearched(t *testing.T) {
+	cacheKey := func(storeName string) string { return watchedStoreCacheKey(storeName, 40.0, -75.0) }
+	if cacheKey("Example Market") == cacheKey("Example-Market") {
+		t.Error("two spellings share one cached answer")
+	}
+	if cacheKey("Example Market") == cacheKey("Examplemarket") {
+		t.Error("two spellings share one cached answer")
+	}
+	if cacheKey("Joe’s Market") != cacheKey("Joe's Market") {
+		t.Error("a typographic apostrophe is searched for as a plain one")
+	}
+	if cacheKey("Example Market") == watchedStoreCacheKey("Example Market", 40.1, -75.0) {
+		t.Error("two cells share one cached answer")
+	}
+}
+
+// A branch reported with no name is not told from any place, so its visit is
+// at the place that holds it and no second place is made for it.
+func TestAVisitToABranchWithNoNameMakesNoPlace(t *testing.T) {
+	world, _ := newStoreWatchWorld(t)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.CreatePlace(world.ada.ID, &models.Place{
+			PlaceName: "Shopping center", IsNamedByPerson: true, LatitudeDegrees: 40.0012, LongitudeDegrees: -75, RadiusMeters: 300,
+		}); err != nil {
+			t.Fatalf("CreatePlace: %s", err)
+		}
+	})
+	arrivedAt := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	world.report(t, world.ada, "", fmt.Sprintf(`{clientVisitKey: "unnamed-1", latitudeDegrees: 40.001, longitudeDegrees: -75, accuracyMeters: 0,
+		visitSource: "region", osmType: "node", osmId: 12, osmName: "", arrivedAt: %q}`, arrivedAt.Format(time.RFC3339)))
+	if got := dbtest.QueryString(t, world.database, `SELECT count(*) FROM place WHERE user_id = '`+world.ada.ID+`'`); got != "1" {
+		t.Errorf("%s places, want only the shopping center", got)
+	}
+}
+
+// A place the map has not named, at the branch, is taken for the branch
+// rather than given a twin.
+func TestAVisitToABranchTakesAnUnnamedPlaceThere(t *testing.T) {
+	world, _ := newStoreWatchWorld(t)
+	var unnamedId string
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		created, err := tx.CreatePlace(world.ada.ID, &models.Place{PlaceName: "40.00, -75.00", LatitudeDegrees: 40.0005, LongitudeDegrees: -75})
+		if err != nil {
+			t.Fatalf("CreatePlace: %s", err)
+		}
+		unnamedId = created.ID
+	})
+	arrivedAt := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	world.report(t, world.ada, "", fmt.Sprintf(`{clientVisitKey: "adopt-1", latitudeDegrees: 40.001, longitudeDegrees: -75, accuracyMeters: 0,
+		visitSource: "region", osmType: "node", osmId: 12, osmName: "Example Market", osmCategory: "shop=supermarket", arrivedAt: %q}`, arrivedAt.Format(time.RFC3339)))
+	var places []*models.Place
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		if places, _, err = tx.ListPlaces(world.ada.ID, db.PlaceFilter{}); err != nil {
+			t.Fatalf("ListPlaces: %s", err)
+		}
+	})
+	if len(places) != 1 || places[0].ID != unnamedId {
+		t.Fatalf("the unnamed place is the only place: %+v", places)
+	}
+	if places[0].PlaceName != "Example Market" || places[0].OSMType != "node" || places[0].OSMID != 12 || places[0].IsNamedByPerson {
+		t.Errorf("the place is the map's branch now: %+v", places[0])
+	}
+}
