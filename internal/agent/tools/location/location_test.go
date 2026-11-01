@@ -470,6 +470,28 @@ func TestAnotherPersonsLocationIsNotReadInARunThePersonDidNotStart(t *testing.T)
 	}
 }
 
+// programRun is a call from a program the person connected over MCP: not
+// their tap, but theirs.
+type programRun struct{ unattendedRun }
+
+func (self programRun) IsCalledByPersonsProgram() bool { return true }
+
+// A program the person connected over MCP reads the location of the people
+// who share theirs with the person, as the person's own turn does.
+func TestAProgramThePersonConnectedReadsAnotherPersonsLocation(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListSharedLocations": `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"history","latestPoint":null,"openVisit":null}]`,
+		"ListLocationVisits":  `{"placeVisits":[]}`,
+	}}
+	run := programRun{unattendedRun{runOf(operations)}}
+	if _, _, err := act(t, run, "people", `{}`, false); err != nil {
+		t.Errorf("people for a program the person connected: %v", err)
+	}
+	if _, _, err := act(t, run, "visits", `{"person":"ben"}`, false); err != nil {
+		t.Errorf("visits of somebody else for a program the person connected: %v", err)
+	}
+}
+
 // A page is asked for as given, so that the API's defaults (50, at most 200
 // for visits and places; 20, at most 50 for a search) and its refusals are the
 // ones said.

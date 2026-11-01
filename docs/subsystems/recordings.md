@@ -87,8 +87,9 @@ and a row on the Recordings list once anybody has shared one.
 allowed it, and the card says the other speakers did not agree
 (`models.RecordingShareConsentWords`, the words every surface uses before a
 share is made). `unshare` is a write. `shared` and `read-shared` work only in a
-run the person started and not in an answer to a chat of several people
-(`tools.IsStartedByPerson`, `tools.IsAnsweringInChat`); a dream or any
+run the person started or a program they connected over MCP called, and not in
+an answer to a chat of several people (`tools.IsStartedByPersonOrProgram`,
+`tools.IsAnsweringInChat`); a dream or any
 background run is refused before the server is asked. What they return is
 another person's words: the result is untrusted and begins with
 `tools.SharedRecordingMarker`, which the run that files what a conversation

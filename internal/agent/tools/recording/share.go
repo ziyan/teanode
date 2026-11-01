@@ -16,13 +16,14 @@ import (
 // was shared at, through the same API the dashboard and the command line use.
 //
 // The recordings of other people are read only in a conversation the person
-// started, never in a chat with others, a dream or a background run, and what
+// started or by a program they connected over MCP, never in a chat with
+// others, a dream or a background run, and what
 // they say is marked (tools.SharedRecordingMarker) so that the run that files
 // what a conversation taught does not write it down as the person's own.
 
 // sharedRecordingRefusal is what a read of another person's recording is told
 // where it may not happen, worded as the memory tool's is for shared pages.
-const sharedRecordingRefusal = "recordings other people shared are read only in a one-to-one conversation the person started, not in a chat with others or a background run; tell the person to ask in their own drawer"
+const sharedRecordingRefusal = "recordings other people shared are read only in a one-to-one conversation the person started, or by a program they connected over MCP, not in a chat with others or a background run; tell the person to ask in their own drawer"
 
 // runSharing does the sharing operations; the second answer is false for any
 // other operation, which the caller does itself.
@@ -34,7 +35,7 @@ func runSharing(ctx context.Context, arguments *recordingArguments) (*tools.Resu
 	}
 	run := tools.MustRun(ctx)
 	isReadingShared := arguments.Operation == "shared" || arguments.Operation == "read-shared"
-	if isReadingShared && (!tools.IsStartedByPerson(run) || tools.IsAnsweringInChat(run)) {
+	if isReadingShared && (!tools.IsStartedByPersonOrProgram(run) || tools.IsAnsweringInChat(run)) {
 		return nil, true, errors.New(sharedRecordingRefusal)
 	}
 	var grantee *tools.Grantee
