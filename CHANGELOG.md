@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.207.4] - 2026-11-01
+
+### Changed
+
+- A program you connected over MCP can read the locations people share with you and the recordings others shared with you. Passwords stays closed to programs. (#694)
+- The browser extension's TeaNode button opens a dropdown with the logins saved for the site you are on. Ctrl+Shift+L then Enter fills the first one. The chat with your agent opens in Chrome's side panel from that dropdown, and the extension no longer draws a panel, a suggestion or a save bar into websites. A login you just typed is offered from the dropdown, marked by a + on the button. The extension needs Chrome 127 or later. Reload it in chrome://extensions after upgrading. (#693)
+
 ## [0.207.3] - 2026-10-29
 
 ### Fixed
