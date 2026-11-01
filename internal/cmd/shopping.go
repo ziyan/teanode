@@ -166,6 +166,15 @@ func NewShoppingCommand() *cli.Command {
 				},
 				Action: runShoppingStore,
 			},
+			{
+				Name: "watched-stores", Usage: "the branches of the stores your lists need something from that the phone watches, so walking in reminds you",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.FloatFlag{Name: "latitude", Usage: "latitude in degrees; where you were last reported to be by default"},
+					&cli.FloatFlag{Name: "longitude", Usage: "longitude in degrees"},
+				},
+				Action: runShoppingWatchedStores,
+			},
 			{Name: "trips", Usage: "who is shopping now, on the lists you reach", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingTrips},
 			{
 				Name: "shop", Usage: "start shopping a store for some lists; the others the lists reach are told", ArgsUsage: "<list>...",
@@ -1099,6 +1108,47 @@ func runShoppingStores(ctx context.Context, command *cli.Command) error {
 		rows = append(rows, []string{store.StoreName, fmt.Sprint(store.NeededCount), reminder})
 	}
 	return printTable([]string{"store", "needed", "reminder"}, rows)
+}
+
+func runShoppingWatchedStores(ctx context.Context, command *cli.Command) error {
+	if command.IsSet("latitude") != command.IsSet("longitude") {
+		return fmt.Errorf("give both --latitude and --longitude, or neither")
+	}
+	var latitudeDegrees, longitudeDegrees *float64
+	if command.IsSet("latitude") {
+		latitude, longitude := command.Float("latitude"), command.Float("longitude")
+		latitudeDegrees, longitudeDegrees = &latitude, &longitude
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	stores, err := client.ListWatchedStores(ctx, connection, latitudeDegrees, longitudeDegrees)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		if stores == nil {
+			stores = []*client.WatchedStore{}
+		}
+		return PrintJSON(stores)
+	}
+	if len(stores) == 0 {
+		_, _ = fmt.Fprintln(command.Writer, "no store is watched: none your lists need something from, with reminders on, is in reach")
+		return nil
+	}
+	rows := make([][]string, 0, len(stores))
+	for _, store := range stores {
+		placeId := store.PlaceID
+		if placeId == "" {
+			placeId = "-"
+		}
+		rows = append(rows, []string{
+			store.StoreName, store.PlaceName, fmt.Sprintf("%.0f m", store.DistanceMeters),
+			fmt.Sprintf("%.5f, %.5f", store.LatitudeDegrees, store.LongitudeDegrees), fmt.Sprintf("%s %d", store.OSMType, store.OSMID), placeId,
+		})
+	}
+	return printTable([]string{"store", "branch", "away", "position", "map object", "your place"}, rows)
 }
 
 func runShoppingStore(ctx context.Context, command *cli.Command) error {

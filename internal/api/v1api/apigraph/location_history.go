@@ -536,6 +536,15 @@ type ReportedVisit struct {
 
 	// PlaceID is the place a region event watched, one of the caller's own.
 	PlaceID string `json:"placeId" graphapi:"nullable"`
+
+	// OSMType and OSMID name the OpenStreetMap object a region event watched
+	// when it was a store's branch (ListWatchedStores) the caller has no place
+	// for; OSMName and OSMCategory are the map's, as that listed them, for the
+	// place made there.
+	OSMType     string `json:"osmType" graphapi:"nullable"`
+	OSMID       *int64 `json:"osmId" graphapi:"nullable"`
+	OSMName     string `json:"osmName" graphapi:"nullable"`
+	OSMCategory string `json:"osmCategory" graphapi:"nullable"`
 }
 
 type SavePlaceArguments struct {
@@ -2318,17 +2327,49 @@ func (self *graph) placeForReportedVisit(tx db.Transaction, userId string, repor
 			return nil, false, err
 		}
 	}
+	// A store's branch the phone watched is the caller's place for that object
+	// when they have one.
+	osmType, osmId := strings.TrimSpace(reported.OSMType), int64(0)
+	if reported.OSMID != nil {
+		osmId = *reported.OSMID
+	}
+	isStoreBranch := osmType != "" && osmId != 0 && models.VisitSource(reported.VisitSource) == models.VisitSourceRegion
+	if isStoreBranch {
+		reference := db.OSMReference{OSMType: osmType, OSMID: osmId}
+		own, err := tx.FindPlaceIDsByOSM(userId, []db.OSMReference{reference})
+		if err != nil {
+			return nil, false, err
+		}
+		if placeId := own[reference]; placeId != "" {
+			found, err := tx.GetPlace(userId, placeId)
+			return found, false, err
+		}
+	}
 	found, err := tx.FindPlaceAt(userId, reported.LatitudeDegrees, reported.LongitudeDegrees)
-	if err != nil || found != nil {
-		return found, false, err
+	if err != nil {
+		return nil, false, err
+	}
+	// A branch inside a larger place of the person's (a shopping center they
+	// labeled) is a place of its own, or its arrival would remind of nothing:
+	// the place holding it is taken only when it is that store.
+	if found != nil && (!isStoreBranch || isPlaceOfStore(found, reported.OSMName)) {
+		return found, false, nil
 	}
 	if err := self.requireNewPlaceAllowance(userId); err != nil {
 		return nil, false, err
 	}
-	made, err := tx.CreatePlace(userId, &models.Place{
+	toMake := &models.Place{
 		PlaceName: placeNameFor(reported.LatitudeDegrees, reported.LongitudeDegrees), LatitudeDegrees: reported.LatitudeDegrees,
 		LongitudeDegrees: reported.LongitudeDegrees,
-	})
+	}
+	// Named as the map names the branch, so that its arrival is the store's
+	// at once, before the provider would be asked about the place.
+	if osmName := strings.TrimSpace(reported.OSMName); isStoreBranch && osmName != "" {
+		now := time.Now()
+		toMake.PlaceName, toMake.OSMType, toMake.OSMID, toMake.OSMName = osmName, osmType, osmId, osmName
+		toMake.OSMCategory, toMake.NamedAt = strings.TrimSpace(reported.OSMCategory), &now
+	}
+	made, err := tx.CreatePlace(userId, toMake)
 	if errors.Is(err, db.ErrPlaceCountMost) {
 		return nil, false, err
 	}
@@ -2336,6 +2377,14 @@ func (self *graph) placeForReportedVisit(tx db.Transaction, userId string, repor
 		return nil, false, locationFailure(err)
 	}
 	return made, true, nil
+}
+
+// isPlaceOfStore says a place is the store the map names a branch by, as the
+// store reminder reads a place.
+func isPlaceOfStore(found *models.Place, osmName string) bool {
+	storeName, _ := agent.ShoppingStoreOfPlace(found)
+	storeKey := models.ShoppingStoreKey(storeName)
+	return storeKey != "" && storeKey == models.ShoppingStoreKey(osmName)
 }
 
 func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) (*PlaceView, error) {

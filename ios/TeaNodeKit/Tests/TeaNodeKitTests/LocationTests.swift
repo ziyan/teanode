@@ -280,7 +280,7 @@ final class LocationTests: XCTestCase {
         var outbox = LocationOutbox(accountKey: "account")
         outbox.addPoint(
             ReportedPoint(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 8, speedMetersPerSecond: 1.5, measuredAt: date("2024-01-02T09:00:00Z")))
-        outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: date("2024-01-02T09:00:00Z"))
+        outbox.arrive(at: WatchedPlace(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, radiusMeters: 100), at: date("2024-01-02T09:00:00Z"))
         let result = try await connection.reportLocation(outbox.nextBatch(), agentPhoneId: "phone-1")
         XCTAssertEqual(result.newVisitCount, 1)
         let variables = try sentVariables(fake.sent[0])
@@ -512,15 +512,15 @@ final class LocationTests: XCTestCase {
     func testADepartureFindsItsArrivalAfterTheOutboxIsReadBack() throws {
         var outbox = LocationOutbox(accountKey: "account")
         let arrived = date("2024-01-02T09:00:00Z")
-        XCTAssertTrue(outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: arrived))
+        XCTAssertTrue(outbox.arrive(at: WatchedPlace(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, radiusMeters: 100), at: arrived))
         outbox.remove(outbox.nextBatch())
 
         var reread = try LocationOutbox.decoded(from: try outbox.encoded())
         XCTAssertEqual(reread, outbox)
-        XCTAssertTrue(reread.depart(placeId: "place-1", at: arrived.addingTimeInterval(3600)))
-        XCTAssertFalse(reread.depart(placeId: "place-1", at: arrived.addingTimeInterval(3700)))
+        XCTAssertTrue(reread.depart(identifier: "place-1", at: arrived.addingTimeInterval(3600)))
+        XCTAssertFalse(reread.depart(identifier: "place-1", at: arrived.addingTimeInterval(3700)))
         let departure = try XCTUnwrap(reread.visits.first)
-        XCTAssertEqual(departure.clientVisitKey, LocationVisitKey.region(placeId: "place-1", arrivedAt: arrived))
+        XCTAssertEqual(departure.clientVisitKey, LocationVisitKey.region(identifier: "place-1", arrivedAt: arrived))
         XCTAssertNil(departure.arrivedAt)
         XCTAssertEqual(departure.departedAt, arrived.addingTimeInterval(3600))
         XCTAssertEqual(departure.placeId, "place-1")
@@ -530,21 +530,21 @@ final class LocationTests: XCTestCase {
         var outbox = LocationOutbox(accountKey: "account")
         let first = date("2024-01-02T09:00:00Z")
         let second = first.addingTimeInterval(3 * 3600)
-        outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: first)
-        XCTAssertTrue(outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: second))
+        outbox.arrive(at: WatchedPlace(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, radiusMeters: 100), at: first)
+        XCTAssertTrue(outbox.arrive(at: WatchedPlace(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, radiusMeters: 100), at: second))
         XCTAssertEqual(outbox.visits.count, 3)
         // The first visit is ended at the second arrival, under its own key.
-        XCTAssertEqual(outbox.visits[1].clientVisitKey, LocationVisitKey.region(placeId: "place-1", arrivedAt: first))
+        XCTAssertEqual(outbox.visits[1].clientVisitKey, LocationVisitKey.region(identifier: "place-1", arrivedAt: first))
         XCTAssertEqual(outbox.visits[1].departedAt, second)
-        XCTAssertEqual(outbox.visits[2].clientVisitKey, LocationVisitKey.region(placeId: "place-1", arrivedAt: second))
+        XCTAssertEqual(outbox.visits[2].clientVisitKey, LocationVisitKey.region(identifier: "place-1", arrivedAt: second))
         XCTAssertNotNil(outbox.openRegionVisits["place-1"])
     }
 
     func testEndingEveryVisitWhenMonitoringStopsLeavesNoneOpen() {
         var outbox = LocationOutbox(accountKey: "account")
         let arrived = date("2024-01-02T09:00:00Z")
-        outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: arrived)
-        outbox.arrive(placeId: "place-2", latitudeDegrees: 10.6, longitudeDegrees: 20.5, at: arrived)
+        outbox.arrive(at: WatchedPlace(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, radiusMeters: 100), at: arrived)
+        outbox.arrive(at: WatchedPlace(placeId: "place-2", latitudeDegrees: 10.6, longitudeDegrees: 20.5, radiusMeters: 100), at: arrived)
         outbox.departEverywhere(at: arrived.addingTimeInterval(600))
         XCTAssertTrue(outbox.openRegionVisits.isEmpty)
         XCTAssertEqual(outbox.visits.filter { $0.departedAt != nil }.count, 2)
@@ -567,7 +567,7 @@ final class LocationTests: XCTestCase {
     func testDiscardingWhatIsUnsentKeepsTheVisitsBegun() {
         var outbox = LocationOutbox(accountKey: "account")
         outbox.addPoint(ReportedPoint(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, measuredAt: Date()))
-        outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: Date())
+        outbox.arrive(at: WatchedPlace(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, radiusMeters: 100), at: Date())
         outbox.discardUnsent()
         XCTAssertTrue(outbox.isEmpty)
         XCTAssertNotNil(outbox.openRegionVisits["place-1"])
@@ -639,6 +639,71 @@ final class LocationTests: XCTestCase {
         XCTAssertEqual(watched.first?.placeId, "named-0")
         XCTAssertFalse(watched.contains { $0.placeId == "only-from-the-map" })
         XCTAssertFalse(watched.contains { $0.placeId == "home" })
+    }
+
+    private func store(_ osmId: Int64, latitude: Double, placeId: String? = nil) -> WatchedStore {
+        WatchedStore(
+            storeName: "Example Market", storeKey: "examplemarket", placeName: "Example Market", osmType: "node", osmId: osmId,
+            osmCategory: "shop=supermarket", latitudeDegrees: latitude, longitudeDegrees: 20.5, radiusMeters: 100, distanceMeters: 0, placeId: placeId)
+    }
+
+    func testTheStoresTakeSixCirclesAndThePersonsPlacesTheRest() {
+        let places = (0..<30).map { place("named-\($0)", latitude: 10.5 + Double($0) * 0.01, isNamed: true) }
+        let stores = (1...8).map { store(Int64($0), latitude: 10.6 + Double($0) * 0.01) }
+        let watched = LocationPlaceWatch.choose(from: places, stores: stores, nearLatitudeDegrees: 10.5, nearLongitudeDegrees: 20.5)
+        XCTAssertEqual(watched.count, 20)
+        XCTAssertEqual(watched.filter { $0.storeBranch != nil }.map(\.identifier), (1...6).map { "store:node:\($0)" })
+        XCTAssertEqual(watched.filter { $0.storeBranch == nil }.count, 14)
+        XCTAssertEqual(watched.first { $0.storeBranch != nil }?.storeBranch?.osmName, "Example Market")
+    }
+
+    func testABranchThatIsAPlaceWatchedIsWatchedAsThatPlace() {
+        let places = [place("market", latitude: 10.5, isNamed: true), place("home", latitude: 10.51, label: "home")]
+        let stores = [store(1, latitude: 10.5, placeId: "market"), store(2, latitude: 10.52, placeId: "a-place-from-the-map")]
+        let watched = LocationPlaceWatch.choose(from: places, stores: stores, nearLatitudeDegrees: 10.5, nearLongitudeDegrees: 20.5)
+        XCTAssertEqual(watched.map(\.identifier), ["market", "home", "store:node:2"])
+        XCTAssertEqual(watched.last?.placeId, "a-place-from-the-map")
+    }
+
+    func testAVisitToAStoresBranchNamesItsMapObject() throws {
+        var outbox = LocationOutbox(accountKey: "account")
+        let arrived = date("2024-01-02T17:00:00Z")
+        let branch = WatchedPlace(store: store(12, latitude: 10.5))
+        XCTAssertTrue(outbox.arrive(at: branch, at: arrived))
+        var reread = try LocationOutbox.decoded(from: try outbox.encoded())
+        XCTAssertTrue(reread.depart(identifier: "store:node:12", at: arrived.addingTimeInterval(900)))
+        XCTAssertEqual(reread.visits.count, 2)
+        for visit in reread.visits {
+            XCTAssertEqual(visit.clientVisitKey, LocationVisitKey.region(identifier: "store:node:12", arrivedAt: arrived))
+            XCTAssertNil(visit.placeId)
+            guard case .object(let fields) = visit.variables else { return XCTFail("a visit is an object") }
+            XCTAssertEqual(fields["osmType"], .string("node"))
+            XCTAssertEqual(fields["osmId"], .number(12))
+            XCTAssertEqual(fields["osmName"], .string("Example Market"))
+            XCTAssertEqual(fields["osmCategory"], .string("shop=supermarket"))
+            XCTAssertEqual(fields["visitSource"], .string("region"))
+            XCTAssertNil(fields["placeId"])
+        }
+    }
+
+    func testAVisitBegunBeforeStoresWereWatchedEndsAtItsPlace() throws {
+        // An open visit kept by an earlier version: no place in it, kept
+        // under the place's id.
+        let kept = #"{"accountKey":"account","nextSequence":2,"points":[],"visits":[],"openRegionVisits":{"place-1":{"clientVisitKey":"region:place-1:a1704186000","latitudeDegrees":10.5,"longitudeDegrees":20.5,"arrivedAt":"2024-01-02T09:00:00Z"}}}"#
+        var outbox = try LocationOutbox.decoded(from: Data(kept.utf8))
+        XCTAssertTrue(outbox.depart(identifier: "place-1", at: date("2024-01-02T10:00:00Z")))
+        XCTAssertEqual(outbox.visits.first?.placeId, "place-1")
+        XCTAssertNil(outbox.visits.first?.storeBranch)
+    }
+
+    func testABranchTheMonitorAloneKnowsIsToldByItsMapObject() {
+        let branch = WatchedPlace(identifier: "store:way:7", latitudeDegrees: 10.5, longitudeDegrees: 20.5, radiusMeters: 100)
+        XCTAssertNil(branch.placeId)
+        XCTAssertEqual(branch.storeBranch?.osmType, "way")
+        XCTAssertEqual(branch.storeBranch?.osmId, 7)
+        let own = WatchedPlace(identifier: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, radiusMeters: 100)
+        XCTAssertEqual(own.placeId, "place-1")
+        XCTAssertNil(own.storeBranch)
     }
 
     func testAWatchedCircleIsAtLeast100MetersWide() {
