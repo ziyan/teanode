@@ -356,6 +356,10 @@ type agentOperations struct {
 	impersonator *models.User
 }
 
+// IsOperatorActingAsPerson says an operator signed in as the person makes
+// these calls, not the person or a program of theirs.
+func (self *agentOperations) IsOperatorActingAsPerson() bool { return self.impersonator != nil }
+
 // NarrowedTo is these operations held to the limit as well: each call is
 // made with the person's permissions as they are at the call, less
 // whatever the limit does not allow.

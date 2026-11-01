@@ -152,6 +152,15 @@ func TestAProgramThePersonConnectedOverMCPActsForThem(t *testing.T) {
 	if !(&directRun{surface: "mcp"}).IsCalledByPersonsProgram() {
 		t.Error("a direct tool call over MCP")
 	}
+	if (&directRun{surface: "mcp", operations: operatorOperations{}}).IsCalledByPersonsProgram() {
+		t.Error("a direct tool call by an operator signed in as the person")
+	}
+	// A program's turn in a chat is its, and still answers in the chat, which
+	// is what keeps somebody else's location out of it.
+	inChat := &AskRun{settings: &AskSettings{Surface: "mcp", Message: "where is everybody?", Conversation: &models.AgentConversation{Kind: models.AgentConversationChat}}}
+	if !inChat.IsCalledByPersonsProgram() || !inChat.IsAnsweringInChat() {
+		t.Error("a teanode_ask turn in a chat is the program's and answers in the chat")
+	}
 	for _, surface := range []string{"drawer", "telegram", "mail", "schedule", "goal", "background", ""} {
 		if (&AskRun{settings: &AskSettings{Surface: surface, Message: "x"}}).IsCalledByPersonsProgram() {
 			t.Errorf("a turn on %q is not a program's", surface)
@@ -167,3 +176,8 @@ func TestAProgramThePersonConnectedOverMCPActsForThem(t *testing.T) {
 		t.Error("the agent's own turn")
 	}
 }
+
+// operatorOperations is the operations of an operator signed in as the person.
+type operatorOperations struct{ tools.Operations }
+
+func (operatorOperations) IsOperatorActingAsPerson() bool { return true }

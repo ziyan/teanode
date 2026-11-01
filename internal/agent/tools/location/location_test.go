@@ -492,6 +492,27 @@ func TestAProgramThePersonConnectedReadsAnotherPersonsLocation(t *testing.T) {
 	}
 }
 
+// A program's turn in a chat still answers to everybody there, so it is
+// given only the person's own location.
+func TestAProgramsTurnInAChatIsNotGivenAnotherPersonsLocation(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListSharedLocations": `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"history","latestPoint":null,"openVisit":null}]`,
+		"ListLocationVisits":  `{"placeVisits":[]}`,
+	}}
+	run := programInChatRun{programRun{unattendedRun{runOf(operations)}}}
+	if _, _, err := act(t, run, "people", `{}`, false); err == nil || !strings.Contains(err.Error(), "not repeated into a chat") {
+		t.Errorf("people for a program's turn in a chat: %v", err)
+	}
+	if _, _, err := act(t, run, "visits", `{"person":"ben"}`, false); err == nil || !strings.Contains(err.Error(), "not repeated into a chat") {
+		t.Errorf("visits of somebody else for a program's turn in a chat: %v", err)
+	}
+}
+
+// programInChatRun is a program's turn whose words are posted to a chat.
+type programInChatRun struct{ programRun }
+
+func (self programInChatRun) IsAnsweringInChat() bool { return true }
+
 // A page is asked for as given, so that the API's defaults (50, at most 200
 // for visits and places; 20, at most 50 for a search) and its refusals are the
 // ones said.
