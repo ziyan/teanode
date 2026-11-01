@@ -116,6 +116,10 @@ type graph struct {
 	locationLimitsOnce  sync.Once
 	locationLimitsValue *locationRateLimits
 
+	// watchedStores keeps the branches of stores found near a position, for
+	// the phone to watch (shopping_watch.go).
+	watchedStores watchedStoreCache
+
 	// passwordsLimits bound the wrong proofs one person gives to unlock
 	// Passwords and how fast they change it (passwords.go).
 	passwordsLimits passwordsLimiters

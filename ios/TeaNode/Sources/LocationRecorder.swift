@@ -360,6 +360,10 @@ final class LocationRecorder {
     /// places watched may be satisfied from before a pause, until they are
     /// given to iOS again after it.
     private static let hasPlacesToWatchAgainKeyPrefix = "locationHasPlacesToWatchAgain."
+    /// The places given to the monitor, as JSON: iOS launches a closed app
+    /// for a place being entered before the places are read again, and the
+    /// monitor's own record does not say which store's branch a circle is.
+    private static let watchedPlacesKey = "locationWatchedPlaces"
     /// How often the watched places are read again from the server because
     /// the person moved a long way: no more than this.
     private static let placeWatchRefreshSeconds = 60.0
@@ -987,9 +991,19 @@ final class LocationRecorder {
             return
         }
         let anchor = livePosition?.coordinate ?? manager?.location?.coordinate
+        // The branches of the stores the lists need something from. A
+        // failure keeps the stores watched now, as a failure to read the
+        // places keeps those: the ones kept in the defaults, since after a
+        // launch nothing is in memory yet.
+        let stores: [WatchedStore]
+        do {
+            stores = try await connection.watchedStores(latitudeDegrees: anchor?.latitude, longitudeDegrees: anchor?.longitude)
+        } catch {
+            stores = keptWatchedPlaces().compactMap(Self.storeOf).sorted { $0.distanceMeters < $1.distanceMeters }
+        }
         let chosen = LocationPlaceWatch.choose(
-            from: places, nearLatitudeDegrees: anchor?.latitude, nearLongitudeDegrees: anchor?.longitude)
-        await watch(chosen)
+            from: places, stores: stores, nearLatitudeDegrees: anchor?.latitude, nearLongitudeDegrees: anchor?.longitude)
+        await watch(chosen, nearLatitudeDegrees: anchor?.latitude, nearLongitudeDegrees: anchor?.longitude)
         arePlacesWatchedForPreviousAccount = false
     }
 
@@ -1023,30 +1037,86 @@ final class LocationRecorder {
         return monitor
     }
 
-    private func watch(_ chosen: [WatchedPlace]) async {
+    private func watch(_ chosen: [WatchedPlace], nearLatitudeDegrees: Double?, nearLongitudeDegrees: Double?) async {
         let monitor = await ensurePlaceMonitor()
-        let wanted = Dictionary(chosen.map { ($0.placeId, $0) }, uniquingKeysWith: { first, _ in first })
-        for identifier in await monitor.identifiers where wanted[identifier] == nil {
+        let monitoredIdentifiers = await monitor.identifiers
+        // A circle is the only thing that says the person left, so one with a
+        // visit still open stays watched even when it is no longer wanted
+        // (the last item was checked off in the store, and the server stopped
+        // listing it). Its exit closes the visit, and the next refresh drops it.
+        var openPlaces: [WatchedPlace] = []
+        for identifier in monitoredIdentifiers where outbox.openRegionVisits[identifier] != nil {
+            if let place = await openPlace(identifier: identifier, chosen: chosen, monitor: monitor) { openPlaces.append(place) }
+        }
+        let watching = LocationPlaceWatch.keepOpen(
+            chosen, open: openPlaces, nearLatitudeDegrees: nearLatitudeDegrees, nearLongitudeDegrees: nearLongitudeDegrees)
+        let wanted = Dictionary(watching.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
+        for identifier in monitoredIdentifiers where wanted[identifier] == nil {
             await monitor.remove(identifier)
             watchedPlaces[identifier] = nil
-            // Nothing will say the person left a place no longer watched.
-            closeOpenVisit(placeId: identifier, at: Date())
         }
-        for place in chosen {
-            if let record = await monitor.record(for: place.placeId),
+        for place in watching {
+            if let record = await monitor.record(for: place.identifier),
                 let condition = record.condition as? CLMonitor.CircularGeographicCondition,
                 condition.center.latitude == place.latitudeDegrees, condition.center.longitude == place.longitudeDegrees,
                 condition.radius == place.radiusMeters
             {
-                watchedPlaces[place.placeId] = place
+                watchedPlaces[place.identifier] = place
                 continue
             }
             let condition = CLMonitor.CircularGeographicCondition(
                 center: CLLocationCoordinate2D(latitude: place.latitudeDegrees, longitude: place.longitudeDegrees), radius: place.radiusMeters)
-            await monitor.add(condition, identifier: place.placeId, assuming: .unsatisfied)
-            placeAddedAt[place.placeId] = Date()
-            watchedPlaces[place.placeId] = place
+            await monitor.add(condition, identifier: place.identifier, assuming: .unsatisfied)
+            placeAddedAt[place.identifier] = Date()
+            watchedPlaces[place.identifier] = place
         }
+        keepWatchedPlaces()
+    }
+
+    /// The place a circle with an open visit is, from the chosen ones, else as
+    /// it was last given to the monitor, else as the monitor's record says.
+    private func openPlace(identifier: String, chosen: [WatchedPlace], monitor: CLMonitor) async -> WatchedPlace? {
+        if let place = chosen.first(where: { $0.identifier == identifier }) ?? watchedPlaces[identifier] ?? keptWatchedPlace(identifier) {
+            return place
+        }
+        guard let record = await monitor.record(for: identifier),
+            let condition = record.condition as? CLMonitor.CircularGeographicCondition
+        else { return nil }
+        return WatchedPlace(
+            identifier: identifier, latitudeDegrees: condition.center.latitude, longitudeDegrees: condition.center.longitude,
+            radiusMeters: condition.radius)
+    }
+
+    private func keepWatchedPlaces() {
+        if watchedPlaces.isEmpty {
+            defaults.removeObject(forKey: Self.watchedPlacesKey)
+        } else if let data = try? JSONEncoder().encode(Array(watchedPlaces.values)) {
+            defaults.set(data, forKey: Self.watchedPlacesKey)
+        }
+    }
+
+    /// The place the monitor knows by an identifier, as it was last given to
+    /// it, from before the app was launched for the event.
+    private func keptWatchedPlace(_ identifier: String) -> WatchedPlace? {
+        keptWatchedPlaces().first { $0.identifier == identifier }
+    }
+
+    /// Every place as it was last given to the monitor, from the defaults.
+    private func keptWatchedPlaces() -> [WatchedPlace] {
+        guard let data = defaults.data(forKey: Self.watchedPlacesKey),
+            let kept = try? JSONDecoder().decode([WatchedPlace].self, from: data)
+        else { return [] }
+        return kept
+    }
+
+    /// A watched store's branch as the server gave it, to keep watching while
+    /// the server cannot be asked.
+    private static func storeOf(_ place: WatchedPlace) -> WatchedStore? {
+        guard let branch = place.storeBranch else { return nil }
+        return WatchedStore(
+            storeName: branch.osmName, storeKey: "", placeName: branch.osmName, osmType: branch.osmType, osmId: branch.osmId,
+            osmCategory: branch.osmCategory, latitudeDegrees: place.latitudeDegrees, longitudeDegrees: place.longitudeDegrees,
+            radiusMeters: place.radiusMeters, distanceMeters: 0, placeId: place.placeId)
     }
 
     private func stopWatchingPlaces() async {
@@ -1054,18 +1124,20 @@ final class LocationRecorder {
         let monitor = await monitorStartup.value
         for identifier in await monitor.identifiers { await monitor.remove(identifier) }
         watchedPlaces = [:]
+        keepWatchedPlaces()
     }
 
     private func placeEventArrived(identifier: String, isInside: Bool, date: Date) async {
         guard isRecordingOn else { return }
         if isInside {
-            var place = watchedPlaces[identifier]
+            // Relaunched for the event, before the places were read again:
+            // as they were last given to the monitor, else as its record says.
+            var place = watchedPlaces[identifier] ?? keptWatchedPlace(identifier)
             if place == nil, let record = await ensurePlaceMonitor().record(for: identifier),
                 let condition = record.condition as? CLMonitor.CircularGeographicCondition
             {
-                // Relaunched for the event, before the places were read again.
                 place = WatchedPlace(
-                    placeId: identifier, latitudeDegrees: condition.center.latitude, longitudeDegrees: condition.center.longitude,
+                    identifier: identifier, latitudeDegrees: condition.center.latitude, longitudeDegrees: condition.center.longitude,
                     radiusMeters: condition.radius)
             }
             guard let place else { return }
@@ -1078,19 +1150,17 @@ final class LocationRecorder {
             {
                 return
             }
-            enqueue(isUrgent: true) {
-                $0.arrive(placeId: place.placeId, latitudeDegrees: place.latitudeDegrees, longitudeDegrees: place.longitudeDegrees, at: date)
-            }
+            enqueue(isUrgent: true) { $0.arrive(at: place, at: date) }
         } else {
-            closeOpenVisit(placeId: identifier, at: date)
+            closeOpenVisit(identifier: identifier, at: date)
         }
     }
 
-    private func closeOpenVisit(placeId: String, at date: Date) {
-        guard outbox.openRegionVisits[placeId] != nil else { return }
+    private func closeOpenVisit(identifier: String, at date: Date) {
+        guard outbox.openRegionVisits[identifier] != nil else { return }
         // Left in a pause: the server ended the visit where the pause began.
         let departureDate = pauseTracker.departureDate(noticedAt: date)
-        enqueue(isUrgent: true) { $0.depart(placeId: placeId, at: departureDate) }
+        enqueue(isUrgent: true) { $0.depart(identifier: identifier, at: departureDate) }
     }
 
     /// Ends every visit to a place that is still open, in the outbox of the

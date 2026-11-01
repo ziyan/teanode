@@ -120,7 +120,7 @@ func TestTheRiskOfEachAction(t *testing.T) {
 		t.Errorf("the tool needs shopping:use and nothing else: %v", merged.Permissions)
 	}
 	risks := map[string]tools.Risk{}
-	for _, action := range []string{"lists", "list", "item", "shares", "stores", "store", "trips", "prices", "receipt", "import_preview"} {
+	for _, action := range []string{"lists", "list", "item", "shares", "stores", "store", "trips", "watched_stores", "prices", "receipt", "import_preview"} {
 		risks[action] = tools.RiskRead
 	}
 	for _, action := range []string{
@@ -386,5 +386,37 @@ func TestTheCardsOfTheActionsThatAskSayWhatTheyDo(t *testing.T) {
 		if line := merged.PreviewLine(ctx, json.RawMessage(testCase.arguments)); !strings.Contains(line, testCase.want) {
 			t.Errorf("%s: %q, want it to say %q", testCase.arguments, line, testCase.want)
 		}
+	}
+}
+
+// The stores the phone watches are read around where the person was last
+// reported to be, each branch with how far it is and the person's place for
+// it when they have one, and none watched says why.
+func TestTheWatchedStoresSayWhereEachBranchIs(t *testing.T) {
+	operations := &routing{answers: map[string]string{"ListWatchedStores": `[
+		{"storeName":"Example Market","storeKey":"examplemarket","placeName":"Example Market","osmType":"node","osmId":12,"osmCategory":"shop=supermarket",
+		 "latitudeDegrees":40.001,"longitudeDegrees":-75,"radiusMeters":100,"distanceMeters":111.2,"placeId":"place-1"},
+		{"storeName":"Example Market","storeKey":"examplemarket","placeName":"Example Market","osmType":"node","osmId":11,"osmCategory":"shop=supermarket",
+		 "latitudeDegrees":40.01,"longitudeDegrees":-75,"radiusMeters":100,"distanceMeters":1112.0,"placeId":""}
+	]`}}
+	answer, _ := actJSON(t, runOf(operations), "watched_stores", `{}`)
+	rows := answer["watched_stores"].([]any)
+	if len(rows) != 2 {
+		t.Fatalf("both branches: %v", answer)
+	}
+	first, second := rows[0].(map[string]any), rows[1].(map[string]any)
+	if first["store_name"] != "Example Market" || first["distance_meters"] != float64(111) || first["radius_meters"] != float64(100) || first["place_id"] != "place-1" {
+		t.Errorf("the nearest branch: %v", first)
+	}
+	if _, hasPlace := second["place_id"]; hasPlace {
+		t.Errorf("a branch the person has no place for names none: %v", second)
+	}
+	if sent := operations.called("ListWatchedStores"); len(sent) != 1 || len(sent[0]) != 0 {
+		t.Errorf("asked around where the person was last reported to be: %v", sent)
+	}
+
+	answer, _ = actJSON(t, runOf(&routing{answers: map[string]string{"ListWatchedStores": `[]`}}), "watched_stores", `{}`)
+	if note, _ := answer["note"].(string); !strings.Contains(note, "no store is watched") {
+		t.Errorf("none watched says why: %v", answer)
 	}
 }

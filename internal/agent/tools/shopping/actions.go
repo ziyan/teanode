@@ -439,6 +439,29 @@ func runStores(ctx context.Context, here *scope, asked *arguments) (*tools.Resul
 	return dataResult(answer)
 }
 
+func runWatchedStores(ctx context.Context, here *scope, asked *arguments) (*tools.Result, error) {
+	stores, err := client.ListWatchedStores(ctx, here.operations, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]map[string]any, 0, len(stores))
+	for _, store := range stores {
+		row := map[string]any{
+			"store_name": store.StoreName, "branch_name": store.PlaceName, "distance_meters": int(store.DistanceMeters),
+			"latitude_degrees": store.LatitudeDegrees, "longitude_degrees": store.LongitudeDegrees, "radius_meters": int(store.RadiusMeters),
+		}
+		if store.PlaceID != "" {
+			row["place_id"] = store.PlaceID
+		}
+		rows = append(rows, row)
+	}
+	answer := map[string]any{"watched_stores": rows}
+	if len(rows) == 0 {
+		answer["note"] = "no store is watched: none the person's lists need something from, with reminders on, has a branch within 25 km"
+	}
+	return dataResult(answer)
+}
+
 func runStore(ctx context.Context, here *scope, asked *arguments) (*tools.Result, error) {
 	storeName, err := requiredText(asked.storeNameText(), "store_name", "store", "stores gives the ones the person's items are for")
 	if err != nil {

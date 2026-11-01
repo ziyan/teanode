@@ -495,6 +495,65 @@ public struct ShoppingStore: Decodable, Identifiable, Hashable, Sendable {
     }
 }
 
+/// WatchedStore is a branch, near the person, of a store their lists need
+/// something from with reminders on, for the phone to watch: walking into it
+/// is a visit there, which brings the store's reminder.
+public struct WatchedStore: Decodable, Identifiable, Hashable, Sendable {
+    public let storeName: String
+    public let storeKey: String
+    /// The branch's name on the map.
+    public let placeName: String
+    public let osmType: String
+    public let osmId: Int64
+    public let osmCategory: String
+    public let latitudeDegrees: Double
+    public let longitudeDegrees: Double
+    public let radiusMeters: Double
+    public let distanceMeters: Double
+    /// The person's place for the branch, when they have one.
+    public let placeId: String?
+
+    public var id: String { WatchedPlace.storeIdentifier(osmType: osmType, osmId: osmId) }
+
+    private enum CodingKeys: String, CodingKey {
+        case storeName, storeKey, placeName, osmType, osmId, osmCategory, latitudeDegrees, longitudeDegrees, radiusMeters, distanceMeters,
+            placeId
+    }
+
+    public init(
+        storeName: String, storeKey: String, placeName: String, osmType: String, osmId: Int64, osmCategory: String, latitudeDegrees: Double,
+        longitudeDegrees: Double, radiusMeters: Double, distanceMeters: Double, placeId: String?
+    ) {
+        self.storeName = storeName
+        self.storeKey = storeKey
+        self.placeName = placeName
+        self.osmType = osmType
+        self.osmId = osmId
+        self.osmCategory = osmCategory
+        self.latitudeDegrees = latitudeDegrees
+        self.longitudeDegrees = longitudeDegrees
+        self.radiusMeters = radiusMeters
+        self.distanceMeters = distanceMeters
+        self.placeId = placeId
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        storeName = try container.decodeIfPresent(String.self, forKey: .storeName) ?? ""
+        storeKey = try container.decodeIfPresent(String.self, forKey: .storeKey) ?? ""
+        placeName = try container.decodeIfPresent(String.self, forKey: .placeName) ?? ""
+        osmType = try container.decode(String.self, forKey: .osmType)
+        osmId = try container.decode(Int64.self, forKey: .osmId)
+        osmCategory = try container.decodeIfPresent(String.self, forKey: .osmCategory) ?? ""
+        latitudeDegrees = try container.decode(Double.self, forKey: .latitudeDegrees)
+        longitudeDegrees = try container.decode(Double.self, forKey: .longitudeDegrees)
+        radiusMeters = try container.decodeIfPresent(Double.self, forKey: .radiusMeters) ?? LocationPlaceWatch.radiusMetersLeast
+        distanceMeters = try container.decodeIfPresent(Double.self, forKey: .distanceMeters) ?? 0
+        let placeId = try container.decodeIfPresent(String.self, forKey: .placeId)
+        self.placeId = placeId?.isEmpty == false ? placeId : nil
+    }
+}
+
 /// ShoppingStoreList is a list that has items at a store, one of the buttons
 /// on the store screen that include or leave out a list.
 public struct ShoppingStoreList: Decodable, Identifiable, Hashable, Sendable {
@@ -1043,6 +1102,13 @@ extension Documents {
     public static let shoppingStores = """
         query { ListShoppingStores { storeKey storeName neededCount isReminded } }
         """
+    public static let watchedStores = """
+        query ($latitudeDegrees: Float, $longitudeDegrees: Float) {
+          ListWatchedStores(latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees) {
+            storeName storeKey placeName osmType osmId osmCategory latitudeDegrees longitudeDegrees radiusMeters distanceMeters placeId
+          }
+        }
+        """
     public static let shoppingStoreItems = """
         query ($storeName: String!, $shoppingListIds: [String!], $isAnyStoreIncluded: Boolean) {
           ListShoppingStoreItems(storeName: $storeName, shoppingListIds: $shoppingListIds, isAnyStoreIncluded: $isAnyStoreIncluded) {
@@ -1284,6 +1350,19 @@ extension Connection {
     public func shoppingStores() async throws -> [ShoppingStore] {
         struct Answer: Decodable, Sendable { let ListShoppingStores: [ShoppingStore] }
         return try await execute(Documents.shoppingStores, as: Answer.self).ListShoppingStores
+    }
+
+    /// The branches near a position (where the person was last reported to
+    /// be when nil) of the stores their lists need something from, for the
+    /// phone to watch.
+    public func watchedStores(latitudeDegrees: Double?, longitudeDegrees: Double?) async throws -> [WatchedStore] {
+        struct Answer: Decodable, Sendable { let ListWatchedStores: [WatchedStore] }
+        var variables: [String: JSONValue] = [:]
+        if let latitudeDegrees, let longitudeDegrees {
+            variables["latitudeDegrees"] = .number(latitudeDegrees)
+            variables["longitudeDegrees"] = .number(longitudeDegrees)
+        }
+        return try await execute(Documents.watchedStores, variables: variables, as: Answer.self).ListWatchedStores
     }
 
     /// The store screen: the items of the lists included (every list with
