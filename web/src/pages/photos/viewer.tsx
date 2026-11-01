@@ -496,6 +496,15 @@ export function PhotoViewer({
   const cameraText = [photo.cameraMake, photo.cameraModel]
     .filter((part, index, parts) => part && !(index === 1 && part.startsWith(parts[0])))
     .join(' ')
+  // Which kind of document a model found, when it was one that was recorded.
+  const documentKindLabel =
+    detail?.photoDocumentKind === 'receipt'
+      ? t('photos.readAsReceipt')
+      : detail?.photoDocumentKind === 'statement'
+        ? t('photos.readAsStatement')
+        : detail?.photoDocumentKind === 'taxDocument'
+          ? t('photos.readAsTaxDocument')
+          : ''
   // A reader of somebody else's photo may be given none of what a model wrote:
   // then there is no description to show, and no empty row for it.
   const hasDescriptionText = Boolean(detail?.photoDescription || detail?.descriptionVisibleText)
@@ -1133,6 +1142,17 @@ export function PhotoViewer({
                         })}
                       </p>
                     </>
+                  )}
+                  {documentKindLabel && (
+                    <p className="photo-document-kind">
+                      {isOwn && detail?.photoDocumentKind === 'receipt' ? (
+                        <Link className="button" to="/finance/receipts">
+                          {documentKindLabel}
+                        </Link>
+                      ) : (
+                        <span className="muted">{documentKindLabel}</span>
+                      )}
+                    </p>
                   )}
                   {isDescribing || isAskingToDescribe ? (
                     <p className="muted photo-describing" role="status">

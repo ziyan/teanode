@@ -1,6 +1,6 @@
 # A photo is described when somebody looks at it, and the description is kept
 
-- Status: proposed
+- Status: superseded for new photos by 20261031-a-new-photo-is-read-as-it-arrives.md
 - Date: 2026-10-16
 - Deciders: the-owner
 

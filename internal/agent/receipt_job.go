@@ -150,6 +150,11 @@ type receiptSource struct {
 	receiptText          string
 	pictures             []llm.ContentPart
 	unreadableWhy        string
+
+	// photoId is the photo of the library the upload was copied from, when
+	// it was read because it was new; its receipt is recorded only when the
+	// purchase is not recorded already.
+	photoId string
 }
 
 // readReceiptSource reads a receipt job's source: the stored message of a
@@ -195,7 +200,7 @@ func (self *Agent) readReceiptSource(ctx context.Context, run *Run, sourceId str
 	}
 	source := &receiptSource{
 		receipt:              &models.FinanceReceipt{ReceiptSourceKind: models.ReceiptSourceKindAttachment, AgentAttachmentID: attachment.ID},
-		financeTransactionId: attachment.FinanceTransactionID, sourceName: attachment.Name,
+		financeTransactionId: attachment.FinanceTransactionID, sourceName: attachment.Name, photoId: attachment.PhotoID,
 	}
 	if attachment.IsTaxDocument {
 		// A paystub's or a tax form's file holds the person's taxpayer
@@ -335,6 +340,19 @@ func (self *Agent) runReadReceipt(ctx context.Context, run *Run) error {
 	}
 	receipt := answer.Value.receipt()
 	receipt.ReceiptSourceKind, receipt.MailID, receipt.AgentAttachmentID = source.receipt.ReceiptSourceKind, source.receipt.MailID, source.receipt.AgentAttachmentID
+	if source.photoId != "" {
+		// A photo of a paper receipt is often of a purchase recorded already,
+		// from its mail or from the same picture sent in a conversation.
+		recorded, err := self.recordedPurchaseOf(ctx, run.Agent.ID, receipt)
+		if err != nil {
+			return err
+		}
+		if recorded != nil && recorded.AgentAttachmentID != receipt.AgentAttachmentID {
+			self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s: the receipt from %s for %s %s is recorded already, so nothing was recorded",
+				source.sourceName, recorded.MerchantName, finance.FormatReceiptAmount(recorded.TotalAmount, recorded.CurrencyCode), recorded.CurrencyCode))
+			return nil
+		}
+	}
 	// Nobody is here to ask whether a receipt that does not add up should
 	// be kept, so it is kept, marked unbalanced for the person to see; nor
 	// whether one that cannot be matched to the charge it was uploaded to

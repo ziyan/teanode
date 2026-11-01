@@ -470,7 +470,7 @@ func TestEachOperationHasItsRisk(test *testing.T) {
 	}
 	properties, _ := photoTool.Parameters["properties"].(map[string]any)
 	operation, _ := properties["operation"].(map[string]any)
-	if enum, _ := operation["enum"].([]string); len(enum) != 40 {
+	if enum, _ := operation["enum"].([]string); len(enum) != 41 {
 		test.Errorf("operations %v", enum)
 	}
 }

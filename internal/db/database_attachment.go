@@ -14,6 +14,10 @@ type AttachmentOperation interface {
 	CreateAgentAttachment(attachment *models.AgentAttachment) (*models.AgentAttachment, error)
 	GetAgentAttachment(attachmentId string) (*models.AgentAttachment, error)
 
+	// GetAgentAttachmentOfPhoto is the copy of a photo made to be read as a
+	// document, or nil when there is none.
+	GetAgentAttachmentOfPhoto(agentId, photoId string) (*models.AgentAttachment, error)
+
 	// GetAgentAttachments reads several by id, in the order given; one
 	// that does not exist is left out.
 	GetAgentAttachments(attachmentIds []string) ([]*models.AgentAttachment, error)
@@ -81,6 +85,7 @@ type agentAttachmentModel struct {
 
 	FinanceTransactionID *string `gorm:"column:finance_transaction_id"`
 	IsTaxDocument        bool    `gorm:"column:is_tax_document"`
+	PhotoID              string  `gorm:"column:photo_id"`
 }
 
 func (agentAttachmentModel) TableName() string { return "agent_attachment" }
@@ -91,6 +96,7 @@ func attachmentFromModel(model *agentAttachmentModel) *models.AgentAttachment {
 		ConversationID: model.ConversationID, MessageID: model.MessageID,
 		Name: model.Name, ContentType: model.ContentType, Size: model.Size, Text: model.Text,
 		FinanceTransactionID: optionalString(model.FinanceTransactionID), IsTaxDocument: model.IsTaxDocument,
+		PhotoID: model.PhotoID,
 	}
 }
 
@@ -103,6 +109,7 @@ func (self *transaction) CreateAgentAttachment(attachment *models.AgentAttachmen
 		ConversationID: attachment.ConversationID, MessageID: attachment.MessageID,
 		Name: truncateRunes(attachment.Name, 255), ContentType: truncateRunes(attachment.ContentType, 128),
 		Size: attachment.Size, Text: attachment.Text, IsTaxDocument: attachment.IsTaxDocument,
+		PhotoID: attachment.PhotoID,
 	}
 	if attachment.IsTaxDocument {
 		model.Text = ""
@@ -126,6 +133,21 @@ func (self *transaction) ChatAttachmentBytes(agentId string) (int64, error) {
 func (self *transaction) GetAgentAttachment(attachmentId string) (*models.AgentAttachment, error) {
 	var model agentAttachmentModel
 	result := self.tx.Where("\"id\" = ?", attachmentId).Limit(1).Find(&model)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return attachmentFromModel(&model), nil
+}
+
+func (self *transaction) GetAgentAttachmentOfPhoto(agentId, photoId string) (*models.AgentAttachment, error) {
+	if agentId == "" || photoId == "" {
+		return nil, nil
+	}
+	var model agentAttachmentModel
+	result := self.tx.Where("\"agent_id\" = ? AND \"photo_id\" = ?", agentId, photoId).Limit(1).Find(&model)
 	if result.Error != nil {
 		return nil, result.Error
 	}

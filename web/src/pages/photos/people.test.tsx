@@ -48,6 +48,9 @@ const group = (overrides: Record<string, unknown>) => ({
 })
 
 const photoLibrary = (overrides: Record<string, unknown> = {}) => ({
+  isDescriptionAvailable: true,
+  descriptionUnavailableMessage: '',
+  isPhotoReadingEnabled: true,
   isFaceRecognitionAvailable: true,
   faceRecognitionUnavailableMessage: '',
   isPhotoFaceRecognitionEnabled: true,

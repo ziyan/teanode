@@ -11,6 +11,7 @@ import { useTranslation } from '../../i18n/i18n'
 import { Select } from '../../components/select'
 import { PRONOUNS, PRONOUN_LABELS } from '../../lib/relationships'
 import { FaceRecognitionPreferences } from '../photos/people'
+import { PhotoReadingPreferences } from '../photos/reading'
 
 const CURRENT_USER = `{ GetCurrentUser { id username name email avatarUrl avatarColorIndex timezone timezoneMode measurementSystem pronoun } }`
 
@@ -358,6 +359,9 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
 
       {/* The person's own switch for finding faces in their photos. */}
       <FaceRecognitionPreferences />
+
+      {/* The person's own switch for reading each new photo as it arrives. */}
+      <PhotoReadingPreferences />
 
       {confirmingRename && (
         <ConfirmDialog

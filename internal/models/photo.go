@@ -81,6 +81,29 @@ const (
 	PhotoProcessingFailed  PhotoProcessingState = "failed"
 )
 
+// PhotoDocumentKind says what kind of document a described picture is.
+type PhotoDocumentKind string
+
+const (
+	PhotoDocumentNone PhotoDocumentKind = "none"
+	// PhotoDocumentReceipt is a receipt or an invoice for a purchase.
+	PhotoDocumentReceipt PhotoDocumentKind = "receipt"
+	// PhotoDocumentStatement is a statement of a bank, card or loan account,
+	// or a list of an account's transactions on a screen.
+	PhotoDocumentStatement PhotoDocumentKind = "statement"
+	// PhotoDocumentTaxDocument is a paystub, a W-2, a 1099 or a 1098.
+	PhotoDocumentTaxDocument PhotoDocumentKind = "taxDocument"
+)
+
+// IsValid says whether the server knows this kind.
+func (self PhotoDocumentKind) IsValid() bool {
+	switch self {
+	case PhotoDocumentNone, PhotoDocumentReceipt, PhotoDocumentStatement, PhotoDocumentTaxDocument:
+		return true
+	}
+	return false
+}
+
 // PhotoUploadState is where a resumable upload is.
 type PhotoUploadState string
 
@@ -185,6 +208,15 @@ type Photo struct {
 	// recently and not yet written. A request older than a day is taken to
 	// have been lost, since the job that serves it gives up before then.
 	IsDescriptionRequested bool `json:"isDescriptionRequested" gorm:"-"`
+
+	// PhotoDocumentKind is what the description said the picture is: empty
+	// until it is described, then none, or a document the person keeps
+	// records of, which is handed to the job that records it.
+	PhotoDocumentKind PhotoDocumentKind `json:"photoDocumentKind"`
+
+	// ReadingQueuedAt is when the photo was queued to be read because it was
+	// new, null when it never was.
+	ReadingQueuedAt *time.Time `json:"-"`
 
 	// The preview addresses are worked out when the photo is read, from the
 	// previews that exist; each is empty until its preview is made. They

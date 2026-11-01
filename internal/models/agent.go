@@ -764,6 +764,12 @@ const (
 	// file.
 	AgentJobTaxDocument AgentJobKind = "tax_document"
 
+	// AgentJobStatementPhoto reads the transactions of one account out of a
+	// photo the description said is a statement, and imports them into the
+	// account of imported statements they are of. Its subject is the copy
+	// of the photo made to be read.
+	AgentJobStatementPhoto AgentJobKind = "statement_photo"
+
 	// AgentJobTaxMail copies the PDFs and pictures of a message that
 	// arrived at the person's tax document address into tax document
 	// uploads, queues the reading of each, and tells the person. Its

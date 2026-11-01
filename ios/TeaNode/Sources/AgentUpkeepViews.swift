@@ -193,6 +193,7 @@ enum UpkeepWords {
         case "statement_import": String(localized: "Statement import")
         case "read_receipt": String(localized: "Read a receipt")
         case "describe_photo": String(localized: "Describe a photo")
+        case "statement_photo": String(localized: "Read a statement photo")
         case "tax_document": String(localized: "Read a tax document")
         case "tax_mail": String(localized: "Tax documents mailed in")
         case "watch": String(localized: "Watching")

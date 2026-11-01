@@ -12438,6 +12438,11 @@ main.content:has(> .knowledge-frame) {
   font-size: var(--text-label);
 }
 
+.photo-document-kind {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-label);
+}
+
 .photo-describing {
   display: flex;
   align-items: center;

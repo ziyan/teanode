@@ -55,6 +55,7 @@ type PhotoLibrary struct {
 	IsPhotoFaceRecognitionEnabled     bool   `json:"isPhotoFaceRecognitionEnabled"`
 	IsDescriptionAvailable            bool   `json:"isDescriptionAvailable"`
 	DescriptionUnavailableMessage     string `json:"descriptionUnavailableMessage"`
+	IsPhotoReadingEnabled             bool   `json:"isPhotoReadingEnabled"`
 }
 
 // PhotoByteSizeText writes a size the way the dashboard's Photos page does:
@@ -204,7 +205,7 @@ func (self *PhotoFilter) variables() map[string]any {
 }
 
 const (
-	photoSelection = `{ id userId isOwnedByCaller ownerName createdAt updatedAt clientPhotoId photoKind photoSource takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingAttemptCount processingErrorMessage trashedAt photoDescription descriptionVisibleText describedAt isDescriptionRequested smallPreviewUrl largePreviewUrl videoPreviewUrl photoFileRoles }`
+	photoSelection = `{ id userId isOwnedByCaller ownerName createdAt updatedAt clientPhotoId photoKind photoSource takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingAttemptCount processingErrorMessage trashedAt photoDescription descriptionVisibleText describedAt isDescriptionRequested photoDocumentKind smallPreviewUrl largePreviewUrl videoPreviewUrl photoFileRoles }`
 
 	photoFilterDeclarations = `$beforePhotoId: String, $offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float, $albumId: String, $faceGroupId: String, $contactId: String, $accountUserId: String`
 	photoFilterArguments    = `beforePhotoId: $beforePhotoId, offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers, albumId: $albumId, faceGroupId: $faceGroupId, contactId: $contactId, accountUserId: $accountUserId`
@@ -229,7 +230,7 @@ const (
 
 	DocumentReadPhotoPlace = `query ($photoId: String!) { ReadPhotoPlace(photoId: $photoId) { locationPlace { ` + placeFields + ` } addressText } }`
 
-	DocumentReadPhotoLibrary = `query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays uploadPath uploadPartBytes isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled isDescriptionAvailable descriptionUnavailableMessage } }`
+	DocumentReadPhotoLibrary = `query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays uploadPath uploadPartBytes isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled isDescriptionAvailable descriptionUnavailableMessage isPhotoReadingEnabled } }`
 
 	DocumentFindPhotos = `query ($clientPhotoIds: [String!]!) { FindPhotos(clientPhotoIds: $clientPhotoIds) ` + photoSelection + ` }`
 
@@ -1154,4 +1155,19 @@ func (self *Client) DownloadPhotoFile(ctx context.Context, file *models.PhotoFil
 		return fmt.Errorf("client: the server sent %d bytes of a file of %d", copiedBytes, file.FileSizeBytes)
 	}
 	return nil
+}
+
+// DocumentSetPhotoReading switches the reading of the person's new photos.
+const DocumentSetPhotoReading = `mutation ($isEnabled: Boolean!) { SetPhotoReading(isEnabled: $isEnabled) }`
+
+// SetPhotoReading switches the reading of the person's new photos on or off,
+// and answers the new state.
+func SetPhotoReading(ctx context.Context, executor Executor, isEnabled bool) (bool, error) {
+	var result struct {
+		SetPhotoReading bool `json:"SetPhotoReading"`
+	}
+	if err := executor.Execute(ctx, DocumentSetPhotoReading, map[string]any{"isEnabled": isEnabled}, &result); err != nil {
+		return false, err
+	}
+	return result.SetPhotoReading, nil
 }

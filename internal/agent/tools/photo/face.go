@@ -48,6 +48,14 @@ func facePreviewOf(asked arguments) (string, bool) {
 			return "Start finding faces in every photo, and keep what identifies each face", true
 		}
 		return "Stop finding faces in the photos and delete every face and group found so far", true
+	case "reading":
+		switch {
+		case asked.IsEnabled == nil:
+			return "Read whether new photos are read", true
+		case *asked.IsEnabled:
+			return "Read new photos as they arrive, and record the receipts, statements and tax documents in them", true
+		}
+		return "Stop reading new photos", true
 	}
 	return "", false
 }
@@ -75,6 +83,13 @@ func faceRiskOf(asked arguments) (tools.Risk, bool) {
 			return tools.RiskGranting, true
 		}
 		return tools.RiskDestructive, true
+	case "reading":
+		// Reading new photos spends on a model for each and records what it
+		// finds; stopping it loses nothing.
+		if asked.IsEnabled == nil {
+			return tools.RiskRead, true
+		}
+		return tools.RiskWrite, true
 	}
 	return tools.RiskRead, false
 }
@@ -306,6 +321,24 @@ func faces(ctx context.Context, executor client.Executor, asked *arguments) (*to
 	}
 	if asked.IsEnabled != nil && !*asked.IsEnabled {
 		answer["note"] = "every face and group of people found so far is deleted; switching faces on again finds them again"
+	}
+	return tools.JSONResult(answer)
+}
+
+// reading reads whether new photos are read, and with is_enabled switches it.
+func reading(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	if asked.IsEnabled != nil {
+		if _, err := client.SetPhotoReading(ctx, executor, *asked.IsEnabled); err != nil {
+			return nil, err
+		}
+	}
+	library, err := client.ReadPhotoLibrary(ctx, executor)
+	if err != nil {
+		return nil, err
+	}
+	answer := map[string]any{"is_available": library.IsDescriptionAvailable, "is_enabled": library.IsPhotoReadingEnabled}
+	if !library.IsDescriptionAvailable {
+		answer["unavailable_message"] = library.DescriptionUnavailableMessage
 	}
 	return tools.JSONResult(answer)
 }

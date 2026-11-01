@@ -1257,6 +1257,7 @@ struct PhotoInfoView: View {
         Section {
             if description.isDescribed {
                 Text(description.photoDescription)
+                documentKindRow
                 if !description.descriptionVisibleText.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Text in the picture")
@@ -1306,6 +1307,29 @@ struct PhotoInfoView: View {
             if shownPhoto.isOwnedByCaller, !description.isDescribed, !description.isDescriptionRequested, isDescriptionAvailable {
                 Text(describeHintText)
             }
+        }
+    }
+
+    /// What the picture was read as, when it was a receipt, a statement or a
+    /// tax document: the server has recorded it in Finance. Nothing for a
+    /// picture of anything else, or one not read yet.
+    @ViewBuilder
+    private var documentKindRow: some View {
+        switch description.photoDocumentKind {
+        case "receipt":
+            Label("This was read as a receipt", systemImage: "receipt")
+                .foregroundStyle(.primary)
+                .fullWidthRowSeparator()
+        case "statement":
+            Label("This was read as a statement", systemImage: "list.bullet.rectangle")
+                .foregroundStyle(.primary)
+                .fullWidthRowSeparator()
+        case "taxDocument":
+            Label("This was read as a tax document", systemImage: "doc.text")
+                .foregroundStyle(.primary)
+                .fullWidthRowSeparator()
+        default:
+            EmptyView()
         }
     }
 

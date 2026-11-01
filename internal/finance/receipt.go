@@ -485,3 +485,38 @@ func ProposeReceiptMatches(receipt *models.FinanceReceipt, candidates []*models.
 	}
 	return proposals
 }
+
+// IsSamePurchase says two receipts are of one purchase: the same day and
+// the same total in the same currency, at a merchant both name alike or
+// under the same receipt number. A mailed receipt and a photo of the paper
+// one, or a photo the person also sent in a conversation, are read twice
+// and must be recorded once. Two receipts without a day are never the same.
+func IsSamePurchase(left, right *models.FinanceReceipt) bool {
+	if left == nil || right == nil || left.PurchasedOn == "" || left.PurchasedOn != right.PurchasedOn ||
+		!strings.EqualFold(left.CurrencyCode, right.CurrencyCode) {
+		return false
+	}
+	leftTotal, err := parseDecimal(left.TotalAmount)
+	if err != nil {
+		return false
+	}
+	rightTotal, err := parseDecimal(right.TotalAmount)
+	if err != nil || leftTotal.Cmp(rightTotal) != 0 {
+		return false
+	}
+	if leftNumber, rightNumber := strings.TrimSpace(left.MerchantReceiptNumber), strings.TrimSpace(right.MerchantReceiptNumber); leftNumber != "" && leftNumber == rightNumber {
+		return true
+	}
+	// "J Example" and "JEXAMPLE" share no word but spell the same letters.
+	if leftKey, rightKey := models.ShoppingStoreKey(left.MerchantName), models.ShoppingStoreKey(right.MerchantName); leftKey != "" && rightKey != "" &&
+		(strings.Contains(leftKey, rightKey) || strings.Contains(rightKey, leftKey)) {
+		return true
+	}
+	rightWords := merchantWords(right.MerchantName)
+	for word := range merchantWords(left.MerchantName) {
+		if rightWords[word] {
+			return true
+		}
+	}
+	return false
+}
