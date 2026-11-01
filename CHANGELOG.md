@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.208.0] - 2026-11-01
+
+### Added
+
+- The iPhone app watches the nearest branches of the stores your shopping lists need something from, so walking into one reminds you what your lists need there, and the stop is in your location history. `teanode shopping watched-stores` shows which. (#695)
+
 ## [0.207.4] - 2026-11-01
 
 ### Changed
