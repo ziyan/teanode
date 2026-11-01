@@ -16,11 +16,20 @@ function info(choices: { label: string; credentialId: string; sharedByText: stri
   }
 }
 
+// portListeners are what the question listens for on its port to the
+// service worker.
+let portListeners: ((message: unknown) => void)[] = []
+let connect: ReturnType<typeof vi.fn>
+
 async function load(answer: unknown) {
   vi.resetModules()
   window.history.replaceState({}, '', '/prompt.html?id=one')
   document.body.innerHTML = '<div id="app"></div>'
-  vi.stubGlobal('chrome', { runtime: { sendMessage: vi.fn(async () => answer) } })
+  portListeners = []
+  connect = vi.fn(() => ({
+    onMessage: { addListener: (listener: (message: unknown) => void) => portListeners.push(listener) },
+  }))
+  vi.stubGlobal('chrome', { runtime: { sendMessage: vi.fn(async () => answer), connect } })
   await import('./prompt')
   await settle()
 }
@@ -52,5 +61,13 @@ describe('the passkey question', () => {
     expect(document.querySelector('.row')?.textContent).toContain('Shared by Grace')
     await load(info([{ label: 'ada', credentialId: 'one', sharedByText: '' }]))
     expect(document.querySelector('.row')?.textContent).toBe('ada')
+  })
+
+  it('keeps a port open to the service worker, and closes when the worker says the question is over', async () => {
+    await load(info([{ label: 'ada', credentialId: 'one', sharedByText: '' }]))
+    expect(connect).toHaveBeenCalledWith({ name: 'passwords-prompt' })
+    expect(window.close).not.toHaveBeenCalled()
+    for (const listener of portListeners) listener({ promptMessageKind: 'close' })
+    expect(window.close).toHaveBeenCalled()
   })
 })

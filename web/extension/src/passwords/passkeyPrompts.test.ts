@@ -12,6 +12,7 @@ function prompt(id: string, tabId: number, windowId: number | null = null): Pend
     userName: '',
     userVerification: 'preferred',
     windowId,
+    port: null,
     context: { pageUrl: 'https://example.com/', origin: 'https://example.com', isCrossOrigin: false },
     creation: null,
     assertion: null,

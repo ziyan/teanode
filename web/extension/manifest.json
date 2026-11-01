@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "TeaNode agent tab",
-  "version": "5.0.0",
-  "minimum_chrome_version": "116",
-  "description": "Your TeaNode agent on any page: talk to it, let it open tabs in your browser, or attach the tab you are looking at so it can act there with your session while you watch. Also fills your logins and passkeys from TeaNode Passwords.",
+  "version": "6.0.0",
+  "minimum_chrome_version": "127",
+  "description": "Your TeaNode agent in the browser's side panel: talk to it, let it open tabs in your browser, or attach the tab you are looking at so it can act there with your session while you watch. Its button fills your logins and passkeys from TeaNode Passwords.",
   "permissions": [
     "debugger",
     "activeTab",
@@ -13,6 +13,7 @@
     "tabGroups",
     "webNavigation",
     "identity",
+    "sidePanel",
     "contextMenus",
     "alarms",
     "offscreen",
@@ -55,13 +56,17 @@
     }
   ],
   "action": {
-    "default_title": "Your TeaNode agent",
+    "default_title": "TeaNode",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
-    }
+    },
+    "default_popup": "passwords.html"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
   "options_page": "options.html",
   "background": {
@@ -72,16 +77,5 @@
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "suggestion.html",
-        "bar.html"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
-    }
-  ]
+  }
 }

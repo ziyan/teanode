@@ -8,18 +8,11 @@
 //
 // inPage runs inside the page. It is self-contained: nothing from this
 // file is in scope there.
-export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, panelWords) {
+export async function inPage(action, args, ownHostname, ownPagesRefusal) {
   // The check that was made on the tab's address a moment ago, made again
   // where the script runs: a page can go to TeaNode in between.
   if (/^(chrome|moz)-extension:$/.test(location.protocol) || (ownHostname && location.hostname.replace(/\.$/, '').toLowerCase() === ownHostname)) {
     return { ok: false, error: ownPagesRefusal }
-  }
-  // Whether an element is under the person's TeaNode panel, which is where
-  // the agent does not act.
-  const isUnderPanel = (node) => {
-    if (!panel || !panel.isOpen) return false
-    const box = node.getBoundingClientRect()
-    return box.left <= panel.right && box.right >= panel.left && box.top <= panel.bottom && box.bottom >= panel.top
   }
   const refs = (window.__teanodeRefs = window.__teanodeRefs || new Map())
   // How many of a select's options a snapshot lists.
@@ -216,7 +209,6 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
       const node = find()
       if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
       node.scrollIntoView({ block: 'center' })
-      if (isUnderPanel(node)) return { ok: false, error: panelWords }
       node.click()
       await new Promise((resolve) => setTimeout(resolve, 300))
       return { ok: true, data: { clicked: nameOf(node), now: { url: location.href, title: document.title } } }
@@ -224,7 +216,6 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
     case 'hover': {
       const node = find()
       if (!node) return { ok: false, error: 'nothing matches' }
-      if (isUnderPanel(node)) return { ok: false, error: panelWords }
       node.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
       return { ok: true, data: { hovered: nameOf(node) } }
     }
@@ -232,7 +223,6 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
       const found = find()
       const node = found && fieldOf(found)
       if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
-      if (isUnderPanel(node)) return { ok: false, error: panelWords }
       if (!takesTypedText(node)) return { ok: false, error: 'that is not a field to type into; take a snapshot and use the ref of the field itself' }
       node.focus()
       if (args.clear_first && 'value' in node) node.value = ''
@@ -252,7 +242,6 @@ export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, 
       const found = find()
       const node = found && fieldOf(found)
       if (!node || node.tagName.toLowerCase() !== 'select') return { ok: false, error: 'not a select' }
-      if (isUnderPanel(node)) return { ok: false, error: panelWords }
       let picked = null
       for (const option of node.options) if (option.value === args.value || option.text.trim() === args.value) picked = option
       if (!picked && typeof args.index === 'number') picked = node.options[args.index]
