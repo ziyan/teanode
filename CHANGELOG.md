@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.209.0] - 2026-11-01
+
+### Added
+
+- New photos are read as they arrive: each picture taken in the last 30 days is described so a search finds it, and a receipt in one is recorded in Finance and matched to its charge, a statement's transactions are added to the account you imported before, and a paystub or W-2 is kept with your tax documents. A receipt already recorded from its mail is not recorded twice. Turn it off in your preferences, in the iPhone's photo settings, or with `teanode photo reading off`. (#696)
+
 ## [0.208.0] - 2026-11-01
 
 ### Added
