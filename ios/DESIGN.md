@@ -162,7 +162,10 @@ its pull request is opened.
   Chats opens on the list of conversations, and a conversation is pushed on it.
   Mail opens on its Mailboxes list, which pushes a folder. Finance, Location and
   Photos choose their list in the menu under the screen's title
-  (`toolbarTitleMenu`), the way Files names its place.
+  (`titleMenu`), the way Files names its place. Such a screen keeps the small
+  title in the bar: iOS draws the menu's chevron only there, and a large title
+  shows the small one only after scrolling, so a page with nothing to scroll
+  would have no way to its other pages (`make check-title-menus`).
 - More is a grouped list: Every day (Calendar, Contacts, Location, Health, Passwords, Shopping), Work (Coding,
   Knowledge, Recordings), Plans (Goals, Ideas), Money (Finance), then Settings. A part
   the server does not offer is left out. A part opened from it shows a button at

@@ -44,8 +44,7 @@ struct JournalPeriodScreen: View {
         content
             .navigationTitle(JournalText.periodTitle(periodKind: periodKind, periodStart: shownStart))
             .navigationSubtitle(JournalText.periodSubtitle(periodKind: periodKind, periodStart: shownStart))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarTitleMenu { zoomMenu }
+            .titleMenu { zoomMenu }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {

@@ -276,8 +276,7 @@ struct PasswordsListView: View {
     var body: some View {
         content
             .navigationTitle(filter.filterTitle)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarTitleMenu { titleMenu }
+            .titleMenu { filterMenu }
             .searchable(text: $searchText, prompt: Text("Search items"))
             .onChange(of: searchText) { model.noteUse() }
             .onChange(of: filter) { model.noteUse() }
@@ -421,7 +420,7 @@ struct PasswordsListView: View {
     }
 
     @ViewBuilder
-    private var titleMenu: some View {
+    private var filterMenu: some View {
         Picker("Show", selection: $filter) {
             Text("All items").tag(PasswordsFilter.everything)
             ForEach(PasswordsItemKind.allCases, id: \.self) { itemKind in

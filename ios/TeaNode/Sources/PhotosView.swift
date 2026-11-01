@@ -4,13 +4,13 @@ import UIKit
 
 /// PhotoSection is what the Collections menu under the title chooses: three
 /// lists of photos, the albums and the people. The name of the one on show is
-/// the large title.
+/// the title.
 enum PhotoSection: String, CaseIterable, Identifiable {
     case library, favorites, albums, people, trash
 
     var id: String { rawValue }
 
-    /// The name in the Collections menu and the large title.
+    /// The name in the Collections menu and the title.
     var title: String {
         switch self {
         case .library: String(localized: "Library")
@@ -887,7 +887,7 @@ struct OpenedPhoto: Identifiable {
     let id: String
 }
 
-/// PhotosScreen is the person's photo library: a large title with the days of
+/// PhotosScreen is the person's photo library: a title with the days of
 /// the photos on screen under it, an edge to edge grid (or a picture for each
 /// month or year), a Select mode, Years, Months and All with Search floating at
 /// the bottom, and a viewer for one photo. The collections are in the menu under
@@ -1010,11 +1010,11 @@ struct PhotosScreen: View {
         NavigationStack {
             content
                 .modifier(LibrarySearch(isActive: model.section == .library, text: $searchText, isPresented: $isSearchPresented))
-                // The large title is the collection on show, with the days of the photos on screen
-                // under it; tapping the title opens the menu of the other collections.
+                // The title is the collection on show, with the days of the photos on screen under
+                // it; tapping the title opens the menu of the other collections.
                 .navigationTitle(isSelecting ? selectionTitle : model.section.title)
                 .navigationSubtitle(subtitleText)
-                .toolbarTitleMenu {
+                .titleMenu {
                     if !isSelecting {
                         Picker("Collections", selection: $model.section) {
                             ForEach(model.sections) { collection in
@@ -1023,7 +1023,6 @@ struct PhotosScreen: View {
                         }
                     }
                 }
-                .navigationBarTitleDisplayMode(.large)
                 .safeAreaInset(edge: .top, spacing: 0) {
                     // One column, so the visit window's chip sits under the others rather than over them.
                     VStack(spacing: 0) {

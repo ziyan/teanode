@@ -207,7 +207,7 @@ struct FinanceScreen: View {
                     }
                 }
             }
-            .toolbarTitleMenu {
+            .titleMenu {
                 Picker("Finance", selection: $part) {
                     ForEach(FinancePart.allCases) { choice in
                         Label(choice.title, systemImage: choice.systemImage).tag(choice)
