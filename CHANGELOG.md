@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.209.1] - 2026-11-01
+
+### Fixed
+
+- iPhone: Finance, Contacts, Journal and Photos show the menu of their other pages under the title as soon as the screen opens, so a page with nothing to scroll can still switch to the others. (#700)
+
 ## [0.209.0] - 2026-11-01
 
 ### Added
