@@ -1,17 +1,27 @@
-// The browser extension's panel frames the drawer on whatever site the
-// person is on, and the drawer needs the person's token to sign in. The
-// token is not in the frame's address, where an element's src attribute
-// would keep it and the DevTools protocol would read it back through the
-// shadow root the panel sits in. The extension's worker hands it over
-// instead, by calling this function in the frame's own world: a page around
-// the frame cannot call into a frame of another origin, and the token is
-// taken once.
+// The browser extension's side panel frames the drawer, and the drawer needs
+// the person's token to sign in. The token is not in the frame's address,
+// where it would be written into logs and history. The side panel posts it as
+// a message once the frame has loaded, with the server's origin as the target
+// origin, so only a document of the server receives it.
 //
-// web/extension/src/reach.js names the function the same way, and a test
-// keeps the two equal.
-export const HAND_TOKEN_FUNCTION = '__teanodeHandToken'
-
-type HandTokenWindow = Window & { [HAND_TOKEN_FUNCTION]?: (token: string) => boolean }
+// The drawer takes a token from a message only when every one of these holds,
+// because a message is something any window that holds a reference to this one
+// can send:
+//
+//   - the page is framed, and has exactly one ancestor;
+//   - that ancestor's origin is a chrome-extension:// origin. A website can
+//     never have one, so the only possible parent is a page of an extension.
+//     (The server also answers /drawer with frame-ancestors chrome-extension:,
+//     so the browser refuses to frame it anywhere else to begin with);
+//   - the message came from that parent window, and its origin is the
+//     ancestor's origin;
+//   - it says it is a token, and the token is a non-empty string;
+//   - no token was taken before: the first is kept and every later one is
+//     refused, so a second extension page cannot swap the account.
+//
+// ancestorOrigins is a Chrome feature, which is the only browser the
+// extension runs in. Without it, nothing is accepted.
+const EXTENSION_ORIGIN_PREFIX = 'chrome-extension://'
 
 let handedToken = ''
 const waiting = new Set<(token: string) => void>()
@@ -36,24 +46,30 @@ export function whenTokenIsHanded(callback: (token: string) => void): () => void
   }
 }
 
-// offerHandedToken puts the function on the window, in a framed drawer only.
-// The worker calls it, from the frame's own world and only after checking that
-// this is the drawer it means, and it takes one token: afterwards it refuses.
-// It is defined so that nothing on the page can replace it before then, or
-// after: not writable, not configurable.
-export function offerHandedToken(target: HandTokenWindow = window as HandTokenWindow) {
-  if (HAND_TOKEN_FUNCTION in target) return
+// The parts of the window the checks read, so that a test can give another.
+type HandingWindow = Pick<Window, 'addEventListener' | 'parent' | 'top'> & {
+  location: { ancestorOrigins?: ArrayLike<string> }
+}
+
+// listenForHandedToken starts taking the one token the extension's side panel
+// posts, in a framed drawer only. Call it as soon as the bundle runs: the
+// panel posts after the frame's load event.
+export function listenForHandedToken(target: HandingWindow = window): void {
   let isTaken = false
-  Object.defineProperty(target, HAND_TOKEN_FUNCTION, {
-    value: (token: string) => {
-      if (isTaken || typeof token !== 'string' || token === '') return false
-      isTaken = true
-      if (waiting.size === 0) handedToken = token
-      else for (const callback of [...waiting]) callback(token)
-      return true
-    },
-    writable: false,
-    configurable: false,
-    enumerable: false,
+  target.addEventListener('message', (event: MessageEvent) => {
+    if (isTaken) return
+    if (target === target.top) return
+    const ancestorOrigins = target.location.ancestorOrigins
+    if (!ancestorOrigins || ancestorOrigins.length !== 1) return
+    const parentOrigin = ancestorOrigins[0]
+    if (!parentOrigin.startsWith(EXTENSION_ORIGIN_PREFIX)) return
+    if (event.source !== target.parent || event.origin !== parentOrigin) return
+    const message: unknown = event.data
+    if (typeof message !== 'object' || message === null) return
+    const { teanode, token } = message as { teanode?: unknown; token?: unknown }
+    if (teanode !== 'token' || typeof token !== 'string' || token === '') return
+    isTaken = true
+    if (waiting.size === 0) handedToken = token
+    else for (const callback of [...waiting]) callback(token)
   })
 }

@@ -2914,8 +2914,8 @@ export function cardsOf(interactions: OpenInteraction[]): Line[] {
 }
 
 // standalone is the drawer as a page of its own, framed by the browser
-// extension into another site: always open, filling its frame, and its
-// close mark telling the framing page to hide it.
+// extension's side panel: always open, filling its frame, and its close mark
+// telling the side panel to close.
 export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {}) {
   const { t, plural, language } = useTranslation()
   const toast = useToast()
@@ -2924,7 +2924,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const session = useSession()
   const ownUserId = session.userId ?? ''
   const ownName = session.name || session.username
-  // Framed by the extension, the panel is the frame and is moved with it.
+  // Framed by the extension, the side panel is the frame and Chrome sizes it.
   const chatBox = usePlacement(!standalone)
   const [available, setAvailable] = useState(false)
   // Whether there are chats to open without an agent, and so a drawer to
@@ -3891,25 +3891,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     })
   }
 
-  // Framed by the extension, the drawer tells the panel around it which
-  // theme it wears, so the panel's bar wears the same.
+  // Framed by the extension, the drawer tells the side panel around it which
+  // theme it wears, so the side panel's bar wears the same.
   const drawerTheme = useResolvedTheme()
   useEffect(() => {
     if (standalone) window.parent.postMessage({ teanode: 'theme', theme: drawerTheme }, '*')
   }, [standalone, drawerTheme])
-
-  // The browser extension, on this dashboard's own pages, opens this
-  // drawer rather than a copy of it: it raises this event from its
-  // content script.
-  useEffect(() => {
-    if (standalone) return
-    const onAgentEvent = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === 'toggle') toggle()
-    }
-    window.addEventListener('teanode:agent', onAgentEvent)
-    return () => window.removeEventListener('teanode:agent', onAgentEvent)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [standalone])
 
   // The conversation on screen now, for an answer that arrives after the
   // person has moved to another one.
@@ -5876,9 +5863,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 onToggle={() => toggleHeadMenu('usage')}
               />
             )}
-            {/* Framed by the extension, the panel around this has a bar
-                of its own with the close on it; two of them, one under
-                the other, is one too many. */}
+            {/* Framed by the extension, Chrome's side panel has a close mark
+                of its own; a second one inside it is one too many. */}
             {!standalone && (
               <Tooltip label={t('agentDrawer.close')}>
                 <button type="button" className="icon-button" aria-label={t('agentDrawer.close')} onClick={toggle}>

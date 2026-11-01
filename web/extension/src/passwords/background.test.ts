@@ -74,6 +74,19 @@ async function start(options: { records?: Awaited<ReturnType<typeof ownRecord>>[
     onUpdated: registrar('tabs.onUpdated'),
     onRemoved: registrar('tabs.onRemoved'),
   }
+  // The toolbar button: its dropdown and, per tab, its badge and title.
+  // Chrome showing the dropdown is a test's to say (dropdownState); by
+  // default it cannot, and the passkey question opens in its window.
+  const dropdownState = { canOpen: false }
+  const action = {
+    openPopup: vi.fn(async () => {
+      if (!dropdownState.canOpen) throw new Error('No toolbar to show the dropdown in.')
+    }),
+    setPopup: vi.fn(async () => undefined),
+    setBadgeText: vi.fn(async () => undefined),
+    setBadgeBackgroundColor: vi.fn(async () => undefined),
+    setTitle: vi.fn(async () => undefined),
+  }
   vi.stubGlobal('chrome', {
     runtime: {
       id: 'ext',
@@ -81,6 +94,7 @@ async function start(options: { records?: Awaited<ReturnType<typeof ownRecord>>[
       onMessage: registrar('runtime.onMessage'),
       onStartup: registrar('runtime.onStartup'),
       onInstalled: registrar('runtime.onInstalled'),
+      onConnect: registrar('runtime.onConnect'),
       sendMessage: vi.fn(async () => ({ isCopied: true })),
       getContexts: vi.fn(async () => []),
     },
@@ -90,6 +104,8 @@ async function start(options: { records?: Awaited<ReturnType<typeof ownRecord>>[
     tabs,
     contextMenus: { removeAll: vi.fn(), create: vi.fn(), onClicked: registrar('contextMenus.onClicked') },
     commands: { onCommand: registrar('commands.onCommand') },
+    action,
+    webNavigation: { getAllFrames: vi.fn(async () => [{ frameId: 0 }]) },
     scripting,
     offscreen: { createDocument: vi.fn(async () => undefined), closeDocument: vi.fn(async () => undefined) },
   })
@@ -112,7 +128,21 @@ async function start(options: { records?: Awaited<ReturnType<typeof ownRecord>>[
       if (isAsync === false) resolve(undefined)
     })
   const unlock = () => send({ type: 'passwords:unlock', secretText: PASSPHRASE, isRecoveryKey: false }, ownPageSender())
-  return { server, session, local, listeners, windows, alarms, scripting, tabs, tabState, send, unlock }
+  return {
+    server,
+    session,
+    local,
+    listeners,
+    windows,
+    alarms,
+    scripting,
+    tabs,
+    tabState,
+    action,
+    dropdownState,
+    send,
+    unlock,
+  }
 }
 
 async function exampleRecords() {
@@ -155,13 +185,14 @@ describe('who may send what', () => {
     }
   })
 
-  it("refuses them from the extension's own frame inside a web page", async () => {
+  it("refuses them from a frame of the extension's page inside a tab, and answers the dropdown", async () => {
     const { send } = await start({ records: await exampleRecords() })
-    const frame = { ...ownPageSender('suggestion.html'), frameId: 3, tab: { id: 5 } }
-    expect(await send({ type: 'passwords:state' }, frame)).toEqual({ error: 'Not allowed from here.' })
-    expect(await send({ type: 'passwords:state' }, { ...ownPageSender('passwords.html'), frameId: 3 })).toEqual({
-      error: 'Not allowed from here.',
-    })
+    expect(
+      await send({ type: 'passwords:state' }, { ...ownPageSender('passwords.html'), frameId: 3, tab: { id: 5 } }),
+    ).toEqual({ error: 'Not allowed from here.' })
+    // The dropdown is in no tab, and Chrome names no frame for it.
+    const dropdown = { id: 'ext', url: `${EXTENSION}/passwords.html` }
+    expect((await send({ type: 'passwords:state' }, dropdown)).isSignedIn).toBe(true)
   })
 
   it('refuses them from another extension or an unknown page of the extension', async () => {
@@ -176,24 +207,21 @@ describe('who may send what', () => {
 
   it('refuses a content message that did not come from a web page', async () => {
     const { send } = await start()
-    expect(await send({ type: 'passwords:suggest', role: 'currentPassword' }, ownPageSender())).toEqual({
+    expect(await send({ type: 'passwords:field-focused' }, ownPageSender())).toEqual({ error: 'Not a page.' })
+    expect(await send({ type: 'passwords:field-focused' }, pageSender('chrome://settings/'))).toEqual({
       error: 'Not a page.',
     })
-    expect(
-      await send({ type: 'passwords:suggest', role: 'currentPassword' }, pageSender('chrome://settings/')),
-    ).toEqual({ error: 'Not a page.' })
   })
 
-  it('offers and fills nothing to a sandboxed document, whatever address it has', async () => {
+  it('takes nothing from a sandboxed document, whatever address it has', async () => {
     const { send, unlock } = await start({ records: await exampleRecords() })
     await unlock()
     for (const origin of ['null', '', undefined]) {
       const sandboxed = { ...pageSender('https://example.com/upload/1'), origin }
       for (const message of [
-        { type: 'passwords:suggest', role: 'currentPassword' },
-        { type: 'passwords:fill', itemId: EXAMPLE_ID },
-        { type: 'passwords:generate' },
+        { type: 'passwords:field-focused' },
         { type: 'passwords:captured', userName: 'ada', password: 'x', isNewPassword: false },
+        { type: 'passwords:page-ready', hasPasswordField: false },
       ]) {
         expect(await send(message, sandboxed), `${message.type} ${origin}`).toEqual({ error: 'Not a page.' })
       }
@@ -215,103 +243,137 @@ describe('who may send what', () => {
   })
 })
 
-describe('suggestions and filling', () => {
-  it('offers nothing while signed out or before Passwords is set up', async () => {
-    const { send } = await start({ isSetUp: false })
-    expect(
-      await send({ type: 'passwords:suggest', role: 'currentPassword' }, pageSender('https://example.com/')),
-    ).toEqual({ suggestionState: 'none' })
-  })
-
-  it('offers to unlock while locked, and the logins for the page once open', async () => {
-    const { send, unlock } = await start({ records: await exampleRecords() })
-    const sender = pageSender('https://www.example.com/sign-in')
-    expect(await send({ type: 'passwords:suggest', role: 'currentPassword' }, sender)).toEqual({
-      suggestionState: 'locked',
-      host: 'example.com',
-    })
-    expect(await unlock()).toEqual({ isDone: true })
-    const answer = await send({ type: 'passwords:suggest', role: 'currentPassword' }, sender)
-    expect(answer.suggestionState).toBe('logins')
-    expect(answer.logins.map((login: { name: string }) => login.name)).toEqual(['Example'])
-    // A list never carries the password.
-    expect(JSON.stringify(answer)).not.toContain('plaintext')
-    expect(
-      await send({ type: 'passwords:suggest', role: 'currentPassword' }, pageSender('https://elsewhere.test/')),
-    ).toEqual({ suggestionState: 'none' })
-  })
-
-  it('offers a generated password under a new password field and the one-time code logins under a code field', async () => {
-    const { send, unlock } = await start({ records: await exampleRecords() })
-    await unlock()
-    expect(await send({ type: 'passwords:suggest', role: 'newPassword' }, pageSender('https://example.com/'))).toEqual({
-      suggestionState: 'generate',
-      host: 'example.com',
-    })
-    expect(await send({ type: 'passwords:suggest', role: 'oneTimeCode' }, pageSender('https://example.com/'))).toEqual({
-      suggestionState: 'none',
-    })
-    const withCode = await send({ type: 'passwords:suggest', role: 'oneTimeCode' }, pageSender('https://other.test/'))
-    expect(withCode.logins.map((login: { name: string }) => login.name)).toEqual(['Other'])
-  })
-
-  it('fills only a login saved for the page that asks', async () => {
-    const { send, unlock } = await start({ records: await exampleRecords() })
-    await unlock()
-    expect(await send({ type: 'passwords:fill', itemId: EXAMPLE_ID }, pageSender('https://example.com/'))).toEqual({
-      userName: 'ada',
-      password: 'hunter2-plaintext',
-    })
-    for (const url of [
-      'https://evil.test/',
-      'https://example.com.evil.test/',
-      'https://login.example.com/',
-      'http://example.com/',
-    ]) {
-      expect(await send({ type: 'passwords:fill', itemId: EXAMPLE_ID }, pageSender(url)), url).toEqual({
-        error: 'This login is not saved for this site.',
-      })
-    }
-  })
-
-  it('works out a one-time code only for a page the login is saved for', async () => {
-    const { send, unlock } = await start({ records: await exampleRecords() })
-    await unlock()
-    const answer = await send(
-      { type: 'passwords:fill-code', itemId: '00000000-0000-4000-8000-000000000002' },
-      pageSender('https://other.test/'),
-    )
-    expect(answer.oneTimeCode).toMatch(/^\d{6}$/)
-    expect(
-      await send(
-        { type: 'passwords:fill-code', itemId: '00000000-0000-4000-8000-000000000002' },
-        pageSender('https://example.com/'),
+describe('the dropdown', () => {
+  async function recordsWithLookAlike() {
+    return [
+      ...(await exampleRecords()),
+      // Its words name the site, but it is saved for another one.
+      await ownRecord(
+        fixture,
+        '00000000-0000-4000-8000-000000000003',
+        makeLogin({ name: 'example.com old', userName: 'ada', password: 'old-plaintext', sites: ['old.test'] }),
       ),
-    ).toEqual({
-      error: 'This login is not saved for this site.',
-    })
-  })
+    ]
+  }
 
-  it('refuses to fill while locked', async () => {
-    const { send } = await start({ records: await exampleRecords() })
-    const answer = await send({ type: 'passwords:fill', itemId: EXAMPLE_ID }, pageSender('https://example.com/'))
-    expect(answer).toMatchObject({ errorCode: 'locked' })
-    expect(JSON.stringify(answer)).not.toContain('hunter2')
-  })
-
-  it("lists logins for the window, the page's first, and keeps secrets out of the list", async () => {
+  it('lists logins for the page first and every other after, and keeps secrets out of the list', async () => {
     const { send, unlock } = await start({ records: await exampleRecords() })
     await unlock()
     const answer = await send({ type: 'passwords:search', query: '', tabId: 5, frameId: 0 }, ownPageSender())
     expect(answer.forThisSite.map((login: { name: string }) => login.name)).toEqual(['Example'])
     expect(answer.others.map((login: { name: string }) => login.name)).toEqual(['Other'])
     expect(JSON.stringify(answer)).not.toContain('plaintext')
-    const searched = await send({ type: 'passwords:search', query: 'grace', tabId: 5, frameId: 0 }, ownPageSender())
-    expect(searched.others.map((login: { name: string }) => login.name)).toEqual(['Other'])
+  })
+
+  it("lists only the logins saved for the page when the search is the page's host, matched as filling matches", async () => {
+    const { send, unlock, scripting } = await start({ records: await recordsWithLookAlike() })
+    await unlock()
+    // A page under the site the login is saved for.
+    scripting.executeScript.mockResolvedValue([{ frameId: 0, result: 'https://www.example.com/sign-in' }])
+    const state = await send({ type: 'passwords:state', tabId: 5 }, ownPageSender())
+    expect(state.frameHost).toBe('example.com')
+    for (const query of ['example.com', ' Example.COM ']) {
+      const answer = await send({ type: 'passwords:search', query, tabId: 5, frameId: 0 }, ownPageSender())
+      expect(
+        answer.forThisSite.map((login: { name: string }) => login.name),
+        query,
+      ).toEqual(['Example'])
+      expect(answer.others, query).toEqual([])
+    }
+  })
+
+  it('searches every login by its words for anything else typed', async () => {
+    const { send, unlock } = await start({ records: await recordsWithLookAlike() })
+    await unlock()
+    const byName = await send({ type: 'passwords:search', query: 'grace', tabId: 5, frameId: 0 }, ownPageSender())
+    expect(byName.forThisSite).toEqual([])
+    expect(byName.others.map((login: { name: string }) => login.name)).toEqual(['Other'])
+    const bySite = await send({ type: 'passwords:search', query: 'example', tabId: 5, frameId: 0 }, ownPageSender())
+    expect(bySite.forThisSite.map((login: { name: string }) => login.name)).toEqual(['Example'])
+    expect(bySite.others.map((login: { name: string }) => login.name)).toEqual(['example.com old'])
+  })
+
+  it('fills the frame where a sign-in field was focused last, while it is there', async () => {
+    const { send } = await start()
+    expect(await send({ type: 'passwords:field-focused' }, pageSender('https://example.com/', { frameId: 3 }))).toEqual(
+      {},
+    )
+    expect((await send({ type: 'passwords:state', tabId: 5 }, ownPageSender())).frameId).toBe(3)
+    // Another tab knows nothing of it.
+    expect((await send({ type: 'passwords:state', tabId: 6 }, ownPageSender())).frameId).toBe(0)
+  })
+
+  it('otherwise fills the first frame that shows a password field, else the top one', async () => {
+    const context = await start()
+    context.tabs.sendMessage.mockImplementation((async (_tabId: number, message: any, options: any) =>
+      message.type === 'passwords:probe' ? { hasPasswordField: options.frameId === 2 } : {}) as any)
+    const getAllFrames = (globalThis as any).chrome.webNavigation.getAllFrames
+    getAllFrames.mockResolvedValue([{ frameId: 2 }, { frameId: 0 }, { frameId: 4 }])
+    expect((await context.send({ type: 'passwords:state', tabId: 5 }, ownPageSender())).frameId).toBe(2)
+    getAllFrames.mockResolvedValue([{ frameId: 0 }, { frameId: 4 }])
+    expect((await context.send({ type: 'passwords:state', tabId: 5 }, ownPageSender())).frameId).toBe(0)
+  })
+
+  it('fills a generated password into the new password fields, unconfirmed, and never into its own page', async () => {
+    const context = await start()
+    await context.unlock()
+    context.tabs.sendMessage.mockResolvedValue({ filledCount: 2 } as any)
+    expect(
+      await context.send(
+        { type: 'passwords:fill-generated', password: 'generated-example', tabId: 5, frameId: 0 },
+        ownPageSender(),
+      ),
+    ).toEqual({ filledCount: 2, foreignActionHost: '' })
+    expect(context.tabs.sendMessage).toHaveBeenLastCalledWith(
+      5,
+      expect.objectContaining({
+        type: 'passwords:fill-fields',
+        origin: 'https://example.com',
+        isForeignActionConfirmed: true,
+        newPassword: 'generated-example',
+        password: '',
+      }),
+      { frameId: 0 },
+    )
+    context.tabs.sendMessage.mockClear()
+    context.scripting.executeScript.mockResolvedValue([{ frameId: 0, result: 'https://tea.example.test/passwords' }])
+    expect(
+      await context.send(
+        { type: 'passwords:fill-generated', password: 'generated-example', tabId: 5, frameId: 0 },
+        ownPageSender(),
+      ),
+    ).toEqual({ error: 'Passwords does not fill its own page.' })
+    expect(context.tabs.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('opens hanging from the button on the keyboard shortcut, for the frame with the focus', async () => {
+    const context = await start()
+    context.dropdownState.canOpen = true
+    context.tabs.query.mockResolvedValue([{ id: 5, windowId: 1 }] as any)
+    context.scripting.executeScript.mockImplementation((async (details: any) =>
+      details.target.allFrames
+        ? [
+            { frameId: 0, result: false },
+            { frameId: 7, result: true },
+          ]
+        : [{ frameId: 7, result: 'https://example.com/' }]) as any)
+    await context.listeners['commands.onCommand']('fill-login')
+    expect(context.action.openPopup).toHaveBeenCalledWith({ windowId: 1 })
+    expect(context.windows.create).not.toHaveBeenCalled()
+    expect((await context.send({ type: 'passwords:state', tabId: 5 }, ownPageSender())).frameId).toBe(7)
+  })
+
+  it('opens in a small window only where Chrome cannot show the dropdown', async () => {
+    const context = await start()
+    context.tabs.query.mockResolvedValue([{ id: 5, windowId: 1 }] as any)
+    await context.listeners['commands.onCommand']('fill-login')
+    expect(context.windows.create).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'popup', url: `${EXTENSION}/passwords.html?tab=5` }),
+    )
   })
 })
 
-describe('whether the frame the popup is for is inside another origin', () => {
+describe('whether the frame the dropdown is for is inside another origin', () => {
   it('counts a frame as cross-origin when the content script finds a page above it on another origin', async () => {
     const context = await start({ records: await exampleRecords() })
     await context.unlock()
@@ -341,7 +403,7 @@ describe('whether the frame the popup is for is inside another origin', () => {
   })
 })
 
-describe('the window for a sandboxed document', () => {
+describe('the dropdown for a sandboxed document', () => {
   afterEach(() => {
     delete (window as any).origin
   })
@@ -386,24 +448,11 @@ describe("the dashboard's own Passwords page", () => {
     ]
   }
 
-  it('is offered, filled and generated for nothing, and remembers nothing typed on it', async () => {
-    const { send, unlock } = await start({ records: await recordsWithDashboardLogin() })
+  it('remembers nothing typed on it, so the button is never marked for it', async () => {
+    const { send, unlock, action } = await start({ records: await recordsWithDashboardLogin() })
     await unlock()
     for (const path of ['/passwords', '/passwords/', '/passwords/items/abc?x=1']) {
       const page = pageSender(`https://tea.example.test${path}`)
-      expect(await send({ type: 'passwords:suggest', role: 'currentPassword' }, page), path).toEqual({
-        suggestionState: 'none',
-      })
-      expect(await send({ type: 'passwords:suggest', role: 'newPassword' }, page), path).toEqual({
-        suggestionState: 'none',
-      })
-      expect(
-        await send({ type: 'passwords:fill', itemId: '00000000-0000-4000-8000-000000000009' }, page),
-        path,
-      ).toEqual({ error: 'Passwords does not fill its own page.' })
-      expect(await send({ type: 'passwords:generate' }, page), path).toEqual({
-        error: 'Passwords does not fill its own page.',
-      })
       expect(
         await send(
           { type: 'passwords:captured', userName: 'ada', password: 'typed-passphrase', isNewPassword: false },
@@ -411,16 +460,14 @@ describe("the dashboard's own Passwords page", () => {
         ),
       ).toEqual({})
     }
-    // Nothing was kept, so no bar is offered after it.
-    expect(
-      await send(
-        { type: 'passwords:page-ready', hasPasswordField: false },
-        pageSender('https://tea.example.test/dashboard'),
-      ),
-    ).toEqual({ offer: null })
+    await send(
+      { type: 'passwords:page-ready', hasPasswordField: false },
+      pageSender('https://tea.example.test/dashboard'),
+    )
+    expect(action.setBadgeText).not.toHaveBeenCalledWith(expect.objectContaining({ text: '+' }))
   })
 
-  it('does not fill from the window either', async () => {
+  it('is not filled from the dropdown either', async () => {
     const context = await start({ records: await recordsWithDashboardLogin() })
     await context.unlock()
     context.scripting.executeScript.mockResolvedValue([{ frameId: 0, result: 'https://tea.example.test/passwords' }])
@@ -438,110 +485,92 @@ describe("the dashboard's own Passwords page", () => {
     expect(context.tabs.sendMessage).not.toHaveBeenCalled()
   })
 
-  it('still offers a login for signing in to the dashboard itself, and for a page that only starts alike', async () => {
-    const { send, unlock } = await start({ records: await recordsWithDashboardLogin() })
-    await unlock()
+  it('still lists a login for signing in to the dashboard itself, and for a page that only starts alike', async () => {
+    const context = await start({ records: await recordsWithDashboardLogin() })
+    await context.unlock()
     for (const path of ['/', '/sign-in', '/settings/passwords', '/passwordless']) {
-      const answer = await send(
-        { type: 'passwords:suggest', role: 'currentPassword' },
-        pageSender(`https://tea.example.test${path}`),
-      )
-      expect(answer.suggestionState, path).toBe('logins')
+      context.scripting.executeScript.mockResolvedValue([{ frameId: 0, result: `https://tea.example.test${path}` }])
+      const answer = await context.send({ type: 'passwords:search', query: '', tabId: 5, frameId: 0 }, ownPageSender())
+      expect(
+        answer.forThisSite.map((login: { name: string }) => login.name),
+        path,
+      ).toEqual(['Dashboard'])
     }
-    // Another site with the same path is not the dashboard.
-    expect(
-      (await send({ type: 'passwords:suggest', role: 'newPassword' }, pageSender('https://other.test/passwords')))
-        .suggestionState,
-    ).toBe('generate')
   })
 })
 
 describe('saving after a sign-in', () => {
   const signIn = { type: 'passwords:captured', userName: 'grace', password: 'new-secret', isNewPassword: false }
+  const pageReady = { type: 'passwords:page-ready', hasPasswordField: false }
+  // The tabs whose button was given the save mark, in order.
+  const markedTabs = (action: { setBadgeText: ReturnType<typeof vi.fn> }) =>
+    action.setBadgeText.mock.calls
+      .filter(([details]: any[]) => details.text === '+')
+      .map(([details]: any[]) => details.tabId)
 
-  it('offers once, on the page after, and saves on Save', async () => {
-    const { send, unlock, server } = await start({ records: await exampleRecords() })
+  it('marks the button once, on the page after, and saves from the dropdown', async () => {
+    const { send, unlock, server, action } = await start({ records: await exampleRecords() })
     await unlock()
     await send(signIn, pageSender('https://new.test/sign-in'))
-    // A frame inside the page, or a page that still asks for a password, shows nothing.
-    expect(
-      await send(
-        { type: 'passwords:page-ready', hasPasswordField: false },
-        pageSender('https://new.test/', { frameId: 2 }),
-      ),
-    ).toEqual({ offer: null })
-    expect(
-      await send({ type: 'passwords:page-ready', hasPasswordField: true }, pageSender('https://new.test/')),
-    ).toEqual({ offer: null })
-    const ready = await send(
-      { type: 'passwords:page-ready', hasPasswordField: false },
-      pageSender('https://new.test/home'),
-    )
-    expect(ready).toEqual({ offer: { offerAction: 'save', host: 'new.test', userName: 'grace' } })
-    expect(
-      await send({ type: 'passwords:page-ready', hasPasswordField: false }, pageSender('https://new.test/home')),
-    ).toEqual({ offer: null })
-    expect(
-      await send({ type: 'passwords:bar-answer', barAnswer: 'save' }, pageSender('https://new.test/home')),
-    ).toEqual({
-      saveOutcome: 'saved',
-    })
+    // A frame inside the page, or a page that still asks for a password, marks nothing.
+    await send(pageReady, pageSender('https://new.test/', { frameId: 2 }))
+    await send({ ...pageReady, hasPasswordField: true }, pageSender('https://new.test/'))
+    expect(markedTabs(action)).toEqual([])
+    expect(await send(pageReady, pageSender('https://new.test/home'))).toEqual({})
+    expect(markedTabs(action)).toEqual([5])
+    expect(action.setTitle).toHaveBeenCalledWith({ tabId: 5, title: 'TeaNode: save the login you used on new.test?' })
+    await send(pageReady, pageSender('https://new.test/home'))
+    expect(markedTabs(action)).toEqual([5])
+    const state = await send({ type: 'passwords:state', tabId: 5, frameId: 0 }, ownPageSender())
+    expect(state.pendingSave).toEqual({ host: 'new.test', userName: 'grace', offerAction: 'save' })
+    expect(JSON.stringify(state)).not.toContain('new-secret')
+    expect(await send({ type: 'passwords:save-pending', tabId: 5 }, ownPageSender())).toEqual({ saveOutcome: 'saved' })
     expect(server.saved.length).toBe(1)
     expect(JSON.stringify(server.saved[0].input)).not.toContain('new-secret')
-    // Saved once; the capture is gone.
-    expect(
-      await send({ type: 'passwords:bar-answer', barAnswer: 'save' }, pageSender('https://new.test/home')),
-    ).toEqual({
-      saveOutcome: 'gone',
-    })
+    // Saved once; the capture and the mark are gone.
+    expect(action.setBadgeText).toHaveBeenLastCalledWith({ tabId: 5, text: null })
+    expect(await send({ type: 'passwords:save-pending', tabId: 5 }, ownPageSender())).toEqual({ saveOutcome: 'gone' })
   })
 
   it('offers an update for a known login with a new password', async () => {
-    const { send, unlock } = await start({ records: await exampleRecords() })
+    const { send, unlock, action } = await start({ records: await exampleRecords() })
     await unlock()
     await send({ ...signIn, userName: 'ada' }, pageSender('https://example.com/sign-in'))
-    expect(
-      await send({ type: 'passwords:page-ready', hasPasswordField: false }, pageSender('https://example.com/home')),
-    ).toEqual({
-      offer: { offerAction: 'update', host: 'example.com', userName: 'ada' },
+    await send(pageReady, pageSender('https://example.com/home'))
+    expect(action.setTitle).toHaveBeenCalledWith({
+      tabId: 5,
+      title: 'TeaNode: update the saved password for example.com?',
+    })
+    expect((await send({ type: 'passwords:state', tabId: 5, frameId: 0 }, ownPageSender())).pendingSave).toEqual({
+      host: 'example.com',
+      userName: 'ada',
+      offerAction: 'update',
     })
   })
 
   it('offers nothing for a login that is already saved', async () => {
-    const { send, unlock } = await start({ records: await exampleRecords() })
+    const { send, unlock, action } = await start({ records: await exampleRecords() })
     await unlock()
     await send({ ...signIn, userName: 'ada', password: 'hunter2-plaintext' }, pageSender('https://example.com/sign-in'))
-    expect(
-      await send({ type: 'passwords:page-ready', hasPasswordField: false }, pageSender('https://example.com/home')),
-    ).toEqual({ offer: null })
+    await send(pageReady, pageSender('https://example.com/home'))
+    expect(markedTabs(action)).toEqual([])
+    expect((await send({ type: 'passwords:state', tabId: 5, frameId: 0 }, ownPageSender())).hasPendingSave).toBe(false)
   })
 
-  it('asks to unlock when locked, keeps the login for the window to save, and saves nothing until then', async () => {
-    const { send, unlock, server, windows } = await start({ records: await exampleRecords() })
+  it('marks the button while locked, keeps the login for the dropdown to save, and saves nothing until unlocked', async () => {
+    const { send, unlock, server, action } = await start({ records: await exampleRecords() })
     await send(signIn, pageSender('https://new.test/sign-in'))
-    expect(
-      await send({ type: 'passwords:page-ready', hasPasswordField: false }, pageSender('https://new.test/home')),
-    ).toEqual({
-      offer: { offerAction: 'unlock', host: 'new.test', userName: 'grace' },
-    })
-    expect(
-      await send({ type: 'passwords:bar-answer', barAnswer: 'save' }, pageSender('https://new.test/home')),
-    ).toEqual({
-      saveOutcome: 'locked',
-    })
+    await send(pageReady, pageSender('https://new.test/home'))
+    expect(markedTabs(action)).toEqual([5])
+    expect(await send({ type: 'passwords:save-pending', tabId: 5 }, ownPageSender())).toEqual({ saveOutcome: 'locked' })
     expect(server.saved).toEqual([])
-    await send({ type: 'passwords:bar-answer', barAnswer: 'unlock' }, pageSender('https://new.test/home'))
-    expect(windows.create).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'popup', url: expect.stringContaining('passwords.html?tab=5') }),
-    )
     await unlock()
     const state = await send({ type: 'passwords:state', tabId: 5, frameId: 0 }, ownPageSender())
     expect(state).toMatchObject({
       isUnlocked: true,
       hasPendingSave: true,
-      pendingSave: { host: 'new.test', userName: 'grace' },
+      pendingSave: { host: 'new.test', userName: 'grace', offerAction: 'save' },
     })
-    expect(JSON.stringify(state)).not.toContain('new-secret')
     expect(await send({ type: 'passwords:save-pending', tabId: 5 }, ownPageSender())).toEqual({ saveOutcome: 'saved' })
   })
 
@@ -549,29 +578,40 @@ describe('saving after a sign-in', () => {
     const first = await start({ records: await exampleRecords() })
     await first.unlock()
     await first.send(signIn, pageSender('https://new.test/sign-in', { isIncognito: true }))
-    expect(
-      await first.send({ type: 'passwords:page-ready', hasPasswordField: false }, pageSender('https://new.test/home')),
-    ).toEqual({ offer: null })
+    await first.send(pageReady, pageSender('https://new.test/home'))
+    expect(markedTabs(first.action)).toEqual([])
     vi.resetModules()
     const second = await start({ isSetUp: false })
     await second.send(signIn, pageSender('https://new.test/sign-in'))
-    expect(
-      await second.send({ type: 'passwords:page-ready', hasPasswordField: false }, pageSender('https://new.test/home')),
-    ).toEqual({ offer: null })
+    await second.send(pageReady, pageSender('https://new.test/home'))
+    expect(markedTabs(second.action)).toEqual([])
   })
 
-  it('forgets the login on Not now', async () => {
-    const { send, unlock, server } = await start()
+  it('forgets the login, and takes the mark off, on Not now', async () => {
+    const { send, unlock, server, action } = await start()
     await unlock()
     await send(signIn, pageSender('https://new.test/sign-in'))
-    await send({ type: 'passwords:page-ready', hasPasswordField: false }, pageSender('https://new.test/home'))
-    await send({ type: 'passwords:bar-answer', barAnswer: 'dismiss' }, pageSender('https://new.test/home'))
-    expect(
-      await send({ type: 'passwords:bar-answer', barAnswer: 'save' }, pageSender('https://new.test/home')),
-    ).toEqual({
-      saveOutcome: 'gone',
-    })
+    await send(pageReady, pageSender('https://new.test/home'))
+    expect(await send({ type: 'passwords:dismiss-pending', tabId: 5 }, ownPageSender())).toEqual({ isDone: true })
+    expect(action.setBadgeText).toHaveBeenLastCalledWith({ tabId: 5, text: null })
+    expect(action.setTitle).toHaveBeenLastCalledWith({ tabId: 5, title: null })
+    expect(await send({ type: 'passwords:save-pending', tabId: 5 }, ownPageSender())).toEqual({ saveOutcome: 'gone' })
     expect(server.saved).toEqual([])
+  })
+
+  it('takes the marks off when the worker starts again, having lost the logins', async () => {
+    const first = await start()
+    await first.unlock()
+    await first.send(signIn, pageSender('https://new.test/sign-in'))
+    await first.send(pageReady, pageSender('https://new.test/home'))
+    const marked = first.session.contents.passwordsSaveMarkedTabs
+    expect(marked).toEqual([5])
+    vi.resetModules()
+    const second = await start()
+    await second.session.set({ passwordsSaveMarkedTabs: marked })
+    vi.resetModules()
+    await import('./background')
+    await vi.waitFor(() => expect(second.action.setBadgeText).toHaveBeenCalledWith({ tabId: 5, text: null }))
   })
 })
 
@@ -586,9 +626,8 @@ describe('locking', () => {
     expect(Object.keys(session.contents)).toContain('passwordsKeys')
     listeners['storage.onChanged']({ token: { oldValue: 'token' } }, 'local')
     await vi.waitFor(() => expect(Object.keys(session.contents)).not.toContain('passwordsKeys'))
-    expect(
-      await send({ type: 'passwords:page-ready', hasPasswordField: false }, pageSender('https://new.test/home')),
-    ).toEqual({ offer: null })
+    await send({ type: 'passwords:page-ready', hasPasswordField: false }, pageSender('https://new.test/home'))
+    expect(await send({ type: 'passwords:save-pending', tabId: 5 }, ownPageSender())).toEqual({ saveOutcome: 'gone' })
   })
 
   it('clears the waiting login and the alarm when the lock time runs out, not only when the person locks', async () => {
@@ -608,9 +647,7 @@ describe('locking', () => {
       expect(alarms.clear).toHaveBeenCalledWith('passwords-lock')
       // Unlocked again, the login that waited is not offered.
       await unlock()
-      expect(
-        await send({ type: 'passwords:page-ready', hasPasswordField: false }, pageSender('https://new.test/home')),
-      ).toEqual({ offer: null })
+      await send({ type: 'passwords:page-ready', hasPasswordField: false }, pageSender('https://new.test/home'))
       expect(await send({ type: 'passwords:state', tabId: 5, frameId: 0 }, ownPageSender())).toMatchObject({
         hasPendingSave: false,
       })
@@ -1098,6 +1135,70 @@ describe('passkey ceremonies and the person', () => {
     })
   })
 
+  describe('the dropdown', () => {
+    // askInDropdown asks with Chrome able to show the dropdown, and plays the
+    // question's page connecting its port.
+    async function askInDropdown(context: Context) {
+      context.dropdownState.canOpen = true
+      const answer = context.send(
+        { type: 'passwords:passkey', ceremonyKind: 'create', options: creation, isCrossOrigin: false },
+        sender,
+      )
+      await vi.waitFor(() => expect(context.action.openPopup).toHaveBeenCalled())
+      const popup = (context.action.setPopup.mock.calls[0] as unknown as [{ tabId: number; popup: string }])[0]
+      const promptId = new URL(`${EXTENSION}/${popup.popup}`).searchParams.get('id') as string
+      const disconnected: (() => void)[] = []
+      const port = {
+        name: 'passwords-prompt',
+        sender: { id: 'ext', url: `${EXTENSION}/${popup.popup}` },
+        postMessage: vi.fn(),
+        disconnect: vi.fn(),
+        onDisconnect: { addListener: (listener: () => void) => disconnected.push(listener) },
+      }
+      context.listeners['runtime.onConnect'](port)
+      return { answer, promptId, port, popup, closeDropdown: () => disconnected.forEach((listener) => listener()) }
+    }
+
+    it('is where the question is asked when the page that asked is in front, with no window', async () => {
+      const context = await start()
+      const { answer, promptId, port, popup } = await askInDropdown(context)
+      expect(popup.tabId).toBe(5)
+      expect(context.action.openPopup).toHaveBeenCalledWith({ windowId: 1 })
+      // The button shows the logins again for the next press.
+      expect(context.action.setPopup).toHaveBeenLastCalledWith({ tabId: 5, popup: 'passwords.html' })
+      expect(context.windows.create).not.toHaveBeenCalled()
+      await decide(context, promptId, 'browser')
+      expect((await answer).replyOutcome).toBe('fallback')
+      expect(port.postMessage).toHaveBeenCalledWith({ promptMessageKind: 'close' })
+    })
+
+    it('answers as a refusal when the dropdown closes', async () => {
+      const context = await start()
+      const { answer, closeDropdown } = await askInDropdown(context)
+      closeDropdown()
+      expect(await answer).toMatchObject({ replyOutcome: 'error', errorName: 'NotAllowedError' })
+    })
+
+    it('takes no port from a page that is not the question, or for a question that is over', async () => {
+      const context = await start()
+      const { answer, promptId, closeDropdown } = await askInDropdown(context)
+      const stranger = {
+        name: 'passwords-prompt',
+        sender: { id: 'ext', url: `${EXTENSION}/passwords.html?id=${promptId}` },
+        postMessage: vi.fn(),
+        disconnect: vi.fn(),
+        onDisconnect: { addListener: vi.fn() },
+      }
+      context.listeners['runtime.onConnect'](stranger)
+      expect(stranger.onDisconnect.addListener).not.toHaveBeenCalled()
+      closeDropdown()
+      await answer
+      const late = { ...stranger, sender: { id: 'ext', url: `${EXTENSION}/prompt.html?id=${promptId}` } }
+      context.listeners['runtime.onConnect'](late)
+      expect(late.disconnect).toHaveBeenCalled()
+    })
+  })
+
   describe('when the page goes away', () => {
     it("ends the question when the page withdraws its request, and only that frame's", async () => {
       const context = await start()
@@ -1246,73 +1347,6 @@ describe('passkey ceremonies and the person', () => {
   })
 })
 
-describe('what the service worker remembers of a list', () => {
-  const sender = pageSender('https://example.com/sign-in')
-  const suggest = (context: Awaited<ReturnType<typeof start>>, role = 'currentPassword', from: Sender = sender) =>
-    context.send({ type: 'passwords:suggest', role }, from)
-  const listCount = (context: Awaited<ReturnType<typeof start>>) =>
-    context.server.calls.filter((call) => call === 'ListPasswordItems').length
-
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it('opens the logins once for a field that gets the focus again and again, for ten seconds', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    const context = await start({ records: await exampleRecords() })
-    await context.unlock()
-    const first = await suggest(context)
-    expect(first.suggestionState).toBe('logins')
-    for (let turn = 0; turn < 20; turn++) expect(await suggest(context)).toEqual(first)
-    expect(listCount(context)).toBe(1)
-    vi.setSystemTime(Date.now() + 9_000)
-    await suggest(context)
-    expect(listCount(context)).toBe(1)
-    vi.setSystemTime(Date.now() + 2_000)
-    await suggest(context)
-    expect(listCount(context)).toBe(2)
-  })
-
-  it('keeps no password in it, and keeps a page apart from another and a kind of field from another', async () => {
-    const context = await start({ records: await exampleRecords() })
-    await context.unlock()
-    await suggest(context)
-    expect(JSON.stringify(await suggest(context))).not.toContain('plaintext')
-    expect((await suggest(context, 'currentPassword', pageSender('https://other.test/'))).suggestionState).toBe(
-      'logins',
-    )
-    expect((await suggest(context, 'oneTimeCode')).suggestionState).toBe('none')
-    expect((await suggest(context, 'currentPassword', pageSender('https://elsewhere.test/'))).suggestionState).toBe(
-      'none',
-    )
-  })
-
-  it('is let go when Passwords locks, and never serves a locked Passwords', async () => {
-    const context = await start({ records: await exampleRecords() })
-    await context.unlock()
-    await suggest(context)
-    await context.send({ type: 'passwords:lock' }, ownPageSender())
-    expect((await suggest(context)).suggestionState).toBe('locked')
-    await context.unlock()
-    await suggest(context)
-    expect(listCount(context)).toBe(2)
-  })
-
-  it('is let go when a login is saved', async () => {
-    const context = await start({ records: await exampleRecords() })
-    await context.unlock()
-    await suggest(context, 'currentPassword', pageSender('https://new.test/'))
-    await context.send(
-      { type: 'passwords:captured', userName: 'grace', password: 'new-secret', isNewPassword: false },
-      pageSender('https://new.test/sign-in'),
-    )
-    await context.send({ type: 'passwords:page-ready', hasPasswordField: false }, pageSender('https://new.test/home'))
-    await context.send({ type: 'passwords:bar-answer', barAnswer: 'save' }, pageSender('https://new.test/home'))
-    const answer = await suggest(context, 'currentPassword', pageSender('https://new.test/'))
-    expect(answer.suggestionState).toBe('logins')
-  })
-})
-
 describe('the changed key of the owner of shared logins', () => {
   const SHARED_ID = '00000000-0000-4000-8000-0000000000aa'
 
@@ -1367,7 +1401,8 @@ describe('the changed key of the owner of shared logins', () => {
 })
 
 describe('a tab the agent is working in', () => {
-  const fillMessage = { type: 'passwords:fill', itemId: EXAMPLE_ID }
+  const signIn = { type: 'passwords:captured', userName: 'grace', password: 'typed-plaintext', isNewPassword: false }
+  const pageReady = { type: 'passwords:page-ready', hasPasswordField: false }
 
   async function unlockedPage() {
     const context = await start({ records: await exampleRecords() })
@@ -1376,56 +1411,46 @@ describe('a tab the agent is working in', () => {
     return { ...context, agentActivity }
   }
 
-  it('is not answered for the page: no suggestion, no secret, no generated password, nothing remembered', async () => {
+  it('remembers nothing typed on its pages, and gets no generated password', async () => {
     const context = await unlockedPage()
-    const page = pageSender('https://example.com/login', { tabId: 5 })
-    // The control: the same asks are answered when the agent has not been there.
-    expect((await context.send({ type: 'passwords:suggest', role: 'currentPassword' }, page)).suggestionState).toBe(
-      'logins',
-    )
+    const page = pageSender('https://new.test/login', { tabId: 5 })
     context.agentActivity.noteAgentCommand(5)
-    expect(await context.send({ type: 'passwords:suggest', role: 'currentPassword' }, page)).toEqual({
-      suggestionState: 'none',
+    expect(await context.send(signIn, page)).toEqual({})
+    await context.send(pageReady, pageSender('https://new.test/home', { tabId: 5 }))
+    expect(await context.send({ type: 'passwords:save-pending', tabId: 5 }, ownPageSender())).toEqual({
+      saveOutcome: 'gone',
     })
-    for (const message of [
-      fillMessage,
-      { type: 'passwords:fill-code', itemId: EXAMPLE_ID },
-      { type: 'passwords:generate' },
-    ]) {
-      const answer = await context.send(message, page)
-      expect(answer.error).toMatch(/agent is working in this tab/)
-      expect(JSON.stringify(answer)).not.toContain('hunter2')
-    }
+    const generated = await context.send(
+      { type: 'passwords:fill-generated', password: 'generated-example', tabId: 5, frameId: 0 },
+      ownPageSender(),
+    )
+    expect(generated.error).toMatch(/agent is working in this tab/)
+    // Another tab is remembered as before.
+    await context.send(signIn, pageSender('https://new.test/login', { tabId: 6 }))
+    await context.send(pageReady, pageSender('https://new.test/home', { tabId: 6 }))
     expect(
-      await context.send(
-        { type: 'passwords:captured', userName: 'ada', password: 'typed-plaintext', isNewPassword: false },
-        page,
-      ),
-    ).toEqual({})
-    expect(await context.send({ type: 'passwords:bar-answer', barAnswer: 'save' }, page)).toEqual({})
-    // Another tab is answered as before.
-    const other = await context.send(fillMessage, pageSender('https://example.com/login', { tabId: 6 }))
-    expect(other.password).toBe('hunter2-plaintext')
+      (await context.send({ type: 'passwords:state', tabId: 6, frameId: 0 }, ownPageSender())).hasPendingSave,
+    ).toBe(true)
   })
 
-  it('is answered again once the agent has been quiet for a minute', async () => {
+  it('remembers again once the agent has been quiet for a minute, or while the person holds the tab', async () => {
     const context = await unlockedPage()
     context.agentActivity.noteAgentCommand(5, Date.now() - 61_000)
-    const answer = await context.send(fillMessage, pageSender('https://example.com/login', { tabId: 5 }))
-    expect(answer.password).toBe('hunter2-plaintext')
+    await context.send(signIn, pageSender('https://new.test/login', { tabId: 5 }))
+    await context.send(pageReady, pageSender('https://new.test/home', { tabId: 5 }))
+    expect(
+      (await context.send({ type: 'passwords:state', tabId: 5, frameId: 0 }, ownPageSender())).hasPendingSave,
+    ).toBe(true)
+    context.agentActivity.noteAgentCommand(7, Date.now() - 5000)
+    context.agentActivity.notePersonInput(7)
+    await context.send(signIn, pageSender('https://new.test/login', { tabId: 7 }))
+    await context.send(pageReady, pageSender('https://new.test/home', { tabId: 7 }))
+    expect(
+      (await context.send({ type: 'passwords:state', tabId: 7, frameId: 0 }, ownPageSender())).hasPendingSave,
+    ).toBe(true)
   })
 
-  it('is answered while the person holds it, and refused again after the agent’s next command', async () => {
-    const context = await unlockedPage()
-    const page = pageSender('https://example.com/login', { tabId: 5 })
-    context.agentActivity.noteAgentCommand(5, Date.now() - 5000)
-    context.agentActivity.notePersonInput(5)
-    expect((await context.send(fillMessage, page)).password).toBe('hunter2-plaintext')
-    context.agentActivity.noteAgentCommand(5, Date.now() + 1)
-    expect((await context.send(fillMessage, page)).error).toMatch(/agent is working/)
-  })
-
-  it('is not told apart by the window: its own page may still fill from the list', async () => {
+  it('is not told apart by the dropdown: the person may still fill from the list', async () => {
     const context = await unlockedPage()
     context.agentActivity.noteAgentCommand(5)
     const answer = await context.send({ type: 'passwords:search', query: '', tabId: 5, frameId: 0 }, ownPageSender())
@@ -1433,7 +1458,7 @@ describe('a tab the agent is working in', () => {
   })
 })
 
-describe('filling from the window', () => {
+describe('filling from the dropdown', () => {
   it('tells the page the origin the login was approved for, and passes on a form that sends elsewhere', async () => {
     const context = await start({ records: await exampleRecords() })
     await context.unlock()
@@ -1578,7 +1603,7 @@ describe('filling from the window', () => {
     })
   })
 
-  it('does not fill a login saved for another port or for the plain-text twin of the page', async () => {
+  it('fills a login saved for another port or for the plain-text twin of the page only after asking', async () => {
     const context = await start({
       records: [
         await ownRecord(
@@ -1589,14 +1614,14 @@ describe('filling from the window', () => {
       ],
     })
     await context.unlock()
-    expect(
-      (await context.send({ type: 'passwords:fill', itemId: EXAMPLE_ID }, pageSender('https://example.com:8443/')))
-        .password,
-    ).toBe('hunter2-plaintext')
+    const fill = { type: 'passwords:fill-in-tab', itemId: EXAMPLE_ID, fillPart: 'login', tabId: 5, frameId: 0 }
+    context.scripting.executeScript.mockResolvedValue([{ frameId: 0, result: 'https://example.com:8443/' }])
+    context.tabs.sendMessage.mockResolvedValueOnce({ filledCount: 2 } as any)
+    expect(await context.send(fill, ownPageSender())).toEqual({ filledCount: 2, foreignActionHost: '' })
     for (const url of ['https://example.com/', 'https://example.com:9443/', 'https://other.test/']) {
-      expect(await context.send({ type: 'passwords:fill', itemId: EXAMPLE_ID }, pageSender(url)), url).toEqual({
-        error: 'This login is not saved for this site.',
-      })
+      context.scripting.executeScript.mockResolvedValue([{ frameId: 0, result: url }])
+      expect((await context.send(fill, ownPageSender())).otherSite, url).toMatchObject({ origin: new URL(url).origin })
     }
+    expect(context.tabs.sendMessage).toHaveBeenCalledTimes(1)
   })
 })

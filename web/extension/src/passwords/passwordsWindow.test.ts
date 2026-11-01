@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// The Passwords window runs when it is loaded, so each test loads it afresh
-// into a page of its own, with the service worker played by the test.
+// The toolbar button's dropdown runs when it is loaded, so each test loads it
+// afresh into a page of its own, with the service worker played by the test.
+// It is in no tab: it asks Chrome for the tab in front, here tab 5 in window 1.
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10))
 
 const OWN_LOGIN = {
@@ -32,7 +33,7 @@ let answers: Record<string, (message: Record<string, any>) => unknown>
 
 beforeEach(() => {
   vi.resetModules()
-  window.history.replaceState({}, '', '/passwords.html?tab=5&frame=0')
+  window.history.replaceState({}, '', '/passwords.html')
   document.body.innerHTML = '<div id="app"></div>'
   sent = []
   answers = {
@@ -41,6 +42,7 @@ beforeEach(() => {
       isSetUp: true,
       isUnlocked: true,
       serverOrigin: 'https://tea.example.test',
+      frameId: 2,
       frameHost: 'example.com',
       topHost: 'example.com',
       isFrameCrossOrigin: false,
@@ -61,8 +63,14 @@ beforeEach(() => {
       }),
       openOptionsPage: vi.fn(),
     },
+    tabs: { query: vi.fn(async () => [{ id: 5 }]), create: vi.fn() },
+    windows: { getCurrent: vi.fn(async () => ({ id: 1 })) },
+    sidePanel: { open: vi.fn(async () => undefined) },
+    commands: { getAll: vi.fn(async () => [{ name: 'fill-login', shortcut: 'Ctrl+Shift+L' }]) },
   })
   vi.spyOn(window, 'close').mockImplementation(() => {})
+  // jsdom lays nothing out, and has no scrolling into view.
+  Element.prototype.scrollIntoView = vi.fn()
 })
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -86,6 +94,169 @@ function rowFor(name: string): HTMLElement {
   if (!found) throw new Error(`no row ${name}`)
   return found
 }
+
+const settleList = async () => {
+  await settle()
+  await settle()
+}
+
+function search(): HTMLInputElement {
+  return document.querySelector('input[type="search"]') as HTMLInputElement
+}
+
+function press(key: string) {
+  search().dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+}
+
+describe('opening', () => {
+  it("starts with the page's host in the search, selected, and asks for the logins saved for the page", async () => {
+    await load()
+    expect(sent[0]).toEqual({ type: 'passwords:state', tabId: 5 })
+    expect(search().value).toBe('example.com')
+    expect(document.activeElement).toBe(search())
+    expect(search().selectionStart).toBe(0)
+    expect(search().selectionEnd).toBe('example.com'.length)
+    expect(sent.find((message) => message.type === 'passwords:search')).toEqual({
+      type: 'passwords:search',
+      query: 'example.com',
+      tabId: 5,
+      frameId: 2,
+    })
+  })
+
+  it('says when no login is saved for the page, and how to see the rest', async () => {
+    answers['passwords:search'] = () => ({ forThisSite: [], others: [], ownerKeyChanges: [] })
+    await load()
+    expect(document.querySelector('.list-area')?.textContent).toBe(
+      'No login is saved for example.com. Clear the search to see every login.',
+    )
+  })
+
+  it('lists every login once the search is cleared', async () => {
+    await load()
+    search().value = ''
+    search().dispatchEvent(new Event('input'))
+    await settleList()
+    expect(sent.filter((message) => message.type === 'passwords:search').slice(-1)[0].query).toBe('')
+  })
+})
+
+describe('the keyboard', () => {
+  it('fills the first login with Enter, into the frame the worker named, and closes', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    answers['passwords:fill-in-tab'] = () => ({ filledCount: 2, foreignActionHost: '' })
+    try {
+      await import('./passwords')
+      await vi.advanceTimersByTimeAsync(20)
+      expect(rowFor('Mine').classList.contains('is-chosen')).toBe(true)
+      press('Enter')
+      await vi.advanceTimersByTimeAsync(20)
+      expect(sent.filter((message) => message.type === 'passwords:fill-in-tab')).toEqual([
+        {
+          type: 'passwords:fill-in-tab',
+          itemId: 'own',
+          fillPart: 'login',
+          isForeignActionConfirmed: false,
+          confirmedOtherSiteOrigin: undefined,
+          tabId: 5,
+          frameId: 2,
+        },
+      ])
+      await vi.advanceTimersByTimeAsync(400)
+      expect(window.close).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('chooses another login with the arrows, never past the ends', async () => {
+    answers['passwords:fill-in-tab'] = () => ({ filledCount: 2, foreignActionHost: '' })
+    await load()
+    press('ArrowUp')
+    expect(rowFor('Mine').classList.contains('is-chosen')).toBe(true)
+    press('ArrowDown')
+    press('ArrowDown')
+    press('ArrowDown')
+    expect(rowFor('Elsewhere').classList.contains('is-chosen')).toBe(true)
+    expect(rowFor('Elsewhere').getAttribute('aria-selected')).toBe('true')
+    expect(rowFor('Mine').classList.contains('is-chosen')).toBe(false)
+    press('Enter')
+    await settle()
+    expect(sent.filter((message) => message.type === 'passwords:fill-in-tab')[0].itemId).toBe('other')
+  })
+
+  it('fills nothing with Enter where there is no page to fill', async () => {
+    const state = answers['passwords:state']
+    answers['passwords:state'] = () => ({ ...(state as any)(), frameHost: '' })
+    await load()
+    expect(search().value).toBe('')
+    press('Enter')
+    await settle()
+    expect(sent.some((message) => message.type === 'passwords:fill-in-tab')).toBe(false)
+  })
+})
+
+describe('the chat', () => {
+  it('opens the agent in the side panel of this window and closes the dropdown', async () => {
+    await load()
+    const chat = Array.from(document.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Chat with TeaNode',
+    )
+    chat!.click()
+    await settle()
+    expect((globalThis as any).chrome.sidePanel.open).toHaveBeenCalledWith({ windowId: 1 })
+    expect(window.close).toHaveBeenCalled()
+  })
+})
+
+describe('a login waiting to be saved', () => {
+  it('offers Save or Not now, and Not now forgets it for the tab', async () => {
+    const state = answers['passwords:state']
+    answers['passwords:state'] = () => ({
+      ...(state as any)(),
+      hasPendingSave: true,
+      pendingSave: { host: 'example.com', userName: 'ada', offerAction: 'update' },
+    })
+    answers['passwords:dismiss-pending'] = () => {
+      answers['passwords:state'] = state
+      return { isDone: true }
+    }
+    await load()
+    const card = document.querySelector('.card') as HTMLElement
+    expect(card.textContent).toContain('Update the saved password?')
+    expect(card.textContent).toContain('ada on example.com')
+    buttonIn(card, 'Not now').click()
+    await settleList()
+    expect(sent.find((message) => message.type === 'passwords:dismiss-pending')).toEqual({
+      type: 'passwords:dismiss-pending',
+      tabId: 5,
+    })
+    expect(document.querySelector('.card')).toBeNull()
+  })
+})
+
+describe('the generator', () => {
+  it('fills the password it made into the page, and copies it', async () => {
+    answers['passwords:fill-generated'] = () => ({ filledCount: 2, foreignActionHost: '' })
+    await load()
+    const section = document.querySelector('details') as HTMLElement
+    buttonIn(section, 'Generate').click()
+    const made = (section.querySelector('input[type="text"]') as HTMLInputElement).value
+    expect(made.length).toBeGreaterThan(8)
+    buttonIn(section, 'Fill').click()
+    await settle()
+    expect(sent.find((message) => message.type === 'passwords:fill-generated')).toEqual({
+      type: 'passwords:fill-generated',
+      password: made,
+      tabId: 5,
+      frameId: 2,
+    })
+    expect(sent.find((message) => message.type === 'passwords:copy-text')).toEqual({
+      type: 'passwords:copy-text',
+      text: made,
+    })
+  })
+})
 
 describe('who owns a login in the list', () => {
   it('says "Shared by" under a login somebody else owns, and nothing under one the person owns', async () => {
@@ -151,6 +322,7 @@ describe('filling a login that is not saved for the page', () => {
       isSetUp: true,
       isUnlocked: true,
       serverOrigin: 'https://tea.example.test',
+      frameId: 0,
       frameHost: 'pay.example.test',
       topHost: 'shop.example.test',
       isFrameCrossOrigin: true,

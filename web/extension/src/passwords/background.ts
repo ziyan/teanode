@@ -6,7 +6,6 @@
 // never for what it claims, and every secret handed to one is checked against
 // that frame's address first.
 
-import { generatePassword } from '../../../src/passwords/generator'
 import { PasswordsError, PasswordsErrorCode } from '../../../src/passwords/passwordsError'
 import { IndexedDBKeptUnlockStore, KeptUnlock } from '../../../src/pages/passwords/passwordsKeptUnlock'
 import { LoginItem } from '../../../src/pages/passwords/passwordsProtocol'
@@ -15,7 +14,6 @@ import { CapturedLogins } from './capturedLogins'
 import { CLEAR_CLIPBOARD_ALARM, clearClipboardIfUnchanged, copySecret } from './clipboard'
 import { isSecureContextPage, isWebPage, normalizeHost, originOf, originOfSite } from './hosts'
 import {
-  BarOffer,
   ContentRequest,
   FillFieldsMessage,
   FillInTabAnswer,
@@ -23,9 +21,8 @@ import {
   PopupRequest,
   PopupState,
   PromptInfo,
+  SaveOffer,
   SearchAnswer,
-  ShowBarMessage,
-  SuggestionAnswer,
 } from './messages'
 import type { PasskeyReply } from './passkeyOverride'
 import { NOT_ALLOWED_REPLY, PasskeyPrompts, PendingPrompt, PROMPT_LIFETIME_MILLISECONDS } from './passkeyPrompts'
@@ -79,7 +76,7 @@ const environment: PasswordsEnvironment = {
   // are only for open keys.
   onLock: async () => {
     capturedLogins.forgetAll()
-    suggestionCache.clear()
+    await unmarkAllSaveOffers()
     await chrome.alarms.clear(LOCK_ALARM)
   },
   onRestore: () => startLockAlarm(),
@@ -91,17 +88,11 @@ const CONTEXT_MENU_ID = 'passwords-fill'
 const POPUP_PATH = '/passwords.html'
 const PROMPT_PATH = '/prompt.html'
 const OPTIONS_PATH = '/options.html'
+// The window the dropdown's page opens in when Chrome cannot show the
+// dropdown (a window without a toolbar, say), and the passkey question's when
+// the page that asked is not the one in front.
 const POPUP_SIZE = { width: 400, height: 600 }
 const PROMPT_SIZE = { width: 440, height: 380 }
-
-// The suggestion for a field is asked for each time a field gets the focus, so
-// a page that moves the focus about over and over would have every login
-// opened over and over. What a field was told is kept for a few seconds,
-// by origin and kind of field. It holds the same names a suggestion shows,
-// never a password, and is dropped when Passwords locks or something is saved.
-const SUGGESTION_CACHE_MILLISECONDS = 10_000
-const SUGGESTION_CACHE_MOST_ENTRIES = 64
-const suggestionCache = new Map<string, { expiresAtMilliseconds: number; answer: SuggestionAnswer }>()
 
 // The sites where the person chose "Use the browser instead", kept for the
 // browser session only (chrome.storage.session).
@@ -159,12 +150,15 @@ function contentFrameOf(sender: any): ContentFrame | null {
 }
 
 // isOwnPage says a message came from one of the extension's own pages, opened
-// as a page of its own. Only those may unlock, copy or list: the suggestion and
-// the bar are the extension's pages too, but they live in a frame inside a
-// website, which a website can frame by itself, so they are not on this list
-// and send nothing.
+// as a page of its own (the button's dropdown, the passkey question, the
+// options). Only those may unlock, copy or list. None of them is reachable
+// from a website: the manifest offers no page of the extension to be framed.
 function isOwnPage(sender: any): boolean {
-  if (!sender || sender.id !== chrome.runtime.id || sender.frameId !== 0) return false
+  if (!sender || sender.id !== chrome.runtime.id) return false
+  // A page in a tab or a window is its top frame; the dropdown is in no tab,
+  // and Chrome gives a frame only to a sender in a tab.
+  const isTopFrame = sender.tab ? sender.frameId === 0 : sender.frameId === undefined || sender.frameId === 0
+  if (!isTopFrame) return false
   const prefix = chrome.runtime.getURL('')
   const url = typeof sender.url === 'string' ? sender.url : ''
   if (!url.startsWith(prefix)) return false
@@ -185,7 +179,7 @@ async function rememberIsSetUp(isSetUp: boolean) {
 }
 
 // learnIfSetUp asks the server whether this person has set Passwords up and
-// remembers the answer, so the suggestion knows whether to appear. It runs
+// remembers the answer, so passkey requests know whether to stop and ask. It runs
 // when the extension signs in and when the browser starts; a server that
 // cannot be reached leaves what was remembered.
 async function learnIfSetUp() {
@@ -196,7 +190,7 @@ async function learnIfSetUp() {
   try {
     await rememberIsSetUp((await readPasswordsSetup(environment)).isSetUp)
   } catch {
-    // Not reachable now; asked again when the window is opened.
+    // Not reachable now; asked again when the dropdown is opened.
   }
 }
 
@@ -234,17 +228,17 @@ async function describeFrame(tabId: number, frameId: number): Promise<string | n
 }
 
 // frameWithFocus is the frame a keyboard shortcut means: the one holding the
-// keyboard focus in a field, or the top frame.
-async function frameWithFocus(tabId: number): Promise<number> {
+// keyboard focus in a field, or null when none does.
+async function frameWithFocus(tabId: number): Promise<number | null> {
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
       func: () => document.hasFocus() && !!document.activeElement && document.activeElement !== document.body,
     })
     const focused = results.find((result: { result: unknown }) => result.result === true)
-    return focused ? focused.frameId : 0
+    return focused ? focused.frameId : null
   } catch {
-    return 0
+    return null
   }
 }
 
@@ -260,20 +254,107 @@ async function closeWindow(windowId: number | null) {
   }
 }
 
-// openPopupWindow opens (or replaces) the window with the logins: for a page
-// when there is one, for a save when there is a login waiting to be saved.
-async function openPopupWindow(target: { tabId?: number; frameId?: number }) {
+// openPasswords shows the button's dropdown for a tab, as a press on the
+// button does: from the keyboard shortcut and the context menu. Where Chrome
+// cannot show it (a window without a toolbar), the same page opens in a small
+// window instead, which is better than nothing happening.
+async function openPasswords(tab: { id?: number; windowId?: number }) {
+  try {
+    await chrome.action.openPopup(typeof tab.windowId === 'number' ? { windowId: tab.windowId } : {})
+    return
+  } catch {
+    // No toolbar to hang the dropdown from.
+  }
   await closeWindow(popupWindowId)
-  const query = new URLSearchParams()
-  if (target.tabId !== undefined) query.set('tab', String(target.tabId))
-  if (target.frameId !== undefined) query.set('frame', String(target.frameId))
   const made = await chrome.windows.create({
-    url: chrome.runtime.getURL(`passwords.html${query.toString() === '' ? '' : '?' + query.toString()}`),
+    url: chrome.runtime.getURL(typeof tab.id === 'number' ? `passwords.html?tab=${tab.id}` : 'passwords.html'),
     type: 'popup',
     focused: true,
     ...POPUP_SIZE,
   })
   popupWindowId = made?.id ?? null
+}
+
+// focusedFrames is, for each tab, the frame that last had a sign-in field
+// focused (the content script says so), or the one holding the focus when the
+// keyboard shortcut was pressed. The dropdown fills that frame: once it is
+// open the page no longer has the focus, so it cannot be asked then.
+const focusedFrames = new Map<number, number>()
+
+// frameToFill is the frame of a tab the dropdown fills: the one focused last
+// if it is still there, else the top frame if it shows a password field,
+// else the first frame that does, else the top frame.
+async function frameToFill(tabId: number): Promise<number> {
+  const focused = focusedFrames.get(tabId)
+  if (focused !== undefined && (await describeFrame(tabId, focused)) !== null) return focused
+  try {
+    const frames = ((await chrome.webNavigation.getAllFrames({ tabId })) ?? []) as { frameId: number }[]
+    const ordered = [...frames].sort((first, second) => first.frameId - second.frameId)
+    for (const frame of ordered) {
+      const probe = await chrome.tabs
+        .sendMessage(tabId, { type: 'passwords:probe' }, { frameId: frame.frameId })
+        .catch(() => null)
+      if (probe && probe.hasPasswordField === true) return frame.frameId
+    }
+  } catch {
+    // The tab cannot be looked into (an internal page).
+  }
+  return 0
+}
+
+// The toolbar button is marked, for one tab, when a login typed there waits
+// to be saved: a "+" on the button and a title saying so, in place of the bar
+// on the page there used to be. The dropdown shows the offer. Which tabs are
+// marked is kept for the browser session, so that a worker started again,
+// which has lost the login itself, takes the marks off.
+const SAVE_MARKED_TABS_KEY = 'passwordsSaveMarkedTabs'
+const SAVE_MARK_TEXT = '+'
+const SAVE_MARK_COLOR = '#2f6fdf'
+
+async function readSaveMarkedTabs(): Promise<number[]> {
+  const stored = (await chrome.storage.session.get(SAVE_MARKED_TABS_KEY))[SAVE_MARKED_TABS_KEY]
+  return Array.isArray(stored) ? stored.filter((tabId): tabId is number => typeof tabId === 'number') : []
+}
+
+async function markSaveOffer(tabId: number, offer: SaveOffer) {
+  const title =
+    offer.offerAction === 'update'
+      ? `TeaNode: update the saved password for ${offer.host}?`
+      : `TeaNode: save the login you used on ${offer.host}?`
+  try {
+    await chrome.action.setBadgeText({ tabId, text: SAVE_MARK_TEXT })
+    await chrome.action.setBadgeBackgroundColor({ tabId, color: SAVE_MARK_COLOR })
+    await chrome.action.setTitle({ tabId, title })
+  } catch {
+    // The tab is gone.
+    return
+  }
+  const marked = await readSaveMarkedTabs()
+  if (!marked.includes(tabId)) await chrome.storage.session.set({ [SAVE_MARKED_TABS_KEY]: [...marked, tabId] })
+}
+
+// unmarkSaveOffer gives the tab the button everybody else has: null hands
+// the badge and the title back to what the rest of the extension sets.
+async function unmarkSaveOffer(tabId: number) {
+  const marked = await readSaveMarkedTabs()
+  if (!marked.includes(tabId)) return
+  await chrome.storage.session.set({ [SAVE_MARKED_TABS_KEY]: marked.filter((each) => each !== tabId) })
+  try {
+    await chrome.action.setBadgeText({ tabId, text: null })
+    await chrome.action.setTitle({ tabId, title: null })
+  } catch {
+    // The tab is gone.
+  }
+}
+
+async function unmarkAllSaveOffers() {
+  for (const tabId of await readSaveMarkedTabs()) await unmarkSaveOffer(tabId)
+}
+
+// forgetCaptured drops the login waiting in a tab, and the mark with it.
+async function forgetCaptured(tabId: number) {
+  capturedLogins.forget(tabId)
+  await unmarkSaveOffer(tabId)
 }
 
 chrome.windows.onRemoved.addListener((windowId: number) => {
@@ -285,82 +366,67 @@ chrome.windows.onRemoved.addListener((windowId: number) => {
   }
 })
 
-// ---------------------------------------------------------------------------
-// From a page: suggestions, filling, saving
+// The passkey question keeps a port open to this worker for as long as it is
+// on screen, in the dropdown or in its window: the dropdown closing (a click
+// elsewhere, Escape) disconnects it, which answers the website as a refusal,
+// as closing its window does.
+const PROMPT_PORT_NAME = 'passwords-prompt'
 
-async function suggest(frame: ContentFrame, role: string): Promise<SuggestionAnswer> {
-  if (!(await isPasswordsAvailable())) return { suggestionState: 'none' }
-  const host = normalizeHost(frame.url)
-  const passwordsState = await readPasswordsState(environment)
-  if (!passwordsState.isUnlocked) return { suggestionState: 'locked', host }
-  if (role === 'newPassword') return { suggestionState: 'generate', host }
-  const cacheKey = `${frame.origin}\n${role}`
-  const cached = suggestionCache.get(cacheKey)
-  if (cached && cached.expiresAtMilliseconds > Date.now()) return cached.answer
+chrome.runtime.onConnect.addListener((port: any) => {
+  if (port.name !== PROMPT_PORT_NAME || !isOwnPage(port.sender)) return
+  const url = typeof port.sender.url === 'string' ? port.sender.url : ''
+  let promptId = ''
   try {
-    // Looking is not use: a page left open with a field focused must still lock.
-    const answer = await withOpenedKeys(
-      environment,
-      async (keys) => {
-        const items = await openItems(environment, keys)
-        try {
-          let logins = loginsForPage(loginsOf(items), frame.url)
-          if (role === 'oneTimeCode') logins = logins.filter((login) => login.fields.oneTimeCodeUri !== '')
-          if (logins.length === 0) return { suggestionState: 'none' } as SuggestionAnswer
-          return {
-            suggestionState: 'logins',
-            host,
-            logins: sortLogins(logins).map(summaryOf),
-          } as SuggestionAnswer
-        } finally {
-          releaseItems(items)
-        }
-      },
-      { isUse: false },
-    )
-    if (suggestionCache.size >= SUGGESTION_CACHE_MOST_ENTRIES) suggestionCache.clear()
-    suggestionCache.set(cacheKey, { expiresAtMilliseconds: Date.now() + SUGGESTION_CACHE_MILLISECONDS, answer })
-    return answer
+    const address = new URL(url)
+    if (address.pathname === PROMPT_PATH) promptId = address.searchParams.get('id') ?? ''
   } catch {
-    return { suggestionState: 'none' }
+    // Not an address.
   }
-}
-
-// findLoginForPage is the login with this id if it is saved for the page,
-// else it throws: a login is never handed to a page it is not saved for.
-function findLoginForPage(items: Awaited<ReturnType<typeof openItems>>, itemId: string, pageUrl: string): LoginItem {
-  const login = loginsForPage(loginsOf(items), pageUrl).find((candidate) => candidate.id === itemId)
-  if (!login) throw new Error('This login is not saved for this site.')
-  return login
-}
-
-async function readSecretForPage(frame: ContentFrame, itemId: string, secretPart: 'login' | 'oneTimeCode') {
-  return withOpenedKeys(environment, async (keys) => {
-    const items = await openItems(environment, keys)
-    try {
-      const login = findLoginForPage(items, itemId, frame.url)
-      if (secretPart === 'login') return { userName: login.fields.userName, password: login.fields.password }
-      const currentCode = await currentOneTimeCode(login, Date.now())
-      if (!currentCode) throw new Error('This login has no one-time code.')
-      return { oneTimeCode: currentCode.oneTimeCode }
-    } finally {
-      releaseItems(items)
+  const prompt = passkeyPrompts.get(promptId)
+  if (!prompt) {
+    port.disconnect()
+    return
+  }
+  prompt.port = port
+  port.onDisconnect.addListener(() => {
+    const still = passkeyPrompts.get(promptId)
+    if (still && still.port === port) {
+      still.port = null
+      settlePrompt(promptId, NOT_ALLOWED_REPLY)
     }
   })
-}
+})
 
-// offerFor decides whether the bar is shown for the login captured in a tab,
-// and what it says. It marks the capture as offered, so the next page does not
-// show it again.
-async function offerFor(tabId: number): Promise<BarOffer | null> {
+// ---------------------------------------------------------------------------
+// From a page: which frame to fill, saving
+
+// offerFor decides whether the button is marked for the login captured in a
+// tab, and what the dropdown offers. It marks the capture as offered, so the
+// next page does not mark it again.
+async function offerFor(tabId: number): Promise<SaveOffer | null> {
   const captured = capturedLogins.peek(tabId)
   if (!captured || captured.password === '' || captured.hasBeenOffered) return null
-  const host = normalizeHost(captured.pageUrl)
-  const passwordsState = await readPasswordsState(environment)
-  if (!passwordsState.isUnlocked) {
-    capturedLogins.markOffered(tabId)
-    return { offerAction: 'unlock', host, userName: captured.userName }
+  const offer = await describeOffer(captured)
+  if (!offer) {
+    await forgetCaptured(tabId)
+    return null
   }
+  capturedLogins.markOffered(tabId)
+  return offer
+}
+
+// describeOffer is what there is to offer for a captured login: saving it,
+// updating the saved password, unlocking first, or nothing (it is saved as
+// it is).
+async function describeOffer(captured: {
+  pageUrl: string
+  userName: string
+  password: string
+  isNewPassword: boolean
+}): Promise<SaveOffer | null> {
+  const host = normalizeHost(captured.pageUrl)
+  if (!(await readPasswordsState(environment)).isUnlocked)
+    return { offerAction: 'unlock', host, userName: captured.userName }
   const offerAction = await withOpenedKeys(
     environment,
     async (keys) => {
@@ -373,19 +439,21 @@ async function offerFor(tabId: number): Promise<BarOffer | null> {
     },
     { isUse: false },
   )
-  if (offerAction === 'none') {
-    capturedLogins.forget(tabId)
-    return null
-  }
-  capturedLogins.markOffered(tabId)
-  return { offerAction, host, userName: captured.userName }
+  return offerAction === 'none' ? null : { offerAction, host, userName: captured.userName }
 }
 
-// pageReady is a page that signs in without leaving asking whether to show
-// the bar. Only the top frame shows it.
-async function pageReady(frame: ContentFrame, hasPasswordField: boolean): Promise<{ offer: BarOffer | null }> {
-  if (frame.frameId !== 0 || hasPasswordField) return { offer: null }
-  return { offer: await offerFor(frame.tabId) }
+// offerToSave marks the button when there is something to offer for the
+// login captured in a tab.
+async function offerToSave(tabId: number) {
+  const offer = await offerFor(tabId)
+  if (offer) await markSaveOffer(tabId, offer)
+}
+
+// pageReady is a page that signs in without leaving saying its password field
+// is gone. Only the top frame counts.
+async function pageReady(frame: ContentFrame, hasPasswordField: boolean): Promise<Record<string, never>> {
+  if (frame.frameId === 0 && !hasPasswordField) await offerToSave(frame.tabId)
+  return {}
 }
 
 // saveCaptured saves the login captured in a tab. Locked, it saves nothing
@@ -394,7 +462,10 @@ async function saveCaptured(
   tabId: number,
 ): Promise<{ saveOutcome: 'saved' | 'updated' | 'unchanged' | 'locked' | 'gone' }> {
   const captured = capturedLogins.peek(tabId)
-  if (!captured || captured.password === '') return { saveOutcome: 'gone' }
+  if (!captured || captured.password === '') {
+    await unmarkSaveOffer(tabId)
+    return { saveOutcome: 'gone' }
+  }
   if (!(await readPasswordsState(environment)).isUnlocked) return { saveOutcome: 'locked' }
   const saveOutcome = await withOpenedKeys(environment, async (keys) => {
     const items = await openItems(environment, keys)
@@ -408,8 +479,7 @@ async function saveCaptured(
       releaseItems(items)
     }
   })
-  capturedLogins.forget(tabId)
-  suggestionCache.clear()
+  await forgetCaptured(tabId)
   return { saveOutcome }
 }
 
@@ -443,41 +513,12 @@ const AGENT_TAB_REFUSAL = {
 }
 
 async function handleContentRequest(frame: ContentFrame, message: ContentRequest): Promise<unknown> {
-  if (
-    (message.type === 'passwords:suggest' ||
-      message.type === 'passwords:fill' ||
-      message.type === 'passwords:fill-code' ||
-      message.type === 'passwords:generate' ||
-      message.type === 'passwords:captured' ||
-      (message.type === 'passwords:bar-answer' && message.barAnswer === 'save')) &&
-    (await agentActivity.isAgentDriving(frame.tabId))
-  ) {
-    if (message.type === 'passwords:suggest') return { suggestionState: 'none' }
-    if (message.type === 'passwords:captured' || message.type === 'passwords:bar-answer') return {}
-    return AGENT_TAB_REFUSAL
-  }
-  if (
-    (message.type === 'passwords:suggest' ||
-      message.type === 'passwords:fill' ||
-      message.type === 'passwords:fill-code' ||
-      message.type === 'passwords:generate' ||
-      message.type === 'passwords:captured') &&
-    (await isOwnPasswordsPage(frame.url))
-  ) {
-    if (message.type === 'passwords:suggest') return { suggestionState: 'none' }
-    if (message.type === 'passwords:captured') return {}
-    return OWN_PAGE_REFUSAL
-  }
+  if (message.type === 'passwords:captured' && (await agentActivity.isAgentDriving(frame.tabId))) return {}
+  if (message.type === 'passwords:captured' && (await isOwnPasswordsPage(frame.url))) return {}
   switch (message.type) {
-    case 'passwords:suggest':
-      return suggest(frame, message.role)
-    case 'passwords:fill':
-      return readSecretForPage(frame, message.itemId, 'login')
-    case 'passwords:fill-code':
-      return readSecretForPage(frame, message.itemId, 'oneTimeCode')
-    case 'passwords:generate':
-      if (!(await readPasswordsState(environment)).isUnlocked) throw new PasswordsError('locked')
-      return { password: generatePassword() }
+    case 'passwords:field-focused':
+      focusedFrames.set(frame.tabId, frame.frameId)
+      return {}
     case 'passwords:captured':
       if (frame.isIncognito || !(await isPasswordsAvailable())) return {}
       capturedLogins.capture(frame.tabId, {
@@ -489,19 +530,6 @@ async function handleContentRequest(frame: ContentFrame, message: ContentRequest
       return {}
     case 'passwords:page-ready':
       return pageReady(frame, message.hasPasswordField)
-    case 'passwords:bar-answer':
-      if (message.barAnswer === 'dismiss') {
-        capturedLogins.forget(frame.tabId)
-        return {}
-      }
-      if (message.barAnswer === 'unlock') {
-        await openPopupWindow({ tabId: frame.tabId, frameId: 0 })
-        return {}
-      }
-      return saveCaptured(frame.tabId)
-    case 'passwords:open-popup':
-      await openPopupWindow({ tabId: frame.tabId, frameId: frame.frameId })
-      return {}
     case 'passwords:passkey':
       return handlePasskey(frame, message)
     case 'passwords:passkey-cancel':
@@ -562,7 +590,7 @@ async function readShouldFocusPrompt(tabId: number): Promise<boolean> {
 }
 
 // After a question for a tab is refused or closed without an answer, the tab
-// is not asked about again for a few seconds: a page cannot open the window
+// is not asked about again for a few seconds: a page cannot open the question
 // over and over by asking over and over.
 const PASSKEY_REFUSAL_PAUSE_MILLISECONDS = 3000
 const passkeyPausedUntilMilliseconds = new Map<number, number>()
@@ -577,10 +605,43 @@ function settlePrompt(promptId: string, reply: PasskeyReply): PendingPrompt | nu
   return settled
 }
 
-// endPrompt answers the page and closes the question's window.
+// endPrompt answers the page and closes the question, in the dropdown or its
+// window.
 function endPrompt(promptId: string, reply: PasskeyReply) {
   const settled = settlePrompt(promptId, reply)
-  if (settled) void closeWindow(settled.windowId)
+  if (!settled) return
+  void closeWindow(settled.windowId)
+  try {
+    settled.port?.postMessage({ promptMessageKind: 'close' })
+  } catch {
+    // Already closed.
+  }
+}
+
+// showPromptInDropdown asks the passkey question in the toolbar button's
+// dropdown. For that one opening the button shows the question instead of the
+// logins; it shows the logins again right after.
+const PROMPT_CONNECT_MILLISECONDS = 5000
+
+async function showPromptInDropdown(tabId: number, promptId: string): Promise<boolean> {
+  try {
+    const tab = await chrome.tabs.get(tabId)
+    await chrome.action.setPopup({ tabId, popup: `prompt.html?id=${promptId}` })
+    try {
+      await chrome.action.openPopup({ windowId: tab.windowId })
+    } finally {
+      await chrome.action.setPopup({ tabId, popup: POPUP_PATH.slice(1) })
+    }
+    // A dropdown closed before its page loaded never connected: that is a
+    // refusal too, not a question left open for minutes.
+    setTimeout(() => {
+      const prompt = passkeyPrompts.get(promptId)
+      if (prompt && prompt.port === null && prompt.windowId === null) endPrompt(promptId, NOT_ALLOWED_REPLY)
+    }, PROMPT_CONNECT_MILLISECONDS)
+    return true
+  } catch {
+    return false
+  }
 }
 
 // The sites the person sent to the browser for this session.
@@ -627,27 +688,29 @@ async function startPrompt(
       frameId: frame.frameId,
       tabUrl,
       windowId: null,
+      port: null,
       context,
       resolve,
       timer: null,
       isDeciding: false,
       ...details,
     }
-    prompt.timer = setTimeout(() => {
-      const timedOut = settlePrompt(id, NOT_ALLOWED_REPLY)
-      if (timedOut) void closeWindow(timedOut.windowId)
-    }, PROMPT_LIFETIME_MILLISECONDS)
+    prompt.timer = setTimeout(() => endPrompt(id, NOT_ALLOWED_REPLY), PROMPT_LIFETIME_MILLISECONDS)
     passkeyPrompts.add(prompt)
   })
   try {
-    // The window takes the keyboard focus only when the page that asked is the
-    // tab the person is looking at, in a window that has the focus; otherwise
-    // it opens without it, and a page in the background cannot pull the
-    // person's typing into a window.
+    // The question takes the keyboard focus only when the page that asked is
+    // the tab the person is looking at, in a window that has the focus: then
+    // it is asked in the button's dropdown, or a window that takes the focus
+    // where there is no dropdown. Otherwise its window opens without the
+    // focus, and a page in the background cannot pull the person's typing
+    // into it.
+    const shouldFocus = await readShouldFocusPrompt(frame.tabId)
+    if (shouldFocus && (await showPromptInDropdown(frame.tabId, id))) return reply
     const made = await chrome.windows.create({
       url: chrome.runtime.getURL(`prompt.html?id=${id}`),
       type: 'popup',
-      focused: await readShouldFocusPrompt(frame.tabId),
+      focused: shouldFocus,
       ...PROMPT_SIZE,
     })
     const prompt = passkeyPrompts.get(id)
@@ -699,7 +762,7 @@ async function handlePasskey(
   // no question. Locked, the passkeys cannot be looked at, but a list of the
   // sites that have one was kept the last time they were opened: a site not on
   // it is left to the browser too, with no window, and only a site that has a
-  // passkey here makes the window ask the person to unlock.
+  // passkey here makes the question ask the person to unlock.
   if ((await readPasswordsState(environment)).isUnlocked) {
     const hasChoice = await withOpenedKeys(
       environment,
@@ -772,7 +835,7 @@ async function promptInfo(promptId: string): Promise<PromptInfo | { error: strin
     userName: prompt.userName,
     isUnlocked: passwordsState.isUnlocked,
     // The site insists on the person proving who they are, and they have not
-    // typed the passphrase lately: the window asks for it again.
+    // typed the passphrase lately: the question asks for it again.
     isVerificationNeeded:
       passwordsState.isUnlocked && prompt.userVerification === 'required' && !passwordsState.wasUserVerifiedRecently,
     choices,
@@ -806,7 +869,7 @@ async function promptDecide(
     const passwordsState = await readPasswordsState(environment)
     const isUserVerified = passwordsState.isUnlocked && passwordsState.wasUserVerifiedRecently
     // A site that insists on the person proving who they are gets no answer
-    // from someone who did not: the window asks for the passphrase, and
+    // from someone who did not: the question asks for the passphrase, and
     // closing it answers the site with NotAllowedError.
     if (passwordsState.isUnlocked && prompt.userVerification === 'required' && !isUserVerified) {
       prompt.isDeciding = false
@@ -845,7 +908,6 @@ async function promptDecide(
             relyingPartyName: request.relyingPartyName,
             passkey: made.passkeyFields,
           })
-          suggestionCache.clear()
           return { replyOutcome: 'credential', credential: made.credential }
         }
         const request = prompt.assertion!.request
@@ -866,7 +928,7 @@ async function promptDecide(
     endPrompt(promptId, reply)
     return { isDone: true }
   } catch (error) {
-    // Locked or failed: the window stays, says why, and can still hand the
+    // Locked or failed: the question stays, says why, and can still hand the
     // request to the browser.
     prompt.isDeciding = false
     return describeError(error)
@@ -935,20 +997,25 @@ async function popupState(tabId: number | undefined, frameId: number | undefined
       isSetUp = (await chrome.storage.local.get(SET_UP_FLAG))[SET_UP_FLAG] === true
     }
   }
-  const target = await frameTargetState(tabId, frameId)
-  const pending = tabId === undefined ? null : capturedLogins.peek(tabId)
+  // The dropdown names its tab; the frame in it to fill is worked out here.
+  const resolvedFrameId = tabId === undefined ? 0 : (frameId ?? (await frameToFill(tabId)))
+  const target = await frameTargetState(tabId, resolvedFrameId)
+  const captured = tabId === undefined ? null : capturedLogins.peek(tabId)
+  const offer = captured && captured.password !== '' ? await describeOffer(captured).catch(() => null) : null
+  // A mark left from a login that is gone (expired, or saved as it is) goes.
+  if (tabId !== undefined && !offer) await unmarkSaveOffer(tabId)
   const passwordsState = await readPasswordsState(environment)
   return {
     isSignedIn: signedIn,
     isSetUp,
     isUnlocked: passwordsState.isUnlocked,
     serverOrigin: await readServerOrigin(),
+    frameId: resolvedFrameId,
     frameHost: target.frameHost,
     topHost: target.topHost,
     isFrameCrossOrigin: target.isFrameCrossOrigin,
-    hasPendingSave: pending !== null && pending.password !== '',
-    pendingSave:
-      pending && pending.password !== '' ? { host: normalizeHost(pending.pageUrl), userName: pending.userName } : null,
+    hasPendingSave: offer !== null,
+    pendingSave: offer ? { host: offer.host, userName: offer.userName, offerAction: offer.offerAction } : null,
   }
 }
 
@@ -959,15 +1026,22 @@ async function search(query: string, tabId: number | undefined, frameId: number 
     const items = await openItems(environment, keys, report)
     try {
       const logins = loginsOf(items)
-      const forThisSite = target.url ? sortLogins(loginsForPage(logins, target.url)) : []
-      const forThisSiteIds = new Set(forThisSite.map((login) => login.id))
       const words = query.trim().toLowerCase()
-      const others = sortLogins(logins).filter(
-        (login) =>
-          !forThisSiteIds.has(login.id) &&
-          (words === '' ||
-            [login.fields.name, login.fields.userName, ...login.fields.sites].join('\n').toLowerCase().includes(words)),
-      )
+      // The dropdown opens with the page's host in its search field: that
+      // asks for the logins saved for the page, by the same match as filling
+      // uses (a login saved for the site the page is under counts), and no
+      // other. Anything else typed searches every login by its words.
+      const isThisSiteAsked = words !== '' && words === target.frameHost.toLowerCase()
+      const matchesWords = (login: LoginItem) =>
+        words === '' ||
+        [login.fields.name, login.fields.userName, ...login.fields.sites].join('\n').toLowerCase().includes(words)
+      const forThisSite = target.url
+        ? sortLogins(loginsForPage(logins, target.url)).filter((login) => isThisSiteAsked || matchesWords(login))
+        : []
+      const forThisSiteIds = new Set(forThisSite.map((login) => login.id))
+      const others = isThisSiteAsked
+        ? []
+        : sortLogins(logins).filter((login) => !forThisSiteIds.has(login.id) && matchesWords(login))
       return {
         forThisSite: forThisSite.map(summaryOf),
         others: others.slice(0, 100).map(summaryOf),
@@ -1028,11 +1102,41 @@ async function fillInTab(message: Extract<PopupRequest, { type: 'passwords:fill-
     userName: fill.userName ?? '',
     password: fill.password ?? '',
     oneTimeCode: fill.oneTimeCode ?? '',
+    newPassword: '',
   }
   const answer = await chrome.tabs.sendMessage(message.tabId, fields, { frameId: message.frameId })
   return {
     filledCount: answer && typeof answer.filledCount === 'number' ? answer.filledCount : 0,
     foreignActionHost: answer && typeof answer.foreignActionHost === 'string' ? answer.foreignActionHost : '',
+  }
+}
+
+// fillGenerated puts a password the dropdown's generator made into the new
+// password fields of the page (the field and its confirmation). It is no
+// stored secret, so a form that sends elsewhere is not asked about; it still
+// goes to no page of the dashboard's own Passwords, and to no tab the agent is
+// working in, where the page's own input looks like the person's.
+async function fillGenerated(
+  message: Extract<PopupRequest, { type: 'passwords:fill-generated' }>,
+): Promise<FillInTabAnswer> {
+  if (message.password === '') throw new Error('Generate a password first.')
+  const url = await describeFrame(message.tabId, message.frameId)
+  if (!url) throw new Error('There is no page to fill here.')
+  if (await isOwnPasswordsPage(url)) throw new Error(OWN_PAGE_REFUSAL.error)
+  if (await agentActivity.isAgentDriving(message.tabId)) throw new Error(AGENT_TAB_REFUSAL.error)
+  const fields: FillFieldsMessage = {
+    type: 'passwords:fill-fields',
+    origin: originOf(url),
+    isForeignActionConfirmed: true,
+    userName: '',
+    password: '',
+    oneTimeCode: '',
+    newPassword: message.password,
+  }
+  const answer = await chrome.tabs.sendMessage(message.tabId, fields, { frameId: message.frameId })
+  return {
+    filledCount: answer && typeof answer.filledCount === 'number' ? answer.filledCount : 0,
+    foreignActionHost: '',
   }
 }
 
@@ -1076,8 +1180,13 @@ async function handlePageRequest(message: PopupRequest): Promise<unknown> {
       })
     case 'passwords:fill-in-tab':
       return fillInTab(message)
+    case 'passwords:fill-generated':
+      return fillGenerated(message)
     case 'passwords:save-pending':
       return saveCaptured(message.tabId)
+    case 'passwords:dismiss-pending':
+      await forgetCaptured(message.tabId)
+      return { isDone: true }
     case 'passwords:dismiss-owner-key':
       // The person dismissed the notice about an owner's changed key in the
       // window. The key stays the one used for the owner.
@@ -1088,9 +1197,6 @@ async function handlePageRequest(message: PopupRequest): Promise<unknown> {
       if (origin) await chrome.tabs.create({ url: `${origin}/passwords` })
       return { isDone: true }
     }
-    case 'passwords:open-popup-window':
-      await openPopupWindow({})
-      return { isDone: true }
     case 'passwords:prompt-info':
       return promptInfo(message.promptId)
     case 'passwords:prompt-decide':
@@ -1103,14 +1209,9 @@ async function handlePageRequest(message: PopupRequest): Promise<unknown> {
 // Wiring
 
 const CONTENT_TYPES = new Set([
-  'passwords:suggest',
-  'passwords:fill',
-  'passwords:fill-code',
-  'passwords:generate',
+  'passwords:field-focused',
   'passwords:captured',
   'passwords:page-ready',
-  'passwords:bar-answer',
-  'passwords:open-popup',
   'passwords:passkey',
   'passwords:passkey-cancel',
 ])
@@ -1141,6 +1242,14 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (
 // answer later; a tab that is closed or navigated away ends its question.
 chrome.tabs.onRemoved.addListener((tabId: number) => {
   capturedLogins.forget(tabId)
+  focusedFrames.delete(tabId)
+  void readSaveMarkedTabs()
+    .then((marked) =>
+      marked.includes(tabId)
+        ? chrome.storage.session.set({ [SAVE_MARKED_TABS_KEY]: marked.filter((each) => each !== tabId) })
+        : undefined,
+    )
+    .catch(() => {})
   agentActivity.forget(tabId)
   passkeyPausedUntilMilliseconds.delete(tabId)
   for (const key of cancelledAtMilliseconds.keys()) {
@@ -1152,7 +1261,7 @@ chrome.tabs.onRemoved.addListener((tabId: number) => {
 
 // A page that finished loading after a sign-in was sent: if a login is waiting
 // to be saved, the top frame is asked whether it still shows a password field
-// (a sign-in that failed does), and otherwise shows the bar.
+// (a sign-in that failed does), and otherwise the button is marked.
 chrome.tabs.onUpdated.addListener(async (tabId: number, changeInfo: { status?: string; url?: string }) => {
   // A tab that went to another address ends the question its old page asked.
   if (typeof changeInfo.url === 'string') {
@@ -1167,13 +1276,9 @@ chrome.tabs.onUpdated.addListener(async (tabId: number, changeInfo: { status?: s
   try {
     const probe = await chrome.tabs.sendMessage(tabId, { type: 'passwords:probe' }, { frameId: 0 })
     if (!probe || probe.hasPasswordField !== false) return
-    const offer = await offerFor(tabId)
-    if (offer)
-      await chrome.tabs.sendMessage(tabId, { type: 'passwords:show-bar', offer } satisfies ShowBarMessage, {
-        frameId: 0,
-      })
+    await offerToSave(tabId)
   } catch {
-    // The page has no content script (an internal page): nothing to show.
+    // The page has no content script (an internal page): nothing to offer.
   }
 })
 
@@ -1209,18 +1314,28 @@ chrome.runtime.onInstalled.addListener(() => {
 })
 
 chrome.contextMenus.onClicked.addListener(
-  (info: { menuItemId: string; frameId?: number }, tab: { id?: number } | undefined) => {
+  (info: { menuItemId: string; frameId?: number }, tab: { id?: number; windowId?: number } | undefined) => {
     if (info.menuItemId !== CONTEXT_MENU_ID || !tab || typeof tab.id !== 'number') return
-    void openPopupWindow({ tabId: tab.id, frameId: info.frameId ?? 0 })
+    focusedFrames.set(tab.id, info.frameId ?? 0)
+    void openPasswords(tab)
   },
 )
 
+// The keyboard shortcut opens the button's dropdown for the tab in front.
+// The frame with the focus is read first: once the dropdown is open, the page
+// no longer has it.
 chrome.commands.onCommand.addListener(async (command: string) => {
   if (command !== 'fill-login') return
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
   if (!tab || typeof tab.id !== 'number') return
-  await openPopupWindow({ tabId: tab.id, frameId: await frameWithFocus(tab.id) })
+  const focusedFrameId = await frameWithFocus(tab.id)
+  if (focusedFrameId !== null) focusedFrames.set(tab.id, focusedFrameId)
+  await openPasswords(tab)
 })
+
+// A worker started again has lost the logins waiting to be saved: the marks
+// for them go too.
+void unmarkAllSaveOffers().catch(() => {})
 
 // A worker started again after the lock time must not leave keys behind, and
 // one started while Passwords is open keeps the alarm that locks it.

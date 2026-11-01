@@ -45,22 +45,17 @@ import { inPage } from './inPage'
 
 import {
   OWN_PAGES_REFUSAL,
-  PANEL_ELEMENT_REFUSAL,
   REQUEST_BODY_REFUSAL,
   addressRefusal,
   cdpParametersRefusal,
   cdpRefusal,
   fetchRefusal,
-  handOverToken,
   isOwnPage,
-  isPanelFrame,
   isRequestShown,
   networkEventsShown,
   newRequestRecord,
   noteRequestEvent,
   pageRefusal,
-  panelProbe,
-  panelRefusal,
   serverHostname,
 } from './reach.js'
 
@@ -79,7 +74,7 @@ const scriptedOriginsRestored = chrome.storage.local
   .then((stored) => scriptedOrigins.replace(stored && stored[SCRIPTED_ORIGINS_KEY]))
   .catch(() => {})
 // attached is the tab the actions go to and the person's own tab, either of
-// which may be none: ownTabId is theirs, attached through the panel, and
+// which may be none: ownTabId is theirs, attached through the side panel, and
 // tabId the one actions go to -- theirs, or one the agent opened.
 const attached = { tabId: null, ownTabId: null, title: '', url: '' }
 // groups are the "TeaNode" tab groups the agent's tabs live in, by window.
@@ -214,7 +209,7 @@ async function attach(tab) {
   } else if (!socket) {
     connect(origin, secret)
   }
-  tellPanels()
+  tellSidePanel()
 }
 
 // detach gives the person's tab back. The connection stays: the agent can
@@ -234,7 +229,7 @@ async function detach() {
   }
   await current().catch(() => {})
   showState()
-  tellPanels()
+  tellSidePanel()
 }
 
 // disconnect closes the connection for good, as signing out does.
@@ -257,7 +252,7 @@ function disconnect() {
   void useTab(null)
   void rememberOwn()
   setBadge('')
-  tellPanels()
+  tellSidePanel()
 }
 
 // tellServer says which tab the actions go to, whether there is one, and
@@ -354,7 +349,7 @@ function connect(origin, secret) {
       }
       attempt = 0
       showState()
-      tellPanels()
+      tellSidePanel()
       // What the tabs committed while the server was away.
       tellServer()
       return
@@ -393,7 +388,7 @@ function connect(origin, secret) {
     clearInterval(pings)
     letEveryDebuggerGo()
     socket = null
-    tellPanels()
+    tellSidePanel()
     // Put it back, slower each time, up to half a minute, while the
     // extension is still signed in.
     setBadge('…', '#a80')
@@ -444,12 +439,14 @@ chrome.storage.onChanged.addListener((changes, area) => {
   void connectIfSignedIn()
 })
 
-// tellPanels says to the open panels whether their tab is the one attached,
-// so their button reads right; a page without a panel does not mind.
-async function tellPanels() {
-  const tabs = await chrome.tabs.query({})
-  for (const tab of tabs) {
-    chrome.tabs.sendMessage(tab.id, { type: 'state', attached: attached.ownTabId === tab.id }).catch(() => {})
+// tellSidePanel says to the open side panels which tab is attached, so their
+// button reads right. With no side panel open nobody listens, and the failed
+// send is not an error.
+function tellSidePanel() {
+  try {
+    chrome.runtime.sendMessage({ type: 'state', attachedTabId: attached.ownTabId }).catch(() => {})
+  } catch {
+    // Nobody to tell.
   }
 }
 
@@ -1032,18 +1029,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true
 })
 
-// panelIn is where the person's TeaNode panel is in a tab now, read from the
-// page: see panelProbe. A page the extension cannot run a script in cannot
-// have the panel on it either, since the panel is put there by a script.
-async function panelIn(tabId) {
-  try {
-    const [probed] = await chrome.scripting.executeScript({ target: { tabId }, func: panelProbe })
-    return (probed && probed.result) || { isOpen: false }
-  } catch {
-    return { isOpen: false }
-  }
-}
-
 // act does one action in the attached tab: navigation here, everything
 // else in the page through the content script; fetch through the tab's
 // own session.
@@ -1183,12 +1168,6 @@ async function act(action, args) {
         // Attaching takes a moment, in which the page may have gone to TeaNode.
         const unreachableNow = pageRefusal(action, await chrome.tabs.get(tab.id), origin)
         if (unreachableNow) return { ok: false, error: unreachableNow }
-        // Input dispatched where the panel is would be a click in TeaNode
-        // itself, as the person's hand. Read as late as it can be.
-        if (args.method.startsWith('Input.')) {
-          const covered = panelRefusal(args.method, args.params, await panelIn(tab.id))
-          if (covered) return { ok: false, error: covered }
-        }
         const answer = await chrome.debugger.sendCommand({ tabId: tab.id }, args.method, args.params || {})
         return { ok: true, data: { result: answer === undefined ? null : answer } }
       }
@@ -1252,16 +1231,13 @@ async function act(action, args) {
       const unwelcome = fetchRefusal(args.url, tab.url, origin)
       if (unwelcome) return { ok: false, error: unwelcome }
     }
-    // An element the panel covers is not clicked, hovered, typed into or
-    // chosen in: the person would see it happen under the panel.
-    const panel = ['click', 'hover', 'type', 'select'].includes(action) ? await panelIn(tab.id) : { isOpen: false }
     const runInPage = async () => {
       const [result] = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: inPage,
         // Whether the tab shows a filled document is the worker's to say, never
         // the caller's: it is set after whatever came with the action.
-        args: [action, { ...args, isFilledDocument }, serverHostname(origin), OWN_PAGES_REFUSAL, panel, PANEL_ELEMENT_REFUSAL],
+        args: [action, { ...args, isFilledDocument }, serverHostname(origin), OWN_PAGES_REFUSAL],
       })
       return { answer: result?.result || { ok: false, error: 'the page did not answer' }, documentId: result?.documentId || '' }
     }
@@ -1346,180 +1322,62 @@ function waitForLoad(tabId) {
   })
 }
 
-// The panel's script runs inside the page the person pressed the button on:
-// it is a content script, not a page of the extension, so what it asks of this
-// worker is not told from what it says. It is told by where it comes from and
-// when: the worker itself put the script into that tab, and only just, when
-// the button was pressed. The token goes to a tab only in the few seconds after
-// that, once; the other requests (attach, detach, the place the panel was left
-// at) only from a tab that has the panel in its current page. Any other
-// content script, and any frame of a page, is refused.
-const PANEL_TOKEN_GRANT_MILLISECONDS = 10000
-const PANEL_STORAGE_KEY = 'panelTabs'
-
-async function readPanelTabs() {
-  const stored = (await chrome.storage.session.get(PANEL_STORAGE_KEY))[PANEL_STORAGE_KEY]
-  return {
-    tabs: stored && Array.isArray(stored.tabs) ? stored.tabs.filter((id) => typeof id === 'number') : [],
-    grants: stored && stored.grants && typeof stored.grants === 'object' ? stored.grants : {},
-  }
+// The side panel is a page of the extension, framing the dashboard's drawer.
+// What it asks of this worker is answered only for that page: from this
+// extension, and from sidepanel.html itself, not from another page of the
+// extension. A content script in a website sends with the website's address,
+// and no website can open a page of the extension (the manifest lists none it
+// may load), so the address is the guard; the same page opened in a tab is
+// still the extension's own.
+function isSidePanel(sender) {
+  if (!sender || sender.id !== chrome.runtime.id || typeof sender.url !== 'string') return false
+  const address = chrome.runtime.getURL('sidepanel.html')
+  if (!sender.url.startsWith(address)) return false
+  // Not sidepanel.html.evil or sidepanel.htmlx: the address ends there, or
+  // goes on with a query or a fragment.
+  const rest = sender.url.slice(address.length)
+  return rest === '' || rest.startsWith('?') || rest.startsWith('#')
 }
 
-async function writePanelTabs(panel) {
-  await chrome.storage.session.set({ [PANEL_STORAGE_KEY]: panel })
-}
-
-async function markPanelPressed(tabId) {
-  const panel = await readPanelTabs()
-  if (!panel.tabs.includes(tabId)) panel.tabs.push(tabId)
-  panel.grants[tabId] = Date.now()
-  await writePanelTabs(panel)
-}
-
-async function forgetPanelTab(tabId) {
-  const panel = await readPanelTabs()
-  if (!panel.tabs.includes(tabId) && !(tabId in panel.grants)) return
-  panel.tabs = panel.tabs.filter((id) => id !== tabId)
-  delete panel.grants[tabId]
-  await writePanelTabs(panel)
-}
-
-// isPanelSender says whether a message is from the panel script in the top
-// frame of a tab that has it. With wantsToken it must also be within the few
-// seconds after the button was pressed, and the grant is used up.
-async function isPanelSender(sender, wantsToken) {
-  if (!sender || sender.id !== chrome.runtime.id || !sender.tab || typeof sender.tab.id !== 'number') return false
-  if (sender.frameId !== undefined && sender.frameId !== 0) return false
-  const panel = await readPanelTabs()
-  if (!panel.tabs.includes(sender.tab.id)) return false
-  if (!wantsToken) return true
-  const pressedAt = panel.grants[sender.tab.id]
-  if (typeof pressedAt !== 'number' || Date.now() - pressedAt > PANEL_TOKEN_GRANT_MILLISECONDS) return false
-  delete panel.grants[sender.tab.id]
-  await writePanelTabs(panel)
-  return true
-}
-
-// The button opens the agent's panel on the page: the dashboard's own
-// drawer, framed, or the dashboard's drawer itself when the page is the
-// dashboard. Where nothing can be put on the page, the options open.
-chrome.action.onClicked.addListener(async (tab) => {
-  try {
-    await markPanelPressed(tab.id)
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['panel.js'] })
-  } catch {
-    await forgetPanelTab(tab.id).catch(() => {})
-    chrome.runtime.openOptionsPage()
-  }
-})
-
-// A tab that loads a new page no longer has the panel in it.
-chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (info.status === 'loading') void forgetPanelTab(tabId).catch(() => {})
-})
-
-const PANEL_GEOMETRY_PREFIX = 'panel:geometry:'
-
-function panelGeometryKey(sender) {
-  try {
-    return PANEL_GEOMETRY_PREFIX + new URL(sender.url).origin
-  } catch {
-    return null
-  }
-}
-
-function isPanelGeometry(value) {
-  return (
-    !!value &&
-    ['across', 'down', 'width', 'height'].every((name) => typeof value[name] === 'number' && Number.isFinite(value[name]))
-  )
-}
-
-// handedNonces are the panels whose frame has been handed the token: once
-// each.
-const handedNonces = new Set()
-
-// handToken hands the person's token to the panel's frame, in the frame's own
-// world, and says whether it took it. See reach.js for why the frame is found
-// by a nonce and the token is in no address. The frame may still be starting,
-// so it is looked for and asked for a few seconds.
-async function handToken(tabId, nonce) {
-  if (typeof nonce !== 'string' || nonce.length < 16 || handedNonces.has(nonce)) return false
-  const [origin, secret] = await Promise.all([serverOrigin(), token()])
-  let own
-  try {
-    own = new URL(origin).origin
-  } catch {
-    return false
-  }
-  if (!secret) return false
-  handedNonces.add(nonce)
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try {
-      const found = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: isPanelFrame, args: [own, nonce] })
-      const match = found.find((one) => one.result === true)
-      if (match) {
-        const [handed] = await chrome.scripting.executeScript({
-          target: { tabId, frameIds: [match.frameId] },
-          world: 'MAIN',
-          func: handOverToken,
-          args: [secret, own, nonce],
-        })
-        if (handed && handed.result === true) return true
-      }
-    } catch {
-      // A frame that is not there yet, or a page that cannot be scripted.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250))
-  }
-  handedNonces.delete(nonce)
-  return false
-}
-
-// What the panel asks of this worker.
+// What the side panel asks of this worker.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const type = message && message.type
-  if (typeof type !== 'string' || !type.startsWith('panel:')) return false
-  const tab = sender.tab
-  isPanelSender(sender, type === 'panel:token').then(async (isAllowed) => {
-    if (!isAllowed) return sendResponse(type === 'panel:handoff' ? false : { error: 'Not allowed from here.' })
+  if (typeof type !== 'string' || !type.startsWith('sidepanel:')) return false
+  if (!isSidePanel(sender)) {
+    sendResponse({ error: 'Not allowed from here.' })
+    return false
+  }
+  void (async () => {
     switch (type) {
-      case 'panel:token': {
+      case 'sidepanel:state': {
         const [server, secret, { username }] = await Promise.all([
           serverOrigin(),
           token(),
           chrome.storage.local.get('username'),
         ])
-        // The token itself stays here: the panel gets only whether there is one.
-        return sendResponse({ server, isSignedIn: !!secret, username: username || '', attached: attached.ownTabId === tab.id })
+        // The token itself is asked for separately, once the frame has loaded.
+        return { server, isSignedIn: !!secret, username: username || '', attachedTabId: attached.ownTabId }
       }
-      case 'panel:handoff':
-        return sendResponse(await handToken(tab.id, message.nonce))
-      case 'panel:options':
-        chrome.runtime.openOptionsPage()
-        return sendResponse({})
-      case 'panel:attach':
-        await attach(tab)
-        return sendResponse({ attached: attached.ownTabId === tab.id })
-      case 'panel:detach':
+      case 'sidepanel:token':
+        // This sender is the extension's own page, so it is handed the token
+        // itself: it posts it to the server's frame and to nobody else.
+        return { token: (await token()) || '' }
+      case 'sidepanel:attach': {
+        if (typeof message.tabId !== 'number') return { error: 'Unknown tab.' }
+        await attach(await chrome.tabs.get(message.tabId))
+        return { attachedTabId: attached.ownTabId }
+      }
+      case 'sidepanel:detach':
         await detach()
-        return sendResponse({ attached: false })
-      case 'panel:geometry-read': {
-        const key = panelGeometryKey(sender)
-        const stored = key ? (await chrome.storage.local.get(key))[key] : null
-        return sendResponse({ geometry: isPanelGeometry(stored) ? stored : null })
-      }
-      case 'panel:geometry-write': {
-        const key = panelGeometryKey(sender)
-        if (key && isPanelGeometry(message.geometry)) {
-          const { across, down, width, height } = message.geometry
-          await chrome.storage.local.set({ [key]: { across, down, width, height } })
-        }
-        return sendResponse({})
-      }
+        return { attachedTabId: attached.ownTabId }
+      case 'sidepanel:options':
+        chrome.runtime.openOptionsPage()
+        return {}
     }
-    return sendResponse({ error: 'Unknown request.' })
-  }).catch(() => sendResponse({ error: 'Something went wrong.' }))
+    return { error: 'Unknown request.' }
+  })()
+    .then(sendResponse)
+    .catch(() => sendResponse({ error: 'Something went wrong.' }))
   return true
 })
 
@@ -1549,7 +1407,6 @@ if (chrome.webNavigation) {
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  void forgetPanelTab(tabId).catch(() => {})
   forgetCast(tabId)
   documents.forget(tabId)
   // A worker that was asleep reads back what it kept, which still holds this

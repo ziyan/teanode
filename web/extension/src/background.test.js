@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   OWN_PAGES_REFUSAL,
-  PANEL_ELEMENT_REFUSAL,
-  PANEL_KEYS_REFUSAL,
-  PANEL_REFUSAL,
   REQUEST_BODY_REFUSAL,
 } from './reach.js'
 
@@ -52,7 +49,6 @@ async function load(
   {
     current = tabs[0].id,
     opened = [],
-    panel = { isOpen: false },
     runPage = false,
     storedServer = serverOrigin,
     syncedServer,
@@ -64,14 +60,11 @@ async function load(
   )
   const calls = { debuggerSent: [], debuggerAttached: [], scripts: [], created: [], updated: [] }
   globalThis.WebSocket = FakeSocket
-  // The session storage keeps what the worker puts in it. The button has just
-  // been pressed on the person's own tab, which is what lets that tab's panel
-  // speak to the worker (see isPanelSender).
+  // The session storage keeps what the worker puts in it.
   const session = {
     ownTabId: tabs[0].id,
     tabId: current,
     opened,
-    panelTabs: { tabs: [tabs[0].id], grants: { [tabs[0].id]: Date.now() } },
   }
   const local = {}
   globalThis.chrome = {
@@ -90,8 +83,10 @@ async function load(
       },
       onChanged: listenerSet(),
     },
-    action: { setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn(), onClicked: listenerSet() },
+    action: { setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn() },
     runtime: {
+      getURL: (path) => 'chrome-extension://extension-id/' + path,
+      sendMessage: vi.fn(async () => {}),
       onStartup: listenerSet(),
       onInstalled: listenerSet(),
       onMessage: listenerSet(),
@@ -125,8 +120,6 @@ async function load(
     windows: { getLastFocused: vi.fn(async () => ({ id: 1 })), create: vi.fn(async () => ({ id: 2 })) },
     scripting: {
       executeScript: vi.fn(async (injection) => {
-        // The worker looking for the panel on the page takes no arguments.
-        if (!injection.args) return [{ result: panel }]
         calls.scripts.push(injection)
         if (runPage) return [{ result: await injection.func(...injection.args) }]
         return [{ result: { ok: true, data: { ran: injection.args[0] } } }]
@@ -161,22 +154,26 @@ async function load(
     )
     return socket.sent.find((message) => message.type === 'result' && message.id === id)
   }
-  // What the panel's content script says to the worker, answered on the callback.
-  const fromPanel = (message, tab = { id: tabs[0].id }) =>
+  // What a page of the extension, or a script in a page, says to the worker,
+  // answered on the callback. The side panel is the default sender: a page of
+  // the extension itself, with no tab.
+  const fromSender = (message, sender = {}) =>
     new Promise((resolve) => {
-      const sender = { id: 'extension-id', frameId: 0, tab: tab || undefined }
+      const full = { id: 'extension-id', url: 'chrome-extension://extension-id/sidepanel.html', ...sender }
       // The worker has more than one listener for messages; the one that
-      // answers keeps the channel open.
-      let keepsOpen = false
-      for (const [listener] of globalThis.chrome.runtime.onMessage.addListener.mock.calls) {
-        if (listener(message, sender, resolve) === true) {
-          keepsOpen = true
-          break
-        }
+      // answers keeps the channel open or answers at once.
+      let isAnswered = false
+      const answer = (value) => {
+        isAnswered = true
+        resolve(value)
       }
-      if (!keepsOpen) resolve(undefined)
+      for (const [listener] of globalThis.chrome.runtime.onMessage.addListener.mock.calls) {
+        if (listener(message, full, answer) === true) return
+        if (isAnswered) return
+      }
+      resolve(undefined)
     })
-  return { ask, calls, chrome: globalThis.chrome, socket, fromPanel }
+  return { ask, calls, chrome: globalThis.chrome, socket, fromSender }
 }
 
 const ownTab = (url) => ({ id: 7, url })
@@ -383,163 +380,7 @@ describe('a tab that shows TeaNode or an extension page', () => {
   })
 })
 
-describe("the person's TeaNode panel on the page", () => {
-  // The panel is at the right of a 1280 by 800 viewport, and its frame has focus or not.
-  const panelAt = (hasFocus = false) => ({ isOpen: true, left: 840, top: 20, right: 1280, bottom: 780, hasFocus })
-  const ordinary = [ownTab('https://shop.example.org/cart')]
-
-  it('is not clicked, tapped, scrolled, touched or typed at by the protocol', async () => {
-    const { ask, calls } = await load(ordinary, { panel: panelAt() })
-    for (const [method, params] of [
-      ['Input.dispatchMouseEvent', { type: 'mousePressed', x: 900, y: 100, button: 'left' }],
-      ['Input.dispatchMouseEvent', { type: 'mouseWheel', x: 1000, y: 400, deltaX: 0, deltaY: 100 }],
-      ['Input.dispatchMouseEvent', { type: 'mouseMoved', x: 840, y: 20 }],
-      ['Input.dispatchMouseEvent', { type: 'mouseReleased', x: 1280, y: 780 }],
-      ['Input.synthesizeTapGesture', { x: 900, y: 100 }],
-      ['Input.synthesizeScrollGesture', { x: 900, y: 100, yDistance: -200 }],
-      [
-        'Input.dispatchTouchEvent',
-        {
-          type: 'touchStart',
-          touchPoints: [
-            { x: 10, y: 10 },
-            { x: 900, y: 100 },
-          ],
-        },
-      ],
-    ]) {
-      const answer = await ask('cdp', { method, params })
-      expect(answer, `${method} ${JSON.stringify(params)}`).toEqual(
-        expect.objectContaining({ ok: false, error: PANEL_REFUSAL }),
-      )
-    }
-    expect(calls.debuggerSent).toEqual([])
-  })
-
-  it('leaves the rest of the page to the agent', async () => {
-    const { ask, calls } = await load(ordinary, { panel: panelAt() })
-    expect(
-      await ask('cdp', {
-        method: 'Input.dispatchMouseEvent',
-        params: { type: 'mousePressed', x: 400, y: 300, button: 'left' },
-      }),
-    ).toMatchObject({ ok: true })
-    expect(
-      await ask('cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: 839, y: 300 } }),
-    ).toMatchObject({ ok: true })
-    expect(
-      await ask('cdp', {
-        method: 'Input.dispatchTouchEvent',
-        params: { type: 'touchStart', touchPoints: [{ x: 10, y: 10 }] },
-      }),
-    ).toMatchObject({ ok: true })
-    expect(
-      await ask('cdp', { method: 'Input.dispatchKeyEvent', params: { type: 'keyDown', key: 'a', text: 'a' } }),
-    ).toMatchObject({ ok: true })
-    expect(await ask('cdp', { method: 'Input.insertText', params: { text: 'hello' } })).toMatchObject({ ok: true })
-    expect(await ask('cdp', { method: 'Runtime.evaluate', params: { expression: '1' } })).toMatchObject({ ok: true })
-    expect(calls.debuggerSent).toHaveLength(6)
-  })
-
-  it('is not typed into by the protocol while its frame has focus', async () => {
-    const { ask, calls } = await load(ordinary, { panel: panelAt(true) })
-    for (const [method, params] of [
-      ['Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter' }],
-      ['Input.insertText', { text: 'yes' }],
-    ]) {
-      expect(await ask('cdp', { method, params }), method).toEqual(
-        expect.objectContaining({ ok: false, error: PANEL_KEYS_REFUSAL }),
-      )
-    }
-    // Points outside it are still the agent's, and focus moves with a click there.
-    expect(
-      await ask('cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: 100, y: 100 } }),
-    ).toMatchObject({ ok: true })
-    expect(calls.debuggerSent).toHaveLength(1)
-  })
-
-  it('does not stop anything when it is closed, or absent', async () => {
-    for (const panel of [{ isOpen: false }, undefined]) {
-      const { ask } = await load(ordinary, { panel })
-      expect(
-        await ask('cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: 900, y: 100 } }),
-      ).toMatchObject({ ok: true })
-      expect(await ask('cdp', { method: 'Input.insertText', params: { text: 'a' } })).toMatchObject({ ok: true })
-    }
-  })
-
-  it('is looked for again at every call, so a panel that moved is where it is now', async () => {
-    const { ask, chrome } = await load(ordinary, { panel: panelAt() })
-    chrome.scripting.executeScript.mockImplementation(async (injection) =>
-      injection.args
-        ? [{ result: {} }]
-        : [{ result: { isOpen: true, left: 0, top: 0, right: 200, bottom: 200, hasFocus: false } }],
-    )
-    expect(
-      await ask('cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: 900, y: 100 } }),
-    ).toMatchObject({ ok: true })
-    expect(
-      await ask('cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: 100, y: 100 } }),
-    ).toEqual(expect.objectContaining({ ok: false, error: PANEL_REFUSAL }))
-  })
-
-  describe('an element under it', () => {
-    const under = { left: 900, right: 1000, top: 100, bottom: 130, width: 100, height: 30 }
-    const clear = { left: 100, right: 200, top: 100, bottom: 130, width: 100, height: 30 }
-    let button
-
-    beforeEach(() => {
-      document.body.innerHTML =
-        '<button id="b">Approve</button><select id="s"><option value="a">A</option></select><input id="i">'
-      button = document.getElementById('b')
-      for (const element of document.body.children) {
-        element.scrollIntoView = () => {}
-        element.getBoundingClientRect = () => under
-      }
-      button.click = vi.fn()
-    })
-
-    afterEach(() => {
-      document.body.innerHTML = ''
-    })
-
-    const ask = async (action, args, box) => {
-      const { ask: asked, calls } = await load(ordinary, { panel: panelAt(), runPage: true })
-      for (const element of document.body.children) element.getBoundingClientRect = () => box
-      // The page's refs: the worker's script numbers what a snapshot lists.
-      window.__teanodeRefs = new Map([
-        [1, button],
-        [2, document.getElementById('s')],
-        [3, document.getElementById('i')],
-      ])
-      return { answer: await asked(action, args), calls }
-    }
-
-    it('is not clicked, hovered, typed into or chosen in', async () => {
-      for (const [action, args] of [
-        ['click', { ref: 1 }],
-        ['hover', { ref: 1 }],
-        ['type', { ref: 3, text: 'x' }],
-        ['select', { ref: 2, value: 'a' }],
-      ]) {
-        const { answer } = await ask(action, args, under)
-        expect(answer, action).toEqual(expect.objectContaining({ ok: false, error: PANEL_ELEMENT_REFUSAL }))
-      }
-      expect(button.click).not.toHaveBeenCalled()
-      expect(document.getElementById('i').value).toBe('')
-    })
-
-    it('is acted in as ever when the panel is clear of it', async () => {
-      const { answer } = await ask('click', { ref: 1 }, clear)
-      expect(answer).toMatchObject({ ok: true })
-      expect(button.click).toHaveBeenCalledTimes(1)
-      expect((await ask('type', { ref: 3, text: 'x' }, clear)).answer).toMatchObject({ ok: true })
-      expect(document.getElementById('i').value).toBe('x')
-    })
-  })
-})
-
-describe("what reaches into the panel's frame", () => {
+describe('what reaches into the frames of a page', () => {
   const ordinary = [ownTab('https://shop.example.org/cart')]
 
   it('is not sent: pierce, another context, another frame', async () => {
@@ -718,67 +559,95 @@ describe('the server address the token is sent to', () => {
   })
 })
 
-describe("the person's token and the panel", () => {
-  const ordinary = [ownTab('https://shop.example.org/cart')]
-  const nonce = '0b9c5f0e-6a53-4d3e-8d0a-0a1b2c3d4e5f'
+describe('the side panel', () => {
+  const ordinary = [ownTab('https://shop.example.org/cart'), { id: 8, url: 'https://shop.example.org/other' }]
+  const sidePanelPage = 'chrome-extension://extension-id/sidepanel.html'
+  const types = ['sidepanel:state', 'sidepanel:token', 'sidepanel:attach', 'sidepanel:detach', 'sidepanel:options']
 
-  it("is not given to the panel's content script, which is in the page", async () => {
-    const { fromPanel } = await load(ordinary)
-    const answer = await fromPanel({ type: 'panel:token' })
-    expect(answer).toMatchObject({ server: serverOrigin, isSignedIn: true, username: '' })
+  it('is told who is signed in, which tab is attached, and not the token', async () => {
+    const { fromSender } = await load(ordinary)
+    const answer = await fromSender({ type: 'sidepanel:state' })
+    expect(answer).toEqual({ server: serverOrigin, isSignedIn: true, username: '', attachedTabId: 7 })
     expect(JSON.stringify(answer)).not.toContain('a-token')
   })
 
-  it("is handed once to the frame that has the panel's nonce, in its own world, and is in no address", async () => {
-    const { fromPanel, chrome } = await load(ordinary)
-    chrome.scripting.executeScript.mockImplementation(async (injection) => {
-      if (injection.target.allFrames)
-        return [
-          { frameId: 0, result: false },
-          { frameId: 5, result: false },
-          { frameId: 9, result: true },
-        ]
-      return [{ result: true }]
-    })
-    expect(await fromPanel({ type: 'panel:handoff', nonce })).toBe(true)
-    const [finding, handing] = chrome.scripting.executeScript.mock.calls.map(([injection]) => injection)
-    // Finding the frame carries no secret, and goes to every frame to ask.
-    expect(finding.args).toEqual([serverOrigin, nonce])
-    expect(JSON.stringify(finding)).not.toContain('a-token')
-    // The token goes to the one frame, in its own world.
-    expect(handing.target).toEqual({ tabId: 7, frameIds: [9] })
-    expect(handing.world).toBe('MAIN')
-    // What the frame is, checked where it runs, in the same call.
-    expect(handing.args).toEqual(['a-token', serverOrigin, nonce])
-    // Once: the same nonce again hands nothing.
-    chrome.scripting.executeScript.mockClear()
-    expect(await fromPanel({ type: 'panel:handoff', nonce })).toBe(false)
-    expect(chrome.scripting.executeScript).not.toHaveBeenCalled()
+  it('is given the token itself when it asks for it, as the extension page it is', async () => {
+    const { fromSender } = await load(ordinary)
+    expect(await fromSender({ type: 'sidepanel:token' })).toEqual({ token: 'a-token' })
+    // The address may carry a query or a fragment.
+    expect(await fromSender({ type: 'sidepanel:token' }, { url: sidePanelPage + '?x=1#y' })).toEqual({ token: 'a-token' })
+    expect(await fromSender({ type: 'sidepanel:token' }, { tab: { id: 7 } })).toEqual({ token: 'a-token' })
   })
 
-  it('is handed to nobody for a nonce that is not one, or from nowhere but a tab', async () => {
-    const { fromPanel, chrome } = await load(ordinary)
-    expect(await fromPanel({ type: 'panel:handoff', nonce: 'short' })).toBe(false)
-    expect(await fromPanel({ type: 'panel:handoff', nonce: undefined })).toBe(false)
-    expect(await fromPanel({ type: 'panel:handoff', nonce }, null)).toBe(false)
-    expect(chrome.scripting.executeScript).not.toHaveBeenCalled()
-  })
-
-  it('is handed again when the drawer was not ready the first time', async () => {
-    vi.useFakeTimers()
-    try {
-      const { fromPanel, chrome } = await load(ordinary)
-      let asked = 0
-      chrome.scripting.executeScript.mockImplementation(async (injection) => {
-        if (injection.target.allFrames) return [{ frameId: 4, result: true }]
-        return [{ result: ++asked >= 3 }]
-      })
-      const handing = fromPanel({ type: 'panel:handoff', nonce })
-      await vi.advanceTimersByTimeAsync(2000)
-      expect(await handing).toBe(true)
-      expect(asked).toBe(3)
-    } finally {
-      vi.useRealTimers()
+  it('is the only sender answered, in a tab or not: not a script in a page, not another page of the extension', async () => {
+    const { fromSender, chrome } = await load(ordinary)
+    chrome.tabs.get.mockClear()
+    const senders = {
+      'a content script in a website': { url: 'https://shop.example.org/cart', tab: { id: 7 } },
+      'another page of the extension': { url: 'chrome-extension://extension-id/options.html' },
+      'a page that only starts like it': { url: sidePanelPage + '.evil.html' },
+      'another extension': { id: 'someone-else' },
+      'no address at all': { url: undefined },
     }
+    for (const [what, sender] of Object.entries(senders)) {
+      for (const type of types) {
+        expect(await fromSender({ type, tabId: 8 }, sender), `${type} from ${what}`).toEqual({
+          error: 'Not allowed from here.',
+        })
+      }
+    }
+    expect(chrome.runtime.openOptionsPage).not.toHaveBeenCalled()
+    expect(chrome.tabs.get).not.toHaveBeenCalled()
+  })
+
+  it('leaves a message that is not for it to the others', async () => {
+    const { fromSender } = await load(ordinary)
+    expect(await fromSender({ type: 'something-else' })).toBeUndefined()
+    expect(await fromSender({ type: 'sidepanel:nothing-known' })).toEqual({ error: 'Unknown request.' })
+  })
+
+  it('opens the options on request', async () => {
+    const { fromSender, chrome } = await load(ordinary)
+    expect(await fromSender({ type: 'sidepanel:options' })).toEqual({})
+    expect(chrome.runtime.openOptionsPage).toHaveBeenCalledTimes(1)
+  })
+
+  it('attaches the tab it names, looked up in the browser, and says so to every side panel', async () => {
+    const { fromSender, chrome } = await load(ordinary)
+    chrome.runtime.sendMessage.mockClear()
+    expect(await fromSender({ type: 'sidepanel:attach', tabId: 8 })).toEqual({ attachedTabId: 8 })
+    expect(chrome.tabs.get).toHaveBeenCalledWith(8)
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'state', attachedTabId: 8 })
+    expect(await fromSender({ type: 'sidepanel:state' })).toMatchObject({ attachedTabId: 8 })
+  })
+
+  it('does not attach a tab it was not given a number for, or one that is not there', async () => {
+    const { fromSender } = await load(ordinary)
+    expect(await fromSender({ type: 'sidepanel:attach', tabId: '8' })).toEqual({ error: 'Unknown tab.' })
+    expect(await fromSender({ type: 'sidepanel:attach', tabId: 99 })).toEqual({ error: 'Something went wrong.' })
+    expect(await fromSender({ type: 'sidepanel:state' })).toMatchObject({ attachedTabId: 7 })
+  })
+
+  it('detaches, and says so to every side panel', async () => {
+    const { fromSender, chrome } = await load(ordinary)
+    chrome.runtime.sendMessage.mockClear()
+    expect(await fromSender({ type: 'sidepanel:detach' })).toEqual({ attachedTabId: null })
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'state', attachedTabId: null })
+  })
+
+  it('says so when the attached tab is closed', async () => {
+    const { chrome } = await load(ordinary)
+    chrome.runtime.sendMessage.mockClear()
+    const closed = chrome.tabs.onRemoved.addListener.mock.calls[0][0]
+    closed(7)
+    await vi.waitFor(() =>
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'state', attachedTabId: null }),
+    )
+  })
+
+  it('does not break attaching when nobody is listening', async () => {
+    const { fromSender, chrome } = await load(ordinary)
+    chrome.runtime.sendMessage.mockRejectedValue(new Error('Receiving end does not exist.'))
+    expect(await fromSender({ type: 'sidepanel:attach', tabId: 8 })).toEqual({ attachedTabId: 8 })
   })
 })

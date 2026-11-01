@@ -88,6 +88,37 @@ func TestSecurityPolicyAllowsPlaidOnlyForTheFinanceLinkPage(t *testing.T) {
 	}
 }
 
+// The drawer is framed by the browser extension's side panel and by nothing
+// else: any website could otherwise frame it, and every other page stays
+// unframeable.
+func TestDrawerPageMayOnlyBeFramedByAnExtension(t *testing.T) {
+	t.Parallel()
+
+	handler := web.MakeSecurityHeadersMiddleware([]string{"'sha256-abc'"}, nil)(
+		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			response.WriteHeader(http.StatusOK)
+		}))
+
+	policyFor := func(path string) string {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		return recorder.Header().Get("Content-Security-Policy")
+	}
+
+	drawerPolicy := policyFor(web.DrawerPagePath)
+	if !strings.HasSuffix(drawerPolicy, "frame-ancestors chrome-extension:") {
+		t.Errorf("the drawer is not limited to extension parents: %q", drawerPolicy)
+	}
+	if strings.Contains(drawerPolicy, "frame-ancestors *") || strings.Contains(drawerPolicy, "frame-ancestors 'none'") {
+		t.Errorf("the drawer's frame-ancestors is not only an extension: %q", drawerPolicy)
+	}
+	for _, path := range []string{"/", "/agent", web.CommandLinePagePath, web.FinanceLinkPagePath} {
+		if policy := policyFor(path); !strings.Contains(policy, "frame-ancestors 'none'") {
+			t.Errorf("%s may be framed: %q", path, policy)
+		}
+	}
+}
+
 // A browser that reached the server over TLS is told to keep to it, so a
 // hostname typed later does not go to the plain listener first. The header
 // is meaningless on a plain response and is not sent there.
