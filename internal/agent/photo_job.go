@@ -9,16 +9,19 @@ import (
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
 // The photo description job: a model looks at a photo's large preview and
-// writes what is in it, with the words it can read there. The description is
-// kept on the photo, embedded like other text, and searched from then on. A
-// photo is described only when somebody works with it (the agent looks at it,
-// or the person asks), never in the background
-// (docs/decisions/20261016-a-photo-is-described-when-somebody-looks-at-it.md).
+// writes what is in it, with the words it can read there, and says whether it
+// is a document the person keeps records of. The description is kept on the
+// photo, embedded like other text, and searched from then on; a document is
+// handed to the job that records it (photo_reading.go). A photo is described
+// when it is new (photo_reading.go) or when somebody works with it (the agent
+// looks at it, or the person asks)
+// (docs/decisions/20261031-a-new-photo-is-read-as-it-arrives.md).
 
 // QueuePhotoDescription asks for a photo of the agent's person to be
 // described. The photo is marked as asked for, which is how a viewer knows to
@@ -55,6 +58,17 @@ func (self *Agent) PhotoDescriptionUnavailableMessage(configuration *config.Conf
 type photoDescriptionAnswer struct {
 	PhotoDescription string         `json:"photoDescription"`
 	VisibleText      describedWords `json:"visibleText"`
+	DocumentKind     string         `json:"documentKind"`
+}
+
+// photoDocumentKind is the kind the answer gave, none for one it did not
+// or one the server does not know.
+func (self *photoDescriptionAnswer) photoDocumentKind() models.PhotoDocumentKind {
+	documentKind := models.PhotoDocumentKind(strings.TrimSpace(self.DocumentKind))
+	if !documentKind.IsValid() {
+		return models.PhotoDocumentNone
+	}
+	return documentKind
 }
 
 // describedWords is the words read in a picture: a string, one piece of text
@@ -156,7 +170,10 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 			return tx.ClearPhotoDescriptionRequest(ownerId, photoId)
 		})
 	}
-	visibleText := cutRunes(strings.TrimSpace(string(answer.Value.VisibleText)), db.MaximumPhotoVisibleTextCharacters)
+	// A paystub's or a tax form's taxpayer number is never kept in the words
+	// a search reads.
+	visibleText := cutRunes(strings.TrimSpace(finance.MaskTaxpayerNumbersInFile(string(answer.Value.VisibleText))), db.MaximumPhotoVisibleTextCharacters)
+	documentKind := answer.Value.photoDocumentKind()
 	// Embedded before the transaction: embedding is a call to another service.
 	// Without an embedding model, or when it fails, the photo is still found
 	// by its words.
@@ -179,6 +196,7 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 		}
 		if err := tx.SetPhotoDescription(ownerId, photoId, &db.PhotoDescription{
 			PhotoDescription: description, VisibleText: visibleText, ModelName: run.Configuration().Agent.Models.ForWork(config.AgentWorkScan),
+			PhotoDocumentKind: documentKind,
 		}); err != nil {
 			return err
 		}
@@ -196,8 +214,34 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 		self.retitle(ctx, run, thinking.Conversation, "Looked at a photo whose location changed meanwhile, and kept nothing")
 		return nil
 	}
-	self.retitle(ctx, run, thinking.Conversation, "Described a photo: "+cutRunes(description, 120))
+	title := "Described a photo: " + cutRunes(description, 120)
+	if documentKind != models.PhotoDocumentNone {
+		handedOn, err := self.handOnPhotoDocument(ctx, run, photo, documentKind, content, preview.ContentType)
+		if err != nil {
+			// The description is kept; the document is handed on when the
+			// photo is described again.
+			log.Warningf("cannot hand on the %s in photo %s: %s", documentKind, photoId, err)
+			handedOn = "not handed on: " + err.Error()
+		}
+		if handedOn != "" {
+			title += " (a " + photoDocumentWords(documentKind) + ", " + handedOn + ")"
+		}
+	}
+	self.retitle(ctx, run, thinking.Conversation, title)
 	return nil
+}
+
+// photoDocumentWords is a document kind in a run's title.
+func photoDocumentWords(documentKind models.PhotoDocumentKind) string {
+	switch documentKind {
+	case models.PhotoDocumentReceipt:
+		return "receipt"
+	case models.PhotoDocumentStatement:
+		return "statement"
+	case models.PhotoDocumentTaxDocument:
+		return "tax document"
+	}
+	return string(documentKind)
 }
 
 // refusePhotoDescription ends a request that cannot be served, saying why on

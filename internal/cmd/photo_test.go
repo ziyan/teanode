@@ -77,7 +77,8 @@ func TestPhotoParity(test *testing.T) {
 		"EmptyPhotoTrash": {client.DocumentEmptyPhotoTrash, []string{"empty-trash"}, []string{"empty-trash"}},
 		// Asking for a description is a person looking at one photo, or the
 		// agent looking at some.
-		"DescribePhoto": {client.DocumentDescribePhoto, []string{"describe"}, []string{"describe", "look"}},
+		"DescribePhoto":   {client.DocumentDescribePhoto, []string{"describe"}, []string{"describe", "look"}},
+		"SetPhotoReading": {client.DocumentSetPhotoReading, []string{"reading on", "reading off"}, []string{"reading"}},
 		// The command line sends a file itself, with upload, and keeps a file of
 		// a conversation with save --attachment; the agent saves a file of a
 		// conversation, a message or the computer.

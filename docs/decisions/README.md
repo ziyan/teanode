@@ -179,6 +179,10 @@ app's own library rather than its Photos library.
 model describes a photo only when somebody works with it, and why the
 description is kept and searched.
 
+`20261031-a-new-photo-is-read-as-it-arrives.md` says why a new photo is
+described as it arrives after all, and why a receipt, a statement or a tax
+document in one is recorded without being asked.
+
 `20261016-faces-are-found-on-the-server-and-named-from-contacts.md` says why
 faces are found by a separate C++ program in the image, and why a face group
 is nobody until it is linked to a contact.

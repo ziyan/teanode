@@ -86,6 +86,12 @@ type PhotoMutation interface {
 	// arrives in describedAt. A photo that has a description is left alone
 	// unless isRedescribed is true.
 	DescribePhoto(context.Context, DescribePhotoArguments) (*models.Photo, error)
+
+	// SetPhotoReading switches the reading of the person's new photos on or
+	// off and answers the new state: on, each new picture is described as
+	// it arrives and a receipt, a statement or a tax document in it is
+	// recorded. Off leaves what was read.
+	SetPhotoReading(context.Context, SetPhotoReadingArguments) (bool, error)
 }
 
 // photoPageSize is how many photos a page holds when the caller does not say.
@@ -148,6 +154,11 @@ type ListPhotosArguments struct {
 // PhotoArguments names one photo.
 type PhotoArguments struct {
 	PhotoID string `json:"photoId"`
+}
+
+// SetPhotoReadingArguments switches the reading of new photos on or off.
+type SetPhotoReadingArguments struct {
+	IsEnabled bool `json:"isEnabled"`
 }
 
 // DescribePhotoArguments names a photo to describe.
@@ -270,6 +281,12 @@ type PhotoLibraryView struct {
 	IsPhotoFaceRecognitionEnabled     bool   `json:"isPhotoFaceRecognitionEnabled"`
 	IsDescriptionAvailable            bool   `json:"isDescriptionAvailable"`
 	DescriptionUnavailableMessage     string `json:"descriptionUnavailableMessage"`
+
+	// IsPhotoReadingEnabled is the person's own switch for having their new
+	// pictures described as they arrive, and the receipts, statements and
+	// tax documents in them recorded. It does anything only while
+	// IsDescriptionAvailable.
+	IsPhotoReadingEnabled bool `json:"isPhotoReadingEnabled"`
 }
 
 // requirePhotosPerson is the caller, if they may keep a photo library.
@@ -742,6 +759,10 @@ func (self *graph) ReadPhotoLibrary(ctx context.Context) (*PhotoLibraryView, err
 	if err != nil {
 		return nil, translateError(err)
 	}
+	isReadingEnabled, err := transaction.IsPhotoReadingEnabled(principal.User.ID)
+	if err != nil {
+		return nil, translateError(err)
+	}
 	faceUnavailableMessage := photo.FaceRecognitionUnavailableMessage(self.config.Current())
 	return &PhotoLibraryView{
 		PhotoCount: counts.PhotoCount, VideoCount: counts.VideoCount, FavoriteCount: counts.FavoriteCount, TrashedCount: counts.TrashedCount,
@@ -752,6 +773,7 @@ func (self *graph) ReadPhotoLibrary(ctx context.Context) (*PhotoLibraryView, err
 		IsPhotoFaceRecognitionEnabled: isFaceRecognitionEnabled,
 		IsDescriptionAvailable:        descriptionUnavailableMessage == "",
 		DescriptionUnavailableMessage: descriptionUnavailableMessage,
+		IsPhotoReadingEnabled:         isReadingEnabled,
 	}, nil
 }
 
@@ -1065,6 +1087,17 @@ func (self *graph) DescribePhoto(ctx context.Context, arguments DescribePhotoArg
 		return nil, translateError(err)
 	}
 	return found, nil
+}
+
+func (self *graph) SetPhotoReading(ctx context.Context, arguments SetPhotoReadingArguments) (bool, error) {
+	principal, err := self.requirePhotosPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := self.transaction(ctx).SetPhotoReading(principal.User.ID, arguments.IsEnabled); err != nil {
+		return false, translateError(err)
+	}
+	return arguments.IsEnabled, nil
 }
 
 // SavePhotoFromAttachment keeps a file of the person's conversation with

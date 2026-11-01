@@ -124,6 +124,7 @@ func NewPhotoCommand() *cli.Command {
 			newPhotoAlbumCommand(),
 			newPhotoPeopleCommand(),
 			newPhotoFacesCommand(),
+			newPhotoReadingCommand(),
 		},
 	}
 }
@@ -427,6 +428,9 @@ func runPhotoRead(ctx context.Context, command *cli.Command) error {
 				}
 				fields = append(fields, [2]string{name, line})
 			}
+		}
+		if words := photoDocumentText(photo.PhotoDocumentKind); words != "" {
+			fields = append(fields, [2]string{"document", words})
 		}
 	case photo.IsDescriptionRequested:
 		fields = append(fields, [2]string{"description", "on its way"})
@@ -1185,5 +1189,6 @@ func runPhotoLibrary(ctx context.Context, command *cli.Command) error {
 		{"largest file", client.PhotoByteSizeText(library.MaximumFileBytes)},
 		{"Trash kept for", fmt.Sprintf("%d days", library.TrashRetentionDays)},
 		{"finding faces", photoFaceRecognitionText(library)},
+		{"reading new photos", photoReadingText(library)},
 	})
 }

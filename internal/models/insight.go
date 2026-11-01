@@ -502,6 +502,10 @@ type AgentAttachment struct {
 	// holds the person's taxpayer number, is never kept in Text.
 	IsTaxDocument bool `json:"isTaxDocument,omitempty"`
 
+	// PhotoID is the photo of the person's library the file was copied from
+	// to be read as a document, empty for any other file.
+	PhotoID string `json:"photoId,omitempty"`
+
 	// IsRemoved says the file went with the account that held it: the chat
 	// message it came with is kept, the file is not, and a screen says so
 	// where the file was.
