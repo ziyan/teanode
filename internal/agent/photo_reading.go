@@ -34,6 +34,11 @@ const (
 	// so that a day of a thousand pictures is read over a quarter of an hour
 	// rather than queued all at once.
 	photoReadingBatch = 10
+
+	// photoReadingWaitingMost is how many descriptions of one person may wait
+	// before more are queued: with a model slower than the sweep, the queue
+	// stays short and the person's own turns do not wait behind a backlog.
+	photoReadingWaitingMost = 2 * photoReadingBatch
 )
 
 // queuePhotoReading queues the description of each person's new photos,
@@ -65,7 +70,14 @@ func (self *Agent) queuePhotoReading(ctx context.Context, now time.Time) {
 			if err != nil || !isEnabled {
 				return err
 			}
-			photos, err := tx.ListPhotosToRead(agent.UserID, now.Add(-photoReadingWindow), photoReadingBatch)
+			waitingCount, err := tx.CountAgentJobs(&db.AgentJobFilter{
+				AgentID: agent.ID, Kinds: []models.AgentJobKind{models.AgentJobDescribePhoto},
+				Statuses: []models.AgentJobStatus{models.AgentJobQueued, models.AgentJobRunning},
+			})
+			if err != nil || waitingCount >= photoReadingWaitingMost {
+				return err
+			}
+			photos, err := tx.ListPhotosToRead(agent.UserID, now.Add(-photoReadingWindow), min(photoReadingBatch, photoReadingWaitingMost-int(waitingCount)))
 			if err != nil {
 				return err
 			}

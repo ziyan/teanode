@@ -321,12 +321,15 @@ up to ten new pictures of each person whose switch is on
 (`user.is_photo_reading_enabled`, on by default): ready, taken or added in the
 last thirty days, never described, asked for or queued before, not a video and
 not saved from somebody else's share. `photo.reading_queued_at` marks each one
-queued, so it is queued once.
+queued, so it is queued once. No more are queued while twenty descriptions of the
+person wait, so a backlog never fills the queue ahead of their own turns.
+The words a description keeps, and the run that wrote them, have taxpayer
+numbers masked, whatever kind the picture was called.
 
 A picture the description calls a document is handed on once
 (`handOnPhotoDocument`), on a server that offers finance and while the switch
 is on: its large preview is copied into an `agent_attachment` that names the
-photo (`photo_id`, unique per agent), and a receipt goes to `read_receipt`, a
+photo (`photo_id`, unique per agent, kept while its job waits), and a receipt goes to `read_receipt`, a
 tax document to `tax_document`, and a statement to `statement_photo`. The
 receipt job does not record a receipt read from a photo when a receipt of the
 same purchase (`finance.IsSamePurchase`: the day, the total and the merchant)

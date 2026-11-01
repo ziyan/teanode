@@ -205,7 +205,7 @@ func TestAReceiptPhotoIsRecordedOnce(test *testing.T) {
 // A tax document's picture goes to the tax document job, and the taxpayer
 // number read in it is masked in the words a search reads.
 func TestATaxDocumentPhotoGoesToTheTaxJobWithItsNumberMasked(test *testing.T) {
-	fixture := newPhotoReadingFixture(test, `{"photoDescription": "A W-2 form on a table.", "visibleText": "Wage and Tax Statement\nEmployee's social security number 123-45-6789", "documentKind": "taxDocument"}`)
+	fixture := newPhotoReadingFixture(test, `{"photoDescription": "A W-2 form on a table, social security number 123-45-6789.", "visibleText": "Wage and Tax Statement\nEmployee's social security number 123-45-6789", "documentKind": "taxDocument"}`)
 	fixture.request(test, fixture.photo)
 	if err := fixture.worker.runDescribePhoto(test.Context(), fixture.run(fixture.photo)); err != nil {
 		test.Fatalf("runDescribePhoto: %s", err)
@@ -214,6 +214,27 @@ func TestATaxDocumentPhotoGoesToTheTaxJobWithItsNumberMasked(test *testing.T) {
 	if strings.Contains(read.DescriptionVisibleText, "123-45-6789") || !strings.Contains(read.DescriptionVisibleText, "Wage and Tax Statement") {
 		test.Errorf("the words kept: %q", read.DescriptionVisibleText)
 	}
+	if strings.Contains(read.PhotoDescription, "123-45-6789") || !strings.Contains(read.PhotoDescription, "A W-2 form") {
+		test.Errorf("the description kept: %q", read.PhotoDescription)
+	}
+	// Nor does the run keep what the model answered with the number in it.
+	dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
+		conversations, err := tx.ListAgentConversations(fixture.agent.ID, []models.AgentConversationKind{models.AgentConversationRun}, nil)
+		if err != nil {
+			test.Fatal(err)
+		}
+		for _, conversation := range conversations {
+			messages, err := tx.ListAgentMessages(conversation.ID, nil)
+			if err != nil {
+				test.Fatal(err)
+			}
+			for _, message := range messages {
+				if strings.Contains(message.Content, "123-45-6789") || strings.Contains(conversation.Title, "123-45-6789") {
+					test.Errorf("a run keeps the number: %q", message.Content)
+				}
+			}
+		}
+	})
 	document := fixture.documentOf(test, fixture.photo)
 	if document == nil || !document.IsTaxDocument {
 		test.Fatalf("the copy is a tax document: %+v", document)
@@ -300,5 +321,60 @@ func TestAStatementPhotoImportsIntoTheAccountImportedBefore(test *testing.T) {
 	titles := fixture.titlesOf(test, models.AgentJobStatementPhoto)
 	if !strings.Contains(strings.Join(titles, "\n"), "1 transaction added to") {
 		test.Errorf("the run says what it added: %q", titles)
+	}
+}
+
+// A document whose handing on failed after its description was kept is
+// handed on when the job runs again, without asking the model a second time.
+func TestADocumentNotHandedOnIsHandedOnWhenTheJobRunsAgain(test *testing.T) {
+	fixture := newPhotoReadingFixture(test, lighthouseAnswer)
+	dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
+		if err := tx.SetPhotoDescription(fixture.owner.ID, fixture.photo.ID, &db.PhotoDescription{
+			PhotoDescription: "A till receipt.", ModelName: "p:thinker", PhotoDocumentKind: models.PhotoDocumentReceipt,
+		}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if err := fixture.worker.runDescribePhoto(test.Context(), fixture.run(fixture.photo)); err != nil {
+		test.Fatalf("runDescribePhoto: %s", err)
+	}
+	if fixture.provider.chatCount() != 0 {
+		test.Errorf("the model was asked again: %d", fixture.provider.chatCount())
+	}
+	document := fixture.documentOf(test, fixture.photo)
+	if document == nil || fixture.queuedJobCount(test, models.AgentJobReadReceipt, document.ID) != "1" {
+		test.Fatalf("the receipt is handed on: %+v", document)
+	}
+	// Its copy is kept while the job waits, however long that is.
+	dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
+		orphans, err := tx.ListOrphanAgentAttachments(time.Now().Add(72 * time.Hour))
+		if err != nil {
+			test.Fatal(err)
+		}
+		for _, orphan := range orphans {
+			if orphan.ID == document.ID {
+				test.Error("a copy whose job waits is taken for an orphan")
+			}
+		}
+	})
+}
+
+// A person's waiting descriptions are capped, so that a backlog of new
+// photos never fills the queue ahead of their own turns.
+func TestNewPhotosWaitInAShortQueue(test *testing.T) {
+	fixture := newPhotoReadingFixture(test, lighthouseAnswer)
+	for index := range 2 * photoReadingWaitingMost {
+		photo := fixture.addPhoto(test, "many-"+strings.Repeat("x", index+1), "", true)
+		fixture.ready(test, photo, time.Now().Add(-time.Duration(index)*time.Minute))
+	}
+	waiting := func() string {
+		return dbtest.QueryString(test, fixture.database, `SELECT count(*)::text FROM "agent_job" WHERE "kind" = 'describe_photo' AND "status" = 'queued'`)
+	}
+	now := time.Now()
+	for look := range 4 {
+		fixture.worker.queuePhotoReading(test.Context(), now.Add(time.Duration(look)*2*photoReadingEvery))
+	}
+	if got := waiting(); got != "20" {
+		test.Errorf("%s descriptions wait, want %d", got, photoReadingWaitingMost)
 	}
 }

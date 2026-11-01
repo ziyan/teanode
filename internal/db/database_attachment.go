@@ -211,11 +211,14 @@ func (self *transaction) ListOrphanAgentAttachments(before time.Time) ([]*models
 	// paystub or tax form read out of it; one nothing was read out of in
 	// TaxDocumentUnreadRetention (not a paystub or a W-2 after all, or never
 	// readable) goes, since it holds the person's taxpayer number.
+	// A file a job is still to read (a photo's copy waiting behind a backlog)
+	// is kept until the job has run.
 	if err := self.tx.Where(`"message_id" = '' AND "created_at" < ? AND "finance_transaction_id" IS NULL
 		AND (NOT "is_tax_document" OR ("created_at" < ?
 			AND NOT EXISTS (SELECT 1 FROM "agent_finance_paystub" WHERE "agent_attachment_id" = "agent_attachment"."id")
 			AND NOT EXISTS (SELECT 1 FROM "agent_finance_tax_form" WHERE "agent_attachment_id" = "agent_attachment"."id")))
-		AND NOT EXISTS (SELECT 1 FROM "agent_finance_receipt" WHERE "agent_attachment_id" = "agent_attachment"."id")`, before, before.Add(-TaxDocumentUnreadRetention)).
+		AND NOT EXISTS (SELECT 1 FROM "agent_finance_receipt" WHERE "agent_attachment_id" = "agent_attachment"."id")
+		AND NOT EXISTS (SELECT 1 FROM "agent_job" WHERE "agent_id" = "agent_attachment"."agent_id" AND "subject_id" = "agent_attachment"."id" AND "status" IN ('queued', 'running'))`, before, before.Add(-TaxDocumentUnreadRetention)).
 		Limit(500).Find(&found).Error; err != nil {
 		return nil, err
 	}

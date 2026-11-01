@@ -385,7 +385,7 @@ func TestIsSamePurchaseTellsOnePurchaseReadTwice(t *testing.T) {
 	mailed := &models.FinanceReceipt{MerchantName: "H Example Market", PurchasedOn: "2026-09-11", CurrencyCode: "USD", TotalAmount: "16.9700"}
 	for _, photographed := range []*models.FinanceReceipt{
 		{MerchantName: "HEXAMPLE MARKET #12", PurchasedOn: "2026-09-11", CurrencyCode: "USD", TotalAmount: "16.97"},
-		{MerchantName: "Example Market", PurchasedOn: "2026-09-11", CurrencyCode: "usd", TotalAmount: "16.97"},
+		{MerchantName: "h-example market", PurchasedOn: "2026-09-11", CurrencyCode: "usd", TotalAmount: "16.97"},
 	} {
 		if !IsSamePurchase(mailed, photographed) {
 			t.Errorf("%q is the same purchase", photographed.MerchantName)
@@ -395,6 +395,7 @@ func TestIsSamePurchaseTellsOnePurchaseReadTwice(t *testing.T) {
 		{MerchantName: "H Example Market", PurchasedOn: "2026-09-12", CurrencyCode: "USD", TotalAmount: "16.97"},
 		{MerchantName: "H Example Market", PurchasedOn: "2026-09-11", CurrencyCode: "USD", TotalAmount: "16.98"},
 		{MerchantName: "Corner Cafe", PurchasedOn: "2026-09-11", CurrencyCode: "USD", TotalAmount: "16.97"},
+		{MerchantName: "Farmers Market", PurchasedOn: "2026-09-11", CurrencyCode: "USD", TotalAmount: "16.97"},
 		{MerchantName: "H Example Market", PurchasedOn: "2026-09-11", CurrencyCode: "EUR", TotalAmount: "16.97"},
 	} {
 		if IsSamePurchase(mailed, other) {
@@ -403,6 +404,10 @@ func TestIsSamePurchaseTellsOnePurchaseReadTwice(t *testing.T) {
 	}
 	if IsSamePurchase(&models.FinanceReceipt{MerchantName: "Corner Cafe", CurrencyCode: "USD", TotalAmount: "4.50"}, &models.FinanceReceipt{MerchantName: "Corner Cafe", CurrencyCode: "USD", TotalAmount: "4.50"}) {
 		t.Error("two receipts with no day are never the same")
+	}
+	if IsSamePurchase(&models.FinanceReceipt{MerchantName: "Cafe", MerchantReceiptNumber: "R-101", PurchasedOn: "2026-09-11", CurrencyCode: "USD", TotalAmount: "4.50"},
+		&models.FinanceReceipt{MerchantName: "Cafe", MerchantReceiptNumber: "R-207", PurchasedOn: "2026-09-11", CurrencyCode: "USD", TotalAmount: "4.50"}) {
+		t.Error("two receipt numbers are two purchases")
 	}
 	numbered := &models.FinanceReceipt{MerchantName: "Store 12", MerchantReceiptNumber: "R-1", PurchasedOn: "2026-09-11", CurrencyCode: "USD", TotalAmount: "3.00"}
 	if !IsSamePurchase(numbered, &models.FinanceReceipt{MerchantName: "Online order", MerchantReceiptNumber: "R-1", PurchasedOn: "2026-09-11", CurrencyCode: "USD", TotalAmount: "3"}) {

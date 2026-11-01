@@ -504,19 +504,22 @@ func IsSamePurchase(left, right *models.FinanceReceipt) bool {
 	if err != nil || leftTotal.Cmp(rightTotal) != 0 {
 		return false
 	}
-	if leftNumber, rightNumber := strings.TrimSpace(left.MerchantReceiptNumber), strings.TrimSpace(right.MerchantReceiptNumber); leftNumber != "" && leftNumber == rightNumber {
-		return true
+	// Two receipt numbers decide it either way: two coffees of one price on
+	// one day are two purchases.
+	if leftNumber, rightNumber := strings.TrimSpace(left.MerchantReceiptNumber), strings.TrimSpace(right.MerchantReceiptNumber); leftNumber != "" && rightNumber != "" {
+		return leftNumber == rightNumber
 	}
-	// "J Example" and "JEXAMPLE" share no word but spell the same letters.
-	if leftKey, rightKey := models.ShoppingStoreKey(left.MerchantName), models.ShoppingStoreKey(right.MerchantName); leftKey != "" && rightKey != "" &&
-		(strings.Contains(leftKey, rightKey) || strings.Contains(rightKey, leftKey)) {
-		return true
+	// The merchant spelled the same letters, or one with a branch number
+	// after it: "J Example" is "JEXAMPLE" and "JEXAMPLE #12". A shared word
+	// is not enough, since "Corner Market" is not "Farmers Market".
+	leftKey, rightKey := models.ShoppingStoreKey(left.MerchantName), models.ShoppingStoreKey(right.MerchantName)
+	shorterKey, longerKey := leftKey, rightKey
+	if len([]rune(shorterKey)) > len([]rune(longerKey)) {
+		shorterKey, longerKey = longerKey, shorterKey
 	}
-	rightWords := merchantWords(right.MerchantName)
-	for word := range merchantWords(left.MerchantName) {
-		if rightWords[word] {
-			return true
-		}
-	}
-	return false
+	return shorterKey != "" && (shorterKey == longerKey || (len([]rune(shorterKey)) >= samePurchaseMerchantKeyLeast && strings.HasPrefix(longerKey, shorterKey)))
 }
+
+// samePurchaseMerchantKeyLeast is the fewest letters a merchant's name has
+// for a longer name that begins with it to be the same merchant.
+const samePurchaseMerchantKeyLeast = 5

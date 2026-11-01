@@ -118,10 +118,12 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 		}
 		return err
 	}
-	// Written already and not asked for again: the job was queued twice, or a
-	// request came in while the first was running.
+	// Written already and not asked for again: the job was queued twice, a
+	// request came in while the first was running, or handing the document
+	// on failed and the job is tried again for it, without asking the model
+	// a second time.
 	if photo.DescribedAt != nil && photo.DescriptionRequestedAt == nil {
-		return nil
+		return self.handOnDocumentLeftOver(ctx, run, photo, preview)
 	}
 	if preview == nil {
 		if photo.PhotoProcessingState == models.PhotoProcessingFailed {
@@ -157,7 +159,19 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 		return err
 	}
 	answer := readModelAnswer[photoDescriptionAnswer](thinking.Text, "photoDescription")
-	description := cutRunes(strings.TrimSpace(answer.Value.PhotoDescription), db.MaximumPhotoDescriptionCharacters)
+	// A paystub's or a tax form's taxpayer number is kept nowhere: not in the
+	// description, the words a search reads, nor the run, which keeps what
+	// the model answered. The model may call such a form anything, so this
+	// does not wait for it to say it is a tax document.
+	description := cutRunes(strings.TrimSpace(finance.MaskTaxpayerNumbersInFile(answer.Value.PhotoDescription)), db.MaximumPhotoDescriptionCharacters)
+	if thinking.Conversation != nil && finance.MaskTaxpayerNumbersInFile(thinking.Text) != thinking.Text {
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			_, err := tx.RedactAgentConversationMessages(thinking.Conversation.ID, finance.MaskTaxpayerNumbersInFile)
+			return err
+		}); err != nil {
+			return err
+		}
+	}
 	if !answer.IsValid || description == "" {
 		problem := answer.Problem
 		if answer.IsValid {
@@ -170,8 +184,6 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 			return tx.ClearPhotoDescriptionRequest(ownerId, photoId)
 		})
 	}
-	// A paystub's or a tax form's taxpayer number is never kept in the words
-	// a search reads.
 	visibleText := cutRunes(strings.TrimSpace(finance.MaskTaxpayerNumbersInFile(string(answer.Value.VisibleText))), db.MaximumPhotoVisibleTextCharacters)
 	documentKind := answer.Value.photoDocumentKind()
 	// Embedded before the transaction: embedding is a call to another service.
@@ -218,10 +230,10 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 	if documentKind != models.PhotoDocumentNone {
 		handedOn, err := self.handOnPhotoDocument(ctx, run, photo, documentKind, content, preview.ContentType)
 		if err != nil {
-			// The description is kept; the document is handed on when the
-			// photo is described again.
-			log.Warningf("cannot hand on the %s in photo %s: %s", documentKind, photoId, err)
-			handedOn = "not handed on: " + err.Error()
+			// The description is kept, and the job is tried again for the
+			// document alone (handOnDocumentLeftOver).
+			self.retitle(ctx, run, thinking.Conversation, title+" (a "+photoDocumentWords(documentKind)+", not handed on yet)")
+			return fmt.Errorf("cannot hand on the %s in photo %s: %w", documentKind, photoId, err)
 		}
 		if handedOn != "" {
 			title += " (a " + photoDocumentWords(documentKind) + ", " + handedOn + ")"
@@ -229,6 +241,28 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 	}
 	self.retitle(ctx, run, thinking.Conversation, title)
 	return nil
+}
+
+// handOnDocumentLeftOver hands on the document of a photo described already
+// whose handing on failed: one its description called a document, with no
+// copy made of it yet.
+func (self *Agent) handOnDocumentLeftOver(ctx context.Context, run *Run, photo *models.Photo, preview *models.PhotoPreview) error {
+	if photo.PhotoDocumentKind == "" || photo.PhotoDocumentKind == models.PhotoDocumentNone || preview == nil || run.Storage() == nil {
+		return nil
+	}
+	var existing *models.AgentAttachment
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		existing, err = tx.GetAgentAttachmentOfPhoto(run.Agent.ID, photo.ID)
+		return err
+	}); err != nil || existing != nil {
+		return err
+	}
+	content, err := run.Storage().GetFile(ctx, models.PhotoPreviewFileID(photo.ID, models.PhotoPreviewLarge))
+	if err != nil {
+		return fmt.Errorf("the picture of photo %s cannot be read yet: %w", photo.ID, err)
+	}
+	_, err = self.handOnPhotoDocument(ctx, run, photo, photo.PhotoDocumentKind, content, preview.ContentType)
+	return err
 }
 
 // photoDocumentWords is a document kind in a run's title.
