@@ -299,17 +299,23 @@ func (self *transaction) ClearPhotoDescriptionRequest(userId, photoId string) er
 }
 
 func (self *transaction) SetPhotoDescription(userId, photoId string, description *PhotoDescription) error {
-	if description == nil || utf8.RuneCountInString(description.PhotoDescription) > MaximumPhotoDescriptionCharacters ||
+	if description == nil || (description.PhotoDocumentKind != "" && !description.PhotoDocumentKind.IsValid()) || utf8.RuneCountInString(description.PhotoDescription) > MaximumPhotoDescriptionCharacters ||
 		utf8.RuneCountInString(description.VisibleText) > MaximumPhotoVisibleTextCharacters || len(description.ModelName) > 128 {
 		return ErrInvalidArguments
 	}
 	if userId == "" || photoId == "" {
 		return ErrNotFound
 	}
+	// A description that says nothing of a document says the picture is none.
+	documentKind := description.PhotoDocumentKind
+	if documentKind == "" {
+		documentKind = models.PhotoDocumentNone
+	}
 	updated := self.tx.Model(&photoModel{}).Where("photo.id = ? AND photo.user_id = ? AND "+photoIsReadable, photoId, userId, photoMarkedForDeletion).Updates(map[string]any{
 		"photo_description":        description.PhotoDescription,
 		"description_visible_text": description.VisibleText,
 		"description_model":        description.ModelName,
+		"photo_document_kind":      documentKind,
 		"described_at":             photoNow(),
 		"description_requested_at": nil,
 	})

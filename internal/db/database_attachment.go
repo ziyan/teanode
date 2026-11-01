@@ -14,6 +14,10 @@ type AttachmentOperation interface {
 	CreateAgentAttachment(attachment *models.AgentAttachment) (*models.AgentAttachment, error)
 	GetAgentAttachment(attachmentId string) (*models.AgentAttachment, error)
 
+	// GetAgentAttachmentOfPhoto is the copy of a photo made to be read as a
+	// document, or nil when there is none.
+	GetAgentAttachmentOfPhoto(agentId, photoId string) (*models.AgentAttachment, error)
+
 	// GetAgentAttachments reads several by id, in the order given; one
 	// that does not exist is left out.
 	GetAgentAttachments(attachmentIds []string) ([]*models.AgentAttachment, error)
@@ -81,6 +85,7 @@ type agentAttachmentModel struct {
 
 	FinanceTransactionID *string `gorm:"column:finance_transaction_id"`
 	IsTaxDocument        bool    `gorm:"column:is_tax_document"`
+	PhotoID              string  `gorm:"column:photo_id"`
 }
 
 func (agentAttachmentModel) TableName() string { return "agent_attachment" }
@@ -91,6 +96,7 @@ func attachmentFromModel(model *agentAttachmentModel) *models.AgentAttachment {
 		ConversationID: model.ConversationID, MessageID: model.MessageID,
 		Name: model.Name, ContentType: model.ContentType, Size: model.Size, Text: model.Text,
 		FinanceTransactionID: optionalString(model.FinanceTransactionID), IsTaxDocument: model.IsTaxDocument,
+		PhotoID: model.PhotoID,
 	}
 }
 
@@ -103,6 +109,7 @@ func (self *transaction) CreateAgentAttachment(attachment *models.AgentAttachmen
 		ConversationID: attachment.ConversationID, MessageID: attachment.MessageID,
 		Name: truncateRunes(attachment.Name, 255), ContentType: truncateRunes(attachment.ContentType, 128),
 		Size: attachment.Size, Text: attachment.Text, IsTaxDocument: attachment.IsTaxDocument,
+		PhotoID: attachment.PhotoID,
 	}
 	if attachment.IsTaxDocument {
 		model.Text = ""
@@ -126,6 +133,21 @@ func (self *transaction) ChatAttachmentBytes(agentId string) (int64, error) {
 func (self *transaction) GetAgentAttachment(attachmentId string) (*models.AgentAttachment, error) {
 	var model agentAttachmentModel
 	result := self.tx.Where("\"id\" = ?", attachmentId).Limit(1).Find(&model)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return attachmentFromModel(&model), nil
+}
+
+func (self *transaction) GetAgentAttachmentOfPhoto(agentId, photoId string) (*models.AgentAttachment, error) {
+	if agentId == "" || photoId == "" {
+		return nil, nil
+	}
+	var model agentAttachmentModel
+	result := self.tx.Where("\"agent_id\" = ? AND \"photo_id\" = ?", agentId, photoId).Limit(1).Find(&model)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -189,11 +211,14 @@ func (self *transaction) ListOrphanAgentAttachments(before time.Time) ([]*models
 	// paystub or tax form read out of it; one nothing was read out of in
 	// TaxDocumentUnreadRetention (not a paystub or a W-2 after all, or never
 	// readable) goes, since it holds the person's taxpayer number.
+	// A file a job is still to read (a photo's copy waiting behind a backlog)
+	// is kept until the job has run.
 	if err := self.tx.Where(`"message_id" = '' AND "created_at" < ? AND "finance_transaction_id" IS NULL
 		AND (NOT "is_tax_document" OR ("created_at" < ?
 			AND NOT EXISTS (SELECT 1 FROM "agent_finance_paystub" WHERE "agent_attachment_id" = "agent_attachment"."id")
 			AND NOT EXISTS (SELECT 1 FROM "agent_finance_tax_form" WHERE "agent_attachment_id" = "agent_attachment"."id")))
-		AND NOT EXISTS (SELECT 1 FROM "agent_finance_receipt" WHERE "agent_attachment_id" = "agent_attachment"."id")`, before, before.Add(-TaxDocumentUnreadRetention)).
+		AND NOT EXISTS (SELECT 1 FROM "agent_finance_receipt" WHERE "agent_attachment_id" = "agent_attachment"."id")
+		AND NOT EXISTS (SELECT 1 FROM "agent_job" WHERE "agent_id" = "agent_attachment"."agent_id" AND "subject_id" = "agent_attachment"."id" AND "status" IN ('queued', 'running'))`, before, before.Add(-TaxDocumentUnreadRetention)).
 		Limit(500).Find(&found).Error; err != nil {
 		return nil, err
 	}

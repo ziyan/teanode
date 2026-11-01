@@ -305,12 +305,43 @@ them first, in a transaction of its own that is over before the model is asked
 (`ListPhotos` and `CountPhotos` are in `isModelBackedQuery`, and read in phases
 as recall does), so a slow model does not hold a database connection.
 
-A photo is described only when somebody works with it: the agent looks at it,
-or a person asks in the viewer. The agent's `describe_photo` job asks the
-scan model for a few plain sentences and the words it can read, and keeps
-them, so a search finds the photo by them from then on. Before that a photo
-is found only by what the server reads without a model; the agent is told so
-and narrows by date or place first.
+A photo is described when it is new or when somebody works with it: the agent
+looks at it, or a person asks in the viewer. The agent's `describe_photo` job
+asks the scan model for a few plain sentences, the words it can read, and
+whether the picture is a receipt, a statement or a tax document, and keeps
+them, so a search finds the photo by them from then on. Taxpayer numbers in
+the words read are masked. Before that a photo is found only by what the
+server reads without a model; the agent is told so and narrows by date or
+place first.
+
+### New photos are read as they arrive
+
+Each minute the agent's tick (`queuePhotoReading`) queues the description of
+up to ten new pictures of each person whose switch is on
+(`user.is_photo_reading_enabled`, on by default): ready, taken or added in the
+last thirty days, never described, asked for or queued before, not a video and
+not saved from somebody else's share. `photo.reading_queued_at` marks each one
+queued, so it is queued once. No more are queued while twenty descriptions of the
+person wait, so a backlog never fills the queue ahead of their own turns.
+The words a description keeps, and the run that wrote them, have taxpayer
+numbers masked, whatever kind the picture was called.
+
+A picture the description calls a document is handed on once
+(`handOnPhotoDocument`), on a server that offers finance and while the switch
+is on: its large preview is copied into an `agent_attachment` that names the
+photo (`photo_id`, unique per agent, kept while its job waits), and a receipt goes to `read_receipt`, a
+tax document to `tax_document`, and a statement to `statement_photo`. The
+receipt job does not record a receipt read from a photo when a receipt of the
+same purchase (`finance.IsSamePurchase`: the day, the total and the merchant)
+is recorded already. The statement job reads one account's rows and imports
+them only into the account of imported statements they are of; rows of an
+account never imported are left for the person to send their agent, which
+asks. `20261031-a-new-photo-is-read-as-it-arrives.md` says why.
+
+The switch is `SetPhotoReading` and `isPhotoReadingEnabled` on
+`ReadPhotoLibrary`, `teanode photo reading on|off`, the photo tool's `reading`,
+"Read new photos" among the dashboard's preferences, and the iPhone's photo
+settings. A photo's `photoDocumentKind` says what it was read as.
 
 ## Asking the agent about a photo
 

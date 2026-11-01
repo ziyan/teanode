@@ -766,6 +766,7 @@ prints data takes `--json`.
 | `teanode photo people merge GROUP-ID GROUP-ID...` | put groups into the first, for one person found as two (at most 50). The first keeps its own contact, or takes the contact of the first of the others that has one, and the others are deleted. Naming does this for you when the contact already names a group |
 | `teanode photo people remove FACE-ID` | "this is not them": take a face out of its group into a group of its own, which stays as you put it and is not grouped again. The face ids are in `photo read` |
 | `teanode photo people hide GROUP-ID` / `unhide GROUP-ID` | leave a group out of the list, or list it again. A hidden group goes on taking the faces of its person, so they stay hidden |
+| `teanode photo reading on` / `off` | switch reading your new photos on (the default) or off: each picture taken in the last 30 days is described as it arrives, and a receipt, a statement or a tax document in one is recorded in finance. Off keeps what was read. `teanode photo library` says whether it is on, and `teanode photo read` says what a photo was read as |
 | `teanode photo faces on` / `off` | switch finding faces in your photos on (the default) or off. Off deletes every face and group found so far, so it asks first, or takes `--force`; on has the photos read again, a few at a time |
 
 Uploads speak the server's resumable upload endpoint, in parts of 8 MiB: a

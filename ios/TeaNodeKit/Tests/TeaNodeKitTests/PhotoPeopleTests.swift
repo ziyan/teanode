@@ -12,7 +12,7 @@ private func photoFields(_ id: String) -> String {
 }
 
 private let describedPhotoFields =
-    #""photoDescription":"A red kite over a field.","descriptionVisibleText":"KITE FESTIVAL","describedAt":"2026-03-02T10:00:00Z","isDescriptionRequested":false"#
+    #""photoDescription":"A red kite over a field.","descriptionVisibleText":"KITE FESTIVAL","describedAt":"2026-03-02T10:00:00Z","isDescriptionRequested":false,"photoDocumentKind":"receipt""#
 
 private let groupJSON =
     #"{"id":"g1","createdAt":"2026-03-01T00:00:00Z","updatedAt":"2026-03-02T00:00:00Z","contactId":"c1","contactAddressBookId":"b1","contactName":"Sample Person","faceCount":5,"photoCount":4,"facePictureUrl":"/api/v1/photos/faces/f1/picture","coverPhotoFaceId":"f1","isHidden":false}"#
@@ -41,6 +41,7 @@ final class PhotoPeopleTests: XCTestCase {
         XCTAssertEqual(detail.photoDescription.descriptionVisibleText, "KITE FESTIVAL")
         XCTAssertTrue(detail.photoDescription.isDescribed)
         XCTAssertFalse(detail.photoDescription.isDescriptionRequested)
+        XCTAssertEqual(detail.photoDescription.photoDocumentKind, "receipt")
         XCTAssertEqual(detail.faces.map(\.id), ["f1"])
         XCTAssertEqual(detail.faces[0].boxWidthFraction, 0.3, accuracy: 0.0001)
         XCTAssertEqual(detail.faces[0].contactName, "Sample Person")
@@ -52,6 +53,7 @@ final class PhotoPeopleTests: XCTestCase {
         let json = #"{"photo":{\#(photoFields("p1"))},"photoFiles":[],"photoPreviews":[]}"#
         let detail = try JSONDecoder().decode(PhotoDetail.self, from: Data(json.utf8))
         XCTAssertEqual(detail.photoDescription, PhotoDescription())
+        XCTAssertEqual(detail.photoDescription.photoDocumentKind, "")
         XCTAssertFalse(detail.photoDescription.isDescribed)
         XCTAssertEqual(detail.faces, [])
     }
@@ -98,16 +100,37 @@ final class PhotoPeopleTests: XCTestCase {
 
     func testTheLibrarySaysWhyDescribingOrFacesAreUnavailable() throws {
         let json =
-            #"{"photoCount":1,"videoCount":0,"favoriteCount":0,"trashedCount":0,"usedBytes":10,"trashRetentionDays":30,"isDescriptionAvailable":false,"descriptionUnavailableMessage":"The assistant is off.","isFaceRecognitionAvailable":true,"faceRecognitionUnavailableMessage":"","isPhotoFaceRecognitionEnabled":false}"#
+            #"{"photoCount":1,"videoCount":0,"favoriteCount":0,"trashedCount":0,"usedBytes":10,"trashRetentionDays":30,"isDescriptionAvailable":false,"descriptionUnavailableMessage":"The assistant is off.","isFaceRecognitionAvailable":true,"faceRecognitionUnavailableMessage":"","isPhotoFaceRecognitionEnabled":false,"isPhotoReadingEnabled":true}"#
         let library = try JSONDecoder().decode(PhotoLibrary.self, from: Data(json.utf8))
         XCTAssertFalse(library.isDescriptionAvailable)
         XCTAssertEqual(library.descriptionUnavailableMessage, "The assistant is off.")
         XCTAssertTrue(library.isFaceRecognitionAvailable)
         XCTAssertFalse(library.isPhotoFaceRecognitionEnabled)
+        XCTAssertTrue(library.isPhotoReadingEnabled)
         let older = try JSONDecoder().decode(
             PhotoLibrary.self, from: Data(#"{"photoCount":1,"videoCount":0,"favoriteCount":0,"trashedCount":0,"usedBytes":10,"trashRetentionDays":30}"#.utf8))
         XCTAssertFalse(older.isDescriptionAvailable)
         XCTAssertFalse(older.isFaceRecognitionAvailable)
+        XCTAssertFalse(older.isPhotoReadingEnabled)
+    }
+
+    func testReadingAStatementPhotoIsAKindOfRunTheFilterKnows() {
+        XCTAssertTrue(AgentRunSummary.jobKinds.contains("statement_photo"))
+    }
+
+    func testTheQueriesAskForTheDocumentKindAndTheReadingSwitch() {
+        XCTAssertTrue(Documents.readPhoto.contains("photoDocumentKind"))
+        XCTAssertTrue(Documents.describePhoto.contains("photoDocumentKind"))
+        XCTAssertTrue(Documents.readPhotoLibrary.contains("isPhotoReadingEnabled"))
+    }
+
+    func testSwitchingPhotoReadingSendsTheChoiceAndSaysTheNewState() async throws {
+        let (connection, fake) = try connection { _ in #"{"data":{"SetPhotoReading":false}}"# }
+        let isEnabled = try await connection.setPhotoReading(isEnabled: false)
+        XCTAssertFalse(isEnabled)
+        let sent = try fake.sent.map { try variables(of: $0) }
+        XCTAssertEqual(sent[0]["isEnabled"] as? Bool, false)
+        XCTAssertTrue(Documents.setPhotoReading.contains("SetPhotoReading(isEnabled: $isEnabled)"))
     }
 
     // MARK: People

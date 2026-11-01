@@ -49,7 +49,13 @@ export interface Photo {
   // of the search in them; any other list leaves them out.
   photoDescription?: string
   descriptionVisibleText?: string
+  photoDocumentKind?: PhotoDocumentKind
 }
+
+// What a model found a picture to be, once it has read it: empty until it
+// has, "none" for an ordinary picture, otherwise a document that was
+// recorded in Finance.
+export type PhotoDocumentKind = '' | 'none' | 'receipt' | 'statement' | 'taxDocument'
 
 export interface PhotoFile {
   photoFileRole: PhotoFileRole
@@ -77,6 +83,7 @@ export interface PhotoDescriptionFields {
   describedAt: string | null
   // A description is on its way: asked for, and not yet written.
   isDescriptionRequested: boolean
+  photoDocumentKind: PhotoDocumentKind
 }
 
 export type PhotoDetail = Photo & PhotoDescriptionFields
@@ -190,6 +197,8 @@ export interface PhotoLibrary {
   // not, why, in the server's words.
   isDescriptionAvailable: boolean
   descriptionUnavailableMessage: string
+  // The person's own switch for reading each new picture as it arrives.
+  isPhotoReadingEnabled: boolean
   // Whether this server can find faces, why not when it cannot, and the
   // person's own switch for it.
   isFaceRecognitionAvailable: boolean
@@ -206,7 +215,7 @@ export const PHOTOS_PER_PAGE = 200
 export const PHOTO_FIELDS =
   'id clientPhotoId photoKind photoSource createdAt takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingErrorMessage trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl isOwnedByCaller ownerName userId'
 
-const PHOTO_DETAIL_FIELDS = `${PHOTO_FIELDS} photoDescription descriptionVisibleText describedAt isDescriptionRequested`
+const PHOTO_DETAIL_FIELDS = `${PHOTO_FIELDS} photoDescription photoDocumentKind descriptionVisibleText describedAt isDescriptionRequested`
 
 const PHOTO_FACE_FIELDS =
   'id photoId boxLeftFraction boxTopFraction boxWidthFraction boxHeightFraction photoFaceGroupId contactId contactName isOwnContact facePictureUrl'
@@ -223,12 +232,12 @@ function listPhotosDocument(fields: string): string {
 
 export const PHOTO_DOCUMENTS = {
   ListPhotos: listPhotosDocument(PHOTO_FIELDS),
-  ListPhotosOfSearch: listPhotosDocument(`${PHOTO_FIELDS} photoDescription descriptionVisibleText`),
+  ListPhotosOfSearch: listPhotosDocument(`${PHOTO_FIELDS} photoDescription photoDocumentKind descriptionVisibleText`),
   CountPhotos:
     'query ($isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $accountUserId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float) { CountPhotos(isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, photoKind: $photoKind, albumId: $albumId, faceGroupId: $faceGroupId, accountUserId: $accountUserId, takenAfter: $takenAfter, takenBefore: $takenBefore, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers) }',
   ReadPhoto: `query ($photoId: String!) { ReadPhoto(photoId: $photoId) { photo { ${PHOTO_DETAIL_FIELDS} } photoFiles { photoFileRole contentType fileSizeBytes originalFilename fileUrl } albums { id albumTitle } faces { ${PHOTO_FACE_FIELDS} } } }`,
   ReadPhotoLibrary:
-    'query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays uploadPath uploadPartBytes isDescriptionAvailable descriptionUnavailableMessage isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled } }',
+    'query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays uploadPath uploadPartBytes isDescriptionAvailable descriptionUnavailableMessage isPhotoReadingEnabled isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled } }',
   ReadPhotoPlace:
     'query ($photoId: String!) { ReadPhotoPlace(photoId: $photoId) { locationPlace { id placeName placeLabel } addressText } }',
   FindPhotos:

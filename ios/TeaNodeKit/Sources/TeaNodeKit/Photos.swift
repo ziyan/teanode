@@ -173,12 +173,21 @@ public struct PhotoDescription: Codable, Hashable, Sendable {
     public let describedAt: String?
     /// A description is on its way: asked for, and not yet written.
     public let isDescriptionRequested: Bool
+    /// What the model took the picture for: empty until it is described, then
+    /// "none", "receipt", "statement" or "taxDocument". A receipt is recorded
+    /// in Finance, a statement's transactions are added to the account the
+    /// person imported before, and a tax document is kept with their others.
+    public let photoDocumentKind: String
 
-    public init(photoDescription: String = "", descriptionVisibleText: String = "", describedAt: String? = nil, isDescriptionRequested: Bool = false) {
+    public init(
+        photoDescription: String = "", descriptionVisibleText: String = "", describedAt: String? = nil, isDescriptionRequested: Bool = false,
+        photoDocumentKind: String = ""
+    ) {
         self.photoDescription = photoDescription
         self.descriptionVisibleText = descriptionVisibleText
         self.describedAt = describedAt
         self.isDescriptionRequested = isDescriptionRequested
+        self.photoDocumentKind = photoDocumentKind
     }
 
     public init(from decoder: Decoder) throws {
@@ -187,6 +196,7 @@ public struct PhotoDescription: Codable, Hashable, Sendable {
         descriptionVisibleText = try container.decodeIfPresent(String.self, forKey: .descriptionVisibleText) ?? ""
         describedAt = try container.decodeIfPresent(String.self, forKey: .describedAt)
         isDescriptionRequested = try container.decodeIfPresent(Bool.self, forKey: .isDescriptionRequested) ?? false
+        photoDocumentKind = try container.decodeIfPresent(String.self, forKey: .photoDocumentKind) ?? ""
     }
 
     /// Whether a description has been written.
@@ -468,11 +478,15 @@ public struct PhotoLibrary: Codable, Hashable, Sendable {
     public let isFaceRecognitionAvailable: Bool
     public let faceRecognitionUnavailableMessage: String
     public let isPhotoFaceRecognitionEnabled: Bool
+    /// The person's own switch for reading each new picture as it arrives:
+    /// describing it, and recording a receipt, a statement or a tax document.
+    public let isPhotoReadingEnabled: Bool
 
     public init(
         photoCount: Int, videoCount: Int, favoriteCount: Int, trashedCount: Int, usedBytes: Int, trashRetentionDays: Int,
         maximumFileBytes: Int = 0, maximumAccountBytes: Int = 0, isDescriptionAvailable: Bool = false, descriptionUnavailableMessage: String = "", isFaceRecognitionAvailable: Bool = false,
-        faceRecognitionUnavailableMessage: String = "", isPhotoFaceRecognitionEnabled: Bool = false
+        faceRecognitionUnavailableMessage: String = "", isPhotoFaceRecognitionEnabled: Bool = false,
+        isPhotoReadingEnabled: Bool = false
     ) {
         self.photoCount = photoCount
         self.videoCount = videoCount
@@ -487,6 +501,7 @@ public struct PhotoLibrary: Codable, Hashable, Sendable {
         self.isFaceRecognitionAvailable = isFaceRecognitionAvailable
         self.faceRecognitionUnavailableMessage = faceRecognitionUnavailableMessage
         self.isPhotoFaceRecognitionEnabled = isPhotoFaceRecognitionEnabled
+        self.isPhotoReadingEnabled = isPhotoReadingEnabled
     }
 
     public init(from decoder: Decoder) throws {
@@ -506,6 +521,7 @@ public struct PhotoLibrary: Codable, Hashable, Sendable {
         isFaceRecognitionAvailable = try container.decodeIfPresent(Bool.self, forKey: .isFaceRecognitionAvailable) ?? false
         faceRecognitionUnavailableMessage = try container.decodeIfPresent(String.self, forKey: .faceRecognitionUnavailableMessage) ?? ""
         isPhotoFaceRecognitionEnabled = try container.decodeIfPresent(Bool.self, forKey: .isPhotoFaceRecognitionEnabled) ?? false
+        isPhotoReadingEnabled = try container.decodeIfPresent(Bool.self, forKey: .isPhotoReadingEnabled) ?? false
     }
 }
 
@@ -797,7 +813,7 @@ extension Documents {
         }
         """
     static let photoDescriptionFields = """
-        photoDescription descriptionVisibleText describedAt isDescriptionRequested
+        photoDescription descriptionVisibleText describedAt isDescriptionRequested photoDocumentKind
         """
     static let photoFaceFields = """
         id photoId boxLeftFraction boxTopFraction boxWidthFraction boxHeightFraction photoFaceGroupId contactId contactName isOwnContact facePictureUrl
@@ -836,7 +852,7 @@ extension Documents {
           ReadPhotoLibrary {
             photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays
             isDescriptionAvailable descriptionUnavailableMessage
-            isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled
+            isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled isPhotoReadingEnabled
           }
         }
         """
@@ -933,6 +949,9 @@ extension Documents {
         """
     public static let setPhotoFaceRecognition = """
         mutation ($isEnabled: Boolean!) { SetPhotoFaceRecognition(isEnabled: $isEnabled) }
+        """
+    public static let setPhotoReading = """
+        mutation ($isEnabled: Boolean!) { SetPhotoReading(isEnabled: $isEnabled) }
         """
     public static let createNamedContact = """
         mutation ($addressBookId: String!, $name: String) { SaveContact(addressBookId: $addressBookId, name: $name) { id name } }
@@ -1691,6 +1710,16 @@ extension Connection {
         return try await execute(
             Documents.setPhotoFaceRecognition, variables: ["isEnabled": .bool(isEnabled)], as: Answer.self
         ).SetPhotoFaceRecognition
+    }
+
+    /// Switches the reading of each new picture on or off. Off leaves what was
+    /// already read as it is.
+    @discardableResult
+    public func setPhotoReading(isEnabled: Bool) async throws -> Bool {
+        struct Answer: Decodable, Sendable { let SetPhotoReading: Bool }
+        return try await execute(
+            Documents.setPhotoReading, variables: ["isEnabled": .bool(isEnabled)], as: Answer.self
+        ).SetPhotoReading
     }
 
     /// The contacts of the person's address books that match the words, for

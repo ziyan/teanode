@@ -17,6 +17,8 @@ struct PhotoBackupView: View {
     /// foreground and when backup finishes something, and never in a loop.
     @State private var isReadingLibrary = false
     @State private var lastLibraryReadAt: Date?
+    /// The switch for reading new photos is being changed on the server.
+    @State private var isChangingPhotoReading = false
     private let engine = PhotoBackupEngine.shared
 
     /// Backup is on for another account than the one signed in now.
@@ -29,6 +31,7 @@ struct PhotoBackupView: View {
             status: engine.status, credentialName: engine.credentialName, accessProblem: engine.accessProblem, isWorking: engine.isWorking,
             isPermitted: app.isPhotosOffered, enabledAccountName: engine.enabledAccountName, isOnForOtherAccount: isOnForOtherAccount,
             library: library, libraryFailureText: libraryFailureText, readLibrary: { Task { await loadLibrary(mustRead: true) } },
+            isChangingPhotoReading: isChangingPhotoReading,
             isOn: Binding(
                 get: { engine.isEnabled && !isOnForOtherAccount },
                 set: { isOn in
@@ -40,6 +43,9 @@ struct PhotoBackupView: View {
                 }),
             usesMobileData: Binding(get: { engine.usesMobileData }, set: { engine.usesMobileData = $0 }),
             includesHidden: Binding(get: { engine.includesHidden }, set: { engine.includesHidden = $0 }),
+            isPhotoReadingOn: Binding(
+                get: { library?.isPhotoReadingEnabled ?? false },
+                set: { isOn in Task { await changePhotoReading(isEnabled: isOn) } }),
             isConfirmingTurnOff: $isConfirmingTurnOff,
             backUpNow: { Task { await engine.backUpNow() } },
             togglePause: { Task { if engine.isPaused { await engine.resume() } else { await engine.pause() } } },
@@ -93,6 +99,20 @@ extension PhotoBackupView {
             lastLibraryReadAt = Date()
         }
     }
+
+    /// Switches the reading of new photos and reads the library again, so the
+    /// switch shows what the server now holds; a failure is shown the way the
+    /// backup's own are, and the switch stays as it was.
+    fileprivate func changePhotoReading(isEnabled: Bool) async {
+        isChangingPhotoReading = true
+        defer { isChangingPhotoReading = false }
+        do {
+            try await connection.setPhotoReading(isEnabled: isEnabled)
+            await loadLibrary(mustRead: true)
+        } catch {
+            engine.problemText = app.describe(error)
+        }
+    }
 }
 
 /// PhotoBackupContent is the Photo backup screen for a status, with every
@@ -115,9 +135,14 @@ struct PhotoBackupContent: View {
     let library: PhotoLibrary?
     let libraryFailureText: String?
     let readLibrary: () -> Void
+    /// The switch for reading new photos is being changed on the server.
+    let isChangingPhotoReading: Bool
     @Binding var isOn: Bool
     @Binding var usesMobileData: Bool
     @Binding var includesHidden: Bool
+    /// Whether each new picture is read as it arrives: described, and its
+    /// receipt, statement or tax document recorded.
+    @Binding var isPhotoReadingOn: Bool
     @Binding var isConfirmingTurnOff: Bool
     let backUpNow: () -> Void
     /// Pauses backup, or resumes it when it is paused.
@@ -200,6 +225,10 @@ struct PhotoBackupContent: View {
                 }
             }
 
+            if let library {
+                photoReadingSection(library)
+            }
+
             if library != nil || libraryFailureText != nil {
                 librarySection
             }
@@ -209,6 +238,21 @@ struct PhotoBackupContent: View {
     }
 
     // MARK: Sections
+
+    /// The person's switch for having each new picture read, which is on
+    /// unless they turn it off; off limits when the server cannot describe.
+    private func photoReadingSection(_ library: PhotoLibrary) -> some View {
+        Section {
+            Toggle("Read new photos", isOn: $isPhotoReadingOn)
+                .disabled(!library.isDescriptionAvailable || isChangingPhotoReading)
+        } footer: {
+            if library.isDescriptionAvailable {
+                Text("New pictures are described as they arrive, so a search finds them. Receipts are recorded in Finance, a statement's transactions are added to the account you imported before, and paystubs and W-2s are kept with your tax documents.")
+            } else {
+                Text(library.descriptionUnavailableMessage.isEmpty ? String(localized: "Describing photos is not available.") : library.descriptionUnavailableMessage.asReasonSentence)
+            }
+        }
+    }
 
     /// How much of the server's room the library takes, and the largest file
     /// it takes, as the server says.
@@ -456,9 +500,11 @@ private func previewContent(
         PhotoBackupContent(
             status: status, credentialName: credentialName, accessProblem: accessProblem, isWorking: false, isPermitted: isPermitted,
             enabledAccountName: status.isEnabled ? "robin on demo.example.com" : nil, isOnForOtherAccount: isOnForOtherAccount,
-            library: PhotoLibrary(photoCount: 3_800, videoCount: 112, favoriteCount: 90, trashedCount: 4, usedBytes: 21_400_000_000, trashRetentionDays: 30, maximumFileBytes: 2_000_000_000, maximumAccountBytes: 50_000_000_000),
+            library: PhotoLibrary(photoCount: 3_800, videoCount: 112, favoriteCount: 90, trashedCount: 4, usedBytes: 21_400_000_000, trashRetentionDays: 30, maximumFileBytes: 2_000_000_000, maximumAccountBytes: 50_000_000_000, isDescriptionAvailable: true, isPhotoReadingEnabled: true),
             libraryFailureText: nil, readLibrary: {},
+            isChangingPhotoReading: false,
             isOn: .constant(status.isEnabled && !isOnForOtherAccount), usesMobileData: .constant(usesMobileData), includesHidden: .constant(false),
+            isPhotoReadingOn: .constant(true),
             isConfirmingTurnOff: .constant(false), backUpNow: {}, togglePause: {}, signInAgain: {}, turnOff: {})
     }
 }

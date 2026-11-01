@@ -485,3 +485,41 @@ func ProposeReceiptMatches(receipt *models.FinanceReceipt, candidates []*models.
 	}
 	return proposals
 }
+
+// IsSamePurchase says two receipts are of one purchase: the same day and
+// the same total in the same currency, at a merchant both name alike or
+// under the same receipt number. A mailed receipt and a photo of the paper
+// one, or a photo the person also sent in a conversation, are read twice
+// and must be recorded once. Two receipts without a day are never the same.
+func IsSamePurchase(left, right *models.FinanceReceipt) bool {
+	if left == nil || right == nil || left.PurchasedOn == "" || left.PurchasedOn != right.PurchasedOn ||
+		!strings.EqualFold(left.CurrencyCode, right.CurrencyCode) {
+		return false
+	}
+	leftTotal, err := parseDecimal(left.TotalAmount)
+	if err != nil {
+		return false
+	}
+	rightTotal, err := parseDecimal(right.TotalAmount)
+	if err != nil || leftTotal.Cmp(rightTotal) != 0 {
+		return false
+	}
+	// Two receipt numbers decide it either way: two coffees of one price on
+	// one day are two purchases.
+	if leftNumber, rightNumber := strings.TrimSpace(left.MerchantReceiptNumber), strings.TrimSpace(right.MerchantReceiptNumber); leftNumber != "" && rightNumber != "" {
+		return leftNumber == rightNumber
+	}
+	// The merchant spelled the same letters, or one with a branch number
+	// after it: "J Example" is "JEXAMPLE" and "JEXAMPLE #12". A shared word
+	// is not enough, since "Corner Market" is not "Farmers Market".
+	leftKey, rightKey := models.ShoppingStoreKey(left.MerchantName), models.ShoppingStoreKey(right.MerchantName)
+	shorterKey, longerKey := leftKey, rightKey
+	if len([]rune(shorterKey)) > len([]rune(longerKey)) {
+		shorterKey, longerKey = longerKey, shorterKey
+	}
+	return shorterKey != "" && (shorterKey == longerKey || (len([]rune(shorterKey)) >= samePurchaseMerchantKeyLeast && strings.HasPrefix(longerKey, shorterKey)))
+}
+
+// samePurchaseMerchantKeyLeast is the fewest letters a merchant's name has
+// for a longer name that begins with it to be the same merchant.
+const samePurchaseMerchantKeyLeast = 5

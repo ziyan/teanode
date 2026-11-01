@@ -9,16 +9,19 @@ import (
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
 // The photo description job: a model looks at a photo's large preview and
-// writes what is in it, with the words it can read there. The description is
-// kept on the photo, embedded like other text, and searched from then on. A
-// photo is described only when somebody works with it (the agent looks at it,
-// or the person asks), never in the background
-// (docs/decisions/20261016-a-photo-is-described-when-somebody-looks-at-it.md).
+// writes what is in it, with the words it can read there, and says whether it
+// is a document the person keeps records of. The description is kept on the
+// photo, embedded like other text, and searched from then on; a document is
+// handed to the job that records it (photo_reading.go). A photo is described
+// when it is new (photo_reading.go) or when somebody works with it (the agent
+// looks at it, or the person asks)
+// (docs/decisions/20261031-a-new-photo-is-read-as-it-arrives.md).
 
 // QueuePhotoDescription asks for a photo of the agent's person to be
 // described. The photo is marked as asked for, which is how a viewer knows to
@@ -55,6 +58,17 @@ func (self *Agent) PhotoDescriptionUnavailableMessage(configuration *config.Conf
 type photoDescriptionAnswer struct {
 	PhotoDescription string         `json:"photoDescription"`
 	VisibleText      describedWords `json:"visibleText"`
+	DocumentKind     string         `json:"documentKind"`
+}
+
+// photoDocumentKind is the kind the answer gave, none for one it did not
+// or one the server does not know.
+func (self *photoDescriptionAnswer) photoDocumentKind() models.PhotoDocumentKind {
+	documentKind := models.PhotoDocumentKind(strings.TrimSpace(self.DocumentKind))
+	if !documentKind.IsValid() {
+		return models.PhotoDocumentNone
+	}
+	return documentKind
 }
 
 // describedWords is the words read in a picture: a string, one piece of text
@@ -104,10 +118,12 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 		}
 		return err
 	}
-	// Written already and not asked for again: the job was queued twice, or a
-	// request came in while the first was running.
+	// Written already and not asked for again: the job was queued twice, a
+	// request came in while the first was running, or handing the document
+	// on failed and the job is tried again for it, without asking the model
+	// a second time.
 	if photo.DescribedAt != nil && photo.DescriptionRequestedAt == nil {
-		return nil
+		return self.handOnDocumentLeftOver(ctx, run, photo, preview)
 	}
 	if preview == nil {
 		if photo.PhotoProcessingState == models.PhotoProcessingFailed {
@@ -143,7 +159,19 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 		return err
 	}
 	answer := readModelAnswer[photoDescriptionAnswer](thinking.Text, "photoDescription")
-	description := cutRunes(strings.TrimSpace(answer.Value.PhotoDescription), db.MaximumPhotoDescriptionCharacters)
+	// A paystub's or a tax form's taxpayer number is kept nowhere: not in the
+	// description, the words a search reads, nor the run, which keeps what
+	// the model answered. The model may call such a form anything, so this
+	// does not wait for it to say it is a tax document.
+	description := cutRunes(strings.TrimSpace(finance.MaskTaxpayerNumbersInFile(answer.Value.PhotoDescription)), db.MaximumPhotoDescriptionCharacters)
+	if thinking.Conversation != nil && finance.MaskTaxpayerNumbersInFile(thinking.Text) != thinking.Text {
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			_, err := tx.RedactAgentConversationMessages(thinking.Conversation.ID, finance.MaskTaxpayerNumbersInFile)
+			return err
+		}); err != nil {
+			return err
+		}
+	}
 	if !answer.IsValid || description == "" {
 		problem := answer.Problem
 		if answer.IsValid {
@@ -156,7 +184,8 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 			return tx.ClearPhotoDescriptionRequest(ownerId, photoId)
 		})
 	}
-	visibleText := cutRunes(strings.TrimSpace(string(answer.Value.VisibleText)), db.MaximumPhotoVisibleTextCharacters)
+	visibleText := cutRunes(strings.TrimSpace(finance.MaskTaxpayerNumbersInFile(string(answer.Value.VisibleText))), db.MaximumPhotoVisibleTextCharacters)
+	documentKind := answer.Value.photoDocumentKind()
 	// Embedded before the transaction: embedding is a call to another service.
 	// Without an embedding model, or when it fails, the photo is still found
 	// by its words.
@@ -179,6 +208,7 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 		}
 		if err := tx.SetPhotoDescription(ownerId, photoId, &db.PhotoDescription{
 			PhotoDescription: description, VisibleText: visibleText, ModelName: run.Configuration().Agent.Models.ForWork(config.AgentWorkScan),
+			PhotoDocumentKind: documentKind,
 		}); err != nil {
 			return err
 		}
@@ -196,8 +226,56 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 		self.retitle(ctx, run, thinking.Conversation, "Looked at a photo whose location changed meanwhile, and kept nothing")
 		return nil
 	}
-	self.retitle(ctx, run, thinking.Conversation, "Described a photo: "+cutRunes(description, 120))
+	title := "Described a photo: " + cutRunes(description, 120)
+	if documentKind != models.PhotoDocumentNone {
+		handedOn, err := self.handOnPhotoDocument(ctx, run, photo, documentKind, content, preview.ContentType)
+		if err != nil {
+			// The description is kept, and the job is tried again for the
+			// document alone (handOnDocumentLeftOver).
+			self.retitle(ctx, run, thinking.Conversation, title+" (a "+photoDocumentWords(documentKind)+", not handed on yet)")
+			return fmt.Errorf("cannot hand on the %s in photo %s: %w", documentKind, photoId, err)
+		}
+		if handedOn != "" {
+			title += " (a " + photoDocumentWords(documentKind) + ", " + handedOn + ")"
+		}
+	}
+	self.retitle(ctx, run, thinking.Conversation, title)
 	return nil
+}
+
+// handOnDocumentLeftOver hands on the document of a photo described already
+// whose handing on failed: one its description called a document, with no
+// copy made of it yet.
+func (self *Agent) handOnDocumentLeftOver(ctx context.Context, run *Run, photo *models.Photo, preview *models.PhotoPreview) error {
+	if photo.PhotoDocumentKind == "" || photo.PhotoDocumentKind == models.PhotoDocumentNone || preview == nil || run.Storage() == nil {
+		return nil
+	}
+	var existing *models.AgentAttachment
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		existing, err = tx.GetAgentAttachmentOfPhoto(run.Agent.ID, photo.ID)
+		return err
+	}); err != nil || existing != nil {
+		return err
+	}
+	content, err := run.Storage().GetFile(ctx, models.PhotoPreviewFileID(photo.ID, models.PhotoPreviewLarge))
+	if err != nil {
+		return fmt.Errorf("the picture of photo %s cannot be read yet: %w", photo.ID, err)
+	}
+	_, err = self.handOnPhotoDocument(ctx, run, photo, photo.PhotoDocumentKind, content, preview.ContentType)
+	return err
+}
+
+// photoDocumentWords is a document kind in a run's title.
+func photoDocumentWords(documentKind models.PhotoDocumentKind) string {
+	switch documentKind {
+	case models.PhotoDocumentReceipt:
+		return "receipt"
+	case models.PhotoDocumentStatement:
+		return "statement"
+	case models.PhotoDocumentTaxDocument:
+		return "tax document"
+	}
+	return string(documentKind)
 }
 
 // refusePhotoDescription ends a request that cannot be served, saying why on

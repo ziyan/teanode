@@ -648,6 +648,16 @@ server cannot read PDFs. `agent.ReadAttachmentText` reads a stored file's
 text on demand from storage, for files whose text is not kept in the
 database.
 
+A receipt, a statement or a paystub photographed into the person's photo
+library is recorded without being handed in: the photo's description says it
+is a document, and its large preview is copied into an upload that names the
+photo and read by the receipt, `statement_photo` or tax document job
+(`docs/subsystems/photos.md`, "New photos are read as they arrive"). A
+receipt read that way is not recorded when the same purchase (the day, the
+total and the merchant, `finance.IsSamePurchase`) is recorded already, from
+its mail or the same picture sent in a conversation. A statement's rows go
+only into the account of imported statements they are of.
+
 ## Paystubs and W-2s
 
 A paystub is one paycheck's statement: what was earned, the taxes withheld

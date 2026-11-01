@@ -360,6 +360,9 @@ type PhotoDescription struct {
 
 	// ModelName is the model that wrote them.
 	ModelName string
+
+	// PhotoDocumentKind is what the model said the picture is.
+	PhotoDocumentKind models.PhotoDocumentKind
 }
 
 // The most a description and the words read in a picture hold, in

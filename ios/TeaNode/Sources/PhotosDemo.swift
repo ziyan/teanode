@@ -221,13 +221,16 @@
             }.joined(separator: ",")
         }
 
-        /// What the demo server says a photo shows: only the first photo has been
-        /// described.
+        /// What the demo server says a photo shows: only the first two photos have
+        /// been described, and the second is a receipt.
         private static func describedFields(photoId: String) -> String {
             if photoId == "demo-01" {
-                return #","photoDescription":"A person in a green jacket stands on a riverside path at sunset, with a footbridge and a few trees behind them.","descriptionVisibleText":"RIVERSIDE PARK","describedAt":"2026-10-16T09:30:00Z","isDescriptionRequested":false"#
+                return #","photoDescription":"A person in a green jacket stands on a riverside path at sunset, with a footbridge and a few trees behind them.","descriptionVisibleText":"RIVERSIDE PARK","describedAt":"2026-10-16T09:30:00Z","isDescriptionRequested":false,"photoDocumentKind":"none""#
             }
-            return #","photoDescription":"","descriptionVisibleText":"","describedAt":null,"isDescriptionRequested":false"#
+            if photoId == "demo-02" {
+                return #","photoDescription":"A printed receipt from a cafe lies on a wooden table, listing two coffees and a pastry.","descriptionVisibleText":"RIVERSIDE CAFE","describedAt":"2026-10-16T09:31:00Z","isDescriptionRequested":false,"photoDocumentKind":"receipt""#
+            }
+            return #","photoDescription":"","descriptionVisibleText":"","describedAt":null,"isDescriptionRequested":false,"photoDocumentKind":"""#
         }
 
         private static func albumJSON(_ album: DemoAlbum) -> String {
@@ -316,7 +319,7 @@
             } else if body.contains("ReadPhotoLibrary") {
                 let inLibrary = isEmpty ? 0 : demoPhotos.filter { !$0.isTrashed && !$0.isForeign }.count
                 let trashed = isEmpty ? 0 : demoPhotos.filter(\.isTrashed).count
-                json = #"{"data":{"ReadPhotoLibrary":{"photoCount":\#(inLibrary),"videoCount":3,"favoriteCount":3,"trashedCount":\#(trashed),"usedBytes":412000000,"maximumFileBytes":2000000000,"maximumAccountBytes":50000000000,"trashRetentionDays":30,"isDescriptionAvailable":true,"descriptionUnavailableMessage":"","isFaceRecognitionAvailable":true,"faceRecognitionUnavailableMessage":"","isPhotoFaceRecognitionEnabled":true}}}"#
+                json = #"{"data":{"ReadPhotoLibrary":{"photoCount":\#(inLibrary),"videoCount":3,"favoriteCount":3,"trashedCount":\#(trashed),"usedBytes":412000000,"maximumFileBytes":2000000000,"maximumAccountBytes":50000000000,"trashRetentionDays":30,"isDescriptionAvailable":true,"descriptionUnavailableMessage":"","isFaceRecognitionAvailable":true,"faceRecognitionUnavailableMessage":"","isPhotoFaceRecognitionEnabled":true,"isPhotoReadingEnabled":true}}}"#
             } else if body.contains("ListPhotoAlbums"), variables["circleId"] as? String == "circle-home" {
                 // The Home circle's page: its own album, and two shared with everyone in it.
                 json = #"{"data":{"ListPhotoAlbums":[\#(circleAlbumsJSON)]}}"#
@@ -355,13 +358,15 @@
                 json = #"{"data":{"HidePhotoFaceGroup":\#(faceGroupJSON(person))}}"#
             } else if body.contains("SetPhotoFaceRecognition") {
                 json = #"{"data":{"SetPhotoFaceRecognition":\#(variables["isEnabled"] as? Bool ?? true)}}"#
+            } else if body.contains("SetPhotoReading") {
+                json = #"{"data":{"SetPhotoReading":\#(variables["isEnabled"] as? Bool ?? true)}}"#
             } else if body.contains("ListPhotoFaceGroups") {
                 json = #"{"data":{"ListPhotoFaceGroups":["# + (isEmpty ? [] : demoFaceGroups).map(faceGroupJSON).joined(separator: ",") + "]}}"
             } else if body.contains("ReadPhotoFaceGroup") {
                 let person = demoFaceGroups.first { $0.id == (variables["photoFaceGroupId"] as? String) } ?? demoFaceGroups[0]
                 json = #"{"data":{"ReadPhotoFaceGroup":\#(faceGroupJSON(person))}}"#
             } else if body.contains("DescribePhoto") {
-                json = #"{"data":{"DescribePhoto":{"photoDescription":"","descriptionVisibleText":"","describedAt":null,"isDescriptionRequested":true}}}"#
+                json = #"{"data":{"DescribePhoto":{"photoDescription":"","descriptionVisibleText":"","describedAt":null,"isDescriptionRequested":true,"photoDocumentKind":""}}}"#
             } else if body.contains("SearchPhotoPlaces") {
                 json = #"{"data":{"SearchPhotoPlaces":\#(demoPlacesJSON(words: variables["query"] as? String ?? "", variables: variables))}}"#
             } else if body.contains("SetPhotoLocation") || body.contains("RemovePhotoLocation") {
