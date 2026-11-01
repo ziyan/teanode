@@ -227,16 +227,36 @@ async function describeFrame(tabId: number, frameId: number): Promise<string | n
   }
 }
 
+// FocusedFrame is the frame holding the keyboard focus, and whether the focus
+// is in a field the person types into.
+interface FocusedFrame {
+  frameId: number
+  isField: boolean
+}
+
 // frameWithFocus is the frame a keyboard shortcut means: the one holding the
-// keyboard focus in a field, or null when none does.
-async function frameWithFocus(tabId: number): Promise<number | null> {
+// keyboard focus in an element of its own, or null when none does. A frame
+// whose focus is an iframe or frame element is not it: document.hasFocus() is
+// also true for every page above the frame that really has the focus, and the
+// frame inside is the one to find.
+async function frameWithFocus(tabId: number): Promise<FocusedFrame | null> {
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
-      func: () => document.hasFocus() && !!document.activeElement && document.activeElement !== document.body,
+      func: () => {
+        const active = document.activeElement
+        if (!document.hasFocus() || !active) return ''
+        const name = active.tagName
+        if (name === 'BODY' || name === 'IFRAME' || name === 'FRAME') return ''
+        const isField =
+          name === 'INPUT' || name === 'TEXTAREA' || name === 'SELECT' || (active as HTMLElement).isContentEditable
+        return isField ? 'field' : 'element'
+      },
     })
-    const focused = results.find((result: { result: unknown }) => result.result === true)
-    return focused ? focused.frameId : null
+    const focused = results.find(
+      (result: { result: unknown }) => result.result === 'field' || result.result === 'element',
+    )
+    return focused ? { frameId: focused.frameId, isField: focused.result === 'field' } : null
   } catch {
     return null
   }
@@ -1323,13 +1343,17 @@ chrome.contextMenus.onClicked.addListener(
 
 // The keyboard shortcut opens the button's dropdown for the tab in front.
 // The frame with the focus is read first: once the dropdown is open, the page
-// no longer has it.
+// no longer has it. The top frame does not take the tab from a frame recorded
+// when its sign-in field was focused, unless the focus is in a field of the
+// top frame itself.
 chrome.commands.onCommand.addListener(async (command: string) => {
   if (command !== 'fill-login') return
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
   if (!tab || typeof tab.id !== 'number') return
-  const focusedFrameId = await frameWithFocus(tab.id)
-  if (focusedFrameId !== null) focusedFrames.set(tab.id, focusedFrameId)
+  const focused = await frameWithFocus(tab.id)
+  if (focused !== null && (focused.frameId !== 0 || focused.isField || !focusedFrames.has(tab.id))) {
+    focusedFrames.set(tab.id, focused.frameId)
+  }
   await openPasswords(tab)
 })
 

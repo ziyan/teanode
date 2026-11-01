@@ -353,14 +353,102 @@ describe('the dropdown', () => {
     context.scripting.executeScript.mockImplementation((async (details: any) =>
       details.target.allFrames
         ? [
-            { frameId: 0, result: false },
-            { frameId: 7, result: true },
+            { frameId: 0, result: '' },
+            { frameId: 7, result: 'field' },
           ]
         : [{ frameId: 7, result: 'https://example.com/' }]) as any)
     await context.listeners['commands.onCommand']('fill-login')
     expect(context.action.openPopup).toHaveBeenCalledWith({ windowId: 1 })
     expect(context.windows.create).not.toHaveBeenCalled()
     expect((await context.send({ type: 'passwords:state', tabId: 5 }, ownPageSender())).frameId).toBe(7)
+  })
+
+  it('keeps the frame a sign-in field was focused in when the top frame only has a button focused', async () => {
+    const context = await start()
+    context.dropdownState.canOpen = true
+    context.tabs.query.mockResolvedValue([{ id: 5, windowId: 1 }] as any)
+    await context.send({ type: 'passwords:field-focused' }, pageSender('https://example.com/', { frameId: 7 }))
+    context.scripting.executeScript.mockImplementation((async (details: any) =>
+      details.target.allFrames
+        ? [
+            { frameId: 0, result: 'element' },
+            { frameId: 7, result: '' },
+          ]
+        : [{ frameId: 7, result: 'https://example.com/' }]) as any)
+    await context.listeners['commands.onCommand']('fill-login')
+    expect((await context.send({ type: 'passwords:state', tabId: 5 }, ownPageSender())).frameId).toBe(7)
+  })
+
+  it('moves to the top frame when a field of its own has the focus, or when no frame was recorded', async () => {
+    const context = await start()
+    context.dropdownState.canOpen = true
+    context.tabs.query.mockResolvedValue([{ id: 5, windowId: 1 }] as any)
+    context.scripting.executeScript.mockImplementation((async (details: any) =>
+      details.target.allFrames
+        ? [{ frameId: 0, result: 'element' }]
+        : [{ frameId: 0, result: 'https://example.com/' }]) as any)
+    await context.listeners['commands.onCommand']('fill-login')
+    expect((await context.send({ type: 'passwords:state', tabId: 5 }, ownPageSender())).frameId).toBe(0)
+    await context.send({ type: 'passwords:field-focused' }, pageSender('https://example.com/', { frameId: 7 }))
+    context.scripting.executeScript.mockImplementation((async (details: any) =>
+      details.target.allFrames
+        ? [{ frameId: 0, result: 'field' }]
+        : [{ frameId: 0, result: 'https://example.com/' }]) as any)
+    await context.listeners['commands.onCommand']('fill-login')
+    expect((await context.send({ type: 'passwords:state', tabId: 5 }, ownPageSender())).frameId).toBe(0)
+  })
+
+  describe('the probe for the frame with the focus', () => {
+    // The probe runs in each frame of the page; here it runs in this one.
+    async function startProbe() {
+      const context = await start()
+      context.dropdownState.canOpen = true
+      context.tabs.query.mockResolvedValue([{ id: 5, windowId: 1 }] as any)
+      let func: (() => string) | undefined
+      context.scripting.executeScript.mockImplementation((async (details: any) => {
+        if (!details.target.allFrames) return [{ frameId: 0, result: 'https://example.com/' }]
+        func = details.func
+        return []
+      }) as any)
+      return async () => {
+        await context.listeners['commands.onCommand']('fill-login')
+        return func!()
+      }
+    }
+    const probe = async () => (await startProbe())()
+
+    afterEach(() => {
+      document.body.innerHTML = ''
+    })
+
+    it('says nothing for a frame whose focus is an iframe, though the page above it has the focus too', async () => {
+      document.body.innerHTML = '<iframe id="inner"></iframe>'
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+      vi.spyOn(document, 'activeElement', 'get').mockReturnValue(document.getElementById('inner'))
+      expect(await probe()).toBe('')
+    })
+
+    it('says nothing for a frame with nothing focused', async () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+      expect(await probe()).toBe('')
+    })
+
+    it('says nothing for a frame that does not have the focus', async () => {
+      document.body.innerHTML = '<input id="user" />'
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+      document.getElementById('user')!.focus()
+      expect(await probe()).toBe('')
+    })
+
+    it('tells a field from another element that has the focus', async () => {
+      document.body.innerHTML = '<input id="user" /><button id="go">Go</button>'
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+      const run = await startProbe()
+      document.getElementById('user')!.focus()
+      expect(await run()).toBe('field')
+      document.getElementById('go')!.focus()
+      expect(await run()).toBe('element')
+    })
   })
 
   it('opens in a small window only where Chrome cannot show the dropdown', async () => {

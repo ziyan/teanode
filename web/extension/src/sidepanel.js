@@ -15,6 +15,7 @@ const LOGO =
 const FRAME_LOAD_TIMEOUT_MILLISECONDS = 8000
 
 const attachButton = document.getElementById('attach')
+const attachError = document.getElementById('attach-error')
 const frameBox = document.getElementById('frame-box')
 const messageBox = document.getElementById('message')
 const messageText = document.getElementById('message-text')
@@ -49,6 +50,13 @@ function showMessage(words, hasOptionsButton) {
   optionsButton.hidden = !hasOptionsButton
   messageBox.hidden = false
   attachButton.hidden = true
+}
+
+// showAttachError puts the reason a tab could not be attached under the bar,
+// or takes the line away when there is none.
+function showAttachError(words) {
+  attachError.textContent = words
+  attachError.hidden = words === ''
 }
 
 // drawAttachButton says what the button will do to the tab in front.
@@ -127,13 +135,15 @@ optionsButton.addEventListener('click', () => {
 
 attachButton.addEventListener('click', async () => {
   const isAttached = activeTabId !== null && activeTabId === attachedTabId
+  showAttachError('')
   if (isAttached) {
     await ask({ type: 'sidepanel:detach' })
     return
   }
   await readActiveTab()
   if (activeTabId === null) return
-  await ask({ type: 'sidepanel:attach', tabId: activeTabId })
+  const answer = await ask({ type: 'sidepanel:attach', tabId: activeTabId })
+  if (answer.error) showAttachError('Could not attach this tab: ' + answer.error)
 })
 
 // What the frame says, and only the frame: whom it signed in as, which must be
@@ -155,6 +165,13 @@ window.addEventListener('message', (event) => {
   if (data.teanode === 'close') window.close()
 })
 
+// hasPersonChanged says whether what the worker pushed differs from what this
+// panel was started with, in being signed in or in whom.
+function hasPersonChanged(pushed) {
+  if (typeof pushed.isSignedIn !== 'boolean') return false
+  return pushed.isSignedIn !== state.isSignedIn || (pushed.username || '') !== (state.username || '')
+}
+
 // The worker says which tab is attached whenever that changes. Only the
 // worker's word counts: a content script in a page can send messages here too.
 chrome.runtime.onMessage.addListener((request, sender) => {
@@ -162,8 +179,9 @@ chrome.runtime.onMessage.addListener((request, sender) => {
   if (!request || request.type !== 'state') return
   attachedTabId = typeof request.attachedTabId === 'number' ? request.attachedTabId : null
   drawAttachButton()
-  // Signed out, or signed in somewhere else, since this was opened.
-  if (state && (!state.isSignedIn || !state.server)) void start()
+  // Signed out, or signed in as somebody else, since this was opened: the
+  // frame shows the old person's dashboard until the panel starts again.
+  if (state && (!state.isSignedIn || !state.server || hasPersonChanged(request))) void start()
 })
 
 chrome.tabs.onActivated.addListener(() => void readActiveTab())

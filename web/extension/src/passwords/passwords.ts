@@ -213,8 +213,11 @@ async function showLogins(popupState: PopupState) {
     void loadList()
   })
   // The keyboard works from the search field: the first login is chosen,
-  // the arrows choose another, and Enter fills the chosen one.
+  // the arrows choose another, and Enter fills the chosen one. Enter that
+  // commits text in an input method (Chinese, Japanese, Korean) is not a
+  // choice.
   search.addEventListener('keydown', (event) => {
+    if (event.isComposing) return
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       choose(chosenIndex + (event.key === 'ArrowDown' ? 1 : -1))
@@ -246,6 +249,9 @@ async function showLogins(popupState: PopupState) {
   let listTurn = 0
   async function loadList() {
     const turn = ++listTurn
+    // The rows shown are of an older search: Enter must not fill one of them
+    // while the newer answer is on its way.
+    choices = []
     let answer: SearchAnswer
     try {
       answer = await ask<SearchAnswer>({ type: 'passwords:search', query, ...target() })

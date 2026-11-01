@@ -73,7 +73,7 @@ function field(id: string): HTMLInputElement {
 }
 
 describe('a sign-in field getting the focus', () => {
-  it('tells the service worker this frame holds the form, once for each field, with nothing typed', async () => {
+  it('tells the service worker this frame holds the form, each time a field is focused, with nothing typed', async () => {
     field('user').focus()
     field('pass').focus()
     field('pass').blur()
@@ -82,7 +82,17 @@ describe('a sign-in field getting the focus', () => {
     expect(sendMessage.mock.calls.map(([message]) => message)).toEqual([
       { type: 'passwords:field-focused' },
       { type: 'passwords:field-focused' },
+      { type: 'passwords:field-focused' },
     ])
+  })
+
+  it('tells it again for a field seen before, so a frame focused in between does not keep the tab', async () => {
+    field('user').focus()
+    await settle()
+    field('user').blur()
+    field('user').focus()
+    await settle()
+    expect(countOf('passwords:field-focused')).toBe(2)
   })
 
   it('says nothing for a field that is no sign-in field', async () => {

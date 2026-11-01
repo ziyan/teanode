@@ -15,6 +15,7 @@
         --accent-text: #ffffff;
         --leaf: #729d39;
         --hover: #efefec;
+        --error: #b3261e;
       }
       @media (prefers-color-scheme: dark) {
         :root:not([data-theme='light']) {
@@ -26,6 +27,7 @@
           --accent-text: #18181b;
           --leaf: #9fca63;
           --hover: #17171a;
+          --error: #f2a5a0;
         }
       }
       :root[data-theme='dark'] {
@@ -37,6 +39,7 @@
         --accent-text: #18181b;
         --leaf: #9fca63;
         --hover: #17171a;
+        --error: #f2a5a0;
       }
       html,
       body {
@@ -121,6 +124,13 @@
         align-items: flex-start;
         gap: 10px;
       }
+      #attach-error {
+        margin: 0;
+        padding: 6px 12px;
+        color: var(--error);
+        border-bottom: 1px solid var(--border);
+      }
+      #attach-error[hidden],
       #message[hidden],
       button[hidden] {
         display: none;
@@ -137,6 +147,7 @@
       <span class="name">TeaNode</span>
       <button id="attach" type="button" hidden>Attach this tab</button>
     </div>
+    <p id="attach-error" role="alert" hidden></p>
     <div id="message" hidden>
       <p id="message-text"></p>
       <button id="options" type="button" class="primary" hidden>Open the extension options</button>

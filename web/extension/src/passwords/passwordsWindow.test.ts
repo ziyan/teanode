@@ -104,8 +104,8 @@ function search(): HTMLInputElement {
   return document.querySelector('input[type="search"]') as HTMLInputElement
 }
 
-function press(key: string) {
-  search().dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+function press(key: string, isComposing = false) {
+  search().dispatchEvent(new KeyboardEvent('keydown', { key, isComposing, bubbles: true, cancelable: true }))
 }
 
 describe('opening', () => {
@@ -180,6 +180,34 @@ describe('the keyboard', () => {
     expect(rowFor('Elsewhere').classList.contains('is-chosen')).toBe(true)
     expect(rowFor('Elsewhere').getAttribute('aria-selected')).toBe('true')
     expect(rowFor('Mine').classList.contains('is-chosen')).toBe(false)
+    press('Enter')
+    await settle()
+    expect(sent.filter((message) => message.type === 'passwords:fill-in-tab')[0].itemId).toBe('other')
+  })
+
+  it('does not fill with the Enter that commits text from an input method', async () => {
+    answers['passwords:fill-in-tab'] = () => ({ filledCount: 2, foreignActionHost: '' })
+    await load()
+    press('Enter', true)
+    await settle()
+    expect(sent.some((message) => message.type === 'passwords:fill-in-tab')).toBe(false)
+    press('Enter')
+    await settle()
+    expect(sent.filter((message) => message.type === 'passwords:fill-in-tab')).toHaveLength(1)
+  })
+
+  it('fills nothing with Enter while a newer search is loading, and the new first login after', async () => {
+    answers['passwords:fill-in-tab'] = () => ({ filledCount: 2, foreignActionHost: '' })
+    await load()
+    let answerSearch: (answer: unknown) => void = () => {}
+    answers['passwords:search'] = () => new Promise((resolve) => (answerSearch = resolve))
+    search().value = 'else'
+    search().dispatchEvent(new Event('input'))
+    press('Enter')
+    await settle()
+    expect(sent.some((message) => message.type === 'passwords:fill-in-tab')).toBe(false)
+    answerSearch({ forThisSite: [], others: [OTHER_LOGIN], ownerKeyChanges: [] })
+    await settleList()
     press('Enter')
     await settle()
     expect(sent.filter((message) => message.type === 'passwords:fill-in-tab')[0].itemId).toBe('other')

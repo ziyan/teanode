@@ -437,14 +437,29 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (!(area === 'local' && (changes.token || changes.server))) return
   disconnect()
   void connectIfSignedIn()
+  void tellSidePanel()
 })
 
-// tellSidePanel says to the open side panels which tab is attached, so their
-// button reads right. With no side panel open nobody listens, and the failed
-// send is not an error.
-function tellSidePanel() {
+// sidePanelState is what a side panel is told: the server, whether anybody is
+// signed in and as whom, and which tab is attached. The token itself is asked
+// for separately, once the panel's frame has loaded.
+async function sidePanelState() {
+  const attachedTabId = attached.ownTabId
+  const [server, secret, { username }] = await Promise.all([
+    serverOrigin(),
+    token(),
+    chrome.storage.local.get('username'),
+  ])
+  return { server, isSignedIn: !!secret, username: username || '', attachedTabId }
+}
+
+// tellSidePanel says to the open side panels how things stand, so their
+// button reads right and a panel left open notices that the person signed out
+// or in as somebody else. With no side panel open nobody listens, and the
+// failed send is not an error.
+async function tellSidePanel() {
   try {
-    chrome.runtime.sendMessage({ type: 'state', attachedTabId: attached.ownTabId }).catch(() => {})
+    await chrome.runtime.sendMessage({ type: 'state', ...(await sidePanelState()) })
   } catch {
     // Nobody to tell.
   }
@@ -1349,15 +1364,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   void (async () => {
     switch (type) {
-      case 'sidepanel:state': {
-        const [server, secret, { username }] = await Promise.all([
-          serverOrigin(),
-          token(),
-          chrome.storage.local.get('username'),
-        ])
-        // The token itself is asked for separately, once the frame has loaded.
-        return { server, isSignedIn: !!secret, username: username || '', attachedTabId: attached.ownTabId }
-      }
+      case 'sidepanel:state':
+        return sidePanelState()
       case 'sidepanel:token':
         // This sender is the extension's own page, so it is handed the token
         // itself: it posts it to the server's frame and to nobody else.

@@ -72,6 +72,9 @@ function isRoleFilled(role: FieldRole): boolean {
 // A sign-in field getting the focus tells the service worker which frame of
 // the tab holds the form, so the dropdown, opened from the toolbar where the
 // page no longer has the focus, fills that frame. It carries nothing typed.
+// It is sent for every focus, also of a field seen before: the service worker
+// keeps one frame for the tab, so a field in this frame focused again after a
+// field in another frame has to take the tab back.
 document.addEventListener(
   'focusin',
   (event) => {
@@ -79,7 +82,6 @@ document.addEventListener(
     if (!(target instanceof HTMLInputElement) || isOpaqueOrigin()) return
     const role = roleOfFocusedField(target)
     if (!role || !isRoleFilled(role)) return
-    if (target === lastLoginField) return
     lastLoginField = target
     void send({ type: 'passwords:field-focused' })
   },

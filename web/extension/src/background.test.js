@@ -617,7 +617,15 @@ describe('the side panel', () => {
     chrome.runtime.sendMessage.mockClear()
     expect(await fromSender({ type: 'sidepanel:attach', tabId: 8 })).toEqual({ attachedTabId: 8 })
     expect(chrome.tabs.get).toHaveBeenCalledWith(8)
-    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'state', attachedTabId: 8 })
+    await vi.waitFor(() =>
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+        type: 'state',
+        server: serverOrigin,
+        isSignedIn: true,
+        username: '',
+        attachedTabId: 8,
+      }),
+    )
     expect(await fromSender({ type: 'sidepanel:state' })).toMatchObject({ attachedTabId: 8 })
   })
 
@@ -632,7 +640,15 @@ describe('the side panel', () => {
     const { fromSender, chrome } = await load(ordinary)
     chrome.runtime.sendMessage.mockClear()
     expect(await fromSender({ type: 'sidepanel:detach' })).toEqual({ attachedTabId: null })
-    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'state', attachedTabId: null })
+    await vi.waitFor(() =>
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+        type: 'state',
+        server: serverOrigin,
+        isSignedIn: true,
+        username: '',
+        attachedTabId: null,
+      }),
+    )
   })
 
   it('says so when the attached tab is closed', async () => {
@@ -641,7 +657,31 @@ describe('the side panel', () => {
     const closed = chrome.tabs.onRemoved.addListener.mock.calls[0][0]
     closed(7)
     await vi.waitFor(() =>
-      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'state', attachedTabId: null }),
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+        type: 'state',
+        server: serverOrigin,
+        isSignedIn: true,
+        username: '',
+        attachedTabId: null,
+      }),
+    )
+  })
+
+  it('says who is signed in whenever the token changes, so a panel left open can start again', async () => {
+    const { chrome } = await load(ordinary)
+    chrome.runtime.sendMessage.mockClear()
+    await chrome.storage.local.set({ token: '', username: 'ada' })
+    for (const [listener] of chrome.storage.onChanged.addListener.mock.calls) {
+      listener({ token: { oldValue: 'a-token', newValue: '' } }, 'local')
+    }
+    await vi.waitFor(() =>
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+        type: 'state',
+        server: serverOrigin,
+        isSignedIn: false,
+        username: 'ada',
+        attachedTabId: null,
+      }),
     )
   })
 
