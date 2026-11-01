@@ -1917,6 +1917,7 @@ export const en = {
   'agent.runKinds.read_receipt': 'Read a receipt',
   'agent.runKinds.tax_document': 'Read a paystub, W-2, 1099 or 1098',
   'agent.runKinds.describe_photo': 'Describe a photo',
+  'agent.runKinds.statement_photo': 'Read a statement photo',
   'agent.runKinds.tax_mail': 'Tax documents mailed in',
   'agent.runKinds.watch': 'Watching',
   'agent.runKinds.follow_up_sweep': 'Check follow-ups',
@@ -6077,6 +6078,15 @@ export const en = {
   'photos.facesOffBody':
     'This deletes every person found in your photos and the names you gave them. Your photos and your contacts stay. Turning it on again finds the people again, but not the names.',
   'photos.facesOffConfirm': 'Turn off and delete',
+  'photos.readingTitle': 'Read new photos',
+  'photos.readingHint':
+    'Each picture taken in the last 30 days is described as it arrives, so a search finds it by what is in it. A receipt is recorded in Finance and matched to its charge, a statement’s transactions are added to the account you imported before, and a paystub or W-2 is recorded with your tax documents. Older photos are described when you or your assistant look at them.',
+  'photos.readingSwitch': 'Describe new photos and record the receipts, statements and tax documents in them',
+  'photos.readingTurnedOn': 'New photos are read',
+  'photos.readingTurnedOff': 'New photos are no longer read',
+  'photos.readAsReceipt': 'Read as a receipt',
+  'photos.readAsStatement': 'Read as a statement',
+  'photos.readAsTaxDocument': 'Read as a tax document',
   'photos.stateInTrash': 'In the Trash',
   'photos.uploadInTrashOne': 'That photo is in the Trash.',
   'photos.uploadInTrashOther': '{count} of those photos are in the Trash.',

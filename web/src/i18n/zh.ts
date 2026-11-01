@@ -1847,6 +1847,7 @@ export const zh: Catalog = {
   'agent.runKinds.read_receipt': '读取收据',
   'agent.runKinds.tax_document': '读取工资单、W-2、1099 或 1098',
   'agent.runKinds.describe_photo': '描述照片',
+  'agent.runKinds.statement_photo': '读取对账单照片',
   'agent.runKinds.tax_mail': '邮件送来的税务文件',
   'agent.runKinds.watch': '关注',
   'agent.runKinds.follow_up_sweep': '检查跟进事项',
@@ -5780,6 +5781,15 @@ export const zh: Catalog = {
   'photos.facesOffBody':
     '这会删除在你的照片中找到的所有人物以及你为他们起的名称。你的照片和联系人会保留。重新打开后会再次查找人物，但名称不会恢复。',
   'photos.facesOffConfirm': '关闭并删除',
+  'photos.readingTitle': '读取新照片',
+  'photos.readingHint':
+    '最近 30 天内拍摄的每张照片在上传时都会被描述，这样搜索就能按照片中的内容找到它。收据会记录到财务中并与对应的扣款匹配，对账单中的交易会添加到你之前导入的账户，工资单或 W-2 会和你的税务文件一起记录。更早的照片会在你或你的助手查看时生成描述。',
+  'photos.readingSwitch': '描述新照片，并记录其中的收据、对账单和税务文件',
+  'photos.readingTurnedOn': '新照片将被读取',
+  'photos.readingTurnedOff': '新照片不再被读取',
+  'photos.readAsReceipt': '已识别为收据',
+  'photos.readAsStatement': '已识别为对账单',
+  'photos.readAsTaxDocument': '已识别为税务文件',
   'photos.stateInTrash': '在废纸篓中',
   'photos.uploadInTrashOne': '那张照片在废纸篓中。',
   'photos.uploadInTrashOther': '其中 {count} 张照片在废纸篓中。',

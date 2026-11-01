@@ -70,6 +70,7 @@ const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(reso
 const describedPhoto = {
   ...photo,
   photoDescription: 'A red kite over a field.',
+  photoDocumentKind: 'none',
   descriptionVisibleText: 'KITE FESTIVAL',
   describedAt: '2030-07-13T10:00:00Z',
   isDescriptionRequested: false,
@@ -77,6 +78,7 @@ const describedPhoto = {
 const undescribedPhoto = {
   ...photo,
   photoDescription: '',
+  photoDocumentKind: '',
   descriptionVisibleText: '',
   describedAt: null,
   isDescriptionRequested: false,
@@ -416,6 +418,32 @@ it('turns to the next photo with the arrow keys, but not while the key goes to a
   fireEvent.keyDown(document.body, { key: 'ArrowRight' })
   expect(onNavigate).toHaveBeenCalledWith(next)
   for (const field of fields) field.remove()
+})
+
+it('says a photo was read as a receipt, with a button to the receipts', async () => {
+  serveRead({ photo: { ...describedPhoto, photoDocumentKind: 'receipt' } })
+  show()
+  const link = await screen.findByRole('link', { name: 'Read as a receipt' })
+  expect(link.getAttribute('href')).toBe('/finance/receipts')
+  expect(link.className).toBe('button')
+})
+
+it('says a photo was read as a statement or a tax document, in plain words', async () => {
+  serveRead({ photo: { ...describedPhoto, photoDocumentKind: 'statement' } })
+  show()
+  expect(await screen.findByText('Read as a statement')).toBeTruthy()
+  cleanup()
+  serveRead({ photo: { ...describedPhoto, photoDocumentKind: 'taxDocument' } })
+  show()
+  expect(await screen.findByText('Read as a tax document')).toBeTruthy()
+  expect(screen.queryByRole('link', { name: /Read as/ })).toBeNull()
+})
+
+it('says nothing of documents for an ordinary photo', async () => {
+  serveRead({ photo: describedPhoto })
+  show()
+  await screen.findByText('A red kite over a field.')
+  expect(screen.queryByText(/Read as a/)).toBeNull()
 })
 
 it('describes the picture to a screen reader: the first sentence of its description, else where and when', async () => {

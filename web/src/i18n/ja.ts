@@ -1909,6 +1909,7 @@ export const ja: Catalog = {
   'agent.runKinds.read_receipt': 'レシートの読み取り',
   'agent.runKinds.tax_document': '給与明細・W-2・1099・1098の読み取り',
   'agent.runKinds.describe_photo': '写真の説明の作成',
+  'agent.runKinds.statement_photo': '明細書の写真の読み取り',
   'agent.runKinds.tax_mail': 'メールで届いた税務書類',
   'agent.runKinds.watch': '見守り',
   'agent.runKinds.follow_up_sweep': 'フォローアップの確認',
@@ -6017,6 +6018,15 @@ export const ja: Catalog = {
   'photos.facesOffBody':
     '写真から見つけたすべての人物と、付けた名前を削除します。写真と連絡先は残ります。再びオンにすると人物は見つけ直されますが、名前は戻りません。',
   'photos.facesOffConfirm': 'オフにして削除',
+  'photos.readingTitle': '新しい写真を読み取る',
+  'photos.readingHint':
+    '過去 30 日間に撮影された写真は、届いた時点でそれぞれ説明が作成され、写っている内容で検索できるようになります。レシートは財務に記録されて該当する請求と照合され、明細書の取引は以前にインポートした口座に追加され、給与明細や W-2 は税務書類として記録されます。それより古い写真は、あなたやアシスタントが開いたときに説明が作成されます。',
+  'photos.readingSwitch': '新しい写真の説明を作成し、写っているレシート、明細書、税務書類を記録する',
+  'photos.readingTurnedOn': '新しい写真を読み取ります',
+  'photos.readingTurnedOff': '新しい写真は読み取られなくなりました',
+  'photos.readAsReceipt': 'レシートとして読み取り済み',
+  'photos.readAsStatement': '明細書として読み取り済み',
+  'photos.readAsTaxDocument': '税務書類として読み取り済み',
   'photos.stateInTrash': 'ゴミ箱にあります',
   'photos.uploadInTrashOne': 'その写真はゴミ箱にあります。',
   'photos.uploadInTrashOther': 'そのうち {count} 件の写真はゴミ箱にあります。',

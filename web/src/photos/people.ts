@@ -44,6 +44,7 @@ export const PEOPLE_DOCUMENTS = {
   HidePhotoFaceGroup: `mutation ($photoFaceGroupId: String!, $isHidden: Boolean!) { HidePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId, isHidden: $isHidden) { ${PHOTO_FACE_GROUP_FIELDS} } }`,
   RemoveContactPicture: 'mutation ($id: String!) { RemoveContactPicture(id: $id) { id hasPhoto } }',
   SetPhotoFaceRecognition: 'mutation ($isEnabled: Boolean!) { SetPhotoFaceRecognition(isEnabled: $isEnabled) }',
+  SetPhotoReading: 'mutation ($isEnabled: Boolean!) { SetPhotoReading(isEnabled: $isEnabled) }',
   ListAddressBooks: 'query { ListAddressBooks { id name } }',
   ListContacts: `query ($addressBookId: String!, $query: String, $first: Int) {
     ListContacts(addressBookId: $addressBookId, query: $query, first: $first) {
@@ -134,6 +135,13 @@ export async function setPhotoFaceRecognition(isEnabled: boolean): Promise<boole
     isEnabled,
   })
   return answer.SetPhotoFaceRecognition
+}
+
+// Turning it off deletes nothing: what was read stays, and new pictures are
+// no longer read.
+export async function setPhotoReading(isEnabled: boolean): Promise<boolean> {
+  const answer = await graphql<{ SetPhotoReading: boolean }>(PEOPLE_DOCUMENTS.SetPhotoReading, { isEnabled })
+  return answer.SetPhotoReading
 }
 
 // A contact as the naming dialog offers it.

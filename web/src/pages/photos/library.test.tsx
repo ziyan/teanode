@@ -114,6 +114,7 @@ beforeEach(() => {
       photo: {
         ...photoFixture(photoId),
         photoDescription: '',
+        photoDocumentKind: '',
         descriptionVisibleText: '',
         describedAt: null,
         isDescriptionRequested: false,
@@ -157,6 +158,7 @@ beforeEach(() => {
           descriptionUnavailableMessage: '',
           isFaceRecognitionAvailable: false,
           faceRecognitionUnavailableMessage: '',
+          isPhotoReadingEnabled: true,
           isPhotoFaceRecognitionEnabled: false,
         },
       } as never
@@ -328,6 +330,7 @@ it('shows a photo that is not in the list once it is read, and never says it is 
         photo: {
           ...photoFixture('photo-9', { originalFilename: 'nine.jpg' }),
           photoDescription: '',
+          photoDocumentKind: '',
           describedAt: null,
           descriptionVisibleText: '',
           isDescriptionRequested: false,
@@ -352,6 +355,7 @@ it('shows the photo asked for, not the one looked up before it', async () => {
             photo: {
               ...photoFixture(photoId, { originalFilename: 'nine.jpg' }),
               photoDescription: '',
+              photoDocumentKind: '',
               describedAt: null,
               descriptionVisibleText: '',
               isDescriptionRequested: false,
@@ -373,6 +377,7 @@ it('shows the photo asked for, not the one looked up before it', async () => {
         photo: {
           ...photoFixture('photo-8', { originalFilename: 'eight.jpg' }),
           photoDescription: '',
+          photoDocumentKind: '',
           describedAt: null,
           descriptionVisibleText: '',
           isDescriptionRequested: false,
@@ -618,6 +623,7 @@ it('hands the drawer the photo as a reference, with the place and day, and close
       photo: {
         ...photoFixture(photoId, { placeName: 'Harbor Town' }),
         photoDescription: '',
+        photoDocumentKind: '',
         descriptionVisibleText: '',
         describedAt: null,
         isDescriptionRequested: false,
@@ -1243,6 +1249,7 @@ it('draws the Trash once the library has said how long it keeps a photo, not bef
       descriptionUnavailableMessage: '',
       isFaceRecognitionAvailable: false,
       faceRecognitionUnavailableMessage: '',
+      isPhotoReadingEnabled: true,
       isPhotoFaceRecognitionEnabled: false,
     },
   })
@@ -1445,6 +1452,7 @@ it('offers no asking about a photo to a person who may not use an assistant', as
       photo: {
         ...photoFixture(photoId, { placeName: 'Harbor Town' }),
         photoDescription: '',
+        photoDocumentKind: '',
         descriptionVisibleText: '',
         describedAt: null,
         isDescriptionRequested: false,
