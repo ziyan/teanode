@@ -308,7 +308,7 @@ struct ContactsScreen: View {
             .navigationTitle(model.title)
             // The books the person can use are chosen under the title, as Finance and Photos choose
             // theirs; with only their own there is nothing to choose.
-            .toolbarTitleMenu {
+            .titleMenu {
                 if model.books.count > 1 {
                     Picker("Address book", selection: bookSelection) {
                         ForEach(model.books) { book in

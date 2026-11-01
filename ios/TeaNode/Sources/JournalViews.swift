@@ -29,10 +29,9 @@ struct JournalScreen: View {
         NavigationStack(path: $path) {
             content
                 .navigationTitle(JournalText.title)
-                .navigationBarTitleDisplayMode(.large)
                 .searchable(text: $search.query, prompt: Text("Search the journal"))
                 .task(id: search.searchWords) { await search.search() }
-                .toolbarTitleMenu { zoomMenu }
+                .titleMenu { zoomMenu }
                 .toolbar {
                     MoreBackButton()
                     ToolbarItemGroup(placement: .topBarTrailing) {
