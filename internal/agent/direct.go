@@ -68,8 +68,20 @@ func (self *directRun) Offered() []*tools.Tool       { return self.offered }
 
 // IsCalledByPersonsProgram is true for a call over MCP: the credential the
 // program holds is one only the person could have given it
-// (tools.ProgramCalling).
-func (self *directRun) IsCalledByPersonsProgram() bool { return self.surface == "mcp" }
+// (tools.ProgramCalling). An operator signed in as the person is not their
+// program, as a teanode_ask turn of theirs is not.
+func (self *directRun) IsCalledByPersonsProgram() bool {
+	if acting, isKnown := self.operations.(operatorActing); isKnown && acting.IsOperatorActingAsPerson() {
+		return false
+	}
+	return self.surface == "mcp"
+}
+
+// operatorActing is operations that know whether an operator signed in as
+// the person makes the calls.
+type operatorActing interface {
+	IsOperatorActingAsPerson() bool
+}
 
 func (self *directRun) Configuration() *config.Configuration {
 	return self.agent.settings.Configuration()
