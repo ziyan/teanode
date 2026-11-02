@@ -215,3 +215,124 @@ func TestTheVoiceSocketTranscribesForThePersonsAgent(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+// Dictation words what is being said as words for a box, by where the box is,
+// and a call is worded as before.
+func TestTheTranscriptionPromptFollowsThePurpose(t *testing.T) {
+	t.Parallel()
+
+	found := &models.Agent{Name: "Bertie"}
+	owner := &models.User{Name: "Mira Example"}
+	for name, testCase := range map[string]struct {
+		isDictation    bool
+		dictationPlace string
+		contains       []string
+		excludes       []string
+	}{
+		"a call":            {contains: []string{"talking to their personal agent, Bertie", "The person is Mira Example."}},
+		"into the agent":    {isDictation: true, dictationPlace: "agent", contains: []string{"dictating a message to their personal agent, Bertie"}, excludes: []string{"talking to"}},
+		"into a chat":       {isDictation: true, dictationPlace: "chat", contains: []string{"dictating a message to people in a chat"}, excludes: []string{"Bertie", "talking to"}},
+		"into the journal":  {isDictation: true, dictationPlace: "journal", contains: []string{"dictating their own words for a page of their journal"}, excludes: []string{"Bertie"}},
+		"nowhere in saying": {isDictation: true, contains: []string{"dictating a message to their personal agent, Bertie"}},
+	} {
+		prompt := voicePromptFor(found, owner, testCase.isDictation, testCase.dictationPlace)
+		for _, want := range testCase.contains {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("%s: the prompt %q lacks %q", name, prompt, want)
+			}
+		}
+		for _, unwanted := range testCase.excludes {
+			if strings.Contains(prompt, unwanted) {
+				t.Errorf("%s: the prompt %q holds %q", name, prompt, unwanted)
+			}
+		}
+	}
+}
+
+// A hello that says dictation opens the same session, with the dictation's
+// prompt, and reads nothing aloud; one that names a purpose or a place the
+// server does not know is refused.
+func TestTheVoiceSocketDictates(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		person, err := tx.CreateUser(&models.User{Username: "dictator", Name: "Example Dictator"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		grantMCPPermissions(t, tx, person, models.PermissionAgentUse)
+		if _, err := tx.CreateAgent(&models.Agent{UserID: person.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+	})
+	var configured map[string]any
+	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		conn, err := (&websocket.Upgrader{}).Upgrade(writer, request, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_ = conn.ReadJSON(&configured)
+		_ = conn.WriteJSON(map[string]any{"type": "session.updated"})
+		var ignored map[string]any
+		_ = conn.ReadJSON(&ignored)
+	}))
+	defer provider.Close()
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	configuration.Agent.Providers = []config.AgentProvider{{Name: "spoken", Kind: config.AgentProviderKindOpenAI, BaseURL: provider.URL + "/v1", APIKey: "test-key"}}
+	configuration.Agent.Voice = config.AgentVoice{Enabled: true}
+	store := config.NewMemoryStore(configuration)
+	worker := agentpackage.New(&agentpackage.Settings{
+		Database: database, Configuration: func() *config.Configuration { return store.Current() }, Instance: "test", Tick: time.Hour,
+	})
+	resolver := &graph{database: database, config: store, settings: &api.Settings{Agent: worker}}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		request.Header.Set(api.AuthenticatedUsernameHeader, "dictator")
+		resolver.voiceView(writer, request)
+	}))
+	defer server.Close()
+	hello := func(fields map[string]any) (*websocket.Conn, voice.Event) {
+		t.Helper()
+		conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), http.Header{"Origin": []string{server.URL}})
+		if err != nil {
+			t.Fatalf("Dial: %s", err)
+		}
+		fields["voiceEvent"] = "hello"
+		_ = conn.WriteJSON(fields)
+		var said voice.Event
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		if err := conn.ReadJSON(&said); err != nil {
+			t.Fatalf("the hello was answered with %s", err)
+		}
+		return conn, said
+	}
+
+	conn, ready := hello(map[string]any{"purpose": "dictation", "dictationPlace": "chat"})
+	defer func() { _ = conn.Close() }()
+	if ready.VoiceEvent != voice.EventReady {
+		t.Fatalf("dictation answered %+v", ready)
+	}
+	prompt := configured["session"].(map[string]any)["audio"].(map[string]any)["input"].(map[string]any)["transcription"].(map[string]any)["prompt"].(string)
+	if !strings.Contains(prompt, "dictating a message to people in a chat") {
+		t.Errorf("the transcription was given %q", prompt)
+	}
+	// Nothing is answered, so nothing is read aloud.
+	_ = conn.WriteJSON(map[string]any{"voiceEvent": "speakAnswer", "answerSegmentId": "answer-1", "answerText": "Hello."})
+	var failed voice.Event
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if err := conn.ReadJSON(&failed); err != nil || failed.VoiceEvent != voice.EventAnswerAudioFailed || failed.AnswerSegmentID != "answer-1" {
+		t.Errorf("reading aloud in dictation got %+v, %v", failed, err)
+	}
+
+	for name, fields := range map[string]map[string]any{
+		"an unknown purpose": {"purpose": "karaoke"},
+		"an unknown place":   {"purpose": "dictation", "dictationPlace": "the moon"},
+	} {
+		refusedConn, refused := hello(fields)
+		_ = refusedConn.Close()
+		if refused.VoiceEvent != voice.EventRefused {
+			t.Errorf("%s was answered with %+v", name, refused)
+		}
+	}
+}

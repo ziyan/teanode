@@ -84,6 +84,13 @@ const (
 	// never kept.
 	AgentAttachmentTaxDocumentParameter = "isTaxDocument"
 
+	// AgentAttachmentVoiceMessageParameter, set to true on a
+	// PathAgentAttachments upload, hands the files in as the recording of a
+	// voice message: each is made into one mono AAC file, its length and
+	// waveform are worked out, and a recording too short, too long or
+	// without sound is refused with a 422.
+	AgentAttachmentVoiceMessageParameter = "isVoiceMessage"
+
 	// PathAgentDocumentFile serves the bytes of one thing a knowledge
 	// source indexed: the picture or the file a record came with, kept in
 	// object storage under the document's key. The document itself is

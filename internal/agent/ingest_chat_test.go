@@ -192,3 +192,98 @@ func TestAnotherAgentsWordsSayWhoseAgentItIs(test *testing.T) {
 		}
 	}
 }
+
+// A voice message is read as its length and its words, in the history of a
+// turn, whoever said it, and the recording is not offered as a file.
+func TestAVoiceMessageIsReadAsItsLengthAndWords(test *testing.T) {
+	test.Parallel()
+
+	recording := []models.AgentAttachment{{ID: "f1", Name: "Voice message.m4a", ContentType: "audio/mp4", AudioDurationMS: 6800}}
+	voice := func(id, userId, name, transcriptState, transcriptText string) *models.AgentMessage {
+		return &models.AgentMessage{
+			ID: id, Role: "user", AuthorKind: models.ChatAuthorPerson, AuthorUserID: userId, AuthorName: name,
+			Attachments: recording, IsVoiceMessage: true, TranscriptState: transcriptState, TranscriptText: transcriptText,
+		}
+	}
+	rows := []*models.AgentMessage{
+		voice("01", "user-ben", "Ben", models.VoiceTranscriptDone, "Running ten minutes late"),
+		voice("02", "user-ann", "Ann", models.VoiceTranscriptOff, ""),
+		voice("03", "user-ben", "Ben", models.VoiceTranscriptWaiting, ""),
+	}
+	history := historyOf(chatTurnRows(rows, "user-ann", "agent-ann", ""), "")
+	if len(history) != 3 {
+		test.Fatalf("history is %+v", history)
+	}
+	if want := "Ben wrote in the chat:\n<untrusted-data>\n[voice message, 0:07] Running ten minutes late\n</untrusted-data>"; history[0].Content != want {
+		test.Errorf("another person's voice message: %q, want %q", history[0].Content, want)
+	}
+	if history[1].Content != "[voice message, 0:07, no transcript]" {
+		test.Errorf("the owner's own voice message: %q", history[1].Content)
+	}
+	if !strings.Contains(history[2].Content, "[voice message, 0:07, no transcript]") || strings.Contains(history[2].Content, "Voice message.m4a") {
+		test.Errorf("a voice message still waiting for its words: %q", history[2].Content)
+	}
+}
+
+// What is filed is not changed, so a chat's knowledge waits for the words of a
+// voice message before it files the message, and files what came before.
+func TestAChatSourceFilesAVoiceMessageOnceItHasItsWords(test *testing.T) {
+	database, worker, run, fixture := ingestionPageFixture(test)
+	var chat *models.Chat
+	var source *models.AgentKnowledgeSource
+	var friend *models.User
+	var voiceMessage *models.ChatMessage
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		agent, err := tx.GetAgent(fixture.AgentID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if run.Owner, err = tx.GetUser(agent.UserID); err != nil {
+			test.Fatal(err)
+		}
+		if friend, err = tx.CreateUser(&models.User{Username: "fixture-friend", Name: "Fixture Friend"}); err != nil {
+			test.Fatal(err)
+		}
+		if chat, err = tx.CreateGroupChat(run.Owner.ID, "Weekend", []string{friend.ID}); err != nil {
+			test.Fatal(err)
+		}
+		if source, err = tx.SetChatAgentReading(chat.ID, run.Owner.ID, true); err != nil || source == nil {
+			test.Fatalf("SetChatAgentReading: %v, %v", source, err)
+		}
+		if _, err := tx.AppendChatMessage(&models.ChatMessage{ChatID: chat.ID, AuthorUserID: friend.ID, AuthorName: friend.DisplayName(), Body: "the boat is booked for Saturday"}); err != nil {
+			test.Fatal(err)
+		}
+		if voiceMessage, err = tx.AppendChatMessage(&models.ChatMessage{
+			ChatID: chat.ID, AuthorUserID: friend.ID, AuthorName: friend.DisplayName(), IsVoiceMessage: true, TranscriptState: models.VoiceTranscriptWaiting,
+			Attachments: []models.AgentAttachment{{ID: "voice-file", Name: "Voice message.m4a", ContentType: "audio/mp4", AudioDurationMS: 6800}},
+		}); err != nil {
+			test.Fatal(err)
+		}
+	})
+
+	next, counts, err := worker.readChat(test.Context(), run, source, source.Cursor)
+	if err != nil || next != "" || counts.Documents != 1 {
+		test.Fatalf("first pass: next=%q counts=%+v, %v", next, counts, err)
+	}
+	text := dbtest.QueryString(test, database, `SELECT string_agg(text, ' ') FROM agent_chunk WHERE source_id = '`+source.ID+`'`)
+	if !strings.Contains(text, "the boat is booked for Saturday") || strings.Contains(text, "voice message") {
+		test.Errorf("a message with words is filed and one still waiting is not: %q", text)
+	}
+
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		if _, err := tx.FinishVoiceMessageTranscript(voiceMessage.ID, models.VoiceTranscriptDone, "I will bring the sandwiches"); err != nil {
+			test.Fatal(err)
+		}
+	})
+	cursor := map[string]any{chatReadThroughKey: dbtest.QueryString(test, database, `SELECT "id" FROM "chat_message" WHERE "body" = 'the boat is booked for Saturday'`)}
+	if _, counts, err := worker.readChat(test.Context(), run, source, cursor); err != nil || counts.Documents != 1 {
+		test.Fatalf("second pass: counts=%+v, %v", counts, err)
+	}
+	text = dbtest.QueryString(test, database, `SELECT string_agg(text, ' ') FROM agent_chunk WHERE source_id = '`+source.ID+`'`)
+	if !strings.Contains(text, "[voice message, 0:07] I will bring the sandwiches") {
+		test.Errorf("the voice message is filed with its words: %q", text)
+	}
+	if strings.Contains(text, "sent a file") {
+		test.Errorf("the recording is filed as a file: %q", text)
+	}
+}

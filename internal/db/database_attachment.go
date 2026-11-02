@@ -86,6 +86,9 @@ type agentAttachmentModel struct {
 	FinanceTransactionID *string `gorm:"column:finance_transaction_id"`
 	IsTaxDocument        bool    `gorm:"column:is_tax_document"`
 	PhotoID              string  `gorm:"column:photo_id"`
+
+	AudioDurationMS int64  `gorm:"column:audio_duration_ms"`
+	AudioWaveform   string `gorm:"column:audio_waveform"`
 }
 
 func (agentAttachmentModel) TableName() string { return "agent_attachment" }
@@ -96,7 +99,7 @@ func attachmentFromModel(model *agentAttachmentModel) *models.AgentAttachment {
 		ConversationID: model.ConversationID, MessageID: model.MessageID,
 		Name: model.Name, ContentType: model.ContentType, Size: model.Size, Text: model.Text,
 		FinanceTransactionID: optionalString(model.FinanceTransactionID), IsTaxDocument: model.IsTaxDocument,
-		PhotoID: model.PhotoID,
+		PhotoID: model.PhotoID, AudioDurationMS: model.AudioDurationMS, AudioWaveform: model.AudioWaveform,
 	}
 }
 
@@ -109,7 +112,7 @@ func (self *transaction) CreateAgentAttachment(attachment *models.AgentAttachmen
 		ConversationID: attachment.ConversationID, MessageID: attachment.MessageID,
 		Name: truncateRunes(attachment.Name, 255), ContentType: truncateRunes(attachment.ContentType, 128),
 		Size: attachment.Size, Text: attachment.Text, IsTaxDocument: attachment.IsTaxDocument,
-		PhotoID: attachment.PhotoID,
+		PhotoID: attachment.PhotoID, AudioDurationMS: attachment.AudioDurationMS, AudioWaveform: attachment.AudioWaveform,
 	}
 	if attachment.IsTaxDocument {
 		model.Text = ""

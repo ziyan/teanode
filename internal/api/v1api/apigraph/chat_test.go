@@ -29,6 +29,10 @@ type chatWorld struct {
 	worker *agent.Agent
 	hub    *chat.Hub
 
+	// configuration is what the hub and the worker read; a test changes it to
+	// turn a feature on.
+	configuration *config.Configuration
+
 	// frank may use the agent as well as circles, and has his on. grace may
 	// too and has never made one. heidi may audit every agent.
 	frank, grace, heidi *models.User
@@ -50,6 +54,7 @@ func newChatWorldWith(t *testing.T, hasWorker bool) *chatWorld {
 	t.Helper()
 	world := &chatWorld{circleWorld: newCircleWorld(t)}
 	configuration := config.Default()
+	world.configuration = configuration
 	world.hub = chat.New(&chat.Settings{
 		Database: world.database, Configuration: func() *config.Configuration { return configuration }, Instance: "chat-test",
 	})
@@ -135,8 +140,8 @@ func (self *chatWorld) read(t *testing.T, as *models.User, conversationId string
 	data := self.call(t, as, fmt.Sprintf(`query { ReadAgentConversation(conversationId: %q) {
 		total conversation %s
 		messages { id role content authorKind authorUserId authorName authorOwnerName authorAgentId authorAvatarColorIndex isMine editedAt isDeleted
-			mentionedUserIds isAllMentioned
-			references { agentMessageId quotedRole quotedText } attachments { id name }
+			mentionedUserIds isAllMentioned isVoiceMessage transcriptText transcriptState
+			references { agentMessageId quotedRole quotedText } attachments { id name contentType audioDurationMS audioWaveform }
 			reactions { emoji reactorKind reactorUserId reactorName } } } }`, conversationId, chatTestFields))
 	view := data["ReadAgentConversation"].(map[string]any)
 	messages := []map[string]any{}

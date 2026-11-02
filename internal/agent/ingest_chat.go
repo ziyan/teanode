@@ -54,6 +54,15 @@ func (self *Agent) readChat(ctx context.Context, run *Run, source *models.AgentK
 	}); err != nil {
 		return "", counts, err
 	}
+	// What is filed is not changed, so a voice message is filed once its
+	// words are written (the server gives up on them after half an hour),
+	// not as a recording with no transcript.
+	for index, message := range messages {
+		if message.IsVoiceMessage && message.TranscriptState == models.VoiceTranscriptWaiting {
+			messages = messages[:index]
+			break
+		}
+	}
 	if chat == nil || len(messages) == 0 {
 		return "", counts, nil
 	}
@@ -100,9 +109,11 @@ func (self *Agent) fileChatDay(ctx context.Context, run *Run, source *models.Age
 		if !slices.Contains(speakers, message.AuthorName) {
 			speakers = append(speakers, message.AuthorName)
 		}
-		fmt.Fprintf(&text, "[%s] %s: %s", message.CreatedAt.In(location).Format("15:04"), name, strings.TrimSpace(message.Body))
-		for _, attachment := range message.Attachments {
-			fmt.Fprintf(&text, " (sent a file: %s)", attachment.Name)
+		fmt.Fprintf(&text, "[%s] %s: %s", message.CreatedAt.In(location).Format("15:04"), name, strings.TrimSpace(message.WordsForReading()))
+		if !message.IsVoiceMessage {
+			for _, attachment := range message.Attachments {
+				fmt.Fprintf(&text, " (sent a file: %s)", attachment.Name)
+			}
 		}
 		text.WriteString("\n")
 	}

@@ -615,6 +615,10 @@ type chatSaying struct {
 	isByAgent        bool
 	mentionedUserIds []string
 	isAllMentioned   bool
+
+	// isVoiceMessage says the one file in attachmentIds is the recording of a
+	// voice message, with nothing else in it.
+	isVoiceMessage bool
 }
 
 // postChatMessage stores what the caller said in a chat, tells the members,
@@ -634,6 +638,11 @@ func (self *graph) postChatMessage(ctx context.Context, session *chatSession, sa
 	if err := models.ValidateChatMessageBody(body, len(attachmentIds) > 0); err != nil {
 		return nil, translateError(err)
 	}
+	if saying.isVoiceMessage {
+		if strings.TrimSpace(body) != "" || len(attachmentIds) != 1 || isByAgent || len(saying.mentionedUserIds) > 0 || saying.isAllMentioned {
+			return nil, fmt.Errorf("%w: a voice message is one recording, with no words and no mention", api.ErrInvalidArguments)
+		}
+	}
 	// The files are the caller's own uploads, not sent with any message yet.
 	attachments, err := tx.GetAgentAttachments(attachmentIds)
 	if err != nil {
@@ -648,6 +657,9 @@ func (self *graph) postChatMessage(ctx context.Context, session *chatSession, sa
 			return nil, api.ErrNotFound
 		}
 		attachedBytes += attachment.Size
+		if saying.isVoiceMessage && attachment.AudioDurationMS <= 0 {
+			return nil, fmt.Errorf("%w: that file was not uploaded as a voice message", api.ErrInvalidArguments)
+		}
 	}
 	if err := self.requireChatAttachmentRoom(tx, session.Agent.ID, attachedBytes); err != nil {
 		return nil, err
@@ -669,6 +681,15 @@ func (self *graph) postChatMessage(ctx context.Context, session *chatSession, sa
 		ReplyToMessageID: strings.TrimSpace(replyToMessageId),
 		MentionedUserIDs: mentionedMembersOf(session.Chat, saying.mentionedUserIds),
 		IsAllMentioned:   saying.isAllMentioned,
+	}
+	if saying.isVoiceMessage {
+		message.IsVoiceMessage = true
+		// Whether anyone pays for the words is settled now, so that a client
+		// draws "transcribing" only for a message that will get them.
+		message.TranscriptState = models.VoiceTranscriptOff
+		if worker := self.agentWorker(); worker != nil {
+			message.TranscriptState = worker.VoiceMessageTranscriptState(tx, session.Agent, session.User)
+		}
 	}
 	for _, attachment := range attachments {
 		message.Attachments = append(message.Attachments, *attachment)
@@ -724,11 +745,19 @@ func mentionedMembersOf(chat *models.Chat, userIds []string) []string {
 // committed. repliedAt is when the message it replies to was said, zero for
 // none: a member who joined after that is not shown what it said.
 func (self *graph) publishSaid(ctx context.Context, session *chatSession, shown *models.AgentMessage, repliedAt time.Time) {
+	tx := self.transaction(ctx)
+	// The words of a voice message are written once it is committed, whether
+	// or not anyone is listening for events.
+	if shown.IsVoiceMessage && shown.TranscriptState == models.VoiceTranscriptWaiting {
+		if worker := self.agentWorker(); worker != nil {
+			messageId := shown.ID
+			tx.AfterCommit(func() { worker.TranscribeVoiceMessageSoon(messageId) })
+		}
+	}
 	hub := self.chatHub()
 	if hub == nil {
 		return
 	}
-	tx := self.transaction(ctx)
 	events := []agent.Event{}
 	for _, member := range session.Chat.ActiveMembers() {
 		if member.ConversationID == "" {
@@ -772,23 +801,39 @@ func (self *graph) sayInChat(ctx context.Context, session *chatSession, argument
 	if err := checkEffort(arguments.Effort); err != nil {
 		return nil, err
 	}
-	addressed := addressedAgentsOf(session, arguments)
-	// Replying to an agent's message is addressing that agent, whichever
-	// client sent it: the dashboard and the app say so themselves, and a
-	// client that only names the message (the command line, an integration)
-	// means the same.
-	if repliedAgentId, err := self.repliedAgentOf(ctx, session, replyTo); err != nil {
-		return nil, err
-	} else if repliedAgentId != "" && !slices.Contains(addressed, repliedAgentId) {
-		addressed = append(addressed, repliedAgentId)
+	voiceMessageAttachmentId := strings.TrimSpace(arguments.VoiceMessageAttachmentID)
+	isVoiceMessage := voiceMessageAttachmentId != ""
+	attachmentIds := arguments.AttachmentIDs
+	var addressed []string
+	if isVoiceMessage {
+		// A recording is said to the people in the chat. It is not read by an
+		// agent until it has words, so it addresses none, and a reply to an
+		// agent's message is not an address either.
+		if strings.TrimSpace(arguments.Message) != "" || len(attachmentIds) > 0 || len(arguments.AddressedAgentIDs) > 0 || arguments.ShouldAddressOwnAgent ||
+			len(arguments.MentionedUserIDs) > 0 || arguments.IsAllMentioned {
+			return nil, fmt.Errorf("%w: a voice message is one recording, with no words, no other file, no mention and no agent addressed", api.ErrInvalidArguments)
+		}
+		attachmentIds = []string{voiceMessageAttachmentId}
+	} else {
+		addressed = addressedAgentsOf(session, arguments)
+		// Replying to an agent's message is addressing that agent, whichever
+		// client sent it: the dashboard and the app say so themselves, and a
+		// client that only names the message (the command line, an integration)
+		// means the same.
+		if repliedAgentId, err := self.repliedAgentOf(ctx, session, replyTo); err != nil {
+			return nil, err
+		} else if repliedAgentId != "" && !slices.Contains(addressed, repliedAgentId) {
+			addressed = append(addressed, repliedAgentId)
+		}
 	}
 	worker := self.agentWorker()
 	if len(addressed) > 0 && worker == nil {
 		return nil, agent.ErrUnavailable
 	}
 	shown, err := self.postChatMessage(ctx, session, chatSaying{
-		body: arguments.Message, attachmentIds: arguments.AttachmentIDs, replyToMessageId: replyTo,
+		body: arguments.Message, attachmentIds: attachmentIds, replyToMessageId: replyTo,
 		mentionedUserIds: arguments.MentionedUserIDs, isAllMentioned: arguments.IsAllMentioned,
+		isVoiceMessage: isVoiceMessage,
 	})
 	if err != nil {
 		return nil, err
@@ -900,6 +945,11 @@ func (self *graph) EditChatMessage(ctx context.Context, arguments EditChatMessag
 	}
 	if message.DeletedAt != nil {
 		return nil, api.ErrNotFound
+	}
+	// Its words are the server's, written from the recording: to say
+	// something else is to send another.
+	if message.IsVoiceMessage {
+		return nil, fmt.Errorf("%w: a voice message cannot be changed; delete it and send another", api.ErrInvalidArguments)
 	}
 	if err := models.ValidateChatMessageBody(arguments.Message, len(message.Attachments) > 0); err != nil {
 		return nil, translateError(err)

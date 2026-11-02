@@ -25,11 +25,7 @@ import (
 // for a day without asking, and a new picture has to be a new address for
 // that to be safe.
 func avatarUrl(user *models.User) *string {
-	if user == nil || user.AvatarFileID == "" || user.AvatarUpdatedAt == nil {
-		return nil
-	}
-	address := fmt.Sprintf("%s/avatar/user/%s?v=%d", api.Prefix, user.ID, user.AvatarUpdatedAt.Unix())
-	return &address
+	return api.UserAvatarURL(user)
 }
 
 // canSeeAvatar says whether the caller may be shown this person's picture:

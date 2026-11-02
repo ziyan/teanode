@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -94,6 +95,39 @@ func TestSchemaBuilds(t *testing.T) {
 	attachment := schema.Type("AttachmentParametersInput").(*graphql.InputObject)
 	if content := attachment.Fields()["content"].Type.String(); content != "Data!" {
 		t.Errorf("attachment content is %s, expected Data!", content)
+	}
+
+	// Voice messages: the clients (the dashboard, the iPhone app and the
+	// command line) ask for these names, so they are the schema's. Sending
+	// one is an optional argument of AskAgent, because every other turn
+	// leaves it out.
+	if field := schema.MutationType().Fields()["AskAgent"]; field == nil {
+		t.Error("AskAgent is not in the schema")
+	} else {
+		for _, argument := range field.Args {
+			if argument.Name() == "voiceMessageAttachmentId" && argument.Type.String() != "String" {
+				t.Errorf("AskAgent's voiceMessageAttachmentId is %s, expected the optional String", argument.Type)
+			}
+		}
+		if !slices.ContainsFunc(field.Args, func(argument *graphql.Argument) bool { return argument.Name() == "voiceMessageAttachmentId" }) {
+			t.Error("AskAgent has no argument voiceMessageAttachmentId")
+		}
+	}
+	for typeName, fieldNames := range map[string][]string{
+		"AgentAttachment": {"audioDurationMS", "audioWaveform"},
+		"AgentMessage":    {"isVoiceMessage", "transcriptText", "transcriptState"},
+		"AgentVoiceView":  {"isVoiceMessageAvailable"},
+	} {
+		object, isObject := schema.Type(typeName).(*graphql.Object)
+		if !isObject {
+			t.Errorf("%s is not in the schema", typeName)
+			continue
+		}
+		for _, fieldName := range fieldNames {
+			if object.Fields()[fieldName] == nil {
+				t.Errorf("%s has no field %s", typeName, fieldName)
+			}
+		}
 	}
 }
 

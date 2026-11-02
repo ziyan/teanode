@@ -221,10 +221,16 @@ func chatTurnRows(rows []*models.AgentMessage, ownerUserId, agentId, triggerId s
 			copied.Role = string(llm.RoleUser)
 			copied.Content = historyTurn(&copied)
 			copied.Attachments = nil
+			// Its words are in Content now; read again as a voice message it
+			// would lose the name and the fence around them.
+			copied.IsVoiceMessage, copied.TranscriptText, copied.TranscriptState = false, "", ""
 		default:
 			copied.Role = string(llm.RoleUser)
 			copied.Content = chatWords(row.AuthorName, row.AuthorOwnerName, row.AuthorKind == models.ChatAuthorAgent, historyTurn(&copied))
 			copied.Attachments = nil
+			// Its words are in Content now; read again as a voice message it
+			// would lose the name and the fence around them.
+			copied.IsVoiceMessage, copied.TranscriptText, copied.TranscriptState = false, "", ""
 		}
 		converted = append(converted, &copied)
 	}

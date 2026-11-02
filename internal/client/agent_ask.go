@@ -90,6 +90,13 @@ type AgentMessage struct {
 	IsAgentWork bool       `json:"isAgentWork"`
 	EditedAt    *time.Time `json:"editedAt"`
 	IsDeleted   bool       `json:"isDeleted"`
+
+	// A voice message in a chat is one recording, with no words of its own:
+	// TranscriptText is what the server heard in it, and TranscriptState says
+	// how that stands (waiting, done, failed, or off when there will be none).
+	IsVoiceMessage  bool   `json:"isVoiceMessage"`
+	TranscriptText  string `json:"transcriptText"`
+	TranscriptState string `json:"transcriptState"`
 }
 
 // AgentMessageReaction is an emoji on a message, and who put it there:
@@ -116,6 +123,12 @@ type AgentAttachment struct {
 	Name        string `json:"name"`
 	ContentType string `json:"contentType"`
 	Size        int64  `json:"size"`
+
+	// AudioDurationMS is the length of a voice message's recording, zero on
+	// any other file; AudioWaveform is its peaks, 48 levels of 0 to 255 in
+	// base64.
+	AudioDurationMS int64  `json:"audioDurationMS"`
+	AudioWaveform   string `json:"audioWaveform"`
 }
 
 // AgentReference is what the person pointed at with a turn: a thread, a
@@ -166,6 +179,10 @@ type AskAgentRequest struct {
 	// Mentioning a person does not ask their agent.
 	MentionedUserIDs []string
 	IsAllMentioned   bool
+
+	// VoiceMessageAttachmentID is, in a chat, the recording to post as a
+	// voice message, from UploadVoiceMessage. The message has no words.
+	VoiceMessageAttachmentID string
 }
 
 // AgentToolCall is a tool the model asked for.
@@ -237,8 +254,8 @@ const todoFields = `{ id conversationId text createdAt doneAt }`
 
 // The documents.
 const (
-	DocumentAskAgent = `mutation ($conversationId: String, $message: String!, $surface: String, $readOnly: Boolean, $attachmentIds: [String!], $references: [AgentReferenceInput!], $effort: String, $addressedAgentIds: [String!], $shouldAddressOwnAgent: Boolean, $mentionedUserIds: [String!], $isAllMentioned: Boolean) {
-		AskAgent(conversationId: $conversationId, message: $message, surface: $surface, readOnly: $readOnly, attachmentIds: $attachmentIds, references: $references, effort: $effort, addressedAgentIds: $addressedAgentIds, shouldAddressOwnAgent: $shouldAddressOwnAgent, mentionedUserIds: $mentionedUserIds, isAllMentioned: $isAllMentioned) { runId conversationId }
+	DocumentAskAgent = `mutation ($conversationId: String, $message: String!, $surface: String, $readOnly: Boolean, $attachmentIds: [String!], $references: [AgentReferenceInput!], $effort: String, $addressedAgentIds: [String!], $shouldAddressOwnAgent: Boolean, $mentionedUserIds: [String!], $isAllMentioned: Boolean, $voiceMessageAttachmentId: String) {
+		AskAgent(conversationId: $conversationId, message: $message, surface: $surface, readOnly: $readOnly, attachmentIds: $attachmentIds, references: $references, effort: $effort, addressedAgentIds: $addressedAgentIds, shouldAddressOwnAgent: $shouldAddressOwnAgent, mentionedUserIds: $mentionedUserIds, isAllMentioned: $isAllMentioned, voiceMessageAttachmentId: $voiceMessageAttachmentId) { runId conversationId }
 	}`
 	DocumentReadAgentRun = `query ($runId: String!, $after: Int, $wait: Int) {
 		ReadAgentRun(runId: $runId, after: $after, wait: $wait) { runId done events { kind runId sequence text tool callId arguments risk note error at } }
@@ -254,7 +271,7 @@ const (
 	DocumentReadAgentConversation   = `query ($conversationId: String, $first: Int, $offset: Int) {
 		ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
 			conversation ` + conversationFields + `
-			messages { id createdAt role content name toolCallId toolCalls { id name arguments } usage { model kind promptTokens completionTokens } attachments { id name contentType size } references { itemId threadId subject from recordingId recordingTitle agentMessageId quotedRole quotedText } reactions { emoji reactorKind reactedAt reactorUserId reactorName } authorKind authorUserId authorName authorOwnerName authorAgentId isMine isAgentWork editedAt isDeleted }
+			messages { id createdAt role content name toolCallId toolCalls { id name arguments } usage { model kind promptTokens completionTokens } attachments { id name contentType size audioDurationMS audioWaveform } references { itemId threadId subject from recordingId recordingTitle agentMessageId quotedRole quotedText } reactions { emoji reactorKind reactedAt reactorUserId reactorName } authorKind authorUserId authorName authorOwnerName authorAgentId isMine isAgentWork editedAt isDeleted isVoiceMessage transcriptText transcriptState }
 			total
 			todos ` + todoFields + `
 		}
@@ -317,6 +334,9 @@ func AskAgentWith(ctx context.Context, connection *Client, request *AskAgentRequ
 	if request.IsAllMentioned {
 		variables["isAllMentioned"] = true
 	}
+	if request.VoiceMessageAttachmentID != "" {
+		variables["voiceMessageAttachmentId"] = request.VoiceMessageAttachmentID
+	}
 	if err := connection.executeAllowed(ctx, DocumentAskAgent, variables, &result); err != nil {
 		return nil, err
 	}
@@ -334,6 +354,14 @@ func UploadAgentAttachment(ctx context.Context, connection *Client, filename str
 // keeps; ReadTaxDocument then names it by id.
 func UploadTaxDocument(ctx context.Context, connection *Client, filename string, content []byte) (*AgentAttachment, error) {
 	return uploadAgentAttachment(ctx, connection, api.PathAgentAttachments+"?"+api.AgentAttachmentTaxDocumentParameter+"=true", filename, content)
+}
+
+// UploadVoiceMessage hands the server the recording of a voice message, which
+// it makes one mono AAC file and measures; AskAgentWith names the result by id
+// in a chat. A recording the server refuses (too short, too long, with no
+// sound) comes back as an error with the reason in words.
+func UploadVoiceMessage(ctx context.Context, connection *Client, filename string, content []byte) (*AgentAttachment, error) {
+	return uploadAgentAttachment(ctx, connection, api.PathAgentAttachments+"?"+api.AgentAttachmentVoiceMessageParameter+"=true", filename, content)
 }
 
 func uploadAgentAttachment(ctx context.Context, connection *Client, path, filename string, content []byte) (*AgentAttachment, error) {

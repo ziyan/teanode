@@ -150,6 +150,7 @@ type Agent struct {
 	lastPhotoReading                     time.Time
 	lastJournalRefresh                   time.Time
 	lastJournalEveningQuestion           time.Time
+	lastVoiceMessageSweep                time.Time
 
 	// journalWeather asks the weather service for a day's weather: Open-Meteo,
 	// through the server's safe outbound client. A test hands in its own.
@@ -167,6 +168,10 @@ type Agent struct {
 	describing      atomic.Bool
 	checkingPrices  atomic.Bool
 	namingPlaces    atomic.Bool
+
+	// transcribingVoiceMessages is set while the sweep is writing the words
+	// of voice messages, so that a slow provider is not asked by two sweeps.
+	transcribingVoiceMessages atomic.Bool
 
 	// refreshingJournals is set while the journals' numbers are brought up
 	// to date in the background.
@@ -534,6 +539,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	// Places are named whether or not the agent is on: they are the
 	// person's, and naming them asks a provider, not a model.
 	self.namePlacesInBackground(ctx, now)
+	self.sweepVoiceMessages(ctx, now)
 	if !configuration.Agent.Enabled {
 		return nil
 	}

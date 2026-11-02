@@ -70,6 +70,12 @@ func NewAudioDecoder(ctx context.Context) (*AudioDecoder, error) {
 	return &AudioDecoder{ffmpegPath: ffmpegPath, ffprobePath: ffprobePath}, nil
 }
 
+// FFmpegPath is the ffmpeg program found when the decoder was made.
+func (self *AudioDecoder) FFmpegPath() string { return self.ffmpegPath }
+
+// FFprobePath is the ffprobe program found when the decoder was made.
+func (self *AudioDecoder) FFprobePath() string { return self.ffprobePath }
+
 type boundedCommandOutput struct {
 	bytes.Buffer
 	maximumBytes int
@@ -99,7 +105,10 @@ func PrivateMediaFile() (*os.File, error) {
 
 const supportedMediaFormats = "mov,mp4,m4a,3gp,3g2,mj2,mp3,wav,flac,ogg,matroska,webm,aac,aiff,caf,asf,mpegts"
 
-func mediaDescriptorArguments() []string {
+// MediaDescriptorArguments are the arguments that make ffmpeg or ffprobe read
+// the file passed as the first extra file (descriptor 3) and nothing else,
+// whatever the file says it is.
+func MediaDescriptorArguments() []string {
 	// fd/pipe cannot fetch a network URL or open a playlist's external file.
 	return []string{"-protocol_whitelist", "fd,pipe", "-format_whitelist", supportedMediaFormats, "-fd", "3", "-i", "fd:"}
 }
@@ -118,7 +127,7 @@ func (self *AudioDecoder) probe(ctx context.Context, file *os.File, maximumDurat
 		return err
 	}
 	arguments := []string{"-v", "error"}
-	arguments = append(arguments, mediaDescriptorArguments()...)
+	arguments = append(arguments, MediaDescriptorArguments()...)
 	arguments = append(arguments, "-select_streams", "a:0", "-show_entries", "stream=codec_type:format=duration", "-of", "json")
 	command := exec.CommandContext(ctx, self.ffprobePath, arguments...)
 	command.ExtraFiles = []*os.File{file}
@@ -164,7 +173,7 @@ func (self *AudioDecoder) Decode(ctx context.Context, file *os.File, timelineSta
 	}
 	writer := &audioChunkWriter{ctx: ctx, timelineStartMS: timelineStartMS, maximumSampleCount: maximumDurationMS * AudioSampleRateHz / 1000, chunkSampleCount: chunkDurationMS * AudioSampleRateHz / 1000, acceptChunk: acceptChunk}
 	arguments := []string{"-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "1", "-copyts", "-start_at_zero"}
-	arguments = append(arguments, mediaDescriptorArguments()...)
+	arguments = append(arguments, MediaDescriptorArguments()...)
 	arguments = append(arguments, "-map", "0:a:0", "-vn", "-sn", "-dn", "-af", "aresample=16000:async=1:first_pts=0", "-ac", "1", "-ar", "16000", "-t", strconv.FormatFloat(float64(maximumDurationMS)/1000+1, 'f', 3, 64), "-f", "s16le", "pipe:1")
 	command := exec.CommandContext(ctx, self.ffmpegPath, arguments...)
 	command.ExtraFiles = []*os.File{file}

@@ -576,6 +576,30 @@ func authorWords(message *client.AgentMessage) string {
 	return name
 }
 
+// chatMessageWords are what a chat message says: its words, or for a voice
+// message its length and the words the server heard in it, or that they are
+// still being written or will not come.
+func chatMessageWords(message *client.AgentMessage) string {
+	if !message.IsVoiceMessage {
+		return message.Content
+	}
+	var durationMS int64
+	for _, attachment := range message.Attachments {
+		if attachment.AudioDurationMS > 0 {
+			durationMS = attachment.AudioDurationMS
+			break
+		}
+	}
+	prefix := "(voice message " + models.VoiceMessageClock(durationMS) + ")"
+	switch {
+	case message.TranscriptState == models.VoiceTranscriptDone && strings.TrimSpace(message.TranscriptText) != "":
+		return prefix + " " + strings.TrimSpace(message.TranscriptText)
+	case message.TranscriptState == models.VoiceTranscriptWaiting:
+		return prefix + " (transcribing)"
+	}
+	return prefix + " (no transcript)"
+}
+
 // chatMessageLines are one chat message as a terminal shows it, with what it
 // replies to and the reactions under it. What others wrote is made safe for
 // the terminal.
@@ -599,9 +623,13 @@ func chatMessageLines(message *client.AgentMessage) string {
 		if message.EditedAt != nil {
 			edited = " (edited)"
 		}
-		_, _ = fmt.Fprintf(&builder, "[%s] %s: %s%s  %s\n", when, authorWords(message), forTerminal(message.Content), edited, message.ID)
+		_, _ = fmt.Fprintf(&builder, "[%s] %s: %s%s  %s\n", when, authorWords(message), forTerminal(chatMessageWords(message)), edited, message.ID)
 	}
+	// A voice message's recording is described in its line, not listed as a file.
 	for _, attachment := range message.Attachments {
+		if message.IsVoiceMessage {
+			break
+		}
 		_, _ = fmt.Fprintf(&builder, "        (file %s)\n", forTerminal(attachment.Name))
 	}
 	if len(message.Reactions) > 0 {
