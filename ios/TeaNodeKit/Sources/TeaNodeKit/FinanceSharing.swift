@@ -58,6 +58,56 @@ public struct FinanceShareView: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
+/// AllFinanceShareView is one share of all of the caller's finance: with a
+/// person or with a circle, never both. It covers every account the caller has
+/// now and links later, so it names none. Its levels are spending and
+/// transactions; there is no balance level, since a balance belongs to one
+/// account.
+public struct AllFinanceShareView: Codable, Identifiable, Hashable, Sendable {
+    public let id: String
+    public let granteeUserId: String?
+    public let granteeUsername: String?
+    public let granteeName: String?
+    public let granteeCircleId: String?
+    public let granteeCircleName: String?
+    public let financeShareLevel: String
+    public let createdAt: String?
+
+    /// The level, when it is one the app knows.
+    public var level: FinanceShareLevel? { FinanceShareLevel(rawValue: financeShareLevel) }
+
+    /// Who the share is with, as a target a sheet can show.
+    public var target: ShareTarget {
+        if let granteeCircleId { return .circle(granteeCircleId) }
+        return .person(granteeUserId ?? "")
+    }
+}
+
+/// SharedAllFinance is a person who shares all of their finance with the
+/// caller, and at which level. It names no account.
+public struct SharedAllFinance: Codable, Identifiable, Hashable, Sendable {
+    public let ownerUserId: String
+    public let ownerUsername: String
+    public let ownerName: String?
+    public let financeShareLevel: String
+
+    public var id: String { ownerUserId }
+
+    /// The level, when it is one the app knows.
+    public var level: FinanceShareLevel? { FinanceShareLevel(rawValue: financeShareLevel) }
+
+    /// Whether the transactions are shared too, not only the spending.
+    public var isSharingTransactions: Bool {
+        level?.isAtLeast(.transactions) ?? false
+    }
+
+    /// The owner's name, else their username.
+    public var ownerShownName: String {
+        if let ownerName, !ownerName.isEmpty { return ownerName }
+        return ownerUsername
+    }
+}
+
 /// SharedCreditUsage is what a shared credit card owes against its limit, in
 /// the card's own currency.
 public struct SharedCreditUsage: Codable, Hashable, Sendable {
@@ -181,11 +231,51 @@ extension Documents {
         }
         """
 
+    public static let allFinanceShares = """
+        query {
+          ListFinanceShares {
+            id granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName financeShareLevel createdAt
+          }
+        }
+        """
+    public static let shareAllFinance = """
+        mutation ($granteeUserId: String, $granteeCircleId: String, $financeShareLevel: String!) {
+          ShareFinance(granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, financeShareLevel: $financeShareLevel) {
+            id granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName financeShareLevel createdAt
+          }
+        }
+        """
+    public static let unshareAllFinance = """
+        mutation ($financeShareId: String!) { UnshareFinance(financeShareId: $financeShareId) }
+        """
+    public static let sharedAllFinance = """
+        query ($ownerUserId: String) {
+          ListSharedFinance(ownerUserId: $ownerUserId) { ownerUserId ownerUsername ownerName financeShareLevel }
+        }
+        """
+    public static let sharedAllFinanceSpending = """
+        query ($ownerUserId: String!) {
+          ListSharedFinanceSpending(ownerUserId: $ownerUserId) {
+            spendingMonth spendingCategoryName currencyCode moneyOut moneyIn financeTransactionCount
+          }
+        }
+        """
+    public static let sharedAllFinanceTransactions = """
+        query ($ownerUserId: String!, $limit: Int, $offset: Int) {
+          ListSharedFinanceTransactions(ownerUserId: $ownerUserId, limit: $limit, offset: $offset) {
+            nextCursor totalCount financeTransactions { id postedOn amount currencyCode merchantName spendingCategoryName }
+          }
+        }
+        """
+
     /// The finance sharing documents, for the server's schema check.
     public static let financeSharingDocuments: [String: String] = [
         "financeShares": financeShares, "shareFinanceAccount": shareFinanceAccount, "unshareFinanceAccount": unshareFinanceAccount,
         "sharedFinanceAccounts": sharedFinanceAccounts, "sharedFinanceSpending": sharedFinanceSpending,
         "sharedFinanceTransactions": sharedFinanceTransactions,
+        "allFinanceShares": allFinanceShares, "shareAllFinance": shareAllFinance, "unshareAllFinance": unshareAllFinance,
+        "sharedAllFinance": sharedAllFinance, "sharedAllFinanceSpending": sharedAllFinanceSpending,
+        "sharedAllFinanceTransactions": sharedAllFinanceTransactions,
     ]
 }
 
@@ -242,6 +332,64 @@ extension Connection {
             variables: [
                 "financeAccountId": .string(financeAccountId), "limit": .number(Double(limit)), "offset": .number(Double(offset)),
             ], as: Answer.self
+        ).ListSharedFinanceTransactions
+    }
+
+    // MARK: All of the caller's finance
+
+    /// The caller's own shares of all their finance.
+    public func allFinanceShares() async throws -> [AllFinanceShareView] {
+        struct Answer: Decodable, Sendable { let ListFinanceShares: [AllFinanceShareView] }
+        return try await execute(Documents.allFinanceShares, as: Answer.self).ListFinanceShares
+    }
+
+    /// Shares all of the caller's finance with a person or a circle (one of
+    /// the two) at the spending or transactions level, or changes the level of
+    /// a share already made.
+    @discardableResult
+    public func shareAllFinance(with target: ShareTarget, level: FinanceShareLevel) async throws -> AllFinanceShareView {
+        struct Answer: Decodable, Sendable { let ShareFinance: AllFinanceShareView }
+        return try await execute(
+            Documents.shareAllFinance,
+            variables: [
+                "financeShareLevel": .string(level.rawValue),
+                "granteeUserId": target.granteeUserId.map { .string($0) } ?? .null,
+                "granteeCircleId": target.granteeCircleId.map { .string($0) } ?? .null,
+            ], as: Answer.self
+        ).ShareFinance
+    }
+
+    /// Takes a share of all finance back.
+    public func unshareAllFinance(financeShareId: String) async throws {
+        struct Answer: Decodable, Sendable { let UnshareFinance: Bool }
+        _ = try await execute(Documents.unshareAllFinance, variables: ["financeShareId": .string(financeShareId)], as: Answer.self)
+    }
+
+    /// The people who share all of their finance with the caller, or the one
+    /// whose identifier is given.
+    public func sharedAllFinance(ownerUserId: String? = nil) async throws -> [SharedAllFinance] {
+        struct Answer: Decodable, Sendable { let ListSharedFinance: [SharedAllFinance] }
+        return try await execute(
+            Documents.sharedAllFinance, variables: ["ownerUserId": ownerUserId.map { .string($0) } ?? .null], as: Answer.self
+        ).ListSharedFinance
+    }
+
+    /// The money out and in by month and spending category across all of a
+    /// person's finance together, in each currency.
+    public func sharedFinanceSpending(ownerUserId: String) async throws -> [SharedFinanceSpendingRow] {
+        struct Answer: Decodable, Sendable { let ListSharedFinanceSpending: [SharedFinanceSpendingRow] }
+        return try await execute(
+            Documents.sharedAllFinanceSpending, variables: ["ownerUserId": .string(ownerUserId)], as: Answer.self
+        ).ListSharedFinanceSpending
+    }
+
+    /// A page of the transactions across all of a person's finance together,
+    /// newest first.
+    public func sharedFinanceTransactions(ownerUserId: String, limit: Int = 50, offset: Int = 0) async throws -> SharedFinanceTransactionPage {
+        struct Answer: Decodable, Sendable { let ListSharedFinanceTransactions: SharedFinanceTransactionPage }
+        return try await execute(
+            Documents.sharedAllFinanceTransactions,
+            variables: ["ownerUserId": .string(ownerUserId), "limit": .number(Double(limit)), "offset": .number(Double(offset))], as: Answer.self
         ).ListSharedFinanceTransactions
     }
 }

@@ -15,11 +15,15 @@ struct FinanceSharer: Identifiable, Hashable {
 }
 
 extension FinanceModel {
-    /// The people who share an account with the person, once each, by name.
+    /// The people who share an account, or all of their finance, with the
+    /// person, once each, by name.
     var sharers: [FinanceSharer] {
         var found: [String: FinanceSharer] = [:]
         for account in sharedAccounts where found[account.ownerUserId] == nil {
             found[account.ownerUserId] = FinanceSharer(userId: account.ownerUserId, displayName: account.ownerShownName)
+        }
+        for wholeShare in sharedAllFinance where found[wholeShare.ownerUserId] == nil {
+            found[wholeShare.ownerUserId] = FinanceSharer(userId: wholeShare.ownerUserId, displayName: wholeShare.ownerShownName)
         }
         return found.values.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
@@ -38,6 +42,11 @@ extension FinanceModel {
     /// The accounts a person shares with the caller.
     func accountsShared(by sharer: FinanceSharer) -> [SharedFinanceAccount] {
         sharedAccounts.filter { $0.ownerUserId == sharer.userId }
+    }
+
+    /// What a person shares of all their finance with the caller, when they do.
+    func allFinanceShared(by sharer: FinanceSharer) -> SharedAllFinance? {
+        sharedAllFinance.first { $0.ownerUserId == sharer.userId }
     }
 }
 
@@ -67,6 +76,30 @@ enum FinanceShareWords {
         case .transactions:
             String(localized: "They also see each transaction's date, amount, merchant and spending category.")
         }
+    }
+
+    /// The levels all of a person's finance can be shared at. There is no
+    /// balance level: a balance belongs to one account.
+    static let allFinanceLevels: [FinanceShareLevel] = [.spending, .transactions]
+
+    /// What a level of all finance shows, to the person sharing it.
+    static func allFinanceHint(_ level: FinanceShareLevel) -> String {
+        switch level {
+        case .spending, .balance:
+            String(localized: "Money in and out by month and category across all your accounts, including ones you link later. No account names or balances.")
+        case .transactions:
+            String(localized: "And each transaction's day, amount, merchant and category.")
+        }
+    }
+
+    /// Who a share of all finance is with: "Everyone in Family", or the person's name.
+    static func name(of share: AllFinanceShareView) -> String {
+        if share.granteeCircleId != nil {
+            let circleName = share.granteeCircleName ?? ""
+            return String(localized: "Everyone in \(circleName)")
+        }
+        if let granteeName = share.granteeName, !granteeName.isEmpty { return granteeName }
+        return share.granteeUsername ?? ""
     }
 
     /// Who a share is with: "Everyone in Family", or the person's name.
@@ -136,30 +169,31 @@ struct FinancePersonMenu: View {
     }
 }
 
-/// SharedFinanceView is what one person shares: their accounts at the level
-/// each was shared at. An account shared for its spending or more opens.
+/// SharedFinanceView is what one person shares. When they share all of their
+/// finance it is one combined view of it, with their individual accounts
+/// below; else their accounts at the level each was shared at.
 struct SharedFinanceView: View {
     @Environment(FinanceModel.self) private var finance
     let sharer: FinanceSharer
 
     var body: some View {
-        let accounts = finance.accountsShared(by: sharer)
+        if let wholeShare = finance.allFinanceShared(by: sharer) {
+            SharedAllFinanceView(sharer: sharer, wholeShare: wholeShare)
+        } else {
+            SharedFinanceAccountsList(sharer: sharer)
+        }
+    }
+}
+
+/// SharedFinanceAccountsList is the accounts one person shares, at the level
+/// each was shared at. An account shared for its spending or more opens.
+struct SharedFinanceAccountsList: View {
+    @Environment(FinanceModel.self) private var finance
+    let sharer: FinanceSharer
+
+    var body: some View {
         List {
-            Section {
-                ForEach(accounts) { account in
-                    if account.isShared(atLeast: .spending) {
-                        NavigationLink(value: account) {
-                            SharedFinanceAccountRow(account: account)
-                        }
-                    } else {
-                        SharedFinanceAccountRow(account: account)
-                    }
-                }
-            } header: {
-                Text("Accounts shared by \(sharer.displayName)")
-            } footer: {
-                Text("You see each account as much as its owner chose to share. Your agent does not read any of it.")
-            }
+            SharedFinanceAccountsSection(sharer: sharer)
         }
         .navigationTitle(sharer.displayName)
         .navigationBarTitleDisplayMode(.inline)
@@ -167,6 +201,32 @@ struct SharedFinanceView: View {
             SharedFinanceAccountScreen(account: account)
         }
         .refreshable { await finance.loadShared() }
+    }
+}
+
+/// SharedFinanceAccountsSection is the accounts one person shares with the
+/// caller, each opening when its level reaches the spending.
+struct SharedFinanceAccountsSection: View {
+    @Environment(FinanceModel.self) private var finance
+    let sharer: FinanceSharer
+
+    var body: some View {
+        let accounts = finance.accountsShared(by: sharer)
+        Section {
+            ForEach(accounts) { account in
+                if account.isShared(atLeast: .spending) {
+                    NavigationLink(value: account) {
+                        SharedFinanceAccountRow(account: account)
+                    }
+                } else {
+                    SharedFinanceAccountRow(account: account)
+                }
+            }
+        } header: {
+            Text("Accounts shared by \(sharer.displayName)")
+        } footer: {
+            Text("You see each account as much as its owner chose to share. Your agent does not read any of it.")
+        }
     }
 }
 
@@ -300,13 +360,29 @@ struct SharedSpendingRow: View {
 /// newest first, read a page at a time as the list is scrolled.
 struct SharedFinanceTransactionsScreen: View {
     @Environment(FinanceModel.self) private var finance
-    let account: SharedFinanceAccount
+    private let screenTitle: String
+    /// One shared account's, or, with an owner, all of that person's finance
+    /// together; exactly one of the two is set.
+    private let financeAccountId: String?
+    private let ownerUserId: String?
     @State private var transactions: [SharedFinanceTransaction] = []
     @State private var totalCount = 0
     @State private var hasLoaded = false
     @State private var isLoadingMore = false
     @State private var loadFailedText: String?
     private let pageSize = 50
+
+    init(account: SharedFinanceAccount) {
+        screenTitle = account.accountName
+        financeAccountId = account.financeAccountId
+        ownerUserId = nil
+    }
+
+    init(sharer: FinanceSharer) {
+        screenTitle = String(localized: "Transactions")
+        financeAccountId = nil
+        ownerUserId = sharer.userId
+    }
 
     var body: some View {
         Group {
@@ -331,14 +407,24 @@ struct SharedFinanceTransactionsScreen: View {
                 .refreshable { await loadFirst() }
             }
         }
-        .navigationTitle(account.accountName)
+        .navigationTitle(screenTitle)
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadFirst() }
     }
 
+    /// A page of the transactions from the offset: of the account, or of all
+    /// of the person's finance together.
+    private func readPage(offset: Int) async throws -> SharedFinanceTransactionPage {
+        if let ownerUserId {
+            return try await finance.connection.sharedFinanceTransactions(ownerUserId: ownerUserId, limit: pageSize, offset: offset)
+        }
+        return try await finance.connection.sharedFinanceTransactions(
+            financeAccountId: financeAccountId ?? "", limit: pageSize, offset: offset)
+    }
+
     private func loadFirst() async {
         do {
-            let page = try await finance.connection.sharedFinanceTransactions(financeAccountId: account.financeAccountId, limit: pageSize, offset: 0)
+            let page = try await readPage(offset: 0)
             transactions = page.financeTransactions
             totalCount = page.totalCount
             hasLoaded = true
@@ -353,8 +439,7 @@ struct SharedFinanceTransactionsScreen: View {
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
-            let page = try await finance.connection.sharedFinanceTransactions(
-                financeAccountId: account.financeAccountId, limit: pageSize, offset: transactions.count)
+            let page = try await readPage(offset: transactions.count)
             transactions.append(contentsOf: page.financeTransactions)
             totalCount = page.totalCount
         } catch {
@@ -397,18 +482,45 @@ struct SharedTransactionRow: View {
 
 // MARK: Sharing
 
+/// FinanceSharingSheet is what the Sharing part presents: sharing one account,
+/// or sharing all of the person's finance.
+enum FinanceSharingSheet: String, Identifiable {
+    case account, allFinance
+    var id: String { rawValue }
+}
+
 /// FinanceSharingView is the Sharing part of Finance: which of the person's
 /// accounts are shared with whom, and at what level, each changeable and
-/// removable, and the way to share another.
+/// removable, and the way to share another. All of the person's finance can
+/// be shared at once, first.
 struct FinanceSharingView: View {
     @Environment(FinanceModel.self) private var finance
     @State private var shares: [FinanceShareView] = []
     @State private var hasLoaded = false
     @State private var loadFailedText: String?
-    @State private var isSharing = false
+    @State private var allShares: [AllFinanceShareView] = []
+    @State private var presentedSheet: FinanceSharingSheet?
 
     var body: some View {
         List {
+            Section {
+                if hasLoaded, allShares.isEmpty {
+                    Text("All of your finance is not shared with anybody.").foregroundStyle(.secondary)
+                }
+                ForEach(allShares) { share in
+                    NavigationLink {
+                        FinanceShareAllScreen(share: share) { await load() }
+                    } label: {
+                        FinanceShareAllRow(share: share)
+                    }
+                }
+                Button("Share all your finance", systemImage: "person.badge.plus") { presentedSheet = .allFinance }
+                    .actionColor()
+            } header: {
+                Text("Share all your finance")
+            } footer: {
+                Text("Covers every account you have now and any you link later. Your agent never reads what others share with you.")
+            }
             Section {
                 if hasLoaded, shares.isEmpty {
                     Text("None of your accounts is shared with anybody.").foregroundStyle(.secondary)
@@ -420,7 +532,7 @@ struct FinanceSharingView: View {
                         FinanceShareRow(share: share)
                     }
                 }
-                Button("Share an account", systemImage: "person.badge.plus") { isSharing = true }
+                Button("Share an account", systemImage: "person.badge.plus") { presentedSheet = .account }
                     .actionColor()
                     .disabled(finance.accounts.isEmpty)
             } header: {
@@ -436,16 +548,28 @@ struct FinanceSharingView: View {
                 LoadFailedView(problemText: loadFailedText) { await load() }
             }
         }
-        .sheet(isPresented: $isSharing) {
-            FinanceShareSheet { await load() }
+        .sheet(item: $presentedSheet) { sheet in
+            switch sheet {
+            case .account: FinanceShareSheet { await load() }
+            case .allFinance: FinanceShareAllSheet { await load() }
+            }
         }
         .task { await load() }
+        #if DEBUG
+            .task {
+                // `-TeaNodeScreen finance-sharing-all`: the sheet that shares all the finance.
+                guard DemoServer.screen == "finance-sharing-all" else { return }
+                try? await Task.sleep(for: .seconds(1))
+                presentedSheet = .allFinance
+            }
+        #endif
         .refreshable { await load() }
     }
 
     private func load() async {
         do {
             shares = try await finance.connection.financeShares()
+            allShares = try await finance.connection.allFinanceShares()
             hasLoaded = true
             loadFailedText = nil
         } catch {

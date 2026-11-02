@@ -3,6 +3,10 @@ import XCTest
 
 @testable import TeaNodeKit
 
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
+
 final class FinanceSharingTests: XCTestCase {
     private func decode<Value: Decodable>(_ type: Value.Type, _ json: String) throws -> Value {
         try JSONDecoder().decode(type, from: Data(json.utf8))
@@ -82,7 +86,117 @@ final class FinanceSharingTests: XCTestCase {
         for name in ["financeShares", "shareFinanceAccount", "unshareFinanceAccount", "sharedFinanceAccounts", "sharedFinanceSpending", "sharedFinanceTransactions"] {
             XCTAssertNotNil(Documents.financeSharingDocuments[name], name)
         }
-        XCTAssertEqual(Documents.financeSharingDocuments.count, 6)
+        XCTAssertEqual(Documents.financeSharingDocuments.count, 12)
+        for name in ["allFinanceShares", "shareAllFinance", "unshareAllFinance", "sharedAllFinance", "sharedAllFinanceSpending", "sharedAllFinanceTransactions"] {
+            XCTAssertNotNil(Documents.financeSharingDocuments[name], name)
+        }
+    }
+
+    func testAShareOfAllFinanceToAPersonAndToACircle() throws {
+        let person = try decode(
+            AllFinanceShareView.self,
+            #"{"id":"s1","granteeUserId":"u-ben","granteeUsername":"ben","granteeName":"Ben","granteeCircleId":null,"granteeCircleName":"","financeShareLevel":"spending","createdAt":"2026-10-30T09:00:00Z"}"#
+        )
+        XCTAssertEqual(person.target, .person("u-ben"))
+        XCTAssertEqual(person.level, .spending)
+        let circle = try decode(
+            AllFinanceShareView.self,
+            #"{"id":"s2","granteeUserId":null,"granteeUsername":"","granteeName":"","granteeCircleId":"c1","granteeCircleName":"Home","financeShareLevel":"transactions","createdAt":"2026-10-30T09:00:00Z"}"#
+        )
+        XCTAssertEqual(circle.target, .circle("c1"))
+        XCTAssertEqual(circle.level, .transactions)
+        let unknown = try decode(AllFinanceShareView.self, #"{"id":"s3","financeShareLevel":"everything"}"#)
+        XCTAssertNil(unknown.level)
+    }
+
+    func testAPersonWhoSharesAllTheirFinanceNamesNoAccount() throws {
+        let sharer = try decode(
+            SharedAllFinance.self, #"{"ownerUserId":"u-mira","ownerUsername":"mira","ownerName":"Mira","financeShareLevel":"spending"}"#)
+        XCTAssertEqual(sharer.id, "u-mira")
+        XCTAssertEqual(sharer.ownerShownName, "Mira")
+        XCTAssertEqual(sharer.level, .spending)
+        XCTAssertFalse(sharer.isSharingTransactions)
+        let withTransactions = try decode(
+            SharedAllFinance.self, #"{"ownerUserId":"u-mira","ownerUsername":"mira","ownerName":"","financeShareLevel":"transactions"}"#)
+        XCTAssertTrue(withTransactions.isSharingTransactions)
+        XCTAssertEqual(withTransactions.ownerShownName, "mira")
+        for document in [
+            Documents.sharedAllFinance, Documents.sharedAllFinanceSpending, Documents.sharedAllFinanceTransactions, Documents.allFinanceShares,
+            Documents.shareAllFinance,
+        ] {
+            XCTAssertFalse(document.contains("accountName"))
+            XCTAssertFalse(document.contains("currentBalance"))
+            XCTAssertFalse(document.contains("financeAccountId"))
+        }
+    }
+
+    func testTheDocumentsForAllFinanceUseTheServersOperations() {
+        XCTAssertTrue(Documents.allFinanceShares.contains("ListFinanceShares"))
+        XCTAssertFalse(Documents.allFinanceShares.contains("ListFinanceAccountShares"))
+        XCTAssertTrue(Documents.shareAllFinance.contains("ShareFinance(granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, financeShareLevel: $financeShareLevel)"))
+        XCTAssertTrue(Documents.unshareAllFinance.contains("UnshareFinance(financeShareId: $financeShareId)"))
+        XCTAssertTrue(Documents.sharedAllFinance.contains("ListSharedFinance(ownerUserId: $ownerUserId)"))
+        XCTAssertTrue(Documents.sharedAllFinanceSpending.contains("ListSharedFinanceSpending(ownerUserId: $ownerUserId)"))
+        XCTAssertTrue(Documents.sharedAllFinanceTransactions.contains("ListSharedFinanceTransactions(ownerUserId: $ownerUserId"))
+    }
+
+    func testTheOperationsForAllFinanceSendWhatTheServerTakes() async throws {
+        let server = try ServerAddress(parsing: "mail.example.com")
+        let account = Account(
+            server: server, clientId: "a-client", accessToken: "tnt_a", refreshToken: "", expiresAt: Date().addingTimeInterval(30 * 86400),
+            username: "robin")
+        func variables(of request: URLRequest) throws -> [String: JSONValue] {
+            let body = try JSONDecoder().decode([String: JSONValue].self, from: request.httpBody ?? Data())
+            guard case .object(let variables) = body["variables"] else { return [:] }
+            return variables
+        }
+
+        let sharing = FakeServer { _ in
+            (200, #"{"data":{"ShareFinance":{"id":"s1","granteeUserId":"u-ben","granteeUsername":"ben","granteeName":"Ben","granteeCircleId":null,"granteeCircleName":"","financeShareLevel":"transactions","createdAt":"2026-10-30T09:00:00Z"}}}"#)
+        }
+        let made = try await Connection(account: account, transport: sharing).shareAllFinance(with: .person("u-ben"), level: .transactions)
+        XCTAssertEqual(made.level, .transactions)
+        var sent = try variables(of: sharing.sent[0])
+        XCTAssertEqual(sent["granteeUserId"], .string("u-ben"))
+        XCTAssertEqual(sent["granteeCircleId"], .null)
+        XCTAssertEqual(sent["financeShareLevel"], .string("transactions"))
+
+        let circleSharing = FakeServer { _ in
+            (200, #"{"data":{"ShareFinance":{"id":"s2","granteeUserId":null,"granteeUsername":"","granteeName":"","granteeCircleId":"c1","granteeCircleName":"Home","financeShareLevel":"spending","createdAt":"2026-10-30T09:00:00Z"}}}"#)
+        }
+        try await Connection(account: account, transport: circleSharing).shareAllFinance(with: .circle("c1"), level: .spending)
+        sent = try variables(of: circleSharing.sent[0])
+        XCTAssertEqual(sent["granteeUserId"], .null)
+        XCTAssertEqual(sent["granteeCircleId"], .string("c1"))
+
+        let listing = FakeServer { _ in (200, #"{"data":{"ListFinanceShares":[{"id":"s1","granteeUserId":"u-ben","financeShareLevel":"spending"}]}}"#) }
+        let shares = try await Connection(account: account, transport: listing).allFinanceShares()
+        XCTAssertEqual(shares.map(\.id), ["s1"])
+
+        let unsharing = FakeServer { _ in (200, #"{"data":{"UnshareFinance":true}}"#) }
+        try await Connection(account: account, transport: unsharing).unshareAllFinance(financeShareId: "s1")
+        XCTAssertEqual(try variables(of: unsharing.sent[0])["financeShareId"], .string("s1"))
+
+        let reading = FakeServer { _ in (200, #"{"data":{"ListSharedFinance":[{"ownerUserId":"u-mira","ownerUsername":"mira","ownerName":"Mira","financeShareLevel":"spending"}]}}"#) }
+        let sharers = try await Connection(account: account, transport: reading).sharedAllFinance()
+        XCTAssertEqual(sharers.first?.ownerUserId, "u-mira")
+        XCTAssertEqual(try variables(of: reading.sent[0])["ownerUserId"], .null)
+
+        let spending = FakeServer { _ in
+            (200, #"{"data":{"ListSharedFinanceSpending":[{"spendingMonth":"2026-09","spendingCategoryName":"Groceries","currencyCode":"USD","moneyOut":"42.1700","moneyIn":"0.0000","financeTransactionCount":1}]}}"#)
+        }
+        let rows = try await Connection(account: account, transport: spending).sharedFinanceSpending(ownerUserId: "u-mira")
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(try variables(of: spending.sent[0])["ownerUserId"], .string("u-mira"))
+        XCTAssertNil(try variables(of: spending.sent[0])["financeAccountId"])
+
+        let transactions = FakeServer { _ in (200, #"{"data":{"ListSharedFinanceTransactions":{"nextCursor":"","totalCount":0,"financeTransactions":[]}}}"#) }
+        let page = try await Connection(account: account, transport: transactions).sharedFinanceTransactions(ownerUserId: "u-mira", limit: 25, offset: 50)
+        XCTAssertEqual(page.totalCount, 0)
+        sent = try variables(of: transactions.sent[0])
+        XCTAssertEqual(sent["ownerUserId"], .string("u-mira"))
+        XCTAssertEqual(sent["limit"], .number(25))
+        XCTAssertEqual(sent["offset"], .number(50))
     }
 
     func testAPersonCardListsTheAccountsTheyShare() throws {
@@ -93,6 +207,15 @@ final class FinanceSharingTests: XCTestCase {
         XCTAssertEqual(card.finance?.sectionState, .shown)
         XCTAssertEqual(card.finance?.financeAccounts.first?.accountName, "Card")
         XCTAssertEqual(card.finance?.hasMore, true)
+        XCTAssertNil(card.finance?.allFinanceLevel)
+        let allCard = try decode(
+            PersonCard.self,
+            #"{"canMessage":true,"finance":{"sectionState":"shown","allFinanceShareLevel":"spending","financeAccounts":[],"hasMore":false}}"#)
+        XCTAssertEqual(allCard.finance?.allFinanceLevel, .spending)
+        let emptyLevel = try decode(
+            PersonCard.self, #"{"canMessage":true,"finance":{"sectionState":"shown","allFinanceShareLevel":"","financeAccounts":[],"hasMore":false}}"#)
+        XCTAssertNil(emptyLevel.finance?.allFinanceLevel)
+        XCTAssertTrue(Documents.personCard.contains("allFinanceShareLevel"))
         let noFinance = try decode(PersonCard.self, #"{"canMessage":false}"#)
         XCTAssertNil(noFinance.finance)
         XCTAssertTrue(Documents.personCard.contains("financeAccounts"))

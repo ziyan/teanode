@@ -94640,6 +94640,308 @@
           }
         }
       }
+    },
+    "Money in and out by month and category across all your accounts, including ones you link later. No account names or balances.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての口座の入出金を、月別・カテゴリ別にまとめて共有します。あとから連携する口座も含まれます。口座名と残高は含まれません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按月份和类别汇总你所有账户的收支，包括之后关联的账户。不含账户名称和余额。"
+          }
+        }
+      }
+    },
+    "And each transaction's day, amount, merchant and category.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "さらに、各取引の日付、金額、店名、カテゴリも共有します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以及每笔交易的日期、金额、商家和类别。"
+          }
+        }
+      }
+    },
+    "All of your finance is not shared with anybody.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家計全体は、まだ誰とも共有していません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的全部财务尚未与任何人共享。"
+          }
+        }
+      }
+    },
+    "Share all your finance": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家計全体を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享全部财务"
+          }
+        }
+      }
+    },
+    "Covers every account you have now and any you link later. Your agent never reads what others share with you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今ある口座も、あとから連携する口座もすべて対象です。あなたのエージェントが他の人から共有された内容を読むことはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "涵盖你现有的所有账户，以及之后关联的账户。你的智能体不会读取别人共享给你的内容。"
+          }
+        }
+      }
+    },
+    "All your finance, shared with %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家計全体（共有先：%@）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的全部财务，共享给%@"
+          }
+        }
+      }
+    },
+    "%@ will no longer see all your finance. Accounts you share one by one stay shared.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@は、あなたの家計全体を見られなくなります。口座ごとに共有しているものは共有されたままです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@将不再看到你的全部财务。你逐个共享的账户仍保持共享。"
+          }
+        }
+      }
+    },
+    "All your finance": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家計全体"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的全部财务"
+          }
+        }
+      }
+    },
+    "All your finance is shared with %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家計全体を%@と共有しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的全部财务已共享给%@。"
+          }
+        }
+      }
+    },
+    "All of %@'s accounts together, in %@. No account names or balances.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のすべての口座の合計（通貨：%@）。口座名と残高は含まれません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@的所有账户合计，币种为%@。不含账户名称和余额。"
+          }
+        }
+      }
+    },
+    "sharing.allFinanceSpending": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All finance (spending)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家計全体（支出）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部财务（支出）"
+          }
+        }
+      }
+    },
+    "sharing.allFinanceTransactions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All finance (transactions)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家計全体（取引）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部财务（交易）"
+          }
+        }
+      }
+    },
+    "sharing.allFinance": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All finance"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家計全体"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部财务"
+          }
+        }
+      }
+    },
+    "sharing.noteLevelAllFinanceSpending": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "spending only"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支出のみ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅支出"
+          }
+        }
+      }
+    },
+    "sharing.noteLevelAllFinanceTransactions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "spending and transactions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支出と取引"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支出和交易"
+          }
+        }
+      }
+    },
+    "%@ shared all their finance with you (%@).": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんが家計全体を共有しました（%@）。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@与你共享了其全部财务（%@）。"
+          }
+        }
+      }
+    },
+    "Across all their accounts, now and later": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての口座が対象（今ある口座もあとから追加する口座も）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "涵盖其所有账户，包括现有的和之后的"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

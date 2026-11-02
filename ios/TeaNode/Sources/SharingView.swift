@@ -194,9 +194,7 @@ private struct SharingReceivedRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(verbatim: SharingWords.what(
-                share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.shownSubjectMask,
-                passwordItemCount: share.passwordItemCount))
+            Text(verbatim: SharingWords.receivedWhat(share))
             Text(verbatim: SharingWords.receivedDetails(share)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
             if let note = SharingWords.cannotRemoveNote(share) {
                 Text(verbatim: note).font(.footnote).foregroundStyle(Color(.secondaryLabel))
@@ -245,10 +243,29 @@ enum SharingWords {
         return subjectName
     }
 
+    /// What a share of all of a person's finance is of, with its level: it
+    /// names no account.
+    static func allFinanceWhat(shareLevel: String) -> String {
+        switch shareLevel {
+        case "spending": String(localized: "sharing.allFinanceSpending", defaultValue: "All finance (spending)")
+        case "transactions": String(localized: "sharing.allFinanceTransactions", defaultValue: "All finance (transactions)")
+        default: String(localized: "sharing.allFinance", defaultValue: "All finance")
+        }
+    }
+
+    /// What a share made to the person is of: as `what`, and all finance with its level.
+    static func receivedWhat(_ share: SharingReceived) -> String {
+        if share.isAllFinance { return allFinanceWhat(shareLevel: share.shareLevel) }
+        return what(
+            share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.shownSubjectMask,
+            passwordItemCount: share.passwordItemCount)
+    }
+
     /// What a share the person made is of: as `what`, and "Page deleted" for a
     /// memory page that is gone, which is listed so that its share can be stopped.
     static func madeWhat(_ share: SharingMade) -> String {
         if share.isPageGone { return String(localized: "sharing.pageDeleted", defaultValue: "Page deleted") }
+        if share.isAllFinance { return allFinanceWhat(shareLevel: share.shareLevel) }
         return what(
             share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.shownSubjectMask,
             passwordItemCount: share.passwordItemCount)
@@ -303,6 +320,8 @@ enum SharingWords {
 
     /// The level and what else it gives, in one phrase; empty when there is neither.
     private static func levelAndScopes(_ kind: SharingKind?, shareLevel: String, shareScopes: [String], isReceived: Bool) -> String {
+        // A share of all finance says its level in its title.
+        if SharingScope.isAllFinance(shareKind: kind?.rawValue ?? "", shareScopes: shareScopes) { return "" }
         var parts: [String] = []
         if !shareLevel.isEmpty { parts.append(level(kind, shareLevel: shareLevel, isReceived: isReceived)) }
         parts.append(contentsOf: scopes(kind, shareScopes: shareScopes))
@@ -367,9 +386,7 @@ enum SharingWords {
     }
 
     static func removeMessage(_ share: SharingReceived) -> String {
-        let thing = what(
-            share.knownKind, shareKind: share.shareKind, subjectName: share.subjectName, subjectMask: share.shownSubjectMask,
-            passwordItemCount: share.passwordItemCount)
+        let thing = receivedWhat(share)
         return String(
             localized: "You will no longer receive \(thing) from \(share.shownOwner). \(share.shownOwner) is not told, and has to share it again for you to have it back.")
     }
@@ -388,6 +405,7 @@ private struct ShareReceivedNote: Decodable {
     var shareKind: String = ""
     var shareLevel: String?
     var shareSubject: String?
+    var shareScopes: [String]?
 }
 
 /// ShareReachedNote is the detail of a share_reached note: who joined which
@@ -416,6 +434,15 @@ extension SharingWords {
         case "balance": String(localized: "sharing.noteLevelBalance", defaultValue: "balance only")
         case "spending": String(localized: "sharing.noteLevelSpending", defaultValue: "balance and spending")
         case "transactions": String(localized: "sharing.noteLevelTransactions", defaultValue: "balance, spending and transactions")
+        default: shareLevel
+        }
+    }
+
+    /// A level of all finance as a note says it: it has no balance level.
+    private static func allFinanceNoteLevel(_ shareLevel: String) -> String {
+        switch shareLevel {
+        case "spending": String(localized: "sharing.noteLevelAllFinanceSpending", defaultValue: "spending only")
+        case "transactions": String(localized: "sharing.noteLevelAllFinanceTransactions", defaultValue: "spending and transactions")
         default: shareLevel
         }
     }
@@ -455,7 +482,12 @@ extension SharingWords {
         case .recording:
             if subject.isEmpty { return String(localized: "\(note.sharerName) shared a recording with you (\(level)).") }
             return String(localized: "\(note.sharerName) shared the recording \(subject) with you (\(level)).")
-        case .finance: return String(localized: "\(note.sharerName) shared a finance account with you (\(level)).")
+        case .finance:
+            if SharingScope.isAllFinance(shareKind: note.shareKind, shareScopes: note.shareScopes ?? []) {
+                let allFinanceLevel = allFinanceNoteLevel(note.shareLevel ?? "")
+                return String(localized: "\(note.sharerName) shared all their finance with you (\(allFinanceLevel)).")
+            }
+            return String(localized: "\(note.sharerName) shared a finance account with you (\(level)).")
         case .shoppingList: return String(localized: "\(note.sharerName) shared the shopping list \(subject) with you.")
         case .passwords, nil: return nil
         }
