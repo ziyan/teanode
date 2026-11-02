@@ -66,9 +66,14 @@ final class AgentSettingsModel {
 struct AgentSettingsView: View {
     @State private var model: AgentSettingsModel
     @State private var isConfirmingForget = false
+    /// The page the Search tab asked for, opened once the settings are read
+    /// and only when the person has it.
+    private let openedPart: AgentSettingsPart?
+    @State private var shownPart: AgentSettingsPart?
 
-    init(connection: Connection) {
+    init(connection: Connection, openedPart: AgentSettingsPart? = nil) {
         _model = State(initialValue: AgentSettingsModel(connection: connection))
+        self.openedPart = openedPart
     }
 
     var body: some View {
@@ -109,11 +114,46 @@ struct AgentSettingsView: View {
             }
         }
         .navigationTitle("Your agent")
+        .navigationDestination(item: $shownPart) { part in
+            partScreen(part)
+        }
         .task {
-            if !model.isLoaded { await model.load() }
+            if !model.isLoaded {
+                await model.load()
+                if let openedPart, isOffered(openedPart) { shownPart = openedPart }
+            }
         }
         .refreshable { await model.load() }
         .toast(done: Bindable(model).doneText, problem: Bindable(model).problemText)
+    }
+
+    /// Whether the page is one of the rows below: the agent is on, and the
+    /// row is drawn for this server.
+    private func isOffered(_ part: AgentSettingsPart) -> Bool {
+        guard let settings = model.settings, settings.allowed.enabled, settings.agent != nil else { return false }
+        switch part {
+        case .speakingVoice: return model.voices != nil
+        case .model: return !settings.choices.isEmpty
+        default: return true
+        }
+    }
+
+    /// The page a row opens, made as the row makes it.
+    @ViewBuilder
+    private func partScreen(_ part: AgentSettingsPart) -> some View {
+        switch part {
+        case .about: AgentAboutView(model: model)
+        case .instructions: AgentInstructionsView(model: model)
+        case .language: AgentLanguageView(model: model)
+        case .writingVoice: AgentWritingVoiceView(model: model)
+        case .speakingVoice: AgentSpeechVoiceView(model: model)
+        case .reach: AgentSourcesView(model: model)
+        case .categories: AgentCategoriesView(model: model)
+        case .model: AgentModelView(model: model)
+        case .speakingFirst: AgentSpeakFirstView(model: model)
+        case .askFirst: AgentConfirmView(model: model)
+        case .whenAway: AgentUnattendedView(model: model)
+        }
     }
 
     @ViewBuilder
