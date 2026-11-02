@@ -113,8 +113,15 @@ its pull request is opened.
   through the environment's `openURL`, set once at the root; nothing calls
   `UIApplication.shared.open` for a web page itself.
 - The composer is one rounded field with its buttons inside it: the words on
-  top, adding files at the bottom left, calling and sending at the bottom
-  right.
+  top, adding files at the bottom left, dictating (a microphone), calling and
+  sending at the bottom right. In a chat the waveform button is not a call:
+  it turns the field into a wide "Hold to talk" button beside a keyboard
+  button, as Messages does, and the choice is kept on the device. Holding
+  records a voice message, letting go sends it, and sliding up before letting
+  go cancels. A glass strip above the composer shows the time and "Slide up
+  to cancel" while it records. A voice message in the transcript is a bubble
+  with a play button, its waveform, its time, and its words under it in
+  secondary footnote text once the server has made them.
 - A list row says who, what and when, and only marks what asks for attention
   (high priority, a reply owed, a sender whose checks failed). Routine
   categories and passing checks are not drawn.

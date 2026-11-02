@@ -24,6 +24,9 @@ public struct VoiceEvent: Decodable, Sendable, Equatable {
 public struct VoiceAvailability: Decodable, Sendable {
     public let isVoiceAvailable: Bool
     public let sampleRate: Int?
+    /// Whether the server can prepare a recording sent as a voice message
+    /// in a chat; nil from a server that does not know them.
+    public var isVoiceMessageAvailable: Bool? = nil
     /// The voice answers are read in: the person's choice, or the server's.
     public var speechVoice: String? = nil
     /// The voices the person may choose.

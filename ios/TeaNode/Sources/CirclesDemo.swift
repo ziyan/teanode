@@ -311,6 +311,19 @@
                 #"{"id":"\#(id)","createdAt":"\#(createdAt)","role":"user","content":"\#(content)","reactions":\#(reactions),"references":\#(references),"authorKind":"person","authorUserId":"\#(userId)","authorName":"\#(person.name)","authorOwnerName":"","authorAvatarUrl":\#(person.avatarUrlJSON),"authorAvatarColorIndex":\#(person.avatarColorIndex),"authorAgentId":"","isMine":\#(isMine),"mentionedUserIds":[\#(mentioned)],"isAllMentioned":\#(isAllMentioned)}"#
         }
 
+        /// A voice message, 0:07 long, with its words under it (an invented waveform: 48 levels from 0 to 255, as base64).
+        static func chatVoiceMessageJSON(
+            _ id: String, daysAgo: Int, hour: Int, minute: Int, from userId: String, durationMS: Int, transcriptText: String
+        ) -> String {
+            let person = demoPerson(userId)
+            let createdAt = demoTime(daysAgo: daysAgo, hour: hour, minute: minute)
+            let isMine = userId == "robin"
+            let recording =
+                #"{"id":"voice-\#(id)","name":"Voice message.m4a","contentType":"audio/mp4","size":56000,"isRemoved":false,"audioDurationMS":\#(durationMS),"audioWaveform":"WX6PgnOJwvT1w4gbG2llipaEdYzF9fC8g2oaGHGVnYZ2j8j067UfZ2VZfqCjiHeR"}"#
+            return
+                #"{"id":"\#(id)","createdAt":"\#(createdAt)","role":"user","content":"","attachments":[\#(recording)],"reactions":[],"references":[],"authorKind":"person","authorUserId":"\#(userId)","authorName":"\#(person.name)","authorOwnerName":"","authorAvatarUrl":\#(person.avatarUrlJSON),"authorAvatarColorIndex":\#(person.avatarColorIndex),"authorAgentId":"","isMine":\#(isMine),"mentionedUserIds":[],"isAllMentioned":false,"isVoiceMessage":true,"transcriptText":"\#(transcriptText)","transcriptState":"done"}"#
+        }
+
         /// A message by somebody's agent, said in front of the whole chat.
         static func chatAgentMessageJSON(_ id: String, daysAgo: Int, hour: Int, minute: Int, ownerUserId: String, _ content: String) -> String {
             let createdAt = demoTime(daysAgo: daysAgo, hour: hour, minute: minute)
@@ -334,6 +347,9 @@
                     reactions: reaction),
                 chatMessageJSON("c05", daysAgo: 0, hour: 8, minute: 52, from: "sam", "Perfect, bring two!", references: reply),
                 chatMessageJSON("c06", daysAgo: 0, hour: 8, minute: 55, from: "robin", "Two it is."),
+                chatVoiceMessageJSON(
+                    "c07", daysAgo: 0, hour: 9, minute: 3, from: "sam", durationMS: 7000,
+                    transcriptText: "Running ten minutes late, save me a seat"),
             ]
         }
 
@@ -374,11 +390,11 @@
                 #"{"data":{"ReadAgentConversation":{"conversation":\#(conversation),"todos":[],"messages":[\#(messages.joined(separator: ","))],"total":\#(messages.count)},"ListAgentInteractions":[]}}"#
         }
 
-        /// The chat a screenshot opens (`-TeaNodeScreen chat-direct`, `chat-link`,
-        /// `chat-group`, `chat-members` or `chat-mention`), or nil for any other screen.
+        /// The chat a screenshot opens (`-TeaNodeScreen chat-direct`, `chat-link`, `chat-voice-mode`,
+        /// `chat-voice-hold`, `chat-group`, `chat-members` or `chat-mention`), or nil for any other screen.
         static var openedChat: AgentConversation? {
             switch screen ?? "" {
-            case "chat-direct", "chat-link": AgentConversation(id: "chat-sam", kind: "chat", title: nil, summary: nil, lastAt: nil)
+            case "chat-direct", "chat-link", "chat-voice-mode", "chat-voice-hold": AgentConversation(id: "chat-sam", kind: "chat", title: nil, summary: nil, lastAt: nil)
             case "chat-group", "chat-members", "chat-mention": AgentConversation(id: "chat-home", kind: "chat", title: "Home", summary: nil, lastAt: nil)
             default: nil
             }

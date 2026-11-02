@@ -121,6 +121,13 @@ final class ConversationModel {
     /// offers calls and at what rate it takes speech.
     var call: VoiceCall?
     private(set) var voiceSampleRate: Int?
+    /// Whether the server prepares and transcribes voice messages in chats.
+    private(set) var isVoiceMessageAvailable = false
+
+    /// Calls are with the agent: never in a chat, which is people.
+    var canCall: Bool { voiceSampleRate != nil && !isChat }
+    /// Dictating needs the server's voice, in a chat as anywhere.
+    var canDictate: Bool { voiceSampleRate != nil }
 
     private let app: AppModel
     let connection: Connection
@@ -241,25 +248,40 @@ final class ConversationModel {
             }
             // `-TeaNodeScreen chat-mention`: an @ typed in the box, so the menu of agents it offers is open.
             if DemoServer.isRequested, DemoServer.screen == "chat-mention", draft.isEmpty { draft = "@" }
+            // `-TeaNodeScreen chat-voice-mode` and `chat-voice-hold`: the composer in voice mode, and with the recording strip shown.
+            // Every other demo screen has the keyboard, since the mode is kept on the device between launches.
+            if DemoServer.isRequested {
+                let isVoiceScreen = DemoServer.screen == "chat-voice-mode" || DemoServer.screen == "chat-voice-hold"
+                UserDefaults.standard.set(isVoiceScreen ? "voice" : "keyboard", forKey: "chatComposerMode")
+            }
+            if DemoServer.isRequested, DemoServer.screen == "chat-voice-hold", !voiceRecorder.isRecording { voiceRecorder.showDemoHold() }
         #endif
         loadSharedOwnersIfCited()
         // A chat is people: no ideas to start it with, and no call to the
-        // agent.
+        // agent. It still has the microphone, to dictate and to speak a
+        // message.
         if isChat {
             await markRead()
+            await loadVoiceAvailability()
             return
         }
         if messages.isEmpty {
             await loadIdeas()
         }
-        if voiceSampleRate == nil, let voice = try? await connection.voiceAvailability(), voice.isVoiceAvailable {
-            voiceSampleRate = voice.sampleRate ?? 24000
-        }
+        await loadVoiceAvailability()
+    }
+
+    /// Reads whether the server offers calls, dictation and voice messages,
+    /// until it has said yes.
+    private func loadVoiceAvailability() async {
+        guard voiceSampleRate == nil || !isVoiceMessageAvailable, let voice = try? await connection.voiceAvailability() else { return }
+        if voice.isVoiceAvailable { voiceSampleRate = voice.sampleRate ?? 24000 }
+        isVoiceMessageAvailable = voice.isVoiceMessageAvailable ?? false
     }
 
     /// Calls the agent in this conversation.
     func startCall() {
-        guard call == nil, let voiceSampleRate else { return }
+        guard call == nil, canCall, let voiceSampleRate else { return }
         let call = VoiceCall(connection: connection, model: self, sampleRate: voiceSampleRate, agentName: app.agentTitle)
         self.call = call
         app.currentCall = call
@@ -549,6 +571,94 @@ final class ConversationModel {
         }
     }
 
+    // MARK: Voice messages
+
+    /// The microphone for a voice message, held by the button in the composer.
+    let voiceRecorder = VoiceMessageRecorder()
+    /// A recording that could not be sent, kept to send again.
+    private(set) var failedRecording: VoiceRecording?
+    /// Why a voice message or dictation did not go, and the way to try again
+    /// beside it, for the toast.
+    var voiceProblemText: String?
+    var voiceToastButtons: [ToastButton] = []
+
+    private static let voiceMessageName = "Voice message.m4a"
+
+    /// The finger went down on the button: starts recording.
+    func beginVoiceMessage() {
+        guard isChat, canWrite, !isSending else { return }
+        voiceRecorder.onLongest = { [weak self] in self?.endVoiceMessage(isCancelled: false) }
+        voiceRecorder.start()
+        if let problemText = voiceRecorder.problemText {
+            voiceProblemText = problemText
+            voiceRecorder.problemText = nil
+        }
+    }
+
+    /// The finger came up: sends the recording, or throws it away when the
+    /// finger had slid up to cancel.
+    func endVoiceMessage(isCancelled: Bool) {
+        guard voiceRecorder.isRecording else { return }
+        if isCancelled {
+            voiceRecorder.cancel()
+            return
+        }
+        guard let recording = voiceRecorder.finish() else { return }
+        Task { await sendVoiceMessage(recording) }
+    }
+
+    /// Sends a recording as a voice message: the file is uploaded as one,
+    /// then the chat is asked to say it. A message that fails keeps its
+    /// recording, to send again.
+    func sendVoiceMessage(_ recording: VoiceRecording) async {
+        guard !isSending else { return }
+        failedRecording = nil
+        voiceProblemText = nil
+        isSending = true
+        defer { isSending = false }
+        let reply = replyingTo
+        let referring = references
+        var sentLineId: String?
+        do {
+            let data = try Data(contentsOf: recording.address)
+            let id = try await connection.upload(name: Self.voiceMessageName, contentType: "audio/mp4", data: data, isVoiceMessage: true)
+            let attachment = AgentAttachment(
+                id: id, name: Self.voiceMessageName, contentType: "audio/mp4", size: data.count,
+                audioDurationMS: Int64(recording.durationSeconds * 1000))
+            references = []
+            sentLineId = transcript.addSent("", attachments: [attachment], replyingTo: reply, author: ownAuthor, isVoiceMessage: true)
+            let asked = try await connection.ask(
+                "", in: conversationId, attachmentIds: [id], references: referring, drawerId: app.drawerId, voiceMessageAttachmentId: id)
+            if let sentLineId { confirmSoon(sentLineId) }
+            if !asked.runId.isEmpty, !runningRunIds.contains(asked.runId) {
+                runningRunIds.append(asked.runId)
+            }
+            sentCount += 1
+            if conversationId == nil {
+                conversationId = asked.conversationId
+            }
+            try? FileManager.default.removeItem(at: recording.address)
+        } catch {
+            if let sentLineId { transcript.withdrawSent(lineId: sentLineId) }
+            references = referring
+            failedRecording = recording
+            voiceProblemText = app.describe(error)
+            voiceToastButtons = [ToastButton(title: String(localized: "Try again")) { [weak self] in await self?.retryVoiceMessage() }]
+        }
+    }
+
+    /// Sends the recording that failed once more.
+    func retryVoiceMessage() async {
+        guard let failedRecording else { return }
+        await sendVoiceMessage(failedRecording)
+    }
+
+    /// Throws away the recording that failed.
+    func discardFailedRecording() {
+        if let failedRecording { try? FileManager.default.removeItem(at: failedRecording.address) }
+        failedRecording = nil
+    }
+
     /// Starts one of the agent's ideas: what it opens with is sent at once.
     func start(_ idea: AgentIdea) async {
         do {
@@ -570,7 +680,9 @@ final class ConversationModel {
         // In a chat the person's own words are the user's, and everybody
         // else's are what an answer is in a conversation with an agent.
         let isOwn = line.author.map(\.isOwnWords) ?? (line.kind == .person)
-        replyingTo = AgentReference(agentMessageId: messageId, quotedRole: isOwn ? "user" : "assistant", quotedText: String(line.text.prefix(1000)))
+        // A voice message is quoted by its words, or by what it is.
+        let quoted = line.isVoiceMessage ? (line.transcriptText.isEmpty ? String(localized: "Voice message") : line.transcriptText) : line.text
+        replyingTo = AgentReference(agentMessageId: messageId, quotedRole: isOwn ? "user" : "assistant", quotedText: String(quoted.prefix(1000)))
     }
 
     /// Who wrote the message a reply quotes, named as the chat names them
@@ -735,9 +847,11 @@ final class ConversationModel {
         return line.author?.isOwnWords == true || (chat?.isGroup == true && chat?.isAdmin(ownUserId: ownUserId) == true)
     }
 
-    /// Whether the person may change what a message says: their own words.
+    /// Whether the person may change what a message says: their own words,
+    /// but not a voice message, whose words are the recording's and which is
+    /// taken back and said again.
     func canEdit(_ line: TranscriptLine) -> Bool {
-        line.author?.isOwnWords == true && line.messageId != nil && !line.isDeleted && !line.isBeingSent
+        line.author?.isOwnWords == true && line.messageId != nil && !line.isDeleted && !line.isBeingSent && !line.isVoiceMessage
     }
 
     func edit(_ line: TranscriptLine, to text: String) async {

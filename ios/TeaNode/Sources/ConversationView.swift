@@ -458,12 +458,12 @@ struct ConversationFollowing: ViewModifier {
                     if model.call == nil { Task { await CallActivities.endAll() } }
                 }
             }
-            .onChange(of: model.voiceSampleRate) { startRequestedCall() }
+            .onChange(of: model.canCall) { startRequestedCall() }
     }
 
     /// Starts the call Siri asked for, once the server has said calls work.
     private func startRequestedCall() {
-        guard app.isCallRequested, model.voiceSampleRate != nil else { return }
+        guard app.isCallRequested, model.canCall else { return }
         app.isCallRequested = false
         model.startCall()
     }
@@ -485,6 +485,7 @@ struct ConversationAlerts: ViewModifier {
                 Text(text)
             }
             .sensoryFeedback(.success, trigger: model.sentCount)
+            .toast(done: .constant(nil), problem: $model.voiceProblemText, buttons: $model.voiceToastButtons)
             .alert("Something went wrong", isPresented: $model.isShowingSendProblem, presenting: model.sendProblemText) { _ in
                 Button("OK", role: .cancel) {}
             } message: { text in
@@ -998,16 +999,27 @@ struct MessageActionsView: View {
         }
     }
 
+    /// What the held message says: for a voice message its words, or what it
+    /// is while it has none.
+    private var shownText: String {
+        guard line.isVoiceMessage else { return line.text }
+        return line.transcriptText.isEmpty ? String(localized: "Voice message") : line.transcriptText
+    }
+
+    /// Whether there are words to copy, select or share: a voice message has
+    /// them only once they are made.
+    private var hasWords: Bool { !line.isVoiceMessage || !line.transcriptText.isEmpty }
+
     @ViewBuilder
     private var bubble: some View {
         if isPerson {
-            Text(line.text)
+            Text(shownText)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
         } else if line.kind == .person {
             // Another person's words in a chat are shown as typed.
-            Text(line.text)
+            Text(shownText)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
@@ -1025,7 +1037,7 @@ struct MessageActionsView: View {
                 actionRow("Reply", systemImage: "arrowshape.turn.up.left") {
                     onClose { model.reply(to: line) }
                 }
-                Divider()
+                if hasWords || model.canDelete(line) { Divider() }
             }
             if model.canEdit(line) {
                 actionRow("Edit", systemImage: "pencil") {
@@ -1033,22 +1045,24 @@ struct MessageActionsView: View {
                 }
                 Divider()
             }
-            actionRow("Copy", systemImage: "doc.on.doc") {
-                UIPasteboard.general.string = line.text
-                onClose(nil)
-            }
-            Divider()
-            actionRow("Select", systemImage: "selection.pin.in.out") {
-                let text = line.text
-                onClose { model.selectingText = text }
-            }
-            Divider()
-            ShareLink(item: line.text) {
-                actionLabel("Share", systemImage: "square.and.arrow.up")
-            }
-            .buttonStyle(.plain)
-            if model.canDelete(line) {
+            if hasWords {
+                actionRow("Copy", systemImage: "doc.on.doc") {
+                    UIPasteboard.general.string = line.readableText
+                    onClose(nil)
+                }
                 Divider()
+                actionRow("Select", systemImage: "selection.pin.in.out") {
+                    let text = line.readableText
+                    onClose { model.selectingText = text }
+                }
+                Divider()
+                ShareLink(item: line.readableText) {
+                    actionLabel("Share", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.plain)
+            }
+            if model.canDelete(line) {
+                if hasWords { Divider() }
                 Button {
                     onClose { model.deletingLine = line }
                 } label: {
@@ -1318,8 +1332,12 @@ struct PersonBubble: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            ForEach(line.attachments, id: \.id) { attachment in
-                AttachmentView(attachment: attachment)
+            if let recording = line.voiceAttachment, recording.isRemoved != true {
+                VoiceMessageBubble(line: line, recording: recording, isOthers: isOthers)
+            } else {
+                ForEach(line.attachments, id: \.id) { attachment in
+                    AttachmentView(attachment: attachment)
+                }
             }
             if !line.text.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -2370,6 +2388,11 @@ struct Composer: View {
     @State private var loadingPictureCount = 0
     @FocusState private var isFocused: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
+    /// What the person says goes into the box as they speak, from the microphone button.
+    @State private var dictation = Dictation()
+    /// How a chat's box is written in: "keyboard", or "voice" to hold a button to talk. Kept on the device, for every chat.
+    @AppStorage("chatComposerMode") private var composerMode = "keyboard"
     /// The width and height of each round button, growing with the text size
     /// so its symbol is never larger than the circle that holds it.
     @ScaledMetric(relativeTo: .body) private var scaledButtonDiameterPoints: CGFloat = 36
@@ -2378,8 +2401,22 @@ struct Composer: View {
     /// largest size they follow (see the cap on the row of buttons).
     private var buttonDiameterPoints: CGFloat { min(scaledButtonDiameterPoints, 60) }
 
+    /// Whether the box is a button to hold: in a chat, once the person chose it, while the server takes voice messages and
+    /// nothing else (a file) is waiting to go with the words.
+    private var isVoiceMode: Bool {
+        model.isChat && model.isVoiceMessageAvailable && model.canWrite && composerMode == "voice" && model.pendingFiles.isEmpty
+    }
+
     var body: some View {
         VStack(spacing: 8) {
+            if let failedRecording = model.failedRecording {
+                FailedRecordingStrip(
+                    recording: failedRecording, onRetry: { Task { await model.retryVoiceMessage() } },
+                    onDiscard: { model.discardFailedRecording() })
+            }
+            if isVoiceMode, model.voiceRecorder.isRecording || model.voiceRecorder.hintText != nil {
+                RecordingStrip(recorder: model.voiceRecorder)
+            }
             if !model.pendingFiles.isEmpty || loadingPictureCount > 0 {
                 ScrollView(.horizontal) {
                     HStack {
@@ -2398,130 +2435,11 @@ struct Composer: View {
                 }
                 .scrollIndicators(.hidden)
             }
-            // One field with its buttons inside it, as the Claude app's: the
-            // words on top, adding files at the bottom left, calling and
-            // sending at the bottom right.
-            VStack(alignment: .leading, spacing: 4) {
-                TextField(placeholder, text: $model.draft, axis: .vertical)
-                    .lineLimit(1...8)
-                    .focused($isFocused)
-                    .disabled(!model.canWrite)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-                HStack(spacing: 4) {
-                    Menu {
-                        Button {
-                            isPickingPhotos = true
-                        } label: {
-                            Label("Photo library", systemImage: "photo.on.rectangle")
-                        }
-                        if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                            Button {
-                                isTakingPicture = true
-                            } label: {
-                                Label("Camera", systemImage: "camera")
-                            }
-                        }
-                        Button {
-                            isPickingFiles = true
-                        } label: {
-                            Label("Files", systemImage: "folder")
-                        }
-                        // A screenshot just taken, pasted as the dashboard
-                        // takes one pasted into its box.
-                        if UIPasteboard.general.hasImages {
-                            Button {
-                                if let picture = UIPasteboard.general.image,
-                                    let file = PendingFile(picture: picture, index: model.pendingFiles.count)
-                                {
-                                    model.pendingFiles.append(file)
-                                }
-                            } label: {
-                                Label("Paste picture", systemImage: "doc.on.clipboard")
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
-                            .background(Color(.tertiarySystemFill), in: .circle)
-                            .frame(minWidth: 44, minHeight: 44)
-                            .contentShape(.rect)
-                    }
-                    .accessibilityLabel("Add files")
-                    Spacer()
-                    if model.voiceSampleRate != nil, model.draft.isEmpty, model.pendingFiles.isEmpty, model.conversation?.kind != "run" {
-                        Button {
-                            model.startCall()
-                        } label: {
-                            Image(systemName: "waveform")
-                                .font(.body.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
-                                .frame(minWidth: 44, minHeight: 44)
-                        }
-                        .accessibilityLabel("Call your agent")
-                    }
-                    if model.runningRunId != nil, model.draft.isEmpty, model.pendingFiles.isEmpty {
-                        Button {
-                            Task { await model.stop() }
-                        } label: {
-                            Image(systemName: "stop.fill")
-                                .font(.footnote)
-                                .foregroundStyle(Color(.systemBackground))
-                                .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
-                                .background(Color.primary, in: .circle)
-                                .frame(minWidth: 44, minHeight: 44)
-                        }
-                        .accessibilityLabel("Stop")
-                    } else {
-                        Button {
-                            Task { await model.send() }
-                        } label: {
-                            Group {
-                                if model.isSending {
-                                    ProgressView().tint(.white)
-                                } else {
-                                    Image(systemName: "arrow.up")
-                                        .font(.body.weight(.semibold))
-                                        .foregroundStyle(.white)
-                                }
-                            }
-                            .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
-                            .background(model.canSend || model.isSending ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.tertiaryLabel)), in: .circle)
-                            .frame(minWidth: 44, minHeight: 44)
-                        }
-                        .disabled(!model.canSend)
-                        // Return is a new line; Command-Return sends, from a
-                        // keyboard on the iPad.
-                        .keyboardShortcut(.return, modifiers: .command)
-                        .accessibilityLabel(model.isSending ? Text("Sending…") : Text("Send"))
-                    }
-                }
-                // Past a point the buttons stop growing with the text: three
-                // of them in the biggest size would fill the whole row.
-                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-                .padding(.horizontal, 6)
-                .padding(.bottom, 4)
+            if isVoiceMode {
+                voicePanel
+            } else {
+                textPanel
             }
-            // A tap anywhere on the panel outside its buttons starts typing,
-            // not only a tap on the words of the placeholder. The tap is
-            // caught behind the buttons, so it never takes theirs; and the
-            // glass is not interactive, as that is for a control and it
-            // took touches meant for the add menu.
-            .background {
-                Color.clear
-                    .contentShape(.rect(cornerRadius: 26, style: .continuous))
-                    .onTapGesture { isFocused = true }
-            }
-            // The glass alone lets the messages behind it show through as
-            // blurred words under the placeholder, so the field has a
-            // mostly solid surface of its own and the glass gives it the edge
-            // and the light.
-            .background(Color(.systemBackground).opacity(0.85), in: .rect(cornerRadius: 26, style: .continuous))
-            .glassEffect(.regular, in: .rect(cornerRadius: 26, style: .continuous))
         }
         .padding(.horizontal)
         .padding(.bottom, 8)
@@ -2544,6 +2462,212 @@ struct Composer: View {
             pickedItems = []
             Task { await add(items) }
         }
+        .animation(.default, value: model.voiceRecorder.isRecording)
+        .onChange(of: dictation.problemText) { _, text in
+            guard let text else { return }
+            model.voiceProblemText = text
+            dictation.problemText = nil
+        }
+        .onChange(of: model.sentCount) { dictation.stop() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { dictation.stop() }
+        }
+        .onChange(of: isVoiceMode) { dictation.stop() }
+        .onDisappear {
+            dictation.stop()
+            model.voiceRecorder.cancel()
+        }
+    }
+
+    /// Starts dictating into the box, or stops.
+    private func toggleDictation() {
+        dictation.toggle(
+            into: $model.draft, place: model.isChat ? .chat : .agent, connection: model.connection, sampleRate: model.voiceSampleRate ?? 24000)
+    }
+
+    /// The box in voice mode: a button for the keyboard, and the wide button held to talk.
+    private var voicePanel: some View {
+        HStack(spacing: 6) {
+            Button {
+                withAnimation { composerMode = "keyboard" }
+                Task {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    isFocused = true
+                }
+            } label: {
+                Image(systemName: "keyboard")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
+                    .background(Color(.tertiarySystemFill), in: .circle)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Use the keyboard")
+            HoldToTalkButton(
+                recorder: model.voiceRecorder, heightPoints: buttonDiameterPoints,
+                onStart: { model.beginVoiceMessage() }, onEnd: { isCancelled in model.endVoiceMessage(isCancelled: isCancelled) })
+        }
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+        .padding(6)
+        .background(Color(.systemBackground).opacity(0.85), in: .rect(cornerRadius: 26, style: .continuous))
+        .glassEffect(.regular, in: .rect(cornerRadius: 26, style: .continuous))
+    }
+
+    // One field with its buttons inside it, as the Claude app's: the
+    // words on top, adding files at the bottom left, dictating, calling
+    // and sending at the bottom right.
+    private var textPanel: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TextField(placeholder, text: $model.draft, axis: .vertical)
+                .lineLimit(1...8)
+                .focused($isFocused)
+                .disabled(!model.canWrite)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+            // The words being heard, until they are final and join the box.
+            if !dictation.captionText.isEmpty {
+                Text(dictation.captionText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+            }
+            HStack(spacing: 4) {
+                Menu {
+                    Button {
+                        isPickingPhotos = true
+                    } label: {
+                        Label("Photo library", systemImage: "photo.on.rectangle")
+                    }
+                    if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                        Button {
+                            isTakingPicture = true
+                        } label: {
+                            Label("Camera", systemImage: "camera")
+                        }
+                    }
+                    Button {
+                        isPickingFiles = true
+                    } label: {
+                        Label("Files", systemImage: "folder")
+                    }
+                    // A screenshot just taken, pasted as the dashboard
+                    // takes one pasted into its box.
+                    if UIPasteboard.general.hasImages {
+                        Button {
+                            if let picture = UIPasteboard.general.image,
+                                let file = PendingFile(picture: picture, index: model.pendingFiles.count)
+                            {
+                                model.pendingFiles.append(file)
+                            }
+                        } label: {
+                            Label("Paste picture", systemImage: "doc.on.clipboard")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
+                        .background(Color(.tertiarySystemFill), in: .circle)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
+                }
+                .accessibilityLabel("Add files")
+                Spacer()
+                if model.canDictate, model.conversation?.kind != "run" {
+                    DictationButton(dictation: dictation) { toggleDictation() }
+                }
+                if model.canCall, model.draft.isEmpty, model.pendingFiles.isEmpty, model.conversation?.kind != "run" {
+                    Button {
+                        dictation.stop()
+                        model.startCall()
+                    } label: {
+                        Image(systemName: "waveform")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel("Call your agent")
+                }
+                // In a chat the waveform is for speaking a message, not for calling: it turns the box into a button to hold.
+                if model.isChat, model.isVoiceMessageAvailable, model.canWrite, model.draft.isEmpty, model.pendingFiles.isEmpty {
+                    Button {
+                        dictation.stop()
+                        withAnimation { composerMode = "voice" }
+                    } label: {
+                        Image(systemName: "waveform")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel("Record voice messages")
+                }
+                if model.runningRunId != nil, model.draft.isEmpty, model.pendingFiles.isEmpty {
+                    Button {
+                        Task { await model.stop() }
+                    } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.footnote)
+                            .foregroundStyle(Color(.systemBackground))
+                            .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
+                            .background(Color.primary, in: .circle)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .accessibilityLabel("Stop")
+                } else {
+                    Button {
+                        dictation.stop()
+                        Task { await model.send() }
+                    } label: {
+                        Group {
+                            if model.isSending {
+                                ProgressView().tint(.white)
+                            } else {
+                                Image(systemName: "arrow.up")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
+                        .background(model.canSend || model.isSending ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.tertiaryLabel)), in: .circle)
+                        .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .disabled(!model.canSend)
+                    // Return is a new line; Command-Return sends, from a
+                    // keyboard on the iPad.
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .accessibilityLabel(model.isSending ? Text("Sending…") : Text("Send"))
+                }
+            }
+            // Past a point the buttons stop growing with the text: three
+            // of them in the biggest size would fill the whole row.
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+            .padding(.horizontal, 6)
+            .padding(.bottom, 4)
+        }
+        // A tap anywhere on the panel outside its buttons starts typing,
+        // not only a tap on the words of the placeholder. The tap is
+        // caught behind the buttons, so it never takes theirs; and the
+        // glass is not interactive, as that is for a control and it
+        // took touches meant for the add menu.
+        .background {
+            Color.clear
+                .contentShape(.rect(cornerRadius: 26, style: .continuous))
+                .onTapGesture { isFocused = true }
+        }
+        // The glass alone lets the messages behind it show through as
+        // blurred words under the placeholder, so the field has a
+        // mostly solid surface of its own and the glass gives it the edge
+        // and the light.
+        .background(Color(.systemBackground).opacity(0.85), in: .rect(cornerRadius: 26, style: .continuous))
+        .glassEffect(.regular, in: .rect(cornerRadius: 26, style: .continuous))
     }
 
     private var placeholder: String {

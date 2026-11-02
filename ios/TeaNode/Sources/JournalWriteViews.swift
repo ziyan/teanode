@@ -38,6 +38,10 @@ struct JournalWriteSheet: View {
     @State private var isWorking = false
     @State private var isConfirmingDiscard = false
     @State private var problemText: String?
+    /// What the person says goes into their original as they speak. The rate is the server's, once it has said it offers
+    /// dictation.
+    @State private var dictation = Dictation()
+    @State private var dictationSampleRate: Int?
 
     init(connection: Connection, request: JournalWriteRequest, didChange: @escaping () async -> Void) {
         self.connection = connection
@@ -71,6 +75,7 @@ struct JournalWriteSheet: View {
                         .frame(minHeight: 220)
                         .disabled(isWorking)
                         .accessibilityLabel(titleText)
+                    if dictationSampleRate != nil { dictateRow }
                 } header: {
                     Text("Your original")
                 } footer: {
@@ -102,6 +107,39 @@ struct JournalWriteSheet: View {
             .toast(done: .constant(nil), problem: $problemText)
         }
         .interactiveDismissDisabled(hasChanges || isWorking)
+        .task {
+            if let voice = try? await connection.voiceAvailability(), voice.isVoiceAvailable {
+                dictationSampleRate = voice.sampleRate ?? 24000
+            }
+        }
+        .onChange(of: dictation.problemText) { _, text in
+            guard let text else { return }
+            problemText = text
+            dictation.problemText = nil
+        }
+        .onChange(of: isWorking) { dictation.stop() }
+        .onDisappear { dictation.stop() }
+    }
+
+    /// Dictating into the original: a row under the editor that starts and stops the microphone, with the words being
+    /// heard under it until they are final and join the original.
+    @ViewBuilder
+    private var dictateRow: some View {
+        Button {
+            dictation.toggle(into: $original, place: .journal, connection: connection, sampleRate: dictationSampleRate ?? 24000)
+        } label: {
+            Label(
+                dictation.isDictating ? String(localized: "Stop dictating") : String(localized: "Dictate"),
+                systemImage: dictation.isDictating ? "mic.fill" : "mic"
+            )
+            .actionColor()
+        }
+        .disabled(isWorking)
+        if !dictation.captionText.isEmpty {
+            Text(dictation.captionText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private var footerText: LocalizedStringKey {

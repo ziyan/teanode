@@ -247,12 +247,21 @@ public actor Connection {
         return value
     }
 
+    /// The address uploads go to: a tax document and a voice message are
+    /// told apart by a parameter.
+    static func uploadPath(isTaxDocument: Bool, isVoiceMessage: Bool) -> String {
+        if isVoiceMessage { return "/api/v1/agent/attachments?isVoiceMessage=true" }
+        return isTaxDocument ? "/api/v1/agent/attachments?isTaxDocument=true" : "/api/v1/agent/attachments"
+    }
+
     /// Uploads a file to hand the agent with a message, and returns its id.
-    /// A tax document (a paystub or a W-2) is kept apart: its text holds
+    /// A voice message is a recording the server prepares and measures; it
+    /// refuses one shorter than half a second or longer than two minutes
+    /// with a sentence, which is the error. A tax document (a paystub or a W-2) is kept apart: its text holds
     /// the person's taxpayer number, so the server does not keep it.
-    public func upload(name: String, contentType: String, data: Data, isTaxDocument: Bool = false) async throws -> String {
+    public func upload(name: String, contentType: String, data: Data, isTaxDocument: Bool = false, isVoiceMessage: Bool = false) async throws -> String {
         let boundary = "teanode-\(UUID().uuidString)"
-        var request = URLRequest(url: account.server.endpoint(isTaxDocument ? "/api/v1/agent/attachments?isTaxDocument=true" : "/api/v1/agent/attachments"))
+        var request = URLRequest(url: account.server.endpoint(Self.uploadPath(isTaxDocument: isTaxDocument, isVoiceMessage: isVoiceMessage)))
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = Upload.body(boundary: boundary, name: name, contentType: contentType, data: data)

@@ -81,6 +81,22 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
     /// whether it mentions everybody, so that the mentions in it are marked.
     public var mentionedUserIds: [String] = []
     public var isAllMentioned = false
+    /// For a message of a chat that is a recording the person spoke: its
+    /// words, and whether they are "waiting", "done", "failed" or "off".
+    public var isVoiceMessage = false
+    public var transcriptText = ""
+    public var transcriptState = ""
+
+    /// The recording of a voice message: its one file.
+    public var voiceAttachment: AgentAttachment? {
+        isVoiceMessage ? attachments.first : nil
+    }
+
+    /// The words to copy, quote or share: for a voice message its
+    /// transcript, which is empty until it is made.
+    public var readableText: String {
+        isVoiceMessage ? transcriptText : text
+    }
 
     /// The emoji one side put on it, if any.
     public func reaction(of reactorKind: String) -> String? {
@@ -463,10 +479,12 @@ public struct Transcript: Sendable {
     /// begins is under way.
     @discardableResult
     public mutating func addSent(
-        _ text: String, attachments: [AgentAttachment] = [], replyingTo reply: AgentReference? = nil, author: ChatAuthor? = nil
+        _ text: String, attachments: [AgentAttachment] = [], replyingTo reply: AgentReference? = nil, author: ChatAuthor? = nil,
+        isVoiceMessage: Bool = false
     ) -> String {
         var line = TranscriptLine(id: Self.sentPrefix + UUID().uuidString, kind: .person, text: text, attachments: attachments)
         line.author = author
+        line.isVoiceMessage = isVoiceMessage
         if let reply {
             line.quotedText = reply.quotedText ?? ""
             line.quotedRole = reply.quotedRole ?? ""
@@ -552,6 +570,11 @@ public struct Transcript: Sendable {
         guard let index = lines.firstIndex(where: { $0.messageId == message.id }) else { return }
         lines[index].text = message.isDeleted == true ? "" : message.content
         lines[index].editedAt = message.editedAt
+        // The words of a voice message arrive after the message, as an edit.
+        if message.isVoiceMessage == true {
+            lines[index].transcriptText = message.transcriptText ?? ""
+            lines[index].transcriptState = message.transcriptState ?? ""
+        }
     }
 
     /// A message of a chat that was deleted: a mark that it was, not a gap.
@@ -567,6 +590,8 @@ public struct Transcript: Sendable {
         lines[index].text = ""
         lines[index].isDeleted = true
         lines[index].attachments = []
+        lines[index].isVoiceMessage = false
+        lines[index].transcriptText = ""
         lines[index].reactions = []
     }
 

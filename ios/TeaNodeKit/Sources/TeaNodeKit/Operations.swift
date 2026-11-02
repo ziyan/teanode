@@ -34,12 +34,12 @@ public enum Documents {
         }
         """
     public static let ask = """
-        mutation ($conversationId: String, $message: String!, $surface: String, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String, $interruptedAnswer: InterruptedAnswerInput, $addressedAgentIds: [String!], $mentionedUserIds: [String!], $isAllMentioned: Boolean) {
-          AskAgent(conversationId: $conversationId, message: $message, surface: $surface, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId, interruptedAnswer: $interruptedAnswer, addressedAgentIds: $addressedAgentIds, mentionedUserIds: $mentionedUserIds, isAllMentioned: $isAllMentioned) { runId conversationId }
+        mutation ($conversationId: String, $message: String!, $surface: String, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String, $interruptedAnswer: InterruptedAnswerInput, $addressedAgentIds: [String!], $mentionedUserIds: [String!], $isAllMentioned: Boolean, $voiceMessageAttachmentId: String) {
+          AskAgent(conversationId: $conversationId, message: $message, surface: $surface, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId, interruptedAnswer: $interruptedAnswer, addressedAgentIds: $addressedAgentIds, mentionedUserIds: $mentionedUserIds, isAllMentioned: $isAllMentioned, voiceMessageAttachmentId: $voiceMessageAttachmentId) { runId conversationId }
         }
         """
     public static let voice = """
-        query { ReadAgentVoice { isVoiceAvailable sampleRate } }
+        query { ReadAgentVoice { isVoiceAvailable sampleRate isVoiceMessageAvailable } }
         """
     public static let updateConversation = """
         mutation ($conversationId: String!, $title: String, $archived: Boolean) {
@@ -387,7 +387,8 @@ extension Connection {
     public func ask(
         _ message: String, in conversationId: String?, attachmentIds: [String] = [], references: [AgentReference] = [],
         surface: String = Surface.typed, drawerId: String, interruptedAnswer: (heardText: String, unheardText: String)? = nil,
-        addressedAgentIds: [String] = [], mentionedUserIds: [String] = [], isAllMentioned: Bool = false
+        addressedAgentIds: [String] = [], mentionedUserIds: [String] = [], isAllMentioned: Bool = false,
+        voiceMessageAttachmentId: String? = nil
     ) async throws -> (runId: String, conversationId: String) {
         struct Answer: Decodable, Sendable {
             struct Asked: Decodable, Sendable {
@@ -418,6 +419,8 @@ extension Connection {
             variables["mentionedUserIds"] = .array(mentionedUserIds.map { .string($0) })
         }
         if isAllMentioned { variables["isAllMentioned"] = .bool(true) }
+        // In a chat, the recording the message is: its words are the server's.
+        if let voiceMessageAttachmentId { variables["voiceMessageAttachmentId"] = .string(voiceMessageAttachmentId) }
         if let conversationId { variables["conversationId"] = .string(conversationId) }
         let asked = try await execute(Documents.ask, variables: variables, as: Answer.self).AskAgent
         return (asked.runId, asked.conversationId)
