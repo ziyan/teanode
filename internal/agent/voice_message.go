@@ -245,6 +245,10 @@ func (self *Agent) sweepVoiceMessages(ctx context.Context, now time.Time) {
 		return
 	}
 	self.lastVoiceMessageSweep = now
+	// Calls are transcribed only where calls are kept.
+	if self.settings.CallRecorder != nil {
+		self.sweepChatCallTranscripts(ctx)
+	}
 	var failed []*models.ChatMessage
 	var waitingIds []string
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {

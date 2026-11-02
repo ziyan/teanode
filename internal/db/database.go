@@ -255,6 +255,34 @@ func (self *database) ListenShoppingEvents(ctx context.Context) (<-chan string, 
 	return self.listen(ctx, ShoppingEventChannel)
 }
 
+// ChatCallEventChannel is what an instance LISTENs on to hear that a call in
+// a chat changed, so that the people with a part in it are told wherever
+// their tabs and phones are connected.
+const ChatCallEventChannel = "chat_call_event"
+
+// ChatCallEvent is what travels on ChatCallEventChannel: which call changed,
+// and who to tell. What changed is read from the tables.
+type ChatCallEvent struct {
+	CallID  string   `json:"callId"`
+	UserIDs []string `json:"userIds"`
+}
+
+// NotifyChatCallEvent is outside any transaction, like NotifyShoppingEvent.
+// A call has at most the members of a chat, which fit one notification.
+func (self *database) NotifyChatCallEvent(callId string, userIds []string) error {
+	payload, err := json.Marshal(&ChatCallEvent{CallID: callId, UserIDs: userIds})
+	if err != nil {
+		return err
+	}
+	return self.db.Exec("SELECT pg_notify(?, ?)", ChatCallEventChannel, string(payload)).Error
+}
+
+// ListenChatCallEvents delivers the payload (a ChatCallEvent as JSON) of
+// every change any instance announces, for as long as the context lives.
+func (self *database) ListenChatCallEvents(ctx context.Context) (<-chan string, error) {
+	return self.listen(ctx, ChatCallEventChannel)
+}
+
 // PresenceEventChannel carries a person's tab's or phone's report that it is
 // shown (agent.PresenceReport as JSON, with the instance that was given it),
 // so that every instance knows who is looking at what.

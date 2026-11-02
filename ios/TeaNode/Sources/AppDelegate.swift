@@ -25,6 +25,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         // The history task registered, and the observers HealthKit wakes the
         // app through made, for the same two reasons.
         HealthSync.shared.launch()
+        // CallKit's provider and PushKit's VoIP registry, made now: a VoIP
+        // push can start the app, and has to be reported to CallKit at once.
+        ChatCallManager.shared.start()
+        #if DEBUG
+            if !DemoServer.isRequested { VoIPPushRegistrar.shared.start() }
+        #else
+            VoIPPushRegistrar.shared.start()
+        #endif
         return true
     }
 

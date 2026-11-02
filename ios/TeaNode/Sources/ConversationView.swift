@@ -71,9 +71,11 @@ struct ConversationView: View {
                 ToolbarItem(placement: .principal) {
                     titleCapsule
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    // What the agent is doing is no part of a chat of people.
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    // What the agent is doing is no part of a chat of people;
+                    // a chat of people can be called.
                     if model.isChat {
+                        ChatCallButton(model: model)
                         ChatMenu(model: model)
                     } else {
                         StatusButton(status: status) { isShowingStatus = true }
@@ -442,6 +444,12 @@ struct ConversationFollowing: ViewModifier {
                 model.refer(to: reference)
                 app.askingAbout = nil
             }
+            // A chat of people shows a banner when a call is going in it: read
+            // when the chat opens, and kept up to date by ChatCallEvents after.
+            .task(id: "\(model.conversationId ?? "")-\(model.isChat)") {
+                guard model.isChat, let conversationId = model.conversationId, let connection = app.connection else { return }
+                await ChatCallManager.shared.readGoingCall(inConversation: conversationId, connection: connection)
+            }
             .onChange(of: app.isCallRequested, initial: true) { startRequestedCall() }
             .onChange(of: app.openingRequest, initial: true) { _, opening in
                 guard let opening, opening.conversationId == model.conversationId else { return }
@@ -522,6 +530,10 @@ struct ConversationBanners: View {
             }
             if let conversation = model.conversation, conversation.kind == "goal", let goal = conversation.goal, !goal.isEmpty {
                 GoalHeader(conversation: conversation, goal: goal)
+            }
+            // A chat with a call going: how many are on it, and Join.
+            if model.isChat {
+                ChatCallBanner(model: model)
             }
             if model.isChat, !model.canWrite {
                 if model.chat?.isRemoved == true {
@@ -723,6 +735,9 @@ struct ConversationItemView: View {
                 .padding(.top, 6)
         case .line(let line):
             switch line.kind {
+            case .person where line.isCallLine:
+                // A call's line, drawn from the call and not as words.
+                ChatCallLineCard(line: line, model: model)
             case .person:
                 if let author = line.author {
                     ChatLineFrame(

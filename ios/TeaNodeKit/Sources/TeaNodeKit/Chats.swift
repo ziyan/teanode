@@ -370,6 +370,8 @@ extension Transcript {
         line.isVoiceMessage = message.isVoiceMessage ?? false
         line.transcriptText = message.transcriptText ?? ""
         line.transcriptState = message.transcriptState ?? ""
+        line.chatCallId = message.callId ?? ""
+        line.chatCall = message.call
         for reference in message.references ?? [] {
             if reference.isReply {
                 line.quotedText = reference.quotedText ?? ""
@@ -740,6 +742,7 @@ extension Documents {
         reactions { emoji reactorKind reactedAt reactorUserId reactorName }
         authorKind authorUserId authorName authorOwnerName authorAvatarUrl authorAvatarColorIndex authorAgentId agentRunId isMine isAgentWork editedAt isDeleted
         mentionedUserIds isAllMentioned isVoiceMessage transcriptText transcriptState
+        callId call { id startedByUserId startedAt answeredAt endedAt endReason transcriptionAskedByUserId transcriptState summaryMessageId members { userId ringState joinedAt leftAt isVideoOn } }
         """
     public static let chatPeople = """
         query { ListCirclePeople { userId username name avatarUrl avatarColorIndex } }

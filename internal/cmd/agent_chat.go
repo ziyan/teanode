@@ -138,7 +138,7 @@ func newAgentConversationCommand() *cli.Command {
 				Action:    runAgentConversationDelete,
 			},
 			newAgentConversationTodoCommand(),
-		}, chatCommands()...),
+		}, append(chatCommands(), chatCallCommands()...)...),
 	}
 }
 
