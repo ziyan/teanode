@@ -37,8 +37,8 @@ type gateFaceReader struct {
 	hold func(callNumber int) <-chan struct{}
 	// pause is how long every call takes.
 	pause time.Duration
-	// panicOn makes the call of that number panic.
-	panicOn int
+	// panicWhen makes a call panic for the pictures it picks out.
+	panicWhen func(picture image.Image) bool
 }
 
 func newGateFaceReader() *gateFaceReader {
@@ -58,7 +58,7 @@ func (self *gateFaceReader) ReadFaces(ctx context.Context, picture image.Image) 
 		self.mutex.Unlock()
 	}()
 	self.entered <- callNumber
-	if callNumber == self.panicOn {
+	if self.panicWhen != nil && self.panicWhen(picture) {
 		panic("the face reader fell over")
 	}
 	if self.hold != nil {
@@ -72,6 +72,13 @@ func (self *gateFaceReader) ReadFaces(ctx context.Context, picture image.Image) 
 	}
 	time.Sleep(self.pause)
 	return nil, nil
+}
+
+// isDarkPicture says whether a picture is one of the dark ones uploadPicture
+// makes, by its first pixel.
+func isDarkPicture(picture image.Image) bool {
+	red, _, _, _ := picture.At(picture.Bounds().Min.X, picture.Bounds().Min.Y).RGBA()
+	return red>>8 < 90
 }
 
 func (self *gateFaceReader) peakCount() int {
@@ -194,7 +201,9 @@ func TestAPassTakesNoMorePhotosThanItIsGiven(test *testing.T) {
 func TestAPanicWhileProcessingFailsThePhotoAndTheServerGoesOn(test *testing.T) {
 	fixture := newFixture(test)
 	reader := newGateFaceReader()
-	reader.panicOn = 1
+	// The two are read side by side, so the dark one is picked out by its
+	// shade rather than by which call comes first.
+	reader.panicWhen = isDarkPicture
 	fixture.store.SetFaceReader(reader, nil)
 	fixture.uploadPicture("panics", 20)
 	fixture.uploadPicture("fine", 160)
