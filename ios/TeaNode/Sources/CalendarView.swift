@@ -36,6 +36,9 @@ struct CalendarScreen: View {
                 .navigationTitle(title)
                 .navigationBarTitleDisplayMode(model.viewMode == .month ? .inline : .large)
                 .toolbar { toolbar }
+                // Today and the views are a bar of the calendar's own at the
+                // bottom, which the tab bar would sit on top of.
+                .toolbarVisibility(.hidden, for: .tabBar)
                 .refreshable {
                     if model.viewMode == .reminders {
                         await reminders.load()
@@ -703,6 +706,7 @@ struct CalendarDayScreen: View {
             .id(day)
             .navigationTitle(date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarVisibility(.hidden, for: .tabBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {

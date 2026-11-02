@@ -181,6 +181,9 @@ check-button-colors: ## Fail on an iPhone button or row whose symbol and words a
 check-presentations: ## Fail on an iPhone sheet or cover attached inside a list or a menu
 	@node ios/scripts/check-presentations.mjs
 
+check-tab-bars: ## Fail on an iPhone screen with a bottom bar of its own that leaves the tab bar showing
+	@node ios/scripts/check-tab-bars.mjs
+
 check-title-menus: ## Fail on an iPhone title menu attached without the small title it needs
 	@node ios/scripts/check-title-menus.mjs
 

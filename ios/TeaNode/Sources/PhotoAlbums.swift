@@ -599,6 +599,8 @@ struct PhotoAlbumScreen: View {
             .navigationTitle(isSelecting ? selectionTitle : (album?.albumTitle ?? ""))
             .navigationSubtitle(isSelecting ? "" : (album.map { PhotoAlbumWords.photoCount($0.photoCount) } ?? ""))
             .navigationBarTitleDisplayMode(.inline)
+            // Select mode has a bar of its own at the bottom.
+            .toolbarVisibility(isSelecting ? .hidden : .automatic, for: .tabBar)
             .toolbar { toolbarContent }
             .task { await model.load(key) }
             .task(id: model.hasWaitingPhotos(in: key)) {
