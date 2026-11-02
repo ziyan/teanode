@@ -1813,7 +1813,7 @@ talking, and each finished utterance is sent as an ordinary turn, the same as
 if they had typed it. The answer is spoken back through the provider's
 text-to-speech, and stops when the person starts talking. Off by default.
 
-**`enabled`** — Whether the drawer offers the microphone. Dictation (words
+**`enabled`**: whether the drawer offers the microphone. Dictation (words
 spoken into a box) and the words under a voice message use it too: with it off,
 a voice message still plays but has no transcript.
 
