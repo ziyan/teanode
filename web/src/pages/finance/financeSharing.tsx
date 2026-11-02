@@ -5,7 +5,7 @@ import { failureText, graphql } from '../../api'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { PencilIcon, TrashIcon } from '../../components/icons'
-import { personLabel, personName } from '../../components/personLabel'
+import { personName } from '../../components/personLabel'
 import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
@@ -15,6 +15,8 @@ import { Key, useTranslation } from '../../i18n/i18n'
 import { hasPermission, useSession } from '../../session'
 import { FINANCE_ACCOUNTS, FinanceAccount } from './financeApi'
 import { accountLabel } from './financeCommon'
+import { FinanceShareAllSection } from './financeShareAll'
+import { CircleChoice, Person, useGranteeOptions, useShareChoices } from './financeShareChoices'
 import {
   FINANCE_SHARE_LEVELS,
   FinanceShare,
@@ -30,12 +32,6 @@ import {
 // more of an account is the person's own tap, which the dashboard is. The
 // agent has no part in it: it neither shares an account nor reads what is
 // shared with the person. What each level shows is in docs/subsystems/finance.md.
-
-type Person = { userId: string; username: string; name: string }
-type CircleChoice = { id: string; name: string; members: { userId: string }[] }
-
-const LIST_PEOPLE = `query { ListCirclePeople { userId username name } }`
-const LIST_CIRCLES = `query { ListCircles { id name members { userId } } }`
 
 // What a share is with, in a sentence and in a list.
 function granteeName(share: FinanceShare, everyoneIn: (name: string) => string): string {
@@ -67,18 +63,7 @@ export function FinanceSharingSection() {
     [],
     { refresh: false },
   )
-  const choices = useQuery(
-    async () => {
-      if (!canUseCircles) return { people: [] as Person[], circles: [] as CircleChoice[] }
-      const [people, circles] = await Promise.all([
-        graphql<{ ListCirclePeople: Person[] }>(LIST_PEOPLE),
-        graphql<{ ListCircles: CircleChoice[] }>(LIST_CIRCLES),
-      ])
-      return { people: people.ListCirclePeople, circles: circles.ListCircles }
-    },
-    [canUseCircles],
-    { refresh: false },
-  )
+  const choices = useShareChoices(canUseCircles)
   // The dialog: closed, or open to share an account anew, or to change the
   // level of a share that is there.
   const [dialog, setDialog] = useState<{ share: FinanceShare | null } | null>(null)
@@ -108,108 +93,111 @@ export function FinanceSharingSection() {
   }
 
   return (
-    <SettingsSection
-      card
-      title={t('finance.shareTitle')}
-      description={t('finance.shareIntro')}
-      action={
-        accountList.length > 0 && canUseCircles ? (
-          <button type="button" onClick={() => setDialog({ share: null })}>
-            {t('finance.shareAction')}
-          </button>
-        ) : undefined
-      }
-    >
-      <ErrorMessage error={shares.error ?? accounts.error ?? choices.error} />
-      {(shares.loading && !shares.data) || (accounts.loading && !accounts.data) ? <Loading /> : null}
-      {shares.data && accounts.data && accountList.length === 0 ? (
-        <SettingsEmpty>{t('finance.shareNoAccounts')}</SettingsEmpty>
-      ) : null}
-      {shares.data && accountList.length > 0 && current.length === 0 ? (
-        <SettingsEmpty>{t('finance.shareNobody')}</SettingsEmpty>
-      ) : null}
-      {current.map((share) => {
-        const name = granteeName(share, everyoneIn)
-        const account = accountLabel(share)
-        return (
-          <SettingsRow
-            key={share.id}
-            title={account}
-            subtitle={t('finance.shareWithName', { name })}
-            badge={<Tag value={levelName(t, share.financeShareLevel)} />}
-            actions={
-              <div className="row-actions">
-                {canUseCircles ? (
-                  <Tooltip label={t('finance.shareChange', { account, name })}>
+    <>
+      <FinanceShareAllSection canUseCircles={canUseCircles} choices={choices.data} choicesError={choices.error} />
+      <SettingsSection
+        card
+        title={t('finance.shareTitle')}
+        description={t('finance.shareIntro')}
+        action={
+          accountList.length > 0 && canUseCircles ? (
+            <button type="button" onClick={() => setDialog({ share: null })}>
+              {t('finance.shareAction')}
+            </button>
+          ) : undefined
+        }
+      >
+        <ErrorMessage error={shares.error ?? accounts.error ?? choices.error} />
+        {(shares.loading && !shares.data) || (accounts.loading && !accounts.data) ? <Loading /> : null}
+        {shares.data && accounts.data && accountList.length === 0 ? (
+          <SettingsEmpty>{t('finance.shareNoAccounts')}</SettingsEmpty>
+        ) : null}
+        {shares.data && accountList.length > 0 && current.length === 0 ? (
+          <SettingsEmpty>{t('finance.shareNobody')}</SettingsEmpty>
+        ) : null}
+        {current.map((share) => {
+          const name = granteeName(share, everyoneIn)
+          const account = accountLabel(share)
+          return (
+            <SettingsRow
+              key={share.id}
+              title={account}
+              subtitle={t('finance.shareWithName', { name })}
+              badge={<Tag value={levelName(t, share.financeShareLevel)} />}
+              actions={
+                <div className="row-actions">
+                  {canUseCircles ? (
+                    <Tooltip label={t('finance.shareChange', { account, name })}>
+                      <button
+                        type="button"
+                        className="icon-action"
+                        aria-label={t('finance.shareChange', { account, name })}
+                        disabled={isBusy}
+                        onClick={() => setDialog({ share })}
+                      >
+                        <PencilIcon size={16} />
+                      </button>
+                    </Tooltip>
+                  ) : null}
+                  <Tooltip label={t('finance.shareStop', { account, name })}>
                     <button
                       type="button"
-                      className="icon-action"
-                      aria-label={t('finance.shareChange', { account, name })}
+                      className="icon-action danger"
+                      aria-label={t('finance.shareStop', { account, name })}
                       disabled={isBusy}
-                      onClick={() => setDialog({ share })}
+                      onClick={() => {
+                        setStopProblem(null)
+                        setStopping(share)
+                      }}
                     >
-                      <PencilIcon size={16} />
+                      <TrashIcon size={16} />
                     </button>
                   </Tooltip>
-                ) : null}
-                <Tooltip label={t('finance.shareStop', { account, name })}>
-                  <button
-                    type="button"
-                    className="icon-action danger"
-                    aria-label={t('finance.shareStop', { account, name })}
-                    disabled={isBusy}
-                    onClick={() => {
-                      setStopProblem(null)
-                      setStopping(share)
-                    }}
-                  >
-                    <TrashIcon size={16} />
-                  </button>
-                </Tooltip>
-              </div>
-            }
+                </div>
+              }
+            />
+          )
+        })}
+        {!canUseCircles && accountList.length > 0 ? <p className="muted">{t('finance.shareNeedsCircles')}</p> : null}
+        {choices.data &&
+        accountList.length > 0 &&
+        choices.data.people.length === 0 &&
+        choices.data.circles.length === 0 ? (
+          <>
+            <p className="muted">{t('finance.shareNoPeople')}</p>
+            <div className="page-actions">
+              <Link className="button" to="/circles">
+                {t('circles.open')}
+              </Link>
+            </div>
+          </>
+        ) : null}
+        {stopping ? (
+          <ConfirmDialog
+            title={t('sharing.stopTitle', { name: granteeName(stopping, everyoneIn) })}
+            body={t('sharing.stopBody', { name: granteeName(stopping, everyoneIn), what: accountLabel(stopping) })}
+            confirmLabel={t('sharing.stop')}
+            busy={isBusy}
+            error={stopProblem}
+            onConfirm={() => void stop(stopping)}
+            onClose={() => setStopping(null)}
           />
-        )
-      })}
-      {!canUseCircles && accountList.length > 0 ? <p className="muted">{t('finance.shareNeedsCircles')}</p> : null}
-      {choices.data &&
-      accountList.length > 0 &&
-      choices.data.people.length === 0 &&
-      choices.data.circles.length === 0 ? (
-        <>
-          <p className="muted">{t('finance.shareNoPeople')}</p>
-          <div className="page-actions">
-            <Link className="button" to="/circles">
-              {t('circles.open')}
-            </Link>
-          </div>
-        </>
-      ) : null}
-      {stopping ? (
-        <ConfirmDialog
-          title={t('sharing.stopTitle', { name: granteeName(stopping, everyoneIn) })}
-          body={t('sharing.stopBody', { name: granteeName(stopping, everyoneIn), what: accountLabel(stopping) })}
-          confirmLabel={t('sharing.stop')}
-          busy={isBusy}
-          error={stopProblem}
-          onConfirm={() => void stop(stopping)}
-          onClose={() => setStopping(null)}
-        />
-      ) : null}
-      {dialog && choices.data ? (
-        <FinanceShareDialog
-          accounts={accountList}
-          people={choices.data.people}
-          circles={choices.data.circles}
-          share={dialog.share}
-          onClose={() => setDialog(null)}
-          onSaved={async () => {
-            setDialog(null)
-            await shares.reload()
-          }}
-        />
-      ) : null}
-    </SettingsSection>
+        ) : null}
+        {dialog && choices.data ? (
+          <FinanceShareDialog
+            accounts={accountList}
+            people={choices.data.people}
+            circles={choices.data.circles}
+            share={dialog.share}
+            onClose={() => setDialog(null)}
+            onSaved={async () => {
+              setDialog(null)
+              await shares.reload()
+            }}
+          />
+        ) : null}
+      </SettingsSection>
+    </>
   )
 }
 
@@ -231,7 +219,7 @@ function FinanceShareDialog({
   onClose: () => void
   onSaved: () => Promise<void>
 }) {
-  const { t, plural } = useTranslation()
+  const { t } = useTranslation()
   const toast = useToast()
   const [financeAccountId, setFinanceAccountId] = useState(share?.financeAccountId ?? '')
   const [grantee, setGrantee] = useState(
@@ -242,29 +230,7 @@ function FinanceShareDialog({
   const [problem, setProblem] = useState<string | null>(null)
 
   const everyoneIn = (name: string) => t('finance.shareEveryoneIn', { name })
-  // A circle also says how many people it is, so two circles with one name
-  // can be told apart, as they are on the command line.
-  const circleOption = (circle: CircleChoice) =>
-    t('finance.shareCircleOption', {
-      name: circle.name,
-      people: plural(
-        circle.members.length,
-        { one: 'circles.memberCountOne', other: 'circles.memberCount' },
-        { count: circle.members.length },
-      ),
-    })
-  const granteeOptions = [
-    ...people.map((person) => ({
-      value: `user:${person.userId}`,
-      label: personLabel(person),
-      group: t('finance.sharePeople'),
-    })),
-    ...circles.map((circle) => ({
-      value: `circle:${circle.id}`,
-      label: circleOption(circle),
-      group: t('finance.shareCircles'),
-    })),
-  ]
+  const granteeOptions = useGranteeOptions(people, circles)
 
   async function save() {
     const [kind, id] = grantee.split(':')

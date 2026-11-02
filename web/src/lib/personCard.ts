@@ -59,6 +59,9 @@ export type PersonCardFinanceAccount = {
 
 export type PersonCardFinanceSection = {
   sectionState: PersonCardSectionState
+  // spending or transactions when they share all of their finance, empty
+  // when they do not. Names no account.
+  allFinanceShareLevel?: string | null
   financeAccounts: PersonCardFinanceAccount[]
   hasMore: boolean
 }
@@ -166,6 +169,7 @@ export const READ_PERSON_CARD = `
       }
       finance {
         sectionState
+        allFinanceShareLevel
         financeAccounts {
           financeAccountId financeShareLevel accountName accountMask currencyCode currentBalance
           creditUsage { usageShare }

@@ -17,7 +17,13 @@ import { useAgentFinancePresence } from './finance/financePresence'
 import { FinanceReceiptListSection } from './finance/financeReceiptList'
 import { FinanceSavingsTargetsSection } from './finance/financeSavingsTargets'
 import { FinanceShared } from './finance/financeShared'
-import { LIST_SHARED_FINANCE_ACCOUNTS, SharedFinanceAccount } from './finance/financeShareApi'
+import { FinanceSharedAll } from './finance/financeSharedAll'
+import {
+  LIST_SHARED_FINANCE,
+  LIST_SHARED_FINANCE_ACCOUNTS,
+  SharedFinanceAccount,
+  SharedFinancePerson,
+} from './finance/financeShareApi'
 import { FinanceSpendingSection } from './finance/financeSpending'
 import { FinanceTaxesSection } from './finance/financeTaxes'
 import { FinanceTransactionsSection } from './finance/financeTransactions'
@@ -58,6 +64,14 @@ export function FinancePage() {
     [],
     { refresh: false },
   )
+  // Who shares all of their finance, which is one combined view of the
+  // person rather than their accounts.
+  const sharedAll = useQuery(
+    async () =>
+      (await graphql<{ ListSharedFinance: SharedFinancePerson[] | null }>(LIST_SHARED_FINANCE)).ListSharedFinance ?? [],
+    [],
+    { refresh: false },
+  )
   const sharers = useMemo(() => {
     const found = new Map<string, Sharer>()
     for (const account of shared.data ?? []) {
@@ -68,15 +82,21 @@ export function FinancePage() {
         })
       }
     }
+    for (const person of sharedAll.data ?? []) {
+      if (!found.has(person.ownerUserId)) {
+        found.set(person.ownerUserId, { userId: person.ownerUserId, name: person.ownerName || person.ownerUsername })
+      }
+    }
     return [...found.values()].sort((first, second) => first.name.localeCompare(second.name))
-  }, [shared.data])
+  }, [shared.data, sharedAll.data])
   const requestedPerson = parameters.get('person')
   const viewedPerson = sharers.find((sharer) => sharer.userId === requestedPerson) ?? null
   // A link to somebody who is not sharing (or stopped) is taken out of the
   // address once the shares are read, and the person is told. A read that
   // failed says nothing about who shares: it is reported, and the address is
   // kept for when it works.
-  const isPersonGone = requestedPerson !== null && shared.data !== null && viewedPerson === null
+  const isPersonGone =
+    requestedPerson !== null && shared.data !== null && sharedAll.data !== null && viewedPerson === null
   useEffect(() => {
     if (!isPersonGone) return
     toast.failed(t('finance.personNotSharing'))
@@ -98,11 +118,11 @@ export function FinancePage() {
   // shares an account with them, so the shares are read before the page says
   // there is nothing to show.
   const isSharedOnly = !presence.isShown && sharers.length > 0
-  if (!presence.isShown && !isSharedOnly && shared.loading) return <Loading />
+  if (!presence.isShown && !isSharedOnly && (shared.loading || sharedAll.loading)) return <Loading />
   if (!presence.isShown && !isSharedOnly) {
     return (
       <div className="card">
-        <ErrorMessage error={shared.error} />
+        <ErrorMessage error={shared.error ?? sharedAll.error} />
         <h3>{t('finance.title')}</h3>
         <p className="muted">{t('finance.notShown')}</p>
         <div className="page-actions">
@@ -155,14 +175,23 @@ export function FinancePage() {
   // Somebody's shared accounts are not the person's own sections: they are
   // drawn instead of the tabs, with the picker to go back to one's own.
   if (shownPerson) {
+    const shownAccounts = (shared.data ?? []).filter((account) => account.ownerUserId === shownPerson.userId)
+    const sharedEverything = (sharedAll.data ?? []).find((person) => person.ownerUserId === shownPerson.userId)
     return (
       <>
-        <ErrorMessage error={shared.error} />
+        <ErrorMessage error={shared.error ?? sharedAll.error} />
         {picker}
-        <FinanceShared
-          ownerName={shownPerson.name}
-          accounts={(shared.data ?? []).filter((account) => account.ownerUserId === shownPerson.userId)}
-        />
+        {sharedEverything ? (
+          <FinanceSharedAll
+            ownerUserId={shownPerson.userId}
+            ownerName={shownPerson.name}
+            level={sharedEverything.financeShareLevel}
+            accounts={shownAccounts}
+            section={section}
+          />
+        ) : (
+          <FinanceShared ownerName={shownPerson.name} accounts={shownAccounts} />
+        )}
       </>
     )
   }
@@ -171,7 +200,7 @@ export function FinancePage() {
   // being shown into view, and the page stays the width of the screen.
   return (
     <>
-      <ErrorMessage error={shared.error} />
+      <ErrorMessage error={shared.error ?? sharedAll.error} />
       {picker}
       <Tabs items={FINANCE_TABS} active={section} onSelect={openSection} />
       {!presence.hasSources ? (

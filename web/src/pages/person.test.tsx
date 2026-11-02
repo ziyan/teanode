@@ -646,3 +646,18 @@ it('lists the finance accounts they share, and a card with how much of its limit
     '/finance/spending?person=person-sam',
   )
 })
+
+// Somebody who shares all of their finance is a row of its own, by level,
+// that names no account, with a way into the Finance page on them.
+it('shows a share of all their finance by its level, with no account', async () => {
+  answer(
+    sam({
+      finance: { sectionState: 'shown', allFinanceShareLevel: 'transactions', financeAccounts: [], hasMore: false },
+    }),
+  )
+  renderAt('/people/person-sam')
+  expect(await screen.findByText('All finance (transactions)')).toBeTruthy()
+  expect(screen.getAllByRole('link', { name: 'Show all' }).map((link) => link.getAttribute('href'))).toContain(
+    '/finance/spending?person=person-sam',
+  )
+})

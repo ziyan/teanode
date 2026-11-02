@@ -11,6 +11,7 @@ import { useTranslation } from '../../i18n/i18n'
 import { formatDay, monthLabel } from './financeApi'
 import { Money, accountLabel, useFinanceWords } from './financeCommon'
 import {
+  LIST_SHARED_ALL_FINANCE_TRANSACTIONS,
   LIST_SHARED_FINANCE_SPENDING,
   LIST_SHARED_FINANCE_TRANSACTIONS,
   SharedFinanceAccount,
@@ -190,7 +191,10 @@ function SharedSpending({ account }: { account: SharedFinanceAccount }) {
   )
 }
 
-function SharedTransactions({ account }: { account: SharedFinanceAccount }) {
+// SharedTransactions is a page-by-page table of the transactions somebody
+// shares: of one of their accounts, or, given ownerUserId, of all of their
+// finance together, which names no account.
+export function SharedTransactions({ account, ownerUserId }: { account?: SharedFinanceAccount; ownerUserId?: string }) {
   const { t, plural, language } = useTranslation()
   // Which page the table shows, as it says once it has read the address:
   // nothing is asked for before then, so a link to page four does not fetch
@@ -202,12 +206,14 @@ function SharedTransactions({ account }: { account: SharedFinanceAccount }) {
       range
         ? (
             await graphql<{ ListSharedFinanceTransactions: SharedFinanceTransactionPage }>(
-              LIST_SHARED_FINANCE_TRANSACTIONS,
-              { financeAccountId: account.financeAccountId, limit: range.limit, offset: range.offset },
+              ownerUserId ? LIST_SHARED_ALL_FINANCE_TRANSACTIONS : LIST_SHARED_FINANCE_TRANSACTIONS,
+              ownerUserId
+                ? { ownerUserId, limit: range.limit, offset: range.offset }
+                : { financeAccountId: account?.financeAccountId, limit: range.limit, offset: range.offset },
             )
           ).ListSharedFinanceTransactions
         : null,
-    [account.financeAccountId, range?.offset, range?.limit],
+    [account?.financeAccountId, ownerUserId, range?.offset, range?.limit],
     { refresh: false },
   )
   // The count of the last answer outlives a page being read, so the pager
