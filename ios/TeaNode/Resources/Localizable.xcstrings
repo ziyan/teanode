@@ -95615,38 +95615,6 @@
         }
       }
     },
-    "Ask everyone": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "全員に確認"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "询问所有人"
-          }
-        }
-      }
-    },
-    "Everybody on the call is asked. Only the voices of those who agree are transcribed, and the transcript is posted in the chat.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "通話中の全員に確認します。同意した人の声だけが文字起こしされ、文字起こしはチャットに投稿されます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "通话中的所有人都会被询问。只有同意者的声音会被转录，转录内容会发布到聊天中。"
-          }
-        }
-      }
-    },
     "Somebody": {
       "localizations": {
         "ja": {
@@ -95659,38 +95627,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "有人"
-          }
-        }
-      }
-    },
-    "%@ asked to transcribe this call": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ さんがこの通話の文字起こしを求めています"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 请求转录这次通话"
-          }
-        }
-      }
-    },
-    "Only your own voice is transcribed, and only if you allow it.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "文字起こしされるのはあなた自身の声だけで、許可した場合に限ります。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "只会转录你自己的声音，并且仅在你允许时进行。"
           }
         }
       }
@@ -95915,6 +95851,102 @@
           "stringUnit": {
             "state": "translated",
             "value": "音频输出"
+          }
+        }
+      }
+    },
+    "%@ turned on transcription": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ さんが文字起こしをオンにしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 开启了转录"
+          }
+        }
+      }
+    },
+    "You turned on transcription": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしをオンにしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你开启了转录"
+          }
+        }
+      }
+    },
+    "Everyone's voice on this call is transcribed, and a summary goes in the chat when it ends.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この通話の全員の声が文字起こしされ、終了後に要約がチャットに投稿されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此通话中每个人的声音都会被转录，通话结束后摘要会发到聊天中。"
+          }
+        }
+      }
+    },
+    "Everybody on the call is told, and their voices are transcribed. A summary is posted in the chat when the call ends.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通話中の全員に知らされ、全員の声が文字起こしされます。通話の終了後、要約がチャットに投稿されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通话中的所有人都会收到通知，他们的声音都会被转录。通话结束后，摘要会发布到聊天中。"
+          }
+        }
+      }
+    },
+    "Minimize the call": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通話を最小化"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最小化通话"
+          }
+        }
+      }
+    },
+    "Return to the call": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通話に戻る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回通话"
           }
         }
       }

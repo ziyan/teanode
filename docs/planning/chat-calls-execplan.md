@@ -6,7 +6,7 @@ This ExecPlan is a living document. The sections Progress, Surprises & Discoveri
 
 A person in a chat with other people (a direct chat or a group) can start a call from the chat. Everyone else in the chat is rung: their iPhone shows a full-screen incoming call (CallKit), even when locked, and any open dashboard tab shows a ringing card. A call starts as audio only. Anyone on it can turn their camera on and off, switch cameras, mute, and use the speaker. People can join a call that is already going, and leave it; the call ends when the last person leaves. The chat shows the call as a line: who called, missed or how long it lasted, and who was on it.
 
-Anyone on a call can ask for it to be transcribed. Each person on the call is asked; only the voices of those who agree are transcribed. When the call ends, the transcript (with each line under its speaker's name, since each person's audio arrives separately) and a short summary are posted into the chat.
+Anyone on a call can turn on transcription, for everybody on it: nobody is asked, and each person is told in a notice they close. When the call ends, the transcript (with each line under its speaker's name, since each person's audio arrives separately) and a short summary are posted into the chat.
 
 How to see it working: two accounts that share a circle, one on an iPhone and one in a browser. In their direct chat, tap the phone button. The iPhone rings on the lock screen; answer, talk, turn on video from either side, hang up. The chat shows "Call, 2 minutes". Do the same in a group of three, with one joining late.
 
@@ -19,6 +19,8 @@ How to see it working: two accounts that share a circle, one on an iPhone and on
 - [ ] Dashboard: start, ring, answer, call screen, video, group grid.
 - [ ] iPhone: WebRTC, PushKit and CallKit, call screen, video, group grid.
 - [x] Transcription with consent, transcript and summary into the chat (server side, 2026-11-02).
+- [x] Transcription without asking anyone: turning it on transcribes everybody on the call and tells them in a notice they close; migration 0270 drops each member's answer (2026-11-02).
+- [x] A call put away while it goes, to use the rest of the app: a bar at the top of the iPhone app with mute and hang up (the dashboard already had its small window) (2026-11-02).
 - [x] Command line and agent tool: calls listed, call transcripts read (2026-11-02).
 - [ ] Docs, demo data and screenshots, review rounds, deploy, ports opened, tried on two devices.
 
@@ -40,6 +42,10 @@ How to see it working: two accounts that share a circle, one on an iPhone and on
 - Decision: calls ring on the iPhone (CallKit, through VoIP pushes) and in open dashboard tabs.
   Date/Author: 2026-11-02, the person.
 - Decision: transcription is optional per call, asked of each person on it, and only consenting voices are transcribed; transcript and summary go into the chat.
+  Date/Author: 2026-11-02, the person.
+- Decision: superseding the one above, nobody is asked: turning transcription on transcribes everybody on the call, and every device shows a notice of who turned it on, which the person closes. The members' `transcriptionConsent` stays in the API, `yes` for everybody while transcribed, for the app build that still reads it; it goes once that build is replaced.
+  Date/Author: 2026-11-02, the person.
+- Decision: a call can be put away while it goes, so the person can read mail, look at photos or write in the chat during it: on the iPhone to a bar at the top of the app (tap to go back, mute, hang up).
   Date/Author: 2026-11-02, the person.
 - Decision: a call starts with audio only; video is each person's own switch.
   Date/Author: 2026-11-02, the person.
@@ -89,7 +95,7 @@ Terms. WebRTC: the browser and phone standard for real-time audio and video. SFU
 - `AnswerChatCall(callId)`, `DeclineChatCall(callId)`, `LeaveChatCall(callId)`.
 - `JoinChatCallMedia(callId, offerSdp)` → answerSdp, and `ChatCallMedia(callId)` subscription for the SFU's renegotiation offers, ICE candidates and who is sending what (a small signaling channel per participant).
 - `SetChatCallVideo(callId, isVideoOn)`, `SetChatCallMuted(callId, isMuted)`: what the others are told (the tracks themselves start and stop on the device).
-- `AskChatCallTranscription(callId)`, `AnswerChatCallTranscription(callId, isConsenting)`.
+- `AskChatCallTranscription(callId)`.
 - `ListChatCalls(conversationId, first, before)`, `ReadChatCall(callId)` (with transcript), `ListGoingChatCalls()`, and `ReadGoingChatCall(conversationId)` for the banner a chat with a call going shows.
 - `ChatCallEvents` subscription: the account's feed of calls (ringing, answered elsewhere, ended), so any dashboard tab rings and stops ringing.
 
@@ -119,7 +125,7 @@ A phone button in a chat's header starts an audio call. A ringing card (top of t
 
 ### 7. Transcription
 
-`AskChatCallTranscription` marks the call and asks every person on it (and anyone who joins later); each answers for their own voice. The SFU writes each consenting person's audio to an Ogg Opus file in the blob store while they consent. When the call ends, each file is transcribed with the `agent.voice` transcription model, the segments are merged by time under each speaker's name, the transcript is kept with the call and posted as the call's transcript (a link from the call line opens it), and the `summarize` model writes a short summary posted into the chat by the asker's agent. The asker's agent pays for both, as a voice message's sender pays.
+`AskChatCallTranscription` marks the call; everybody on it, and anyone who joins later, is transcribed and told so. The SFU writes each person's audio to Ogg Opus files of their own on its disk from then on. When the call ends, each file is transcribed with the `agent.voice` transcription model, the segments are merged by time under each speaker's name, the transcript is kept with the call and posted as the call's transcript (a link from the call line opens it), and the `summarize` model writes a short summary posted into the chat by the asker's agent. The asker's agent pays for both, as a voice message's sender pays.
 
 ### 8. Command line and agent
 

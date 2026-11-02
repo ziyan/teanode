@@ -834,15 +834,17 @@ struct MainView: View {
             // `person-card-unlinked`, `location-person-card`), or a contact's from the Contacts list (`person-card-contact`).
             if let person = DemoServer.openedPerson { app.openedPerson = person }
             if let contactId = DemoServer.openedPersonContactId { app.openedContactId = contactId }
-            // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-voice-mode`, `chat-voice-hold`, `chat-group`, `chat-members`, `chat-mention`, `chat-call-banner`, `chat-call-lines`),
+            // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-voice-mode`, `chat-voice-hold`, `chat-group`, `chat-members`, `chat-mention`, `chat-call-banner`, `chat-call-lines`, `chat-call-minimized`),
             // or the main conversation (`conversation`, `conversation-long-message`).
             if let chat = DemoServer.openedChat {
                 chatPath = [ChatPlace.conversation(chat)]
             } else if DemoServer.opensMainChat {
                 chatPath = [ChatPlace.main]
             }
-            // The call screen of a call with three people (`-TeaNodeScreen chat-call-screen`), over the app.
+            // The call screen of a call with three people (`-TeaNodeScreen chat-call-screen`), over the app, or the
+            // same call put away to its bar over the group's chat (`chat-call-minimized`).
             if DemoServer.isRequested, DemoServer.screen == "chat-call-screen" { ChatCallManager.shared.showDemoCall() }
+            if DemoServer.isRequested, DemoServer.screen == "chat-call-minimized" { ChatCallManager.shared.showDemoCall(isMinimized: true) }
         }
     #endif
 }

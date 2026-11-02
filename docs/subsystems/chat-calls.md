@@ -33,7 +33,7 @@ A server that stops ends the calls it held as failed when it starts again.
 when and how it ended (`ended`, `missed`, `declined`, `failed`).
 `chat_call_member` is each person's part: rung and what came of it (`ringing`,
 `answered`, `declined`, `missed`, or `none` for whoever started it), when they
-were on, whether their camera is on, and their answer to a transcript. The
+were on, and whether their camera is on. The
 call's line in the chat is a message with no words whose `callId` names the
 call; a client draws it from the call (`call` on the message), as it goes and
 after.
@@ -84,21 +84,29 @@ dashboard tab rings from `ChatCallEvents`.
 
 ## Transcripts
 
-Anyone on a call can ask for it to be transcribed
-(`AskChatCallTranscription`); they agree for their own voice, and everybody
-else on the call, and anyone who joins later, is asked
-(`AnswerChatCallTranscription`). The media server keeps the microphone of each
-person who agreed in files of their own on its disk (`call.Recorder`), cut
-every ten minutes. When the call ends, each file is transcribed with the voice
-settings' transcription model, the lines are put in the order they were said
-under each speaker's name, kept with the call (`ReadChatCall`), and summarized
-into the chat by the agent of whoever asked, which pays for both. Whoever said
-no is not transcribed, and a server that stops before the transcript is written
-loses the recordings, so the transcript fails.
+Anyone on a call can turn transcription on (`AskChatCallTranscription`), for
+everybody on it: nobody is asked, and everybody is told. Each device shows a
+notice that names who turned it on (`transcriptionAskedByUserId`), which the
+person closes, and a mark that stays while the call lasts; whoever joins later
+sees the same notice. The media server keeps the microphone of everybody on
+the call, from then on, in files of their own on its disk (`call.Recorder`),
+cut every ten minutes. When the call ends, each file is transcribed with the
+voice settings' transcription model, the lines are put in the order they were
+said under each speaker's name, kept with the call (`ReadChatCall`), and
+summarized into the chat by the agent of whoever turned it on, which pays for
+both. A server that stops before the transcript is written loses the
+recordings, so the transcript fails.
+
+A member's `transcriptionConsent` is `yes` for everybody while a call is
+transcribed. Nobody answers it any more; it stays for app builds that still
+read it.
 
 ## Surfaces
 
-The dashboard and the iPhone app start, ring, answer and show calls. The
+The dashboard and the iPhone app start, ring, answer and show calls. A call
+can be put away while it goes, to use the rest of the app: on the dashboard to
+a small window in a corner, on the iPhone to a bar at the top of the app with
+mute and hang up; either brings the call back. The
 command line lists a chat's calls (`teanode chat calls`) and shows one with its
 transcript (`teanode chat call`). The agent reads them with its chat tool
 (`list_calls`, `read_call`); starting a call is not an agent action.

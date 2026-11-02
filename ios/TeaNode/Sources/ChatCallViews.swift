@@ -155,6 +155,9 @@ struct ChatCallScreen: View {
     let manager: ChatCallManager
     let session: ChatCallSession
     @State private var isConfirmingTranscription = false
+    /// The call whose transcription notice the person closed.
+    @State private var noticeClosedCallId: String?
+    @ScaledMetric(relativeTo: .body) private var minimizeDiameter: CGFloat = 44
 
     private var status: ChatCallTranscriptionStatus {
         guard let call = session.call else { return .notAsked }
@@ -196,55 +199,59 @@ struct ChatCallScreen: View {
     // MARK: Head
 
     private var header: some View {
-        VStack(spacing: 2) {
-            Text(session.title)
-                .font(.headline)
-                .lineLimit(1)
-            statusLine
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
-    }
-
-    @ViewBuilder
-    private var statusLine: some View {
-        if session.phase == .connected, let answeredDate = session.call?.answeredDate {
-            Text(answeredDate, style: .timer)
-                .font(.subheadline)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-        } else {
-            Text(statusText)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var statusText: String {
-        switch session.phase {
-        case .connecting: String(localized: "Connecting…")
-        case .reconnecting: String(localized: "Reconnecting…")
-        case .connected: session.isOutgoing ? String(localized: "Calling…") : ""
+        HStack(spacing: 8) {
+            // Puts the call away to the bar at the top of the app, to use the
+            // rest of it while on the call.
+            Button {
+                session.isMinimized = true
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.primary)
+                    .frame(width: minimizeDiameter, height: minimizeDiameter)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .accessibilityLabel("Minimize the call")
+            VStack(spacing: 2) {
+                Text(session.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                ChatCallStatusLine(session: session)
+                    .font(.subheadline)
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .combine)
+            // As wide as the button, so the title stays in the middle.
+            Color.clear
+                .frame(width: minimizeDiameter, height: 1)
+                .accessibilityHidden(true)
         }
     }
 
     // MARK: Transcription
 
+    /// Whoever turns transcription on turns it on for everybody on the call:
+    /// each person is told once, in a notice they close, and the mark under
+    /// the title stays while it lasts.
     @ViewBuilder
     private var transcription: some View {
         switch status {
         case .notAsked:
             EmptyView()
-        case .transcribing:
-            Label("Transcribing", systemImage: "text.bubble")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(.regularMaterial, in: .capsule)
-        case .asking(let askerName):
-            TranscriptionPrompt(askerName: askerName) { isConsenting in
-                Task { await manager.answerTranscription(isConsenting: isConsenting) }
+        case .transcribing(let askerName, let isAskedByPerson):
+            if noticeClosedCallId != nil, noticeClosedCallId == session.callId {
+                Label("Transcribing", systemImage: "text.bubble")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.regularMaterial, in: .capsule)
+            } else {
+                TranscriptionNotice(askerName: askerName, isAskedByPerson: isAskedByPerson) {
+                    noticeClosedCallId = session.callId
+                }
             }
         }
     }
@@ -330,11 +337,11 @@ struct ChatCallScreen: View {
         .disabled(!status.canAsk)
         // A confirmation hangs on the control that asks.
         .confirmationDialog("Transcribe this call?", isPresented: $isConfirmingTranscription, titleVisibility: .visible) {
-            Button("Ask everyone") {
+            Button("Transcribe") {
                 Task { await manager.askTranscription() }
             }
         } message: {
-            Text("Everybody on the call is asked. Only the voices of those who agree are transcribed, and the transcript is posted in the chat.")
+            Text("Everybody on the call is told, and their voices are transcribed. A summary is posted in the chat when the call ends.")
         }
         ChatCallControlButton(systemImage: "phone.down.fill", label: String(localized: "Hang up"), isDestructive: true) {
             manager.endCall()
@@ -379,27 +386,45 @@ struct ChatCallControlButton: View {
     }
 }
 
-/// TranscriptionPrompt asks the person whether their voice may be transcribed
-/// when somebody on the call asked for it: Allow, or Not me.
-struct TranscriptionPrompt: View {
+/// TranscriptionNotice tells the person the call is being transcribed, and
+/// who turned it on. Nobody is asked: it closes with its button.
+struct TranscriptionNotice: View {
     let askerName: String
-    let onAnswer: (Bool) -> Void
+    let isAskedByPerson: Bool
+    let onClose: () -> Void
 
-    private var askerText: String {
-        askerName.isEmpty ? String(localized: "Somebody") : askerName
+    private var title: String {
+        if isAskedByPerson { return String(localized: "You turned on transcription") }
+        let name = askerName.isEmpty ? String(localized: "Somebody") : askerName
+        return String(localized: "\(name) turned on transcription")
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("\(askerText) asked to transcribe this call")
-                .font(.subheadline)
-            Text("Only your own voice is transcribed, and only if you allow it.")
-                .font(.footnote)
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "text.bubble")
+                .font(.title3)
                 .foregroundStyle(.secondary)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) { buttons }
-                VStack(spacing: 8) { buttons }
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text("Everyone's voice on this call is transcribed, and a summary goes in the chat when it ends.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
+            .padding(.top, -12)
+            .padding(.trailing, -12)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -408,47 +433,123 @@ struct TranscriptionPrompt: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(.separator).opacity(0.5), lineWidth: 0.5)
         }
     }
+}
 
-    @ViewBuilder
-    private var buttons: some View {
-        Button {
-            onAnswer(true)
-        } label: {
-            Text("Allow")
-                .frame(maxWidth: .infinity)
+/// ChatCallStatusLine is how a call stands, under its title: how long it has
+/// gone once answered, or that it is connecting or calling.
+struct ChatCallStatusLine: View {
+    let session: ChatCallSession
+
+    var body: some View {
+        if session.phase == .connected, let answeredDate = session.call?.answeredDate {
+            Text(answeredDate, style: .timer)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        } else {
+            Text(statusText)
+                .foregroundStyle(.secondary)
         }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
-        .controlSize(.large)
-        Button {
-            onAnswer(false)
-        } label: {
-            Text("Not me")
-                .frame(maxWidth: .infinity)
+    }
+
+    private var statusText: String {
+        switch session.phase {
+        case .connecting: String(localized: "Connecting…")
+        case .reconnecting: String(localized: "Reconnecting…")
+        case .connected: session.isOutgoing ? String(localized: "Calling…") : ""
         }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.capsule)
-        .controlSize(.large)
+    }
+}
+
+/// ChatCallBar is a call put away while the phone is on it: a bar at the top
+/// of the app, over whatever the person went to (a mail, a photo, the chat),
+/// with mute and hang up. Tapping it brings the call screen back.
+struct ChatCallBar: View {
+    let manager: ChatCallManager
+    let session: ChatCallSession
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                session.isMinimized = false
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: session.isCameraOn ? "video.fill" : "phone.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.green)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(session.title)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                        ChatCallStatusLine(session: session)
+                            .font(.caption)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(String(localized: "Return to the call"))
+            .accessibilityValue(session.title)
+            Button {
+                manager.setMuted(!session.isMuted)
+            } label: {
+                Image(systemName: session.isMuted ? "mic.slash.fill" : "mic.fill")
+                    .font(.body)
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(session.isMuted ? String(localized: "Unmute") : String(localized: "Mute"))
+            Button {
+                manager.endCall()
+            } label: {
+                Image(systemName: "phone.down.fill")
+                    .font(.body)
+                    .foregroundStyle(Color.red)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Hang up")
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 4)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
     }
 }
 
 /// ChatCallPresenter shows the call screen over the app while the phone is on
-/// a call, and tells what went wrong when a call could not be started.
+/// a call, or the bar of a call put away, and tells what went wrong when a
+/// call could not be started.
 struct ChatCallPresenter: ViewModifier {
     func body(content: Content) -> some View {
         let manager = ChatCallManager.shared
-        let isOnCall = manager.session != nil
+        let session = manager.session
+        let isScreenShown = session != nil && session?.isMinimized != true
         let problemText = manager.problemText
         return content
-            .fullScreenCover(isPresented: Binding(get: { isOnCall }, set: { _ in })) {
+            // The bar of a call put away takes its room at the top, so what
+            // is under it moves down rather than hiding behind it.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let session, session.isMinimized {
+                    ChatCallBar(manager: manager, session: session)
+                }
+            }
+            .fullScreenCover(isPresented: Binding(get: { isScreenShown }, set: { _ in })) {
                 if let session = manager.session {
                     ChatCallScreen(manager: manager, session: session)
                 }
             }
             .alert(
                 "Something went wrong",
-                // On a call, its screen tells it, being on top.
-                isPresented: Binding(get: { problemText != nil && !isOnCall }, set: { if !$0 { manager.problemText = nil } }),
+                // While the call screen shows, it tells it, being on top.
+                isPresented: Binding(get: { problemText != nil && !isScreenShown }, set: { if !$0 { manager.problemText = nil } }),
                 presenting: problemText
             ) { _ in
                 Button("OK", role: .cancel) {}

@@ -5,8 +5,9 @@
     // The invented calls that the screenshots of calls in chats photograph
     // (`-TeaNodeDemo`, docs/subsystems/chat-calls.md): the banner of a chat
     // with a call going (`-TeaNodeScreen chat-call-banner`, the Home circle's
-    // chat), the call screen with three people (`chat-call-screen`), and a
-    // chat with calls in it (`chat-call-lines`, the direct chat): one that
+    // chat), the call screen with three people (`chat-call-screen`), the same
+    // call put away to its bar (`chat-call-minimized`), and a chat with calls
+    // in it (`chat-call-lines`, the direct chat): one that
     // ended with its transcript, one missed and one going. The same people as
     // the rest of the demo.
 
@@ -24,11 +25,11 @@
 
         /// One person's part in a call, as a call's view tells it.
         private static func callMemberJSON(
-            _ userId: String, ringState: String, isOn: Bool, isVideoOn: Bool = false, consent: String = "", joinedAt: String?
+            _ userId: String, ringState: String, isOn: Bool, isVideoOn: Bool = false, joinedAt: String?
         ) -> String {
             let person = demoPerson(userId)
             return
-                #"{"userId":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"ringState":"\#(ringState)","isOn":\#(isOn),"isVideoOn":\#(isVideoOn),"transcriptionConsent":"\#(consent)","joinedAt":\#(quoted(joinedAt)),"leftAt":null}"#
+                #"{"userId":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"ringState":"\#(ringState)","isOn":\#(isOn),"isVideoOn":\#(isVideoOn),"joinedAt":\#(quoted(joinedAt)),"leftAt":null}"#
         }
 
         /// A call as the person sees it.
@@ -69,7 +70,7 @@
         }
 
         /// The call of the call screen: Robin, Sam (with his camera on) and
-        /// Alex, who has asked to transcribe it. Four minutes twelve in.
+        /// Alex, who has turned on transcription. Four minutes twelve in.
         static var callScreenJSON: String {
             let answeredAt = CalendarDates.text(Date().addingTimeInterval(-252))
             return callViewJSON(
@@ -78,7 +79,7 @@
                 members: [
                     callMemberJSON("robin", ringState: "answered", isOn: true, joinedAt: answeredAt),
                     callMemberJSON("sam", ringState: "answered", isOn: true, isVideoOn: true, joinedAt: answeredAt),
-                    callMemberJSON("alex", ringState: "none", isOn: true, consent: "yes", joinedAt: answeredAt),
+                    callMemberJSON("alex", ringState: "none", isOn: true, joinedAt: answeredAt),
                 ])
         }
 
@@ -91,7 +92,7 @@
         }
 
         private static func callRecordMemberJSON(_ userId: String, ringState: String, joinedAt: String?, leftAt: String?) -> String {
-            #"{"userId":"\#(userId)","ringState":"\#(ringState)","joinedAt":\#(quoted(joinedAt)),"leftAt":\#(quoted(leftAt)),"isVideoOn":false,"transcriptionConsent":""}"#
+            #"{"userId":"\#(userId)","ringState":"\#(ringState)","joinedAt":\#(quoted(joinedAt)),"leftAt":\#(quoted(leftAt)),"isVideoOn":false}"#
         }
 
         /// The line of a call in a chat: a message with no words.
@@ -175,8 +176,9 @@
 
     extension ChatCallManager {
         /// `-TeaNodeScreen chat-call-screen`: the call screen with three
-        /// people, one with his camera on, and Alex's request to transcribe.
-        func showDemoCall() {
+        /// people, one with his camera on, and the notice that Alex turned on
+        /// transcription; `chat-call-minimized`: the same call put away.
+        func showDemoCall(isMinimized: Bool = false) {
             guard let call = try? JSONDecoder().decode(ChatCallView.self, from: Data(DemoServer.callScreenJSON.utf8)) else { return }
             let demo = ChatCallSession(
                 uuid: UUID(), accountKey: DemoServer.account.accountKey, conversationId: call.conversationId, title: call.chatTitle,
@@ -185,6 +187,7 @@
             demo.call = call
             demo.ownUserId = "robin"
             demo.phase = .connected
+            demo.isMinimized = isMinimized
             showDemo(session: demo)
         }
     }

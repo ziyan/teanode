@@ -35,6 +35,9 @@ final class ChatCallSession {
     /// The person's own user id, which of the call's members is them.
     var ownUserId = ""
     var isMuted = false
+    /// Whether the call screen is put away to the bar at the top of the app,
+    /// so the person can use the rest of it while on the call.
+    var isMinimized = false
     var isCameraOn = false
     var isSpeakerOn = false
     var usesFrontCamera = true
@@ -316,7 +319,11 @@ final class ChatCallManager: NSObject {
             callController.request(CXTransaction(action: CXAnswerCallAction(call: ringing.uuid))) { @Sendable _ in }
             return
         }
-        if let session, session.callId == callId { return }
+        // The call the phone is on already: its screen comes back.
+        if let session, session.callId == callId {
+            session.isMinimized = false
+            return
+        }
         await place(conversationId: conversationId, title: title, existingCallId: callId)
     }
 
@@ -581,16 +588,6 @@ final class ChatCallManager: NSObject {
         guard let session, let callId = session.callId, let connection = session.connection else { return }
         do {
             note(try await connection.askChatCallTranscription(callId: callId))
-        } catch {
-            problemText = AppModel.shared.describe(error)
-        }
-    }
-
-    /// The person's answer to the call being transcribed, for their own voice.
-    func answerTranscription(isConsenting: Bool) async {
-        guard let session, let callId = session.callId, let connection = session.connection else { return }
-        do {
-            note(try await connection.answerChatCallTranscription(callId: callId, isConsenting: isConsenting))
         } catch {
             problemText = AppModel.shared.describe(error)
         }
