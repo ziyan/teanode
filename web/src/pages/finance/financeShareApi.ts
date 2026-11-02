@@ -107,3 +107,64 @@ export const LIST_SHARED_FINANCE_TRANSACTIONS = `query ($financeAccountId: Strin
     nextCursor totalCount financeTransactions { id postedOn amount currencyCode merchantName spendingCategoryName }
   }
 }`
+
+// Sharing all of one's finance at once (docs/planning/share-all-finance-execplan.md).
+// A whole-finance share covers every account, now and later, at one of two
+// levels, and shows the reader one combined view with no account name, mask or
+// balance, so there is no balance level.
+export const ALL_FINANCE_SHARE_LEVELS = ['spending', 'transactions'] as const
+export type AllFinanceShareLevel = (typeof ALL_FINANCE_SHARE_LEVELS)[number]
+
+// One share of all of the person's finance: with a person or with a circle,
+// never both.
+export type AllFinanceShare = {
+  id: string
+  granteeUserId: string | null
+  granteeUsername: string
+  granteeName: string
+  granteeCircleId: string | null
+  granteeCircleName: string
+  financeShareLevel: AllFinanceShareLevel
+  createdAt: string
+}
+
+// Somebody who shares all of their finance with the person, at the highest
+// level that reaches them.
+export type SharedFinancePerson = {
+  ownerUserId: string
+  ownerUsername: string
+  ownerName: string
+  financeShareLevel: AllFinanceShareLevel
+}
+
+export const LIST_FINANCE_SHARES = `query {
+  ListFinanceShares {
+    id granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName financeShareLevel createdAt
+  }
+}`
+
+export const SHARE_FINANCE = `mutation ($granteeUserId: String, $granteeCircleId: String, $financeShareLevel: String!) {
+  ShareFinance(granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, financeShareLevel: $financeShareLevel) {
+    id granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName financeShareLevel createdAt
+  }
+}`
+
+export const UNSHARE_FINANCE = `mutation ($financeShareId: String!) { UnshareFinance(financeShareId: $financeShareId) }`
+
+export const LIST_SHARED_FINANCE = `query ($ownerUserId: String) {
+  ListSharedFinance(ownerUserId: $ownerUserId) { ownerUserId ownerUsername ownerName financeShareLevel }
+}`
+
+// The combined reads: the same operations as one account's, given the owner
+// in place of the account.
+export const LIST_SHARED_ALL_FINANCE_SPENDING = `query ($ownerUserId: String!, $from: String, $to: String) {
+  ListSharedFinanceSpending(ownerUserId: $ownerUserId, from: $from, to: $to) {
+    spendingMonth spendingCategoryName currencyCode moneyOut moneyIn financeTransactionCount
+  }
+}`
+
+export const LIST_SHARED_ALL_FINANCE_TRANSACTIONS = `query ($ownerUserId: String!, $limit: Int, $offset: Int) {
+  ListSharedFinanceTransactions(ownerUserId: $ownerUserId, limit: $limit, offset: $offset) {
+    nextCursor totalCount financeTransactions { id postedOn amount currencyCode merchantName spendingCategoryName }
+  }
+}`

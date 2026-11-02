@@ -79,8 +79,8 @@ type SharingOperation interface {
 	// person, which a share to a circle never is.
 	DeclineRecordingShare(granteeUserId, shareId string) error
 
-	// DeclineFinanceShare ends a share of somebody's finance account that was
-	// made to the person by name. ErrNotFound unless the share is to that
+	// DeclineFinanceShare ends a share of somebody's finance account, or of all
+	// of their finance, that was made to the person by name. ErrNotFound unless the share is to that
 	// person, which a share to a circle never is.
 	DeclineFinanceShare(granteeUserId, shareId string) error
 }
@@ -412,6 +412,8 @@ func (self *transaction) ListCircleShareOwners(circleId string) ([]*models.Circl
 		JOIN "agent" owner_agent ON owner_agent.id = account.agent_id
 		WHERE share.grantee_circle_id = @circle
 		UNION ALL
+		SELECT share.owner_user_id, 'finance' FROM "finance_share" share WHERE share.grantee_circle_id = @circle
+		UNION ALL
 		SELECT list.user_id, 'shopping_list' FROM "shopping_list_share" share
 		JOIN "shopping_list" list ON list.id = share.shopping_list_id
 		WHERE share.grantee_circle_id = @circle
@@ -515,12 +517,17 @@ func (self *transaction) DeclineFinanceShare(granteeUserId, shareId string) erro
 	if granteeUserId == "" || shareId == "" {
 		return ErrNotFound
 	}
-	result := self.tx.Where("\"id\" = ? AND \"grantee_user_id\" = ?", shareId, granteeUserId).Delete(&financeAccountShareModel{})
-	if result.Error != nil {
-		return result.Error
+	// A share of one account and a share of all of a person's finance are
+	// both finance shares to the person declining, and their identifiers do
+	// not overlap.
+	for _, model := range []any{&financeAccountShareModel{}, &financeShareModel{}} {
+		result := self.tx.Where("\"id\" = ? AND \"grantee_user_id\" = ?", shareId, granteeUserId).Delete(model)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected > 0 {
+			return nil
+		}
 	}
-	if result.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return ErrNotFound
 }

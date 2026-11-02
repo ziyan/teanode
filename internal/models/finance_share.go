@@ -141,3 +141,51 @@ type SharedFinanceTransaction struct {
 	MerchantName         string `json:"merchantName,omitempty" graphapi:"nullable"`
 	SpendingCategoryName string `json:"spendingCategoryName,omitempty" graphapi:"nullable"`
 }
+
+// IsGrantableForAllAccounts reports whether all of a person's finance may be
+// shared at this level. A balance belongs to one account, and a share of all
+// finance shows no account, so it has no balance level.
+func (self FinanceShareLevel) IsGrantableForAllAccounts() bool {
+	return self == FinanceShareLevelSpending || self == FinanceShareLevelTransactions
+}
+
+// AllFinanceShare gives one person, or every member of one circle, a level of
+// access to all of the owner's finance: every finance account they hold now
+// and every one they link later. Exactly one of GranteeUserID and
+// GranteeCircleID is set. It is the whole-finance counterpart of FinanceShare,
+// which is of one account.
+type AllFinanceShare struct {
+	ID          string `json:"id"`
+	OwnerUserID string `json:"ownerUserId"`
+
+	GranteeUserID   string `json:"granteeUserId,omitempty"`
+	GranteeCircleID string `json:"granteeCircleId,omitempty"`
+
+	// FinanceShareLevel is spending or transactions.
+	FinanceShareLevel FinanceShareLevel `json:"financeShareLevel"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	// CreatedByUserID is empty once that person is gone.
+	CreatedByUserID string `json:"createdByUserId,omitempty"`
+
+	// The rest is filled in by the listings.
+	OwnerUsername     string `json:"ownerUsername,omitempty"`
+	OwnerName         string `json:"ownerName,omitempty"`
+	OwnerUser         *User  `json:"-"`
+	GranteeUsername   string `json:"granteeUsername,omitempty"`
+	GranteeName       string `json:"granteeName,omitempty"`
+	GranteeCircleName string `json:"granteeCircleName,omitempty"`
+}
+
+// ReachedAllFinance is a person's whole finance as somebody else reaches it:
+// whose it is and the highest level of the shares of all their finance that
+// reach the reader. The reader is never told which accounts it covers.
+type ReachedAllFinance struct {
+	OwnerUserID   string
+	OwnerUsername string
+	OwnerName     string
+
+	FinanceShareLevel FinanceShareLevel
+}

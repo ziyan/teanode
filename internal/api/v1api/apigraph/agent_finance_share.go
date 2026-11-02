@@ -12,19 +12,21 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// Sharing a finance account: with one person or one circle, at a level. Part
-// of the finance area, but not of FinanceQuery or FinanceMutation, because the
-// agent has no tool operation for any of it: what a finance account holds is
-// the person's, and what others share is theirs to read, not their agents' to
-// send to a model provider. docs/subsystems/finance.md ("Sharing") says what
-// each level shows.
+// Sharing finance: one account, or all of a person's accounts, with one person
+// or one circle, at a level. Part of the finance area, but not of FinanceQuery
+// or FinanceMutation, because the agent has no tool operation for any of it:
+// what a finance account holds is the person's, and what others share is
+// theirs to read, not their agents' to send to a model provider.
+// docs/subsystems/finance.md ("Sharing") says what each level shows.
 //
 // Who may read which account, and at what level, is decided in one place, the
-// database's ReachFinanceAccount, and what a level shows is made in one place
-// for each kind of answer: describeSharedFinanceAccount here, and the types
-// the database's ListSharedFinanceSpending and ListSharedFinanceTransactions
-// return, which have no field for what a level does not show. Sharing is the
-// account owner's alone.
+// database's ReachFinanceAccount, and for the finance of a person as a whole
+// ReachAllFinance, which asks the same conditions. What a level shows is made
+// in one place for each kind of answer: describeSharedFinanceAccount here, and
+// the types the database's ListSharedFinanceSpending and
+// ListSharedFinanceTransactions return, which have no field for what a level
+// does not show and none for an account when the answer is of all of them.
+// Sharing is the owner's alone.
 
 // FinanceShareQuery reads who a finance account is shared with, and what is
 // shared with the caller. Needs agent:use.
@@ -42,21 +44,44 @@ type FinanceShareQuery interface {
 	// available to the agent.
 	ListSharedFinanceAccounts(ctx context.Context, arguments ListSharedFinanceAccountsArguments) ([]*SharedFinanceAccountView, error)
 
+	// The shares of all of their finance that the caller has made, oldest
+	// first, with who each is for. Not available to the agent.
+	ListFinanceShares(ctx context.Context) ([]*FinanceShareAllView, error)
+
+	// The people who share all of their finance with the caller, one row for
+	// each person at the highest level that reaches the caller; of one person
+	// when ownerUserId is given. The finance of such a person is read as one
+	// with ListSharedFinanceSpending and ListSharedFinanceTransactions given
+	// the person's ownerUserId and no financeAccountId. A person whose agent or
+	// circle is gone, or who the caller no longer shares a circle with, is not
+	// there. Not available to the agent.
+	ListSharedFinance(ctx context.Context, arguments ListSharedFinanceArguments) ([]*SharedFinanceView, error)
+
 	// A shared finance account's money out and in by month and spending
 	// category, newest month first, in each currency, without merchants or
 	// descriptions; for the days from and to ("2006-01-02", either may be
 	// left out; at the spending level they are widened to whole months, so a
 	// range of single days cannot be used to find one charge). Needs the
-	// spending level or the transactions level. Not available to the agent.
+	// spending level or the transactions level. Given ownerUserId instead of
+	// financeAccountId, the same across all of that person's finance accounts
+	// together, now and later, in each currency with their category names and
+	// no account (transfers between their own accounts are left out, as on
+	// their own Spending page), for a person who shares all their finance at
+	// the spending level or better. Give one of the two. Not available to the
+	// agent.
 	ListSharedFinanceSpending(ctx context.Context, arguments ListSharedFinanceSpendingArguments) ([]*models.SharedFinanceSpendingRow, error)
 
 	// A page of a shared finance account's transactions, newest first: the
 	// day, amount, merchant name and spending category of each. Needs the
-	// transactions level. Not available to the agent.
+	// transactions level. Given ownerUserId instead of financeAccountId, the
+	// transactions of all of that person's finance accounts together, with no
+	// account, for a person who shares all their finance at the transactions
+	// level. Give one of the two. Not available to the agent.
 	ListSharedFinanceTransactions(ctx context.Context, arguments ListSharedFinanceTransactionsArguments) (*SharedFinanceTransactionPageView, error)
 }
 
-// FinanceShareMutation shares one of the caller's finance accounts.
+// FinanceShareMutation shares one of the caller's finance accounts, or all of
+// their finance.
 type FinanceShareMutation interface {
 	// Share one of the caller's finance accounts with one person or one
 	// circle at a level: balance, spending or transactions. The person must
@@ -70,6 +95,20 @@ type FinanceShareMutation interface {
 	// Take one of the caller's shares of a finance account back. Open to
 	// every sign-in. Not available to the agent.
 	UnshareFinanceAccount(ctx context.Context, arguments UnshareFinanceAccountArguments) (bool, error)
+
+	// Share all of the caller's finance with one person or one circle at a
+	// level: spending or transactions. Every finance account the caller holds
+	// now, and every one they link later, is covered, and the reader sees one
+	// combined view with no account name, mask or balance. The person must
+	// share a circle with the caller, and the caller must be in the circle.
+	// Sharing again changes the level. Sharing with somebody it is not
+	// already shared with, or at a higher level, is done where a person taps,
+	// not from a command line or an API token. Not available to the agent.
+	ShareFinance(ctx context.Context, arguments ShareFinanceArguments) (*FinanceShareAllView, error)
+
+	// Take one of the caller's shares of all of their finance back. Open to
+	// every sign-in. Not available to the agent.
+	UnshareFinance(ctx context.Context, arguments UnshareFinanceArguments) (bool, error)
 }
 
 // FinanceShareView is one share of a finance account.
@@ -105,6 +144,56 @@ func describeFinanceShare(share *models.FinanceShare) *FinanceShareView {
 		view.GranteeCircleID = &share.GranteeCircleID
 	}
 	return view
+}
+
+// FinanceShareAllView is one share of all of the caller's finance.
+type FinanceShareAllView struct {
+	ID string `json:"id"`
+
+	// Who it is shared with: a person or a circle, never both.
+	GranteeUserID     *string `json:"granteeUserId"`
+	GranteeUsername   string  `json:"granteeUsername"`
+	GranteeName       string  `json:"granteeName"`
+	GranteeCircleID   *string `json:"granteeCircleId"`
+	GranteeCircleName string  `json:"granteeCircleName"`
+
+	// spending or transactions
+	FinanceShareLevel string `json:"financeShareLevel"`
+
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func describeFinanceShareAll(share *models.AllFinanceShare) *FinanceShareAllView {
+	view := &FinanceShareAllView{
+		ID: share.ID, FinanceShareLevel: string(share.FinanceShareLevel), CreatedAt: share.CreatedAt,
+		GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName, GranteeCircleName: share.GranteeCircleName,
+	}
+	if share.GranteeUserID != "" {
+		view.GranteeUserID = &share.GranteeUserID
+	}
+	if share.GranteeCircleID != "" {
+		view.GranteeCircleID = &share.GranteeCircleID
+	}
+	return view
+}
+
+// SharedFinanceView is a person who shares all of their finance with the
+// caller. It names no account: the level is all there is to say about what is
+// covered.
+type SharedFinanceView struct {
+	OwnerUserID   string `json:"ownerUserId"`
+	OwnerUsername string `json:"ownerUsername"`
+	OwnerName     string `json:"ownerName"`
+
+	// spending or transactions: the highest level that reaches the caller.
+	FinanceShareLevel string `json:"financeShareLevel"`
+}
+
+func describeSharedFinance(reached *models.ReachedAllFinance) *SharedFinanceView {
+	return &SharedFinanceView{
+		OwnerUserID: reached.OwnerUserID, OwnerUsername: reached.OwnerUsername, OwnerName: reached.OwnerName,
+		FinanceShareLevel: string(reached.FinanceShareLevel),
+	}
 }
 
 // SharedFinanceAccountView is somebody else's finance account as the level it
@@ -207,8 +296,19 @@ type ListSharedFinanceAccountsArguments struct {
 	OwnerUserID string `json:"ownerUserId" graphapi:"nullable"`
 }
 
+type ListSharedFinanceArguments struct {
+	// Only this person
+	OwnerUserID string `json:"ownerUserId" graphapi:"nullable"`
+}
+
 type ListSharedFinanceSpendingArguments struct {
-	FinanceAccountID string `json:"financeAccountId"`
+	// One shared finance account; leave out and give ownerUserId for all of a
+	// person's finance together
+	FinanceAccountID string `json:"financeAccountId" graphapi:"nullable"`
+
+	// The person who shares all their finance; leave out when asking for one
+	// finance account
+	OwnerUserID string `json:"ownerUserId" graphapi:"nullable"`
 
 	// From and To bound the posted day, both included, "2006-01-02". At the
 	// spending level From becomes the first of its month and To the last of
@@ -218,7 +318,13 @@ type ListSharedFinanceSpendingArguments struct {
 }
 
 type ListSharedFinanceTransactionsArguments struct {
-	FinanceAccountID string `json:"financeAccountId"`
+	// One shared finance account; leave out and give ownerUserId for all of a
+	// person's finance together
+	FinanceAccountID string `json:"financeAccountId" graphapi:"nullable"`
+
+	// The person who shares all their finance; leave out when asking for one
+	// finance account
+	OwnerUserID string `json:"ownerUserId" graphapi:"nullable"`
 
 	// From and To bound the posted day, both included, "2006-01-02"
 	From string `json:"from" graphapi:"nullable"`
@@ -252,10 +358,27 @@ type UnshareFinanceAccountArguments struct {
 	ShareID string `json:"shareId"`
 }
 
+type ShareFinanceArguments struct {
+	// The person to share with, who must share a circle with the caller;
+	// leave out when sharing with a circle
+	GranteeUserID string `json:"granteeUserId" graphapi:"nullable"`
+
+	// The circle to share with, which the caller must be in; leave out when
+	// sharing with a person
+	GranteeCircleID string `json:"granteeCircleId" graphapi:"nullable"`
+
+	// spending or transactions
+	FinanceShareLevel string `json:"financeShareLevel"`
+}
+
+type UnshareFinanceArguments struct {
+	FinanceShareID string `json:"financeShareId"`
+}
+
 // financeShareOnATap is what a call is told when only a person's own tap may
 // make it. It begins with api.TapRequiredPhrase, which the command line
 // recognizes.
-const financeShareOnATap = api.TapRequiredPhrase + ": sharing a finance account with somebody it is not already shared with, or at a higher level, is done on the Settings tab of the Finance page on the dashboard or in Finance in the iPhone app, not from a command line or an API token"
+const financeShareOnATap = api.TapRequiredPhrase + ": sharing a finance account, or all your finance, with somebody it is not already shared with, or at a higher level, is done on the Settings tab of the Finance page on the dashboard or in Finance in the iPhone app, not from a command line or an API token"
 
 // requireFinanceNotAgent refuses the person's agent: it has no tool for
 // sharing finance or for reading what others share, and the API says the same
@@ -446,11 +569,35 @@ func (self *graph) ListSharedFinanceSpending(ctx context.Context, arguments List
 	if err != nil {
 		return nil, err
 	}
-	rows, err := self.transaction(ctx).ListSharedFinanceSpending(principal.User.ID, strings.TrimSpace(arguments.FinanceAccountID), from, to)
+	financeAccountId, ownerUserId, err := sharedFinanceSubject(arguments.FinanceAccountID, arguments.OwnerUserID)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	if ownerUserId != "" {
+		rows, err := tx.ListSharedAllFinanceSpending(principal.User.ID, ownerUserId, from, to)
+		if err != nil {
+			return nil, financeError(err)
+		}
+		return rows, nil
+	}
+	rows, err := tx.ListSharedFinanceSpending(principal.User.ID, financeAccountId, from, to)
 	if err != nil {
 		return nil, financeError(err)
 	}
 	return rows, nil
+}
+
+// sharedFinanceSubject is what a read of shared finance is of: one finance
+// account, or all the finance of one person. Exactly one is asked for, because
+// a combined answer and an answer of one account are different answers and a
+// call that gave both would not say which it wanted.
+func sharedFinanceSubject(financeAccountId, ownerUserId string) (string, string, error) {
+	financeAccountId, ownerUserId = strings.TrimSpace(financeAccountId), strings.TrimSpace(ownerUserId)
+	if (financeAccountId == "") == (ownerUserId == "") {
+		return "", "", fmt.Errorf("%w: give a financeAccountId for one account or an ownerUserId for all of a person's finance, not both", api.ErrInvalidArguments)
+	}
+	return financeAccountId, ownerUserId, nil
 }
 
 func (self *graph) ListSharedFinanceTransactions(ctx context.Context, arguments ListSharedFinanceTransactionsArguments) (*SharedFinanceTransactionPageView, error) {
@@ -479,9 +626,143 @@ func (self *graph) ListSharedFinanceTransactions(ctx context.Context, arguments 
 		}
 		filter.Offset = *arguments.Offset
 	}
-	page, err := self.transaction(ctx).ListSharedFinanceTransactions(principal.User.ID, strings.TrimSpace(arguments.FinanceAccountID), filter)
+	financeAccountId, ownerUserId, err := sharedFinanceSubject(arguments.FinanceAccountID, arguments.OwnerUserID)
+	if err != nil {
+		return nil, err
+	}
+	var page *db.SharedFinanceTransactionPage
+	if ownerUserId != "" {
+		page, err = self.transaction(ctx).ListSharedAllFinanceTransactions(principal.User.ID, ownerUserId, filter)
+	} else {
+		page, err = self.transaction(ctx).ListSharedFinanceTransactions(principal.User.ID, financeAccountId, filter)
+	}
 	if err != nil {
 		return nil, financeError(err)
 	}
 	return &SharedFinanceTransactionPageView{FinanceTransactions: page.FinanceTransactions, NextCursor: page.NextCursor, TotalCount: page.TotalCount}, nil
+}
+
+func (self *graph) ListFinanceShares(ctx context.Context) ([]*FinanceShareAllView, error) {
+	principal, err := self.requireFinanceReader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	shares, err := self.transaction(ctx).ListAllFinanceSharesBy(principal.User.ID)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]*FinanceShareAllView, 0, len(shares))
+	for _, share := range shares {
+		views = append(views, describeFinanceShareAll(share))
+	}
+	return views, nil
+}
+
+func (self *graph) ShareFinance(ctx context.Context, arguments ShareFinanceArguments) (*FinanceShareAllView, error) {
+	principal, err := self.requireFinanceSharer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	financeShareLevel := models.FinanceShareLevel(strings.ToLower(strings.TrimSpace(arguments.FinanceShareLevel)))
+	if !financeShareLevel.IsGrantableForAllAccounts() {
+		return nil, fmt.Errorf("%w: all finance is shared at spending or transactions", api.ErrInvalidArguments)
+	}
+	granteeUserId, granteeCircleId := strings.TrimSpace(arguments.GranteeUserID), strings.TrimSpace(arguments.GranteeCircleID)
+	if (granteeUserId == "") == (granteeCircleId == "") {
+		return nil, fmt.Errorf("%w: share with one person or one circle", api.ErrInvalidArguments)
+	}
+	tx := self.transaction(ctx)
+	made, err := tx.ListAllFinanceSharesBy(principal.User.ID)
+	if err != nil {
+		return nil, err
+	}
+	// Sharing with somebody who does not already see it, or showing them more,
+	// is disclosing finance to somebody, a person's tap. Narrowing a share
+	// discloses nothing and is open to every sign-in.
+	if !principal.IsPersonsTap() {
+		var alreadyShared models.FinanceShareLevel
+		for _, share := range made {
+			if share.GranteeUserID == granteeUserId && share.GranteeCircleID == granteeCircleId {
+				alreadyShared = share.FinanceShareLevel
+			}
+		}
+		if !alreadyShared.AtLeast(financeShareLevel) {
+			return nil, fmt.Errorf("%w: %s", api.ErrPermissionDenied, financeShareOnATap)
+		}
+	}
+	saved, err := tx.ShareAllFinance(principal.User.ID, &models.AllFinanceShare{
+		GranteeUserID: granteeUserId, GranteeCircleID: granteeCircleId, FinanceShareLevel: financeShareLevel,
+	})
+	if err != nil {
+		// Not a circle in common, a person who does not exist, a circle the
+		// caller is not in: all of them answer as nothing found, because
+		// which of them it was is not the caller's to learn.
+		return nil, translateError(err)
+	}
+	shares, err := tx.ListAllFinanceSharesBy(principal.User.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, share := range shares {
+		if share.ID == saved.ID {
+			saved = share
+		}
+	}
+	if isAllFinanceShareWider(made, saved) {
+		if err := self.tellAboutShare(ctx, principal.User, models.ShareReceivedNote{
+			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindFinance, ShareLevel: string(saved.FinanceShareLevel),
+			ShareScopes: []string{models.ShareScopeAllAccounts},
+		}, granteeUserId, granteeCircleId); err != nil {
+			return nil, err
+		}
+	}
+	log.Noticef("%s shared all their finance at %s", principal.User.Username, financeShareLevel)
+	return describeFinanceShareAll(saved), nil
+}
+
+// isAllFinanceShareWider says whether the share gives its grantee more of the
+// owner's finance than the owner's shares of all of it did before: there was
+// none for them, or a lower level.
+func isAllFinanceShareWider(earlier []*models.AllFinanceShare, saved *models.AllFinanceShare) bool {
+	for _, share := range earlier {
+		if share.GranteeUserID == saved.GranteeUserID && share.GranteeCircleID == saved.GranteeCircleID {
+			return saved.FinanceShareLevel.Rank() > share.FinanceShareLevel.Rank()
+		}
+	}
+	return true
+}
+
+func (self *graph) UnshareFinance(ctx context.Context, arguments UnshareFinanceArguments) (bool, error) {
+	if err := requireFinanceNotAgent(ctx); err != nil {
+		return false, err
+	}
+	principal, err := self.requireShareOwner(ctx)
+	if err != nil {
+		return false, err
+	}
+	// The share is the owner's to take back; anyone else is told there is no
+	// such share.
+	if err := self.transaction(ctx).UnshareAllFinance(principal.User.ID, strings.TrimSpace(arguments.FinanceShareID)); err != nil {
+		return false, translateError(err)
+	}
+	return true, nil
+}
+
+func (self *graph) ListSharedFinance(ctx context.Context, arguments ListSharedFinanceArguments) ([]*SharedFinanceView, error) {
+	principal, err := self.requireFinanceReader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reached, err := self.transaction(ctx).ListReachedAllFinance(principal.User.ID)
+	if err != nil {
+		return nil, err
+	}
+	ownerUserId := strings.TrimSpace(arguments.OwnerUserID)
+	views := make([]*SharedFinanceView, 0, len(reached))
+	for _, each := range reached {
+		if ownerUserId == "" || each.OwnerUserID == ownerUserId {
+			views = append(views, describeSharedFinance(each))
+		}
+	}
+	return views, nil
 }

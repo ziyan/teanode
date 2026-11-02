@@ -114,13 +114,13 @@ and must not read as part of the sentence) and how many people it is. The dashbo
 pickers as "Everyone in Family (4 people)", so two circles called the same can
 be told apart there too.
 
-**A circle that Health or a finance account is shared with.** Whoever joins a
+**A circle that Health, a finance account or all finance is shared with.** Whoever joins a
 circle reads what was shared with it, so bringing somebody into such a circle is
 sharing that with them, and is the person's own tap, as sharing it is.
 `InviteToCircle` and `AddCircleMember` refuse a command line token, an
 operator signed in as the person and the agent's own operations while
-`CircleHasSensitiveShare` says a health share or a finance account share
-names the circle (`requireTapForSensitiveSharedCircle`, in
+`CircleHasSensitiveShare` says a health share, a finance account share or a
+share of all finance names the circle (`requireTapForSensitiveSharedCircle`, in
 `apigraph/circle.go`); the dashboard and the iPhone app are taps. Answering an
 invitation is the invited person's own, and is not refused.
 
@@ -459,6 +459,7 @@ so a new kind of share cannot ship without one.
 | Photo albums (`photo_album_share`) | one person, or a circle | `view`, `contribute`; whether the location of the photos and the names of the faces in them are included | Share on an album in Photos; `teanode photo album share` | `endPhotoAlbumSharesOutsideCircles` |
 | Recordings (`recording_share`) | one person, or a circle, a recording at a time | `summary` (title, date, length, summary, the speaker names the owner confirmed), `transcript` (and the words, with the owner's corrections); never the audio | Share on a recording in Recordings; `teanode recording share`; the recording tool | `endRecordingSharesOutsideCircles` |
 | Finance accounts (`finance_account_share`) | one person, or a circle, an account at a time | `balance`, `spending`, `transactions`; starting or widening a share only on a person's tap | Sharing panel of the Finance tab of the agent page; Finance in the iPhone app; `teanode finance share`; not the agent | `endFinanceSharesOutsideCircles` |
+| All of a person's finance (`finance_share`) | one person, or a circle, every account now and later, as one combined view with no account | `spending`, `transactions`; starting or widening a share only on a person's tap | the same panel and screens; `teanode finance share all`; not the agent | `endAllFinanceSharesOutsideCircles` |
 | Lent skills (`skill_share`) | one person | named tools of a skill, approved call by call | Skills on the agent page; `teanode agent skill share` | `endSkillSharesOutsideCircles` |
 
 Five things belong to the circle itself and are not shares: its chat, its
@@ -490,8 +491,8 @@ owner whose role lost the permission can still list and end what they shared.
 | The operations | `internal/api/v1api/apigraph/circle.go`; the helpers `requireCirclePerson`, `requireCircleMember` and `requireCircleAdmin` are in `authorize.go` |
 | The invitation note and phone notification, and the note told to admins when an operator puts an account in | `internal/agent/circle_invitation.go` |
 | Everything shared, declining, and the notes about shares | `internal/api/v1api/apigraph/sharing.go`, `sharing_notice.go`, `internal/db/database_sharing.go`, `internal/models/sharing.go`, `internal/agent/sharing_note.go`; `internal/cmd/sharing.go`, `internal/client/sharing.go` |
-| The cleanup when a circle stops making a share possible | `endSharesOutsideCircles` in `internal/db/database_circle.go`, which calls `endCalendarSharesOutsideCircles` (`database_calendar_share.go`), `endLocationSharesOutsideCircles` (`database_location_share.go`), `endHealthSharesOutsideCircles` (`database_health_share.go`), `endPasswordSharesOutsideCircles` (`database_passwords.go`), `endPageSharesOutsideCircles` (`database_page_share.go`), `endSkillSharesOutsideCircles` (`database_skill_share.go`), `endPhotoAlbumSharesOutsideCircles` (`database_photo_share.go`), `endRecordingSharesOutsideCircles` (`database_recording_share.go`), `endFinanceSharesOutsideCircles` (`database_finance_share.go`), and the relationship and contact link cleanups |
-| The share tables | `calendar_share` (`0195`), `agent_page_share` (`0196`), `skill_share` (`0197`), `photo_album_share` (`0224`), `location_share` (`0240`), `health_share` (`0245`), `password_share` (`0251`), `finance_account_share` (`0254`), `recording_share` (`0255`) in `internal/db/migrations/` |
+| The cleanup when a circle stops making a share possible | `endSharesOutsideCircles` in `internal/db/database_circle.go`, which calls `endCalendarSharesOutsideCircles` (`database_calendar_share.go`), `endLocationSharesOutsideCircles` (`database_location_share.go`), `endHealthSharesOutsideCircles` (`database_health_share.go`), `endPasswordSharesOutsideCircles` (`database_passwords.go`), `endPageSharesOutsideCircles` (`database_page_share.go`), `endSkillSharesOutsideCircles` (`database_skill_share.go`), `endPhotoAlbumSharesOutsideCircles` (`database_photo_share.go`), `endRecordingSharesOutsideCircles` (`database_recording_share.go`), `endFinanceSharesOutsideCircles` (`database_finance_share.go`), `endAllFinanceSharesOutsideCircles` (`database_finance_share_all.go`), and the relationship and contact link cleanups |
+| The share tables | `calendar_share` (`0195`), `agent_page_share` (`0196`), `skill_share` (`0197`), `photo_album_share` (`0224`), `location_share` (`0240`), `health_share` (`0245`), `password_share` (`0251`), `finance_account_share` (`0254`), `recording_share` (`0255`), `finance_share` (`0268`) in `internal/db/migrations/` |
 | The live map told when a circle change ends a location share | `watchLocationReach` in `internal/api/v1api/apigraph/location_share.go`, called from `circle.go` |
 | Command line | `internal/cmd/circle.go`, `internal/client/circle.go`; `--circle` on `teanode user create` is in `internal/cmd/user.go` |
 | The agent's tool | `internal/agent/tools/circle` |

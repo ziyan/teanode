@@ -485,13 +485,13 @@ func (self *graph) DeleteCircle(ctx context.Context, arguments DeleteCircleArgum
 // sensitiveSharedCircleOnATap is what a call is told when bringing somebody
 // into a circle needs a person's own tap. It begins with
 // api.TapRequiredPhrase, which the command line recognizes.
-const sensitiveSharedCircleOnATap = api.TapRequiredPhrase + ": Health or a finance account is shared with this circle, so bringing somebody in gives them that, and is done on the dashboard or in the iPhone app, not from a command line or an API token"
+const sensitiveSharedCircleOnATap = api.TapRequiredPhrase + ": Health, a finance account or all finance is shared with this circle, so bringing somebody in gives them that, and is done on the dashboard or in the iPhone app, not from a command line or an API token"
 
 // requireTapForSensitiveSharedCircle refuses a call that is not a person's own
-// tap when Health or a finance account is shared with the circle: whoever
+// tap when Health or finance is shared with the circle: whoever
 // joins a circle reads what it was shared, so bringing somebody in is sharing
-// that with them, which SetHealthShare and ShareFinanceAccount leave to a tap
-// as well.
+// that with them, which SetHealthShare, ShareFinanceAccount and ShareFinance
+// leave to a tap as well.
 func (self *graph) requireTapForSensitiveSharedCircle(ctx context.Context, circleId string) error {
 	if api.ContextPrincipal(ctx).IsPersonsTap() {
 		return nil

@@ -147,8 +147,14 @@ type PersonCardHealthSection struct {
 // each as the level it was shared at shows it: its name, kind and balance, and
 // for a credit card what it owes against its limit. What an account's months
 // and transactions say is on the Finance page, for the levels that reach them.
+// A person who shares all of their finance says so by the level of it, and the
+// section names no account for that.
 type PersonCardFinanceSection struct {
 	SectionState PersonCardSectionState `json:"sectionState"`
+
+	// AllFinanceShareLevel is spending or transactions when they share all of
+	// their finance with the caller, and empty when they do not.
+	AllFinanceShareLevel string `json:"allFinanceShareLevel,omitempty" graphapi:"nullable"`
 
 	// FinanceAccounts are the accounts they share, oldest first.
 	FinanceAccounts []*SharedFinanceAccountView `json:"financeAccounts"`
@@ -727,13 +733,21 @@ func (self *graph) readPersonCardFinance(ctx context.Context, subject *personCar
 	if err != nil {
 		return refusedPersonCardSection(section, err)
 	}
-	reached, err := self.transaction(ctx).ListReachedFinanceAccounts(principal.User.ID, subject.accountUserID)
+	tx := self.transaction(ctx)
+	reached, err := tx.ListReachedFinanceAccounts(principal.User.ID, subject.accountUserID)
 	if err != nil {
 		return nil, err
 	}
-	if len(reached) == 0 {
+	allFinance, err := tx.ReachAllFinance(principal.User.ID, subject.accountUserID)
+	if err != nil {
+		return nil, err
+	}
+	if len(reached) == 0 && allFinance == nil {
 		section.SectionState = PersonCardSectionStateNotShared
 		return section, nil
+	}
+	if allFinance != nil {
+		section.AllFinanceShareLevel = string(allFinance.FinanceShareLevel)
 	}
 	section.SectionState, section.HasMore = PersonCardSectionStateShown, len(reached) > itemLimit
 	for _, each := range reached[:min(len(reached), itemLimit)] {

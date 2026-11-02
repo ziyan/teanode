@@ -218,6 +218,17 @@ var shareLevelWords = map[string]string{
 	"transactions": "balance, spending and transactions",
 }
 
+// allFinanceLevelWords is each level of a share of all of a person's finance
+// in English.
+var allFinanceLevelWords = map[string]string{
+	"spending":     "spending only",
+	"transactions": "spending and transactions",
+}
+
+// ShareScopeAllAccounts is the scope of a finance share that covers all of the
+// owner's accounts, now and later, instead of one.
+const ShareScopeAllAccounts = "allAccounts"
+
 // shareKindNouns is what each kind is called in a list: "calendar and
 // location".
 var shareKindNouns = map[ShareKind]string{
@@ -262,6 +273,14 @@ func ShareReceivedText(note *ShareReceivedNote) string {
 		}
 		return withLevel(note.SharerName + " shared the recording " + note.ShareSubject + " with you")
 	case ShareKindFinance:
+		for _, scope := range note.ShareScopes {
+			if scope == ShareScopeAllAccounts {
+				// A share of all finance has no balance level, so its levels are
+				// not worded as the levels of one account.
+				level = allFinanceLevelWords[note.ShareLevel]
+				return withLevel(note.SharerName + " shared all their finance with you")
+			}
+		}
 		return withLevel(note.SharerName + " shared a finance account with you")
 	case ShareKindShopping:
 		return note.SharerName + " shared the shopping list " + note.ShareSubject + " with you"

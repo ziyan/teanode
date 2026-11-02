@@ -33,6 +33,10 @@ func TestShareNotesAreWordedForRecordingsAndFinanceAccounts(test *testing.T) {
 			"Alex shared a finance account with you (balance and spending)"},
 		{models.ShareReceivedNote{SharerName: "Alex", ShareKind: models.ShareKindFinance, ShareLevel: "transactions"},
 			"Alex shared a finance account with you (balance, spending and transactions)"},
+		{models.ShareReceivedNote{SharerName: "Alex", ShareKind: models.ShareKindFinance, ShareLevel: "spending", ShareScopes: []string{models.ShareScopeAllAccounts}},
+			"Alex shared all their finance with you (spending only)"},
+		{models.ShareReceivedNote{SharerName: "Alex", ShareKind: models.ShareKindFinance, ShareLevel: "transactions", ShareScopes: []string{models.ShareScopeAllAccounts}},
+			"Alex shared all their finance with you (spending and transactions)"},
 	} {
 		if got := models.ShareReceivedText(&each.note); got != each.want {
 			test.Errorf("got %q, want %q", got, each.want)

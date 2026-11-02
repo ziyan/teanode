@@ -18,6 +18,9 @@ final class FinanceModel {
     /// What other people share with the person, and whose is shown under
     /// Showing (nil for the person's own).
     private(set) var sharedAccounts: [SharedFinanceAccount] = []
+    /// The people who share all of their finance with the person, and at
+    /// which level.
+    private(set) var sharedAllFinance: [SharedAllFinance] = []
     var selectedOwnerUserId: String?
     /// Whether what other people share has been read once, so a person with
     /// no finance of their own is not told it is not set up before then.
@@ -48,10 +51,20 @@ final class FinanceModel {
     /// was shown, since the person's own finance does not wait for it.
     func loadShared() async {
         defer { hasReadShared = true }
-        guard let read = try? await connection.sharedFinanceAccounts() else { return }
-        sharedAccounts = read
+        let readAccounts = try? await connection.sharedFinanceAccounts()
+        let readAllFinance = try? await connection.sharedAllFinance()
+        var isRead = false
+        if let readAccounts {
+            sharedAccounts = readAccounts
+            isRead = true
+        }
+        if let readAllFinance {
+            sharedAllFinance = readAllFinance
+            isRead = true
+        }
+        guard isRead else { return }
         // Somebody who stopped sharing is no longer shown.
-        if let selectedOwnerUserId, !read.contains(where: { $0.ownerUserId == selectedOwnerUserId }) {
+        if let selectedOwnerUserId, !sharers.contains(where: { $0.userId == selectedOwnerUserId }) {
             self.selectedOwnerUserId = nil
         }
     }
@@ -246,10 +259,11 @@ struct FinanceScreen: View {
         .task { if finance.isShown == nil { await finance.load() } }
         #if DEBUG
             .task {
-                // `-TeaNodeScreen finance-person`: the accounts somebody shares with the person.
-                guard DemoServer.screen == "finance-person" else { return }
+                // `-TeaNodeScreen finance-person`: the accounts somebody shares with the person;
+                // `finance-person-all`: the combined finance of somebody who shares all of it.
+                guard let screen = DemoServer.screen, screen == "finance-person" || screen == "finance-person-all" else { return }
                 await finance.load()
-                finance.selectedOwnerUserId = FinanceSharingDemo.sharerId
+                finance.selectedOwnerUserId = screen == "finance-person" ? FinanceSharingDemo.sharerId : FinanceSharingDemo.wholeSharerId
             }
             .task {
                 // `-TeaNodeScreen finance-part-switch`: a transaction list is
@@ -403,9 +417,6 @@ struct SpendingView: View {
     @State private var selectedDayKey: String?
     /// The year touched on the chart of years, as "2025".
     @State private var selectedYearKey: String?
-    /// Where a touch on the donut is, as Swift Charts reports it: a running
-    /// total from the start of the first slice.
-    @State private var selectedRunningTotal: Double?
     /// The slice chosen on the donut or by its row; it stays chosen when the
     /// finger lifts.
     @State private var selectedSliceId: String?
@@ -505,7 +516,7 @@ struct SpendingView: View {
                     let slices = spendingSlices(lines)
                     let total = lines.reduce(Decimal(0)) { $0 + $1.amount }
                     if !slices.isEmpty {
-                        spendingDonut(slices, total: total)
+                        SpendingDonutChart(slices: slices, total: total, currency: currency, selectedSliceId: $selectedSliceId)
                     }
                     ForEach(Array(lines.enumerated()), id: \.element.id) { rank, line in
                         let lineSlice = drawnSlice(ofRank: rank, line: line, in: slices)
@@ -778,68 +789,6 @@ struct SpendingView: View {
             }
             .frame(height: 180)
         }
-    }
-
-    /// The month's groups as a donut, each in its color, the rest in gray.
-    /// Touching a slice chooses it: it stays full, the others step back,
-    /// and the middle says what it is. With none chosen the middle says the
-    /// total.
-    private func spendingDonut(_ slices: [SpendingSlice], total: Decimal) -> some View {
-        let selectedSlice = slices.first { $0.id == selectedSliceId }
-        return Chart(slices) { slice in
-            let isChosen = slice.id == selectedSlice?.id
-            SectorMark(
-                angle: .value("Amount", slice.amountValue),
-                innerRadius: .ratio(0.62),
-                outerRadius: .ratio(isChosen || selectedSlice == nil ? 1 : 0.94),
-                angularInset: 1
-            )
-            .foregroundStyle(slice.color)
-            .opacity(ChartPalette.markOpacity(isChosen: isChosen, isAnyChosen: selectedSlice != nil))
-            .accessibilityLabel(Text(verbatim: slice.label))
-            .accessibilityValue(Text(verbatim: "\(moneyText(slice.amount)), \(shareText(slice.amount, of: total))"))
-        }
-        .chartLegend(.hidden)
-        .chartAngleSelection(value: $selectedRunningTotal)
-        .onChange(of: selectedRunningTotal) { previousTotal, runningTotal in
-            guard let runningTotal, let index = ChartShares.sliceIndex(atRunningTotal: runningTotal, amounts: slices.map(\.amountValue)) else { return }
-            let touchedId = slices[index].id
-            // A new touch on the chosen slice lets it go; a drag across
-            // the donut chooses whatever is under the finger.
-            selectedSliceId = previousTotal == nil && touchedId == selectedSliceId ? nil : touchedId
-        }
-        .chartBackground { chartProxy in
-            GeometryReader { geometry in
-                if let plotFrame = chartProxy.plotFrame {
-                    let frame = geometry[plotFrame]
-                    let holeWidth = min(frame.width, frame.height) * 0.62
-                    VStack(spacing: 2) {
-                        Text(verbatim: selectedSlice?.label ?? String(localized: "Total"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                        Text(verbatim: moneyText(selectedSlice?.amount ?? total))
-                            .font(.headline)
-                            .monospacedDigit()
-                            .lineLimit(1)
-                            .contentTransition(.numericText())
-                        if let selectedSlice {
-                            Text(verbatim: shareText(selectedSlice.amount, of: total))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                    .multilineTextAlignment(.center)
-                    .minimumScaleFactor(0.4)
-                    .frame(width: holeWidth * 0.82)
-                    .position(x: frame.midX, y: frame.midY)
-                    .accessibilityHidden(true)
-                }
-            }
-        }
-        .frame(height: 220)
-        .padding(.vertical, 4)
     }
 
     /// The donut's slices: the largest groups each in a color of the
@@ -1216,6 +1165,87 @@ struct SpendingView: View {
     }
 }
 
+/// SpendingDonutChart is a spending period's groups as a donut, each in its
+/// color, the rest in gray. Touching a slice chooses it: it stays full, the
+/// others step back, and the middle says what it is. With none chosen the
+/// middle says the total. The chosen slice is the screen's, since its rows
+/// choose it too.
+struct SpendingDonutChart: View {
+    let slices: [SpendingSlice]
+    let total: Decimal
+    let currency: String
+    @Binding var selectedSliceId: String?
+    /// Where a touch on the donut is, as Swift Charts reports it: a running
+    /// total from the start of the first slice.
+    @State private var selectedRunningTotal: Double?
+
+    var body: some View {
+        let selectedSlice = slices.first { $0.id == selectedSliceId }
+        Chart(slices) { slice in
+            let isChosen = slice.id == selectedSlice?.id
+            SectorMark(
+                angle: .value("Amount", slice.amountValue),
+                innerRadius: .ratio(0.62),
+                outerRadius: .ratio(isChosen || selectedSlice == nil ? 1 : 0.94),
+                angularInset: 1
+            )
+            .foregroundStyle(slice.color)
+            .opacity(ChartPalette.markOpacity(isChosen: isChosen, isAnyChosen: selectedSlice != nil))
+            .accessibilityLabel(Text(verbatim: slice.label))
+            .accessibilityValue(Text(verbatim: "\(moneyText(slice.amount)), \(shareText(slice.amount))"))
+        }
+        .chartLegend(.hidden)
+        .chartAngleSelection(value: $selectedRunningTotal)
+        .onChange(of: selectedRunningTotal) { previousTotal, runningTotal in
+            guard let runningTotal, let index = ChartShares.sliceIndex(atRunningTotal: runningTotal, amounts: slices.map(\.amountValue)) else { return }
+            let touchedId = slices[index].id
+            // A new touch on the chosen slice lets it go; a drag across
+            // the donut chooses whatever is under the finger.
+            selectedSliceId = previousTotal == nil && touchedId == selectedSliceId ? nil : touchedId
+        }
+        .chartBackground { chartProxy in
+            GeometryReader { geometry in
+                if let plotFrame = chartProxy.plotFrame {
+                    let frame = geometry[plotFrame]
+                    let holeWidth = min(frame.width, frame.height) * 0.62
+                    VStack(spacing: 2) {
+                        Text(verbatim: selectedSlice?.label ?? String(localized: "Total"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        Text(verbatim: moneyText(selectedSlice?.amount ?? total))
+                            .font(.headline)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .contentTransition(.numericText())
+                        if let selectedSlice {
+                            Text(verbatim: shareText(selectedSlice.amount))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.4)
+                    .frame(width: holeWidth * 0.82)
+                    .position(x: frame.midX, y: frame.midY)
+                    .accessibilityHidden(true)
+                }
+            }
+        }
+        .frame(height: 220)
+        .padding(.vertical, 4)
+    }
+
+    private func moneyText(_ amount: Decimal) -> String {
+        FinanceMoney.shown(NSDecimalNumber(decimal: amount).stringValue, currencyCode: currency)
+    }
+
+    private func shareText(_ amount: Decimal) -> String {
+        FinanceMoney.percent(total > 0 ? NSDecimalNumber(decimal: amount / total).doubleValue : 0)
+    }
+}
+
 /// SpendingLineRow is one group of "Where it went": its color on the
 /// donut, its name and count, and its amount and share, opening its
 /// transactions.
@@ -1226,6 +1256,9 @@ struct SpendingLineRow: View {
     let color: Color?
     let currency: String
     let shareText: String
+    /// Whether the row opens the group's transactions, which draws the
+    /// chevron of a row that opens a screen.
+    var isOpening = true
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -1251,10 +1284,12 @@ struct SpendingLineRow: View {
             }
             // A row opens a screen, so it carries the chevron a navigation
             // row would; it is a button so that the tap chooses its slice too.
-            Image(systemName: "chevron.forward")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)
+            if isOpening {
+                Image(systemName: "chevron.forward")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
         }
         .contentShape(.rect)
     }

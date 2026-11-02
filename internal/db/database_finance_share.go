@@ -302,13 +302,10 @@ func (self *transaction) ListFinanceSharesBy(ownerUserId string) ([]*models.Fina
 
 // reachingFinanceSharesQuery selects the shares that reach one viewer, with
 // the finance account each is of. It is reachingHealthSharesQuery for finance
-// accounts: the joins on circle_member are what make a share stop reaching
-// someone the moment the circle it depended on is gone, the joins on the
-// owner's agent and account stop a disabled account's, or a switched off
-// agent's, finance reaching anybody, and the owner and the viewer both need
-// agent:use (@permission), the permission the finance operations themselves
-// need, so that an operator who takes it from a role has switched finance off
-// for those people and what they hold is no longer read by others.
+// accounts: the joins on circle_member (financeShareReachesViewerSQL) are what
+// make a share stop reaching someone the moment the circle it depended on is
+// gone, and the joins on the owner's agent and account stop a disabled
+// account's, or a switched off agent's, finance reaching anybody.
 var reachingFinanceSharesQuery = `
 SELECT share.id AS share_id, share.finance_account_id AS finance_account_id,
        share.finance_share_level AS finance_share_level, owner_agent.user_id AS owner_user_id
@@ -316,22 +313,36 @@ FROM "finance_account_share" share
 JOIN "agent_finance_account" account ON account.id = share.finance_account_id
 JOIN "agent" owner_agent ON owner_agent.id = account.agent_id AND owner_agent.enabled AND owner_agent.operator_disabled_at IS NULL
 JOIN "user" owner_user ON owner_user.id = owner_agent.user_id AND owner_user.disabled_at IS NULL
-WHERE owner_agent.user_id <> @viewer
-  AND ` + userHasPermissionSQL("owner_agent.user_id") + `
-  AND (@owner = '' OR owner_agent.user_id = @owner)
-  AND (@account = '' OR share.finance_account_id = @account)
+WHERE (@account = '' OR share.finance_account_id = @account)
+  AND ` + financeShareReachesViewerSQL("owner_agent.user_id")
+
+// financeShareReachesViewerSQL are the conditions, on a row of a share named
+// share whose owner is the user the expression gives, that make the share reach
+// @viewer, for one owner or, with an empty @owner, all of them. They are the
+// same for a share of one account and a share of all of a person's finance, so
+// that the two cannot disagree on who may read: the owner is not the viewer, the
+// owner and the viewer both need agent:use (@permission), the permission the
+// finance operations themselves need, so that an operator who takes it from a
+// role has switched finance off for those people and what they hold is no longer
+// read by others; and the share is to the viewer while the two still share a
+// circle, or to a circle both are still in.
+func financeShareReachesViewerSQL(ownerExpression string) string {
+	return ownerExpression + ` <> @viewer
+  AND ` + userHasPermissionSQL(ownerExpression) + `
+  AND (@owner = '' OR ` + ownerExpression + ` = @owner)
   AND EXISTS (SELECT 1 FROM "user" viewer_user WHERE viewer_user.id = @viewer AND viewer_user.disabled_at IS NULL)
   AND ` + userHasPermissionSQL("@viewer") + `
   AND (
     (share.grantee_user_id = @viewer AND EXISTS (
         SELECT 1 FROM "circle_member" mine
         JOIN "circle_member" theirs ON theirs.circle_id = mine.circle_id
-        WHERE mine.user_id = @viewer AND theirs.user_id = owner_agent.user_id))
+        WHERE mine.user_id = @viewer AND theirs.user_id = ` + ownerExpression + `))
     OR
     (share.grantee_circle_id IS NOT NULL
      AND EXISTS (SELECT 1 FROM "circle_member" WHERE circle_id = share.grantee_circle_id AND user_id = @viewer)
-     AND EXISTS (SELECT 1 FROM "circle_member" WHERE circle_id = share.grantee_circle_id AND user_id = owner_agent.user_id))
+     AND EXISTS (SELECT 1 FROM "circle_member" WHERE circle_id = share.grantee_circle_id AND user_id = ` + ownerExpression + `))
   )`
+}
 
 type reachingFinanceShareRow struct {
 	ShareID           string `gorm:"column:share_id"`
@@ -376,12 +387,34 @@ func highestReachingFinanceShares(rows []reachingFinanceShareRow) []reachingFina
 // reachingFinanceShares are the shares that reach the viewer, the one of the
 // highest level for each finance account, for one owner and one account or,
 // with empty identifiers, for all of them.
+//
+// A share of all the owner's finance that reaches the viewer lifts the level of
+// each account the viewer also reaches by a share of that account, because the
+// highest level that reaches an account wins whichever kind of share gave it. It
+// adds no account: a share of all finance names none, so an account the viewer
+// reaches only that way is not listed and has no identifier to ask for.
 func (self *transaction) reachingFinanceShares(viewerUserId, ownerUserId, financeAccountId string) ([]reachingFinanceShareRow, error) {
 	rows, err := self.allReachingFinanceShares(viewerUserId, ownerUserId, financeAccountId)
 	if err != nil {
 		return nil, err
 	}
-	return highestReachingFinanceShares(rows), nil
+	reaching := highestReachingFinanceShares(rows)
+	if len(reaching) == 0 {
+		return reaching, nil
+	}
+	allFinanceRows, err := self.allReachingAllFinanceShares(viewerUserId, ownerUserId)
+	if err != nil {
+		return nil, err
+	}
+	if len(allFinanceRows) == 0 {
+		return reaching, nil
+	}
+	levels := highestAllFinanceLevels(allFinanceRows)
+	for index := range reaching {
+		lifted := models.HighestFinanceShareLevel(models.FinanceShareLevel(reaching[index].FinanceShareLevel), levels[reaching[index].OwnerUserID])
+		reaching[index].FinanceShareLevel = string(lifted)
+	}
+	return reaching, nil
 }
 
 func (self *transaction) ListFinanceSharesReaching(userId string) ([]*models.FinanceShare, error) {
@@ -546,9 +579,24 @@ func (self *transaction) ListSharedFinanceSpending(viewerUserId, financeAccountI
 	if err != nil {
 		return nil, err
 	}
-	conditions := `"summarized"."finance_account_id" = @finance_account_id AND "summarized"."agent_id" = @agent_id
+	return self.sharedFinanceSpending(reached.Account.AgentID, reached.Account.ID, reached.FinanceShareLevel, from, to)
+}
+
+// sharedFinanceSpending is the money out and in by month and spending category
+// of one agent's finance, of one account or, with an empty identifier, of all
+// of them, as a reader at the level sees it. The conditions are those of the
+// owner's own spending summary (FinanceSpendingSummary): transfers between the
+// owner's accounts and mirrored copies are left out, so that a total across
+// accounts does not count a transfer as money out of one and money into
+// another. The caller has already decided that the level is reached.
+func (self *transaction) sharedFinanceSpending(agentId, financeAccountId string, level models.FinanceShareLevel, from, to string) ([]*models.SharedFinanceSpendingRow, error) {
+	conditions := `"summarized"."agent_id" = @agent_id
 		AND NOT COALESCE("spending_category"."is_transfer", false) AND "summarized"."duplicate_of_transaction_id" IS NULL`
-	arguments := map[string]any{"finance_account_id": reached.Account.ID, "agent_id": reached.Account.AgentID}
+	arguments := map[string]any{"agent_id": agentId}
+	if financeAccountId != "" {
+		conditions += ` AND "summarized"."finance_account_id" = @finance_account_id`
+		arguments["finance_account_id"] = financeAccountId
+	}
 	fromDay, err := parseOptionalDay(from)
 	if err != nil {
 		return nil, err
@@ -561,7 +609,7 @@ func (self *transaction) ListSharedFinanceSpending(viewerUserId, financeAccountI
 	// would let a reader tell which day and how much each charge was by
 	// moving the ends one day at a time. Below the transactions level the
 	// range is widened to whole months.
-	if !reached.FinanceShareLevel.AtLeast(models.FinanceShareLevelTransactions) {
+	if !level.AtLeast(models.FinanceShareLevelTransactions) {
 		if fromDay != "" {
 			fromDay = fromDay[:len("2006-01")] + "-01"
 		}
@@ -618,13 +666,21 @@ func (self *transaction) ListSharedFinanceTransactions(viewerUserId, financeAcco
 	if err != nil {
 		return nil, err
 	}
+	return self.sharedFinanceTransactions(reached.Account.AgentID, reached.Account.ID, filter)
+}
+
+// sharedFinanceTransactions is a page of one agent's finance transactions,
+// newest first, of one account or, with an empty identifier, of all of them, as
+// a reader at the transactions level sees them. The caller has already decided
+// that the level is reached.
+func (self *transaction) sharedFinanceTransactions(agentId, financeAccountId string, filter *SharedFinanceTransactionFilter) (*SharedFinanceTransactionPage, error) {
 	if filter == nil {
 		filter = &SharedFinanceTransactionFilter{}
 	}
 	// A mirrored copy is the same charge reported again, left out of every
 	// total of the owner's, and so out of this too.
-	page, err := self.ListFinanceTransactions(reached.Account.AgentID, &FinanceTransactionFilter{
-		FinanceAccountID: reached.Account.ID, From: filter.From, To: filter.To, Limit: filter.Limit, After: filter.After,
+	page, err := self.ListFinanceTransactions(agentId, &FinanceTransactionFilter{
+		FinanceAccountID: financeAccountId, From: filter.From, To: filter.To, Limit: filter.Limit, After: filter.After,
 		Offset: filter.Offset, IsDuplicateExcluded: true, ShouldCountTotal: true,
 	})
 	if err != nil {
@@ -637,7 +693,7 @@ func (self *transaction) ListSharedFinanceTransactions(viewerUserId, financeAcco
 			SpendingCategoryName string `gorm:"column:spending_category_name"`
 		}
 		if err := self.tx.Raw(`SELECT "id", "spending_category_name" FROM "agent_spending_category" WHERE "agent_id" = ?`,
-			reached.Account.AgentID).Scan(&categories).Error; err != nil {
+			agentId).Scan(&categories).Error; err != nil {
 			return nil, err
 		}
 		for _, category := range categories {
@@ -665,7 +721,8 @@ func (self *transaction) ListSharedFinanceTransactions(viewerUserId, financeAcco
 // unchosen, the day they met in another circle, and a share to a circle the
 // sharer has left is meaningless. A share to a circle that somebody else left
 // stops reaching that person by the join in reachingFinanceSharesQuery and
-// needs no deleting.
+// needs no deleting. The shares of all of a person's finance are ended the same
+// way by endAllFinanceSharesOutsideCircles.
 func endFinanceSharesOutsideCircles(tx *gorm.DB, userId string) error {
 	return tx.Exec(`DELETE FROM "finance_account_share" WHERE "id" IN (
 		SELECT share.id FROM "finance_account_share" share

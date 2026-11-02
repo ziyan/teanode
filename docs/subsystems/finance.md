@@ -1408,7 +1408,9 @@ A person shares one finance account (a row of `agent_finance_account`) with
 another person or with a circle at a level. The table is `finance_account_share`
 (migration 0254), shaped like `calendar_share`: the account, one grantee that is
 a person or a circle, the level, who made it, one share per account and
-grantee. A share belongs to its account and goes when the account does.
+grantee. A share belongs to its account and goes when the account does. All of
+a person's finance can also be shared at once, with no account named; that is
+the last part of this section.
 
 | Level | What the reader sees |
 | --- | --- |
@@ -1503,6 +1505,84 @@ sharer's accounts there. A failed read of the shares is reported and does not
 take a `?person=` out of the address; ending a share asks first. The
 iPhone's Finance has the same: **Sharing** in the title menu and a **Showing**
 menu in the bar.
+
+### Sharing all of one's finance
+
+Sharing account by account leaves out every account a person links later, and
+asks a household to tap through every card. A person can instead share **all of
+their finance** with a person or a circle. The table is `finance_share`
+(migration 0268): the owner, one grantee that is a person or a circle, the
+level, who made it, and the day it was made and last changed, one per owner and
+grantee. It has no account: it covers every account the owner holds now and
+every one they link later, and goes when the owner or the grantee does.
+
+| Level | What the reader sees |
+| --- | --- |
+| `spending` | the owner's money out and money in by month and spending category, across all their accounts together, in each currency, with the owner's own names for the categories |
+| `transactions` | and each transaction's day, amount, currency, merchant name and spending category, across all their accounts together |
+
+There is no `balance` level: a balance belongs to one account, and a share of
+all finance names none. The reader is never given an account's name, mask or
+balance, an account identifier, or a card's usage, at either level; those stay
+with the shares of single accounts. The reads are made by the same code as the
+per-account ones (`sharedFinanceSpending` and `sharedFinanceTransactions` in
+`database_finance_share.go`) with no account, and return the same types, which
+have no field for an account. The combined spending uses the conditions of the
+owner's own spending summary, so a transfer between two of the owner's accounts
+counts as neither money out nor money in and a mirrored copy is not counted,
+and the numbers equal what the owner's own Spending page shows, month by month.
+The page of transactions is the owner's Transactions page without the account:
+a transfer is listed there, in its category, as it is on theirs. At the spending
+level a range of days is widened to whole months, as for one account.
+
+**Who may read.** `ReachAllFinance` in `internal/db/database_finance_share_all.go`
+answers, with the conditions of `ReachFinanceAccount` written once
+(`financeShareReachesViewerSQL`): the owner and the reader are enabled accounts
+holding `agent:use`, the owner's agent is on and not disabled by the operator,
+a share to a person reaches them only while the two share a circle, and a share
+to a circle reaches a member only while the owner is still in it. The highest
+level of the shares that reach the reader wins. **The combined reads use the
+level of the shares of all finance and nothing else**: a share of one account at
+a higher level is read for that account (`ListSharedFinanceTransactions` with
+its `financeAccountId`), and does not make the combined page wider. In the other
+direction, an account a reader reaches by a share of that account is read at the
+higher of the two levels when the owner also shares all their finance
+(`reachingFinanceShares`), so the highest level wins for an account both
+reach; an account only a share of all finance reaches is not listed and has no
+identifier to ask for. Leaving a circle ends these shares as it ends the others
+(`endAllFinanceSharesOutsideCircles`), a circle with such a share counts among
+those whose new members need a tap (`CircleHasSensitiveShare`), and a share made
+to a person by name can be declined from the Sharing list (`DeclineFinanceShare`
+ends either kind).
+
+**Who may share, and the agent.** Only the owner, to a person they share a
+circle with or a circle they are in; starting or widening is a tap
+(`financeShareOnATap`), narrowing and ending are open to tokens, and the audit
+actor being the agent is refused everything, exactly as for one account.
+`ShareFinance`, `UnshareFinance` and `ListFinanceShares` are in
+`FinanceShareMutation` and `FinanceShareQuery`, never in `FinanceQuery` or
+`FinanceMutation`.
+
+**Operations.** `ShareFinance` (`granteeUserId` or `granteeCircleId`, and
+`financeShareLevel` of `spending` or `transactions`; sharing again changes the
+level), `UnshareFinance` (`financeShareId`) and `ListFinanceShares` (the
+caller's own). For the reader, `ListSharedFinance` (optionally one
+`ownerUserId`) lists the people who share all their finance with them and the
+level, and `ListSharedFinanceSpending` and `ListSharedFinanceTransactions` take
+an `ownerUserId` instead of a `financeAccountId` for the combined answer: exactly
+one of the two is given. `ListSharing` lists a share of all finance as a
+`finance` row with no subject and the scope `allAccounts`, and
+`ReadPersonCard`'s finance part carries `allFinanceShareLevel`. A note telling
+the grantee says "shared all their finance with you (spending only)".
+
+**Surfaces.** `teanode finance share all <username|circle> --level
+spending|transactions`; `shares` lists both kinds (an `all accounts` row for a
+share of all finance; `--json` has `allFinanceSharedByYou` and
+`allFinanceSharedWithYou`); `unshare <share id>` ends either; `--person` on
+`spending-summary` and `transactions` reads the combined view when the person
+shares all their finance at a level that reaches the read and no
+`--finance-account` is named. The dashboard and the iPhone app show it under
+**Showing** that person, as one Spending page like the reader's own.
 
 ## The three ways in
 

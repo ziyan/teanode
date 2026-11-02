@@ -234,6 +234,7 @@ type Transaction interface {
 	HealthLockOperation
 	HealthShareOperation
 	FinanceShareOperation
+	AllFinanceShareOperation
 	PasswordsOperation
 	PageShareOperation
 	SkillShareOperation

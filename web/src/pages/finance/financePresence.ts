@@ -17,7 +17,7 @@ export type FinancePresence = { isShown: boolean | null; hasSources: boolean }
 // finance account with them. Reading what others share needs only the
 // permission to use the agent area, not an agent that is on, so a person with
 // no finance of their own still has a Finance page and a row for it.
-const SHARED_FINANCE_PRESENCE = `query { ListSharedFinanceAccounts { financeAccountId } }`
+const SHARED_FINANCE_PRESENCE = `query { ListSharedFinanceAccounts { financeAccountId } ListSharedFinance { ownerUserId } }`
 
 // isShared says somebody shares a finance account with the person, apart from
 // whether the person has finance of their own.
@@ -79,16 +79,19 @@ export function useAgentFinancePresence(isAsked = true): AgentFinancePresence {
   // Asked on its own: a failed question, as for a person who may not use the
   // agent area, is nobody sharing.
   const sharing = useQuery(
-    async () =>
-      isAsked
-        ? ((
-            await graphql<{ ListSharedFinanceAccounts: { financeAccountId: string }[] | null }>(SHARED_FINANCE_PRESENCE)
-          ).ListSharedFinanceAccounts ?? [])
-        : [],
+    async () => {
+      if (!isAsked) return 0
+      const answer = await graphql<{
+        ListSharedFinanceAccounts: { financeAccountId: string }[] | null
+        ListSharedFinance?: { ownerUserId: string }[] | null
+      }>(SHARED_FINANCE_PRESENCE)
+      // Accounts shared one by one, and people who share all their finance.
+      return (answer.ListSharedFinanceAccounts?.length ?? 0) + (answer.ListSharedFinance?.length ?? 0)
+    },
     [isAsked],
     { refresh: false },
   )
-  const isShared = (sharing.data?.length ?? 0) > 0
+  const isShared = (sharing.data ?? 0) > 0
   if (!isAsked) return { isShown: null, hasSources: false, isShared: false }
   if (agent.error) return { isShown: false, hasSources: false, isShared }
   if (!view) return { isShown: null, hasSources: false, isShared }
