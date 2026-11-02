@@ -81,6 +81,10 @@ type Configuration struct {
 	// How big a photo library may get, and how long a deleted photo waits
 	Photos Photos `yaml:"photos"`
 
+	// Calls in chats: the media server's ports and the address devices
+	// send to
+	Calls Calls `yaml:"calls"`
+
 	// Signing in with a passkey, and where the half-finished ceremonies wait
 	Passkey Passkey `yaml:"passkey"`
 
@@ -694,6 +698,29 @@ type Antivirus struct {
 	Enabled bool   `yaml:"enabled"`
 	Host    string `yaml:"host"`
 	Port    uint16 `yaml:"port"`
+}
+
+// Calls are voice and video calls in chats. Everybody on a call sends to
+// the server's media server, which forwards each person's audio and video to
+// the others, on one UDP port and one TCP port that must be reachable from
+// the internet (forwarded by the gateway when the server is behind one).
+type Calls struct {
+	// Enabled offers calls in chats.
+	Enabled bool `yaml:"enabled"`
+
+	// PublicAddress is the IPv4 address devices send a call's audio and
+	// video to. Empty is the address the dashboard's name resolves to when
+	// the server starts.
+	PublicAddress string `yaml:"publicAddress,omitempty"`
+
+	// UDPPort and TCPPort are where the media server listens; TCP is for
+	// networks that let no UDP through.
+	UDPPort uint16 `yaml:"udpPort"`
+	TCPPort uint16 `yaml:"tcpPort"`
+
+	// RingSeconds is how long a call rings before whoever has not answered
+	// missed it.
+	RingSeconds int `yaml:"ringSeconds"`
 }
 
 // Antispam configures spam scoring. The score a message is compared against

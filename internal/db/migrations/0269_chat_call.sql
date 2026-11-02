@@ -69,3 +69,9 @@ CREATE INDEX "chat_call_transcript_segment_call" ON "chat_call_transcript_segmen
 -- call; a client draws it from the call.
 ALTER TABLE "chat_message"
     ADD COLUMN "call_id" character varying(32) REFERENCES "chat_call" ("id") ON DELETE SET NULL;
+
+-- A phone's second registration with the push relay, for the pushes that
+-- ring it (PushKit), sealed by the relay like push_registration; empty for a
+-- phone that has none.
+ALTER TABLE "agent_phone"
+    ADD COLUMN "voip_push_registration" text NOT NULL DEFAULT '';

@@ -79,6 +79,12 @@ func Default() *Configuration {
 				"https://icanhazip.com",
 			},
 		},
+		Calls: Calls{
+			Enabled:     true,
+			UDPPort:     3478,
+			TCPPort:     3478,
+			RingSeconds: 60,
+		},
 		Antivirus: Antivirus{
 			Host: "127.0.0.1",
 			Port: 3310,
