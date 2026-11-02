@@ -742,7 +742,7 @@ extension Documents {
         reactions { emoji reactorKind reactedAt reactorUserId reactorName }
         authorKind authorUserId authorName authorOwnerName authorAvatarUrl authorAvatarColorIndex authorAgentId agentRunId isMine isAgentWork editedAt isDeleted
         mentionedUserIds isAllMentioned isVoiceMessage transcriptText transcriptState
-        callId call { id startedByUserId startedAt answeredAt endedAt endReason transcriptionAskedByUserId transcriptState summaryMessageId members { userId ringState joinedAt leftAt isVideoOn transcriptionConsent } }
+        callId call { id startedByUserId startedAt answeredAt endedAt endReason transcriptionAskedByUserId transcriptState summaryMessageId members { userId ringState joinedAt leftAt isVideoOn } }
         """
     public static let chatPeople = """
         query { ListCirclePeople { userId username name avatarUrl avatarColorIndex } }

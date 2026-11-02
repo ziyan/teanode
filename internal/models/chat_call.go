@@ -47,15 +47,6 @@ const (
 	ChatCallTranscriptFailed  = "failed"
 )
 
-// ChatCallConsent is a member's answer to the call being transcribed: their
-// own voice is transcribed only when it is yes.
-type ChatCallConsent string
-
-const (
-	ChatCallConsentYes ChatCallConsent = "yes"
-	ChatCallConsentNo  ChatCallConsent = "no"
-)
-
 // ChatCall is a call in a chat, with each member's part in it.
 type ChatCall struct {
 	ID              string            `json:"id"`
@@ -81,12 +72,16 @@ type ChatCall struct {
 
 // ChatCallMember is one person's part in a call.
 type ChatCallMember struct {
-	UserID               string            `json:"userId"`
-	RingState            ChatCallRingState `json:"ringState"`
-	JoinedAt             *time.Time        `json:"joinedAt,omitempty"`
-	LeftAt               *time.Time        `json:"leftAt,omitempty"`
-	IsVideoOn            bool              `json:"isVideoOn,omitempty"`
-	TranscriptionConsent ChatCallConsent   `json:"transcriptionConsent,omitempty"`
+	UserID    string            `json:"userId"`
+	RingState ChatCallRingState `json:"ringState"`
+	JoinedAt  *time.Time        `json:"joinedAt,omitempty"`
+	LeftAt    *time.Time        `json:"leftAt,omitempty"`
+	IsVideoOn bool              `json:"isVideoOn,omitempty"`
+
+	// TranscriptionConsent is "yes" for everybody while the call is
+	// transcribed, as everybody on it is, and empty otherwise. Nobody
+	// answers it any more; it stays for app builds that still read it.
+	TranscriptionConsent string `json:"transcriptionConsent,omitempty"`
 }
 
 // IsGoing says the call has not ended.

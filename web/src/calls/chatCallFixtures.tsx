@@ -22,7 +22,6 @@ export function memberOf(userId: string, name: string, overrides: Partial<ChatCa
     ringState: 'answered',
     isOn: false,
     isVideoOn: false,
-    transcriptionConsent: '',
     joinedAt: null,
     leftAt: null,
     ...overrides,

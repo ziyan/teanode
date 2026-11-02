@@ -87,15 +87,10 @@ type ChatCallMutation interface {
 	// starts or stops sending its picture itself.
 	SetChatCallVideo(ctx context.Context, arguments SetChatCallVideoArguments) (*ChatCallView, error)
 
-	// Asks for the call to be transcribed and summarized into the chat when
-	// it ends. Everybody on it is asked, and only the voices of those who
-	// agree are transcribed; the caller agrees for their own. The caller's
-	// agent pays for it.
+	// Turns on transcribing the call, to be summarized into the chat when it
+	// ends. Everybody on it, and whoever joins later, is transcribed and told
+	// so; nobody is asked. The caller's agent pays for it.
 	AskChatCallTranscription(ctx context.Context, arguments ChatCallArguments) (*ChatCallView, error)
-
-	// The caller's answer to the call being transcribed, for their own
-	// voice.
-	AnswerChatCallTranscription(ctx context.Context, arguments AnswerChatCallTranscriptionArguments) (*ChatCallView, error)
 }
 
 // ChatCallSubscription follows calls as they happen.
@@ -150,12 +145,6 @@ type SetChatCallVideoArguments struct {
 	IsVideoOn bool   `json:"isVideoOn"`
 }
 
-// AnswerChatCallTranscriptionArguments carry the caller's answer.
-type AnswerChatCallTranscriptionArguments struct {
-	CallID       string `json:"callId"`
-	IsConsenting bool   `json:"isConsenting"`
-}
-
 // ChatCallView is a call as the person asking sees it.
 type ChatCallView struct {
 	ID string `json:"id"`
@@ -207,7 +196,8 @@ type ChatCallMemberView struct {
 	IsOn      bool   `json:"isOn"`
 	IsVideoOn bool   `json:"isVideoOn"`
 
-	// yes or no once they answered about a transcript; empty before
+	// yes for everybody while the call is transcribed; it stays for app
+	// builds that still read it (transcriptionAskedByUserId says the same)
 	TranscriptionConsent string `json:"transcriptionConsent"`
 
 	JoinedAt *time.Time `json:"joinedAt"`
@@ -331,7 +321,7 @@ func describeChatCall(session *chatSession, chatCall *models.ChatCall, now time.
 		part := &chatCall.Members[index]
 		memberView := &ChatCallMemberView{
 			UserID: part.UserID, RingState: string(part.RingState), IsOn: part.IsOn(), IsVideoOn: part.IsVideoOn,
-			TranscriptionConsent: string(part.TranscriptionConsent), JoinedAt: part.JoinedAt, LeftAt: part.LeftAt,
+			TranscriptionConsent: part.TranscriptionConsent, JoinedAt: part.JoinedAt, LeftAt: part.LeftAt,
 		}
 		if member := session.Chat.Member(part.UserID); member != nil {
 			memberView.Name, memberView.AvatarURL, memberView.AvatarColorIndex = member.Name, member.AvatarURL, member.AvatarColorIndex
@@ -712,37 +702,20 @@ func (self *graph) AskChatCallTranscription(ctx context.Context, arguments ChatC
 	if chatCall, err = self.transaction(ctx).AskChatCallTranscription(chatCall.ID, session.User.ID); err != nil {
 		return nil, translateError(err)
 	}
-	self.keepVoice(ctx, chatCall.ID, session.User.ID, true)
+	self.keepVoices(ctx, chatCall.ID)
 	self.notifyChatCall(ctx, chatCall)
 	return describeChatCall(session, chatCall, time.Now()), nil
 }
 
-func (self *graph) AnswerChatCallTranscription(ctx context.Context, arguments AnswerChatCallTranscriptionArguments) (*ChatCallView, error) {
-	session, chatCall, err := self.requireGoingChatCall(ctx, arguments.CallID)
-	if err != nil {
-		return nil, err
-	}
-	consent := models.ChatCallConsentNo
-	if arguments.IsConsenting {
-		consent = models.ChatCallConsentYes
-	}
-	if chatCall, err = self.transaction(ctx).SetChatCallConsent(chatCall.ID, session.User.ID, consent); err != nil {
-		return nil, translateError(err)
-	}
-	self.keepVoice(ctx, chatCall.ID, session.User.ID, arguments.IsConsenting)
-	self.notifyChatCall(ctx, chatCall)
-	return describeChatCall(session, chatCall, time.Now()), nil
-}
-
-// keepVoice starts or stops keeping the person's microphone for the call's
-// transcript, once their answer is committed. Only the instance holding the
-// call hears it; a call held elsewhere keeps nothing here.
-func (self *graph) keepVoice(ctx context.Context, callId, userId string, isKept bool) {
+// keepVoices starts keeping everybody's microphone on the call for its
+// transcript, once the ask is committed. Only the instance holding the call
+// hears it; a call held elsewhere keeps nothing here.
+func (self *graph) keepVoices(ctx context.Context, callId string) {
 	if self.settings == nil || self.settings.CallRecorder == nil {
 		return
 	}
 	recorder := self.settings.CallRecorder
-	self.transaction(ctx).AfterCommit(func() { recorder.Want(callId, userId, isKept) })
+	self.transaction(ctx).AfterCommit(func() { recorder.Want(callId, true) })
 }
 
 // ChatCallEvents reads each call the caller has a part in again when it

@@ -4,6 +4,7 @@ import { Avatar } from '../components/avatar'
 import {
   CameraSwitchIcon,
   CheckIcon,
+  CloseIcon,
   DocumentIcon,
   ExpandIcon,
   MicrophoneIcon,
@@ -309,7 +310,7 @@ function CallScreenView({ activeCall }: { activeCall: ActiveChatCall }) {
   const { t } = useTranslation()
   const toast = useToast()
   const session = useOptionalSession()
-  const { calls, setMinimized, leaveCall, askTranscription, answerTranscription } = useChatCalls()
+  const { calls, setMinimized, leaveCall, askTranscription } = useChatCalls()
   const snapshot = useSessionSnapshot(activeCall.session)
   const call = calls.find((each) => each.id === activeCall.callId)
   const elapsedMS = useElapsed(call?.answeredAt ?? null)
@@ -340,17 +341,21 @@ function CallScreenView({ activeCall }: { activeCall: ActiveChatCall }) {
       ringState: 'answered',
       isOn: true,
       isVideoOn: snapshot.isVideoOn,
-      transcriptionConsent: '',
       joinedAt: null,
       leftAt: null,
     })
   }
 
+  // Whoever turns transcription on turns it on for everybody; each person is
+  // told once, in a notice they close, and the mark in the head stays.
   const asker = call?.members.find((member) => member.userId === call.transcriptionAskedByUserId)
-  const own = call?.members.find((member) => member.userId === ownUserId)
-  const isAsked = Boolean(call?.transcriptionAskedByUserId)
-  const isConsentWaiting = isAsked && own !== undefined && own.transcriptionConsent === ''
-  const isTranscribing = isAsked && (call?.members ?? []).some((member) => member.transcriptionConsent === 'yes')
+  const isTranscribing = Boolean(call?.transcriptionAskedByUserId)
+  const [noticeClosedCallId, setNoticeClosedCallId] = useState('')
+  const isNoticeShown = isTranscribing && noticeClosedCallId !== activeCall.callId
+  const noticeTitle =
+    asker?.userId === ownUserId
+      ? t('calls.transcriptionOnBySelf')
+      : t('calls.transcriptionOnBy', { name: asker?.name || t('chat.someone') })
 
   const tellCameraFailure = (caught: unknown) => toast.failure(caught, t('calls.cameraFailed'))
 
@@ -382,24 +387,22 @@ function CallScreenView({ activeCall }: { activeCall: ActiveChatCall }) {
           </Tooltip>
         </div>
 
-        {isConsentWaiting ? (
-          <div
-            className="call-consent"
-            role="group"
-            aria-label={t('calls.transcriptionAsked', { name: asker?.name ?? t('chat.someone') })}
-          >
-            <div className="call-consent-words">
-              <strong>{t('calls.transcriptionAsked', { name: asker?.name ?? t('chat.someone') })}</strong>
-              <span className="muted">{t('calls.transcriptionHint')}</span>
+        {isNoticeShown ? (
+          <div className="call-notice" role="status" aria-label={noticeTitle}>
+            <div className="call-notice-words">
+              <strong>{noticeTitle}</strong>
+              <span className="muted">{t('calls.transcriptionOnHint')}</span>
             </div>
-            <div className="call-consent-actions">
-              <button type="button" className="primary" onClick={() => void answerTranscription(true)}>
-                {t('calls.transcriptionAllow')}
+            <Tooltip label={t('calls.dismiss')}>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t('calls.dismiss')}
+                onClick={() => setNoticeClosedCallId(activeCall.callId)}
+              >
+                <CloseIcon size={18} />
               </button>
-              <button type="button" onClick={() => void answerTranscription(false)}>
-                {t('calls.transcriptionRefuse')}
-              </button>
-            </div>
+            </Tooltip>
           </div>
         ) : null}
 
@@ -464,7 +467,7 @@ function CallScreenView({ activeCall }: { activeCall: ActiveChatCall }) {
               render={(close) => <AudioMenu session={activeCall.session} close={close} />}
             />
           </Tooltip>
-          {call && !isAsked ? (
+          {call && !isTranscribing ? (
             <Tooltip label={t('calls.transcribe')}>
               <button
                 type="button"

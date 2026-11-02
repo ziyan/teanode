@@ -31,7 +31,6 @@ export interface ChatCallsValue {
   leaveCall: () => Promise<void>
   setMinimized: (isMinimized: boolean) => void
   askTranscription: () => Promise<void>
-  answerTranscription: (isConsenting: boolean) => Promise<void>
   // Reads the call going in a chat again, as a chat that opens does.
   readGoingCall: (conversationId: string) => Promise<void>
 }
@@ -49,7 +48,6 @@ const UNAVAILABLE: ChatCallsValue = {
   leaveCall: nothing,
   setMinimized: () => {},
   askTranscription: nothing,
-  answerTranscription: nothing,
   readGoingCall: nothing,
 }
 

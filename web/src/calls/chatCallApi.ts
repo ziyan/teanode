@@ -12,8 +12,6 @@ export interface ChatCallMember {
   ringState: string
   isOn: boolean
   isVideoOn: boolean
-  // yes or no once they answered about a transcript; empty before.
-  transcriptionConsent: string
   joinedAt: string | null
   leftAt: string | null
 }
@@ -79,7 +77,7 @@ export const CHAT_CALL_SUMMARY_FIELDS =
 const CALL_FIELDS = `
   id conversationId chatTitle isGroup startedByUserId startedByName startedAt answeredAt endedAt endReason isGoing
   durationMs askerRingState isAskerOn transcriptionAskedByUserId transcriptState summaryMessageId
-  members { userId name avatarUrl avatarColorIndex ringState isOn isVideoOn transcriptionConsent joinedAt leftAt }`
+  members { userId name avatarUrl avatarColorIndex ringState isOn isVideoOn joinedAt leftAt }`
 
 export const START_CHAT_CALL = `
   mutation ($conversationId: String!, $isVideoOn: Boolean) {
@@ -112,10 +110,6 @@ export const SET_CHAT_CALL_VIDEO = `
 export const ASK_CHAT_CALL_TRANSCRIPTION = `
   mutation ($callId: String!) {
     AskChatCallTranscription(callId: $callId) { ${CALL_FIELDS} }
-  }`
-export const ANSWER_CHAT_CALL_TRANSCRIPTION = `
-  mutation ($callId: String!, $isConsenting: Boolean!) {
-    AnswerChatCallTranscription(callId: $callId, isConsenting: $isConsenting) { ${CALL_FIELDS} }
   }`
 
 export const LIST_GOING_CHAT_CALLS = `

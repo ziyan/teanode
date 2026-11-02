@@ -179,12 +179,8 @@ type ChatOperation interface {
 	StopRingingChatCall(callId string) (*models.ChatCall, error)
 
 	// AskChatCallTranscription marks a going call as asked to be
-	// transcribed, by the first to ask, who says yes for their own voice.
+	// transcribed, by the first to ask: everybody on it is transcribed.
 	AskChatCallTranscription(callId, userId string) (*models.ChatCall, error)
-
-	// SetChatCallConsent is the person's answer to the call being
-	// transcribed, for their own voice.
-	SetChatCallConsent(callId, userId string, consent models.ChatCallConsent) (*models.ChatCall, error)
 
 	// ClaimChatCallTranscript claims a call whose transcript is waiting, so
 	// one server writes it; nil when it is not waiting or another server

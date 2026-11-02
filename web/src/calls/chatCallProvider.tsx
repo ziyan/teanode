@@ -6,7 +6,6 @@ import { useTranslation } from '../i18n/i18n'
 import { useOptionalSession } from '../session'
 import { CallAudio, CallMiniWindow, CallScreen } from './callScreen'
 import {
-  ANSWER_CHAT_CALL_TRANSCRIPTION,
   ASK_CHAT_CALL_TRANSCRIPTION,
   CHAT_CALL_EVENTS,
   DECLINE_CHAT_CALL,
@@ -235,26 +234,6 @@ export function ChatCallProvider({
     }
   }, [store, t, toast])
 
-  const answerTranscription = useCallback(
-    async (isConsenting: boolean) => {
-      const current = activeCallRef.current
-      if (!current) return
-      try {
-        store.apply(
-          (
-            await graphql<{ AnswerChatCallTranscription: ChatCall }>(ANSWER_CHAT_CALL_TRANSCRIPTION, {
-              callId: current.callId,
-              isConsenting,
-            })
-          ).AnswerChatCallTranscription,
-        )
-      } catch (caught) {
-        toast.failure(caught, t('calls.transcriptionFailed'))
-      }
-    },
-    [store, t, toast],
-  )
-
   const readGoingCall = useCallback(
     async (conversationId: string) => {
       const markedAt = store.writeMark()
@@ -280,7 +259,6 @@ export function ChatCallProvider({
       leaveCall: leaveActiveCall,
       setMinimized,
       askTranscription,
-      answerTranscription,
       readGoingCall,
     }),
     [
@@ -294,7 +272,6 @@ export function ChatCallProvider({
       leaveActiveCall,
       setMinimized,
       askTranscription,
-      answerTranscription,
       readGoingCall,
     ],
   )

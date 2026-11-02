@@ -18,8 +18,8 @@ import (
 )
 
 // A call in a chat that somebody asked to have transcribed is transcribed
-// when it ends: each person who agreed had their microphone kept apart by
-// the media server (call.Recorder), so every line is under its speaker
+// when it ends: everybody on it had their microphone kept apart by the
+// media server (call.Recorder), so every line is under its speaker
 // without guessing. Each file goes to the voice settings' transcription
 // model, as a voice message does; the lines are put in the order they were
 // said, kept with the call, and summarized into the chat by the agent of
@@ -111,19 +111,9 @@ func (self *Agent) TranscribeChatCall(ctx context.Context, callId string) error 
 	if chatCall.AnsweredAt != nil {
 		callStartedAt = *chatCall.AnsweredAt
 	}
-	consenting := map[string]bool{}
-	for _, member := range chatCall.Members {
-		if member.TranscriptionConsent == models.ChatCallConsentYes {
-			consenting[member.UserID] = true
-		}
-	}
 	var segments []models.ChatCallTranscriptSegment
 	var usages []llm.Usage
 	for _, voice := range voices {
-		// Whoever took their yes back is not transcribed, whatever was kept.
-		if !consenting[voice.UserID] {
-			continue
-		}
 		content, err := os.ReadFile(voice.Path)
 		if err != nil {
 			return err

@@ -12,7 +12,7 @@ import (
 )
 
 const chatCallTestFields = `{ id conversationId chatTitle isGroup startedByName isGoing endReason askerRingState isAskerOn answeredAt
-	members { userId name ringState isOn isVideoOn transcriptionConsent } }`
+	transcriptionAskedByUserId members { userId name ringState isOn isVideoOn transcriptionConsent } }`
 
 // callWorld is a chat world whose server has a media server.
 func newCallWorld(t *testing.T) *chatWorld {
@@ -144,9 +144,9 @@ func TestACallNobodyAnswersIsMissedAndOneDeclinedEnds(t *testing.T) {
 	}
 }
 
-// A transcript is asked for by somebody on the call, who agrees for their
-// own voice; the others answer for theirs.
-func TestATranscriptIsAskedAndAnswered(t *testing.T) {
+// A transcript is turned on by somebody on the call, for everybody on it, and
+// the first to turn it on stays its asker.
+func TestATranscriptIsTurnedOnForEverybody(t *testing.T) {
 	world := newCallWorld(t)
 	world.shareCircle(t, world.frank, "Neighbours", world.grace)
 	frankConversation := world.openDirect(t, world.frank, world.grace)
@@ -157,12 +157,12 @@ func TestATranscriptIsAskedAndAnswered(t *testing.T) {
 	}
 	world.callView(t, world.grace, fmt.Sprintf(`JoinChatCall(callId: %q)`, callId))
 	asked := world.callView(t, world.frank, fmt.Sprintf(`AskChatCallTranscription(callId: %q)`, callId))
-	if memberOf(asked, world.frank)["transcriptionConsent"] != "yes" || memberOf(asked, world.grace)["transcriptionConsent"] != "" {
+	if asked["transcriptionAskedByUserId"] != world.frank.ID || memberOf(asked, world.grace)["transcriptionConsent"] != "yes" {
 		t.Fatalf("after Frank asked: %v", asked)
 	}
-	answered := world.callView(t, world.grace, fmt.Sprintf(`AnswerChatCallTranscription(callId: %q, isConsenting: false)`, callId))
-	if memberOf(answered, world.grace)["transcriptionConsent"] != "no" {
-		t.Errorf("Grace's answer: %v", answered)
+	again := world.callView(t, world.grace, fmt.Sprintf(`AskChatCallTranscription(callId: %q)`, callId))
+	if again["transcriptionAskedByUserId"] != world.frank.ID {
+		t.Errorf("a second ask took it over: %v", again)
 	}
 }
 

@@ -14,8 +14,8 @@ import (
 	"github.com/pion/webrtc/v4/pkg/media/oggwriter"
 )
 
-// Recorder keeps the microphones of the people on a call who agreed to the
-// call being transcribed, each in files of their own: the server hears each
+// Recorder keeps the microphone of everybody on a call being transcribed,
+// each in files of their own: the server hears each
 // person apart, so whose words are whose is known without guessing. A file
 // holds one stretch of one person's microphone; a person who leaves and
 // joins again has a file for each time.
@@ -60,17 +60,21 @@ func NewRecorder(directory string) *Recorder {
 
 func recorderKey(callId, userId string) string { return callId + "/" + userId }
 
-// Want starts or stops keeping a person's microphone on a call.
-func (self *Recorder) Want(callId, userId string, isWanted bool) {
+// Want starts or stops keeping the microphones on a call: everybody's on it
+// now, and of whoever joins it later.
+func (self *Recorder) Want(callId string, isWanted bool) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-	key := recorderKey(callId, userId)
 	if isWanted {
-		self.wanted[key] = true
+		self.wanted[callId] = true
 		return
 	}
-	delete(self.wanted, key)
-	self.closeWriter(callId, key)
+	delete(self.wanted, callId)
+	for key := range self.writers {
+		if filepath.Dir(key) == callId {
+			self.closeWriter(callId, key)
+		}
+	}
 }
 
 // closeWriter ends the person's current file, kept when anything was
@@ -92,17 +96,17 @@ func (self *Recorder) closeWriter(callId, key string) {
 }
 
 // Record is the media server's AudioRecorder: it keeps the packet when the
-// person's microphone is wanted.
+// call's microphones are wanted.
 func (self *Recorder) Record(callId, userId string, packet []byte, codec webrtc.RTPCodecParameters) {
 	if codec.MimeType != webrtc.MimeTypeOpus {
 		return
 	}
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-	key := recorderKey(callId, userId)
-	if !self.wanted[key] {
+	if !self.wanted[callId] {
 		return
 	}
+	key := recorderKey(callId, userId)
 	parsed := &rtp.Packet{}
 	if err := parsed.Unmarshal(packet); err != nil {
 		return
@@ -139,11 +143,7 @@ func (self *Recorder) Record(callId, userId string, packet []byte, codec webrtc.
 func (self *Recorder) Finish(callId string) []RecordedVoice {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-	for key := range self.wanted {
-		if filepath.Dir(key) == callId {
-			delete(self.wanted, key)
-		}
-	}
+	delete(self.wanted, callId)
 	for key := range self.writers {
 		if filepath.Dir(key) == callId {
 			self.closeWriter(callId, key)

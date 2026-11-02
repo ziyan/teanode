@@ -135,72 +135,43 @@ it('shrinks to a small window that keeps the call, and brings it back', async ()
   expect(await screen.findByRole('dialog', { name: 'Call in Trip planning' })).toBeTruthy()
 })
 
-it('asks before transcribing: the request names who asked, and Allow answers for this voice only', async () => {
+it('tells everybody once transcription is on, in a notice they close, and asks nobody', async () => {
   const asked = callOf({
     askerRingState: 'answered',
     isAskerOn: true,
     answeredAt: '2030-01-01T10:00:05Z',
     transcriptionAskedByUserId: 'person-b',
     members: [
-      memberOf('person-a', 'Mira', { isOn: true, transcriptionConsent: '' }),
-      memberOf('person-b', 'Tobias', { ringState: 'none', isOn: true, transcriptionConsent: 'yes' }),
-    ],
-  })
-  const allowed = callOf({
-    ...asked,
-    members: [{ ...asked.members[0], transcriptionConsent: 'yes' }, asked.members[1]],
-  })
-  const { screenDialog } = await startCall(asked, quietSnapshot, { AnswerChatCallTranscription: () => allowed })
-
-  expect(within(screenDialog).getByText('Tobias asked to transcribe this call')).toBeTruthy()
-  // Somebody has agreed, so it is being kept.
-  expect(within(screenDialog).getByText('Transcribing')).toBeTruthy()
-  // It was asked for already: no second ask.
-  expect(within(screenDialog).queryByRole('button', { name: 'Transcribe this call' })).toBeNull()
-
-  fireEvent.click(within(screenDialog).getByRole('button', { name: 'Allow' }))
-
-  await waitFor(() =>
-    expect(vi.mocked(graphql)).toHaveBeenCalledWith(expect.stringContaining('AnswerChatCallTranscription('), {
-      callId: 'call-one',
-      isConsenting: true,
-    }),
-  )
-  await waitFor(() => expect(within(screenDialog).queryByText('Tobias asked to transcribe this call')).toBeNull())
-})
-
-it('lets a person say no to being transcribed', async () => {
-  const asked = callOf({
-    askerRingState: 'answered',
-    isAskerOn: true,
-    transcriptionAskedByUserId: 'person-b',
-    members: [
       memberOf('person-a', 'Mira', { isOn: true }),
-      memberOf('person-b', 'Tobias', { ringState: 'none', isOn: true, transcriptionConsent: 'yes' }),
+      memberOf('person-b', 'Tobias', { ringState: 'none', isOn: true }),
     ],
   })
-  const { screenDialog } = await startCall(asked, quietSnapshot, { AnswerChatCallTranscription: () => asked })
+  const { screenDialog } = await startCall(asked)
 
-  fireEvent.click(within(screenDialog).getByRole('button', { name: 'Not me' }))
+  const notice = within(screenDialog).getByRole('status', { name: 'Tobias turned on transcription' })
+  expect(within(notice).getByText(/Everyone's voice on this call is transcribed/)).toBeTruthy()
+  expect(within(screenDialog).getByText('Transcribing')).toBeTruthy()
+  // It is on already: no second ask, and nothing to answer.
+  expect(within(screenDialog).queryByRole('button', { name: 'Transcribe this call' })).toBeNull()
+  expect(within(screenDialog).queryByRole('button', { name: 'Allow' })).toBeNull()
 
-  await waitFor(() =>
-    expect(vi.mocked(graphql)).toHaveBeenCalledWith(expect.stringContaining('AnswerChatCallTranscription('), {
-      callId: 'call-one',
-      isConsenting: false,
-    }),
-  )
+  fireEvent.click(within(notice).getByRole('button', { name: 'Dismiss' }))
+
+  expect(within(screenDialog).queryByRole('status', { name: 'Tobias turned on transcription' })).toBeNull()
+  // The mark in the head stays while the call is transcribed.
+  expect(within(screenDialog).getByText('Transcribing')).toBeTruthy()
 })
 
-it('shows no transcribing mark when nobody has agreed', async () => {
+it('tells whoever turned transcription on that they did', async () => {
   const asked = callOf({
     askerRingState: 'answered',
     isAskerOn: true,
     transcriptionAskedByUserId: 'person-a',
-    members: [memberOf('person-a', 'Mira', { isOn: true, transcriptionConsent: 'no' })],
+    members: [memberOf('person-a', 'Mira', { isOn: true })],
   })
   const { screenDialog } = await startCall(asked)
 
-  expect(within(screenDialog).queryByText('Transcribing')).toBeNull()
+  expect(within(screenDialog).getByRole('status', { name: 'You turned on transcription' })).toBeTruthy()
 })
 
 it('asks for a transcript through the bar', async () => {

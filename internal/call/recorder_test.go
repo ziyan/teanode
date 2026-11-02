@@ -20,14 +20,16 @@ func packetOf(t *testing.T, ssrc uint32, sequence uint16) []byte {
 	return raw
 }
 
-// Only the voices wanted are kept, each stretch in a file of its own; what
-// is kept of a call is handed over once and removed with Discard.
-func TestTheRecorderKeepsOnlyTheVoicesWanted(t *testing.T) {
+// Every voice on a call being transcribed is kept, each stretch in a file of
+// its own, and nothing of a call that is not; what is kept of a call is
+// handed over once and removed with Discard.
+func TestTheRecorderKeepsEveryVoiceOfACallWanted(t *testing.T) {
 	recorder := NewRecorder(t.TempDir())
-	recorder.Want("call-1", "mira", true)
+	recorder.Want("call-1", true)
 	for sequence := uint16(1); sequence <= 10; sequence++ {
 		recorder.Record("call-1", "mira", packetOf(t, 1, sequence), opus)
 		recorder.Record("call-1", "tobias", packetOf(t, 2, sequence), opus)
+		recorder.Record("call-elsewhere", "priya", packetOf(t, 9, sequence), opus)
 	}
 	// Mira joined again: a new stream is a new stretch.
 	for sequence := uint16(1); sequence <= 5; sequence++ {
@@ -36,8 +38,15 @@ func TestTheRecorderKeepsOnlyTheVoicesWanted(t *testing.T) {
 	recorder.Record("call-1", "mira", packetOf(t, 3, 6), webrtc.RTPCodecParameters{RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}})
 
 	kept := recorder.Finish("call-1")
-	if len(kept) != 2 || kept[0].UserID != "mira" || kept[1].UserID != "mira" {
+	voicesOf := map[string]int{}
+	for _, voice := range kept {
+		voicesOf[voice.UserID]++
+	}
+	if len(kept) != 3 || voicesOf["mira"] != 2 || voicesOf["tobias"] != 1 {
 		t.Fatalf("kept %+v", kept)
+	}
+	if elsewhere := recorder.Finish("call-elsewhere"); len(elsewhere) != 0 {
+		t.Errorf("a call nobody wanted transcribed was kept: %+v", elsewhere)
 	}
 	for _, voice := range kept {
 		if info, err := os.Stat(voice.Path); err != nil || info.Size() == 0 {
@@ -57,13 +66,12 @@ func TestTheRecorderKeepsOnlyTheVoicesWanted(t *testing.T) {
 		t.Error("a path outside the recordings was discarded")
 	}
 
-	// A voice no longer wanted stops being kept, and a stretch nothing was
-	// written to leaves no file.
-	recorder.Want("call-2", "mira", true)
+	// A call no longer wanted stops being kept.
+	recorder.Want("call-2", true)
 	recorder.Record("call-2", "mira", packetOf(t, 4, 1), opus)
-	recorder.Want("call-2", "mira", false)
+	recorder.Want("call-2", false)
 	recorder.Record("call-2", "mira", packetOf(t, 4, 2), opus)
 	if kept := recorder.Finish("call-2"); len(kept) != 1 {
-		t.Errorf("after the voice was no longer wanted: %+v", kept)
+		t.Errorf("after the call was no longer wanted: %+v", kept)
 	}
 }

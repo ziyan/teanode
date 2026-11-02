@@ -37,11 +37,11 @@ final class ChatCallTests: XCTestCase {
          "transcriptState":"","summaryMessageId":null,
          "members":[
            {"userId":"user-mira","name":"Mira","avatarUrl":null,"avatarColorIndex":3,"ringState":"none","isOn":true,"isVideoOn":false,
-            "transcriptionConsent":"yes","joinedAt":"2030-01-01T10:00:00Z","leftAt":null},
+            "joinedAt":"2030-01-01T10:00:00Z","leftAt":null},
            {"userId":"user-tobias","name":"Tobias","avatarUrl":"/api/v1/avatar/user/user-tobias?v=1","avatarColorIndex":5,"ringState":"answered",
-            "isOn":true,"isVideoOn":true,"transcriptionConsent":"","joinedAt":"2030-01-01T10:00:20Z","leftAt":null},
+            "isOn":true,"isVideoOn":true,"joinedAt":"2030-01-01T10:00:20Z","leftAt":null},
            {"userId":"user-priya","name":"Priya","avatarUrl":null,"avatarColorIndex":8,"ringState":"ringing","isOn":false,"isVideoOn":false,
-            "transcriptionConsent":"","joinedAt":null,"leftAt":null}]}
+            "joinedAt":null,"leftAt":null}]}
         """#
 
     private func decodedCall(_ json: String) throws -> ChatCallView {
@@ -79,9 +79,9 @@ final class ChatCallTests: XCTestCase {
                      "endedAt":"2030-01-01T10:04:32Z","endReason":"ended","transcriptionAskedByUserId":null,"transcriptState":"done",
                      "summaryMessageId":null,
                      "members":[{"userId":"user-mira","ringState":"none","joinedAt":"2030-01-01T10:00:00Z","leftAt":"2030-01-01T10:04:32Z",
-                                 "isVideoOn":false,"transcriptionConsent":"yes"},
+                                 "isVideoOn":false},
                                 {"userId":"user-tobias","ringState":"answered","joinedAt":"2030-01-01T10:00:20Z",
-                                 "leftAt":"2030-01-01T10:04:30Z","isVideoOn":true,"transcriptionConsent":""}]}}
+                                 "leftAt":"2030-01-01T10:04:30Z","isVideoOn":true}]}}
             """#
         let message = try JSONDecoder().decode(AgentMessage.self, from: Data(json.utf8))
         XCTAssertEqual(message.callId, "call-1")
@@ -157,16 +157,11 @@ final class ChatCallTests: XCTestCase {
         XCTAssertEqual(try sentVariables(fake)["isVideoOn"], .bool(false))
     }
 
-    func testTranscriptionIsAskedAndAnswered() async throws {
+    func testTranscriptionIsTurnedOn() async throws {
         let (asking, askingFake) = try makeConnection(answering: #"{"data":{"AskChatCallTranscription":\#(goingCall)}}"#)
         try await asking.askChatCallTranscription(callId: "call-1")
         XCTAssertTrue(try sentDocument(askingFake).contains("AskChatCallTranscription"))
-
-        let (answering, answeringFake) = try makeConnection(answering: #"{"data":{"AnswerChatCallTranscription":\#(goingCall)}}"#)
-        try await answering.answerChatCallTranscription(callId: "call-1", isConsenting: true)
-        let variables = try sentVariables(answeringFake)
-        XCTAssertEqual(variables["callId"], .string("call-1"))
-        XCTAssertEqual(variables["isConsenting"], .bool(true))
+        XCTAssertEqual(try sentVariables(askingFake)["callId"], .string("call-1"))
     }
 
     func testTheCallsGoingAreListed() async throws {
@@ -296,20 +291,17 @@ final class ChatCallTests: XCTestCase {
         XCTAssertEqual(record.durationMs(), 0)
     }
 
-    func testTheTranscriptionPromptIsForWhoHasNotAnswered() throws {
+    func testTheTranscriptionNoticeSaysWhoTurnedItOn() throws {
         let call = try decodedCall(goingCall)
-        // Tobias is asked by Mira and has not answered.
-        XCTAssertEqual(ChatCallTranscriptionStatus(view: call, ownUserId: "user-tobias"), .asking(askerName: "Mira"))
-        // Mira asked for it herself.
-        XCTAssertEqual(ChatCallTranscriptionStatus(view: call, ownUserId: "user-mira"), .transcribing)
-        var answered = call
-        answered.members[1].transcriptionConsent = "no"
-        XCTAssertEqual(ChatCallTranscriptionStatus(view: answered, ownUserId: "user-tobias"), .transcribing)
+        // Tobias is told Mira turned it on; nobody asks him.
+        XCTAssertEqual(ChatCallTranscriptionStatus(view: call, ownUserId: "user-tobias"), .transcribing(askerName: "Mira", isAskedByPerson: false))
+        // Mira turned it on herself.
+        XCTAssertEqual(ChatCallTranscriptionStatus(view: call, ownUserId: "user-mira"), .transcribing(askerName: "Mira", isAskedByPerson: true))
         var nobodyAsked = call
         nobodyAsked.transcriptionAskedByUserId = nil
         XCTAssertEqual(ChatCallTranscriptionStatus(view: nobodyAsked, ownUserId: "user-tobias"), .notAsked)
         XCTAssertTrue(ChatCallTranscriptionStatus.notAsked.canAsk)
-        XCTAssertFalse(ChatCallTranscriptionStatus.transcribing.canAsk)
+        XCTAssertFalse(ChatCallTranscriptionStatus.transcribing(askerName: "Mira", isAskedByPerson: false).canAsk)
         var ended = call
         ended.isGoing = false
         XCTAssertEqual(ChatCallTranscriptionStatus(view: ended, ownUserId: "user-tobias"), .notAsked)

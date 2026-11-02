@@ -108,28 +108,21 @@ public struct ChatCallLine: Equatable, Sendable {
 }
 
 /// ChatCallTranscriptionStatus is what the call screen says of a transcript:
-/// whether the person is asked, or the call is being transcribed.
+/// whether the call is being transcribed, and who turned it on. Turning it on
+/// transcribes everybody on the call; nobody is asked, everybody is told.
 public enum ChatCallTranscriptionStatus: Equatable, Sendable {
-    /// Nobody asked.
+    /// Nobody turned it on.
     case notAsked
-    /// Somebody else asked for it, and the person has not answered: the
-    /// prompt, "Mira asked to transcribe this call".
-    case asking(askerName: String)
-    /// It was asked for and the person has answered, or asked for it
-    /// themselves: the call shows that it is transcribed.
-    case transcribing
+    /// Somebody turned it on: "Mira turned on transcription", or "You turned
+    /// on transcription" when it was the person.
+    case transcribing(askerName: String, isAskedByPerson: Bool)
 
     public init(view: ChatCallView, ownUserId: String?) {
         guard let askerId = view.transcriptionAskedByUserId, !askerId.isEmpty, view.isGoing else {
             self = .notAsked
             return
         }
-        let ownConsent = ownUserId.flatMap { view.member(userId: $0)?.transcriptionConsent } ?? ""
-        if askerId != ownUserId, ownConsent.isEmpty {
-            self = .asking(askerName: view.member(userId: askerId)?.name ?? "")
-        } else {
-            self = .transcribing
-        }
+        self = .transcribing(askerName: view.member(userId: askerId)?.name ?? "", isAskedByPerson: askerId == ownUserId)
     }
 
     /// Whether the transcribe button is offered: nobody has asked yet.

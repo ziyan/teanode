@@ -30,13 +30,12 @@ type chatCallModel struct {
 func (chatCallModel) TableName() string { return "chat_call" }
 
 type chatCallMemberModel struct {
-	CallID               string     `gorm:"column:call_id;primaryKey"`
-	UserID               string     `gorm:"column:user_id;primaryKey"`
-	RingState            string     `gorm:"column:ring_state"`
-	JoinedAt             *time.Time `gorm:"column:joined_at"`
-	LeftAt               *time.Time `gorm:"column:left_at"`
-	IsVideoOn            bool       `gorm:"column:is_video_on"`
-	TranscriptionConsent string     `gorm:"column:transcription_consent"`
+	CallID    string     `gorm:"column:call_id;primaryKey"`
+	UserID    string     `gorm:"column:user_id;primaryKey"`
+	RingState string     `gorm:"column:ring_state"`
+	JoinedAt  *time.Time `gorm:"column:joined_at"`
+	LeftAt    *time.Time `gorm:"column:left_at"`
+	IsVideoOn bool       `gorm:"column:is_video_on"`
 }
 
 func (chatCallMemberModel) TableName() string { return "chat_call_member" }
@@ -72,6 +71,10 @@ func chatCallFromModel(model *chatCallModel, members []chatCallMemberModel) *mod
 		SummaryMessageID:           valueOfString(model.SummaryMessageID),
 		Members:                    []models.ChatCallMember{},
 	}
+	transcriptionConsent := ""
+	if call.TranscriptionAskedByUserID != "" {
+		transcriptionConsent = "yes"
+	}
 	for _, member := range members {
 		call.Members = append(call.Members, models.ChatCallMember{
 			UserID:               member.UserID,
@@ -79,7 +82,7 @@ func chatCallFromModel(model *chatCallModel, members []chatCallMemberModel) *mod
 			JoinedAt:             localTime(member.JoinedAt),
 			LeftAt:               localTime(member.LeftAt),
 			IsVideoOn:            member.IsVideoOn,
-			TranscriptionConsent: models.ChatCallConsent(member.TranscriptionConsent),
+			TranscriptionConsent: transcriptionConsent,
 		})
 	}
 	return call
@@ -341,29 +344,6 @@ func (self *transaction) AskChatCallTranscription(callId, userId string) (*model
 	}
 	if err := self.tx.Model(&chatCallModel{}).Where(`"id" = ? AND "transcription_asked_by_user_id" IS NULL`, callId).
 		Update("transcription_asked_by_user_id", userId).Error; err != nil {
-		return nil, err
-	}
-	// Whoever asks says yes for their own voice.
-	if err := self.tx.Model(&chatCallMemberModel{}).Where(`"call_id" = ? AND "user_id" = ?`, callId, userId).
-		Update("transcription_consent", models.ChatCallConsentYes).Error; err != nil {
-		return nil, err
-	}
-	return self.GetChatCall(callId)
-}
-
-func (self *transaction) SetChatCallConsent(callId, userId string, consent models.ChatCallConsent) (*models.ChatCall, error) {
-	if consent != models.ChatCallConsentYes && consent != models.ChatCallConsentNo {
-		return nil, ErrInvalidArguments
-	}
-	call, err := self.goingChatCall(callId)
-	if err != nil {
-		return nil, err
-	}
-	if call.TranscriptionAskedByUserID == nil {
-		return nil, fmt.Errorf("%w: nobody asked for this call to be transcribed", ErrInvalidArguments)
-	}
-	if err := self.tx.Model(&chatCallMemberModel{}).Where(`"call_id" = ? AND "user_id" = ?`, callId, userId).
-		Update("transcription_consent", consent).Error; err != nil {
 		return nil, err
 	}
 	return self.GetChatCall(callId)

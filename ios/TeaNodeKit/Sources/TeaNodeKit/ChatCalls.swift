@@ -21,15 +21,13 @@ public struct ChatCallMemberView: Codable, Hashable, Sendable, Identifiable {
     /// Whether they are on the call now.
     public var isOn: Bool
     public var isVideoOn: Bool
-    /// yes or no once they answered about a transcript; empty before.
-    public var transcriptionConsent: String
     public var joinedAt: String?
     public var leftAt: String?
 
     public var id: String { userId }
 
     private enum CodingKeys: String, CodingKey {
-        case userId, name, avatarUrl, avatarColorIndex, ringState, isOn, isVideoOn, transcriptionConsent, joinedAt, leftAt
+        case userId, name, avatarUrl, avatarColorIndex, ringState, isOn, isVideoOn, joinedAt, leftAt
     }
 }
 
@@ -43,7 +41,6 @@ extension ChatCallMemberView {
         ringState = try container.decodeIfPresent(String.self, forKey: .ringState) ?? ""
         isOn = try container.decodeIfPresent(Bool.self, forKey: .isOn) ?? false
         isVideoOn = try container.decodeIfPresent(Bool.self, forKey: .isVideoOn) ?? false
-        transcriptionConsent = try container.decodeIfPresent(String.self, forKey: .transcriptionConsent) ?? ""
         joinedAt = try container.decodeIfPresent(String.self, forKey: .joinedAt)
         leftAt = try container.decodeIfPresent(String.self, forKey: .leftAt)
     }
@@ -195,10 +192,9 @@ public struct ChatCallMemberRecord: Codable, Hashable, Sendable {
     public var joinedAt: String?
     public var leftAt: String?
     public var isVideoOn: Bool
-    public var transcriptionConsent: String
 
     private enum CodingKeys: String, CodingKey {
-        case userId, ringState, joinedAt, leftAt, isVideoOn, transcriptionConsent
+        case userId, ringState, joinedAt, leftAt, isVideoOn
     }
 }
 
@@ -210,7 +206,6 @@ extension ChatCallMemberRecord {
         joinedAt = try container.decodeIfPresent(String.self, forKey: .joinedAt)
         leftAt = try container.decodeIfPresent(String.self, forKey: .leftAt)
         isVideoOn = try container.decodeIfPresent(Bool.self, forKey: .isVideoOn) ?? false
-        transcriptionConsent = try container.decodeIfPresent(String.self, forKey: .transcriptionConsent) ?? ""
     }
 
     /// Whether they are on the call: joined, and not left since.
@@ -284,7 +279,7 @@ extension Documents {
     static let chatCallFields = """
         id conversationId chatTitle isGroup startedByUserId startedByName startedAt answeredAt endedAt endReason isGoing durationMs
         askerRingState isAskerOn transcriptionAskedByUserId transcriptState summaryMessageId
-        members { userId name avatarUrl avatarColorIndex ringState isOn isVideoOn transcriptionConsent joinedAt leftAt }
+        members { userId name avatarUrl avatarColorIndex ringState isOn isVideoOn joinedAt leftAt }
         """
 
     public static let startChatCall = """
@@ -314,11 +309,6 @@ extension Documents {
         """
     public static let askChatCallTranscription = """
         mutation ($callId: String!) { AskChatCallTranscription(callId: $callId) { \(chatCallFields) } }
-        """
-    public static let answerChatCallTranscription = """
-        mutation ($callId: String!, $isConsenting: Boolean!) {
-          AnswerChatCallTranscription(callId: $callId, isConsenting: $isConsenting) { \(chatCallFields) }
-        }
         """
     public static let listGoingChatCalls = """
         query { ListGoingChatCalls { \(chatCallFields) } }
@@ -420,14 +410,6 @@ extension Connection {
         struct Answer: Decodable, Sendable { let AskChatCallTranscription: ChatCallView }
         return try await execute(Documents.askChatCallTranscription, variables: ["callId": .string(callId)], as: Answer.self)
             .AskChatCallTranscription
-    }
-
-    /// The person's answer to the call being transcribed, for their own voice.
-    @discardableResult
-    public func answerChatCallTranscription(callId: String, isConsenting: Bool) async throws -> ChatCallView {
-        struct Answer: Decodable, Sendable { let AnswerChatCallTranscription: ChatCallView }
-        let variables: [String: JSONValue] = ["callId": .string(callId), "isConsenting": .bool(isConsenting)]
-        return try await execute(Documents.answerChatCallTranscription, variables: variables, as: Answer.self).AnswerChatCallTranscription
     }
 
     /// The calls going that the person has a part in: ringing them, or that

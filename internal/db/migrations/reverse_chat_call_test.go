@@ -36,10 +36,9 @@ func TestTheChatCallMigrationHoldsOneGoingCallAndReverses(t *testing.T) {
 	dbtest.Exec(t, database, `UPDATE "chat_call" SET "ended_at" = now(), "end_reason" = 'ended' WHERE "id" = 'reverse-call-1'`)
 	dbtest.Exec(t, database, `INSERT INTO "chat_call" ("id", "chat_id", "started_at") VALUES ('reverse-call-2', 'reverse-call-chat', now())`)
 	for statement, what := range map[string]string{
-		`UPDATE "chat_call" SET "end_reason" = 'hung up' WHERE "id" = 'reverse-call-1'`:                      "an end reason",
-		`UPDATE "chat_call" SET "transcript_state" = 'pending' WHERE "id" = 'reverse-call-1'`:                "a transcript state",
-		`UPDATE "chat_call_member" SET "ring_state" = 'busy' WHERE "call_id" = 'reverse-call-1'`:             "a ring state",
-		`UPDATE "chat_call_member" SET "transcription_consent" = 'maybe' WHERE "call_id" = 'reverse-call-1'`: "a consent",
+		`UPDATE "chat_call" SET "end_reason" = 'hung up' WHERE "id" = 'reverse-call-1'`:          "an end reason",
+		`UPDATE "chat_call" SET "transcript_state" = 'pending' WHERE "id" = 'reverse-call-1'`:    "a transcript state",
+		`UPDATE "chat_call_member" SET "ring_state" = 'busy' WHERE "call_id" = 'reverse-call-1'`: "a ring state",
 	} {
 		if err := execute(database, statement); err == nil {
 			t.Errorf("the database accepted %s it does not know", what)

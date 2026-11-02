@@ -140,10 +140,10 @@ func TestACallNobodyAnswersIsMissed(t *testing.T) {
 	})
 }
 
-// A transcript is asked for during a call; each person answers for their own
-// voice; it waits once an answered call ends, is claimed by one server, and
-// is kept once in the order it was said.
-func TestACallsTranscriptIsAskedConsentedAndKept(t *testing.T) {
+// A transcript is asked for during a call, by the first to ask; it waits
+// once an answered call ends, is claimed by one server, and is kept once in
+// the order it was said.
+func TestACallsTranscriptIsAskedAndKept(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
@@ -157,21 +157,14 @@ func TestACallsTranscriptIsAskedConsentedAndKept(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateChatCall: %s", err)
 		}
-		if _, err := tx.SetChatCallConsent(call.ID, tobias.ID, models.ChatCallConsentYes); !errors.Is(err, db.ErrInvalidArguments) {
-			t.Errorf("consent was given to a transcript nobody asked for: %v", err)
-		}
 		if call, err = tx.JoinChatCall(call.ID, tobias.ID); err != nil {
 			t.Fatalf("JoinChatCall: %s", err)
 		}
-		if call, err = tx.AskChatCallTranscription(call.ID, mira.ID); err != nil || call.TranscriptionAskedByUserID != mira.ID ||
-			call.Member(mira.ID).TranscriptionConsent != models.ChatCallConsentYes {
+		if call, err = tx.AskChatCallTranscription(call.ID, mira.ID); err != nil || call.TranscriptionAskedByUserID != mira.ID {
 			t.Fatalf("AskChatCallTranscription: %+v %v", call, err)
 		}
 		if call, err = tx.AskChatCallTranscription(call.ID, tobias.ID); err != nil || call.TranscriptionAskedByUserID != mira.ID {
 			t.Errorf("a second ask took it over: %+v %v", call, err)
-		}
-		if call, err = tx.SetChatCallConsent(call.ID, tobias.ID, models.ChatCallConsentNo); err != nil || call.Member(tobias.ID).TranscriptionConsent != models.ChatCallConsentNo {
-			t.Errorf("Tobias's answer: %+v %v", call, err)
 		}
 		if call, err = tx.EndChatCall(call.ID, models.ChatCallEnded); err != nil || call.TranscriptState != models.ChatCallTranscriptWaiting {
 			t.Fatalf("an answered call asked to be transcribed ends waiting: %+v %v", call, err)
