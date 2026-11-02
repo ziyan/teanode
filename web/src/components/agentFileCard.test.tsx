@@ -114,3 +114,27 @@ it('opens a photo of the library on its page with a click on the picture', async
   fireEvent.click(await screen.findByRole('link', { name: 'Open in Photos' }))
   expect(await screen.findByText('The photo page')).toBeTruthy()
 })
+
+it('opens a page sent to the main chat in its sandbox, and a PDF in the browser viewer', async () => {
+  const { container } = show(file({ name: 'notes.html', content_type: 'text/html', sent_by: 'Example Coder' }))
+  const page = await waitFor(() => {
+    const frame = container.querySelector('iframe')
+    expect(frame).toBeTruthy()
+    return frame as HTMLIFrameElement
+  })
+  expect(page.getAttribute('sandbox')).toBe('allow-scripts')
+  cleanup()
+
+  const pdf = show(file({ name: 'report.pdf', content_type: 'application/pdf', sent_by: 'Example Coder' }))
+  const viewer = await waitFor(() => {
+    const frame = pdf.container.querySelector('iframe')
+    expect(frame).toBeTruthy()
+    return frame as HTMLIFrameElement
+  })
+  expect(viewer.getAttribute('sandbox')).toBeNull()
+})
+
+it('leaves a page handed over in a conversation to be opened', () => {
+  const { container } = show(file({ name: 'notes.html', content_type: 'text/html' }))
+  expect(container.querySelector('iframe')).toBeNull()
+})

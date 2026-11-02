@@ -1,10 +1,15 @@
 // Package share is how the agent hands the person a file: the photo on
 // a message, a file from their computer, something already in the
 // conversation. What it hands over becomes a file of the conversation,
-// shown under the tool line — a picture inline, a video playing — and
+// shown under the tool line (a picture inline, a video playing) and
 // sent to a chat app as a photo, a video or a document. A picture it
 // fetches it may look at as well, which is how it answers what is in
 // the photo somebody sent.
+//
+// It can send the file to the person's main chat instead, the conversation
+// the dashboard and the phone open on: from another conversation, from a
+// run nobody is present for, and from a program over MCP, which is in no
+// conversation and may upload the file's bytes itself.
 package share
 
 import (
@@ -12,6 +17,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"mime"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -30,9 +37,12 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "share_file", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskRead,
-				Description: "Hand the person a file, shown in the conversation — a picture inline, a video playing, anything else to open — and sent to their chat app if that is where they are. From a message (source mail: the item and the attachment's number or name as mail_read lists them), from their attached computer (source computer: the path), or one already in this conversation (source conversation: its attachment id). With look, a picture is shown to you as well, so you can say what is in it. Say in the answer what you handed over; the person sees it under the tool line. The answer's url is the file itself: called over MCP, it downloads directly with no sign-in for six hours, which is how to get any file off the person's computer, a picture or a binary file included, in one call.",
+				Description: "Hand the person a file (a picture inline, a video playing, a page, a PDF, anything else to open), shown in the conversation and sent to their chat app if that is where they are. From a message (source mail: the item and the attachment's number or name as mail_read lists them), from their attached computer (source computer: the path), one already in this conversation (source conversation: its attachment id), or, sending to the main chat, bytes you upload yourself (source upload: the file's name; the answer's upload_url takes one PUT of the bytes, `curl -T <file> '<upload_url>'`, within an hour, and the file is posted when it arrives). With to main_chat it goes to the person's main chat, the conversation their dashboard and phone open on, and their phone is told: how to send the person a file from another conversation, from a run nobody is present for, or over MCP. With look, a picture is shown to you as well, so you can say what is in it. Say in the answer what you handed over; the person sees it under the tool line. The answer's url is the file itself: called over MCP, it downloads directly with no sign-in for six hours, which is how to get any file off the person's computer, a picture or a binary file included, in one call.",
 				Parameters: tools.Object(map[string]any{
-					"source":        tools.EnumProperty("where the file is", "mail", "computer", "conversation"),
+					"source":        tools.EnumProperty("where the file is", "mail", "computer", "conversation", "upload"),
+					"to":            tools.EnumProperty("where it goes: here (the default), this conversation, or over MCP only the answer's url; main_chat, the person's main chat", "here", "main_chat"),
+					"name":          tools.StringProperty("upload: the file's name, with its extension"),
+					"content_type":  tools.StringProperty("upload: the file's type, optional; the name's extension is used without it"),
 					"item_id":       tools.StringProperty("mail: the message's item id"),
 					"attachment":    tools.StringProperty("mail: the attachment's number or name as mail_read lists them"),
 					"computer":      tools.StringProperty("computer: which one, when several are attached"),
@@ -59,7 +69,16 @@ type shareArguments struct {
 	Look         bool   `json:"look"`
 	Link         bool   `json:"link"`
 	Caption      string `json:"caption"`
+	To           string `json:"to"`
+	Name         string `json:"name"`
+	ContentType  string `json:"content_type"`
 }
+
+// The places a file goes.
+const (
+	toHere     = "here"
+	toMainChat = "main_chat"
+)
 
 // The bounds of a hand-over.
 const (
@@ -70,8 +89,6 @@ const (
 	// the same as a picture attached to a message. A provider that takes
 	// less shrinks it to fit.
 	lookBytes = 10 << 20
-	// sharedMessage marks an attachment as a file the agent handed over.
-	sharedMessage = "shared"
 	// fetchWait is how long the computer has to send a file across.
 	fetchWait = 2 * time.Minute
 )
@@ -99,13 +116,36 @@ func runShare(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if arguments.Link && run.Headless() {
 		return nil, fmt.Errorf("a link that opens with no sign-in is made only in a conversation with the person; hand over the file without link, or say that they can ask for the link")
 	}
-	file, attachment, err := fetchIntoConversation(ctx, run, arguments)
+	to, err := destinationOf(run, arguments.To)
+	if err != nil {
+		return nil, err
+	}
+	if arguments.Source == "upload" {
+		if to != toMainChat {
+			return nil, fmt.Errorf("an upload is sent to the main chat; leave to out, or say main_chat")
+		}
+		return uploadToMainChat(ctx, run, arguments)
+	}
+	var file *fetched
+	var attachment *models.AgentAttachment
+	if to == toMainChat {
+		file, attachment, err = fetchForMainChat(ctx, run, arguments)
+	} else {
+		file, attachment, err = fetchIntoConversation(ctx, run, arguments)
+	}
 	if err != nil {
 		return nil, err
 	}
 	answer := map[string]any{
 		"attachment_id": attachment.ID, "name": attachment.Name, "content_type": attachment.ContentType, "size": attachment.Size,
 		"url": "/api/v1/agent/attachments/" + attachment.ID,
+	}
+	if to == toMainChat {
+		sending, _ := run.(tools.MainChatSending)
+		if err := sending.SendToMainChat(ctx, attachment.ID, strings.TrimSpace(arguments.Caption), sentByOf(ctx, run)); err != nil {
+			return nil, err
+		}
+		answer["sent_to"] = "the person's main chat, where their dashboard and phone open; their phone is told"
 	}
 	if strings.TrimSpace(arguments.Caption) != "" {
 		answer["caption"] = strings.TrimSpace(arguments.Caption)
@@ -151,7 +191,156 @@ func runShare(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	result.Note = "handed over " + attachment.Name
+	if to == toMainChat {
+		result.Note = "sent " + attachment.Name + " to the main chat"
+	}
 	result.Images = images
+	return result, nil
+}
+
+// destinationOf is where the file goes: here unless the main chat was asked
+// for. Here, for a call over MCP, is no conversation: the file is kept and
+// its address answered, which is how a program fetches a file for itself. A
+// run in the main chat sends there by handing over here.
+func destinationOf(run tools.Run, asked string) (string, error) {
+	conversation := run.Conversation()
+	to := strings.TrimSpace(asked)
+	if to == "" {
+		to = toHere
+	}
+	switch to {
+	case toHere:
+		return toHere, nil
+	case toMainChat:
+		if conversation != nil && conversation.Kind == models.AgentConversationMain {
+			return toHere, nil
+		}
+		if _, ok := run.(tools.MainChatSending); !ok {
+			return "", fmt.Errorf("a file cannot be sent to the main chat from here")
+		}
+		return toMainChat, nil
+	default:
+		return "", fmt.Errorf("%q is not here or main_chat", asked)
+	}
+}
+
+// sentByOf is who sent a file to the main chat, as the line it is posted
+// under says: the program by the name it was approved under, or the
+// conversation or the run it came from.
+func sentByOf(ctx context.Context, run tools.Run) string {
+	if name := tools.SenderNameOf(ctx); name != "" {
+		return name
+	}
+	if calling, ok := run.(tools.ProgramCalling); ok && calling.IsCalledByPersonsProgram() {
+		return "a program over MCP"
+	}
+	conversation := run.Conversation()
+	switch {
+	case conversation.IsGoal() && conversation.GoalTitle != "":
+		return fmt.Sprintf("the goal %q", conversation.GoalTitle)
+	case conversation != nil && conversation.Kind == models.AgentConversationRun:
+		return "a job in the background"
+	case conversation != nil && conversation.Kind == models.AgentConversationChat && conversation.Title != "":
+		return fmt.Sprintf("the chat %q", conversation.Title)
+	case conversation != nil && conversation.Title != "":
+		return fmt.Sprintf("the conversation %q", conversation.Title)
+	case run.Headless():
+		return "a run in the background"
+	}
+	return "another conversation"
+}
+
+// fetchForMainChat reads a file from its source and keeps a copy of it, in
+// no conversation until it is posted to the main chat, so that the main chat
+// keeps it whatever becomes of the conversation it came from.
+func fetchForMainChat(ctx context.Context, run tools.Run, arguments shareArguments) (*fetched, *models.AgentAttachment, error) {
+	store := run.Storage()
+	if store == nil {
+		return nil, nil, fmt.Errorf("nowhere to keep a file")
+	}
+	var file *fetched
+	var err error
+	switch arguments.Source {
+	case "mail":
+		file, err = fromMail(ctx, run, arguments)
+	case "computer":
+		file, err = fromComputer(ctx, run, arguments)
+	case "conversation":
+		file, err = fromConversation(ctx, run, arguments)
+		if err == nil {
+			file.content, err = store.GetFile(ctx, file.existing.ID)
+		}
+	default:
+		return nil, nil, fmt.Errorf("%q is not mail, computer, conversation or upload", arguments.Source)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	limit := run.Configuration().Agent.Limits.EffectiveMaxSentFileBytes()
+	if uint64(len(file.content)) > limit {
+		return nil, nil, fmt.Errorf("%s is %d bytes, more than %d; it is too large to send", file.name, len(file.content), limit)
+	}
+	var attachment *models.AgentAttachment
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		attachment, err = tx.CreateAgentAttachment(&models.AgentAttachment{
+			AgentID:     run.Agent().ID,
+			MessageID:   models.AttachmentMessageShared,
+			Name:        safeName(file.name),
+			ContentType: file.contentType,
+			Size:        int64(len(file.content)),
+		})
+		if err != nil {
+			return err
+		}
+		return store.PutFile(ctx, attachment.ID, file.content)
+	}); err != nil {
+		return nil, nil, err
+	}
+	return file, attachment, nil
+}
+
+// uploadToMainChat keeps a file with no bytes, waiting for the program to
+// upload them, and answers the address to send them to. It is posted to the
+// main chat when they arrive.
+func uploadToMainChat(ctx context.Context, run tools.Run, arguments shareArguments) (*tools.Result, error) {
+	name := safeName(arguments.Name)
+	if strings.TrimSpace(arguments.Name) == "" {
+		return nil, fmt.Errorf("an upload needs the file's name, with its extension")
+	}
+	sending, _ := run.(tools.MainChatSending)
+	contentType := strings.TrimSpace(arguments.ContentType)
+	if contentType == "" {
+		contentType = mime.TypeByExtension(strings.ToLower(filepath.Ext(name)))
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	var attachment *models.AgentAttachment
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		attachment, err = tx.CreateAgentAttachment(&models.AgentAttachment{
+			AgentID: run.Agent().ID, MessageID: models.AttachmentMessageUpload, Name: name, ContentType: contentType,
+		})
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	link := sending.UploadLink(attachment.ID)
+	if link == "" {
+		return nil, fmt.Errorf("no upload address can be made from here; send a file from the person's computer, with source computer")
+	}
+	if err := sending.SendToMainChat(ctx, attachment.ID, strings.TrimSpace(arguments.Caption), sentByOf(ctx, run)); err != nil {
+		return nil, err
+	}
+	limit := run.Configuration().Agent.Limits.EffectiveMaxSentFileBytes()
+	result, err := tools.JSONResult(map[string]any{
+		"attachment_id": attachment.ID, "name": attachment.Name,
+		"upload_url":  link,
+		"upload_note": fmt.Sprintf("send the bytes with one PUT within an hour, at most %d bytes: curl -T <file> '<upload_url>'. It is posted to the person's main chat when they arrive, and their phone is told.", limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	result.Note = "waiting for " + attachment.Name + " to be uploaded"
 	return result, nil
 }
 
@@ -211,7 +400,7 @@ func fetchIntoConversation(ctx context.Context, run tools.Run, arguments shareAr
 			attachment, err = tx.CreateAgentAttachment(&models.AgentAttachment{
 				AgentID:        run.Agent().ID,
 				ConversationID: tools.ConversationIDOf(run),
-				MessageID:      sharedMessage,
+				MessageID:      models.AttachmentMessageShared,
 				Name:           safeName(file.name),
 				ContentType:    file.contentType,
 				Size:           int64(len(file.content)),

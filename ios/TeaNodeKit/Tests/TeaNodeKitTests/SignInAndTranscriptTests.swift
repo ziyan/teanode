@@ -409,6 +409,14 @@ final class MediaTests: XCTestCase {
         XCTAssertTrue(AgentFile.of(toolResult: elsewhere).isEmpty)
     }
 
+    func testAPageSentToTheMainChatIsShownAsAnArtifact() {
+        let sent = #"{"attachment_id":"d4","name":"notes.html","content_type":"text/html","size":40,"url":"/api/v1/agent/attachments/d4","sent_by":"Example Coder"}"#
+        XCTAssertEqual(AgentFile.of(toolResult: sent).first?.artifactKind, "html")
+        let handed = #"{"attachment_id":"d5","name":"notes.html","content_type":"text/html","size":40,"url":"/api/v1/agent/attachments/d5"}"#
+        XCTAssertEqual(AgentFile.of(toolResult: handed).first?.artifactKind, "")
+        XCTAssertEqual(CheckInOrigin.of("[file sent] Example Coder sent the person notes.html"), .fileSent)
+    }
+
     func testAPhotoTheAgentShowedKeepsItsIdOnlyFromThePhotoTool() {
         let shown = #"{"files":[{"photo_id":"photo-1_A","attachment_id":"a1","name":"IMG_0001.jpg","content_type":"image/jpeg","size":12,"url":"/api/v1/agent/attachments/a1"}]}"#
         XCTAssertEqual(AgentFile.of(toolResult: shown, tool: "photo").first?.photoId, "photo-1_A")

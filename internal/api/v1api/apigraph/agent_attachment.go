@@ -314,9 +314,18 @@ func writeAgentAttachment(response http.ResponseWriter, request *http.Request, a
 		// A picture, a video or a sound plays in the page; a browser
 		// runs nothing in those.
 		disposition = "inline"
-	case attachment.MessageID == "artifact":
+	case attachment.MessageID == "artifact", isSentPage(attachment, contentType):
 		disposition = "inline"
 		response.Header().Set("Content-Security-Policy", artifactPolicy(request.Host))
+	case isSentPDF(attachment, contentType):
+		// A PDF sent to the main chat opens in the browser's viewer, which
+		// runs nothing of this origin's; the person asked for it to open
+		// in place. The dashboard frames it in the drawer, which the
+		// dashboard's own policy (frame-ancestors 'none') would refuse; a
+		// sandbox would stop the viewer, so the policy only says who may
+		// frame it: the dashboard, and the extension's side panel it is in.
+		disposition = "inline"
+		response.Header().Set("Content-Security-Policy", "frame-ancestors 'self' chrome-extension:")
 	default:
 		contentType = "application/octet-stream"
 	}
@@ -327,6 +336,24 @@ func writeAgentAttachment(response http.ResponseWriter, request *http.Request, a
 	// The length, a range, HEAD and If-Modified-Since. The name is left out
 	// so the type set above is the one sent.
 	http.ServeContent(response, request, "", attachment.CreatedAt, bytes.NewReader(content))
+}
+
+// isSentPage says the file is a page sent to the person's main chat, shown
+// as an artifact is: in the sandbox, where a script can draw and reach
+// nothing else. A page handed over in a conversation still downloads.
+func isSentPage(attachment *models.AgentAttachment, contentType string) bool {
+	return attachment.SentBy != "" && (mediaTypeOf(contentType) == "text/html" || mediaTypeOf(contentType) == "image/svg+xml")
+}
+
+// isSentPDF says the file is a PDF sent to the person's main chat.
+func isSentPDF(attachment *models.AgentAttachment, contentType string) bool {
+	return attachment.SentBy != "" && mediaTypeOf(contentType) == "application/pdf"
+}
+
+// mediaTypeOf is a content type without its parameters, in lower case.
+func mediaTypeOf(contentType string) string {
+	mediaType, _, _ := strings.Cut(contentType, ";")
+	return strings.ToLower(strings.TrimSpace(mediaType))
 }
 
 // hostName is what a host header may look like to be written into a policy:

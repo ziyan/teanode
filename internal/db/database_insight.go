@@ -165,6 +165,12 @@ type InsightOperation interface {
 	// opening message carries one of models.OwnTurnMarkers: nobody wrote
 	// to it, so nobody's chat followed it.
 	ListAgentOwnTurnAnswers(conversationId, afterMessageId string, before time.Time, limit int) ([]*models.AgentMessage, error)
+
+	// ListAgentOwnTurnFiles is the answers of share_file in turns of the
+	// agent's own in a conversation, after the first message given and up to
+	// and including the second, oldest first: the files it handed the person
+	// there, which a chat app is sent beside what the agent said.
+	ListAgentOwnTurnFiles(conversationId, afterMessageId, throughMessageId string) ([]*models.AgentMessage, error)
 	// LastAgentMessageID is the newest message of a conversation written
 	// before the moment given, or empty.
 	LastAgentMessageID(conversationId string, before time.Time) (string, error)
@@ -1249,6 +1255,34 @@ func (self *transaction) ListAgentOwnTurnAnswers(conversationId, afterMessageId 
 		       ORDER BY "opening"."created_at" DESC, "opening"."id" DESC LIMIT 1) LIKE ANY (?)
 		ORDER BY "answer"."created_at" ASC, "answer"."id" ASC LIMIT ?`,
 		conversationId, afterMessageId, before, pq.Array(markers), limit).Scan(&found).Error; err != nil {
+		return nil, err
+	}
+	messages := make([]*models.AgentMessage, 0, len(found))
+	for index := range found {
+		message, err := messageFromModel(&found[index])
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+	return messages, nil
+}
+
+func (self *transaction) ListAgentOwnTurnFiles(conversationId, afterMessageId, throughMessageId string) ([]*models.AgentMessage, error) {
+	markers := make([]string, 0, len(models.OwnTurnMarkers))
+	for _, marker := range models.OwnTurnMarkers {
+		markers = append(markers, escapeLike(marker)+"%")
+	}
+	var found []agentMessageModel
+	if err := self.tx.Raw(`SELECT "handed".* FROM "agent_message" AS "handed"
+		WHERE "handed"."conversation_id" = ? AND "handed"."id" > ? AND "handed"."id" <= ?
+		  AND "handed"."role" = 'tool' AND "handed"."name" = 'share_file'
+		  AND (SELECT "opening"."content" FROM "agent_message" AS "opening"
+		       WHERE "opening"."conversation_id" = "handed"."conversation_id" AND "opening"."role" = 'user'
+		         AND ("opening"."created_at", "opening"."id") < ("handed"."created_at", "handed"."id")
+		       ORDER BY "opening"."created_at" DESC, "opening"."id" DESC LIMIT 1) LIKE ANY (?)
+		ORDER BY "handed"."created_at" ASC, "handed"."id" ASC LIMIT 50`,
+		conversationId, afterMessageId, throughMessageId, pq.Array(markers)).Scan(&found).Error; err != nil {
 		return nil, err
 	}
 	messages := make([]*models.AgentMessage, 0, len(found))

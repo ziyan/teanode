@@ -1362,6 +1362,7 @@ export const ja: Catalog = {
   'agentDrawer.scheduleTurn': 'スケジュールのターン',
   'agentDrawer.speakFirstTurn': 'エージェントから話しかけました',
   'agentDrawer.alertTurn': 'メールからのお知らせ',
+  'agentDrawer.fileSentTurn': '届いたファイル',
   'agentDrawer.approvedLater': 'ターン終了後に承認しました',
   'agentDrawer.declinedLater': 'ターン終了後に却下しました',
   'agentDrawer.backgroundCommands': 'バックグラウンドのコマンド',

@@ -56,9 +56,14 @@ public struct AgentFile: Hashable, Sendable {
             else { return nil }
             var size = 0
             if case .number(let number)? = entry["size"] { size = Int(number) }
+            let contentType = entry["content_type"]?.stringValue ?? ""
+            // A page sent to the main chat is shown as an artifact is, which
+            // is how the server serves it: in its sandbox.
+            let isSentPage = !(entry["sent_by"]?.stringValue ?? "").isEmpty
+                && (contentType.lowercased().hasPrefix("text/html") || contentType.lowercased().hasPrefix("image/svg+xml"))
             return AgentFile(
-                attachmentId: attachmentId, name: entry["name"]?.stringValue ?? "", contentType: entry["content_type"]?.stringValue ?? "",
-                size: size, caption: entry["caption"]?.stringValue ?? "", artifactKind: "",
+                attachmentId: attachmentId, name: entry["name"]?.stringValue ?? "", contentType: contentType,
+                size: size, caption: entry["caption"]?.stringValue ?? "", artifactKind: isSentPage ? "html" : "",
                 photoId: tool == "photo" ? entry["photo_id"]?.stringValue.flatMap(Self.photoId(from:)) : nil)
         }
     }
