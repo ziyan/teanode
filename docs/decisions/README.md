@@ -179,6 +179,11 @@ app's own library rather than its Photos library.
 model describes a photo only when somebody works with it, and why the
 description is kept and searched.
 
+`20261101-a-file-can-be-sent-to-the-main-chat.md` says why a program over
+MCP, another conversation or a run nobody is present for can send the person
+a file in their main chat without asking, why the main chat is never the
+default, and why a program uploads the bytes to a signed address.
+
 `20261031-a-new-photo-is-read-as-it-arrives.md` says why a new photo is
 described as it arrives after all, and why a receipt, a statement or a tax
 document in one is recorded without being asked.

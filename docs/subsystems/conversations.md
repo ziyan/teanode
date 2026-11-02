@@ -54,6 +54,40 @@ written.
 Reading a conversation returns the **newest** page — a drawer opens at the end
 — along with the conversation's open todos.
 
+## A file sent to the main chat
+
+Anything can send the person a file in their main chat: `share_file` with
+`to: "main_chat"` from another conversation, from a run nobody is present for,
+or from a program over MCP, and `teanode agent send-file` from a terminal
+(`SendAgentFileToMainChat`). The file is a copy of its own
+(`agent_attachment`, with `caption`, `sent_by` and `main_chat_queued_at`),
+and `Agent.SendFileToMainChat` posts it as the four rows of a file the agent
+handed over: a user line opening with `models.FileSentMarker` (`[file sent]`)
+that names who sent it, an assistant line calling `share_file`, the tool line
+with the file in the shape every client draws, and an assistant line with the
+caption, or the file's name and who sent it. The marker is one of
+`models.OwnTurnMarkers`, so the phone is notified of the last line and a
+linked chat app is sent it with the file (`ListAgentOwnTurnFiles`). The
+`file_sent` surface opens the drawer, as an alert's does.
+
+Nothing is written into a turn in progress: a file sent while one runs in the
+main chat waits, and the tick (`postWaitingFiles`) posts it when the turn
+ends. It is marked posted in the transaction that writes it, so it is posted
+once.
+
+A program over MCP sends bytes it holds with `source: "upload"`: the answer's
+`upload_url` (`PUT /api/v1/agent/attachments/{id}/upload?upload=…`) takes one
+PUT within an hour, signed with the server's secret over a name of its own, so
+an address that opens a file cannot replace one. The row waits with no bytes
+(`message_id` `upload`) until they arrive, and one never uploaded goes with
+the uploads nobody sent. A file is at most `agent.limits.maxSentFileBytes`,
+100 MB by default.
+
+A page (HTML or SVG) sent this way is served inline in the artifact sandbox
+and drawn in a frame, and a PDF inline in the browser's viewer; the same file
+handed over in a conversation is still a download. The answer carries
+`sent_by`, which is how a client tells the two apart.
+
 ## Reactions
 
 The person and the agent can each put one reaction on a message somebody
