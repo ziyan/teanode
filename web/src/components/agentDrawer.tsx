@@ -2608,6 +2608,27 @@ function herdrSummaryOf(text: string): { asked: string; who: string } {
   return { asked: asked || who, who: asked ? who : '' }
 }
 
+// OPENING_STORED_LEEWAY_MS is how much earlier than a turn's asked event its
+// words can be stored: they are kept as the turn begins, after the event, but
+// the two times are read a moment apart.
+const OPENING_STORED_LEEWAY_MS = 5000
+
+// storedOpeningIndex is where the person's words a replayed turn began with
+// were read back, when other words of theirs come after them: the same
+// words, stored on or after the moment the turn was asked, the earliest such.
+// A turn waiting behind another stores them only when it starts, so there is
+// no limit after; an older message with the same words, a "yes" of last
+// week, was stored before and is not this turn. -1 when there is none.
+export function storedOpeningIndex(lines: Line[], text: string, askedAt: string | undefined): number {
+  const asked = askedAt ? Date.parse(askedAt) : NaN
+  if (Number.isNaN(asked)) return -1
+  return lines.findIndex((line) => {
+    if (line.kind !== 'user' || line.text !== text || !line.at) return false
+    const stored = Date.parse(line.at)
+    return !Number.isNaN(stored) && stored >= asked - OPENING_STORED_LEEWAY_MS
+  })
+}
+
 // questionFromSaid is a herdr question read back from the agent's words,
 // for one asked before its question was kept whole beside it: the quoted
 // lines are the question, the numbered ones its options.
@@ -4396,6 +4417,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         if (line.kind !== 'user') continue
         if (line.text === (event.text ?? '')) kept = previous.slice(0, index)
         break
+      }
+      // Not the latest words: what the person wrote while this turn ran went
+      // into it, stored after its opening, which is found by its time and
+      // goes from there the same way.
+      if (kept === previous) {
+        const opening = storedOpeningIndex(previous, event.text ?? '', event.at)
+        if (opening >= 0) kept = previous.slice(0, opening)
       }
       const answering = answeringOf(event.text ?? '')
       return [

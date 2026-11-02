@@ -3,7 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { APIError, graphql } from '../api'
 import { TranslationProvider } from '../i18n/i18n'
-import { QuestionCard, cardsOf, citationsIn, readConversationSnapshot, sharedFilesOf, toolWords } from './agentDrawer'
+import {
+  QuestionCard,
+  cardsOf,
+  citationsIn,
+  readConversationSnapshot,
+  sharedFilesOf,
+  storedOpeningIndex,
+  toolWords,
+} from './agentDrawer'
 import { hasSharedCitation, linkSharedCitations } from './dashboardPath'
 
 // The drawer asks the window about the screen when it loads, which jsdom
@@ -143,4 +151,30 @@ it('draws a kept take-over request as a card that opens the Browser page', () =>
   fireEvent.click(screen.getByRole('button', { name: 'Take over the tab' }))
   expect(onTakeOver).toHaveBeenCalledTimes(1)
   expect(screen.getByRole('button', { name: 'Chat about it' })).toBeTruthy()
+})
+
+// A turn the person wrote into while it ran replays after the transcript was
+// read: its opening is matched by time, not only when it is the latest words.
+describe('storedOpeningIndex', () => {
+  const lines = [
+    { kind: 'user' as const, key: '0', text: 'Import the statement.', at: '2026-10-03T09:00:00Z' },
+    { kind: 'user' as const, key: '1', text: 'Import the statement.', at: '2026-10-10T09:00:00.4Z' },
+    { kind: 'user' as const, key: '3', text: 'And the other bank.', at: '2026-10-10T09:00:09Z' },
+  ]
+
+  it('finds the words stored as the turn began, not an older message with the same words', () => {
+    expect(storedOpeningIndex(lines, 'Import the statement.', '2026-10-10T09:00:00.123Z')).toBe(1)
+  })
+
+  it('finds words stored long after the turn was asked, as a turn that waited stores them', () => {
+    expect(storedOpeningIndex(lines, 'And the other bank.', '2026-10-10T08:58:00Z')).toBe(2)
+  })
+
+  it('finds nothing for words stored only before the turn was asked', () => {
+    expect(storedOpeningIndex(lines, 'Import the statement.', '2026-10-11T09:00:00Z')).toBe(-1)
+  })
+
+  it('finds nothing without a time to go by', () => {
+    expect(storedOpeningIndex(lines, 'Import the statement.', undefined)).toBe(-1)
+  })
 })
