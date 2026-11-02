@@ -319,15 +319,11 @@ struct ChatCallScreen: View {
         .disabled(!session.isCameraOn)
     }
 
-    /// The speaker, the transcript and hanging up.
+    /// Where the sound goes, the transcript and hanging up.
     @ViewBuilder
     private var callControls: some View {
-        ChatCallControlButton(
-            systemImage: "speaker.wave.2.fill", label: String(localized: "Speaker"), value: session.isSpeakerOn ? String(localized: "On") : String(localized: "Off"),
-            isActive: session.isSpeakerOn
-        ) {
-            manager.setSpeaker(!session.isSpeakerOn)
-        }
+        // Where the sound goes: the phone, the speaker or a headset.
+        ChatCallAudioRouteButton()
         ChatCallControlButton(systemImage: "text.bubble", label: String(localized: "Transcribe")) {
             isConfirmingTranscription = true
         }
