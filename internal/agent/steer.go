@@ -142,6 +142,7 @@ func (self *AskRun) followSteered(into *AskRun) bool {
 // conversation's feed has it already, from the run that emitted it.
 func (self *AskRun) relay(event Event) {
 	event.RunID = self.ID
+	event.isRelayed = true
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	if self.finished {

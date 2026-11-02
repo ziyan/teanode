@@ -64,6 +64,12 @@ func (self *Agent) SubscribeConversation(conversationId string) (<-chan Event, f
 			continue
 		}
 		for _, event := range events {
+			// A steered message's run keeps the running turn's events, under
+			// its own id, for whoever follows it; that turn replays them here
+			// itself, and a second copy drew its answer twice.
+			if event.isRelayed {
+				continue
+			}
 			select {
 			case channel <- event:
 			default:
