@@ -80,6 +80,9 @@ func (self *ChatMessage) WordsForReading() string {
 	if self == nil {
 		return ""
 	}
+	if self.CallID != "" {
+		return ChatCallWords(self.Call)
+	}
 	if !self.IsVoiceMessage {
 		return self.Body
 	}
@@ -100,6 +103,9 @@ func (self *AgentMessage) VoiceMessageDurationMS() int64 {
 func (self *AgentMessage) WordsForReading() string {
 	if self == nil {
 		return ""
+	}
+	if self.CallID != "" {
+		return ChatCallWords(self.Call)
 	}
 	if !self.IsVoiceMessage {
 		return self.Content
