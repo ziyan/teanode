@@ -7615,6 +7615,22 @@ label .select-value.placeholder {
   margin: 0 0 6px;
 }
 
+/* A chip in the person's own bubble is drawn in the bubble's letters on a
+   wash of them: with the page's field behind it, a file's name (a link, so
+   the bubble's color) was white on light gray, or dark on dark. */
+.agent-line.user .agent-attachment-chip,
+.agent-line.user .agent-reference-chip {
+  color: inherit;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  border-color: color-mix(in srgb, currentColor 28%, transparent);
+}
+
+.agent-line.user .agent-attachment-chip .muted,
+.agent-line.user .agent-reference-chip .muted {
+  color: inherit;
+  opacity: 0.7;
+}
+
 /* The question a late answer answers, or the message a reply answers,
    above it and quieter: either may be far up the conversation by now. A
    long one shows its start. */
