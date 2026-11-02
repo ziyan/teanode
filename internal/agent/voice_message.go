@@ -25,7 +25,10 @@ const (
 	// holds before another may take it, so a server that died mid-way does not
 	// keep a message waiting forever, and two servers do not pay for the same
 	// words.
-	voiceMessageClaimLifetime = 5 * time.Minute
+	// It outlives the provider's own limit on a transcription, so a server
+	// still waiting on the provider is not overtaken by another that pays a
+	// second time.
+	voiceMessageClaimLifetime = 11 * time.Minute
 
 	// voiceMessageGiveUpAfter is how long a message waits for its words before
 	// the sweep says it will not have them.
@@ -171,7 +174,9 @@ func (self *Agent) TranscribeVoiceMessage(ctx context.Context, messageId string)
 
 // finishVoiceMessage writes how a waiting message ended and tells the members,
 // in one go with whatever the caller writes beside it. A message that was
-// deleted meanwhile is not told about.
+// deleted, or finished by another server, meanwhile is not told about, and
+// what the caller writes beside it is not written: the usage of words nobody
+// keeps is not charged.
 func (self *Agent) finishVoiceMessage(ctx context.Context, message *models.ChatMessage, transcriptState, transcriptText string, alongside func(tx db.Transaction) error) error {
 	var finished *models.ChatMessage
 	var chat *models.Chat
@@ -181,13 +186,13 @@ func (self *Agent) finishVoiceMessage(ctx context.Context, message *models.ChatM
 	completionContext, cancelCompletion := context.WithTimeout(context.WithoutCancel(ctx), jobCompletionTimeout)
 	defer cancelCompletion()
 	if err := self.settings.Database.TransactionContext(completionContext, func(tx db.Transaction) (err error) {
+		if finished, err = tx.FinishVoiceMessageTranscript(message.ID, transcriptState, transcriptText); err != nil || finished == nil {
+			return err
+		}
 		if alongside != nil {
 			if err = alongside(tx); err != nil {
 				return err
 			}
-		}
-		if finished, err = tx.FinishVoiceMessageTranscript(message.ID, transcriptState, transcriptText); err != nil || finished == nil {
-			return err
 		}
 		if chat, err = tx.GetChat(finished.ChatID); err != nil {
 			return err

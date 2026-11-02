@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/recording"
@@ -130,6 +131,14 @@ func (self *boundedBuffer) Write(content []byte) (int, error) {
 	return self.Buffer.Write(content)
 }
 
+// prepareTimeout bounds one recording's probe and encoding: two minutes of
+// sound encode in a few seconds, so this is only reached by a file built to
+// be slow.
+const prepareTimeout = time.Minute
+
+// preparing holds a place for each recording being prepared.
+var preparing = make(chan struct{}, 2)
+
 // Prepare checks the recording and makes the file to keep. It refuses
 // anything without an audio track, shorter than ShortestMS or longer than
 // LongestMS, with an error that satisfies errors.Is(err, ErrRefused); a server
@@ -139,6 +148,16 @@ func Prepare(ctx context.Context, content []byte) (*Prepared, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Anyone who chats may upload, so the work an upload starts is bounded:
+	// a few at a time across the server, each for at most prepareTimeout.
+	select {
+	case preparing <- struct{}{}:
+		defer func() { <-preparing }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	ctx, cancel := context.WithTimeout(ctx, prepareTimeout)
+	defer cancel()
 	if len(content) == 0 {
 		return nil, refusal("The recording is empty.")
 	}
