@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.210.0] - 2026-11-02
+
+### Added
+
+- Send yourself a file in your main chat: a coding session over MCP (`share_file` with `to: "main_chat"`, uploading bytes it holds to a signed address), the agent from another conversation or a reminder, or `teanode agent send-file`. Your phone is told, a linked chat app gets the file, and a page or a PDF sent this way opens in place. (#702)
+- Share all of your finance at once, at the spending or transactions level, including accounts you link later; the person you share with sees one combined view without your account names or balances. (#712)
+
+### Fixed
+
+- iPhone: the Calendar's Today and views, and the Select mode actions in Photos and albums, are no longer covered by the tab bar. (#704)
+
 ## [0.209.1] - 2026-11-01
 
 ### Fixed
