@@ -170,7 +170,7 @@ func TestTheMediaServerForwardsEachVoiceToTheOthers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %s", err)
 	}
-	defer server.Close()
+	defer func() { _ = server.Close() }()
 	recorded := map[string]int{}
 	var recordedMutex sync.Mutex
 	server.SetAudioRecorder(func(callId, userId string, _ []byte, codec webrtc.RTPCodecParameters) {
