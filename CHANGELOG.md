@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.211.0] - 2026-11-02
+
+### Added
+
+- Dictate into a conversation, a chat or your journal's own words with the microphone. (#705)
+- Voice messages in chats with people: switch the composer to voice, hold to talk, release to send. Everyone can play it, and its words appear under it. (#705)
+
 ## [0.210.0] - 2026-11-02
 
 ### Added
