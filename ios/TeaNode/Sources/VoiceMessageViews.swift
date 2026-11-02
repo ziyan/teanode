@@ -91,26 +91,37 @@ struct HoldToTalkButton: View {
 /// recording it holds a hint for a moment.
 struct RecordingStrip: View {
     let recorder: VoiceMessageRecorder
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// At the accessibility sizes what letting go does goes under the time,
+    /// which would otherwise wrap a digit at a time.
+    private var layout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 10))
+    }
 
     var body: some View {
-        HStack(spacing: 10) {
+        layout {
             if recorder.isRecording {
-                Image(systemName: recorder.isCancelArmed ? "trash" : "mic.fill")
-                    .foregroundStyle(recorder.isCancelArmed ? AnyShapeStyle(Color.red) : AnyShapeStyle(.tint))
-                if recorder.isCountingDown {
-                    Text("\(VoiceMessageRecorder.clockText(recorder.secondsLeft)) left")
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                } else {
-                    Text(verbatim: VoiceMessageRecorder.clockText(recorder.elapsedSeconds))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
+                HStack(spacing: 10) {
+                    Image(systemName: recorder.isCancelArmed ? "trash" : "mic.fill")
+                        .foregroundStyle(recorder.isCancelArmed ? AnyShapeStyle(Color.red) : AnyShapeStyle(.tint))
+                    if recorder.isCountingDown {
+                        Text("\(VoiceMessageRecorder.clockText(recorder.secondsLeft)) left")
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                            .fixedSize()
+                    } else {
+                        Text(verbatim: VoiceMessageRecorder.clockText(recorder.elapsedSeconds))
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                            .fixedSize()
+                    }
+                    meter
                 }
-                meter
                 cancelText
                     .font(.footnote)
                     .foregroundStyle(recorder.isCancelArmed ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             } else if let hintText = recorder.hintText {
                 Text(hintText)
             }
@@ -118,7 +129,7 @@ struct RecordingStrip: View {
         .font(.callout)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .glassEffect(.regular, in: .capsule)
+        .glassEffect(.regular, in: dynamicTypeSize.isAccessibilitySize ? AnyShape(RoundedRectangle(cornerRadius: 24, style: .continuous)) : AnyShape(Capsule()))
         .accessibilityElement(children: .combine)
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
@@ -345,6 +356,10 @@ struct VoiceMessageBubble: View {
     @Environment(AppModel.self) private var app
     @ScaledMetric(relativeTo: .body) private var scaledButtonDiameterPoints: CGFloat = 36
     @ScaledMetric(relativeTo: .body) private var scaledWaveformHeightPoints: CGFloat = 28
+    /// The button and the waveform grow with the text only so far: at the
+    /// largest sizes they would not fit beside the time in a bubble.
+    private var buttonDiameterPoints: CGFloat { min(scaledButtonDiameterPoints, 56) }
+    private var waveformHeightPoints: CGFloat { min(scaledWaveformHeightPoints, 44) }
     private let player = VoiceMessagePlayer.shared
 
     private var isLoaded: Bool { player.loadedAttachmentId == recording.id }
@@ -383,10 +398,11 @@ struct VoiceMessageBubble: View {
                         } else {
                             Image(systemName: isPlayingThis ? "pause.fill" : "play.fill")
                                 .font(.body)
+                                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                                 .foregroundStyle(.white)
                         }
                     }
-                    .frame(width: scaledButtonDiameterPoints, height: scaledButtonDiameterPoints)
+                    .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(.rect)
                 }
@@ -395,7 +411,7 @@ struct VoiceMessageBubble: View {
                 .accessibilityValue(Text(verbatim: VoiceMessageRecorder.clockText(durationSeconds.rounded(.up))))
                 VoiceWaveform(levels: VoiceWaveform.decodedLevels(of: recording.audioWaveform), progress: progress)
                     .frame(minWidth: 60, idealWidth: 150, maxWidth: 150)
-                    .frame(height: scaledWaveformHeightPoints)
+                    .frame(height: waveformHeightPoints)
                 Text(verbatim: timeText)
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(.secondary)
