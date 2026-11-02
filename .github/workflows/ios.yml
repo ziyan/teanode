@@ -475,6 +475,12 @@ jobs:
           shoot finance-sharing-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-sharing
           shoot finance-person-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-person
           shoot finance-person-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-person
+          # All of one's finance shared at once: the sharing screen with its first section and the sheet that makes the share, and the
+          # combined view of somebody who shares all of theirs (Spending across all their accounts, no account names or balances).
+          shoot finance-sharing-all-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-sharing-all
+          shoot finance-sharing-all-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-sharing-all
+          shoot finance-person-all-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-person-all
+          shoot finance-person-all-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-person-all
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
           # Photos, from invented photos drawn by the demo server: the library as a grid, the viewer on its

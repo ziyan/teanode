@@ -1937,6 +1937,7 @@ struct CheckInLine: View {
         case .schedule: String(localized: "Scheduled turn")
         case .speakFirst: String(localized: "Started by the agent")
         case .alert: String(localized: "Alert from your mail")
+        case .fileSent: String(localized: "A file sent to you")
         case .herdrQuestion: String(localized: "A coding session asks you")
         case .herdrSession: String(localized: "A coding session finished")
         case .restartResume: String(localized: "Carrying on after a restart")
@@ -1954,6 +1955,7 @@ struct CheckInLine: View {
         case .backgroundWork: "list.bullet"
         case .schedule: "calendar"
         case .speakFirst: "sparkles"
+        case .fileSent: "paperclip"
         case .restartResume: "arrow.clockwise"
         case .approved: "checkmark"
         case .declined: "xmark"

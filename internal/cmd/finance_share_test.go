@@ -31,10 +31,14 @@ func TestFinanceSharingParity(test *testing.T) {
 	}
 	table := map[string]string{
 		"ListFinanceAccountShares":      "shares",
+		"ListFinanceShares":             "shares",
+		"ListSharedFinance":             "shares",
 		"ListSharedFinanceAccounts":     "shares",
 		"ListSharedFinanceSpending":     "spending-summary",
 		"ListSharedFinanceTransactions": "transactions",
+		"ShareFinance":                  "share",
 		"ShareFinanceAccount":           "share",
+		"UnshareFinance":                "unshare",
 		"UnshareFinanceAccount":         "unshare",
 	}
 	for operation := range operations {
@@ -77,7 +81,7 @@ func TestFinanceSharingParity(test *testing.T) {
 			}
 		}
 		encoded, _ := json.Marshal(tool.Parameters)
-		for _, word := range []string{"share_finance_account", "unshare", "shared_finance", "list_finance_account_shares"} {
+		for _, word := range []string{"share_finance", "unshare", "shared_finance", "list_finance_account_shares", "list_finance_shares"} {
 			if strings.Contains(string(encoded), word) {
 				test.Errorf("the finance tool offers %s", word)
 			}
@@ -87,7 +91,10 @@ func TestFinanceSharingParity(test *testing.T) {
 
 // financeSharingServer answers the documents the sharing commands send with a
 // small world: ada is the caller, with a checking account and a card, ben and
-// cora share a circle with her, and ben shares two accounts with her.
+// cora share a circle with her, ben shares two accounts with her, cora shares
+// all her finance with her at the spending level, and ada shares all of hers
+// with ben. A share identifier that begins with w is of all finance: asking to
+// unshare it as an account's share is not found.
 func financeSharingServer(test *testing.T) (*httptest.Server, func(string) map[string]any) {
 	test.Helper()
 	var lock sync.Mutex
@@ -105,6 +112,10 @@ func financeSharingServer(test *testing.T) (*httptest.Server, func(string) map[s
 		"ListSharedFinanceAccounts": `[
 			{"financeAccountId":"b1","ownerUserId":"u-ben","ownerUsername":"ben","ownerName":"Ben","financeShareLevel":"transactions","accountName":"Joint Checking","accountMask":"7788","accountKind":"depository","currencyCode":"USD","currentBalance":"250.0000","creditUsage":null},
 			{"financeAccountId":"b2","ownerUserId":"u-ben","ownerUsername":"ben","ownerName":"Ben","financeShareLevel":"balance","accountName":"Store Card","accountKind":"credit","currencyCode":"USD","currentBalance":"-100.0000","creditUsage":{"owedAmount":"100.0000","creditLimitAmount":"400.0000","creditLimitSource":"provider","usageShare":0.25}}]`,
+		"ShareFinance":                  `{"id":"w1","granteeUserId":"u-ben","granteeUsername":"ben","financeShareLevel":"spending"}`,
+		"UnshareFinance":                `true`,
+		"ListFinanceShares":             `[{"id":"w1","granteeUserId":"u-ben","granteeUsername":"ben","financeShareLevel":"spending"},{"id":"w2","granteeCircleId":"c1","granteeCircleName":"Home","financeShareLevel":"transactions"}]`,
+		"ListSharedFinance":             `[{"ownerUserId":"u-cora","ownerUsername":"cora","ownerName":"Cora","financeShareLevel":"spending"},{"ownerUserId":"u-dana","ownerUsername":"dana","ownerName":"Dana","financeShareLevel":"transactions"}]`,
 		"ListSharedFinanceSpending":     `[{"spendingMonth":"2026-09","spendingCategoryName":"Groceries","currencyCode":"USD","moneyOut":"42.1700","moneyIn":"0.0000","financeTransactionCount":1}]`,
 		"ListSharedFinanceTransactions": `{"nextCursor":"next-one","totalCount":5,"financeTransactions":[{"id":"t1","postedOn":"2026-09-10","amount":"-42.1700","currencyCode":"USD","merchantName":"Corner Grocer","spendingCategoryName":"Groceries"}]}`,
 	}
@@ -118,15 +129,19 @@ func financeSharingServer(test *testing.T) (*httptest.Server, func(string) map[s
 			return
 		}
 		data := map[string]json.RawMessage{}
+		response.Header().Set("Content-Type", "application/json")
 		for operation, answer := range answers {
 			if strings.Contains(document.Query, " "+operation+"(") || strings.Contains(document.Query, "{ "+operation+" ") || strings.Contains(document.Query, "\n  "+operation+"(") {
 				data[operation] = json.RawMessage(answer)
 				lock.Lock()
 				calls[operation] = document.Variables
 				lock.Unlock()
+				if shareId, _ := document.Variables["shareId"].(string); operation == "UnshareFinanceAccount" && strings.HasPrefix(shareId, "w") {
+					_ = json.NewEncoder(response).Encode(map[string]any{"errors": []map[string]string{{"message": "api: not found"}}})
+					return
+				}
 			}
 		}
-		response.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(response).Encode(map[string]any{"data": data})
 	}))
 	test.Cleanup(server.Close)
@@ -204,7 +219,7 @@ func TestFinanceSharesAndUnshare(test *testing.T) {
 		test.Fatal(err)
 	}
 	for _, wanted := range []string{"shared by you", "Travel Card", "ben", "balance", "s1", `the circle "Home"`, "Everyday Checking ••0001", "spending", "s2",
-		"shared with you", "Joint Checking ••7788", "transactions", "b1", "Store Card", "b2"} {
+		"all accounts", "w1", "w2", "shared with you", "cora", "Joint Checking ••7788", "transactions", "b1", "Store Card", "b2"} {
 		if !strings.Contains(output, wanted) {
 			test.Errorf("shares lacks %q:\n%s", wanted, output)
 		}
@@ -218,57 +233,135 @@ func TestFinanceSharesAndUnshare(test *testing.T) {
 	if _, err = runFinanceCommand(test, server, "unshare"); err == nil {
 		test.Errorf("unshare without a share")
 	}
+
+	// A share of all finance is ended by the same command: the server does not
+	// know the identifier as an account's share, so the other kind is tried.
+	if _, err = runFinanceCommand(test, server, "unshare", "w1"); err != nil {
+		test.Fatal(err)
+	}
+	if called("UnshareFinance")["financeShareId"] != "w1" {
+		test.Errorf("unshare falls back to the share of all finance: %v", called("UnshareFinance"))
+	}
+
+	output, err = runFinanceCommand(test, server, "shares", "--json")
+	if err != nil {
+		test.Fatal(err)
+	}
+	for _, wanted := range []string{"sharedByYou", "allFinanceSharedByYou", "sharedWithYou", "allFinanceSharedWithYou", "w2"} {
+		if !strings.Contains(output, wanted) {
+			test.Errorf("shares --json lacks %q:\n%s", wanted, output)
+		}
+	}
 }
 
-// The reads take --person and show what that person shares, at the level each
-// was shared at; a level too low for a read, and a person who shares nothing,
-// are said so in words.
-func TestFinanceReadsOfWhatAPersonShares(test *testing.T) {
+// Sharing all of one's finance names the level and who it is for, and refuses
+// in words what cannot be said: a balance belongs to one account.
+func TestFinanceShareAllResolvesWhoItIsFor(test *testing.T) {
 	server, called := financeSharingServer(test)
 
-	output, err := runFinanceCommand(test, server, "accounts", "--person", "ben")
+	output, err := runFinanceCommand(test, server, "share", "all", "ben", "--level", "spending")
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, wanted := range []string{"Joint Checking ••7788", "250.00 USD", "transactions", "Store Card", "25%", "balance"} {
-		if !strings.Contains(output, wanted) {
-			test.Errorf("accounts --person lacks %q:\n%s", wanted, output)
-		}
+	variables := called("ShareFinance")
+	if variables["granteeUserId"] != "u-ben" || variables["granteeCircleId"] != nil || variables["financeShareLevel"] != "spending" || variables["financeAccountId"] != nil {
+		test.Errorf("all finance is shared with a person by their account: %v", variables)
 	}
-	if _, err = runFinanceCommand(test, server, "accounts", "--person", "cora"); err == nil || !strings.Contains(err.Error(), "does not share") {
-		test.Errorf("a person who shares nothing: %v", err)
+	if !strings.Contains(output, "all your finance") || !strings.Contains(output, "ben") || !strings.Contains(output, "spending") {
+		test.Errorf("it says what it did: %q", output)
+	}
+	if called("ShareFinanceAccount") != nil {
+		test.Errorf("no account was asked for: %v", called("ShareFinanceAccount"))
 	}
 
-	// Transactions are of the one account shared at that level.
-	output, err = runFinanceCommand(test, server, "transactions", "--person", "ben", "--limit", "20")
-	if err != nil {
+	if _, err = runFinanceCommand(test, server, "share", "ALL", "Home", "--level", "transactions"); err != nil {
 		test.Fatal(err)
 	}
-	for _, wanted := range []string{"2026-09-10", "-42.17 USD", "Corner Grocer", "Groceries", "1 to 1 of 5", "--offset 1"} {
-		if !strings.Contains(output, wanted) {
-			test.Errorf("transactions --person lacks %q:\n%s", wanted, output)
-		}
-	}
-	if variables := called("ListSharedFinanceTransactions"); variables["financeAccountId"] != "b1" || variables["limit"] != float64(20) {
-		test.Errorf("the account shared at the transactions level: %v", variables)
-	}
-	if _, err = runFinanceCommand(test, server, "transactions", "--person", "ben", "--finance-account", "b2"); err == nil || !strings.Contains(err.Error(), "at transactions or more") {
-		test.Errorf("a card shared at the balance level has no transactions: %v", err)
+	if variables = called("ShareFinance"); variables["granteeCircleId"] != "c1" || variables["granteeUserId"] != nil || variables["financeShareLevel"] != "transactions" {
+		test.Errorf("all finance is shared with a circle by its name: %v", variables)
 	}
 
-	output, err = runFinanceCommand(test, server, "spending-summary", "--person", "ben")
+	if _, err = runFinanceCommand(test, server, "share", "all", "ben", "--level", "balance"); err == nil || !strings.Contains(err.Error(), "spending or transactions") {
+		test.Errorf("a balance belongs to one account: %v", err)
+	}
+	if _, err = runFinanceCommand(test, server, "share", "all", "ben"); err == nil || !strings.Contains(err.Error(), "--level") {
+		test.Errorf("no level: %v", err)
+	}
+	if _, err = runFinanceCommand(test, server, "share", "all", "stranger", "--level", "spending"); err == nil || !strings.Contains(err.Error(), "circle") {
+		test.Errorf("a stranger: %v", err)
+	}
+}
+
+// A person who shares all their finance is read as one: no account is named,
+// and a read of one account is still of that account.
+func TestFinanceReadsOfAllFinanceAPersonShares(test *testing.T) {
+	server, called := financeSharingServer(test)
+
+	output, err := runFinanceCommand(test, server, "spending-summary", "--person", "cora")
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, wanted := range []string{"Joint Checking ••7788", "2026-09", "Groceries", "42.17 USD"} {
+	for _, wanted := range []string{"month", "2026-09", "Groceries", "42.17 USD"} {
 		if !strings.Contains(output, wanted) {
 			test.Errorf("spending-summary --person lacks %q:\n%s", wanted, output)
 		}
 	}
-	if variables := called("ListSharedFinanceSpending"); variables["financeAccountId"] != "b1" {
-		test.Errorf("only the account shared at the spending level or more: %v", variables)
+	if strings.Contains(output, "account") {
+		test.Errorf("the combined view names no account:\n%s", output)
 	}
-	if _, err = runFinanceCommand(test, server, "spending-summary", "--person", "ben", "--group-by", "merchant"); err == nil {
-		test.Errorf("a merchant is not shared")
+	if variables := called("ListSharedFinanceSpending"); variables["ownerUserId"] != "u-cora" || variables["financeAccountId"] != nil {
+		test.Errorf("the combined read asks for the person: %v", variables)
+	}
+
+	output, err = runFinanceCommand(test, server, "spending-summary", "--person", "cora", "--json")
+	if err != nil || !strings.Contains(output, `"spendingRows"`) || !strings.Contains(output, `"ownerUsername": "cora"`) {
+		test.Errorf("the combined read as JSON: %v\n%s", err, output)
+	}
+
+	// Her level is spending, so there are no transactions to list, and the
+	// message says why.
+	if _, err = runFinanceCommand(test, server, "transactions", "--person", "cora"); err == nil || !strings.Contains(err.Error(), "all their finance with you at spending") {
+		test.Errorf("transactions at the spending level: %v", err)
+	}
+
+	output, err = runFinanceCommand(test, server, "accounts", "--person", "cora")
+	if err != nil || !strings.Contains(output, "shares all their finance with you at spending") {
+		test.Errorf("accounts --person says that all finance is shared: %v\n%s", err, output)
+	}
+}
+
+// With a share of all finance at the transactions level the page is of all
+// accounts, and naming an account asks for that account alone.
+func TestFinanceTransactionsOfAllFinanceAPersonShares(test *testing.T) {
+	server, called := financeSharingServer(test)
+
+	output, err := runFinanceCommand(test, server, "transactions", "--person", "dana", "--limit", "20")
+	if err != nil {
+		test.Fatal(err)
+	}
+	for _, wanted := range []string{"2026-09-10", "-42.17 USD", "Corner Grocer", "Groceries"} {
+		if !strings.Contains(output, wanted) {
+			test.Errorf("transactions --person lacks %q:\n%s", wanted, output)
+		}
+	}
+	if variables := called("ListSharedFinanceTransactions"); variables["ownerUserId"] != "u-dana" || variables["financeAccountId"] != nil || variables["limit"] != float64(20) {
+		test.Errorf("all of the person's finance is read together: %v", variables)
+	}
+	if _, err = runFinanceCommand(test, server, "transactions", "--person", "dana", "--finance-account", "b1"); err == nil || !strings.Contains(err.Error(), "no finance account") {
+		test.Errorf("naming an account asks for what is shared of that account: %v", err)
+	}
+	if _, err = runFinanceCommand(test, server, "spending-summary", "--person", "dana"); err != nil {
+		test.Fatal(err)
+	}
+	if variables := called("ListSharedFinanceSpending"); variables["ownerUserId"] != "u-dana" {
+		test.Errorf("spending of all finance: %v", variables)
+	}
+
+	// A person who shares accounts only is read account by account.
+	if _, err = runFinanceCommand(test, server, "transactions", "--person", "ben"); err != nil {
+		test.Fatal(err)
+	}
+	if variables := called("ListSharedFinanceTransactions"); variables["financeAccountId"] != "b1" || variables["ownerUserId"] != nil {
+		test.Errorf("a person who shares accounts only: %v", variables)
 	}
 }

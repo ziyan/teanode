@@ -69,9 +69,15 @@ type PersonCardHealth struct {
 }
 
 // PersonCardFinance is the finance accounts they share, each as the level it
-// was shared at shows it. Never read by the agent.
+// was shared at shows it, and the level at which they share all their finance,
+// when they do. Never read by the agent.
 type PersonCardFinance struct {
-	SectionState    PersonCardSectionState  `json:"sectionState"`
+	SectionState PersonCardSectionState `json:"sectionState"`
+
+	// AllFinanceShareLevel is spending or transactions when they share all
+	// their finance with you, and empty when they do not.
+	AllFinanceShareLevel string `json:"allFinanceShareLevel,omitempty"`
+
 	FinanceAccounts []*SharedFinanceAccount `json:"financeAccounts"`
 	HasMore         bool                    `json:"hasMore"`
 }
@@ -171,7 +177,7 @@ const DocumentReadPersonCard = `query ($userId: String, $addressBookId: String, 
       }
     }
     finance {
-      sectionState hasMore
+      sectionState hasMore allFinanceShareLevel
       financeAccounts {
         financeAccountId ownerUserId ownerUsername ownerName financeShareLevel accountName accountMask accountKind currencyCode currentBalance balanceAt
         creditUsage { owedAmount creditLimitAmount creditLimitSource usageShare }

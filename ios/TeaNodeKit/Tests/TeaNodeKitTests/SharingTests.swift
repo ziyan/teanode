@@ -168,6 +168,35 @@ final class SharingTests: XCTestCase {
         }
     }
 
+    func testStoppingAShareOfAllFinanceEndsItWithUnshareFinance() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"UnshareFinance":true}}"#)
+        let share = SharingMade(shareKind: "finance", shareId: "share-all-1", shareLevel: "spending", shareScopes: ["allAccounts"], granteeUserId: "user-2")
+        XCTAssertTrue(share.isAllFinance)
+        XCTAssertTrue(share.canStop)
+        try await connection.stopSharing(share)
+        let body = String(decoding: fake.sent[0].httpBody ?? Data(), as: UTF8.self)
+        XCTAssertTrue(body.contains("UnshareFinance"), body)
+        XCTAssertFalse(body.contains("UnshareFinanceAccount"), body)
+        XCTAssertEqual(try sentVariables(fake.sent[0])["financeShareId"], .string("share-all-1"))
+        // A share of one account, and a share of another kind with the same scope word, are not it.
+        XCTAssertFalse(SharingMade(shareKind: "finance", shareId: "s", shareLevel: "spending").isAllFinance)
+        XCTAssertFalse(SharingMade(shareKind: "calendar", shareId: "s", shareScopes: ["allAccounts"]).isAllFinance)
+        let received = SharingReceived(
+            shareKind: "finance", shareId: "s", shareLevel: "transactions", shareScopes: ["allAccounts"], ownerUserId: "u", ownerUsername: "mira", isDirect: true,
+            canDecline: true)
+        XCTAssertTrue(received.isAllFinance)
+    }
+
+    func testAShareOfAllFinanceDecodesWithNoSubject() throws {
+        let list = try JSONDecoder().decode(
+            SharingList.self,
+            from: Data(
+                #"{"sharesMade":[{"shareKind":"finance","shareId":"s1","subjectId":"","subjectName":"","subjectMask":"","shareLevel":"spending","shareScopes":["allAccounts"],"passwordItemCount":0,"granteeUserId":"u-ben","granteeUsername":"ben","granteeName":"Ben","granteeCircleId":null,"granteeCircleName":"","createdAt":"2026-09-17T08:30:00Z"}],"sharesReceived":[]}"#
+                    .utf8))
+        XCTAssertTrue(list.sharesMade[0].isAllFinance)
+        XCTAssertEqual(list.sharesMade[0].shownGrantee, "Ben")
+    }
+
     func testStoppingHealthSharesNoCategoriesWithTheGranteeItWasSharedWith() async throws {
         let (connection, fake) = connection(answering: #"{"data":{"SetHealthShare":null}}"#)
         try await connection.stopSharing(SharingMade(shareKind: "health", shareId: "share-1", granteeUserId: "user-2"))

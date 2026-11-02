@@ -432,3 +432,56 @@ it('lists a shopping list the person shares, opening it in Shopping, and stops i
   await waitFor(() => expect(calls('UnshareShoppingList')).toHaveLength(1))
   expect(calls('UnshareShoppingList')[0][1]).toEqual({ shoppingListShareId: 'share-shopping' })
 })
+
+// A share of all of the person's finance names no account: it is listed by its
+// level, links to the Sharing panel, and ends with its own operation.
+it('lists a share of all finance by its level and ends it with UnshareFinance', async () => {
+  answerWith(
+    [
+      made({
+        shareKind: 'finance',
+        shareId: 'share-all-finance',
+        subjectId: '',
+        subjectName: '',
+        shareLevel: 'spending',
+        shareScopes: ['allAccounts'],
+      }),
+    ],
+    [],
+  )
+  renderAt('/sharing')
+
+  const everything = (await screen.findByRole('link', { name: 'All finance (spending)' })) as HTMLAnchorElement
+  expect(everything.getAttribute('href')).toBe('/settings/agent/finance')
+  const row = everything.closest('tr') as HTMLElement
+  expect(within(row).getByText('Spending')).toBeTruthy()
+  // The scope is said by the name, not listed as a word of its own.
+  expect(within(row).queryByText(/allAccounts/)).toBeNull()
+
+  fireEvent.click(screen.getByRole('button', { name: /stop sharing with Person B/i }))
+  fireEvent.click(screen.getByRole('button', { name: 'Stop sharing' }))
+  await waitFor(() => expect(calls('UnshareFinance')).toHaveLength(1))
+  expect(calls('UnshareFinance')[0][1]).toEqual({ financeShareId: 'share-all-finance' })
+  expect(calls('UnshareFinanceAccount')).toHaveLength(0)
+})
+
+it('lists a share of all finance with the person at its level, without an account', async () => {
+  answerWith(
+    [],
+    [
+      received({
+        shareKind: 'finance',
+        shareId: 'share-all-finance',
+        subjectId: '',
+        subjectName: '',
+        shareLevel: 'transactions',
+        shareScopes: ['allAccounts'],
+      }),
+    ],
+  )
+  renderAt('/sharing/with-you')
+
+  const everything = (await screen.findByRole('link', { name: 'All finance (transactions)' })) as HTMLAnchorElement
+  expect(everything.getAttribute('href')).toBe('/finance?person=person-b')
+  expect(within(everything.closest('tr') as HTMLElement).getByText('Transactions')).toBeTruthy()
+})

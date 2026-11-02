@@ -1549,6 +1549,12 @@ person past it is refused, with how much they keep and what to do: delete old
 messages with files to make room. Not to be confused with `maxAttachmentBytes`
 above, which bounds one upload.
 
+**`maxSentFileBytes`** bounds one file sent to a person's main chat: by a
+program over MCP, by the agent from another conversation, or by a run nobody
+is present for (`share_file` with `to: "main_chat"`, `teanode agent
+send-file`); `100MB` when it is not set, which takes a few minutes of a
+screen recording.
+
 **`maxScannedAttachmentBytes`** — The largest file a knowledge source
 carries off a person's machine: a picture or a document that a record in a
 `records` folder said it came with, kept in object storage so that

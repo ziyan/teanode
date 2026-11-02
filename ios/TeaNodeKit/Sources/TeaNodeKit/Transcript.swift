@@ -280,6 +280,7 @@ public enum CheckInOrigin: String, CaseIterable, Sendable {
     case schedule = "[schedule]"
     case speakFirst = "[speaking first]"
     case alert = "[alert]"
+    case fileSent = "[file sent]"
     case herdrQuestion = "[herdr question]"
     case herdrSession = "[herdr session]"
     case restartResume = "[resuming after a restart]"

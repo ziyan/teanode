@@ -195,6 +195,7 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	router.Path(api.PathPhotoPlaybackFile).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.photoPlaybackFileView)
 	router.Path(api.PathAgentAttachments).Methods(http.MethodPost).HandlerFunc(self.agentAttachmentsView)
 	router.Path(api.PathAgentAttachment).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.agentAttachmentView)
+	router.Path(api.PathAgentAttachmentUpload).Methods(http.MethodPut).HandlerFunc(self.agentAttachmentUploadView)
 	// And the file behind a document a knowledge source indexed, so that
 	// a page citing a screenshot can show the screenshot.
 	router.Path(api.PathAgentDocumentFile).Methods(http.MethodGet).HandlerFunc(self.agentDocumentFileView)

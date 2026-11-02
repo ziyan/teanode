@@ -84,7 +84,7 @@ func (self *chatState) relay(ctx context.Context) {
 func (self *chatState) relayOnce(ctx context.Context, now time.Time) (string, error) {
 	var channel *models.AgentChannel
 	var conversationId string
-	var answers []*models.AgentMessage
+	var answers, handed []*models.AgentMessage
 	instance := self.manager.settings.Instance
 	if err := self.manager.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		found, err := tx.GetAgentChannel(self.agentId, self.kind)
@@ -126,10 +126,13 @@ func (self *chatState) relayOnce(ctx context.Context, now time.Time) (string, er
 			answers = nil
 			return nil
 		}
+		if handed, err = tx.ListAgentOwnTurnFiles(conversationId, found.RelayedThrough, through); err != nil {
+			return err
+		}
 		isAdvanced, err := tx.AdvanceAgentChannelRelay(found.ID, instance, found.RelayedThrough, through)
 		if err != nil || !isAdvanced {
 			// Another instance holds the bot now, or looked first.
-			answers = nil
+			answers, handed = nil, nil
 			return err
 		}
 		channel = found
@@ -137,13 +140,22 @@ func (self *chatState) relayOnce(ctx context.Context, now time.Time) (string, er
 	}); err != nil {
 		return conversationId, err
 	}
-	if len(answers) == 0 {
+	if len(answers) == 0 && len(handed) == 0 {
 		return conversationId, nil
 	}
 	chat, err := self.bot.ChatFor(channel.LinkedID)
 	if err != nil {
 		return conversationId, err
 	}
+	// The files the agent handed over first, then what it said of them: a
+	// file sent to the main chat comes with its caption as the agent's word.
+	var fileIds []string
+	for _, message := range handed {
+		if id := artifactIn(message.Content); id != "" {
+			fileIds = append(fileIds, id)
+		}
+	}
+	self.sendArtifacts(ctx, chat, fileIds)
 	dashboard := self.manager.settings.Configuration().DashboardBase()
 	for _, answer := range answers {
 		(&preview{chat: chat, dashboard: dashboard}).finish(ctx, answer.Content)

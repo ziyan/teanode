@@ -9672,6 +9672,15 @@ td.truncate:has(.contact-postal) {
   background: #ffffff;
 }
 
+/* A PDF sent to the main chat, in the browser's viewer: tall enough to read a
+   page in the drawer, and it opens larger in a tab of its own. */
+.agent-file-document {
+  display: block;
+  width: 100%;
+  height: 420px;
+  border: 0;
+}
+
 .agent-artifact-body {
   padding: 10px 12px;
   max-height: 320px;

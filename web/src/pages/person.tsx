@@ -426,6 +426,15 @@ function PersonCardView({
           <h3>{t('finance.title')}</h3>
           {finance.sectionState === 'shown' ? (
             <>
+              {finance.allFinanceShareLevel ? (
+                <div className="person-row">
+                  <span className="person-row-text">
+                    <span className="person-row-title">
+                      {t(`finance.shareAllName.${finance.allFinanceShareLevel}` as Key)}
+                    </span>
+                  </span>
+                </div>
+              ) : null}
               {finance.financeAccounts.map((account) => {
                 const usageShare = account.creditUsage?.usageShare
                 return (
@@ -447,7 +456,7 @@ function PersonCardView({
                   </div>
                 )
               })}
-              {person && finance.hasMore && showAll(personFinancePath(person.userId))}
+              {person && (finance.hasMore || finance.allFinanceShareLevel) && showAll(personFinancePath(person.userId))}
             </>
           ) : (
             stateText(finance.sectionState, t('person.financeNotShared', { name: displayName }))

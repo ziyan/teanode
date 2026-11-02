@@ -344,6 +344,8 @@ func (self *mcpCatalog) call(ctx context.Context, name string, arguments json.Ra
 	if self.caller.isProgramHeld && credentialTools[name] {
 		return mcpserve.Answer{}, false, fmt.Errorf("a program authorized by approval cannot make credentials; make one from the dashboard instead")
 	}
+	// A file the program sends to the main chat says it came from it.
+	ctx = agenttools.WithSenderName(ctx, self.caller.name)
 	result, err := self.worker.CallDirect(ctx, self.owner, self.person, self.operations, mcpSurface, self.origin, mcpToolResultCharacters, name, arguments)
 	if err != nil {
 		return mcpserve.Answer{}, false, err

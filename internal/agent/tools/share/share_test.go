@@ -294,3 +294,132 @@ func TestShareFileLinkIsRefusedWhenNobodyIsPresent(t *testing.T) {
 		t.Fatalf("a link in a run nobody is present for is refused: %v", err)
 	}
 }
+
+// sendingRun is a run that sends files to the main chat, and remembers what
+// it sent.
+type sendingRun struct {
+	*fakeRun
+	sent       []string
+	captions   []string
+	senders    []string
+	isProgram  bool
+	uploadLink string
+}
+
+func (self *sendingRun) SendToMainChat(_ context.Context, attachmentId, caption, sentBy string) error {
+	self.sent = append(self.sent, attachmentId)
+	self.captions = append(self.captions, caption)
+	self.senders = append(self.senders, sentBy)
+	return nil
+}
+func (self *sendingRun) UploadLink(attachmentId string) string {
+	if self.uploadLink == "" {
+		return ""
+	}
+	return self.uploadLink + attachmentId
+}
+func (self *sendingRun) IsCalledByPersonsProgram() bool { return self.isProgram }
+
+// A file sent to the main chat is a copy of its own, sent with its caption
+// and who sent it; from the main chat itself it is handed over there; and a
+// program uploads its bytes to the address answered.
+func TestShareFileSendsToTheMainChat(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	store, err := storage.Open(&storage.Settings{Directory: t.TempDir()})
+	if err != nil {
+		t.Fatalf("storage.Open: %s", err)
+	}
+	base := &fakeRun{database: database, store: store, computer: &fakeComputer{}}
+	var main, side *models.AgentConversation
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if base.agent, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if main, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: base.agent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		if side, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: base.agent.ID, Kind: models.AgentConversationNamed, Title: "Invoices", LastAt: time.Now()}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+	})
+	tool := find(t, "share_file")
+	share := func(ctx context.Context, run tools.Run, arguments string) (map[string]any, error) {
+		t.Helper()
+		result, err := tool.Run(tools.WithRun(ctx, run), &tools.Call{ID: "c1", Arguments: json.RawMessage(arguments)})
+		if err != nil {
+			return nil, err
+		}
+		var answer map[string]any
+		_ = json.Unmarshal([]byte(result.Content), &answer)
+		return answer, nil
+	}
+
+	// From a side conversation: a copy in no conversation yet, sent.
+	base.conversation = side
+	fromSide := &sendingRun{fakeRun: base}
+	answer, err := share(context.Background(), fromSide, `{"source":"computer","path":"~/Pictures/cat.png","to":"main_chat","caption":"The cat"}`)
+	if err != nil {
+		t.Fatalf("share_file: %s", err)
+	}
+	if len(fromSide.sent) != 1 || fromSide.sent[0] != answer["attachment_id"] || fromSide.captions[0] != "The cat" || fromSide.senders[0] != `the conversation "Invoices"` {
+		t.Fatalf("the file was not sent to the main chat with its caption and sender: %+v %v", fromSide, answer)
+	}
+	var copied *models.AgentAttachment
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if copied, err = tx.GetAgentAttachment(fromSide.sent[0]); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if copied.ConversationID != "" || copied.Size != 33 {
+		t.Errorf("the copy for the main chat is %+v", copied)
+	}
+
+	// Left out, the file is handed over here, and nothing is sent.
+	if _, err := share(context.Background(), fromSide, `{"source":"computer","path":"~/Pictures/cat.png"}`); err != nil {
+		t.Fatalf("share_file: %s", err)
+	}
+	if len(fromSide.sent) != 1 {
+		t.Errorf("a file handed over here was sent to the main chat")
+	}
+
+	// In the main chat, the main chat is here.
+	base.conversation = main
+	inMain := &sendingRun{fakeRun: base}
+	if _, err := share(context.Background(), inMain, `{"source":"computer","path":"~/Pictures/cat.png","to":"main_chat"}`); err != nil {
+		t.Fatalf("share_file: %s", err)
+	}
+	if len(inMain.sent) != 0 {
+		t.Errorf("a file in the main chat was sent there a second time")
+	}
+
+	// A program over MCP, in no conversation, uploads the bytes itself.
+	base.conversation = nil
+	program := &sendingRun{fakeRun: base, isProgram: true, uploadLink: "https://mail.example.org/upload/"}
+	answer, err = share(tools.WithSenderName(context.Background(), "Example Coder"), program, `{"source":"upload","name":"screen.mp4","to":"main_chat"}`)
+	if err != nil {
+		t.Fatalf("share_file: %s", err)
+	}
+	if answer["upload_url"] != "https://mail.example.org/upload/"+answer["attachment_id"].(string) || len(program.sent) != 1 || program.senders[0] != "Example Coder" {
+		t.Fatalf("the upload was not answered with its address and sent: %v %+v", answer, program)
+	}
+	var waiting *models.AgentAttachment
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if waiting, err = tx.GetAgentAttachment(program.sent[0]); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if waiting.MessageID != models.AttachmentMessageUpload || waiting.ContentType != "video/mp4" {
+		t.Errorf("the file waiting for its bytes is %+v", waiting)
+	}
+	if _, err := share(context.Background(), program, `{"source":"upload","name":"screen.mp4"}`); err == nil {
+		t.Error("an upload was taken for somewhere other than the main chat")
+	}
+	if _, err := share(context.Background(), &sendingRun{fakeRun: base}, `{"source":"upload","name":"screen.mp4","to":"main_chat"}`); err == nil {
+		t.Error("an upload was taken with no address to send its bytes to")
+	}
+}

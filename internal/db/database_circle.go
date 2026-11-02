@@ -80,8 +80,8 @@ type CircleOperation interface {
 	// together.
 	SharesCircle(userId, otherUserId string) (bool, error)
 
-	// CircleHasSensitiveShare says whether anybody has shared Health or a
-	// finance account with the circle, so that a new member of it would read
+	// CircleHasSensitiveShare says whether anybody has shared Health, a
+	// finance account or all their finance with the circle, so that a new member of it would read
 	// that. Sharing either with somebody new is the sharer's own tap, and so
 	// is bringing somebody into a circle that has such a share.
 	CircleHasSensitiveShare(circleId string) (bool, error)
@@ -493,6 +493,9 @@ func endSharesOutsideCircles(tx *gorm.DB, userIds ...string) error {
 		if err := endFinanceSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}
+		if err := endAllFinanceSharesOutsideCircles(tx, userId); err != nil {
+			return err
+		}
 		if err := endPasswordSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}
@@ -748,6 +751,12 @@ func (self *transaction) CircleHasSensitiveShare(circleId string) (bool, error) 
 		return true, nil
 	}
 	if err := self.tx.Model(&financeAccountShareModel{}).Where("\"grantee_circle_id\" = ?", circleId).Count(&count).Error; err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+	if err := self.tx.Model(&financeShareModel{}).Where("\"grantee_circle_id\" = ?", circleId).Count(&count).Error; err != nil {
 		return false, err
 	}
 	return count > 0, nil

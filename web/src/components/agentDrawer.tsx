@@ -306,6 +306,13 @@ const SPEAK_FIRST_SURFACE = 'speak_first:'
 const ALERT_MARKER = '[alert]'
 const ALERT_SURFACE = 'alert'
 
+// The marker a file sent to the main chat is written under, by a program
+// over MCP, another conversation or a run nobody was present for, which is
+// models.FileSentMarker on the server. Its surface opens the drawer as an
+// alert's does.
+const FILE_SENT_MARKER = '[file sent]'
+const FILE_SENT_SURFACE = 'file_sent'
+
 // The marker a goal kept in the background is written under in the main
 // conversation when it comes to need the person, followed by the goal's
 // id, which is models.GoalNeedsYouMarker on the server. Its surface opens
@@ -366,6 +373,7 @@ type CheckInOrigin =
   | 'schedule'
   | 'speakFirst'
   | 'alert'
+  | 'fileSent'
   | 'herdrQuestion'
   | 'herdrSession'
   | 'restartResume'
@@ -388,6 +396,7 @@ function checkInOriginOf(text: string): CheckInOrigin | null {
   if (text.startsWith(SCHEDULE_MARKER)) return 'schedule'
   if (text.startsWith(SPEAK_FIRST_MARKER)) return 'speakFirst'
   if (text.startsWith(ALERT_MARKER)) return 'alert'
+  if (text.startsWith(FILE_SENT_MARKER)) return 'fileSent'
   if (text.startsWith(HERDR_QUESTION_MARKER)) return 'herdrQuestion'
   if (text.startsWith(HERDR_SESSION_MARKER)) return 'herdrSession'
   if (text.startsWith(RESTART_RESUME_MARKER)) return 'restartResume'
@@ -449,6 +458,9 @@ interface SharedFile {
   size: number
   url: string
   caption?: string
+  // Who sent the file to the main chat, for a file sent there: a page or a
+  // PDF sent there opens in place, as the server serves it.
+  sent_by?: string
   // The photo this is a preview of, where the photo tool showed it. The
   // card links to that photo in Photos.
   photo_id?: string
@@ -2046,6 +2058,14 @@ export function FileCard({ file }: { file: SharedFile }) {
     <video src={signed} controls preload="metadata" className="agent-file-media" />
   ) : type.startsWith('audio/') ? (
     <audio src={signed} controls preload="metadata" className="agent-file-audio" />
+  ) : file.sent_by && (type.startsWith('text/html') || type.startsWith('image/svg+xml')) ? (
+    // A page sent to the main chat is shown as an artifact is: in a frame of
+    // its own with no way out of it, which is how the server serves it.
+    <iframe className="agent-artifact-frame" title={file.name} src={signed} sandbox="allow-scripts" />
+  ) : file.sent_by && type.startsWith('application/pdf') ? (
+    // A PDF sent to the main chat opens in the browser's own viewer, which
+    // a sandboxed frame would refuse to run.
+    <iframe className="agent-file-document" title={file.name} src={signed} />
   ) : null
   return (
     <div className="agent-artifact agent-file">
@@ -2532,6 +2552,7 @@ const CHECK_IN_LABEL = {
   schedule: 'agentDrawer.scheduleTurn',
   speakFirst: 'agentDrawer.speakFirstTurn',
   alert: 'agentDrawer.alertTurn',
+  fileSent: 'agentDrawer.fileSentTurn',
   herdrQuestion: 'agentDrawer.herdrQuestionTurn',
   herdrSession: 'agentDrawer.herdrSessionTurn',
   restartResume: 'agentDrawer.restartResumeTurn',
@@ -2547,6 +2568,7 @@ function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
   if (origin === 'speakFirst') return <SparkIcon size={12} />
   if (origin === 'restartResume') return <RefreshIcon size={12} />
   if (origin === 'alert') return <WarningIcon size={12} />
+  if (origin === 'fileSent') return <PaperclipIcon size={12} />
   if (origin === 'approved') return <CheckIcon size={12} />
   if (origin === 'declined') return <CloseIcon size={12} />
   return <TargetIcon size={12} />
@@ -3675,6 +3697,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           !(
             note.startsWith(SPEAK_FIRST_SURFACE) ||
             note === ALERT_SURFACE ||
+            note === FILE_SENT_SURFACE ||
             note === GOAL_NEEDS_YOU_SURFACE ||
             note === HERDR_QUESTION_SURFACE
           )

@@ -8,7 +8,30 @@ import (
 // Finance accounts shared with other people: the operations behind
 // `teanode finance share`, `unshare`, `shares` and the --person reads. The
 // agent's finance tool has no operation for any of them, and these documents
-// are not among FinanceDocuments, which is what that tool runs from.
+// are not among FinanceDocuments, which is what that tool runs from. Sharing
+// all of one's finance at once (`teanode finance share all`) is here too.
+
+// FinanceShareAll is one share of all of the caller's finance, which covers
+// every account they hold now and later and names none.
+type FinanceShareAll struct {
+	ID                string    `json:"id"`
+	GranteeUserID     *string   `json:"granteeUserId"`
+	GranteeUsername   string    `json:"granteeUsername"`
+	GranteeName       string    `json:"granteeName"`
+	GranteeCircleID   *string   `json:"granteeCircleId"`
+	GranteeCircleName string    `json:"granteeCircleName"`
+	FinanceShareLevel string    `json:"financeShareLevel"`
+	CreatedAt         time.Time `json:"createdAt"`
+}
+
+// SharedFinance is a person who shares all of their finance with the caller,
+// and the level they share it at.
+type SharedFinance struct {
+	OwnerUserID       string `json:"ownerUserId"`
+	OwnerUsername     string `json:"ownerUsername"`
+	OwnerName         string `json:"ownerName"`
+	FinanceShareLevel string `json:"financeShareLevel"`
+}
 
 // FinanceShare is one share of one of the caller's finance accounts.
 type FinanceShare struct {
@@ -96,16 +119,25 @@ const (
     creditUsage { owedAmount creditLimitAmount creditLimitSource usageShare }
   }
 }`
-	DocumentListSharedFinanceSpending = `query ($financeAccountId: String!, $from: String, $to: String) {
-  ListSharedFinanceSpending(financeAccountId: $financeAccountId, from: $from, to: $to) {
+	DocumentListSharedFinanceSpending = `query ($financeAccountId: String, $ownerUserId: String, $from: String, $to: String) {
+  ListSharedFinanceSpending(financeAccountId: $financeAccountId, ownerUserId: $ownerUserId, from: $from, to: $to) {
     spendingMonth spendingCategoryName currencyCode moneyOut moneyIn financeTransactionCount
   }
 }`
-	DocumentListSharedFinanceTransactions = `query ($financeAccountId: String!, $from: String, $to: String, $limit: Int, $after: String, $offset: Int) {
-  ListSharedFinanceTransactions(financeAccountId: $financeAccountId, from: $from, to: $to, limit: $limit, after: $after, offset: $offset) {
+	DocumentListSharedFinanceTransactions = `query ($financeAccountId: String, $ownerUserId: String, $from: String, $to: String, $limit: Int, $after: String, $offset: Int) {
+  ListSharedFinanceTransactions(financeAccountId: $financeAccountId, ownerUserId: $ownerUserId, from: $from, to: $to, limit: $limit, after: $after, offset: $offset) {
     nextCursor totalCount financeTransactions { id postedOn amount currencyCode merchantName spendingCategoryName }
   }
 }`
+
+	financeShareAllFields = `id granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName financeShareLevel createdAt`
+
+	DocumentListFinanceShares = `query { ListFinanceShares { ` + financeShareAllFields + ` } }`
+	DocumentShareFinance      = `mutation ($granteeUserId: String, $granteeCircleId: String, $financeShareLevel: String!) {
+  ShareFinance(granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, financeShareLevel: $financeShareLevel) { ` + financeShareAllFields + ` }
+}`
+	DocumentUnshareFinance    = `mutation ($financeShareId: String!) { UnshareFinance(financeShareId: $financeShareId) }`
+	DocumentListSharedFinance = `query ($ownerUserId: String) { ListSharedFinance(ownerUserId: $ownerUserId) { ownerUserId ownerUsername ownerName financeShareLevel } }`
 )
 
 // FinanceShareDocuments is every document here by the operation it runs, for
@@ -114,6 +146,8 @@ var FinanceShareDocuments = map[string]string{
 	"ListFinanceAccountShares": DocumentListFinanceAccountShares, "ShareFinanceAccount": DocumentShareFinanceAccount,
 	"UnshareFinanceAccount": DocumentUnshareFinanceAccount, "ListSharedFinanceAccounts": DocumentListSharedFinanceAccounts,
 	"ListSharedFinanceSpending": DocumentListSharedFinanceSpending, "ListSharedFinanceTransactions": DocumentListSharedFinanceTransactions,
+	"ListFinanceShares": DocumentListFinanceShares, "ShareFinance": DocumentShareFinance, "UnshareFinance": DocumentUnshareFinance,
+	"ListSharedFinance": DocumentListSharedFinance,
 }
 
 // ListFinanceAccountShares are the shares the caller has made, of one finance
@@ -181,7 +215,23 @@ func ListSharedFinanceAccounts(ctx context.Context, connection *Client, ownerUse
 // ListSharedFinanceSpending is a shared account's money out and in by month
 // and spending category, for the days from and to (either may be empty).
 func ListSharedFinanceSpending(ctx context.Context, connection *Client, financeAccountId, from, to string) ([]*SharedFinanceSpendingRow, error) {
-	variables := map[string]any{"financeAccountId": financeAccountId, "from": nil, "to": nil}
+	return listSharedFinanceSpending(ctx, connection, financeAccountId, "", from, to)
+}
+
+// ListSharedAllFinanceSpending is the same across all of one person's finance
+// accounts together, for a person who shares all their finance.
+func ListSharedAllFinanceSpending(ctx context.Context, connection *Client, ownerUserId, from, to string) ([]*SharedFinanceSpendingRow, error) {
+	return listSharedFinanceSpending(ctx, connection, "", ownerUserId, from, to)
+}
+
+func listSharedFinanceSpending(ctx context.Context, connection *Client, financeAccountId, ownerUserId, from, to string) ([]*SharedFinanceSpendingRow, error) {
+	variables := map[string]any{"financeAccountId": nil, "ownerUserId": nil, "from": nil, "to": nil}
+	if financeAccountId != "" {
+		variables["financeAccountId"] = financeAccountId
+	}
+	if ownerUserId != "" {
+		variables["ownerUserId"] = ownerUserId
+	}
 	if from != "" {
 		variables["from"] = from
 	}
@@ -201,7 +251,24 @@ func ListSharedFinanceSpending(ctx context.Context, connection *Client, financeA
 // newest first. A limit of zero is the server's default; an offset passes over
 // that many transactions first, from the cursor when one is given.
 func ListSharedFinanceTransactions(ctx context.Context, connection *Client, financeAccountId, from, to string, limit int, after string, offset int) (*SharedFinanceTransactionPage, error) {
-	variables := map[string]any{"financeAccountId": financeAccountId, "from": nil, "to": nil, "limit": nil, "after": nil, "offset": nil}
+	return listSharedFinanceTransactions(ctx, connection, financeAccountId, "", from, to, limit, after, offset)
+}
+
+// ListSharedAllFinanceTransactions is a page of the transactions of all of one
+// person's finance accounts together, for a person who shares all their
+// finance at the transactions level.
+func ListSharedAllFinanceTransactions(ctx context.Context, connection *Client, ownerUserId, from, to string, limit int, after string, offset int) (*SharedFinanceTransactionPage, error) {
+	return listSharedFinanceTransactions(ctx, connection, "", ownerUserId, from, to, limit, after, offset)
+}
+
+func listSharedFinanceTransactions(ctx context.Context, connection *Client, financeAccountId, ownerUserId, from, to string, limit int, after string, offset int) (*SharedFinanceTransactionPage, error) {
+	variables := map[string]any{"financeAccountId": nil, "ownerUserId": nil, "from": nil, "to": nil, "limit": nil, "after": nil, "offset": nil}
+	if financeAccountId != "" {
+		variables["financeAccountId"] = financeAccountId
+	}
+	if ownerUserId != "" {
+		variables["ownerUserId"] = ownerUserId
+	}
 	if from != "" {
 		variables["from"] = from
 	}
@@ -224,4 +291,60 @@ func ListSharedFinanceTransactions(ctx context.Context, connection *Client, fina
 		return nil, err
 	}
 	return result.ListSharedFinanceTransactions, nil
+}
+
+// ListFinanceShares are the shares of all of their finance that the caller has
+// made.
+func ListFinanceShares(ctx context.Context, connection *Client) ([]*FinanceShareAll, error) {
+	var result struct {
+		ListFinanceShares []*FinanceShareAll `json:"ListFinanceShares"`
+	}
+	if err := connection.Execute(ctx, DocumentListFinanceShares, map[string]any{}, &result); err != nil {
+		return nil, err
+	}
+	return result.ListFinanceShares, nil
+}
+
+// ShareFinance shares all of the caller's finance with a person or a circle,
+// given by identifier (one of the two), or changes the level of a share
+// already made.
+func ShareFinance(ctx context.Context, connection *Client, granteeUserId, granteeCircleId, financeShareLevel string) (*FinanceShareAll, error) {
+	variables := map[string]any{"financeShareLevel": financeShareLevel, "granteeUserId": nil, "granteeCircleId": nil}
+	if granteeUserId != "" {
+		variables["granteeUserId"] = granteeUserId
+	}
+	if granteeCircleId != "" {
+		variables["granteeCircleId"] = granteeCircleId
+	}
+	var result struct {
+		ShareFinance *FinanceShareAll `json:"ShareFinance"`
+	}
+	if err := connection.Execute(ctx, DocumentShareFinance, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.ShareFinance, nil
+}
+
+// UnshareFinance takes a share of all of the caller's finance back.
+func UnshareFinance(ctx context.Context, connection *Client, financeShareId string) error {
+	var result struct {
+		UnshareFinance bool `json:"UnshareFinance"`
+	}
+	return connection.Execute(ctx, DocumentUnshareFinance, map[string]any{"financeShareId": financeShareId}, &result)
+}
+
+// ListSharedFinance are the people who share all of their finance with the
+// caller, of one person when their identifier is given.
+func ListSharedFinance(ctx context.Context, connection *Client, ownerUserId string) ([]*SharedFinance, error) {
+	variables := map[string]any{"ownerUserId": nil}
+	if ownerUserId != "" {
+		variables["ownerUserId"] = ownerUserId
+	}
+	var result struct {
+		ListSharedFinance []*SharedFinance `json:"ListSharedFinance"`
+	}
+	if err := connection.Execute(ctx, DocumentListSharedFinance, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.ListSharedFinance, nil
 }

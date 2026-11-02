@@ -96,6 +96,7 @@ const SET_HEALTH_SHARE = `mutation ($granteeUserId: String, $granteeCircleId: St
 }`
 const UNSHARE_RECORDING = `mutation ($recordingShareId: String!) { UnshareRecording(recordingShareId: $recordingShareId) }`
 const UNSHARE_FINANCE_ACCOUNT = `mutation ($shareId: String!) { UnshareFinanceAccount(shareId: $shareId) }`
+const UNSHARE_FINANCE = `mutation ($financeShareId: String!) { UnshareFinance(financeShareId: $financeShareId) }`
 const UNSHARE_SHOPPING_LIST = `mutation ($shoppingListShareId: String!) { UnshareShoppingList(shoppingListShareId: $shoppingListShareId) }`
 const DECLINE_SHARE = `mutation ($shareKind: String!, $shareId: String!) { DeclineShare(shareKind: $shareKind, shareId: $shareId) }`
 
@@ -149,6 +150,14 @@ const SCOPE_NAMES: Partial<Record<ShareKind, Record<string, Key>>> = {
 const HEALTH_CATEGORY_PREFIX = 'health.category.'
 
 type Tab = 'by-you' | 'with-you'
+
+// The scope of a finance share that covers all of the owner's accounts, now
+// and later, instead of one: it has no subject.
+const ALL_ACCOUNTS_SCOPE = 'allAccounts'
+
+function isAllFinance(share: { shareKind: ShareKind; shareScopes: string[] }): boolean {
+  return share.shareKind === 'finance' && share.shareScopes.includes(ALL_ACCOUNTS_SCOPE)
+}
 
 // Where a kind is managed: the page that shares it and can change it. A memory
 // page shared with the person opens as theirs to read, with its owner named.
@@ -259,6 +268,8 @@ function useShareWords() {
     subjectMask: string
     isSubjectDeleted?: boolean
     passwordItemCount: number
+    shareLevel?: string
+    shareScopes?: string[]
   }): string {
     if (share.isSubjectDeleted) {
       return t('sharing.pageDeleted')
@@ -269,6 +280,9 @@ function useShareWords() {
         { one: 'sharing.itemsOne', other: 'sharing.itemsOther' },
         { count: share.passwordItemCount },
       )
+    }
+    if (isAllFinance({ shareKind: share.shareKind, shareScopes: share.shareScopes ?? [] })) {
+      return t(`finance.shareAllName.${share.shareLevel}` as Key)
     }
     if (share.shareKind === 'finance' && share.subjectName) {
       return accountLabel({ accountName: share.subjectName, accountMask: share.subjectMask })
@@ -297,6 +311,10 @@ function useShareWords() {
       parts.push(levelName ? t(levelName) : share.shareLevel)
     }
     for (const scope of share.shareScopes) {
+      // The scope of a share of all finance is already said by its name.
+      if (share.shareKind === 'finance' && scope === ALL_ACCOUNTS_SCOPE) {
+        continue
+      }
       if (share.shareKind === 'health') {
         parts.push(t(`${HEALTH_CATEGORY_PREFIX}${scope}` as Key))
       } else {
@@ -375,7 +393,11 @@ function SharedByYou({ shares, reload }: { shares: SharingMade[]; reload: () => 
         work = graphql(UNSHARE_RECORDING, { recordingShareId: share.shareId })
         break
       case 'finance':
-        work = graphql(UNSHARE_FINANCE_ACCOUNT, { shareId: share.shareId })
+        // A share of all of the person's finance names no account, and is
+        // taken back with its own operation.
+        work = isAllFinance(share)
+          ? graphql(UNSHARE_FINANCE, { financeShareId: share.shareId })
+          : graphql(UNSHARE_FINANCE_ACCOUNT, { shareId: share.shareId })
         break
       case 'shopping_list':
         work = graphql(UNSHARE_SHOPPING_LIST, { shoppingListShareId: share.shareId })
@@ -477,7 +499,11 @@ function SharedByYou({ shares, reload }: { shares: SharingMade[]; reload: () => 
           title={t('sharing.stopTitle', { name: granteeName(stopping) })}
           body={t('sharing.stopBody', {
             name: granteeName(stopping),
-            what: stopping.isSubjectDeleted ? t('sharing.thisPage') : words.what(stopping),
+            what: stopping.isSubjectDeleted
+              ? t('sharing.thisPage')
+              : isAllFinance(stopping)
+                ? t('finance.shareAllWhat')
+                : words.what(stopping),
           })}
           confirmLabel={t('sharing.stop')}
           busy={stop.isBusy}
@@ -602,7 +628,10 @@ function SharedWithYou({ shares, reload }: { shares: SharingReceived[]; reload: 
       {removing && (
         <ConfirmDialog
           title={t('sharing.removeTitle', { name: ownerName(removing) })}
-          body={t('sharing.removeBody', { name: ownerName(removing), what: words.what(removing) })}
+          body={t('sharing.removeBody', {
+            name: ownerName(removing),
+            what: isAllFinance(removing) ? t('finance.shareAllWhatTheirs') : words.what(removing),
+          })}
           confirmLabel={t('sharing.remove')}
           busy={decline.isBusy}
           error={decline.problem}

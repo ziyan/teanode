@@ -501,6 +501,7 @@ func TestEveryKindOfShareIsEndedWhenACircleStopsMakingItPossible(t *testing.T) {
 		"agent_page_share":      "endPageSharesOutsideCircles",
 		"calendar_share":        "endCalendarSharesOutsideCircles",
 		"finance_account_share": "endFinanceSharesOutsideCircles",
+		"finance_share":         "endAllFinanceSharesOutsideCircles",
 		"health_share":          "endHealthSharesOutsideCircles",
 		"location_share":        "endLocationSharesOutsideCircles",
 		"password_share":        "endPasswordSharesOutsideCircles",

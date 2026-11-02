@@ -129,16 +129,26 @@ public struct PersonCardHealthSection: Decodable, Hashable, Sendable {
 /// shown it.
 public struct PersonCardFinanceSection: Decodable, Hashable, Sendable {
     public let sectionState: PersonCardSectionState
+    /// Spending or transactions when they share all of their finance with the
+    /// person, else empty or absent (an older server).
+    public let allFinanceShareLevel: String?
     public let financeAccounts: [SharedFinanceAccount]
     public let hasMore: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case sectionState, financeAccounts, hasMore
+        case sectionState, allFinanceShareLevel, financeAccounts, hasMore
+    }
+
+    /// The level they share all of their finance at, when they do.
+    public var allFinanceLevel: FinanceShareLevel? {
+        guard let allFinanceShareLevel, !allFinanceShareLevel.isEmpty else { return nil }
+        return FinanceShareLevel(rawValue: allFinanceShareLevel)
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sectionState = try container.decode(PersonCardSectionState.self, forKey: .sectionState)
+        allFinanceShareLevel = try container.decodeIfPresent(String.self, forKey: .allFinanceShareLevel)
         financeAccounts = try container.decodeIfPresent([SharedFinanceAccount].self, forKey: .financeAccounts) ?? []
         hasMore = try container.decodeIfPresent(Bool.self, forKey: .hasMore) ?? false
     }
@@ -390,7 +400,7 @@ extension Documents {
             location { sectionState location { \(personLocationFields) } todayVisits { \(personCardVisitFields) } hasMoreTodayVisits }
             health { sectionState healthTypes { \(healthTypeFields) } hasMore }
             finance {
-              sectionState hasMore
+              sectionState hasMore allFinanceShareLevel
               financeAccounts {
                 financeAccountId ownerUserId ownerUsername ownerName financeShareLevel accountName accountMask accountKind currencyCode currentBalance balanceAt
                 creditUsage { owedAmount creditLimitAmount creditLimitSource usageShare }

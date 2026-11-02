@@ -217,6 +217,15 @@ recordings other people shared with them. A turn in a chat with other people is
 still refused all three. Passwords is the exception: it keeps every secret to a
 turn the person typed, and refuses a program.
 
+A program sends the person a file with `share_file` and `to: "main_chat"`:
+from their attached computer by its path, or, for bytes the program holds,
+with `source: "upload"` and the file's `name`, then one PUT of the bytes to the
+`upload_url` answered (`curl -T chart.png '<upload_url>'`). The file is posted
+in the person's main chat under the name the program was approved by, and
+their phone is told (conversations.md, "A file sent to the main chat").
+Without `to`, `share_file` over MCP only keeps the file and answers its
+address, which is how a program fetches a file for itself.
+
 Anything a tool marks untrusted is wrapped before it goes back, the way the
 conversation loop wraps it. The harness hands it to a model of its own, which
 needs telling as much as ours does.

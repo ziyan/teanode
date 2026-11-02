@@ -179,7 +179,9 @@ its pull request is opened.
   the top left that goes back to the list (`MoreBackButton`).
 - A screen with a bar of its own at the bottom, such as a conversation with its
   composer, a mail with its actions, or a list in Select mode, hides the tab
-  bar (`.toolbarVisibility(.hidden, for: .tabBar)`) while it is on screen.
+  bar (`.toolbarVisibility(.hidden, for: .tabBar)`) while it is on screen. On
+  iOS 26 the tab bar shrinks to a button at each end of the bottom edge, right
+  where such a bar is drawn, and covers it (`make check-tab-bars`).
 - Search finds the person's words across chats, mail, contacts, photos, memory,
   documents, recordings, places and finance at once, a few results from each,
   grouped by part. A row opens the item in its part; Show all opens the part

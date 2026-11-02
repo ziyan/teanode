@@ -285,10 +285,13 @@ struct PersonCardFinanceView: View {
     @ViewBuilder
     private func rows(of section: PersonCardFinanceSection) -> some View {
         if section.sectionState == .shown {
+            if let allFinanceLevel = section.allFinanceLevel {
+                PersonCardAllFinanceRow(level: allFinanceLevel)
+            }
             ForEach(section.financeAccounts) { account in
                 SharedFinanceAccountRow(account: account)
             }
-            if section.hasMore {
+            if section.hasMore || section.allFinanceLevel != nil {
                 PersonCardShowAllRow(title: AppSection.finance.title) { open() }
             }
         } else {
@@ -303,6 +306,22 @@ struct PersonCardFinanceView: View {
             app.openedFinanceSharerId = card.person?.userId
             app.openedSection = .finance
         }
+    }
+}
+
+/// PersonCardAllFinanceRow says they share all of their finance with the
+/// person, and at which level. It names no account and has no balance.
+struct PersonCardAllFinanceRow: View {
+    let level: FinanceShareLevel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(verbatim: SharingWords.allFinanceWhat(shareLevel: level.rawValue))
+            Text("Across all their accounts, now and later")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

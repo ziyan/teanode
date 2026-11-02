@@ -562,6 +562,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 		log.Warningf("cannot wake the goals whose schedule is gone: %s", err)
 	}
 	self.surfaceGoals(ctx)
+	self.postWaitingFiles(ctx)
 	self.scavenge(ctx, now)
 	self.describeInBackground(ctx, now)
 	self.checkPricesInBackground(ctx, now)

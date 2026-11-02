@@ -21,6 +21,18 @@ public enum SharingKind: String, CaseIterable, Sendable {
     case shoppingList = "shopping_list"
 }
 
+/// SharingScope holds the words a share's scopes can carry.
+public enum SharingScope {
+    /// The scope of a finance share that covers all of the owner's accounts,
+    /// now and later, instead of one.
+    public static let allAccounts = "allAccounts"
+
+    /// Whether a share is of all of a person's finance.
+    public static func isAllFinance(shareKind: String, shareScopes: [String]) -> Bool {
+        shareKind == SharingKind.finance.rawValue && shareScopes.contains(allAccounts)
+    }
+}
+
 /// SharingMade is one share the person made: of what, with whom, at what level.
 /// A share of passwords has no id of its own and is counted, never named,
 /// because an item's title is sealed.
@@ -62,6 +74,10 @@ public struct SharingMade: Decodable, Hashable, Sendable, Identifiable {
 
     /// Whether it is shared with a circle rather than a person.
     public var isCircle: Bool { granteeCircleId != nil }
+
+    /// Whether it is a share of all of the person's finance, which names no
+    /// account and is taken back with UnshareFinance.
+    public var isAllFinance: Bool { SharingScope.isAllFinance(shareKind: shareKind, shareScopes: shareScopes) }
 
     /// Who it is shared with: the circle's name, or the person's name, or their
     /// username when they have no name.
@@ -136,6 +152,9 @@ public struct SharingReceived: Decodable, Hashable, Sendable, Identifiable {
     public var id: String { shareKind + "|" + (shareId.isEmpty ? ownerUserId + "|" + (granteeCircleId ?? "") : shareId) }
 
     public var knownKind: SharingKind? { SharingKind(rawValue: shareKind) }
+
+    /// Whether it is a share of all of the owner's finance, which names no account.
+    public var isAllFinance: Bool { SharingScope.isAllFinance(shareKind: shareKind, shareScopes: shareScopes) }
 
     /// Who shared it: their name, or their username when they have none.
     public var shownOwner: String { ownerName.isEmpty ? ownerUsername : ownerName }
@@ -215,7 +234,12 @@ extension Connection {
         case .memoryPage: try await unshareKnowledgePage(shareId: share.shareId)
         case .photoAlbum: try await removePhotoAlbumShare(share.shareId)
         case .recording: try await unshareRecording(shareId: share.shareId)
-        case .finance: try await unshareFinanceAccount(shareId: share.shareId)
+        case .finance:
+            if share.isAllFinance {
+                try await unshareAllFinance(financeShareId: share.shareId)
+            } else {
+                try await unshareFinanceAccount(shareId: share.shareId)
+            }
         case .skill: try await unshareSkill(shareId: share.shareId)
         case .shoppingList: try await unshareShoppingList(shoppingListShareId: share.shareId)
         case .passwords: throw SharingError.passwordsAreStoppedOnTheirOwnScreen

@@ -78,6 +78,13 @@ const (
 	PathAgentAttachments = Prefix + "/agent/attachments"
 	PathAgentAttachment  = Prefix + "/agent/attachments/{attachmentId}"
 
+	// PathAgentAttachmentUpload takes one PUT of the bytes of a file a
+	// program is sending to the person's main chat, at the signed address
+	// share_file answered with. It is under PathAgentAttachments, which
+	// the middleware lets through (see PublicPrefixes), and the handler
+	// checks the signature.
+	PathAgentAttachmentUpload = Prefix + "/agent/attachments/{attachmentId}/upload"
+
 	// AgentAttachmentTaxDocumentParameter, set to true on a
 	// PathAgentAttachments upload, hands the files in as paystubs or tax
 	// forms: their text, which holds the person's taxpayer number, is
