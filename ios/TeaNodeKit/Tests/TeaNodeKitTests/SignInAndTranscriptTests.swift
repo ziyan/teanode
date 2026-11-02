@@ -345,6 +345,27 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(transcript.lines.map(\.kind), [.person, .answer, .tool])
     }
 
+    func testATurnWrittenIntoWhileItRanIsDrawnOnceWhenItReplays() {
+        // A second message written while the turn ran went into it, stored
+        // after the turn's opening and its first words. Read back, and then
+        // the feed replays the turn and the second message's own opening.
+        var transcript = Transcript(messages: [
+            AgentMessage(id: "0", createdAt: "2026-10-03T09:00:00Z", role: "user", content: "Import the statement."),
+            AgentMessage(id: "0a", createdAt: "2026-10-03T09:00:05Z", role: "assistant", content: "Imported."),
+            AgentMessage(id: "1", createdAt: "2026-10-10T09:00:00Z", role: "user", content: "Import the statement."),
+            AgentMessage(id: "2", createdAt: "2026-10-10T09:00:04Z", role: "assistant", content: "Importing the visible months."),
+            AgentMessage(id: "3", createdAt: "2026-10-10T09:00:09Z", role: "user", content: "And the other bank."),
+        ])
+        transcript.apply(AgentEvent(kind: "asked", runId: "r1", sequence: 0, at: "2026-10-10T09:00:00.123Z", text: "Import the statement."))
+        transcript.apply(AgentEvent(kind: "message", runId: "r1", sequence: 1, text: "Importing the visible months."))
+        transcript.apply(AgentEvent(kind: "asked", runId: "r2", sequence: 0, at: "2026-10-10T09:00:08Z", text: "And the other bank."))
+        XCTAssertEqual(
+            transcript.lines.map(\.text),
+            ["Import the statement.", "Imported.", "Import the statement.", "Importing the visible months.", "And the other bank."])
+        XCTAssertEqual(transcript.lines[2].id, "1", "the turn's stored opening was not the one matched")
+        XCTAssertEqual(transcript.lines[2].runId, "r1")
+    }
+
     func testAFileSentFromThisAppKeepsItsFileWhenTheTurnStarts() {
         var transcript = Transcript(messages: [])
         transcript.addSent("Here it is.", attachments: [AgentAttachment(id: "a1", name: "receipt.jpg", contentType: "image/jpeg", size: 10)])
