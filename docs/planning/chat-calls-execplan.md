@@ -13,18 +13,21 @@ How to see it working: two accounts that share a circle, one on an iPhone and on
 ## Progress
 
 - [x] Plan agreed with the person (this document), 2026-11-02.
-- [ ] Server: tables and migration 0269, call model and operations, GraphQL, the account's call feed.
-- [ ] Server: the media server (SFU) inside the TeaNode server, its configuration and ports.
-- [ ] Server: ringing pushes (VoIP through the push relay, alert as a fallback).
+- [x] Server: tables and migration 0269, call model and operations, GraphQL, the account's call feed (2026-11-02).
+- [x] Server: the media server (SFU) inside the TeaNode server, its configuration and ports (2026-11-02).
+- [x] Server: ringing pushes (VoIP through the push relay, alert as a fallback), and a call_ended push that stops other phones ringing (2026-11-02).
 - [ ] Dashboard: start, ring, answer, call screen, video, group grid.
 - [ ] iPhone: WebRTC, PushKit and CallKit, call screen, video, group grid.
-- [ ] Transcription with consent, transcript and summary into the chat.
-- [ ] Command line and agent tool: calls listed, call transcripts read.
+- [x] Transcription with consent, transcript and summary into the chat (server side, 2026-11-02).
+- [x] Command line and agent tool: calls listed, call transcripts read (2026-11-02).
 - [ ] Docs, demo data and screenshots, review rounds, deploy, ports opened, tried on two devices.
 
 ## Surprises & Discoveries
 
-(None yet.)
+- A device can be sent the server's first change offer before it has applied the server's answer to its join (the offer is made as soon as the join is answered). Devices therefore take the join, then each offer, strictly one at a time; the SFU test's device works that way and found it.
+  Evidence: the race detector in `TestTheMediaServerForwardsEachVoiceToTheOthers` before the device serialized its signaling.
+- Chrome works with the pion SFU as planned: two headless Chrome tabs with fake devices connected through it with no ICE servers, heard each other, and a camera turned on mid-call by replacing the video sender's track (no offer from the browser) reached the other tab (about 160 to 230 frames decoded in ten seconds).
+  Evidence: a throwaway harness on 2026-11-02, not kept.
 
 ## Decision Log
 
