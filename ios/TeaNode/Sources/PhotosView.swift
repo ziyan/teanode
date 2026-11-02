@@ -1014,6 +1014,8 @@ struct PhotosScreen: View {
                 // it; tapping the title opens the menu of the other collections.
                 .navigationTitle(isSelecting ? selectionTitle : model.section.title)
                 .navigationSubtitle(subtitleText)
+                // Select mode has a bar of its own at the bottom.
+                .toolbarVisibility(isSelecting ? .hidden : .automatic, for: .tabBar)
                 .titleMenu {
                     if !isSelecting {
                         Picker("Collections", selection: $model.section) {

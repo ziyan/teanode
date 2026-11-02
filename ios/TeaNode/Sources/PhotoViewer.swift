@@ -270,6 +270,7 @@ struct PhotoViewer: View {
         }
         if let current {
             if current.isTrashed {
+                // check-tab-bars: allow, the viewer is a full screen cover, with no tab bar under it
                 ToolbarItem(placement: .bottomBar) {
                     Button("Restore", systemImage: "arrow.uturn.backward") {
                         let next = neighbor(of: current)
