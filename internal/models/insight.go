@@ -488,6 +488,12 @@ type AgentMessage struct {
 	// the rows without it.
 	IsAgentWork bool `json:"isAgentWork,omitempty"`
 
+	// IsVoiceMessage, TranscriptText and TranscriptState are, on a chat's
+	// message, what ChatMessage says of them.
+	IsVoiceMessage  bool   `json:"isVoiceMessage,omitempty"`
+	TranscriptText  string `json:"transcriptText,omitempty"`
+	TranscriptState string `json:"transcriptState,omitempty"`
+
 	// EditedAt is when its author last changed what it says, and IsDeleted
 	// says they took it back: its content is then empty.
 	EditedAt  *time.Time `json:"editedAt,omitempty"`
@@ -537,6 +543,13 @@ type AgentAttachment struct {
 	// message it came with is kept, the file is not, and a screen says so
 	// where the file was.
 	IsRemoved bool `json:"isRemoved,omitempty"`
+
+	// AudioDurationMS and AudioWaveform are the facts of a voice message's
+	// recording, zero and empty on any other file. The waveform is
+	// VoiceMessageWaveformLevelCount peak levels, 0 to 255 each, in base64,
+	// for drawing the bubble without fetching the sound.
+	AudioDurationMS int64  `json:"audioDurationMS,omitempty"`
+	AudioWaveform   string `json:"audioWaveform,omitempty"`
 }
 
 // AgentReference is a thread or message the person pointed the agent at

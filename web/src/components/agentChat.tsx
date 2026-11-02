@@ -126,6 +126,19 @@ export const TYPING_SENT_EVERY = 3_000
 // How long a typing line stays after the last word of it: a little longer
 // than the interval it is told at, so it does not flicker between two.
 export const TYPING_SHOWN_FOR = 5_000
+// ChatAttachment is a file of a message. A voice message's recording says
+// how long it is and the shape of it, for drawing the bubble without
+// fetching the sound.
+export interface ChatAttachment {
+  id: string
+  name: string
+  contentType: string
+  size: number
+  isRemoved?: boolean | null
+  audioDurationMS?: number | null
+  audioWaveform?: string | null
+}
+
 // ChatLine is one message of a chat as the drawer draws it: a person's or
 // an agent's, with who said it.
 export interface ChatLine {
@@ -154,9 +167,15 @@ export interface ChatLine {
   isStreaming?: boolean
   // The run of the turn that wrote an agent's message.
   agentRunId?: string
-  attachments?: { id: string; name: string; contentType: string; size: number }[]
+  attachments?: ChatAttachment[]
   references?: AgentReference[]
   reactions?: AgentMessageReaction[]
+  // A voice message: one recording in attachments and no words, with what
+  // the server heard in it once it has, and how that stands: waiting,
+  // done, failed, or off (no transcript is made).
+  isVoiceMessage?: boolean
+  transcriptText?: string
+  transcriptState?: string
   // Who the message mentions: members by account, and everybody.
   mentionedUserIds?: string[]
   isAllMentioned?: boolean
@@ -171,6 +190,9 @@ export interface ChatStoredMessage {
   attachments?: ChatLine['attachments'] | null
   references?: AgentReference[] | null
   reactions?: AgentMessageReaction[] | null
+  isVoiceMessage?: boolean | null
+  transcriptText?: string | null
+  transcriptState?: string | null
   authorKind?: string | null
   authorUserId?: string | null
   authorName?: string | null
@@ -224,6 +246,9 @@ export function chatLineOf(message: ChatStoredMessage): ChatLine {
     attachments: message.attachments ?? undefined,
     references: message.references ?? undefined,
     reactions: message.reactions ?? undefined,
+    isVoiceMessage: message.isVoiceMessage ? true : undefined,
+    transcriptText: message.transcriptText ?? undefined,
+    transcriptState: message.transcriptState ?? undefined,
     mentionedUserIds: message.mentionedUserIds ?? undefined,
     isAllMentioned: Boolean(message.isAllMentioned),
   }
@@ -400,6 +425,22 @@ export function linesWithEdit<Line extends { kind: string; key: string }>(
   return lines.map((line) =>
     line.kind === 'chat' && (line as unknown as ChatLine).messageId === messageId
       ? ({ ...line, text, editedAt: editedAt ?? new Date().toISOString() } as Line)
+      : line,
+  )
+}
+
+// linesWithTranscript puts the words the server heard in a voice message
+// onto its line. The message is told as edited, but nobody edited it: the
+// line is not marked edited.
+export function linesWithTranscript<Line extends { kind: string; key: string }>(
+  lines: Line[],
+  messageId: string,
+  transcriptText: string,
+  transcriptState: string,
+): Line[] {
+  return lines.map((line) =>
+    line.kind === 'chat' && (line as unknown as ChatLine).messageId === messageId
+      ? ({ ...line, transcriptText, transcriptState } as Line)
       : line,
   )
 }

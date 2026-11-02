@@ -43,6 +43,7 @@ func newAgentAskCommand() *cli.Command {
 			&cli.StringSliceFlag{Name: "address", Usage: "in a chat (--conversation), ask this agent with the message: an agent id, or the username of the person it belongs to, from 'teanode agent conversation members <id>'; repeat it for more than one. Another person's agent answers only if its owner let the chat ask it. Replying to an agent's message (--reply-to) asks that agent as well"},
 			&cli.StringSliceFlag{Name: "mention", Usage: "in a chat (--conversation), mention this person with the message, by username, from 'teanode agent conversation members <id>'; repeat it for more than one. A person told only of mentions is told of it. It does not ask their agent: --address does"},
 			&cli.BoolFlag{Name: "mention-all", Usage: "in a chat (--conversation), mention everybody in it with the message"},
+			&cli.StringFlag{Name: "voice-message", Usage: "in a chat (--conversation), send this recording as a voice message, between half a second and two minutes long, in any common audio format; it takes no message, --attach, --address or --mention (--reply-to is fine). The server writes its words under it a few seconds later when your agent can pay for them"},
 			&cli.BoolFlag{Name: "ask-agent", Usage: "in a chat (--conversation), ask your own agent with it: the message goes to the people there and your agent answers them, for everybody to read; its work stays yours. Without it a message in a chat starts no agent"},
 		},
 		Action: runAgentAsk,
@@ -216,7 +217,27 @@ func readMessage(command *cli.Command) (string, error) {
 	return message, nil
 }
 
+// refuseVoiceMessageArguments says why --voice-message cannot go with what
+// else the command was given, in words, before anything is uploaded.
+func refuseVoiceMessageArguments(command *cli.Command) error {
+	switch {
+	case strings.TrimSpace(command.String("conversation")) == "" || command.Bool("new"):
+		return fmt.Errorf("--voice-message is said in a chat with people: name the chat with --conversation")
+	case command.Args().Len() > 0:
+		return fmt.Errorf("a voice message has no words of its own: leave the message out, or send it as a separate message")
+	case len(command.StringSlice("attach")) > 0 || len(command.StringSlice("recording")) > 0 || len(command.StringSlice("photo")) > 0:
+		return fmt.Errorf("a voice message is one recording: leave out --attach, --recording and --photo")
+	case len(command.StringSlice("address")) > 0 || command.Bool("ask-agent") || len(command.StringSlice("mention")) > 0 || command.Bool("mention-all"):
+		return fmt.Errorf("a voice message addresses no agent and mentions nobody: leave out --address, --ask-agent, --mention and --mention-all")
+	}
+	return nil
+}
+
 func runAgentAsk(ctx context.Context, command *cli.Command) error {
+	voicePath := strings.TrimSpace(command.String("voice-message"))
+	if voicePath != "" {
+		return runAgentAskVoiceMessage(ctx, command, voicePath)
+	}
 	message, err := readMessage(command)
 	if err != nil {
 		return err
@@ -280,6 +301,34 @@ func runAgentAsk(ctx context.Context, command *cli.Command) error {
 		ConversationID: conversationId, Message: message, Surface: "cli", AttachmentIDs: attachmentIds, References: references, Effort: command.String("effort"),
 		AddressedAgentIDs: addressedAgentIds, ShouldAddressOwnAgent: command.Bool("ask-agent"),
 		MentionedUserIDs: mentionedUserIds, IsAllMentioned: command.Bool("mention-all"),
+	}, command.Bool("json"), command.Bool("quiet"))
+}
+
+// runAgentAskVoiceMessage sends a recording as a voice message in a chat. The
+// server prepares the file and refuses one it cannot use, so a file is not
+// judged here beyond being there.
+func runAgentAskVoiceMessage(ctx context.Context, command *cli.Command, voicePath string) error {
+	if err := refuseVoiceMessageArguments(command); err != nil {
+		return err
+	}
+	content, err := os.ReadFile(voicePath)
+	if err != nil {
+		return fmt.Errorf("cannot read %s: %w", voicePath, err)
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	var references []client.AgentReference
+	if replyTo := strings.TrimSpace(command.String("reply-to")); replyTo != "" {
+		references = append(references, client.AgentReference{AgentMessageID: replyTo})
+	}
+	attachment, err := client.UploadVoiceMessage(ctx, connection, filepath.Base(voicePath), content)
+	if err != nil {
+		return describeError(command, err)
+	}
+	return askOnce(ctx, command, connection, &client.AskAgentRequest{
+		ConversationID: command.String("conversation"), Surface: "cli", References: references, VoiceMessageAttachmentID: attachment.ID,
 	}, command.Bool("json"), command.Bool("quiet"))
 }
 

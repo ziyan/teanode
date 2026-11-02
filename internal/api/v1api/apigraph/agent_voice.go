@@ -20,6 +20,7 @@ import (
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/voice"
+	"github.com/ziyan/teanode/internal/voicemessage"
 )
 
 // Voice: a person talking to their agent in the drawer. The drawer streams
@@ -68,25 +69,37 @@ type AgentVoiceView struct {
 	// SampleRate is the audio the socket takes: mono 16-bit PCM at this
 	// many samples a second.
 	SampleRate int `json:"sampleRate"`
+
+	// IsVoiceMessageAvailable says the server can prepare a voice message
+	// (ffmpeg was found when it started), so that a chat offers to record one.
+	// It does not depend on the agent: a person whose agent is off, or who may
+	// only chat, sends voice messages that play, with no words under them.
+	IsVoiceMessageAvailable bool `json:"isVoiceMessageAvailable"`
 }
 
 func (self *graph) ReadAgentVoice(ctx context.Context) (*AgentVoiceView, error) {
 	_, found, err := self.requireAgentPerson(ctx)
+	isVoiceMessageAvailable := voicemessage.IsAvailable()
 	if errors.Is(err, agent.ErrUnavailable) {
 		// The drawer opens for chats with the agent off, and a microphone
 		// to talk to an agent that is off is simply not offered.
-		return &AgentVoiceView{SampleRate: voice.SampleRate, SpeechVoices: config.VoiceSpeechVoices}, nil
+		return &AgentVoiceView{SampleRate: voice.SampleRate, SpeechVoices: config.VoiceSpeechVoices, IsVoiceMessageAvailable: isVoiceMessageAvailable}, nil
+	}
+	// A person who may chat but not use an agent still sends voice messages.
+	if principal := api.ContextPrincipal(ctx); errors.Is(err, api.ErrNotFound) && principal != nil && principal.User != nil && principal.Permissions.Has(models.PermissionCircleUse) {
+		return &AgentVoiceView{SampleRate: voice.SampleRate, SpeechVoices: config.VoiceSpeechVoices, IsVoiceMessageAvailable: isVoiceMessageAvailable}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 	configuration := self.config.Current()
 	return &AgentVoiceView{
-		IsVoiceAvailable:  configuration.Agent.Voice.Enabled && configuration.Agent.VoiceProvider() != nil && self.agentWorker() != nil,
-		SampleRate:        voice.SampleRate,
-		SpeechVoice:       speechVoiceOf(configuration, found),
-		SpeechVoices:      config.VoiceSpeechVoices,
-		ServerSpeechVoice: configuration.Agent.Voice.EffectiveSpeechVoice(),
+		IsVoiceMessageAvailable: isVoiceMessageAvailable,
+		IsVoiceAvailable:        configuration.Agent.Voice.Enabled && configuration.Agent.VoiceProvider() != nil && self.agentWorker() != nil,
+		SampleRate:              voice.SampleRate,
+		SpeechVoice:             speechVoiceOf(configuration, found),
+		SpeechVoices:            config.VoiceSpeechVoices,
+		ServerSpeechVoice:       configuration.Agent.Voice.EffectiveSpeechVoice(),
 	}, nil
 }
 
@@ -209,6 +222,13 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 		VoiceEvent    string `json:"voiceEvent"`
 		Authorization string `json:"authorization"`
 
+		// Purpose is "dictation" for words that go into a box and are never
+		// sent as a turn, "call" or nothing for talking to the agent.
+		// DictationPlace says which box: the agent's conversation, a chat or
+		// the journal's own words.
+		Purpose        string `json:"purpose"`
+		DictationPlace string `json:"dictationPlace"`
+
 		// CaptureSettings is what the browser says it granted for the
 		// microphone, in the browser's own names: whether echo
 		// cancellation is on is what decides whether a spoken answer will
@@ -222,6 +242,15 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 	}
 	if messageType, helloBytes, err := conn.ReadMessage(); err != nil || messageType != websocket.TextMessage || json.Unmarshal(helloBytes, &hello) != nil || hello.VoiceEvent != "hello" {
 		refuse("the first message says hello")
+		return
+	}
+	isDictation := hello.Purpose == voicePurposeDictation
+	switch {
+	case hello.Purpose != "" && hello.Purpose != voicePurposeDictation && hello.Purpose != voicePurposeCall:
+		refuse("the purpose is dictation or call")
+		return
+	case isDictation && hello.DictationPlace != "" && !slices.Contains(voiceDictationPlaces, hello.DictationPlace):
+		refuse("dictation is for the agent, a chat or the journal")
 		return
 	}
 	username := ""
@@ -257,7 +286,7 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 	session, err := voice.Open(ctx, &voice.Settings{
 		BaseURL: provider.BaseURL, APIKey: provider.APIKey,
 		TranscriptionModel:  model,
-		TranscriptionPrompt: voicePrompt(found, owner),
+		TranscriptionPrompt: voicePromptFor(found, owner, isDictation, hello.DictationPlace),
 		SilenceMS:           configuration.Agent.Voice.SilenceMS,
 	})
 	if err != nil {
@@ -270,10 +299,15 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 		return
 	}
 	started := time.Now()
-	log.Noticef("%s started talking to their agent (echo cancellation %v, noise suppression %v, gain control %v, capture at %v Hz)", username,
+	// What the session is for, in the log's words.
+	doing, stopped := "talking to their agent", "stopped talking to their agent"
+	if isDictation {
+		doing, stopped = "dictating", "stopped dictating"
+	}
+	log.Noticef("%s started %s (echo cancellation %v, noise suppression %v, gain control %v, capture at %v Hz)", username, doing,
 		hello.CaptureSettings.EchoCancellation, hello.CaptureSettings.NoiseSuppression, hello.CaptureSettings.AutoGainControl, hello.CaptureSettings.SampleRate)
 	defer func() {
-		log.Noticef("%s stopped talking to their agent after %s", username, time.Since(started).Round(time.Second))
+		log.Noticef("%s %s after %s", username, stopped, time.Since(started).Round(time.Second))
 	}()
 
 	// What the provider hears goes back to the drawer as it comes; each
@@ -321,6 +355,11 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 	var speakingMutex sync.Mutex
 	speaking := map[string]*speakingPiece{}
 	speak := func(answerSegmentID, answerText string) {
+		// Dictation puts words in a box; nothing answers it.
+		if isDictation {
+			_ = socket.say(&voice.Event{VoiceEvent: voice.EventAnswerAudioFailed, AnswerSegmentID: answerSegmentID, ErrorMessage: "dictation has no answers to read"})
+			return
+		}
 		speakingMutex.Lock()
 		if _, isSpeaking := speaking[answerSegmentID]; isSpeaking || answerSegmentID == "" || len(speaking) >= answerSegmentsAtOnce {
 			speakingMutex.Unlock()
@@ -432,10 +471,30 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 	}
 }
 
-// voicePrompt tells the transcription who is being talked to, which is
-// what gets the agent's name spelled right.
-func voicePrompt(found *models.Agent, owner *models.User) string {
+// The purposes a voice socket's hello may name. Nothing is a call.
+const (
+	voicePurposeCall      = "call"
+	voicePurposeDictation = "dictation"
+)
+
+// voiceDictationPlaces are the boxes dictation puts words into.
+var voiceDictationPlaces = []string{"agent", "chat", "journal"}
+
+// voicePromptFor tells the transcription what is being said and to whom,
+// which is what gets the names in it spelled right: a call is to the person's
+// agent, and dictation is words for a box.
+func voicePromptFor(found *models.Agent, owner *models.User, isDictation bool, dictationPlace string) string {
 	prompt := "A person talking to their personal agent, " + found.DisplayName() + ", in TeaNode, their mail and agent server."
+	if isDictation {
+		switch dictationPlace {
+		case "chat":
+			prompt = "A person dictating a message to people in a chat, in TeaNode, their mail and agent server."
+		case "journal":
+			prompt = "A person dictating their own words for a page of their journal, in TeaNode, their mail and agent server."
+		default:
+			prompt = "A person dictating a message to their personal agent, " + found.DisplayName() + ", in TeaNode, their mail and agent server."
+		}
+	}
 	if name := strings.TrimSpace(owner.Name); name != "" {
 		prompt += " The person is " + name + "."
 	}

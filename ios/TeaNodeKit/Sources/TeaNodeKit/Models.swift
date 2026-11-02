@@ -176,13 +176,22 @@ public struct AgentAttachment: Codable, Hashable, Sendable {
     /// The file went with the account that held it; the message it came with
     /// is kept, and a screen says so where the file was.
     public let isRemoved: Bool?
+    /// For a recording sent as a voice message, how long it runs and its
+    /// loudness: 48 levels from 0 to 255, as base64.
+    public var audioDurationMS: Int64? = nil
+    public var audioWaveform: String? = nil
 
-    public init(id: String, name: String, contentType: String, size: Int, isRemoved: Bool? = nil) {
+    public init(
+        id: String, name: String, contentType: String, size: Int, isRemoved: Bool? = nil, audioDurationMS: Int64? = nil,
+        audioWaveform: String? = nil
+    ) {
         self.id = id
         self.name = name
         self.contentType = contentType
         self.size = size
         self.isRemoved = isRemoved
+        self.audioDurationMS = audioDurationMS
+        self.audioWaveform = audioWaveform
     }
 }
 
@@ -229,6 +238,12 @@ public struct AgentMessage: Codable, Identifiable, Hashable, Sendable {
     /// mentions everybody.
     public var mentionedUserIds: [String]? = nil
     public var isAllMentioned: Bool? = nil
+    /// In a chat, whether the message is a recording the person spoke, and
+    /// its words: transcriptState is "waiting", "done", "failed" or "off"
+    /// (nothing was made, as the server's voice is off).
+    public var isVoiceMessage: Bool? = nil
+    public var transcriptText: String? = nil
+    public var transcriptState: String? = nil
 
     public init(
         id: String, createdAt: String, role: String, content: String, name: String? = nil, toolCallId: String? = nil,

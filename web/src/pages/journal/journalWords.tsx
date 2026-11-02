@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { graphql } from '../../api'
 import { FormDialog } from '../../components/dialog'
-import { PencilIcon, SparkIcon } from '../../components/icons'
+import { MicrophoneIcon, PencilIcon, SparkIcon } from '../../components/icons'
+import { Tooltip } from '../../components/tooltip'
 import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
+import { useDictation, useVoiceAvailability } from '../../voice/useDictation'
 import {
   JournalTarget,
   JournalWords as JournalWordsView,
@@ -324,11 +326,23 @@ function OriginalEditor({
   const [draft, setDraft] = useState(rescuedDraft ?? words.original)
   const [how, setHow] = useState(words.touchUpHow)
   const hasChanged = draft !== words.original || (words.isTouchUpOn && how !== words.touchUpHow)
+  // Dictating puts what the person says at the cursor, to be edited and
+  // saved as typed; saving stops it.
+  const original = useRef<HTMLTextAreaElement>(null)
+  const voice = useVoiceAvailability()
+  const dictation = useDictation({
+    place: 'journal',
+    input: original,
+    value: draft,
+    sampleRate: voice.sampleRate,
+    onInsert: setDraft,
+  })
   return (
     <form
       className="journal-editor"
       onSubmit={(event) => {
         event.preventDefault()
+        dictation.abort()
         onSave(draft, how.trim())
       }}
     >
@@ -341,8 +355,15 @@ function OriginalEditor({
       <label htmlFor="journal-original">
         {words.isTouchUpOn ? t('journal.originalLabelTouchedUp') : t('journal.originalLabel')}
       </label>
+      {dictation.state !== 'off' && (
+        <p className="journal-dictation-caption muted" role="status" aria-live="polite">
+          {dictation.captionText ||
+            (dictation.state === 'starting' ? t('dictation.starting') : t('dictation.listening'))}
+        </p>
+      )}
       <textarea
         id="journal-original"
+        ref={original}
         rows={7}
         value={draft}
         placeholder={isPeriod ? t('journal.lookingBackPlaceholder') : t('journal.wordsPlaceholder')}
@@ -360,6 +381,22 @@ function OriginalEditor({
       )}
       <div className="journal-card-foot">
         <span className="journal-card-foot-actions">
+          {voice.isDictationAvailable && (
+            <Tooltip label={dictation.state === 'off' ? t('dictation.start') : t('dictation.stop')}>
+              <button
+                type="button"
+                className={['icon-button', 'journal-dictate', dictation.state !== 'off' ? 'is-listening' : '']
+                  .filter(Boolean)
+                  .join(' ')}
+                aria-label={dictation.state === 'off' ? t('dictation.start') : t('dictation.stop')}
+                aria-pressed={dictation.state !== 'off'}
+                disabled={isBusy}
+                onClick={dictation.toggle}
+              >
+                <MicrophoneIcon size={16} />
+              </button>
+            </Tooltip>
+          )}
           <button type="submit" className="primary" disabled={isBusy || !hasChanged}>
             {words.isTouchUpOn ? t('journal.saveAndTouchUp') : t('common.save')}
           </button>

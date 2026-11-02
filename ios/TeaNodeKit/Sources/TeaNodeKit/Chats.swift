@@ -367,6 +367,9 @@ extension Transcript {
         line.isDeleted = message.isDeleted ?? false
         line.mentionedUserIds = message.mentionedUserIds ?? []
         line.isAllMentioned = message.isAllMentioned ?? false
+        line.isVoiceMessage = message.isVoiceMessage ?? false
+        line.transcriptText = message.transcriptText ?? ""
+        line.transcriptState = message.transcriptState ?? ""
         for reference in message.references ?? [] {
             if reference.isReply {
                 line.quotedText = reference.quotedText ?? ""
@@ -732,11 +735,11 @@ extension Documents {
     /// What every read of a message answers with, in every conversation.
     static let messageFields = """
         id createdAt role content name toolCallId
-        attachments { id name contentType size isRemoved }
+        attachments { id name contentType size isRemoved audioDurationMS audioWaveform }
         references { itemId threadId subject from path name recordingId recordingTitle photoId photoTitle financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
         reactions { emoji reactorKind reactedAt reactorUserId reactorName }
         authorKind authorUserId authorName authorOwnerName authorAvatarUrl authorAvatarColorIndex authorAgentId agentRunId isMine isAgentWork editedAt isDeleted
-        mentionedUserIds isAllMentioned
+        mentionedUserIds isAllMentioned isVoiceMessage transcriptText transcriptState
         """
     public static let chatPeople = """
         query { ListCirclePeople { userId username name avatarUrl avatarColorIndex } }

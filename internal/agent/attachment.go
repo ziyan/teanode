@@ -287,6 +287,12 @@ func historyTurn(message *models.AgentMessage) string {
 	if lines := referenceLines(message.References); lines != "" {
 		blocks = append(blocks, lines)
 	}
+	// A voice message is its recording and its words; the file is not
+	// something the model can open, so it is not listed as one.
+	if message.IsVoiceMessage {
+		blocks = append(blocks, message.WordsForReading())
+		return strings.Join(blocks, "\n\n")
+	}
 	blocks = append(blocks, message.Content)
 	if lines := attachmentLines(message.Attachments); lines != "" {
 		blocks = append(blocks, lines)

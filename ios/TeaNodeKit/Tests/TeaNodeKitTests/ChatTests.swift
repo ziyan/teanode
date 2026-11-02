@@ -773,3 +773,133 @@ final class ChatTests: XCTestCase {
         XCTAssertEqual(agentOff.name, "Robin")
     }
 }
+
+/// VoiceMessageTests cover what a voice message adds to the app's reading of
+/// a chat: the facts of its recording, its words, the calls that send it.
+final class VoiceMessageTests: XCTestCase {
+    private func connection(answering body: String) -> (Connection, FakeServer) {
+        let fake = FakeServer { _ in (200, body) }
+        let account = Account(
+            server: try! ServerAddress(parsing: "mail.example.com"), clientId: "a-client", accessToken: "tnt_a", refreshToken: "",
+            expiresAt: Date().addingTimeInterval(30 * 86400), username: "person-a")
+        return (Connection(account: account, transport: fake), fake)
+    }
+
+    private func sentVariables(_ request: URLRequest) throws -> [String: JSONValue] {
+        let body = try JSONDecoder().decode([String: JSONValue].self, from: request.httpBody ?? Data())
+        guard case .object(let variables) = body["variables"] else {
+            XCTFail("no variables")
+            return [:]
+        }
+        return variables
+    }
+
+    private let voiceMessageJSON = #"""
+        {"id":"01J0000000000000000000009","createdAt":"2030-01-01T10:00:00Z","role":"assistant","content":"","authorKind":"person",
+         "authorUserId":"user-b","authorName":"Person B","authorAvatarUrl":null,"authorAvatarColorIndex":4,"authorAgentId":"",
+         "isMine":false,"editedAt":null,"isDeleted":false,
+         "attachments":[{"id":"file-1","name":"Voice message.m4a","contentType":"audio/mp4","size":9000,"isRemoved":false,
+           "audioDurationMS":7000,"audioWaveform":"AAECAwQF"}],
+         "isVoiceMessage":true,"transcriptText":"","transcriptState":"waiting"}
+        """#
+
+    func testAVoiceMessageDecodesWithItsRecordingFacts() throws {
+        let message = try JSONDecoder().decode(AgentMessage.self, from: Data(voiceMessageJSON.utf8))
+        XCTAssertEqual(message.isVoiceMessage, true)
+        XCTAssertEqual(message.transcriptState, "waiting")
+        let recording = try XCTUnwrap(message.attachments?.first)
+        XCTAssertEqual(recording.audioDurationMS, 7000)
+        XCTAssertEqual(recording.audioWaveform, "AAECAwQF")
+    }
+
+    func testAnOrdinaryMessageAndFileDecodeWithNoVoiceFields() throws {
+        let message = try JSONDecoder().decode(
+            AgentMessage.self,
+            from: Data(
+                #"{"id":"m","createdAt":"2030-01-01T10:00:00Z","role":"user","content":"hi","attachments":[{"id":"f","name":"a.pdf","contentType":"application/pdf","size":3}]}"#
+                    .utf8))
+        XCTAssertNil(message.isVoiceMessage)
+        XCTAssertNil(message.transcriptText)
+        XCTAssertNil(message.attachments?.first?.audioDurationMS)
+        XCTAssertNil(message.attachments?.first?.audioWaveform)
+    }
+
+    func testAVoiceMessageIsALineWithItsRecordingAndLaterItsWords() throws {
+        let message = try JSONDecoder().decode(AgentMessage.self, from: Data(voiceMessageJSON.utf8))
+        var transcript = Transcript(messages: [message], isChat: true)
+        var line = try XCTUnwrap(transcript.lines.first)
+        XCTAssertTrue(line.isVoiceMessage)
+        XCTAssertEqual(line.voiceAttachment?.id, "file-1")
+        XCTAssertEqual(line.transcriptState, "waiting")
+        XCTAssertEqual(line.readableText, "")
+        // The words arrive as an edit of the message.
+        var edited = message
+        edited.transcriptText = "Running late, save me a seat"
+        edited.transcriptState = "done"
+        transcript.apply(edited: edited)
+        line = try XCTUnwrap(transcript.lines.first)
+        XCTAssertEqual(line.transcriptText, "Running late, save me a seat")
+        XCTAssertEqual(line.transcriptState, "done")
+        XCTAssertEqual(line.readableText, "Running late, save me a seat")
+        // Taken back, it is a mark that it was said, with no recording.
+        transcript.apply(deleted: message.id)
+        line = try XCTUnwrap(transcript.lines.first)
+        XCTAssertTrue(line.isDeleted)
+        XCTAssertNil(line.voiceAttachment)
+        XCTAssertEqual(line.transcriptText, "")
+    }
+
+    func testAVoiceMessageJustSentIsDrawnAsOneUntilTheChatHasIt() throws {
+        var transcript = Transcript(messages: [], isChat: true)
+        let me = ChatAuthor(authorKind: "person", authorUserId: "user-a", authorName: "Person A", isMine: true)
+        let recording = AgentAttachment(id: "file-2", name: "Voice message.m4a", contentType: "audio/mp4", size: 100, audioDurationMS: 4000)
+        let sentId = transcript.addSent("", attachments: [recording], author: me, isVoiceMessage: true)
+        XCTAssertEqual(transcript.lines.first?.voiceAttachment?.id, "file-2")
+        var said = try JSONDecoder().decode(AgentMessage.self, from: Data(voiceMessageJSON.utf8))
+        said.authorUserId = "user-a"
+        said.isMine = true
+        transcript.apply(said: said)
+        XCTAssertEqual(transcript.lines.map(\.id), [said.id])
+        XCTAssertFalse(transcript.lines.map(\.id).contains(sentId))
+    }
+
+    func testTheDocumentsThatReadMessagesAskForTheVoiceFields() {
+        for document in [Documents.conversation, Documents.conversationEvents] {
+            XCTAssertTrue(document.contains("isVoiceMessage transcriptText transcriptState"))
+            XCTAssertTrue(document.contains("audioDurationMS audioWaveform"))
+        }
+        XCTAssertTrue(Documents.ask.contains("$voiceMessageAttachmentId: String"))
+        XCTAssertTrue(Documents.ask.contains("voiceMessageAttachmentId: $voiceMessageAttachmentId"))
+        XCTAssertTrue(Documents.voice.contains("isVoiceMessageAvailable"))
+    }
+
+    func testAVoiceMessageIsUploadedWithItsParameter() async throws {
+        let (connection, fake) = connection(answering: #"{"attachments":[{"id":"attachment-1"}]}"#)
+        let attachmentId = try await connection.upload(
+            name: "Voice message.m4a", contentType: "audio/mp4", data: Data([0, 1]), isVoiceMessage: true)
+        XCTAssertEqual(attachmentId, "attachment-1")
+        XCTAssertEqual(fake.sent.first?.url?.path, "/api/v1/agent/attachments")
+        XCTAssertEqual(fake.sent.first?.url?.query, "isVoiceMessage=true")
+    }
+
+    func testAskingWithAVoiceMessageSendsItsAttachment() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"AskAgent":{"runId":"","conversationId":"c"}}}"#)
+        _ = try await connection.ask("", in: "c", attachmentIds: ["attachment-1"], drawerId: "d", voiceMessageAttachmentId: "attachment-1")
+        var sent = try sentVariables(try XCTUnwrap(fake.sent.last))
+        XCTAssertEqual(sent["voiceMessageAttachmentId"], .string("attachment-1"))
+        _ = try await connection.ask("hi", in: "c", drawerId: "d")
+        sent = try sentVariables(try XCTUnwrap(fake.sent.last))
+        XCTAssertNil(sent["voiceMessageAttachmentId"])
+    }
+
+    func testTheVoiceAvailabilityTellsIfVoiceMessagesAreOffered() async throws {
+        let (connection, _) = connection(
+            answering: #"{"data":{"ReadAgentVoice":{"isVoiceAvailable":true,"sampleRate":24000,"isVoiceMessageAvailable":true}}}"#)
+        let voice = try await connection.voiceAvailability()
+        XCTAssertTrue(voice.isVoiceAvailable)
+        XCTAssertEqual(voice.isVoiceMessageAvailable, true)
+        let (older, _) = self.connection(answering: #"{"data":{"ReadAgentVoice":{"isVoiceAvailable":false,"sampleRate":null}}}"#)
+        let before = try await older.voiceAvailability()
+        XCTAssertNil(before.isVoiceMessageAvailable)
+    }
+}

@@ -18,6 +18,9 @@ var (
 	phraseSpokeIn  = push.Phrase{English: "%s in %s", Chinese: "%s（%s）", Japanese: "%s（%s）"}
 	phraseSentFile = push.Phrase{English: "Sent a file", Chinese: "发送了文件", Japanese: "ファイルを送信しました"}
 
+	// phraseVoiceMessage is a voice message, with its length as a clock.
+	phraseVoiceMessage = push.Phrase{English: "Voice message (%s)", Chinese: "语音消息（%s）", Japanese: "ボイスメッセージ（%s）"}
+
 	// What the title says of a message that mentions the person reading it,
 	// after who wrote it: them by name, or everybody in the chat.
 	phraseMentionedYou        = push.Phrase{English: "%s mentioned you", Chinese: "%s 提到了你", Japanese: "%sがあなたをメンションしました"}
@@ -94,6 +97,12 @@ func agentSpeakerLabel(agentName, ownerName, language string) string {
 // notificationBody is the first line of what was said, or what came with it
 // when nothing was, in a language as push.PhoneLanguage names it.
 func notificationBody(message *models.AgentMessage, language string) string {
+	// A voice message has no words of its own to show: what a phone shows is
+	// that it is one and how long it is, whether or not the server has
+	// written its words yet.
+	if message.IsVoiceMessage {
+		return phraseVoiceMessage.In(language, models.VoiceMessageClock(message.VoiceMessageDurationMS()))
+	}
 	for _, line := range strings.Split(message.Content, "\n") {
 		if strings.TrimSpace(line) != "" {
 			return agent.PhoneBody(line)

@@ -21,6 +21,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/storage"
+	"github.com/ziyan/teanode/internal/voicemessage"
 )
 
 // Files for a conversation with the agent go up as a multipart body, the
@@ -141,6 +142,7 @@ func (self *graph) agentAttachmentsView(response http.ResponseWriter, request *h
 	ctx := db.ContextWithAuditPrincipal(request.Context(), self.auditPrincipal(request, user, impersonator))
 	result := &AgentAttachmentUploadResult{Attachments: []*models.AgentAttachment{}}
 	isTaxDocument := request.URL.Query().Get(api.AgentAttachmentTaxDocumentParameter) == "true"
+	isVoiceMessage := request.URL.Query().Get(api.AgentAttachmentVoiceMessageParameter) == "true"
 	// A file sent in a chat is kept for a person whose agent is off, but what
 	// is read out of it is meant for the model, and there is none for them to
 	// spend.
@@ -165,20 +167,43 @@ func (self *graph) agentAttachmentsView(response http.ResponseWriter, request *h
 		// the database, so doing it under the transaction held one open
 		// for the length of a file.
 		contentType := contentTypeOf(upload.Filename, upload.ContentType, upload.Content)
+		name, content := upload.Filename, upload.Content
+		var audioDurationMS int64
+		var audioWaveform string
+		if isVoiceMessage {
+			prepared, err := voicemessage.Prepare(ctx, content)
+			if errors.Is(err, voicemessage.ErrUnavailable) {
+				writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "voice messages need ffmpeg, which this server does not have"})
+				return
+			}
+			if errors.Is(err, voicemessage.ErrRefused) {
+				writeJSON(response, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+				return
+			}
+			if err != nil {
+				log.Errorf("preparing a voice message for %q failed: %s", user.Username, err)
+				writeJSON(response, http.StatusInternalServerError, map[string]string{"error": "the recording could not be prepared"})
+				return
+			}
+			name, contentType, content = voicemessage.FileName, voicemessage.ContentType, prepared.Content
+			audioDurationMS, audioWaveform = prepared.DurationMS, prepared.Waveform
+		}
 		// A paystub's or a tax form's text holds the person's taxpayer
 		// number, and is read from the file each time it is needed.
 		text := ""
-		if !isTaxDocument && isAgentOn {
+		if !isTaxDocument && !isVoiceMessage && isAgentOn {
 			text = agent.ExtractAttachmentText(ctx, upload.Filename, upload.ContentType, upload.Content)
 		}
 		if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 			created, err = tx.CreateAgentAttachment(&models.AgentAttachment{
-				AgentID:       found.ID,
-				Name:          upload.Filename,
-				ContentType:   contentType,
-				Size:          int64(len(upload.Content)),
-				Text:          text,
-				IsTaxDocument: isTaxDocument,
+				AgentID:         found.ID,
+				Name:            name,
+				ContentType:     contentType,
+				Size:            int64(len(content)),
+				Text:            text,
+				IsTaxDocument:   isTaxDocument,
+				AudioDurationMS: audioDurationMS,
+				AudioWaveform:   audioWaveform,
 			})
 			if err != nil {
 				return err
@@ -187,7 +212,7 @@ func (self *graph) agentAttachmentsView(response http.ResponseWriter, request *h
 			// that outlives its bytes is an attachment nobody can open,
 			// while bytes that outlive a rolled back row are reclaimed by
 			// retention. The id is the row's, so this cannot move out.
-			return self.storage.PutFile(ctx, created.ID, upload.Content)
+			return self.storage.PutFile(ctx, created.ID, content)
 		}); err != nil {
 			log.Errorf("storing a file for the agent of %q failed: %s", user.Username, err)
 			writeJSON(response, http.StatusInternalServerError, map[string]string{"error": "the file could not be stored"})

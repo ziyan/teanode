@@ -319,7 +319,18 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 			if message.Name != "" {
 				entry["tool"] = message.Name
 			}
-			if content := strings.TrimSpace(message.Content); content != "" {
+			content := strings.TrimSpace(message.Content)
+			// A recording is read as its length and its words, and the entry
+			// says how its words stand: "waiting" is not the same as nothing
+			// having been said.
+			if message.IsVoiceMessage {
+				content = message.WordsForReading()
+				entry["voice_message"] = map[string]any{
+					"seconds":          models.VoiceMessageSeconds(message.VoiceMessageDurationMS()),
+					"transcript_state": message.TranscriptState,
+				}
+			}
+			if content != "" {
 				if isPrivate[index] && (message.Role == "tool" || message.Role == "assistant") {
 					entry["said"] = hiddenPrivateWords
 					said = append(said, entry)

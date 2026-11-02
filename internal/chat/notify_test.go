@@ -277,6 +277,28 @@ func TestAnAgentsNotificationTitleSaysWhoseAgentItIs(t *testing.T) {
 	}
 }
 
+// A voice message is told as what it is and how long it is, in the reader's
+// language, whether or not its words have been written.
+func TestAVoiceMessageIsNotifiedAsItsLength(t *testing.T) {
+	t.Parallel()
+
+	message := &models.AgentMessage{
+		IsVoiceMessage: true, TranscriptState: models.VoiceTranscriptWaiting,
+		Attachments: []models.AgentAttachment{{Name: "Voice message.m4a", AudioDurationMS: 12000}},
+	}
+	for language, want := range map[string]string{
+		push.LanguageEnglish: "Voice message (0:12)", push.LanguageChinese: "语音消息（0:12）", push.LanguageJapanese: "ボイスメッセージ（0:12）",
+	} {
+		if got := notificationBody(message, language); got != want {
+			t.Errorf("in %s the body is %q, want %q", language, got, want)
+		}
+	}
+	message.TranscriptState, message.TranscriptText = models.VoiceTranscriptDone, "Leaving the bakery now"
+	if got := notificationBody(message, push.LanguageEnglish); got != "Voice message (0:12)" {
+		t.Errorf("the words are not the body: %q", got)
+	}
+}
+
 // Each level tells the member of what they asked for: all of everything,
 // mentions only of a message that names them or everybody, off of nothing,
 // a mention included. Addressing their agent is not mentioning them.

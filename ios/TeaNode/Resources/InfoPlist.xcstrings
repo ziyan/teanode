@@ -176,19 +176,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "TeaNode uses the microphone while you call your agent or explicitly record a meeting."
+            "value": "TeaNode uses the microphone while you call your agent, dictate, record a voice message or explicitly record a meeting."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在你呼叫助手或明确录制会议时，TeaNode 会使用麦克风。"
+            "value": "在你呼叫助手、听写、录制语音消息或明确录制会议时，TeaNode 会使用麦克风。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "エージェントと通話しているときや、会議を明示的に録音しているときに、TeaNode はマイクを使用します。"
+            "value": "エージェントと通話しているとき、音声入力や音声メッセージの録音をしているとき、会議を明示的に録音しているときに、TeaNode はマイクを使用します。"
           }
         }
       }

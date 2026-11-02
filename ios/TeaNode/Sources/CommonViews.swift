@@ -8,8 +8,8 @@ struct Toast: ViewModifier {
     @Binding var problemText: String?
     /// What undoes the action just done, offered as a button beside it.
     var undo: Binding<(@MainActor () async -> Void)?>?
-    /// What can be done next, offered as buttons beside the words: two at
-    /// most fit beside them.
+    /// What can be done next, offered as buttons beside the words, whether
+    /// they say something done or a problem: two at most fit beside them.
     var buttons: Binding<[ToastButton]>?
 
     func body(content: Content) -> some View {
@@ -28,7 +28,7 @@ struct Toast: ViewModifier {
                             }
                             .fontWeight(.semibold)
                         }
-                        if !isProblem, let shownButtons = buttons?.wrappedValue {
+                        if let shownButtons = buttons?.wrappedValue {
                             ForEach(shownButtons) { shownButton in
                                 Button(shownButton.title) {
                                     clear()

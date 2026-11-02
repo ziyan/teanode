@@ -1317,3 +1317,72 @@ func TestConversationDoesNotReadBackAPrivateTurn(t *testing.T) {
 		t.Errorf("expected the three tool results and the three answers after them to be marked hidden, got: %s", result.Content)
 	}
 }
+
+// A voice message in a chat is read as its length and its words, and the entry
+// says how the words stand, so a model can tell "still being written" from
+// "nothing was said".
+func TestConversationReadsAVoiceMessageAsItsLengthAndWords(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	run := &chattingRun{fakeRun: &fakeRun{database: database}, operations: &sayingOperations{}}
+	var chatConversation *models.AgentConversation
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "voice-owner", Name: "Example Owner"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		friend, err := tx.CreateUser(&models.User{Username: "voice-friend", Name: "Example Friend"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if run.agent, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatal(err)
+		}
+		chat, err := tx.OpenDirectChat(owner.ID, friend.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if chatConversation, err = tx.EnsureChatConversation(run.agent.ID, chat.ID); err != nil {
+			t.Fatal(err)
+		}
+		for _, transcriptState := range []string{models.VoiceTranscriptDone, models.VoiceTranscriptWaiting} {
+			stored, err := tx.AppendChatMessage(&models.ChatMessage{
+				ChatID: chat.ID, AuthorUserID: friend.ID, AuthorName: friend.DisplayName(), IsVoiceMessage: true,
+				Attachments:     []models.AgentAttachment{{ID: "recording-" + transcriptState, Name: "Voice message.m4a", ContentType: "audio/mp4", AudioDurationMS: 6800}},
+				TranscriptState: models.VoiceTranscriptWaiting,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if transcriptState == models.VoiceTranscriptDone {
+				if _, err := tx.FinishVoiceMessageTranscript(stored.ID, models.VoiceTranscriptDone, "Running ten minutes late"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			time.Sleep(3 * time.Millisecond)
+		}
+	})
+	result, err := find(t, "conversation").Run(tools.WithRun(context.Background(), run), &tools.Call{ID: "c1", Arguments: json.RawMessage(`{"action":"read","conversation_id":"` + chatConversation.ID + `"}`)})
+	if err != nil {
+		t.Fatalf("read: %s", err)
+	}
+	var read map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &read); err != nil {
+		t.Fatal(err)
+	}
+	messages := read["messages"].([]any)
+	if len(messages) != 2 {
+		t.Fatalf("the chat reads %v", messages)
+	}
+	for index, want := range []struct{ said, transcriptState string }{
+		{"[voice message, 0:07] Running ten minutes late", models.VoiceTranscriptDone},
+		{"[voice message, 0:07, no transcript]", models.VoiceTranscriptWaiting},
+	} {
+		entry := messages[index].(map[string]any)
+		voiceMessage, _ := entry["voice_message"].(map[string]any)
+		if entry["said"] != want.said || voiceMessage["transcript_state"] != want.transcriptState || voiceMessage["seconds"] != float64(7) {
+			t.Errorf("message %d reads %v, want %q and %q", index, entry, want.said, want.transcriptState)
+		}
+	}
+}

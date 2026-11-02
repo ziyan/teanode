@@ -122,8 +122,14 @@
             } else if query.contains("ReportingCurrency") {
                 answer = #"{"data":{"ReportingCurrency":{"reportingCurrencyCode":"USD","isChosen":true}}}"#
             } else if query.contains("ReadAgentVoice") {
-                // No voice, so the conversation shows no call button.
-                answer = #"{"data":{"ReadAgentVoice":{"isVoiceAvailable":false,"sampleRate":null}}}"#
+                // The conversation and the journal ask whether dictation and voice messages are offered (the document that names
+                // isVoiceMessageAvailable): they are, so the screens show the microphone, the call button and the voice mode. The
+                // speaking voice screen asks another question and still finds no voice.
+                if query.contains("isVoiceMessageAvailable") {
+                    answer = #"{"data":{"ReadAgentVoice":{"isVoiceAvailable":true,"sampleRate":24000,"isVoiceMessageAvailable":true}}}"#
+                } else {
+                    answer = #"{"data":{"ReadAgentVoice":{"isVoiceAvailable":false,"sampleRate":null}}}"#
+                }
             } else if query.contains("ListAgentAlerts") {
                 answer = Self.alerts
             } else if query.contains("ListAgentFollowUps") {

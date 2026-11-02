@@ -233,6 +233,13 @@ type AskAgentArguments struct {
 	AttachmentIDs []string                `json:"attachmentIds" graphapi:"nullable"`
 	References    []models.AgentReference `json:"references" graphapi:"nullable"`
 
+	// VoiceMessageAttachmentID is, in a chat, the recording to post as a
+	// voice message: an upload of the caller's made with the voice message
+	// parameter (api.AgentAttachmentVoiceMessageParameter). The message has
+	// no words, no other file, no addressed agent and no mention. Elsewhere
+	// it is refused.
+	VoiceMessageAttachmentID string `json:"voiceMessageAttachmentId" graphapi:"nullable"`
+
 	// Effort is how hard the model thinks before it answers: low, medium
 	// or high. Empty leaves it to the agent.
 	Effort string `json:"effort" graphapi:"nullable"`
@@ -1009,6 +1016,9 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 			return nil, err
 		}
 		return self.sayInChat(ctx, session, arguments)
+	}
+	if strings.TrimSpace(arguments.VoiceMessageAttachmentID) != "" {
+		return nil, fmt.Errorf("%w: a voice message can only be sent in a chat with people", api.ErrInvalidArguments)
 	}
 	if err := requireConversationUse(principal, found, &models.AgentConversation{Kind: models.AgentConversationNamed}); err != nil {
 		return nil, err

@@ -114,6 +114,24 @@ type ChatOperation interface {
 	// message stays, drawn as deleted.
 	DeleteChatMessage(messageId string) (*models.ChatMessage, error)
 
+	// ClaimVoiceMessageTranscript takes a voice message whose words are
+	// still to be written, for one server to write: nil when it is not
+	// waiting, is deleted, or another server claimed it within retryAfter.
+	ClaimVoiceMessageTranscript(messageId string, retryAfter time.Duration) (*models.ChatMessage, error)
+
+	// FinishVoiceMessageTranscript writes the words of a waiting voice
+	// message and its new state (done, failed or off), without marking it
+	// edited. nil when it is no longer waiting.
+	FinishVoiceMessageTranscript(messageId, transcriptState, transcriptText string) (*models.ChatMessage, error)
+
+	// ListWaitingVoiceMessageIDs are the voice messages still waiting for
+	// their words, oldest first, that nobody claimed within retryAfter.
+	ListWaitingVoiceMessageIDs(retryAfter time.Duration, limit int) ([]string, error)
+
+	// FailStaleVoiceMessages gives up on the voice messages that have waited
+	// since before the given time, and answers them as they now are.
+	FailStaleVoiceMessages(before time.Time) ([]*models.ChatMessage, error)
+
 	// SharesChat says whether two different people are both current members
 	// of one chat, whatever circles they are in: a chat shows each member to
 	// the others by name, so their picture goes with it.
@@ -184,22 +202,26 @@ type chatMemberModel struct {
 func (chatMemberModel) TableName() string { return "chat_member" }
 
 type chatMessageModel struct {
-	ID               string     `gorm:"column:id;primaryKey"`
-	ChatID           string     `gorm:"column:chat_id"`
-	CreatedAt        time.Time  `gorm:"column:created_at"`
-	AuthorUserID     *string    `gorm:"column:author_user_id"`
-	AuthorMemberName string     `gorm:"column:author_member_name"`
-	AuthorOwnerName  string     `gorm:"column:author_owner_name"`
-	AuthorKind       string     `gorm:"column:author_kind"`
-	AuthorAgentID    *string    `gorm:"column:author_agent_id"`
-	AgentRunID       *string    `gorm:"column:agent_run_id"`
-	Body             string     `gorm:"column:body"`
-	Attachments      []byte     `gorm:"column:attachments;type:jsonb"`
-	ReplyToMessageID *string    `gorm:"column:reply_to_message_id"`
-	EditedAt         *time.Time `gorm:"column:edited_at"`
-	DeletedAt        *time.Time `gorm:"column:deleted_at"`
-	MentionedUserIDs []byte     `gorm:"column:mentioned_user_ids;type:jsonb"`
-	IsAllMentioned   bool       `gorm:"column:is_all_mentioned"`
+	ID                string     `gorm:"column:id;primaryKey"`
+	ChatID            string     `gorm:"column:chat_id"`
+	CreatedAt         time.Time  `gorm:"column:created_at"`
+	AuthorUserID      *string    `gorm:"column:author_user_id"`
+	AuthorMemberName  string     `gorm:"column:author_member_name"`
+	AuthorOwnerName   string     `gorm:"column:author_owner_name"`
+	AuthorKind        string     `gorm:"column:author_kind"`
+	AuthorAgentID     *string    `gorm:"column:author_agent_id"`
+	AgentRunID        *string    `gorm:"column:agent_run_id"`
+	Body              string     `gorm:"column:body"`
+	Attachments       []byte     `gorm:"column:attachments;type:jsonb"`
+	ReplyToMessageID  *string    `gorm:"column:reply_to_message_id"`
+	EditedAt          *time.Time `gorm:"column:edited_at"`
+	DeletedAt         *time.Time `gorm:"column:deleted_at"`
+	MentionedUserIDs  []byte     `gorm:"column:mentioned_user_ids;type:jsonb"`
+	IsAllMentioned    bool       `gorm:"column:is_all_mentioned"`
+	IsVoiceMessage    bool       `gorm:"column:is_voice_message"`
+	TranscriptText    string     `gorm:"column:transcript_text"`
+	TranscriptState   string     `gorm:"column:transcript_state"`
+	TranscriptTriedAt *time.Time `gorm:"column:transcript_tried_at"`
 }
 
 func (chatMessageModel) TableName() string { return "chat_message" }
@@ -1023,6 +1045,7 @@ func encodeChatAttachments(attachments []models.AgentAttachment) ([]byte, error)
 		kept = append(kept, models.AgentAttachment{
 			ID: attachment.ID, CreatedAt: attachment.CreatedAt, Name: attachment.Name,
 			ContentType: attachment.ContentType, Size: attachment.Size, IsRemoved: attachment.IsRemoved,
+			AudioDurationMS: attachment.AudioDurationMS, AudioWaveform: attachment.AudioWaveform,
 		})
 	}
 	return encodeJSON(kept)
@@ -1054,6 +1077,9 @@ func chatMessageFromModel(model *chatMessageModel) (*models.ChatMessage, error) 
 		message.MentionedUserIDs = nil
 	}
 	message.IsAllMentioned = model.IsAllMentioned
+	message.IsVoiceMessage = model.IsVoiceMessage
+	message.TranscriptText = model.TranscriptText
+	message.TranscriptState = model.TranscriptState
 	return message, nil
 }
 
@@ -1110,6 +1136,7 @@ func (self *transaction) AppendChatMessage(message *models.ChatMessage) (*models
 		Body: strings.ToValidUTF8(message.Body, "�"), Attachments: encoded,
 		ReplyToMessageID: stringPointer(message.ReplyToMessageID),
 		MentionedUserIDs: mentioned, IsAllMentioned: message.IsAllMentioned,
+		IsVoiceMessage: message.IsVoiceMessage, TranscriptState: message.TranscriptState,
 	}
 	if model.ReplyToMessageID != nil {
 		var count int64
@@ -1210,7 +1237,12 @@ func (self *transaction) EditChatMessage(messageId, body string) (*models.ChatMe
 func (self *transaction) DeleteChatMessage(messageId string) (*models.ChatMessage, error) {
 	now := time.Now()
 	result := self.tx.Model(&chatMessageModel{}).Where(`"id" = ? AND "deleted_at" IS NULL`, messageId).
-		Updates(map[string]any{"body": "", "attachments": []byte("[]"), "deleted_at": now})
+		Updates(map[string]any{
+			"body": "", "attachments": []byte("[]"), "deleted_at": now,
+			// A deleted recording has no words, and nothing is left to write
+			// them from.
+			"is_voice_message": false, "transcript_text": "", "transcript_state": "",
+		})
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -1490,10 +1522,24 @@ func (self *transaction) quotedChatMessages(chatId string, messages []*models.Ch
 		}
 		if message.CreatedAt.Before(readFrom) {
 			message.Body = ""
+			message.IsVoiceMessage = false
+			message.TranscriptText = ""
 		}
 		quoted[message.ID] = message
 	}
 	return quoted, nil
+}
+
+// chatQuotedWords is what a reply shows of the message it is to: its body, or
+// for a voice message its transcript, or "Voice message" when it has none.
+func chatQuotedWords(message *models.ChatMessage) string {
+	if !message.IsVoiceMessage {
+		return message.Body
+	}
+	if transcriptText := strings.TrimSpace(message.TranscriptText); transcriptText != "" {
+		return transcriptText
+	}
+	return "Voice message"
 }
 
 // ChatMessageAsAgentMessage is a chat message as the conversation of one of
@@ -1517,6 +1563,10 @@ func ChatMessageAsAgentMessage(message *models.ChatMessage, conversationId strin
 
 		MentionedUserIDs: message.MentionedUserIDs,
 		IsAllMentioned:   message.IsAllMentioned,
+
+		IsVoiceMessage:  message.IsVoiceMessage,
+		TranscriptText:  message.TranscriptText,
+		TranscriptState: message.TranscriptState,
 	}
 	if message.IsByAgent() {
 		converted.Role = "assistant"
@@ -1531,7 +1581,7 @@ func ChatMessageAsAgentMessage(message *models.ChatMessage, conversationId strin
 			reference.QuotedRole = "assistant"
 		}
 		if replied.DeletedAt == nil {
-			reference.QuotedText = truncateRunes(replied.Body, chatQuotedLength)
+			reference.QuotedText = truncateRunes(chatQuotedWords(replied), chatQuotedLength)
 		}
 		converted.References = []models.AgentReference{reference}
 	}

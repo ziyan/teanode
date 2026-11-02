@@ -290,6 +290,15 @@ type ChatMessage struct {
 
 	// Reactions are one per reactor, in the order they were made.
 	Reactions []AgentMessageReaction `json:"reactions,omitempty"`
+
+	// IsVoiceMessage says the message is one recording, in Attachments, with
+	// an empty Body. TranscriptText is the words said in it, written by the
+	// server after the message is posted, and TranscriptState says how that
+	// stands: see VoiceTranscriptState. All three are empty on any other
+	// message.
+	IsVoiceMessage  bool   `json:"isVoiceMessage,omitempty"`
+	TranscriptText  string `json:"transcriptText,omitempty"`
+	TranscriptState string `json:"transcriptState,omitempty"`
 }
 
 // MentionsUser says the message mentions the person, by name or by

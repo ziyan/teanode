@@ -88,7 +88,7 @@ func probeImportedContainer(ctx context.Context, file *os.File) importedContaine
 	ctx, cancel := context.WithTimeout(ctx, creationTimeProbeTimeout)
 	defer cancel()
 	arguments := []string{"-v", "error"}
-	arguments = append(arguments, mediaDescriptorArguments()...)
+	arguments = append(arguments, MediaDescriptorArguments()...)
 	arguments = append(arguments, "-show_entries", "format=duration:format_tags=creation_time,com.apple.quicktime.creationdate", "-of", "json")
 	command := exec.CommandContext(ctx, ffprobePath, arguments...)
 	command.ExtraFiles = []*os.File{file}

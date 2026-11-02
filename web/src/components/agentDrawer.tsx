@@ -39,6 +39,10 @@ import { RelativeTime } from './relativeTime'
 import { VoiceSession } from '../voice/voiceSession'
 import type { InterruptedAnswer } from '../voice/voiceAnswer'
 import { VoiceMeter } from '../voice/voiceMeter'
+import { useDictation, useVoiceAvailability } from '../voice/useDictation'
+import { canRecordVoiceMessages } from '../voice/voiceMessageRecorder'
+import { ChatVoiceComposer, useChatComposerMode } from './chatVoiceComposer'
+import { VoiceMessageBubble } from './voiceMessageBubble'
 import {
   ArchiveIcon,
   ArrowDownIcon,
@@ -76,6 +80,7 @@ import {
   WarningIcon,
   ExternalIcon,
   PhotoSaveIcon,
+  WaveformIcon,
 } from './icons'
 import { BackgroundCommand, BackgroundPanel, useBackgroundCommands } from './backgroundCommands'
 import { HerdrQuestionAnswer, HerdrQuestionCard, codingAgentName, paneNameOf, type HerdrSession } from './herdrSessions'
@@ -131,6 +136,7 @@ import {
   isOwnWords,
   linesWithEdit,
   linesWithSaid,
+  linesWithTranscript,
   linesWithStreamedText,
   linesWithDeleted,
   linesWithoutStreaming,
@@ -545,6 +551,9 @@ interface Attachment {
   // The file went with the account that held it; the message it came with
   // is kept.
   isRemoved?: boolean | null
+  // A voice message's recording: how long it is and its shape.
+  audioDurationMS?: number | null
+  audioWaveform?: string | null
 }
 
 // CitedFile is one picture or file the fact behind a citation was read
@@ -718,9 +727,6 @@ const AGENT = `
     ReadAgent { agent { id enabled name } allowed { enabled ask } }
   }`
 
-// READ_VOICE says whether the drawer offers the microphone.
-const READ_VOICE = `query { ReadAgentVoice { isVoiceAvailable sampleRate } }`
-
 const TAB = `
   query {
     ReadAgentTab { attached title url }
@@ -768,7 +774,8 @@ const CONVERSATION = `
       messages {
         id createdAt role content name toolCallId toolCalls { id name arguments }
         usage { promptTokens completionTokens cost }
-        attachments { id name contentType size isRemoved }
+        isVoiceMessage transcriptText transcriptState
+        attachments { id name contentType size isRemoved audioDurationMS audioWaveform }
         references { itemId threadId subject from path name recordingId recordingTitle photoId photoTitle financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
         reactions { emoji reactorKind reactedAt reactorUserId reactorName }
         authorKind authorUserId authorName authorOwnerName authorAvatarUrl authorAvatarColorIndex authorAgentId agentRunId isMine isAgentWork editedAt isDeleted
@@ -810,7 +817,8 @@ const FEED = `
       kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId messageId emoji reactorKind reactorUserId reactorName userId name authorAgentId authorOwnerName isMessageCut
       message {
         id createdAt role content
-        attachments { id name contentType size isRemoved }
+        isVoiceMessage transcriptText transcriptState
+        attachments { id name contentType size isRemoved audioDurationMS audioWaveform }
         references { agentMessageId quotedRole quotedText }
         reactions { emoji reactorKind reactedAt reactorUserId reactorName }
         authorKind authorUserId authorName authorOwnerName authorAvatarUrl authorAvatarColorIndex authorAgentId agentRunId isMine isAgentWork editedAt isDeleted
@@ -1896,6 +1904,32 @@ function AttachmentChips({ attachments }: { attachments: Attachment[] }) {
         ),
       )}
     </div>
+  )
+}
+
+// VoiceMessageLine is a voice message of a chat: its recording as a bubble
+// with a play button, and the words the server heard in it under. The
+// recording's address is signed when the drawer is framed elsewhere.
+function VoiceMessageLine({ line, attachment }: { line: ChatLine; attachment: Attachment }) {
+  const { t } = useTranslation()
+  const source = useFileHref(attachmentHref(attachment))
+  if (attachment.isRemoved) {
+    return (
+      <div className="agent-attachments">
+        <span className="agent-attachment-chip muted">
+          <PaperclipIcon size={12} /> {t('chat.fileRemoved')}
+        </span>
+      </div>
+    )
+  }
+  return (
+    <VoiceMessageBubble
+      source={source}
+      durationMS={attachment.audioDurationMS ?? 0}
+      waveform={attachment.audioWaveform ?? ''}
+      transcriptText={line.transcriptText ?? ''}
+      transcriptState={line.transcriptState ?? ''}
+    />
   )
 }
 
@@ -4027,6 +4061,18 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           void readConversation(conversationRef.current).catch(() => undefined)
           return
         }
+        // The words the server heard in a voice message come as an edit of
+        // it, though nobody edited it: the line is not marked edited.
+        if (message.isVoiceMessage) {
+          patchStored(message.id, {
+            transcriptText: message.transcriptText,
+            transcriptState: message.transcriptState,
+          })
+          setLines((previous) =>
+            linesWithTranscript(previous, message.id, message.transcriptText ?? '', message.transcriptState ?? ''),
+          )
+          return
+        }
         patchStored(message.id, { content: message.content, editedAt: message.editedAt })
         setLines((previous) => linesWithEdit(previous, message.id, message.content, message.editedAt ?? null))
         return
@@ -4393,6 +4439,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     const files = isSuggested ? [] : pending
     const pointed = isSuggested ? [] : references
     if ((!message && files.length === 0) || uploading || loading.current) return
+    if (!isSuggested) dictation.abort()
     // A question card waiting for an answer takes what is typed here as
     // its answer. Sent as a turn of its own, it queued behind the turn
     // that was waiting for it, and neither moved until the card timed out.
@@ -4572,7 +4619,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // dashboard's own drawer (the extension's page has a microphone of its
   // own to ask for). Each utterance the server finishes hearing is sent as
   // if typed; the caption shows the one being heard.
-  const [voiceSampleRate, setVoiceSampleRate] = useState(0)
+  const voiceAvailability = useVoiceAvailability(!standalone)
+  const voiceSampleRate = voiceAvailability.isDictationAvailable ? voiceAvailability.sampleRate : 0
   const [voiceState, setVoiceState] = useState<'off' | 'starting' | 'listening'>('off')
   const [voiceCaption, setVoiceCaption] = useState('')
   const [isVoiceHearing, setVoiceHearing] = useState(false)
@@ -4584,24 +4632,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const voiceLevel = useCallback(() => voiceSession.current?.level() ?? 0, [])
   const sendLatest = useRef(send)
   sendLatest.current = send
-  useEffect(() => {
-    if (standalone || framedDrawer) return
-    let cancelled = false
-    graphql<{ ReadAgentVoice: { isVoiceAvailable: boolean; sampleRate: number } }>(READ_VOICE)
-      .then((response) => {
-        if (!cancelled && response.ReadAgentVoice.isVoiceAvailable)
-          setVoiceSampleRate(response.ReadAgentVoice.sampleRate)
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [standalone])
   const toggleVoice = () => {
     if (voiceSession.current) {
       voiceSession.current.stop()
       return
     }
+    dictation.abort()
     setVoiceState('starting')
     const session = new VoiceSession(
       {
@@ -4644,14 +4680,39 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   useEffect(() => {
     const previous = callConversationId.current
     callConversationId.current = conversationId
-    if (previous && previous !== conversationId) voiceSession.current?.stop()
+    if (previous && previous !== conversationId) {
+      voiceSession.current?.stop()
+      dictation.abort()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId])
   // And when the drawer closes, which hides the way to hang up: a
   // microphone left listening behind a closed drawer is not acceptable.
   useEffect(() => {
-    if (!open) voiceSession.current?.stop()
+    if (!open) {
+      voiceSession.current?.stop()
+      dictation.abort()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
   useEffect(() => () => voiceSession.current?.stop(), [])
+
+  // Dictation: the microphone beside send puts what the person says into
+  // the box at the cursor, to be edited and sent as typed. It stops when
+  // it is sent, the conversation changes or the drawer closes.
+  const dictation = useDictation({
+    place: loaded?.kind === 'chat' ? 'chat' : 'agent',
+    input,
+    value: draft,
+    sampleRate: voiceAvailability.sampleRate,
+    onInsert: (text) => {
+      setDraft(text)
+      tellTyping(text)
+    },
+  })
+  // Voice messages: in a chat the box can give way to a button held to
+  // talk. The mode is the browser's, for every chat.
+  const [composerMode, setComposerMode] = useChatComposerMode()
 
   // A draft asked to be sent is sent once its conversation is the one open
   // and its draft has been read back into the box: the same send as the
@@ -5180,9 +5241,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const shownText = (line: Line) =>
     line.kind === 'assistant'
       ? suggestedRepliesOf(withoutPartialMarker(line.text)).displayText.trim()
-      : line.kind === 'user' || line.kind === 'chat'
-        ? line.text.trim()
-        : ''
+      : line.kind === 'chat' && line.isVoiceMessage
+        ? line.transcriptText?.trim() || t('chat.voiceMessage')
+        : line.kind === 'user' || line.kind === 'chat'
+          ? line.text.trim()
+          : ''
   const replyTo = (line: Line) => {
     if (line.kind !== 'user' && line.kind !== 'assistant' && line.kind !== 'chat') return
     // An answer still being written has no message to reply to yet.
@@ -5348,8 +5411,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         }
         const isEditing = Boolean(line.messageId) && editing?.messageId === line.messageId
         const repliedTo = line.references?.find(isReplyReference)
-        const canEdit = isOwnWords(line) && Boolean(line.messageId)
-        const canDelete = Boolean(line.messageId) && (canEdit || isChatAdmin)
+        // The words of a voice message are what the server heard, so they
+        // cannot be edited; the author deletes it and sends it again.
+        const isOwnMessage = isOwnWords(line) && Boolean(line.messageId)
+        const canEdit = isOwnMessage && !line.isVoiceMessage
+        const canDelete = Boolean(line.messageId) && (isOwnMessage || isChatAdmin)
         return (
           <ChatLineFrame key={line.key} line={line} isRunStart={isRunStart} readers={readers} onLeaving={leaving}>
             {/* The time is in the toolbar, where it is read when the pointer
@@ -5430,14 +5496,20 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     </button>
                   </div>
                 </div>
-              ) : line.authorKind === 'agent' ? (
+              ) : line.isVoiceMessage ? null : line.authorKind === 'agent' ? (
                 <MentionWords.Provider value={mentionWordsOf(line, chat, ownUserId, deletedNote)}>
                   <Markdown text={line.text} onLeaving={leaving} pictureSource={pictureSource} />
                 </MentionWords.Provider>
               ) : (
                 <LinkedText text={line.text} mentions={mentionWordsOf(line, chat, ownUserId, deletedNote)} />
               )}
-              {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
+              {line.attachments && line.attachments.length > 0 ? (
+                line.isVoiceMessage ? (
+                  <VoiceMessageLine line={line} attachment={line.attachments[0]} />
+                ) : (
+                  <AttachmentChips attachments={line.attachments} />
+                )
+              ) : null}
               {line.editedAt && !isEditing ? <span className="agent-chat-edited">{t('chat.edited')}</span> : null}
               {reactionsOn(line)}
             </SwipeableLine>
@@ -5724,6 +5796,32 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // agent did on its own asks about it right there, with the run as the
   // history. A line above the box says what they are looking at.
   const isRun = current?.kind === 'run'
+  // Voice messages are offered in a chat the person can still write in, on
+  // the dashboard's own drawer: the extension's is another origin with a
+  // microphone permission of its own.
+  const isVoiceModeOffered =
+    isInChat &&
+    !chat.isRemoved &&
+    !standalone &&
+    !framedDrawer &&
+    !isRun &&
+    !actingAs &&
+    voiceAvailability.isVoiceMessageAvailable &&
+    canRecordVoiceMessages()
+  const isVoiceComposerShown = isVoiceModeOffered && composerMode === 'voice'
+  // voiceMessageSent follows a voice message sent: the reply it answered is
+  // done with, and the chat is read again should its own event not arrive.
+  const voiceMessageSent = (sentConversationId: string) => {
+    setReferences((previous) => previous.filter((reference) => !isReplyReference(reference)))
+    sticking.current = true
+    setAtBottom(true)
+    const storedBefore = messages.current.length
+    window.setTimeout(() => {
+      if (conversationRef.current === sentConversationId && messages.current.length === storedBefore) {
+        void readConversation(sentConversationId).catch(() => undefined)
+      }
+    }, CHAT_CONFIRMED_WITHIN)
+  }
   const running = runs.length > 0
   // A list with every step done is put away once the turn ends: it has
   // nothing left to track and was taking the room above the box.
@@ -6430,132 +6528,180 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 </button>
               </Tooltip>
             </div>
-          ) : (
-            <form
-              className="agent-drawer-input"
-              onSubmit={(event) => {
-                event.preventDefault()
-                void send()
+          ) : isVoiceComposerShown ? (
+            <ChatVoiceComposer
+              conversationId={conversationId}
+              references={references.filter(isReplyReference)}
+              surface={surface()}
+              drawerId={drawerId.current}
+              onKeyboard={() => {
+                setComposerMode('keyboard')
+                window.setTimeout(() => input.current?.focus(), 0)
               }}
-            >
-              <input
-                ref={filePicker}
-                type="file"
-                multiple
-                hidden
-                onChange={(event) => {
-                  addFiles(event.target.files)
-                  event.target.value = ''
+              onSent={voiceMessageSent}
+            />
+          ) : (
+            <>
+              {dictation.state !== 'off' && (
+                <div className="agent-dictation-caption muted" role="status" aria-live="polite">
+                  {dictation.captionText ||
+                    (dictation.state === 'starting' ? t('dictation.starting') : t('dictation.listening'))}
+                </div>
+              )}
+              <form
+                className="agent-drawer-input"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void send()
                 }}
-              />
-              <Tooltip label={t('agentDrawer.attach')}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={t('agentDrawer.attach')}
-                  onClick={() => filePicker.current?.click()}
-                >
-                  <PaperclipIcon size={16} />
-                </button>
-              </Tooltip>
-              {mention && mentionOffer.length > 0 && (
-                <MentionList
-                  choices={mentionOffer}
-                  allWord={allWord}
-                  activeIndex={Math.min(mentionIndex, mentionOffer.length - 1)}
-                  onChoose={chooseMention}
-                  onHover={setMentionIndex}
+              >
+                <input
+                  ref={filePicker}
+                  type="file"
+                  multiple
+                  hidden
+                  onChange={(event) => {
+                    addFiles(event.target.files)
+                    event.target.value = ''
+                  }}
                 />
-              )}
-              <textarea
-                ref={input}
-                rows={1}
-                value={draft}
-                placeholder={uploading ? t('agentDrawer.uploading') : isInChat ? chatPlaceholder : askPlaceholder}
-                aria-label={isInChat ? chatPlaceholder : askPlaceholder}
-                onChange={(event) => {
-                  setDraft(event.target.value)
-                  tellTyping(event.target.value)
-                  watchMention(event.target.value, event.target.selectionStart)
-                }}
-                onClick={(event) => watchMention(event.currentTarget.value, event.currentTarget.selectionStart)}
-                onBlur={() => setMention(null)}
-                onPaste={(event) => {
-                  const files = Array.from(event.clipboardData.files ?? [])
-                  if (files.length > 0) {
-                    event.preventDefault()
-                    addFiles(files)
-                  }
-                }}
-                onKeyDown={(event) => {
-                  // Enter while an input method is composing picks a
-                  // character, not a message to send.
-                  if (isComposingText(event)) return
-                  // While an @ is offering choices, the arrows pick one, Enter
-                  // and Tab choose it and Escape puts the offer away.
-                  if (mention && mentionOffer.length > 0) {
-                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                      event.preventDefault()
-                      const step = event.key === 'ArrowDown' ? 1 : -1
-                      setMentionIndex((mentionIndex + step + mentionOffer.length) % mentionOffer.length)
-                      return
-                    }
-                    if (event.key === 'Enter' || event.key === 'Tab') {
-                      event.preventDefault()
-                      chooseMention(mentionOffer[Math.min(mentionIndex, mentionOffer.length - 1)])
-                      return
-                    }
-                    if (event.key === 'Escape') {
-                      event.preventDefault()
-                      setMention(null)
-                      return
-                    }
-                  }
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault()
-                    void send()
-                  }
-                }}
-              />
-              {running && (
-                <Tooltip label={t('agentDrawer.stop')}>
+                <Tooltip label={t('agentDrawer.attach')}>
                   <button
                     type="button"
-                    className="icon-button agent-stop"
-                    aria-label={t('agentDrawer.stop')}
-                    onClick={() => void stop()}
+                    className="icon-button"
+                    aria-label={t('agentDrawer.attach')}
+                    onClick={() => filePicker.current?.click()}
                   >
-                    ■
+                    <PaperclipIcon size={16} />
                   </button>
                 </Tooltip>
-              )}
-              {voiceSampleRate > 0 && !isInChat && (
-                <Tooltip label={voiceState === 'off' ? t('agentDrawer.voiceStart') : t('agentDrawer.voiceStop')}>
+                {isVoiceModeOffered && (
+                  <Tooltip label={t('chat.useVoice')}>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={t('chat.useVoice')}
+                      onClick={() => setComposerMode('voice')}
+                    >
+                      <WaveformIcon size={18} />
+                    </button>
+                  </Tooltip>
+                )}
+                {mention && mentionOffer.length > 0 && (
+                  <MentionList
+                    choices={mentionOffer}
+                    allWord={allWord}
+                    activeIndex={Math.min(mentionIndex, mentionOffer.length - 1)}
+                    onChoose={chooseMention}
+                    onHover={setMentionIndex}
+                  />
+                )}
+                <textarea
+                  ref={input}
+                  rows={1}
+                  value={draft}
+                  placeholder={uploading ? t('agentDrawer.uploading') : isInChat ? chatPlaceholder : askPlaceholder}
+                  aria-label={isInChat ? chatPlaceholder : askPlaceholder}
+                  onChange={(event) => {
+                    setDraft(event.target.value)
+                    tellTyping(event.target.value)
+                    watchMention(event.target.value, event.target.selectionStart)
+                  }}
+                  onClick={(event) => watchMention(event.currentTarget.value, event.currentTarget.selectionStart)}
+                  onBlur={() => setMention(null)}
+                  onPaste={(event) => {
+                    const files = Array.from(event.clipboardData.files ?? [])
+                    if (files.length > 0) {
+                      event.preventDefault()
+                      addFiles(files)
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    // Enter while an input method is composing picks a
+                    // character, not a message to send.
+                    if (isComposingText(event)) return
+                    // While an @ is offering choices, the arrows pick one, Enter
+                    // and Tab choose it and Escape puts the offer away.
+                    if (mention && mentionOffer.length > 0) {
+                      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                        event.preventDefault()
+                        const step = event.key === 'ArrowDown' ? 1 : -1
+                        setMentionIndex((mentionIndex + step + mentionOffer.length) % mentionOffer.length)
+                        return
+                      }
+                      if (event.key === 'Enter' || event.key === 'Tab') {
+                        event.preventDefault()
+                        chooseMention(mentionOffer[Math.min(mentionIndex, mentionOffer.length - 1)])
+                        return
+                      }
+                      if (event.key === 'Escape') {
+                        event.preventDefault()
+                        setMention(null)
+                        return
+                      }
+                    }
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault()
+                      void send()
+                    }
+                  }}
+                />
+                {running && (
+                  <Tooltip label={t('agentDrawer.stop')}>
+                    <button
+                      type="button"
+                      className="icon-button agent-stop"
+                      aria-label={t('agentDrawer.stop')}
+                      onClick={() => void stop()}
+                    >
+                      ■
+                    </button>
+                  </Tooltip>
+                )}
+                {voiceSampleRate > 0 && !isInChat && (
+                  <Tooltip label={voiceState === 'off' ? t('agentDrawer.voiceStart') : t('agentDrawer.voiceStop')}>
+                    <button
+                      type="button"
+                      className={['icon-button', 'agent-voice', voiceState !== 'off' ? 'is-listening' : '']
+                        .filter(Boolean)
+                        .join(' ')}
+                      aria-label={voiceState === 'off' ? t('agentDrawer.voiceStart') : t('agentDrawer.voiceStop')}
+                      aria-pressed={voiceState !== 'off'}
+                      disabled={isRun || Boolean(actingAs)}
+                      onClick={toggleVoice}
+                    >
+                      <PhoneIcon size={16} />
+                    </button>
+                  </Tooltip>
+                )}
+                {voiceAvailability.isDictationAvailable && (
+                  <Tooltip label={dictation.state === 'off' ? t('dictation.start') : t('dictation.stop')}>
+                    <button
+                      type="button"
+                      className={['icon-button', 'agent-dictate', dictation.state !== 'off' ? 'is-listening' : '']
+                        .filter(Boolean)
+                        .join(' ')}
+                      aria-label={dictation.state === 'off' ? t('dictation.start') : t('dictation.stop')}
+                      aria-pressed={dictation.state !== 'off'}
+                      disabled={isRun || Boolean(actingAs)}
+                      onClick={dictation.toggle}
+                    >
+                      <MicrophoneIcon size={16} />
+                    </button>
+                  </Tooltip>
+                )}
+                <Tooltip label={t('agentDrawer.send')}>
                   <button
-                    type="button"
-                    className={['icon-button', 'agent-voice', voiceState !== 'off' ? 'is-listening' : '']
-                      .filter(Boolean)
-                      .join(' ')}
-                    aria-label={voiceState === 'off' ? t('agentDrawer.voiceStart') : t('agentDrawer.voiceStop')}
-                    aria-pressed={voiceState !== 'off'}
-                    disabled={isRun || Boolean(actingAs)}
-                    onClick={toggleVoice}
+                    type="submit"
+                    className="icon-button agent-send"
+                    aria-label={t('agentDrawer.send')}
+                    disabled={!canSend || isReadingConversation}
                   >
-                    <PhoneIcon size={16} />
+                    <ArrowUpIcon size={16} />
                   </button>
                 </Tooltip>
-              )}
-              <Tooltip label={t('agentDrawer.send')}>
-                <button
-                  type="submit"
-                  className="icon-button agent-send"
-                  aria-label={t('agentDrawer.send')}
-                  disabled={!canSend || isReadingConversation}
-                >
-                  <ArrowUpIcon size={16} />
-                </button>
-              </Tooltip>
-            </form>
+              </form>
+            </>
           )}
           {dragging && <div className="agent-drawer-drop">{t('agentDrawer.dropHere')}</div>}
         </aside>

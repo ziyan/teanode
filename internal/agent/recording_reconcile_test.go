@@ -41,6 +41,15 @@ func (self *recordingReconciliationTransaction) ReconcileRecordingReferenceInval
 	return nil
 }
 
+// The voice message sweep runs with the agent off too; there is none here.
+func (self *recordingReconciliationTransaction) FailStaleVoiceMessages(before time.Time) ([]*models.ChatMessage, error) {
+	return nil, nil
+}
+
+func (self *recordingReconciliationTransaction) ListWaitingVoiceMessageIDs(retryAfter time.Duration, limit int) ([]string, error) {
+	return nil, nil
+}
+
 func TestRecordingReferenceReconciliationContinuesWithAgentDisabled(test *testing.T) {
 	configuration := config.Default()
 	configuration.Agent.Enabled = false
