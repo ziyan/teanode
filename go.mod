@@ -26,7 +26,7 @@ require (
 	github.com/graphql-go/graphql v0.8.1
 	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/kaptinlin/jsonrepair v0.4.9
+	github.com/kaptinlin/jsonrepair v0.4.10
 	github.com/lib/pq v1.12.3
 	github.com/miekg/dns v1.1.73
 	github.com/oklog/ulid/v2 v2.1.2
