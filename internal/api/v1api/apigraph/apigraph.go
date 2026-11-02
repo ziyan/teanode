@@ -168,6 +168,11 @@ func New(database db.Database, configuration config.Store, messages storage.Stor
 	self.wrapServiceOperations()
 	self.wrapQueryTransactions()
 	self.wrapTransactionFreeMutations()
+	// A device whose connection fails is taken off its call here, where the
+	// call's people are told.
+	if settings != nil && settings.Calls != nil {
+		settings.Calls.SetDeviceLost(self.DeviceLost)
+	}
 	return self, nil
 }
 

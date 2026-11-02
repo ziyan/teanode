@@ -656,7 +656,8 @@ func (self *graph) JoinChatCallMedia(ctx context.Context, arguments JoinChatCall
 	if strings.TrimSpace(arguments.OfferSDP) == "" || len(arguments.OfferSDP) > chatCallDescriptionMostBytes {
 		return nil, fmt.Errorf("%w: that is not an offer", api.ErrInvalidArguments)
 	}
-	box := self.chatCallSignals.box(chatCall.ID, session.User.ID, false)
+	box := self.chatCallSignals.box(chatCall.ID, session.User.ID)
+	box.drain()
 	answerSDP, err := server.Join(chatCall.ID, session.User.ID, arguments.OfferSDP, box.send)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
@@ -810,9 +811,8 @@ func (self *graph) ChatCallSignals(ctx context.Context, arguments ChatCallArgume
 	}); err != nil {
 		return nil, err
 	}
-	// A device that opens its signals starts afresh: offers made to a
-	// device before it are not its to answer.
-	box := self.chatCallSignals.box(callId, userId, true)
+	// Offers made before this device joined were drained by its join.
+	box := self.chatCallSignals.box(callId, userId)
 	views := make(chan *ChatCallSignalView)
 	go func() {
 		defer deferutil.Recover()
@@ -893,4 +893,34 @@ func (self *graph) FailChatCallsLeftGoing(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// DeviceLost takes a person off a call when their device's connection
+// failed without their leaving: a tab closed, a phone that lost its network
+// for good. The call ends when nobody is left on it, as when the last person
+// leaves.
+func (self *graph) DeviceLost(callId, userId string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	self.chatCallSignals.forget(callId, userId)
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		txContext := api.ContextWithTransaction(ctx, tx)
+		chatCall, err := tx.LeaveChatCall(callId, userId)
+		if err != nil {
+			return err
+		}
+		if chatCall.OnCount() == 0 {
+			endReason := models.ChatCallEnded
+			if chatCall.AnsweredAt == nil {
+				endReason = models.ChatCallMissed
+			}
+			if chatCall, err = self.endChatCall(txContext, chatCall, endReason); err != nil {
+				return err
+			}
+		}
+		self.notifyChatCall(txContext, chatCall)
+		return nil
+	}); err != nil && !errors.Is(err, db.ErrNotFound) {
+		log.Warningf("cannot take a lost device off call %q: %s", callId, err)
+	}
 }

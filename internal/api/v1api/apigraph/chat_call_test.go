@@ -165,3 +165,26 @@ func TestATranscriptIsAskedAndAnswered(t *testing.T) {
 		t.Errorf("Grace's answer: %v", answered)
 	}
 }
+
+// A device whose connection fails takes its person off the call, and the
+// call ends when that leaves nobody on it.
+func TestALostDeviceTakesItsPersonOffTheCall(t *testing.T) {
+	world := newCallWorld(t)
+	world.shareCircle(t, world.frank, "Neighbours", world.grace)
+	frankConversation := world.openDirect(t, world.frank, world.grace)
+	started := world.callView(t, world.frank, fmt.Sprintf(`StartChatCall(conversationId: %q)`, frankConversation))
+	callId := started["id"].(string)
+	world.callView(t, world.grace, fmt.Sprintf(`JoinChatCall(callId: %q)`, callId))
+
+	world.graph.DeviceLost(callId, world.grace.ID)
+	read := func() map[string]any {
+		return world.call(t, world.frank, fmt.Sprintf(`query { ReadChatCall(callId: %q) { call %s } }`, callId, chatCallTestFields))["ReadChatCall"].(map[string]any)["call"].(map[string]any)
+	}
+	if after := read(); after["isGoing"] != true || memberOf(after, world.grace)["isOn"] != false {
+		t.Fatalf("after Grace's device was lost: %v", after)
+	}
+	world.graph.DeviceLost(callId, world.frank.ID)
+	if after := read(); after["isGoing"] != false || after["endReason"] != "ended" {
+		t.Fatalf("after the last device was lost: %v", after)
+	}
+}

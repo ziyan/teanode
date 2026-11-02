@@ -76,6 +76,11 @@ type Server struct {
 	// recordAudio, when set, is handed every RTP packet of a person's
 	// microphone on a call, for a transcript; see SetAudioRecorder.
 	recordAudio AudioRecorder
+
+	// deviceLost, when set, is told of a device whose connection failed
+	// (the tab closed, the phone lost its network for good); see
+	// SetDeviceLost.
+	deviceLost func(callId, userId string)
 }
 
 // AudioRecorder is told each packet of each person's microphone; it keeps
@@ -133,6 +138,16 @@ func (self *Server) SetAudioRecorder(recorder AudioRecorder) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	self.recordAudio = recorder
+}
+
+// SetDeviceLost sets what is told when a device's connection fails, after
+// it has been taken off the call: the person is no longer on it, though
+// nothing said so. A device the server takes off itself (it joined again, it
+// left) is not lost.
+func (self *Server) SetDeviceLost(deviceLost func(callId, userId string)) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.deviceLost = deviceLost
 }
 
 // Close ends every call and stops listening.
@@ -269,6 +284,12 @@ func (self *room) join(userId, offerSDP string, signal func(Signal)) (string, er
 			if isCurrent && state == webrtc.PeerConnectionStateFailed {
 				log.Infof("the device of %q on call %q lost its connection", userId, self.callId)
 				self.leave(userId)
+				self.server.mutex.Lock()
+				deviceLost := self.server.deviceLost
+				self.server.mutex.Unlock()
+				if deviceLost != nil {
+					go deviceLost(self.callId, userId)
+				}
 			}
 		}
 	})

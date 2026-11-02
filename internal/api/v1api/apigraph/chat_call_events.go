@@ -125,9 +125,10 @@ type chatCallSignalBox struct {
 
 func chatCallSignalKey(callId, userId string) string { return callId + "/" + userId }
 
-// box is the person's box on a call, made fresh when isFresh: a device that
-// joins again does not answer the offers made to the one before it.
-func (self *chatCallSignals) box(callId, userId string, isFresh bool) *chatCallSignalBox {
+// box is the person's box on a call, made the first time it is wanted, by
+// the device's signals or by its join, whichever reaches the server first:
+// they travel apart, so either may.
+func (self *chatCallSignals) box(callId, userId string) *chatCallSignalBox {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	if self.boxes == nil {
@@ -135,7 +136,7 @@ func (self *chatCallSignals) box(callId, userId string, isFresh bool) *chatCallS
 	}
 	key := chatCallSignalKey(callId, userId)
 	found := self.boxes[key]
-	if found == nil || isFresh {
+	if found == nil {
 		found = &chatCallSignalBox{signals: make(chan call.Signal, chatCallSignalBacklog)}
 		self.boxes[key] = found
 	}
@@ -148,6 +149,18 @@ func (self *chatCallSignalBox) send(signal call.Signal) {
 	case self.signals <- signal:
 	default:
 		log.Warningf("a device on a call is not reading the offers it is sent")
+	}
+}
+
+// drain drops the offers made to the device before this one joined: a
+// device that joins again does not answer them.
+func (self *chatCallSignalBox) drain() {
+	for {
+		select {
+		case <-self.signals:
+		default:
+			return
+		}
 	}
 }
 
