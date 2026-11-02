@@ -760,6 +760,67 @@ export function SpeakerIcon(props: IconProps) {
   )
 }
 
+// VideoIcon is a video camera: a call with the camera on.
+export function VideoIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="6" width="14" height="12" rx="2" />
+      <path d="m16 10 6-3.5v11L16 14" />
+    </Icon>
+  )
+}
+
+// VideoOffIcon is the video camera struck through: the camera is off.
+export function VideoOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M16 10.5V8a2 2 0 0 0-2-2H8.5" />
+      <path d="M2 8v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" />
+      <path d="m16 10 6-3.5v11L16 14" />
+      <path d="m3 3 18 18" />
+    </Icon>
+  )
+}
+
+// CameraSwitchIcon is two arrows chasing each other round a camera: use the
+// other camera of the device.
+export function CameraSwitchIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20 8V5h-3" />
+      <path d="M20 5a9 9 0 0 0-14.5 2" />
+      <path d="M4 16v3h3" />
+      <path d="M4 19a9 9 0 0 0 14.5-2" />
+      <circle cx="12" cy="12" r="2.5" />
+    </Icon>
+  )
+}
+
+// MinimizeIcon is two corners folding in: shrink the call to a small window.
+export function MinimizeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 14h6v6" />
+      <path d="M20 10h-6V4" />
+      <path d="m14 10 7-7" />
+      <path d="m3 21 7-7" />
+    </Icon>
+  )
+}
+
+// ExpandIcon is two corners opening out: bring the small call window back to
+// the whole call.
+export function ExpandIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M15 3h6v6" />
+      <path d="M9 21H3v-6" />
+      <path d="m21 3-7 7" />
+      <path d="m3 21 7-7" />
+    </Icon>
+  )
+}
+
 export function PaperclipIcon(props: IconProps) {
   return (
     <Icon {...props}>

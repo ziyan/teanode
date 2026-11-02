@@ -8,19 +8,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "TeaNode uses the camera to scan the code that connects it to your server, and to take pictures you send."
+            "value": "TeaNode uses the camera to scan the code that connects it to your server, to take pictures you send, and to show your picture when you turn your camera on in a call."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "TeaNode 使用相机扫描连接服务器的二维码，并拍摄你要发送的照片。"
+            "value": "TeaNode 使用相机扫描连接服务器的二维码，拍摄你要发送的照片，并在通话中你打开摄像头时显示你的画面。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "TeaNode はサーバーに接続するためのコードを読み取り、送信する写真を撮るためにカメラを使用します。"
+            "value": "TeaNode はサーバーに接続するためのコードを読み取り、送信する写真を撮り、通話中にカメラをオンにしたときに映像を映すためにカメラを使用します。"
           }
         }
       }
@@ -176,19 +176,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "TeaNode uses the microphone while you call your agent, dictate, record a voice message or explicitly record a meeting."
+            "value": "TeaNode uses the microphone while you call your agent or the people in your chats, dictate, record a voice message or explicitly record a meeting."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在你呼叫助手、听写、录制语音消息或明确录制会议时，TeaNode 会使用麦克风。"
+            "value": "在你呼叫助手或聊天中的人、听写、录制语音消息或明确录制会议时，TeaNode 会使用麦克风。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "エージェントと通話しているとき、音声入力や音声メッセージの録音をしているとき、会議を明示的に録音しているときに、TeaNode はマイクを使用します。"
+            "value": "エージェントやチャットの相手と通話しているとき、音声入力や音声メッセージの録音をしているとき、会議を明示的に録音しているときに、TeaNode はマイクを使用します。"
           }
         }
       }

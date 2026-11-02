@@ -24,7 +24,8 @@ type RegisterRequest struct {
 	IsSandbox   bool   `json:"isSandbox"`
 
 	// PushType is PushTypeAlert, the phone itself, which is the default, or
-	// PushTypeLiveActivity, one Live Activity's push token.
+	// PushTypeLiveActivity, one Live Activity's push token, or PushTypeVoIP,
+	// the token PushKit gives the app for incoming calls.
 	PushType string `json:"pushType,omitempty"`
 }
 

@@ -25,7 +25,9 @@ import Foundation
 public struct NotificationContent: Codable, Equatable, Sendable {
     /// alert, herdr_question, goal_needs_you, speak_first, message,
     /// approval, question, answer, circle, chat, skill_share_call, photo,
-    /// location, shopping, journalEveningQuestion or test.
+    /// location, shopping, journalEveningQuestion, test, or, in a VoIP push,
+    /// call (a call rings, `callId` names it) and call_ended (it no longer
+    /// rings this phone).
     public let notificationKind: String
     public let conversationId: String?
     public let runId: String?

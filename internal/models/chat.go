@@ -299,6 +299,12 @@ type ChatMessage struct {
 	IsVoiceMessage  bool   `json:"isVoiceMessage,omitempty"`
 	TranscriptText  string `json:"transcriptText,omitempty"`
 	TranscriptState string `json:"transcriptState,omitempty"`
+
+	// CallID names the call this message is the line of in the chat: such a
+	// message has no words, and Call is the call as it now stands, read with
+	// the message.
+	CallID string    `json:"callId,omitempty"`
+	Call   *ChatCall `json:"call,omitempty"`
 }
 
 // MentionsUser says the message mentions the person, by name or by
