@@ -45,6 +45,8 @@ How to see it working: two accounts that share a circle, one on an iPhone and on
   Date/Author: 2026-11-02, the person.
 - Decision: a call in a group rings every member except those who set that chat's notifications to Off (Only mentions still rings).
   Date/Author: 2026-11-02, the person.
+- Decision: a chat with a call going shows a banner at its top, on the dashboard and the iPhone, that joins the call with one tap, for every member whether or not the call rang them; every member of the chat is told of each change to its call, so the banner comes and goes while the chat is open.
+  Date/Author: 2026-11-02, the person.
 - Decision: a call that comes in while the person is on another TeaNode call rings as a waiting call; answering it leaves the first (CallKit offers hold or end on the iPhone; the dashboard ends the first).
   Date/Author: 2026-11-02, the person.
 
@@ -85,7 +87,7 @@ Terms. WebRTC: the browser and phone standard for real-time audio and video. SFU
 - `JoinChatCallMedia(callId, offerSdp)` → answerSdp, and `ChatCallMedia(callId)` subscription for the SFU's renegotiation offers, ICE candidates and who is sending what (a small signaling channel per participant).
 - `SetChatCallVideo(callId, isVideoOn)`, `SetChatCallMuted(callId, isMuted)`: what the others are told (the tracks themselves start and stop on the device).
 - `AskChatCallTranscription(callId)`, `AnswerChatCallTranscription(callId, isConsenting)`.
-- `ListChatCalls(conversationId, first, after)`, `ReadChatCall(callId)` (with transcript).
+- `ListChatCalls(conversationId, first, before)`, `ReadChatCall(callId)` (with transcript), `ListGoingChatCalls()`, and `ReadGoingChatCall(conversationId)` for the banner a chat with a call going shows.
 - `ChatCallEvents` subscription: the account's feed of calls (ringing, answered elsewhere, ended), so any dashboard tab rings and stops ringing.
 
 The call's state changes are also chat events (`call`) on the members' conversation feeds, so an open chat updates its call line live.

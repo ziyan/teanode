@@ -448,6 +448,7 @@ github.com/pion/webrtc/v4/internal/fmtp
 github.com/pion/webrtc/v4/internal/mux
 github.com/pion/webrtc/v4/internal/util
 github.com/pion/webrtc/v4/pkg/media
+github.com/pion/webrtc/v4/pkg/media/oggwriter
 github.com/pion/webrtc/v4/pkg/rtcerr
 # github.com/redis/go-redis/v9 v9.23.0
 ## explicit; go 1.26.0

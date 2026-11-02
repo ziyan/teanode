@@ -13,6 +13,7 @@ package api
 import (
 	"context"
 	"errors"
+	"github.com/ziyan/teanode/internal/call"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/models"
 	"time"
@@ -94,6 +95,14 @@ type Settings struct {
 	// is there whatever the agent configuration is, nil only in a test with
 	// no chats.
 	Chat ChatService
+
+	// Calls is the media server of calls in chats; nil when calls are off
+	// or its ports could not be opened, in which case calls are refused.
+	Calls *call.Server
+
+	// CallRecorder keeps the microphones of the people on a call who agreed
+	// to its transcript; nil when calls are off.
+	CallRecorder *call.Recorder
 }
 
 // ChatService is what the API tells the chat hub in the request: who has the
