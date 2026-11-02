@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.211.1] - 2026-11-02
+
+### Fixed
+
+- A file attached to your own message shows its name, in the light and dark themes. (#715)
+
 ## [0.211.0] - 2026-11-02
 
 ### Added
