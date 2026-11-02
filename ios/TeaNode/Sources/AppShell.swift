@@ -89,6 +89,8 @@ struct MainView: View {
     @State private var mail: MailModel
     @State private var finance: FinanceModel
     @State private var financePart = FinancePart.spending
+    /// The pages pushed on Settings by name, as the Search tab opens them.
+    @State private var settingsPath: [SettingsPage] = []
     /// The list under Location's map, which the menu under its title chooses.
     @State private var locationSegment = LocationSegment.visits
     /// The photo library, held here so a link can open it on a filter.
@@ -256,6 +258,12 @@ struct MainView: View {
                 app.openedFinancePart = nil
                 financePart = part
             }
+            .onChange(of: app.openedSettingsPages) { _, pages in
+                guard let pages else { return }
+                app.openedSettingsPages = nil
+                settingsPath = pages
+                show(.settings)
+            }
             .onChange(of: app.openedFinanceSharerId) { _, userId in
                 guard let userId else { return }
                 app.openedFinanceSharerId = nil
@@ -354,7 +362,7 @@ struct MainView: View {
                 .customizationID("tab.more")
             }
             Tab(value: MainTab.search, role: .search) {
-                SearchTabScreen(connection: connection, onOpen: openSearchResult, onShowAll: showAllInPart)
+                SearchTabScreen(connection: connection, mail: mail, onOpen: openSearchResult, onShowAll: showAllInPart)
             }
             .customizationID("tab.search")
         }
@@ -716,9 +724,12 @@ struct MainView: View {
         case .coding:
             CodingScreen(connection: connection)
         case .settings:
-            NavigationStack {
+            NavigationStack(path: $settingsPath) {
                 SettingsForm()
                     .toolbar { MoreBackButton() }
+                    .navigationDestination(for: SettingsPage.self) { page in
+                        SettingsPageScreen(page: page)
+                    }
             }
             .environment(mail)
         }
