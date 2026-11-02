@@ -51,6 +51,13 @@ export interface ChatCallSessionSnapshot {
   // The connection to the media server dropped or failed. It comes back on its
   // own when the network does, or it does not and the person leaves.
   isConnectionLost: boolean
+  // The microphone this device sends, as the browser names it; empty until
+  // the microphone is open. The one marked in use in the audio menu.
+  microphoneDeviceId: string
+  // Where the sound of the others plays; empty is the system's default.
+  // Held here, and not by each audio element, so that the audio element of a
+  // person who arrives later plays where the others do.
+  soundOutputDeviceId: string
   // What this device sends, for its own picture and its own level.
   localAudioStream: MediaStream | null
   localVideoStream: MediaStream | null
@@ -104,6 +111,8 @@ export class ChatCallSession {
     isVideoOn: false,
     canSwitchCamera: false,
     isConnectionLost: false,
+    microphoneDeviceId: '',
+    soundOutputDeviceId: '',
     localAudioStream: null,
     localVideoStream: null,
     participants: {},
@@ -113,6 +122,7 @@ export class ChatCallSession {
   private connection: RTCPeerConnection | null = null
   private unsubscribeSignals: (() => void) | null = null
   private audioTrack: MediaStreamTrack | null = null
+  private audioSender: RTCRtpSender | null = null
   private videoTrack: MediaStreamTrack | null = null
   private videoSender: RTCRtpSender | null = null
   private videoInputCount = 0
@@ -128,6 +138,7 @@ export class ChatCallSession {
   private isClosed = false
   private isLeft = false
   private isChangingVideo = false
+  private isChangingMicrophone = false
   private readonly receivedTracks = new Map<
     string,
     { audio: MediaStreamTrack | null; video: MediaStreamTrack | null }
@@ -179,7 +190,10 @@ export class ChatCallSession {
         return
       }
       this.audioTrack = microphone.getAudioTracks()[0] ?? null
-      this.update({ localAudioStream: microphone })
+      this.update({
+        microphoneDeviceId: this.audioTrack?.getSettings().deviceId ?? '',
+        localAudioStream: microphone,
+      })
 
       const connection = this.options.createPeerConnection()
       this.connection = connection
@@ -189,7 +203,9 @@ export class ChatCallSession {
         const state = connection.connectionState
         this.update({ isConnectionLost: state === 'failed' || state === 'disconnected' })
       })
-      if (this.audioTrack) connection.addTrack(this.audioTrack, microphone)
+      // The sender is kept: choosing another microphone swaps the track in
+      // it, which needs no new offer.
+      if (this.audioTrack) this.audioSender = connection.addTrack(this.audioTrack, microphone)
       // The camera has a seat from the start, empty while it is off, so
       // turning it on later is a track swapped in and not a new offer.
       this.videoSender = connection.addTransceiver('video', { direction: 'sendrecv' }).sender
@@ -316,6 +332,68 @@ export class ChatCallSession {
     this.update({ isMuted })
   }
 
+  // setMicrophone moves the call to another microphone: the one chosen is
+  // opened before the old one is let go of, so a microphone that will not open
+  // leaves the call as it was. The track is swapped in the sender, which needs
+  // no new offer, and it keeps whether the person is muted. An empty id is the
+  // system's default microphone.
+  async setMicrophone(deviceId: string): Promise<void> {
+    if (this.isClosed || this.isChangingMicrophone || !this.audioSender) return
+    this.isChangingMicrophone = true
+    try {
+      const stream = await this.options.mediaDevices.getUserMedia({
+        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+      })
+      const track = stream.getAudioTracks()[0]
+      if (!track) {
+        stream.getTracks().forEach((each) => each.stop())
+        throw new Error('no audio track')
+      }
+      if (this.isClosed) {
+        track.stop()
+        return
+      }
+      track.enabled = !this.snapshot.isMuted
+      try {
+        await this.audioSender.replaceTrack(track)
+      } catch (caught) {
+        track.stop()
+        throw caught
+      }
+      const previous = this.audioTrack
+      this.audioTrack = track
+      previous?.stop()
+      this.update({ microphoneDeviceId: track.getSettings().deviceId ?? deviceId, localAudioStream: stream })
+    } finally {
+      this.isChangingMicrophone = false
+    }
+  }
+
+  // setSoundOutput chooses where the sound of the others plays. The session
+  // only keeps the choice; each audio element of the call applies it.
+  setSoundOutput(deviceId: string) {
+    this.update({ soundOutputDeviceId: deviceId })
+  }
+
+  // listAudioDevices is the microphones and the loudspeakers of this device.
+  // The browser names them only once the page has been allowed a microphone,
+  // which a call has.
+  async listAudioDevices(): Promise<{ microphones: MediaDeviceInfo[]; speakers: MediaDeviceInfo[] }> {
+    const devices = await this.options.mediaDevices.enumerateDevices()
+    return {
+      microphones: devices.filter((device) => device.kind === 'audioinput'),
+      speakers: devices.filter((device) => device.kind === 'audiooutput'),
+    }
+  }
+
+  // watchDeviceChanges tells of a device plugged in or taken away, until the
+  // function returned is called.
+  watchDeviceChanges(onChange: () => void): () => void {
+    const { mediaDevices } = this.options
+    mediaDevices.addEventListener?.('devicechange', onChange)
+    return () => mediaDevices.removeEventListener?.('devicechange', onChange)
+  }
+
   // setVideo turns the camera on or off: the track in the video seat is
   // swapped, which needs no new offer, and the others are told.
   async setVideo(isVideoOn: boolean): Promise<void> {
@@ -420,6 +498,7 @@ export class ChatCallSession {
     this.audioTrack?.stop()
     this.videoTrack?.stop()
     this.audioTrack = null
+    this.audioSender = null
     this.videoTrack = null
     this.connection?.close()
     this.offers.length = 0
@@ -428,6 +507,7 @@ export class ChatCallSession {
       phase: 'closed',
       isVideoOn: false,
       canSwitchCamera: false,
+      microphoneDeviceId: '',
       localAudioStream: null,
       localVideoStream: null,
       participants: {},

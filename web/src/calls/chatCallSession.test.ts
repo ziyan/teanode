@@ -38,6 +38,7 @@ class FakePeerConnection {
   log: string[] = []
   listeners: Record<string, ((event: unknown) => void)[]> = {}
   sender = { replaceTrack: vi.fn(async () => {}) }
+  audioSender = { replaceTrack: vi.fn(async () => {}) }
   answerCount = 0
   close = vi.fn()
 
@@ -50,6 +51,7 @@ class FakePeerConnection {
   }
   addTrack() {
     this.log.push('addTrack')
+    return this.audioSender
   }
   addTransceiver(kind: string, init: { direction: string }) {
     this.log.push(`addTransceiver ${kind} ${init.direction}`)
@@ -80,6 +82,8 @@ interface Harness {
   answers: ReturnType<typeof deferred<boolean>>[]
   signal: (offerSdp: string) => void
   microphone: FakeTrack
+  // The microphones opened by choosing one, in order.
+  chosenMicrophones: FakeTrack[]
   cameras: FakeTrack[]
   problems: unknown[]
 }
@@ -104,7 +108,8 @@ function build(options: Partial<ChatCallSessionOptions> = {}, cameraCount = 1): 
     onSignal = onData
     return () => {}
   })
-  const microphone = fakeTrack('audio')
+  const microphone = fakeTrack('audio', 'microphone-built-in')
+  const chosenMicrophones: FakeTrack[] = []
   const cameras: FakeTrack[] = []
   const problems: unknown[] = []
   const session = new ChatCallSession({
@@ -120,11 +125,20 @@ function build(options: Partial<ChatCallSessionOptions> = {}, cameraCount = 1): 
           cameras.push(camera)
           return { getVideoTracks: () => [camera], getAudioTracks: () => [], getTracks: () => [camera] }
         }
+        const audio = constraints.audio
+        if (typeof audio === 'object' && audio.deviceId) {
+          const chosen = fakeTrack('audio', (audio.deviceId as { exact: string }).exact)
+          chosenMicrophones.push(chosen)
+          return { getAudioTracks: () => [chosen], getVideoTracks: () => [], getTracks: () => [chosen] }
+        }
         return { getAudioTracks: () => [microphone], getVideoTracks: () => [], getTracks: () => [microphone] }
       }) as unknown as MediaDevices['getUserMedia'],
-      enumerateDevices: vi.fn(async () =>
-        Array.from({ length: cameraCount }, (_, index) => ({ kind: 'videoinput', deviceId: `camera-${index}` })),
-      ) as unknown as MediaDevices['enumerateDevices'],
+      enumerateDevices: vi.fn(async () => [
+        ...Array.from({ length: cameraCount }, (_, index) => ({ kind: 'videoinput', deviceId: `camera-${index}` })),
+        { kind: 'audioinput', deviceId: 'microphone-built-in' },
+        { kind: 'audioinput', deviceId: 'microphone-headset' },
+        { kind: 'audiooutput', deviceId: 'speaker-headset' },
+      ]) as unknown as MediaDevices['enumerateDevices'],
     },
     createMediaStream: (tracks) => ({ tracks }) as unknown as MediaStream,
     onProblem: (_problem, caught) => problems.push(caught),
@@ -139,6 +153,7 @@ function build(options: Partial<ChatCallSessionOptions> = {}, cameraCount = 1): 
     answers,
     signal: (offerSdp) => onSignal({ ChatCallSignals: { offerSdp } }),
     microphone,
+    chosenMicrophones,
     cameras,
     problems,
   }
@@ -167,6 +182,7 @@ describe('a device joining a call', () => {
     await started
     expect(harness.connection.log.slice(0, 2)).toEqual(['addTrack', 'addTransceiver video sendrecv'])
     expect(harness.connection.sender.replaceTrack).not.toHaveBeenCalled()
+    expect(harness.session.getSnapshot().microphoneDeviceId).toBe('microphone-built-in')
   })
 
   it('holds an offer that arrives before the answer to the join is set', async () => {
@@ -306,6 +322,67 @@ describe('the controls of a call', () => {
     expect(harness.session.getSnapshot().isMuted).toBe(true)
     harness.session.setMuted(false)
     expect(harness.microphone.enabled).toBe(true)
+  })
+
+  it('moves to another microphone by swapping the track, with no new offer', async () => {
+    const harness = build()
+    await connected(harness)
+    const offersBefore = harness.connection.log.filter((entry) => entry.startsWith('local')).length
+
+    await harness.session.setMicrophone('microphone-headset')
+
+    const [headset] = harness.chosenMicrophones
+    expect(harness.connection.audioSender.replaceTrack).toHaveBeenCalledWith(headset)
+    expect(harness.microphone.stop).toHaveBeenCalled()
+    expect(headset.stop).not.toHaveBeenCalled()
+    expect(harness.session.getSnapshot().microphoneDeviceId).toBe('microphone-headset')
+    expect(harness.session.getSnapshot().localAudioStream?.getAudioTracks()[0]).toBe(headset)
+    expect(harness.connection.log.filter((entry) => entry.startsWith('local'))).toHaveLength(offersBefore)
+  })
+
+  it('keeps the person muted on the new microphone', async () => {
+    const harness = build()
+    await connected(harness)
+    harness.session.setMuted(true)
+
+    await harness.session.setMicrophone('microphone-headset')
+    expect(harness.chosenMicrophones[0].enabled).toBe(false)
+    expect(harness.session.getSnapshot().isMuted).toBe(true)
+
+    // And unmuting reaches the microphone now in use, not the one let go.
+    harness.session.setMuted(false)
+    expect(harness.chosenMicrophones[0].enabled).toBe(true)
+  })
+
+  it('keeps the old microphone when the new one cannot be opened or swapped in', async () => {
+    const harness = build()
+    await connected(harness)
+
+    harness.connection.audioSender.replaceTrack.mockRejectedValueOnce(new Error('refused'))
+    await expect(harness.session.setMicrophone('microphone-headset')).rejects.toThrow('refused')
+    expect(harness.chosenMicrophones[0].stop).toHaveBeenCalled()
+    expect(harness.microphone.stop).not.toHaveBeenCalled()
+    expect(harness.session.getSnapshot().microphoneDeviceId).toBe('microphone-built-in')
+
+    // A choice that failed does not block the next.
+    await harness.session.setMicrophone('microphone-headset')
+    expect(harness.microphone.stop).toHaveBeenCalled()
+  })
+
+  it('lists the microphones and the loudspeakers apart', async () => {
+    const harness = build()
+    const { microphones, speakers } = await harness.session.listAudioDevices()
+    expect(microphones.map((device) => device.deviceId)).toEqual(['microphone-built-in', 'microphone-headset'])
+    expect(speakers.map((device) => device.deviceId)).toEqual(['speaker-headset'])
+  })
+
+  it('keeps where the sound plays, to be told to every audio element', async () => {
+    const harness = build()
+    const heard = vi.fn()
+    harness.session.subscribe(heard)
+    harness.session.setSoundOutput('speaker-headset')
+    expect(harness.session.getSnapshot().soundOutputDeviceId).toBe('speaker-headset')
+    expect(heard).toHaveBeenCalled()
   })
 
   it('turns the camera on by swapping the track in and telling the others', async () => {

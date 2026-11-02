@@ -2,7 +2,15 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { graphql } from '../api'
-import { answerCallsWith, callOf, fakeSession, memberOf, quietSnapshot, renderWithCalls } from './chatCallFixtures'
+import {
+  answerCallsWith,
+  callOf,
+  deviceOf,
+  fakeSession,
+  memberOf,
+  quietSnapshot,
+  renderWithCalls,
+} from './chatCallFixtures'
 import type { ChatCallSessionSnapshot } from './chatCallSession'
 import { useChatCalls } from './chatCallContext'
 
@@ -45,9 +53,10 @@ async function startCall(
   call = onTheCall,
   snapshot: ChatCallSessionSnapshot = quietSnapshot,
   extra: Record<string, (variables: Record<string, unknown>) => unknown> = {},
+  devices?: Parameters<typeof fakeSession>[1],
 ) {
   const server = answerCallsWith({ StartChatCall: () => call, ...extra })
-  const session = fakeSession(snapshot)
+  const session = fakeSession(snapshot, devices)
   renderWithCalls(<StartHere />, () => session)
   fireEvent.click(screen.getByRole('button', { name: 'Start here' }))
   const screenDialog = await screen.findByRole('dialog', { name: 'Call in Trip planning' })
@@ -206,4 +215,105 @@ it('asks for a transcript through the bar', async () => {
       callId: 'call-one',
     }),
   )
+})
+
+// A browser that can play an audio element on a device of its choice.
+function allowSoundOutputChoice() {
+  const setSinkId = vi.fn(async () => {})
+  Object.defineProperty(HTMLMediaElement.prototype, 'setSinkId', { value: setSinkId, configurable: true })
+  return setSinkId
+}
+
+const devices = {
+  microphones: [
+    deviceOf('audioinput', 'default', 'Default - Built-in microphone'),
+    deviceOf('audioinput', 'microphone-built-in', 'Built-in microphone'),
+    deviceOf('audioinput', 'microphone-headset', 'Headset microphone'),
+  ],
+  speakers: [
+    deviceOf('audiooutput', 'default', ''),
+    deviceOf('audiooutput', 'speaker-built-in', 'Built-in speakers'),
+    deviceOf('audiooutput', 'speaker-headset', 'Headset'),
+  ],
+}
+
+afterEach(() => {
+  Reflect.deleteProperty(HTMLMediaElement.prototype, 'setSinkId')
+})
+
+it('chooses the microphone from the audio menu, marking the one in use', async () => {
+  const { screenDialog, session } = await startCall(
+    onTheCall,
+    { ...quietSnapshot, microphoneDeviceId: 'microphone-built-in' },
+    {},
+    devices,
+  )
+
+  fireEvent.click(within(screenDialog).getByRole('button', { name: 'Sound and microphone' }))
+  const menu = await screen.findByRole('dialog', { name: 'Sound and microphone' })
+  const builtIn = await within(menu).findByRole('button', { name: 'Built-in microphone' })
+  expect(builtIn.getAttribute('aria-pressed')).toBe('true')
+  expect(within(menu).getByRole('button', { name: 'Headset microphone' }).getAttribute('aria-pressed')).toBe('false')
+
+  fireEvent.click(within(menu).getByRole('button', { name: 'Headset microphone' }))
+  expect(session.setMicrophone).toHaveBeenCalledWith('microphone-headset')
+  // Choosing closes the menu, and the call stays on screen.
+  expect(screen.queryByRole('dialog', { name: 'Sound and microphone' })).toBeNull()
+  expect(screen.getByRole('dialog', { name: 'Call in Trip planning' })).toBeTruthy()
+})
+
+it('plays the others on the chosen device, new voices included, and names the default one', async () => {
+  const setSinkId = allowSoundOutputChoice()
+  const { screenDialog, session } = await startCall(
+    onTheCall,
+    {
+      ...quietSnapshot,
+      participants: { 'person-b': { audioStream: {} as MediaStream, videoStream: null } },
+    },
+    {},
+    devices,
+  )
+  // Nothing is asked of a call that never chose a device.
+  expect(setSinkId).not.toHaveBeenCalled()
+
+  fireEvent.click(within(screenDialog).getByRole('button', { name: 'Sound and microphone' }))
+  const menu = await screen.findByRole('dialog', { name: 'Sound and microphone' })
+  // The default device has no label until the browser names it.
+  const systemDefault = await within(menu).findByRole('button', { name: 'System default' })
+  expect(systemDefault.getAttribute('aria-pressed')).toBe('true')
+
+  fireEvent.click(within(menu).getByRole('button', { name: 'Headset' }))
+  expect(session.setSoundOutput).toHaveBeenCalledWith('speaker-headset')
+  await waitFor(() => expect(setSinkId).toHaveBeenCalledWith('speaker-headset'))
+  expect(document.querySelectorAll('audio')).toHaveLength(1)
+})
+
+it('leaves out the sound section where the browser cannot choose where sound plays', async () => {
+  const { screenDialog } = await startCall(onTheCall, quietSnapshot, {}, devices)
+
+  fireEvent.click(within(screenDialog).getByRole('button', { name: 'Sound and microphone' }))
+  const menu = await screen.findByRole('dialog', { name: 'Sound and microphone' })
+  await within(menu).findByRole('button', { name: 'Headset microphone' })
+  expect(within(menu).queryByText('Play sound on')).toBeNull()
+  expect(within(menu).queryByRole('button', { name: 'Built-in speakers' })).toBeNull()
+})
+
+it('closes the audio menu on Escape without putting the call away, and on a click outside it', async () => {
+  const { screenDialog } = await startCall(onTheCall, quietSnapshot, {}, devices)
+  const open = () => fireEvent.click(within(screenDialog).getByRole('button', { name: 'Sound and microphone' }))
+
+  open()
+  await screen.findByRole('dialog', { name: 'Sound and microphone' })
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(screen.queryByRole('dialog', { name: 'Sound and microphone' })).toBeNull()
+  expect(screen.getByRole('dialog', { name: 'Call in Trip planning' })).toBeTruthy()
+
+  open()
+  await screen.findByRole('dialog', { name: 'Sound and microphone' })
+  fireEvent.mouseDown(document.body)
+  expect(screen.queryByRole('dialog', { name: 'Sound and microphone' })).toBeNull()
+
+  // With no menu open, Escape puts the call away as it did.
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(await screen.findByRole('group', { name: 'Call in Trip planning' })).toBeTruthy()
 })

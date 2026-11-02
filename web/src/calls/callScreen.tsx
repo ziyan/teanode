@@ -1,17 +1,20 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 import { Avatar } from '../components/avatar'
 import {
   CameraSwitchIcon,
+  CheckIcon,
   DocumentIcon,
   ExpandIcon,
   MicrophoneIcon,
   MicrophoneOffIcon,
   MinimizeIcon,
   PhoneHangUpIcon,
+  SpeakerIcon,
   VideoIcon,
   VideoOffIcon,
 } from '../components/icons'
+import { MenuButton } from '../components/menuButton'
 import { useToast } from '../components/toast'
 import { Tooltip } from '../components/tooltip'
 import { useTranslation } from '../i18n/i18n'
@@ -42,13 +45,36 @@ function useElapsed(since: string | null): number {
   return since ? Math.max(0, now - new Date(since).getTime()) : 0
 }
 
+// canChooseSoundOutput is whether this browser can play an audio element on a
+// device other than the default one. Safari and Firefox may not.
+export function canChooseSoundOutput(): boolean {
+  return typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype
+}
+
 // RemoteAudio plays one person's microphone. A stream is not an address, so it
-// is set on the element rather than in a src.
-function RemoteAudio({ stream }: { stream: MediaStream }) {
+// is set on the element rather than in a src. It plays on the device the call
+// is set to, whenever that changes and on first appearing, so that a person who
+// arrives after the choice is heard where the others are.
+function RemoteAudio({
+  stream,
+  soundOutputDeviceId,
+  onSoundOutputFailed,
+}: {
+  stream: MediaStream
+  soundOutputDeviceId: string
+  onSoundOutputFailed: (caught: unknown) => void
+}) {
   const element = useRef<HTMLAudioElement>(null)
   useEffect(() => {
     if (element.current && element.current.srcObject !== stream) element.current.srcObject = stream
   }, [stream])
+  useEffect(() => {
+    const audio = element.current as (HTMLAudioElement & { setSinkId?: (deviceId: string) => Promise<void> }) | null
+    // An element already on the default device is left alone, so that a call
+    // that never chose one never asks for it.
+    if (!audio?.setSinkId || (audio.sinkId ?? '') === soundOutputDeviceId) return
+    audio.setSinkId(soundOutputDeviceId).catch(onSoundOutputFailed)
+  }, [soundOutputDeviceId, onSoundOutputFailed])
   return <audio ref={element} autoPlay hidden />
 }
 
@@ -61,11 +87,25 @@ export function CallAudio() {
 }
 
 function CallAudioStreams({ session }: { session: ChatCallSession }) {
+  const { t } = useTranslation()
+  const toast = useToast()
   const snapshot = useSessionSnapshot(session)
+  // A device that was taken away since it was chosen cannot be played on.
+  const tellSoundOutputFailure = useCallback(
+    (caught: unknown) => toast.failure(caught, t('calls.soundOutputFailed')),
+    [t, toast],
+  )
   return (
     <>
       {Object.entries(snapshot.participants).map(([userId, participant]) =>
-        participant.audioStream ? <RemoteAudio key={userId} stream={participant.audioStream} /> : null,
+        participant.audioStream ? (
+          <RemoteAudio
+            key={userId}
+            stream={participant.audioStream}
+            soundOutputDeviceId={snapshot.soundOutputDeviceId}
+            onSoundOutputFailed={tellSoundOutputFailure}
+          />
+        ) : null,
       )}
     </>
   )
@@ -126,6 +166,125 @@ function CallTile({
   )
 }
 
+// isDefaultDevice is the entry a browser lists for the system's default
+// device, or the empty id a choice of it is kept as.
+function isDefaultDevice(deviceId: string): boolean {
+  return deviceId === '' || deviceId === 'default'
+}
+
+// isDeviceInUse is whether a device listed is the one chosen. The default
+// device is listed under an id of its own and chosen as the empty id, and the
+// browser reports the id of the default microphone either way.
+function isDeviceInUse(device: MediaDeviceInfo, chosenDeviceId: string): boolean {
+  return device.deviceId === chosenDeviceId || (isDefaultDevice(chosenDeviceId) && isDefaultDevice(device.deviceId))
+}
+
+// useAudioDevices is the microphones and loudspeakers of this device, read
+// when it is first used and again whenever one is plugged in or taken away.
+function useAudioDevices(session: ChatCallSession) {
+  const [devices, setDevices] = useState<{ microphones: MediaDeviceInfo[]; speakers: MediaDeviceInfo[] }>({
+    microphones: [],
+    speakers: [],
+  })
+  useEffect(() => {
+    let isCancelled = false
+    const read = () => {
+      session
+        .listAudioDevices()
+        .then((listed) => {
+          if (!isCancelled) setDevices(listed)
+        })
+        // A list that cannot be read is an empty menu, not a failed call.
+        .catch(() => {})
+    }
+    read()
+    const stopWatching = session.watchDeviceChanges(read)
+    return () => {
+      isCancelled = true
+      stopWatching()
+    }
+  }, [session])
+  return devices
+}
+
+// AudioMenu is where the sound of the call plays and which microphone it
+// uses, as the iPhone app lets a person choose the speaker, a headset or the
+// phone. The sound section is left out where the browser cannot play on
+// another device. The device in use is ticked.
+function AudioMenu({ session, close }: { session: ChatCallSession; close: () => void }) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const snapshot = useSessionSnapshot(session)
+  const { microphones, speakers } = useAudioDevices(session)
+
+  // The names are empty until the browser has allowed a microphone. The
+  // default device is then still called what it is, and any other is numbered.
+  const nameOf = (device: MediaDeviceInfo, index: number) => {
+    if (device.label) return device.label
+    return isDefaultDevice(device.deviceId) ? t('calls.systemDefault') : t('calls.deviceNumber', { number: index + 1 })
+  }
+
+  // Every browser can be taken back to the default device, even one that does
+  // not list it.
+  const soundOutputs: MediaDeviceInfo[] = speakers.some((device) => isDefaultDevice(device.deviceId))
+    ? speakers
+    : [{ deviceId: '', groupId: '', kind: 'audiooutput', label: '' } as MediaDeviceInfo, ...speakers]
+  const namedMicrophones = microphones.filter((device) => device.deviceId)
+
+  const chooseMicrophone = (deviceId: string) => {
+    close()
+    session.setMicrophone(deviceId).catch((caught) => toast.failure(caught, t('calls.microphoneFailed')))
+  }
+  const chooseSoundOutput = (deviceId: string) => {
+    close()
+    session.setSoundOutput(deviceId)
+  }
+
+  const choices = (
+    heading: string,
+    devices: MediaDeviceInfo[],
+    chosenDeviceId: string,
+    onChoose: (deviceId: string) => void,
+  ) => (
+    <div role="group" aria-label={heading}>
+      <div className="menu-header" aria-hidden="true">
+        {heading}
+      </div>
+      {devices.map((device, index) => {
+        const isInUse = isDeviceInUse(device, chosenDeviceId)
+        return (
+          <button
+            key={device.deviceId || 'system-default'}
+            type="button"
+            className={isInUse ? 'selected' : undefined}
+            aria-pressed={isInUse}
+            onClick={() => onChoose(device.deviceId)}
+          >
+            <span className="menu-check" aria-hidden="true">
+              {isInUse && <CheckIcon size={14} />}
+            </span>
+            {nameOf(device, index)}
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  return (
+    <>
+      {canChooseSoundOutput()
+        ? choices(t('calls.soundOutput'), soundOutputs, snapshot.soundOutputDeviceId, chooseSoundOutput)
+        : null}
+      {canChooseSoundOutput() && namedMicrophones.length > 0 ? (
+        <div className="menu-separator" role="separator" />
+      ) : null}
+      {namedMicrophones.length > 0
+        ? choices(t('calls.microphone'), namedMicrophones, snapshot.microphoneDeviceId, chooseMicrophone)
+        : null}
+    </>
+  )
+}
+
 // callStatusOf is the line under the call's name: how it is going.
 function callStatusOf(
   call: ChatCall | undefined,
@@ -156,10 +315,14 @@ function CallScreenView({ activeCall }: { activeCall: ActiveChatCall }) {
   const elapsedMS = useElapsed(call?.answeredAt ?? null)
   const ownUserId = session?.userId ?? ''
 
-  // Escape puts the call away to a small window, not an end to it.
+  // Escape puts the call away to a small window, not an end to it. Unless a
+  // menu of the bar is open: its Escape closes it, and this one runs first.
+  const bar = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) setMinimized(true)
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (bar.current?.querySelector('[aria-expanded="true"]')) return
+      setMinimized(true)
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
@@ -256,7 +419,7 @@ function CallScreenView({ activeCall }: { activeCall: ActiveChatCall }) {
           })}
         </ul>
 
-        <div className="call-bar" role="toolbar" aria-label={t('calls.controls')}>
+        <div className="call-bar" role="toolbar" aria-label={t('calls.controls')} ref={bar}>
           <Tooltip label={snapshot.isMuted ? t('calls.unmute') : t('calls.mute')}>
             <button
               type="button"
@@ -291,6 +454,16 @@ function CallScreenView({ activeCall }: { activeCall: ActiveChatCall }) {
               </button>
             </Tooltip>
           ) : null}
+          <Tooltip label={t('calls.audio')}>
+            <MenuButton
+              className="call-control"
+              label={t('calls.audio')}
+              icon={<SpeakerIcon size={20} />}
+              placement="above"
+              popup="dialog"
+              render={(close) => <AudioMenu session={activeCall.session} close={close} />}
+            />
+          </Tooltip>
           {call && !isAsked ? (
             <Tooltip label={t('calls.transcribe')}>
               <button

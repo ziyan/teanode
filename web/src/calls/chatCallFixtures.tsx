@@ -64,24 +64,50 @@ export const quietSnapshot: ChatCallSessionSnapshot = {
   isVideoOn: false,
   canSwitchCamera: false,
   isConnectionLost: false,
+  microphoneDeviceId: '',
+  soundOutputDeviceId: '',
   localAudioStream: null,
   localVideoStream: null,
   participants: {},
 }
 
-// fakeSession is a connection that connects to nothing and says so.
-export function fakeSession(snapshot: ChatCallSessionSnapshot = quietSnapshot) {
+// fakeSession is a connection that connects to nothing and says so. What the
+// person chooses of the sound is kept and told of, as the real one does, and
+// the devices are the ones given.
+export function fakeSession(
+  snapshot: ChatCallSessionSnapshot = quietSnapshot,
+  devices: { microphones: MediaDeviceInfo[]; speakers: MediaDeviceInfo[] } = { microphones: [], speakers: [] },
+) {
+  let current = snapshot
+  const listeners = new Set<() => void>()
   const session = {
-    subscribe: () => () => {},
-    getSnapshot: () => snapshot,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+    getSnapshot: () => current,
     start: vi.fn(async () => {}),
     leave: vi.fn(async () => {}),
     close: vi.fn(),
     setMuted: vi.fn(),
     setVideo: vi.fn(async () => {}),
     switchCamera: vi.fn(async () => {}),
+    setMicrophone: vi.fn(async () => {}),
+    setSoundOutput: vi.fn((soundOutputDeviceId: string) => {
+      current = { ...current, soundOutputDeviceId }
+      listeners.forEach((listener) => listener())
+    }),
+    listAudioDevices: vi.fn(async () => devices),
+    watchDeviceChanges: vi.fn(() => () => {}),
   }
   return session as unknown as ChatCallSession & typeof session
+}
+
+// deviceOf is a microphone or a loudspeaker as the browser lists it.
+export function deviceOf(kind: 'audioinput' | 'audiooutput', deviceId: string, label: string): MediaDeviceInfo {
+  return { kind, deviceId, label, groupId: '' } as MediaDeviceInfo
 }
 
 // answerCallsWith makes the server: each operation named answers with what the
