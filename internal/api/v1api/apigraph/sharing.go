@@ -105,7 +105,9 @@ type SharingMadeView struct {
 
 	// What else it gives: the Health categories, the skill's tools, quotes for
 	// a page shared with the words each fact was read in, location for an
-	// album shared with where its photos were taken
+	// album shared with where its photos were taken, allAccounts for a finance
+	// share that covers all of the caller's finance and has no subject (it is
+	// taken back with UnshareFinance, not UnshareFinanceAccount)
 	ShareScopes []string `json:"shareScopes"`
 
 	// How many password items it reaches; zero for the other kinds
@@ -303,6 +305,13 @@ func (self *graph) sharesMadeBy(tx db.Transaction, user *models.User, shareKind 
 		for _, share := range shares {
 			rows = append(rows, financeShareRow(share))
 		}
+		allShares, err := tx.ListAllFinanceSharesBy(user.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, share := range allShares {
+			rows = append(rows, allFinanceShareRow(share))
+		}
 	case models.ShareKindPasswords:
 		return tx.ListPasswordSharesBy(user.ID)
 	case models.ShareKindShopping:
@@ -390,6 +399,13 @@ func (self *graph) sharesReachingFor(tx db.Transaction, user *models.User, share
 		for _, share := range shares {
 			rows = append(rows, financeShareRow(share))
 		}
+		allShares, err := tx.ListAllFinanceSharesReaching(user.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, share := range allShares {
+			rows = append(rows, allFinanceShareRow(share))
+		}
 	case models.ShareKindPasswords:
 		return tx.ListPasswordSharesReaching(user.ID)
 	case models.ShareKindShopping:
@@ -426,6 +442,19 @@ func financeShareRow(share *models.FinanceShare) *models.ShareRow {
 		GranteeUserID: share.GranteeUserID, GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName,
 		GranteeCircleID: share.GranteeCircleID, GranteeCircleName: share.GranteeCircleName,
 		ShareLevel: string(share.FinanceShareLevel), CreatedAt: share.CreatedAt,
+	}
+}
+
+// allFinanceShareRow is a share of all of a person's finance as a row of the
+// list. It is of no one account, so it has no subject, and its scope says what
+// it covers.
+func allFinanceShareRow(share *models.AllFinanceShare) *models.ShareRow {
+	return &models.ShareRow{
+		ShareKind: models.ShareKindFinance, ShareID: share.ID,
+		OwnerUserID: share.OwnerUserID, OwnerUsername: share.OwnerUsername, OwnerName: share.OwnerName, OwnerUser: share.OwnerUser,
+		GranteeUserID: share.GranteeUserID, GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName,
+		GranteeCircleID: share.GranteeCircleID, GranteeCircleName: share.GranteeCircleName,
+		ShareLevel: string(share.FinanceShareLevel), ShareScopes: []string{models.ShareScopeAllAccounts}, CreatedAt: share.CreatedAt,
 	}
 }
 

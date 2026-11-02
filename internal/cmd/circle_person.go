@@ -204,6 +204,12 @@ func printPersonCardFinance(card *client.PersonCard) error {
 	if section == nil || !personCardSectionHeading("finance", section.SectionState) {
 		return nil
 	}
+	if section.AllFinanceShareLevel != "" {
+		fmt.Printf("shares all their finance with you at %s; teanode finance spending-summary --person <username> reads it\n", section.AllFinanceShareLevel)
+	}
+	if len(section.FinanceAccounts) == 0 {
+		return nil
+	}
 	rows := make([][]string, 0, len(section.FinanceAccounts))
 	for _, each := range section.FinanceAccounts {
 		used := ""

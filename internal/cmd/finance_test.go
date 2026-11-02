@@ -52,9 +52,10 @@ var financeSubcommandsSpanningOperations = map[string][]string{
 	"record-receipt": {"RecordReceipt", "PreviewRecordReceipt"},
 	// Sharing a finance account is named for what the person does. The agent's
 	// finance tool has no part in any of it.
-	"share":          {"ShareFinanceAccount"},
-	"shares":         {"ListFinanceAccountShares", "ListSharedFinanceAccounts"},
-	"unshare":        {"UnshareFinanceAccount"},
+	// Sharing all of one's finance is share all.
+	"share":          {"ShareFinanceAccount", "ShareFinance"},
+	"shares":         {"ListFinanceAccountShares", "ListFinanceShares", "ListSharedFinanceAccounts", "ListSharedFinance"},
+	"unshare":        {"UnshareFinanceAccount", "UnshareFinance"},
 	"sync":           {},
 	"disable-source": {},
 	"enable-source":  {},
