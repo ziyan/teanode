@@ -370,6 +370,54 @@ cursor a chat source reads from: identifiers made by different server instances
 are not in the order of their clocks, so comparing the identifiers alone could
 skip or repeat a message.
 
+**Voice messages.** A voice message is a chat message that is one recording:
+`chat_message.is_voice_message` is set, the body is empty and there is exactly
+one file. The recording is uploaded first (`POST /api/v1/agent/attachments`
+with `isVoiceMessage=true`), where `internal/voicemessage` makes it a mono AAC
+file in an MP4 container (`Voice message.m4a`, `audio/mp4`; an upload that is
+AAC already is remuxed, not encoded again) and works out its length and 48 peak
+levels for the waveform, which live on the file (`agent_attachment.audio_duration_ms`,
+`audio_waveform`) and so ride along in the copy of the file the message keeps.
+It is refused with a 422 and a plain sentence when it has no sound, is shorter
+than half a second or longer than two minutes, and with a 503 when the server
+has no ffmpeg (`ReadAgentVoice.isVoiceMessageAvailable` says so ahead of time,
+whether or not the person's agent is on). It is then sent by `AskAgent` with
+`voiceMessageAttachmentId` and no message: the file must be the caller's own,
+unsent, and prepared; the message can carry no other file, no mention, no
+addressed agent (a reply to an agent's message does not address it either), and
+outside a chat the argument is refused. Anyone in the chat plays the file
+through the attachment URL, which answers byte ranges. Its push notification says
+"Voice message (0:12)" in the reader's language. A voice message cannot be
+edited, because its words are not the sender's to change; deleting it takes the
+recording and the words.
+
+Its words, the **transcript** (`transcript_text`), are written by the server
+afterwards (`(*Agent).TranscribeVoiceMessage`), so the bubble appears at once.
+`transcript_state` is `waiting` while they are coming, then `done`, `failed`
+(the provider refused the recording, or nothing came in half an hour) or `off`.
+It starts `off`, and the bubble just plays, when the words would have nobody to
+pay for them: voice is off on the server (`agent.voice`), or the sender's agent
+is off, the sender may not use an agent, or the agent's budget is spent. The
+sender's agent pays: the usage is recorded against it with the kind `voice`,
+through the same file transcription recordings use. A server claims a waiting
+message before it works on it (`transcript_tried_at`, five minutes), so of
+several servers one does; the tick sweeps messages nobody is working on, which a
+restart or a provider that was down leaves, and gives up on those older than 30
+minutes. When the words are written, every member who can read the message is
+told with an `edited` event (the message as `ReadAgentConversation` returns it,
+with `transcriptText` and `transcriptState`, and no `editedAt`), so a client
+draws the message again.
+
+What an agent reads is `[voice message, 0:12] <transcript>`, or `[voice message,
+0:12, no transcript]` when there are no words (`ChatMessage.WordsForReading`),
+in a chat turn's history, in the `conversation` tool's `read` (which also gives
+`voice_message: {seconds, transcript_state}`, so "being written" is told from
+"nothing said"), and in what a chat source files. The source waits for the
+words of a message that is still `waiting` before it files the rest of the
+page, as it never changes what it has filed. A reply to a voice message shows
+its transcript, or "Voice message" when it has none. The `conversation` tool's
+`send` stays text only.
+
 **Told.** Who is in a chat is told as well: adding, taking out, leaving, a
 circle's change to its chat and a circle ending send a `members` event to the
 conversation of everybody in the chat now and of those the change took out, once
@@ -553,8 +601,11 @@ agent that its owner let the chat ask, and a line of `agent chat` that starts
 with `@agent` asks your own; `--mention USERNAME` (repeatable) and
 `--mention-all` on `ask` mention people, and a line of `agent chat` mentions
 whoever it names after an @.
-`direct`, `group`, `add`, `remove`, `leave`, `notifications`, `read`, `edit` and
-`delete-message` do the rest, and `remember ID on|off` and
+`--voice-message FILE` on `ask` sends a recording as a voice message (it takes
+no message, `--attach`, `--address` or `--mention`), and `show` and `agent chat`
+print one as `(voice message 0:07) words`, with `(transcribing)` or `(no
+transcript)` when there are none. `direct`, `group`, `add`, `remove`, `leave`,
+`notifications`, `read`, `edit` and `delete-message` do the rest, and `remember ID on|off` and
 `others-may-ask ID on|off` are the two switches. `agent chat` finds what the others say by looking every couple of
 seconds, as a terminal cannot be pushed to.
 

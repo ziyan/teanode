@@ -1813,7 +1813,9 @@ talking, and each finished utterance is sent as an ordinary turn, the same as
 if they had typed it. The answer is spoken back through the provider's
 text-to-speech, and stops when the person starts talking. Off by default.
 
-**`enabled`** — Whether the drawer offers the microphone.
+**`enabled`** — Whether the drawer offers the microphone. Dictation (words
+spoken into a box) and the words under a voice message use it too: with it off,
+a voice message still plays but has no transcript.
 
 **`provider`** — The provider of kind `openai` whose key and address the
 transcription uses. Empty is the first one.
@@ -1821,7 +1823,8 @@ transcription uses. Empty is the first one.
 **`transcriptionModel`** — The realtime transcription model. It has to be
 one that detects speech itself; `gpt-live-transcribe` and
 `gpt-realtime-whisper` need the application to end each turn and are refused.
-Empty is `gpt-4o-transcribe`.
+Empty is `gpt-4o-transcribe`. The words under a voice message are written by
+this model too, from the saved file, and are paid for by the sender's agent.
 
 **`silenceMS`** — How long a pause ends what somebody is saying, in
 milliseconds, up to 5000. Zero, the default, lets the provider judge from

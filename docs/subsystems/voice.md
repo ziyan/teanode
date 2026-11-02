@@ -177,12 +177,54 @@ check-in, a subagent, background work), one whose person chose their own
 model, and one the depth judgement chose to dig on all start on the ask model
 as before.
 
+## Dictation
+
+Dictation puts the words a person says into a box and sends nothing: the agent
+conversation's box, a chat's box, or the journal's "Your words". It is the same
+socket as a call, `/api/v1/agent/voice`, opened with a hello that says
+`purpose: "dictation"` and `dictationPlace`: `agent`, `chat` or `journal`. A
+hello with no purpose is a call, as before; any other purpose or place is
+refused. The socket already only transcribes and starts no turn, so dictation
+changes two things: the transcription is told what the words are for (a message
+to the agent, to people in a chat, or a page of the journal's own words, where
+a call is told whom the person is talking to), and nothing is read aloud (a
+`speakAnswer` is answered with `answerAudioFailed`). The socket streams
+`transcriptDelta` and `transcriptFinal` for each utterance, and the client puts
+each final transcript into the box at the cursor, to be edited and sent or saved
+by the person. It needs what a call needs: voice on, an agent that is on, and
+budget; each transcription is paid for by the agent as `voice`, and the log says
+"started dictating". A client offers it when `ReadAgentVoice.isVoiceAvailable`
+is true.
+
+## Voice messages
+
+A voice message is a recording sent in a chat, with its words written under it.
+It does not use the realtime socket: the app or the page records a file
+(AAC in an m4a on the iPhone and in Safari, WebM and Opus in Chrome and
+Firefox), uploads it with `isVoiceMessage=true`, and posts it with `AskAgent`
+and `voiceMessageAttachmentId`. The server makes the recording one mono AAC file
+(`internal/voicemessage`, ffmpeg and ffprobe reading the upload through a file
+descriptor under the protocol and format whitelist recordings use), measures it,
+and, after the message is posted, writes its words through the provider's file
+transcription: the model of `agent.voice` (`transcriptionModel`), through its
+provider, with the names of the people in the chat as the prompt. The sender's
+agent pays, as `voice`; with voice off, or the sender's agent off or over its
+budget, the message is posted with `transcript_state` `off` and plays with no
+words. A message is between half a second and two minutes long. A voice message
+is not a call and starts no agent turn; what an agent reads of one, and how a
+transcript is retried, is in `conversations.md`.
+
+`ReadAgentVoice.isVoiceMessageAvailable` is true when ffmpeg was found on the
+server, and is answered for a person whose agent is off, or who may only chat.
+
 ## Configuration
 
 `agent.voice` in `docs/configuration.md`: on or off, which provider of kind
 `openai`, the model (`gpt-4o-transcribe` by default) and the pause that ends a
 turn. It is on the server's agent settings page and in `teanode settings`. The
-drawer asks `ReadAgentVoice` whether to show the microphone.
+drawer asks `ReadAgentVoice` whether to show the microphone. The transcripts of
+voice messages and recordings' second pass use its provider and
+`transcriptionModel` too; they need voice on only for voice messages.
 
 ## What it does not do yet
 
