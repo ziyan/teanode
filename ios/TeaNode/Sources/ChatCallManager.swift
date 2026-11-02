@@ -555,9 +555,12 @@ final class ChatCallManager: NSObject {
 
     /// Changes to the phone's other camera.
     func flipCamera() {
-        guard let session, session.isCameraOn else { return }
-        session.usesFrontCamera.toggle()
-        session.media?.flipCamera(usesFrontCamera: session.usesFrontCamera)
+        guard let session, session.isCameraOn, let media = session.media else { return }
+        // Only a camera that opened is the one in use: a phone whose other
+        // camera will not open stays on this one.
+        if media.flipCamera(usesFrontCamera: !session.usesFrontCamera) {
+            session.usesFrontCamera.toggle()
+        }
     }
 
     /// Plays the call on the speaker, or back on the receiver or whatever is

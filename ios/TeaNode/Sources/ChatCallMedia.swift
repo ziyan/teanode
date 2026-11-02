@@ -306,7 +306,10 @@ final class ChatCallMedia {
     func flipCamera(usesFrontCamera: Bool) -> Bool {
         guard let videoSource else { return false }
         stopCapture()
-        return startCapture(into: videoSource, usesFrontCamera: usesFrontCamera)
+        if startCapture(into: videoSource, usesFrontCamera: usesFrontCamera) { return true }
+        // The other camera would not open: the one before goes on again.
+        _ = startCapture(into: videoSource, usesFrontCamera: !usesFrontCamera)
+        return false
     }
 
     private func startCapture(into source: RTCVideoSource, usesFrontCamera: Bool) -> Bool {
