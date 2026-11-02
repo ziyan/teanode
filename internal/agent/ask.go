@@ -385,6 +385,11 @@ type Event struct {
 	Message      *models.AgentMessage `json:"message,omitempty"`
 	IsMessageCut bool                 `json:"isMessageCut,omitempty"`
 	At           time.Time            `json:"at"`
+
+	// isRelayed says the event is another run's, passed on to the followers
+	// of a message steered into it (see relay): the conversation's feed has
+	// it from that run, so its replay leaves this copy out.
+	isRelayed bool
 }
 
 // sayNote tells whoever is watching a note of a kind: in English, and by

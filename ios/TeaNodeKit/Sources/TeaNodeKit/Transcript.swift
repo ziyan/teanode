@@ -476,6 +476,27 @@ public struct Transcript: Sendable {
     /// is matched with the line already there rather than drawn again.
     static let replayLookBack = 8
 
+    /// How much earlier than a turn's asked event its words can be stored:
+    /// they are kept as the turn begins, after the event, but the two clocks
+    /// are read a moment apart and a time is read to the second.
+    static let openingStoredLeeway: TimeInterval = 5
+
+    /// The person's words a turn began with, read back with the transcript,
+    /// when other words of theirs come after them: the same words, stored on
+    /// or after the moment the turn was asked, the earliest such. A turn
+    /// waiting behind another stores them only when it starts, so there is
+    /// no limit after; an older message with the same words, a "yes" of last
+    /// week, was stored before and is not this turn.
+    func storedOpeningIndex(of text: String, runId: String, askedAt: String?) -> Int? {
+        guard let asked = ServerTime.date(askedAt) else { return nil }
+        return lines.firstIndex { line in
+            guard line.kind == .person, line.text == text, line.runId.isEmpty || line.runId == runId,
+                let stored = ServerTime.date(line.at)
+            else { return false }
+            return stored.timeIntervalSince(asked) >= -Self.openingStoredLeeway
+        }
+    }
+
     /// Shows what the person just sent from this app, before the turn it
     /// begins is under way.
     @discardableResult
@@ -667,6 +688,15 @@ public struct Transcript: Sendable {
             if let index = lines.lastIndex(where: { $0.kind == .person }), lines[index].text == text,
                 lines[index].runId.isEmpty || lines[index].runId == event.runId
             {
+                lines.removeSubrange((index + 1)...)
+                lines[index].runId = event.runId
+                return
+            }
+            // Not the latest words: what the person wrote while this turn ran
+            // went into it, stored after its opening. The opening is still
+            // the turn as far as it was stored, and goes from there the same
+            // way; the later words come back with their own turns' openings.
+            if let index = storedOpeningIndex(of: text, runId: event.runId, askedAt: event.at) {
                 lines.removeSubrange((index + 1)...)
                 lines[index].runId = event.runId
                 return
