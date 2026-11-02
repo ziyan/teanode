@@ -24498,3 +24498,205 @@ a.journal-year-month:hover {
     flex: 1 1 100%;
   }
 }
+
+/* --- dictation and voice messages ------------------------------------------
+   Dictation puts the words heard into a box. A voice message is recorded in a
+   people chat by a button held down in place of the box. */
+
+/* The words being heard while dictating: muted, above the box, two lines of
+   them with the newest at the end. */
+.agent-dictation-caption {
+  padding: 6px 12px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.agent-drawer-pending ~ .agent-dictation-caption,
+.agent-drawer-goal-waiting ~ .agent-dictation-caption {
+  border-top: 0;
+}
+
+.agent-dictation-caption ~ .agent-drawer-input {
+  border-top: 0;
+  padding-top: 6px;
+}
+
+/* The microphone, lit while it listens. */
+.agent-drawer-input .agent-dictate.is-listening,
+.journal-dictate.is-listening {
+  color: var(--bad);
+}
+
+.journal-dictation-caption {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-label);
+}
+
+/* Voice mode: the keyboard button and the wide button held to talk, as tall
+   as the box they replace. */
+.chat-voice-composer {
+  align-items: center;
+}
+
+.chat-hold-to-talk {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 14px;
+  background: var(--field);
+  color: var(--text);
+  font-size: 14px;
+  /* A hold must not scroll, select or open the system's menu. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.chat-hold-to-talk:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.chat-hold-to-talk.is-recording,
+.chat-hold-to-talk.is-recording:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.chat-hold-to-talk.is-canceling,
+.chat-hold-to-talk.is-canceling:hover:not(:disabled) {
+  border-color: var(--bad);
+  background: var(--bad);
+  color: #fff;
+}
+
+/* The strip above the composer while recording: the time, the level and what
+   releasing will do. It takes no pointer, so the hold under it is not lost. */
+.chat-voice-strip {
+  position: absolute;
+  right: 10px;
+  bottom: 100%;
+  left: 10px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+  pointer-events: none;
+}
+
+.chat-voice-strip.is-canceling {
+  border-color: var(--bad);
+}
+
+.chat-voice-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.chat-voice-time.is-ending {
+  color: var(--bad);
+}
+
+.chat-voice-hint {
+  margin-left: auto;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.chat-voice-strip.is-canceling .chat-voice-hint {
+  color: var(--bad);
+}
+
+/* A voice message in a chat: the play button, the shape of the recording, the
+   time left, and the words under. Drawn in the bubble's own colors, which are
+   the accent for the person's own and a wash of the text for the others'. */
+.voice-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 260px;
+  max-width: 100%;
+}
+
+.voice-bubble-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-line .voice-bubble-play {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.agent-line .voice-bubble-play:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.agent-line.user .voice-bubble-play,
+.agent-line.user .voice-bubble-play:hover:not(:disabled) {
+  background: var(--background);
+  color: var(--accent);
+}
+
+.voice-bubble-play:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.voice-bubble-wave {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 32px;
+  cursor: pointer;
+}
+
+.voice-bubble-bar {
+  flex: 1;
+  min-width: 1px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.35;
+}
+
+.voice-bubble-bar.is-played {
+  opacity: 1;
+}
+
+.voice-bubble-time {
+  flex: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-bubble-transcript {
+  font-size: 13px;
+  line-height: 1.4;
+  opacity: 0.75;
+}
+
+.voice-bubble-transcript:empty {
+  display: none;
+}

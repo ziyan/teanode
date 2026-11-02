@@ -686,6 +686,16 @@ export function MicrophoneIcon(props: IconProps) {
   )
 }
 
+// WaveformIcon is a row of bars of different heights: a voice message, which
+// the composer's voice mode records. Not the microphone, which dictates.
+export function WaveformIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4" />
+    </Icon>
+  )
+}
+
 // RecordIcon is a record button, a ring with a dot: the recordings of
 // meetings. Not the microphone, which means talking to the agent on a call,
 // nor a waveform, which the iPhone app uses for the same.
