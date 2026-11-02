@@ -42,6 +42,13 @@ type AgentQuery interface {
 
 // AgentMutation changes a person's own agent.
 type AgentMutation interface {
+	// Send the caller a file in their main chat, the conversation the
+	// dashboard and the phone open on: the file is named here, and its bytes
+	// go with one PUT to the address answered, within an hour, up to
+	// agent.limits.maxSentFileBytes. It is posted when they arrive, and the
+	// phone is told. For the command line and scripts. Needs agent:use.
+	SendAgentFileToMainChat(ctx context.Context, arguments SendAgentFileToMainChatArguments) (*AgentFileUpload, error)
+
 	// Turn the caller's agent on or off, name it, or change what it knows
 	// about them. Makes the agent if they have none. Off cancels queued work
 	// and keeps what was learned; forget deletes the agent and everything it

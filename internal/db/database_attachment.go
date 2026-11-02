@@ -65,6 +65,27 @@ type AttachmentOperation interface {
 	// after it read that text, already masked when it was kept, and
 	// would lose the file. ErrNotFound when the agent has no such upload.
 	MarkAgentAttachmentTaxDocument(agentId, attachmentId string) error
+
+	// QueueAgentAttachmentForMainChat marks a file of the agent's as sent
+	// to the main chat, with the line sent with it and who sent it, to be
+	// posted once no turn runs there. ErrNotFound when the agent has no
+	// such file.
+	QueueAgentAttachmentForMainChat(agentId, attachmentId, caption, sentBy string) error
+
+	// ListAgentAttachmentsWaitingForMainChat is the files sent to a main
+	// chat and not posted yet, oldest first; one still waiting for its
+	// upload is not among them.
+	ListAgentAttachmentsWaitingForMainChat(limit int) ([]*models.AgentAttachment, error)
+
+	// PostedAgentAttachmentToMainChat records that a waiting file was
+	// posted into the main chat: it is that conversation's, and waits no
+	// more. False when it was not waiting, because another sweep posted it.
+	PostedAgentAttachmentToMainChat(attachmentId, conversationId string) (bool, error)
+
+	// FinishAgentAttachmentUpload records that the bytes of a file waiting
+	// for its upload arrived, with their size and type. False when the
+	// file is not waiting for one, because it was uploaded already.
+	FinishAgentAttachmentUpload(attachmentId, contentType string, size int64) (bool, error)
 }
 
 // TaxDocumentUnreadRetention is how long a file handed in as a paystub or
@@ -86,6 +107,10 @@ type agentAttachmentModel struct {
 	FinanceTransactionID *string `gorm:"column:finance_transaction_id"`
 	IsTaxDocument        bool    `gorm:"column:is_tax_document"`
 	PhotoID              string  `gorm:"column:photo_id"`
+
+	Caption          string     `gorm:"column:caption"`
+	SentBy           string     `gorm:"column:sent_by"`
+	MainChatQueuedAt *time.Time `gorm:"column:main_chat_queued_at"`
 }
 
 func (agentAttachmentModel) TableName() string { return "agent_attachment" }
@@ -96,7 +121,7 @@ func attachmentFromModel(model *agentAttachmentModel) *models.AgentAttachment {
 		ConversationID: model.ConversationID, MessageID: model.MessageID,
 		Name: model.Name, ContentType: model.ContentType, Size: model.Size, Text: model.Text,
 		FinanceTransactionID: optionalString(model.FinanceTransactionID), IsTaxDocument: model.IsTaxDocument,
-		PhotoID: model.PhotoID,
+		PhotoID: model.PhotoID, Caption: model.Caption, SentBy: model.SentBy, MainChatQueuedAt: model.MainChatQueuedAt,
 	}
 }
 
@@ -109,7 +134,7 @@ func (self *transaction) CreateAgentAttachment(attachment *models.AgentAttachmen
 		ConversationID: attachment.ConversationID, MessageID: attachment.MessageID,
 		Name: truncateRunes(attachment.Name, 255), ContentType: truncateRunes(attachment.ContentType, 128),
 		Size: attachment.Size, Text: attachment.Text, IsTaxDocument: attachment.IsTaxDocument,
-		PhotoID: attachment.PhotoID,
+		PhotoID: attachment.PhotoID, Caption: attachment.Caption, SentBy: truncateRunes(attachment.SentBy, 255),
 	}
 	if attachment.IsTaxDocument {
 		model.Text = ""
@@ -213,7 +238,8 @@ func (self *transaction) ListOrphanAgentAttachments(before time.Time) ([]*models
 	// readable) goes, since it holds the person's taxpayer number.
 	// A file a job is still to read (a photo's copy waiting behind a backlog)
 	// is kept until the job has run.
-	if err := self.tx.Where(`"message_id" = '' AND "created_at" < ? AND "finance_transaction_id" IS NULL
+	// A file a program was to upload and never did is an orphan as well.
+	if err := self.tx.Where(`"message_id" IN ('', 'upload') AND "created_at" < ? AND "finance_transaction_id" IS NULL
 		AND (NOT "is_tax_document" OR ("created_at" < ?
 			AND NOT EXISTS (SELECT 1 FROM "agent_finance_paystub" WHERE "agent_attachment_id" = "agent_attachment"."id")
 			AND NOT EXISTS (SELECT 1 FROM "agent_finance_tax_form" WHERE "agent_attachment_id" = "agent_attachment"."id")))
@@ -272,4 +298,47 @@ func (self *transaction) MarkAgentAttachmentTaxDocument(agentId, attachmentId st
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (self *transaction) QueueAgentAttachmentForMainChat(agentId, attachmentId, caption, sentBy string) error {
+	updated := self.tx.Model(&agentAttachmentModel{}).Where(`"agent_id" = ? AND "id" = ?`, agentId, attachmentId).
+		Updates(map[string]any{"caption": caption, "sent_by": truncateRunes(sentBy, 255), "main_chat_queued_at": time.Now()})
+	if updated.Error != nil {
+		return updated.Error
+	}
+	if updated.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (self *transaction) ListAgentAttachmentsWaitingForMainChat(limit int) ([]*models.AgentAttachment, error) {
+	var found []agentAttachmentModel
+	if err := self.tx.Where(`"main_chat_queued_at" IS NOT NULL AND "message_id" <> ?`, models.AttachmentMessageUpload).
+		Order(`"main_chat_queued_at" ASC, "id" ASC`).Limit(limit).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	attachments := make([]*models.AgentAttachment, 0, len(found))
+	for index := range found {
+		attachments = append(attachments, attachmentFromModel(&found[index]))
+	}
+	return attachments, nil
+}
+
+func (self *transaction) PostedAgentAttachmentToMainChat(attachmentId, conversationId string) (bool, error) {
+	updated := self.tx.Model(&agentAttachmentModel{}).Where(`"id" = ? AND "main_chat_queued_at" IS NOT NULL`, attachmentId).
+		Updates(map[string]any{"conversation_id": conversationId, "message_id": models.AttachmentMessageShared, "main_chat_queued_at": nil})
+	if updated.Error != nil {
+		return false, updated.Error
+	}
+	return updated.RowsAffected > 0, nil
+}
+
+func (self *transaction) FinishAgentAttachmentUpload(attachmentId, contentType string, size int64) (bool, error) {
+	updated := self.tx.Model(&agentAttachmentModel{}).Where(`"id" = ? AND "message_id" = ?`, attachmentId, models.AttachmentMessageUpload).
+		Updates(map[string]any{"content_type": truncateRunes(contentType, 128), "size": size, "message_id": models.AttachmentMessageShared})
+	if updated.Error != nil {
+		return false, updated.Error
+	}
+	return updated.RowsAffected > 0, nil
 }

@@ -364,7 +364,22 @@ const ScheduleMarker = "[schedule]"
 // OwnTurnMarkers are the markers of every turn the agent takes on its own
 // in a person's conversation: what anything looking for the person's own
 // last word must pass over.
-var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker, AlertMarker, GoalNeedsYouMarker, HerdrQuestionMarker, HerdrSessionMarker, RestartResumeMarker}
+var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker, AlertMarker, GoalNeedsYouMarker, HerdrQuestionMarker, HerdrSessionMarker, RestartResumeMarker, FileSentMarker}
+
+// FileSentMarker begins the line a file sent to the person's main chat is
+// posted under: by a program over MCP, from another conversation, or by a
+// run nobody is present for. What follows says who sent it.
+const FileSentMarker = "[file sent]"
+
+// The message ids a file of the agent's carries besides a real message's.
+const (
+	// AttachmentMessageShared is a file the agent handed over in a
+	// conversation, or sent to the main chat.
+	AttachmentMessageShared = "shared"
+	// AttachmentMessageUpload is a file a program is to upload to the main
+	// chat, kept with no bytes until it does.
+	AttachmentMessageUpload = "upload"
+)
 
 // IsOwnTurn says whether a turn's opening message is one of the agent's own
 // turns rather than something a person wrote.
@@ -505,6 +520,18 @@ type AgentAttachment struct {
 	// PhotoID is the photo of the person's library the file was copied from
 	// to be read as a document, empty for any other file.
 	PhotoID string `json:"photoId,omitempty"`
+
+	// Caption is the line sent with a file sent to the person's main chat,
+	// and SentBy who sent it there: a program over MCP by the name it was
+	// approved under, another conversation, a reminder. Both empty for any
+	// other file.
+	Caption string `json:"caption,omitempty"`
+	SentBy  string `json:"sentBy,omitempty"`
+
+	// MainChatQueuedAt is when a file sent to the main chat was sent, while
+	// it waits for a turn running there to end; nil once it is posted, and
+	// for any other file.
+	MainChatQueuedAt *time.Time `json:"-"`
 
 	// IsRemoved says the file went with the account that held it: the chat
 	// message it came with is kept, the file is not, and a screen says so

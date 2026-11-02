@@ -434,6 +434,24 @@ func TestTelegramBotSendsTheAgentsOwnTurnsOnce(t *testing.T) {
 		t.Fatal("what the person asked elsewhere, and a round that went on to a tool, are not sent")
 	}
 
+	// A file sent to the main chat goes to the chat app as a file, with its
+	// caption as the agent's word.
+	var sent *models.AgentAttachment
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if sent, err = tx.CreateAgentAttachment(&models.AgentAttachment{AgentID: found.ID, MessageID: models.AttachmentMessageShared, Name: "plot.txt", ContentType: "text/plain", Size: 13}); err != nil {
+			t.Fatalf("CreateAgentAttachment: %s", err)
+		}
+	})
+	if err := store.PutFile(t.Context(), sent.ID, []byte("a small plot.")); err != nil {
+		t.Fatalf("PutFile: %s", err)
+	}
+	if err := worker.SendFileToMainChat(t.Context(), found.ID, sent.ID, "The plot you asked for", "Example Coder"); err != nil {
+		t.Fatalf("SendFileToMainChat: %s", err)
+	}
+	fake.wait(t, "a small plot.")
+	fake.wait(t, "The plot you asked for")
+
 	// Started again, it has nothing new to send.
 	manager.Stop()
 	manager = start()
