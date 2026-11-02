@@ -418,6 +418,59 @@ struct OpensPersonCard<Content: View>: View {
     }
 }
 
+/// ChatMenuOptions is what the chat's menu offers, apart from the rest of the
+/// chat.
+struct ChatMenuOptions: Equatable {
+    let level: ChatNotificationLevel
+    let canBeRenamed: Bool
+    let canBeLeft: Bool
+}
+
+/// ChatMenuButton is the chat's menu itself, drawn again only when what it
+/// offers changes (see ChatMenu).
+struct ChatMenuButton: View, Equatable {
+    let options: ChatMenuOptions
+    let onMembers: () -> Void
+    let onRename: () -> Void
+    let onChooseLevel: (ChatNotificationLevel) -> Void
+    let onLeave: () -> Void
+
+    nonisolated static func == (left: ChatMenuButton, right: ChatMenuButton) -> Bool {
+        left.options == right.options
+    }
+
+    var body: some View {
+        Menu {
+            Button {
+                onMembers()
+            } label: {
+                Label("Members", systemImage: "person.2")
+            }
+            if options.canBeRenamed {
+                Button {
+                    onRename()
+                } label: {
+                    Label("Rename group", systemImage: "pencil")
+                }
+            }
+            // What the phone is told of here, a submenu of the three
+            // levels with the current one ticked.
+            NotificationLevelPicker(level: options.level) { level in onChooseLevel(level) }
+            if options.canBeLeft {
+                Divider()
+                Button(role: .destructive) {
+                    onLeave()
+                } label: {
+                    Label("Leave group", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+                .tint(.red)
+            }
+        } label: {
+            Label("Chat options", systemImage: "ellipsis.circle")
+        }
+    }
+}
+
 /// ChatMenu is what can be done about the chat on screen: who is in it, its
 /// name if it is a group, its sound, and leaving it. A circle's chat follows
 /// the circle, so it is neither renamed nor left from here.
@@ -442,37 +495,23 @@ struct ChatMenu: View {
 
     var body: some View {
         if let chat = model.chat {
-            Menu {
-                Button {
-                    isShowingMembers = true
-                } label: {
-                    Label("Members", systemImage: "person.2")
-                }
-                if chat.canBeRenamed {
-                    Button {
-                        newTitle = chat.title ?? ""
-                        isRenaming = true
-                    } label: {
-                        Label("Rename group", systemImage: "pencil")
-                    }
-                }
-                // What the phone is told of here, a submenu of the three
-                // levels with the current one ticked.
-                NotificationLevelPicker(level: chat.level) { level in
+            ChatMenuButton(
+                options: ChatMenuOptions(level: chat.level, canBeRenamed: chat.canBeRenamed, canBeLeft: chat.canBeLeft),
+                onMembers: { isShowingMembers = true },
+                onRename: {
+                    newTitle = model.chat?.title ?? ""
+                    isRenaming = true
+                },
+                onChooseLevel: { level in
                     Task { await model.setNotificationLevel(level) }
-                }
-                if chat.canBeLeft {
-                    Divider()
-                    Button(role: .destructive) {
-                        isConfirmingLeave = true
-                    } label: {
-                        Label("Leave group", systemImage: "rectangle.portrait.and.arrow.right")
-                    }
-                    .tint(.red)
-                }
-            } label: {
-                Label("Chat options", systemImage: "ellipsis.circle")
-            }
+                },
+                onLeave: { isConfirmingLeave = true }
+            )
+            // The chat changes under an open menu every time somebody reads
+            // or writes (its read marks move), and a menu drawn again while
+            // it is open left a tick behind and rows blank: only what the
+            // menu shows draws it again.
+            .equatable()
             // On iOS 26 a confirmation points at the control that asked, and
             // the item goes away with its menu, so it hangs on the menu.
             .confirmationDialog("Leave this group?", isPresented: $isConfirmingLeave, titleVisibility: .visible) {
