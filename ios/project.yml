@@ -18,6 +18,10 @@ configFiles:
 packages:
   TeaNodeKit:
     path: TeaNodeKit
+  # Google's WebRTC, built for Apple platforms: the media of a call in a chat.
+  WebRTC:
+    url: https://github.com/stasel/WebRTC
+    exactVersion: 155.0.0
 
 targets:
   TeaNode:
@@ -30,6 +34,8 @@ targets:
       - Shared
     dependencies:
       - package: TeaNodeKit
+      - package: WebRTC
+        product: WebRTC
       - target: TeaNodeNotification
       - target: TeaNodeShare
       - target: TeaNodeWidgets
@@ -39,7 +45,8 @@ targets:
     # association file), so scanning a connect code with the Camera does.
     # Notifications, and a keychain group the notification extension
     # shares, so it can read the key notifications are encrypted with.
-    # A call goes on with the screen locked: audio, and CallKit's voip.
+    # A call goes on with the screen locked: audio, and CallKit's voip, which
+    # is also how PushKit wakes the app to ring for a call in a chat.
     # The photo backup catches up overnight on power (a processing task), and
     # goes on when the person taps Back up now (a continued processing task);
     # the system only starts a task whose identifier is listed here. The Health
@@ -102,12 +109,12 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         LOCALIZATION_PREFERS_STRING_CATALOGS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
-        INFOPLIST_KEY_NSCameraUsageDescription: "TeaNode uses the camera to scan the code that connects it to your server, and to take pictures you send."
+        INFOPLIST_KEY_NSCameraUsageDescription: "TeaNode uses the camera to scan the code that connects it to your server, to take pictures you send, and to show your picture when you turn your camera on in a call."
         INFOPLIST_KEY_NSFaceIDUsageDescription: "TeaNode asks for Face ID to open Passwords, and before you approve a payment somebody made with a skill you share."
         INFOPLIST_KEY_NSContactsUsageDescription: "TeaNode reads your iPhone's contacts only when you choose to import them into your address book."
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "TeaNode saves the photos you choose to your library."
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "TeaNode backs up your photos and videos to your server when you turn on backup."
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: "TeaNode uses the microphone while you call your agent, dictate, record a voice message or explicitly record a meeting."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "TeaNode uses the microphone while you call your agent or the people in your chats, dictate, record a voice message or explicitly record a meeting."
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "TeaNode shows where you are on the map and follows you while the app is open, and your agent asks where you are when something you asked depends on it."
         INFOPLIST_KEY_NSMotionUsageDescription: "TeaNode reads your phone's motion activity to tell walking, running, cycling and driving apart, so the trips between the places you go show how you got there."
         INFOPLIST_KEY_NSHealthShareUsageDescription: "TeaNode copies the Health data you allow to your own TeaNode server. Your agent reads it only if you turn that on in Health settings."
