@@ -35,14 +35,22 @@ type besideProvider struct {
 	isJudgeHeld bool
 	release     chan struct{}
 
+	// isFinalRoundAfterJudgeAsked makes a final answer of the quick model
+	// wait until the judge has been asked. Otherwise a quick answer can end
+	// the turn, and with it the judge's request, before that request has
+	// reached the provider.
+	isFinalRoundAfterJudgeAsked bool
+
 	// isFirstRoundWaiting makes the first round of the quick model wait
 	// until the judge has answered, so that the judge is known to have
 	// come back while that round was running.
 	isFirstRoundWaiting bool
 
 	firstRoundSeen     chan struct{}
+	judgeAsked         chan struct{}
 	judgeAnswered      chan struct{}
 	firstRoundOnce     sync.Once
+	judgeAskedOnce     sync.Once
 	judgeAnsweredOnce  sync.Once
 	isQuickAnswerFinal bool
 }
@@ -63,7 +71,7 @@ const (
 )
 
 func newBesideProvider(depth string) *besideProvider {
-	return &besideProvider{depth: depth, release: make(chan struct{}), firstRoundSeen: make(chan struct{}), judgeAnswered: make(chan struct{})}
+	return &besideProvider{depth: depth, release: make(chan struct{}), firstRoundSeen: make(chan struct{}), judgeAsked: make(chan struct{}), judgeAnswered: make(chan struct{})}
 }
 
 func (self *besideProvider) record(event string) {
@@ -112,6 +120,7 @@ func (self *besideProvider) handle(writer http.ResponseWriter, request *http.Req
 			return
 		}
 		self.record("judge asked")
+		self.judgeAskedOnce.Do(func() { close(self.judgeAsked) })
 		if self.isJudgeHeld {
 			select {
 			case <-self.release:
@@ -164,6 +173,14 @@ func (self *besideProvider) handle(writer http.ResponseWriter, request *http.Req
 		}
 		_, _ = writer.Write([]byte("data: " + `{"id":"s1","model":"quick","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"datetime","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}` + "\n\ndata: [DONE]\n\n"))
 		return
+	}
+	if body.Model == "quick" && self.isFinalRoundAfterJudgeAsked {
+		select {
+		case <-self.judgeAsked:
+		case <-request.Context().Done():
+			return
+		case <-time.After(20 * time.Second):
+		}
 	}
 	_, _ = writer.Write([]byte("data: " + `{"id":"s2","model":"` + body.Model + `","choices":[{"delta":{"content":"Here you are."},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":3}}` + "\n\ndata: [DONE]\n\n"))
 }
@@ -236,6 +253,7 @@ func TestAQuickModelTurnIsAskedBeforeTheJudgeAnswers(t *testing.T) {
 	provider := newBesideProvider("answer")
 	provider.isJudgeHeld = true
 	provider.isQuickAnswerFinal = true
+	provider.isFinalRoundAfterJudgeAsked = true
 	// The judge is held until the first round has been asked.
 	_, turn, _ := askBeside(t, provider, "drawer", func() {
 		<-provider.firstRoundSeen
