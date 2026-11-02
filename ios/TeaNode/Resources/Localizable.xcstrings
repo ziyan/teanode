@@ -9161,6 +9161,22 @@
         }
       }
     },
+    "A file sent to you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "届いたファイル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发给你的文件"
+          }
+        }
+      }
+    },
     "Alerts": {
       "localizations": {
         "ja": {
