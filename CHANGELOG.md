@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.211.2] - 2026-11-02
+
+### Fixed
+
+- A message written while the agent is working no longer makes the conversation show that turn twice after the app reconnects. (#716)
+
 ## [0.211.1] - 2026-11-02
 
 ### Fixed
