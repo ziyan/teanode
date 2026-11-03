@@ -54,6 +54,8 @@ struct TeaNodeApp: App {
             // own browser, from the bottom. After the model is in the
             // environment's reach, which the line below gives it.
             .modifier(InAppBrowserPresenter())
+            // A call in a chat, over the whole app while the phone is on one.
+            .modifier(ChatCallPresenter())
             .environment(app)
             .environment(\.openURL, OpenURLAction { address in app.followLink(address) })
             // Switches in TeaNode's green: they are the system's brighter

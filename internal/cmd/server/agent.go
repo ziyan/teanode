@@ -83,9 +83,10 @@ func (self *server) openAgentWorker(configuration *config.Configuration) error {
 		Instance:            self.instance,
 		// What the agent shares with the chat hub: who is looking at the
 		// dashboard or the app, and the phones' sender.
-		Presence:   self.chatHub.Presence(),
-		Phones:     self.chatHub.Phones(),
-		ChatEvents: self.chatHub,
+		Presence:     self.chatHub.Presence(),
+		Phones:       self.chatHub.Phones(),
+		ChatEvents:   self.chatHub,
+		CallRecorder: self.callRecorder,
 	})
 	if self.exchange != nil {
 		self.exchange.SetAgentHook(self.agentWorker)

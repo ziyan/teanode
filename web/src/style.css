@@ -24725,3 +24725,404 @@ a.journal-year-month:hover {
 .voice-bubble-transcript:empty {
   display: none;
 }
+
+/* --- calls in chats ---------------------------------------------------------
+   The ringing card at the top of the window, the call screen over the page
+   (the whole window on a phone, a large panel on a wide one), the small
+   window it shrinks to, the banner at the top of a chat with a call going,
+   and a call's line in the transcript. A ring stands above the call screen
+   (46 over 44) and below dialogs (50), which a transcript opens. */
+.call-rings {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(520px, calc(100vw - 24px));
+  transform: translateX(-50%);
+}
+.call-ring {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+}
+.call-ring-who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.call-ring-words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--text-body);
+}
+.call-ring-words .muted {
+  font-size: var(--text-label);
+}
+.call-ring-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.call-ring-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.call-screen-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: rgb(0 0 0 / 45%);
+}
+.call-screen {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(960px, 100%);
+  height: min(720px, 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--background);
+  box-shadow: var(--shadow-floating);
+  overflow: hidden;
+}
+@media (max-width: 600px) {
+  .call-screen-scrim {
+    padding: 0;
+  }
+  .call-screen {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top);
+  }
+}
+.call-screen-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.call-screen-title {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+}
+.call-screen-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.call-screen-status {
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}
+.call-transcribing {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+.call-transcribing-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-round);
+  background: var(--bad);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .call-transcribing-dot {
+    animation: recording-bar-pulse 1.6s ease-in-out infinite;
+  }
+}
+.call-notice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-3) var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+}
+.call-notice-words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.call-notice-words .muted {
+  font-size: var(--text-label);
+}
+.call-notice .icon-button {
+  flex: none;
+  margin: calc(-1 * var(--space-1));
+}
+
+.call-grid {
+  display: grid;
+  flex: 1 1 0;
+  grid-auto-rows: minmax(0, 1fr);
+  grid-template-columns: 1fr;
+  gap: var(--space-2);
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-3);
+  list-style: none;
+  overflow-y: auto;
+}
+@media (min-width: 601px) {
+  .call-grid[data-count='2'],
+  .call-grid[data-count='3'],
+  .call-grid[data-count='4'] {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .call-grid[data-count='5'],
+  .call-grid[data-count='6'],
+  .call-grid[data-count='7'],
+  .call-grid[data-count='8'],
+  .call-grid[data-count='9'] {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .call-grid:not([data-count='1']):not([data-count='2']) {
+    grid-template-columns: repeat(2, 1fr);
+    grid-auto-rows: minmax(140px, 1fr);
+  }
+}
+/* The border is there all the time, clear, so lighting it for a voice moves
+   nothing. */
+.call-tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  border: 2px solid transparent;
+  border-radius: var(--radius-3);
+  background: var(--rail);
+  overflow: hidden;
+  transition: border-color 0.12s;
+}
+.call-tile.speaking {
+  border-color: var(--good);
+}
+.call-picture {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+.call-picture.mirrored {
+  transform: scaleX(-1);
+}
+.call-tile-name {
+  position: absolute;
+  left: var(--space-2);
+  bottom: var(--space-2);
+  max-width: calc(100% - 2 * var(--space-2));
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-1);
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: var(--text-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.call-tile-name .muted {
+  color: inherit;
+  opacity: 0.75;
+}
+
+.call-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+}
+button.call-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-round);
+  background: var(--surface);
+  color: var(--text);
+}
+button.call-control.is-off {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--background);
+}
+button.call-control.is-off:hover:not(:disabled) {
+  background: var(--text);
+  opacity: 0.85;
+}
+button.call-control.is-leaving {
+  border-color: var(--bad);
+  background: var(--bad);
+  color: #fff;
+}
+button.call-control.is-leaving:hover:not(:disabled) {
+  background: var(--bad);
+  opacity: 0.85;
+}
+
+/* Where the recording bar stands, and beside the agent's box when it is open. */
+.call-mini {
+  position: fixed;
+  right: 20px;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  z-index: 32;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: min(380px, calc(100vw - 40px));
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+  font-size: var(--text-body);
+}
+@media (min-width: 721px) {
+  body:has(.agent-drawer:not(.standalone)) .call-mini {
+    right: 476px;
+    bottom: 20px;
+    width: min(380px, calc(100vw - 496px));
+  }
+}
+button.call-mini-main {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+button.call-mini-main:hover:not(:disabled) {
+  background: none;
+}
+.call-mini-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-round);
+  background: var(--good);
+}
+.call-mini-title {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.call-mini-status {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.call-mini .row-actions {
+  flex: none;
+}
+
+.call-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-size: var(--text-body);
+}
+.call-banner-words {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.call-banner button,
+.chat-call-line button {
+  padding: 2px 12px;
+  font-size: var(--text-label);
+}
+
+/* A call's line in the transcript: centered like a day divider, because it
+   happened in the chat and nobody said it. */
+.chat-call-row {
+  align-self: center;
+  max-width: 100%;
+  margin: 4px 0;
+}
+.chat-call-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  font-size: var(--text-label);
+}
+.chat-call-line[data-state='missed'],
+.chat-call-line[data-state='failed'] {
+  color: var(--bad);
+}
+.chat-call-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.call-transcript {
+  max-height: 60vh;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+.call-transcript li + li {
+  margin-top: var(--space-3);
+}
+.call-transcript p {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+}
+.call-transcript-speaker {
+  font-weight: 600;
+}
+.call-transcript-time {
+  margin-left: var(--space-2);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}

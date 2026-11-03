@@ -11,6 +11,7 @@ import { PeopleIcon, PlusIcon, SparkIcon, TrashIcon, UserIcon } from './icons'
 import { mentionSpansOf, type MentionWord } from './mentionMarks'
 import { Tooltip } from './tooltip'
 import type { AgentMessageReaction } from './agentReactions'
+import type { ChatCallSummary } from '../calls/chatCallApi'
 
 // Chats in the drawer. A chat is a conversation with people in it: it is
 // listed with the other conversations, read and followed the way they are,
@@ -179,6 +180,11 @@ export interface ChatLine {
   // Who the message mentions: members by account, and everybody.
   mentionedUserIds?: string[]
   isAllMentioned?: boolean
+  // The line of a call: no words, and the call it names, as the message
+  // came with it. It is drawn from the call, which ChatCallEvents keeps
+  // current.
+  callId?: string
+  call?: ChatCallSummary | null
 }
 
 // ChatStoredMessage is the part of a stored message a chat line reads.
@@ -207,6 +213,8 @@ export interface ChatStoredMessage {
   agentRunId?: string | null
   mentionedUserIds?: string[] | null
   isAllMentioned?: boolean | null
+  callId?: string | null
+  call?: ChatCallSummary | null
   // In a chat, a row of what the signed-in person's own agent did to
   // answer (a call, its result, a note), which only they read, and not
   // something said there.
@@ -251,6 +259,8 @@ export function chatLineOf(message: ChatStoredMessage): ChatLine {
     transcriptState: message.transcriptState ?? undefined,
     mentionedUserIds: message.mentionedUserIds ?? undefined,
     isAllMentioned: Boolean(message.isAllMentioned),
+    callId: message.callId || undefined,
+    call: message.call ?? undefined,
   }
 }
 
@@ -307,6 +317,9 @@ function localDayOf(at: string): string {
 export function beginsRun(line: ChatLine, previous: { kind: string } | undefined): boolean {
   if (!previous || previous.kind !== 'chat') return true
   const before = previous as ChatLine
+  // A call's line is drawn with no author, so whoever started the call is
+  // named again on their next message.
+  if (before.callId) return true
   if (authorKeyOf(before) !== authorKeyOf(line)) return true
   if (!before.at || !line.at) return false
   // The drawer draws a divider where the day changes ("Today"), and the line

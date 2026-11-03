@@ -43,6 +43,10 @@ import { useDictation, useVoiceAvailability } from '../voice/useDictation'
 import { canRecordVoiceMessages } from '../voice/voiceMessageRecorder'
 import { ChatVoiceComposer, useChatComposerMode } from './chatVoiceComposer'
 import { VoiceMessageBubble } from './voiceMessageBubble'
+import { ChatCallBanner } from '../calls/callBanner'
+import { ChatCallLine } from '../calls/callLine'
+import { CHAT_CALL_SUMMARY_FIELDS } from '../calls/chatCallApi'
+import { useChatCalls } from '../calls/chatCallContext'
 import {
   ArchiveIcon,
   ArrowDownIcon,
@@ -775,6 +779,7 @@ const CONVERSATION = `
         id createdAt role content name toolCallId toolCalls { id name arguments }
         usage { promptTokens completionTokens cost }
         isVoiceMessage transcriptText transcriptState
+        ${CHAT_CALL_SUMMARY_FIELDS}
         attachments { id name contentType size isRemoved audioDurationMS audioWaveform }
         references { itemId threadId subject from path name recordingId recordingTitle photoId photoTitle financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
         reactions { emoji reactorKind reactedAt reactorUserId reactorName }
@@ -818,6 +823,7 @@ const FEED = `
       message {
         id createdAt role content
         isVoiceMessage transcriptText transcriptState
+        ${CHAT_CALL_SUMMARY_FIELDS}
         attachments { id name contentType size isRemoved audioDurationMS audioWaveform }
         references { agentMessageId quotedRole quotedText }
         reactions { emoji reactorKind reactedAt reactorUserId reactorName }
@@ -2999,6 +3005,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const location = useLocation()
   const navigate = useNavigate()
   const session = useSession()
+  const chatCalls = useChatCalls()
   const ownUserId = session.userId ?? ''
   const ownName = session.name || session.username
   // Framed by the extension, the side panel is the frame and Chrome sizes it.
@@ -5427,6 +5434,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const drawLine = (line: Line, previous?: Line) => {
     switch (line.kind) {
       case 'chat': {
+        // A call's line says how the call went, drawn from the call and
+        // kept current by it: it has no author and no words to reply to.
+        if (line.callId) {
+          return (
+            <div key={line.key} className="chat-call-row">
+              <ChatCallLine callId={line.callId} call={line.call} />
+            </div>
+          )
+        }
         const isRunStart = beginsRun(line, previous)
         const readers = line.messageId ? (readersOf.get(line.messageId) ?? []) : []
         // A deleted message is a mark that it was, not a gap.
@@ -5958,6 +5974,25 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 way to its page. Goals are started by asking the agent or on
                 the Goals tab, never set on a chat. */}
             {current && current.kind === 'goal' && current.goal ? <GoalChip conversation={current} /> : null}
+            {/* A call to the people of the chat: audio first, the camera is
+                each person's own switch. Not offered while the person is on
+                a call in this chat, and not while they are on another. */}
+            {chat &&
+              !chat.isRemoved &&
+              chatCalls.isAvailable &&
+              chatCalls.activeCall?.conversationId !== conversationId && (
+                <Tooltip label={chatCalls.activeCall ? t('calls.alreadyOnCall') : t('calls.start')}>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={t('calls.start')}
+                    disabled={chatCalls.isBusy || chatCalls.activeCall !== null}
+                    onClick={() => void chatCalls.startCall(conversationId)}
+                  >
+                    <PhoneIcon size={14} />
+                  </button>
+                </Tooltip>
+              )}
             {/* A chat's menu: who is in it, its name, its sound, leaving. */}
             {chat && (
               <HeadMark label={t('chat.menu')} isOpen={headMenu === 'chat'} onToggle={() => toggleHeadMenu('chat')}>
@@ -6191,6 +6226,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               </div>
             </>
           )}
+          {/* A call going in this chat, to join. */}
+          {chat && !chat.isRemoved && conversationId ? <ChatCallBanner conversationId={conversationId} /> : null}
           <div
             className="agent-drawer-transcript"
             ref={(node) => {

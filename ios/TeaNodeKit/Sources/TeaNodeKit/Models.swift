@@ -244,6 +244,10 @@ public struct AgentMessage: Codable, Identifiable, Hashable, Sendable {
     public var isVoiceMessage: Bool? = nil
     public var transcriptText: String? = nil
     public var transcriptState: String? = nil
+    /// In a chat, the call this message is the line of (it has no words),
+    /// and the call as it stood when the message was read.
+    public var callId: String? = nil
+    public var call: ChatCallRecord? = nil
 
     public init(
         id: String, createdAt: String, role: String, content: String, name: String? = nil, toolCallId: String? = nil,

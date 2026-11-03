@@ -89,6 +89,7 @@ type Query interface {
 	AgentGoalQuery
 	FinanceQuery
 	FinanceShareQuery
+	ChatCallQuery
 	ServerQuery
 	UpgradeQuery
 	CredentialQuery
@@ -178,6 +179,7 @@ type Mutation interface {
 	AgentGoalMutation
 	FinanceMutation
 	FinanceShareMutation
+	ChatCallMutation
 	ServerMutation
 	UpgradeMutation
 	CredentialMutation
@@ -200,6 +202,7 @@ type Subscription interface {
 	AgentSubscription
 	LocationSubscription
 	ShoppingSubscription
+	ChatCallSubscription
 }
 
 var _ Subscription = &graph{}
