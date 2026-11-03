@@ -77,9 +77,14 @@ An iPhone registers a second token with the push relay, for PushKit
 (`voipPushRegistration` on `RegisterAgentPhone`), and is rung with a VoIP push
 of kind `call` whose sealed content names the call (`callId`) and the chat
 (`conversationId`). The app reports it to CallKit at once, as iOS requires.
-When the person answers or declines on another device, or the call ends, their
-phones get a VoIP push of kind `call_ended` for the same call, and stop
-ringing. A phone whose app registered no VoIP token gets an alert instead. A
+When the person answers or declines on another device, or the call stops
+ringing them, their phones get a VoIP push of kind `call_ended` for the same
+call, and stop ringing. Only phones that may still ring are sent one: iOS has
+an app show a call for every VoIP push, so one sent to a phone not ringing
+flashes a call on its screen. The phone that answers or declines names itself
+(`agentPhoneId` on `JoinChatCall` and `DeclineChatCall`) and is not told; a
+member who joins without having been rung, or an answered person when the
+call ends, is told nothing. A phone whose app registered no VoIP token gets an alert instead. A
 dashboard tab rings from `ChatCallEvents`.
 
 ## Transcripts

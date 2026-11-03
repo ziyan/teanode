@@ -131,8 +131,12 @@ final class ChatCallTests: XCTestCase {
         XCTAssertTrue(try sentDocument(leavingFake).contains("LeaveChatCall"))
 
         let (declining, decliningFake) = try makeConnection(answering: #"{"data":{"DeclineChatCall":\#(goingCall)}}"#)
-        try await declining.declineChatCall(callId: "call-1")
+        try await declining.declineChatCall(callId: "call-1", agentPhoneId: "phone-1")
         XCTAssertTrue(try sentDocument(decliningFake).contains("DeclineChatCall"))
+        // The phone that declines names itself, so it is not told to stop
+        // ringing; with no phone, none is named.
+        XCTAssertEqual(try sentVariables(decliningFake)["agentPhoneId"], .string("phone-1"))
+        XCTAssertNil(try sentVariables(joiningFake)["agentPhoneId"])
     }
 
     func testJoiningTheMediaSendsTheOfferAndReturnsTheAnswer() async throws {

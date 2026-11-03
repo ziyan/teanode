@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -156,5 +157,23 @@ func TestNoPhoneRegisteredRingsNobody(t *testing.T) {
 	}
 	if len(relay.sent) != 0 {
 		t.Errorf("%d registrations were sent to with no phone", len(relay.sent))
+	}
+}
+
+// A call's end is told to the person's phones but the one that answered or
+// declined it: a VoIP push must show a call, and that phone rings no more.
+func TestTheEndOfACallSkipsThePhoneThatAnswered(t *testing.T) {
+	fixture, relay := ringFixture(t, "sealed:a-voip-registration")
+	stored := fixture.storedPhone(t)
+	ended := &push.Content{NotificationKind: models.NotificationCallEnded, ConversationID: "a-chat", CallID: "a-call"}
+
+	fixture.worker.Phones().UnringPhones(fixture.agent.ID, ended, stored.ID)
+	fixture.worker.Phones().UnringPhones(fixture.agent.ID, ended, "")
+	deadline := time.Now().Add(5 * time.Second)
+	for len(relay.to("sealed:a-voip-registration")) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if sent := relay.to("sealed:a-voip-registration"); len(sent) != 1 {
+		t.Fatalf("the phone was told %d times, want once: only when it was not the one that answered", len(sent))
 	}
 }

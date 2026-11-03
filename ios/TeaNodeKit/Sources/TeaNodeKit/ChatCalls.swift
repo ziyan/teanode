@@ -288,10 +288,12 @@ extension Documents {
         }
         """
     public static let joinChatCall = """
-        mutation ($callId: String!) { JoinChatCall(callId: $callId) { \(chatCallFields) } }
+        mutation ($callId: String!, $agentPhoneId: String) { JoinChatCall(callId: $callId, agentPhoneId: $agentPhoneId) { \(chatCallFields) } }
         """
     public static let declineChatCall = """
-        mutation ($callId: String!) { DeclineChatCall(callId: $callId) { \(chatCallFields) } }
+        mutation ($callId: String!, $agentPhoneId: String) {
+          DeclineChatCall(callId: $callId, agentPhoneId: $agentPhoneId) { \(chatCallFields) }
+        }
         """
     public static let leaveChatCall = """
         mutation ($callId: String!) { LeaveChatCall(callId: $callId) { \(chatCallFields) } }
@@ -354,17 +356,27 @@ extension Connection {
     }
 
     /// Answers a call ringing the person, or joins one going in their chat.
-    /// The device then joins its media with `joinChatCallMedia`.
-    public func joinChatCall(callId: String) async throws -> ChatCallView {
+    /// The device then joins its media with `joinChatCallMedia`. The phone
+    /// that answers names itself, so that it is not told to stop ringing.
+    public func joinChatCall(callId: String, agentPhoneId: String? = nil) async throws -> ChatCallView {
         struct Answer: Decodable, Sendable { let JoinChatCall: ChatCallView }
-        return try await execute(Documents.joinChatCall, variables: ["callId": .string(callId)], as: Answer.self).JoinChatCall
+        return try await execute(Documents.joinChatCall, variables: Self.answerVariables(callId: callId, agentPhoneId: agentPhoneId), as: Answer.self)
+            .JoinChatCall
     }
 
-    /// Says no to a call ringing the person.
+    /// Says no to a call ringing the person; the phone that does names
+    /// itself, as when it answers.
     @discardableResult
-    public func declineChatCall(callId: String) async throws -> ChatCallView {
+    public func declineChatCall(callId: String, agentPhoneId: String? = nil) async throws -> ChatCallView {
         struct Answer: Decodable, Sendable { let DeclineChatCall: ChatCallView }
-        return try await execute(Documents.declineChatCall, variables: ["callId": .string(callId)], as: Answer.self).DeclineChatCall
+        return try await execute(Documents.declineChatCall, variables: Self.answerVariables(callId: callId, agentPhoneId: agentPhoneId), as: Answer.self)
+            .DeclineChatCall
+    }
+
+    private static func answerVariables(callId: String, agentPhoneId: String?) -> [String: JSONValue] {
+        var variables: [String: JSONValue] = ["callId": .string(callId)]
+        if let agentPhoneId, !agentPhoneId.isEmpty { variables["agentPhoneId"] = .string(agentPhoneId) }
+        return variables
     }
 
     /// Takes the person off a call; it ends when nobody is left on it.

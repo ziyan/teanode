@@ -365,11 +365,11 @@ final class ChatCallManager: NSObject {
             if session.ownUserId.isEmpty, let userId = try await connection.userId() { session.ownUserId = userId }
             var view: ChatCallView
             if let callId = session.callId {
-                view = try await connection.joinChatCall(callId: callId)
+                view = try await connection.joinChatCall(callId: callId, agentPhoneId: AppModel.shared.phone?.id)
             } else {
                 view = try await connection.startChatCall(conversationId: session.conversationId, isVideoOn: false)
                 // A call going in the chat is returned to be joined.
-                if !view.isAskerOn { view = try await connection.joinChatCall(callId: view.id) }
+                if !view.isAskerOn { view = try await connection.joinChatCall(callId: view.id, agentPhoneId: AppModel.shared.phone?.id) }
             }
             session.callId = view.id
             note(view)
@@ -392,7 +392,7 @@ final class ChatCallManager: NSObject {
         do {
             guard await Self.requestMicrophoneAccess() else { throw ChatCallProblem.microphoneRefused }
             if session.ownUserId.isEmpty, let userId = try await connection.userId() { session.ownUserId = userId }
-            let view = try await connection.joinChatCall(callId: callId)
+            let view = try await connection.joinChatCall(callId: callId, agentPhoneId: AppModel.shared.phone?.id)
             note(view)
             if session.isEnding {
                 _ = try? await connection.leaveChatCall(callId: callId)
@@ -716,7 +716,7 @@ extension ChatCallManager: @preconcurrency CXProviderDelegate {
         if removed.phase == .ringing {
             // Said no to a call that was ringing.
             if let callId = removed.callId, let connection = AppModel.shared.callConnection(accountKey: removed.accountKey) {
-                Task { _ = try? await connection.declineChatCall(callId: callId) }
+                Task { _ = try? await connection.declineChatCall(callId: callId, agentPhoneId: AppModel.shared.phone?.id) }
             }
             return
         }

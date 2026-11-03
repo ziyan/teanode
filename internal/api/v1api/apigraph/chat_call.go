@@ -66,10 +66,10 @@ type ChatCallMutation interface {
 
 	// Answers a call ringing the caller, or joins one going in their chat.
 	// A device then joins its media with JoinChatCallMedia.
-	JoinChatCall(ctx context.Context, arguments ChatCallArguments) (*ChatCallView, error)
+	JoinChatCall(ctx context.Context, arguments AnswerChatCallArguments) (*ChatCallView, error)
 
 	// Says no to a call ringing the caller.
-	DeclineChatCall(ctx context.Context, arguments ChatCallArguments) (*ChatCallView, error)
+	DeclineChatCall(ctx context.Context, arguments AnswerChatCallArguments) (*ChatCallView, error)
 
 	// Takes the caller off a call; it ends when nobody is left on it.
 	LeaveChatCall(ctx context.Context, arguments ChatCallArguments) (*ChatCallView, error)
@@ -110,6 +110,14 @@ type ChatCallSubscription interface {
 // ChatCallArguments name a call.
 type ChatCallArguments struct {
 	CallID string `json:"callId"`
+}
+
+// AnswerChatCallArguments name the call answered or declined, and the
+// phone that did it when a phone did: the caller's other phones stop
+// ringing, and that one, which knows already, is not told.
+type AnswerChatCallArguments struct {
+	CallID       string `json:"callId"`
+	AgentPhoneID string `json:"agentPhoneId" graphapi:"nullable"`
 }
 
 // ListChatCallsArguments name the chat by the caller's conversation for it.
@@ -523,7 +531,7 @@ func (self *graph) publishCallLine(ctx context.Context, session *chatSession, li
 	self.transaction(ctx).AfterCommit(func() { hub.PublishChatEvents(events) })
 }
 
-func (self *graph) JoinChatCall(ctx context.Context, arguments ChatCallArguments) (*ChatCallView, error) {
+func (self *graph) JoinChatCall(ctx context.Context, arguments AnswerChatCallArguments) (*ChatCallView, error) {
 	if self.callServer() == nil {
 		return nil, errCallsOff
 	}
@@ -535,16 +543,20 @@ func (self *graph) JoinChatCall(ctx context.Context, arguments ChatCallArguments
 	if err := self.requireChatWritable(tx, session); err != nil {
 		return nil, err
 	}
+	member := chatCall.Member(session.User.ID)
+	wasRinging := member != nil && member.RingState == models.ChatCallRinging
 	if chatCall, err = tx.JoinChatCall(chatCall.ID, session.User.ID); err != nil {
 		return nil, translateError(err)
 	}
-	// The person's other phones stop ringing.
-	self.unringChatCall(ctx, chatCall, []string{session.User.ID})
+	// The person's other phones stop ringing, when it rang them.
+	if wasRinging {
+		self.unringChatCall(ctx, chatCall, []string{session.User.ID}, strings.TrimSpace(arguments.AgentPhoneID))
+	}
 	self.notifyChatCall(ctx, chatCall)
 	return describeChatCall(session, chatCall, time.Now()), nil
 }
 
-func (self *graph) DeclineChatCall(ctx context.Context, arguments ChatCallArguments) (*ChatCallView, error) {
+func (self *graph) DeclineChatCall(ctx context.Context, arguments AnswerChatCallArguments) (*ChatCallView, error) {
 	session, chatCall, err := self.requireGoingChatCall(ctx, arguments.CallID)
 	if err != nil {
 		return nil, err
@@ -553,7 +565,7 @@ func (self *graph) DeclineChatCall(ctx context.Context, arguments ChatCallArgume
 	if chatCall, err = tx.DeclineChatCall(chatCall.ID, session.User.ID); err != nil {
 		return nil, translateError(err)
 	}
-	self.unringChatCall(ctx, chatCall, []string{session.User.ID})
+	self.unringChatCall(ctx, chatCall, []string{session.User.ID}, strings.TrimSpace(arguments.AgentPhoneID))
 	// Nobody else is on it and nobody else is rung: everybody said no.
 	if chatCall.AnsweredAt == nil && !isAnyoneRung(chatCall) {
 		if chatCall, err = self.endChatCall(ctx, chatCall, models.ChatCallDeclined); err != nil {
@@ -612,8 +624,8 @@ func (self *graph) endChatCall(ctx context.Context, chatCall *models.ChatCall, e
 	if err != nil {
 		return nil, translateError(err)
 	}
-	// Whoever's phone still rings stops.
-	self.unringChatCall(ctx, ended, rungUserIds(ended))
+	// Whoever's phone still rings stops; nobody else's is told.
+	self.unringChatCall(ctx, ended, ringingUserIds(chatCall), "")
 	callId, isTranscriptWaiting := ended.ID, ended.TranscriptState == models.ChatCallTranscriptWaiting
 	tx.AfterCommit(func() {
 		if server := self.callServer(); server != nil {
@@ -828,6 +840,8 @@ func (self *graph) TickChatCalls(ctx context.Context, now time.Time) error {
 			if err != nil {
 				return err
 			}
+			// The phones still ringing stop, the call answered or not.
+			self.unringChatCall(txContext, stopped, ringingUserIds(chatCall), "")
 			if stopped.AnsweredAt == nil {
 				if stopped, err = self.endChatCall(txContext, stopped, models.ChatCallMissed); err != nil {
 					return err

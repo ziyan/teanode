@@ -331,7 +331,7 @@ func PhoneBody(text string) string {
 // phone still ringing stops. A phone that cannot be rung is told nothing: it
 // was shown an alert, which a later alert would not take back. It returns
 // without waiting for the relay.
-func (self *PhoneNotifier) UnringPhones(agentId string, content *push.Content) {
+func (self *PhoneNotifier) UnringPhones(agentId string, content *push.Content, exceptPhoneId string) {
 	if sender, err := self.Sender(); err != nil || sender == nil {
 		return
 	}
@@ -344,7 +344,9 @@ func (self *PhoneNotifier) UnringPhones(agentId string, content *push.Content) {
 		return
 	}
 	for _, phone := range phones {
-		if !phone.CanRing() {
+		// The phone that answered or declined knows already, and a VoIP push
+		// it is sent must show a call, which would flash on its screen.
+		if !phone.CanRing() || phone.ID == exceptPhoneId {
 			continue
 		}
 		self.settings.WaitGroup.Add(1)

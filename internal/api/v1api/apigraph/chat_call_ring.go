@@ -32,8 +32,9 @@ func (self *graph) ringChatCall(ctx context.Context, session *chatSession, chatC
 }
 
 // unringChatCall tells the phones of the people given that the call no
-// longer rings them, once the change is committed.
-func (self *graph) unringChatCall(ctx context.Context, chatCall *models.ChatCall, userIds []string) {
+// longer rings them, once the change is committed; exceptPhoneId is the
+// phone that answered or declined, which knows already.
+func (self *graph) unringChatCall(ctx context.Context, chatCall *models.ChatCall, userIds []string, exceptPhoneId string) {
 	hub := self.chatHub()
 	if hub == nil || len(userIds) == 0 {
 		return
@@ -49,14 +50,16 @@ func (self *graph) unringChatCall(ctx context.Context, chatCall *models.ChatCall
 		}
 	}
 	recipients, callId := recipientsOf(told), chatCall.ID
-	self.transaction(ctx).AfterCommit(func() { hub.UnringChatCall(callId, recipients) })
+	self.transaction(ctx).AfterCommit(func() { hub.UnringChatCall(callId, recipients, exceptPhoneId) })
 }
 
-// rungUserIds are the people a call rang, whose phones may still ring.
-func rungUserIds(chatCall *models.ChatCall) []string {
+// ringingUserIds are the people the call rings now. Only their phones are
+// told when it stops: a VoIP push must show a call, so one sent to a phone
+// that is not ringing flashes a call on its screen.
+func ringingUserIds(chatCall *models.ChatCall) []string {
 	var userIds []string
 	for _, member := range chatCall.Members {
-		if member.RingState != models.ChatCallRingNone {
+		if member.RingState == models.ChatCallRinging {
 			userIds = append(userIds, member.UserID)
 		}
 	}

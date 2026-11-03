@@ -56,8 +56,8 @@ func (self *Hub) ringChatCall(callId, callerName, chatTitle string, isGroup bool
 
 // UnringChatCall tells the phones of the people given that the call no
 // longer rings them: they answered or declined it on another device, or it
-// ended.
-func (self *Hub) UnringChatCall(callId string, recipients []Recipient) {
+// ended. The phone that answered or declined, when one did, is not told.
+func (self *Hub) UnringChatCall(callId string, recipients []Recipient, exceptPhoneId string) {
 	for _, recipient := range recipients {
 		if recipient.AgentID == "" {
 			continue
@@ -66,6 +66,6 @@ func (self *Hub) UnringChatCall(callId string, recipients []Recipient) {
 			NotificationKind: models.NotificationCallEnded,
 			ConversationID:   recipient.ConversationID,
 			CallID:           callId,
-		})
+		}, exceptPhoneId)
 	}
 }
