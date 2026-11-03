@@ -43,7 +43,12 @@ struct PasswordsScreen: View {
     @State private var searchText = ""
     @State private var filter = PasswordsFilter.everything
     @State private var editing: PasswordsEditing?
+    /// A page the Search tab asked for, kept until Passwords is in a state
+    /// that has it: the settings any time it is set up or locked, Recently
+    /// deleted once unlocked.
+    @State private var pendingDestination: PasswordsDestination?
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         framed
@@ -63,6 +68,13 @@ struct PasswordsScreen: View {
             .onChange(of: model.phase) {
                 path = []
                 editing = nil
+                openPendingDestination()
+            }
+            .onChange(of: app.openedPasswordsDestination, initial: true) { _, destination in
+                guard let destination else { return }
+                app.openedPasswordsDestination = nil
+                pendingDestination = destination
+                openPendingDestination()
             }
             // Coming back to the app from another one asks for Face ID again if Passwords locked meanwhile.
             .onChange(of: scenePhase) { previous, current in
@@ -191,6 +203,19 @@ struct PasswordsScreen: View {
         case .deleted: PasswordsDeletedScreen(model: model)
         case .settings: PasswordsSettingsScreen(model: model)
         }
+    }
+
+    /// Opens the page the Search tab asked for once Passwords can show it.
+    private func openPendingDestination() {
+        guard let destination = pendingDestination else { return }
+        let isShown: Bool
+        switch destination {
+        case .settings: isShown = model.phase == .notSetUp || model.phase == .locked || model.phase == .unlocked
+        default: isShown = model.phase == .unlocked
+        }
+        guard isShown else { return }
+        pendingDestination = nil
+        path = [destination]
     }
 
     /// Checks the lock time every few seconds while Passwords is open.

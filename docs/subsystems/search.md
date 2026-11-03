@@ -50,6 +50,36 @@ selected). A tab or a folder is never completed. The next letter replaces the
 offered letters, Backspace removes them, and Tab or the right arrow takes them.
 Escape closes the list, and a second Escape leaves the box.
 
+## The iPhone app's Search tab
+
+The Search tab offers places of the app the same way, under "Go to", above
+what the words find. The places are known on the phone, so they show as the
+words are typed, before the server answers. The list is `AppPlaces` in
+`AppPlaces.swift`, and the matching is `PlaceSearch` in TeaNodeKit, the
+dashboard's rules: a name in the reader's language or in English, its start
+before a word inside it, and a place inside another by its own name or by the
+start of the outer one's name then its own ("manage dom", "set pass"). Parts of
+the app come first, then the places inside them, eight at most.
+
+The places, each offered only when the account has it by the same check its
+screen makes:
+
+- The parts of the app, as More lists them, and Settings.
+- Places inside a part: Mail's folders, Starred, Priority and Subscriptions;
+  the Calendar's views; Photos' collections; Finance's sections; Location
+  settings and Travel; Health settings; Passwords' Settings and Recently
+  deleted.
+- The pages of Settings, with the pages of Manage, Mailbox and Agent settings
+  under them, shown as "Settings › Manage › Domains".
+
+A tap opens the place as a link to it would: the part it is in is shown, and
+the part is asked for the place through an `AppModel` property it takes and
+clears. Settings holds its pages by name (`SettingsPage`) on its stack's path,
+so a place two pages deep opens with the page above it to go back to. A page
+of Agent settings opens once Agent settings has read the agent, and a page of
+Passwords once Passwords is in a state that has it (the settings when set up or
+locked, Recently deleted once unlocked).
+
 ## The areas
 
 The order is fixed, whatever order they finish in. Each is asked for one more

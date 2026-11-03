@@ -52,12 +52,14 @@ extension SearchArea {
     var isShownInApp: Bool { self != .documents }
 }
 
-/// SearchTabScreen is the Search tab: a field, and under it what the typed
-/// words find in every part, a few from each, grouped by part. A row opens
-/// the item where it lives; Show all opens the part with the words in its own
+/// SearchTabScreen is the Search tab: a field, and under it the places of
+/// the app the typed words name, then what they find in every part, a few
+/// from each, grouped by part. A place opens where it is; a row opens the
+/// item where it lives; Show all opens the part with the words in its own
 /// search.
 struct SearchTabScreen: View {
     let connection: Connection
+    let mail: MailModel
     /// Opens a result, with the words that found it.
     let onOpen: (SearchResult, String) -> Void
     /// Opens a part with the words in its own search.
@@ -66,6 +68,9 @@ struct SearchTabScreen: View {
     @State private var typedText = ""
     @State private var found: SearchEverythingResults?
     @State private var failedText: String?
+    /// What the account may open on the management side, which decides the
+    /// pages of Manage offered.
+    @State private var access: OperatorAccess?
 
     var body: some View {
         NavigationStack {
@@ -73,10 +78,17 @@ struct SearchTabScreen: View {
                 .navigationTitle("Search")
                 .searchable(text: $typedText, prompt: Text("Search everything"))
                 .task(id: typedText) { await search() }
+                .task { access = try? await connection.operatorAccess() }
                 .onAppear {
                     #if DEBUG
                         // `-TeaNodeTab search -TeaNodeScreen search-results`: words typed already.
                         if DemoServer.isRequested, DemoServer.screen == "search-results", typedText.isEmpty { typedText = "harbor" }
+                        // `search-places`: words that name places of the app, which are offered first.
+                        if DemoServer.isRequested, DemoServer.screen == "search-places", typedText.isEmpty { typedText = "pass" }
+                        // `search-open-settings-page` and `search-open-agent-page`: a place two pages deep in
+                        // Settings, and a page of Agent settings, opened as a tap on its row opens it.
+                        if DemoServer.isRequested, DemoServer.screen == "search-open-settings-page" { app.openPlace(.settings([.manage, .manageDomains])) }
+                        if DemoServer.isRequested, DemoServer.screen == "search-open-agent-page" { app.openPlace(.settings([.agentSettings(.instructions)])) }
                     #endif
                 }
         }
@@ -87,7 +99,12 @@ struct SearchTabScreen: View {
         if SearchWords.normalized(typedText) == nil {
             ContentUnavailableView(
                 "Search everything", systemImage: "magnifyingglass",
-                description: Text("Find a name or a few words across your chats, mail, contacts, photos and more."))
+                description: Text("Find a page of the app, or a name or a few words across your chats, mail, contacts, photos and more."))
+        } else if !places.isEmpty {
+            // The places are known at once; what the server finds follows them.
+            SearchResultsList(
+                found: found, places: places, failedText: failedText, isPhotosOffered: isPhotosOffered,
+                onOpen: onOpen, onShowAll: onShowAll, onRetry: { await run() })
         } else if let found {
             if found.isEmpty, found.failedAreas.isEmpty, isPhotosOffered {
                 // Nothing has the words, but a picture may show them.
@@ -113,6 +130,13 @@ struct SearchTabScreen: View {
     /// Whether the search can go on in Photos, which also finds pictures by
     /// what is in them.
     private var isPhotosOffered: Bool { app.isSectionAvailable(.photos) }
+
+    /// The places of the app whose names the typed words are, best first.
+    private var places: [AppPlace] {
+        let all = AppPlaces.all(app: app, mail: mail, access: access)
+        let byId = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return PlaceSearch.matchingPlaceIds(all.map(\.placeName), words: typedText).compactMap { byId[$0] }
+    }
 
     /// Asks a moment after the last key, as the other searches do.
     private func search() async {
@@ -141,28 +165,66 @@ struct SearchTabScreen: View {
     }
 }
 
-/// SearchResultsList is what a search found: a section for each part with
-/// results, and a line saying which parts could not be searched.
+/// SearchResultsList is what a search found: the places of the app the
+/// words name, a section for each part with results, and a line saying which
+/// parts could not be searched. With places to show, it is shown while the
+/// server is still asked, or could not be.
 struct SearchResultsList: View {
-    let found: SearchEverythingResults
+    let found: SearchEverythingResults?
+    var places: [AppPlace] = []
+    var failedText: String? = nil
     let isPhotosOffered: Bool
     let onOpen: (SearchResult, String) -> Void
     let onShowAll: (SearchArea, String) -> Void
+    var onRetry: (() async -> Void)? = nil
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         List {
-            ForEach(found.areas) { areaResults in
-                if let area = areaResults.area {
-                    SearchAreaSection(area: area, areaResults: areaResults, words: found.words, onOpen: onOpen, onShowAll: onShowAll)
+            if !places.isEmpty {
+                Section {
+                    ForEach(places) { place in
+                        Button {
+                            app.openPlace(place.target)
+                        } label: {
+                            // In the text's colors: a place is somewhere to go, not an action (ios/DESIGN.md).
+                            Label(place.shownTitle, systemImage: place.systemImage)
+                                .foregroundStyle(Color.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(.rect)
+                        }
+                    }
+                } header: {
+                    Text("Go to")
                 }
             }
-            if isPhotosOffered, !isPhotosShowAllShown {
-                SearchPhotosRow(words: found.words, onShowAll: onShowAll)
-            }
-            if !found.failedAreas.isEmpty {
+            if let found {
+                ForEach(found.areas) { areaResults in
+                    if let area = areaResults.area {
+                        SearchAreaSection(area: area, areaResults: areaResults, words: found.words, onOpen: onOpen, onShowAll: onShowAll)
+                    }
+                }
+                if isPhotosOffered, !isPhotosShowAllShown(found) {
+                    SearchPhotosRow(words: found.words, onShowAll: onShowAll)
+                }
+                if !found.failedAreas.isEmpty {
+                    Section {
+                        Label(String(localized: "Could not search \(failedNames(found))."), systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else if let failedText {
                 Section {
-                    Label(String(localized: "Could not search \(failedNames)."), systemImage: "exclamationmark.triangle")
+                    Label(failedText, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.secondary)
+                    if let onRetry {
+                        Button("Try again") { Task { await onRetry() } }
+                    }
+                }
+            } else {
+                Section {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
                 }
             }
         }
@@ -170,12 +232,12 @@ struct SearchResultsList: View {
 
     /// Whether the Photos section already ends in Show all, which opens the
     /// same search in Photos.
-    private var isPhotosShowAllShown: Bool {
+    private func isPhotosShowAllShown(_ found: SearchEverythingResults) -> Bool {
         found.areas.contains { $0.area == .photos && $0.hasMore && !$0.results.isEmpty }
     }
 
     /// The parts that did not answer, by name.
-    private var failedNames: String {
+    private func failedNames(_ found: SearchEverythingResults) -> String {
         found.failedAreas.map { name in SearchArea(rawValue: name)?.title ?? name }.joined(separator: ", ")
     }
 }

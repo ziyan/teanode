@@ -52,6 +52,13 @@ struct CalendarScreen: View {
                     }
                 }
         }
+        // A view the Search tab opens by name, from the calendar's start.
+        .onChange(of: app.openedCalendarViewMode, initial: true) { _, mode in
+            guard let mode else { return }
+            app.openedCalendarViewMode = nil
+            path = []
+            model.viewMode = mode
+        }
         .task(id: app.services) {
             if app.services?.isCalendarEnabled == false {
                 model.viewMode = .reminders

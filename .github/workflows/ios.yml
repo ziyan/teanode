@@ -312,6 +312,12 @@ jobs:
           shoot search-results-light light large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results
           shoot search-results-dark dark large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results
           shoot search-results-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results
+          # Places of the app the words name, above what they find; and a place opened from its row.
+          shoot search-places-light light large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-places
+          shoot search-places-dark dark large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-places
+          shoot search-places-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-places
+          shoot search-open-settings-page-light light large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-open-settings-page
+          shoot search-open-agent-page-light light large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-open-agent-page
           shoot calendar-light light large -TeaNodeDemo -TeaNodeTab calendar
           shoot calendar-dark dark large -TeaNodeDemo -TeaNodeTab calendar
           shoot calendar-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar
@@ -774,6 +780,7 @@ jobs:
             "mail-inbox|-TeaNodeTab mail -TeaNodeScreen mail-inbox"
             "search|-TeaNodeTab search"
             "search-results|-TeaNodeTab search -TeaNodeScreen search-results"
+            "search-places|-TeaNodeTab search -TeaNodeScreen search-places"
             "calendar|-TeaNodeTab calendar"
             "calendar-day|-TeaNodeTab calendar -TeaNodeScreen calendar-day"
             "calendar-sheet|-TeaNodeTab calendar -TeaNodeScreen calendar-sheet"
