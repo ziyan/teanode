@@ -183,7 +183,8 @@ struct ChatCallScreen: View {
     @State private var noticeClosedCallId: String?
     @ScaledMetric(relativeTo: .body) private var minimizeDiameter: CGFloat = 44
     /// The size of a tile in the row under the one featured, grown with the
-    /// text so a bigger name still sits under the picture.
+    /// text so a bigger name still sits under the picture, up to half as big
+    /// again, so the row never takes the screen from the one featured.
     @ScaledMetric(relativeTo: .footnote) private var rowTileWidth: CGFloat = 120
     @ScaledMetric(relativeTo: .footnote) private var rowTileHeight: CGFloat = 90
 
@@ -314,12 +315,12 @@ struct ChatCallScreen: View {
                     HStack(spacing: 8) {
                         ForEach(members.filter { $0.userId != featured.userId }) { member in
                             choosable(tile(for: member, avatarSize: 36), member: member)
-                                .frame(width: rowTileWidth, height: rowTileHeight)
+                                .frame(width: min(rowTileWidth, 180), height: min(rowTileHeight, 135))
                         }
                     }
                 }
                 .scrollIndicators(.hidden)
-                .frame(height: rowTileHeight)
+                .frame(height: min(rowTileHeight, 135))
             }
         } else {
             let columns = ChatCallGrid.columnCount(tileCount: members.count)
