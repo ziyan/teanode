@@ -182,6 +182,10 @@ struct ChatCallScreen: View {
     /// The call whose transcription notice the person closed.
     @State private var noticeClosedCallId: String?
     @ScaledMetric(relativeTo: .body) private var minimizeDiameter: CGFloat = 44
+    /// The size of a tile in the row under the one featured, grown with the
+    /// text so a bigger name still sits under the picture.
+    @ScaledMetric(relativeTo: .footnote) private var rowTileWidth: CGFloat = 120
+    @ScaledMetric(relativeTo: .footnote) private var rowTileHeight: CGFloat = 90
 
     private var status: ChatCallTranscriptionStatus {
         guard let call = session.call else { return .notAsked }
@@ -310,12 +314,12 @@ struct ChatCallScreen: View {
                     HStack(spacing: 8) {
                         ForEach(members.filter { $0.userId != featured.userId }) { member in
                             choosable(tile(for: member, avatarSize: 36), member: member)
-                                .frame(width: 120, height: 90)
+                                .frame(width: rowTileWidth, height: rowTileHeight)
                         }
                     }
                 }
                 .scrollIndicators(.hidden)
-                .frame(height: 90)
+                .frame(height: rowTileHeight)
             }
         } else {
             let columns = ChatCallGrid.columnCount(tileCount: members.count)
