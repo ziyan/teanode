@@ -14,6 +14,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/deferutil"
+	"github.com/ziyan/teanode/internal/web"
 )
 
 // Calls in chats. A person in a chat starts a call; everybody else in it is
@@ -907,9 +908,29 @@ func (self *graph) ChatCallSignals(ctx context.Context, arguments ChatCallArgume
 }
 
 // TickChatCalls stops the ringing of the calls on this instance that have
+// rung too long (graph.tickChatCalls). The server calls it every few seconds.
+func TickChatCalls(ctx context.Context, component web.Component, now time.Time) error {
+	built, isGraph := component.(*graph)
+	if !isGraph {
+		return fmt.Errorf("apigraph: not the graph")
+	}
+	return built.tickChatCalls(ctx, now)
+}
+
+// FailChatCallsLeftGoing ends the calls this instance held when it stopped
+// (graph.failChatCallsLeftGoing). The server calls it when it starts.
+func FailChatCallsLeftGoing(ctx context.Context, component web.Component) error {
+	built, isGraph := component.(*graph)
+	if !isGraph {
+		return fmt.Errorf("apigraph: not the graph")
+	}
+	return built.failChatCallsLeftGoing(ctx)
+}
+
+// tickChatCalls stops the ringing of the calls on this instance that have
 // rung for calls.ringSeconds: whoever has not answered missed it, and a call
 // nobody answered ends. Run every few seconds by the server.
-func (self *graph) TickChatCalls(ctx context.Context, now time.Time) error {
+func (self *graph) tickChatCalls(ctx context.Context, now time.Time) error {
 	ringFor := time.Duration(self.config.Current().Calls.RingSeconds) * time.Second
 	var going []*models.ChatCall
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
@@ -944,9 +965,9 @@ func (self *graph) TickChatCalls(ctx context.Context, now time.Time) error {
 	return nil
 }
 
-// FailChatCallsLeftGoing ends the calls this instance held when it stopped:
+// failChatCallsLeftGoing ends the calls this instance held when it stopped:
 // their audio and video were in its memory. Run when the server starts.
-func (self *graph) FailChatCallsLeftGoing(ctx context.Context) error {
+func (self *graph) failChatCallsLeftGoing(ctx context.Context) error {
 	var going []*models.ChatCall
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		going, err = tx.ListGoingChatCalls(self.settings.BackendID)
@@ -970,11 +991,11 @@ func (self *graph) FailChatCallsLeftGoing(ctx context.Context) error {
 	return nil
 }
 
-// DeviceLost takes a person off a call when their device's connection
+// deviceLost takes a person off a call when their device's connection
 // failed without their leaving: a tab closed, a phone that lost its network
 // for good. The call ends when nobody is left on it, as when the last person
 // leaves.
-func (self *graph) DeviceLost(callId, userId string) {
+func (self *graph) deviceLost(callId, userId string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	self.chatCallSignals.forget(callId, userId)

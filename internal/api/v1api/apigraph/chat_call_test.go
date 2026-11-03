@@ -123,14 +123,14 @@ func TestACallNobodyAnswersIsMissedAndOneDeclinedEnds(t *testing.T) {
 	frankConversation := world.openDirect(t, world.frank, world.grace)
 
 	started := world.callView(t, world.frank, fmt.Sprintf(`StartChatCall(conversationId: %q)`, frankConversation))
-	if err := world.graph.TickChatCalls(context.Background(), time.Now()); err != nil {
-		t.Fatalf("TickChatCalls: %s", err)
+	if err := world.graph.tickChatCalls(context.Background(), time.Now()); err != nil {
+		t.Fatalf("tickChatCalls: %s", err)
 	}
 	if still := world.call(t, world.grace, `query { ListGoingChatCalls { id } }`)["ListGoingChatCalls"].([]any); len(still) != 1 {
 		t.Fatalf("a call stopped ringing at once: %v", still)
 	}
-	if err := world.graph.TickChatCalls(context.Background(), time.Now().Add(2*time.Minute)); err != nil {
-		t.Fatalf("TickChatCalls: %s", err)
+	if err := world.graph.tickChatCalls(context.Background(), time.Now().Add(2*time.Minute)); err != nil {
+		t.Fatalf("tickChatCalls: %s", err)
 	}
 	missed := world.call(t, world.grace, fmt.Sprintf(`query { ReadChatCall(callId: %q) { call %s } }`, started["id"], chatCallTestFields))["ReadChatCall"].(map[string]any)["call"].(map[string]any)
 	if missed["isGoing"] != false || missed["endReason"] != "missed" || missed["askerRingState"] != "missed" {
@@ -176,14 +176,14 @@ func TestALostDeviceTakesItsPersonOffTheCall(t *testing.T) {
 	callId := started["id"].(string)
 	world.callView(t, world.grace, fmt.Sprintf(`JoinChatCall(callId: %q)`, callId))
 
-	world.graph.DeviceLost(callId, world.grace.ID)
+	world.graph.deviceLost(callId, world.grace.ID)
 	read := func() map[string]any {
 		return world.call(t, world.frank, fmt.Sprintf(`query { ReadChatCall(callId: %q) { call %s } }`, callId, chatCallTestFields))["ReadChatCall"].(map[string]any)["call"].(map[string]any)
 	}
 	if after := read(); after["isGoing"] != true || memberOf(after, world.grace)["isOn"] != false {
 		t.Fatalf("after Grace's device was lost: %v", after)
 	}
-	world.graph.DeviceLost(callId, world.frank.ID)
+	world.graph.deviceLost(callId, world.frank.ID)
 	if after := read(); after["isGoing"] != false || after["endReason"] != "ended" {
 		t.Fatalf("after the last device was lost: %v", after)
 	}
