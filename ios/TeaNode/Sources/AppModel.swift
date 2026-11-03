@@ -133,6 +133,19 @@ final class AppModel {
 
     /// A part of the app the agent asked to show.
     var openedSection: AppSection?
+    /// The pages of Settings the Search tab opens, outermost first. Settings
+    /// takes them and clears this.
+    var openedSettingsPages: [SettingsPage]?
+    /// A page of Location the Search tab opens: its settings or Travel.
+    var openedLocationRoute: LocationRoute?
+    /// A page of Passwords the Search tab opens, once Passwords is in the
+    /// state that has it.
+    var openedPasswordsDestination: PasswordsDestination?
+    /// A place of the mail the Search tab opens: Starred, Priority, the
+    /// subscriptions or a folder.
+    var openedMailPlace: MailPlace?
+    /// The view the Calendar opens in.
+    var openedCalendarViewMode: CalendarModel.ViewMode?
     /// The person whose location the Location screen opens with selected: a
     /// pressed notification, or a link, names them. The screen takes it and
     /// clears it.

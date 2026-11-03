@@ -231,6 +231,12 @@ struct LocationScreen: View {
             app.openedLocationDay = nil
             path = [.day(day)]
         }
+        // A page the Search tab opens by name.
+        .onChange(of: app.openedLocationRoute, initial: true) { _, route in
+            guard let route else { return }
+            app.openedLocationRoute = nil
+            path = [route]
+        }
     }
 
     /// Whether the people sharing with the person are shown: their rows under

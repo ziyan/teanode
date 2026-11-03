@@ -32,6 +32,13 @@ struct MailScreen: View {
             if let inbox = mail.folder(kind: "inbox") { path.append(MailPlace.folder(inbox.id)) }
             path.append(OpenedThread(itemId: itemId, folderId: nil))
         }
+        // A place the Search tab opens by name.
+        .onChange(of: app.openedMailPlace, initial: true) { _, place in
+            guard let place else { return }
+            app.openedMailPlace = nil
+            path = NavigationPath()
+            path.append(place)
+        }
         .onChange(of: app.openedPartSearch, initial: true) { _, search in
             guard let search, search.area == .mail else { return }
             app.openedPartSearch = nil

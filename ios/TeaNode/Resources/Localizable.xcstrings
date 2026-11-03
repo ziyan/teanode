@@ -33,6 +33,22 @@
         }
       }
     },
+    "Go to": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移動"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前往"
+          }
+        }
+      }
+    },
     "Half height": {
       "localizations": {
         "ja": {
@@ -79604,18 +79620,18 @@
         }
       }
     },
-    "Find a name or a few words across your chats, mail, contacts, photos and more.": {
+    "Find a page of the app, or a name or a few words across your chats, mail, contacts, photos and more.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "チャット、メール、連絡先、写真などから、名前や言葉を探します。"
+            "value": "アプリのページや、チャット、メール、連絡先、写真などにある名前や言葉を探します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在对话、邮件、联系人、照片等所有内容中查找名字或几个词。"
+            "value": "查找应用里的页面，或在对话、邮件、联系人、照片等所有内容中查找名字或几个词。"
           }
         }
       }
