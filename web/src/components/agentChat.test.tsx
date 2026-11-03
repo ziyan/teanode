@@ -310,7 +310,8 @@ it('starts a new run after a date divider even for the same person, and not with
 
   // A call's line has no author drawn, so the caller's message under it
   // starts a run.
-  expect(beginsRun(at('06', 'person-b', soonAfter), { ...at('03', 'person-b', noon), callId: 'call-one' })).toBe(true)
+  const callLine: ChatLine = { ...at('03', 'person-b', noon), callId: 'call-one' }
+  expect(beginsRun(at('06', 'person-b', soonAfter), callLine)).toBe(true)
 
   // A different author starts one either way, and the first line of all does.
   expect(beginsRun(at('05', 'person-c', soonAfter), at('03', 'person-b', noon))).toBe(true)
