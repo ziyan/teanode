@@ -628,7 +628,7 @@ final class ConversationModel {
             references = []
             sentLineId = transcript.addSent("", attachments: [attachment], replyingTo: reply, author: ownAuthor, isVoiceMessage: true)
             let asked = try await connection.ask(
-                "", in: conversationId, attachmentIds: [id], references: referring, drawerId: app.drawerId, voiceMessageAttachmentId: id)
+                "", in: conversationId, references: referring, drawerId: app.drawerId, voiceMessageAttachmentId: id)
             if let sentLineId { confirmSoon(sentLineId) }
             if !asked.runId.isEmpty, !runningRunIds.contains(asked.runId) {
                 runningRunIds.append(asked.runId)
