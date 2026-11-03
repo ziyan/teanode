@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.213.0] - 2026-11-03
+
+### Added
+
+- A voice message with no words can be transcribed by anyone in the chat, paid by their own agent: Transcribe under the bubble on the dashboard and the iPhone, or `teanode agent conversation transcribe`. (#720)
+
 ## [0.212.0] - 2026-11-03
 
 ### Added
