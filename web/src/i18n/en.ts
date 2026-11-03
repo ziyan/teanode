@@ -1197,6 +1197,12 @@ export const en = {
   'agent.scheduleEnable': 'Turn on',
   'agent.scheduleDisable': 'Turn off',
   'agent.scheduleQueued': 'Queued; the answer arrives where the schedule says.',
+  'agent.scheduleWhen': 'When',
+  'agent.scheduleWhenClock': 'At set times',
+  'agent.scheduleWhenMail': 'When mail arrives',
+  'agent.scheduleOnMail': 'When mail arrives {conditions}',
+  'agent.scheduleMailHint':
+    'Runs once for each new message in your mailbox that meets every condition below. A value compared with "matches pattern" is a regular expression.',
   'agent.corrections': 'What it learned from you',
   'agent.correctionsHint':
     'Recorded from your own hands — a message you filed elsewhere, a reply you did not let go — and shown to the next run as examples, for a while.',

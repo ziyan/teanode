@@ -1,10 +1,11 @@
 import { FormEvent, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
-import { graphql, openAgentConversation, sendToAgentConversation } from '../api'
+import { MailboxRuleCondition, graphql, openAgentConversation, sendToAgentConversation } from '../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../components/common'
 import { FormDialog } from '../components/dialog'
 import { Select } from '../components/select'
+import { describeMailSchedule, describeScheduleTiming } from '../components/mailConditions'
 import { IdeaList, LIST_IDEAS } from '../components/ideaRow'
 import { SettingsEmpty, SettingsSection } from '../components/settingsList'
 import { useToast } from '../components/toast'
@@ -45,7 +46,14 @@ interface GoalDetails extends Goal {
   goalOriginTitle: string
   isGoalOriginMain: boolean
   activity: GoalActivity[]
-  schedules: { id: string; name: string; cron: string; enabled: boolean; nextRunAt?: string | null }[]
+  schedules: {
+    id: string
+    name: string
+    cron: string
+    mailConditions?: MailboxRuleCondition[] | null
+    enabled: boolean
+    nextRunAt?: string | null
+  }[]
   backgroundWork: { id: string; workKind: string; workStatus: string; title: string }[]
   artifacts: { id: string; goalArtifactKind: string; artifactReference: string; artifactTitle: string }[]
 }
@@ -54,6 +62,7 @@ interface Schedule {
   id: string
   name: string
   cron: string
+  mailConditions?: MailboxRuleCondition[] | null
   enabled: boolean
   conversationId?: string
   nextRunAt?: string | null
@@ -69,13 +78,13 @@ const GOAL = `
       ${GOAL_FIELDS}
       goalOriginConversationId goalOriginTitle isGoalOriginMain
       activity { id createdAt goalActivityKind activityHeadline activityDetail }
-      schedules { id name cron enabled nextRunAt }
+      schedules { id name cron mailConditions { field header operator value } enabled nextRunAt }
       backgroundWork { id workKind workStatus title }
       artifacts { id goalArtifactKind artifactReference artifactTitle }
     }
   }`
 
-const SCHEDULES = `query { ListAgentSchedules { id name cron enabled conversationId nextRunAt } }`
+const SCHEDULES = `query { ListAgentSchedules { id name cron mailConditions { field header operator value } enabled conversationId nextRunAt } }`
 
 const MOVE_SCHEDULE_TO_GOAL = `
   mutation ($scheduleId: String!, $conversationId: String!) {
@@ -258,7 +267,11 @@ function GoalList({ onOpen }: { onOpen: (conversationId: string) => void }) {
                   {schedule.name}
                 </Link>
                 <span className="goal-meta muted">
-                  <code>{schedule.cron}</code>
+                  {schedule.mailConditions?.length ? (
+                    <span>{describeMailSchedule(schedule.mailConditions, t)}</span>
+                  ) : (
+                    <code>{schedule.cron}</code>
+                  )}
                   {schedule.nextRunAt ? (
                     <span>{t('goals.nextRun', { when: formatTime(schedule.nextRunAt) })}</span>
                   ) : null}
@@ -587,7 +600,7 @@ function GoalPage({ conversationId, onBack }: { conversationId: string; onBack: 
                 label={t('goals.useScheduleLabel')}
                 options={usableSchedules.map((schedule) => ({
                   value: schedule.id,
-                  label: `${schedule.name} (${schedule.cron})`,
+                  label: `${schedule.name} (${describeScheduleTiming(schedule, t)})`,
                 }))}
                 onChange={setChosenScheduleId}
               />
@@ -608,7 +621,11 @@ function GoalPage({ conversationId, onBack }: { conversationId: string; onBack: 
                     {schedule.name}
                   </Link>
                   <span className="goal-meta muted">
-                    <code>{schedule.cron}</code>
+                    {schedule.mailConditions?.length ? (
+                      <span>{describeMailSchedule(schedule.mailConditions, t)}</span>
+                    ) : (
+                      <code>{schedule.cron}</code>
+                    )}
                     {schedule.enabled && schedule.nextRunAt ? (
                       <span>{t('goals.nextRun', { when: formatTime(schedule.nextRunAt) })}</span>
                     ) : null}

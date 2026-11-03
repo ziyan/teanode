@@ -149,6 +149,13 @@ it('moves a schedule into a goal, offering only the ones that do not already run
         ListAgentSchedules: [
           { id: 's-own', name: 'Already its', cron: '0 9 * * *', enabled: true, conversationId: 'goal-boiler' },
           { id: 's-loose', name: 'Weekly look', cron: '0 8 * * 1', enabled: true },
+          {
+            id: 's-mail',
+            name: 'School notices',
+            cron: '',
+            mailConditions: [{ field: 'from', header: '', operator: 'contains', value: 'news@school.example' }],
+            enabled: true,
+          },
         ],
       }
     if (document.includes('ListAgentIdeas')) return { ListAgentIdeas: { ideas: [], ideaCategories: [] } }
@@ -164,6 +171,13 @@ it('moves a schedule into a goal, offering only the ones that do not already run
   // The schedule that already runs this goal is not offered again.
   expect(dialog.textContent).toContain('Weekly look (0 8 * * 1)')
   expect(dialog.textContent).not.toContain('Already its (')
+  // A schedule that runs on mail is offered by when it runs, not by an empty cron line.
+  fireEvent.click(screen.getByRole('combobox', { name: 'goals.useScheduleLabel' }))
+  expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+    'Weekly look (0 8 * * 1)',
+    'School notices (agent.scheduleOnMail {"conditions":"mailboxSettings.fieldFrom mailboxSettings.operatorContains news@school.example"})',
+  ])
+  fireEvent.click(screen.getByRole('option', { name: 'Weekly look (0 8 * * 1)' }))
   fireEvent.click(dialog.querySelector('button[type="submit"]')!)
   await waitFor(() =>
     expect(execute).toHaveBeenCalledWith(expect.stringContaining('MoveAgentScheduleToGoal'), {

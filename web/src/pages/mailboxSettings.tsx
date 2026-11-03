@@ -5,7 +5,8 @@ import { Mailbox, MailboxAutoReply, MailboxFolder, MailboxRule, MailboxView, gra
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { Tooltip } from '../components/tooltip'
 import { PasswordUsage, sortNewestFirst } from '../components/passwordUsage'
-import { Combobox, Select } from '../components/select'
+import { Select } from '../components/select'
+import { BARE_FIELDS, MailConditionsEditor, describeMailCondition } from '../components/mailConditions'
 import { useQuery } from '../components/useQuery'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { useToast } from '../components/toast'
@@ -454,84 +455,13 @@ function FoldersTab({ view }: { view: MailboxView }) {
   )
 }
 
-const FIELDS = [
-  'from',
-  'to',
-  'subject',
-  'header',
-  'score',
-  'sender-known',
-  'category',
-  'priority',
-  'needs-reply',
-  'any',
-] as const
-
-// The fields that need no value: the condition is the field.
-const BARE_FIELDS = ['sender-known', 'needs-reply', 'any']
-
-// The categories the agent always knows; a person's own go in by name.
-const CATEGORIES = [
-  'personal',
-  'work',
-  'newsletter',
-  'notification',
-  'receipt',
-  'promotion',
-  'social',
-  'invitation',
-  'other',
-]
-const PRIORITIES = ['high', 'normal', 'low']
-const OPERATORS = ['contains', 'equals', 'matches', 'above', 'below'] as const
 const ACTIONS = ['move', 'markRead', 'flag', 'forward', 'delete'] as const
-
-const FIELD_LABELS: Record<string, Key> = {
-  from: 'mailboxSettings.fieldFrom',
-  to: 'mailboxSettings.fieldTo',
-  subject: 'mailboxSettings.fieldSubject',
-  header: 'mailboxSettings.fieldHeader',
-  score: 'mailboxSettings.fieldScore',
-  'sender-known': 'mailboxSettings.fieldSenderKnown',
-  category: 'mailboxSettings.fieldCategory',
-  priority: 'mailboxSettings.fieldPriority',
-  'needs-reply': 'mailboxSettings.fieldNeedsReply',
-  any: 'mailboxSettings.fieldAny',
-}
-const PRIORITY_LABELS: Record<string, Key> = {
-  high: 'mailboxSettings.priorityHigh',
-  normal: 'mailboxSettings.priorityNormal',
-  low: 'mailboxSettings.priorityLow',
-}
-const OPERATOR_LABELS: Record<string, Key> = {
-  contains: 'mailboxSettings.operatorContains',
-  equals: 'mailboxSettings.operatorEquals',
-  matches: 'mailboxSettings.operatorMatches',
-  above: 'mailboxSettings.operatorAbove',
-  below: 'mailboxSettings.operatorBelow',
-}
 const ACTION_LABELS: Record<string, Key> = {
   move: 'mailboxSettings.actionMove',
   markRead: 'mailboxSettings.actionMarkRead',
   flag: 'mailboxSettings.actionFlag',
   forward: 'mailboxSettings.actionForward',
   delete: 'mailboxSettings.actionDelete',
-}
-
-// operatorsFor is what a condition's field can be compared with: a score
-// is above or below a number, a priority is one of three, everything else
-// matches text.
-function operatorsFor(field: string): string[] {
-  if (field === 'score') {
-    return ['above', 'below']
-  }
-  if (field === 'priority') {
-    return ['equals']
-  }
-  if (BARE_FIELDS.includes(field)) {
-    return ['']
-  }
-  return OPERATORS.filter((operator) => operator !== 'above' && operator !== 'below')
 }
 
 function emptyRule(): MailboxRule {
@@ -566,27 +496,10 @@ function cleanRules(rules: MailboxRule[]): MailboxRule[] {
   }))
 }
 
-// describeCondition and describeAction say what a rule does in a line, for
-// the list. The list is read far more often than it is edited — somebody
-// comes to it to find out where their mail is going — and a page of open
-// forms is the worst thing to read that with.
-function describeCondition(
-  condition: MailboxRule['conditions'][number],
-  t: (key: Key, values?: Record<string, string | number>) => string,
-): string {
-  const field = t(FIELD_LABELS[condition.field] ?? 'mailboxSettings.fieldAny')
-  if (BARE_FIELDS.includes(condition.field)) {
-    return field
-  }
-  const name = condition.field === 'header' && condition.header ? ` ${condition.header}` : ''
-  const operator = t(OPERATOR_LABELS[condition.operator] ?? 'mailboxSettings.operatorContains')
-  const value =
-    condition.field === 'priority' && PRIORITY_LABELS[condition.value ?? '']
-      ? t(PRIORITY_LABELS[condition.value ?? ''])
-      : (condition.value ?? '')
-  return `${field}${name} ${operator} ${value}`.trim()
-}
-
+// describeAction says what a rule does in a line, for the list. The list
+// is read far more often than it is edited: somebody comes to it to find
+// out where their mail is going, and a page of open forms is the worst
+// thing to read that with.
 function describeAction(
   action: MailboxRule['actions'][number],
   t: (key: Key, values?: Record<string, string | number>) => string,
@@ -700,7 +613,7 @@ function RulesTab({ view }: { view: MailboxView }) {
               subtitle={
                 <>
                   {t('mailboxSettings.ruleWhen', {
-                    conditions: entry.conditions.map((condition) => describeCondition(condition, t)).join(', '),
+                    conditions: entry.conditions.map((condition) => describeMailCondition(condition, t)).join(', '),
                   })}
                   {' · '}
                   {t('mailboxSettings.ruleThen', {
@@ -846,134 +759,10 @@ function RulesTab({ view }: { view: MailboxView }) {
           </label>
 
           <div className="field-label">{t('mailboxSettings.conditions')}</div>
-          {rule.conditions.map((condition, conditionIndex) => (
-            <div className="rule-line" key={conditionIndex}>
-              <Select
-                label={t('mailboxSettings.conditions')}
-                value={condition.field}
-                options={FIELDS.map((field) => ({ value: field, label: t(FIELD_LABELS[field]) }))}
-                onChange={(value) =>
-                  change((current) => ({
-                    ...current,
-                    conditions: current.conditions.map((item, at) =>
-                      at === conditionIndex
-                        ? {
-                            ...item,
-                            field: value,
-                            // A field has its own operators; keep one only if
-                            // the new field can use it.
-                            operator: operatorsFor(value).includes(item.operator)
-                              ? item.operator
-                              : operatorsFor(value)[0],
-                          }
-                        : item,
-                    ),
-                  }))
-                }
-              />
-              {condition.field === 'header' && (
-                <input
-                  placeholder={t('mailboxSettings.headerName')}
-                  aria-label={t('mailboxSettings.headerName')}
-                  value={condition.header ?? ''}
-                  onChange={(event) =>
-                    change((current) => ({
-                      ...current,
-                      conditions: current.conditions.map((item, at) =>
-                        at === conditionIndex ? { ...item, header: event.target.value } : item,
-                      ),
-                    }))
-                  }
-                />
-              )}
-              {!BARE_FIELDS.includes(condition.field) && (
-                <>
-                  <Select
-                    label={t('mailboxSettings.operator')}
-                    value={condition.operator}
-                    options={operatorsFor(condition.field).map((operator) => ({
-                      value: operator,
-                      label: t(OPERATOR_LABELS[operator]),
-                    }))}
-                    onChange={(value) =>
-                      change((current) => ({
-                        ...current,
-                        conditions: current.conditions.map((item, at) =>
-                          at === conditionIndex ? { ...item, operator: value } : item,
-                        ),
-                      }))
-                    }
-                  />
-                  {condition.field === 'priority' ? (
-                    <Select
-                      label={t('mailboxSettings.value')}
-                      value={PRIORITIES.includes(condition.value ?? '') ? (condition.value ?? '') : ''}
-                      options={[
-                        { value: '', label: t('mailboxSettings.choose') },
-                        ...PRIORITIES.map((level) => ({ value: level, label: t(PRIORITY_LABELS[level]) })),
-                      ]}
-                      onChange={(value) =>
-                        change((current) => ({
-                          ...current,
-                          conditions: current.conditions.map((item, at) =>
-                            at === conditionIndex ? { ...item, value } : item,
-                          ),
-                        }))
-                      }
-                    />
-                  ) : (
-                    <>
-                      <Combobox
-                        label={t('mailboxSettings.value')}
-                        suggestions={
-                          condition.field === 'category'
-                            ? CATEGORIES.filter((name) => name.includes((condition.value ?? '').toLowerCase()))
-                            : []
-                        }
-                        placeholder={condition.field === 'category' ? t('mailboxSettings.categoryHint') : undefined}
-                        value={condition.value ?? ''}
-                        onChange={(value) =>
-                          change((current) => ({
-                            ...current,
-                            conditions: current.conditions.map((item, at) =>
-                              at === conditionIndex ? { ...item, value } : item,
-                            ),
-                          }))
-                        }
-                      />
-                    </>
-                  )}
-                </>
-              )}
-              <Tooltip label={t('common.remove')}>
-                <button
-                  type="button"
-                  className="icon-action danger"
-                  aria-label={t('common.remove')}
-                  disabled={rule.conditions.length === 1}
-                  onClick={() =>
-                    change((current) => ({
-                      ...current,
-                      conditions: current.conditions.filter((_, at) => at !== conditionIndex),
-                    }))
-                  }
-                >
-                  <TrashIcon size={16} />
-                </button>
-              </Tooltip>
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={() =>
-              change((current) => ({
-                ...current,
-                conditions: [...current.conditions, { field: 'subject', operator: 'contains', value: '' }],
-              }))
-            }
-          >
-            {t('mailboxSettings.addCondition')}
-          </button>
+          <MailConditionsEditor
+            conditions={rule.conditions}
+            onChange={(conditions) => change((current) => ({ ...current, conditions }))}
+          />
 
           <div className="field-label">{t('mailboxSettings.actions')}</div>
           {rule.actions.map((action, actionIndex) => (
