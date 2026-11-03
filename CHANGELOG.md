@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.214.0] - 2026-11-03
+
+### Added
+
+- The iPhone app's Search tab offers the app's pages by name: type "passkeys", "domains" or "receipts" to jump to Settings › Passkeys, Settings › Manage › Domains or Finance › Receipts. (#722)
+
 ## [0.213.1] - 2026-11-03
 
 ### Fixed
