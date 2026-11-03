@@ -86,6 +86,12 @@ type ChatMutation interface {
 	// Tell the others the caller is writing. Nothing is stored.
 	SetChatTyping(ctx context.Context, arguments SetChatTypingArguments) (bool, error)
 
+	// Say something in a chat as the caller, under their own name, for a
+	// program or the agent's tool writing for them: the words alone, an @
+	// before a member's name in them mentioning that member. It asks no
+	// agent; AskAgent does that.
+	SayInChat(ctx context.Context, arguments SayInChatArguments) (*models.AgentMessage, error)
+
 	// Say something in a chat as the caller's agent, under its name, for the
 	// agent's own tool. Needs the agent to be on.
 	SayInChatAsAgent(ctx context.Context, arguments SayInChatAsAgentArguments) (*models.AgentMessage, error)
@@ -179,6 +185,14 @@ type ReactInChatAsAgentArguments struct {
 
 	// One emoji; empty takes the agent's reaction away
 	Emoji string `json:"emoji"`
+}
+
+// SayInChatArguments name the chat, the words and, when they answer one, the
+// message replied to.
+type SayInChatArguments struct {
+	ConversationID   string `json:"conversationId"`
+	Message          string `json:"message"`
+	ReplyToMessageID string `json:"replyToMessageId" graphapi:"nullable"`
 }
 
 // SayInChatAsAgentArguments name the chat and the words.
@@ -888,6 +902,20 @@ func (self *graph) repliedAgentOf(ctx context.Context, session *chatSession, rep
 		return "", nil
 	}
 	return replied.AuthorAgentID, nil
+}
+
+func (self *graph) SayInChat(ctx context.Context, arguments SayInChatArguments) (*models.AgentMessage, error) {
+	session, err := self.requireChatMember(ctx, arguments.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+	// What is said by hand names whom it mentions in the composer; words
+	// written by a program name them with an @.
+	mentionedUserIds, isAllMentioned := models.ChatMentionsIn(arguments.Message, session.Chat.ActiveMembers())
+	return self.postChatMessage(ctx, session, chatSaying{
+		body: arguments.Message, replyToMessageId: strings.TrimSpace(arguments.ReplyToMessageID),
+		mentionedUserIds: mentionedUserIds, isAllMentioned: isAllMentioned,
+	})
 }
 
 func (self *graph) SayInChatAsAgent(ctx context.Context, arguments SayInChatAsAgentArguments) (*models.AgentMessage, error) {

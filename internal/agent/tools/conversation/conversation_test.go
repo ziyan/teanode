@@ -423,7 +423,10 @@ func (self *sayingOperations) Execute(_ context.Context, document string, variab
 	self.documents = append(self.documents, document)
 	self.variables = append(self.variables, variables)
 	if target, ok := result.(*map[string]any); ok {
-		*target = map[string]any{"SayInChatAsAgent": map[string]any{"id": "a-message", "authorName": "Bertie"}}
+		*target = map[string]any{
+			"SayInChatAsAgent": map[string]any{"id": "a-message", "authorName": "Bertie"},
+			"SayInChat":        map[string]any{"id": "a-person-message", "authorName": "Example Person"},
+		}
 	}
 	return nil
 }
@@ -546,9 +549,30 @@ func TestConversationListsReadsAndSendsInAChat(t *testing.T) {
 		operations.variables[0]["conversationId"] != chatConversation.ID || operations.variables[0]["message"] != "I will be late." {
 		t.Errorf("the API was asked %v with %v", operations.documents, operations.variables)
 	}
+
+	// Under the person's own name, answering a message: asked the same way,
+	// and the card says whose name it goes under.
+	asPerson := json.RawMessage(`{"action":"send","author_kind":"person","conversation_id":"` + chatConversation.ID +
+		`","text":"On my way.","reply_to_message_id":"a-chat-message"}`)
+	if tool.RiskFor(asPerson) != tools.RiskOutward || !tools.NeedsConfirmation(tool, asPerson, nil, nil) {
+		t.Errorf("sending as the person is %s", tool.RiskFor(asPerson))
+	}
+	if line := tool.PreviewLine(ctx, asPerson); !strings.Contains(line, "under your own name") || !strings.Contains(line, "On my way.") {
+		t.Errorf("the card says %q", line)
+	}
+	answered, _, err = call(string(asPerson))
+	if err != nil || answered["message_id"] != "a-person-message" {
+		t.Fatalf("send as the person: %v %v", answered, err)
+	}
+	if len(operations.documents) != 2 || !strings.Contains(operations.documents[1], "SayInChat(") ||
+		operations.variables[1]["message"] != "On my way." || operations.variables[1]["replyToMessageId"] != "a-chat-message" {
+		t.Errorf("the API was asked %v with %v", operations.documents, operations.variables)
+	}
 	for _, arguments := range []string{
 		`{"action":"send","text":"to nobody"}`,
 		`{"action":"send","conversation_id":"` + chatConversation.ID + `","text":"  "}`,
+		`{"action":"send","author_kind":"somebody","conversation_id":"` + chatConversation.ID + `","text":"hi"}`,
+		`{"action":"send","conversation_id":"` + chatConversation.ID + `","text":"hi","reply_to_message_id":"a-chat-message"}`,
 	} {
 		if _, _, err := call(arguments); err == nil {
 			t.Errorf("%s was accepted", arguments)

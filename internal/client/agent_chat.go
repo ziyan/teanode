@@ -73,6 +73,7 @@ const (
 	DocumentSetChatTyping               = `mutation ($conversationId: String!) { SetChatTyping(conversationId: $conversationId) }`
 	DocumentSetChatAgentReading         = `mutation ($conversationId: String!, $isAgentReading: Boolean!) { SetChatAgentReading(conversationId: $conversationId, isAgentReading: $isAgentReading) ` + conversationFields + ` }`
 	DocumentSetChatAgentAskableByOthers = `mutation ($conversationId: String!, $isAgentAskableByOthers: Boolean!) { SetChatAgentAskableByOthers(conversationId: $conversationId, isAgentAskableByOthers: $isAgentAskableByOthers) ` + conversationFields + ` }`
+	DocumentSayInChat                   = `mutation ($conversationId: String!, $message: String!, $replyToMessageId: String) { SayInChat(conversationId: $conversationId, message: $message, replyToMessageId: $replyToMessageId) { id createdAt content authorName } }`
 	DocumentSayInChatAsAgent            = `mutation ($conversationId: String!, $message: String!) { SayInChatAsAgent(conversationId: $conversationId, message: $message) { id createdAt content authorName } }`
 )
 
@@ -208,6 +209,23 @@ func SetChatTyping(ctx context.Context, connection *Client, conversationId strin
 		SetChatTyping bool `json:"SetChatTyping"`
 	}
 	return connection.Execute(ctx, DocumentSetChatTyping, map[string]any{"conversationId": conversationId}, &result)
+}
+
+// SayInChat says something in a chat as you, under your own name; an @
+// before a member's name mentions them, and replyToMessageId, when given, is
+// the message it answers. It asks no agent.
+func SayInChat(ctx context.Context, connection *Client, conversationId, message, replyToMessageId string) (*AgentMessage, error) {
+	var result struct {
+		SayInChat *AgentMessage `json:"SayInChat"`
+	}
+	variables := map[string]any{"conversationId": conversationId, "message": message}
+	if replyToMessageId != "" {
+		variables["replyToMessageId"] = replyToMessageId
+	}
+	if err := connection.Execute(ctx, DocumentSayInChat, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.SayInChat, nil
 }
 
 // SayInChatAsAgent says something in a chat as your agent, under its name.

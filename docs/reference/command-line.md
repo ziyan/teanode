@@ -583,6 +583,7 @@ have made.
 | `teanode agent conversation remove <id> <username>` | take a person out of a group chat; needs an admin; asks first |
 | `teanode agent conversation leave <id>` | leave a group chat, which you can still read up to now; asks first. A circle's chat follows the circle: leave the circle instead |
 | `teanode agent conversation notifications <id> all\|mentions\|off` | what your phone is told of in the chat: every message, only a message that mentions you or everybody, or nothing; it stays until you change it |
+| `teanode agent conversation say <id> <text>` | say something in a chat under your own name, as if you typed it, for a script or an agent working for you: an @ before a member's name, as `members` shows it, mentions them and `@all` everybody, `--reply-to <message id>` answers a message, and it asks no agent (`ask --conversation` does). `--as-agent` says it under your agent's name instead, which needs your agent on. Prints the message id. Your agent's `conversation` tool, which a harness reaches over MCP, does the same with `send` (`author_kind` `person` or `agent`) |
 | `teanode agent conversation read <id>` | say you have read the chat through its newest message; the mark never moves back |
 | `teanode agent conversation edit <message-id> <text>` | change one of your messages in a chat; the others see it was edited |
 | `teanode agent conversation transcribe <message-id>` | write the words of a voice message that has none, paid by your agent; everybody in the chat sees them |

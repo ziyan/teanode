@@ -96,6 +96,17 @@ func chatCommands() []*cli.Command {
 			Action:    runChatOthersMayAsk,
 		},
 		{
+			Name:      "say",
+			Usage:     "say something in a chat, under your name or with --as-agent your agent's; an @ before a member's name mentions them, and it asks no agent (ask --conversation does)",
+			ArgsUsage: "<conversation-id> <text>",
+			Flags: []cli.Flag{
+				&cli.BoolFlag{Name: "as-agent", Usage: "under your agent's name, as your agent, which needs it to be on"},
+				&cli.StringFlag{Name: "reply-to", Usage: "the id of a message in the chat this answers, as conversation show --json lists them; not with --as-agent"},
+				JSONFlag(),
+			},
+			Action: runChatSay,
+		},
+		{
 			Name:      "edit",
 			Usage:     "change what one of your messages says; the others see it was edited",
 			ArgsUsage: "<message-id> <text>",
@@ -524,6 +535,36 @@ func runChatRead(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s: read\n", conversationId)
+	return nil
+}
+
+func runChatSay(ctx context.Context, command *cli.Command) error {
+	conversationId := strings.TrimSpace(command.Args().First())
+	text := strings.TrimSpace(strings.Join(command.Args().Slice()[min(1, command.Args().Len()):], " "))
+	replyToMessageId := strings.TrimSpace(command.String("reply-to"))
+	if conversationId == "" || text == "" {
+		return fmt.Errorf("give the conversation id of the chat and what to say")
+	}
+	if replyToMessageId != "" && command.Bool("as-agent") {
+		return fmt.Errorf("--reply-to answers a message as you, not as your agent")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	var message *client.AgentMessage
+	if command.Bool("as-agent") {
+		message, err = client.SayInChatAsAgent(ctx, connection, conversationId, text)
+	} else {
+		message, err = client.SayInChat(ctx, connection, conversationId, text, replyToMessageId)
+	}
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(message)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s: said as %s\n", message.ID, forTerminal(message.AuthorName))
 	return nil
 }
 

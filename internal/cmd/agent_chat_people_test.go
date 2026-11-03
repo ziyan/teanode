@@ -47,7 +47,8 @@ func TestChatParity(test *testing.T) {
 		"MarkChatRead":               {"read", "mark_read"},
 		"SetChatNotificationLevel":   {"notifications", "notifications"},
 		"SetChatTyping":              {"", ""},
-		"SayInChatAsAgent":           {"", "send"},
+		"SayInChat":                  {"say", "send"},
+		"SayInChatAsAgent":           {"say", "send"},
 
 		// The agent's own reaction, apart from its person's: the person
 		// reacts with teanode agent react.
@@ -307,5 +308,62 @@ func TestAskingOtherPeoplesAgentsFromTheCommandLine(test *testing.T) {
 	defer lock.Unlock()
 	if asked != "" {
 		test.Errorf("something was sent for a name that is nobody's: %s", asked)
+	}
+}
+
+// say writes in a chat under your name, answering a message when asked to,
+// or under your agent's with --as-agent, which answers nothing.
+func TestSayingSomethingInAChatFromTheCommandLine(test *testing.T) {
+	test.Parallel()
+
+	var lock sync.Mutex
+	var asked []string
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		body := new(bytes.Buffer)
+		_, _ = body.ReadFrom(request.Body)
+		lock.Lock()
+		asked = append(asked, body.String())
+		lock.Unlock()
+		response.Header().Set("Content-Type", "application/json")
+		if strings.Contains(body.String(), "SayInChatAsAgent(") {
+			_, _ = response.Write([]byte(`{"data":{"SayInChatAsAgent":{"id":"m2","content":"noted","authorName":"Agent"}}}`))
+			return
+		}
+		_, _ = response.Write([]byte(`{"data":{"SayInChat":{"id":"m1","content":"on my way","authorName":"Alice"}}}`))
+	}))
+	defer server.Close()
+	run := func(arguments ...string) (string, error) {
+		written := &bytes.Buffer{}
+		command := &cli.Command{
+			Name:     "fixture",
+			Flags:    []cli.Flag{&cli.StringFlag{Name: "url", Value: server.URL}, &cli.StringFlag{Name: "token", Value: "tnt_x"}},
+			Commands: []*cli.Command{NewAgentCommand()},
+			Writer:   written,
+		}
+		err := command.Run(test.Context(), append([]string{"fixture", "agent", "conversation", "say"}, arguments...))
+		return written.String(), err
+	}
+
+	printed, err := run("--reply-to", "m0", "c1", "@Maria", "on", "my", "way")
+	if err != nil {
+		test.Fatal(err)
+	}
+	lock.Lock()
+	sent := asked[0]
+	lock.Unlock()
+	if !strings.Contains(sent, "SayInChat(") || !strings.Contains(sent, `"message":"@Maria on my way"`) || !strings.Contains(sent, `"replyToMessageId":"m0"`) {
+		test.Errorf("the server was asked %s", sent)
+	}
+	if !strings.Contains(printed, "m1: said as Alice") {
+		test.Errorf("the command printed %q", printed)
+	}
+	if printed, err := run("--as-agent", "c1", "noted"); err != nil || !strings.Contains(printed, "m2: said as Agent") {
+		test.Errorf("--as-agent printed %q: %v", printed, err)
+	}
+	if _, err := run("--as-agent", "--reply-to", "m0", "c1", "noted"); err == nil {
+		test.Error("--as-agent answered a message")
+	}
+	if _, err := run("c1"); err == nil {
+		test.Error("nothing to say was sent")
 	}
 }
