@@ -173,10 +173,14 @@ struct ChatCallScreen: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            // The people give way first: the head and the controls keep
+            // their size, so hanging up is always on screen.
             header
+                .layoutPriority(1)
             transcription
             tiles
             controls
+                .layoutPriority(1)
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
@@ -184,9 +188,9 @@ struct ChatCallScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground).ignoresSafeArea())
         // Everything of a call fits on one screen, the people and the controls
-        // with it, as the Phone app's does: the largest sizes would push the
-        // head and the controls off it.
-        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        // with it, as the Phone app's does: the accessibility sizes would push
+        // the head and the controls off it.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .alert("Something went wrong", isPresented: problemBinding, presenting: manager.problemText) { _ in
             Button("OK", role: .cancel) {}
         } message: { text in
