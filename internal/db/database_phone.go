@@ -34,6 +34,12 @@ type PhoneOperation interface {
 	// what Apple saying the phone is gone means.
 	NoteAgentPhoneDelivery(phoneId string, at time.Time, deliveryError string, isGone bool) error
 
+	// SetAgentPhoneVoIPPushRegistration replaces the registration a phone is
+	// rung through. An empty one clears it, which is what Apple saying the
+	// VoIP token is gone means: the phone's ordinary registration is left
+	// alone, since the two tokens go stale separately.
+	SetAgentPhoneVoIPPushRegistration(phoneId, voipPushRegistration string) error
+
 	// AdvanceAgentPhonePush moves how far the agent's own turns have been
 	// sent from one message to another, and says whether it did: only if
 	// nobody moved it since it was read, which is what keeps a turn from
@@ -47,21 +53,22 @@ type PhoneOperation interface {
 }
 
 type agentPhoneModel struct {
-	ID                string     `gorm:"column:id;primaryKey"`
-	CreatedAt         time.Time  `gorm:"column:created_at"`
-	ModifiedAt        time.Time  `gorm:"column:modified_at"`
-	AgentID           string     `gorm:"column:agent_id"`
-	ClientID          string     `gorm:"column:client_id"`
-	PhoneName         string     `gorm:"column:phone_name"`
-	PhoneModel        string     `gorm:"column:phone_model"`
-	PushRegistration  string     `gorm:"column:push_registration"`
-	PayloadKey        string     `gorm:"column:payload_key"`
-	NotificationKinds string     `gorm:"column:notification_kinds"`
-	PushedThrough     string     `gorm:"column:pushed_through"`
-	LastSeenAt        *time.Time `gorm:"column:last_seen_at"`
-	LastDeliveredAt   *time.Time `gorm:"column:last_delivered_at"`
-	LastDeliveryError string     `gorm:"column:last_delivery_error"`
-	TouredAt          *time.Time `gorm:"column:toured_at"`
+	ID                   string     `gorm:"column:id;primaryKey"`
+	CreatedAt            time.Time  `gorm:"column:created_at"`
+	ModifiedAt           time.Time  `gorm:"column:modified_at"`
+	AgentID              string     `gorm:"column:agent_id"`
+	ClientID             string     `gorm:"column:client_id"`
+	PhoneName            string     `gorm:"column:phone_name"`
+	PhoneModel           string     `gorm:"column:phone_model"`
+	PushRegistration     string     `gorm:"column:push_registration"`
+	VoIPPushRegistration string     `gorm:"column:voip_push_registration"`
+	PayloadKey           string     `gorm:"column:payload_key"`
+	NotificationKinds    string     `gorm:"column:notification_kinds"`
+	PushedThrough        string     `gorm:"column:pushed_through"`
+	LastSeenAt           *time.Time `gorm:"column:last_seen_at"`
+	LastDeliveredAt      *time.Time `gorm:"column:last_delivered_at"`
+	LastDeliveryError    string     `gorm:"column:last_delivery_error"`
+	TouredAt             *time.Time `gorm:"column:toured_at"`
 }
 
 func (agentPhoneModel) TableName() string { return "agent_phone" }
@@ -73,7 +80,8 @@ func (self *agentPhoneModel) toModel() *models.AgentPhone {
 	}
 	return &models.AgentPhone{
 		ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, ClientID: self.ClientID,
-		PhoneName: self.PhoneName, PhoneModel: self.PhoneModel, PushRegistration: self.PushRegistration, PayloadKey: self.PayloadKey,
+		PhoneName: self.PhoneName, PhoneModel: self.PhoneModel, PushRegistration: self.PushRegistration,
+		VoIPPushRegistration: self.VoIPPushRegistration, PayloadKey: self.PayloadKey,
 		NotificationKinds: kinds, PushedThrough: self.PushedThrough, LastSeenAt: self.LastSeenAt,
 		LastDeliveredAt: self.LastDeliveredAt, LastDeliveryError: self.LastDeliveryError, TouredAt: self.TouredAt,
 	}
@@ -93,7 +101,7 @@ func (self *transaction) PutAgentPhone(phone *models.AgentPhone) (*models.AgentP
 	model := &agentPhoneModel{
 		ID: newID(), CreatedAt: now, ModifiedAt: now, AgentID: phone.AgentID, ClientID: phone.ClientID,
 		PhoneName: phone.PhoneName, PhoneModel: phone.PhoneModel, PushRegistration: phone.PushRegistration,
-		PayloadKey: phone.PayloadKey, LastSeenAt: &now,
+		VoIPPushRegistration: phone.VoIPPushRegistration, PayloadKey: phone.PayloadKey, LastSeenAt: &now,
 	}
 	if existing != nil {
 		model.ID, model.CreatedAt = existing.ID, existing.CreatedAt
@@ -116,7 +124,7 @@ func (self *transaction) PutAgentPhone(phone *models.AgentPhone) (*models.AgentP
 	}
 	if err := self.tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "agent_id"}, {Name: "client_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"modified_at", "phone_name", "phone_model", "push_registration", "payload_key", "last_seen_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"modified_at", "phone_name", "phone_model", "push_registration", "voip_push_registration", "payload_key", "last_seen_at"}),
 	}).Create(model).Error; err != nil {
 		return nil, err
 	}
@@ -189,6 +197,11 @@ func (self *transaction) NoteAgentPhoneDelivery(phoneId string, at time.Time, de
 		updates["push_registration"] = ""
 	}
 	return self.tx.Model(&agentPhoneModel{}).Where("\"id\" = ?", phoneId).Updates(updates).Error
+}
+
+func (self *transaction) SetAgentPhoneVoIPPushRegistration(phoneId, voipPushRegistration string) error {
+	return self.tx.Model(&agentPhoneModel{}).Where("\"id\" = ?", phoneId).
+		Updates(map[string]any{"voip_push_registration": voipPushRegistration, "modified_at": time.Now()}).Error
 }
 
 func (self *transaction) AdvanceAgentPhonePush(phoneId, fromMessageId, throughMessageId string) (bool, error) {

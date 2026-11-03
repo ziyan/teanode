@@ -400,6 +400,22 @@ func (self *Configuration) validateIntegrations(validator *validator) {
 		}
 	}
 
+	if self.Calls.Enabled {
+		if self.Calls.UDPPort == 0 {
+			validator.add("calls.udpPort", "required when calls are enabled, usually 3478")
+		}
+		if self.Calls.TCPPort == 0 {
+			validator.add("calls.tcpPort", "required when calls are enabled, usually 3478")
+		}
+		if self.Calls.RingSeconds < 10 || self.Calls.RingSeconds > 300 {
+			validator.add("calls.ringSeconds", "must be from 10 to 300")
+		}
+		if address := strings.TrimSpace(self.Calls.PublicAddress); address != "" {
+			if parsed := net.ParseIP(address); parsed == nil || parsed.To4() == nil {
+				validator.add("calls.publicAddress", "%q is not an IPv4 address", self.Calls.PublicAddress)
+			}
+		}
+	}
 	if self.Services.IsEnabled(models.ServiceMailRouting) && self.Antivirus.Enabled {
 		if self.Antivirus.Host == "" {
 			validator.add("antivirus.host", "required when antivirus is enabled: where clamd is listening")

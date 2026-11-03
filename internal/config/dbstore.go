@@ -37,6 +37,7 @@ const (
 	settingPlaces    = "places"
 	settingStorage   = "storage"
 	settingPhotos    = "photos"
+	settingCalls     = "calls"
 	settingPasskey   = "passkey"
 	settingSSO       = "sso"
 	settingUpgrade   = "upgrade"
@@ -61,6 +62,7 @@ func (self *Configuration) sections() map[string]any {
 		settingPlaces:    &self.Places,
 		settingStorage:   &self.Storage,
 		settingPhotos:    &self.Photos,
+		settingCalls:     &self.Calls,
 		settingPasskey:   &self.Passkey,
 		settingSSO:       &self.SSO,
 		settingUpgrade:   &self.Upgrade,

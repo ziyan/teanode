@@ -379,7 +379,7 @@
             switch conversationId {
             case "chat-sam"?:
                 conversation = directChatConversationJSON(unreadCount: 0)
-                messages = directChatMessages + (screen == "chat-link" ? linkChatMessages : [])
+                messages = directChatMessages + (screen == "chat-link" ? linkChatMessages : []) + (screen == "chat-call-lines" ? directChatCallMessages : [])
             case "chat-home"?:
                 conversation = groupChatConversationJSON(unreadCount: 0)
                 messages = groupChatMessages
@@ -391,11 +391,12 @@
         }
 
         /// The chat a screenshot opens (`-TeaNodeScreen chat-direct`, `chat-link`, `chat-voice-mode`,
-        /// `chat-voice-hold`, `chat-group`, `chat-members` or `chat-mention`), or nil for any other screen.
+        /// `chat-voice-hold`, `chat-call-lines`, `chat-group`, `chat-members`, `chat-mention`, `chat-call-banner` or `chat-call-minimized`), or nil
+        /// for any other screen.
         static var openedChat: AgentConversation? {
             switch screen ?? "" {
-            case "chat-direct", "chat-link", "chat-voice-mode", "chat-voice-hold": AgentConversation(id: "chat-sam", kind: "chat", title: nil, summary: nil, lastAt: nil)
-            case "chat-group", "chat-members", "chat-mention": AgentConversation(id: "chat-home", kind: "chat", title: "Home", summary: nil, lastAt: nil)
+            case "chat-direct", "chat-link", "chat-voice-mode", "chat-voice-hold", "chat-call-lines": AgentConversation(id: "chat-sam", kind: "chat", title: nil, summary: nil, lastAt: nil)
+            case "chat-group", "chat-members", "chat-mention", "chat-call-banner", "chat-call-minimized": AgentConversation(id: "chat-home", kind: "chat", title: "Home", summary: nil, lastAt: nil)
             default: nil
             }
         }

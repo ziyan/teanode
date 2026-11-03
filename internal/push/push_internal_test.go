@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -325,8 +326,8 @@ func TestALiveActivityIsToldAStateAndNothingElse(test *testing.T) {
 		test.Fatalf("NewRelay: %s", err)
 	}
 	now := time.Now()
-	if _, err := relay.Register(testDeviceToken, false, "voip", now); !errors.Is(err, ErrRefused) {
-		test.Errorf("a voip registration came back as %v", err)
+	if _, err := relay.Register(testDeviceToken, false, "carrier-pigeon", now); !errors.Is(err, ErrRefused) {
+		test.Errorf("a registration for a push type nobody relays came back as %v", err)
 	}
 	activity, err := relay.Register(testDeviceToken, false, PushTypeLiveActivity, now)
 	if err != nil {
@@ -422,5 +423,87 @@ func TestALiveActivityIsStampedWithWhenItsStateChanged(test *testing.T) {
 	phone, _ := relay.Register(testDeviceToken, false, "", now)
 	if err := relay.Send(context.Background(), phone, &Delivery{ActivityChangedAt: now}); !errors.Is(err, ErrRefused) {
 		test.Errorf("a state's time sent to the phone came back as %v", err)
+	}
+}
+
+// A VoIP push is handed to the app by iOS without showing anything, so the
+// relay sends only the sealed content, to the VoIP topic, urgently, and
+// stops trying soon.
+func TestAVoIPPushCarriesOnlyTheSealedContentToTheVoIPTopic(test *testing.T) {
+	apple, client, _ := newFakeApple(test)
+	relay, err := NewRelay(client)
+	if err != nil {
+		test.Fatalf("NewRelay: %s", err)
+	}
+	now := time.Now()
+	voip, err := relay.Register(testDeviceToken, false, PushTypeVoIP, now)
+	if err != nil {
+		test.Fatalf("a voip registration was refused: %s", err)
+	}
+	opened, err := relay.Open(voip, now)
+	if err != nil || opened.PushType != PushTypeVoIP {
+		test.Fatalf("Open: %v %v", opened, err)
+	}
+
+	key := make([]byte, PhoneKeyBytes)
+	delivery, err := EncryptContent(key, &Content{NotificationKind: "call", Title: "Sam", Body: "is calling", ConversationID: "a-chat", CallID: "a-call", ThreadID: "a-chat"})
+	if err != nil {
+		test.Fatalf("EncryptContent: %s", err)
+	}
+	if err := relay.Send(context.Background(), voip, delivery); err != nil {
+		test.Fatalf("Send: %s", err)
+	}
+	request := apple.requests[0]
+	if request.Header.Get("apns-push-type") != "voip" || request.Header.Get("apns-topic") != "com.example.app.voip" ||
+		request.Header.Get("apns-priority") != "10" || request.Header.Get("apns-collapse-id") != "" {
+		test.Errorf("headers %v", request.Header)
+	}
+	expiration, _ := strconv.ParseInt(request.Header.Get("apns-expiration"), 10, 64)
+	if expiration < now.Add(50*time.Second).Unix() || expiration > time.Now().Add(70*time.Second).Unix() {
+		test.Errorf("a ring with no expiry was given until %d, now being %d", expiration, now.Unix())
+	}
+	var payload map[string]any
+	_ = json.Unmarshal(apple.bodies[0], &payload)
+	if len(payload) != 1 || payload["sealed"] != delivery.Sealed {
+		test.Errorf("Apple was sent %s", apple.bodies[0])
+	}
+	if strings.Contains(string(apple.bodies[0]), "a-call") || strings.Contains(string(apple.bodies[0]), "Sam") {
+		test.Errorf("the call can be read in %s", apple.bodies[0])
+	}
+
+	// A server may ask for a shorter ring, never one that outlasts a call.
+	soon := *delivery
+	soon.ExpiresAt = now.Add(20 * time.Second)
+	if err := relay.Send(context.Background(), voip, &soon); err != nil {
+		test.Fatalf("Send: %s", err)
+	}
+	if expiration, _ := strconv.ParseInt(apple.requests[1].Header.Get("apns-expiration"), 10, 64); expiration != soon.ExpiresAt.Unix() {
+		test.Errorf("a ring asked to last until %d was sent until %d", soon.ExpiresAt.Unix(), expiration)
+	}
+	later := *delivery
+	later.ExpiresAt = now.Add(time.Hour)
+	if err := relay.Send(context.Background(), voip, &later); err != nil {
+		test.Fatalf("Send: %s", err)
+	}
+	if expiration, _ := strconv.ParseInt(apple.requests[2].Header.Get("apns-expiration"), 10, 64); expiration > time.Now().Add(voipLifetimeMost).Unix() {
+		test.Errorf("a ring asked to last an hour was sent until %d", expiration)
+	}
+
+	// Only sealed content rings a phone.
+	for _, forged := range []*Delivery{
+		{Sealed: "Your account is locked. Call us."},
+		{ActivityState: "working"},
+		{Sealed: delivery.Sealed, ExpiresAt: now.Add(-time.Minute)},
+	} {
+		if err := relay.Send(context.Background(), voip, forged); !errors.Is(err, ErrRefused) {
+			test.Errorf("%+v to a VoIP token came back as %v", forged, err)
+		}
+	}
+	huge := &Delivery{Sealed: base64.StdEncoding.EncodeToString(make([]byte, payloadBytesMost))}
+	if err := relay.Send(context.Background(), voip, huge); !errors.Is(err, ErrTooLarge) {
+		test.Errorf("a payload over what Apple takes came back as %v", err)
+	}
+	if len(apple.requests) != 3 {
+		test.Errorf("%d requests reached Apple, want only the 3 rings", len(apple.requests))
 	}
 }

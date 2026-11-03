@@ -197,6 +197,19 @@ final class ChatTests: XCTestCase {
         XCTAssertEqual(begins, [true, false, true, true, true])
     }
 
+    func testTheMessageUnderACallLineIsNamedAgain() throws {
+        let stored = try messages([
+            message("01J0000000000000000000001", "", authorUserId: "user-b", authorName: "Person B", isMine: false, at: "2030-01-01T10:00:00Z",
+                    extra: #","callId":"call-one""#),
+            message("01J0000000000000000000002", "After the call", authorUserId: "user-b", authorName: "Person B", isMine: false, at: "2030-01-01T10:04:00Z"),
+        ])
+        let lines = Transcript(messages: stored, isChat: true).lines
+        XCTAssertTrue(lines[0].isCallLine)
+        // The call's line shows no author, so whoever started the call is
+        // named, with their picture, on the message after it.
+        XCTAssertTrue(lines[1].beginsRun(after: lines[0]))
+    }
+
     func testTheFirstMessageUnderADateDividerIsNamedAgainBySamePerson() throws {
         var utc = Calendar(identifier: .gregorian)
         utc.timeZone = TimeZone(identifier: "UTC")!
@@ -884,9 +897,11 @@ final class VoiceMessageTests: XCTestCase {
 
     func testAskingWithAVoiceMessageSendsItsAttachment() async throws {
         let (connection, fake) = connection(answering: #"{"data":{"AskAgent":{"runId":"","conversationId":"c"}}}"#)
-        _ = try await connection.ask("", in: "c", attachmentIds: ["attachment-1"], drawerId: "d", voiceMessageAttachmentId: "attachment-1")
+        _ = try await connection.ask("", in: "c", drawerId: "d", voiceMessageAttachmentId: "attachment-1")
         var sent = try sentVariables(try XCTUnwrap(fake.sent.last))
         XCTAssertEqual(sent["voiceMessageAttachmentId"], .string("attachment-1"))
+        // The recording is the message, not one of its files.
+        XCTAssertEqual(sent["attachmentIds"], .array([]))
         _ = try await connection.ask("hi", in: "c", drawerId: "d")
         sent = try sentVariables(try XCTUnwrap(fake.sent.last))
         XCTAssertNil(sent["voiceMessageAttachmentId"])

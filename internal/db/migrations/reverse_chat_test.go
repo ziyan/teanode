@@ -33,11 +33,15 @@ func TestTheChatMigrationReverses(t *testing.T) {
 	} {
 		dbtest.Exec(t, database, statement)
 	}
-	reverse, err := os.ReadFile("0194_chat.reverse.sql")
-	if err != nil {
-		t.Fatalf("ReadFile: %s", err)
+	// Calls hang on their chats, so they are undone first, as the
+	// migrations are undone newest first.
+	for _, name := range []string{"0271_recording_chat_call.reverse.sql", "0270_chat_call_member_consent.reverse.sql", "0269_chat_call.reverse.sql", "0194_chat.reverse.sql"} {
+		reverse, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("ReadFile: %s", err)
+		}
+		dbtest.Exec(t, database, string(reverse))
 	}
-	dbtest.Exec(t, database, string(reverse))
 	for _, table := range []string{"chat", "chat_member", "chat_message", "chat_reaction"} {
 		if got := dbtest.QueryString(t, database, `SELECT coalesce(to_regclass('"`+table+`"')::text, '')`); got != "" {
 			t.Errorf("the table %s is still there: %q", table, got)

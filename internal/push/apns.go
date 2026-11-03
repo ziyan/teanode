@@ -38,11 +38,13 @@ const (
 	SandboxHost    = "https://api.sandbox.push.apple.com"
 )
 
-// Push types: an ordinary notification, or an update to a Live Activity on
-// the lock screen.
+// Push types: an ordinary notification, an update to a Live Activity on the
+// lock screen, or a VoIP push, which iOS hands to the app itself (PushKit)
+// so that it can ring for an incoming call.
 const (
 	PushTypeAlert        = "alert"
 	PushTypeLiveActivity = "liveactivity"
+	PushTypeVoIP         = "voip"
 )
 
 // payloadBytesMost is the largest payload APNs accepts for an alert.
@@ -71,7 +73,7 @@ var (
 // Notification is what is delivered: the payload APNs passes to the phone,
 // and how APNs should treat it.
 type Notification struct {
-	// PushType is PushTypeAlert or PushTypeLiveActivity.
+	// PushType is PushTypeAlert, PushTypeLiveActivity or PushTypeVoIP.
 	PushType string `json:"pushType"`
 
 	// Priority is 10 to deliver now, 5 to let the phone save power.
@@ -181,8 +183,11 @@ func (self *APNs) Send(ctx context.Context, deviceToken string, isSandbox bool, 
 	request.Header.Set("Authorization", "bearer "+token)
 	request.Header.Set("apns-push-type", notification.PushType)
 	topic := self.topic
-	if notification.PushType == PushTypeLiveActivity {
+	switch notification.PushType {
+	case PushTypeLiveActivity:
 		topic += ".push-type.liveactivity"
+	case PushTypeVoIP:
+		topic += ".voip"
 	}
 	request.Header.Set("apns-topic", topic)
 	// Apple limits how many urgent Live Activity updates an app sends, so

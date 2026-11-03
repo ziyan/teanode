@@ -28,6 +28,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/api/v1api"
 	"github.com/ziyan/teanode/internal/bootstrap"
+	"github.com/ziyan/teanode/internal/call"
 	"github.com/ziyan/teanode/internal/chat"
 	"github.com/ziyan/teanode/internal/cmd"
 	"github.com/ziyan/teanode/internal/config"
@@ -309,6 +310,12 @@ type server struct {
 	// with no language model.
 	chatHub *chat.Hub
 
+	// callServer is the media server of calls in chats, and callRecorder
+	// what keeps the voices of a call to be transcribed; both nil when
+	// calls are off (calls.go).
+	callServer   *call.Server
+	callRecorder *call.Recorder
+
 	// scheduler reads the invitations that arrive as mail. Unlike the
 	// agent it follows the event-calendar service: a person with no agent
 	// still wants their meetings.
@@ -489,6 +496,7 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 	}
 
 	self.openChatHub()
+	self.openCallServer(configuration)
 
 	if err := self.openAgentWorker(configuration); err != nil {
 		return nil, err
@@ -1136,11 +1144,13 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		// The instance, not the server name: the name is the same on every
 		// instance sharing this database, and this is the field that says
 		// which process you are talking to.
-		BackendID:   self.instance,
-		Restarter:   self.restarter,
-		AuthLimiter: self.authLimiter(configuration),
-		Agent:       self.agentService(),
-		Chat:        self.chatHub,
+		BackendID:    self.instance,
+		Restarter:    self.restarter,
+		AuthLimiter:  self.authLimiter(configuration),
+		Agent:        self.agentService(),
+		Chat:         self.chatHub,
+		Calls:        self.callServer,
+		CallRecorder: self.callRecorder,
 	})
 	if err != nil {
 		return fmt.Errorf("cannot create the API: %w", err)
@@ -1158,6 +1168,26 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		self.onClose(func() {
 			visitNotices.Stop()
 			visitNoticeGroup.Wait()
+		})
+	}
+
+	// A call rings for calls.ringSeconds; whoever has not answered by then
+	// missed it. The calls this instance held when it stopped ended with it.
+	if ticker, ok := apiComponent.(interface {
+		TickChatCalls(context.Context, time.Time) error
+		FailChatCallsLeftGoing(context.Context) error
+	}); ok && self.callServer != nil {
+		if err := ticker.FailChatCallsLeftGoing(context.Background()); err != nil {
+			log.Warningf("cannot end the calls left going: %s", err)
+		}
+		var chatCallGroup sync.WaitGroup
+		chatCallRinging := periodic.New(context.Background(), &chatCallGroup, func(ctx context.Context) error {
+			return ticker.TickChatCalls(ctx, time.Now())
+		}, &periodic.Settings{Interval: 5 * time.Second, Name: "chat:call-ringing"})
+		chatCallRinging.Start()
+		self.onClose(func() {
+			chatCallRinging.Stop()
+			chatCallGroup.Wait()
 		})
 	}
 
@@ -1309,6 +1339,9 @@ func startupOnly(configuration *config.Configuration) map[string]any {
 		// every instance for a restart; see withoutRenewal.
 		"tls":        withoutRenewal(configuration.TLS),
 		"smtp.relay": configuration.SMTP.Relay,
+		// The media server listens on its ports, and gives its address,
+		// from when it starts; how long a call rings is read live.
+		"calls": []any{configuration.Calls.Enabled, configuration.Calls.PublicAddress, configuration.Calls.UDPPort, configuration.Calls.TCPPort},
 		// The mail listeners and the exchange are built with these once.
 		// The dashboard's own limit on a message to send reads the size
 		// live, but the listeners keep the one they started with.

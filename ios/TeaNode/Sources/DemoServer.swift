@@ -37,7 +37,10 @@
             }
             let query = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let answer: String
-            if let journalAnswer = Self.journalAnswer(query: query, body: request.httpBody) {
+            if let chatCallAnswer = Self.chatCallAnswer(query: query, body: request.httpBody) {
+                // First: a call's document names fields (members, a chat's title) that the questions below are looked for by.
+                answer = chatCallAnswer
+            } else if let journalAnswer = Self.journalAnswer(query: query, body: request.httpBody) {
                 // First: its documents name fields (mail, photos, recordings) that the questions below are looked for by.
                 answer = journalAnswer
             } else if let shoppingAnswer = Self.shoppingAnswer(query: query, body: request.httpBody) {

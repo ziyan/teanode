@@ -154,38 +154,55 @@ const (
 
 	// deliveryLifetimeMost is the longest a server may ask for.
 	deliveryLifetimeMost = 24 * time.Hour
+
+	// voipLifetime is how long Apple keeps trying to ring a phone that is
+	// off, unless the server says otherwise, and voipLifetimeMost the longest
+	// a server may ask for: a call that nobody picked up for minutes is over.
+	voipLifetime     = 60 * time.Second
+	voipLifetimeMost = 2 * time.Minute
 )
 
 // envelopeIdPattern is a thread or collapse identifier as EncryptContent
 // makes one.
 var envelopeIdPattern = regexp.MustCompile(`^[0-9a-f]{1,64}$`)
 
-// notification is the delivery as Apple takes it, with the payload written
-// here rather than by the server that asked.
-func (self *Delivery) notification(now time.Time) (*Notification, error) {
+// sealedExpiry checks a delivery that carries sealed content, and says when
+// Apple should give up on it: the delivery's own time, or lifetime from now,
+// and never more than lifetimeMost from now.
+func (self *Delivery) sealedExpiry(now time.Time, lifetime, lifetimeMost time.Duration) (time.Time, error) {
 	if self.ActivityState != "" || self.IsActivityEnded || !self.ActivityChangedAt.IsZero() {
-		return nil, fmt.Errorf("%w: a state is for a Live Activity, and this registration is the phone's", ErrRefused)
+		return time.Time{}, fmt.Errorf("%w: a state is for a Live Activity, and this registration is the phone's", ErrRefused)
 	}
 	if self.Sealed == "" {
-		return nil, fmt.Errorf("%w: the notification has no content", ErrRefused)
+		return time.Time{}, fmt.Errorf("%w: the notification has no content", ErrRefused)
 	}
 	if _, err := base64.StdEncoding.Strict().DecodeString(self.Sealed); err != nil {
-		return nil, fmt.Errorf("%w: the notification's content is not sealed", ErrRefused)
+		return time.Time{}, fmt.Errorf("%w: the notification's content is not sealed", ErrRefused)
 	}
 	for _, identifier := range []string{self.ThreadID, self.CollapseID} {
 		if identifier != "" && !envelopeIdPattern.MatchString(identifier) {
-			return nil, fmt.Errorf("%w: a thread or collapse identifier is up to 64 hex digits", ErrRefused)
+			return time.Time{}, fmt.Errorf("%w: a thread or collapse identifier is up to 64 hex digits", ErrRefused)
 		}
 	}
 	expiresAt := self.ExpiresAt
 	if expiresAt.IsZero() {
-		expiresAt = now.Add(deliveryLifetime)
+		expiresAt = now.Add(lifetime)
 	}
 	if expiresAt.Before(now) {
-		return nil, fmt.Errorf("%w: the notification has expired", ErrRefused)
+		return time.Time{}, fmt.Errorf("%w: the notification has expired", ErrRefused)
 	}
-	if expiresAt.After(now.Add(deliveryLifetimeMost)) {
-		expiresAt = now.Add(deliveryLifetimeMost)
+	if expiresAt.After(now.Add(lifetimeMost)) {
+		expiresAt = now.Add(lifetimeMost)
+	}
+	return expiresAt, nil
+}
+
+// notification is the delivery as Apple takes it, with the payload written
+// here rather than by the server that asked.
+func (self *Delivery) notification(now time.Time) (*Notification, error) {
+	expiresAt, err := self.sealedExpiry(now, deliveryLifetime, deliveryLifetimeMost)
+	if err != nil {
+		return nil, err
 	}
 	payload, err := alertPayload(self.Sealed, self.ThreadID)
 	if err != nil {
@@ -197,6 +214,29 @@ func (self *Delivery) notification(now time.Time) (*Notification, error) {
 	return &Notification{
 		PushType: PushTypeAlert, Priority: 10, CollapseID: self.CollapseID, ExpiresAt: expiresAt, Payload: payload,
 	}, nil
+}
+
+// voipNotification is the delivery as Apple takes it for a phone's VoIP
+// token: only the sealed content. iOS hands a VoIP push to the app without
+// showing anything, and the app decrypts the content with its own key and
+// rings, so there is no "aps" dictionary to write. A ring is worth nothing
+// once the call has been answered elsewhere or has given up, so it expires
+// within voipLifetime unless the server asks for less, and never lasts more
+// than voipLifetimeMost. It is never collapsed with another: two calls are
+// two rings.
+func (self *Delivery) voipNotification(now time.Time) (*Notification, error) {
+	expiresAt, err := self.sealedExpiry(now, voipLifetime, voipLifetimeMost)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(map[string]string{"sealed": self.Sealed})
+	if err != nil {
+		return nil, err
+	}
+	if len(payload) > payloadBytesMost {
+		return nil, ErrTooLarge
+	}
+	return &Notification{PushType: PushTypeVoIP, Priority: 10, ExpiresAt: expiresAt, Payload: payload}, nil
 }
 
 // activityNotification is the delivery as Apple takes it for a Live

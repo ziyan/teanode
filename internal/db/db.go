@@ -130,6 +130,13 @@ type Database interface {
 	NotifyShoppingEvent(shoppingListId string, endedForUserIds ...string) error
 	ListenShoppingEvents(ctx context.Context) (<-chan string, error)
 
+	// NotifyChatCallEvent and ListenChatCallEvents are the same for a call
+	// in a chat: it rang, somebody joined or left, it ended. The people
+	// given are those with a part in it, told so that every tab and phone of
+	// theirs on any instance reads the call again.
+	NotifyChatCallEvent(callId string, userIds []string) error
+	ListenChatCallEvents(ctx context.Context) (<-chan string, error)
+
 	// NotifyPresenceEvent and ListenPresenceEvents carry what a person's
 	// tabs and phones report about being shown, to every instance.
 	NotifyPresenceEvent(payload string) error

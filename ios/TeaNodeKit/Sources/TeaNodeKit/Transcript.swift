@@ -86,6 +86,14 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
     public var isVoiceMessage = false
     public var transcriptText = ""
     public var transcriptState = ""
+    /// For a message of a chat that is the line of a call: the call, as the
+    /// message carried it. It has no words.
+    public var chatCallId = ""
+    public var chatCall: ChatCallRecord?
+
+    /// Whether the message is the line of a call, which is drawn from the
+    /// call and not as words.
+    public var isCallLine: Bool { !chatCallId.isEmpty }
 
     /// The recording of a voice message: its one file.
     public var voiceAttachment: AgentAttachment? {

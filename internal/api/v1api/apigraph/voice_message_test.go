@@ -171,6 +171,13 @@ func TestAVoiceMessageIsRefusedWhenItIsMoreThanOneRecording(t *testing.T) {
 		}
 	}
 
+	// The recording named among the files as well is still one recording,
+	// as the iPhone app sends it.
+	world.call(t, world.alice, fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "", attachmentIds: [%q], voiceMessageAttachmentId: %q) { runId } }`, aliceChat, otherRecordingId, otherRecordingId))
+	if messages := world.read(t, world.bob, bobChat); len(messages) != 1 || messages[0]["isVoiceMessage"] != true {
+		t.Fatalf("the recording named twice was posted as %v", messages)
+	}
+
 	// Outside a chat it is refused in plain words.
 	if refusal := world.refused(t, world.frank, fmt.Sprintf(`mutation { AskAgent(message: "", voiceMessageAttachmentId: %q) { runId } }`, recordingId)); !strings.Contains(refusal, "voice message can only be sent in a chat") {
 		t.Errorf("outside a chat it was refused with %q", refusal)

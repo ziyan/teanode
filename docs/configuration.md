@@ -851,6 +851,29 @@ usually private, and only something outside can say what a sending mail server
 sees.  Each is tried in turn until one answers. Empty disables the lookup, and
 the dashboard then asks the operator for the address instead.
 
+### `calls`
+
+Voice and video calls in chats. Everybody on a call sends their audio and
+video to the server's media server once, and it forwards each to the others,
+so a call can have any number of people. The media server listens on one UDP
+port and one TCP port, which must be reachable from the internet: forward
+both on the gateway when the server is behind one, and publish both from the
+container. See [docs/subsystems/chat-calls.md](subsystems/chat-calls.md).
+
+**`enabled`** — Whether calls are offered in chats. On by default.
+
+**`publicAddress`** — The IPv4 address devices send a call's audio and video
+to. Leave it empty to use the address the dashboard's name resolves to when
+the server starts.
+
+**`udpPort`** — The UDP port the media server listens on, 3478 by default.
+
+**`tcpPort`** — The TCP port the media server listens on, for networks that
+let no UDP through, 3478 by default.
+
+**`ringSeconds`** — How long a call rings before whoever has not answered
+missed it, from 10 to 300; 60 by default.
+
 ### `antivirus`
 
 **`enabled`** — See the field above; the two are set together.

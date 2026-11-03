@@ -129,6 +129,10 @@ var authorizing = map[string]bool{
 	"requireChatPerson":  true,
 	"requireChatMember":  true,
 	"requireChatMessage": true,
+	// requireChatPerson, then a call in a chat the caller has a conversation
+	// for; the going one also refuses a call that ended.
+	"requireChatCall":      true,
+	"requireGoingChatCall": true,
 	// The caller for the operations on conversations, which a chat shares with
 	// a conversation with the agent: circle:use for a chat, agent:use and an
 	// agent that is on for any other, settled once the conversation is known

@@ -137,6 +137,73 @@ type ChatOperation interface {
 	// since before the given time, and answers them as they now are.
 	FailStaleVoiceMessages(before time.Time) ([]*models.ChatMessage, error)
 
+	// CreateChatCall starts a call in a chat: the one who started it is on
+	// it, and the people given are being rung. ErrAlreadyExists when a call is
+	// going in the chat already.
+	CreateChatCall(chatId, startedByUserId, instance string, rungUserIds []string) (*models.ChatCall, error)
+
+	// GetChatCall is a call with each member's part in it; nil when there is
+	// none.
+	GetChatCall(callId string) (*models.ChatCall, error)
+
+	// GetGoingChatCall is the call going in a chat; nil when none is.
+	GetGoingChatCall(chatId string) (*models.ChatCall, error)
+
+	// ListChatCalls is a chat's calls, newest first, started before the time
+	// given when one is.
+	ListChatCalls(chatId string, before *time.Time, limit int) ([]*models.ChatCall, error)
+
+	// ListGoingChatCallsOfUser is the calls going that the person has a part
+	// in: rung by, on, or left.
+	ListGoingChatCallsOfUser(userId string) ([]*models.ChatCall, error)
+
+	// ListGoingChatCalls is the calls going that a server instance holds.
+	ListGoingChatCalls(instance string) ([]*models.ChatCall, error)
+
+	// JoinChatCall puts the person on a going call: answered when they were
+	// rung, and added when they came into the chat after it started. The call
+	// is answered from the first time somebody other than its starter joins.
+	JoinChatCall(callId, userId string) (*models.ChatCall, error)
+
+	// DeclineChatCall is the person saying no while they are rung.
+	DeclineChatCall(callId, userId string) (*models.ChatCall, error)
+
+	// LeaveChatCall takes the person off a going call.
+	LeaveChatCall(callId, userId string) (*models.ChatCall, error)
+
+	// SetChatCallVideo records whether the person's camera is on.
+	SetChatCallVideo(callId, userId string, isVideoOn bool) (*models.ChatCall, error)
+
+	// EndChatCall ends a going call: whoever is still rung missed it, and
+	// whoever is on it has left. A transcript asked for on a call that was
+	// answered is then waiting to be written.
+	EndChatCall(callId string, endReason models.ChatCallEndReason) (*models.ChatCall, error)
+
+	// StopRingingChatCall marks whoever is still rung on a going call as
+	// having missed it.
+	StopRingingChatCall(callId string) (*models.ChatCall, error)
+
+	// AskChatCallTranscription marks a going call as asked to be
+	// transcribed, by the first to ask: everybody on it is transcribed.
+	AskChatCallTranscription(callId, userId string) (*models.ChatCall, error)
+
+	// ClaimChatCallTranscript claims a call whose transcript is waiting, so
+	// one server writes it; nil when it is not waiting or another server
+	// claimed it within retryAfter.
+	ClaimChatCallTranscript(callId string, retryAfter time.Duration) (*models.ChatCall, error)
+
+	// ListWaitingChatCallTranscriptIDs is the calls whose transcript is
+	// waiting and that nobody claimed within retryAfter, oldest first.
+	ListWaitingChatCallTranscriptIDs(retryAfter time.Duration, limit int) ([]string, error)
+
+	// SetChatCallRecording names the recording a call waiting for its
+	// transcript became; nil when it was not waiting or has one already.
+	SetChatCallRecording(callId, recordingId string) (*models.ChatCall, error)
+
+	// FinishChatCallTranscript says how a call's transcript ended (done or
+	// failed), with the summary's message; nil when it was not waiting.
+	FinishChatCallTranscript(callId, transcriptState string, summaryMessageId string) (*models.ChatCall, error)
+
 	// SharesChat says whether two different people are both current members
 	// of one chat, whatever circles they are in: a chat shows each member to
 	// the others by name, so their picture goes with it.
@@ -227,6 +294,7 @@ type chatMessageModel struct {
 	TranscriptText    string     `gorm:"column:transcript_text"`
 	TranscriptState   string     `gorm:"column:transcript_state"`
 	TranscriptTriedAt *time.Time `gorm:"column:transcript_tried_at"`
+	CallID            *string    `gorm:"column:call_id"`
 }
 
 func (chatMessageModel) TableName() string { return "chat_message" }
@@ -1085,6 +1153,7 @@ func chatMessageFromModel(model *chatMessageModel) (*models.ChatMessage, error) 
 	message.IsVoiceMessage = model.IsVoiceMessage
 	message.TranscriptText = model.TranscriptText
 	message.TranscriptState = model.TranscriptState
+	message.CallID = valueOfString(model.CallID)
 	return message, nil
 }
 
@@ -1142,6 +1211,7 @@ func (self *transaction) AppendChatMessage(message *models.ChatMessage) (*models
 		ReplyToMessageID: stringPointer(message.ReplyToMessageID),
 		MentionedUserIDs: mentioned, IsAllMentioned: message.IsAllMentioned,
 		IsVoiceMessage: message.IsVoiceMessage, TranscriptState: message.TranscriptState,
+		CallID: stringPointer(message.CallID),
 	}
 	if model.ReplyToMessageID != nil {
 		var count int64
@@ -1221,6 +1291,9 @@ func (self *transaction) GetChatMessage(messageId string) (*models.ChatMessage, 
 		return nil, err
 	}
 	if err := self.attachChatReactions([]*models.ChatMessage{message}); err != nil {
+		return nil, err
+	}
+	if err := self.attachChatCalls([]*models.ChatMessage{message}); err != nil {
 		return nil, err
 	}
 	return message, nil
@@ -1463,6 +1536,9 @@ func (self *transaction) listChatConversationMessages(conversation *models.Agent
 	if err := self.attachChatReactions(chatMessages); err != nil {
 		return nil, 0, err
 	}
+	if err := self.attachChatCalls(chatMessages); err != nil {
+		return nil, 0, err
+	}
 	quoted, err := self.quotedChatMessages(conversation.ChatID, chatMessages, readFrom)
 	if err != nil {
 		return nil, 0, err
@@ -1572,6 +1648,9 @@ func ChatMessageAsAgentMessage(message *models.ChatMessage, conversationId strin
 		IsVoiceMessage:  message.IsVoiceMessage,
 		TranscriptText:  message.TranscriptText,
 		TranscriptState: message.TranscriptState,
+
+		CallID: message.CallID,
+		Call:   message.Call,
 	}
 	if message.IsByAgent() {
 		converted.Role = "assistant"

@@ -34,8 +34,9 @@ type AgentPhoneMutation interface {
 	// agent:use.
 	RegisterAgentPhone(ctx context.Context, arguments RegisterAgentPhoneArguments) (*AgentPhoneView, error)
 
-	// Rename a phone or choose which notifications it gets. Needs
-	// agent:use.
+	// Rename a phone, choose which notifications it gets, or replace the
+	// registration it is rung through for calls.
+	// Needs agent:use.
 	UpdateAgentPhone(ctx context.Context, arguments UpdateAgentPhoneArguments) (*AgentPhoneView, error)
 
 	// Remove a phone: it is signed out and gets nothing more. Needs
@@ -95,6 +96,12 @@ type RegisterAgentPhoneArguments struct {
 	// phone, empty while it has not allowed notifications
 	PushRegistration string `json:"pushRegistration" graphapi:"nullable"`
 
+	// VoIPPushRegistration is the push relay's sealed registration for the
+	// token PushKit gave the app, which is how the phone is rung for a
+	// call; the phone gets it from the relay's register endpoint with push
+	// type voip, as it gets the one above. Empty while the app has none
+	VoIPPushRegistration string `json:"voipPushRegistration" graphapi:"nullable"`
+
 	// PayloadKey is the 256-bit key, base64, the phone decrypts its
 	// notifications with
 	PayloadKey string `json:"payloadKey" graphapi:"nullable"`
@@ -108,6 +115,10 @@ type UpdateAgentPhoneArguments struct {
 
 	// NotificationKinds it should get; empty is every kind
 	NotificationKinds *[]string `json:"notificationKinds" graphapi:"nullable"`
+
+	// VoIPPushRegistration to replace the one it has, as it is on
+	// RegisterAgentPhone; empty removes it, and leaving it out keeps it
+	VoIPPushRegistration *string `json:"voipPushRegistration" graphapi:"nullable"`
 }
 
 type AgentPhoneArguments struct {
@@ -119,7 +130,7 @@ const (
 	phoneNameLongest  = 64
 	phoneModelLongest = 32
 	// pushRegistrationLongest bounds a sealed registration, which is a few
-	// hundred characters.
+	// hundred characters, whichever token it is for.
 	pushRegistrationLongest = 2048
 )
 
@@ -172,6 +183,10 @@ func (self *graph) RegisterAgentPhone(ctx context.Context, arguments RegisterAge
 	if len(pushRegistration) > pushRegistrationLongest {
 		return nil, fmt.Errorf("%w: that is not a push registration", api.ErrInvalidArguments)
 	}
+	voipPushRegistration := strings.TrimSpace(arguments.VoIPPushRegistration)
+	if len(voipPushRegistration) > pushRegistrationLongest {
+		return nil, fmt.Errorf("%w: that is not a VoIP push registration", api.ErrInvalidArguments)
+	}
 	sealedKey := ""
 	if key := strings.TrimSpace(arguments.PayloadKey); key != "" {
 		raw, err := base64.StdEncoding.DecodeString(key)
@@ -188,7 +203,7 @@ func (self *graph) RegisterAgentPhone(ctx context.Context, arguments RegisterAge
 		AgentID: found.ID, ClientID: clientId,
 		PhoneName:        api.DisplayName(arguments.PhoneName, phoneNameLongest),
 		PhoneModel:       api.DisplayName(arguments.PhoneModel, phoneModelLongest),
-		PushRegistration: pushRegistration, PayloadKey: sealedKey,
+		PushRegistration: pushRegistration, VoIPPushRegistration: voipPushRegistration, PayloadKey: sealedKey,
 	})
 	if err != nil {
 		return nil, translateError(err)
@@ -262,11 +277,22 @@ func (self *graph) UpdateAgentPhone(ctx context.Context, arguments UpdateAgentPh
 			}
 		}
 	}
+	voipPushRegistration := phone.VoIPPushRegistration
+	if arguments.VoIPPushRegistration != nil {
+		if voipPushRegistration = strings.TrimSpace(*arguments.VoIPPushRegistration); len(voipPushRegistration) > pushRegistrationLongest {
+			return nil, fmt.Errorf("%w: that is not a VoIP push registration", api.ErrInvalidArguments)
+		}
+	}
 	tx := self.transaction(ctx)
 	if err := tx.UpdateAgentPhoneSettings(found.ID, phone.ID, name, kinds); err != nil {
 		return nil, translateError(err)
 	}
-	phone.PhoneName, phone.NotificationKinds = name, kinds
+	if arguments.VoIPPushRegistration != nil {
+		if err := tx.SetAgentPhoneVoIPPushRegistration(phone.ID, voipPushRegistration); err != nil {
+			return nil, translateError(err)
+		}
+	}
+	phone.PhoneName, phone.NotificationKinds, phone.VoIPPushRegistration = name, kinds, voipPushRegistration
 	return phoneView(phone), nil
 }
 
