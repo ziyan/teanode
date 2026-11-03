@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -188,6 +189,9 @@ func TestRecordingSearchMatchesTitleAndSummaryLiterally(test *testing.T) {
 		if err != nil {
 			test.Fatal(err)
 		}
+		// Ids order by the millisecond they were made in, and two made in the
+		// same one in no particular order: the second is made in a later one.
+		time.Sleep(2 * time.Millisecond)
 		summarized, err := transaction.CreateRecording(&models.Recording{UserID: ownerId, ClientRecordingID: "search-summarized", RecordingOrigin: models.RecordingOriginCapture})
 		if err != nil {
 			test.Fatal(err)
