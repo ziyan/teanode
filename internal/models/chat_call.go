@@ -80,6 +80,7 @@ type ChatCallMember struct {
 	JoinedAt  *time.Time        `json:"joinedAt,omitempty"`
 	LeftAt    *time.Time        `json:"leftAt,omitempty"`
 	IsVideoOn bool              `json:"isVideoOn,omitempty"`
+	IsMuted   bool              `json:"isMuted,omitempty"`
 
 	// TranscriptionConsent is "yes" for everybody while the call is
 	// transcribed, as everybody on it is, and empty otherwise. Nobody

@@ -8159,6 +8159,12 @@ export const en = {
   'journal.kindOther': 'something',
   // Calls in people chats: ringing, the call screen, the call's line in a chat.
   'calls.start': 'Start a call',
+  'calls.voiceCall': 'Voice call',
+  'calls.videoCall': 'Video call',
+  'calls.chooseWhoToCall': 'Choose who to call',
+  'calls.whoToCall': 'Who to call',
+  'calls.whoToCallHint': 'The others in the chat are not rung, and can still join from the chat.',
+  'calls.muted': 'Muted',
   'calls.alreadyOnCall': 'You are on another call',
   'calls.incomingRegion': 'Incoming calls',
   'calls.isCalling': '{name} is calling',

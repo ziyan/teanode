@@ -7,12 +7,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/avatar"
 	"github.com/ziyan/teanode/internal/call"
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
 )
 
 const chatCallTestFields = `{ id conversationId chatTitle isGroup startedByName isGoing endReason askerRingState isAskerOn answeredAt
-	transcriptionAskedByUserId members { userId name ringState isOn isVideoOn transcriptionConsent } }`
+	transcriptionAskedByUserId members { userId name avatarUrl avatarColorIndex ringState isOn isVideoOn isMuted transcriptionConsent } }`
 
 // callWorld is a chat world whose server has a media server.
 func newCallWorld(t *testing.T) *chatWorld {
@@ -112,6 +115,59 @@ func TestACallRingsIsJoinedAndEndsWhenEverybodyLeaves(t *testing.T) {
 	listed := world.call(t, world.grace, fmt.Sprintf(`query { ListChatCalls(conversationId: %q) { id endReason } }`, graceConversation))["ListChatCalls"].([]any)
 	if len(listed) != 1 || listed[0].(map[string]any)["id"] != callId {
 		t.Errorf("Grace's list of calls: %v", listed)
+	}
+}
+
+// A call can ring only the people chosen in a group chat; the others are
+// not rung but may still join. Everybody on it is drawn with their picture
+// and initial color, as the chat draws them, and a microphone turned off is
+// shown to the others until its person leaves.
+func TestACallRingsTheChosenAndShowsPicturesAndMicrophones(t *testing.T) {
+	world := newCallWorld(t)
+	world.shareCircle(t, world.frank, "Choir", world.grace, world.alice)
+	frankConversation := world.listedCircleChat(t, world.frank)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.UpdateUser(world.grace.ID, func(user *models.User) error {
+			updatedAt := time.Now()
+			user.AvatarFileID, user.AvatarUpdatedAt = "grace-picture", &updatedAt
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateUser: %s", err)
+		}
+	})
+
+	if refused := world.refused(t, world.frank, fmt.Sprintf(`mutation { StartChatCall(conversationId: %q, userIds: [%q]) { id } }`, frankConversation, world.frank.ID)); refused == "" {
+		t.Error("Frank called himself")
+	}
+	started := world.callView(t, world.frank, fmt.Sprintf(`StartChatCall(conversationId: %q, userIds: [%q])`, frankConversation, world.grace.ID))
+	callId := started["id"].(string)
+	if member := memberOf(started, world.grace); member == nil || member["ringState"] != "ringing" {
+		t.Errorf("Grace, who was chosen, is %v", member)
+	}
+	if member := memberOf(started, world.alice); member != nil && member["ringState"] == "ringing" {
+		t.Errorf("Alice, who was not chosen, is rung: %v", member)
+	}
+	grace := memberOf(started, world.grace)
+	if avatarUrl, _ := grace["avatarUrl"].(string); !strings.Contains(avatarUrl, world.grace.ID) {
+		t.Errorf("Grace's picture on the call is %v", grace["avatarUrl"])
+	}
+	if frank := memberOf(started, world.frank); frank["avatarUrl"] != nil || frank["avatarColorIndex"] != float64(avatar.InitialColorIndex(world.frank.ID)) {
+		t.Errorf("Frank, who has no picture, is drawn as %v", frank)
+	}
+
+	aliceConversation := world.listedCircleChat(t, world.alice)
+	if banner := world.call(t, world.alice, fmt.Sprintf(`query { ReadGoingChatCall(conversationId: %q) { id } }`, aliceConversation))["ReadGoingChatCall"]; banner == nil {
+		t.Fatal("Alice's chat does not show the call to join")
+	}
+	world.callView(t, world.alice, fmt.Sprintf(`JoinChatCall(callId: %q)`, callId))
+	muted := world.callView(t, world.alice, fmt.Sprintf(`SetChatCallMuted(callId: %q, isMuted: true)`, callId))
+	if memberOf(muted, world.alice)["isMuted"] != true {
+		t.Errorf("Alice's microphone: %v", memberOf(muted, world.alice))
+	}
+	world.callView(t, world.alice, fmt.Sprintf(`LeaveChatCall(callId: %q)`, callId))
+	rejoined := world.callView(t, world.alice, fmt.Sprintf(`JoinChatCall(callId: %q)`, callId))
+	if memberOf(rejoined, world.alice)["isMuted"] != false {
+		t.Errorf("Alice came back still muted: %v", memberOf(rejoined, world.alice))
 	}
 }
 

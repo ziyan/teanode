@@ -72,6 +72,15 @@ const chatConversation = {
     members: [member('person-a', 'Mira'), member('person-b', 'Tobias')],
   },
 }
+// The same chat as a group of three.
+const groupConversation = {
+  ...chatConversation,
+  chat: {
+    ...chatConversation.chat,
+    chatKind: 'group',
+    members: [member('person-a', 'Mira'), member('person-b', 'Tobias'), member('person-c', 'Priya')],
+  },
+}
 const mainConversation = {
   id: 'main-conversation',
   kind: 'main',
@@ -122,23 +131,24 @@ function callLine(overrides: Record<string, unknown> = {}) {
 interface Shown {
   messages?: unknown[]
   going?: ChatCall | null
+  isGroup?: boolean
 }
 
 function answerWith(shown: Shown = {}) {
   const messages = shown.messages ?? []
+  const chatShown = shown.isGroup ? groupConversation : chatConversation
   vi.mocked(graphql).mockImplementation((async (document: string, variables: Record<string, unknown> = {}) => {
     if (document.includes('allowed {')) {
       return {
         ReadAgent: { agent: { id: 'agent-one', enabled: true, name: 'Robin' }, allowed: { enabled: true, ask: true } },
       }
     }
-    if (document.includes('ListAgentConversations'))
-      return { ListAgentConversations: [mainConversation, chatConversation] }
+    if (document.includes('ListAgentConversations')) return { ListAgentConversations: [mainConversation, chatShown] }
     if (document.includes('ReadAgentConversation(')) {
       if (variables.conversationId === 'chat-conversation') {
         return {
           ReadAgentConversation: {
-            conversation: chatConversation,
+            conversation: chatShown,
             actingAs: null,
             messages,
             total: messages.length,
@@ -235,20 +245,61 @@ function openOnChat() {
   localStorage.setItem(CONVERSATION_KEY, 'chat-conversation')
 }
 
-it('starts an audio call from a button in the chat header, and opens the call screen', async () => {
+it('starts a voice call from the menu of the call button in the chat header, and opens the call screen', async () => {
   answerWith()
   openOnChat()
   renderDrawer(true)
 
   fireEvent.click(await screen.findByRole('button', { name: 'Start a call' }))
+  // A direct chat has nobody to choose.
+  expect(screen.queryByRole('menuitem', { name: 'Choose who to call' })).toBeNull()
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Voice call' }))
 
   expect(await screen.findByRole('dialog', { name: 'Call in Trip planning' })).toBeTruthy()
   expect(vi.mocked(graphql)).toHaveBeenCalledWith(expect.stringContaining('StartChatCall('), {
     conversationId: 'chat-conversation',
     isVideoOn: false,
+    userIds: null,
   })
   // Already on a call in this chat: no second button.
   expect(screen.queryByRole('button', { name: 'Start a call' })).toBeNull()
+})
+
+it('starts a video call from the same menu', async () => {
+  answerWith()
+  openOnChat()
+  renderDrawer(true)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Start a call' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Video call' }))
+
+  await screen.findByRole('dialog', { name: 'Call in Trip planning' })
+  expect(vi.mocked(graphql)).toHaveBeenCalledWith(expect.stringContaining('StartChatCall('), {
+    conversationId: 'chat-conversation',
+    isVideoOn: true,
+    userIds: null,
+  })
+})
+
+it('rings only the people chosen in a group, everybody else chosen to begin with', async () => {
+  answerWith({ isGroup: true })
+  openOnChat()
+  renderDrawer(true)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Start a call' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Choose who to call' }))
+  const chooser = await screen.findByRole('alertdialog', { name: 'Who to call' })
+  // Mira is the person signed in, so is not among those to call.
+  expect(within(chooser).queryByRole('checkbox', { name: /Mira/ })).toBeNull()
+  fireEvent.click(within(chooser).getByRole('checkbox', { name: /Tobias/ }))
+  fireEvent.click(within(chooser).getByRole('button', { name: 'Voice call' }))
+
+  await screen.findByRole('dialog', { name: 'Call in Trip planning' })
+  expect(vi.mocked(graphql)).toHaveBeenCalledWith(expect.stringContaining('StartChatCall('), {
+    conversationId: 'chat-conversation',
+    isVideoOn: false,
+    userIds: ['person-c'],
+  })
 })
 
 it('offers no call button where nothing provides calls', async () => {

@@ -3,6 +3,7 @@ import {
   CHAT_CALL_SIGNALS,
   JOIN_CHAT_CALL_MEDIA,
   LEAVE_CHAT_CALL,
+  SET_CHAT_CALL_MUTED,
   SET_CHAT_CALL_VIDEO,
 } from './chatCallApi'
 
@@ -236,6 +237,7 @@ export class ChatCallSession {
       void this.refreshCameraCount()
       // The others are told of a camera that is on from the first moment.
       if (this.videoTrack) await graphql(SET_CHAT_CALL_VIDEO, { callId, isVideoOn: true })
+      if (this.snapshot.isMuted) await graphql(SET_CHAT_CALL_MUTED, { callId, isMuted: true })
       void this.answerOffers()
     } catch (caught) {
       this.close()
@@ -327,9 +329,14 @@ export class ChatCallSession {
 
   // setMuted stops the microphone's sound without closing it, so that being
   // heard again is instant and the others' connection is not renegotiated.
+  // The others are told, to show it beside the name; the sound stops either
+  // way, so a failure to tell them is not the person's to handle.
   setMuted(isMuted: boolean) {
     if (this.audioTrack) this.audioTrack.enabled = !isMuted
     this.update({ isMuted })
+    if (this.isJoinApplied && !this.isClosed) {
+      void this.options.graphql(SET_CHAT_CALL_MUTED, { callId: this.options.callId, isMuted }).catch(() => undefined)
+    }
   }
 
   // setMicrophone moves the call to another microphone: the one chosen is

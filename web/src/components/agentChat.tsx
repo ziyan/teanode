@@ -7,7 +7,7 @@ import { personPath } from '../lib/circlePeople'
 import { Avatar } from './avatar'
 import { Tag } from './common'
 import { ConfirmDialog, FormDialog } from './dialog'
-import { PeopleIcon, PlusIcon, SparkIcon, TrashIcon, UserIcon } from './icons'
+import { PeopleIcon, PlusIcon, SparkIcon, TrashIcon, UserIcon, VideoIcon } from './icons'
 import { mentionSpansOf, type MentionWord } from './mentionMarks'
 import { Tooltip } from './tooltip'
 import type { AgentMessageReaction } from './agentReactions'
@@ -1060,6 +1060,54 @@ function PeopleList({
         )
       })}
     </div>
+  )
+}
+
+// CallPeopleDialog chooses who in a chat a call rings, then starts it with
+// the camera off or on. Everybody is chosen to begin with; whoever is left
+// out is not rung, and can still join from the chat.
+export function CallPeopleDialog({
+  chat,
+  ownUserId,
+  onClose,
+  onCall,
+}: {
+  chat: ChatSummary
+  ownUserId: string
+  onClose: () => void
+  onCall: (userIds: string[], isVideoOn: boolean) => void
+}) {
+  const { t } = useTranslation()
+  const deleted = t('chat.deletedAccount')
+  const people: Person[] = chat.members
+    .filter((member) => !member.isRemoved && !member.isDeletedAccount && member.userId && member.userId !== ownUserId)
+    .map((member) => ({
+      userId: member.userId,
+      username: member.username,
+      name: memberNameOf(member, deleted),
+      avatarUrl: member.avatarUrl,
+      avatarColorIndex: member.avatarColorIndex,
+    }))
+  const [chosen, setChosen] = useState<string[]>(() => people.map((person) => person.userId))
+  return (
+    <ConfirmDialog
+      title={t('calls.whoToCall')}
+      body={
+        <>
+          <p className="muted">{t('calls.whoToCallHint')}</p>
+          <PeopleList people={people} chosen={chosen} isSingle={false} onChange={setChosen} />
+        </>
+      }
+      confirmLabel={t('calls.voiceCall')}
+      otherAction={
+        <button type="button" className="with-icon" disabled={chosen.length === 0} onClick={() => onCall(chosen, true)}>
+          <VideoIcon size={14} />
+          {t('calls.videoCall')}
+        </button>
+      }
+      onConfirm={chosen.length === 0 ? undefined : () => onCall(chosen, false)}
+      onClose={onClose}
+    />
   )
 }
 

@@ -1,10 +1,12 @@
 # Calls in chats
 
-A person in a chat with other people, direct or a group, can call it. A call
-starts with audio only; anyone on it turns their own camera on and off. Every
-other member of the chat is rung, on their phones and in their open
+A person in a chat with other people, direct or a group, can call it, as a
+voice call or a video call; anyone on it turns their own camera on and off.
+Every other member of the chat is rung, on their phones and in their open
 dashboards, except anyone who set that chat's notifications to off (Only
-mentions still rings). Anyone in the chat can join while the call goes, and
+mentions still rings). In a group the caller may choose who is rung instead;
+the others are not rung but can still join. Whoever has their microphone off
+is marked beside their name on the call. Anyone in the chat can join while the call goes, and
 an open chat shows a banner to join it. The call ends when the last person
 leaves, or as missed when nobody answers within `calls.ringSeconds`.
 
@@ -33,7 +35,7 @@ A server that stops ends the calls it held as failed when it starts again.
 when and how it ended (`ended`, `missed`, `declined`, `failed`).
 `chat_call_member` is each person's part: rung and what came of it (`ringing`,
 `answered`, `declined`, `missed`, or `none` for whoever started it), when they
-were on, and whether their camera is on. The
+were on, whether their camera is on, and whether they are muted. The
 call's line in the chat is a message with no words whose `callId` names the
 call; a client draws it from the call (`call` on the message), as it goes and
 after.
@@ -42,8 +44,9 @@ after.
 
 The operations are in `internal/api/v1api/apigraph/chat_call.go`.
 
-1. Start or answer: `StartChatCall(conversationId, isVideoOn)` starts one (or
-   returns the one going in the chat, to join), `JoinChatCall(callId)` answers
+1. Start or answer: `StartChatCall(conversationId, isVideoOn, userIds)` starts
+   one, ringing only `userIds` when given (or returns the one going in the
+   chat, to join), `JoinChatCall(callId)` answers
    a ringing call or joins a going one. `DeclineChatCall(callId)` says no.
 2. Open `ChatCallSignals(callId)` before connecting: the server's offers come
    there.
@@ -61,7 +64,8 @@ The operations are in `internal/api/v1api/apigraph/chat_call.go`.
    leave, and turn cameras on.
 6. Turn the camera on or off by replacing the video sender's track (no new
    offer is needed) and tell the others with `SetChatCallVideo(callId,
-   isVideoOn)`. Muting stops sending the microphone's sound the same way.
+   isVideoOn)`. Muting stops sending the microphone's sound the same way, and
+   `SetChatCallMuted(callId, isMuted)` tells the others.
 7. `LeaveChatCall(callId)` takes the person off. The call ends when nobody is
    left.
 

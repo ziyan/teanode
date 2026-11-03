@@ -66,6 +66,7 @@ import {
   MicrophoneOffIcon,
   PhoneHangUpIcon,
   PhoneIcon,
+  VideoIcon,
   PaperclipIcon,
   PencilIcon,
   PeopleIcon,
@@ -114,6 +115,7 @@ import {
   CHAT_FIELDS,
   ChatAvatars,
   ChatLineFrame,
+  CallPeopleDialog,
   ChatMembersDialog,
   ChatPeopleDialog,
   DEFAULT_AGENT_NAME,
@@ -2265,7 +2267,7 @@ function BudgetRing({
 // and its edges what it is resized by.
 
 // HeadMenuName is which of them is open.
-type HeadMenuName = 'computers' | 'tab' | 'usage' | 'background' | 'chat'
+type HeadMenuName = 'computers' | 'tab' | 'usage' | 'background' | 'chat' | 'call'
 
 // HeadMenu is the frame: a small title, and what is under it.
 function HeadMenu({
@@ -2494,6 +2496,40 @@ function ChatMenu({
         <button type="button" className="head-menu-row head-menu-action danger" role="menuitem" onClick={onLeave}>
           <LogoutIcon size={14} />
           <span className="head-menu-row-name">{t('chat.leave')}</span>
+        </button>
+      ) : null}
+    </HeadMenu>
+  )
+}
+
+// CallMenu is how a call in a chat starts: with the sound alone, with the
+// camera on too, or, in a group, ringing only the people chosen.
+function CallMenu({
+  chat,
+  onCall,
+  onChoose,
+  onClose,
+}: {
+  chat: ChatSummary
+  onCall: (isVideoOn: boolean) => void
+  onChoose: () => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <HeadMenu title={t('calls.start')} className="chat-menu" onClose={onClose}>
+      <button type="button" className="head-menu-row head-menu-action" role="menuitem" onClick={() => onCall(false)}>
+        <PhoneIcon size={14} />
+        <span className="head-menu-row-name">{t('calls.voiceCall')}</span>
+      </button>
+      <button type="button" className="head-menu-row head-menu-action" role="menuitem" onClick={() => onCall(true)}>
+        <VideoIcon size={14} />
+        <span className="head-menu-row-name">{t('calls.videoCall')}</span>
+      </button>
+      {chat.chatKind === 'group' ? (
+        <button type="button" className="head-menu-row head-menu-action" role="menuitem" onClick={onChoose}>
+          <PeopleIcon size={14} />
+          <span className="head-menu-row-name">{t('calls.chooseWhoToCall')}</span>
         </button>
       ) : null}
     </HeadMenu>
@@ -3037,7 +3073,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     Record<string, { name: string; ownerName?: string; until: number; isAgent?: boolean }>
   >({})
   // The dialog open over the drawer for a chat, if any.
-  const [chatDialog, setChatDialog] = useState<'direct' | 'group' | 'add' | 'members' | 'rename' | 'leave' | null>(null)
+  const [chatDialog, setChatDialog] = useState<
+    'direct' | 'group' | 'add' | 'members' | 'rename' | 'leave' | 'call' | null
+  >(null)
   // The message being rewritten in place, and the one asked about deleting.
   const [editing, setEditing] = useState<{ messageId: string; text: string } | null>(null)
   const [deletingMessage, setDeletingMessage] = useState<ChatLine | null>(null)
@@ -6002,8 +6040,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     type="button"
                     className="icon-button"
                     aria-label={t('calls.start')}
+                    aria-expanded={headMenu === 'call'}
                     disabled={chatCalls.isBusy || chatCalls.activeCall !== null}
-                    onClick={() => void chatCalls.startCall(conversationId)}
+                    onClick={() => toggleHeadMenu('call')}
                   >
                     <PhoneIcon size={14} />
                   </button>
@@ -6099,6 +6138,20 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               onLeave={() => {
                 setHeadMenu(null)
                 setChatDialog('leave')
+              }}
+              onClose={() => setHeadMenu(null)}
+            />
+          )}
+          {headMenu === 'call' && chat && (
+            <CallMenu
+              chat={chat}
+              onCall={(isVideoOn) => {
+                setHeadMenu(null)
+                void chatCalls.startCall(conversationId, { isVideoOn })
+              }}
+              onChoose={() => {
+                setHeadMenu(null)
+                setChatDialog('call')
               }}
               onClose={() => setHeadMenu(null)}
             />
@@ -6815,6 +6868,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           onDone={() => {
             setChatDialog(null)
             void readConversation(conversationId).catch(() => undefined)
+          }}
+        />
+      ) : null}
+      {chatDialog === 'call' && chat ? (
+        <CallPeopleDialog
+          chat={chat}
+          ownUserId={ownUserId}
+          onClose={() => setChatDialog(null)}
+          onCall={(userIds, isVideoOn) => {
+            setChatDialog(null)
+            void chatCalls.startCall(conversationId, { isVideoOn, userIds })
           }}
         />
       ) : null}

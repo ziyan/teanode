@@ -84,6 +84,19 @@ it('draws everybody on the call, with their picture only while their camera is o
   expect(tiles[1].querySelector('.avatar')).toBeTruthy()
 })
 
+it('marks whoever has their microphone off beside their name, this person from the moment they mute', async () => {
+  const { screenDialog } = await startCall(
+    callOf({
+      ...onTheCall,
+      members: members.map((member) => (member.userId === 'person-b' ? { ...member, isMuted: true } : member)),
+    }),
+    { ...quietSnapshot, isMuted: true },
+  )
+
+  const tiles = within(screenDialog).getAllByRole('listitem')
+  expect(tiles.map((tile) => within(tile).queryByRole('img', { name: 'Muted' }) !== null)).toEqual([true, true, false])
+})
+
 it('has a bar of mute, camera, transcribe and leave, and the switch only when there are several cameras', async () => {
   const { screenDialog, session } = await startCall()
 
