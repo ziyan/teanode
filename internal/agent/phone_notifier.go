@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/push"
+	"github.com/ziyan/teanode/internal/util/deferutil"
 	"github.com/ziyan/teanode/internal/util/secretbox"
 )
 
@@ -101,15 +103,34 @@ func (self *PhoneNotifier) Sender() (push.Sender, error) {
 
 // NotifyPhone sends one notification to one phone and records how it went.
 func (self *PhoneNotifier) NotifyPhone(ctx context.Context, phone *models.AgentPhone, content *push.Content) error {
+	if !phone.CanBeNotified() {
+		return fmt.Errorf("agent: the phone has not registered for notifications; open the TeaNode app on it")
+	}
+	sendError := self.sendToPhone(ctx, phone, phone.PushRegistration, content)
+
+	isGone := errors.Is(sendError, push.ErrGone)
+	errorText := ""
+	if sendError != nil {
+		errorText = sendError.Error()
+	}
+	if err := self.settings.Database.TransactionContext(context.WithoutCancel(ctx), func(tx db.Transaction) error {
+		return tx.NoteAgentPhoneDelivery(phone.ID, time.Now(), errorText, isGone)
+	}); err != nil {
+		log.Warningf("cannot record a notification to phone %s: %s", phone.ID, err)
+	}
+	return sendError
+}
+
+// sendToPhone seals the content for the phone, in its person's language, and
+// sends it through the relay to the sealed registration given: the phone's
+// ordinary one, or the one it is rung through.
+func (self *PhoneNotifier) sendToPhone(ctx context.Context, phone *models.AgentPhone, pushRegistration string, content *push.Content) error {
 	sender, err := self.Sender()
 	if err != nil {
 		return err
 	}
 	if sender == nil {
 		return fmt.Errorf("agent: notifications to phones are off on this server")
-	}
-	if !phone.CanBeNotified() {
-		return fmt.Errorf("agent: the phone has not registered for notifications; open the TeaNode app on it")
 	}
 	opened, err := OpenConnectionSecret(self.settings.Configuration(), phone.PayloadKey)
 	if err != nil {
@@ -125,17 +146,24 @@ func (self *PhoneNotifier) NotifyPhone(ctx context.Context, phone *models.AgentP
 	}
 	sendContext, cancel := context.WithTimeout(ctx, phonePushTimeout)
 	defer cancel()
-	sendError := sender.Send(sendContext, phone.PushRegistration, delivery)
+	return sender.Send(sendContext, pushRegistration, delivery)
+}
 
-	isGone := errors.Is(sendError, push.ErrGone)
-	errorText := ""
-	if sendError != nil {
-		errorText = sendError.Error()
+// RingPhone rings one phone for a call through its VoIP registration, which
+// wakes the app to show the incoming call. A registration Apple says is gone
+// is cleared, leaving the phone's ordinary one alone. It does not record a
+// delivery: the phone's last delivery is about its notifications.
+func (self *PhoneNotifier) RingPhone(ctx context.Context, phone *models.AgentPhone, content *push.Content) error {
+	if !phone.CanRing() {
+		return fmt.Errorf("agent: the phone has not registered to be rung; open the TeaNode app on it")
 	}
-	if err := self.settings.Database.TransactionContext(context.WithoutCancel(ctx), func(tx db.Transaction) error {
-		return tx.NoteAgentPhoneDelivery(phone.ID, time.Now(), errorText, isGone)
-	}); err != nil {
-		log.Warningf("cannot record a notification to phone %s: %s", phone.ID, err)
+	sendError := self.sendToPhone(ctx, phone, phone.VoIPPushRegistration, content)
+	if errors.Is(sendError, push.ErrGone) {
+		if err := self.settings.Database.TransactionContext(context.WithoutCancel(ctx), func(tx db.Transaction) error {
+			return tx.SetAgentPhoneVoIPPushRegistration(phone.ID, "")
+		}); err != nil {
+			log.Warningf("cannot clear the VoIP registration of phone %s: %s", phone.ID, err)
+		}
 	}
 	return sendError
 }
@@ -191,6 +219,63 @@ func (self *PhoneNotifier) NotifyPhones(agentId, notificationKind string, conten
 	}
 }
 
+// RingPhones rings each of the person's phones for a call, and waits for
+// the relay to answer for all of them, since the call wants to know whether
+// anybody could be reached. content is the call as the phone shows it: the
+// caller fills ConversationID and CallID, and the kind is NotificationCall.
+//
+// A phone that can ring is sent a VoIP push, which wakes the app. A phone
+// that cannot (its app is too old to register one, or Apple said its VoIP
+// token is gone), and one whose VoIP push failed, gets an ordinary alert
+// with the same content, so it still shows "somebody is calling". The
+// phone's own choice of notification kinds does not apply: whether to ring
+// a member at all is for the caller to decide. The count is of phones
+// reached either way.
+func (self *PhoneNotifier) RingPhones(agentId string, content *push.Content) (rangCount int) {
+	if sender, err := self.Sender(); err != nil || sender == nil {
+		return 0
+	}
+	var phones []*models.AgentPhone
+	if err := self.settings.Database.TransactionContext(self.settings.Context, func(tx db.Transaction) (err error) {
+		phones, err = tx.ListAgentPhones(agentId)
+		return err
+	}); err != nil {
+		log.Warningf("cannot list the phones to ring: %s", err)
+		return 0
+	}
+	var waitGroup sync.WaitGroup
+	var reachedCount atomic.Int64
+	for _, phone := range phones {
+		if !phone.CanRing() && !phone.CanBeNotified() {
+			continue
+		}
+		waitGroup.Add(1)
+		self.settings.WaitGroup.Add(1)
+		go func(phone *models.AgentPhone) {
+			defer self.settings.WaitGroup.Done()
+			defer waitGroup.Done()
+			if phone.CanRing() {
+				err := self.RingPhone(self.settings.Context, phone, content)
+				if err == nil {
+					reachedCount.Add(1)
+					return
+				}
+				log.Noticef("a call did not ring phone %s: %s", phone.ID, err)
+			}
+			if !phone.CanBeNotified() {
+				return
+			}
+			if err := self.NotifyPhone(self.settings.Context, phone, content); err != nil {
+				log.Noticef("a call notification did not reach phone %s: %s", phone.ID, err)
+				return
+			}
+			reachedCount.Add(1)
+		}(phone)
+	}
+	waitGroup.Wait()
+	return int(reachedCount.Load())
+}
+
 // OpenConnectionSecret opens a credential that Agent.SealSecret sealed with
 // the server secret, for whoever has the configuration and no agent.
 func OpenConnectionSecret(configuration *config.Configuration, value string) (string, error) {
@@ -239,4 +324,38 @@ func PhoneBody(text string) string {
 		return string(runes[:600]) + "…"
 	}
 	return text
+}
+
+// UnringPhones tells each of the person's phones that can be rung that a
+// call no longer rings them, through the same VoIP registration, so that a
+// phone still ringing stops. A phone that cannot be rung is told nothing: it
+// was shown an alert, which a later alert would not take back. It returns
+// without waiting for the relay.
+func (self *PhoneNotifier) UnringPhones(agentId string, content *push.Content, exceptPhoneId string) {
+	if sender, err := self.Sender(); err != nil || sender == nil {
+		return
+	}
+	var phones []*models.AgentPhone
+	if err := self.settings.Database.TransactionContext(self.settings.Context, func(tx db.Transaction) (err error) {
+		phones, err = tx.ListAgentPhones(agentId)
+		return err
+	}); err != nil {
+		log.Warningf("cannot list the phones to stop ringing: %s", err)
+		return
+	}
+	for _, phone := range phones {
+		// The phone that answered or declined knows already, and a VoIP push
+		// it is sent must show a call, which would flash on its screen.
+		if !phone.CanRing() || phone.ID == exceptPhoneId {
+			continue
+		}
+		self.settings.WaitGroup.Add(1)
+		go func(phone *models.AgentPhone) {
+			defer deferutil.Recover()
+			defer self.settings.WaitGroup.Done()
+			if err := self.RingPhone(self.settings.Context, phone, content); err != nil {
+				log.Noticef("a call's end did not reach phone %s: %s", phone.ID, err)
+			}
+		}(phone)
+	}
 }

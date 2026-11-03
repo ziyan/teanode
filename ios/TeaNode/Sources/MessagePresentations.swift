@@ -11,6 +11,8 @@ enum MessagePresentation: Identifiable {
     case agentPhoto(photoId: String)
     case artifact(name: String, markdown: String?, address: URL?)
     case savingProblem(String)
+    /// What was said on a call that was transcribed.
+    case callTranscript(callId: String, title: String)
 
     var id: String {
         switch self {
@@ -18,6 +20,7 @@ enum MessagePresentation: Identifiable {
         case .agentPhoto(let photoId): "photo-\(photoId)"
         case .artifact(let name, _, let address): "artifact-\(name)-\(address?.absoluteString ?? "")"
         case .savingProblem(let text): "problem-\(text)"
+        case .callTranscript(let callId, _): "call-transcript-\(callId)"
         }
     }
 }
@@ -50,7 +53,7 @@ struct MessagePresentations: ViewModifier {
                     switch item {
                     case .agentPhoto: coverItem = item
                     case .savingProblem(let text): problemText = text
-                    case .recordingImport, .artifact: sheetItem = item
+                    case .recordingImport, .artifact, .callTranscript: sheetItem = item
                     }
                 }
             )
@@ -60,6 +63,8 @@ struct MessagePresentations: ViewModifier {
                     if let connection = app.connection { RecordingAttachmentImportView(connection: connection, attachment: attachment) }
                 case .artifact(let name, let markdown, let address):
                     ArtifactSheet(name: name, markdown: markdown, address: address)
+                case .callTranscript(let callId, let title):
+                    if let connection = app.connection { ChatCallTranscriptSheet(connection: connection, callId: callId, title: title) }
                 case .agentPhoto, .savingProblem:
                     EmptyView()
                 }

@@ -501,6 +501,28 @@ and the app mark the mentions in the words, the reader's own stronger. A chat
 not at `all` does not count toward the unread number on the drawer's button or
 the Chats tab.
 
+**VoIP pushes for calls.** A call has to ring a phone that is locked or has the
+app closed, which an ordinary alert cannot do: iOS hands a VoIP push to the app
+(PushKit), which must show the incoming call at once. So the app registers a
+second token beside its alert token, from PushKit, with the relay's register
+endpoint and push type `voip` (`push.PushTypeVoIP`), and sends it as
+`voipPushRegistration` on `RegisterAgentPhone` (or `UpdateAgentPhone`);
+it is stored in `agent_phone.voip_push_registration` and `AgentPhone.CanRing`
+is true when a phone has it and a payload key. The relay sends it to the topic
+of the app's bundle identifier plus `.voip`, with `apns-push-type: voip`,
+priority 10 and a short expiry (60 seconds unless the server asks for less,
+never more than two minutes, since a ring that arrives late is a call that is
+over). The payload is only `{"sealed": ...}`: the call's content encrypted with
+the phone's key like any other notification, which the app decrypts itself, so
+Apple and the relay learn nothing of who is calling. `PhoneNotifier.RingPhones`
+rings every phone of a person that can ring, and sends an ordinary alert of the
+kind `call` to a phone that cannot (an app from before calls, or a VoIP token
+Apple reported gone, which is cleared on its own and leaves the alert token
+alone), so an old app still shows "somebody is calling". The kind `call` is
+not one a phone chooses among: a phone's own choice of kinds never drops it.
+Whether to ring a member at all is for whoever starts the call: a member who
+turned the chat's notifications to `off` is never rung.
+
 **Agents in a chat.** A message starts a turn of an agent only when its author
 addresses that agent: the composer's `@` chooses it, or replying to one of its
 messages, and the client sends the agent's id as `addressedAgentIds` (the

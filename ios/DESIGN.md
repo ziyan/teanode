@@ -122,6 +122,20 @@ its pull request is opened.
   to cancel" while it records. A voice message in the transcript is a bubble
   with a play button, its waveform, its time, and its words under it in
   secondary footnote text once the server has made them.
+- A chat with people has a phone button in its bar that starts an audio call.
+  A chat with a call going shows a banner at its top ("Call going, 2 on it")
+  with one prominent Join, hidden while this phone is on that call. A call's
+  line in the transcript is a card on the cards' surface: how it went ("Call,
+  4:12", "Missed call", "Declined call", "Call going"), who was on it, a Join
+  button while it goes and a Transcript button once there is one; a missed call
+  is red in its symbol and words. The call itself is a CallKit call, so it
+  rings and shows on the lock screen like any other, and the call screen is
+  shown full screen over the app: the people in tiles (their picture when
+  their camera is on, otherwise their avatar), and the controls (mute, camera,
+  flip, speaker, transcribe, hang up) as round glass buttons floating over
+  them. Hanging up is the one red symbol. When somebody asks to transcribe the
+  call, a card on the cards' surface asks the person, Allow first and Not me
+  beside it, and the call shows "Transcribing" once it is answered.
 - A list row says who, what and when, and only marks what asks for attention
   (high priority, a reply owed, a sender whose checks failed). Routine
   categories and passing checks are not drawn.

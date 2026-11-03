@@ -69,6 +69,13 @@ final class AppModel {
     /// This phone as the server knows it, once it has registered.
     private(set) var phone: AgentPhone?
 
+    /// The relay's sealed registrations for the phone's two tokens, kept so
+    /// that whichever arrives last is handed to the servers with the other:
+    /// the notification token (alert) and PushKit's VoIP token, which is how
+    /// the phone is rung for a call in a chat.
+    private var alertPushRegistration: String?
+    private var voipPushRegistration: String?
+
     /// Whether the person allowed notifications.
     private(set) var isNotificationAllowed = false
 
@@ -920,8 +927,11 @@ final class AppModel {
             UIApplication.shared.registerForRemoteNotifications()
         } else {
             // Listed on the dashboard all the same, as a phone that is told
-            // nothing.
-            phone = try? await connection.registerPhone(phoneName: UIDevice.current.name, phoneModel: Device.modelIdentifier)
+            // nothing. A call still rings it, if PushKit gave it a token, so
+            // the key the ring is sealed with goes with it.
+            phone = try? await connection.registerPhone(
+                phoneName: UIDevice.current.name, phoneModel: Device.modelIdentifier, voipPushRegistration: voipPushRegistration,
+                payloadKey: account.flatMap { try? PayloadKey.current(for: $0.accountKey) })
         }
     }
 
@@ -938,14 +948,39 @@ final class AppModel {
         #endif
         do {
             let pushRegistration = try await PushRelay(transport: transport).register(deviceToken: deviceToken, isSandbox: isSandbox)
+            alertPushRegistration = pushRegistration
             phone = try await connection.registerPhone(
                 phoneName: UIDevice.current.name, phoneModel: Device.modelIdentifier,
-                pushRegistration: pushRegistration, payloadKey: try PayloadKey.current(for: account.accountKey))
+                pushRegistration: pushRegistration, voipPushRegistration: voipPushRegistration,
+                payloadKey: try PayloadKey.current(for: account.accountKey))
             notificationProblemText = nil
             await registerOtherAccounts(pushRegistration: pushRegistration)
         } catch {
             notificationProblemText = describe(error)
         }
+    }
+
+    /// Registers the token PushKit gave with the relay, as the device token
+    /// is registered but for VoIP pushes, and hands the sealed registration
+    /// to the server of every account: it rings the phone for a call with it.
+    /// One that cannot be had now (the relay is not up to date, the server
+    /// cannot be reached) is tried again at the next launch, and says nothing:
+    /// calls then reach the phone as notifications.
+    func register(voipToken: Data) async {
+        #if DEBUG
+            let isSandbox = true
+        #else
+            let isSandbox = false
+        #endif
+        guard let registration = try? await PushRelay(transport: transport).register(deviceToken: voipToken, isSandbox: isSandbox, pushType: "voip")
+        else { return }
+        voipPushRegistration = registration
+        // A phone registered already is given the VoIP registration on its
+        // own; one not registered yet is given it when it is.
+        if let connection, let known = phone, let updated = try? await connection.updatePhoneRinging(known.id, voipPushRegistration: registration) {
+            phone = updated
+        }
+        if let alertPushRegistration { await registerOtherAccounts(pushRegistration: alertPushRegistration) }
     }
 
     /// Registers the phone with the servers of the accounts not in use, each
@@ -958,8 +993,18 @@ final class AppModel {
         for other in others {
             guard let payloadKey = try? PayloadKey.current(for: other.accountKey) else { continue }
             _ = try? await connection(for: other).registerPhone(
-                phoneName: UIDevice.current.name, phoneModel: Device.modelIdentifier, pushRegistration: pushRegistration, payloadKey: payloadKey)
+                phoneName: UIDevice.current.name, phoneModel: Device.modelIdentifier, pushRegistration: pushRegistration,
+                voipPushRegistration: voipPushRegistration, payloadKey: payloadKey)
         }
+    }
+
+    /// The connection of the account a call belongs to: the one in use, or
+    /// one kept for it, so that a call to an account not in use is answered
+    /// as that account. Nil when the account is no longer on the phone.
+    func callConnection(accountKey: String) -> Connection? {
+        if accountKey == account?.accountKey { return connection }
+        guard let other = ((try? store.accounts().accounts) ?? []).first(where: { $0.accountKey == accountKey }) else { return nil }
+        return connection(for: other)
     }
 
     /// The connection to an account: the one in use, or one kept for it.

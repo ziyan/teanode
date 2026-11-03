@@ -494,6 +494,11 @@ type AgentMessage struct {
 	TranscriptText  string `json:"transcriptText,omitempty"`
 	TranscriptState string `json:"transcriptState,omitempty"`
 
+	// CallID and Call are, on a chat's message that is the line of a call,
+	// what ChatMessage says of them.
+	CallID string    `json:"callId,omitempty"`
+	Call   *ChatCall `json:"call,omitempty"`
+
 	// EditedAt is when its author last changed what it says, and IsDeleted
 	// says they took it back: its content is then empty.
 	EditedAt  *time.Time `json:"editedAt,omitempty"`

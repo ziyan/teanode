@@ -261,7 +261,7 @@ func (self *Agent) publishRecordingRun(ctx context.Context, run *Run, transcript
 			return err
 		}
 	}
-	shouldContinue, err := self.transcribeRecordingChunk(ctx, run, transcriptRun, selection, files, handoffChunk, vocabularyPrompt)
+	shouldContinue, err := self.transcribeRecordingChunk(ctx, run, transcriptRun, selection, files, handoffChunk, vocabularyPrompt, media)
 	if err != nil || !shouldContinue {
 		return err
 	}

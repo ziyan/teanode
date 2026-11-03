@@ -31,6 +31,7 @@ import { firstManagementPath } from './components/sidebar'
 import { AgentDrawer } from './components/agentDrawer'
 import { NavigationShortcuts } from './components/navigationShortcuts'
 import { RecordingBar } from './recording/recordingBar'
+import { ChatCallProvider } from './calls/chatCallProvider'
 import { MailboxesProvider } from './mailboxes'
 import { homePath } from './services'
 import { RouteErrorBoundary } from './components/errorBoundary'
@@ -762,7 +763,14 @@ export function App() {
                 </Suspense>
               </main>
             </div>
-            {session.username && <AgentDrawer />}
+            {/* The calls of the dashboard live with the drawer, which starts and
+                joins them: a ringing card on any page and the call screen
+                over it are fixed to the window, wherever they are drawn. */}
+            {session.username && (
+              <ChatCallProvider>
+                <AgentDrawer />
+              </ChatCallProvider>
+            )}
             {/* Above the agent's button while a recording is made or sent. */}
             {session.username && <RecordingBar />}
             {/* The keys that work on every page, and the list of them on ?. */}

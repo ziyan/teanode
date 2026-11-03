@@ -66,6 +66,7 @@ type recordingModel struct {
 	// KnowledgeSyncedGeneration is the source generation the recording's
 	// knowledge was last synced at. It is null until a change asks for a sync.
 	KnowledgeSyncedGeneration *int64
+	ChatCallID                *string
 	DeletedAt                 *time.Time
 	CleanupCompletedAt        *time.Time
 }
@@ -86,7 +87,7 @@ func recordingFromModel(row *recordingModel) *models.Recording {
 		recordedAtUTC := recordedAt.UTC()
 		recordedAt = &recordedAtUTC
 	}
-	return &models.Recording{ID: row.ID, UserID: optionalString(row.UserID), CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), RecordedAt: recordedAt, ClientRecordingID: row.ClientRecordingID, RecordingTitle: row.RecordingTitle, RecordingTitleSource: row.RecordingTitleSource, RecordingSummary: row.RecordingSummary, RecordingOrigin: row.RecordingOrigin, RecordingCaptureState: row.RecordingCaptureState, TimelineDurationMS: row.TimelineDurationMS, CaptureGaps: row.CaptureGaps, SourceGeneration: row.SourceGeneration, DeletedAt: row.DeletedAt}
+	return &models.Recording{ID: row.ID, UserID: optionalString(row.UserID), CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), RecordedAt: recordedAt, ClientRecordingID: row.ClientRecordingID, RecordingTitle: row.RecordingTitle, RecordingTitleSource: row.RecordingTitleSource, RecordingSummary: row.RecordingSummary, RecordingOrigin: row.RecordingOrigin, RecordingCaptureState: row.RecordingCaptureState, TimelineDurationMS: row.TimelineDurationMS, CaptureGaps: row.CaptureGaps, SourceGeneration: row.SourceGeneration, ChatCallID: optionalString(row.ChatCallID), DeletedAt: row.DeletedAt}
 }
 
 func recordingMediaFromModel(row *recordingMediaModel) *models.RecordingMedia {
@@ -149,6 +150,9 @@ func (self *transaction) CreateRecording(recording *models.Recording) (*models.R
 		recordingTitleSource = models.RecordingTitleSourceUser
 	}
 	row := recordingModel{ID: newID(), UserID: new(recording.UserID), CreatedAt: time.Now().UTC().Truncate(time.Microsecond), UpdatedAt: time.Now().UTC().Truncate(time.Microsecond), ClientRecordingID: recording.ClientRecordingID, RecordingTitle: recordingTitle, RecordingTitleSource: recordingTitleSource, RecordedAt: recording.RecordedAt, RecordingOrigin: recording.RecordingOrigin, RecordingCaptureState: captureState, CaptureGaps: []models.RecordingGap{}, SourceGeneration: 1}
+	if recording.ChatCallID != "" {
+		row.ChatCallID = new(recording.ChatCallID)
+	}
 	if err := self.tx.Create(&row).Error; err != nil {
 		return nil, err
 	}
@@ -292,7 +296,7 @@ func validRecordingSHA256(digest string) bool {
 }
 
 func (self *transaction) CreateRecordingMedia(userId string, media *models.RecordingMedia, maximumMediaBytes, maximumAccountBytes int64) (*models.RecordingMedia, error) {
-	if media == nil || media.OriginalSizeBytes <= 0 || media.OriginalSizeBytes > maximumMediaBytes || maximumAccountBytes <= 0 || maximumMediaBytes <= 0 || media.OriginalSizeBytes > math.MaxInt64-models.RecordingUploadPartBytes || !validRecordingSHA256(media.OriginalSHA256) || media.TimelineStartMS < 0 || media.MediaDurationMS < 0 || media.TimelineStartMS > math.MaxInt64-media.MediaDurationMS || media.ClientMediaID == "" || len(media.ClientMediaID) > 128 || media.OriginalFilename == "" || len(media.OriginalFilename) > 255 || (media.OriginalFilename == "." || media.OriginalFilename == ".." || filepath.Base(media.OriginalFilename) != media.OriginalFilename) || strings.ContainsAny(media.OriginalFilename, "\r\n\\") || len(media.OriginalContentType) > 128 {
+	if media == nil || media.OriginalSizeBytes <= 0 || media.OriginalSizeBytes > maximumMediaBytes || maximumAccountBytes <= 0 || maximumMediaBytes <= 0 || media.OriginalSizeBytes > math.MaxInt64-models.RecordingUploadPartBytes || !validRecordingSHA256(media.OriginalSHA256) || media.TimelineStartMS < 0 || media.MediaDurationMS < 0 || media.TimelineStartMS > math.MaxInt64-media.MediaDurationMS || media.ClientMediaID == "" || len(media.ClientMediaID) > 128 || media.OriginalFilename == "" || len(media.OriginalFilename) > 255 || (media.OriginalFilename == "." || media.OriginalFilename == ".." || filepath.Base(media.OriginalFilename) != media.OriginalFilename) || strings.ContainsAny(media.OriginalFilename, "\r\n\\") || len(media.OriginalContentType) > 128 || len(media.SpeakerUserID) > 32 || len(media.SpeakerName) > 100 || (media.SpeakerName != "" && media.SpeakerUserID == "") {
 		return nil, ErrInvalidArguments
 	}
 	var owner userModel

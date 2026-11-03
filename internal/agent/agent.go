@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"github.com/ziyan/teanode/internal/agent/tools"
 	_ "github.com/ziyan/teanode/internal/agent/tools/all"
+	"github.com/ziyan/teanode/internal/call"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -78,6 +79,11 @@ type Settings struct {
 	// which exists whether or not an agent does. Nil in tests that have no
 	// chats.
 	ChatEvents ChatPublisher
+
+	// CallRecorder keeps the microphones of the people on a call who agreed
+	// to its transcript, on the instance whose media server holds the call;
+	// nil when calls are off.
+	CallRecorder *call.Recorder
 
 	// Tick is how often the worker looks for work. Zero means five seconds.
 	Tick time.Duration

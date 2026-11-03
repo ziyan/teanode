@@ -104,8 +104,15 @@ type graph struct {
 	// shoppingEvents is the one listener for shopping list changes, fanned
 	// out to the lists open on this instance.
 	shoppingEvents shoppingEventHub
-	mapLimitsOnce  sync.Once
-	mapLimitsValue *ratelimit.Registry
+
+	// chatCallEvents is the one listener for changes to calls, fanned out
+	// to the tabs and phones of the people on them; chatCallSignals holds
+	// the media server's offers until each device reads them
+	// (chat_call_events.go).
+	chatCallEvents  chatCallEventHub
+	chatCallSignals chatCallSignals
+	mapLimitsOnce   sync.Once
+	mapLimitsValue  *ratelimit.Registry
 
 	// linkPreviews is what the previews of links need: the fetcher and its
 	// limits (link_preview.go).
@@ -161,6 +168,11 @@ func New(database db.Database, configuration config.Store, messages storage.Stor
 	self.wrapServiceOperations()
 	self.wrapQueryTransactions()
 	self.wrapTransactionFreeMutations()
+	// A device whose connection fails is taken off its call here, where the
+	// call's people are told.
+	if settings != nil && settings.Calls != nil {
+		settings.Calls.SetDeviceLost(self.deviceLost)
+	}
 	return self, nil
 }
 

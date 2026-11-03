@@ -22,6 +22,12 @@ type AgentPhone struct {
 	// said the phone is gone. Never shown to anybody.
 	PushRegistration string `json:"-"`
 
+	// VoIPPushRegistration is the relay's sealed registration for the token
+	// PushKit gave the app, which is how a phone is rung for a call. Empty
+	// while the app has not registered one, or once Apple said it is gone.
+	// Never shown to anybody.
+	VoIPPushRegistration string `json:"-"`
+
 	// PayloadKey is the phone's notification key, sealed. Never shown.
 	PayloadKey string `json:"-"`
 
@@ -78,6 +84,19 @@ const (
 	// person shares. It opens the app on Shopping, at that store or list.
 	NotificationShopping = "shopping"
 
+	// NotificationCall is a call ringing: somebody started a call in a chat
+	// the person is in. It is not one of NotificationKinds a phone chooses
+	// among, and a phone's own choice never drops it, since a call that does
+	// not ring is a missed call. Whether to ring a member at all is for
+	// whoever starts the call to decide: a member who turned the chat's
+	// notifications off is never rung.
+	NotificationCall = "call"
+
+	// NotificationCallEnded tells a phone still ringing for a call to stop:
+	// the person answered or declined on another device, or the call ended.
+	// It goes only to phones that can be rung, and is never shown.
+	NotificationCallEnded = "call_ended"
+
 	// NotificationJournalEveningQuestion is the journal's "How was today?",
 	// with five mood buttons. It is not one of NotificationKinds a phone
 	// chooses among: the person turns it on and off, and sets its time, in the
@@ -90,7 +109,7 @@ var NotificationKinds = []string{NotificationMessage, NotificationApproval, Noti
 
 // Wants reports whether the phone takes a kind of notification.
 func (self *AgentPhone) Wants(notificationKind string) bool {
-	if notificationKind == NotificationJournalEveningQuestion || len(self.NotificationKinds) == 0 {
+	if notificationKind == NotificationJournalEveningQuestion || notificationKind == NotificationCall || notificationKind == NotificationCallEnded || len(self.NotificationKinds) == 0 {
 		return true
 	}
 	for _, wanted := range self.NotificationKinds {
@@ -104,4 +123,10 @@ func (self *AgentPhone) Wants(notificationKind string) bool {
 // CanBeNotified reports whether the phone has a registration to send to.
 func (self *AgentPhone) CanBeNotified() bool {
 	return strings.TrimSpace(self.PushRegistration) != "" && self.PayloadKey != ""
+}
+
+// CanRing reports whether the phone can be rung for a call: it has a VoIP
+// registration and a key to seal the call's content with.
+func (self *AgentPhone) CanRing() bool {
+	return strings.TrimSpace(self.VoIPPushRegistration) != "" && self.PayloadKey != ""
 }

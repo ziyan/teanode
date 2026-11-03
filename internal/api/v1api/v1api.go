@@ -107,6 +107,18 @@ func (self *v1) TellDueVisitNotices(ctx context.Context, now time.Time) error {
 	return apigraph.TellDueVisitNotices(ctx, self.graph, now)
 }
 
+// TickChatCalls stops the ringing of the calls that rang too long
+// (apigraph.TickChatCalls).
+func (self *v1) TickChatCalls(ctx context.Context, now time.Time) error {
+	return apigraph.TickChatCalls(ctx, self.graph, now)
+}
+
+// FailChatCallsLeftGoing ends the calls this instance held when it stopped
+// (apigraph.FailChatCallsLeftGoing).
+func (self *v1) FailChatCallsLeftGoing(ctx context.Context) error {
+	return apigraph.FailChatCallsLeftGoing(ctx, self.graph)
+}
+
 func (self *v1) AddRoutes(router *mux.Router) error {
 	for _, component := range self.components {
 		if err := component.AddRoutes(router); err != nil {

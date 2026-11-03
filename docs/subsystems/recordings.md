@@ -109,6 +109,18 @@ carry no request and are not affected. That is a guard against mistakes and
 steered runs, not a boundary against code the person runs: anything that leaves
 the header off is the person.
 
+## A call's recording
+
+A call in a chat that was transcribed is a recording of its own kind of
+originals: one per stretch of one person's microphone (`speaker_user_id` and
+`speaker_name` on `recording_media`), owned by whoever turned transcription
+on and tied to the call (`recording.chat_call_id`). Such an original is
+transcribed with the voice settings' model and no speaker separation, its
+passages are labelled with the speaker's name and confirmed at once, and it
+gets no voice samples and no accurate-words pass
+(`internal/agent/recording.go`, `ConfirmRecordingKnownSpeaker`). How the call
+gets there is in `docs/subsystems/chat-calls.md`.
+
 ## Things that will catch you
 
 - A shared read and an owner's read are different operations. The owner's go
