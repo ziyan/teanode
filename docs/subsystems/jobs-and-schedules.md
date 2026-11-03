@@ -142,8 +142,8 @@ doing, carrying `Auto-Submitted: auto-replied`.
 
 ## Schedules
 
-A schedule is a name, a cron line, a prompt, and where the answer goes: the
-drawer or an email.
+A schedule is a name, a cron line or the mail it waits for, a prompt, and
+where the answer goes: the drawer or an email.
 
 Three forms are understood. Five cron fields in the person's own zone; `@at`
 and a moment, which runs once and is then removed; and `@in` and a
@@ -185,6 +185,36 @@ use the same acceptance path but remain best effort when the first attempt fails
 This does not make every tool effect or conversation insertion within a scheduled
 turn idempotent, and it does not guarantee exactly one remote SMTP delivery.
 
+### Schedules that run on arriving mail
+
+A schedule can wait for mail instead of a time: its `mail_conditions` are the
+tests a mailbox rule makes (from, to, subject, a header, or any message;
+contains, equals or matches), and it has no cron line. Only tests a message
+can be judged by as it arrives are allowed, not the ones that wait for the
+agent's sorting.
+
+The delivery hook (`noteMailForSchedules` in `internal/agent/schedule_mail.go`)
+runs inside the delivery transaction for a mailbox the agent was given. For
+each enabled schedule whose conditions the message passes, unless the filters
+put it in Junk or Trash, it appends the message to the schedule's
+`mail_arrivals` (its item id, mailbox, From line, subject, when, and whether
+DMARC passed or it was submitted here) and makes the schedule due now. Nothing
+slower happens there, for the same reason as the agent's other delivery work.
+
+The sweep that runs clock schedules queues the run (`dueMailSchedule`). While
+an earlier run of the same schedule is still going it waits thirty seconds and
+looks again, rather than letting the job dedupe swallow the new mail. Messages
+that come together share one run. The run's opening message lists what came,
+oldest first, with senders and subjects quoted as data and an unverified
+sender said to be one; the turn reads a message with `mail_read` by its item
+id. When the run is done it forgets the messages it was told about and keeps
+any that came during it. At most fifty are kept for a run; past that the
+oldest are dropped and the run is told more may have come.
+
+A schedule that waits for mail is never ended for having no time left. A cron
+line given to it makes it run at set times again, dropping the conditions and
+whatever was waiting; conditions given to a clock schedule do the reverse.
+
 ## Goals, and how they differ from a schedule
 
 A schedule is a clock with a prompt. A **goal** is a sentence on a
@@ -195,7 +225,7 @@ alike from the queue and are opposite everywhere else:
 | --- | --- | --- |
 | where the turn runs | the conversation it was made in (a `run` transcript when it mails) | the person's own conversation |
 | what it remembers | the conversation, when it answers there | everything, it is the same transcript |
-| when the next one is | the cron line says | the last turn says, within bounds |
+| when the next one is | the cron line says, or the next message it waits for | the last turn says, within bounds |
 | how it ends | one for a moment is removed once it has run; a repeating one when somebody switches it off | the agent says `met`, or the person clears it |
 
 The sweep, `dueGoals`, queues one job per conversation whose goal is
