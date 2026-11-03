@@ -503,9 +503,26 @@ boat or plane (`docs/planning/location-travel-execplan.md` has the reasons).
   2.2 m/s walk, up to 75 car, and 100 km or more at 55 m/s or more a plane;
   faster than a car over less is no trip, since the visit times are off.
   Run and bike are never guessed from speed: with a position every few
-  minutes, a few meters a second is as likely a slow drive. Visits less
-  than a minute apart are no trip (neighboring places, one visit ending as
-  the next begins). A trip guessed from speed with more than 30 minutes
+  minutes, a few meters a second is as likely a slow drive.
+- **Visits that leave no time for the trip.** iOS can tell of leaving a
+  place late, or not at all (a missed departure from a place's circle is
+  ended when the next visit begins), so one visit can end the moment the
+  next begins, or after it, though their places are 150 m or more apart. The
+  trip is then looked for from two hours before that moment
+  (`TripSearchDuration`), but not before the first visit's arrival or the
+  trip before, to ten minutes after it (`MaximumTripOffset`), but not after
+  the next visit's departure. Motion activity says it best: the time it
+  names a way of travel for (stops of up to three minutes, and changes of
+  way, do not break it) closest to that moment and no more than ten minutes
+  from it. Without it, an accurate position (100 m or better) more than
+  100 m from both places and within ten minutes of the moment shows the
+  person on the way; the trip runs from the last time they were known to be
+  at the first place (a position within 100 m of it, or the departure) to
+  the first time they were known to be at the second, each within ten
+  minutes of that position. A trip found this way starts no later than the
+  next visit's arrival, unless the trip before ended later. With neither, or for places less than 150 m apart,
+  there is no trip. A trip
+  guessed from speed with more than 30 minutes
   between two points of its path is no trip, since the phone was off,
   paused or erased then and the time is not time on the way, unless that
   stretch was a flight. A leg cut by motion activity of 100 km or more at
@@ -519,9 +536,10 @@ boat or plane (`docs/planning/location-travel-execplan.md` has the reasons).
   run has no gap of over two days, so a report of two distant days does not
   rebuild the days between), after a check-in, after a place is forgotten or
   history is erased, and once at start for the days before trips existed
-  (`trip_backfill` says who is done). A rebuild starts at the departure of the
-  person's latest visit that departed before the first time (a day before when
-  there is none), so that a trip whose departure was long before the report,
+  (`trip_backfill` says who is done). A rebuild starts two hours before the
+  departure of the person's latest visit that departed before the first time
+  (a day and two hours before when there is none), for a trip found between
+  visits that leave no time for it, so that a trip whose departure was long before the report,
   such as after a phone that was off for 30 hours, is built; it ends six hours
   after the last time. It reads visits up to the first arrival after the
   window (at most 30 days on), and every position of the window, a page at a

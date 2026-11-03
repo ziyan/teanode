@@ -62,8 +62,10 @@ var pointsPageSize = 10000
 // When from falls inside a visit that began before it, the person was staying
 // put at from, so nothing the change brings belongs to a trip that ended at
 // that visit's arrival: the window starts at that arrival, and a report
-// during a long stay reads only the stay. No window starts more than the
-// longest trip before from.
+// during a long stay reads only the stay and a little before it. Every window
+// starts travel.TripSearchDuration earlier still, since a trip between visits
+// that leave no time for it can start before the departure it ends with. No
+// window starts more than the longest trip, and that, before from.
 func Around(tx db.Transaction, userId string, from, until time.Time) error {
 	windowStart := from.Add(-defaultLookBack)
 	staying, _, err := tx.ListPlaceVisits(userId, db.PlaceVisitFilter{From: &from, Until: &from, LimitCount: 1})
@@ -84,6 +86,9 @@ func Around(tx db.Transaction, userId string, from, until time.Time) error {
 	if earliest := from.Add(-travel.MaximumTripDuration); windowStart.Before(earliest) {
 		windowStart = earliest
 	}
+	// A trip between visits that leave no time for it can start before the
+	// first one's departure (travel.TripSearchDuration).
+	windowStart = windowStart.Add(-travel.TripSearchDuration)
 	return Window(tx, userId, windowStart, until.Add(lookAhead))
 }
 

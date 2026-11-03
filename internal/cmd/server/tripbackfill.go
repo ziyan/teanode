@@ -29,7 +29,7 @@ const tripBackfillWindow = 7 * 24 * time.Hour
 // tripRulesChangedAt is when the rules in package travel last changed in a
 // way that changes trips already built. Move it to a moment before the
 // change is deployed whenever they do.
-var tripRulesChangedAt = time.Date(2026, 10, 27, 10, 40, 0, 0, time.UTC)
+var tripRulesChangedAt = time.Date(2026, 11, 3, 12, 15, 0, 0, time.UTC)
 
 // backfillTrips builds the trips of past days for every person who needs it.
 // One instance at a time does the pass, whichever instance started first: the
