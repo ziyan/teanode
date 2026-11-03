@@ -5796,6 +5796,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }, 0)
   }
   const isFindingChat = !available && !loaded && !hasSearchedChats
+  // The empty state and the ideas wait for the conversation to have been
+  // read: before, it has no lines only because they have not come yet.
+  const isConversationRead = loaded !== null && loaded.id === conversationId
   const title = current
     ? current.kind === 'main'
       ? t('agentDrawer.main')
@@ -6228,10 +6231,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               </div>
             )}
             {isFindingChat && <p className="muted agent-drawer-empty">{t('common.loading')}</p>}
-            {!isOfferShown && !isFindingChat && isInChat && lines.length === 0 && (
+            {!isOfferShown && !isFindingChat && isConversationRead && isInChat && lines.length === 0 && (
               <p className="muted agent-drawer-empty">{t('chat.empty')}</p>
             )}
-            {!isOfferShown && !isFindingChat && !isInChat && lines.length === 0 && (
+            {!isOfferShown && !isFindingChat && isConversationRead && !isInChat && lines.length === 0 && (
               <>
                 <p className="muted agent-drawer-empty">{t('agentDrawer.empty')}</p>
                 {draft.trim() === '' ? (
