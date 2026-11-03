@@ -23,7 +23,7 @@ import (
 //
 // The actions are named as the command line names them
 // (teanode agent conversation direct, group, add, remove, leave, notifications, read,
-// remember, others-may-ask, edit, delete-message and rename), except that
+// remember, others-may-ask, edit, delete-message, transcribe and rename), except that
 // "add" and "remove" say what they take because this tool also has other
 // things to add to, and "read" is mark_read because read already reads.
 
@@ -31,7 +31,7 @@ import (
 // lists them.
 var chatActions = []string{
 	"direct", "group", "rename", "add_members", "remove_member", "leave",
-	"notifications", "mark_read", "edit", "delete_message", "remember", "others_may_ask",
+	"notifications", "mark_read", "edit", "delete_message", "transcribe", "remember", "others_may_ask",
 }
 
 // isChatAction says whether an action changes a chat.
@@ -80,7 +80,7 @@ func chatRiskOf(asked conversationArguments) tools.Risk {
 			return tools.RiskWrite
 		}
 		return tools.RiskGranting
-	case "direct", "group", "rename", "notifications", "mark_read", "remember":
+	case "direct", "group", "rename", "notifications", "mark_read", "remember", "transcribe":
 		return tools.RiskWrite
 	}
 	return tools.RiskRead
@@ -101,6 +101,7 @@ const (
 	documentMarkChatRead         = `mutation ($conversationId: String!, $throughMessageId: String!) { MarkChatRead(conversationId: $conversationId, throughMessageId: $throughMessageId) }`
 	documentEditChatMessage      = `mutation ($messageId: String!, $message: String!) { EditChatMessage(messageId: $messageId, message: $message) { id editedAt } }`
 	documentDeleteChatMessage    = `mutation ($messageId: String!) { DeleteChatMessage(messageId: $messageId) }`
+	documentTranscribeVoice      = `mutation ($messageId: String!) { TranscribeChatVoiceMessage(messageId: $messageId) { id transcriptState transcriptText } }`
 	documentSetChatAgentReading  = `mutation ($conversationId: String!, $isAgentReading: Boolean!) { SetChatAgentReading(conversationId: $conversationId, isAgentReading: $isAgentReading) ` + chatAnswerFields + ` }`
 	documentSetChatAgentAskable  = `mutation ($conversationId: String!, $isAgentAskableByOthers: Boolean!) { SetChatAgentAskableByOthers(conversationId: $conversationId, isAgentAskableByOthers: $isAgentAskableByOthers) ` + chatAnswerFields + ` }`
 
@@ -422,6 +423,25 @@ func runChatAction(ctx context.Context, run tools.Run, arguments conversationArg
 			return nil, err
 		}
 		return tools.TextResult("deleted the message for everybody in the chat"), nil
+
+	case "transcribe":
+		chatMessageId := strings.TrimSpace(arguments.ChatMessageID)
+		if chatMessageId == "" {
+			return nil, fmt.Errorf("transcribing needs the chat_message_id of a voice message, which read gives")
+		}
+		result, err := operator.Execute(ctx, documentTranscribeVoice, map[string]any{"messageId": chatMessageId})
+		if err != nil {
+			return nil, err
+		}
+		written, _ := result["TranscribeChatVoiceMessage"].(map[string]any)
+		words, _ := written["transcriptText"].(string)
+		if strings.TrimSpace(words) == "" {
+			return tools.TextResult("nothing was said in it that could be transcribed"), nil
+		}
+		// Somebody else's words: data, as reading the chat is.
+		answer := tools.TextResult("the voice message says: %s", words)
+		answer.Untrusted = true
+		return answer, nil
 
 	case "remember", "others_may_ask":
 		if conversationId == "" {

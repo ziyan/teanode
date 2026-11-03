@@ -585,6 +585,7 @@ have made.
 | `teanode agent conversation notifications <id> all\|mentions\|off` | what your phone is told of in the chat: every message, only a message that mentions you or everybody, or nothing; it stays until you change it |
 | `teanode agent conversation read <id>` | say you have read the chat through its newest message; the mark never moves back |
 | `teanode agent conversation edit <message-id> <text>` | change one of your messages in a chat; the others see it was edited |
+| `teanode agent conversation transcribe <message-id>` | write the words of a voice message that has none, paid by your agent; everybody in the chat sees them |
 | `teanode agent conversation delete-message <message-id>` | delete a message of yours in a chat, or any message in a group you are an admin of; asks first |
 | `teanode agent conversation calls <id>` | the calls of a chat, newest first: who started each, how long it went or that it was missed or declined, and who was on it. Calls are made and answered in the dashboard and the app |
 | `teanode agent conversation call <call-id>` | one call, with its transcript when somebody turned transcription on, each line under its speaker, and the recording it became (yours, or shared with you) |

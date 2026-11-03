@@ -1916,6 +1916,12 @@ function AttachmentChips({ attachments }: { attachments: Attachment[] }) {
 // VoiceMessageLine is a voice message of a chat: its recording as a bubble
 // with a play button, and the words the server heard in it under. The
 // recording's address is signed when the drawer is framed elsewhere.
+// TRANSCRIBE_CHAT_VOICE_MESSAGE asks for the words of a voice message that
+// has none, paid by the reader's agent.
+const TRANSCRIBE_CHAT_VOICE_MESSAGE = `mutation ($messageId: String!) {
+  TranscribeChatVoiceMessage(messageId: $messageId) { id transcriptState transcriptText }
+}`
+
 function VoiceMessageLine({ line, attachment }: { line: ChatLine; attachment: Attachment }) {
   const { t } = useTranslation()
   const source = useFileHref(attachmentHref(attachment))
@@ -1935,6 +1941,13 @@ function VoiceMessageLine({ line, attachment }: { line: ChatLine; attachment: At
       waveform={attachment.audioWaveform ?? ''}
       transcriptText={line.transcriptText ?? ''}
       transcriptState={line.transcriptState ?? ''}
+      onTranscribe={
+        line.messageId
+          ? async () => {
+              await graphql(TRANSCRIBE_CHAT_VOICE_MESSAGE, { messageId: line.messageId })
+            }
+          : undefined
+      }
     />
   )
 }

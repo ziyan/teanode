@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { TranslationProvider } from '../i18n/i18n'
@@ -9,7 +9,12 @@ import { VoiceMessageBubble, waveformLevels } from './voiceMessageBubble'
 // 48 levels rising from 0 to 235, as the server sends them.
 const waveform = btoa(String.fromCharCode(...Array.from({ length: 48 }, (_, index) => index * 5)))
 
-const show = (transcriptState: string, transcriptText = '', source: string | null = '/api/v1/agent/attachments/a-1') =>
+const show = (
+  transcriptState: string,
+  transcriptText = '',
+  source: string | null = '/api/v1/agent/attachments/a-1',
+  onTranscribe?: () => Promise<void>,
+) =>
   render(
     <TranslationProvider>
       <ToastProvider>
@@ -19,6 +24,7 @@ const show = (transcriptState: string, transcriptText = '', source: string | nul
           waveform={waveform}
           transcriptText={transcriptText}
           transcriptState={transcriptState}
+          onTranscribe={onTranscribe}
         />
       </ToastProvider>
     </TranslationProvider>,
@@ -44,6 +50,24 @@ beforeEach(() => {
   })
 })
 afterEach(cleanup)
+
+it('offers to transcribe a message with no words, and says so while it is', async () => {
+  let finish: () => void = () => {}
+  const onTranscribe = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)))
+  show('off', '', '/api/v1/agent/attachments/a-1', onTranscribe)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Transcribe' }))
+
+  expect(onTranscribe).toHaveBeenCalledTimes(1)
+  expect(screen.getByText('Transcribing…')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Transcribe' })).toBeNull()
+  await act(async () => finish())
+})
+
+it('offers no transcribing of a message that has its words', () => {
+  show('done', 'Running ten minutes late', '/api/v1/agent/attachments/a-1', async () => {})
+  expect(screen.queryByRole('button', { name: 'Transcribe' })).toBeNull()
+})
 
 it('shows the words once they are heard', () => {
   show('done', 'Running ten minutes late, save me a seat')

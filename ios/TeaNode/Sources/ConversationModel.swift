@@ -865,6 +865,13 @@ final class ConversationModel {
         await changeChat { try await connection.deleteChatMessage(messageId) }
     }
 
+    /// Asks for the words of a voice message that has none, paid by the
+    /// person's agent; they come back as an edit of the message.
+    func transcribe(_ line: TranscriptLine) async {
+        guard let messageId = line.messageId, line.isVoiceMessage else { return }
+        await changeChat { try await connection.transcribeChatVoiceMessage(messageId) }
+    }
+
     func rename(to title: String) async {
         guard let conversationId else { return }
         await changeChat { try await connection.renameChat(conversationId, title: title) }

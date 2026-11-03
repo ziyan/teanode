@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -63,6 +64,45 @@ func (self *Agent) VoiceMessageTranscriptState(tx db.Transaction, sender *models
 	return models.VoiceTranscriptWaiting
 }
 
+// VoiceMessagePayer is the agent that pays for the words of a voice message
+// in a chat, so that every voice message has them for the people and the
+// agents who read the chat: the sender's own, else the agent of a member who
+// has it read the chat, else any other member's that can pay; nil when none
+// can.
+func (self *Agent) VoiceMessagePayer(tx db.Transaction, chat *models.Chat, authorUserId string) (*models.Agent, error) {
+	candidates := []string{}
+	if authorUserId != "" {
+		candidates = append(candidates, authorUserId)
+	}
+	if chat != nil {
+		members := chat.ActiveMembers()
+		for _, isReading := range []bool{true, false} {
+			for _, member := range members {
+				if member.IsAgentReading == isReading && member.UserID != "" && !slices.Contains(candidates, member.UserID) {
+					candidates = append(candidates, member.UserID)
+				}
+			}
+		}
+	}
+	for _, userId := range candidates {
+		owner, err := tx.GetUser(userId)
+		if err != nil {
+			return nil, err
+		}
+		if owner == nil {
+			continue
+		}
+		payer, err := tx.GetAgentByUser(userId)
+		if err != nil {
+			return nil, err
+		}
+		if self.VoiceMessageTranscriptState(tx, payer, owner) == models.VoiceTranscriptWaiting {
+			return payer, nil
+		}
+	}
+	return nil, nil
+}
+
 // voiceMessageModelName is the transcription model, written provider:model, or
 // empty when voice has none: the voice settings' model through their
 // OpenAI-compatible provider, which is what recordings use for their second
@@ -101,48 +141,68 @@ func (self *Agent) TranscribeVoiceMessageSoon(messageId string) {
 // instead, with no error.
 func (self *Agent) TranscribeVoiceMessage(ctx context.Context, messageId string) error {
 	var message *models.ChatMessage
-	var sender *models.Agent
-	var owner *models.User
+	var payer *models.Agent
 	var chat *models.Chat
-	var state string
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if message, err = tx.ClaimVoiceMessageTranscript(messageId, voiceMessageClaimLifetime); err != nil || message == nil {
 			return err
 		}
-		if chat, err = tx.GetChat(message.ChatID); err != nil {
+		if chat, err = tx.GetChat(message.ChatID); err != nil || chat == nil {
 			return err
 		}
-		if owner, err = tx.GetUser(message.AuthorUserID); err != nil || owner == nil {
-			return err
-		}
-		if sender, err = tx.GetAgentByUser(owner.ID); err != nil {
-			return err
-		}
-		state = self.VoiceMessageTranscriptState(tx, sender, owner)
-		return nil
+		payer, err = self.VoiceMessagePayer(tx, chat, message.AuthorUserID)
+		return err
 	}); err != nil {
 		return err
 	}
 	if message == nil {
 		return nil
 	}
-	if chat == nil || owner == nil || len(message.Attachments) == 0 {
+	if chat == nil || len(message.Attachments) == 0 {
 		return self.finishVoiceMessage(ctx, message, models.VoiceTranscriptFailed, "", nil)
 	}
-	if state == models.VoiceTranscriptOff {
+	if payer == nil {
 		return self.finishVoiceMessage(ctx, message, models.VoiceTranscriptOff, "", nil)
 	}
 
+	words, err := self.hearVoiceMessage(ctx, message, chat)
+	if errors.Is(err, errVoiceMessageUnheard) {
+		return self.finishVoiceMessage(ctx, message, models.VoiceTranscriptFailed, "", nil)
+	}
+	if err != nil {
+		return err
+	}
+	// What was heard is paid for whether or not the message is still there to
+	// show it.
+	return self.finishVoiceMessage(ctx, message, models.VoiceTranscriptDone, words.text, func(tx db.Transaction) error {
+		return RecordUsageIn(tx, payer.ID, "", words.modelName, "voice", words.usage)
+	})
+}
+
+// errVoiceMessageUnheard is a voice message that cannot be heard, by any
+// retry: no model to hear it with, or a recording the provider refused.
+var errVoiceMessageUnheard = errors.New("agent: the voice message cannot be transcribed")
+
+// voiceMessageWords is what was heard in a voice message, and what it cost.
+type voiceMessageWords struct {
+	text      string
+	modelName string
+	usage     llm.Usage
+}
+
+// hearVoiceMessage transcribes a voice message's recording with the voice
+// settings' model, with the names of the chat's people to spell.
+func (self *Agent) hearVoiceMessage(ctx context.Context, message *models.ChatMessage, chat *models.Chat) (*voiceMessageWords, error) {
 	modelName := self.voiceMessageModelName()
 	selection, err := self.settings.Registry.TranscribingFor(modelName, false, false)
 	if err != nil {
 		log.Warningf("voice message %q has no words, %q cannot transcribe: %s", message.ID, modelName, err)
-		return self.finishVoiceMessage(ctx, message, models.VoiceTranscriptFailed, "", nil)
+		return nil, errVoiceMessageUnheard
 	}
 	recording := message.Attachments[0]
 	content, err := self.settings.Storage.GetFile(ctx, recording.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	names := make([]string, 0, len(chat.Members))
 	for _, member := range chat.ActiveMembers() {
@@ -161,15 +221,74 @@ func (self *Agent) TranscribeVoiceMessage(ctx context.Context, messageId string)
 		// being down) would be refused again.
 		if errors.As(err, &apiError) && apiError.Status >= 400 && apiError.Status < 500 && apiError.Status != 429 && apiError.Status != 408 {
 			log.Warningf("voice message %q has no words, the provider refused it: %s", message.ID, err)
-			return self.finishVoiceMessage(ctx, message, models.VoiceTranscriptFailed, "", nil)
+			return nil, errVoiceMessageUnheard
 		}
-		return err
+		return nil, err
 	}
-	// What was heard is paid for whether or not the message is still there to
-	// show it.
-	return self.finishVoiceMessage(ctx, message, models.VoiceTranscriptDone, strings.TrimSpace(response.TranscriptText), func(tx db.Transaction) error {
-		return RecordUsageIn(tx, sender.ID, "", modelName, "voice", response.TranscriptionUsage.Usage)
-	})
+	return &voiceMessageWords{text: strings.TrimSpace(response.TranscriptText), modelName: modelName, usage: response.TranscriptionUsage.Usage}, nil
+}
+
+// ErrVoiceMessageNotPayable is a member asking for a voice message's words
+// whose own agent cannot pay for them.
+var ErrVoiceMessageNotPayable = errors.New("agent: your agent cannot transcribe voice messages now: voice is off on this server, or your agent is off or over its budget")
+
+// TranscribeVoiceMessageFor writes the words of a voice message that has
+// none (they were off for its sender, or failed), as a member of the chat
+// asked, whose agent pays. The words are the message's, for every member.
+// Nothing is kept when it fails: the message is as it was, to ask again.
+func (self *Agent) TranscribeVoiceMessageFor(ctx context.Context, messageId string, asker *models.User) (*models.ChatMessage, error) {
+	var message *models.ChatMessage
+	var chat *models.Chat
+	var author *models.User
+	var payer *models.Agent
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		if message, err = tx.GetChatMessage(messageId); err != nil || message == nil {
+			return err
+		}
+		if chat, err = tx.GetChat(message.ChatID); err != nil {
+			return err
+		}
+		if message.AuthorUserID != "" {
+			users, err := tx.GetUsersByID([]string{message.AuthorUserID})
+			if err != nil {
+				return err
+			}
+			author = users[message.AuthorUserID]
+		}
+		if payer, err = tx.GetAgentByUser(asker.ID); err != nil {
+			return err
+		}
+		if self.VoiceMessageTranscriptState(tx, payer, asker) != models.VoiceTranscriptWaiting {
+			return ErrVoiceMessageNotPayable
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if message == nil || chat == nil || !message.IsVoiceMessage || len(message.Attachments) == 0 {
+		return nil, db.ErrNotFound
+	}
+	words, err := self.hearVoiceMessage(ctx, message, chat)
+	if err != nil {
+		return nil, err
+	}
+	completionContext, cancelCompletion := context.WithTimeout(context.WithoutCancel(ctx), jobCompletionTimeout)
+	defer cancelCompletion()
+	var written *models.ChatMessage
+	if err := self.settings.Database.TransactionContext(completionContext, func(tx db.Transaction) (err error) {
+		if written, err = tx.WriteVoiceMessageWords(message.ID, words.text); err != nil || written == nil {
+			return err
+		}
+		return RecordUsageIn(tx, payer.ID, "", words.modelName, "voice", words.usage)
+	}); err != nil {
+		return nil, err
+	}
+	if written == nil {
+		// Somebody else's words got there first, or it was deleted.
+		return message, nil
+	}
+	self.publishEditedVoiceMessage(written, chat, author)
+	return written, nil
 }
 
 // finishVoiceMessage writes how a waiting message ended and tells the members,

@@ -6452,6 +6452,7 @@ export const ja: Catalog = {
   'chat.voiceMessagePlay': 'ボイスメッセージを再生',
   'chat.voiceMessagePause': 'ボイスメッセージを一時停止',
   'chat.voiceMessageSeek': 'ボイスメッセージの再生位置',
+  'chat.transcribe': '文字起こし',
   'chat.transcribing': '文字起こし中…',
   'chat.transcriptFailed': '文字起こしできませんでした',
   'chat.deleteTitle': 'このメッセージを削除しますか？',

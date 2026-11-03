@@ -40,6 +40,19 @@ func (self *transaction) FinishVoiceMessageTranscript(messageId, transcriptState
 	return self.GetChatMessage(messageId)
 }
 
+func (self *transaction) WriteVoiceMessageWords(messageId, transcriptText string) (*models.ChatMessage, error) {
+	result := self.tx.Model(&chatMessageModel{}).
+		Where(`"id" = ? AND "transcript_state" IN ? AND "deleted_at" IS NULL`, messageId, []string{models.VoiceTranscriptOff, models.VoiceTranscriptFailed}).
+		Updates(map[string]any{"transcript_state": models.VoiceTranscriptDone, "transcript_text": truncateRunes(transcriptText, 20000)})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return self.GetChatMessage(messageId)
+}
+
 func (self *transaction) ListWaitingVoiceMessageIDs(retryAfter time.Duration, limit int) ([]string, error) {
 	var messageIds []string
 	if err := self.tx.Model(&chatMessageModel{}).

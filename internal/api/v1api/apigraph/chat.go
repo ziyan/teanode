@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -67,6 +68,11 @@ type ChatMutation interface {
 	// is an admin of. The others are told, and see that it was deleted.
 	DeleteChatMessage(ctx context.Context, arguments DeleteChatMessageArguments) (bool, error)
 
+	// Write the words of a voice message that has none (its sender's agent
+	// could not pay for them, or they failed), paid by the caller's agent.
+	// The words are the message's, shown to every member, who are told.
+	TranscribeChatVoiceMessage(ctx context.Context, arguments TranscribeChatVoiceMessageArguments) (*models.AgentMessage, error)
+
 	// Say the caller has read a chat through a message. The mark moves
 	// forward and never back; it answers whether it moved. The others are
 	// told.
@@ -131,6 +137,11 @@ type RemoveChatMemberArguments struct {
 // LeaveChatArguments name the chat by the caller's conversation.
 type LeaveChatArguments struct {
 	ConversationID string `json:"conversationId"`
+}
+
+// TranscribeChatVoiceMessageArguments name the voice message.
+type TranscribeChatVoiceMessageArguments struct {
+	MessageID string `json:"messageId"`
 }
 
 // EditChatMessageArguments name the message and what it should say.
@@ -684,11 +695,19 @@ func (self *graph) postChatMessage(ctx context.Context, session *chatSession, sa
 	}
 	if saying.isVoiceMessage {
 		message.IsVoiceMessage = true
-		// Whether anyone pays for the words is settled now, so that a client
-		// draws "transcribing" only for a message that will get them.
+		// Every voice message gets its words, for the people and the agents
+		// who read the chat, paid by the sender's agent or else another
+		// member's. Whether anyone can is settled now, so that a client draws
+		// "transcribing" only for a message that will get them.
 		message.TranscriptState = models.VoiceTranscriptOff
 		if worker := self.agentWorker(); worker != nil {
-			message.TranscriptState = worker.VoiceMessageTranscriptState(tx, session.Agent, session.User)
+			payer, err := worker.VoiceMessagePayer(tx, session.Chat, session.User.ID)
+			if err != nil {
+				return nil, err
+			}
+			if payer != nil {
+				message.TranscriptState = models.VoiceTranscriptWaiting
+			}
 		}
 	}
 	for _, attachment := range attachments {
@@ -971,6 +990,40 @@ func (self *graph) EditChatMessage(ctx context.Context, arguments EditChatMessag
 		return agent.Event{Kind: agent.EventEdited, MessageID: shown.ID, Message: copyForMember(shown, member)}
 	})
 	return shown, nil
+}
+
+func (self *graph) TranscribeChatVoiceMessage(ctx context.Context, arguments TranscribeChatVoiceMessageArguments) (*models.AgentMessage, error) {
+	session, message, err := self.requireChatMessage(ctx, arguments.MessageID)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	if session.Member.IsRemoved {
+		return nil, fmt.Errorf("%w: you are no longer in this chat", api.ErrInvalidArguments)
+	}
+	if message.DeletedAt != nil || !message.IsVoiceMessage {
+		return nil, fmt.Errorf("%w: that is not a voice message", api.ErrInvalidArguments)
+	}
+	switch message.TranscriptState {
+	case models.VoiceTranscriptDone:
+		return self.chatMessageFor(tx, message, nil, session.Conversation.ID, session.User.ID)
+	case models.VoiceTranscriptWaiting:
+		return nil, fmt.Errorf("%w: its words are being written already", api.ErrInvalidArguments)
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, fmt.Errorf("%w: voice messages cannot be transcribed on this server: its agent is off", api.ErrInvalidArguments)
+	}
+	// Heard outside this transaction: it waits on the provider, and what it
+	// writes is the worker's own to commit.
+	written, err := worker.TranscribeVoiceMessageFor(ctx, message.ID, session.User)
+	if errors.Is(err, agent.ErrVoiceMessageNotPayable) {
+		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, strings.TrimPrefix(err.Error(), "agent: "))
+	}
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return self.chatMessageFor(tx, written, nil, session.Conversation.ID, session.User.ID)
 }
 
 func (self *graph) DeleteChatMessage(ctx context.Context, arguments DeleteChatMessageArguments) (bool, error) {
