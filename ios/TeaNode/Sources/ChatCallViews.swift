@@ -700,8 +700,9 @@ struct ChatCallPeopleSheet: View {
                         } label: {
                             HStack(spacing: 12) {
                                 AvatarView(name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex ?? 0, size: 36)
+                                // The text color, not the button's: .primary takes the tint here.
                                 Text(person.displayName)
-                                    .foregroundStyle(.primary)
+                                    .foregroundStyle(Color.primary)
                                 Spacer(minLength: 0)
                                 if chosen.contains(person.userId) {
                                     Image(systemName: "checkmark")
