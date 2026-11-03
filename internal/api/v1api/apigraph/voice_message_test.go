@@ -240,8 +240,27 @@ func TestAVoiceMessageGetsItsWordsWhenTheSendersAgentCanPay(t *testing.T) {
 
 	// Alice's agent does not exist, so nobody pays for hers.
 	world.sendVoiceMessage(t, world.alice, aliceChat, world.recording(t, world.alice, 4000))
-	if message := world.read(t, world.alice, aliceChat)[1]; message["transcriptState"] != models.VoiceTranscriptOff {
-		t.Errorf("a sender with no agent starts %v", message["transcriptState"])
+	offMessage := world.read(t, world.alice, aliceChat)[1]
+	if offMessage["transcriptState"] != models.VoiceTranscriptOff {
+		t.Errorf("a sender with no agent starts %v", offMessage["transcriptState"])
+	}
+
+	// Asking for its words: Alice has no agent to pay; Frank's pays, and the
+	// words are the message's, which Alice reads too.
+	transcribe := fmt.Sprintf(`mutation { TranscribeChatVoiceMessage(messageId: %q) { id transcriptState transcriptText } }`, offMessage["id"])
+	if refusal := world.refused(t, world.alice, transcribe); !strings.Contains(refusal, "your agent cannot transcribe") {
+		t.Errorf("Alice's ask was refused with %q", refusal)
+	}
+	written := world.call(t, world.frank, transcribe)["TranscribeChatVoiceMessage"].(map[string]any)
+	if written["transcriptState"] != models.VoiceTranscriptDone || written["transcriptText"] != "Leaving the bakery now, see you at six" {
+		t.Fatalf("Frank's ask wrote %v", written)
+	}
+	if message := world.read(t, world.alice, aliceChat)[1]; message["transcriptState"] != models.VoiceTranscriptDone || message["transcriptText"] != "Leaving the bakery now, see you at six" {
+		t.Errorf("Alice then reads %v", message)
+	}
+	// A message with words keeps them.
+	if again := world.call(t, world.frank, transcribe)["TranscribeChatVoiceMessage"].(map[string]any); again["transcriptState"] != models.VoiceTranscriptDone {
+		t.Errorf("asked again: %v", again)
 	}
 }
 

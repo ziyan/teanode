@@ -210,7 +210,12 @@ transcription: the model of `agent.voice` (`transcriptionModel`), through its
 provider, with the names of the people in the chat as the prompt. The sender's
 agent pays, as `voice`; with voice off, or the sender's agent off or over its
 budget, the message is posted with `transcript_state` `off` and plays with no
-words. A message is between half a second and two minutes long. A voice message
+words. Any member of the chat can then ask for them
+(`TranscribeChatVoiceMessage`, Transcribe under the bubble, `teanode agent
+conversation transcribe`, the conversation tool's `transcribe`): their own
+agent pays, the words are written at once (or not at all, leaving the message as
+it was), and every member sees them. The same goes for words that failed. A
+message is between half a second and two minutes long. A voice message
 is not a call and starts no agent turn; what an agent reads of one, and how a
 transcript is retried, is in `conversations.md`.
 

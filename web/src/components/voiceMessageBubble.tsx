@@ -45,6 +45,7 @@ export function VoiceMessageBubble({
   waveform,
   transcriptText,
   transcriptState,
+  onTranscribe,
 }: {
   // The address of the recording: signed when the drawer is framed
   // elsewhere, so null until it is.
@@ -54,6 +55,10 @@ export function VoiceMessageBubble({
   transcriptText: string
   // 'waiting', 'done', 'failed', or 'off' and empty for no transcript.
   transcriptState: string
+  // Asks for the words of a message that has none, paid by the reader's
+  // agent; left out where that cannot be asked. The words come back as an
+  // edit of the message, to every member.
+  onTranscribe?: () => Promise<void>
 }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -61,6 +66,19 @@ export function VoiceMessageBubble({
   const [isPlaying, setPlaying] = useState(false)
   const [positionSeconds, setPositionSeconds] = useState(0)
   const [loadedSeconds, setLoadedSeconds] = useState(0)
+  const [isTranscribing, setTranscribing] = useState(false)
+  const canTranscribe = onTranscribe !== undefined && ['off', 'failed', ''].includes(transcriptState)
+  const transcribe = async () => {
+    if (!onTranscribe) return
+    setTranscribing(true)
+    try {
+      await onTranscribe()
+    } catch (caught) {
+      toast.failure(caught, t('chat.transcriptFailed'))
+    } finally {
+      setTranscribing(false)
+    }
+  }
   const levels = waveformLevels(waveform)
   const totalSeconds = durationMS > 0 ? durationMS / 1000 : loadedSeconds
   const progress = totalSeconds > 0 ? Math.min(1, positionSeconds / totalSeconds) : 0
@@ -162,7 +180,7 @@ export function VoiceMessageBubble({
         />
       </div>
       <div className="voice-bubble-transcript" aria-live="polite">
-        {transcriptState === 'waiting'
+        {transcriptState === 'waiting' || isTranscribing
           ? t('chat.transcribing')
           : transcriptState === 'failed'
             ? t('chat.transcriptFailed')
@@ -170,6 +188,11 @@ export function VoiceMessageBubble({
               ? transcriptText
               : null}
       </div>
+      {canTranscribe && !isTranscribing ? (
+        <button type="button" className="voice-bubble-transcribe" onClick={() => void transcribe()}>
+          {t('chat.transcribe')}
+        </button>
+      ) : null}
     </div>
   )
 }

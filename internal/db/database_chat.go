@@ -124,6 +124,11 @@ type ChatOperation interface {
 	// edited. nil when it is no longer waiting.
 	FinishVoiceMessageTranscript(messageId, transcriptState, transcriptText string) (*models.ChatMessage, error)
 
+	// WriteVoiceMessageWords gives a voice message that has no words (they
+	// were off, or failed) the words a member asked for; nil when it has
+	// words, is waiting for them, or is gone.
+	WriteVoiceMessageWords(messageId, transcriptText string) (*models.ChatMessage, error)
+
 	// ListWaitingVoiceMessageIDs are the voice messages still waiting for
 	// their words, oldest first, that nobody claimed within retryAfter.
 	ListWaitingVoiceMessageIDs(retryAfter time.Duration, limit int) ([]string, error)

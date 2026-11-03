@@ -353,7 +353,11 @@ struct VoiceMessageBubble: View {
     let line: TranscriptLine
     let recording: AgentAttachment
     let isOthers: Bool
+    /// Asks for the words of a message that has none (they were off for its
+    /// sender, or failed), paid by the person's agent.
+    var onTranscribe: (() async -> Void)? = nil
     @Environment(AppModel.self) private var app
+    @State private var isTranscribing = false
     @ScaledMetric(relativeTo: .body) private var scaledButtonDiameterPoints: CGFloat = 36
     @ScaledMetric(relativeTo: .body) private var scaledWaveformHeightPoints: CGFloat = 28
     /// The button and the waveform grow with the text only so far: at the
@@ -379,11 +383,14 @@ struct VoiceMessageBubble: View {
     /// The words under the bubble: a note while they are made, and nothing
     /// when the server makes none.
     private var transcriptText: Text? {
-        if line.transcriptState == "waiting" { return Text("Transcribing…") }
+        if line.transcriptState == "waiting" || isTranscribing { return Text("Transcribing…") }
         if line.transcriptState == "failed" { return Text("Could not transcribe") }
         if line.transcriptState == "done", !line.transcriptText.isEmpty { return Text(verbatim: line.transcriptText) }
         return nil
     }
+
+    /// Whether the message has no words to show and could have some.
+    private var canTranscribe: Bool { ["off", "failed", ""].contains(line.transcriptState) && line.messageId != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -422,6 +429,19 @@ struct VoiceMessageBubble: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: 260, alignment: .leading)
+            }
+            if let onTranscribe, canTranscribe, !isTranscribing {
+                Button("Transcribe") {
+                    isTranscribing = true
+                    Task {
+                        await onTranscribe()
+                        isTranscribing = false
+                    }
+                }
+                .font(.footnote)
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
             }
             if player.failedAttachmentId == recording.id {
                 Text("Could not play this voice message")

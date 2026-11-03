@@ -24725,3 +24725,10 @@ a.journal-year-month:hover {
 .voice-bubble-transcript:empty {
   display: none;
 }
+
+button.voice-bubble-transcribe {
+  align-self: flex-start;
+  min-height: 28px;
+  padding: 2px var(--space-3);
+  font-size: var(--text-label);
+}

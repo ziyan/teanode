@@ -729,7 +729,9 @@ struct ConversationItemView: View {
                         line: line, author: author, isRunStart: line.beginsRun(after: previous?.line),
                         readers: line.messageId.flatMap { readers[$0] } ?? []
                     ) {
-                        PersonBubble(line: line, mentions: model.mentionWords(of: line)) { model.readingText = line.text }
+                        PersonBubble(line: line, mentions: model.mentionWords(of: line), onTranscribe: { await model.transcribe(line) }) {
+                            model.readingText = line.text
+                        }
                             .onLongPressGesture(minimumDuration: 0.35) {
                                 if line.messageId != nil { MessageActionsPresenter.present(line: line, model: model, app: app) }
                             }
@@ -1261,6 +1263,9 @@ struct PersonBubble: View {
     let line: TranscriptLine
     /// The words a message of a chat mentions people by, marked in it.
     var mentions: [ChatMentionWord] = []
+    /// Asks for the words of a voice message that has none, where that can
+    /// be asked.
+    var onTranscribe: (() async -> Void)? = nil
     /// Opens the whole of a message too long to show in the bubble.
     var onShowAll: () -> Void = {}
 
@@ -1333,7 +1338,7 @@ struct PersonBubble: View {
                     .foregroundStyle(.secondary)
             }
             if let recording = line.voiceAttachment, recording.isRemoved != true {
-                VoiceMessageBubble(line: line, recording: recording, isOthers: isOthers)
+                VoiceMessageBubble(line: line, recording: recording, isOthers: isOthers, onTranscribe: onTranscribe)
             } else {
                 ForEach(line.attachments, id: \.id) { attachment in
                     AttachmentView(attachment: attachment)

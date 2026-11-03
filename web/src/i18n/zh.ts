@@ -6192,6 +6192,7 @@ export const zh: Catalog = {
   'chat.voiceMessagePlay': '播放语音消息',
   'chat.voiceMessagePause': '暂停语音消息',
   'chat.voiceMessageSeek': '语音消息的播放位置',
+  'chat.transcribe': '转写',
   'chat.transcribing': '正在转写…',
   'chat.transcriptFailed': '无法转写',
   'chat.deleteTitle': '删除这条消息？',

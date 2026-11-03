@@ -892,6 +892,15 @@ final class VoiceMessageTests: XCTestCase {
         XCTAssertNil(sent["voiceMessageAttachmentId"])
     }
 
+    func testAVoiceMessageIsTranscribedByName() async throws {
+        let (connection, fake) = connection(
+            answering: #"{"data":{"TranscribeChatVoiceMessage":{"id":"m-1","transcriptState":"done","transcriptText":"See you at six"}}}"#)
+        try await connection.transcribeChatVoiceMessage("m-1")
+        let sent = try sentVariables(try XCTUnwrap(fake.sent.last))
+        XCTAssertEqual(sent["messageId"], .string("m-1"))
+        XCTAssertTrue(Documents.transcribeChatVoiceMessage.contains("TranscribeChatVoiceMessage(messageId: $messageId)"))
+    }
+
     func testTheVoiceAvailabilityTellsIfVoiceMessagesAreOffered() async throws {
         let (connection, _) = connection(
             answering: #"{"data":{"ReadAgentVoice":{"isVoiceAvailable":true,"sampleRate":24000,"isVoiceMessageAvailable":true}}}"#)

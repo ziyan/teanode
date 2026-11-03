@@ -768,6 +768,9 @@ extension Documents {
     public static let deleteChatMessage = """
         mutation ($messageId: String!) { DeleteChatMessage(messageId: $messageId) }
         """
+    public static let transcribeChatVoiceMessage = """
+        mutation ($messageId: String!) { TranscribeChatVoiceMessage(messageId: $messageId) { id transcriptState transcriptText } }
+        """
     public static let markChatRead = """
         mutation ($conversationId: String!, $throughMessageId: String!) {
           MarkChatRead(conversationId: $conversationId, throughMessageId: $throughMessageId)
@@ -883,6 +886,13 @@ extension Connection {
         struct Answer: Decodable, Sendable { let EditChatMessage: JSONValue? }
         _ = try await execute(
             Documents.editChatMessage, variables: ["messageId": .string(messageId), "message": .string(message)], as: Answer.self)
+    }
+
+    /// Writes the words of a voice message that has none, paid by the
+    /// person's agent; everybody in the chat sees them, told as an edit.
+    public func transcribeChatVoiceMessage(_ messageId: String) async throws {
+        struct Answer: Decodable, Sendable { let TranscribeChatVoiceMessage: JSONValue? }
+        _ = try await execute(Documents.transcribeChatVoiceMessage, variables: ["messageId": .string(messageId)], as: Answer.self)
     }
 
     /// Takes a message back: the person's own, or any in a group chat they
