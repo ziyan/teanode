@@ -153,10 +153,11 @@ const (
 	MaximumWalkSpeedMetersPerSecond = 2.2
 	MaximumCarSpeedMetersPerSecond  = 75
 
-	// MinimumTripDuration is the shortest trip. Visits less than this apart
-	// are neighboring places the phone moved between at once (one visit
-	// ends the second the next begins), and the distance between them over
-	// that time says nothing of how the person went.
+	// MinimumTripDuration is the shortest trip. Over less, the distance
+	// between two visits says nothing of how the person went. Visits less
+	// than this apart are neighboring places the phone moved between at
+	// once, or, for places farther apart, visits iOS ended and began at the
+	// same moment, whose trip is looked for around it (findTripTimes).
 	MinimumTripDuration = time.Minute
 
 	// MinimumPlaneDistanceMeters and MinimumPlaneSpeedMetersPerSecond are the
@@ -181,6 +182,31 @@ const (
 	// kept only when that stretch was a flight, the one way of travel a phone
 	// is often silent through.
 	MaximumPositionGap = 30 * time.Minute
+
+	// TripSearchDuration is how far before the moment two visits meet the
+	// trip between them is looked for, when the visits leave no time for
+	// it. iOS can tell of leaving a place late, or not at all, and
+	// the visit is then ended when the next one begins; the trip happened
+	// in the last part of the one visit or the first part of the next.
+	TripSearchDuration = 2 * time.Hour
+
+	// MaximumTripOffset is how far from the moment two visits meet a trip
+	// looked for between them may lie, and how long it may go on after that
+	// moment. Further off, the phone saw the person move about inside one
+	// of the visits (a walk back out of the place they just reached, say).
+	// It also bounds how old a position at a place may be to say when they
+	// left it or reached it.
+	MaximumTripOffset = 10 * time.Minute
+
+	// MaximumStopOnTheWay is the longest the motion activity can say the
+	// person was still, or say nothing, in the middle of a trip looked for
+	// that way: a traffic light or a door does not end it.
+	MaximumStopOnTheWay = 3 * time.Minute
+
+	// PlaceRadiusMeters is how close a position must be to a visit's place
+	// to put the person there, when a trip is looked for in the positions.
+	// Only positions at least this accurate are used for it.
+	PlaceRadiusMeters = 100
 )
 
 // MotionActivity is what the phone said the person was doing from a moment on. It
@@ -214,7 +240,8 @@ type Leg struct {
 }
 
 // Trip is the travel between the departure of one visit and the arrival of the
-// next. Its legs follow one another and cover it, and their distances add up
+// next, or the times findTripTimes found when the visits leave no time for
+// it. Its legs follow one another and cover it, and their distances add up
 // to the trip's.
 type Trip struct {
 	FromVisitID, ToVisitID string
@@ -250,16 +277,199 @@ func BuildTrips(visits []Visit, positions []Position, activities []MotionActivit
 	var trips []Trip
 	for index := 0; index+1 < len(visits); index++ {
 		from, to := visits[index], visits[index+1]
-		if from.DepartedAt == nil || to.ArrivedAt == nil || !to.ArrivedAt.After(*from.DepartedAt) ||
-			to.ArrivedAt.Sub(*from.DepartedAt) > MaximumTripDuration {
+		if from.DepartedAt == nil || to.ArrivedAt == nil {
 			continue
 		}
-		trip, isTrip := buildTrip(from, to, positions, activities)
+		startedAt, endedAt := *from.DepartedAt, *to.ArrivedAt
+		if endedAt.Sub(startedAt) < MinimumTripDuration {
+			var notBefore time.Time
+			if count := len(trips); count > 0 {
+				notBefore = trips[count-1].EndedAt
+			}
+			var isFound bool
+			if startedAt, endedAt, isFound = findTripTimes(from, to, positions, activities, notBefore); !isFound {
+				continue
+			}
+		}
+		if endedAt.Sub(startedAt) > MaximumTripDuration {
+			continue
+		}
+		trip, isTrip := buildTrip(from, to, startedAt, endedAt, positions, activities)
 		if isTrip {
 			trips = append(trips, trip)
 		}
 	}
 	return trips
+}
+
+// findTripTimes finds when the person left one place and reached the next
+// when the visits leave no time between them: one ends as the next begins,
+// or the next begins first. The motion activity says it best, the moving
+// stretch around the moment the visits meet; without it, the positions
+// measured away from both places, between the last one at the first place
+// and the first one at the second. The trip starts no earlier than the first
+// visit's arrival or notBefore (the end of the trip before), and no earlier
+// than TripSearchDuration before the moment the visits meet; it ends no later
+// than the second visit's departure, and no later than MaximumTripOffset
+// after that moment. Places closer than a trip's shortest distance are
+// neighbors the phone moved between at once, and are not looked at.
+func findTripTimes(from, to Visit, positions []Position, activities []MotionActivity, notBefore time.Time) (time.Time, time.Time, bool) {
+	if place.DistanceMeters(from.LatitudeDegrees, from.LongitudeDegrees, to.LatitudeDegrees, to.LongitudeDegrees) < MinimumTripDistanceMeters {
+		return time.Time{}, time.Time{}, false
+	}
+	meetAt := *from.DepartedAt
+	earliest := meetAt.Add(-TripSearchDuration)
+	if from.ArrivedAt != nil && from.ArrivedAt.After(earliest) {
+		earliest = *from.ArrivedAt
+	}
+	if notBefore.After(earliest) {
+		earliest = notBefore
+	}
+	latest := to.ArrivedAt.Add(TripSearchDuration)
+	if to.DepartedAt != nil && to.DepartedAt.Before(latest) {
+		latest = *to.DepartedAt
+	}
+	if endBy := meetAt.Add(MaximumTripOffset); endBy.Before(latest) {
+		latest = endBy
+	}
+	if !earliest.Before(latest) {
+		return time.Time{}, time.Time{}, false
+	}
+	startedAt, endedAt, isFound := motionTripTimes(earliest, latest, meetAt, activities)
+	if !isFound {
+		startedAt, endedAt, isFound = positionTripTimes(from, to, earliest, latest, meetAt, positions)
+	}
+	if !isFound {
+		return time.Time{}, time.Time{}, false
+	}
+	// The trip is shown before the visit it ends at, so it starts no later
+	// than that visit's arrival, though still not before the trip before.
+	if startedAt.After(*to.ArrivedAt) {
+		startedAt = *to.ArrivedAt
+		if notBefore.After(startedAt) {
+			startedAt = notBefore
+		}
+	}
+	if !endedAt.After(startedAt) {
+		return time.Time{}, time.Time{}, false
+	}
+	return startedAt, endedAt, true
+}
+
+// motionTripTimes is the stretch, within earliest and latest, that the
+// motion activity names a way of travel for, closest to meetAt and no more
+// than MaximumTripOffset from it. Moving stretches with a stop no longer
+// than MaximumStopOnTheWay between them are one stretch; the ways may
+// differ, as a walk to the car and the drive do. An activity lasts until the
+// next one starts. The last one the phone sent lasts until meetAt at most:
+// what came after it is not known yet.
+func motionTripTimes(earliest, latest, meetAt time.Time, activities []MotionActivity) (time.Time, time.Time, bool) {
+	type stretch struct{ startedAt, endedAt time.Time }
+	var stretches []stretch
+	for index, activity := range activities {
+		if _, isMoving := TravelModeOfActivityKind(activity.ActivityKind); !isMoving {
+			continue
+		}
+		startedAt, endedAt := activity.StartedAt, meetAt
+		if index+1 < len(activities) {
+			endedAt = activities[index+1].StartedAt
+		}
+		if startedAt.Before(earliest) {
+			startedAt = earliest
+		}
+		if endedAt.After(latest) {
+			endedAt = latest
+		}
+		if !endedAt.After(startedAt) {
+			continue
+		}
+		if count := len(stretches); count > 0 && startedAt.Sub(stretches[count-1].endedAt) <= MaximumStopOnTheWay {
+			stretches[count-1].endedAt = endedAt
+			continue
+		}
+		stretches = append(stretches, stretch{startedAt: startedAt, endedAt: endedAt})
+	}
+	closestIndex := -1
+	var closestAway time.Duration
+	for index, each := range stretches {
+		if each.endedAt.Sub(each.startedAt) < MinimumTripDuration {
+			continue
+		}
+		var away time.Duration
+		switch {
+		case meetAt.Before(each.startedAt):
+			away = each.startedAt.Sub(meetAt)
+		case meetAt.After(each.endedAt):
+			away = meetAt.Sub(each.endedAt)
+		}
+		if away <= MaximumTripOffset && (closestIndex < 0 || away < closestAway) {
+			closestIndex, closestAway = index, away
+		}
+	}
+	if closestIndex < 0 {
+		return time.Time{}, time.Time{}, false
+	}
+	return stretches[closestIndex].startedAt, stretches[closestIndex].endedAt, true
+}
+
+// positionTripTimes looks for the trip in the positions: the accurate one
+// measured away from both places closest to meetAt, and no more than
+// MaximumTripOffset from it, shows the person on the way. The trip starts at
+// the last moment they were known to be at the first place before it (a
+// position there, or the visit's departure) and ends at the first moment
+// they were known to be at the second after it, each no more than
+// MaximumTripOffset from that position: an older one says little of when
+// they set off, and a slow trip guessed from it would be called a walk.
+func positionTripTimes(from, to Visit, earliest, latest, meetAt time.Time, positions []Position) (time.Time, time.Time, bool) {
+	isAt := func(position Position, visit Visit) bool {
+		return place.DistanceMeters(position.LatitudeDegrees, position.LongitudeDegrees, visit.LatitudeDegrees, visit.LongitudeDegrees) <= PlaceRadiusMeters
+	}
+	var accurate []Position
+	for _, position := range positions {
+		if position.AccuracyMeters <= PlaceRadiusMeters && position.MeasuredAt.After(earliest) && position.MeasuredAt.Before(latest) {
+			accurate = append(accurate, position)
+		}
+	}
+	wayIndex := -1
+	for index, position := range accurate {
+		if isAt(position, from) || isAt(position, to) || position.MeasuredAt.Sub(meetAt).Abs() > MaximumTripOffset {
+			continue
+		}
+		if wayIndex < 0 || position.MeasuredAt.Sub(meetAt).Abs() < accurate[wayIndex].MeasuredAt.Sub(meetAt).Abs() {
+			wayIndex = index
+		}
+	}
+	if wayIndex < 0 {
+		return time.Time{}, time.Time{}, false
+	}
+	onTheWayAt := accurate[wayIndex].MeasuredAt
+	var startedAt, endedAt time.Time
+	if from.DepartedAt.Before(onTheWayAt) && from.DepartedAt.After(earliest) && onTheWayAt.Sub(*from.DepartedAt) <= MaximumTripOffset {
+		startedAt = *from.DepartedAt
+	}
+	for index := wayIndex - 1; index >= 0 && onTheWayAt.Sub(accurate[index].MeasuredAt) <= MaximumTripOffset; index-- {
+		if isAt(accurate[index], from) {
+			if accurate[index].MeasuredAt.After(startedAt) {
+				startedAt = accurate[index].MeasuredAt
+			}
+			break
+		}
+	}
+	if to.ArrivedAt.After(onTheWayAt) && to.ArrivedAt.Before(latest) && to.ArrivedAt.Sub(onTheWayAt) <= MaximumTripOffset {
+		endedAt = *to.ArrivedAt
+	}
+	for index := wayIndex + 1; index < len(accurate) && accurate[index].MeasuredAt.Sub(onTheWayAt) <= MaximumTripOffset; index++ {
+		if isAt(accurate[index], to) {
+			if endedAt.IsZero() || accurate[index].MeasuredAt.Before(endedAt) {
+				endedAt = accurate[index].MeasuredAt
+			}
+			break
+		}
+	}
+	if startedAt.IsZero() || endedAt.IsZero() {
+		return time.Time{}, time.Time{}, false
+	}
+	return startedAt, endedAt, true
 }
 
 // visitOrderTime is the time a visit is ordered by: its arrival, or its
@@ -274,12 +484,14 @@ func visitOrderTime(visit Visit) time.Time {
 	return time.Time{}
 }
 
-func buildTrip(from, to Visit, positions []Position, activities []MotionActivity) (Trip, bool) {
-	startedAt, endedAt := *from.DepartedAt, *to.ArrivedAt
+// buildTrip builds the trip from one visit to the next over the time
+// given: the first visit's departure and the second's arrival, or the times
+// findTripTimes found.
+func buildTrip(from, to Visit, startedAt, endedAt time.Time, positions []Position, activities []MotionActivity) (Trip, bool) {
 	if endedAt.Sub(startedAt) < MinimumTripDuration {
 		return Trip{}, false
 	}
-	path := buildPath(from, to, positions)
+	path := buildPath(from, to, startedAt, endedAt, positions)
 	totalMeters := path[len(path)-1].cumulativeMeters
 	if totalMeters < MinimumTripDistanceMeters {
 		return Trip{}, false
@@ -350,8 +562,7 @@ func isPlaneStretch(meters, seconds float64) bool {
 
 // buildPath is the first visit's coordinates, the positions measured during the
 // trip that are believable, and the second visit's coordinates.
-func buildPath(from, to Visit, positions []Position) []pathPoint {
-	startedAt, endedAt := *from.DepartedAt, *to.ArrivedAt
+func buildPath(from, to Visit, startedAt, endedAt time.Time, positions []Position) []pathPoint {
 	var inside []Position
 	hasAccuratePosition := false
 	for _, position := range positions {

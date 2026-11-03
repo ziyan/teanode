@@ -379,3 +379,212 @@ func TestFastTrainReportedAsDrivingIsNotPlane(t *testing.T) {
 		t.Fatalf("legs %+v", trip.Legs)
 	}
 }
+
+// touchingVisits are a visit that iOS ended the moment the next began, at the
+// given minutes, and the next the given meters north of it.
+func touchingVisits(meetMinutes, meters float64) []Visit {
+	return []Visit{
+		{VisitID: "home", ArrivedAt: pointer(at(-600)), DepartedAt: pointer(at(meetMinutes)), LatitudeDegrees: northOf(0), LongitudeDegrees: 20},
+		{VisitID: "park", ArrivedAt: pointer(at(meetMinutes)), DepartedAt: pointer(at(meetMinutes + 300)), LatitudeDegrees: northOf(meters), LongitudeDegrees: 20},
+	}
+}
+
+// iOS told of leaving home only when it told of reaching the park, so the
+// visits leave no time between them; the walk is found in the motion
+// activity around that moment.
+func TestTripFoundInMotionWhenVisitsLeaveNoTime(t *testing.T) {
+	activities := []MotionActivity{
+		{StartedAt: at(-30), ActivityKind: ActivityKindStationary, ActivityConfidence: ActivityConfidenceHigh},
+		{StartedAt: at(0), ActivityKind: ActivityKindWalking, ActivityConfidence: ActivityConfidenceHigh},
+		{StartedAt: at(7), ActivityKind: ActivityKindStationary, ActivityConfidence: ActivityConfidenceHigh},
+	}
+	trip := onlyTrip(t, BuildTrips(touchingVisits(8, 450), nil, activities))
+	if trip.FromVisitID != "home" || trip.ToVisitID != "park" || !trip.StartedAt.Equal(at(0)) || !trip.EndedAt.Equal(at(7)) {
+		t.Fatalf("trip: %+v", trip)
+	}
+	if len(trip.Legs) != 1 || trip.Legs[0].DetectedTravelMode != TravelModeWalk || trip.Legs[0].DetectionSource != DetectionSourceMotion {
+		t.Fatalf("legs: %+v", trip.Legs)
+	}
+}
+
+// A stop at a crossing between a walk and a drive does not end the trip, and
+// the drive's way is kept beside the walk's.
+func TestStopOnTheWayStaysInTheTrip(t *testing.T) {
+	activities := []MotionActivity{
+		{StartedAt: at(0), ActivityKind: ActivityKindWalking, ActivityConfidence: ActivityConfidenceHigh},
+		{StartedAt: at(3), ActivityKind: ActivityKindStationary, ActivityConfidence: ActivityConfidenceMedium},
+		{StartedAt: at(5), ActivityKind: ActivityKindAutomotive, ActivityConfidence: ActivityConfidenceHigh},
+		{StartedAt: at(20), ActivityKind: ActivityKindStationary, ActivityConfidence: ActivityConfidenceHigh},
+	}
+	trip := onlyTrip(t, BuildTrips(touchingVisits(22, 12000), nil, activities))
+	if !trip.StartedAt.Equal(at(0)) || !trip.EndedAt.Equal(at(20)) {
+		t.Fatalf("trip: %+v", trip)
+	}
+	if len(trip.Legs) != 2 || trip.Legs[0].DetectedTravelMode != TravelModeWalk || trip.Legs[1].DetectedTravelMode != TravelModeCar {
+		t.Fatalf("legs: %+v", trip.Legs)
+	}
+}
+
+// iOS told of leaving the park late, a second before reaching home; the
+// person was seen at the park, then on the way, so the trip runs from the
+// last position at the park to the arrival.
+func TestTripFoundInPositionsWhenTheDepartureWasLate(t *testing.T) {
+	visitList := []Visit{
+		{VisitID: "park", ArrivedAt: pointer(at(-21)), DepartedAt: pointer(at(0)), LatitudeDegrees: northOf(450), LongitudeDegrees: 20},
+		{VisitID: "home", ArrivedAt: pointer(at(1.0 / 60)), LatitudeDegrees: northOf(0), LongitudeDegrees: 20},
+	}
+	positions := []Position{
+		{MeasuredAt: at(-15), LatitudeDegrees: northOf(455), LongitudeDegrees: 20, AccuracyMeters: 3},
+		{MeasuredAt: at(-9), LatitudeDegrees: northOf(445), LongitudeDegrees: 20, AccuracyMeters: 6},
+		{MeasuredAt: at(-1), LatitudeDegrees: northOf(200), LongitudeDegrees: 20, AccuracyMeters: 2},
+	}
+	trip := onlyTrip(t, BuildTrips(visitList, positions, nil))
+	if trip.FromVisitID != "park" || !trip.StartedAt.Equal(at(-9)) || !trip.EndedAt.Equal(at(1.0/60)) {
+		t.Fatalf("trip: %+v", trip)
+	}
+	if len(trip.Legs) != 1 || trip.Legs[0].DetectedTravelMode != TravelModeWalk || trip.Legs[0].DetectionSource != DetectionSourceSpeed {
+		t.Fatalf("legs: %+v", trip.Legs)
+	}
+}
+
+// Moving seen long before the visits meet, or with no position away from
+// both places, says nothing of the trip between them.
+func TestMovingFarFromWhereVisitsMeetIsNoTrip(t *testing.T) {
+	activities := []MotionActivity{
+		{StartedAt: at(0), ActivityKind: ActivityKindWalking, ActivityConfidence: ActivityConfidenceHigh},
+		{StartedAt: at(5), ActivityKind: ActivityKindStationary, ActivityConfidence: ActivityConfidenceHigh},
+	}
+	if trips := BuildTrips(touchingVisits(30, 450), nil, activities); len(trips) != 0 {
+		t.Fatalf("a walk 25 minutes before: %+v", trips)
+	}
+	positions := []Position{
+		{MeasuredAt: at(-20), LatitudeDegrees: northOf(0), LongitudeDegrees: 20, AccuracyMeters: 5},
+		{MeasuredAt: at(40), LatitudeDegrees: northOf(450), LongitudeDegrees: 20, AccuracyMeters: 5},
+	}
+	if trips := BuildTrips(touchingVisits(30, 450), positions, nil); len(trips) != 0 {
+		t.Fatalf("positions only at the places: %+v", trips)
+	}
+}
+
+// Neighboring places the phone moved between at once are not looked at,
+// however the person moved about.
+func TestNeighboringTouchingVisitsMakeNoTrip(t *testing.T) {
+	activities := []MotionActivity{{StartedAt: at(0), ActivityKind: ActivityKindWalking, ActivityConfidence: ActivityConfidenceHigh}}
+	if trips := BuildTrips(touchingVisits(5, 100), nil, activities); len(trips) != 0 {
+		t.Fatalf("100 meters apart: %+v", trips)
+	}
+}
+
+// A trip found this way starts no earlier than the trip before it ended, and
+// no earlier than the first visit's arrival.
+func TestFoundTripStartsAfterTheVisitBegan(t *testing.T) {
+	// The phone says the drive went on until -3, past the arrival home at
+	// -6 where the drive's trip ends; the walk found next is clipped there.
+	visitList := []Visit{
+		{VisitID: "office", ArrivedAt: pointer(at(-60)), DepartedAt: pointer(at(-20)), LatitudeDegrees: northOf(5000), LongitudeDegrees: 20},
+		{VisitID: "home", ArrivedAt: pointer(at(-6)), DepartedAt: pointer(at(5)), LatitudeDegrees: northOf(0), LongitudeDegrees: 20},
+		{VisitID: "park", ArrivedAt: pointer(at(5)), DepartedAt: pointer(at(200)), LatitudeDegrees: northOf(450), LongitudeDegrees: 20},
+	}
+	activities := []MotionActivity{
+		{StartedAt: at(-21), ActivityKind: ActivityKindAutomotive, ActivityConfidence: ActivityConfidenceHigh},
+		{StartedAt: at(-3), ActivityKind: ActivityKindWalking, ActivityConfidence: ActivityConfidenceHigh},
+		{StartedAt: at(4), ActivityKind: ActivityKindStationary, ActivityConfidence: ActivityConfidenceHigh},
+	}
+	trips := BuildTrips(visitList, nil, activities)
+	if len(trips) != 2 {
+		t.Fatalf("got %d trips, want 2: %+v", len(trips), trips)
+	}
+	if trips[1].FromVisitID != "home" || !trips[1].StartedAt.Equal(at(-6)) || !trips[1].EndedAt.Equal(at(4)) {
+		t.Fatalf("the walk: %+v", trips[1])
+	}
+
+	// With no trip before, the first visit's arrival bounds it.
+	trips = BuildTrips(visitList[1:], nil, activities)
+	if trip := onlyTrip(t, trips); !trip.StartedAt.Equal(at(-6)) {
+		t.Fatalf("from the arrival: %+v", trip)
+	}
+}
+
+// A stretch of moving that goes on long after the visits meet (the phone
+// told of stopping only much later) ends ten minutes after the moment.
+func TestFoundTripEndsSoonAfterVisitsMeet(t *testing.T) {
+	activities := []MotionActivity{
+		{StartedAt: at(-2), ActivityKind: ActivityKindWalking, ActivityConfidence: ActivityConfidenceHigh},
+		{StartedAt: at(90), ActivityKind: ActivityKindStationary, ActivityConfidence: ActivityConfidenceHigh},
+	}
+	trip := onlyTrip(t, BuildTrips(touchingVisits(5, 450), nil, activities))
+	if !trip.StartedAt.Equal(at(-2)) || !trip.EndedAt.Equal(at(15)) {
+		t.Fatalf("trip: %+v", trip)
+	}
+}
+
+// When the next visit begins before the first ends, a trip found after that
+// arrival starts at it, so it is not shown after the visit it ends at.
+func TestFoundTripStartsByTheNextArrival(t *testing.T) {
+	visitList := []Visit{
+		{VisitID: "home", ArrivedAt: pointer(at(-600)), DepartedAt: pointer(at(10)), LatitudeDegrees: northOf(0), LongitudeDegrees: 20},
+		{VisitID: "park", ArrivedAt: pointer(at(8)), DepartedAt: pointer(at(300)), LatitudeDegrees: northOf(450), LongitudeDegrees: 20},
+	}
+	activities := []MotionActivity{
+		{StartedAt: at(9), ActivityKind: ActivityKindWalking, ActivityConfidence: ActivityConfidenceHigh},
+		{StartedAt: at(16), ActivityKind: ActivityKindStationary, ActivityConfidence: ActivityConfidenceHigh},
+	}
+	trip := onlyTrip(t, BuildTrips(visitList, nil, activities))
+	if !trip.StartedAt.Equal(at(8)) || !trip.EndedAt.Equal(at(16)) {
+		t.Fatalf("trip: %+v", trip)
+	}
+}
+
+// A position at the first place long before the one on the way says little of
+// when the person set off: no trip is guessed from it.
+func TestOldPositionAtThePlaceStartsNoTrip(t *testing.T) {
+	visitList := []Visit{
+		{VisitID: "office", ArrivedAt: pointer(at(-120)), DepartedAt: pointer(at(0)), LatitudeDegrees: northOf(2000), LongitudeDegrees: 20},
+		{VisitID: "home", ArrivedAt: pointer(at(1.0 / 60)), LatitudeDegrees: northOf(0), LongitudeDegrees: 20},
+	}
+	positions := []Position{
+		{MeasuredAt: at(-16), LatitudeDegrees: northOf(2000), LongitudeDegrees: 20, AccuracyMeters: 5},
+		{MeasuredAt: at(-2), LatitudeDegrees: northOf(1000), LongitudeDegrees: 20, AccuracyMeters: 5},
+	}
+	if trips := BuildTrips(visitList, positions, nil); len(trips) != 0 {
+		t.Fatalf("from a position 14 minutes before: %+v", trips)
+	}
+}
+
+// The last activity the phone sent is not taken to go on past the moment the
+// visits meet: what came after it is not known yet.
+func TestLastActivityEndsWhereVisitsMeet(t *testing.T) {
+	activities := []MotionActivity{
+		{StartedAt: at(-30), ActivityKind: ActivityKindStationary, ActivityConfidence: ActivityConfidenceHigh},
+		{StartedAt: at(2), ActivityKind: ActivityKindWalking, ActivityConfidence: ActivityConfidenceHigh},
+	}
+	trip := onlyTrip(t, BuildTrips(touchingVisits(9, 450), nil, activities))
+	if !trip.StartedAt.Equal(at(2)) || !trip.EndedAt.Equal(at(9)) {
+		t.Fatalf("trip: %+v", trip)
+	}
+}
+
+// Moving a found trip's start back to the next arrival does not take it
+// before the trip before it ended.
+func TestStartAtTheNextArrivalKeepsAfterTheTripBefore(t *testing.T) {
+	visitList := []Visit{
+		{VisitID: "office", ArrivedAt: pointer(at(-120)), DepartedAt: pointer(at(0)), LatitudeDegrees: northOf(3000), LongitudeDegrees: 20},
+		{VisitID: "home", ArrivedAt: pointer(at(0)), DepartedAt: pointer(at(10)), LatitudeDegrees: northOf(0), LongitudeDegrees: 20},
+		{VisitID: "park", ArrivedAt: pointer(at(2)), DepartedAt: pointer(at(300)), LatitudeDegrees: northOf(450), LongitudeDegrees: 20},
+	}
+	activities := []MotionActivity{
+		{StartedAt: at(-6), ActivityKind: ActivityKindAutomotive, ActivityConfidence: ActivityConfidenceHigh},
+		{StartedAt: at(3), ActivityKind: ActivityKindStationary, ActivityConfidence: ActivityConfidenceHigh},
+		{StartedAt: at(9), ActivityKind: ActivityKindWalking, ActivityConfidence: ActivityConfidenceHigh},
+		{StartedAt: at(15), ActivityKind: ActivityKindStationary, ActivityConfidence: ActivityConfidenceHigh},
+	}
+	trips := BuildTrips(visitList, nil, activities)
+	for index := 1; index < len(trips); index++ {
+		if trips[index].StartedAt.Before(trips[index-1].EndedAt) {
+			t.Fatalf("trips overlap: %+v", trips)
+		}
+	}
+	if len(trips) != 2 || !trips[0].EndedAt.Equal(at(3)) || !trips[1].StartedAt.Equal(at(3)) {
+		t.Fatalf("trips: %+v", trips)
+	}
+}
