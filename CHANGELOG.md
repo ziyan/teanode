@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.211.3] - 2026-11-03
+
+### Fixed
+
+- The chat no longer flashes the agent's ideas while a conversation is loading. (#718)
+- Voice messages recorded on the iPhone in a chat with people are sent instead of failing. (#719)
+
 ## [0.211.2] - 2026-11-02
 
 ### Fixed
