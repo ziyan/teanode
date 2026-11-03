@@ -53,8 +53,9 @@ func TestTheRecorderKeepsEveryVoiceOfACallWanted(t *testing.T) {
 			t.Errorf("%s: %v", voice.Path, err)
 		}
 	}
-	if again := recorder.Finish("call-1"); len(again) != 0 {
-		t.Errorf("handed over twice: %+v", again)
+	// What is on disk is handed over until it is discarded.
+	if again := recorder.Finish("call-1"); len(again) != 3 {
+		t.Errorf("read again: %+v", again)
 	}
 	if err := recorder.Discard("call-1"); err != nil {
 		t.Fatal(err)
@@ -64,6 +65,18 @@ func TestTheRecorderKeepsEveryVoiceOfACallWanted(t *testing.T) {
 	}
 	if err := recorder.Discard("../elsewhere"); err == nil {
 		t.Error("a path outside the recordings was discarded")
+	}
+
+	// A server that stops finds what it kept of a call when it starts again.
+	directory := t.TempDir()
+	stopped := NewRecorder(directory)
+	stopped.Want("call-3", true)
+	for sequence := uint16(1); sequence <= 5; sequence++ {
+		stopped.Record("call-3", "mira", packetOf(t, 5, sequence), opus)
+	}
+	started := NewRecorder(directory)
+	if found := started.Finish("call-3"); len(found) != 1 || found[0].UserID != "mira" || found[0].StartedAt.IsZero() {
+		t.Errorf("after a restart the recorder found %+v", found)
 	}
 
 	// A call no longer wanted stops being kept.

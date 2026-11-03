@@ -38,10 +38,12 @@ func (self *server) openCallServer(configuration *config.Configuration) {
 		log.Warningf("calls are off: %s", err)
 		return
 	}
-	recordings := filepath.Join(os.TempDir(), "teanode-call-recordings")
-	// What a stopped server kept of the calls it held is of no use now.
-	if err := os.RemoveAll(recordings); err != nil {
-		log.Warningf("cannot remove the recordings of calls left from before: %s", err)
+	// Under the data directory, so that what a stopped server kept of a call
+	// being transcribed is there when it starts again, to become the call's
+	// recording; a call's files are removed once they have.
+	recordings := filepath.Join(configuration.DataDirectory(), "call-recordings")
+	if err := os.MkdirAll(recordings, 0o700); err != nil {
+		log.Warningf("calls cannot be transcribed: %s", err)
 	}
 	recorder := call.NewRecorder(recordings)
 	server.SetAudioRecorder(recorder.Record)

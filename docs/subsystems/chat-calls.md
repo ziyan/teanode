@@ -93,14 +93,26 @@ Anyone on a call can turn transcription on (`AskChatCallTranscription`), for
 everybody on it: nobody is asked, and everybody is told. Each device shows a
 notice that names who turned it on (`transcriptionAskedByUserId`), which the
 person closes, and a mark that stays while the call lasts; whoever joins later
-sees the same notice. The media server keeps the microphone of everybody on
-the call, from then on, in files of their own on its disk (`call.Recorder`),
-cut every ten minutes. When the call ends, each file is transcribed with the
-voice settings' transcription model, the lines are put in the order they were
-said under each speaker's name, kept with the call (`ReadChatCall`), and
-summarized into the chat by the agent of whoever turned it on, which pays for
-both. A server that stops before the transcript is written loses the
-recordings, so the transcript fails.
+sees the same notice. From then on the media server keeps the microphone of
+everybody on the call in files of their own (`call.Recorder`), under the data
+directory (`call-recordings/<call id>`), so a restart keeps them.
+
+When the call ends it becomes a recording (`docs/subsystems/recordings.md`)
+owned by whoever turned transcription on (`recording.chat_call_id`,
+`chat_call.recording_id`; `internal/agent/chat_call_transcript.go`): one
+original per stretch of one person's microphone, at its offset from the
+answer, naming its speaker (`recording_media.speaker_user_id`,
+`speaker_name`). An original whose speaker is known is transcribed with the
+voice settings' model and no speaker separation, every passage under the
+speaker, whose name is then confirmed (the owner's own track as the account
+owner); no voice samples are cut from it. Each member who was on the call and
+shares a circle with the owner is given it at the transcript level. When all
+of it is transcribed, a summary is posted into the chat by the owner's agent,
+which pays for both, as for any recording. `ReadChatCall` gives the
+transcript, read from the recording, to its owner and to a member it is
+shared with, and names the recording to open. The sweep picks up a call a
+stopped server left with its files on disk, and a recording ready for its
+summary.
 
 A member's `transcriptionConsent` is `yes` for everybody while a call is
 transcribed. Nobody answers it any more; it stays for app builds that still
@@ -112,6 +124,7 @@ The dashboard and the iPhone app start, ring, answer and show calls. A call
 can be put away while it goes, to use the rest of the app: on the dashboard to
 a small window in a corner, on the iPhone to a bar at the top of the app with
 mute and hang up; either brings the call back. The
-command line lists a chat's calls (`teanode chat calls`) and shows one with its
-transcript (`teanode chat call`). The agent reads them with its chat tool
+command line lists a chat's calls (`teanode agent conversation calls`) and
+shows one with its transcript and the recording it became (`teanode agent
+conversation call`). The agent reads them with its chat tool
 (`list_calls`, `read_call`); starting a call is not an agent action.

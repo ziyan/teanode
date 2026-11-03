@@ -3,7 +3,6 @@ package db
 import (
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -25,6 +24,7 @@ type chatCallModel struct {
 	TranscriptState            string     `gorm:"column:transcript_state"`
 	TranscriptTriedAt          *time.Time `gorm:"column:transcript_tried_at"`
 	SummaryMessageID           *string    `gorm:"column:summary_message_id"`
+	RecordingID                *string    `gorm:"column:recording_id"`
 }
 
 func (chatCallModel) TableName() string { return "chat_call" }
@@ -40,21 +40,6 @@ type chatCallMemberModel struct {
 
 func (chatCallMemberModel) TableName() string { return "chat_call_member" }
 
-type chatCallTranscriptSegmentModel struct {
-	ID          string  `gorm:"column:id;primaryKey"`
-	CallID      string  `gorm:"column:call_id"`
-	UserID      *string `gorm:"column:user_id"`
-	SpeakerName string  `gorm:"column:speaker_name"`
-	StartMS     int64   `gorm:"column:start_ms"`
-	EndMS       int64   `gorm:"column:end_ms"`
-	Text        string  `gorm:"column:text"`
-}
-
-func (chatCallTranscriptSegmentModel) TableName() string { return "chat_call_transcript_segment" }
-
-// chatCallSegmentMostCharacters bounds one line of a call's transcript.
-const chatCallSegmentMostCharacters = 4000
-
 func chatCallFromModel(model *chatCallModel, members []chatCallMemberModel) *models.ChatCall {
 	call := &models.ChatCall{
 		ID:                         model.ID,
@@ -69,6 +54,7 @@ func chatCallFromModel(model *chatCallModel, members []chatCallMemberModel) *mod
 		TranscriptState:            model.TranscriptState,
 		TranscriptTriedAt:          localTime(model.TranscriptTriedAt),
 		SummaryMessageID:           valueOfString(model.SummaryMessageID),
+		RecordingID:                valueOfString(model.RecordingID),
 		Members:                    []models.ChatCallMember{},
 	}
 	transcriptionConsent := ""
@@ -375,7 +361,22 @@ func (self *transaction) ListWaitingChatCallTranscriptIDs(retryAfter time.Durati
 	return callIds, nil
 }
 
-func (self *transaction) FinishChatCallTranscript(callId, transcriptState string, segments []models.ChatCallTranscriptSegment, summaryMessageId string) (*models.ChatCall, error) {
+func (self *transaction) SetChatCallRecording(callId, recordingId string) (*models.ChatCall, error) {
+	if recordingId == "" {
+		return nil, ErrInvalidArguments
+	}
+	result := self.tx.Model(&chatCallModel{}).Where(`"id" = ? AND "transcript_state" = ? AND "recording_id" IS NULL`, callId, models.ChatCallTranscriptWaiting).
+		Update("recording_id", recordingId)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return self.GetChatCall(callId)
+}
+
+func (self *transaction) FinishChatCallTranscript(callId, transcriptState string, summaryMessageId string) (*models.ChatCall, error) {
 	if transcriptState != models.ChatCallTranscriptDone && transcriptState != models.ChatCallTranscriptFailed {
 		return nil, fmt.Errorf("%w: %q is not a state a transcript ends in", ErrInvalidArguments, transcriptState)
 	}
@@ -387,38 +388,7 @@ func (self *transaction) FinishChatCallTranscript(callId, transcriptState string
 	if result.RowsAffected == 0 {
 		return nil, nil
 	}
-	rows := make([]chatCallTranscriptSegmentModel, 0, len(segments))
-	for _, segment := range segments {
-		text := strings.TrimSpace(strings.ToValidUTF8(segment.Text, "�"))
-		if text == "" {
-			continue
-		}
-		rows = append(rows, chatCallTranscriptSegmentModel{
-			ID: newID(), CallID: callId, UserID: stringPointer(segment.UserID), SpeakerName: truncateRunes(segment.SpeakerName, 100),
-			StartMS: segment.StartMS, EndMS: segment.EndMS, Text: truncateRunes(text, chatCallSegmentMostCharacters),
-		})
-	}
-	if len(rows) > 0 {
-		if err := self.tx.CreateInBatches(&rows, 200).Error; err != nil {
-			return nil, err
-		}
-	}
 	return self.GetChatCall(callId)
-}
-
-func (self *transaction) ListChatCallTranscript(callId string) ([]*models.ChatCallTranscriptSegment, error) {
-	var rows []chatCallTranscriptSegmentModel
-	if err := self.tx.Where(`"call_id" = ?`, callId).Order(`"start_ms" ASC, "id" ASC`).Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	segments := make([]*models.ChatCallTranscriptSegment, 0, len(rows))
-	for _, row := range rows {
-		segments = append(segments, &models.ChatCallTranscriptSegment{
-			ID: row.ID, CallID: row.CallID, UserID: valueOfString(row.UserID), SpeakerName: row.SpeakerName,
-			StartMS: row.StartMS, EndMS: row.EndMS, Text: row.Text,
-		})
-	}
-	return segments, nil
 }
 
 // attachChatCalls reads the calls that messages are the lines of.

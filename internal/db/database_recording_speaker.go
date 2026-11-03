@@ -33,6 +33,12 @@ type RecordingSpeakerOperation interface {
 	ListRecordingSpeakerCorrections(userId, recordingId string) ([]*models.RecordingSpeakerCorrection, error)
 	ListRecordingVoiceReferences(userId, recordingId string) ([]*models.RecordingVoiceReference, error)
 	CorrectRecordingSpeaker(userId string, correction RecordingSpeakerCorrectionInput) ([]*models.RecordingSpeakerCorrection, error)
+
+	// ConfirmRecordingKnownSpeaker names, in every piece of a completed run,
+	// the speaker of an original that is one person's microphone: the
+	// person themselves when it is the owner's own. A run of an original of
+	// several voices is left for the person to name.
+	ConfirmRecordingKnownSpeaker(userId, runId string) error
 	RenameRecordingSpeaker(userId, recordingId, speakerIdentityId, confirmedName string, expectedSourceGeneration int64) error
 	SetRecordingSpeakerContact(userId, recordingId, speakerIdentityId, addressBookId, contactId string, expectedSourceGeneration int64) error
 	ListRecordingsSpokenByContact(userId string, addressBookId string, contactId string, limit int) ([]*RecordingSpokenByContact, bool, error)
@@ -217,6 +223,48 @@ func (self *transaction) CorrectRecordingSpeaker(userId string, correction Recor
 		}
 	}
 	return corrected, nil
+}
+
+func (self *transaction) ConfirmRecordingKnownSpeaker(userId, runId string) error {
+	run, err := self.GetRecordingTranscriptRun(userId, runId)
+	if err != nil {
+		return err
+	}
+	media, err := self.GetRecordingMedia(userId, run.RecordingMediaID)
+	if err != nil {
+		return err
+	}
+	if !media.HasKnownSpeaker() || strings.TrimSpace(media.SpeakerName) == "" {
+		return nil
+	}
+	attempts, err := self.ListRecordingTranscriptionAttempts(userId, runId)
+	if err != nil {
+		return err
+	}
+	isAccountOwner := media.SpeakerUserID == userId
+	confirmedName := strings.TrimSpace(media.SpeakerName)
+	for _, attempt := range attempts {
+		if attempt.RecordingAttemptState != models.RecordingAttemptComplete {
+			continue
+		}
+		var generation int64
+		if err := self.tx.Raw("SELECT source_generation FROM recording WHERE id = ?", run.RecordingID).Scan(&generation).Error; err != nil {
+			return err
+		}
+		correction := RecordingSpeakerCorrectionInput{
+			RecordingID: run.RecordingID, RecordingTranscriptionAttemptID: attempt.ID, LocalSpeakerID: media.SpeakerName,
+			// One key per piece, so naming it again is harmless.
+			ClientCorrectionID: "known-speaker-" + attempt.ID, ConfirmedName: confirmedName, IsAccountOwner: isAccountOwner,
+			ExpectedSourceGeneration: generation, PassageStartMS: -1, PassageEndMS: -1,
+		}
+		if isAccountOwner {
+			correction.ConfirmedName = ""
+		}
+		if _, err := self.CorrectRecordingSpeaker(userId, correction); err != nil && !errors.Is(err, ErrAlreadyExists) {
+			return err
+		}
+	}
+	return nil
 }
 
 // correctRecordingSpeakerLocked is CorrectRecordingSpeaker once the account and

@@ -45,11 +45,15 @@ func TestTheChatCallMigrationHoldsOneGoingCallAndReverses(t *testing.T) {
 		}
 	}
 
-	reverse, err := os.ReadFile("0269_chat_call.reverse.sql")
-	if err != nil {
-		t.Fatalf("ReadFile: %s", err)
+	// The migrations after it are undone first, as they are undone newest
+	// first.
+	for _, name := range []string{"0271_recording_chat_call.reverse.sql", "0270_chat_call_member_consent.reverse.sql", "0269_chat_call.reverse.sql"} {
+		reverse, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("ReadFile: %s", err)
+		}
+		dbtest.Exec(t, database, string(reverse))
 	}
-	dbtest.Exec(t, database, string(reverse))
 	if got := dbtest.QueryString(t, database, `SELECT count(*)::text FROM information_schema.columns WHERE table_name = 'chat_message' AND column_name = 'call_id'`); got != "0" {
 		t.Error("the chat_message table still has call_id")
 	}

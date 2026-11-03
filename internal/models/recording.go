@@ -75,7 +75,11 @@ type Recording struct {
 	TimelineDurationMS    int64                 `json:"timelineDurationMS"`
 	CaptureGaps           []RecordingGap        `json:"captureGaps"`
 	SourceGeneration      int64                 `json:"sourceGeneration"`
-	DeletedAt             *time.Time            `json:"-"`
+	// ChatCallID is the call in a chat the recording was made from, when it
+	// was: a transcribed call is a recording owned by whoever turned
+	// transcription on.
+	ChatCallID string     `json:"chatCallId,omitempty"`
+	DeletedAt  *time.Time `json:"-"`
 }
 
 // RecordingMedia represents original bytes through immutable ordered blob parts.
@@ -94,7 +98,15 @@ type RecordingMedia struct {
 	RecordingUploadState RecordingUploadState `json:"recordingUploadState"`
 	CleanupNextPartIndex int                  `json:"-"`
 	VerifiedAt           *time.Time           `json:"verifiedAt"`
+	// SpeakerUserID and SpeakerName name the one person an original is the
+	// microphone of (a call's track), so its transcript needs no guessing
+	// who spoke; both are empty for an original of several voices.
+	SpeakerUserID string `json:"speakerUserId,omitempty"`
+	SpeakerName   string `json:"speakerName,omitempty"`
 }
+
+// HasKnownSpeaker says the original is one named person's voice.
+func (self *RecordingMedia) HasKnownSpeaker() bool { return self.SpeakerUserID != "" }
 
 // RecordingMediaPart is a durable upload receipt for one immutable part.
 type RecordingMediaPart struct {

@@ -20,7 +20,7 @@ const (
 		members { name ringState } } }`
 	documentReadChatCall = `query ($callId: String!) { ReadChatCall(callId: $callId) {
 		call { id chatTitle startedByName startedAt answeredAt endedAt endReason isGoing durationMs transcriptState members { name ringState } }
-		transcript { speakerName startMs text } } }`
+		transcript { speakerName startMs text } recordingId isRecordingOwned } }`
 )
 
 // callActions read the calls of a chat.

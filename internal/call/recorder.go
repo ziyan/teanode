@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,16 +25,16 @@ import (
 // A stretch is cut into files of at most recordingPieceDuration, each short
 // enough to be transcribed at once.
 //
-// The files live on this server's disk until the call's transcript is
-// written; a server that stops before then loses them, and the transcript
-// fails.
+// The files are kept under the directory given, on this server's disk,
+// until the call's recording is made from them: a server that stops before
+// then finds them again when it starts (Finish reads the directory, not
+// what this process remembers).
 type Recorder struct {
 	directory string
 
 	mutex   sync.Mutex
 	wanted  map[string]bool
 	writers map[string]*voiceWriter
-	kept    map[string][]RecordedVoice
 }
 
 // RecordedVoice is one stretch of one person's microphone on a call.
@@ -55,7 +57,7 @@ type voiceWriter struct {
 const recordingPieceDuration = 10 * time.Minute
 
 func NewRecorder(directory string) *Recorder {
-	return &Recorder{directory: directory, wanted: map[string]bool{}, writers: map[string]*voiceWriter{}, kept: map[string][]RecordedVoice{}}
+	return &Recorder{directory: directory, wanted: map[string]bool{}, writers: map[string]*voiceWriter{}}
 }
 
 func recorderKey(callId, userId string) string { return callId + "/" + userId }
@@ -77,7 +79,7 @@ func (self *Recorder) Want(callId string, isWanted bool) {
 	}
 }
 
-// closeWriter ends the person's current file, kept when anything was
+// closeWriter ends the person's current file, removed when nothing was
 // written to it; the mutex is held.
 func (self *Recorder) closeWriter(callId, key string) {
 	writer := self.writers[key]
@@ -88,9 +90,7 @@ func (self *Recorder) closeWriter(callId, key string) {
 	if err := writer.ogg.Close(); err != nil {
 		log.Warningf("cannot close a recording of call %q: %s", callId, err)
 	}
-	if writer.isWritten {
-		self.kept[callId] = append(self.kept[callId], writer.recorded)
-	} else {
+	if !writer.isWritten {
 		_ = os.Remove(writer.recorded.Path)
 	}
 }
@@ -138,8 +138,9 @@ func (self *Recorder) Record(callId, userId string, packet []byte, codec webrtc.
 	}
 }
 
-// Finish ends a call's recordings and returns them, oldest first; the files
-// are the caller's to remove with Discard once read.
+// Finish ends a call's recordings and returns what is kept of it on disk,
+// oldest first, also what a process that stopped kept; the files are the
+// caller's to remove with Discard once read.
 func (self *Recorder) Finish(callId string) []RecordedVoice {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
@@ -149,8 +150,31 @@ func (self *Recorder) Finish(callId string) []RecordedVoice {
 			self.closeWriter(callId, key)
 		}
 	}
-	kept := self.kept[callId]
-	delete(self.kept, callId)
+	if callId == "" || filepath.Base(callId) != callId {
+		return nil
+	}
+	entries, err := os.ReadDir(filepath.Join(self.directory, callId))
+	if err != nil {
+		return nil
+	}
+	var kept []RecordedVoice
+	for _, entry := range entries {
+		// A file is "<user id>-<unix nanoseconds it started>.ogg".
+		name := entry.Name()
+		stem, isOgg := strings.CutSuffix(name, ".ogg")
+		cut := strings.LastIndex(stem, "-")
+		if !isOgg || entry.IsDir() || cut <= 0 {
+			continue
+		}
+		startedAtNanoseconds, err := strconv.ParseInt(stem[cut+1:], 10, 64)
+		if err != nil {
+			continue
+		}
+		if info, err := entry.Info(); err != nil || info.Size() == 0 {
+			continue
+		}
+		kept = append(kept, RecordedVoice{UserID: stem[:cut], Path: filepath.Join(self.directory, callId, name), StartedAt: time.Unix(0, startedAtNanoseconds)})
+	}
 	sort.Slice(kept, func(left, right int) bool { return kept[left].StartedAt.Before(kept[right].StartedAt) })
 	return kept
 }

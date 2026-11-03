@@ -66,6 +66,9 @@ type ChatCall struct {
 	TranscriptState            string     `json:"transcriptState,omitempty"`
 	TranscriptTriedAt          *time.Time `json:"-"`
 	SummaryMessageID           string     `json:"summaryMessageId,omitempty"`
+	// RecordingID is the recording the call became once it was
+	// transcribed: owned by whoever turned transcription on.
+	RecordingID string `json:"recordingId,omitempty"`
 
 	Members []ChatCallMember `json:"members"`
 }
@@ -129,18 +132,6 @@ func (self *ChatCall) DurationMS(now time.Time) int64 {
 		end = *self.EndedAt
 	}
 	return max(0, end.Sub(*self.AnsweredAt).Milliseconds())
-}
-
-// ChatCallTranscriptSegment is one line of a transcribed call under its
-// speaker, timed from the start of the call.
-type ChatCallTranscriptSegment struct {
-	ID          string `json:"id"`
-	CallID      string `json:"callId"`
-	UserID      string `json:"userId,omitempty"`
-	SpeakerName string `json:"speakerName"`
-	StartMS     int64  `json:"startMs"`
-	EndMS       int64  `json:"endMs"`
-	Text        string `json:"text"`
 }
 
 // ChatCallWords is what a model reads in place of a call's line in a chat:

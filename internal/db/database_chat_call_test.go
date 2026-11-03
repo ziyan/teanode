@@ -141,8 +141,8 @@ func TestACallNobodyAnswersIsMissed(t *testing.T) {
 }
 
 // A transcript is asked for during a call, by the first to ask; it waits
-// once an answered call ends, is claimed by one server, and is kept once in
-// the order it was said.
+// once an answered call ends, is claimed by one server, becomes a recording
+// once, and ends once.
 func TestACallsTranscriptIsAskedAndKept(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
@@ -178,20 +178,22 @@ func TestACallsTranscriptIsAskedAndKept(t *testing.T) {
 		if again, err := tx.ClaimChatCallTranscript(call.ID, time.Minute); err != nil || again != nil {
 			t.Errorf("claimed twice: %v %v", again, err)
 		}
-		segments := []models.ChatCallTranscriptSegment{
-			{UserID: mira.ID, SpeakerName: "Mira", StartMS: 4000, EndMS: 6000, Text: "Then Thursday works."},
-			{UserID: mira.ID, SpeakerName: "Mira", StartMS: 1000, EndMS: 3000, Text: "Shall we meet this week?"},
-			{UserID: mira.ID, SpeakerName: "Mira", StartMS: 7000, EndMS: 7100, Text: "  "},
+		// The call becomes a recording owned by whoever asked, once.
+		source, err := tx.CreateRecording(&models.Recording{UserID: mira.ID, ClientRecordingID: "call-" + call.ID, RecordingOrigin: models.RecordingOriginAudioImport, ChatCallID: call.ID})
+		if err != nil || source.ChatCallID != call.ID {
+			t.Fatalf("CreateRecording: %+v %v", source, err)
 		}
-		if finished, err := tx.FinishChatCallTranscript(call.ID, models.ChatCallTranscriptDone, segments, ""); err != nil || finished.TranscriptState != models.ChatCallTranscriptDone {
+		if recorded, err := tx.SetChatCallRecording(call.ID, source.ID); err != nil || recorded == nil || recorded.RecordingID != source.ID {
+			t.Fatalf("SetChatCallRecording: %+v %v", recorded, err)
+		}
+		if again, err := tx.SetChatCallRecording(call.ID, source.ID); err != nil || again != nil {
+			t.Errorf("a second recording was set: %+v %v", again, err)
+		}
+		if finished, err := tx.FinishChatCallTranscript(call.ID, models.ChatCallTranscriptDone, ""); err != nil || finished.TranscriptState != models.ChatCallTranscriptDone || finished.RecordingID != source.ID {
 			t.Fatalf("FinishChatCallTranscript: %+v %v", finished, err)
 		}
-		if again, err := tx.FinishChatCallTranscript(call.ID, models.ChatCallTranscriptDone, segments, ""); err != nil || again != nil {
+		if again, err := tx.FinishChatCallTranscript(call.ID, models.ChatCallTranscriptDone, ""); err != nil || again != nil {
 			t.Errorf("finished twice: %+v %v", again, err)
-		}
-		kept, err := tx.ListChatCallTranscript(call.ID)
-		if err != nil || len(kept) != 2 || kept[0].Text != "Shall we meet this week?" || kept[1].Text != "Then Thursday works." {
-			t.Fatalf("the transcript kept: %+v %v", kept, err)
 		}
 		if words := models.ChatCallWords(call); words == "" {
 			t.Error("no words for a transcribed call")

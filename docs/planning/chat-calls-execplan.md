@@ -20,6 +20,7 @@ How to see it working: two accounts that share a circle, one on an iPhone and on
 - [ ] iPhone: WebRTC, PushKit and CallKit, call screen, video, group grid.
 - [x] Transcription with consent, transcript and summary into the chat (server side, 2026-11-02).
 - [x] Transcription without asking anyone: turning it on transcribes everybody on the call and tells them in a notice they close; migration 0270 drops each member's answer (2026-11-02).
+- [ ] A transcribed call becomes a recording owned by whoever turned it on, its speakers named from their own tracks, shared with the call's members (migration 0271).
 - [x] A call put away while it goes, to use the rest of the app: a bar at the top of the iPhone app with mute and hang up (the dashboard already had its small window) (2026-11-02).
 - [x] Command line and agent tool: calls listed, call transcripts read (2026-11-02).
 - [ ] Docs, demo data and screenshots, review rounds, deploy, ports opened, tried on two devices.
@@ -58,6 +59,13 @@ How to see it working: two accounts that share a circle, one on an iPhone and on
   Date/Author: 2026-11-02, the person.
 - Decision: a call that comes in while the person is on another TeaNode call rings as a waiting call; answering it leaves the first (CallKit offers hold or end on the iPhone; the dashboard ends the first).
   Date/Author: 2026-11-02, the person.
+
+- Decision: a transcribed call is a recording (the recordings feature), one original per person's track so the speakers are known rather than guessed, owned by whoever turned transcription on and shared at the transcript level with the call's members who share a circle with them.
+  Rationale: the person asked to reuse recordings ("transcribe actually means make a recording, and transcribe, with speakers already identified"). It keeps the audio durably (a deploy 30 seconds after a call's end lost its in-memory recordings on 2026-11-02) and brings playback, corrections, search and memory.
+  Date/Author: 2026-11-02, the person (choice), Claude (details below).
+- Decision: the call's recording goes into its owner's memory like any recording, and no voice samples are cut from it.
+  Rationale: the owner heard the call, and everyone was told it is transcribed; the voices belong to other TeaNode users and are named from their tracks, so samples would only put other people's voices among the owner's references.
+  Date/Author: 2026-11-02, Claude.
 
 ## Outcomes & Retrospective
 
@@ -123,9 +131,15 @@ A phone button in a chat's header starts an audio call. A ringing card (top of t
 
 `WebRTC` from `https://github.com/stasel/WebRTC` (Swift package of Google's WebRTC, version 155.0.0). PushKit registers a VoIP token and sends it with the phone's registration. An incoming VoIP push is reported to CallKit at once (iOS requires it); Answer joins the call. Outgoing calls also go through CallKit, so the call is on the lock screen and in the car. The call screen follows `ios/DESIGN.md`: the same grid and bar as the dashboard, the camera switch, picture in picture for video when leaving the app. The chat's toolbar has the call button; the call line in the transcript as on the dashboard.
 
-### 7. Transcription
+### 7. Transcription, as a recording
 
-`AskChatCallTranscription` marks the call; everybody on it, and anyone who joins later, is transcribed and told so. The SFU writes each person's audio to Ogg Opus files of their own on its disk from then on. When the call ends, each file is transcribed with the `agent.voice` transcription model, the segments are merged by time under each speaker's name, the transcript is kept with the call and posted as the call's transcript (a link from the call line opens it), and the `summarize` model writes a short summary posted into the chat by the asker's agent. The asker's agent pays for both, as a voice message's sender pays.
+`AskChatCallTranscription` marks the call; everybody on it, and anyone who joins later, is transcribed and told so. The media server writes each person's microphone to Ogg Opus files of their own (`call.Recorder`), under the server's data directory (`<data>/call-recordings/<call id>`), so a restart keeps them.
+
+When the call ends, the call becomes a recording owned by whoever turned transcription on (`recording.chat_call_id`, origin `call`): one original per stretch of one person's microphone, at its offset from the call's start, each naming its speaker (`recording_media.speaker_user_id`, `speaker_name`). It is imported through the recording store as `ImportRecordingAttachment` does, and its transcript runs are queued at once, so the diarization sweep never takes them. A run of an original whose speaker is known is transcribed without speaker separation, with the voice settings' model (as a voice message is), every passage under the speaker's label; when it completes, the label is confirmed as that member's name (the owner's own track as the account owner), so every screen, the summary and a share name the speakers. Voice samples are not cut from these runs: the voices are other people's, and are named already.
+
+After that the recording is what any recording is: playback, the transcript with corrections, the summary (`recording_brief`), search, the owner's memory, the `recording` tool and `teanode recording`. Each call member who shares a circle with the owner is given it at the transcript level; when the summary is written it is posted into the chat by the owner's agent, with a link to the recording, and the call's line opens it. The owner's agent pays, as for any recording. A server that stops before the import picks the files up from the data directory when it starts again.
+
+Migration 0271 adds `recording.chat_call_id`, `recording_media.speaker_user_id` and `speaker_name`, and `chat_call.recording_id`, and drops `chat_call_transcript_segment` (the transcript is the recording's).
 
 ### 8. Command line and agent
 

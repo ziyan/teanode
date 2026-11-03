@@ -20,6 +20,7 @@ import (
 type recordingFixtureTranscriber struct {
 	callCount          int
 	hasProviderFailure bool
+	lastRequest        *llm.TranscriptionRequest
 }
 
 func (self *recordingFixtureTranscriber) TranscriptionCapabilities(string) llm.TranscriptionCapabilities {
@@ -27,6 +28,7 @@ func (self *recordingFixtureTranscriber) TranscriptionCapabilities(string) llm.T
 }
 func (self *recordingFixtureTranscriber) Transcribe(_ context.Context, request *llm.TranscriptionRequest) (*llm.TranscriptionResponse, error) {
 	self.callCount++
+	self.lastRequest = request
 	if self.hasProviderFailure {
 		return nil, errors.New("fixture connection lost after submission")
 	}
@@ -34,8 +36,19 @@ func (self *recordingFixtureTranscriber) Transcribe(_ context.Context, request *
 }
 
 func TestRecordingChunkRetriesPreserveUsageEvidenceAndUnknownOutcomes(test *testing.T) {
-	for _, hasProviderFailure := range []bool{false, true} {
-		test.Run(map[bool]string{false: "success", true: "unknown"}[hasProviderFailure], func(test *testing.T) {
+	// The third is one person's own microphone, a call's track: no telling
+	// voices apart is asked for, and every passage is theirs.
+	for _, testCase := range []struct {
+		name               string
+		hasProviderFailure bool
+		media              *models.RecordingMedia
+	}{
+		{name: "success", media: &models.RecordingMedia{}},
+		{name: "unknown", hasProviderFailure: true, media: &models.RecordingMedia{}},
+		{name: "known speaker", media: &models.RecordingMedia{SpeakerUserID: "user-mira", SpeakerName: "Mira"}},
+	} {
+		hasProviderFailure := testCase.hasProviderFailure
+		test.Run(testCase.name, func(test *testing.T) {
 			database, closeDatabase := dbtest.AcquireDatabase(test)
 			defer closeDatabase()
 			files, err := storage.Open(&storage.Settings{Directory: test.TempDir()})
@@ -131,7 +144,7 @@ func TestRecordingChunkRetriesPreserveUsageEvidenceAndUnknownOutcomes(test *test
 					test.Fatal(err)
 				}
 			})
-			shouldContinue, budgetError := worker.transcribeRecordingChunk(test.Context(), run, transcriptRun, selection, files.(storage.StreamFiles), chunk, "")
+			shouldContinue, budgetError := worker.transcribeRecordingChunk(test.Context(), run, transcriptRun, selection, files.(storage.StreamFiles), chunk, "", testCase.media)
 			var deferral *Deferral
 			if shouldContinue || !errors.As(budgetError, &deferral) || provider.callCount != 0 {
 				test.Fatal("exhausted budget submitted paid transcription", budgetError)
@@ -144,7 +157,7 @@ func TestRecordingChunkRetriesPreserveUsageEvidenceAndUnknownOutcomes(test *test
 					}
 					continue
 				}
-				shouldContinue, err := worker.transcribeRecordingChunk(test.Context(), run, transcriptRun, selection, files.(storage.StreamFiles), chunk, "")
+				shouldContinue, err := worker.transcribeRecordingChunk(test.Context(), run, transcriptRun, selection, files.(storage.StreamFiles), chunk, "", testCase.media)
 				if err != nil || shouldContinue == hasProviderFailure {
 					test.Fatal("unexpected chunk outcome", shouldContinue, err)
 				}
@@ -170,6 +183,13 @@ func TestRecordingChunkRetriesPreserveUsageEvidenceAndUnknownOutcomes(test *test
 				}
 				if hasProviderFailure && (len(segments) != 0 || usage.Calls != 2) {
 					test.Fatal("unknown provider result was invented")
+				}
+				if testCase.media.HasKnownSpeaker() {
+					if len(segments) != 1 || segments[0].LocalSpeakerID != "Mira" || provider.lastRequest.IsSpeakerDiarizationRequired || len(provider.lastRequest.SpeakerReferences) != 0 {
+						test.Fatal("a known speaker's piece was told apart instead of named", segments, provider.lastRequest)
+					}
+				} else if !hasProviderFailure && (len(segments) != 1 || segments[0].LocalSpeakerID != "local-speaker" || !provider.lastRequest.IsSpeakerDiarizationRequired) {
+					test.Fatal("a piece of several voices was not told apart", segments)
 				}
 			})
 			if dbtest.QueryString(test, database, "SELECT COUNT(*)::text FROM agent_message") != "0" {

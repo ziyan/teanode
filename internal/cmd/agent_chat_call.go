@@ -86,6 +86,15 @@ func runChatCall(ctx context.Context, command *cli.Command) error {
 	for _, line := range detail.Transcript {
 		_, _ = fmt.Fprintf(command.Writer, "[%s] %s: %s\n", models.VoiceMessageClock(line.StartMS), line.SpeakerName, line.Text)
 	}
+	// The recording plays the call and has the whole transcript, with its
+	// corrections.
+	if detail.RecordingID != "" {
+		if detail.IsRecordingOwned {
+			_, _ = fmt.Fprintf(command.Writer, "Recording: %s (teanode recording read %s)\n", detail.RecordingID, detail.RecordingID)
+		} else {
+			_, _ = fmt.Fprintf(command.Writer, "Recording shared with you: %s (teanode recording read-shared %s)\n", detail.RecordingID, detail.RecordingID)
+		}
+	}
 	return nil
 }
 

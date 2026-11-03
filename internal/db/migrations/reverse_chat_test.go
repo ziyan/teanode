@@ -35,7 +35,7 @@ func TestTheChatMigrationReverses(t *testing.T) {
 	}
 	// Calls hang on their chats, so they are undone first, as the
 	// migrations are undone newest first.
-	for _, name := range []string{"0269_chat_call.reverse.sql", "0194_chat.reverse.sql"} {
+	for _, name := range []string{"0271_recording_chat_call.reverse.sql", "0270_chat_call_member_consent.reverse.sql", "0269_chat_call.reverse.sql", "0194_chat.reverse.sql"} {
 		reverse, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatalf("ReadFile: %s", err)

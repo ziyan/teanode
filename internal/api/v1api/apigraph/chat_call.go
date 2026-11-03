@@ -212,11 +212,35 @@ type ChatCallMemberView struct {
 	LeftAt   *time.Time `json:"leftAt"`
 }
 
-// ChatCallDetailView is a call with its transcript.
+// ChatCallDetailView is a call with its transcript, which is its
+// recording's: read by the recording's owner, and by a member it is shared
+// with at the transcript level.
 type ChatCallDetailView struct {
-	Call       *ChatCallView                       `json:"call"`
-	Transcript []*models.ChatCallTranscriptSegment `json:"transcript"`
+	Call       *ChatCallView             `json:"call"`
+	Transcript []*ChatCallTranscriptLine `json:"transcript"`
+
+	// The recording the call became, when the caller may read it; whether it
+	// is the caller's own (opened among their recordings) or shared with
+	// them (opened among those shared with them).
+	RecordingID      *string `json:"recordingId"`
+	IsRecordingOwned bool    `json:"isRecordingOwned"`
 }
+
+// ChatCallTranscriptLine is one passage of a transcribed call under its
+// speaker, timed from the start of the call.
+type ChatCallTranscriptLine struct {
+	ID          string `json:"id"`
+	CallID      string `json:"callId"`
+	UserID      string `json:"userId"`
+	SpeakerName string `json:"speakerName"`
+	StartMS     int64  `json:"startMs"`
+	EndMS       int64  `json:"endMs"`
+	Text        string `json:"text"`
+}
+
+// chatCallTranscriptLinesMost bounds the transcript a call's read returns;
+// the recording has the whole of a longer one.
+const chatCallTranscriptLinesMost = 2000
 
 // ChatCallMediaView is the server's answer to a device's offer.
 type ChatCallMediaView struct {
@@ -410,11 +434,75 @@ func (self *graph) ReadChatCall(ctx context.Context, arguments ChatCallArguments
 	if err != nil {
 		return nil, err
 	}
-	transcript, err := self.transaction(ctx).ListChatCallTranscript(chatCall.ID)
+	detail := &ChatCallDetailView{Call: describeChatCall(session, chatCall, time.Now()), Transcript: []*ChatCallTranscriptLine{}}
+	if chatCall.RecordingID == "" || chatCall.TranscriptionAskedByUserID == "" {
+		return detail, nil
+	}
+	tx := self.transaction(ctx)
+	ownerId := chatCall.TranscriptionAskedByUserID
+	if ownerId != session.User.ID {
+		level, err := tx.GetRecordingShareLevel(session.User.ID, chatCall.RecordingID)
+		if err != nil || level != models.RecordingShareLevelTranscript {
+			// Not shared with them (they share no circle with its owner): the
+			// summary in the chat is what they have.
+			return detail, nil
+		}
+	}
+	lines, err := chatCallTranscriptOf(tx, ownerId, chatCall)
+	if errors.Is(err, db.ErrNotFound) || errors.Is(err, db.ErrRecordingDeleted) {
+		return detail, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	return &ChatCallDetailView{Call: describeChatCall(session, chatCall, time.Now()), Transcript: transcript}, nil
+	recordingId := chatCall.RecordingID
+	detail.Transcript, detail.RecordingID, detail.IsRecordingOwned = lines, &recordingId, ownerId == session.User.ID
+	return detail, nil
+}
+
+// chatCallTranscriptOf reads a call's transcript from its recording, as its
+// owner reads it: each passage under the name of whose microphone it was.
+func chatCallTranscriptOf(tx db.Transaction, ownerId string, chatCall *models.ChatCall) ([]*ChatCallTranscriptLine, error) {
+	media, err := tx.ListRecordingMedia(ownerId, chatCall.RecordingID)
+	if err != nil {
+		return nil, err
+	}
+	speakerOfMedia := map[string]*models.RecordingMedia{}
+	for _, each := range media {
+		speakerOfMedia[each.ID] = each
+	}
+	lines := []*ChatCallTranscriptLine{}
+	for offset := 0; len(lines) < chatCallTranscriptLinesMost; {
+		page, runs, total, err := tx.ReadRecordingTranscriptTimelinePage(ownerId, chatCall.RecordingID, offset, 500)
+		if err != nil {
+			return nil, err
+		}
+		mediaOfRun := map[string]string{}
+		for _, run := range runs {
+			mediaOfRun[run.ID] = run.RecordingMediaID
+		}
+		for _, segment := range page {
+			text := segment.EffectiveTranscriptText
+			if strings.TrimSpace(text) == "" {
+				text = segment.TranscriptText
+			}
+			line := &ChatCallTranscriptLine{
+				ID: segment.ID, CallID: chatCall.ID, SpeakerName: segment.LocalSpeakerID,
+				StartMS: segment.SegmentStartMS, EndMS: segment.SegmentEndMS, Text: strings.TrimSpace(text),
+			}
+			if speaker := speakerOfMedia[mediaOfRun[segment.RecordingTranscriptRunID]]; speaker != nil && speaker.HasKnownSpeaker() {
+				line.UserID, line.SpeakerName = speaker.SpeakerUserID, speaker.SpeakerName
+			}
+			if line.Text != "" && len(lines) < chatCallTranscriptLinesMost {
+				lines = append(lines, line)
+			}
+		}
+		offset += len(page)
+		if len(page) == 0 || int64(offset) >= total {
+			break
+		}
+	}
+	return lines, nil
 }
 
 func (self *graph) ListGoingChatCalls(ctx context.Context) ([]*ChatCallView, error) {

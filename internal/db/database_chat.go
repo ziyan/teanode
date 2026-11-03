@@ -191,13 +191,13 @@ type ChatOperation interface {
 	// waiting and that nobody claimed within retryAfter, oldest first.
 	ListWaitingChatCallTranscriptIDs(retryAfter time.Duration, limit int) ([]string, error)
 
-	// FinishChatCallTranscript keeps a call's transcript and how it ended
-	// (done or failed), with the summary's message; nil when it was not
-	// waiting.
-	FinishChatCallTranscript(callId, transcriptState string, segments []models.ChatCallTranscriptSegment, summaryMessageId string) (*models.ChatCall, error)
+	// SetChatCallRecording names the recording a call waiting for its
+	// transcript became; nil when it was not waiting or has one already.
+	SetChatCallRecording(callId, recordingId string) (*models.ChatCall, error)
 
-	// ListChatCallTranscript is a call's transcript, in the order it was said.
-	ListChatCallTranscript(callId string) ([]*models.ChatCallTranscriptSegment, error)
+	// FinishChatCallTranscript says how a call's transcript ended (done or
+	// failed), with the summary's message; nil when it was not waiting.
+	FinishChatCallTranscript(callId, transcriptState string, summaryMessageId string) (*models.ChatCall, error)
 
 	// SharesChat says whether two different people are both current members
 	// of one chat, whatever circles they are in: a chat shows each member to

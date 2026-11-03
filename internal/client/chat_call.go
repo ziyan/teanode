@@ -36,10 +36,13 @@ type ChatCallTranscriptLine struct {
 	Text        string `json:"text"`
 }
 
-// ChatCallDetail is a call with its transcript.
+// ChatCallDetail is a call with its transcript, and the recording the call
+// became when the caller may read it, theirs or shared with them.
 type ChatCallDetail struct {
-	Call       *ChatCall                 `json:"call"`
-	Transcript []*ChatCallTranscriptLine `json:"transcript"`
+	Call             *ChatCall                 `json:"call"`
+	Transcript       []*ChatCallTranscriptLine `json:"transcript"`
+	RecordingID      string                    `json:"recordingId"`
+	IsRecordingOwned bool                      `json:"isRecordingOwned"`
 }
 
 const chatCallFields = `{ id conversationId chatTitle startedByName startedAt answeredAt endedAt endReason isGoing durationMs transcriptState
@@ -47,7 +50,7 @@ const chatCallFields = `{ id conversationId chatTitle startedByName startedAt an
 
 const (
 	DocumentListChatCalls = `query ($conversationId: String!, $first: Int) { ListChatCalls(conversationId: $conversationId, first: $first) ` + chatCallFields + ` }`
-	DocumentReadChatCall  = `query ($callId: String!) { ReadChatCall(callId: $callId) { call ` + chatCallFields + ` transcript { speakerName startMs text } } }`
+	DocumentReadChatCall  = `query ($callId: String!) { ReadChatCall(callId: $callId) { call ` + chatCallFields + ` transcript { speakerName startMs text } recordingId isRecordingOwned } }`
 )
 
 // ListChatCalls is a chat's calls, newest first.
