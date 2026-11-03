@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.216.0] - 2026-11-03
+
+### Added
+
+- A call can start as a voice call or a video call, and in a group you can choose who it rings; the others can still join from the chat. (#723)
+- People on a call see who has their microphone off, marked beside their name. (#723)
+
+### Fixed
+
+- Everybody on a call shows their own picture, instead of an initial in the same color. (#723)
+
 ## [0.215.0] - 2026-11-03
 
 ### Added
