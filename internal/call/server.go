@@ -1,8 +1,10 @@
 // Package call is the media server of calls in chats: everybody on a call
 // sends their microphone, and their camera when it is on, to the server once,
 // and the server forwards each of those to everybody else on the call without
-// mixing it (a selective forwarding unit). A phone sends one stream however
-// many people are on the call.
+// mixing it (a selective forwarding unit). A phone sends its microphone once
+// and its camera in two sizes however many people are on the call; each
+// person is sent the whole picture of whoever they feature and the small one
+// of the rest (video.go), and is told who is speaking (speaker.go).
 //
 // One port of each kind carries every call: UDP, and TCP for networks that
 // let no UDP through. The server's public address is what it tells the
@@ -27,8 +29,10 @@ import (
 	"time"
 
 	"github.com/op/go-logging"
+	"github.com/pion/interceptor"
 	pionlogging "github.com/pion/logging"
-	"github.com/pion/rtcp"
+	"github.com/pion/rtp"
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -56,11 +60,13 @@ type Settings struct {
 }
 
 // Signal is something the server tells one device on a call: an offer to
-// answer. One can arrive before the device has read the server's answer to
-// its join, so a device takes its join and then each offer one at a time, in
-// that order.
+// answer, or who is speaking now (for a device that asked to be told). An
+// offer can arrive before the device has read the server's answer to its
+// join, so a device takes its join and then each offer one at a time, in that
+// order.
 type Signal struct {
-	OfferSDP string
+	OfferSDP       string
+	SpeakingUserID string
 }
 
 // Server is the media server.
@@ -119,18 +125,78 @@ func New(settings Settings) (*Server, error) {
 		_ = tcpListener.Close()
 		return nil, fmt.Errorf("call: cannot give the public address: %w", err)
 	}
-	media := &webrtc.MediaEngine{}
-	if err := media.RegisterDefaultCodecs(); err != nil {
+	media, err := newMediaEngine()
+	if err != nil {
+		_ = udpConn.Close()
+		_ = tcpListener.Close()
+		return nil, err
+	}
+	// What a sending device needs to hear back to send its whole picture:
+	// which packets were lost (resent from what the server sent), reports of
+	// what arrived, and how much got through when (transport-wide feedback),
+	// from which it judges how much it can send.
+	interceptors := &interceptor.Registry{}
+	if err := webrtc.RegisterDefaultInterceptors(media, interceptors); err != nil {
 		_ = udpConn.Close()
 		_ = tcpListener.Close()
 		return nil, err
 	}
 	return &Server{
-		api:         webrtc.NewAPI(webrtc.WithSettingEngine(engine), webrtc.WithMediaEngine(media)),
+		api:         webrtc.NewAPI(webrtc.WithSettingEngine(engine), webrtc.WithMediaEngine(media), webrtc.WithInterceptorRegistry(interceptors)),
 		udpConn:     udpConn,
 		tcpListener: tcpListener,
 		rooms:       map[string]*room{},
 	}, nil
+}
+
+// videoFeedback is what a device and the server say to each other about a
+// picture: a lost one asked for again, and a whole one asked for.
+var videoFeedback = []webrtc.RTCPFeedback{{Type: "goog-remb"}, {Type: "ccm", Parameter: "fir"}, {Type: "nack"}, {Type: "nack", Parameter: "pli"}}
+
+// h264Profiles are the H.264 profiles a device may send: constrained
+// baseline, baseline, main and high.
+var h264Profiles = []string{"42001f", "42e01f", "4d001f", "64001f"}
+
+// newMediaEngine is what devices and the server may send: Opus for sound,
+// VP8 and H.264 for pictures, whose whole pictures the server can find to
+// switch a watcher between sizes (video.go). There is no resending (RTX): a
+// lost picture is asked for whole again. The header extensions are those a
+// camera in two sizes needs, and the loudness of each packet of sound, to
+// tell who is speaking.
+func newMediaEngine() (*webrtc.MediaEngine, error) {
+	media := &webrtc.MediaEngine{}
+	opus := webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1"},
+		PayloadType:        111,
+	}
+	if err := media.RegisterCodec(opus, webrtc.RTPCodecTypeAudio); err != nil {
+		return nil, err
+	}
+	videoCodecs := []webrtc.RTPCodecParameters{{
+		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000, RTCPFeedback: videoFeedback},
+		PayloadType:        96,
+	}}
+	for index, profile := range h264Profiles {
+		videoCodecs = append(videoCodecs, webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType: webrtc.MimeTypeH264, ClockRate: 90000, RTCPFeedback: videoFeedback,
+				SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=" + profile,
+			},
+			PayloadType: webrtc.PayloadType(102 + 2*index),
+		})
+	}
+	for _, codec := range videoCodecs {
+		if err := media.RegisterCodec(codec, webrtc.RTPCodecTypeVideo); err != nil {
+			return nil, err
+		}
+	}
+	if err := webrtc.ConfigureSimulcastExtensionHeaders(media); err != nil {
+		return nil, err
+	}
+	if err := media.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: sdp.AudioLevelURI}, webrtc.RTPCodecTypeAudio); err != nil {
+		return nil, err
+	}
+	return media, nil
 }
 
 // SetAudioRecorder sets what is told each microphone packet.
@@ -171,21 +237,58 @@ func (self *Server) roomOf(callId string, isMade bool) (*room, error) {
 	}
 	found := self.rooms[callId]
 	if found == nil && isMade {
-		found = &room{server: self, callId: callId, participants: map[string]*participant{}}
+		found = &room{server: self, callId: callId, participants: map[string]*participant{}, done: make(chan struct{})}
 		self.rooms[callId] = found
+		go found.followSpeakers()
 	}
 	return found, nil
 }
 
 // Join puts a device on a call with its offer, and returns the server's
 // answer. A device already on it for the person is replaced: the person
-// moved to another device, or this one connected again.
-func (self *Server) Join(callId, userId, offerSDP string, signal func(Signal)) (string, error) {
+// moved to another device, or this one connected again. shouldTellSpeaker
+// says the device is to be told who is speaking; a device that does not read
+// such signals is not sent them.
+func (self *Server) Join(callId, userId, offerSDP string, shouldTellSpeaker bool, signal func(Signal)) (string, error) {
 	room, err := self.roomOf(callId, true)
 	if err != nil {
 		return "", err
 	}
-	return room.join(userId, offerSDP, signal)
+	return room.join(userId, offerSDP, shouldTellSpeaker, signal)
+}
+
+// Feature sets whose camera the person's device is sent whole: the person
+// chosen, or whoever is speaking when featuredUserId is empty. It is the
+// device's own, and goes when it leaves.
+func (self *Server) Feature(callId, userId, featuredUserId string) error {
+	room, err := self.roomOf(callId, false)
+	if err != nil {
+		return err
+	}
+	if room == nil {
+		return ErrNotOnCall
+	}
+	room.mutex.Lock()
+	defer room.mutex.Unlock()
+	watching := room.participants[userId]
+	if watching == nil {
+		return ErrNotOnCall
+	}
+	watching.featuredUserId = featuredUserId
+	room.chooseLayers()
+	return nil
+}
+
+// SpeakingUserID is who is speaking on a call, as far as the server can
+// tell; empty when nobody has yet.
+func (self *Server) SpeakingUserID(callId string) string {
+	room, _ := self.roomOf(callId, false)
+	if room == nil {
+		return ""
+	}
+	room.mutex.Lock()
+	defer room.mutex.Unlock()
+	return room.speakingUserId
 }
 
 // Answer is a device's answer to the server's latest offer.
@@ -238,6 +341,17 @@ type room struct {
 	mutex        sync.Mutex
 	participants map[string]*participant
 	forwarded    []*forwardedTrack
+	videos       []*forwardedVideo
+
+	// Who is speaking, who spoke before them, and since when (speaker.go);
+	// done closes when the room does.
+	speakingUserId         string
+	previousSpeakingUserId string
+	speakerChangedAt       time.Time
+	voiceMutex             sync.Mutex
+	voices                 map[string]*voiceActivity
+	done                   chan struct{}
+	closeOnce              sync.Once
 }
 
 // participant is one person's device on a call.
@@ -245,6 +359,11 @@ type participant struct {
 	userId     string
 	connection *webrtc.PeerConnection
 	signal     func(Signal)
+
+	// featuredUserId is whose camera the device is sent whole, empty for
+	// whoever is speaking; shouldTellSpeaker says it is told who that is.
+	featuredUserId    string
+	shouldTellSpeaker bool
 
 	// negotiating says an offer went out that has not been answered, and
 	// isNegotiationOwed that another change came meanwhile, for one more
@@ -254,8 +373,9 @@ type participant struct {
 	isNegotiationOwed bool
 }
 
-// forwardedTrack is one person's microphone or camera, sent on to the
-// others; senders are the ways out, by whose device each goes to.
+// forwardedTrack is one person's microphone, sent on to the others; senders
+// are the ways out, by whose device each goes to. A camera is a
+// forwardedVideo (video.go).
 type forwardedTrack struct {
 	fromUserId string
 	remote     *webrtc.TrackRemote
@@ -266,15 +386,19 @@ type forwardedTrack struct {
 	publisher *webrtc.PeerConnection
 }
 
-func (self *room) join(userId, offerSDP string, signal func(Signal)) (string, error) {
+func (self *room) join(userId, offerSDP string, shouldTellSpeaker bool, signal func(Signal)) (string, error) {
 	self.leave(userId)
 	connection, err := self.server.api.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		return "", err
 	}
-	joined := &participant{userId: userId, connection: connection, signal: signal}
-	connection.OnTrack(func(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-		self.forward(joined, remote)
+	joined := &participant{userId: userId, connection: connection, signal: signal, shouldTellSpeaker: shouldTellSpeaker}
+	connection.OnTrack(func(remote *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+		if remote.Kind() == webrtc.RTPCodecTypeVideo {
+			self.forwardVideo(joined, remote)
+			return
+		}
+		self.forward(joined, remote, audioLevelID(receiver))
 	})
 	connection.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
@@ -319,11 +443,35 @@ func (self *room) join(userId, offerSDP string, signal func(Signal)) (string, er
 			added = true
 		}
 	}
+	for _, video := range self.videos {
+		if video.fromUserId != userId && self.watch(joined, video) {
+			added = true
+		}
+	}
+	self.chooseLayers()
+	speaker := self.speakingUserId
 	self.mutex.Unlock()
 	if added {
 		go self.negotiate(joined)
 	}
+	if shouldTellSpeaker && speaker != "" {
+		go signal(Signal{SpeakingUserID: speaker})
+	}
 	return answerSDP, nil
+}
+
+// audioLevelID is the number the device gave the loudness header extension
+// on its microphone, or 0 when it sends none.
+func audioLevelID(receiver *webrtc.RTPReceiver) uint8 {
+	if receiver == nil {
+		return 0
+	}
+	for _, extension := range receiver.GetParameters().HeaderExtensions {
+		if extension.URI == sdp.AudioLevelURI {
+			return uint8(extension.ID)
+		}
+	}
+	return 0
 }
 
 // setLocalAndGather sets the server's side and waits for its addresses, so
@@ -356,40 +504,21 @@ func (self *room) subscribe(to *participant, track *forwardedTrack) bool {
 		return false
 	}
 	track.senders[to.userId] = sender
-	// What the receiver asks for (a whole picture, a resend) goes back to
-	// whoever sends it.
-	go self.relayFeedback(sender, track)
-	if track.remote.Kind() == webrtc.RTPCodecTypeVideo {
-		requestPicture(track)
-	}
+	// Reports from the receiver are read so they do not pile up.
+	go func() {
+		for {
+			if _, _, err := sender.ReadRTCP(); err != nil {
+				return
+			}
+		}
+	}()
 	return true
 }
 
-// relayFeedback reads what a receiving device says about a forwarded track,
-// and asks the sending device for a whole picture when the receiver lost
-// one.
-func (self *room) relayFeedback(sender *webrtc.RTPSender, track *forwardedTrack) {
-	for {
-		packets, _, err := sender.ReadRTCP()
-		if err != nil {
-			return
-		}
-		for _, packet := range packets {
-			switch packet.(type) {
-			case *rtcp.PictureLossIndication, *rtcp.FullIntraRequest:
-				requestPicture(track)
-			}
-		}
-	}
-}
-
-func requestPicture(track *forwardedTrack) {
-	_ = track.publisher.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: uint32(track.remote.SSRC())}})
-}
-
-// forward starts sending a device's new track to everybody else, and reads
-// it until it ends.
-func (self *room) forward(from *participant, remote *webrtc.TrackRemote) {
+// forward starts sending a device's microphone to everybody else, and reads
+// it until it ends, noting how loud each packet is (by the header extension
+// numbered levelId, 0 for none) to tell who is speaking.
+func (self *room) forward(from *participant, remote *webrtc.TrackRemote, levelId uint8) {
 	local, err := webrtc.NewTrackLocalStaticRTP(remote.Codec().RTPCodecCapability, remote.Kind().String(), from.userId)
 	if err != nil {
 		log.Warningf("cannot forward %q's %s on call %q: %s", from.userId, remote.Kind(), self.callId, err)
@@ -415,17 +544,28 @@ func (self *room) forward(from *participant, remote *webrtc.TrackRemote) {
 	self.server.mutex.Lock()
 	recordAudio := self.server.recordAudio
 	self.server.mutex.Unlock()
-	isAudio := remote.Kind() == webrtc.RTPCodecTypeAudio
 	buffer := make([]byte, 1500)
+	packet := &rtp.Packet{}
 	for {
 		read, _, err := remote.Read(buffer)
 		if err != nil {
 			break
 		}
-		if _, err := local.Write(buffer[:read]); err != nil && !errors.Is(err, io.ErrClosedPipe) {
+		if err := packet.Unmarshal(buffer[:read]); err != nil {
+			continue
+		}
+		if levelId != 0 {
+			if level := packet.GetExtension(levelId); len(level) > 0 {
+				self.hearLevel(from.userId, level[0]&0x7f, time.Now())
+			}
+		}
+		// The sending device's header extensions are numbered for its own
+		// connection, not the receivers'.
+		packet.Extension, packet.Extensions, packet.ExtensionProfile = false, nil, 0
+		if err := local.WriteRTP(packet); err != nil && !errors.Is(err, io.ErrClosedPipe) {
 			break
 		}
-		if isAudio && recordAudio != nil {
+		if recordAudio != nil {
 			recordAudio(self.callId, from.userId, buffer[:read], remote.Codec())
 		}
 	}
@@ -508,7 +648,26 @@ func (self *room) leave(userId string) {
 	self.mutex.Lock()
 	left := self.participants[userId]
 	delete(self.participants, userId)
+	// What was sent to the device goes with it, so a device that joins again
+	// is sent everything anew.
+	for _, track := range self.forwarded {
+		delete(track.senders, userId)
+	}
+	for _, video := range self.videos {
+		video.mutex.Lock()
+		delete(video.watchers, userId)
+		video.mutex.Unlock()
+	}
+	if left != nil {
+		if self.speakingUserId == userId {
+			self.speakingUserId = ""
+		}
+		self.chooseLayers()
+	}
 	self.mutex.Unlock()
+	if left != nil {
+		self.forgetVoice(userId)
+	}
 	if left != nil {
 		// Its tracks end as their reads fail, which takes them from the
 		// others.
@@ -517,6 +676,7 @@ func (self *room) leave(userId string) {
 }
 
 func (self *room) close() {
+	self.closeOnce.Do(func() { close(self.done) })
 	self.mutex.Lock()
 	participants := self.participants
 	self.participants = map[string]*participant{}

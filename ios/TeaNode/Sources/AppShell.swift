@@ -856,6 +856,8 @@ struct MainView: View {
             // same call put away to its bar over the group's chat (`chat-call-minimized`).
             if DemoServer.isRequested, DemoServer.screen == "chat-call-screen" { ChatCallManager.shared.showDemoCall() }
             if DemoServer.isRequested, DemoServer.screen == "chat-call-minimized" { ChatCallManager.shared.showDemoCall(isMinimized: true) }
+            // A call of five, the person speaking featured above the rest (`chat-call-featured`).
+            if DemoServer.isRequested, DemoServer.screen == "chat-call-featured" { ChatCallManager.shared.showDemoCall(isFeatured: true) }
         }
     #endif
 }

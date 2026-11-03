@@ -127,6 +127,7 @@ final class ChatCallMedia {
         let videoInit = RTCRtpTransceiverInit()
         videoInit.direction = .sendRecv
         videoInit.streamIds = [streamId]
+        videoInit.sendEncodings = Self.videoLayers()
         let addedTransceiver: RTCRtpTransceiver? = peerConnection.addTransceiver(of: .video, init: videoInit)
         guard let videoTransceiver = addedTransceiver else {
             throw MediaError.cannotCreate
@@ -330,6 +331,21 @@ final class ChatCallMedia {
         let framesPerSecond = Int(min(30, largestRate))
         capturer.startCapture(with: device, format: format, fps: framesPerSecond) { _ in }
         return true
+    }
+
+    /// The two sizes the camera is sent in, named as the server knows them
+    /// (internal/call/video.go): q, a third of the picture, and f, the whole
+    /// of it. The server passes on the whole one only to those who feature
+    /// this person.
+    private static func videoLayers() -> [RTCRtpEncodingParameters] {
+        let small = RTCRtpEncodingParameters()
+        small.rid = "q"
+        small.scaleResolutionDownBy = NSNumber(value: 3)
+        small.maxBitrateBps = NSNumber(value: 200_000)
+        let whole = RTCRtpEncodingParameters()
+        whole.rid = "f"
+        whole.maxBitrateBps = NSNumber(value: 1_200_000)
+        return [small, whole]
     }
 
     private static func distance(of format: AVCaptureDevice.Format, from pixelCount: Int) -> Int {

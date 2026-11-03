@@ -96062,6 +96062,38 @@
           }
         }
       }
+    },
+    "Features this person": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この人を大きく表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "突出显示此人"
+          }
+        }
+      }
+    },
+    "Stops featuring this person": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この人の大きな表示をやめます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消突出显示此人"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

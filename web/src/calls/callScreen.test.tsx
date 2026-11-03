@@ -11,6 +11,7 @@ import {
   quietSnapshot,
   renderWithCalls,
 } from './chatCallFixtures'
+import { featuredOf } from './callScreen'
 import type { ChatCallSessionSnapshot } from './chatCallSession'
 import { useChatCalls } from './chatCallContext'
 
@@ -82,6 +83,53 @@ it('draws everybody on the call, with their picture only while their camera is o
   expect(tiles[2].querySelector('video')).toBeTruthy()
   expect(tiles[1].querySelector('video')).toBeNull()
   expect(tiles[1].querySelector('.avatar')).toBeTruthy()
+})
+
+it('features whoever speaks once five are on the call, above a row of the rest, and the one chosen instead', async () => {
+  const five = [
+    ...members,
+    memberOf('person-d', 'Lena', { ringState: 'answered', isOn: true }),
+    memberOf('person-e', 'Omar', { ringState: 'answered', isOn: true }),
+  ]
+  const { screenDialog, session } = await startCall(callOf({ ...onTheCall, members: five }), {
+    ...quietSnapshot,
+    speakingUserId: 'person-d',
+  })
+
+  const featured = screenDialog.querySelector('.call-featured')
+  expect(featured?.textContent).toContain('Lena')
+  const row = within(screenDialog.querySelector('.call-strip') as HTMLElement)
+  expect(row.getAllByRole('listitem')).toHaveLength(4)
+  // Mira is the person signed in: her own tile features nobody.
+  expect(row.queryByRole('button', { name: 'Feature Mira' })).toBeNull()
+
+  fireEvent.click(row.getByRole('button', { name: 'Feature Omar' }))
+  expect(session.setFeatured).toHaveBeenCalledWith('person-e')
+  await waitFor(() => expect(screenDialog.querySelector('.call-featured')?.textContent).toContain('Omar'))
+  fireEvent.click(
+    within(screenDialog.querySelector('.call-featured') as HTMLElement).getByRole('button', {
+      name: 'Stop featuring Omar',
+    }),
+  )
+  expect(session.setFeatured).toHaveBeenLastCalledWith('')
+})
+
+it('keeps the grid for a small call until somebody is chosen', async () => {
+  const { screenDialog, session } = await startCall()
+
+  expect(screenDialog.querySelector('.call-grid')).toBeTruthy()
+  expect(screenDialog.querySelector('.call-featured')).toBeNull()
+  fireEvent.click(within(screenDialog).getByRole('button', { name: 'Feature Priya' }))
+  expect(session.setFeatured).toHaveBeenCalledWith('person-c')
+  await waitFor(() => expect(screenDialog.querySelector('.call-featured')?.textContent).toContain('Priya'))
+})
+
+it('features the one chosen, else whoever speaks, else who spoke last, never the person themselves', () => {
+  expect(featuredOf(members, 'person-a', 'person-b', 'person-c', '')?.userId).toBe('person-b')
+  expect(featuredOf(members, 'person-a', '', 'person-c', '')?.userId).toBe('person-c')
+  expect(featuredOf(members, 'person-a', '', 'person-a', 'person-b')?.userId).toBe('person-b')
+  expect(featuredOf(members, 'person-a', '', '', '')?.userId).toBe('person-b')
+  expect(featuredOf(members, 'person-a', 'person-gone', '', '')?.userId).toBe('person-b')
 })
 
 it('marks whoever has their microphone off beside their name, this person from the moment they mute', async () => {

@@ -11,6 +11,7 @@ import {
   MicrophoneOffIcon,
   MinimizeIcon,
   PhoneHangUpIcon,
+  PinIcon,
   SpeakerIcon,
   VideoIcon,
   VideoOffIcon,
@@ -131,19 +132,43 @@ function CallPicture({ stream, isMirrored }: { stream: MediaStream; isMirrored: 
   )
 }
 
+// FEATURED_FROM is how many people on a call turn the grid into one person
+// featured above a row of the rest; choosing somebody to feature does too.
+export const FEATURED_FROM = 5
+
+// featuredOf is who is featured: the one chosen, or else whoever is speaking,
+// or whoever spoke last while this person speaks, or else the first of the
+// others. Never this person: their own picture is in the row.
+export function featuredOf(
+  people: ChatCallMember[],
+  ownUserId: string,
+  chosenUserId: string,
+  speakingUserId: string,
+  lastOtherSpeakerId: string,
+): ChatCallMember | null {
+  const others = people.filter((member) => member.userId !== ownUserId)
+  const named = (userId: string) => (userId ? others.find((member) => member.userId === userId) : undefined)
+  return named(chosenUserId) ?? named(speakingUserId) ?? named(lastOtherSpeakerId) ?? others[0] ?? null
+}
+
 // CallTile is one person on the call: their picture while their camera is on
 // and it has arrived, otherwise their avatar and name, with a ring that lights
-// while they speak.
+// while they speak. Pressing somebody else's features them, or, when they are
+// the one chosen, goes back to following whoever speaks.
 function CallTile({
   member,
   isSelf,
+  isChosen,
   voiceStream,
   videoStream,
+  onChoose,
 }: {
   member: ChatCallMember
   isSelf: boolean
+  isChosen: boolean
   voiceStream: MediaStream | null
   videoStream: MediaStream | null
+  onChoose: () => void
 }) {
   const { t } = useTranslation()
   const [isSpeaking, setSpeaking] = useState(false)
@@ -159,7 +184,23 @@ function CallTile({
       ) : (
         <Avatar name={member.name} avatarUrl={member.avatarUrl} colorIndex={member.avatarColorIndex} size={72} />
       )}
+      {isSelf ? null : (
+        <button
+          type="button"
+          className="call-tile-choose"
+          aria-label={
+            isChosen ? t('calls.stopFeaturing', { name: member.name }) : t('calls.feature', { name: member.name })
+          }
+          aria-pressed={isChosen}
+          onClick={onChoose}
+        />
+      )}
       <span className="call-tile-name">
+        {isChosen ? (
+          <span className="call-tile-muted" aria-hidden="true">
+            <PinIcon size={12} />
+          </span>
+        ) : null}
         {member.isMuted ? (
           <span className="call-tile-muted" role="img" aria-label={t('calls.muted')}>
             <MicrophoneOffIcon size={12} />
@@ -367,6 +408,34 @@ function CallScreenView({ activeCall }: { activeCall: ActiveChatCall }) {
 
   const tellCameraFailure = (caught: unknown) => toast.failure(caught, t('calls.cameraFailed'))
 
+  // Somebody is featured once the call is big enough for the grid's pictures
+  // to be small, or once the person chose somebody. Who spoke last before
+  // this person is kept, so their own voice does not take the picture away.
+  const lastOtherSpeaker = useRef('')
+  if (snapshot.speakingUserId && snapshot.speakingUserId !== ownUserId) {
+    lastOtherSpeaker.current = snapshot.speakingUserId
+  }
+  const isFeaturedLayout = people.length >= FEATURED_FROM || snapshot.featuredUserId !== ''
+  const featured = isFeaturedLayout
+    ? featuredOf(people, ownUserId, snapshot.featuredUserId, snapshot.speakingUserId, lastOtherSpeaker.current)
+    : null
+  const tileOf = (member: ChatCallMember) => {
+    const isSelf = member.userId === ownUserId
+    const received = snapshot.participants[member.userId]
+    const isChosen = member.userId === snapshot.featuredUserId
+    return (
+      <CallTile
+        key={member.userId}
+        member={isSelf ? { ...member, isVideoOn: snapshot.isVideoOn, isMuted: snapshot.isMuted } : member}
+        isSelf={isSelf}
+        isChosen={isChosen}
+        voiceStream={isSelf ? snapshot.localAudioStream : (received?.audioStream ?? null)}
+        videoStream={isSelf ? snapshot.localVideoStream : (received?.videoStream ?? null)}
+        onChoose={() => activeCall.session.setFeatured(isChosen ? '' : member.userId)}
+      />
+    )
+  }
+
   return (
     <div className="call-screen-scrim">
       <div className="call-screen" role="dialog" aria-label={t('calls.callIn', { title: activeCall.chatTitle })}>
@@ -414,21 +483,16 @@ function CallScreenView({ activeCall }: { activeCall: ActiveChatCall }) {
           </div>
         ) : null}
 
-        <ul className="call-grid" data-count={Math.min(people.length, 9)}>
-          {people.map((member) => {
-            const isSelf = member.userId === ownUserId
-            const received = snapshot.participants[member.userId]
-            return (
-              <CallTile
-                key={member.userId}
-                member={isSelf ? { ...member, isVideoOn: snapshot.isVideoOn, isMuted: snapshot.isMuted } : member}
-                isSelf={isSelf}
-                voiceStream={isSelf ? snapshot.localAudioStream : (received?.audioStream ?? null)}
-                videoStream={isSelf ? snapshot.localVideoStream : (received?.videoStream ?? null)}
-              />
-            )
-          })}
-        </ul>
+        {featured ? (
+          <div className="call-stage">
+            <ul className="call-featured">{tileOf(featured)}</ul>
+            <ul className="call-strip">{people.filter((member) => member.userId !== featured.userId).map(tileOf)}</ul>
+          </div>
+        ) : (
+          <ul className="call-grid" data-count={Math.min(people.length, 9)}>
+            {people.map(tileOf)}
+          </ul>
+        )}
 
         <div className="call-bar" role="toolbar" aria-label={t('calls.controls')} ref={bar}>
           <Tooltip label={snapshot.isMuted ? t('calls.unmute') : t('calls.mute')}>

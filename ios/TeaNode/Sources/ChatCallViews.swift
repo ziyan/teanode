@@ -89,6 +89,11 @@ struct ChatCallTile: View {
     /// Whether their microphone is off, marked beside their name.
     let isMuted: Bool
     let track: RTCVideoTrack?
+    /// Whether the person chose them to feature, marked with a pin.
+    var isChosen = false
+    /// How big the picture of a person with their camera off is: smaller in
+    /// the row under the one featured.
+    var avatarSize: CGFloat = 96
 
     private var name: String {
         if isOwn { return String(localized: "You") }
@@ -125,7 +130,7 @@ struct ChatCallTile: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            AvatarView(name: member.name, avatarUrl: member.avatarUrl, colorIndex: member.avatarColorIndex, size: 96)
+            AvatarView(name: member.name, avatarUrl: member.avatarUrl, colorIndex: member.avatarColorIndex, size: avatarSize)
                 .opacity(isRinging ? 0.5 : 1)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -134,6 +139,11 @@ struct ChatCallTile: View {
     private var label: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
+                if isChosen {
+                    Image(systemName: "pin.fill")
+                        .font(.caption)
+                        .accessibilityHidden(true)
+                }
                 if isMuted {
                     Image(systemName: "mic.slash.fill")
                         .font(.caption)
@@ -281,6 +291,27 @@ struct ChatCallScreen: View {
         if members.isEmpty {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if ChatCallStage.isFeatured(tileCount: members.count, chosenUserId: session.featuredUserId),
+            let featured = ChatCallStage.featured(
+                members, ownUserId: session.ownUserId, chosenUserId: session.featuredUserId, speakingUserId: session.speakingUserId,
+                lastOtherSpeakerId: session.lastOtherSpeakerId)
+        {
+            // One person whole above a row of the rest, which scrolls
+            // sideways when it is longer than the screen.
+            VStack(spacing: 8) {
+                choosable(tile(for: featured), member: featured)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(members.filter { $0.userId != featured.userId }) { member in
+                            choosable(tile(for: member, avatarSize: 44), member: member)
+                                .frame(width: 120, height: 90)
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+                .frame(height: 90)
+            }
         } else {
             let columns = ChatCallGrid.columnCount(tileCount: members.count)
             let rows = stride(from: 0, to: members.count, by: columns).map { Array(members[$0..<min($0 + columns, members.count)]) }
@@ -288,7 +319,7 @@ struct ChatCallScreen: View {
                 ForEach(rows.indices, id: \.self) { rowIndex in
                     HStack(spacing: 8) {
                         ForEach(rows[rowIndex]) { member in
-                            tile(for: member)
+                            choosable(tile(for: member), member: member)
                         }
                     }
                 }
@@ -297,12 +328,34 @@ struct ChatCallScreen: View {
         }
     }
 
-    private func tile(for member: ChatCallMemberView) -> some View {
+    private func tile(for member: ChatCallMemberView, avatarSize: CGFloat = 96) -> ChatCallTile {
         let isOwn = member.userId == session.ownUserId
         return ChatCallTile(
             member: member, isOwn: isOwn, isVideoOn: isOwn ? session.isCameraOn : member.isVideoOn,
             isMuted: isOwn ? session.isMuted : member.isMuted,
-            track: isOwn ? session.localVideoTrack : session.remoteVideoTracks[member.userId])
+            track: isOwn ? session.localVideoTrack : session.remoteVideoTracks[member.userId],
+            isChosen: member.userId == session.featuredUserId, avatarSize: avatarSize)
+    }
+
+    /// A tile that features its person when tapped, or goes back to following
+    /// whoever speaks when they are the one chosen. The person's own tile
+    /// features nobody.
+    @ViewBuilder
+    private func choosable(_ tile: ChatCallTile, member: ChatCallMemberView) -> some View {
+        if member.userId == session.ownUserId {
+            tile
+        } else {
+            let isChosen = member.userId == session.featuredUserId
+            Button {
+                manager.setFeatured(isChosen ? nil : member.userId)
+            } label: {
+                tile
+            }
+            .buttonStyle(.plain)
+            // The tile still says who it is and whether they are muted.
+            .accessibilityHint(isChosen ? "Stops featuring this person" : "Features this person")
+            .accessibilityAddTraits(isChosen ? .isSelected : [])
+        }
     }
 
     // MARK: Controls

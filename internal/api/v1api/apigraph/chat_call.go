@@ -85,6 +85,11 @@ type ChatCallMutation interface {
 	// The device's answer to the latest offer ChatCallSignals brought.
 	AnswerChatCallMedia(ctx context.Context, arguments AnswerChatCallMediaArguments) (bool, error)
 
+	// Chooses whose camera the caller's device is sent whole, the others'
+	// coming small once several are on: the person in userId, or whoever is
+	// speaking when it is null.
+	SetChatCallFeatured(ctx context.Context, arguments SetChatCallFeaturedArguments) (bool, error)
+
 	// Tells the others that the caller's camera is on or off; the device
 	// starts or stops sending its picture itself.
 	SetChatCallVideo(ctx context.Context, arguments SetChatCallVideoArguments) (*ChatCallView, error)
@@ -144,10 +149,18 @@ type StartChatCallArguments struct {
 	UserIDs        []string `json:"userIds" graphapi:"nullable"`
 }
 
-// JoinChatCallMediaArguments carry the device's offer.
+// JoinChatCallMediaArguments carry the device's offer. shouldTellSpeaker
+// asks for ChatCallSignals to tell who is speaking too.
 type JoinChatCallMediaArguments struct {
-	CallID   string `json:"callId"`
-	OfferSDP string `json:"offerSdp"`
+	CallID            string `json:"callId"`
+	OfferSDP          string `json:"offerSdp"`
+	ShouldTellSpeaker bool   `json:"shouldTellSpeaker" graphapi:"nullable"`
+}
+
+// SetChatCallFeaturedArguments name whose camera the device is sent whole.
+type SetChatCallFeaturedArguments struct {
+	CallID string `json:"callId"`
+	UserID string `json:"userId" graphapi:"nullable"`
 }
 
 // AnswerChatCallMediaArguments carry the device's answer.
@@ -265,7 +278,10 @@ type ChatCallMediaView struct {
 
 // ChatCallSignalView is an offer the media server makes a device.
 type ChatCallSignalView struct {
+	// An offer to answer, empty when the signal says who is speaking.
 	OfferSDP string `json:"offerSdp"`
+	// Who is speaking now, for a device that asked (shouldTellSpeaker).
+	SpeakingUserID *string `json:"speakingUserId"`
 }
 
 // chatCallsListedMost bounds a page of a chat's calls.
@@ -788,7 +804,7 @@ func (self *graph) JoinChatCallMedia(ctx context.Context, arguments JoinChatCall
 	}
 	box := self.chatCallSignals.box(chatCall.ID, session.User.ID)
 	box.drain()
-	answerSDP, err := server.Join(chatCall.ID, session.User.ID, arguments.OfferSDP, box.send)
+	answerSDP, err := server.Join(chatCall.ID, session.User.ID, arguments.OfferSDP, arguments.ShouldTellSpeaker, box.send)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
@@ -797,6 +813,38 @@ func (self *graph) JoinChatCallMedia(ctx context.Context, arguments JoinChatCall
 
 // chatCallDescriptionMostBytes bounds an offer or an answer a device sends.
 const chatCallDescriptionMostBytes = 64 << 10
+
+func (self *graph) SetChatCallFeatured(ctx context.Context, arguments SetChatCallFeaturedArguments) (bool, error) {
+	server := self.callServer()
+	if server == nil {
+		return false, errCallsOff
+	}
+	session, chatCall, err := self.requireGoingChatCall(ctx, arguments.CallID)
+	if err != nil {
+		return false, err
+	}
+	featured := strings.TrimSpace(arguments.UserID)
+	if featured != "" && chatCall.Member(featured) == nil {
+		return false, fmt.Errorf("%w: that person has no part in this call", api.ErrInvalidArguments)
+	}
+	if chatCall.Instance != self.settings.BackendID {
+		return false, fmt.Errorf("%w: this call is held by another instance of the server", api.ErrInvalidArguments)
+	}
+	if err := server.Feature(chatCall.ID, session.User.ID, featured); err != nil {
+		return false, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+	}
+	return true, nil
+}
+
+// signalView is a signal of the media server as a device reads it.
+func signalView(signal call.Signal) *ChatCallSignalView {
+	view := &ChatCallSignalView{OfferSDP: signal.OfferSDP}
+	if signal.SpeakingUserID != "" {
+		speaking := signal.SpeakingUserID
+		view.SpeakingUserID = &speaking
+	}
+	return view
+}
 
 func (self *graph) AnswerChatCallMedia(ctx context.Context, arguments AnswerChatCallMediaArguments) (bool, error) {
 	server := self.callServer()
@@ -948,7 +996,7 @@ func (self *graph) ChatCallSignals(ctx context.Context, arguments ChatCallArgume
 				return
 			case signal := <-box.signals:
 				select {
-				case views <- &ChatCallSignalView{OfferSDP: signal.OfferSDP}:
+				case views <- signalView(signal):
 				case <-ctx.Done():
 					return
 				}
