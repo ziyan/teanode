@@ -806,6 +806,11 @@ func (self *graph) sayInChat(ctx context.Context, session *chatSession, argument
 	attachmentIds := arguments.AttachmentIDs
 	var addressed []string
 	if isVoiceMessage {
+		// The recording named among the files too is still the one file.
+		attachmentIds = slices.DeleteFunc(slices.Clone(attachmentIds), func(id string) bool {
+			id = strings.TrimSpace(id)
+			return id == "" || id == voiceMessageAttachmentId
+		})
 		// A recording is said to the people in the chat. It is not read by an
 		// agent until it has words, so it addresses none, and a reply to an
 		// agent's message is not an address either.
