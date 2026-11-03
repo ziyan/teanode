@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.215.0] - 2026-11-03
+
+### Added
+
+- Your agent, a program you connect over MCP, and `teanode agent conversation say` can write in your chats under your own name, mentioning people with @, as well as under your agent's. (#726)
+
+### Fixed
+
+- Location: a trip is no longer missing when the iPhone reported leaving one place at the moment it reported reaching the next; its times come from the phone's motion activity or positions. (#724)
+
 ## [0.214.0] - 2026-11-03
 
 ### Added
