@@ -607,6 +607,16 @@ struct MainView: View {
                 ServicesLoadingView()
                     .toolbar { MoreBackButton() }
             }
+        } else if section == .coding, app.services?.isAssistantEnabled == true, !app.hasCodingPresenceBeenRead {
+            // Coding is offered once a computer runs coding sessions, which a
+            // notification can open the app to before it has asked: it asks
+            // here, and Coding opens once it knows, rather than saying it is
+            // off.
+            NavigationStack {
+                ServicesLoadingView()
+                    .toolbar { MoreBackButton() }
+                    .task { await app.refreshCodingPresence() }
+            }
         } else if section == .location, !app.hasReadPermissions {
             // Whether the account may use Location is read with the chats; a
             // Location link opened at launch waits for it rather than being
@@ -791,14 +801,16 @@ struct MainView: View {
     /// Asks at launch, when the app comes to the front and when the account
     /// changes, then every half minute, so a question shows on the Coding
     /// row soon after it comes. Not while the Coding section is on screen: it reads the list
-    /// itself and says what it finds.
+    /// itself and says what it finds. Until somebody has asked it is not on
+    /// screen at all (a notification can open the app to it first), so this
+    /// asks then too.
     private func refreshCodingPresenceSlowly() async {
         guard scenePhase == .active else { return }
         // Whether the assistant is on decides it, and at launch that is not
         // known yet.
         if app.services == nil { await app.refreshServices() }
         repeat {
-            if visibleSection != .coding { await app.refreshCodingPresence() }
+            if visibleSection != .coding || !app.hasCodingPresenceBeenRead { await app.refreshCodingPresence() }
             do { try await Task.sleep(for: .seconds(30)) } catch { return }
         } while !Task.isCancelled && scenePhase == .active
     }
