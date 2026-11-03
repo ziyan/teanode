@@ -183,6 +183,10 @@ struct ChatCallScreen: View {
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground).ignoresSafeArea())
+        // Everything of a call fits on one screen, the people and the controls
+        // with it, as the Phone app's does: the largest sizes would push the
+        // head and the controls off it.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
         .alert("Something went wrong", isPresented: problemBinding, presenting: manager.problemText) { _ in
             Button("OK", role: .cancel) {}
         } message: { text in
@@ -521,6 +525,8 @@ struct ChatCallBar: View {
         .glassEffect(.regular.interactive(), in: .capsule)
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
+        // One line of a bar: at the largest sizes it would push the app off.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
 }
 
@@ -533,29 +539,30 @@ struct ChatCallPresenter: ViewModifier {
         let session = manager.session
         let isScreenShown = session != nil && session?.isMinimized != true
         let problemText = manager.problemText
-        return content
-            // The bar of a call put away takes its room at the top, so what
-            // is under it moves down rather than hiding behind it.
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if let session, session.isMinimized {
-                    ChatCallBar(manager: manager, session: session)
-                }
+        // The bar of a call put away takes its own row above the app, so the
+        // app's bars move down rather than hiding behind it (a safe area inset
+        // left the navigation bar under it).
+        return VStack(spacing: 0) {
+            if let session, session.isMinimized {
+                ChatCallBar(manager: manager, session: session)
             }
-            .fullScreenCover(isPresented: Binding(get: { isScreenShown }, set: { _ in })) {
-                if let session = manager.session {
-                    ChatCallScreen(manager: manager, session: session)
-                }
+            content
+        }
+        .fullScreenCover(isPresented: Binding(get: { isScreenShown }, set: { _ in })) {
+            if let session = manager.session {
+                ChatCallScreen(manager: manager, session: session)
             }
-            .alert(
-                "Something went wrong",
-                // While the call screen shows, it tells it, being on top.
-                isPresented: Binding(get: { problemText != nil && !isScreenShown }, set: { if !$0 { manager.problemText = nil } }),
-                presenting: problemText
-            ) { _ in
-                Button("OK", role: .cancel) {}
-            } message: { text in
-                Text(text)
-            }
+        }
+        .alert(
+            "Something went wrong",
+            // While the call screen shows, it tells it, being on top.
+            isPresented: Binding(get: { problemText != nil && !isScreenShown }, set: { if !$0 { manager.problemText = nil } }),
+            presenting: problemText
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { text in
+            Text(text)
+        }
     }
 }
 
