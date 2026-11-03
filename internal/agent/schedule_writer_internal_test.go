@@ -53,6 +53,7 @@ func TestABuiltInScheduleIsNotThePersonsOwnForPasswords(t *testing.T) {
 		"the person's own prompt, same name":    {&models.AgentSchedule{Name: BriefScheduleName, WrittenBy: models.WrittenByPerson, Prompt: "Read my bank balance every morning"}, true},
 		"written by the agent":                  {&models.AgentSchedule{Name: "Monthly statement", WrittenBy: models.WrittenByAgent, Prompt: "x"}, false},
 		"no writer":                             {&models.AgentSchedule{Name: "Monthly statement", Prompt: "x"}, false},
+		"the person's, run by arriving mail":    {&models.AgentSchedule{Name: "Statement mail", WrittenBy: models.WrittenByPerson, Prompt: "Sign in and read it", MailConditions: []models.MailboxRuleCondition{{Field: "any"}}}, false},
 	} {
 		if got := isPersonsOwnSchedule(test.schedule, found, owner); got != test.wanted {
 			t.Errorf("%s: %v, wanted %v", name, got, test.wanted)

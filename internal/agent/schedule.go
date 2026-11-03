@@ -352,9 +352,11 @@ func isBuiltInSchedule(schedule *models.AgentSchedule, found *models.Agent, owne
 // person asking, which is what Passwords asks. Only a schedule the person
 // wrote does: not one the agent wrote, and not one of the built-in schedules,
 // which read content the person did not write (the brief reads the inbox) and
-// so could be steered by a stranger's mail.
+// so could be steered by a stranger's mail. Nor one that runs on arriving
+// mail: whoever sends that mail decides when it runs, and its run reads what
+// they wrote.
 func isPersonsOwnSchedule(schedule *models.AgentSchedule, found *models.Agent, owner *models.User) bool {
-	return models.KnownWriter(schedule.WrittenBy) == models.WrittenByPerson && !isBuiltInSchedule(schedule, found, owner)
+	return models.KnownWriter(schedule.WrittenBy) == models.WrittenByPerson && !isBuiltInSchedule(schedule, found, owner) && !schedule.IsMailTriggered()
 }
 
 // scheduleCheckIn is the message a drawer schedule's turn arrives as.
