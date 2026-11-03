@@ -95,6 +95,8 @@ struct ChatCallTile: View {
     /// the row under the one featured.
     var avatarSize: CGFloat = 96
 
+    private var isSmall: Bool { avatarSize < 96 }
+
     private var name: String {
         if isOwn { return String(localized: "You") }
         return member.name
@@ -130,9 +132,12 @@ struct ChatCallTile: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
+            // In a small tile the picture sits at the top, clear of the name
+            // under it.
             AvatarView(name: member.name, avatarUrl: member.avatarUrl, colorIndex: member.avatarColorIndex, size: avatarSize)
                 .opacity(isRinging ? 0.5 : 1)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.top, isSmall ? 8 : 0)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: isSmall ? .top : .center)
         }
     }
 
@@ -304,7 +309,7 @@ struct ChatCallScreen: View {
                 ScrollView(.horizontal) {
                     HStack(spacing: 8) {
                         ForEach(members.filter { $0.userId != featured.userId }) { member in
-                            choosable(tile(for: member, avatarSize: 44), member: member)
+                            choosable(tile(for: member, avatarSize: 36), member: member)
                                 .frame(width: 120, height: 90)
                         }
                     }
