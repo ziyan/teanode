@@ -659,8 +659,10 @@ final class ChatCallManager: NSObject {
 
 extension ChatCallManager: @preconcurrency CXProviderDelegate {
     func providerDidReset(_ provider: CXProvider) {
-        // CallKit lost every call: so did the phone.
-        if let session {
+        // CallKit lost every call: so did the phone. Only the calls CallKit
+        // had: one it was never told of (the screenshots' demo call, which a
+        // simulator's CallKit resets right after launch) stays.
+        if let session, ledger.entry(uuid: session.uuid) != nil {
             leaveOnServer(session)
             teardown(session)
         }
