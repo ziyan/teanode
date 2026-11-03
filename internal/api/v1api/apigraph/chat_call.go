@@ -1000,6 +1000,12 @@ func (self *graph) ChatCallSignals(ctx context.Context, arguments ChatCallArgume
 				case <-ctx.Done():
 					return
 				}
+			case speaking := <-box.speakers:
+				select {
+				case views <- signalView(call.Signal{SpeakingUserID: speaking}):
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()

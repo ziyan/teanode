@@ -64,8 +64,10 @@ func (self *room) hearLevel(userId string, level uint8, now time.Time) {
 	activity.heardAt = now
 }
 
-// nextSpeaker is who is speaking now, given who was and since when.
-func (self *room) nextSpeaker(current string, currentSince time.Time, now time.Time) string {
+// nextSpeaker is who is speaking now, given who was and since when, of the
+// people isOn says are on the call: a packet read as somebody left can leave
+// their voice behind for a moment.
+func (self *room) nextSpeaker(current string, currentSince time.Time, now time.Time, isOn func(userId string) bool) string {
 	self.voiceMutex.Lock()
 	defer self.voiceMutex.Unlock()
 	loudest, loudestShare := "", 0.0
@@ -73,6 +75,9 @@ func (self *room) nextSpeaker(current string, currentSince time.Time, now time.T
 	for userId, activity := range self.voices {
 		if now.Sub(activity.heardAt) > silentAfter {
 			activity.speechShare /= 2
+		}
+		if !isOn(userId) {
+			continue
 		}
 		if userId == current {
 			currentShare = activity.speechShare
@@ -110,7 +115,9 @@ func (self *room) followSpeakers() {
 			return
 		case now := <-ticker.C:
 			self.mutex.Lock()
-			speaker := self.nextSpeaker(self.speakingUserId, self.speakerChangedAt, now)
+			speaker := self.nextSpeaker(self.speakingUserId, self.speakerChangedAt, now, func(userId string) bool {
+				return self.participants[userId] != nil
+			})
 			var told []*participant
 			if speaker != self.speakingUserId {
 				if self.speakingUserId != "" {

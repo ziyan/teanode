@@ -2,6 +2,7 @@ package call
 
 import (
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +17,9 @@ type testCamera struct {
 	connection   *webrtc.PeerConnection
 	whole, small *webrtc.TrackLocalStaticRTP
 	sender       *webrtc.RTPSender
+	// isWholePaused stops the whole layer, as a device short of bandwidth
+	// does, while the small one goes on.
+	isWholePaused atomic.Bool
 }
 
 func (self *device) camera() *testCamera {
@@ -83,6 +87,9 @@ func (self *testCamera) film(stop <-chan struct{}) {
 				timestampBase uint32
 				mark          byte
 			}{{self.whole, 1000, 70000, 'F'}, {self.small, 50000, 9000000, 'Q'}} {
+				if layer.mark == 'F' && self.isWholePaused.Load() {
+					continue
+				}
 				packet := &rtp.Packet{
 					Header: rtp.Header{
 						Version: 2, PayloadType: 96, Marker: true,
@@ -168,6 +175,12 @@ func TestEachPersonIsSentTheWholePictureOfWhoTheyFeature(t *testing.T) {
 			t.Fatalf("Mira's pictures jump from %d to %d at the switch", sequences[index-1], sequences[index])
 		}
 	}
+	// Mira's whole picture stops, as on a weak connection: Priya is sent
+	// the small one meanwhile, and the whole one again when it comes back.
+	miraCamera.isWholePaused.Store(true)
+	waitFor(t, "Priya to fall back to Mira's small picture", func() bool { return priya.layerSeenFrom("mira") == 'Q' })
+	miraCamera.isWholePaused.Store(false)
+	waitFor(t, "Priya to see Mira whole again", func() bool { return priya.layerSeenFrom("mira") == 'F' })
 	if err := server.Feature("call-1", "sam", "mira"); err != ErrNotOnCall {
 		t.Errorf("somebody not on the call featured somebody: %v", err)
 	}
@@ -191,6 +204,36 @@ func TestEachPersonIsSentTheWholePictureOfWhoTheyFeature(t *testing.T) {
 	}
 	for _, each := range []*device{mira, tobias, priya} {
 		each.reportProblems()
+	}
+}
+
+// A late or repeated packet does not move back where a switch carries on
+// from, and a switch after a wait leaves a gap in time as long as the wait.
+func TestASwitchCarriesOnFromTheNewestPacket(t *testing.T) {
+	watcher := &videoWatcher{hasWanted: true, wantedLayer: layerSmall}
+	start := time.Now()
+	keyFrame := []byte{0x10, 0x00, 0x9d}
+	frame := []byte{0x10, 0x01, 0x9d}
+	sent := func(layer string, sequence uint16, timestamp uint32, payload []byte, at time.Time) *rtp.Packet {
+		packet, _ := watcher.rewrite(layer, &rtp.Packet{Header: rtp.Header{SequenceNumber: sequence, Timestamp: timestamp}, Payload: payload},
+			isWholePictureStart(webrtc.MimeTypeVP8, payload), at)
+		return packet
+	}
+	sent(layerSmall, 10, 1000, keyFrame, start)
+	sent(layerSmall, 11, 4000, frame, start)
+	// A packet that comes late, after 11.
+	sent(layerSmall, 9, 0, frame, start)
+	watcher.wantedLayer = layerWhole
+	if packet := sent(layerWhole, 500, 777, frame, start); packet != nil {
+		t.Fatal("the other layer was sent before its whole picture")
+	}
+	later := start.Add(time.Second)
+	switched := sent(layerWhole, 501, 900, keyFrame, later)
+	if switched == nil || switched.SequenceNumber != 12 {
+		t.Fatalf("the switch went on from %v, not 11", switched)
+	}
+	if gap := switched.Timestamp - 4000; gap < 80000 || gap > 100000 {
+		t.Errorf("a second's wait left a gap of %d ticks", gap)
 	}
 }
 

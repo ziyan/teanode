@@ -3,6 +3,7 @@ package call
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pion/rtcp"
@@ -33,6 +34,15 @@ const (
 	// asks again for the whole picture it starts with, in case the request
 	// was lost.
 	pictureAskedEvery = time.Second
+
+	// layerSilentAfter is how long a layer may send nothing before it is
+	// taken to have stopped: a device short of bandwidth stops sending its
+	// whole picture, and whoever was sent it is moved to the small one until
+	// it comes back.
+	layerSilentAfter = 1500 * time.Millisecond
+
+	// videoClockRate is the clock of video timestamps, ticks a second.
+	videoClockRate = 90000
 )
 
 // wholePicturesMost is how many of the others' cameras a person is sent
@@ -48,8 +58,33 @@ type forwardedVideo struct {
 	codec      webrtc.RTPCodecCapability
 
 	mutex    sync.RWMutex
-	layers   map[string]*webrtc.TrackRemote
+	layers   map[string]*videoLayer
 	watchers map[string]*videoWatcher
+	// watcherList is the watchers as a list, made anew whenever one comes or
+	// goes, so that a packet is sent to them with the mutex let go: a write
+	// to a slow connection can block, and nothing else of the room should
+	// wait for it.
+	watcherList []*videoWatcher
+}
+
+// videoLayer is one layer of a camera, and when a packet of it last came.
+type videoLayer struct {
+	remote       *webrtc.TrackRemote
+	heardAtNanos atomic.Int64
+}
+
+// isLive says the layer sent something within layerSilentAfter.
+func (self *videoLayer) isLive(now time.Time) bool {
+	return now.Sub(time.Unix(0, self.heardAtNanos.Load())) <= layerSilentAfter
+}
+
+// listWatchers makes watcherList again; the video's mutex is held to write.
+func (self *forwardedVideo) listWatchers() {
+	list := make([]*videoWatcher, 0, len(self.watchers))
+	for _, watcher := range self.watchers {
+		list = append(list, watcher)
+	}
+	self.watcherList = list
 }
 
 // videoWatcher is the way a camera goes to one person: the track the server
@@ -61,7 +96,11 @@ type videoWatcher struct {
 	local  *webrtc.TrackLocalStaticRTP
 	sender *webrtc.RTPSender
 
-	mutex           sync.Mutex
+	mutex sync.Mutex
+	// preferredLayer is the layer chooseLayers asked for; wantedLayer the
+	// one the watcher is moved to, which is another while the preferred one
+	// is silent; sentLayer the one sent now.
+	preferredLayer  string
 	hasWanted       bool
 	wantedLayer     string
 	sentLayer       string
@@ -69,6 +108,7 @@ type videoWatcher struct {
 	hasSent         bool
 	lastSequence    uint16
 	lastTimestamp   uint32
+	lastSentAt      time.Time
 	sequenceOffset  uint16
 	timestampOffset uint32
 	pictureAskedAt  time.Time
@@ -80,13 +120,23 @@ func layerOf(remote *webrtc.TrackRemote) string {
 	return strings.TrimSpace(remote.RID())
 }
 
-// availableLayer is the layer to send of those the camera has, the one
-// wanted when it has it; the video's mutex is held.
-func (self *forwardedVideo) availableLayer(wanted string) (string, bool) {
-	if _, ok := self.layers[wanted]; ok {
-		return wanted, true
+// availableLayer is the layer to send of those the camera has: the one
+// preferred while it is sending, or else another that is, or the preferred
+// one all the same when none is (a camera turned off sends nothing at all).
+// The video's mutex is held.
+func (self *forwardedVideo) availableLayer(preferred string, now time.Time) (string, bool) {
+	if layer, ok := self.layers[preferred]; ok && layer.isLive(now) {
+		return preferred, true
 	}
 	// The other named layer, or the one a device with a single layer sends.
+	for _, each := range []string{layerSmall, layerWhole, ""} {
+		if layer, ok := self.layers[each]; ok && layer.isLive(now) {
+			return each, true
+		}
+	}
+	if _, ok := self.layers[preferred]; ok {
+		return preferred, true
+	}
 	for _, each := range []string{layerSmall, layerWhole, ""} {
 		if _, ok := self.layers[each]; ok {
 			return each, true
@@ -100,15 +150,20 @@ func (self *forwardedVideo) availableLayer(wanted string) (string, bool) {
 
 // want sets the layer a watcher should be sent, and asks the camera for the
 // whole picture that layer starts with when it changes.
-func (self *forwardedVideo) want(watcher *videoWatcher, layer string) {
+func (self *forwardedVideo) want(watcher *videoWatcher, preferred string) {
+	now := time.Now()
 	self.mutex.RLock()
-	available, ok := self.availableLayer(layer)
-	remote := self.layers[available]
+	available, ok := self.availableLayer(preferred, now)
+	var remote *webrtc.TrackRemote
+	if layer := self.layers[available]; layer != nil {
+		remote = layer.remote
+	}
 	self.mutex.RUnlock()
 	if !ok {
 		return
 	}
 	watcher.mutex.Lock()
+	watcher.preferredLayer = preferred
 	isNewlyWanted := !watcher.hasWanted || watcher.wantedLayer != available
 	watcher.wantedLayer, watcher.hasWanted = available, true
 	isWaiting := !watcher.isLayerSent || watcher.sentLayer != available
@@ -135,23 +190,27 @@ func (self *forwardedVideo) askPictureFor(watcher *videoWatcher) {
 	watcher.pictureAskedAt = time.Now()
 	watcher.mutex.Unlock()
 	self.mutex.RLock()
-	remote := self.layers[layer]
+	found := self.layers[layer]
 	self.mutex.RUnlock()
-	if remote != nil {
-		self.askPicture(remote)
+	if found != nil {
+		self.askPicture(found.remote)
 	}
 }
 
-// askPicturesStillWaited asks again for the pictures watchers have waited
-// for longer than pictureAskedEvery.
+// askPicturesStillWaited moves each watcher off a layer that stopped, and
+// back to it once it sends again, and asks again for the pictures watchers
+// have waited for longer than pictureAskedEvery.
 func (self *forwardedVideo) askPicturesStillWaited(now time.Time) {
 	self.mutex.RLock()
-	watchers := make([]*videoWatcher, 0, len(self.watchers))
-	for _, watcher := range self.watchers {
-		watchers = append(watchers, watcher)
-	}
+	watchers := self.watcherList
 	self.mutex.RUnlock()
 	for _, watcher := range watchers {
+		watcher.mutex.Lock()
+		preferred, hasWanted := watcher.preferredLayer, watcher.hasWanted
+		watcher.mutex.Unlock()
+		if hasWanted {
+			self.want(watcher, preferred)
+		}
 		watcher.mutex.Lock()
 		isWaiting := (!watcher.isLayerSent || watcher.sentLayer != watcher.wantedLayer) && now.Sub(watcher.pictureAskedAt) >= pictureAskedEvery
 		watcher.mutex.Unlock()
@@ -164,12 +223,15 @@ func (self *forwardedVideo) askPicturesStillWaited(now time.Time) {
 // send passes a packet of one layer to everybody who is sent that layer, and
 // moves anybody who wants it over to it when the packet starts a whole
 // picture.
-func (self *forwardedVideo) send(layer string, packet *rtp.Packet) {
+func (self *forwardedVideo) send(layer string, from *videoLayer, packet *rtp.Packet) {
+	now := time.Now()
+	from.heardAtNanos.Store(now.UnixNano())
 	isPictureStart := isWholePictureStart(self.codec.MimeType, packet.Payload)
 	self.mutex.RLock()
-	defer self.mutex.RUnlock()
-	for _, watcher := range self.watchers {
-		outgoing, ok := watcher.rewrite(layer, packet, isPictureStart)
+	watchers := self.watcherList
+	self.mutex.RUnlock()
+	for _, watcher := range watchers {
+		outgoing, ok := watcher.rewrite(layer, packet, isPictureStart, now)
 		if !ok {
 			continue
 		}
@@ -181,7 +243,7 @@ func (self *forwardedVideo) send(layer string, packet *rtp.Packet) {
 // sent this layer. The sequence numbers and times carry on from the last
 // packet sent, whichever layer that came from, so a switch looks to the
 // watcher's device like the next frame.
-func (self *videoWatcher) rewrite(layer string, packet *rtp.Packet, isPictureStart bool) (*rtp.Packet, bool) {
+func (self *videoWatcher) rewrite(layer string, packet *rtp.Packet, isPictureStart bool, now time.Time) (*rtp.Packet, bool) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	if !self.isLayerSent || self.sentLayer != layer {
@@ -189,8 +251,14 @@ func (self *videoWatcher) rewrite(layer string, packet *rtp.Packet, isPictureSta
 			return nil, false
 		}
 		if self.hasSent {
+			// The next picture comes as long after the last as the wait
+			// for it took, a frame at least.
+			gapTicks := uint32(frameTicks)
+			if elapsed := now.Sub(self.lastSentAt); elapsed > 0 {
+				gapTicks = max(gapTicks, uint32(elapsed.Seconds()*videoClockRate))
+			}
 			self.sequenceOffset = self.lastSequence + 1 - packet.SequenceNumber
-			self.timestampOffset = self.lastTimestamp + frameTicks - packet.Timestamp
+			self.timestampOffset = self.lastTimestamp + gapTicks - packet.Timestamp
 		} else {
 			self.sequenceOffset, self.timestampOffset = 0, 0
 		}
@@ -202,7 +270,15 @@ func (self *videoWatcher) rewrite(layer string, packet *rtp.Packet, isPictureSta
 	// The sending device's header extensions are numbered for its own
 	// connection, not the watcher's.
 	header.Extension, header.Extensions, header.ExtensionProfile = false, nil, 0
-	self.lastSequence, self.lastTimestamp, self.hasSent = header.SequenceNumber, header.Timestamp, true
+	// A late or repeated packet does not move the last one back: the next
+	// switch carries on from the newest sent.
+	if !self.hasSent || int16(header.SequenceNumber-self.lastSequence) > 0 {
+		self.lastSequence = header.SequenceNumber
+	}
+	if !self.hasSent || int32(header.Timestamp-self.lastTimestamp) > 0 {
+		self.lastTimestamp = header.Timestamp
+	}
+	self.hasSent, self.lastSentAt = true, now
 	return &rtp.Packet{Header: header, Payload: packet.Payload}, true
 }
 
@@ -319,7 +395,7 @@ func (self *room) forwardVideo(from *participant, remote *webrtc.TrackRemote) {
 	if video == nil {
 		video = &forwardedVideo{
 			fromUserId: from.userId, publisher: from.connection, codec: remote.Codec().RTPCodecCapability,
-			layers: map[string]*webrtc.TrackRemote{}, watchers: map[string]*videoWatcher{},
+			layers: map[string]*videoLayer{}, watchers: map[string]*videoWatcher{},
 		}
 		self.videos = append(self.videos, video)
 		for userId, other := range self.participants {
@@ -328,8 +404,21 @@ func (self *room) forwardVideo(from *participant, remote *webrtc.TrackRemote) {
 			}
 		}
 	}
+	layerState := &videoLayer{remote: remote}
+	layerState.heardAtNanos.Store(time.Now().UnixNano())
 	video.mutex.Lock()
-	video.layers[layer] = remote
+	// A layer started again on a stream of its own starts its own count:
+	// whoever was sent the old one waits for a whole picture of this one.
+	if replaced := video.layers[layer]; replaced != nil {
+		for _, watcher := range video.watchers {
+			watcher.mutex.Lock()
+			if watcher.isLayerSent && watcher.sentLayer == layer {
+				watcher.isLayerSent, watcher.hasWanted = false, false
+			}
+			watcher.mutex.Unlock()
+		}
+	}
+	video.layers[layer] = layerState
 	video.mutex.Unlock()
 	self.chooseLayers()
 	self.mutex.Unlock()
@@ -342,23 +431,31 @@ func (self *room) forwardVideo(from *participant, remote *webrtc.TrackRemote) {
 		if err != nil {
 			break
 		}
-		video.send(layer, packet)
+		video.send(layer, layerState, packet)
 	}
 
+	// A camera whose last layer ended is taken out of the room at once, so
+	// that a layer that starts meanwhile starts a camera of its own.
 	self.mutex.Lock()
 	video.mutex.Lock()
-	if video.layers[layer] == remote {
+	if video.layers[layer] == layerState {
 		delete(video.layers, layer)
 	}
 	isGone := len(video.layers) == 0
 	video.mutex.Unlock()
+	if isGone {
+		for index, each := range self.videos {
+			if each == video {
+				self.videos = append(self.videos[:index], self.videos[index+1:]...)
+				break
+			}
+		}
+	} else {
+		self.chooseLayers()
+	}
 	self.mutex.Unlock()
 	if isGone {
 		self.unforwardVideo(video)
-	} else {
-		self.mutex.Lock()
-		self.chooseLayers()
-		self.mutex.Unlock()
 	}
 }
 
@@ -384,6 +481,7 @@ func (self *room) watch(to *participant, video *forwardedVideo) bool {
 	watcher := &videoWatcher{userId: to.userId, local: local, sender: sender}
 	video.mutex.Lock()
 	video.watchers[to.userId] = watcher
+	video.listWatchers()
 	video.mutex.Unlock()
 	// A picture the watcher's device lost is asked for again.
 	go func() {
@@ -415,6 +513,7 @@ func (self *room) unforwardVideo(video *forwardedVideo) {
 	video.mutex.Lock()
 	watchers := video.watchers
 	video.watchers = map[string]*videoWatcher{}
+	video.listWatchers()
 	video.mutex.Unlock()
 	var owed []*participant
 	for userId, watcher := range watchers {

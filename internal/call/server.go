@@ -656,6 +656,7 @@ func (self *room) leave(userId string) {
 	for _, video := range self.videos {
 		video.mutex.Lock()
 		delete(video.watchers, userId)
+		video.listWatchers()
 		video.mutex.Unlock()
 	}
 	if left != nil {
