@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.213.1] - 2026-11-03
+
+### Fixed
+
+- A chat's menu on the iPhone no longer shows a stray tick or blank rows when someone reads or writes while it is open. (#721)
+
 ## [0.213.0] - 2026-11-03
 
 ### Added
