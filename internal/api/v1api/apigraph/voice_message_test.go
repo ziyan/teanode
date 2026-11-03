@@ -200,10 +200,11 @@ func transcriptionProvider(t *testing.T, words string) *httptest.Server {
 	return provider
 }
 
-// When the sender's agent can pay, the message is posted waiting, the server
-// writes its words once it is committed, and the other member is told the
-// message changed; a sender whose agent is off gets none.
-func TestAVoiceMessageGetsItsWordsWhenTheSendersAgentCanPay(t *testing.T) {
+// A voice message is posted waiting when an agent in the chat can pay (the
+// sender's, or else another member's), the server writes its words once it is
+// committed, and the other member is told the message changed; one left with
+// no words is transcribed by a member who asks, paid by their agent.
+func TestAVoiceMessageGetsItsWordsFromAnAgentInTheChat(t *testing.T) {
 	world := newChatWorld(t)
 	world.configuration.Agent.Enabled = true
 	world.configuration.Agent.Features.Dreaming = new(bool)
@@ -238,15 +239,21 @@ func TestAVoiceMessageGetsItsWordsWhenTheSendersAgentCanPay(t *testing.T) {
 		t.Errorf("Alice reads %v", message)
 	}
 
-	// Alice's agent does not exist, so nobody pays for hers.
+	// Alice has no agent: Frank's, in the chat with her, pays for her words,
+	// so the chat has them for whoever reads it.
 	world.sendVoiceMessage(t, world.alice, aliceChat, world.recording(t, world.alice, 4000))
-	offMessage := world.read(t, world.alice, aliceChat)[1]
-	if offMessage["transcriptState"] != models.VoiceTranscriptOff {
-		t.Errorf("a sender with no agent starts %v", offMessage["transcriptState"])
+	if posted := events.next(agent.EventSaid); posted == nil || posted.Message.TranscriptState != models.VoiceTranscriptWaiting {
+		t.Fatalf("Alice's own message was posted as %+v", posted)
+	}
+	if edited := events.next(agent.EventEdited); edited == nil || edited.Message.TranscriptText != "Leaving the bakery now, see you at six" {
+		t.Fatalf("Alice's own message then became %+v", edited)
 	}
 
-	// Asking for its words: Alice has no agent to pay; Frank's pays, and the
-	// words are the message's, which Alice reads too.
+	// One left with no words (nobody could pay when it was said) is
+	// transcribed by asking: not by Alice, who has no agent to pay, but by
+	// Frank, whose agent does; the words are the message's.
+	offMessage := world.read(t, world.alice, aliceChat)[1]
+	dbtest.Exec(t, world.database, fmt.Sprintf(`UPDATE "chat_message" SET "transcript_state" = 'off', "transcript_text" = '' WHERE "id" = '%s'`, offMessage["id"]))
 	transcribe := fmt.Sprintf(`mutation { TranscribeChatVoiceMessage(messageId: %q) { id transcriptState transcriptText } }`, offMessage["id"])
 	if refusal := world.refused(t, world.alice, transcribe); !strings.Contains(refusal, "your agent cannot transcribe") {
 		t.Errorf("Alice's ask was refused with %q", refusal)

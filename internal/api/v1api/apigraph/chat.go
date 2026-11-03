@@ -695,11 +695,19 @@ func (self *graph) postChatMessage(ctx context.Context, session *chatSession, sa
 	}
 	if saying.isVoiceMessage {
 		message.IsVoiceMessage = true
-		// Whether anyone pays for the words is settled now, so that a client
-		// draws "transcribing" only for a message that will get them.
+		// Every voice message gets its words, for the people and the agents
+		// who read the chat, paid by the sender's agent or else another
+		// member's. Whether anyone can is settled now, so that a client draws
+		// "transcribing" only for a message that will get them.
 		message.TranscriptState = models.VoiceTranscriptOff
 		if worker := self.agentWorker(); worker != nil {
-			message.TranscriptState = worker.VoiceMessageTranscriptState(tx, session.Agent, session.User)
+			payer, err := worker.VoiceMessagePayer(tx, session.Chat, session.User.ID)
+			if err != nil {
+				return nil, err
+			}
+			if payer != nil {
+				message.TranscriptState = models.VoiceTranscriptWaiting
+			}
 		}
 	}
 	for _, attachment := range attachments {

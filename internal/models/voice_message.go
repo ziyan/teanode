@@ -20,8 +20,9 @@ const (
 	VoiceTranscriptFailed = "failed"
 
 	// VoiceTranscriptOff: there is nothing to pay for the words (voice is
-	// off for the server, or the sender's agent is off or over its budget),
-	// so there will be none. The recording still plays.
+	// off for the server, or no member of the chat has an agent that is on
+	// and within its budget), so there will be none unless a member asks
+	// later. The recording still plays.
 	VoiceTranscriptOff = "off"
 )
 
