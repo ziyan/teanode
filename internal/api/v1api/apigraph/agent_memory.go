@@ -83,9 +83,12 @@ type SaveAgentScheduleArguments struct {
 	ScheduleID string `json:"scheduleId" graphapi:"nullable"`
 	Name       string `json:"name" graphapi:"nullable"`
 	Cron       string `json:"cron" graphapi:"nullable"`
-	Prompt     string `json:"prompt" graphapi:"nullable"`
-	Deliver    string `json:"deliver" graphapi:"nullable"`
-	Enabled    *bool  `json:"enabled" graphapi:"nullable"`
+	// MailConditions make the schedule run on arriving mail instead of at
+	// set times; a cron line makes it run at set times again.
+	MailConditions []models.MailboxRuleCondition `json:"mailConditions" graphapi:"nullable"`
+	Prompt         string                        `json:"prompt" graphapi:"nullable"`
+	Deliver        string                        `json:"deliver" graphapi:"nullable"`
+	Enabled        *bool                         `json:"enabled" graphapi:"nullable"`
 }
 
 // DeleteAgentScheduleArguments name the schedule.
@@ -201,7 +204,7 @@ func (self *graph) DeleteAgentMemory(ctx context.Context, arguments DeleteAgentM
 }
 
 func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentScheduleArguments) (*models.AgentSchedule, error) {
-	if arguments.Deliver == models.AgentDeliverMail {
+	if arguments.Deliver == models.AgentDeliverMail || len(arguments.MailConditions) > 0 {
 		if err := self.requireService(models.ServiceMailboxes); err != nil {
 			return nil, err
 		}
@@ -223,12 +226,12 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 		writtenBy = models.WrittenByPerson
 	}
 	if arguments.ScheduleID == "" {
-		schedule := &models.AgentSchedule{AgentID: found.ID, Name: strings.TrimSpace(arguments.Name), Cron: strings.TrimSpace(arguments.Cron), Prompt: strings.TrimSpace(arguments.Prompt), WrittenBy: writtenBy, Deliver: arguments.Deliver, Enabled: arguments.Enabled == nil || *arguments.Enabled}
+		schedule := &models.AgentSchedule{AgentID: found.ID, Name: strings.TrimSpace(arguments.Name), Cron: strings.TrimSpace(arguments.Cron), MailConditions: arguments.MailConditions, Prompt: strings.TrimSpace(arguments.Prompt), WrittenBy: writtenBy, Deliver: arguments.Deliver, Enabled: arguments.Enabled == nil || *arguments.Enabled}
 		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
 		if err != nil {
 			return nil, translateError(err)
 		}
-		schedule.NextRunAt = &next
+		schedule.NextRunAt = next
 		created, err := tx.CreateAgentSchedule(schedule)
 		if err != nil {
 			return nil, translateError(err)
@@ -246,8 +249,17 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 		if arguments.Name != "" {
 			schedule.Name = strings.TrimSpace(arguments.Name)
 		}
-		if arguments.Cron != "" {
+		switch {
+		case arguments.Cron != "":
+			// At set times again: what mail had set off is no longer waited
+			// for.
 			schedule.Cron = strings.TrimSpace(arguments.Cron)
+			schedule.MailConditions, schedule.MailArrivals = nil, nil
+		case len(arguments.MailConditions) > 0:
+			if !schedule.IsMailTriggered() {
+				schedule.Cron, schedule.NextRunAt = "", nil
+			}
+			schedule.MailConditions = arguments.MailConditions
 		}
 		// A save the person made with a tap on a screen that includes the prompt
 		// is theirs, whether or not the prompt changed: pressing Save in the
@@ -276,14 +288,14 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 			if strings.TrimSpace(arguments.Prompt) != "" {
 				schedule.WrittenBy = models.WrittenByPerson
 			}
-		} else if arguments.Cron != "" || arguments.Deliver != "" || arguments.Enabled != nil {
+		} else if arguments.Cron != "" || len(arguments.MailConditions) > 0 || arguments.Deliver != "" || arguments.Enabled != nil {
 			schedule.WrittenBy = models.WrittenByAgent
 		}
 		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
 		if err != nil {
 			return err
 		}
-		schedule.NextRunAt = &next
+		schedule.NextRunAt = next
 		return nil
 	})
 	if err != nil {

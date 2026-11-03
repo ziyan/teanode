@@ -1,12 +1,13 @@
 // Package schedule is the tool the agent keeps its own times with: a
 // prompt run on a cron line, at one moment, or a distance from now, in the
-// person's zone, with nobody present.
+// person's zone, or whenever mail it waits for arrives, with nobody present.
 package schedule
 
 import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
@@ -19,26 +20,36 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "schedule", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "Things you do on your own at set times, in the person's zone: add one (a name, a cron line or a single moment, what to do, and whether the answer goes by mail or is a turn of yours in this conversation), list, change, remove, or run one now. A reminder for later is a schedule at one moment; \"check this in five minutes\" is @in 5m with the item's id in the prompt. A scheduled run can confirm nothing, so it does only what needs no confirmation.",
+				Description: "Things you do on your own at set times, in the person's zone, or whenever mail you wait for arrives: add one (a name, a cron line or a single moment, or on_mail instead, what to do, and whether the answer goes by mail or is a turn of yours in this conversation), list, change, remove, or run one now. A reminder for later is a schedule at one moment; \"check this in five minutes\" is @in 5m with the item's id in the prompt. \"Whenever the school mails, save its pictures\" is on_mail, and each run is told which messages came. A scheduled run can confirm nothing, so it does only what needs no confirmation.",
 				Parameters: tools.Object(map[string]any{
-					"action":  tools.EnumProperty("what to do", "add", "list", "update", "remove", "run"),
-					"id":      tools.StringProperty("for update, remove and run: the schedule"),
-					"name":    tools.StringProperty("what it is called"),
-					"cron":    tools.StringProperty("five fields: minute hour day month weekday, such as 0 8 * * 1-5; or once, at a moment in the person's zone: @at 2026-09-12 09:00; or once, from now: @in 5m, @in 2h, @in 1 day"),
+					"action": tools.EnumProperty("what to do", "add", "list", "update", "remove", "run"),
+					"id":     tools.StringProperty("for update, remove and run: the schedule"),
+					"name":   tools.StringProperty("what it is called"),
+					"cron":   tools.StringProperty("five fields: minute hour day month weekday, such as 0 8 * * 1-5; or once, at a moment in the person's zone: @at 2026-09-12 09:00; or once, from now: @in 5m, @in 2h, @in 1 day"),
+					"on_mail": tools.ArrayProperty("instead of cron: run whenever a message arrives, in a mailbox you were given, that passes every one of these tests, as a mailbox rule's are; for example from contains news@school.example", tools.Object(map[string]any{
+						"field":    tools.EnumProperty("what to test", models.ScheduleMailFields...),
+						"header":   tools.StringProperty("for header: the header's name"),
+						"operator": tools.EnumProperty("how to compare", "contains", "equals", "matches"),
+						"value":    tools.StringProperty("what to compare with"),
+					})),
 					"prompt":  tools.StringProperty("what to do, as the person would say it"),
 					"deliver": tools.EnumProperty("where the answer goes: drawer is a turn of yours in this conversation when the time comes; mail is a message to the person", "drawer", "mail"),
 					"enabled": tools.BooleanProperty("on"),
 				}, "action"),
 				Preview: tools.PreviewOf(func(call struct {
-					Action  string `json:"action"`
-					Name    string `json:"name"`
-					Cron    string `json:"cron"`
-					Deliver string `json:"deliver"`
+					Action  string                        `json:"action"`
+					Name    string                        `json:"name"`
+					Cron    string                        `json:"cron"`
+					OnMail  []models.MailboxRuleCondition `json:"on_mail"`
+					Deliver string                        `json:"deliver"`
 				}) string {
 					named := tools.Named(call.Name, "a schedule")
 					when := ""
 					if call.Cron != "" {
 						when = ", " + call.Cron
+					}
+					if len(call.OnMail) > 0 {
+						when = ", whenever mail arrives " + MailConditionsInWords(call.OnMail)
 					}
 					switch call.Action {
 					case "add":
@@ -65,14 +76,15 @@ func init() {
 }
 
 type scheduleArguments struct {
-	Action     string `json:"action"`
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Cron       string `json:"cron"`
-	Prompt     string `json:"prompt"`
-	Deliver    string `json:"deliver"`
-	Enabled    *bool  `json:"enabled"`
-	ScheduleID string `json:"schedule_id"`
+	Action     string                        `json:"action"`
+	ID         string                        `json:"id"`
+	Name       string                        `json:"name"`
+	Cron       string                        `json:"cron"`
+	OnMail     []models.MailboxRuleCondition `json:"on_mail"`
+	Prompt     string                        `json:"prompt"`
+	Deliver    string                        `json:"deliver"`
+	Enabled    *bool                         `json:"enabled"`
+	ScheduleID string                        `json:"schedule_id"`
 }
 
 // passwordsNotice is said to the model when it makes or rewords a schedule
@@ -110,7 +122,7 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 	if !tools.FeatureAllowed(run.Configuration(), "schedules") {
 		return nil, fmt.Errorf("schedules are off on this server")
 	}
-	if arguments.Deliver == models.AgentDeliverMail {
+	if arguments.Deliver == models.AgentDeliverMail || len(arguments.OnMail) > 0 {
 		if err := run.Configuration().RequireService(models.ServiceMailboxes); err != nil {
 			return nil, err
 		}
@@ -119,7 +131,13 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 	agentId := run.Agent().ID
 	location := tools.Location(run.Owner())
 	describe := func(schedule *models.AgentSchedule) map[string]any {
-		row := map[string]any{"id": schedule.ID, "name": schedule.Name, "cron": schedule.Cron, "prompt": schedule.Prompt, "deliver": schedule.Deliver, "enabled": schedule.Enabled}
+		row := map[string]any{"id": schedule.ID, "name": schedule.Name, "prompt": schedule.Prompt, "deliver": schedule.Deliver, "enabled": schedule.Enabled}
+		if schedule.IsMailTriggered() {
+			row["on_mail"] = schedule.MailConditions
+			row["runs"] = "whenever mail arrives " + MailConditionsInWords(schedule.MailConditions)
+		} else {
+			row["cron"] = schedule.Cron
+		}
 		if schedule.NextRunAt != nil {
 			row["next_run"] = schedule.NextRunAt.In(location).Format("2006-01-02 15:04")
 		}
@@ -141,14 +159,21 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 	}
 	switch arguments.Action {
 	case "add":
-		cron, err := tools.ResolveRelative(arguments.Cron, time.Now(), location)
-		if err != nil {
-			return nil, err
-		}
-		arguments.Cron = cron
-		next, err := tools.NextCron(arguments.Cron, time.Now(), location)
-		if err != nil {
-			return nil, err
+		var next *time.Time
+		switch {
+		case len(arguments.OnMail) > 0 && arguments.Cron != "":
+			return nil, fmt.Errorf("a schedule runs on a cron line or on_mail, not both")
+		case len(arguments.OnMail) == 0:
+			cron, err := tools.ResolveRelative(arguments.Cron, time.Now(), location)
+			if err != nil {
+				return nil, err
+			}
+			arguments.Cron = cron
+			at, err := tools.NextCron(arguments.Cron, time.Now(), location)
+			if err != nil {
+				return nil, err
+			}
+			next = &at
 		}
 		// A schedule answers in the conversation it was made in, when that
 		// is one of the person's or a goal's -- a goal's schedule is one of
@@ -169,7 +194,7 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 		}
 		var created *models.AgentSchedule
 		if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-			created, err = tx.CreateAgentSchedule(&models.AgentSchedule{AgentID: agentId, Name: arguments.Name, Cron: arguments.Cron, Prompt: arguments.Prompt, WrittenBy: models.WrittenByAgent, Deliver: deliver, ConversationID: conversationId, Enabled: arguments.Enabled == nil || *arguments.Enabled, NextRunAt: &next})
+			created, err = tx.CreateAgentSchedule(&models.AgentSchedule{AgentID: agentId, Name: arguments.Name, Cron: arguments.Cron, MailConditions: arguments.OnMail, Prompt: arguments.Prompt, WrittenBy: models.WrittenByAgent, Deliver: deliver, ConversationID: conversationId, Enabled: arguments.Enabled == nil || *arguments.Enabled, NextRunAt: next})
 			return err
 		}); err != nil {
 			return nil, err
@@ -224,15 +249,25 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 					schedule.Enabled = *arguments.Enabled
 					schedule.WrittenBy = models.WrittenByAgent
 				}
-				if arguments.Cron != "" {
+				switch {
+				case len(arguments.OnMail) > 0 && arguments.Cron != "":
+					return fmt.Errorf("a schedule runs on a cron line or on_mail, not both")
+				case arguments.Cron != "":
 					cron, err := tools.ResolveRelative(arguments.Cron, time.Now(), location)
 					if err != nil {
 						return err
 					}
 					schedule.Cron = cron
+					schedule.MailConditions, schedule.MailArrivals = nil, nil
+					schedule.WrittenBy = models.WrittenByAgent
+				case len(arguments.OnMail) > 0:
+					if !schedule.IsMailTriggered() {
+						schedule.Cron, schedule.NextRunAt = "", nil
+					}
+					schedule.MailConditions = arguments.OnMail
 					schedule.WrittenBy = models.WrittenByAgent
 				}
-				if arguments.Cron != "" || (arguments.Enabled != nil && *arguments.Enabled) {
+				if !schedule.IsMailTriggered() && (arguments.Cron != "" || (arguments.Enabled != nil && *arguments.Enabled)) {
 					next, err := tools.NextCron(schedule.Cron, time.Now(), location)
 					if err != nil {
 						return err
@@ -280,4 +315,25 @@ func isGoalsSchedule(tx db.Transaction, schedule *models.AgentSchedule) bool {
 	}
 	conversation, err := tx.GetAgentConversation(schedule.ConversationID)
 	return err == nil && conversation.IsGoal()
+}
+
+// MailConditionsInWords says what a schedule waits for, as in "from
+// contains news@school.example and subject contains photos".
+func MailConditionsInWords(conditions []models.MailboxRuleCondition) string {
+	words := make([]string, 0, len(conditions))
+	for _, condition := range conditions {
+		operator := condition.Operator
+		if operator == "" {
+			operator = "contains"
+		}
+		switch condition.Field {
+		case "any":
+			words = append(words, "of any kind")
+		case "header":
+			words = append(words, fmt.Sprintf("with header %s %s %q", condition.Header, operator, condition.Value))
+		default:
+			words = append(words, fmt.Sprintf("%s %s %q", condition.Field, operator, condition.Value))
+		}
+	}
+	return strings.Join(words, " and ")
 }

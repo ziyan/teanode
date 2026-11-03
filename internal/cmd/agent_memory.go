@@ -53,11 +53,12 @@ func newAgentScheduleCommand() *cli.Command {
 			},
 			{
 				Name:      "add",
-				Usage:     "add one: a name, a cron line in your zone, and what to do; - reads the prompt from stdin",
-				ArgsUsage: "<name> <cron> <prompt | ->",
+				Usage:     "add one: a name, a cron line in your zone, and what to do; - reads the prompt from stdin. With --on-mail it runs whenever such mail arrives, and takes no cron line",
+				ArgsUsage: "<name> <cron> <prompt | ->, or --on-mail ... <name> <prompt | ->",
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "deliver", Usage: "where the answer goes: drawer (into your conversation) or mail", Value: "drawer"},
+					onMailFlag(),
 				},
 				Action: runAgentScheduleAdd,
 			},
@@ -68,7 +69,8 @@ func newAgentScheduleCommand() *cli.Command {
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "name", Usage: "what it is called"},
-					&cli.StringFlag{Name: "cron", Usage: "a cron line in your zone, a moment (\"@at 2026-09-12 09:00\"), or a distance from now (\"@in 20m\")"},
+					&cli.StringFlag{Name: "cron", Usage: "a cron line in your zone, a moment (\"@at 2026-09-12 09:00\"), or a distance from now (\"@in 20m\"); runs it at set times again if it ran on mail"},
+					onMailFlag(),
 					&cli.StringFlag{Name: "prompt", Usage: "what to do; - reads it from stdin"},
 					&cli.StringFlag{Name: "deliver", Usage: "where the answer goes: drawer (into your conversation) or mail"},
 				},
@@ -156,25 +158,80 @@ func runAgentScheduleList(ctx context.Context, command *cli.Command) error {
 		if !schedule.Enabled {
 			state = "off"
 		}
-		rows = append(rows, []string{schedule.ID, schedule.Name, schedule.Cron, schedule.Deliver, state, next})
+		rows = append(rows, []string{schedule.ID, schedule.Name, scheduleWhen(schedule.Cron, schedule.MailConditions), schedule.Deliver, state, next})
 	}
-	return printTable([]string{"id", "name", "cron", "deliver", "", "next"}, rows)
+	return printTable([]string{"id", "name", "when", "deliver", "", "next"}, rows)
+}
+
+// onMailFlag is --on-mail, the conditions a schedule that runs on arriving
+// mail waits for, written as a rule's --when is.
+func onMailFlag() cli.Flag {
+	return &cli.StringSliceFlag{Name: "on-mail", Usage: "run whenever a message arrives that passes this test, field:operator:value as in from:contains:news@school.example (header:Name:operator:value for a header, any alone); repeatable, and every one must pass"}
+}
+
+// mailConditionsOf reads the --on-mail tests.
+func mailConditionsOf(command *cli.Command) ([]client.MailboxRuleCondition, error) {
+	conditions := []client.MailboxRuleCondition{}
+	for _, specification := range command.StringSlice("on-mail") {
+		condition, err := parseCondition(specification)
+		if err != nil {
+			return nil, err
+		}
+		conditions = append(conditions, condition)
+	}
+	return conditions, nil
+}
+
+// scheduleWhen is when a schedule runs, in a few words: its cron line, or
+// the mail it waits for.
+func scheduleWhen(cron string, conditions []client.MailboxRuleCondition) string {
+	if len(conditions) == 0 {
+		return cron
+	}
+	words := make([]string, 0, len(conditions))
+	for _, condition := range conditions {
+		switch condition.Field {
+		case "any":
+			words = append(words, "any")
+		case "header":
+			words = append(words, fmt.Sprintf("header %s %s %s", condition.Header, condition.Operator, condition.Value))
+		default:
+			words = append(words, fmt.Sprintf("%s %s %s", condition.Field, condition.Operator, condition.Value))
+		}
+	}
+	return "on mail: " + strings.Join(words, " and ")
 }
 
 func runAgentScheduleAdd(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() < 3 {
-		return fmt.Errorf("give a name, a cron line and the prompt: teanode agent schedule add \"Morning\" \"0 8 * * 1-5\" \"what needs me today?\"")
-	}
-	arguments := command.Args().Slice()
-	prompt, err := readValue(command, strings.Join(arguments[2:], " "))
+	conditions, err := mailConditionsOf(command)
 	if err != nil {
 		return err
 	}
+	arguments := command.Args().Slice()
+	fields := map[string]any{"deliver": command.String("deliver"), "enabled": true}
+	promptFrom := 2
+	if len(conditions) > 0 {
+		if len(arguments) < 2 {
+			return fmt.Errorf("give a name and the prompt: teanode agent schedule add --on-mail from:contains:news@school.example \"School pictures\" \"save the pictures it links\"")
+		}
+		fields["mailConditions"] = conditions
+		promptFrom = 1
+	} else {
+		if len(arguments) < 3 {
+			return fmt.Errorf("give a name, a cron line and the prompt: teanode agent schedule add \"Morning\" \"0 8 * * 1-5\" \"what needs me today?\"")
+		}
+		fields["cron"] = arguments[1]
+	}
+	prompt, err := readValue(command, strings.Join(arguments[promptFrom:], " "))
+	if err != nil {
+		return err
+	}
+	fields["name"], fields["prompt"] = arguments[0], prompt
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
-	schedule, err := client.SaveAgentSchedule(ctx, connection, "", map[string]any{"name": arguments[0], "cron": arguments[1], "prompt": prompt, "deliver": command.String("deliver"), "enabled": true})
+	schedule, err := client.SaveAgentSchedule(ctx, connection, "", fields)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -196,6 +253,16 @@ func runAgentScheduleSet(ctx context.Context, command *cli.Command) error {
 	if command.IsSet("cron") {
 		fields["cron"] = command.String("cron")
 	}
+	if command.IsSet("on-mail") {
+		if command.IsSet("cron") {
+			return fmt.Errorf("a schedule runs on a cron line or on mail, not both: give --cron or --on-mail")
+		}
+		conditions, err := mailConditionsOf(command)
+		if err != nil {
+			return err
+		}
+		fields["mailConditions"] = conditions
+	}
 	if command.IsSet("prompt") {
 		prompt, err := readValue(command, command.String("prompt"))
 		if err != nil {
@@ -207,7 +274,7 @@ func runAgentScheduleSet(ctx context.Context, command *cli.Command) error {
 		fields["deliver"] = command.String("deliver")
 	}
 	if len(fields) == 0 {
-		return fmt.Errorf("say what to change: --name, --cron, --prompt or --deliver")
+		return fmt.Errorf("say what to change: --name, --cron, --on-mail, --prompt or --deliver")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -257,7 +324,9 @@ func printAgentSchedule(command *cli.Command, schedule *client.AgentSchedule) er
 		return nil
 	}
 	next := ""
-	if schedule.NextRunAt != nil {
+	if len(schedule.MailConditions) > 0 {
+		next = ", " + scheduleWhen(schedule.Cron, schedule.MailConditions)
+	} else if schedule.NextRunAt != nil {
 		next = ", next " + schedule.NextRunAt.Local().Format("2006-01-02 15:04")
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s: %s%s\n", schedule.ID, schedule.Name, next)

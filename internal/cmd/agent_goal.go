@@ -142,7 +142,7 @@ func runAgentGoalShow(ctx context.Context, command *cli.Command) error {
 			if !schedule.IsEnabled {
 				state = "off"
 			}
-			_, _ = fmt.Fprintf(writer, "  schedule %s: %s (%s, %s)\n", schedule.ID, forTerminal(schedule.Name), schedule.Cron, state)
+			_, _ = fmt.Fprintf(writer, "  schedule %s: %s (%s, %s)\n", schedule.ID, forTerminal(schedule.Name), scheduleWhen(schedule.Cron, schedule.MailConditions), state)
 		}
 		for _, work := range goal.BackgroundWork {
 			_, _ = fmt.Fprintf(writer, "  background %s %s: %s (%s)\n", work.WorkKind, work.ID, forTerminal(work.Title), backgroundWorkState(work))

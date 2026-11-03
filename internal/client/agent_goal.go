@@ -42,11 +42,12 @@ type AgentGoalActivity struct {
 
 // AgentGoalSchedule is a schedule a goal made.
 type AgentGoalSchedule struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	Cron      string     `json:"cron"`
-	IsEnabled bool       `json:"enabled"`
-	NextRunAt *time.Time `json:"nextRunAt"`
+	ID             string                 `json:"id"`
+	Name           string                 `json:"name"`
+	Cron           string                 `json:"cron"`
+	MailConditions []MailboxRuleCondition `json:"mailConditions,omitempty"`
+	IsEnabled      bool                   `json:"enabled"`
+	NextRunAt      *time.Time             `json:"nextRunAt"`
 }
 
 // AgentGoalArtifact is a mail rule, a reminder or an alert mute a goal
@@ -71,7 +72,7 @@ const (
 		GetAgentGoal(conversationId: $conversationId) {
 			` + goalFields + `
 			activity { id createdAt goalActivityKind activityHeadline activityDetail }
-			schedules { id name cron enabled nextRunAt }
+			schedules { id name cron mailConditions { field header operator value } enabled nextRunAt }
 			backgroundWork { ` + backgroundWorkFields + ` }
 			artifacts { id createdAt goalArtifactKind artifactReference artifactTitle }
 		}

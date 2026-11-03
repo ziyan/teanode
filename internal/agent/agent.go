@@ -486,6 +486,7 @@ func (self *Agent) OnMailboxDelivery(tx db.Transaction, mailbox *models.Mailbox,
 	if !agent.Active() {
 		return
 	}
+	self.noteMailForSchedules(tx, agent, mailbox, item, mail)
 	source := mailbox.Agent
 	if source.Triage != nil && source.Triage.Enabled && configuration.Agent.FeatureOn("triage") {
 		if _, err := self.Enqueue(tx, models.AgentJobTriage, agent.ID, mailbox.ID, mail.ID); err != nil {

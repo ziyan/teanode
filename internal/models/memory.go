@@ -1,6 +1,8 @@
 package models
 
 import (
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -133,7 +135,8 @@ type AgentFeedback struct {
 	Said string `json:"said"`
 }
 
-// AgentSchedule is a prompt run at times the person chose.
+// AgentSchedule is a prompt run at times the person chose, or whenever a
+// message they chose arrives.
 type AgentSchedule struct {
 	ID         string    `json:"id"`
 	CreatedAt  time.Time `json:"createdAt"`
@@ -143,9 +146,19 @@ type AgentSchedule struct {
 	Name string `json:"name"`
 
 	// Cron is five fields — minute hour day month weekday — read in the
-	// person's zone.
+	// person's zone. Empty for a schedule that runs on arriving mail.
 	Cron   string `json:"cron"`
 	Prompt string `json:"prompt"`
+
+	// MailConditions make a schedule run when a message arrives that passes
+	// every one of them, in a mailbox the agent was given, instead of at set
+	// times. They are the tests a mailbox rule makes.
+	MailConditions []MailboxRuleCondition `json:"mailConditions,omitempty"`
+
+	// MailArrivals are the messages that passed since the schedule last ran,
+	// for its next run to be told about. Kept off the API: they are the
+	// run's to read, by the id each carries.
+	MailArrivals []AgentScheduleArrival `json:"-"`
 
 	// WrittenBy is who wrote that prompt: the person, the agent through a
 	// tool, or TeaNode itself for the schedules a switch makes (the daily
@@ -168,6 +181,35 @@ type AgentSchedule struct {
 	LastRunAt *time.Time `json:"lastRunAt,omitempty"`
 	NextRunAt *time.Time `json:"nextRunAt,omitempty"`
 }
+
+// IsMailTriggered is whether the schedule runs on arriving mail rather than
+// at set times.
+func (self *AgentSchedule) IsMailTriggered() bool {
+	return len(self.MailConditions) > 0
+}
+
+// AgentScheduleArrival is one message that set a schedule off: enough for
+// the run to say what came and to read it, not what it says.
+type AgentScheduleArrival struct {
+	MailboxItemID string    `json:"mailboxItemId"`
+	MailboxName   string    `json:"mailboxName,omitempty"`
+	From          string    `json:"from"`
+	Subject       string    `json:"subject"`
+	ReceivedAt    time.Time `json:"receivedAt"`
+	// IsSenderVerified is whether the sender's domain vouched for the
+	// message (DMARC passed), so that a From line anybody can write is not
+	// taken for the sender it names.
+	IsSenderVerified bool `json:"isSenderVerified"`
+}
+
+// MaximumScheduleArrivals is how many messages a schedule keeps for its next
+// run; a flood past that is counted by the newest ones alone.
+const MaximumScheduleArrivals = 50
+
+// ScheduleMailFields are the tests a schedule's mail conditions may make:
+// those a message can be judged by as it arrives, before the agent has
+// sorted it.
+var ScheduleMailFields = []string{"from", "to", "subject", "header", "any"}
 
 // Who wrote a schedule's prompt.
 const (
@@ -205,8 +247,35 @@ func (self *AgentSchedule) Validate() error {
 	if strings.TrimSpace(self.Name) == "" {
 		errors.add("name", "required")
 	}
-	if strings.TrimSpace(self.Cron) == "" {
-		errors.add("cron", "required")
+	switch {
+	case self.IsMailTriggered() && strings.TrimSpace(self.Cron) != "":
+		errors.add("cron", "a schedule runs at set times or on arriving mail, not both")
+	case !self.IsMailTriggered() && strings.TrimSpace(self.Cron) == "":
+		errors.add("cron", "required, or mail conditions")
+	}
+	for index, condition := range self.MailConditions {
+		if !slices.Contains(ScheduleMailFields, condition.Field) {
+			errors.add("mailConditions", "condition %d: %q is not a field; use from, to, subject, header or any", index, condition.Field)
+			continue
+		}
+		if condition.Field == "any" {
+			continue
+		}
+		switch condition.Operator {
+		case "contains", "equals", "":
+		case "matches":
+			if _, err := regexp.Compile(condition.Value); err != nil {
+				errors.add("mailConditions", "condition %d: %q is not a pattern: %s", index, condition.Value, err)
+			}
+		default:
+			errors.add("mailConditions", "condition %d: %q is not an operator; use contains, equals or matches", index, condition.Operator)
+		}
+		if strings.TrimSpace(condition.Value) == "" {
+			errors.add("mailConditions", "condition %d: needs a value to compare with", index)
+		}
+		if condition.Field == "header" && strings.TrimSpace(condition.Header) == "" {
+			errors.add("mailConditions", "condition %d: a header condition names the header", index)
+		}
 	}
 	if strings.TrimSpace(self.Prompt) == "" {
 		errors.add("prompt", "required")
