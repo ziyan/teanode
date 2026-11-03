@@ -67,6 +67,7 @@ const (
 	DocumentLeaveChat                   = `mutation ($conversationId: String!) { LeaveChat(conversationId: $conversationId) }`
 	DocumentEditChatMessage             = `mutation ($messageId: String!, $message: String!) { EditChatMessage(messageId: $messageId, message: $message) { id createdAt content authorName editedAt } }`
 	DocumentDeleteChatMessage           = `mutation ($messageId: String!) { DeleteChatMessage(messageId: $messageId) }`
+	DocumentTranscribeChatVoiceMessage  = `mutation ($messageId: String!) { TranscribeChatVoiceMessage(messageId: $messageId) { id transcriptState transcriptText } }`
 	DocumentMarkChatRead                = `mutation ($conversationId: String!, $throughMessageId: String!) { MarkChatRead(conversationId: $conversationId, throughMessageId: $throughMessageId) }`
 	DocumentSetChatNotificationLevel    = `mutation ($conversationId: String!, $notificationLevel: String!) { SetChatNotificationLevel(conversationId: $conversationId, notificationLevel: $notificationLevel) ` + conversationFields + ` }`
 	DocumentSetChatTyping               = `mutation ($conversationId: String!) { SetChatTyping(conversationId: $conversationId) }`
@@ -153,6 +154,18 @@ func EditChatMessage(ctx context.Context, connection *Client, messageId, message
 		return nil, err
 	}
 	return result.EditChatMessage, nil
+}
+
+// TranscribeChatVoiceMessage writes the words of a voice message that has
+// none, paid by your agent; everybody in the chat sees them.
+func TranscribeChatVoiceMessage(ctx context.Context, connection *Client, messageId string) (*AgentMessage, error) {
+	var result struct {
+		TranscribeChatVoiceMessage *AgentMessage `json:"TranscribeChatVoiceMessage"`
+	}
+	if err := connection.Execute(ctx, DocumentTranscribeChatVoiceMessage, map[string]any{"messageId": messageId}, &result); err != nil {
+		return nil, err
+	}
+	return result.TranscribeChatVoiceMessage, nil
 }
 
 // DeleteChatMessage takes a message back.

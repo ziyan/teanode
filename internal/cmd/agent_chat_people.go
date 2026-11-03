@@ -103,6 +103,13 @@ func chatCommands() []*cli.Command {
 			Action:    runChatEdit,
 		},
 		{
+			Name:      "transcribe",
+			Usage:     "write the words of a voice message that has none, paid by your agent; everybody in the chat sees them",
+			ArgsUsage: "<message-id>",
+			Flags:     []cli.Flag{JSONFlag()},
+			Action:    runChatTranscribe,
+		},
+		{
 			Name:      "delete-message",
 			Usage:     "delete one of your messages for everybody in the chat; in a group chat an admin may delete any",
 			ArgsUsage: "<message-id>",
@@ -538,6 +545,30 @@ func runChatEdit(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(message)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s: edited\n", message.ID)
+	return nil
+}
+
+func runChatTranscribe(ctx context.Context, command *cli.Command) error {
+	messageId := strings.TrimSpace(command.Args().First())
+	if messageId == "" {
+		return fmt.Errorf("which voice message? give its id, as conversation show --json lists them")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	message, err := client.TranscribeChatVoiceMessage(ctx, connection, messageId)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(message)
+	}
+	if strings.TrimSpace(message.TranscriptText) == "" {
+		_, _ = fmt.Fprintf(command.Writer, "%s: nothing was said that could be transcribed\n", message.ID)
+		return nil
+	}
+	_, _ = fmt.Fprintln(command.Writer, message.TranscriptText)
 	return nil
 }
 

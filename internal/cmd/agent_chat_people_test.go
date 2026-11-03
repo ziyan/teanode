@@ -35,18 +35,19 @@ func TestChatParity(test *testing.T) {
 		subcommand string
 		action     string
 	}{
-		"OpenDirectChat":           {"direct", "direct"},
-		"CreateGroupChat":          {"group", "group"},
-		"RenameChat":               {"rename", "rename"},
-		"AddChatMembers":           {"add", "add_members"},
-		"RemoveChatMember":         {"remove", "remove_member"},
-		"LeaveChat":                {"leave", "leave"},
-		"EditChatMessage":          {"edit", "edit"},
-		"DeleteChatMessage":        {"delete-message", "delete_message"},
-		"MarkChatRead":             {"read", "mark_read"},
-		"SetChatNotificationLevel": {"notifications", "notifications"},
-		"SetChatTyping":            {"", ""},
-		"SayInChatAsAgent":         {"", "send"},
+		"OpenDirectChat":             {"direct", "direct"},
+		"CreateGroupChat":            {"group", "group"},
+		"RenameChat":                 {"rename", "rename"},
+		"AddChatMembers":             {"add", "add_members"},
+		"RemoveChatMember":           {"remove", "remove_member"},
+		"LeaveChat":                  {"leave", "leave"},
+		"EditChatMessage":            {"edit", "edit"},
+		"DeleteChatMessage":          {"delete-message", "delete_message"},
+		"TranscribeChatVoiceMessage": {"transcribe", "transcribe"},
+		"MarkChatRead":               {"read", "mark_read"},
+		"SetChatNotificationLevel":   {"notifications", "notifications"},
+		"SetChatTyping":              {"", ""},
+		"SayInChatAsAgent":           {"", "send"},
 
 		// The agent's own reaction, apart from its person's: the person
 		// reacts with teanode agent react.

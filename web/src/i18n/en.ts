@@ -6513,6 +6513,7 @@ export const en = {
   'chat.voiceMessagePlay': 'Play the voice message',
   'chat.voiceMessagePause': 'Pause the voice message',
   'chat.voiceMessageSeek': 'Position in the voice message',
+  'chat.transcribe': 'Transcribe',
   'chat.transcribing': 'Transcribing…',
   'chat.transcriptFailed': 'Could not transcribe',
   'chat.deleteTitle': 'Delete this message?',
