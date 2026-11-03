@@ -1044,6 +1044,38 @@ func TestAnAgentSpeaksInAChatUnderItsNameForItsOwner(t *testing.T) {
 	world.refused(t, world.alice, fmt.Sprintf(`mutation { SayInChatAsAgent(conversationId: %q, message: "hello") { id } }`, frankChat))
 }
 
+// A program writing for a person (the agent's tool, a harness over MCP, the
+// command line) says something in a group chat under the person's own name:
+// an @ before a member's name mentions them, it may answer a message, and it
+// asks no agent. Somebody outside the chat cannot.
+func TestAPersonSaysSomethingInAGroupChatThroughTheAPI(t *testing.T) {
+	world := newChatWorld(t)
+	world.shareCircle(t, world.alice, "Home", world.frank, world.bob)
+	aliceChat := world.listedCircleChat(t, world.alice)
+	frankChat := world.listedCircleChat(t, world.frank)
+	world.say(t, world.alice, aliceChat, "who is cooking tonight?")
+	asked := world.read(t, world.frank, frankChat)[0]["id"].(string)
+
+	said := world.call(t, world.frank, fmt.Sprintf(`mutation { SayInChat(conversationId: %q, message: "@%s I am, at seven.", replyToMessageId: %q) { id content authorKind authorName } }`,
+		frankChat, world.alice.DisplayName(), asked))["SayInChat"].(map[string]any)
+	if said["authorKind"] != "person" || said["authorName"] != world.frank.DisplayName() {
+		t.Errorf("SayInChat answered %v", said)
+	}
+	messages := world.read(t, world.alice, aliceChat)
+	message := messages[len(messages)-1]
+	if message["authorKind"] != "person" || message["authorUserId"] != world.frank.ID || message["role"] != "user" || message["authorAgentId"] != "" {
+		t.Errorf("Alice reads %v", message)
+	}
+	if mentioned, _ := message["mentionedUserIds"].([]any); len(mentioned) != 1 || mentioned[0] != world.alice.ID {
+		t.Errorf("the message mentions %v", message["mentionedUserIds"])
+	}
+	if references, _ := message["references"].([]any); len(references) != 1 || references[0].(map[string]any)["agentMessageId"] != asked {
+		t.Errorf("the message answers %v", message["references"])
+	}
+	world.refused(t, world.frank, fmt.Sprintf(`mutation { SayInChat(conversationId: %q, message: "  ") { id } }`, frankChat))
+	world.refused(t, world.alice, fmt.Sprintf(`mutation { SayInChat(conversationId: %q, message: "hello") { id } }`, frankChat))
+}
+
 // An agent that is on reacts to what was said in its owner's chat, as itself:
 // the others are told, the reaction is read back as the agent's, it can be
 // taken away, and an agent does not react to its own words or when it is off.
