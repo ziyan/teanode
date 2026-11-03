@@ -396,7 +396,11 @@ message are told only to the members the message was readable by
 (`publishChatMessageEvents`), so somebody added to a group later is never handed
 the new words of what was said before them. `SayInChatAsAgent`, which the `conversation`
 tool's `send` action calls, writes the same message as the agent: its name, and
-`author_agent_id` set. Unread counts come from the member's read mark, which
+`author_agent_id` set. `SayInChat` writes it as the person, for a program writing
+for them (the tool's `send` with `author_kind` `person`, a harness over MCP, which
+has the same tool, and `teanode agent conversation say`): the words alone, an @
+before a member's name mentioning them, and optionally the message it answers. It
+asks no agent. Unread counts come from the member's read mark, which
 only moves forward (`MarkChatRead`) and which writing a message also moves.
 "Forward" and "newer" are by when a message was stored and then its identifier,
 the order a chat is read in, for the read mark, the unread counts and the
