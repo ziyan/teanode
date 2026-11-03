@@ -307,9 +307,10 @@ extension TranscriptLine {
     /// row. One after a different author, or a long pause, or on another
     /// day begins one. The day is the one the conversation draws its date
     /// dividers between, so the message under a divider shows the name and
-    /// the picture again however little time passed across midnight.
+    /// the picture again however little time passed across midnight. A call's
+    /// line is drawn with no author, so the message under it begins one.
     public func beginsRun(after previous: TranscriptLine?, calendar: Calendar = .current) -> Bool {
-        guard let author, let previous, let before = previous.author, before.runKey == author.runKey else { return true }
+        guard let author, let previous, !previous.isCallLine, let before = previous.author, before.runKey == author.runKey else { return true }
         guard let now = ServerTime.date(at), let then = ServerTime.date(previous.at) else { return false }
         if !calendar.isDate(now, inSameDayAs: then) { return true }
         let gap = now.timeIntervalSince(then)

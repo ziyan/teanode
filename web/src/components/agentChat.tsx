@@ -317,6 +317,9 @@ function localDayOf(at: string): string {
 export function beginsRun(line: ChatLine, previous: { kind: string } | undefined): boolean {
   if (!previous || previous.kind !== 'chat') return true
   const before = previous as ChatLine
+  // A call's line is drawn with no author, so whoever started the call is
+  // named again on their next message.
+  if (before.callId) return true
   if (authorKeyOf(before) !== authorKeyOf(line)) return true
   if (!before.at || !line.at) return false
   // The drawer draws a divider where the day changes ("Today"), and the line
