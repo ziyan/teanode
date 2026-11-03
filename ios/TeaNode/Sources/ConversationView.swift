@@ -41,6 +41,8 @@ struct ConversationView: View {
     @State private var hasPersonScrolled = false
     @State private var status = StatusModel()
     @State private var isShowingStatus = false
+    /// The sheet that chooses who a call in a group rings.
+    @State private var isChoosingCallPeople = false
 
     private static let endId = "end"
 
@@ -75,13 +77,24 @@ struct ConversationView: View {
                     // What the agent is doing is no part of a chat of people;
                     // a chat of people can be called.
                     if model.isChat {
-                        ChatCallButton(model: model)
+                        ChatCallButton(model: model) { isChoosingCallPeople = true }
                         ChatMenu(model: model)
                     } else {
                         StatusButton(status: status) { isShowingStatus = true }
                     }
                 }
             }
+            .sheet(isPresented: $isChoosingCallPeople) {
+                ChatCallPeopleSheet(model: model)
+            }
+            #if DEBUG
+                // `-TeaNodeScreen chat-call-choose`: choosing who to call in the group.
+                .task {
+                    guard DemoServer.isRequested, DemoServer.screen == "chat-call-choose" else { return }
+                    try? await Task.sleep(for: .seconds(1))
+                    isChoosingCallPeople = true
+                }
+            #endif
             .sheet(isPresented: $isShowingStatus) {
                 if let connection = app.connection {
                     StatusSheet(status: status, connection: connection)

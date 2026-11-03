@@ -12,6 +12,8 @@ export interface ChatCallMember {
   ringState: string
   isOn: boolean
   isVideoOn: boolean
+  // Their microphone is off, shown beside their name.
+  isMuted: boolean
   joinedAt: string | null
   leftAt: string | null
 }
@@ -86,11 +88,11 @@ export const CHAT_CALL_SUMMARY_FIELDS =
 const CALL_FIELDS = `
   id conversationId chatTitle isGroup startedByUserId startedByName startedAt answeredAt endedAt endReason isGoing
   durationMs askerRingState isAskerOn transcriptionAskedByUserId transcriptState summaryMessageId
-  members { userId name avatarUrl avatarColorIndex ringState isOn isVideoOn joinedAt leftAt }`
+  members { userId name avatarUrl avatarColorIndex ringState isOn isVideoOn isMuted joinedAt leftAt }`
 
 export const START_CHAT_CALL = `
-  mutation ($conversationId: String!, $isVideoOn: Boolean) {
-    StartChatCall(conversationId: $conversationId, isVideoOn: $isVideoOn) { ${CALL_FIELDS} }
+  mutation ($conversationId: String!, $isVideoOn: Boolean, $userIds: [String!]) {
+    StartChatCall(conversationId: $conversationId, isVideoOn: $isVideoOn, userIds: $userIds) { ${CALL_FIELDS} }
   }`
 export const JOIN_CHAT_CALL = `
   mutation ($callId: String!) {
@@ -115,6 +117,10 @@ export const ANSWER_CHAT_CALL_MEDIA = `
 export const SET_CHAT_CALL_VIDEO = `
   mutation ($callId: String!, $isVideoOn: Boolean!) {
     SetChatCallVideo(callId: $callId, isVideoOn: $isVideoOn) { ${CALL_FIELDS} }
+  }`
+export const SET_CHAT_CALL_MUTED = `
+  mutation ($callId: String!, $isMuted: Boolean!) {
+    SetChatCallMuted(callId: $callId, isMuted: $isMuted) { ${CALL_FIELDS} }
   }`
 export const ASK_CHAT_CALL_TRANSCRIPTION = `
   mutation ($callId: String!) {

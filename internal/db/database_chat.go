@@ -174,6 +174,9 @@ type ChatOperation interface {
 	// SetChatCallVideo records whether the person's camera is on.
 	SetChatCallVideo(callId, userId string, isVideoOn bool) (*models.ChatCall, error)
 
+	// SetChatCallMuted records whether the person's microphone is off.
+	SetChatCallMuted(callId, userId string, isMuted bool) (*models.ChatCall, error)
+
 	// EndChatCall ends a going call: whoever is still rung missed it, and
 	// whoever is on it has left. A transcript asked for on a call that was
 	// answered is then waiting to be written.

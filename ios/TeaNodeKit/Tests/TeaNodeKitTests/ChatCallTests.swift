@@ -41,7 +41,7 @@ final class ChatCallTests: XCTestCase {
            {"userId":"user-tobias","name":"Tobias","avatarUrl":"/api/v1/avatar/user/user-tobias?v=1","avatarColorIndex":5,"ringState":"answered",
             "isOn":true,"isVideoOn":true,"joinedAt":"2030-01-01T10:00:20Z","leftAt":null},
            {"userId":"user-priya","name":"Priya","avatarUrl":null,"avatarColorIndex":8,"ringState":"ringing","isOn":false,"isVideoOn":false,
-            "joinedAt":null,"leftAt":null}]}
+            "isMuted":true,"joinedAt":null,"leftAt":null}]}
         """#
 
     private func decodedCall(_ json: String) throws -> ChatCallView {
@@ -58,6 +58,7 @@ final class ChatCallTests: XCTestCase {
         XCTAssertEqual(call.onCount, 2)
         XCTAssertEqual(call.onMembers.map(\.userId), ["user-mira", "user-tobias"])
         XCTAssertEqual(call.member(userId: "user-tobias")?.isVideoOn, true)
+        XCTAssertEqual(call.members.map(\.isMuted), [false, false, true])
         XCTAssertEqual(call.durationMs, 252_000)
         XCTAssertNotNil(call.startedDate)
         XCTAssertNil(call.endedDate)
@@ -118,6 +119,22 @@ final class ChatCallTests: XCTestCase {
         XCTAssertEqual(variables["conversationId"], .string("conversation-1"))
         XCTAssertEqual(variables["isVideoOn"], .bool(true))
         XCTAssertTrue(try sentDocument(fake).contains("StartChatCall"))
+        XCTAssertNil(variables["userIds"])
+    }
+
+    func testStartingACallCanRingOnlyThePeopleChosen() async throws {
+        let (connection, fake) = try makeConnection(answering: #"{"data":{"StartChatCall":\#(goingCall)}}"#)
+        _ = try await connection.startChatCall(conversationId: "conversation-1", userIds: ["user-tobias"])
+        XCTAssertEqual(try sentVariables(fake)["userIds"], .array([.string("user-tobias")]))
+    }
+
+    func testMutingTellsTheCall() async throws {
+        let (connection, fake) = try makeConnection(answering: #"{"data":{"SetChatCallMuted":\#(goingCall)}}"#)
+        try await connection.setChatCallMuted(callId: "call-1", isMuted: true)
+        let variables = try sentVariables(fake)
+        XCTAssertEqual(variables["callId"], .string("call-1"))
+        XCTAssertEqual(variables["isMuted"], .bool(true))
+        XCTAssertTrue(try sentDocument(fake).contains("SetChatCallMuted"))
     }
 
     func testJoiningAndLeavingNameTheCall() async throws {

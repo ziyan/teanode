@@ -10,6 +10,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/avatar"
 	"github.com/ziyan/teanode/internal/call"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -59,8 +60,8 @@ type ReadGoingChatCallArguments struct {
 // ChatCallMutation starts, answers and ends calls. Needs circle:use, and a
 // place in the chat.
 type ChatCallMutation interface {
-	// Starts a call in the chat, ringing everybody else in it, with the
-	// caller on it. When a call is going in the chat already, it is that
+	// Starts a call in the chat, ringing everybody else in it (or only the
+	// people in userIds), with the caller on it. When a call is going in the chat already, it is that
 	// call, for the caller to join. isVideoOn says the caller starts with
 	// their camera on.
 	StartChatCall(ctx context.Context, arguments StartChatCallArguments) (*ChatCallView, error)
@@ -87,6 +88,10 @@ type ChatCallMutation interface {
 	// Tells the others that the caller's camera is on or off; the device
 	// starts or stops sending its picture itself.
 	SetChatCallVideo(ctx context.Context, arguments SetChatCallVideoArguments) (*ChatCallView, error)
+
+	// Tells the others that the caller's microphone is off or on; the device
+	// stops or starts sending its sound itself.
+	SetChatCallMuted(ctx context.Context, arguments SetChatCallMutedArguments) (*ChatCallView, error)
 
 	// Turns on transcribing the call, to be summarized into the chat when it
 	// ends. Everybody on it, and whoever joins later, is transcribed and told
@@ -131,9 +136,12 @@ type ListChatCallsArguments struct {
 }
 
 // StartChatCallArguments name the chat by the caller's conversation for it.
+// UserIDs, when given, are the people in it to ring instead of everybody;
+// the rest may still join from the chat's banner.
 type StartChatCallArguments struct {
-	ConversationID string `json:"conversationId"`
-	IsVideoOn      bool   `json:"isVideoOn" graphapi:"nullable"`
+	ConversationID string   `json:"conversationId"`
+	IsVideoOn      bool     `json:"isVideoOn" graphapi:"nullable"`
+	UserIDs        []string `json:"userIds" graphapi:"nullable"`
 }
 
 // JoinChatCallMediaArguments carry the device's offer.
@@ -152,6 +160,12 @@ type AnswerChatCallMediaArguments struct {
 type SetChatCallVideoArguments struct {
 	CallID    string `json:"callId"`
 	IsVideoOn bool   `json:"isVideoOn"`
+}
+
+// SetChatCallMutedArguments say whether the caller's microphone is off.
+type SetChatCallMutedArguments struct {
+	CallID  string `json:"callId"`
+	IsMuted bool   `json:"isMuted"`
 }
 
 // ChatCallView is a call as the person asking sees it.
@@ -204,6 +218,7 @@ type ChatCallMemberView struct {
 	RingState string `json:"ringState"`
 	IsOn      bool   `json:"isOn"`
 	IsVideoOn bool   `json:"isVideoOn"`
+	IsMuted   bool   `json:"isMuted"`
 
 	// yes for everybody while the call is transcribed; it stays for app
 	// builds that still read it (transcriptionAskedByUserId says the same)
@@ -354,10 +369,16 @@ func describeChatCall(session *chatSession, chatCall *models.ChatCall, now time.
 		part := &chatCall.Members[index]
 		memberView := &ChatCallMemberView{
 			UserID: part.UserID, RingState: string(part.RingState), IsOn: part.IsOn(), IsVideoOn: part.IsVideoOn,
-			TranscriptionConsent: part.TranscriptionConsent, JoinedAt: part.JoinedAt, LeftAt: part.LeftAt,
+			IsMuted: part.IsMuted, TranscriptionConsent: part.TranscriptionConsent, JoinedAt: part.JoinedAt, LeftAt: part.LeftAt,
+			AvatarColorIndex: avatar.InitialColorIndex(part.UserID),
 		}
+		// Drawn as the chat draws them (describeChatMembers), without
+		// changing the session's chat, which the caller goes on to use.
 		if member := session.Chat.Member(part.UserID); member != nil {
-			memberView.Name, memberView.AvatarURL, memberView.AvatarColorIndex = member.Name, member.AvatarURL, member.AvatarColorIndex
+			memberView.Name = member.Name
+			if member.User != nil {
+				memberView.AvatarURL = avatarUrl(member.User)
+			}
 		}
 		if part.UserID == session.User.ID {
 			view.AskerRingState = string(part.RingState)
@@ -563,14 +584,9 @@ func (self *graph) StartChatCall(ctx context.Context, arguments StartChatCallArg
 	} else if going != nil {
 		return describeChatCall(session, going, time.Now()), nil
 	}
-	// Everybody else still in the chat is rung, but whoever turned its
-	// notifications off.
-	var rung []string
-	for _, member := range session.Chat.ActiveMembers() {
-		if member.UserID == session.User.ID || member.UserID == "" || member.NotificationLevel == models.ChatNotificationOff {
-			continue
-		}
-		rung = append(rung, member.UserID)
+	rung, err := chatCallRung(session, arguments.UserIDs)
+	if err != nil {
+		return nil, err
 	}
 	chatCall, err := tx.CreateChatCall(session.Chat.ID, session.User.ID, self.settings.BackendID, rung)
 	if errors.Is(err, db.ErrAlreadyExists) {
@@ -600,6 +616,29 @@ func (self *graph) StartChatCall(ctx context.Context, arguments StartChatCallArg
 	self.notifyChatCall(ctx, chatCall)
 	self.ringChatCall(ctx, session, chatCall, rung)
 	return describeChatCall(session, chatCall, time.Now()), nil
+}
+
+// chatCallRung are the people a new call rings: everybody else still in the
+// chat, or only the ones chosen, but never whoever turned the chat's
+// notifications off.
+func chatCallRung(session *chatSession, chosenUserIds []string) ([]string, error) {
+	for _, userId := range chosenUserIds {
+		member := session.Chat.Member(userId)
+		if userId == session.User.ID || member == nil || member.IsRemoved {
+			return nil, fmt.Errorf("%w: only somebody else in the chat can be called", api.ErrInvalidArguments)
+		}
+	}
+	var rung []string
+	for _, member := range session.Chat.ActiveMembers() {
+		if member.UserID == session.User.ID || member.UserID == "" || member.NotificationLevel == models.ChatNotificationOff {
+			continue
+		}
+		if chosenUserIds != nil && !slices.Contains(chosenUserIds, member.UserID) {
+			continue
+		}
+		rung = append(rung, member.UserID)
+	}
+	return rung, nil
 }
 
 // publishCallLine puts the call's line in the open chats of the members,
@@ -783,6 +822,18 @@ func (self *graph) SetChatCallVideo(ctx context.Context, arguments SetChatCallVi
 		return nil, err
 	}
 	if chatCall, err = self.transaction(ctx).SetChatCallVideo(chatCall.ID, session.User.ID, arguments.IsVideoOn); err != nil {
+		return nil, translateError(err)
+	}
+	self.notifyChatCall(ctx, chatCall)
+	return describeChatCall(session, chatCall, time.Now()), nil
+}
+
+func (self *graph) SetChatCallMuted(ctx context.Context, arguments SetChatCallMutedArguments) (*ChatCallView, error) {
+	session, chatCall, err := self.requireGoingChatCall(ctx, arguments.CallID)
+	if err != nil {
+		return nil, err
+	}
+	if chatCall, err = self.transaction(ctx).SetChatCallMuted(chatCall.ID, session.User.ID, arguments.IsMuted); err != nil {
 		return nil, translateError(err)
 	}
 	self.notifyChatCall(ctx, chatCall)

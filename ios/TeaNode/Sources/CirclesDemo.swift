@@ -391,12 +391,12 @@
         }
 
         /// The chat a screenshot opens (`-TeaNodeScreen chat-direct`, `chat-link`, `chat-voice-mode`,
-        /// `chat-voice-hold`, `chat-call-lines`, `chat-group`, `chat-members`, `chat-mention`, `chat-call-banner` or `chat-call-minimized`), or nil
+        /// `chat-voice-hold`, `chat-call-lines`, `chat-group`, `chat-members`, `chat-mention`, `chat-call-banner`, `chat-call-minimized` or `chat-call-choose`), or nil
         /// for any other screen.
         static var openedChat: AgentConversation? {
             switch screen ?? "" {
             case "chat-direct", "chat-link", "chat-voice-mode", "chat-voice-hold", "chat-call-lines": AgentConversation(id: "chat-sam", kind: "chat", title: nil, summary: nil, lastAt: nil)
-            case "chat-group", "chat-members", "chat-mention", "chat-call-banner", "chat-call-minimized": AgentConversation(id: "chat-home", kind: "chat", title: "Home", summary: nil, lastAt: nil)
+            case "chat-group", "chat-members", "chat-mention", "chat-call-banner", "chat-call-minimized", "chat-call-choose": AgentConversation(id: "chat-home", kind: "chat", title: "Home", summary: nil, lastAt: nil)
             default: nil
             }
         }

@@ -35,6 +35,8 @@ final class ChatCallSession {
     /// The person's own user id, which of the call's members is them.
     var ownUserId = ""
     var isMuted = false
+    /// Who a call this phone starts rings: nil for everybody else in the chat.
+    var ringUserIds: [String]?
     /// Whether the call screen is put away to the bar at the top of the app,
     /// so the person can use the rest of it while on the call.
     var isMinimized = false
@@ -303,13 +305,19 @@ final class ChatCallManager: NSObject {
 
     // MARK: Starting and joining
 
-    /// Calls the people of a chat: starts a call, or joins the one going in it.
-    func startCall(conversationId: String, title: String) async {
+    /// Calls the people of a chat, with the camera on or off, ringing
+    /// everybody else in it or only the people in userIds: starts a call, or
+    /// joins the one going in it.
+    func startCall(conversationId: String, title: String, isVideoOn: Bool = false, userIds: [String]? = nil) async {
         if let callId = goingCallIds[conversationId] {
             await join(callId: callId, conversationId: conversationId, title: title)
             return
         }
-        await place(conversationId: conversationId, title: title, existingCallId: nil)
+        if isVideoOn, !(await Self.requestCameraAccess()) {
+            problemText = ChatCallProblem.cameraRefused.errorDescription
+            return
+        }
+        await place(conversationId: conversationId, title: title, existingCallId: nil, isVideoOn: isVideoOn, userIds: userIds)
     }
 
     /// Joins a call going: the one ringing this phone is answered through
@@ -327,7 +335,9 @@ final class ChatCallManager: NSObject {
         await place(conversationId: conversationId, title: title, existingCallId: callId)
     }
 
-    private func place(conversationId: String, title: String, existingCallId: String?) async {
+    private func place(
+        conversationId: String, title: String, existingCallId: String?, isVideoOn: Bool = false, userIds: [String]? = nil
+    ) async {
         guard session == nil, ledger.activeEntry == nil else {
             problemText = ChatCallProblem.alreadyOnCall.errorDescription
             return
@@ -343,9 +353,11 @@ final class ChatCallManager: NSObject {
         placed.connection = connection
         placed.callId = existingCallId
         placed.ownUserId = app.ownUserId ?? ""
+        placed.isCameraOn = isVideoOn
+        placed.ringUserIds = userIds
         session = placed
         let action = CXStartCallAction(call: entry.uuid, handle: CXHandle(type: .generic, value: title))
-        action.isVideo = false
+        action.isVideo = isVideoOn
         callController.request(CXTransaction(action: action)) { @Sendable error in
             guard error != nil else { return }
             // CallKit would not take the call (another call it cannot hold).
@@ -367,7 +379,8 @@ final class ChatCallManager: NSObject {
             if let callId = session.callId {
                 view = try await connection.joinChatCall(callId: callId, agentPhoneId: AppModel.shared.phone?.id)
             } else {
-                view = try await connection.startChatCall(conversationId: session.conversationId, isVideoOn: false)
+                view = try await connection.startChatCall(
+                    conversationId: session.conversationId, isVideoOn: session.isCameraOn, userIds: session.ringUserIds)
                 // A call going in the chat is returned to be joined.
                 if !view.isAskerOn { view = try await connection.joinChatCall(callId: view.id, agentPhoneId: AppModel.shared.phone?.id) }
             }
@@ -435,6 +448,8 @@ final class ChatCallManager: NSObject {
         if session.isCameraOn {
             media.setCamera(isOn: true, usesFrontCamera: session.usesFrontCamera)
             session.localVideoTrack = media.localVideoTrack
+            // A picture is looked at, not held to the ear.
+            if !session.isSpeakerOn, Self.isOnReceiver { setSpeaker(true) }
         }
         openSignals(session, connection: connection, callId: callId)
         let commands = session.signaling.start()
@@ -527,9 +542,14 @@ final class ChatCallManager: NSObject {
         }
     }
 
+    /// Mutes the microphone and tells the others, to show it beside the
+    /// name. The sound stops either way, so a failure to tell them is not
+    /// the person's to handle.
     private func applyMuted(_ isMuted: Bool, to session: ChatCallSession) {
         session.isMuted = isMuted
         session.media?.setMuted(isMuted)
+        guard session.media != nil, let callId = session.callId, let connection = session.connection else { return }
+        Task { if let view = try? await connection.setChatCallMuted(callId: callId, isMuted: isMuted) { note(view) } }
     }
 
     /// Turns the camera on or off, and tells the others.

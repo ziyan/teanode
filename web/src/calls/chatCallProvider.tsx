@@ -15,7 +15,7 @@ import {
   START_CHAT_CALL,
   type ChatCall,
 } from './chatCallApi'
-import { ChatCallsContext, type ActiveChatCall, type ChatCallsValue } from './chatCallContext'
+import { ChatCallsContext, type ActiveChatCall, type ChatCallsValue, type StartCallOptions } from './chatCallContext'
 import { ChatCallSession, type ChatCallProblem } from './chatCallSession'
 import { ChatCallStore } from './chatCallStore'
 import { RingingCards } from './ringingCards'
@@ -185,14 +185,21 @@ export function ChatCallProvider({
   )
 
   const startCall = useCallback(
-    (conversationId: string) =>
-      joinWith(
+    (conversationId: string, options: StartCallOptions = {}) => {
+      const isVideoOn = options.isVideoOn ?? false
+      return joinWith(
         async () =>
-          (await graphql<{ StartChatCall: ChatCall }>(START_CHAT_CALL, { conversationId, isVideoOn: false }))
-            .StartChatCall,
-        false,
+          (
+            await graphql<{ StartChatCall: ChatCall }>(START_CHAT_CALL, {
+              conversationId,
+              isVideoOn,
+              userIds: options.userIds ?? null,
+            })
+          ).StartChatCall,
+        isVideoOn,
         t('calls.startFailed'),
-      ),
+      )
+    },
     [joinWith, t],
   )
 

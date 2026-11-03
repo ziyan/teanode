@@ -14,6 +14,13 @@ export interface ActiveChatCall {
   isMinimized: boolean
 }
 
+// StartCallOptions are how a call starts: with the camera on, and ringing
+// only some of the people in the chat.
+export interface StartCallOptions {
+  isVideoOn?: boolean
+  userIds?: string[]
+}
+
 // ChatCallsValue is what the calls of the dashboard offer the rest of it.
 // Each action says its own failure in a toast, so a caller only starts it.
 export interface ChatCallsValue {
@@ -25,7 +32,9 @@ export interface ChatCallsValue {
   activeCall: ActiveChatCall | null
   // A call is being started or joined, so a second press does nothing.
   isBusy: boolean
-  startCall: (conversationId: string) => Promise<void>
+  // Starts a call in a chat with the camera on or off, ringing everybody
+  // else in it or only the people in userIds.
+  startCall: (conversationId: string, options?: StartCallOptions) => Promise<void>
   joinCall: (callId: string, isVideoOn: boolean) => Promise<void>
   declineCall: (callId: string) => Promise<void>
   leaveCall: () => Promise<void>

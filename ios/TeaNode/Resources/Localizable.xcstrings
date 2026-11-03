@@ -95982,6 +95982,86 @@
           }
         }
       }
+    },
+    "Voice call": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声通話"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音通话"
+          }
+        }
+      }
+    },
+    "Video call": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ビデオ通話"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视频通话"
+          }
+        }
+      }
+    },
+    "Choose who to call": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通話する人を選ぶ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择通话对象"
+          }
+        }
+      }
+    },
+    "Who to call": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通話する人"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "呼叫谁"
+          }
+        }
+      }
+    },
+    "The others in the chat are not rung, and can still join from the chat.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットの他のメンバーには着信せず、チャットから参加できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聊天中的其他人不会收到来电，但仍可从聊天中加入。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

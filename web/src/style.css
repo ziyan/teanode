@@ -24943,16 +24943,27 @@ a.journal-year-month:hover {
   position: absolute;
   left: var(--space-2);
   bottom: var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   max-width: calc(100% - 2 * var(--space-2));
   padding: 2px var(--space-2);
   border-radius: var(--radius-1);
   background: rgb(0 0 0 / 55%);
   color: #fff;
   font-size: var(--text-label);
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
+.call-tile-muted {
+  display: flex;
+  flex: none;
+}
+
+.call-tile-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .call-tile-name .muted {
   color: inherit;
   opacity: 0.75;

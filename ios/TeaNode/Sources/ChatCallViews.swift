@@ -86,6 +86,8 @@ struct ChatCallTile: View {
     let isOwn: Bool
     /// Whether the person's camera is on.
     let isVideoOn: Bool
+    /// Whether their microphone is off, marked beside their name.
+    let isMuted: Bool
     let track: RTCVideoTrack?
 
     private var name: String {
@@ -131,9 +133,16 @@ struct ChatCallTile: View {
 
     private var label: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(name)
-                .font(.footnote.weight(.semibold))
-                .lineLimit(1)
+            HStack(spacing: 4) {
+                if isMuted {
+                    Image(systemName: "mic.slash.fill")
+                        .font(.caption)
+                        .accessibilityLabel("Muted")
+                }
+                Text(name)
+                    .font(.footnote.weight(.semibold))
+                    .lineLimit(1)
+            }
             if isRinging {
                 Text("Ringing…")
                     .font(.caption)
@@ -292,6 +301,7 @@ struct ChatCallScreen: View {
         let isOwn = member.userId == session.ownUserId
         return ChatCallTile(
             member: member, isOwn: isOwn, isVideoOn: isOwn ? session.isCameraOn : member.isVideoOn,
+            isMuted: isOwn ? session.isMuted : member.isMuted,
             track: isOwn ? session.localVideoTrack : session.remoteVideoTracks[member.userId])
     }
 
@@ -572,20 +582,125 @@ struct ChatCallPresenter: ViewModifier {
 
 // MARK: In a chat
 
-/// ChatCallButton is the call button in the bar of a chat with people: it
-/// starts an audio call, or joins the one going.
+/// ChatCallButton is the call button in the bar of a chat with people: a
+/// menu of a voice call, a video call, and in a group, choosing who to call.
+/// A call going in the chat is joined instead.
 struct ChatCallButton: View {
     let model: ConversationModel
+    /// Opens the sheet that chooses who a call rings; the chat presents it.
+    let onChoose: () -> Void
 
     var body: some View {
-        Button {
-            guard let conversationId = model.conversationId else { return }
-            let title = model.title
-            Task { await ChatCallManager.shared.startCall(conversationId: conversationId, title: title) }
+        Menu {
+            Button {
+                call(isVideoOn: false)
+            } label: {
+                Label("Voice call", systemImage: "phone")
+            }
+            Button {
+                call(isVideoOn: true)
+            } label: {
+                Label("Video call", systemImage: "video")
+            }
+            if model.chat?.isGroup == true {
+                Button(action: onChoose) {
+                    Label("Choose who to call", systemImage: "person.2")
+                }
+            }
         } label: {
             Label("Start a call", systemImage: "phone")
         }
         .disabled(!model.canWrite || model.conversationId == nil)
+    }
+
+    private func call(isVideoOn: Bool) {
+        guard let conversationId = model.conversationId else { return }
+        let title = model.title
+        Task { await ChatCallManager.shared.startCall(conversationId: conversationId, title: title, isVideoOn: isVideoOn) }
+    }
+}
+
+/// ChatCallPeopleSheet chooses who in a group a call rings, then starts it
+/// with the camera off or on. Everybody is chosen to begin with; whoever is
+/// left out is not rung, and can still join from the chat.
+struct ChatCallPeopleSheet: View {
+    let model: ConversationModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var chosen: Set<String> = []
+    @State private var hasChosen = false
+
+    private var people: [ChatMember] {
+        (model.chat?.presentMembers ?? []).filter { !$0.isDeletedAccount && !$0.userId.isEmpty && $0.userId != model.ownUserId }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(people) { person in
+                        Button {
+                            if chosen.contains(person.userId) {
+                                chosen.remove(person.userId)
+                            } else {
+                                chosen.insert(person.userId)
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                AvatarView(name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex ?? 0, size: 36)
+                                Text(person.displayName)
+                                    .foregroundStyle(.primary)
+                                Spacer(minLength: 0)
+                                if chosen.contains(person.userId) {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.tint)
+                                }
+                            }
+                            .contentShape(.rect)
+                        }
+                        .accessibilityAddTraits(chosen.contains(person.userId) ? .isSelected : [])
+                    }
+                } footer: {
+                    Text("The others in the chat are not rung, and can still join from the chat.")
+                }
+                Section {
+                    Button {
+                        call(isVideoOn: false)
+                    } label: {
+                        Label("Voice call", systemImage: "phone")
+                            .actionColor()
+                    }
+                    Button {
+                        call(isVideoOn: true)
+                    } label: {
+                        Label("Video call", systemImage: "video")
+                            .actionColor()
+                    }
+                }
+                .disabled(chosen.isEmpty)
+            }
+            .navigationTitle("Who to call")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .onAppear {
+                guard !hasChosen else { return }
+                hasChosen = true
+                chosen = Set(people.map(\.userId))
+            }
+        }
+    }
+
+    private func call(isVideoOn: Bool) {
+        guard let conversationId = model.conversationId else { return }
+        let title = model.title
+        let userIds = people.map(\.userId).filter { chosen.contains($0) }
+        dismiss()
+        Task {
+            await ChatCallManager.shared.startCall(conversationId: conversationId, title: title, isVideoOn: isVideoOn, userIds: userIds)
+        }
     }
 }
 

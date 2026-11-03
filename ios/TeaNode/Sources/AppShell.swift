@@ -845,7 +845,7 @@ struct MainView: View {
             // `person-card-unlinked`, `location-person-card`), or a contact's from the Contacts list (`person-card-contact`).
             if let person = DemoServer.openedPerson { app.openedPerson = person }
             if let contactId = DemoServer.openedPersonContactId { app.openedContactId = contactId }
-            // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-voice-mode`, `chat-voice-hold`, `chat-group`, `chat-members`, `chat-mention`, `chat-call-banner`, `chat-call-lines`, `chat-call-minimized`),
+            // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-voice-mode`, `chat-voice-hold`, `chat-group`, `chat-members`, `chat-mention`, `chat-call-banner`, `chat-call-lines`, `chat-call-minimized`, `chat-call-choose`),
             // or the main conversation (`conversation`, `conversation-long-message`).
             if let chat = DemoServer.openedChat {
                 chatPath = [ChatPlace.conversation(chat)]

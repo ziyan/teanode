@@ -25,11 +25,11 @@
 
         /// One person's part in a call, as a call's view tells it.
         private static func callMemberJSON(
-            _ userId: String, ringState: String, isOn: Bool, isVideoOn: Bool = false, joinedAt: String?
+            _ userId: String, ringState: String, isOn: Bool, isVideoOn: Bool = false, isMuted: Bool = false, joinedAt: String?
         ) -> String {
             let person = demoPerson(userId)
             return
-                #"{"userId":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"ringState":"\#(ringState)","isOn":\#(isOn),"isVideoOn":\#(isVideoOn),"joinedAt":\#(quoted(joinedAt)),"leftAt":null}"#
+                #"{"userId":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"ringState":"\#(ringState)","isOn":\#(isOn),"isVideoOn":\#(isVideoOn),"isMuted":\#(isMuted),"joinedAt":\#(quoted(joinedAt)),"leftAt":null}"#
         }
 
         /// A call as the person sees it.
@@ -70,7 +70,8 @@
         }
 
         /// The call of the call screen: Robin, Sam (with his camera on) and
-        /// Alex, who has turned on transcription. Four minutes twelve in.
+        /// Alex, who has turned on transcription and is muted. Four minutes
+        /// twelve in.
         static var callScreenJSON: String {
             let answeredAt = CalendarDates.text(Date().addingTimeInterval(-252))
             return callViewJSON(
@@ -79,7 +80,7 @@
                 members: [
                     callMemberJSON("robin", ringState: "answered", isOn: true, joinedAt: answeredAt),
                     callMemberJSON("sam", ringState: "answered", isOn: true, isVideoOn: true, joinedAt: answeredAt),
-                    callMemberJSON("alex", ringState: "none", isOn: true, joinedAt: answeredAt),
+                    callMemberJSON("alex", ringState: "none", isOn: true, isMuted: true, joinedAt: answeredAt),
                 ])
         }
 

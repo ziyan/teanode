@@ -160,8 +160,15 @@ function CallTile({
         <Avatar name={member.name} avatarUrl={member.avatarUrl} colorIndex={member.avatarColorIndex} size={72} />
       )}
       <span className="call-tile-name">
-        {member.name}
-        {isSelf ? <span className="muted"> {t('calls.you')}</span> : null}
+        {member.isMuted ? (
+          <span className="call-tile-muted" role="img" aria-label={t('calls.muted')}>
+            <MicrophoneOffIcon size={12} />
+          </span>
+        ) : null}
+        <span className="call-tile-name-text">
+          {member.name}
+          {isSelf ? <span className="muted"> {t('calls.you')}</span> : null}
+        </span>
       </span>
     </li>
   )
@@ -341,6 +348,7 @@ function CallScreenView({ activeCall }: { activeCall: ActiveChatCall }) {
       ringState: 'answered',
       isOn: true,
       isVideoOn: snapshot.isVideoOn,
+      isMuted: snapshot.isMuted,
       joinedAt: null,
       leftAt: null,
     })
@@ -413,7 +421,7 @@ function CallScreenView({ activeCall }: { activeCall: ActiveChatCall }) {
             return (
               <CallTile
                 key={member.userId}
-                member={isSelf ? { ...member, isVideoOn: snapshot.isVideoOn } : member}
+                member={isSelf ? { ...member, isVideoOn: snapshot.isVideoOn, isMuted: snapshot.isMuted } : member}
                 isSelf={isSelf}
                 voiceStream={isSelf ? snapshot.localAudioStream : (received?.audioStream ?? null)}
                 videoStream={isSelf ? snapshot.localVideoStream : (received?.videoStream ?? null)}

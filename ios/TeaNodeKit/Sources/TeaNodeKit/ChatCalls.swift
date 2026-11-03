@@ -21,13 +21,15 @@ public struct ChatCallMemberView: Codable, Hashable, Sendable, Identifiable {
     /// Whether they are on the call now.
     public var isOn: Bool
     public var isVideoOn: Bool
+    /// Their microphone is off, shown beside their name.
+    public var isMuted: Bool
     public var joinedAt: String?
     public var leftAt: String?
 
     public var id: String { userId }
 
     private enum CodingKeys: String, CodingKey {
-        case userId, name, avatarUrl, avatarColorIndex, ringState, isOn, isVideoOn, joinedAt, leftAt
+        case userId, name, avatarUrl, avatarColorIndex, ringState, isOn, isVideoOn, isMuted, joinedAt, leftAt
     }
 }
 
@@ -41,6 +43,7 @@ extension ChatCallMemberView {
         ringState = try container.decodeIfPresent(String.self, forKey: .ringState) ?? ""
         isOn = try container.decodeIfPresent(Bool.self, forKey: .isOn) ?? false
         isVideoOn = try container.decodeIfPresent(Bool.self, forKey: .isVideoOn) ?? false
+        isMuted = try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
         joinedAt = try container.decodeIfPresent(String.self, forKey: .joinedAt)
         leftAt = try container.decodeIfPresent(String.self, forKey: .leftAt)
     }
@@ -285,12 +288,12 @@ extension Documents {
     static let chatCallFields = """
         id conversationId chatTitle isGroup startedByUserId startedByName startedAt answeredAt endedAt endReason isGoing durationMs
         askerRingState isAskerOn transcriptionAskedByUserId transcriptState summaryMessageId
-        members { userId name avatarUrl avatarColorIndex ringState isOn isVideoOn joinedAt leftAt }
+        members { userId name avatarUrl avatarColorIndex ringState isOn isVideoOn isMuted joinedAt leftAt }
         """
 
     public static let startChatCall = """
-        mutation ($conversationId: String!, $isVideoOn: Boolean) {
-          StartChatCall(conversationId: $conversationId, isVideoOn: $isVideoOn) { \(chatCallFields) }
+        mutation ($conversationId: String!, $isVideoOn: Boolean, $userIds: [String!]) {
+          StartChatCall(conversationId: $conversationId, isVideoOn: $isVideoOn, userIds: $userIds) { \(chatCallFields) }
         }
         """
     public static let joinChatCall = """
@@ -313,6 +316,11 @@ extension Documents {
     public static let setChatCallVideo = """
         mutation ($callId: String!, $isVideoOn: Boolean!) {
           SetChatCallVideo(callId: $callId, isVideoOn: $isVideoOn) { \(chatCallFields) }
+        }
+        """
+    public static let setChatCallMuted = """
+        mutation ($callId: String!, $isMuted: Boolean!) {
+          SetChatCallMuted(callId: $callId, isMuted: $isMuted) { \(chatCallFields) }
         }
         """
     public static let askChatCallTranscription = """
@@ -354,11 +362,13 @@ extension Documents {
 // MARK: The operations
 
 extension Connection {
-    /// Starts a call in the chat, ringing everybody else in it. When a call is
-    /// going in the chat already, it is that one, to join.
-    public func startChatCall(conversationId: String, isVideoOn: Bool = false) async throws -> ChatCallView {
+    /// Starts a call in the chat, ringing everybody else in it, or only the
+    /// people in userIds. When a call is going in the chat already, it is
+    /// that one, to join.
+    public func startChatCall(conversationId: String, isVideoOn: Bool = false, userIds: [String]? = nil) async throws -> ChatCallView {
         struct Answer: Decodable, Sendable { let StartChatCall: ChatCallView }
-        let variables: [String: JSONValue] = ["conversationId": .string(conversationId), "isVideoOn": .bool(isVideoOn)]
+        var variables: [String: JSONValue] = ["conversationId": .string(conversationId), "isVideoOn": .bool(isVideoOn)]
+        if let userIds { variables["userIds"] = .array(userIds.map { .string($0) }) }
         return try await execute(Documents.startChatCall, variables: variables, as: Answer.self).StartChatCall
     }
 
@@ -420,6 +430,15 @@ extension Connection {
         struct Answer: Decodable, Sendable { let SetChatCallVideo: ChatCallView }
         let variables: [String: JSONValue] = ["callId": .string(callId), "isVideoOn": .bool(isVideoOn)]
         return try await execute(Documents.setChatCallVideo, variables: variables, as: Answer.self).SetChatCallVideo
+    }
+
+    /// Tells the others the person's microphone is off or on; the device
+    /// stops or starts sending its sound itself.
+    @discardableResult
+    public func setChatCallMuted(callId: String, isMuted: Bool) async throws -> ChatCallView {
+        struct Answer: Decodable, Sendable { let SetChatCallMuted: ChatCallView }
+        let variables: [String: JSONValue] = ["callId": .string(callId), "isMuted": .bool(isMuted)]
+        return try await execute(Documents.setChatCallMuted, variables: variables, as: Answer.self).SetChatCallMuted
     }
 
     /// Asks for the call to be transcribed. Everybody on it is asked, and

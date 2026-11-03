@@ -36,6 +36,7 @@ type chatCallMemberModel struct {
 	JoinedAt  *time.Time `gorm:"column:joined_at"`
 	LeftAt    *time.Time `gorm:"column:left_at"`
 	IsVideoOn bool       `gorm:"column:is_video_on"`
+	IsMuted   bool       `gorm:"column:is_muted"`
 }
 
 func (chatCallMemberModel) TableName() string { return "chat_call_member" }
@@ -68,6 +69,7 @@ func chatCallFromModel(model *chatCallModel, members []chatCallMemberModel) *mod
 			JoinedAt:             localTime(member.JoinedAt),
 			LeftAt:               localTime(member.LeftAt),
 			IsVideoOn:            member.IsVideoOn,
+			IsMuted:              member.IsMuted,
 			TranscriptionConsent: transcriptionConsent,
 		})
 	}
@@ -266,7 +268,7 @@ func (self *transaction) LeaveChatCall(callId, userId string) (*models.ChatCall,
 		return nil, err
 	}
 	if err := self.tx.Model(&chatCallMemberModel{}).Where(`"call_id" = ? AND "user_id" = ? AND "joined_at" IS NOT NULL AND "left_at" IS NULL`, callId, userId).
-		Updates(map[string]any{"left_at": time.Now(), "is_video_on": false}).Error; err != nil {
+		Updates(map[string]any{"left_at": time.Now(), "is_video_on": false, "is_muted": false}).Error; err != nil {
 		return nil, err
 	}
 	return self.GetChatCall(callId)
@@ -278,6 +280,17 @@ func (self *transaction) SetChatCallVideo(callId, userId string, isVideoOn bool)
 	}
 	if err := self.tx.Model(&chatCallMemberModel{}).Where(`"call_id" = ? AND "user_id" = ? AND "joined_at" IS NOT NULL AND "left_at" IS NULL`, callId, userId).
 		Update("is_video_on", isVideoOn).Error; err != nil {
+		return nil, err
+	}
+	return self.GetChatCall(callId)
+}
+
+func (self *transaction) SetChatCallMuted(callId, userId string, isMuted bool) (*models.ChatCall, error) {
+	if _, err := self.goingChatCall(callId); err != nil {
+		return nil, err
+	}
+	if err := self.tx.Model(&chatCallMemberModel{}).Where(`"call_id" = ? AND "user_id" = ? AND "joined_at" IS NOT NULL AND "left_at" IS NULL`, callId, userId).
+		Update("is_muted", isMuted).Error; err != nil {
 		return nil, err
 	}
 	return self.GetChatCall(callId)
@@ -307,7 +320,7 @@ func (self *transaction) EndChatCall(callId string, endReason models.ChatCallEnd
 		return nil, err
 	}
 	if err := self.tx.Model(&chatCallMemberModel{}).Where(`"call_id" = ? AND "joined_at" IS NOT NULL AND "left_at" IS NULL`, callId).
-		Updates(map[string]any{"left_at": now, "is_video_on": false}).Error; err != nil {
+		Updates(map[string]any{"left_at": now, "is_video_on": false, "is_muted": false}).Error; err != nil {
 		return nil, err
 	}
 	return self.GetChatCall(callId)
