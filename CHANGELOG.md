@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.212.0] - 2026-11-03
+
+### Added
+
+- Voice and video calls in chats with other people. A call rings everyone else in the chat on their iPhone (even when locked) and in the dashboard, starts with audio, and anyone can turn their camera on. A chat with a call going shows a banner to join it. Anyone on a call can turn on transcription: everybody is told in a notice they can close, and the call is transcribed and summarized into the chat. A call can be minimized so you can read mail, look at photos or write in the chat while on it. (#717)
+- `teanode agent conversation calls` and `call` list a chat's calls and show one with its transcript. (#717)
+
 ## [0.211.3] - 2026-11-03
 
 ### Fixed
