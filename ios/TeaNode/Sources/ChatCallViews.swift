@@ -735,13 +735,17 @@ struct ChatCallTranscriptSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var detail: ChatCallDetailView?
     @State private var problemText: String?
+    /// The recording shared with the person, once read, which the sheet
+    /// shows next.
+    @State private var sharedRecording: SharedRecording?
+    @State private var isOpeningRecording = false
 
     var body: some View {
         NavigationStack {
             Group {
                 if let detail {
                     if detail.transcript.isEmpty {
-                        ContentUnavailableView("No transcript", systemImage: "text.bubble", description: Text("Nothing was said by the people who agreed to be transcribed."))
+                        ContentUnavailableView("No transcript", systemImage: "text.bubble", description: Text("Nothing was said that could be transcribed."))
                     } else {
                         transcript(detail)
                     }
@@ -757,11 +761,42 @@ struct ChatCallTranscriptSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+                // The call is a recording, which plays it and keeps the
+                // corrections of its words.
+                if let recordingId = detail?.recordingId {
+                    ToolbarItem(placement: .bottomBar) {
+                        Button("Open the recording") { openRecording(recordingId) }
+                            .disabled(isOpeningRecording)
+                    }
+                }
+            }
+            .navigationDestination(item: $sharedRecording) { recording in
+                SharedRecordingScreen(connection: connection, recording: recording)
             }
         }
         .task {
             do {
                 detail = try await connection.readChatCall(callId: callId)
+            } catch {
+                problemText = AppModel.shared.describe(error)
+            }
+        }
+    }
+
+    /// The person's own recording opens in Recordings; one shared with them
+    /// is read and shown here.
+    private func openRecording(_ recordingId: String) {
+        guard let detail else { return }
+        if detail.isRecordingOwned {
+            dismiss()
+            AppModel.shared.show(path: "/recordings/\(recordingId)")
+            return
+        }
+        isOpeningRecording = true
+        Task {
+            defer { isOpeningRecording = false }
+            do {
+                sharedRecording = try await connection.sharedRecording(recordingId: recordingId)
             } catch {
                 problemText = AppModel.shared.describe(error)
             }

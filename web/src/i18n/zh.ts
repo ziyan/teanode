@@ -7808,6 +7808,7 @@ export const zh: Catalog = {
   'calls.lineDeclined': '已拒接的通话',
   'calls.lineFailed': '通话失败',
   'calls.transcript': '文字记录',
+  'calls.openRecording': '打开录音',
   'calls.transcriptTitle': '通话文字记录',
   'calls.transcriptEmpty': '没有可转写的内容。',
   'calls.callIn': '{title} 的通话',

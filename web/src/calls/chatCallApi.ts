@@ -56,6 +56,15 @@ export interface ChatCallTranscriptSegment {
   text: string
 }
 
+// ChatCallDetail is a call's transcript, read from the recording the call
+// became, and that recording when the reader may open it: their own, or one
+// shared with them.
+export interface ChatCallDetail {
+  transcript: ChatCallTranscriptSegment[]
+  recordingId: string | null
+  isRecordingOwned: boolean
+}
+
 // ChatCallSummary is the part of a call a message's line in the chat carries:
 // enough to say how the call went, and to be replaced by the call itself as
 // ChatCallEvents tells of it.
@@ -129,6 +138,7 @@ export const READ_CHAT_CALL = `
     ReadChatCall(callId: $callId) {
       call { ${CALL_FIELDS} }
       transcript { id callId userId speakerName startMs endMs text }
+      recordingId isRecordingOwned
     }
   }`
 

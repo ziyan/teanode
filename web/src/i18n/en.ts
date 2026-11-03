@@ -8175,6 +8175,7 @@ export const en = {
   'calls.lineDeclined': 'Declined call',
   'calls.lineFailed': 'Call failed',
   'calls.transcript': 'Transcript',
+  'calls.openRecording': 'Open the recording',
   'calls.transcriptTitle': 'Call transcript',
   'calls.transcriptEmpty': 'Nothing was said that could be transcribed.',
   'calls.callIn': 'Call in {title}',

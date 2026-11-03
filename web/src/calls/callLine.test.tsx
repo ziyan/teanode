@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { graphql } from '../api'
@@ -140,6 +140,8 @@ it('opens the transcript of a transcribed call, each line under its speaker', as
           text: 'Yes, the early one.',
         },
       ],
+      recordingId: 'recording-one',
+      isRecordingOwned: true,
     }),
   })
   renderWithCalls(
@@ -162,6 +164,8 @@ it('opens the transcript of a transcribed call, each line under its speaker', as
   expect(dialog.textContent).toContain('Mira')
   expect(dialog.textContent).toContain('Yes, the early one.')
   expect(vi.mocked(graphql)).toHaveBeenCalledWith(expect.stringContaining('ReadChatCall('), { callId: 'call-one' })
+  // The call is a recording, which the dialog opens.
+  expect(within(dialog).getByRole('button', { name: 'Open the recording' })).toBeTruthy()
 })
 
 it('offers no transcript until it is done', () => {

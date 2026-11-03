@@ -95711,22 +95711,6 @@
         }
       }
     },
-    "Nothing was said by the people who agreed to be transcribed.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "文字起こしに同意した人の発言はありませんでした。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同意转录的人没有说话。"
-          }
-        }
-      }
-    },
     "Cannot read the transcript": {
       "localizations": {
         "ja": {
@@ -95947,6 +95931,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "返回通话"
+          }
+        }
+      }
+    },
+    "Nothing was said that could be transcribed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしできる発言はありませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可转录的内容。"
+          }
+        }
+      }
+    },
+    "Open the recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开录音"
           }
         }
       }

@@ -164,9 +164,13 @@ extension ChatCallTranscriptSegment {
 public struct ChatCallDetailView: Codable, Hashable, Sendable {
     public var call: ChatCallView
     public var transcript: [ChatCallTranscriptSegment]
+    /// The recording the call became, when the person may open it: their
+    /// own (in Recordings), or one shared with them.
+    public var recordingId: String?
+    public var isRecordingOwned: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case call, transcript
+        case call, transcript, recordingId, isRecordingOwned
     }
 }
 
@@ -175,6 +179,8 @@ extension ChatCallDetailView {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         call = try container.decode(ChatCallView.self, forKey: .call)
         transcript = try container.decodeIfPresent([ChatCallTranscriptSegment].self, forKey: .transcript) ?? []
+        recordingId = try container.decodeIfPresent(String.self, forKey: .recordingId)
+        isRecordingOwned = try container.decodeIfPresent(Bool.self, forKey: .isRecordingOwned) ?? false
     }
 }
 
@@ -328,6 +334,7 @@ extension Documents {
           ReadChatCall(callId: $callId) {
             call { \(chatCallFields) }
             transcript { id callId userId speakerName startMs endMs text }
+            recordingId isRecordingOwned
           }
         }
         """

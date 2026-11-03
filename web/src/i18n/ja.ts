@@ -8117,6 +8117,7 @@ export const ja: Catalog = {
   'calls.lineDeclined': '拒否した通話',
   'calls.lineFailed': '通話に失敗しました',
   'calls.transcript': '文字起こし',
+  'calls.openRecording': '録音を開く',
   'calls.transcriptTitle': '通話の文字起こし',
   'calls.transcriptEmpty': '文字起こしできる発言はありませんでした。',
   'calls.callIn': '{title} の通話',

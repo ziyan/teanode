@@ -1,5 +1,6 @@
 import { act, render } from '@testing-library/react'
 import { vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 
 import { graphql, subscribe } from '../api'
 import { ToastProvider } from '../components/toast'
@@ -158,9 +159,11 @@ export function renderWithCalls(ui: React.ReactNode, createSession: () => ChatCa
             passkeysEnabled: false,
           }}
         >
-          <ChatCallProvider isSupported createSession={createSession}>
-            {ui}
-          </ChatCallProvider>
+          <MemoryRouter>
+            <ChatCallProvider isSupported createSession={createSession}>
+              {ui}
+            </ChatCallProvider>
+          </MemoryRouter>
         </SessionProvider>
       </ToastProvider>
     </TranslationProvider>,

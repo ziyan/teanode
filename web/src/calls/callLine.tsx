@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 
 import { graphql } from '../api'
 import { ConfirmDialog } from '../components/dialog'
@@ -10,8 +11,8 @@ import {
   chatCallLineState,
   formatCallLength,
   type ChatCall,
+  type ChatCallDetail,
   type ChatCallSummary,
-  type ChatCallTranscriptSegment,
 } from './chatCallApi'
 import { useChatCalls } from './chatCallContext'
 
@@ -92,16 +93,19 @@ export function ChatCallLine({
 }
 
 // CallTranscriptDialog reads a call's transcript: each line under the name of
-// whoever said it, in the order it was said.
+// whoever said it, in the order it was said. The call is a recording, which
+// plays it and keeps the corrections; the dialog opens it.
 function CallTranscriptDialog({ callId, onClose }: { callId: string; onClose: () => void }) {
   const { t } = useTranslation()
-  const [transcript, setTranscript] = useState<ChatCallTranscriptSegment[] | null>(null)
+  const navigate = useNavigate()
+  const [detail, setDetail] = useState<ChatCallDetail | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const transcript = detail?.transcript ?? null
   useEffect(() => {
     let isCurrent = true
-    graphql<{ ReadChatCall: { transcript: ChatCallTranscriptSegment[] } }>(READ_CHAT_CALL, { callId })
+    graphql<{ ReadChatCall: ChatCallDetail }>(READ_CHAT_CALL, { callId })
       .then((read) => {
-        if (isCurrent) setTranscript(read.ReadChatCall.transcript)
+        if (isCurrent) setDetail(read.ReadChatCall)
       })
       .catch((caught) => {
         if (isCurrent) setErrorMessage(caught instanceof Error ? caught.message : String(caught))
@@ -116,6 +120,20 @@ function CallTranscriptDialog({ callId, onClose }: { callId: string; onClose: ()
       wide
       destructive={false}
       error={errorMessage}
+      otherAction={
+        detail?.recordingId ? (
+          <button
+            type="button"
+            onClick={() => {
+              const id = encodeURIComponent(detail.recordingId ?? '')
+              onClose()
+              navigate(detail.isRecordingOwned ? `/recordings/${id}` : `/recordings/shared/${id}`)
+            }}
+          >
+            {t('calls.openRecording')}
+          </button>
+        ) : undefined
+      }
       body={
         transcript === null ? (
           errorMessage ? null : (
