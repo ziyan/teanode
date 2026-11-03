@@ -884,9 +884,11 @@ final class VoiceMessageTests: XCTestCase {
 
     func testAskingWithAVoiceMessageSendsItsAttachment() async throws {
         let (connection, fake) = connection(answering: #"{"data":{"AskAgent":{"runId":"","conversationId":"c"}}}"#)
-        _ = try await connection.ask("", in: "c", attachmentIds: ["attachment-1"], drawerId: "d", voiceMessageAttachmentId: "attachment-1")
+        _ = try await connection.ask("", in: "c", drawerId: "d", voiceMessageAttachmentId: "attachment-1")
         var sent = try sentVariables(try XCTUnwrap(fake.sent.last))
         XCTAssertEqual(sent["voiceMessageAttachmentId"], .string("attachment-1"))
+        // The recording is the message, not one of its files.
+        XCTAssertEqual(sent["attachmentIds"], .array([]))
         _ = try await connection.ask("hi", in: "c", drawerId: "d")
         sent = try sentVariables(try XCTUnwrap(fake.sent.last))
         XCTAssertNil(sent["voiceMessageAttachmentId"])
