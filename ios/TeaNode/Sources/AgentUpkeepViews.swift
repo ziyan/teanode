@@ -155,6 +155,17 @@ enum UpkeepWords {
         }
     }
 
+    /// When a schedule that runs on mail comes round, in a person's words,
+    /// "When mail arrives: From contains news@school.example", with the
+    /// conditions as a mailbox rule's line words them.
+    static func scheduleMailText(_ conditions: [MailRule.Condition]) -> String {
+        let words = MailRuleWords(folders: [])
+        let conditionTexts = conditions.filter { !$0.isBare }.map { words.describe($0) }
+        if conditionTexts.isEmpty { return String(localized: "When any mail arrives") }
+        let conditionsText = conditionTexts.joined(separator: ", ")
+        return String(localized: "When mail arrives: \(conditionsText)")
+    }
+
     static func readingSpan(_ span: ReadingProgress.ReadingSpan) -> String {
         switch span {
         case .minutes(let minutes): String(localized: "\(minutes) minutes")
@@ -2145,7 +2156,9 @@ struct AgentScheduleRow: View {
                 Text(verbatim: schedule.name).foregroundStyle(schedule.enabled ? Color(.label) : Color(.secondaryLabel))
                 if !schedule.enabled { UpkeepTag(text: String(localized: "off"), tone: .warning) }
             }
-            if let timingText = UpkeepWords.scheduleTimingText(schedule.cron) {
+            if schedule.isTriggeredByMail {
+                Text(verbatim: UpkeepWords.scheduleMailText(schedule.mailConditions ?? [])).font(.subheadline).foregroundStyle(Color(.secondaryLabel))
+            } else if let timingText = UpkeepWords.scheduleTimingText(schedule.cron) {
                 Text(verbatim: timingText).font(.subheadline).foregroundStyle(Color(.secondaryLabel))
             } else {
                 Text(verbatim: schedule.cron).font(.subheadline.monospaced()).foregroundStyle(Color(.secondaryLabel))
@@ -2197,31 +2210,79 @@ struct BriefDaysScreen: View {
             BriefDaysScreen(dayNumbers: $dayNumbers)
         }
     }
+
+    /// The screen `-TeaNodeScreen schedules-mail-editor` photographs: the
+    /// editor open on a schedule that runs when mail arrives.
+    struct ScheduleEditorDemoScreen: View {
+        let connection: Connection
+        @State private var isEditing = true
+
+        private let schedule = AgentSchedule(
+            id: "pictures", name: "School pictures", cron: "", prompt: "Save the pictures and videos it links to the photo library.",
+            mailConditions: [MailRule.Condition(field: "from", comparisonOperator: "contains", value: "news@school.example")])
+
+        var body: some View {
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
+                .sheet(isPresented: $isEditing) {
+                    AgentScheduleEditor(connection: connection, schedule: schedule) {}
+                }
+        }
+    }
 #endif
 
-/// AgentScheduleEditor adds a schedule or changes one: its name, its cron
-/// line, where the answer goes, and what to do. A new one starts on.
+/// AgentScheduleEditor adds a schedule or changes one: its name, when it
+/// runs (a cron line, or when a message that passes its conditions
+/// arrives), where the answer goes, and what to do. A new one starts on.
 struct AgentScheduleEditor: View {
     let connection: Connection
     let schedule: AgentSchedule?
     let onSaved: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
+    @State private var trigger: Trigger
     @State private var cron: String
+    @State private var conditions: [MailRuleEditor.Edited<MailRule.Condition>]
     @State private var prompt: String
     @State private var deliver: String
     @State private var isSaving = false
     @State private var doneText: String?
     @State private var problemText: String?
 
+    /// Trigger is what makes the schedule run.
+    enum Trigger: Hashable {
+        case clock, mail
+    }
+
     init(connection: Connection, schedule: AgentSchedule?, onSaved: @escaping () -> Void) {
         self.connection = connection
         self.schedule = schedule
         self.onSaved = onSaved
+        let savedConditions = schedule?.mailConditions ?? []
+        let startingConditions: [MailRule.Condition] = savedConditions.isEmpty ? [MailRule.Condition()] : savedConditions
+        // A schedule that runs on mail has no cron line; one switched to the clock starts on a usual one.
+        let savedCron = schedule?.cron ?? ""
         _name = State(initialValue: schedule?.name ?? "")
-        _cron = State(initialValue: schedule?.cron ?? "0 8 * * 1-5")
+        _trigger = State(initialValue: savedConditions.isEmpty ? Trigger.clock : Trigger.mail)
+        _cron = State(initialValue: savedCron.isEmpty ? "0 8 * * 1-5" : savedCron)
+        _conditions = State(initialValue: startingConditions.map { MailRuleEditor.Edited<MailRule.Condition>(value: $0) })
         _prompt = State(initialValue: schedule?.prompt ?? "")
         _deliver = State(initialValue: schedule?.deliver ?? "drawer")
+    }
+
+    /// The conditions as they are saved: what they look for and the header's name without the spaces round them.
+    private var trimmedConditions: [MailRule.Condition] {
+        conditions.map { edited in
+            var condition = edited.value
+            condition.value = condition.value?.trimmed
+            condition.header = condition.header?.trimmed
+            return condition
+        }
+    }
+
+    private var isWhenComplete: Bool {
+        if trigger == .mail { return ScheduleMailTrigger.isComplete(trimmedConditions) }
+        return !cron.trimmed.isEmpty
     }
 
     var body: some View {
@@ -2231,21 +2292,46 @@ struct AgentScheduleEditor: View {
                     TextField("Name", text: $name)
                 }
                 Section {
-                    TextField("When, as a cron line", text: $cron, prompt: Text(verbatim: "0 8 * * 1-5"))
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .fontDesign(.monospaced)
-                    if let timingText = UpkeepWords.scheduleTimingText(cron) {
-                        Text(verbatim: timingText).font(.footnote).foregroundStyle(Color(.secondaryLabel))
+                    Picker("When", selection: $trigger) {
+                        Text("At set times").tag(Trigger.clock)
+                        Text("When mail arrives").tag(Trigger.mail)
                     }
+                }
+                if trigger == .mail {
+                    Section {
+                        ForEach($conditions) { $condition in
+                            MailConditionEditor(condition: $condition.value, fields: ScheduleMailTrigger.fields, words: MailRuleWords(folders: []))
+                        }
+                        .onDelete { offsets in conditions.remove(atOffsets: offsets) }
+                        Button("Add a condition", systemImage: "plus") {
+                            conditions.append(MailRuleEditor.Edited(value: MailRule.Condition()))
+                        }
+                        .actionColor()
+                    } header: {
+                        Text("When all of these match")
+                    } footer: {
+                        Text("The schedule runs for each new message that matches all of these. To run it for every new message, choose Any message.")
+                    }
+                } else {
+                    Section {
+                        TextField("When, as a cron line", text: $cron, prompt: Text(verbatim: "0 8 * * 1-5"))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .fontDesign(.monospaced)
+                        if let timingText = UpkeepWords.scheduleTimingText(cron) {
+                            Text(verbatim: timingText).font(.footnote).foregroundStyle(Color(.secondaryLabel))
+                        }
+                    } header: {
+                        Text("When, as a cron line")
+                    } footer: {
+                        Text("Five fields (minute hour day month weekday) in your zone. 0 8 * * 1-5 is weekdays at eight; @at 2030-09-12 09:00 is once, at that moment; @in 20m is once, twenty minutes from now.")
+                    }
+                }
+                Section {
                     Picker("Where the answer goes", selection: $deliver) {
                         Text("Into the conversation").tag("drawer")
                         Text("By mail").tag("mail")
                     }
-                } header: {
-                    Text("When, as a cron line")
-                } footer: {
-                    Text("Five fields (minute hour day month weekday) in your zone. 0 8 * * 1-5 is weekdays at eight; @at 2030-09-12 09:00 is once, at that moment; @in 20m is once, twenty minutes from now.")
                 }
                 Section("What to do, as you would say it") {
                     TextField("What to do, as you would say it", text: $prompt, axis: .vertical).lineLimit(3...)
@@ -2259,7 +2345,7 @@ struct AgentScheduleEditor: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(schedule == nil ? LocalizedStringKey("Add") : "Save") { Task { await save() } }
-                        .disabled(name.trimmed.isEmpty || cron.trimmed.isEmpty || prompt.trimmed.isEmpty || isSaving)
+                        .disabled(name.trimmed.isEmpty || !isWhenComplete || prompt.trimmed.isEmpty || isSaving)
                 }
             }
             .toast(done: $doneText, problem: $problemText)
@@ -2270,9 +2356,12 @@ struct AgentScheduleEditor: View {
         isSaving = true
         defer { isSaving = false }
         do {
+            // Conditions or a cron line, never both: each one switches the schedule to its kind.
+            let savedCron: String? = trigger == .clock ? cron.trimmed : nil
+            let savedConditions: [MailRule.Condition]? = trigger == .mail ? trimmedConditions : nil
             try await connection.saveAgentSchedule(
-                scheduleId: schedule?.id, name: name.trimmed, cron: cron.trimmed, prompt: prompt.trimmed, deliver: deliver,
-                isEnabled: schedule == nil ? true : nil)
+                scheduleId: schedule?.id, name: name.trimmed, cron: savedCron, mailConditions: savedConditions, prompt: prompt.trimmed,
+                deliver: deliver, isEnabled: schedule == nil ? true : nil)
             onSaved()
             dismiss()
         } catch {

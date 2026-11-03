@@ -327,6 +327,59 @@ final class AgentUpkeepTests: XCTestCase {
         XCTAssertEqual(try sentVariables(fake.sent[0]), ["scheduleId": .string("schedule-1"), "enabled": .bool(false)])
     }
 
+    func testReadsAScheduleThatRunsWhenMailArrives() async throws {
+        let (connection, fake) = connection(
+            answering: #"""
+                {"data":{"ListAgentSchedules":[
+                  {"id":"schedule-1","name":"Round-up","cron":"0 17 * * 5","prompt":"Sum up the week.","deliver":"mail","enabled":true,"lastRunAt":null,"nextRunAt":"2030-01-04T17:00:00Z","conversationId":null,"mailConditions":null},
+                  {"id":"schedule-2","name":"School pictures","cron":"","prompt":"Save the pictures.","deliver":"drawer","enabled":true,"lastRunAt":null,"nextRunAt":null,"conversationId":null,
+                    "mailConditions":[{"field":"from","header":null,"operator":"contains","value":"news@school.example"},{"field":"header","header":"List-Id","operator":"equals","value":"pictures.school.example"}]}
+                ]}}
+                """#)
+        let schedules = try await connection.agentSchedules()
+        XCTAssertFalse(schedules[0].isTriggeredByMail)
+        XCTAssertTrue(schedules[1].isTriggeredByMail)
+        XCTAssertNil(schedules[1].nextRunAt)
+        XCTAssertEqual(schedules[1].mailConditions?.count, 2)
+        XCTAssertEqual(schedules[1].mailConditions?[1].header, "List-Id")
+        XCTAssertEqual(schedules[1].mailConditions?[1].comparisonOperator, "equals")
+        XCTAssertTrue(fake.sent[0].httpBody.flatMap { String(data: $0, encoding: .utf8) }?.contains("mailConditions { field header operator value }") ?? false)
+    }
+
+    func testSaysWhenMailArrivesInWords() {
+        let sender = MailRule.Condition(field: "from", comparisonOperator: "contains", value: "news@school.example")
+        let header = MailRule.Condition(field: "header", header: "List-Id", comparisonOperator: "equals", value: "pictures.school.example")
+        let anything = MailRule.Condition(field: "any", comparisonOperator: "", value: nil)
+        XCTAssertEqual(ScheduleMailTrigger.englishText([sender]), "When mail arrives: From contains news@school.example")
+        XCTAssertEqual(
+            ScheduleMailTrigger.englishText([sender, header]),
+            "When mail arrives: From contains news@school.example, Header List-Id is pictures.school.example")
+        XCTAssertEqual(ScheduleMailTrigger.englishText([anything]), "When any mail arrives")
+    }
+
+    func testChecksThatMailConditionsAreComplete() {
+        let sender = MailRule.Condition(field: "from", comparisonOperator: "contains", value: "news@school.example")
+        XCTAssertTrue(ScheduleMailTrigger.isComplete([sender]))
+        XCTAssertTrue(ScheduleMailTrigger.isComplete([MailRule.Condition(field: "any", comparisonOperator: "", value: nil)]))
+        XCTAssertFalse(ScheduleMailTrigger.isComplete([]))
+        XCTAssertFalse(ScheduleMailTrigger.isComplete([MailRule.Condition(field: "subject", comparisonOperator: "contains", value: "  ")]))
+        XCTAssertFalse(ScheduleMailTrigger.isComplete([sender, MailRule.Condition(field: "subject", comparisonOperator: "contains", value: nil)]))
+        XCTAssertFalse(ScheduleMailTrigger.isComplete([MailRule.Condition(field: "header", header: " ", comparisonOperator: "contains", value: "x")]))
+        XCTAssertTrue(ScheduleMailTrigger.isComplete([MailRule.Condition(field: "header", header: "List-Id", comparisonOperator: "contains", value: "x")]))
+    }
+
+    func testSavesAScheduleThatRunsWhenMailArrives() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"SaveAgentSchedule":{"id":"schedule-2"}}}"#)
+        let sender = MailRule.Condition(field: "from", header: "left over", comparisonOperator: "contains", value: "news@school.example")
+        try await connection.saveAgentSchedule(name: "School pictures", mailConditions: [sender], prompt: "Save the pictures.")
+        let variables = try sentVariables(fake.sent[0])
+        XCTAssertNil(variables["cron"])
+        XCTAssertEqual(
+            variables["mailConditions"],
+            .array([.object(["field": .string("from"), "header": .string(""), "operator": .string("contains"), "value": .string("news@school.example")])]))
+        XCTAssertTrue(fake.sent[0].httpBody.flatMap { String(data: $0, encoding: .utf8) }?.contains("$mailConditions: [MailboxRuleConditionInput!]") ?? false)
+    }
+
     // MARK: Alerts and connections
 
     func testReadsAlertsAndMutes() async throws {

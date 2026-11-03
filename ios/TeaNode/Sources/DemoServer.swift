@@ -882,6 +882,8 @@
             {"data":{"ListAgentSchedules":[
               {"id":"brief","name":"Daily brief","cron":"30 7 * * 1-5","prompt":"What is on today, what arrived overnight that needs me, and the weather for the walk to the station.","deliver":"drawer","enabled":true,"lastRunAt":"2026-10-09T07:30:00Z","nextRunAt":"2026-10-12T07:30:00Z"},
               {"id":"roundup","name":"Friday round-up","cron":"0 17 * * 5","prompt":"Sum up the week: what I answered, what still waits, and what is on next week.","deliver":"mail","enabled":true,"lastRunAt":"2026-10-09T17:00:00Z","nextRunAt":"2026-10-16T17:00:00Z"},
+              {"id":"pictures","name":"School pictures","cron":"","prompt":"Save the pictures and videos it links to the photo library.","deliver":"drawer","enabled":true,"lastRunAt":"2026-10-08T15:20:00Z","nextRunAt":null,
+                "mailConditions":[{"field":"from","header":null,"operator":"contains","value":"news@school.example"}]},
               {"id":"plants","name":"Water the plants","cron":"0 9 * * 0","prompt":"Remind me to water the plants, and say which ones were watered last week.","deliver":"drawer","enabled":false,"lastRunAt":"2026-09-27T09:00:00Z","nextRunAt":null}
             ]}}
             """#

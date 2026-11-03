@@ -17,6 +17,12 @@ public struct AgentGoal: Codable, Hashable, Sendable, Identifiable {
         public let cron: String
         public let enabled: Bool
         public let nextRunAt: String?
+        /// What a message must match for it to run, for a schedule that runs
+        /// when mail arrives; its cron is then empty.
+        public let mailConditions: [MailRule.Condition]?
+
+        /// Whether it runs when mail arrives, not at set times.
+        public var isTriggeredByMail: Bool { !(mailConditions ?? []).isEmpty }
     }
 
     public let conversationId: String
@@ -49,7 +55,7 @@ extension Documents {
             \(goalFields)
             goalOriginTitle
             activity { id createdAt goalActivityKind activityHeadline activityDetail }
-            schedules { id name cron enabled nextRunAt }
+            schedules { id name cron enabled nextRunAt mailConditions { field header operator value } }
           }
         }
         """

@@ -823,6 +823,7 @@ struct SettingsForm: View {
                 case "schedules": SchedulesView(connection: connection)
                 case "schedules-brief-days": BriefDaysDemoScreen(isEmpty: false)
                 case "schedules-brief-days-none": BriefDaysDemoScreen(isEmpty: true)
+                case "schedules-mail-editor": ScheduleEditorDemoScreen(connection: connection)
                 case "agent-usage": AgentUsageView(connection: connection)
                 case "agent-usage-cost": AgentUsageView(connection: connection, isTableAtCost: true)
                 case "circles": CirclesView(connection: connection)

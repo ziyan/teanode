@@ -93,6 +93,17 @@ public struct MailRule: Codable, Hashable, Sendable {
 
         public var isBare: Bool { Self.bareFields.contains(field) }
 
+        /// As the server takes it: the header's name only for a header, and
+        /// no operator for a field that needs none.
+        var variables: JSONValue {
+            .object([
+                "field": .string(field),
+                "header": .string(field == "header" ? header ?? "" : ""),
+                "operator": .string(isBare ? "" : comparisonOperator),
+                "value": .string(value ?? ""),
+            ])
+        }
+
         /// What a field can be compared with: a score is above or below a
         /// number, a priority is one of three, everything else matches text.
         public static func operators(for field: String) -> [String] {
@@ -143,14 +154,7 @@ public struct MailRule: Codable, Hashable, Sendable {
     var variables: JSONValue {
         .object([
             "name": .string(name), "enabled": .bool(enabled), "stop": .bool(stop),
-            "conditions": .array(conditions.map { condition in
-                .object([
-                    "field": .string(condition.field),
-                    "header": .string(condition.field == "header" ? condition.header ?? "" : ""),
-                    "operator": .string(condition.isBare ? "" : condition.comparisonOperator),
-                    "value": .string(condition.value ?? ""),
-                ])
-            }),
+            "conditions": .array(conditions.map(\.variables)),
             "actions": .array(actions.map { action in
                 .object([
                     "kind": .string(action.kind),

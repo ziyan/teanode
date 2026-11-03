@@ -155,7 +155,11 @@ struct GoalDetail: View {
                             } label: {
                                 VStack(alignment: .leading) {
                                     Text(schedule.name)
-                                    Text(verbatim: schedule.cron).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                    if schedule.isTriggeredByMail {
+                                        Text(verbatim: UpkeepWords.scheduleMailText(schedule.mailConditions ?? [])).font(.caption).foregroundStyle(.secondary)
+                                    } else {
+                                        Text(verbatim: schedule.cron).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                    }
                                 }
                             }
                         }
