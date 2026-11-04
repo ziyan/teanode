@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.218.1] - 2026-11-04
+
+### Changed
+
+- New videos are described as they arrive, from frames across the clip, so a search finds them by what happens in them. (#729)
+
 ## [0.218.0] - 2026-11-04
 
 ### Added
