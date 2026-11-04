@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.217.0] - 2026-11-04
+
+### Added
+
+- Calls with many people show the person speaking large above a row of everyone else, and you can tap anyone to keep them large. Only that picture is sent at full size, so big video calls use far less data. (#725)
+
 ## [0.216.0] - 2026-11-03
 
 ### Added
