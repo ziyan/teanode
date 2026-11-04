@@ -88,7 +88,7 @@ type PhotoMutation interface {
 	DescribePhoto(context.Context, DescribePhotoArguments) (*models.Photo, error)
 
 	// SetPhotoReading switches the reading of the person's new photos on or
-	// off and answers the new state: on, each new picture is described as
+	// off and answers the new state: on, each new picture and video is described as
 	// it arrives and a receipt, a statement or a tax document in it is
 	// recorded. Off leaves what was read.
 	SetPhotoReading(context.Context, SetPhotoReadingArguments) (bool, error)

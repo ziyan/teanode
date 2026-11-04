@@ -220,6 +220,55 @@ func TestVideoPosterIsAboutOneSecondIn(t *testing.T) {
 	}
 }
 
+func TestVideoFrames(t *testing.T) {
+	requireFFmpeg(t)
+	// A rotated video gives frames that are upright, in order, and apart:
+	// testsrc draws a running clock, so no two are the same.
+	frames, err := VideoFrames(context.Background(), makeVideo(t, "3", "320x240", "90"), 3000, 3, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(frames) != 3 {
+		t.Fatalf("%d frames, want 3", len(frames))
+	}
+	for index, frame := range frames {
+		decoded, err := Decode(frame)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if decoded.Bounds().Dx() != 240 || decoded.Bounds().Dy() != 320 {
+			t.Errorf("frame %d is %v, want 240 by 320", index, decoded.Bounds())
+		}
+		if index > 0 && bytes.Equal(frame, frames[index-1]) {
+			t.Errorf("frame %d is the frame before it", index)
+		}
+	}
+
+	// A frame is made no larger than asked, and the shape is kept.
+	frames, err = VideoFrames(context.Background(), makeVideo(t, "2", "640x480", ""), 2000, 1, 320)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded, err := Decode(frames[0]); err != nil || decoded.Bounds().Dx() != 320 || decoded.Bounds().Dy() != 240 {
+		t.Errorf("a large frame: %v, %v", decoded, err)
+	}
+
+	// A video shorter than it claims gives the frames it has.
+	frames, err = VideoFrames(context.Background(), makeVideo(t, "2", "320x240", ""), 4000, 4, 1024)
+	if err != nil || len(frames) != 2 {
+		t.Errorf("a video shorter than it claims gave %d frames, %v", len(frames), err)
+	}
+
+	// What is not a video is refused.
+	notVideo := filepath.Join(t.TempDir(), "note.mp4")
+	if err := os.WriteFile(notVideo, []byte("not a video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VideoFrames(context.Background(), notVideo, 1000, 2, 1024); err == nil {
+		t.Error("frames were cut from what is not a video")
+	}
+}
+
 func extractFrame(t *testing.T, path, seekSeconds string) []byte {
 	t.Helper()
 	output := filepath.Join(t.TempDir(), "frame.jpg")

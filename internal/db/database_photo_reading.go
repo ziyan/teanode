@@ -16,10 +16,10 @@ type PhotoReadingOperation interface {
 	// SetPhotoReading switches it on or off. Off leaves what was read.
 	SetPhotoReading(userId string, isEnabled bool) error
 
-	// ListPhotosToRead lists up to limit pictures of the person's library,
-	// newest first, that are ready, were taken (or added, when they carry no
-	// date) at or after since, and have been neither described, asked to be,
-	// nor queued to be read. Videos and photos saved from somebody else's
+	// ListPhotosToRead lists up to limit pictures and videos of the person's
+	// library, newest first, that are ready, were taken (or added, when they
+	// carry no date) at or after since, and have been neither described,
+	// asked to be, nor queued to be read. Photos saved from somebody else's
 	// share are not read.
 	ListPhotosToRead(userId string, since time.Time, limit int) ([]*models.Photo, error)
 
@@ -63,7 +63,7 @@ func (self *transaction) ListPhotosToRead(userId string, since time.Time, limit 
 	if err := self.tx.Where("photo.user_id = ? AND photo.trashed_at IS NULL AND photo.reading_queued_at IS NULL AND photo.described_at IS NULL"+
 		" AND photo.description_requested_at IS NULL AND photo.photo_processing_state = ? AND photo.photo_kind IN ? AND photo.photo_source <> ?"+
 		" AND "+photoTimelineExpression+" >= ?",
-		userId, models.PhotoProcessingReady, []models.PhotoKind{models.PhotoKindPicture, models.PhotoKindLivePhoto}, models.PhotoSourceShared, since).
+		userId, models.PhotoProcessingReady, []models.PhotoKind{models.PhotoKindPicture, models.PhotoKindLivePhoto, models.PhotoKindVideo}, models.PhotoSourceShared, since).
 		Order(photoTimelineExpression + " DESC, photo.id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}

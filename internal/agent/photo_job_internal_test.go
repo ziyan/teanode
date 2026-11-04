@@ -10,6 +10,9 @@ import (
 	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -304,6 +307,67 @@ func TestThePhotoJobDescribesAPhotoAndItIsFoundByWhatIsInIt(test *testing.T) {
 	}
 	if titles := fixture.runTitles(test); len(titles) != 1 || !strings.HasPrefix(titles[0], "Described a photo: A red lighthouse") {
 		test.Fatalf("the run says what it did: %q", titles)
+	}
+}
+
+// A video is shown to the model as frames spread across its preview, in
+// order, and the model is told they are one video's; whatever it calls the
+// video, it is not handed on as a document. Without a video preview the
+// poster is all it sees.
+func TestThePhotoJobShowsAVideoAsFramesAcrossIt(test *testing.T) {
+	for _, name := range []string{"ffmpeg", "ffprobe"} {
+		if _, err := exec.LookPath(name); err != nil {
+			test.Skipf("%s is not installed", name)
+		}
+	}
+	const receiptAnswer = `{"photoDescription": "A child stacks blocks on a table, then knocks them over.", "visibleText": "", "documentKind": "receipt"}`
+	fixture := newPhotoJobFixture(test, false, receiptAnswer)
+	video := fixture.addPhoto(test, "clip-one", "", true)
+	poster := fixture.addPhoto(test, "clip-two", "", true)
+	for _, photo := range []*models.Photo{video, poster} {
+		dbtest.Exec(test, fixture.database, `UPDATE "photo" SET "photo_kind" = 'video', "duration_ms" = 4000 WHERE "id" = '`+photo.ID+`'`)
+	}
+	clip := filepath.Join(test.TempDir(), "clip.mp4")
+	if output, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-nostdin", "-f", "lavfi", "-i", "testsrc=duration=4:size=320x240:rate=10",
+		"-c:v", "libx264", "-pix_fmt", "yuv420p", clip).CombinedOutput(); err != nil {
+		test.Fatalf("ffmpeg: %v\n%s", err, output)
+	}
+	content, err := os.ReadFile(clip)
+	if err != nil {
+		test.Fatal(err)
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
+		if _, err := tx.UpsertPhotoPreview(fixture.owner.ID, &models.PhotoPreview{PhotoID: video.ID, PhotoPreviewSize: models.PhotoPreviewVideo, ContentType: "video/mp4", PreviewSizeBytes: int64(len(content))}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if err := fixture.store.PutFile(test.Context(), models.PhotoPreviewFileID(video.ID, models.PhotoPreviewVideo), content); err != nil {
+		test.Fatal(err)
+	}
+
+	fixture.request(test, video)
+	if err := fixture.worker.runDescribePhoto(test.Context(), fixture.run(video)); err != nil {
+		test.Fatalf("runDescribePhoto: %s", err)
+	}
+	body := fixture.provider.chatBodies[0]
+	if got := strings.Count(body, "data:image/jpeg;base64,"); got != 4 {
+		test.Errorf("the model is shown %d pictures of a 4 second video, want 4 frames", got)
+	}
+	if !strings.Contains(body, "frames of one video 4 seconds long") {
+		test.Errorf("the model is told the pictures are one video's frames: %.600s", body)
+	}
+	described := fixture.read(test, video)
+	if !strings.HasPrefix(described.PhotoDescription, "A child stacks blocks") || described.PhotoDocumentKind != models.PhotoDocumentNone {
+		test.Errorf("the video is described and is no document: %+v", described)
+	}
+
+	fixture.request(test, poster)
+	if err := fixture.worker.runDescribePhoto(test.Context(), fixture.run(poster)); err != nil {
+		test.Fatalf("runDescribePhoto: %s", err)
+	}
+	body = fixture.provider.chatBodies[1]
+	if got := strings.Count(body, "data:image/jpeg;base64,"); got != 1 || !strings.Contains(body, "first frame of a video") {
+		test.Errorf("a video without a preview is shown by its poster alone: %d pictures", got)
 	}
 }
 

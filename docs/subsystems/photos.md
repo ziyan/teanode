@@ -309,7 +309,10 @@ A photo is described when it is new or when somebody works with it: the agent
 looks at it, or a person asks in the viewer. The agent's `describe_photo` job
 asks the scan model for a few plain sentences, the words it can read, and
 whether the picture is a receipt, a statement or a tax document, and keeps
-them, so a search finds the photo by them from then on. Taxpayer numbers in
+them, so a search finds the photo by them from then on. A video is shown as
+up to six frames cut evenly across its preview (one a second for a shorter
+clip), and is never handed on as a document; a video with no preview, or one
+over 128 MiB, is shown by its poster. Taxpayer numbers in
 the words read are masked. Before that a photo is found only by what the
 server reads without a model; the agent is told so and narrows by date or
 place first.
@@ -317,10 +320,10 @@ place first.
 ### New photos are read as they arrive
 
 Each minute the agent's tick (`queuePhotoReading`) queues the description of
-up to ten new pictures of each person whose switch is on
+up to ten new pictures and videos of each person whose switch is on
 (`user.is_photo_reading_enabled`, on by default): ready, taken or added in the
-last thirty days, never described, asked for or queued before, not a video and
-not saved from somebody else's share. `photo.reading_queued_at` marks each one
+last thirty days, never described, asked for or queued before, and not saved
+from somebody else's share. `photo.reading_queued_at` marks each one
 queued, so it is queued once. No more are queued while twenty descriptions of the
 person wait, so a backlog never fills the queue ahead of their own turns.
 The words a description keeps, and the run that wrote them, have taxpayer

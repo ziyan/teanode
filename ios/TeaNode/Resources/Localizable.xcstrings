@@ -94673,18 +94673,18 @@
         }
       }
     },
-    "New pictures are described as they arrive, so a search finds them. Receipts are recorded in Finance, a statement's transactions are added to the account you imported before, and paystubs and W-2s are kept with your tax documents.": {
+    "New pictures and videos are described as they arrive, so a search finds them. Receipts are recorded in Finance, a statement's transactions are added to the account you imported before, and paystubs and W-2s are kept with your tax documents.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "新しい写真は届くとすぐに説明が作成されるので、検索で見つけられます。レシートは「家計」に記録され、明細書の取引は以前に読み込んだ口座に追加され、給与明細と W-2 は税務書類と一緒に保管されます。"
+            "value": "新しい写真と動画は届くとすぐに説明が作成されるので、検索で見つけられます。レシートは「家計」に記録され、明細書の取引は以前に読み込んだ口座に追加され、給与明細と W-2 は税務書類と一緒に保管されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "新图片一到就会生成描述，这样搜索就能找到它们。收据会记入“财务”，对账单中的交易会添加到你之前导入的账户，工资单和 W-2 表则会与你的税务文件一起保存。"
+            "value": "新图片和视频一到就会生成描述，这样搜索就能找到它们。收据会记入“财务”，对账单中的交易会添加到你之前导入的账户，工资单和 W-2 表则会与你的税务文件一起保存。"
           }
         }
       }

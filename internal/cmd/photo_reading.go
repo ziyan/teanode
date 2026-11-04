@@ -18,7 +18,7 @@ func newPhotoReadingCommand() *cli.Command {
 		Name:  "reading",
 		Usage: "whether your new photos are described as they arrive, and the receipts, statements and tax documents in them recorded",
 		Commands: []*cli.Command{
-			{Name: "on", Usage: "describe each new picture taken in the last 30 days as it arrives, and record the receipts, statements and tax documents in them", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoReading},
+			{Name: "on", Usage: "describe each new picture and video taken in the last 30 days as it arrives, and record the receipts, statements and tax documents in them", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoReading},
 			{Name: "off", Usage: "stop reading new photos; what was read is kept", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoReading},
 		},
 	}

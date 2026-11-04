@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/config"
@@ -12,6 +14,7 @@ import (
 	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/picture"
 )
 
 // The photo description job: a model looks at a photo's large preview and
@@ -101,7 +104,7 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 		return self.refusePhotoDescription(ctx, run, ownerId, photoId, why)
 	}
 	var photo *models.Photo
-	var preview *models.PhotoPreview
+	var preview, videoPreview *models.PhotoPreview
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		var err error
 		if photo, err = tx.GetPhoto(ownerId, photoId); err != nil {
@@ -110,6 +113,13 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 		preview, err = tx.GetPhotoPreview(ownerId, photoId, models.PhotoPreviewLarge)
 		if errors.Is(err, db.ErrNotFound) {
 			preview, err = nil, nil
+		}
+		if err != nil || photo.PhotoKind != models.PhotoKindVideo {
+			return err
+		}
+		videoPreview, err = tx.GetPhotoPreview(ownerId, photoId, models.PhotoPreviewVideo)
+		if errors.Is(err, db.ErrNotFound) {
+			videoPreview, err = nil, nil
 		}
 		return err
 	}); err != nil {
@@ -143,18 +153,32 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 	if len(content) == 0 || len(content) > attachmentImageBytes {
 		return self.refusePhotoDescription(ctx, run, ownerId, photoId, fmt.Sprintf("its picture is %s, which a model cannot be shown", formatBytes(int64(len(content)))))
 	}
+	pictures := []llm.ContentPart{{Type: "image", MediaType: preview.ContentType, Data: content}}
+	if photo.PhotoKind == models.PhotoKindVideo {
+		frames, err := videoFrames(ctx, run, photo, videoPreview)
+		if err != nil {
+			return err
+		}
+		if len(frames) > 0 {
+			pictures = pictures[:0]
+			for _, frame := range frames {
+				pictures = append(pictures, llm.ContentPart{Type: "image", MediaType: "image/jpeg", Data: frame})
+			}
+		}
+	}
 	prompt, err := render("describe_photo.txt", map[string]any{
-		"PersonName": personName(run.Owner),
-		"Language":   languageName(KnowledgeLanguage(run.Agent, run.Owner)),
-		"PlaceName":  photo.PlaceName,
-		"IsVideo":    photo.PhotoKind == models.PhotoKindVideo,
+		"PersonName":      personName(run.Owner),
+		"Language":        languageName(KnowledgeLanguage(run.Agent, run.Owner)),
+		"PlaceName":       photo.PlaceName,
+		"IsVideo":         photo.PhotoKind == models.PhotoKindVideo,
+		"FrameCount":      len(pictures),
+		"DurationSeconds": (photo.DurationMS + 500) / 1000,
 	})
 	if err != nil {
 		return err
 	}
 	thinking, err := self.thinkAbout(ctx, run, "Describing a photo", prompt,
-		[]llm.ContentPart{{Type: "image", MediaType: preview.ContentType, Data: content}}, noTools, 1,
-		models.AgentJobDescribePhoto, config.AgentWorkScan)
+		pictures, noTools, 1, models.AgentJobDescribePhoto, config.AgentWorkScan)
 	if err != nil {
 		return err
 	}
@@ -186,6 +210,11 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 	}
 	visibleText := cutRunes(strings.TrimSpace(finance.MaskTaxpayerNumbersInFile(string(answer.Value.VisibleText))), db.MaximumPhotoVisibleTextCharacters)
 	documentKind := answer.Value.photoDocumentKind()
+	if photo.PhotoKind == models.PhotoKindVideo {
+		// A frame of a video is no record of a purchase or an account, and
+		// nothing downstream reads a video.
+		documentKind = models.PhotoDocumentNone
+	}
 	// Embedded before the transaction: embedding is a call to another service.
 	// Without an embedding model, or when it fails, the photo is still found
 	// by its words.
@@ -241,6 +270,53 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 	}
 	self.retitle(ctx, run, thinking.Conversation, title)
 	return nil
+}
+
+// How a video is shown to the model, which cannot watch one: frames spread
+// across its preview, one for each second of a shorter clip, each at most
+// videoFrameLongSidePixels on its long side. A preview larger than
+// maximumVideoFramesSourceBytes is not read to cut them from, and the model
+// sees the poster alone, as it does for a video too long to have a preview.
+const (
+	videoFrameCount               = 6
+	videoFrameLongSidePixels      = 1024
+	maximumVideoFramesSourceBytes = 128 << 20
+)
+
+// videoFrames is the frames of a video photo, in order, cut from its
+// preview. None, and no error, when there is no preview or the frames cannot
+// be cut: the video is then described by its poster.
+func videoFrames(ctx context.Context, run *Run, photo *models.Photo, videoPreview *models.PhotoPreview) ([][]byte, error) {
+	if videoPreview == nil || videoPreview.PreviewSizeBytes > maximumVideoFramesSourceBytes || photo.DurationMS <= 0 {
+		return nil, nil
+	}
+	content, err := run.Storage().GetFile(ctx, models.PhotoPreviewFileID(photo.ID, models.PhotoPreviewVideo))
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		log.Warningf("the video preview of photo %s could not be read, it is described by its poster: %s", photo.ID, err)
+		return nil, nil
+	}
+	directory, err := os.MkdirTemp("", "teanode-video-frames-")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(directory) }()
+	path := filepath.Join(directory, "preview.mp4")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		return nil, err
+	}
+	frameCount := int(min(int64(videoFrameCount), max(photo.DurationMS/1000, 1)))
+	frames, err := picture.VideoFrames(ctx, path, photo.DurationMS, frameCount, videoFrameLongSidePixels)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		log.Warningf("the frames of video %s could not be cut, it is described by its poster: %s", photo.ID, err)
+		return nil, nil
+	}
+	return frames, nil
 }
 
 // handOnDocumentLeftOver hands on the document of a photo described already
