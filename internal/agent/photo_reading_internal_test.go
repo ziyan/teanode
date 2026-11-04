@@ -100,7 +100,10 @@ func TestANewPhotoIsQueuedToBeReadOnce(test *testing.T) {
 	if got := fixture.queuedJobCount(test, models.AgentJobDescribePhoto, fixture.photo.ID); got != "1" {
 		test.Fatalf("%s jobs describe the new photo, want 1", got)
 	}
-	for _, photo := range []*models.Photo{old, video, shared, waiting} {
+	if got := fixture.queuedJobCount(test, models.AgentJobDescribePhoto, video.ID); got != "1" {
+		test.Errorf("%s jobs describe the new video, want 1", got)
+	}
+	for _, photo := range []*models.Photo{old, shared, waiting} {
 		if got := fixture.queuedJobCount(test, models.AgentJobDescribePhoto, photo.ID); got != "0" {
 			test.Errorf("photo %s was queued", photo.ClientPhotoID)
 		}

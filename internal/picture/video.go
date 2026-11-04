@@ -287,6 +287,64 @@ func VideoPoster(ctx context.Context, path string) ([]byte, error) {
 	return nil, lastErr
 }
 
+// VideoFrames returns JPEGs of frameCount frames spread evenly across a
+// video durationMS long, in order, each the right way up and at most
+// longSidePixels on its long side. A model cannot watch a video, so this is
+// what it is shown of one. A frame that cannot be cut, as past the end of a
+// video shorter than it claims, is left out; it is an error only when none
+// can be.
+func VideoFrames(ctx context.Context, path string, durationMS int64, frameCount, longSidePixels int) ([][]byte, error) {
+	if frameCount <= 0 || longSidePixels <= 0 {
+		return nil, errors.New("picture: frames are cut at least one at a time, and with a size")
+	}
+	program, err := findVideoProgram("ffmpeg")
+	if err != nil {
+		return nil, err
+	}
+	file, err := openVideoFile(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+
+	ctx, cancel := context.WithTimeout(ctx, posterTimeout)
+	defer cancel()
+	limit := strconv.Itoa(longSidePixels)
+	scale := fmt.Sprintf("scale=w='min(%s,iw)':h='min(%s,ih)':force_original_aspect_ratio=decrease", limit, limit)
+	frames := make([][]byte, 0, frameCount)
+	var lastErr error
+	for index := range frameCount {
+		// The middle of each of frameCount equal parts, so neither the
+		// first frame nor the last, which are often black, is one of them.
+		atMS := max(durationMS, 0) * int64(2*index+1) / int64(2*frameCount)
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
+		arguments := []string{"-nostdin", "-hide_banner", "-loglevel", "error", "-threads", encodeThreadCount,
+			"-ss", strconv.FormatFloat(float64(atMS)/1000, 'f', 3, 64)}
+		arguments = append(arguments, videoInputArguments()...)
+		arguments = append(arguments, "-map", "0:v:0", "-frames:v", "1", "-an", "-sn", "-dn", "-vf", scale,
+			"-threads", encodeThreadCount, "-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "3", "pipe:1")
+		output := &boundedWriter{maximumBytes: maximumPosterBytes}
+		if lastErr = runVideoProgram(ctx, program, arguments, file, output); lastErr != nil {
+			if ctx.Err() != nil || errors.Is(lastErr, errOutputTooLarge) {
+				return nil, lastErr
+			}
+			continue
+		}
+		if output.buffer.Len() > 0 {
+			frames = append(frames, output.buffer.Bytes())
+		}
+	}
+	if len(frames) == 0 {
+		if lastErr == nil {
+			lastErr = errors.New("picture: the video has no frame to show")
+		}
+		return nil, lastErr
+	}
+	return frames, nil
+}
+
 // VideoPreview writes an H.264 and AAC MP4 of the video at inputPath to
 // outputPath, at most VideoPreviewLongSidePixels on the long side, the right
 // way up, with the moov box in front so that a browser starts playing before

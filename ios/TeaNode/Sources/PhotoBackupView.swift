@@ -247,7 +247,7 @@ struct PhotoBackupContent: View {
                 .disabled(!library.isDescriptionAvailable || isChangingPhotoReading)
         } footer: {
             if library.isDescriptionAvailable {
-                Text("New pictures are described as they arrive, so a search finds them. Receipts are recorded in Finance, a statement's transactions are added to the account you imported before, and paystubs and W-2s are kept with your tax documents.")
+                Text("New pictures and videos are described as they arrive, so a search finds them. Receipts are recorded in Finance, a statement's transactions are added to the account you imported before, and paystubs and W-2s are kept with your tax documents.")
             } else {
                 Text(library.descriptionUnavailableMessage.isEmpty ? String(localized: "Describing photos is not available.") : library.descriptionUnavailableMessage.asReasonSentence)
             }

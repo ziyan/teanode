@@ -16,9 +16,14 @@ receipt in the library was neither found by its words nor recorded.
 
 A new picture in the person's own library is described as soon as its
 previews are made. New means taken (or added, when it carries no date) in the
-last thirty days, so that importing an archive pays for none of it. Videos and
-photos saved from somebody else's share are not read. Older photos are still
+last thirty days, so that importing an archive pays for none of it. Photos
+saved from somebody else's share are not read. Older photos are still
 described only when somebody looks at them.
+
+Videos were left out at first, which left a library of short clips with
+nothing a search could find them by. A new video is read too, from up to six
+frames spread across it, in the same one call; it is never taken for a
+document.
 
 The description also says whether the picture is a receipt, a statement of an
 account, or a tax document, and such a picture is handed to the job that
