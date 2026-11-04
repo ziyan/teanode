@@ -531,16 +531,50 @@ type agentScheduleModel struct {
 	Enabled        bool       `gorm:"column:enabled"`
 	LastRunAt      *time.Time `gorm:"column:last_run_at"`
 	NextRunAt      *time.Time `gorm:"column:next_run_at"`
+	// MailConditions and MailArrivals are NULL for a schedule on a clock.
+	MailConditions []byte `gorm:"column:mail_conditions;type:jsonb"`
+	MailArrivals   []byte `gorm:"column:mail_arrivals;type:jsonb"`
 }
 
 func (agentScheduleModel) TableName() string { return "agent_schedule" }
 
-func scheduleToModel(schedule *models.AgentSchedule) *agentScheduleModel {
-	return &agentScheduleModel{ID: schedule.ID, CreatedAt: schedule.CreatedAt, ModifiedAt: schedule.ModifiedAt, AgentID: schedule.AgentID, Name: schedule.Name, Cron: schedule.Cron, Prompt: schedule.Prompt, WrittenBy: schedule.WrittenBy, Deliver: schedule.Deliver, ConversationID: schedule.ConversationID, Enabled: schedule.Enabled, LastRunAt: schedule.LastRunAt, NextRunAt: schedule.NextRunAt}
+func scheduleToModel(schedule *models.AgentSchedule) (*agentScheduleModel, error) {
+	model := &agentScheduleModel{ID: schedule.ID, CreatedAt: schedule.CreatedAt, ModifiedAt: schedule.ModifiedAt, AgentID: schedule.AgentID, Name: schedule.Name, Cron: schedule.Cron, Prompt: schedule.Prompt, WrittenBy: schedule.WrittenBy, Deliver: schedule.Deliver, ConversationID: schedule.ConversationID, Enabled: schedule.Enabled, LastRunAt: schedule.LastRunAt, NextRunAt: schedule.NextRunAt}
+	var err error
+	if len(schedule.MailConditions) > 0 {
+		if model.MailConditions, err = json.Marshal(schedule.MailConditions); err != nil {
+			return nil, err
+		}
+	}
+	if len(schedule.MailArrivals) > 0 {
+		if model.MailArrivals, err = json.Marshal(schedule.MailArrivals); err != nil {
+			return nil, err
+		}
+	}
+	return model, nil
 }
 
-func (self *agentScheduleModel) toModel() *models.AgentSchedule {
-	return &models.AgentSchedule{ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, Name: self.Name, Cron: self.Cron, Prompt: self.Prompt, WrittenBy: self.WrittenBy, Deliver: self.Deliver, ConversationID: self.ConversationID, Enabled: self.Enabled, LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt}
+func (self *agentScheduleModel) toModel() (*models.AgentSchedule, error) {
+	schedule := &models.AgentSchedule{ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, Name: self.Name, Cron: self.Cron, Prompt: self.Prompt, WrittenBy: self.WrittenBy, Deliver: self.Deliver, ConversationID: self.ConversationID, Enabled: self.Enabled, LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt}
+	if err := decodeJSON(self.MailConditions, &schedule.MailConditions); err != nil {
+		return nil, fmt.Errorf("db: the mail conditions of schedule %q: %w", self.ID, err)
+	}
+	if err := decodeJSON(self.MailArrivals, &schedule.MailArrivals); err != nil {
+		return nil, fmt.Errorf("db: the mail arrivals of schedule %q: %w", self.ID, err)
+	}
+	return schedule, nil
+}
+
+func schedulesToModels(found []agentScheduleModel) ([]*models.AgentSchedule, error) {
+	schedules := make([]*models.AgentSchedule, 0, len(found))
+	for index := range found {
+		schedule, err := found[index].toModel()
+		if err != nil {
+			return nil, err
+		}
+		schedules = append(schedules, schedule)
+	}
+	return schedules, nil
 }
 
 func (self *transaction) CreateAgentSchedule(schedule *models.AgentSchedule) (*models.AgentSchedule, error) {
@@ -563,7 +597,11 @@ func (self *transaction) CreateAgentSchedule(schedule *models.AgentSchedule) (*m
 	if models.KnownWriter(created.WrittenBy) == "" {
 		created.WrittenBy = models.WrittenByPerson
 	}
-	if err := self.tx.Create(scheduleToModel(&created)).Error; err != nil {
+	model, err := scheduleToModel(&created)
+	if err != nil {
+		return nil, err
+	}
+	if err := self.tx.Create(model).Error; err != nil {
 		return nil, err
 	}
 	return &created, nil
@@ -577,7 +615,7 @@ func (self *transaction) GetAgentSchedule(scheduleId string) (*models.AgentSched
 	if len(found) == 0 {
 		return nil, nil
 	}
-	return found[0].toModel(), nil
+	return found[0].toModel()
 }
 
 func (self *transaction) UpdateAgentSchedule(scheduleId string, modify func(*models.AgentSchedule) error) (*models.AgentSchedule, error) {
@@ -588,7 +626,10 @@ func (self *transaction) UpdateAgentSchedule(scheduleId string, modify func(*mod
 	if len(found) == 0 {
 		return nil, ErrNotFound
 	}
-	schedule := found[0].toModel()
+	schedule, err := found[0].toModel()
+	if err != nil {
+		return nil, err
+	}
 	if err := modify(schedule); err != nil {
 		return nil, err
 	}
@@ -597,7 +638,11 @@ func (self *transaction) UpdateAgentSchedule(scheduleId string, modify func(*mod
 	}
 	schedule.ID = scheduleId
 	schedule.ModifiedAt = time.Now()
-	if err := self.tx.Save(scheduleToModel(schedule)).Error; err != nil {
+	model, err := scheduleToModel(schedule)
+	if err != nil {
+		return nil, err
+	}
+	if err := self.tx.Save(model).Error; err != nil {
 		return nil, err
 	}
 	return schedule, nil
@@ -612,11 +657,7 @@ func (self *transaction) ListAgentSchedules(agentId string) ([]*models.AgentSche
 	if err := self.tx.Where("\"agent_id\" = ?", agentId).Order("\"created_at\" ASC").Find(&found).Error; err != nil {
 		return nil, err
 	}
-	schedules := make([]*models.AgentSchedule, 0, len(found))
-	for index := range found {
-		schedules = append(schedules, found[index].toModel())
-	}
-	return schedules, nil
+	return schedulesToModels(found)
 }
 
 func (self *transaction) ListDueAgentSchedules(now time.Time, limit int) ([]*models.AgentSchedule, error) {
@@ -627,11 +668,7 @@ func (self *transaction) ListDueAgentSchedules(now time.Time, limit int) ([]*mod
 	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Where("\"enabled\" AND \"next_run_at\" IS NOT NULL AND \"next_run_at\" <= ?", now).Order("\"next_run_at\" ASC").Limit(limit).Find(&found).Error; err != nil {
 		return nil, err
 	}
-	schedules := make([]*models.AgentSchedule, 0, len(found))
-	for index := range found {
-		schedules = append(schedules, found[index].toModel())
-	}
-	return schedules, nil
+	return schedulesToModels(found)
 }
 
 type agentTodoModel struct {

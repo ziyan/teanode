@@ -651,6 +651,9 @@ jobs:
             shoot "$brief_days_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$brief_days_screen"
           done
           shoot schedules-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules
+          # The editor open on a schedule that runs when mail arrives, with its conditions.
+          shoot schedules-mail-editor-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules-mail-editor
+          shoot schedules-mail-editor-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules-mail-editor
           shoot activity-run-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen activity-run
           shoot activity-run-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen activity-run
           # The alert settings, with what the agent is following.

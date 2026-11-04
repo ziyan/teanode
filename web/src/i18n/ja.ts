@@ -1193,6 +1193,12 @@ export const ja: Catalog = {
   'agent.scheduleEnable': '有効にする',
   'agent.scheduleDisable': '停止する',
   'agent.scheduleQueued': 'キューに入れました。答えは予定の届け先に届きます。',
+  'agent.scheduleWhen': '実行するタイミング',
+  'agent.scheduleWhenClock': '決まった時刻に',
+  'agent.scheduleWhenMail': 'メールが届いたとき',
+  'agent.scheduleOnMail': 'メールが届いたとき {conditions}',
+  'agent.scheduleMailHint':
+    'メールボックスに届いた新しいメールが下の条件をすべて満たすたびに、1 回実行します。「パターンに一致」で比べる値は正規表現です。',
   'agent.corrections': 'あなたから学んだこと',
   'agent.correctionsHint':
     'あなた自身の操作から記録されたもの — 別の場所に移したメッセージ、送らせなかった返信 — で、しばらくの間、次の処理に例として示されます。',

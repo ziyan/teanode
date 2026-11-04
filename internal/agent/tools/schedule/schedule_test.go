@@ -192,3 +192,52 @@ func TestAScheduleAboutSigningInTellsTheModelWhatThePersonCanDo(t *testing.T) {
 		t.Errorf("a reworded prompt: %s", reworded.Content)
 	}
 }
+
+// A schedule can wait for mail instead of a time: it has no cron line and no
+// next run until a message comes. Given a cron line it runs at set times
+// again, and asked for both it is refused.
+func TestAScheduleCanWaitForMail(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	run := &fakeRun{database: database}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if run.owner, err = tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example"}); err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if run.agent, err = tx.CreateAgent(&models.Agent{UserID: run.owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+	})
+	ctx := tools.WithRun(context.Background(), run)
+	tool := find(t)
+
+	onMail := `"on_mail":[{"field":"from","operator":"contains","value":"news@school.example"}]`
+	if _, err := tool.Run(ctx, &tools.Call{ID: "c0", Arguments: []byte(`{"action":"add","name":"Pictures","cron":"0 8 * * *",` + onMail + `,"prompt":"Save them."}`)}); err == nil {
+		t.Fatal("a schedule on a cron line and on mail at once should be refused")
+	}
+	result, err := tool.Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"add","name":"Pictures",` + onMail + `,"prompt":"Save them."}`)})
+	if err != nil {
+		t.Fatalf("add: %s", err)
+	}
+	if !strings.Contains(result.Content, `whenever mail arrives from contains \"news@school.example\"`) {
+		t.Errorf("the answer should say what it waits for: %s", result.Content)
+	}
+	var schedules []*models.AgentSchedule
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		schedules, _ = tx.ListAgentSchedules(run.agent.ID)
+	})
+	if len(schedules) != 1 || !schedules[0].IsMailTriggered() || schedules[0].Cron != "" || schedules[0].NextRunAt != nil {
+		t.Fatalf("the schedule should wait for mail with no time of its own: %+v", schedules)
+	}
+	if _, err := tool.Run(ctx, &tools.Call{ID: "c2", Arguments: []byte(`{"action":"update","id":"` + schedules[0].ID + `","cron":"0 8 * * *"}`)}); err != nil {
+		t.Fatalf("update: %s", err)
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		after, _ := tx.GetAgentSchedule(schedules[0].ID)
+		if after.IsMailTriggered() || after.Cron != "0 8 * * *" || after.NextRunAt == nil {
+			t.Fatalf("given a cron line it should run at set times again: %+v", after)
+		}
+	})
+}

@@ -68,7 +68,7 @@ func (self *graph) startAssetEstimates(ctx context.Context, tx db.Transaction, p
 			log.Warningf("cannot settle the asset estimate schedule of agent %s: %s", found.ID, err)
 			return
 		}
-		schedule.NextRunAt = &next
+		schedule.NextRunAt = next
 		if estimates, err = tx.CreateAgentSchedule(schedule); err != nil {
 			log.Warningf("cannot make the asset estimate schedule of agent %s: %s", found.ID, err)
 			return

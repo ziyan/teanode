@@ -1148,6 +1148,12 @@ export const zh: Catalog = {
   'agent.scheduleEnable': '启用',
   'agent.scheduleDisable': '停用',
   'agent.scheduleQueued': '已排队；答复会送到定时任务指定的地方。',
+  'agent.scheduleWhen': '何时运行',
+  'agent.scheduleWhenClock': '在固定时间',
+  'agent.scheduleWhenMail': '收到邮件时',
+  'agent.scheduleOnMail': '收到邮件时 {conditions}',
+  'agent.scheduleMailHint':
+    '你的邮箱每收到一封满足下列全部条件的新邮件，就运行一次。与“匹配模式”比较的值是正则表达式。',
   'agent.corrections': '从你这里学到的',
   'agent.correctionsHint':
     '从你自己的操作记录下来的——你归到别处的邮件、你没让发出的回复——并在一段时间内作为例子提供给下一次处理。',

@@ -90,7 +90,7 @@ func (self *graph) SetAgentBrief(ctx context.Context, arguments SetAgentBriefArg
 		if err != nil {
 			return nil, translateError(err)
 		}
-		schedule.NextRunAt = &next
+		schedule.NextRunAt = next
 		created, err := tx.CreateAgentSchedule(schedule)
 		if err != nil {
 			return nil, translateError(err)
@@ -100,6 +100,8 @@ func (self *graph) SetAgentBrief(ctx context.Context, arguments SetAgentBriefArg
 	}
 	updated, err := tx.UpdateAgentSchedule(brief.ID, func(schedule *models.AgentSchedule) error {
 		schedule.Cron = cron
+		// The brief runs at its hour, whatever it was changed to before.
+		schedule.MailConditions, schedule.MailArrivals = nil, nil
 		schedule.Enabled = arguments.Enabled
 		if strings.TrimSpace(schedule.Prompt) == "" {
 			schedule.Prompt = agent.BriefPrompt(found, principal.User)
@@ -108,7 +110,7 @@ func (self *graph) SetAgentBrief(ctx context.Context, arguments SetAgentBriefArg
 		if err != nil {
 			return err
 		}
-		schedule.NextRunAt = &next
+		schedule.NextRunAt = next
 		return nil
 	})
 	if err != nil {

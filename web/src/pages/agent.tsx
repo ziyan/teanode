@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
-import { AgentReply, graphql, openAgentConversation } from '../api'
+import { AgentReply, MailboxRuleCondition, graphql, openAgentConversation } from '../api'
 import {
   CopyIconButton,
   ErrorMessage,
@@ -45,6 +45,12 @@ import { AGENT_FINANCE_TAB, AGENT_TABS, shownTabs } from '../pageTabs'
 import { useSession } from '../session'
 import { useMailboxes } from '../mailboxes'
 import { Select } from '../components/select'
+import {
+  BARE_FIELDS,
+  MailConditionsEditor,
+  SCHEDULE_MAIL_FIELDS,
+  describeMailSchedule,
+} from '../components/mailConditions'
 import { SpeechVoiceChoice } from '../components/speechVoice'
 import { PolicyTool, ToolPolicyAccordion } from '../components/toolPolicy'
 import { SkillSharesCard } from './agentSkillSharing'
@@ -594,7 +600,10 @@ function AlertSettings({ agent, busy, onSave }: SaveProps) {
               value={agent.lookAroundWeekday || 'thursday'}
               disabled={busy || !agent.isAlertsEnabled}
               label={t('agent.lookAroundWeekday')}
-              options={LOOK_AROUND_WEEKDAYS.map((weekday) => ({ value: weekday, label: t(`agent.weekday.${weekday}`) }))}
+              options={LOOK_AROUND_WEEKDAYS.map((weekday) => ({
+                value: weekday,
+                label: t(`agent.weekday.${weekday}`),
+              }))}
               onChange={(weekday) => void onSave({ lookAroundWeekday: weekday }, t('agent.saved'))}
             />
           </label>
@@ -1111,12 +1120,12 @@ type DreamState = {
 
 const SCHEDULES = `
   query {
-    ListAgentSchedules { id name cron prompt deliver enabled lastRunAt nextRunAt }
+    ListAgentSchedules { id name cron mailConditions { field header operator value } prompt deliver enabled lastRunAt nextRunAt }
   }`
 
 const SAVE_SCHEDULE = `
-  mutation ($scheduleId: String, $name: String, $cron: String, $prompt: String, $deliver: String, $enabled: Boolean) {
-    SaveAgentSchedule(scheduleId: $scheduleId, name: $name, cron: $cron, prompt: $prompt, deliver: $deliver, enabled: $enabled) { id }
+  mutation ($scheduleId: String, $name: String, $cron: String, $mailConditions: [MailboxRuleConditionInput!], $prompt: String, $deliver: String, $enabled: Boolean) {
+    SaveAgentSchedule(scheduleId: $scheduleId, name: $name, cron: $cron, mailConditions: $mailConditions, prompt: $prompt, deliver: $deliver, enabled: $enabled) { id }
   }`
 
 const SET_BRIEF = `
@@ -1946,6 +1955,9 @@ interface Schedule {
   id: string
   name: string
   cron: string
+  // Set when the schedule runs on arriving mail rather than on the clock; the
+  // cron line is then empty.
+  mailConditions?: MailboxRuleCondition[] | null
   prompt: string
   deliver: string
   enabled: boolean
@@ -3244,7 +3256,30 @@ export function BriefCard() {
   )
 }
 
-function SchedulesCard() {
+// A schedule that runs on mail starts with one line, the commonest question
+// of a message: who it is from.
+function newMailConditions(): MailboxRuleCondition[] {
+  return [{ field: 'from', operator: 'contains', value: '' }]
+}
+
+// What the server accepts as a condition: the header name only on a header,
+// and no operator or value where the field is the whole condition.
+function cleanMailConditions(conditions: MailboxRuleCondition[]): MailboxRuleCondition[] {
+  return conditions.map((condition) => ({
+    field: condition.field,
+    header: condition.field === 'header' ? (condition.header ?? '').trim() : '',
+    operator: BARE_FIELDS.includes(condition.field) ? '' : condition.operator,
+    value: BARE_FIELDS.includes(condition.field) ? '' : (condition.value ?? '').trim(),
+  }))
+}
+
+function isMailConditionComplete(condition: MailboxRuleCondition): boolean {
+  if (BARE_FIELDS.includes(condition.field)) return true
+  if (condition.field === 'header' && (condition.header ?? '').trim() === '') return false
+  return (condition.value ?? '').trim() !== ''
+}
+
+export function SchedulesCard() {
   const session = useSession()
   const { t } = useTranslation()
   const toast = useToast()
@@ -3256,6 +3291,8 @@ function SchedulesCard() {
   const [editing, setEditing] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [cron, setCron] = useState('0 8 * * 1-5')
+  const [runsOnMail, setRunsOnMail] = useState(false)
+  const [mailConditions, setMailConditions] = useState<MailboxRuleCondition[]>(newMailConditions)
   const [prompt, setPrompt] = useState('')
   const [deliver, setDeliver] = useState('drawer')
   const [busy, setBusy] = useState(false)
@@ -3264,7 +3301,18 @@ function SchedulesCard() {
   const open = (schedule?: Schedule) => {
     setEditing(schedule?.id ?? null)
     setName(schedule?.name ?? '')
-    setCron(schedule?.cron ?? '0 8 * * 1-5')
+    setCron(schedule?.cron || '0 8 * * 1-5')
+    setRunsOnMail(Boolean(schedule?.mailConditions?.length))
+    setMailConditions(
+      schedule?.mailConditions?.length
+        ? schedule.mailConditions.map((condition) => ({
+            field: condition.field,
+            header: condition.header ?? '',
+            operator: condition.operator,
+            value: condition.value ?? '',
+          }))
+        : newMailConditions(),
+    )
     setPrompt(schedule?.prompt ?? '')
     setDeliver(schedule?.deliver ?? 'drawer')
     setProblem(null)
@@ -3277,7 +3325,9 @@ function SchedulesCard() {
       await graphql(SAVE_SCHEDULE, {
         scheduleId: editing ?? undefined,
         name: name.trim(),
-        cron: cron.trim(),
+        // One or the other, never both: the server switches the schedule to
+        // whichever it is given.
+        ...(runsOnMail ? { mailConditions: cleanMailConditions(mailConditions) } : { cron: cron.trim() }),
         prompt: prompt.trim(),
         deliver,
         ...(editing ? {} : { enabled: true }),
@@ -3338,7 +3388,7 @@ function SchedulesCard() {
             title={schedule.name}
             badge={
               <>
-                <code className="tag">{schedule.cron}</code>
+                {schedule.mailConditions?.length ? null : <code className="tag">{schedule.cron}</code>}
                 {!schedule.enabled ? <Tag value={t('agent.scheduleOff')} tone="warn" /> : null}
               </>
             }
@@ -3346,6 +3396,12 @@ function SchedulesCard() {
               <>
                 {schedule.prompt}
                 <br />
+                {schedule.mailConditions?.length ? (
+                  <>
+                    {describeMailSchedule(schedule.mailConditions, t)}
+                    <br />
+                  </>
+                ) : null}
                 {schedule.deliver === 'mail' ? t('agent.deliverMail') : t('agent.deliverDrawer')}
                 {schedule.nextRunAt ? ` · ${t('agent.scheduleNext', { time: formatTime(schedule.nextRunAt) })}` : ''}
               </>
@@ -3403,7 +3459,11 @@ function SchedulesCard() {
           submitLabel={editing ? t('common.save') : t('agent.scheduleAdd')}
           busy={busy}
           error={problem}
-          canSubmit={name.trim() !== '' && cron.trim() !== '' && prompt.trim() !== ''}
+          canSubmit={
+            name.trim() !== '' &&
+            prompt.trim() !== '' &&
+            (runsOnMail ? mailConditions.every(isMailConditionComplete) : cron.trim() !== '')
+          }
           onClose={() => setAdding(false)}
           onSubmit={() => void add()}
         >
@@ -3413,8 +3473,17 @@ function SchedulesCard() {
           </label>
           <div className="row">
             <label>
-              <span>{t('agent.scheduleCron')}</span>
-              <input value={cron} placeholder="0 8 * * 1-5" onChange={(event) => setCron(event.target.value)} />
+              <span>{t('agent.scheduleWhen')}</span>
+              <Select
+                block
+                value={runsOnMail ? 'mail' : 'clock'}
+                label={t('agent.scheduleWhen')}
+                options={[
+                  { value: 'clock', label: t('agent.scheduleWhenClock') },
+                  { value: 'mail', label: t('agent.scheduleWhenMail') },
+                ]}
+                onChange={(value) => setRunsOnMail(value === 'mail')}
+              />
             </label>
             <label>
               <span>{t('agent.scheduleDeliver')}</span>
@@ -3432,7 +3501,25 @@ function SchedulesCard() {
               />
             </label>
           </div>
-          <p className="muted">{t('agent.scheduleCronHint')}</p>
+          {runsOnMail ? (
+            <>
+              <div className="field-label">{t('mailboxSettings.conditions')}</div>
+              <MailConditionsEditor
+                conditions={mailConditions}
+                onChange={setMailConditions}
+                fields={SCHEDULE_MAIL_FIELDS}
+              />
+              <p className="muted">{t('agent.scheduleMailHint')}</p>
+            </>
+          ) : (
+            <>
+              <label>
+                <span>{t('agent.scheduleCron')}</span>
+                <input value={cron} placeholder="0 8 * * 1-5" onChange={(event) => setCron(event.target.value)} />
+              </label>
+              <p className="muted">{t('agent.scheduleCronHint')}</p>
+            </>
+          )}
           <label>
             <span>{t('agent.schedulePrompt')}</span>
             <textarea rows={3} value={prompt} onChange={(event) => setPrompt(event.target.value)} />

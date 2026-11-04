@@ -113,12 +113,16 @@ func (self *device) layerSeenFrom(userId string) byte {
 	return self.seenLayer[userId]
 }
 
-// sequencesFrom are the sequence numbers of the pictures from a person, from
-// the first given on.
-func (self *device) sequencesFrom(userId string) []uint16 {
+// seenPacket is one packet of video as it reached a device.
+type seenPacket struct {
+	sequence uint16
+	layer    byte
+}
+
+func (self *device) packetsFrom(userId string) []seenPacket {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-	return slices.Clone(self.seenSequences[userId])
+	return slices.Clone(self.seenPackets[userId])
 }
 
 func (self *device) speakersTold() []string {
@@ -169,10 +173,24 @@ func TestEachPersonIsSentTheWholePictureOfWhoTheyFeature(t *testing.T) {
 	if priya.layerSeenFrom("tobias") != 'Q' {
 		t.Error("Tobias, not featured, is sent whole")
 	}
-	sequences := priya.sequencesFrom("mira")
-	for index := 1; index < len(sequences); index++ {
-		if sequences[index] != sequences[index-1]+1 {
-			t.Fatalf("Mira's pictures jump from %d to %d at the switch", sequences[index-1], sequences[index])
+	// The first whole picture carries on from the newest small one. A
+	// packet or two the network lost or reordered on the way may open a
+	// small gap; without the rewriting the numbers would jump to the whole
+	// layer's own, which start anywhere.
+	packets := priya.packetsFrom("mira")
+	newestSmall, hasSmall := uint16(0), false
+	for _, packet := range packets {
+		if packet.layer == 'F' {
+			if !hasSmall {
+				t.Fatal("Priya saw Mira whole before small")
+			}
+			if jump := int16(packet.sequence - newestSmall); jump < 1 || jump > 3 {
+				t.Fatalf("Mira's pictures jump from %d to %d at the switch", newestSmall, packet.sequence)
+			}
+			break
+		}
+		if !hasSmall || int16(packet.sequence-newestSmall) > 0 {
+			newestSmall, hasSmall = packet.sequence, true
 		}
 	}
 	// Mira's whole picture stops, as on a weak connection: Priya is sent

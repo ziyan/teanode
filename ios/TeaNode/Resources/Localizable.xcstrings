@@ -11091,6 +11091,22 @@
         }
       }
     },
+    "At set times": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "決まった時刻に"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在固定时间"
+          }
+        }
+      }
+    },
     "Attach": {
       "localizations": {
         "ja": {
@@ -43376,6 +43392,22 @@
         }
       }
     },
+    "The schedule runs for each new message that matches all of these. To run it for every new message, choose Any message.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これらすべてに一致する新着メールごとに実行されます。すべての新着メールで実行するには、「すべてのメッセージ」を選んでください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对每封同时满足以上全部条件的新邮件运行。若要对每封新邮件都运行，请选择“任何邮件”。"
+          }
+        }
+      }
+    },
     "The sender is told at once, the way the list asks to be left.": {
       "localizations": {
         "ja": {
@@ -48478,6 +48510,22 @@
         }
       }
     },
+    "When any mail arrives": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールが届くたび"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每收到一封邮件时"
+          }
+        }
+      }
+    },
     "When it may dream": {
       "localizations": {
         "ja": {
@@ -48506,6 +48554,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "何时成立（2023-06）"
+          }
+        }
+      }
+    },
+    "When mail arrives": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールが届いたとき"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收到邮件时"
+          }
+        }
+      }
+    },
+    "When mail arrives: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールが届いたとき: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收到邮件时：%@"
           }
         }
       }

@@ -28,24 +28,29 @@ func (self *Agent) SetOperationsFactory(factory OperationsFactory) {
 	self.operations = factory
 }
 
-// NextRun is when a schedule next runs for a person, from now.
-func NextRun(schedule *models.AgentSchedule, owner *models.User, now time.Time) (time.Time, error) {
-	return nextCron(schedule.Cron, now, Location(owner))
-}
-
 // SettleSchedule settles a schedule's time and says when it next runs. A
 // distance from now ("@in 20m") becomes the moment it means, so that what
 // is stored does not move every time it is read. The agent's own tool has
 // always done this; a schedule written from the dashboard or the command
 // line was refused instead, being told it wanted five cron fields.
-func SettleSchedule(schedule *models.AgentSchedule, owner *models.User, now time.Time) (time.Time, error) {
+//
+// One that runs on arriving mail has no time of its own: it runs when it is
+// next due because a message came, which is whatever it already was.
+func SettleSchedule(schedule *models.AgentSchedule, owner *models.User, now time.Time) (*time.Time, error) {
+	if schedule.IsMailTriggered() {
+		return schedule.NextRunAt, nil
+	}
 	location := Location(owner)
 	settled, err := resolveRelative(schedule.Cron, now, location)
 	if err != nil {
-		return time.Time{}, err
+		return nil, err
 	}
 	schedule.Cron = settled
-	return nextCron(schedule.Cron, now, location)
+	next, err := nextCron(schedule.Cron, now, location)
+	if err != nil {
+		return nil, err
+	}
+	return &next, nil
 }
 
 // dueSchedules queues a run for every schedule whose time has come, and
@@ -71,6 +76,12 @@ func (self *Agent) dueSchedules(ctx context.Context, now time.Time) error {
 				if err != nil {
 					return err
 				}
+			}
+			if schedule.IsMailTriggered() {
+				if err := self.dueMailSchedule(tx, schedule, agent, owner, now); err != nil {
+					return err
+				}
+				continue
 			}
 			next, nextErr := nextCron(schedule.Cron, now, Location(owner))
 			if _, err := tx.UpdateAgentSchedule(schedule.ID, func(schedule *models.AgentSchedule) error {
@@ -151,7 +162,7 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 	// Taking the goal up again lets it run again.
 	if conversation.IsGoal() && (conversation.GoalState == models.GoalMet || conversation.GoalState == models.GoalDropped) {
 		log.Infof("skipped schedule %q: its goal is %s", schedule.ID, conversation.GoalState)
-		return self.finishOnce(run, schedule.ID)
+		return self.finishRun(run, schedule)
 	}
 	operations, err := self.operations(ctx, run.Owner)
 	if err != nil {
@@ -161,6 +172,9 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 	surface, turnMessage := "schedule", ""
 	if isMailed {
 		surface, turnMessage = "mail", scheduledMessage(schedule)
+		if schedule.IsMailTriggered() {
+			turnMessage += "\n\n" + arrivalLines(schedule, run.Owner)
+		}
 	} else {
 		turnMessage = scheduleCheckIn(schedule, run.Agent, run.Owner, time.Now())
 		if conversation.IsGoal() {
@@ -220,7 +234,7 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 		} else if isCutShort {
 			log.Warningf("the scheduled turn of %q ran out of time", schedule.Name)
 		}
-		return self.finishOnce(run, schedule.ID)
+		return self.finishRun(run, schedule)
 	}
 	if failure != "" {
 		return fmt.Errorf("the scheduled turn failed: %s", failure)
@@ -236,7 +250,7 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 			return err
 		}
 	}
-	return self.finishOnce(run, schedule.ID)
+	return self.finishRun(run, schedule)
 }
 
 // scheduleConversation is where a drawer schedule takes its turn: the
@@ -279,8 +293,9 @@ func (self *Agent) finishOnce(run *Run, scheduleId string) error {
 // the person can see it and mend the line.
 func endIfNoTimeLeft(tx db.Transaction, scheduleId string) error {
 	schedule, err := tx.GetAgentSchedule(scheduleId)
-	if err != nil || schedule == nil || schedule.NextRunAt != nil {
-		// Removed while it ran, or it has a next time.
+	if err != nil || schedule == nil || schedule.NextRunAt != nil || schedule.IsMailTriggered() {
+		// Removed while it ran, or it has a next time, or it never had a
+		// time: it runs on arriving mail.
 		return err
 	}
 	if tools.IsOneMoment(schedule.Cron) {
@@ -337,9 +352,11 @@ func isBuiltInSchedule(schedule *models.AgentSchedule, found *models.Agent, owne
 // person asking, which is what Passwords asks. Only a schedule the person
 // wrote does: not one the agent wrote, and not one of the built-in schedules,
 // which read content the person did not write (the brief reads the inbox) and
-// so could be steered by a stranger's mail.
+// so could be steered by a stranger's mail. Nor one that runs on arriving
+// mail: whoever sends that mail decides when it runs, and its run reads what
+// they wrote.
 func isPersonsOwnSchedule(schedule *models.AgentSchedule, found *models.Agent, owner *models.User) bool {
-	return models.KnownWriter(schedule.WrittenBy) == models.WrittenByPerson && !isBuiltInSchedule(schedule, found, owner)
+	return models.KnownWriter(schedule.WrittenBy) == models.WrittenByPerson && !isBuiltInSchedule(schedule, found, owner) && !schedule.IsMailTriggered()
 }
 
 // scheduleCheckIn is the message a drawer schedule's turn arrives as.
@@ -350,11 +367,18 @@ func isPersonsOwnSchedule(schedule *models.AgentSchedule, found *models.Agent, o
 // The prompt comes as the person's words when they wrote it, and fenced as
 // a note to itself when the agent did.
 func scheduleCheckIn(schedule *models.AgentSchedule, agent *models.Agent, owner *models.User, now time.Time) string {
+	opening := fmt.Sprintf(" The schedule %q is due. This is your own turn at a time that was set, not the person speaking; they may not be watching.", schedule.Name)
+	if schedule.IsMailTriggered() {
+		opening = fmt.Sprintf(" The schedule %q runs because mail it waits for arrived. This is your own turn, not the person speaking; they may not be watching.", schedule.Name)
+	}
 	lines := []string{
-		models.ScheduleMarker + fmt.Sprintf(" The schedule %q is due. This is your own turn at a time that was set, not the person speaking; they may not be watching.", schedule.Name),
+		models.ScheduleMarker + opening,
 		"",
 		"It is " + now.In(Location(owner)).Format("Monday 2 January, 15:04") + " where they are.",
 		"",
+	}
+	if schedule.IsMailTriggered() {
+		lines = append(lines, arrivalLines(schedule, owner), "")
 	}
 	if !isPersonsSchedule(schedule) {
 		lines = append(lines,

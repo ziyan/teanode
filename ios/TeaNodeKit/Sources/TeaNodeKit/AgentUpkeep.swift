@@ -784,8 +784,9 @@ public struct ReadingProgress: Codable, Hashable, Sendable {
 
 // MARK: - Schedules
 
-/// AgentSchedule is something the agent does at set times: a cron line in
-/// the person's zone, what to do, and where the answer goes.
+/// AgentSchedule is something the agent does at set times, a cron line in
+/// the person's zone, or when a matching message arrives in a mailbox;
+/// what to do, and where the answer goes.
 public struct AgentSchedule: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let name: String
@@ -799,10 +800,14 @@ public struct AgentSchedule: Codable, Hashable, Sendable, Identifiable {
     /// The conversation its answers go to: a goal's, for a schedule that
     /// runs a goal.
     public let conversationId: String?
+    /// What a message must match, all of it, for the schedule to run; nil or
+    /// empty for a schedule that runs on the clock. A schedule that runs on
+    /// mail has an empty cron.
+    public let mailConditions: [MailRule.Condition]?
 
     public init(
         id: String, name: String, cron: String, prompt: String = "", deliver: String = "drawer", enabled: Bool = true, lastRunAt: String? = nil,
-        nextRunAt: String? = nil, conversationId: String? = nil
+        nextRunAt: String? = nil, conversationId: String? = nil, mailConditions: [MailRule.Condition]? = nil
     ) {
         self.id = id
         self.name = name
@@ -813,9 +818,54 @@ public struct AgentSchedule: Codable, Hashable, Sendable, Identifiable {
         self.lastRunAt = lastRunAt
         self.nextRunAt = nextRunAt
         self.conversationId = conversationId
+        self.mailConditions = mailConditions
     }
 
     public var isDeliveredByMail: Bool { deliver == "mail" }
+
+    /// Whether it runs when mail arrives, not at set times.
+    public var isTriggeredByMail: Bool { !(mailConditions ?? []).isEmpty }
+}
+
+/// ScheduleMailTrigger is what a schedule that runs when mail arrives is
+/// made of: the conditions a message must all pass, as the server takes
+/// them and as a person reads them.
+public enum ScheduleMailTrigger {
+    /// The fields a schedule's conditions can test; the rest of a mailbox
+    /// rule's (score, category and so on) are not offered to schedules.
+    public static let fields = ["from", "to", "subject", "header", "any"]
+
+    /// Whether the conditions can be saved: there is one at least, and
+    /// every one that needs a value has it, and a header one has its name.
+    public static func isComplete(_ conditions: [MailRule.Condition]) -> Bool {
+        if conditions.isEmpty { return false }
+        return conditions.allSatisfy { condition in
+            if condition.isBare { return true }
+            if (condition.value ?? "").trimmingCharacters(in: .whitespaces).isEmpty { return false }
+            return condition.field != "header" || !(condition.header ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+        }
+    }
+
+    /// As the server takes them.
+    static func variables(_ conditions: [MailRule.Condition]) -> JSONValue {
+        .array(conditions.map(\.variables))
+    }
+
+    /// The conditions in English, which the app words in the person's
+    /// language: "When mail arrives: From contains news@school.example".
+    public static func englishText(_ conditions: [MailRule.Condition]) -> String {
+        var parts: [String] = []
+        for condition in conditions where !condition.isBare {
+            var fieldName = condition.field.capitalized
+            if condition.field == "header" { fieldName += " " + (condition.header ?? "") }
+            var comparisonText = "contains"
+            if condition.comparisonOperator == "equals" { comparisonText = "is" }
+            if condition.comparisonOperator == "matches" { comparisonText = "matches pattern" }
+            parts.append("\(fieldName) \(comparisonText) \(condition.value ?? "")")
+        }
+        if parts.isEmpty { return "When any mail arrives" }
+        return "When mail arrives: " + parts.joined(separator: ", ")
+    }
 }
 
 /// DailyBrief is the morning brief: an ordinary schedule with a known
@@ -1598,11 +1648,11 @@ extension Documents {
         """
 
     public static let agentSchedules = """
-        query { ListAgentSchedules { id name cron prompt deliver enabled lastRunAt nextRunAt conversationId } }
+        query { ListAgentSchedules { id name cron prompt deliver enabled lastRunAt nextRunAt conversationId mailConditions { field header operator value } } }
         """
     public static let saveAgentSchedule = """
-        mutation ($scheduleId: String, $name: String, $cron: String, $prompt: String, $deliver: String, $enabled: Boolean) {
-          SaveAgentSchedule(scheduleId: $scheduleId, name: $name, cron: $cron, prompt: $prompt, deliver: $deliver, enabled: $enabled) { id }
+        mutation ($scheduleId: String, $name: String, $cron: String, $mailConditions: [MailboxRuleConditionInput!], $prompt: String, $deliver: String, $enabled: Boolean) {
+          SaveAgentSchedule(scheduleId: $scheduleId, name: $name, cron: $cron, mailConditions: $mailConditions, prompt: $prompt, deliver: $deliver, enabled: $enabled) { id }
         }
         """
     public static let deleteAgentSchedule = """
@@ -1929,9 +1979,11 @@ extension Connection {
     }
 
     /// Adds a schedule, without an id, or changes one; what is not given
-    /// stays as it is.
+    /// stays as it is. Mail conditions make it run when mail arrives and a
+    /// cron line makes it run at set times: give one of them, never both.
     public func saveAgentSchedule(
-        scheduleId: String? = nil, name: String? = nil, cron: String? = nil, prompt: String? = nil, deliver: String? = nil, isEnabled: Bool? = nil
+        scheduleId: String? = nil, name: String? = nil, cron: String? = nil, mailConditions: [MailRule.Condition]? = nil, prompt: String? = nil,
+        deliver: String? = nil, isEnabled: Bool? = nil
     ) async throws {
         struct Answer: Decodable, Sendable {
             struct Saved: Decodable, Sendable { let id: String }
@@ -1941,6 +1993,7 @@ extension Connection {
         if let scheduleId { variables["scheduleId"] = .string(scheduleId) }
         if let name { variables["name"] = .string(name) }
         if let cron { variables["cron"] = .string(cron) }
+        if let mailConditions { variables["mailConditions"] = ScheduleMailTrigger.variables(mailConditions) }
         if let prompt { variables["prompt"] = .string(prompt) }
         if let deliver { variables["deliver"] = .string(deliver) }
         if let isEnabled { variables["enabled"] = .bool(isEnabled) }

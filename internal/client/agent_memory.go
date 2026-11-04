@@ -29,20 +29,22 @@ type AgentFeedback struct {
 	Said      string    `json:"said"`
 }
 
-// AgentSchedule is a prompt the agent runs at set times.
+// AgentSchedule is a prompt the agent runs at set times, or whenever mail
+// that passes its MailConditions arrives.
 type AgentSchedule struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	Cron      string     `json:"cron"`
-	Prompt    string     `json:"prompt"`
-	Deliver   string     `json:"deliver"`
-	Enabled   bool       `json:"enabled"`
-	LastRunAt *time.Time `json:"lastRunAt"`
-	NextRunAt *time.Time `json:"nextRunAt"`
+	ID             string                 `json:"id"`
+	Name           string                 `json:"name"`
+	Cron           string                 `json:"cron"`
+	MailConditions []MailboxRuleCondition `json:"mailConditions,omitempty"`
+	Prompt         string                 `json:"prompt"`
+	Deliver        string                 `json:"deliver"`
+	Enabled        bool                   `json:"enabled"`
+	LastRunAt      *time.Time             `json:"lastRunAt"`
+	NextRunAt      *time.Time             `json:"nextRunAt"`
 }
 
 const memoryFields = `{ id createdAt modifiedAt title content tags appliesTo pinned usedAt }`
-const scheduleFields = `{ id name cron prompt deliver enabled lastRunAt nextRunAt }`
+const scheduleFields = `{ id name cron mailConditions { field header operator value } prompt deliver enabled lastRunAt nextRunAt }`
 
 // The documents.
 const (
@@ -55,8 +57,8 @@ const (
 	DocumentDeleteAgentMemory    = `mutation ($memoryId: String!) { DeleteAgentMemory(memoryId: $memoryId) }`
 	DocumentListAgentCorrections = `query ($first: Int) { ListAgentCorrections(first: $first) { id createdAt kind mailId said } }`
 	DocumentListAgentSchedules   = `query { ListAgentSchedules ` + scheduleFields + ` }`
-	DocumentSaveAgentSchedule    = `mutation ($scheduleId: String, $name: String, $cron: String, $prompt: String, $deliver: String, $enabled: Boolean) {
-		SaveAgentSchedule(scheduleId: $scheduleId, name: $name, cron: $cron, prompt: $prompt, deliver: $deliver, enabled: $enabled) ` + scheduleFields + `
+	DocumentSaveAgentSchedule    = `mutation ($scheduleId: String, $name: String, $cron: String, $mailConditions: [MailboxRuleConditionInput!], $prompt: String, $deliver: String, $enabled: Boolean) {
+		SaveAgentSchedule(scheduleId: $scheduleId, name: $name, cron: $cron, mailConditions: $mailConditions, prompt: $prompt, deliver: $deliver, enabled: $enabled) ` + scheduleFields + `
 	}`
 	DocumentDeleteAgentSchedule = `mutation ($scheduleId: String!) { DeleteAgentSchedule(scheduleId: $scheduleId) }`
 	DocumentRunAgentSchedule    = `mutation ($scheduleId: String!) { RunAgentSchedule(scheduleId: $scheduleId) }`

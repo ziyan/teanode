@@ -285,58 +285,8 @@ struct MailRuleEditor: View {
         .toast(done: .constant(nil), problem: Bindable(mail).problemText)
     }
 
-    @ViewBuilder
     private func conditionEditor(_ condition: Binding<MailRule.Condition>) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Picker("Field", selection: Binding(get: { condition.wrappedValue.field }, set: { field in
-                condition.wrappedValue.field = field
-                // A field keeps its operator only when it can use it.
-                let operators = MailRule.Condition.operators(for: field)
-                if !operators.contains(condition.wrappedValue.comparisonOperator) {
-                    condition.wrappedValue.comparisonOperator = operators[0]
-                }
-                if field == "priority" { condition.wrappedValue.value = "" }
-            })) {
-                ForEach(MailRule.fields, id: \.self) { field in
-                    Text(words.field(field)).tag(field)
-                }
-            }
-            if condition.wrappedValue.field == "header" {
-                TextField("Header name", text: Binding(get: { condition.wrappedValue.header ?? "" }, set: { condition.wrappedValue.header = $0 }))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            }
-            if !condition.wrappedValue.isBare {
-                let operators = MailRule.Condition.operators(for: condition.wrappedValue.field)
-                if operators.count > 1 {
-                    Picker("How it compares", selection: condition.comparisonOperator) {
-                        ForEach(operators, id: \.self) { comparison in
-                            Text(words.comparison(comparison)).tag(comparison)
-                        }
-                    }
-                }
-                let value = Binding(get: { condition.wrappedValue.value ?? "" }, set: { condition.wrappedValue.value = $0 })
-                switch condition.wrappedValue.field {
-                case "priority":
-                    Picker("What it looks for", selection: value) {
-                        Text("Choose…").tag("")
-                        ForEach(MailRule.priorities, id: \.self) { priority in
-                            Text(words.priority(priority)).tag(priority)
-                        }
-                    }
-                case "score":
-                    TextField("What it looks for", text: value).keyboardType(.decimalPad)
-                case "category":
-                    TextField("personal, work, newsletter… or one of your own", text: value)
-                        .textInputAutocapitalization(.never)
-                default:
-                    TextField("What it looks for", text: value)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-            }
-        }
-        .padding(.vertical, 2)
+        MailConditionEditor(condition: condition, fields: MailRule.fields, words: words)
     }
 
     @ViewBuilder
@@ -362,6 +312,69 @@ struct MailRuleEditor: View {
                     .autocorrectionDisabled()
             default:
                 EmptyView()
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+/// MailConditionEditor is the rows of one condition: the field, the
+/// header's name when the field is a header, how it compares and what it
+/// looks for. A mailbox rule's editor and a schedule that runs when mail
+/// arrives both use it, each with the fields it can test.
+struct MailConditionEditor: View {
+    @Binding var condition: MailRule.Condition
+    let fields: [String]
+    let words: MailRuleWords
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("Field", selection: Binding(get: { condition.field }, set: { field in
+                condition.field = field
+                // A field keeps its operator only when it can use it.
+                let operators = MailRule.Condition.operators(for: field)
+                if !operators.contains(condition.comparisonOperator) {
+                    condition.comparisonOperator = operators[0]
+                }
+                if field == "priority" { condition.value = "" }
+            })) {
+                ForEach(fields, id: \.self) { field in
+                    Text(words.field(field)).tag(field)
+                }
+            }
+            if condition.field == "header" {
+                TextField("Header name", text: Binding(get: { condition.header ?? "" }, set: { condition.header = $0 }))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            }
+            if !condition.isBare {
+                let operators = MailRule.Condition.operators(for: condition.field)
+                if operators.count > 1 {
+                    Picker("How it compares", selection: $condition.comparisonOperator) {
+                        ForEach(operators, id: \.self) { comparison in
+                            Text(words.comparison(comparison)).tag(comparison)
+                        }
+                    }
+                }
+                let value = Binding(get: { condition.value ?? "" }, set: { condition.value = $0 })
+                switch condition.field {
+                case "priority":
+                    Picker("What it looks for", selection: value) {
+                        Text("Choose…").tag("")
+                        ForEach(MailRule.priorities, id: \.self) { priority in
+                            Text(words.priority(priority)).tag(priority)
+                        }
+                    }
+                case "score":
+                    TextField("What it looks for", text: value).keyboardType(.decimalPad)
+                case "category":
+                    TextField("personal, work, newsletter… or one of your own", text: value)
+                        .textInputAutocapitalization(.never)
+                default:
+                    TextField("What it looks for", text: value)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
             }
         }
         .padding(.vertical, 2)
@@ -438,7 +451,7 @@ struct MailRuleWords {
         }
     }
 
-    private func describe(_ condition: MailRule.Condition) -> String {
+    func describe(_ condition: MailRule.Condition) -> String {
         let name = shortField(condition.field)
         if condition.isBare { return name }
         let header = condition.field == "header" ? " " + (condition.header ?? "") : ""
