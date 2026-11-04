@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.218.0] - 2026-11-04
+
+### Added
+
+- Schedules can run when mail arrives: choose When mail arrives in a schedule's editor (dashboard or iPhone), `--on-mail` on the command line, or `on_mail` in the agent's schedule tool, with the same conditions as a mailbox rule. Each run is told which messages set it off. (#728)
+
 ## [0.217.0] - 2026-11-04
 
 ### Added
