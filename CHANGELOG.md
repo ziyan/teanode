@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.218.2] - 2026-11-04
+
+### Fixed
+
+- Opening a coding notification on the iPhone when the app wasn't running no longer says Coding is turned off on the server. (#727)
+
 ## [0.218.1] - 2026-11-04
 
 ### Changed
