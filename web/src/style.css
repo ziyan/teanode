@@ -24911,6 +24911,57 @@ a.journal-year-month:hover {
     grid-auto-rows: minmax(140px, 1fr);
   }
 }
+/* One person featured, whole, above a row of the rest that scrolls
+   sideways when it is longer than the screen. */
+.call-stage {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+  padding: var(--space-3);
+}
+.call-featured {
+  display: grid;
+  flex: 1 1 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.call-strip {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+}
+.call-strip > .call-tile {
+  flex: none;
+  width: 160px;
+  height: 100px;
+}
+.call-strip .avatar {
+  transform: scale(0.6);
+}
+/* The whole tile features its person; the name stays readable over it. */
+.call-tile-choose {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.call-tile-choose:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -4px;
+}
+.call-tile-name {
+  pointer-events: none;
+}
 /* The border is there all the time, clear, so lighting it for a voice moves
    nothing. */
 .call-tile {

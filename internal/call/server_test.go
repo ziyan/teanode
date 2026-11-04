@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/pion/rtp"
+	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -21,6 +22,15 @@ type device struct {
 
 	mutex sync.Mutex
 	heard map[string]int
+	// The pictures that reached the device, by whose they are: the last
+	// layer's mark and the sequence numbers, which must run on unbroken.
+	seenLayer         map[string]byte
+	seenSequences     map[string][]uint16
+	speakers          []string
+	shouldTellSpeaker bool
+	// audioSequence numbers the microphone's packets, one sequence however
+	// many goroutines speak: a repeated number is dropped as replayed.
+	audioSequence uint16
 
 	// signaling holds the join until the server's answer is applied, and
 	// each offer after it in turn, as a real device must: an offer can
@@ -31,7 +41,11 @@ type device struct {
 
 func newDevice(t *testing.T, server *Server, callId, userId string) *device {
 	t.Helper()
-	connection, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	media, err := newMediaEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := webrtc.NewAPI(webrtc.WithMediaEngine(media)).NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,16 +57,28 @@ func newDevice(t *testing.T, server *Server, callId, userId string) *device {
 	if _, err := connection.AddTrack(microphone); err != nil {
 		t.Fatal(err)
 	}
-	joined := &device{t: t, server: server, callId: callId, userId: userId, connection: connection, microphone: microphone, heard: map[string]int{}}
+	joined := &device{
+		t: t, server: server, callId: callId, userId: userId, connection: connection, microphone: microphone,
+		heard: map[string]int{}, seenLayer: map[string]byte{}, seenSequences: map[string][]uint16{},
+	}
 	connection.OnTrack(func(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		// The stream is named after whose it is.
 		from := remote.StreamID()
+		isVideo := remote.Kind() == webrtc.RTPCodecTypeVideo
 		for {
-			if _, _, err := remote.ReadRTP(); err != nil {
+			packet, _, err := remote.ReadRTP()
+			if err != nil {
 				return
 			}
 			joined.mutex.Lock()
-			joined.heard[from]++
+			if isVideo {
+				if len(packet.Payload) > 0 {
+					joined.seenLayer[from] = packet.Payload[len(packet.Payload)-1]
+				}
+				joined.seenSequences[from] = append(joined.seenSequences[from], packet.SequenceNumber)
+			} else {
+				joined.heard[from]++
+			}
 			joined.mutex.Unlock()
 		}
 	})
@@ -73,7 +99,13 @@ func (self *device) join() {
 		self.t.Fatal(err)
 	}
 	<-gathered
-	answerSDP, err := self.server.Join(self.callId, self.userId, self.connection.LocalDescription().SDP, func(signal Signal) {
+	answerSDP, err := self.server.Join(self.callId, self.userId, self.connection.LocalDescription().SDP, self.shouldTellSpeaker, func(signal Signal) {
+		if signal.SpeakingUserID != "" {
+			self.mutex.Lock()
+			self.speakers = append(self.speakers, signal.SpeakingUserID)
+			self.mutex.Unlock()
+			return
+		}
 		go self.answerOffer(signal.OfferSDP)
 	})
 	if err != nil {
@@ -129,7 +161,12 @@ func (self *device) reportProblems() {
 
 // speak sends a few packets of silence, as a microphone would.
 func (self *device) speak(stop <-chan struct{}) {
-	sequence := uint16(0)
+	self.speakAt(stop, 127)
+}
+
+// speakAt sends packets as loud as level says (0 is loudest, 127 silence),
+// with the loudness in its header extension once the connection has one.
+func (self *device) speakAt(stop <-chan struct{}, level uint8) {
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -137,13 +174,35 @@ func (self *device) speak(stop <-chan struct{}) {
 		case <-stop:
 			return
 		case <-ticker.C:
-			sequence++
-			_ = self.microphone.WriteRTP(&rtp.Packet{
+			self.mutex.Lock()
+			self.audioSequence++
+			sequence := self.audioSequence
+			self.mutex.Unlock()
+			packet := &rtp.Packet{
 				Header:  rtp.Header{Version: 2, PayloadType: 111, SequenceNumber: sequence, Timestamp: uint32(sequence) * 960, SSRC: 1234},
 				Payload: []byte{0xf8, 0xff, 0xfe},
-			})
+			}
+			if levelId := self.audioLevelID(); levelId != 0 {
+				_ = packet.SetExtension(levelId, []byte{level})
+			}
+			_ = self.microphone.WriteRTP(packet)
 		}
 	}
+}
+
+// audioLevelID is the number the connection gave the loudness extension.
+func (self *device) audioLevelID() uint8 {
+	for _, sender := range self.connection.GetSenders() {
+		if sender.Track() != self.microphone {
+			continue
+		}
+		for _, extension := range sender.GetParameters().HeaderExtensions {
+			if extension.URI == sdp.AudioLevelURI {
+				return uint8(extension.ID)
+			}
+		}
+	}
+	return 0
 }
 
 func (self *device) heardFrom(userId string) int {

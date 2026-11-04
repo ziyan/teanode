@@ -121,6 +121,9 @@ type chatCallSignals struct {
 
 type chatCallSignalBox struct {
 	signals chan call.Signal
+	// speakers holds who is speaking, the latest only: a device that reads
+	// slowly misses who spoke in between, never an offer.
+	speakers chan string
 }
 
 func chatCallSignalKey(callId, userId string) string { return callId + "/" + userId }
@@ -137,7 +140,7 @@ func (self *chatCallSignals) box(callId, userId string) *chatCallSignalBox {
 	key := chatCallSignalKey(callId, userId)
 	found := self.boxes[key]
 	if found == nil {
-		found = &chatCallSignalBox{signals: make(chan call.Signal, chatCallSignalBacklog)}
+		found = &chatCallSignalBox{signals: make(chan call.Signal, chatCallSignalBacklog), speakers: make(chan string, 1)}
 		self.boxes[key] = found
 	}
 	return found
@@ -145,6 +148,19 @@ func (self *chatCallSignals) box(callId, userId string) *chatCallSignalBox {
 
 // send is the media server's signal function for one device.
 func (self *chatCallSignalBox) send(signal call.Signal) {
+	if signal.SpeakingUserID != "" {
+		for {
+			select {
+			case self.speakers <- signal.SpeakingUserID:
+				return
+			default:
+			}
+			select {
+			case <-self.speakers:
+			default:
+			}
+		}
+	}
 	select {
 	case self.signals <- signal:
 	default:

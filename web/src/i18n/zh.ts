@@ -7792,6 +7792,8 @@ export const zh: Catalog = {
   'journal.kindContact': '一位联系人',
   'journal.kindOther': '某样东西',
   'calls.start': '发起通话',
+  'calls.feature': '突出显示{name}',
+  'calls.stopFeaturing': '取消突出显示{name}',
   'calls.voiceCall': '语音通话',
   'calls.videoCall': '视频通话',
   'calls.chooseWhoToCall': '选择通话对象',

@@ -53,8 +53,10 @@ class FakePeerConnection {
     this.log.push('addTrack')
     return this.audioSender
   }
-  addTransceiver(kind: string, init: { direction: string }) {
+  sendEncodings: RTCRtpEncodingParameters[] = []
+  addTransceiver(kind: string, init: { direction: string; sendEncodings?: RTCRtpEncodingParameters[] }) {
     this.log.push(`addTransceiver ${kind} ${init.direction}`)
+    this.sendEncodings = init.sendEncodings ?? []
     return { sender: this.sender }
   }
   async createOffer() {
@@ -81,6 +83,8 @@ interface Harness {
   joinAnswer: ReturnType<typeof deferred<{ JoinChatCallMedia: { answerSdp: string } }>>
   answers: ReturnType<typeof deferred<boolean>>[]
   signal: (offerSdp: string) => void
+  // The server saying who is speaking.
+  tellSpeaker: (speakingUserId: string) => void
   microphone: FakeTrack
   // The microphones opened by choosing one, in order.
   chosenMicrophones: FakeTrack[]
@@ -103,7 +107,7 @@ function build(options: Partial<ChatCallSessionOptions> = {}, cameraCount = 1): 
     }
     return {}
   })
-  let onSignal: (data: { ChatCallSignals: { offerSdp: string } }) => void = () => {}
+  let onSignal: (data: { ChatCallSignals: { offerSdp: string; speakingUserId?: string | null } }) => void = () => {}
   const subscribe = vi.fn((_query: string, _variables: unknown, onData: typeof onSignal) => {
     onSignal = onData
     return () => {}
@@ -151,7 +155,8 @@ function build(options: Partial<ChatCallSessionOptions> = {}, cameraCount = 1): 
     subscribe,
     joinAnswer,
     answers,
-    signal: (offerSdp) => onSignal({ ChatCallSignals: { offerSdp } }),
+    signal: (offerSdp) => onSignal({ ChatCallSignals: { offerSdp, speakingUserId: null } }),
+    tellSpeaker: (speakingUserId) => onSignal({ ChatCallSignals: { offerSdp: '', speakingUserId } }),
     microphone,
     chosenMicrophones,
     cameras,
@@ -181,8 +186,40 @@ describe('a device joining a call', () => {
     harness.joinAnswer.resolve({ JoinChatCallMedia: { answerSdp: 'server-answer' } })
     await started
     expect(harness.connection.log.slice(0, 2)).toEqual(['addTrack', 'addTransceiver video sendrecv'])
+    // The camera goes in two sizes, small and whole, for the server to pick.
+    expect(harness.connection.sendEncodings.map((encoding) => encoding.rid)).toEqual(['q', 'f'])
     expect(harness.connection.sender.replaceTrack).not.toHaveBeenCalled()
     expect(harness.session.getSnapshot().microphoneDeviceId).toBe('microphone-built-in')
+  })
+
+  it('is told who is speaking, which is no offer to answer', async () => {
+    const harness = build()
+    const started = harness.session.start()
+    harness.joinAnswer.resolve({ JoinChatCallMedia: { answerSdp: 'server-answer' } })
+    await started
+    const remotesBefore = harness.connection.log.filter((entry) => entry.startsWith('remote')).length
+    harness.tellSpeaker('person-b')
+    expect(harness.session.getSnapshot().speakingUserId).toBe('person-b')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(harness.connection.log.filter((entry) => entry.startsWith('remote'))).toHaveLength(remotesBefore)
+  })
+
+  it('chooses whom to feature, and tells the server once joined', async () => {
+    const harness = build()
+    const started = harness.session.start()
+    harness.joinAnswer.resolve({ JoinChatCallMedia: { answerSdp: 'server-answer' } })
+    await started
+    harness.session.setFeatured('person-c')
+    expect(harness.session.getSnapshot().featuredUserId).toBe('person-c')
+    expect(harness.graphql).toHaveBeenCalledWith(expect.stringContaining('SetChatCallFeatured('), {
+      callId: 'call-one',
+      userId: 'person-c',
+    })
+    harness.session.setFeatured('')
+    expect(harness.graphql).toHaveBeenLastCalledWith(expect.stringContaining('SetChatCallFeatured('), {
+      callId: 'call-one',
+      userId: null,
+    })
   })
 
   it('holds an offer that arrives before the answer to the join is set', async () => {

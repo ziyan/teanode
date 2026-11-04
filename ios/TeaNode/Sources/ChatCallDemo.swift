@@ -84,6 +84,22 @@
                 ])
         }
 
+        /// A call of five, big enough that whoever speaks is featured: Sam,
+        /// with his camera on, above Robin, Alex, Casey and Morgan.
+        static var featuredCallJSON: String {
+            let answeredAt = CalendarDates.text(Date().addingTimeInterval(-612))
+            return callViewJSON(
+                id: "call-featured", conversationId: "chat-home", chatTitle: "Home", isGroup: true, startedBy: "alex", startedAt: answeredAt,
+                answeredAt: answeredAt, askerRingState: "answered", isAskerOn: true,
+                members: [
+                    callMemberJSON("robin", ringState: "answered", isOn: true, joinedAt: answeredAt),
+                    callMemberJSON("sam", ringState: "answered", isOn: true, isVideoOn: true, joinedAt: answeredAt),
+                    callMemberJSON("alex", ringState: "none", isOn: true, isMuted: true, joinedAt: answeredAt),
+                    callMemberJSON("casey", ringState: "answered", isOn: true, joinedAt: answeredAt),
+                    callMemberJSON("morgan", ringState: "answered", isOn: true, isMuted: true, joinedAt: answeredAt),
+                ])
+        }
+
         /// A call as a chat's message carries it.
         private static func callRecordJSON(
             id: String, startedBy: String, startedAt: String, answeredAt: String?, endedAt: String?, endReason: String, transcriptState: String,
@@ -179,8 +195,11 @@
         /// `-TeaNodeScreen chat-call-screen`: the call screen with three
         /// people, one with his camera on, and the notice that Alex turned on
         /// transcription; `chat-call-minimized`: the same call put away.
-        func showDemoCall(isMinimized: Bool = false) {
-            guard let call = try? JSONDecoder().decode(ChatCallView.self, from: Data(DemoServer.callScreenJSON.utf8)) else { return }
+        /// `chat-call-featured`: a call of five with Sam, who is speaking,
+        /// featured above the rest.
+        func showDemoCall(isMinimized: Bool = false, isFeatured: Bool = false) {
+            let json = isFeatured ? DemoServer.featuredCallJSON : DemoServer.callScreenJSON
+            guard let call = try? JSONDecoder().decode(ChatCallView.self, from: Data(json.utf8)) else { return }
             let demo = ChatCallSession(
                 uuid: UUID(), accountKey: DemoServer.account.accountKey, conversationId: call.conversationId, title: call.chatTitle,
                 isOutgoing: false)
@@ -189,6 +208,7 @@
             demo.ownUserId = "robin"
             demo.phase = .connected
             demo.isMinimized = isMinimized
+            if isFeatured { demo.speakingUserId = "sam" }
             showDemo(session: demo)
         }
     }

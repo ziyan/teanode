@@ -37,6 +37,13 @@ final class ChatCallSession {
     var isMuted = false
     /// Who a call this phone starts rings: nil for everybody else in the chat.
     var ringUserIds: [String]?
+    /// Who the server says is speaking, and the last of the others who did,
+    /// so the person's own voice does not take the featured picture away.
+    var speakingUserId = ""
+    var lastOtherSpeakerId = ""
+    /// Whose picture the person chose to feature, empty to follow whoever
+    /// speaks.
+    var featuredUserId = ""
     /// Whether the call screen is put away to the bar at the top of the app,
     /// so the person can use the rest of it while on the call.
     var isMinimized = false
@@ -468,6 +475,11 @@ final class ChatCallManager: NSObject {
                     for try await signal in ChatCallFeed.signals(connection: connection, callId: callId) {
                         guard let self, let session else { return }
                         delay = .milliseconds(500)
+                        if let speaking = signal.speakingUserId, !speaking.isEmpty {
+                            session.speakingUserId = speaking
+                            if speaking != session.ownUserId { session.lastOtherSpeakerId = speaking }
+                            continue
+                        }
                         let commands = session.signaling.receive(offer: signal.offerSdp)
                         await self.perform(commands, in: session, connection: connection, callId: callId)
                     }
@@ -550,6 +562,16 @@ final class ChatCallManager: NSObject {
         session.media?.setMuted(isMuted)
         guard session.media != nil, let callId = session.callId, let connection = session.connection else { return }
         Task { if let view = try? await connection.setChatCallMuted(callId: callId, isMuted: isMuted) { note(view) } }
+    }
+
+    /// Features a person's picture, or nil to follow whoever speaks, and asks
+    /// the server to send that one whole. The picture is featured here at
+    /// once; a failure to tell the server leaves it small.
+    func setFeatured(_ userId: String?) {
+        guard let session else { return }
+        session.featuredUserId = userId ?? ""
+        guard session.media != nil, let callId = session.callId, let connection = session.connection else { return }
+        Task { try? await connection.setChatCallFeatured(callId: callId, userId: userId) }
     }
 
     /// Turns the camera on or off, and tells the others.

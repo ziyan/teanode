@@ -8159,6 +8159,8 @@ export const en = {
   'journal.kindOther': 'something',
   // Calls in people chats: ringing, the call screen, the call's line in a chat.
   'calls.start': 'Start a call',
+  'calls.feature': 'Feature {name}',
+  'calls.stopFeaturing': 'Stop featuring {name}',
   'calls.voiceCall': 'Voice call',
   'calls.videoCall': 'Video call',
   'calls.chooseWhoToCall': 'Choose who to call',

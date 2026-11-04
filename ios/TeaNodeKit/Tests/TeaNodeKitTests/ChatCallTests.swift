@@ -163,6 +163,39 @@ final class ChatCallTests: XCTestCase {
         let variables = try sentVariables(fake)
         XCTAssertEqual(variables["callId"], .string("call-1"))
         XCTAssertEqual(variables["offerSdp"], .string("v=0 offer"))
+        // The device asks to be told who is speaking.
+        XCTAssertTrue(try sentDocument(fake).contains("shouldTellSpeaker: true"))
+    }
+
+    func testFeaturingSendsThePersonOrNoneToFollowTheSpeaker() async throws {
+        let (connection, fake) = try makeConnection(answering: #"{"data":{"SetChatCallFeatured":true}}"#)
+        try await connection.setChatCallFeatured(callId: "call-1", userId: "user-tobias")
+        XCTAssertEqual(try sentVariables(fake)["userId"], .string("user-tobias"))
+        try await connection.setChatCallFeatured(callId: "call-1", userId: nil)
+        XCTAssertEqual(try sentVariables(fake)["userId"], .null)
+    }
+
+    func testASignalCanSayWhoIsSpeaking() throws {
+        let speaking = try JSONDecoder().decode(ChatCallSignalView.self, from: Data(#"{"offerSdp":"","speakingUserId":"user-tobias"}"#.utf8))
+        XCTAssertEqual(speaking.speakingUserId, "user-tobias")
+        let offer = try JSONDecoder().decode(ChatCallSignalView.self, from: Data(#"{"offerSdp":"v=0","speakingUserId":null}"#.utf8))
+        XCTAssertNil(offer.speakingUserId)
+        XCTAssertEqual(offer.offerSdp, "v=0")
+    }
+
+    func testTheFeaturedPersonIsTheOneChosenElseTheSpeakerNeverOneself() throws {
+        let members = try decodedCall(goingCall).members
+        func featured(_ chosen: String, _ speaking: String, _ last: String) -> String? {
+            ChatCallStage.featured(members, ownUserId: "user-mira", chosenUserId: chosen, speakingUserId: speaking, lastOtherSpeakerId: last)?.userId
+        }
+        XCTAssertEqual(featured("user-priya", "user-tobias", ""), "user-priya")
+        XCTAssertEqual(featured("", "user-tobias", ""), "user-tobias")
+        XCTAssertEqual(featured("", "user-mira", "user-priya"), "user-priya")
+        XCTAssertEqual(featured("", "", ""), "user-tobias")
+        XCTAssertEqual(featured("user-gone", "", ""), "user-tobias")
+        XCTAssertFalse(ChatCallStage.isFeatured(tileCount: 4, chosenUserId: ""))
+        XCTAssertTrue(ChatCallStage.isFeatured(tileCount: 5, chosenUserId: ""))
+        XCTAssertTrue(ChatCallStage.isFeatured(tileCount: 2, chosenUserId: "user-tobias"))
     }
 
     func testAnsweringAnOfferSendsTheAnswer() async throws {
