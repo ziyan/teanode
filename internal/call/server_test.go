@@ -23,9 +23,10 @@ type device struct {
 	mutex sync.Mutex
 	heard map[string]int
 	// The pictures that reached the device, by whose they are: the last
-	// layer's mark and the sequence numbers, which must run on unbroken.
+	// layer's mark, and each packet's sequence number and layer in the
+	// order they came.
 	seenLayer         map[string]byte
-	seenSequences     map[string][]uint16
+	seenPackets       map[string][]seenPacket
 	speakers          []string
 	shouldTellSpeaker bool
 	// audioSequence numbers the microphone's packets, one sequence however
@@ -59,7 +60,7 @@ func newDevice(t *testing.T, server *Server, callId, userId string) *device {
 	}
 	joined := &device{
 		t: t, server: server, callId: callId, userId: userId, connection: connection, microphone: microphone,
-		heard: map[string]int{}, seenLayer: map[string]byte{}, seenSequences: map[string][]uint16{},
+		heard: map[string]int{}, seenLayer: map[string]byte{}, seenPackets: map[string][]seenPacket{},
 	}
 	connection.OnTrack(func(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		// The stream is named after whose it is.
@@ -73,9 +74,10 @@ func newDevice(t *testing.T, server *Server, callId, userId string) *device {
 			joined.mutex.Lock()
 			if isVideo {
 				if len(packet.Payload) > 0 {
-					joined.seenLayer[from] = packet.Payload[len(packet.Payload)-1]
+					layer := packet.Payload[len(packet.Payload)-1]
+					joined.seenLayer[from] = layer
+					joined.seenPackets[from] = append(joined.seenPackets[from], seenPacket{sequence: packet.SequenceNumber, layer: layer})
 				}
-				joined.seenSequences[from] = append(joined.seenSequences[from], packet.SequenceNumber)
 			} else {
 				joined.heard[from]++
 			}
