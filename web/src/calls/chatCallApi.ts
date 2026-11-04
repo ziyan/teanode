@@ -108,7 +108,11 @@ export const LEAVE_CHAT_CALL = `
   }`
 export const JOIN_CHAT_CALL_MEDIA = `
   mutation ($callId: String!, $offerSdp: String!) {
-    JoinChatCallMedia(callId: $callId, offerSdp: $offerSdp) { answerSdp }
+    JoinChatCallMedia(callId: $callId, offerSdp: $offerSdp, shouldTellSpeaker: true) { answerSdp }
+  }`
+export const SET_CHAT_CALL_FEATURED = `
+  mutation ($callId: String!, $userId: String) {
+    SetChatCallFeatured(callId: $callId, userId: $userId)
   }`
 export const ANSWER_CHAT_CALL_MEDIA = `
   mutation ($callId: String!, $answerSdp: String!) {
@@ -156,7 +160,7 @@ export const CHAT_CALL_EVENTS = `
 // What the media server tells the device on a call: offers to answer.
 export const CHAT_CALL_SIGNALS = `
   subscription ($callId: String!) {
-    ChatCallSignals(callId: $callId) { offerSdp }
+    ChatCallSignals(callId: $callId) { offerSdp speakingUserId }
   }`
 
 // isRinging is whether a call is ringing the person now.

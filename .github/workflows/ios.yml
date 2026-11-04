@@ -709,8 +709,9 @@ jobs:
           done
           # Calls in chats: the banner of a chat with a call going, the call screen with three people (one with his camera on, and the notice
           # that the call is transcribed), the same call put away to its bar over the group's chat, and a chat with calls in it (one that ended
-          # with its transcript, one missed and one going), and the sheet that chooses who in the group a call rings.
-          for call_screen in chat-call-banner chat-call-screen chat-call-minimized chat-call-lines chat-call-choose; do
+          # with its transcript, one missed and one going), a call of five with whoever speaks featured above the rest, and the sheet
+          # that chooses who in the group a call rings.
+          for call_screen in chat-call-banner chat-call-screen chat-call-featured chat-call-minimized chat-call-lines chat-call-choose; do
             shoot "$call_screen-light" light large -TeaNodeDemo -TeaNodeScreen "$call_screen"
             shoot "$call_screen-dark" dark large -TeaNodeDemo -TeaNodeScreen "$call_screen"
             shoot "$call_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeScreen "$call_screen"

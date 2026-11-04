@@ -3,6 +3,7 @@ import {
   CHAT_CALL_SIGNALS,
   JOIN_CHAT_CALL_MEDIA,
   LEAVE_CHAT_CALL,
+  SET_CHAT_CALL_FEATURED,
   SET_CHAT_CALL_MUTED,
   SET_CHAT_CALL_VIDEO,
 } from './chatCallApi'
@@ -64,6 +65,11 @@ export interface ChatCallSessionSnapshot {
   localVideoStream: MediaStream | null
   // The others, by user id.
   participants: Record<string, ChatCallParticipant>
+  // Who the server says is speaking, empty until somebody has.
+  speakingUserId: string
+  // Whose picture the person chose to feature, empty to follow whoever
+  // speaks. The server sends that picture whole and the others small.
+  featuredUserId: string
 }
 
 // ChatCallProblem is something that went wrong after the call began, told to
@@ -104,6 +110,14 @@ export function waitForGathering(connection: RTCPeerConnection, timeoutMS: numbe
   })
 }
 
+// VIDEO_LAYERS are the two sizes a camera is sent in, named as the server
+// knows them (internal/call/video.go): q, a third of the picture, and f, the
+// whole of it.
+export const VIDEO_LAYERS: RTCRtpEncodingParameters[] = [
+  { rid: 'q', scaleResolutionDownBy: 3, maxBitrate: 200_000 },
+  { rid: 'f', maxBitrate: 1_200_000 },
+]
+
 export class ChatCallSession {
   private readonly options: ChatCallSessionOptions
   private snapshot: ChatCallSessionSnapshot = {
@@ -117,6 +131,8 @@ export class ChatCallSession {
     localAudioStream: null,
     localVideoStream: null,
     participants: {},
+    speakingUserId: '',
+    featuredUserId: '',
   }
   private readonly listeners = new Set<() => void>()
 
@@ -176,10 +192,17 @@ export class ChatCallSession {
     try {
       // The server's offers come on the signals, so they are opened before
       // anything is sent.
-      this.unsubscribeSignals = subscribe<{ ChatCallSignals: { offerSdp: string } }>(
+      this.unsubscribeSignals = subscribe<{ ChatCallSignals: { offerSdp: string; speakingUserId: string | null } }>(
         CHAT_CALL_SIGNALS,
         { callId },
-        (data) => this.queueOffer(data.ChatCallSignals.offerSdp),
+        (data) => {
+          const { offerSdp, speakingUserId } = data.ChatCallSignals
+          if (speakingUserId) {
+            if (!this.isClosed) this.update({ speakingUserId })
+            return
+          }
+          this.queueOffer(offerSdp)
+        },
         (error) => {
           if (error && !this.isClosed) this.options.onProblem?.('media', error)
         },
@@ -208,8 +231,13 @@ export class ChatCallSession {
       // it, which needs no new offer.
       if (this.audioTrack) this.audioSender = connection.addTrack(this.audioTrack, microphone)
       // The camera has a seat from the start, empty while it is off, so
-      // turning it on later is a track swapped in and not a new offer.
-      this.videoSender = connection.addTransceiver('video', { direction: 'sendrecv' }).sender
+      // turning it on later is a track swapped in and not a new offer. It
+      // sends two sizes, a third of the picture and the whole: the server
+      // passes on the whole one only to those who feature this person.
+      this.videoSender = connection.addTransceiver('video', {
+        direction: 'sendrecv',
+        sendEncodings: VIDEO_LAYERS,
+      }).sender
       if (this.options.isVideoOn) {
         try {
           await this.openCameraTrack()
@@ -339,6 +367,18 @@ export class ChatCallSession {
     }
   }
 
+  // setFeatured chooses whose picture is featured, empty to follow whoever
+  // speaks, and asks the server to send that one whole. The picture is
+  // featured here at once; a failure to tell the server leaves it small.
+  setFeatured(featuredUserId: string) {
+    this.update({ featuredUserId })
+    if (this.isJoinApplied && !this.isClosed) {
+      void this.options
+        .graphql(SET_CHAT_CALL_FEATURED, { callId: this.options.callId, userId: featuredUserId || null })
+        .catch(() => undefined)
+    }
+  }
+
   // setMicrophone moves the call to another microphone: the one chosen is
   // opened before the old one is let go of, so a microphone that will not open
   // leaves the call as it was. The track is swapped in the sender, which needs
@@ -450,8 +490,11 @@ export class ChatCallSession {
   }
 
   private async openCameraTrack(deviceId?: string) {
+    // Near 960 by 540, which is whole enough for the featured picture and
+    // leaves a third of it for the small one.
+    const size = { width: { ideal: 960 }, height: { ideal: 540 } }
     const stream = await this.options.mediaDevices.getUserMedia({
-      video: deviceId ? { deviceId: { exact: deviceId } } : true,
+      video: deviceId ? { deviceId: { exact: deviceId }, ...size } : size,
     })
     const track = stream.getVideoTracks()[0]
     if (!track) throw new Error('no video track')

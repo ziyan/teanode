@@ -8107,6 +8107,8 @@ export const ja: Catalog = {
   'journal.kindContact': '連絡先',
   'journal.kindOther': 'あるもの',
   'calls.start': '通話を開始',
+  'calls.feature': '{name}を大きく表示',
+  'calls.stopFeaturing': '{name}の大きな表示をやめる',
   'calls.voiceCall': '音声通話',
   'calls.videoCall': 'ビデオ通話',
   'calls.chooseWhoToCall': '通話する人を選ぶ',

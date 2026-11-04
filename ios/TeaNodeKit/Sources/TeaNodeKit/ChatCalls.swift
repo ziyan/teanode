@@ -187,9 +187,16 @@ extension ChatCallDetailView {
     }
 }
 
-/// ChatCallSignalView is an offer the media server makes the device.
+/// ChatCallSignalView is what the media server tells the device: an offer
+/// to answer, or who is speaking now (`speakingUserId`, with no offer).
 public struct ChatCallSignalView: Codable, Hashable, Sendable {
     public var offerSdp: String
+    public var speakingUserId: String?
+
+    public init(offerSdp: String, speakingUserId: String? = nil) {
+        self.offerSdp = offerSdp
+        self.speakingUserId = speakingUserId
+    }
 }
 
 /// ChatCallMemberRecord is one person's part in a call as a chat's message
@@ -308,7 +315,9 @@ extension Documents {
         mutation ($callId: String!) { LeaveChatCall(callId: $callId) { \(chatCallFields) } }
         """
     public static let joinChatCallMedia = """
-        mutation ($callId: String!, $offerSdp: String!) { JoinChatCallMedia(callId: $callId, offerSdp: $offerSdp) { answerSdp } }
+        mutation ($callId: String!, $offerSdp: String!) {
+          JoinChatCallMedia(callId: $callId, offerSdp: $offerSdp, shouldTellSpeaker: true) { answerSdp }
+        }
         """
     public static let answerChatCallMedia = """
         mutation ($callId: String!, $answerSdp: String!) { AnswerChatCallMedia(callId: $callId, answerSdp: $answerSdp) }
@@ -317,6 +326,9 @@ extension Documents {
         mutation ($callId: String!, $isVideoOn: Boolean!) {
           SetChatCallVideo(callId: $callId, isVideoOn: $isVideoOn) { \(chatCallFields) }
         }
+        """
+    public static let setChatCallFeatured = """
+        mutation ($callId: String!, $userId: String) { SetChatCallFeatured(callId: $callId, userId: $userId) }
         """
     public static let setChatCallMuted = """
         mutation ($callId: String!, $isMuted: Boolean!) {
@@ -350,7 +362,7 @@ extension Documents {
         subscription { ChatCallEvents { \(chatCallFields) } }
         """
     public static let chatCallSignals = """
-        subscription ($callId: String!) { ChatCallSignals(callId: $callId) { offerSdp } }
+        subscription ($callId: String!) { ChatCallSignals(callId: $callId) { offerSdp speakingUserId } }
         """
     public static let updatePhoneRinging = """
         mutation ($phoneId: String!, $voipPushRegistration: String) {
@@ -430,6 +442,15 @@ extension Connection {
         struct Answer: Decodable, Sendable { let SetChatCallVideo: ChatCallView }
         let variables: [String: JSONValue] = ["callId": .string(callId), "isVideoOn": .bool(isVideoOn)]
         return try await execute(Documents.setChatCallVideo, variables: variables, as: Answer.self).SetChatCallVideo
+    }
+
+    /// Chooses whose camera the device is sent whole, the others' coming
+    /// small once several are on: the person given, or whoever is speaking
+    /// for nil.
+    public func setChatCallFeatured(callId: String, userId: String?) async throws {
+        struct Answer: Decodable, Sendable { let SetChatCallFeatured: Bool }
+        let variables: [String: JSONValue] = ["callId": .string(callId), "userId": userId.map { .string($0) } ?? .null]
+        _ = try await execute(Documents.setChatCallFeatured, variables: variables, as: Answer.self)
     }
 
     /// Tells the others the person's microphone is off or on; the device

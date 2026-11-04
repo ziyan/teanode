@@ -130,6 +130,35 @@ public enum ChatCallTranscriptionStatus: Equatable, Sendable {
 }
 
 /// ChatCallGrid lays the people on a call out.
+/// ChatCallStage is who is featured on a call: one person whole above a row
+/// of the rest, once the call is big enough for the grid's pictures to be
+/// small, or once the person chose somebody. The server sends the featured
+/// picture whole and the others small.
+public enum ChatCallStage {
+    /// How many people on a call turn the grid into one featured above the
+    /// rest.
+    public static let featuredFrom = 5
+
+    /// Whether one person is featured above the rest.
+    public static func isFeatured(tileCount: Int, chosenUserId: String) -> Bool {
+        tileCount >= featuredFrom || !chosenUserId.isEmpty
+    }
+
+    /// Who is featured: the one chosen, or else whoever is speaking, or whoever
+    /// spoke last while this person speaks, or else the first of the others.
+    /// Never this person: their own picture is in the row.
+    public static func featured(
+        _ members: [ChatCallMemberView], ownUserId: String, chosenUserId: String, speakingUserId: String,
+        lastOtherSpeakerId: String
+    ) -> ChatCallMemberView? {
+        let others = members.filter { $0.userId != ownUserId }
+        func named(_ userId: String) -> ChatCallMemberView? {
+            userId.isEmpty ? nil : others.first { $0.userId == userId }
+        }
+        return named(chosenUserId) ?? named(speakingUserId) ?? named(lastOtherSpeakerId) ?? others.first
+    }
+}
+
 public enum ChatCallGrid {
     /// How many columns the tiles of the people are laid in: one or two
     /// people fill the screen one above the other, up to six are two across,

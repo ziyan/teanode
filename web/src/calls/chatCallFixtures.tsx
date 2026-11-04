@@ -70,6 +70,8 @@ export const quietSnapshot: ChatCallSessionSnapshot = {
   localAudioStream: null,
   localVideoStream: null,
   participants: {},
+  speakingUserId: '',
+  featuredUserId: '',
 }
 
 // fakeSession is a connection that connects to nothing and says so. What the
@@ -93,6 +95,10 @@ export function fakeSession(
     leave: vi.fn(async () => {}),
     close: vi.fn(),
     setMuted: vi.fn(),
+    setFeatured: vi.fn((featuredUserId: string) => {
+      current = { ...current, featuredUserId }
+      listeners.forEach((listener) => listener())
+    }),
     setVideo: vi.fn(async () => {}),
     switchCamera: vi.fn(async () => {}),
     setMicrophone: vi.fn(async () => {}),

@@ -164,6 +164,14 @@ func TestACallRingsTheChosenAndShowsPicturesAndMicrophones(t *testing.T) {
 	if memberOf(muted, world.alice)["isMuted"] != true {
 		t.Errorf("Alice's microphone: %v", memberOf(muted, world.alice))
 	}
+	// Featuring is a device's, so it waits for the device's media; and only
+	// somebody with a part in the call can be featured.
+	if refused := world.refused(t, world.alice, fmt.Sprintf(`mutation { SetChatCallFeatured(callId: %q, userId: %q) }`, callId, world.grace.ID)); refused == "" {
+		t.Error("a device not connected to the call chose whom to feature")
+	}
+	if refused := world.refused(t, world.alice, fmt.Sprintf(`mutation { SetChatCallFeatured(callId: %q, userId: "nobody") }`, callId)); refused == "" {
+		t.Error("somebody with no part in the call was featured")
+	}
 	world.callView(t, world.alice, fmt.Sprintf(`LeaveChatCall(callId: %q)`, callId))
 	rejoined := world.callView(t, world.alice, fmt.Sprintf(`JoinChatCall(callId: %q)`, callId))
 	if memberOf(rejoined, world.alice)["isMuted"] != false {

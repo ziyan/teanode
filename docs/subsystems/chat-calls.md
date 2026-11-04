@@ -15,8 +15,8 @@ leaves, or as missed when nobody answers within `calls.ringSeconds`.
 Everybody on a call sends their microphone, and their camera while it is on,
 to the server once, and the server forwards each to everybody else without
 mixing it (a selective forwarding unit, `internal/call`, on pion/webrtc). A
-phone sends one stream however many people are on the call, and receives one
-of each from everybody else.
+phone sends its microphone once and its camera in two sizes however many
+people are on the call, and receives one of each from everybody else.
 
 It listens on one UDP port and one TCP port (`calls.udpPort`,
 `calls.tcpPort`, 3478 by default), which must be reachable from the internet:
@@ -25,6 +25,29 @@ the container. TCP is for networks that let no UDP through. The address it
 gives devices is `calls.publicAddress`, or what the dashboard's name resolves
 to. The server is an ICE-lite agent: a device needs no STUN or TURN server and
 sends it no candidates of its own; the server answers whatever reaches it.
+
+### Two sizes of each camera, and who is featured
+
+A camera is sent twice (simulcast): whole, the layer named `f`, and a third
+of its size, `q` (`internal/call/video.go`). Each person is sent one layer of
+each camera: the whole picture of the person they feature and the small one
+of the rest, unless three or fewer of the others' cameras are on, when every
+picture is whole. Whom a device features is its own choice
+(`SetChatCallFeatured(callId, userId)`), or whoever is speaking when it chose
+nobody (`userId` null). A switch of layers waits for a whole picture (a key
+frame) of the new layer, asked for at once, and the packets the person gets
+carry on in one unbroken sequence. The codecs are VP8 and H.264, whose key
+frames the server can find; there is no resending, so a lost picture is asked
+for whole again. A device that sends one layer only is sent as it is.
+
+Who is speaking comes from the loudness each microphone packet carries (the
+audio level header extension, `internal/call/speaker.go`): the person with the
+largest share of speech over about the last second, who keeps it for a moment
+while somebody else talks over them. A device that joins with
+`shouldTellSpeaker: true` is told each change on `ChatCallSignals`
+(`speakingUserId`, with no offer). The dashboard and the iPhone feature one
+person above a row of the rest once five are on the call, or once the person
+taps somebody; tapping the one chosen goes back to following whoever speaks.
 
 A call lives in the memory of the instance that started it (`chat_call.instance`).
 A server that stops ends the calls it held as failed when it starts again.
@@ -52,8 +75,9 @@ The operations are in `internal/api/v1api/apigraph/chat_call.go`.
    there.
 3. Make a peer connection with no ICE servers, add the microphone track and a
    video transceiver (`sendrecv`, with the camera's track when it is on and
-   none when it is off), create an offer, wait for the local addresses to be
-   gathered, and send it with `JoinChatCallMedia(callId, offerSdp)`. Set the
+   none when it is off, and two send encodings, `q` scaled down by 3 and `f`
+   whole), create an offer, wait for the local addresses to be gathered, and
+   send it with `JoinChatCallMedia(callId, offerSdp, shouldTellSpeaker)`. Set the
    returned `answerSdp` as the remote description.
 4. Answer each offer from `ChatCallSignals` with `AnswerChatCallMedia(callId,
    answerSdp)`, one at a time and in order. An offer can arrive before the
