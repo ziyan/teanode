@@ -179,8 +179,8 @@ type AskSettings struct {
 	PreApproved map[string]bool
 
 	// CanAsk says that a turn nobody typed may still put a question card
-	// to the person: they have the dashboard open, and the turn is the
-	// agent starting a conversation with them. Everything else about a
+	// to the person: the turn is the agent starting a conversation with
+	// them, and the card waits for them to come to it. Everything else about a
 	// headless turn stands; only ask_user and confirmations may wait for
 	// them.
 	CanAsk    bool

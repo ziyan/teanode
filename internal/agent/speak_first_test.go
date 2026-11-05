@@ -460,3 +460,86 @@ func TestATripOnTheCalendarIsAReasonToSpeakFirst(t *testing.T) {
 		t.Fatalf("the trip is a reason to speak: %+v", jobs)
 	}
 }
+
+// tripOnTheCalendar answers a calendar with a trip starting at starts.
+func tripOnTheCalendar(starts time.Time) map[string]string {
+	return map[string]string{
+		"ListCalendars {":    `{"ListCalendars":[{"id":"own","agentGranted":true,"calendarKind":"events","shareLevel":"owner"}]}`,
+		"ListCalendarEvents": fmt.Sprintf(`{"ListCalendarEvents":[{"id":"event","summary":"Lake weekend","location":"Example Lake","allDay":true,"startsAt":%q,"endsAt":%q}]}`, starts.Format(time.RFC3339), starts.Add(72*time.Hour).Format(time.RFC3339)),
+	}
+}
+
+// awayWorld is somebody with no app or dashboard in front of them, who has
+// spoken before and has a trip tomorrow, and whose night is quietStart to
+// quietEnd.
+func awayWorld(t *testing.T, hasPhone bool, quietStart, quietEnd string) *speakFirstWorld {
+	t.Helper()
+	world := newSpeakFirstWorld(t)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		now := time.Now()
+		if err := tx.MarkAgentSpokeFirst(world.agent.ID, nil, &now, nil); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.UpdateAgent(world.agent.ID, func(found *models.Agent) error {
+			found.AlertQuietStart, found.AlertQuietEnd = quietStart, quietEnd
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if !hasPhone {
+			return
+		}
+		phone, err := tx.PutAgentPhone(&models.AgentPhone{
+			AgentID: world.agent.ID, ClientID: "a-phone-client", PhoneName: "A test phone", PushRegistration: "registration", PayloadKey: "key",
+			NotificationKinds: []string{models.NotificationMessage},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Shown around already: a new phone's tour comes before a trip.
+		if _, err := tx.MarkAgentPhoneToured(phone.ID, now); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if hasPhone {
+		// A phone is seen only while its client is signed in.
+		if _, err := world.database.CreateAuthorizedToken(&models.Token{
+			UserID: world.owner.ID, Name: "A test phone", ClientID: "a-phone-client", ExpiresAt: time.Now().Add(time.Hour),
+		}, "a-key-hash", "a-refresh-hash"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	world.operations.answers = tripOnTheCalendar(time.Now().UTC().Add(24 * time.Hour).Truncate(24 * time.Hour))
+	return world
+}
+
+// The person need not have the app open: what the agent says reaches their
+// phone. A quiet hour that starts where it ends is no night at all.
+func TestTheAgentSpeaksToSomebodyWithAPhoneWhoIsAway(t *testing.T) {
+	world := awayWorld(t, true, "00:00", "00:00")
+	world.tick(t)
+	if jobs := world.speakFirstJobs(t); len(jobs) != 1 || jobs[0].SubjectID != agent.SpeakFirstTrip {
+		t.Fatalf("the trip should reach somebody who is away: %+v", jobs)
+	}
+}
+
+// Their night is theirs, trip or no trip.
+func TestTheAgentWaitsOutThePersonsNight(t *testing.T) {
+	// A night that covers every moment but the one just before this.
+	now := time.Now().UTC()
+	world := awayWorld(t, true, now.Add(-time.Minute).Format("15:04"), now.Add(-2*time.Minute).Format("15:04"))
+	world.tick(t)
+	if jobs := world.speakFirstJobs(t); len(jobs) != 0 {
+		t.Fatalf("it should wait for the morning: %+v", jobs)
+	}
+}
+
+// With no phone and no chat app nothing would reach them, so it waits for them
+// to come, and an account nobody uses spends no model turns.
+func TestTheAgentWaitsForSomebodyItCannotReach(t *testing.T) {
+	world := awayWorld(t, false, "00:00", "00:00")
+	world.tick(t)
+	if jobs := world.speakFirstJobs(t); len(jobs) != 0 {
+		t.Fatalf("nobody would read it: %+v", jobs)
+	}
+}

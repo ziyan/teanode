@@ -28,6 +28,11 @@ const (
 	// any reason but its introduction.
 	speakFirstApart = 24 * time.Hour
 
+	// speakFirstAwayIdle is how idle somebody who is away and has never
+	// written counts as: long enough for anything that waits for them to be
+	// done with what they are doing.
+	speakFirstAwayIdle = 24 * time.Hour
+
 	// speakFirstSurfacePrefix begins the surface of a spoken-first turn:
 	// "speak_first:idea". The dashboard opens the chat drawer on a turn
 	// whose surface begins so.
@@ -107,10 +112,11 @@ func (self *Agent) speakFirstReasonNamed(name string) (speakFirstReason, bool) {
 	return speakFirstReason{}, false
 }
 
-// queueSpeakingFirst queues, for each agent whose person is here, the
-// first reason to speak that is due, when speaking at all is welcome:
-// nothing of this kind already queued, no turn running in the main
-// conversation, the person quiet for half an hour, and not snoozed.
+// queueSpeakingFirst queues, for each agent, the first reason to speak that
+// is due, when speaking at all is welcome: nothing of this kind already
+// queued, no turn running in the main conversation, the person quiet for half
+// an hour, and not snoozed. The person need not be looking: what the agent
+// says reaches them on their phone (canReachAway), during their day.
 func (self *Agent) queueSpeakingFirst(ctx context.Context, now time.Time) {
 	if self.settings.Registry == nil {
 		return
@@ -136,12 +142,9 @@ func (self *Agent) queueSpeakingFirst(ctx context.Context, now time.Time) {
 			continue
 		}
 		isPresent, idle := self.presence.isPresent(agent.UserID, now)
-		if !isPresent {
-			continue
-		}
 		self.lookForTrip(ctx, agent, now)
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-			reason, err := self.dueSpeakFirstReason(ctx, tx, agent, idle, now)
+			reason, err := self.dueSpeakFirstReason(ctx, tx, agent, !isPresent, idle, now)
 			if err != nil || reason == "" {
 				return err
 			}
@@ -154,7 +157,7 @@ func (self *Agent) queueSpeakingFirst(ctx context.Context, now time.Time) {
 }
 
 // dueSpeakFirstReason is the reason the agent should speak now, or empty.
-func (self *Agent) dueSpeakFirstReason(ctx context.Context, tx db.Transaction, agent *models.Agent, idle time.Duration, now time.Time) (string, error) {
+func (self *Agent) dueSpeakFirstReason(ctx context.Context, tx db.Transaction, agent *models.Agent, isAway bool, idle time.Duration, now time.Time) (string, error) {
 	if agent.SpeakFirstSnoozedUntil != nil && now.Before(*agent.SpeakFirstSnoozedUntil) {
 		return "", nil
 	}
@@ -184,6 +187,16 @@ func (self *Agent) dueSpeakFirstReason(ctx context.Context, tx db.Transaction, a
 	if err != nil || owner == nil {
 		return "", err
 	}
+	if isAway {
+		isReachable, err := canReachAway(tx, agent.ID)
+		if err != nil || !isReachable || isAlertQuietHour(now.In(Location(owner)), alertBoundsOf(agent, nil)) {
+			return "", err
+		}
+		idle = speakFirstAwayIdle
+		if spoke != nil {
+			idle = now.Sub(*spoke)
+		}
+	}
 	isRecent := agent.SpokeFirstAt != nil && now.Sub(*agent.SpokeFirstAt) < speakFirstApart
 	for _, reason := range self.speakFirstReasons() {
 		if reason.isDailyLimited && isRecent {
@@ -198,6 +211,32 @@ func (self *Agent) dueSpeakFirstReason(ctx context.Context, tx db.Transaction, a
 		}
 	}
 	return "", nil
+}
+
+// canReachAway says what the agent writes reaches the person while they have
+// no app or dashboard in front of them: a phone that takes notifications, or a
+// chat app. Somebody with neither reads it when they next come, so it waits
+// for that, and an account nobody uses costs no model turns.
+func canReachAway(tx db.Transaction, agentId string) (bool, error) {
+	phones, err := tx.ListAgentPhones(agentId)
+	if err != nil {
+		return false, err
+	}
+	for _, phone := range phones {
+		if phone.CanBeNotified() && phone.Wants(models.NotificationMessage) {
+			return true, nil
+		}
+	}
+	channels, err := tx.ListAgentChannels(agentId)
+	if err != nil {
+		return false, err
+	}
+	for _, channel := range channels {
+		if channel.Enabled {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // isTurnRunning says whether a turn is in flight in a conversation, here or
@@ -347,7 +386,7 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 // person asked for says so in place of "nobody asked": told both, the
 // model believed the first and declined a check they had just asked for.
 func speakFirstMessage(owner *models.User, now time.Time, what string, prepared map[string]string) string {
-	who := " Nobody asked for this turn: you are starting the conversation, and what you write is the first thing " + personName(owner) + " reads when they look at the chat. They have their dashboard open."
+	who := " Nobody asked for this turn: you are starting the conversation, and what you write is the first thing " + personName(owner) + " reads when they look at the chat. They may not be looking now: it reaches them as a notification, so the first line has to say why it is worth opening."
 	if prepared[preparedIsAsked] == "true" {
 		who = " " + personName(owner) + " asked for this just now, with the button on their dashboard or by saying so. Whatever was said earlier, or is in the note on the earlier conversation, about waiting until they ask or only going on if they engage, this is them asking: begin now. They are looking at the chat."
 	}
