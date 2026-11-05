@@ -1279,7 +1279,7 @@ extension Documents {
     public static let shoppingDocuments: [String: String] = [
         "shoppingLists": shoppingLists, "shoppingList": shoppingList, "shoppingItem": shoppingItem,
         "shoppingListShares": shoppingListShares, "shoppingStores": shoppingStores, "shoppingStoreItems": shoppingStoreItems,
-        "openShoppingTrips": openShoppingTrips, "shoppingItemPrices": shoppingItemPrices,
+        "openShoppingTrips": openShoppingTrips, "shoppingItemPrices": shoppingItemPrices, "similarShoppingItems": similarShoppingItems,
         "shoppingReceiptMatches": shoppingReceiptMatches, "previewShoppingImport": previewShoppingImport,
         "createShoppingList": createShoppingList, "renameShoppingList": renameShoppingList, "deleteShoppingList": deleteShoppingList,
         "shareShoppingList": shareShoppingList, "unshareShoppingList": unshareShoppingList,
