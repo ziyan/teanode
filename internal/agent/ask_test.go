@@ -24,6 +24,9 @@ import (
 // fakeOperations is the API as a test person: it answers the documents the
 // mailbox tools send with canned data, and records what was asked.
 type fakeOperations struct {
+	// answers scripts an operation, by a word of its document.
+	answers map[string]string
+
 	mutex       sync.Mutex
 	documents   []string
 	permissions *models.EffectivePermissions
@@ -36,6 +39,11 @@ func (self *fakeOperations) Execute(ctx context.Context, document string, variab
 	self.documents = append(self.documents, document)
 	self.mutex.Unlock()
 	answer := `{}`
+	for operation, scripted := range self.answers {
+		if strings.Contains(document, operation) {
+			answer = scripted
+		}
+	}
 	switch {
 	case strings.Contains(document, "ListMailboxes"):
 		answer = `{"ListMailboxes":[{"mailbox":{"id":"mb1","name":"Personal","userId":"u1","addresses":[{"address":"alice@example.com"}],"rules":[],"agent":{"granted":true,"triage":{"enabled":true}}},"folders":[{"id":"f-inbox","mailboxId":"mb1","name":"Inbox","kind":"inbox","unread":2,"total":10},{"id":"f-trash","mailboxId":"mb1","name":"Trash","kind":"trash","unread":0,"total":0}]}]}`

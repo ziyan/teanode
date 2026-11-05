@@ -67,20 +67,52 @@ type tripNote struct {
 	FirstOn string `json:"firstOn"`
 }
 
+// tripLook is what the last look at somebody's calendar found. The calendar
+// is read through their operations, which a transaction deciding who to speak
+// to cannot do, and a job queued only to look would stand in the way of every
+// other reason to speak. So the sweep looks first, on its own, and the reason
+// reads the answer.
+type tripLook struct {
+	lookedAt time.Time
+	isDue    bool
+}
+
+// lookForTrip reads the calendar of somebody who is here, at most every
+// tripLookEvery. Only the sweep calls it, and only the sweep reads what it
+// keeps, so the map needs no lock.
+func (self *Agent) lookForTrip(ctx context.Context, agent *models.Agent, now time.Time) {
+	if agent.OnboardedAt == nil {
+		return
+	}
+	if look := self.tripLooks[agent.ID]; look != nil && now.Sub(look.lookedAt) < tripLookEvery {
+		return
+	}
+	var owner *models.User
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		owner, err = tx.GetUser(agent.UserID)
+		return err
+	}); err != nil || owner == nil {
+		return
+	}
+	trip, err := self.tripToSpeakAbout(ctx, agent, owner, now, false)
+	if err != nil {
+		log.Debugf("cannot look for a trip for agent %q: %s", agent.ID, err)
+		return
+	}
+	if self.tripLooks == nil {
+		self.tripLooks = map[string]*tripLook{}
+	}
+	self.tripLooks[agent.ID] = &tripLook{lookedAt: now, isDue: trip != nil}
+}
+
 // tripReason speaks about a trip a few days before it.
 func (self *Agent) tripReason() speakFirstReason {
 	return speakFirstReason{
 		name:           SpeakFirstTrip,
 		isDailyLimited: true,
 		isDue: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idle time.Duration, now time.Time) (bool, error) {
-			if agent.OnboardedAt == nil {
-				return false, nil
-			}
-			looked, err := tx.CountAgentJobs(&db.AgentJobFilter{
-				AgentID: agent.ID, Kinds: []models.AgentJobKind{models.AgentJobSpeakFirst},
-				SubjectID: SpeakFirstTrip, Since: now.Add(-tripLookEvery),
-			})
-			return looked == 0, err
+			look := self.tripLooks[agent.ID]
+			return look != nil && look.isDue, nil
 		},
 		prepare: self.prepareTrip,
 		checkIn: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time, prepared map[string]string) (string, error) {
@@ -96,26 +128,25 @@ func (self *Agent) tripReason() speakFirstReason {
 	}
 }
 
-// prepareTrip finds the trip to speak about, outside any transaction since
-// the calendar is read through the person's operations, and says nothing
-// when there is none or it was spoken about. A person who asks is answered
-// about the soonest trip, spoken about or not.
-func (self *Agent) prepareTrip(ctx context.Context, run *Run, now time.Time) (map[string]string, bool, error) {
-	if self.operations == nil || !run.Configuration().Services.IsEnabled(models.ServiceCalendar) {
-		return nil, false, nil
+// tripToSpeakAbout is the trip to speak about now, or nil: the soonest one
+// not spoken about, or when the person asks the soonest one at all.
+func (self *Agent) tripToSpeakAbout(ctx context.Context, agent *models.Agent, owner *models.User, now time.Time, isAsked bool) (*comingUpEvent, error) {
+	if self.operations == nil || !self.settings.Configuration().Services.IsEnabled(models.ServiceCalendar) {
+		return nil, nil
 	}
-	operations, err := self.operations(ctx, run.Owner)
+	operations, err := self.operations(ctx, owner)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	events, err := readComingUp(ctx, operations, now)
 	if err != nil {
-		log.Debugf("no calendar to look for a trip in for agent %q: %s", run.Agent.ID, err)
-		return nil, false, nil
+		// Somebody who gave the agent no calendar has no trips to find.
+		log.Debugf("no calendar to look for a trip in for agent %q: %s", agent.ID, err)
+		return nil, nil
 	}
 	isTold := map[string]bool{}
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		followUps, err := tx.ListOpenAgentFollowUps(run.Agent.ID)
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		followUps, err := tx.ListOpenAgentFollowUps(agent.ID)
 		if err != nil {
 			return err
 		}
@@ -126,16 +157,21 @@ func (self *Agent) prepareTrip(ctx context.Context, run *Run, now time.Time) (ma
 		}
 		return nil
 	}); err != nil {
+		return nil, err
+	}
+	return nextTrip(events, Location(owner), now, func(event *comingUpEvent) bool {
+		return !isAsked && isTold[followUpKeyOfTrip(event.ID)]
+	}), nil
+}
+
+// prepareTrip finds the trip for the turn, and says nothing when there is
+// none or it was spoken about since the sweep looked.
+func (self *Agent) prepareTrip(ctx context.Context, run *Run, now time.Time) (map[string]string, bool, error) {
+	trip, err := self.tripToSpeakAbout(ctx, run.Agent, run.Owner, now, strings.HasSuffix(run.Job.SubjectID, askedSuffix))
+	if err != nil || trip == nil {
 		return nil, false, err
 	}
-	isAsked := strings.HasSuffix(run.Job.SubjectID, askedSuffix)
 	location := Location(run.Owner)
-	trip := nextTrip(events, location, now, func(event *comingUpEvent) bool {
-		return !isAsked && isTold[followUpKeyOfTrip(event.ID)]
-	})
-	if trip == nil {
-		return nil, false, nil
-	}
 	note, err := json.Marshal(&tripNote{
 		EventID: trip.ID, Line: trip.line(location), Summary: trip.Summary, Place: trip.Location,
 		FirstOn: trip.firstDay(location).Format(time.DateOnly),

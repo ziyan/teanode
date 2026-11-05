@@ -148,6 +148,7 @@ type Agent struct {
 	lastIngest                           time.Time
 	lastDream                            time.Time
 	lastSpeak                            time.Time
+	tripLooks                            map[string]*tripLook
 	lastWatch                            time.Time
 	lastFollowUpSweep                    time.Time
 	lastFollowUpBackfill                 time.Time

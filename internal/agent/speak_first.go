@@ -139,6 +139,7 @@ func (self *Agent) queueSpeakingFirst(ctx context.Context, now time.Time) {
 		if !isPresent {
 			continue
 		}
+		self.lookForTrip(ctx, agent, now)
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 			reason, err := self.dueSpeakFirstReason(ctx, tx, agent, idle, now)
 			if err != nil || reason == "" {

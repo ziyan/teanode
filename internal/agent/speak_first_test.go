@@ -438,3 +438,25 @@ func TestANewPhoneIsShownAroundOnce(t *testing.T) {
 		t.Fatalf("the same phone signed in again was shown around again: %+v", jobs)
 	}
 }
+
+// A trip on the calendar is a reason to speak, found before any job is
+// queued, so nothing is queued for somebody with no trip.
+func TestATripOnTheCalendarIsAReasonToSpeakFirst(t *testing.T) {
+	world := newSpeakFirstWorld(t)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		now := time.Now()
+		if err := tx.MarkAgentSpokeFirst(world.agent.ID, nil, &now, nil); err != nil {
+			t.Fatal(err)
+		}
+	})
+	starts := time.Now().UTC().Add(24 * time.Hour).Truncate(24 * time.Hour)
+	world.operations.answers = map[string]string{
+		"ListCalendars {":    `{"ListCalendars":[{"id":"own","agentGranted":true,"calendarKind":"events","shareLevel":"owner"}]}`,
+		"ListCalendarEvents": fmt.Sprintf(`{"ListCalendarEvents":[{"id":"event","summary":"Lake weekend","location":"Example Lake","allDay":true,"startsAt":%q,"endsAt":%q}]}`, starts.Format(time.RFC3339), starts.Add(72*time.Hour).Format(time.RFC3339)),
+	}
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, "", time.Now())
+	world.tick(t)
+	if jobs := world.speakFirstJobs(t); len(jobs) != 1 || jobs[0].SubjectID != agent.SpeakFirstTrip {
+		t.Fatalf("the trip is a reason to speak: %+v", jobs)
+	}
+}
