@@ -3791,6 +3791,7 @@ export const zh: Catalog = {
   'goals.activity': '动态',
   'goals.noActivity': '还没有任何动态。',
   'agentDrawer.goalNeedsYouTurn': '有个目标需要你',
+  'agentDrawer.goalDoneTurn': '有个目标完成了',
   'agentDrawer.herdrQuestionTurn': '有个编程会话在问你',
   'agentDrawer.herdrSessionTurn': '有个编程会话完成了',
   'agentDrawer.restartResumeTurn': '重启之后，接着继续',

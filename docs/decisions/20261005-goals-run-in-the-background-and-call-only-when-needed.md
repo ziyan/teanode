@@ -29,6 +29,11 @@ turn waits for them, or the goal stalls. One exchange is written there, under
 and the agent passes the answer on with the goal tool's `tell`; or they answer
 on the Goals tab or in the goal's own conversation.
 
+Changed since: a goal finished by a turn the person was not at is now said
+there too, under `[goal done]`, once. Left on the Goals tab, the person never
+learned that what they asked for had happened, and the conversation they talk
+in did not know either.
+
 Goals are no longer put on conversations the person chats in. Alerts,
 schedules made in the main conversation, speaking first and statement imports
 keep posting to the main conversation as before.

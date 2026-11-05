@@ -53,7 +53,7 @@ func init() {
 					"action":       tools.EnumProperty("what to do", "start", "list", "show", "tell", "done", "drop", "reopen", "note", "wait", "met", "take_schedule"),
 					"goal_id":      tools.StringProperty("for show, tell, done, drop and reopen: the goal, by the id list gives"),
 					"title":        tools.StringProperty("for start: what the goal is called, a few words"),
-					"text":         tools.StringProperty("for start: what it is for and what done looks like. For tell: the person's words. For met: how it ended"),
+					"text":         tools.StringProperty("for start: what it is for and what done looks like. For tell: the person's words. For met: how it ended and what came of it; when the person was not there it is what they are told in their main conversation"),
 					"status":       tools.StringProperty("for note: where the goal stands, in one line. For wait: what you need from the person, a sentence they can answer"),
 					"schedule_ids": tools.ArrayProperty("for start: schedules that do this goal's work on a clock, by id; they become the goal's, and their runs are its turns", tools.StringProperty("a schedule id")),
 					"schedule_id":  tools.StringProperty("for take_schedule: a schedule to make the goal's, by id"),
@@ -213,17 +213,17 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 				conversation.GoalNextAt = nil
 				if action == "wait" {
 					conversation.GoalState = models.GoalWaiting
-					// A goal waiting with nobody present is said in the
-					// person's main conversation by the worker's next
-					// sweep; one waiting in front of them needs no call.
-					if current.Headless() {
-						conversation.GoalSurfacedAt = nil
-					} else {
-						now := time.Now()
-						conversation.GoalSurfacedAt = &now
-					}
 				} else {
 					conversation.GoalState = models.GoalMet
+				}
+				// A goal waiting or finished with nobody present is said in
+				// the person's main conversation by the worker's next
+				// sweep; in front of them it needs no call.
+				if current.Headless() {
+					conversation.GoalSurfacedAt = nil
+				} else {
+					now := time.Now()
+					conversation.GoalSurfacedAt = &now
 				}
 				return nil
 			}
@@ -246,6 +246,8 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		note = fmt.Sprintf("goal: %s, next turn %s", after.GoalState, after.GoalNextAt.Format("15:04"))
 	case after.GoalState == models.GoalWaiting && after.GoalSurfacedAt == nil:
 		note = "goal: waiting; the person is told in their main conversation"
+	case after.GoalState == models.GoalMet && after.GoalSurfacedAt == nil:
+		note = "goal: met; the person is told in their main conversation"
 	default:
 		note = "goal: " + string(after.GoalState)
 	}

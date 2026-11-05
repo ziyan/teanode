@@ -728,7 +728,7 @@ func printTranscript(command *cli.Command, view *client.AgentConversationView) e
 					_, _ = fmt.Fprintf(command.Writer, "[%s] ↪ replying to %s\n", when, quotedLine(reference))
 				}
 			}
-			_, _ = fmt.Fprintf(command.Writer, "[%s] you: %s\n", when, message.Content)
+			_, _ = fmt.Fprintf(command.Writer, "[%s] %s\n", when, transcriptOpening(message.Content))
 			if line := reactionLine(message.Reactions); line != "" {
 				_, _ = fmt.Fprintln(command.Writer, line)
 			}
@@ -1074,3 +1074,15 @@ var (
 	readers      = map[io.Reader]*bufio.Reader{}
 	readersMutex sync.Mutex
 )
+
+// transcriptOpening is a stored user message as a transcript line: the
+// person's own words, or, for a turn the agent took on its own, the marker
+// line alone. Nobody wrote the rest, which is the agent's instructions to
+// itself, and printing it after "you:" put words in the person's mouth.
+func transcriptOpening(content string) string {
+	if models.IsOwnTurn(content) {
+		firstLine, _, _ := strings.Cut(content, "\n")
+		return "on its own: " + firstLine
+	}
+	return "you: " + content
+}

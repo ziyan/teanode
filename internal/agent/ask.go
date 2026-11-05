@@ -405,6 +405,10 @@ type AskRun struct {
 	comingUpBlock   string
 	hasReadComingUp bool
 
+	// rightNowBlock is the turn's <right_now> overlay, read once like it.
+	rightNowBlock   string
+	hasReadRightNow bool
+
 	// recordedAt is when the run was recorded as running (turn_record.go),
 	// zero for one that was not: a run steered into another, or one with no
 	// database to record it in.
@@ -3031,6 +3035,9 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 		blocks = append(blocks, block)
 	}
 	if block := self.comingUpOverlay(ctx); block != "" {
+		blocks = append(blocks, block)
+	}
+	if block := self.rightNowOverlay(ctx); block != "" {
 		blocks = append(blocks, block)
 	}
 	_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
