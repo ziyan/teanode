@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.222.0] - 2026-11-05
+
+### Added
+
+- Before a trip your agent plans the day you leave around your calendar and check-in, reads the pages your booking messages link to, and sends a note the day before with what has arrived since. (#734)
+
+### Changed
+
+- Your agent now starts a conversation without the app or dashboard being open: it reaches your phone during your day, up to once a day, and stays quiet overnight. "Not now" still pauses it. (#734)
+
 ## [0.221.0] - 2026-11-05
 
 ### Added
