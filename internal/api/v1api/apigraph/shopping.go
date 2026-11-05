@@ -56,6 +56,10 @@ type ShoppingQuery interface {
 	// An item's prices, newest first.
 	ListShoppingItemPrices(ctx context.Context, arguments ShoppingItemArguments) ([]*models.ShoppingItemPrice, error)
 
+	// The items that read like what is about to be added to a list, on it or
+	// on the other lists the caller reaches, nearest first and at most five.
+	ListSimilarShoppingItems(ctx context.Context, arguments ListSimilarShoppingItemsArguments) ([]*models.ShoppingItem, error)
+
 	// What one of the caller's receipts did to their lists: each item line
 	// with its matches, and what is still needed on the lists it touched.
 	ListShoppingReceiptMatches(ctx context.Context, arguments ShoppingReceiptArguments) (*ShoppingReceiptView, error)
@@ -227,6 +231,11 @@ type ShoppingListArguments struct {
 
 type ShoppingItemArguments struct {
 	ShoppingItemID string `json:"shoppingItemId"`
+}
+
+type ListSimilarShoppingItemsArguments struct {
+	ShoppingListID  string `json:"shoppingListId"`
+	ItemDescription string `json:"itemDescription"`
 }
 
 type ShoppingReceiptArguments struct {
@@ -656,6 +665,18 @@ func (self *graph) ListOpenShoppingTrips(ctx context.Context) ([]*models.Shoppin
 	}
 	trips, err := self.transaction(ctx).ListOpenShoppingTrips(user.ID)
 	return trips, translateError(err)
+}
+
+func (self *graph) ListSimilarShoppingItems(ctx context.Context, arguments ListSimilarShoppingItemsArguments) ([]*models.ShoppingItem, error) {
+	user, err := self.shoppingPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items, err := self.transaction(ctx).ListSimilarShoppingItems(user.ID, arguments.ShoppingListID, arguments.ItemDescription)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return withPicturePaths(items...), nil
 }
 
 func (self *graph) ListShoppingItemPrices(ctx context.Context, arguments ShoppingItemArguments) ([]*models.ShoppingItemPrice, error) {

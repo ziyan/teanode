@@ -47,6 +47,9 @@ func init() {
 				tools.Object(map[string]any{"list_id": listIDProperty, "shopping_item_states": itemStatesProperty, "offset": offsetProperty, "page_size": pageSizeProperty}, "list_id"), runList),
 			read("shopping_item", "One item: its details, count, store, aisle, picture source, latest price and where it is.",
 				tools.Object(map[string]any{"item_id": itemIDProperty}, "item_id"), runItem),
+			read("shopping_similar_items", "The items that read like one about to be added, on the list named and the person's other lists, nearest first and at most five, in every state. "+
+				"Use it before add_items when the person names something that may already be there under another wording: need or update the item it finds rather than adding a second one.",
+				tools.Object(map[string]any{"list_id": listIDProperty, "item_description": tools.StringProperty("what is about to be added")}, "list_id", "item_description"), runSimilarItems),
 			read("shopping_shares", "Who one of the person's own lists is shared with, each with the share_id that unshare takes.",
 				tools.Object(map[string]any{"list_id": listIDProperty}, "list_id"), runShares),
 			read("shopping_stores", "The stores the items of the person's lists are for, with how many are needed at each and whether the person is reminded on arriving there.",
@@ -160,6 +163,7 @@ func init() {
 					{Action: "lists", Tool: "shopping_lists"},
 					{Action: "list", Tool: "shopping_list"},
 					{Action: "item", Tool: "shopping_item"},
+					{Action: "similar_items", Tool: "shopping_similar_items"},
 					{Action: "shares", Tool: "shopping_shares"},
 					{Action: "stores", Tool: "shopping_stores"},
 					{Action: "store", Tool: "shopping_store"},

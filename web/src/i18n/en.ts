@@ -7714,6 +7714,7 @@ export const en = {
   'shopping.checkItem': 'Check off {itemDescription}',
   'shopping.editItem': 'Edit item',
   'shopping.needAgain': 'Need again',
+  'shopping.similarItems': 'Already on your lists',
   'shopping.needAgainTitle': 'Need {itemDescription} again',
   'shopping.neededAgain': '{itemDescription} is on the list to buy again.',
   'shopping.storeBrand': 'Store brand',

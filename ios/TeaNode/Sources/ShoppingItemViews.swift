@@ -205,6 +205,8 @@ struct ShoppingItemSheet: View {
     let onChanged: (ShoppingItem) -> Void
     /// Takes the item off the list.
     let onRemove: (ShoppingItem) async -> Void
+    /// Needs a bought item again with a count; nil where nothing is bought.
+    var onNeedAgain: ((String) async -> Void)?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -227,11 +229,15 @@ struct ShoppingItemSheet: View {
     @State private var problemText: String?
     @State private var doneText: String?
 
-    init(connection: Connection, item: ShoppingItem, onChanged: @escaping (ShoppingItem) -> Void, onRemove: @escaping (ShoppingItem) async -> Void) {
+    init(
+        connection: Connection, item: ShoppingItem, onChanged: @escaping (ShoppingItem) -> Void, onRemove: @escaping (ShoppingItem) async -> Void,
+        onNeedAgain: ((String) async -> Void)? = nil
+    ) {
         self.connection = connection
         self.item = item
         self.onChanged = onChanged
         self.onRemove = onRemove
+        self.onNeedAgain = onNeedAgain
         _shown = State(initialValue: item)
         _itemDescription = State(initialValue: item.itemDescription)
         _itemDetails = State(initialValue: item.itemDetails)
@@ -381,6 +387,16 @@ struct ShoppingItemSheet: View {
 
     private var actionsSection: some View {
         Section {
+            if shown.isNotNeeded, let onNeedAgain {
+                Button("Need again", systemImage: "arrow.uturn.backward") {
+                    Task {
+                        await onNeedAgain(ShoppingQuantity.text(of: quantity))
+                        dismiss()
+                    }
+                }
+                .actionColor()
+                .disabled(isWorking)
+            }
             Button(outOfStockTitle, systemImage: "exclamationmark.circle") {
                 Task { await toggleOutOfStock() }
             }

@@ -42,6 +42,14 @@ without case, needs the existing one again: its count becomes the larger of the
 two, its details gain what is new, and no second row is made. So importing the
 same weekly list twice does not double it.
 
+That merge needs the same words. For the rest, whoever is adding an item is
+shown what reads like it as they type (`ListSimilarShoppingItems`), on this list
+and their others, in any state, and can go to one instead: a bought item is the
+one most worth needing again. `models.ShoppingItemSimilarity` decides, on words
+in any order, ignoring case, punctuation and an English plural, and accepting a
+word only begun or slightly misspelled; scripts written without spaces match
+anywhere in the phrase. It only ever suggests: nothing is merged on its word.
+
 Stores are compared by `models.ShoppingStoreKey`: lower case, letters and digits
 only, so "Example Market", "EXAMPLE MARKET'S" and "example-market" are one
 store, at any branch. Aisles keep the order they were given in, so a list

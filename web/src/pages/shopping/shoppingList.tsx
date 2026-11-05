@@ -352,8 +352,10 @@ export function ShoppingListPage() {
 
       {opened?.dialogKind === 'item' ? (
         <ShoppingItemDialog
+          key={opened.target.shoppingItem?.id ?? 'new'}
           target={itemDialogTarget(opened.target, shoppingItems)}
           onSaved={() => void reloadAll()}
+          onOpenItem={(shoppingItem) => setOpened({ dialogKind: 'item', target: { shoppingItem } })}
           onClose={() => setOpened(null)}
         />
       ) : null}

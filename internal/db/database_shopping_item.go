@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strings"
 	"time"
 
@@ -87,6 +88,11 @@ type ShoppingItemOperation interface {
 	// ListShoppingItemPrices are an item's prices, newest first.
 	ListShoppingItemPrices(userId, shoppingItemId string) ([]*models.ShoppingItemPrice, error)
 
+	// ListSimilarShoppingItems are the items, on the list named and the other
+	// lists the person reaches, that read like what is about to be added,
+	// nearest first: a few, for somebody to go to one instead of adding it.
+	ListSimilarShoppingItems(userId, shoppingListId, itemDescription string) ([]*models.ShoppingItem, error)
+
 	// ListShoppingStores are the stores the items of the person's lists are
 	// for, by name, with how many are needed at each and whether the person
 	// is reminded there.
@@ -116,6 +122,8 @@ const (
 	shoppingItemUnitLengthMost        = 32
 	shoppingItemsAddedAtOnceMost      = 500
 	shoppingPageSizeMost              = 500
+	shoppingSimilarItemsMost          = 5
+	shoppingSimilarItemsCompared      = 5000
 )
 
 type shoppingItemModel struct {
@@ -926,6 +934,67 @@ func (self *transaction) ListShoppingItemPrices(userId, shoppingItemId string) (
 		prices = append(prices, rows[index].toModel())
 	}
 	return prices, nil
+}
+
+// ListSimilarShoppingItems compares in Go because the comparison knows plurals
+// and scripts without spaces, which an index does not, and a person's items
+// are few. Items of every state count: a bought item is the one most worth
+// needing again rather than adding twice.
+func (self *transaction) ListSimilarShoppingItems(userId, shoppingListId, itemDescription string) ([]*models.ShoppingItem, error) {
+	if _, err := self.GetShoppingListAccess(userId, shoppingListId); err != nil {
+		return nil, err
+	}
+	listIds, err := self.reachableShoppingListIds(userId)
+	if err != nil {
+		return nil, err
+	}
+	var rows []shoppingItemModel
+	if err := self.tx.Select("\"id\"", "\"shopping_list_id\"", "\"item_description\"", "\"shopping_item_state\"").
+		Where("\"shopping_list_id\" IN ?", listIds).Order("\"created_at\" DESC").Limit(shoppingSimilarItemsCompared).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	scores := map[string]float64{}
+	nearest := make([]*shoppingItemModel, 0, len(rows))
+	for index := range rows {
+		row := &rows[index]
+		if score := models.ShoppingItemSimilarity(itemDescription, row.ItemDescription); score > 0 {
+			scores[row.ID] = score
+			nearest = append(nearest, row)
+		}
+	}
+	// This list before the others, and what is still to buy before the rest.
+	sort.SliceStable(nearest, func(first, second int) bool {
+		left, right := nearest[first], nearest[second]
+		if scores[left.ID] != scores[right.ID] {
+			return scores[left.ID] > scores[right.ID]
+		}
+		if isOnList := left.ShoppingListID == shoppingListId; isOnList != (right.ShoppingListID == shoppingListId) {
+			return isOnList
+		}
+		needed := string(models.ShoppingItemStateNeeded)
+		if isNeeded := left.ShoppingItemState == needed; isNeeded != (right.ShoppingItemState == needed) {
+			return isNeeded
+		}
+		return strings.ToLower(left.ItemDescription) < strings.ToLower(right.ItemDescription)
+	})
+	if len(nearest) > shoppingSimilarItemsMost {
+		nearest = nearest[:shoppingSimilarItemsMost]
+	}
+	if len(nearest) == 0 {
+		return []*models.ShoppingItem{}, nil
+	}
+	rank := make(map[string]int, len(nearest))
+	itemIds := make([]string, 0, len(nearest))
+	for index, row := range nearest {
+		rank[row.ID] = index
+		itemIds = append(itemIds, row.ID)
+	}
+	items, err := self.shoppingItemsOf(self.tx.Where("\"id\" IN ?", itemIds))
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(items, func(first, second int) bool { return rank[items[first].ID] < rank[items[second].ID] })
+	return items, nil
 }
 
 func (self *transaction) ListShoppingStores(userId string) ([]*models.ShoppingStore, error) {

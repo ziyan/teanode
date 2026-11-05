@@ -91931,6 +91931,22 @@
         }
       }
     },
+    "Already on your lists": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すでにリストにあります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在你的清单上"
+          }
+        }
+      }
+    },
     "Need again": {
       "localizations": {
         "ja": {

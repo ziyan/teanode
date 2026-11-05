@@ -286,6 +286,10 @@
                     ])
             }
             if query.contains("ListOpenShoppingTrips") { return answer("ListOpenShoppingTrips", [ShoppingDemo.alexTrip]) }
+            if query.contains("ListSimilarShoppingItems") {
+                let typed = (variables["itemDescription"] as? String ?? "").lowercased()
+                return answer("ListSimilarShoppingItems", ShoppingDemo.items.filter { $0.description.lowercased().contains(typed) }.map(\.dictionary))
+            }
             if query.contains("ListShoppingItemPrices") { return answer("ListShoppingItemPrices", ShoppingDemo.priceDictionaries(itemId: itemId)) }
             if query.contains("ListShoppingReceiptMatches") { return answer("ListShoppingReceiptMatches", ShoppingDemo.receiptView) }
             if query.contains("PreviewShoppingImport") { return answer("PreviewShoppingImport", ["shoppingItems": ShoppingDemo.importItems]) }

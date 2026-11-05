@@ -503,6 +503,25 @@ func runTrips(ctx context.Context, here *scope, asked *arguments) (*tools.Result
 	return dataResult(answer)
 }
 
+func runSimilarItems(ctx context.Context, here *scope, asked *arguments) (*tools.Result, error) {
+	listId, err := listIDOf(asked, "similar_items")
+	if err != nil {
+		return nil, err
+	}
+	itemDescription := ""
+	if asked.ItemDescription != nil {
+		itemDescription = *asked.ItemDescription
+	}
+	if itemDescription, err = requiredText(itemDescription, "item_description", "similar_items", "say what is about to be added"); err != nil {
+		return nil, err
+	}
+	items, err := client.ListSimilarShoppingItems(ctx, here.operations, listId, itemDescription)
+	if err != nil {
+		return nil, err
+	}
+	return dataResult(map[string]any{"items": here.itemRows(items, true)})
+}
+
 func runPrices(ctx context.Context, here *scope, asked *arguments) (*tools.Result, error) {
 	itemId, err := itemIDOf(asked, "prices")
 	if err != nil {

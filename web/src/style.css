@@ -22324,6 +22324,53 @@ button.person-row:focus-visible {
   margin-top: var(--space-4);
 }
 
+.shopping-similar {
+  margin-bottom: var(--space-3);
+}
+
+.shopping-similar h4 {
+  margin: 0 0 var(--space-1);
+}
+
+.shopping-similar ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shopping-similar li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+}
+
+.shopping-similar li + li {
+  border-top: 1px solid var(--border);
+}
+
+/* The whole width of the row opens the item, not only its words. */
+.shopping-similar li button {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  min-height: 40px;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shopping-similar li button:hover strong {
+  text-decoration: underline;
+}
+
 /* The item's dialog and the import's are wide, as their tables need: the
    general dialog rule caps every dialog at 420px, which put the item's four
    buttons on two lines and squeezed the price table's headings. On a phone a
