@@ -41,18 +41,6 @@ type route53Solver struct {
 	client      *route53.Client
 	zoneId      string
 	nameservers []string
-	hosts       []string
-}
-
-// allHosts is every name across every certificate. The dns-01 solver works
-// out which zone to write in from the names it may be asked about, and it can
-// be asked about any of them.
-func allHosts(settings *Settings) []string {
-	var hosts []string
-	for _, request := range settings.Certificates {
-		hosts = append(hosts, request.Hosts...)
-	}
-	return hosts
 }
 
 func newRoute53Solver(settings *Settings) *route53Solver {
@@ -60,7 +48,6 @@ func newRoute53Solver(settings *Settings) *route53Solver {
 		client:      route53.NewFromConfig(settings.AWSConfig),
 		zoneId:      settings.Route53ZoneID,
 		nameservers: settings.Route53Nameservers,
-		hosts:       allHosts(settings),
 	}
 }
 
@@ -78,7 +65,7 @@ func (self *route53Solver) Present(ctx context.Context, client acmeClient, chall
 		values = append(values, value)
 	}
 
-	names := self.challengeRecordNames()
+	names := challengeRecordNames(challenges)
 	for _, name := range names {
 		if err := self.replaceRecordValues(ctx, name, values); err != nil {
 			return err
@@ -136,14 +123,18 @@ func (self *route53Solver) CleanUp(ctx context.Context, challenges []Challenge) 
 	return nil
 }
 
-// challengeRecordNames returns the record to publish for each configured host.
-// A wildcard host is authorized under its bare domain, and a bare domain plus
-// its wildcard therefore share one record.
-func (self *route53Solver) challengeRecordNames() []string {
-	seen := make(map[string]bool, len(self.hosts))
-	names := make([]string, 0, len(self.hosts))
-	for _, host := range self.hosts {
-		name := challengeRecordPrefix + strings.TrimPrefix(host, "*.")
+// challengeRecordNames returns the record to publish for an order: only the
+// names it authorizes. The server's other certificates can name domains
+// outside this zone, proved some other way, and a record for one of those is
+// refused and fails an order that never needed it.
+//
+// A wildcard is authorized under its bare domain, so a bare domain and its
+// wildcard share one record.
+func challengeRecordNames(challenges []Challenge) []string {
+	seen := make(map[string]bool, len(challenges))
+	names := make([]string, 0, len(challenges))
+	for _, challenge := range challenges {
+		name := challengeRecordPrefix + strings.TrimPrefix(challenge.Domain, "*.")
 		if seen[name] {
 			continue
 		}
