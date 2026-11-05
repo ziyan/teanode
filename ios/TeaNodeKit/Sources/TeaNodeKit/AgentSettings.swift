@@ -615,6 +615,9 @@ extension Documents {
     public static let agentTools = """
         query { ListAgentTools { name family risk description confirms core actions } }
         """
+    public static let speechPieces = """
+        query ($messageText: String!) { ReadSpeechPieces(messageText: $messageText) }
+        """
     public static let speechVoices = """
         query { ReadAgentVoice { isVoiceAvailable sampleRate speechVoice speechVoices serverSpeechVoice } }
         """
@@ -676,6 +679,28 @@ extension Connection {
     public func speechVoices() async throws -> VoiceAvailability {
         struct Answer: Decodable, Sendable { let ReadAgentVoice: VoiceAvailability }
         return try await execute(Documents.speechVoices, as: Answer.self).ReadAgentVoice
+    }
+
+    /// A message as it is read aloud, in pieces to say one after another.
+    public func speechPieces(of messageText: String) async throws -> [String] {
+        struct Answer: Decodable, Sendable { let ReadSpeechPieces: [String] }
+        return try await execute(Documents.speechPieces, variables: ["messageText": .string(messageText)], as: Answer.self).ReadSpeechPieces
+    }
+
+    /// A piece of a message in the voice the person chose, as a WAV file. It
+    /// is paid for like any speech.
+    public func speechAudio(of answerText: String) async throws -> Data {
+        var request = URLRequest(url: account.server.endpoint("/api/v1/agent/voice/read"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["answerText": answerText])
+        let (audioData, response) = try await send(authorizing: request)
+        guard response.statusCode == 200 else {
+            struct Refusal: Decodable { let error: String? }
+            let refusalReason = (try? JSONDecoder().decode(Refusal.self, from: audioData))?.error
+            throw TeaNodeError.refused(refusalReason ?? "The message could not be read aloud (\(response.statusCode)).")
+        }
+        return audioData
     }
 
     /// A few words in a voice, as a WAV file, to hear it before choosing.

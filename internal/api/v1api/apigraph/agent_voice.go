@@ -53,6 +53,11 @@ type AgentVoiceQuery interface {
 	// on with a provider to transcribe it, and the caller has an agent that
 	// is on. Needs agent:use.
 	ReadAgentVoice(ctx context.Context) (*AgentVoiceView, error)
+
+	// A message as it is read aloud: without what is only for the eye, cut
+	// into pieces to say one after another. Each is said by posting it to
+	// the voice's read address, or by the device when the server has no voice
+	ReadSpeechPieces(ctx context.Context, arguments ReadSpeechPiecesArguments) ([]string, error)
 }
 
 // AgentVoiceView is what the drawer needs to offer voice.
@@ -75,6 +80,21 @@ type AgentVoiceView struct {
 	// It does not depend on the agent: a person whose agent is off, or who may
 	// only chat, sends voice messages that play, with no words under them.
 	IsVoiceMessageAvailable bool `json:"isVoiceMessageAvailable"`
+}
+
+type ReadSpeechPiecesArguments struct {
+	MessageText string `json:"messageText"`
+}
+
+func (self *graph) ReadSpeechPieces(ctx context.Context, arguments ReadSpeechPiecesArguments) ([]string, error) {
+	if _, err := self.requireAccount(ctx); err != nil {
+		return nil, err
+	}
+	pieces := voice.SpokenPieces(models.StripHiddenMarkers(arguments.MessageText))
+	if pieces == nil {
+		return []string{}, nil
+	}
+	return pieces, nil
 }
 
 func (self *graph) ReadAgentVoice(ctx context.Context) (*AgentVoiceView, error) {
@@ -133,6 +153,46 @@ func (self *graph) voiceSampleView(response http.ResponseWriter, request *http.R
 		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "not a voice"})
 		return
 	}
+	self.speakAsWAV(response, request, found, speechVoice, voiceSampleText(found), "private, max-age=3600")
+}
+
+// readPieceBytesMost bounds what one request asks to have said, which is
+// what the provider takes at once.
+const readPieceBytesMost = voice.MaximumAnswerTextLength
+
+// voiceReadView says a piece of a message, from ReadSpeechPieces, in the
+// voice the person chose, as a WAV file. The person sends the words, since
+// they read them on their screen already; it is paid for like any speech.
+func (self *graph) voiceReadView(response http.ResponseWriter, request *http.Request) {
+	_, found, ok := self.agentAttachmentPerson(response, request)
+	if !ok {
+		return
+	}
+	configuration := self.config.Current()
+	if !configuration.Agent.Voice.Enabled || configuration.Agent.VoiceProvider() == nil {
+		writeJSON(response, http.StatusForbidden, map[string]string{"error": "voice is off on this server"})
+		return
+	}
+	var asked struct {
+		AnswerText string `json:"answerText"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(response, request.Body, 4*readPieceBytesMost)).Decode(&asked); err != nil {
+		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "not a piece of a message"})
+		return
+	}
+	answerText := strings.TrimSpace(asked.AnswerText)
+	if answerText == "" || len(answerText) > readPieceBytesMost {
+		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "a piece of a message is a few sentences"})
+		return
+	}
+	self.speakAsWAV(response, request, found, speechVoiceOf(configuration, found), answerText, "no-store")
+}
+
+// speakAsWAV answers with words said in a voice, held to the person's budget
+// and counted against it.
+func (self *graph) speakAsWAV(response http.ResponseWriter, request *http.Request, found *models.Agent, speechVoice, answerText, cacheControl string) {
+	configuration := self.config.Current()
+	provider := configuration.Agent.VoiceProvider()
 	var owner *models.User
 	if err := self.database.Transaction(func(tx db.Transaction) (err error) {
 		if owner, err = tx.GetUser(found.UserID); err != nil || owner == nil {
@@ -149,7 +209,7 @@ func (self *graph) voiceSampleView(response http.ResponseWriter, request *http.R
 		SpeechVoice: speechVoice,
 	}
 	var pcm []byte
-	usage, err := voice.Speak(request.Context(), settings, voiceSampleText(found), func(piece []byte) error {
+	usage, err := voice.Speak(request.Context(), settings, answerText, func(piece []byte) error {
 		pcm = append(pcm, piece...)
 		return nil
 	})
@@ -161,7 +221,7 @@ func (self *graph) voiceSampleView(response http.ResponseWriter, request *http.R
 		return
 	}
 	response.Header().Set("Content-Type", "audio/wav")
-	response.Header().Set("Cache-Control", "private, max-age=3600")
+	response.Header().Set("Cache-Control", cacheControl)
 	_, _ = response.Write(voice.WAV(pcm))
 }
 

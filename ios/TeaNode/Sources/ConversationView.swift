@@ -50,6 +50,7 @@ struct ConversationView: View {
         framed
             .modifier(ConversationFollowing(model: model, status: status))
             .modifier(ConversationAlerts(model: model))
+            .onDisappear { model.reader.stop() }
     }
 
     /// The conversation with its bars, title and status.
@@ -241,6 +242,14 @@ struct ConversationView: View {
                     }
                     if screen == "conversation-long-message-read" {
                         model.readingText = model.transcript.lines.first(where: { $0.kind == .person })?.text
+                    }
+                    // `conversation-long-message-reading`: being read aloud, with its
+                    // banner; `conversation-long-message-menu`: the actions of a message.
+                    if let line = model.transcript.lines.first(where: { $0.kind == .person }) {
+                        if screen == "conversation-long-message-reading" { model.reader.showReading(line) }
+                        if screen == "conversation-long-message-menu" {
+                            MessageActionsPresenter.present(line: line, model: model, app: app)
+                        }
                     }
                 }
             #endif
@@ -533,6 +542,11 @@ struct ConversationBanners: View {
 
     var body: some View {
         VStack(spacing: 6) {
+            if model.reader.isReading {
+                Banner(systemImage: "speaker.wave.2", text: String(localized: "Reading aloud. Tap to stop.")) {
+                    model.reader.stop()
+                }
+            }
             if let actingAs = model.actingAs {
                 Banner(systemImage: "person.badge.key", text: String(localized: "This is \(actingAs)'s agent. What you say here reaches it as \(actingAs), and the server log says you did."))
             }
@@ -1079,6 +1093,17 @@ struct MessageActionsView: View {
                 actionRow("Copy", systemImage: "doc.on.doc") {
                     UIPasteboard.general.string = line.readableText
                     onClose(nil)
+                }
+                Divider()
+                if model.reader.isReading(line) {
+                    actionRow("Stop reading", systemImage: "stop.circle") {
+                        model.reader.stop()
+                        onClose(nil)
+                    }
+                } else {
+                    actionRow("Read aloud", systemImage: "speaker.wave.2") {
+                        onClose { model.readAloud(line) }
+                    }
                 }
                 Divider()
                 actionRow("Select", systemImage: "selection.pin.in.out") {
