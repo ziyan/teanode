@@ -7355,6 +7355,7 @@ export const zh: Catalog = {
   'shopping.checkItem': '勾选{itemDescription}',
   'shopping.editItem': '编辑商品',
   'shopping.needAgain': '再次需要',
+  'shopping.similarItems': '已在你的清单上',
   'shopping.needAgainTitle': '再次需要{itemDescription}',
   'shopping.neededAgain': '{itemDescription}已重新加入待买。',
   'shopping.storeBrand': '自有品牌',

@@ -47,7 +47,8 @@ const (
 
 	DocumentListWatchedStores = `query ($latitudeDegrees: Float, $longitudeDegrees: Float) { ListWatchedStores(latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees) { storeName storeKey placeName osmType osmId osmCategory latitudeDegrees longitudeDegrees radiusMeters distanceMeters placeId } }`
 
-	DocumentListShoppingItemPrices = `query ($shoppingItemId: String!) { ListShoppingItemPrices(shoppingItemId: $shoppingItemId) ` + shoppingPriceSelection + ` }`
+	DocumentListSimilarShoppingItems = `query ($shoppingListId: String!, $itemDescription: String!) { ListSimilarShoppingItems(shoppingListId: $shoppingListId, itemDescription: $itemDescription) ` + shoppingItemSelection + ` }`
+	DocumentListShoppingItemPrices   = `query ($shoppingItemId: String!) { ListShoppingItemPrices(shoppingItemId: $shoppingItemId) ` + shoppingPriceSelection + ` }`
 
 	DocumentListShoppingReceiptMatches = `query ($financeReceiptId: String!) { ListShoppingReceiptMatches(financeReceiptId: $financeReceiptId) { financeReceiptId merchantName purchasedOn totalAmount currencyCode shoppingReceiptLines { financeReceiptLineId lineNumber description quantity lineAmount shoppingReceiptMatches { shoppingReceiptMatch ` + shoppingReceiptMatchSelection + ` shoppingItem ` + shoppingItemSelection + ` } } stillNeededItems ` + shoppingItemSelection + ` } }`
 
@@ -390,6 +391,18 @@ func ListOpenShoppingTrips(ctx context.Context, executor Executor) ([]*models.Sh
 		return nil, err
 	}
 	return result.ListOpenShoppingTrips, nil
+}
+
+// ListSimilarShoppingItems are the items that read like what is about to be
+// added to a list, nearest first.
+func ListSimilarShoppingItems(ctx context.Context, executor Executor, shoppingListId, itemDescription string) ([]*models.ShoppingItem, error) {
+	var result struct {
+		ListSimilarShoppingItems []*models.ShoppingItem `json:"ListSimilarShoppingItems"`
+	}
+	if err := executor.Execute(ctx, DocumentListSimilarShoppingItems, map[string]any{"shoppingListId": shoppingListId, "itemDescription": itemDescription}, &result); err != nil {
+		return nil, err
+	}
+	return result.ListSimilarShoppingItems, nil
 }
 
 // ListShoppingItemPrices are an item's prices, newest first.

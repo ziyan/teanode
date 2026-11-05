@@ -73,6 +73,7 @@ func NewShoppingCommand() *cli.Command {
 				Action: runShoppingShow,
 			},
 			{Name: "item", Usage: "one item", ArgsUsage: "<item id>", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingItem},
+			{Name: "similar", Usage: "the items that read like what you are about to add, on the list and your other lists", ArgsUsage: "<list> <description>", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingSimilar},
 			{Name: "create", Usage: "make a list", ArgsUsage: "<name>", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingCreate},
 			{Name: "rename", Usage: "give a list another name", ArgsUsage: "<list> <name>", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingRename},
 			{
@@ -1004,6 +1005,40 @@ func shoppingPriceWords(price *models.ShoppingItemPrice) string {
 		words += " on " + price.ObservedOn
 	}
 	return words
+}
+
+func runShoppingSimilar(ctx context.Context, command *cli.Command) error {
+	arguments, err := shoppingArguments(command, 2, "usage: teanode shopping similar <list> <description>")
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	list, err := shoppingListNamed(ctx, connection, arguments[0])
+	if err != nil {
+		return describeError(command, err)
+	}
+	items, err := client.ListSimilarShoppingItems(ctx, connection, list.ID, strings.Join(arguments[1:], " "))
+	if err != nil {
+		return describeNotFound(command, err, "the list "+arguments[0])
+	}
+	if command.Bool("json") {
+		if items == nil {
+			items = []*models.ShoppingItem{}
+		}
+		return PrintJSON(items)
+	}
+	if len(items) == 0 {
+		_, _ = fmt.Fprintln(command.Writer, "nothing like it on your lists")
+		return nil
+	}
+	rows := make([][]string, 0, len(items))
+	for _, item := range items {
+		rows = append(rows, []string{item.ID, item.ItemDescription, item.ListName, string(item.ShoppingItemState), item.StoreName})
+	}
+	return printTable([]string{"id", "item", "list", "state", "store"}, rows)
 }
 
 func runShoppingPrices(ctx context.Context, command *cli.Command) error {

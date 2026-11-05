@@ -128,7 +128,7 @@ struct ShoppingScreen: View {
         /// `shopping-store-pictures` show those two as pictures.
         private func openDemoScreen() {
             guard DemoServer.isRequested, path.isEmpty, let screen = DemoServer.screen else { return }
-            if screen.hasPrefix("shopping-list") || screen == "shopping-item" || screen == "shopping-import" {
+            if screen.hasPrefix("shopping-list") || screen == "shopping-item" || screen == "shopping-import" || screen == "shopping-add-similar" {
                 path = [.list(ShoppingDemo.groceriesListId)]
             } else if screen.hasPrefix("shopping-store") {
                 path = [.store(ShoppingDemo.exampleMarket, listIds: [])]
@@ -631,13 +631,16 @@ struct ShoppingListScreen: View {
     }
 
     #if DEBUG
-        /// `-TeaNodeScreen shopping-item` opens the apples, `shopping-import` the import sheet.
+        /// `-TeaNodeScreen shopping-item` opens the apples, `shopping-import` the import sheet,
+        /// `shopping-add-similar` the add sheet with something typed.
         private func openDemoSheet() {
             guard DemoServer.isRequested else { return }
             if DemoServer.screen == "shopping-item" {
                 editing = model.items.first { $0.itemDescription == "Apples" }
             } else if DemoServer.screen == "shopping-import" {
                 isImporting = true
+            } else if DemoServer.screen == "shopping-add-similar" {
+                isAdding = true
             }
         }
     #endif
@@ -656,19 +659,30 @@ struct ShoppingListSheets: ViewModifier {
     @Binding var isSharing: Bool
     @Binding var isRenaming: Bool
     @Binding var newName: String
+    @State private var chosenItem: ShoppingItem?
+
+    private func openChosenItem() {
+        editing = chosenItem
+        chosenItem = nil
+    }
 
     func body(content: Content) -> some View {
         content
             .sheet(item: $editing) { item in
                 ShoppingItemSheet(
                     connection: connection, item: item, onChanged: { model.replace($0) },
-                    onRemove: { removed in await model.remove(removed) })
+                    onRemove: { removed in await model.remove(removed) },
+                    onNeedAgain: { quantity in await model.needAgain(item, quantity: quantity) })
             }
             .sheet(item: $needingAgain) { item in
                 ShoppingNeedAgainSheet(item: item) { quantity in Task { await model.needAgain(item, quantity: quantity) } }
             }
-            .sheet(isPresented: $isAdding) {
-                ShoppingAddItemSheet { entry in await model.add([entry]) }
+            // The item chosen opens once the add sheet has gone: a sheet asked
+            // for while another is still leaving does not appear.
+            .sheet(isPresented: $isAdding, onDismiss: openChosenItem) {
+                ShoppingAddItemSheet(
+                    connection: connection, listId: listId, onAdd: { entry in await model.add([entry]) },
+                    onOpen: { chosenItem = $0 })
             }
             .sheet(isPresented: $isImporting) {
                 ShoppingImportSheet(connection: connection, initialListId: listId) { Task { await model.load() } }
@@ -737,10 +751,15 @@ struct ShoppingNeedAgainSheet: View {
 }
 
 /// ShoppingAddItemSheet adds one item to a list: what it is, how many, and
-/// where to get it.
+/// where to get it. What reads like it is listed as it is typed, to go to that
+/// item instead of adding a second one.
 struct ShoppingAddItemSheet: View {
+    let connection: Connection
+    let listId: String
     /// Adds the item; true when it was added.
     let onAdd: (ShoppingItemEntry) async -> Bool
+    /// Goes to an item that already exists, in place of adding one.
+    let onOpen: (ShoppingItem) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var itemDescription = ""
     @State private var itemDetails = ""
@@ -748,6 +767,7 @@ struct ShoppingAddItemSheet: View {
     @State private var quantityUnit = ""
     @State private var storeName = ""
     @State private var isWorking = false
+    @State private var similarItems: [ShoppingItem] = []
 
     var body: some View {
         NavigationStack {
@@ -755,6 +775,9 @@ struct ShoppingAddItemSheet: View {
                 Section {
                     TextField("What", text: $itemDescription)
                     TextField("Details, such as a brand or a size", text: $itemDetails, axis: .vertical)
+                }
+                if !similarItems.isEmpty {
+                    similarSection
                 }
                 Section("How many") {
                     Stepper(value: $quantity, in: 1...999, step: 1) {
@@ -782,8 +805,58 @@ struct ShoppingAddItemSheet: View {
                         .disabled(isWorking || itemDescription.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .task(id: itemDescription) { await readSimilarItems() }
+            #if DEBUG
+                .onAppear {
+                    // `-TeaNodeScreen shopping-add-similar` has something typed.
+                    if DemoServer.isRequested, DemoServer.screen == "shopping-add-similar" { itemDescription = "Paper" }
+                }
+            #endif
         }
         .presentationDetents([.large])
+    }
+
+    private var similarSection: some View {
+        Section("Already on your lists") {
+            ForEach(similarItems) { item in
+                Button {
+                    onOpen(item)
+                    dismiss()
+                } label: {
+                    HStack(spacing: 12) {
+                        ShoppingPictureView(item: item, size: 44)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: item.itemDescription)
+                            Text(verbatim: ShoppingWords.similarItemDetail(item, onListId: listId))
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .multilineTextAlignment(.leading)
+                        Spacer(minLength: 8)
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+                }
+                .shoppingWordsButton()
+            }
+        }
+    }
+
+    /// Reads what is like the words once typing pauses: a new word cancels
+    /// the wait. Only a help to whoever is adding, so a failure says nothing
+    /// and leaves what was shown.
+    private func readSimilarItems() async {
+        let typed = itemDescription.trimmingCharacters(in: .whitespaces)
+        guard typed.count >= 2 else {
+            similarItems = []
+            return
+        }
+        do {
+            try await Task.sleep(for: .milliseconds(250))
+            similarItems = try await connection.similarShoppingItems(shoppingListId: listId, itemDescription: typed)
+        } catch {
+            return
+        }
     }
 
     private func add() {

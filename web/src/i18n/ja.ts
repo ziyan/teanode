@@ -7655,6 +7655,7 @@ export const ja: Catalog = {
   'shopping.checkItem': '{itemDescription}にチェックを入れる',
   'shopping.editItem': '品物を編集',
   'shopping.needAgain': 'また必要',
+  'shopping.similarItems': 'すでにリストにあります',
   'shopping.needAgainTitle': '{itemDescription}がまた必要',
   'shopping.neededAgain': '{itemDescription}を買うものに戻しました。',
   'shopping.storeBrand': '店のブランド',

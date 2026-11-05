@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { ErrorMessage, formatMoney } from '../../components/common'
@@ -12,8 +12,10 @@ import {
   findShoppingItemPicture,
   listShoppingItemPrices,
   listShoppingStores,
+  listSimilarShoppingItems,
   recordShoppingItemPrice,
   removeShoppingItems,
+  setShoppingItemNeed,
   setShoppingItemOutOfStock,
   setShoppingItemPicture,
   ShoppingItem,
@@ -28,6 +30,7 @@ import {
   MAXIMUM_UPLOAD_BYTES,
   plainNumber,
   priceNumber,
+  quantityText,
   uploadAgentAttachment,
 } from './shoppingItems'
 import { ShoppingPicture } from './shoppingParts'
@@ -36,18 +39,23 @@ import { ShoppingPicture } from './shoppingParts'
 // how many are needed and what one costs. Changing one also shows its picture
 // (to find another or to upload one's own) and what it has cost over time.
 // Saving changes only what was edited; a changed price is remembered as a new
-// price seen today rather than written over the old ones.
+// price seen today rather than written over the old ones. While an item is
+// being made, what reads like it is listed under its description, to go to
+// that item instead of adding a second one.
 
 export type ShoppingItemDialogTarget = { shoppingListId: string; shoppingItem: null } | { shoppingItem: ShoppingItem }
 
 export function ShoppingItemDialog({
   target,
   onSaved,
+  onOpenItem,
   onClose,
 }: {
   target: ShoppingItemDialogTarget
   // Called after anything was changed, so that the page can read again.
   onSaved: () => void
+  // Goes to an item that already exists, in place of adding one.
+  onOpenItem?: (shoppingItem: ShoppingItem) => void
   onClose: () => void
 }) {
   const { t } = useTranslation()
@@ -168,6 +176,20 @@ export function ShoppingItemDialog({
       otherAction={
         item ? (
           <>
+            {item.shoppingItemState === 'not_needed' ? (
+              <button
+                type="button"
+                disabled={isBusy || !isPositiveNumber(neededQuantity)}
+                onClick={() =>
+                  void run(async () => {
+                    await setShoppingItemNeed(item.id, true, neededQuantity.trim())
+                    return t('shopping.neededAgain', { itemDescription: item.itemDescription })
+                  })
+                }
+              >
+                {t('shopping.needAgain')}
+              </button>
+            ) : null}
             <button
               type="button"
               disabled={isBusy}
@@ -227,6 +249,13 @@ export function ShoppingItemDialog({
         {t('shopping.itemDescription')}
         <input value={itemDescription} maxLength={200} onChange={(event) => setItemDescription(event.target.value)} />
       </label>
+      {'shoppingListId' in target && onOpenItem ? (
+        <SimilarItems
+          shoppingListId={target.shoppingListId}
+          itemDescription={itemDescription}
+          onOpenItem={onOpenItem}
+        />
+      ) : null}
       <label>
         {t('shopping.itemDetails')}
         <textarea
@@ -290,6 +319,73 @@ export function ShoppingItemDialog({
 
       {item ? <PriceHistory shoppingItemId={item.id} /> : null}
     </FormDialog>
+  )
+}
+
+// How long typing has to pause before what it says is looked up.
+const SIMILAR_ITEMS_WAIT_MS = 250
+const SIMILAR_ITEMS_LEAST_CHARACTERS = 2
+
+// SimilarItems lists what reads like the description being typed, from this
+// list and the person's others. Only a help to whoever is adding: when it
+// cannot be read there is nothing to say, and the item can still be added.
+function SimilarItems({
+  shoppingListId,
+  itemDescription,
+  onOpenItem,
+}: {
+  shoppingListId: string
+  itemDescription: string
+  onOpenItem: (shoppingItem: ShoppingItem) => void
+}) {
+  const { t } = useTranslation()
+  const [askedDescription, setAskedDescription] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setAskedDescription(itemDescription.trim()), SIMILAR_ITEMS_WAIT_MS)
+    return () => clearTimeout(timer)
+  }, [itemDescription])
+  const similar = useQuery(
+    () =>
+      askedDescription.length < SIMILAR_ITEMS_LEAST_CHARACTERS
+        ? Promise.resolve([])
+        : listSimilarShoppingItems(shoppingListId, askedDescription),
+    [shoppingListId, askedDescription],
+    { refresh: false },
+  )
+  const items = similar.data ?? []
+  if (items.length === 0) return null
+
+  function itemLine(shoppingItem: ShoppingItem): string {
+    const stateText =
+      shoppingItem.shoppingItemState === 'needed'
+        ? `${t('shopping.tabToBuy')} ${quantityText(shoppingItem)}`
+        : shoppingItem.shoppingItemState === 'in_cart'
+          ? t('shopping.tabInCart')
+          : t('shopping.tabNotNeeded')
+    return [
+      shoppingItem.shoppingListId === shoppingListId ? '' : shoppingItem.listName,
+      stateText,
+      shoppingItem.storeName,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  }
+
+  return (
+    <section className="shopping-similar" aria-label={t('shopping.similarItems')}>
+      <h4>{t('shopping.similarItems')}</h4>
+      <ul>
+        {items.map((shoppingItem) => (
+          <li key={shoppingItem.id}>
+            <ShoppingPicture item={shoppingItem} />
+            <button type="button" onClick={() => onOpenItem(shoppingItem)}>
+              <strong>{shoppingItem.itemDescription}</strong>
+              <span className="muted">{itemLine(shoppingItem)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 

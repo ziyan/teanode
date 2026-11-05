@@ -42,6 +42,7 @@ func TestShoppingParity(test *testing.T) {
 		"ListShoppingReceiptMatches":     {[]string{"receipt"}, []string{"receipt"}},
 		"ListShoppingStoreItems":         {[]string{"store"}, []string{"store"}},
 		"ListShoppingStores":             {[]string{"stores"}, []string{"stores"}},
+		"ListSimilarShoppingItems":       {[]string{"similar"}, []string{"similar_items"}},
 		"ListWatchedStores":              {[]string{"watched-stores"}, []string{"watched_stores"}},
 		"PreviewShoppingImport":          {[]string{"import-preview"}, []string{"import_preview"}},
 		"AddShoppingItemFromReceiptLine": {[]string{"add-from-receipt"}, []string{"add_from_receipt"}},
@@ -175,6 +176,7 @@ func TestShoppingParity(test *testing.T) {
 		"isNeeded.tool":                "the actions are need and not_needed",
 
 		"ListShoppingStoreItems.storeName.command":                  "the store is the argument of the subcommand",
+		"ListSimilarShoppingItems.itemDescription.command":          "the description is an argument of the subcommand",
 		"SetShoppingStoreReminder.storeName.command":                "the store is the argument of the subcommand",
 		"StartShopping.shoppingListIds.command":                     "the lists are the arguments of the subcommand",
 		"CreateShoppingList.listName.command":                       "the name is the argument of the subcommand",

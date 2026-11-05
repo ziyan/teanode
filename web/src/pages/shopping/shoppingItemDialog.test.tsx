@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 import { graphql } from '../../api'
 import { uploadFiles } from '../../upload'
-import type { ShoppingItemPrice } from './shoppingApi'
+import type { ShoppingItem, ShoppingItemPrice } from './shoppingApi'
 import { ShoppingItemDialog, pricePoints } from './shoppingItemDialog'
 import { callsOf, lastOf, renderInProviders, shoppingItem } from './shoppingTestSupport'
 
@@ -34,8 +34,9 @@ function price(overrides: Partial<ShoppingItemPrice> = {}): ShoppingItemPrice {
   }
 }
 
-function serve(prices: ShoppingItemPrice[] = []) {
+function serve(prices: ShoppingItemPrice[] = [], similarItems: ShoppingItem[] = []) {
   vi.mocked(graphql).mockImplementation((async (document: string) => {
+    if (document.includes('ListSimilarShoppingItems')) return { ListSimilarShoppingItems: similarItems }
     if (document.includes('ListShoppingItemPrices')) return { ListShoppingItemPrices: prices }
     if (document.includes('ListShoppingStores')) {
       return {
@@ -54,6 +55,69 @@ function open(item = shoppingItem()) {
   renderInProviders(<ShoppingItemDialog target={{ shoppingItem: item }} onSaved={onSaved} onClose={onClose} />)
   return { onSaved, onClose }
 }
+
+function openToAdd() {
+  const onOpenItem = vi.fn()
+  renderInProviders(
+    <ShoppingItemDialog
+      target={{ shoppingListId: 'list-1', shoppingItem: null }}
+      onSaved={vi.fn()}
+      onOpenItem={onOpenItem}
+      onClose={vi.fn()}
+    />,
+  )
+  return { onOpenItem }
+}
+
+it('lists what reads like the item being added, and goes to the one chosen', async () => {
+  const onThisList = shoppingItem({ id: 'item-2', itemDescription: 'Whole milk', neededQuantity: '2' })
+  const onAnother = shoppingItem({
+    id: 'item-3',
+    shoppingListId: 'list-2',
+    listName: 'Warehouse',
+    itemDescription: 'Oat milk',
+    shoppingItemState: 'not_needed',
+  })
+  serve([], [onThisList, onAnother])
+  const { onOpenItem } = openToAdd()
+
+  fireEvent.change(screen.getByLabelText('Description'), { target: { value: ' milk ' } })
+
+  const found = await screen.findByRole('region', { name: 'Already on your lists' })
+  expect(callsOf('ListSimilarShoppingItems')[0][1]).toEqual({ shoppingListId: 'list-1', itemDescription: 'milk' })
+  expect(within(found).getByText(/To buy 2/)).toBeTruthy()
+  expect(within(found).getByText(/Warehouse · Not needed/)).toBeTruthy()
+
+  fireEvent.click(within(found).getByRole('button', { name: /Oat milk/ }))
+  expect(onOpenItem).toHaveBeenCalledWith(onAnother)
+})
+
+it('asks nothing until there is something to compare, and says nothing when nothing is alike', async () => {
+  serve()
+  openToAdd()
+
+  fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'm' } })
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  expect(callsOf('ListSimilarShoppingItems')).toHaveLength(0)
+
+  fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'milk' } })
+  await waitFor(() => expect(callsOf('ListSimilarShoppingItems')).toHaveLength(1))
+  expect(screen.queryByRole('region', { name: 'Already on your lists' })).toBeNull()
+})
+
+it('needs a bought item again from its dialog, with the count in the dialog', async () => {
+  serve()
+  const { onClose } = open(shoppingItem({ shoppingItemState: 'not_needed', neededQuantity: '2' }))
+
+  fireEvent.click(screen.getByRole('button', { name: 'Need again' }))
+
+  await waitFor(() => expect(onClose).toHaveBeenCalled())
+  expect(callsOf('SetShoppingItemNeed')[0][1]).toEqual({
+    shoppingItemId: 'item-1',
+    isNeeded: true,
+    neededQuantity: '2',
+  })
+})
 
 it('saves only what was changed, and remembers a changed price as a new price', async () => {
   serve()

@@ -196,7 +196,7 @@ final class ShoppingListModel {
     func replace(_ changed: ShoppingItem) {
         if let index = items.firstIndex(where: { $0.id == changed.id }) {
             items[index] = changed
-        } else {
+        } else if changed.shoppingListId == listId {
             items.append(changed)
         }
     }

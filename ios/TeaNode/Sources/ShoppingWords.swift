@@ -64,6 +64,13 @@ enum ShoppingWords {
         return parts.joined(separator: " · ")
     }
 
+    /// The line under an item offered instead of adding one: the list it is on
+    /// when that is another, then what the list says of it.
+    static func similarItemDetail(_ item: ShoppingItem, onListId listId: String) -> String {
+        let detail = listItemDetail(item)
+        return item.shoppingListId == listId ? detail : [item.listName, detail].joined(separator: " · ")
+    }
+
     /// The line under an item on the store screen: its list when several are
     /// shown; then who put it in the cart, or who found it out of stock, or
     /// else its details.

@@ -170,6 +170,47 @@ func TestAddingAShoppingItemTwiceMergesIt(t *testing.T) {
 // Checking off at the store puts an item in the cart; finishing the trip
 // buys only what that shopper put in the cart; a trip left open long ago is
 // finished by the next one on its list.
+func TestSimilarItemsComeFromEveryListThePersonReaches(t *testing.T) {
+	t.Parallel()
+	world := newShoppingWorld(t)
+	world.run(t, func(tx db.Transaction) {
+		groceries := mustCreateShoppingList(t, tx, world.owner.ID, "Groceries")
+		warehouse := mustCreateShoppingList(t, tx, world.owner.ID, "Warehouse")
+		samsList := mustCreateShoppingList(t, tx, world.sam.ID, "Sam's own")
+		onGroceries := mustAddShoppingItems(t, tx, world.owner.ID, groceries.ID,
+			&models.ShoppingItem{ItemDescription: "Whole milk"},
+			&models.ShoppingItem{ItemDescription: "Bread"},
+			&models.ShoppingItem{ItemDescription: "Oat milk"},
+		)
+		mustAddShoppingItems(t, tx, world.owner.ID, warehouse.ID, &models.ShoppingItem{ItemDescription: "Milk"})
+		mustAddShoppingItems(t, tx, world.sam.ID, samsList.ID, &models.ShoppingItem{ItemDescription: "Milk"})
+		// Bought and put away, and still the one to need again.
+		if _, err := tx.SetShoppingItemNeed(world.owner.ID, onGroceries[0].ID, false, ""); err != nil {
+			t.Fatalf("SetShoppingItemNeed: %s", err)
+		}
+
+		similar, err := tx.ListSimilarShoppingItems(world.owner.ID, groceries.ID, "milk")
+		if err != nil {
+			t.Fatalf("ListSimilarShoppingItems: %s", err)
+		}
+		found := []string{}
+		for _, item := range similar {
+			found = append(found, item.ListName+": "+item.ItemDescription)
+		}
+		want := []string{"Warehouse: Milk", "Groceries: Oat milk", "Groceries: Whole milk"}
+		if !slices.Equal(found, want) {
+			t.Errorf("the same words first, then this list's, still to buy before bought, and nobody else's: %v, want %v", found, want)
+		}
+
+		if nothing, err := tx.ListSimilarShoppingItems(world.owner.ID, groceries.ID, "batteries"); err != nil || len(nothing) != 0 {
+			t.Errorf("nothing reads like it: %v, %v", nothing, err)
+		}
+		if _, err := tx.ListSimilarShoppingItems(world.lee.ID, groceries.ID, "milk"); err == nil {
+			t.Errorf("a list out of reach answers nothing")
+		}
+	})
+}
+
 func TestAShoppingTripBuysWhatItsShopperPutInTheCart(t *testing.T) {
 	t.Parallel()
 	world := newShoppingWorld(t)

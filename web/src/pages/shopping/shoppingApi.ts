@@ -216,6 +216,10 @@ const LIST_SHOPPING_STORE_ITEMS = `query ($storeName: String!, $shoppingListIds:
   }
 }`
 
+const LIST_SIMILAR_SHOPPING_ITEMS = `query ($shoppingListId: String!, $itemDescription: String!) {
+  ListSimilarShoppingItems(shoppingListId: $shoppingListId, itemDescription: $itemDescription) { ${SHOPPING_ITEM_FIELDS} }
+}`
+
 const LIST_SHOPPING_ITEM_PRICES = `query ($shoppingItemId: String!) {
   ListShoppingItemPrices(shoppingItemId: $shoppingItemId) {
     id shoppingItemId storeName unitPriceAmount currencyCode quantity quantityUnit observedOn priceSource
@@ -311,6 +315,21 @@ export async function listShoppingStoreItems(
     shoppingLists: view.shoppingLists ?? [],
     shoppingTrips: view.shoppingTrips ?? [],
   }
+}
+
+// The items that read like what is about to be added, on this list and the
+// person's others, nearest first.
+export async function listSimilarShoppingItems(
+  shoppingListId: string,
+  itemDescription: string,
+  signal?: AbortSignal,
+): Promise<ShoppingItem[]> {
+  const answer = await graphql<{ ListSimilarShoppingItems: ShoppingItem[] | null }>(
+    LIST_SIMILAR_SHOPPING_ITEMS,
+    { shoppingListId, itemDescription },
+    signal,
+  )
+  return answer.ListSimilarShoppingItems ?? []
 }
 
 export async function listShoppingItemPrices(

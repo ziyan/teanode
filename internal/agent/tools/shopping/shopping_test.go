@@ -120,7 +120,7 @@ func TestTheRiskOfEachAction(t *testing.T) {
 		t.Errorf("the tool needs shopping:use and nothing else: %v", merged.Permissions)
 	}
 	risks := map[string]tools.Risk{}
-	for _, action := range []string{"lists", "list", "item", "shares", "stores", "store", "trips", "watched_stores", "prices", "receipt", "import_preview"} {
+	for _, action := range []string{"lists", "list", "item", "similar_items", "shares", "stores", "store", "trips", "watched_stores", "prices", "receipt", "import_preview"} {
 		risks[action] = tools.RiskRead
 	}
 	for _, action := range []string{
@@ -196,6 +196,8 @@ func TestArgumentsAreCheckedBeforeAnythingIsSent(t *testing.T) {
 		{"shares", `{}`, "list_id"},
 		{"store", `{}`, "store_name"},
 		{"prices", `{}`, "item_id"},
+		{"similar_items", `{"item_description":"Milk"}`, "list_id"},
+		{"similar_items", `{"list_id":"list-1","item_description":" "}`, "item_description"},
 		{"receipt", `{}`, "receipt_id"},
 		{"import_preview", `{}`, "import_text or attachment_ids"},
 		{"create_list", `{"list_name":"  "}`, "list_name"},

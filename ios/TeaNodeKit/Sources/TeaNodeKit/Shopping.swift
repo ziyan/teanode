@@ -1123,6 +1123,11 @@ extension Documents {
     public static let openShoppingTrips = """
         query { ListOpenShoppingTrips { \(shoppingTripFields) } }
         """
+    public static let similarShoppingItems = """
+        query ($shoppingListId: String!, $itemDescription: String!) {
+          ListSimilarShoppingItems(shoppingListId: $shoppingListId, itemDescription: $itemDescription) { \(shoppingItemFields) }
+        }
+        """
     public static let shoppingItemPrices = """
         query ($shoppingItemId: String!) {
           ListShoppingItemPrices(shoppingItemId: $shoppingItemId) {
@@ -1274,7 +1279,7 @@ extension Documents {
     public static let shoppingDocuments: [String: String] = [
         "shoppingLists": shoppingLists, "shoppingList": shoppingList, "shoppingItem": shoppingItem,
         "shoppingListShares": shoppingListShares, "shoppingStores": shoppingStores, "shoppingStoreItems": shoppingStoreItems,
-        "openShoppingTrips": openShoppingTrips, "shoppingItemPrices": shoppingItemPrices,
+        "openShoppingTrips": openShoppingTrips, "shoppingItemPrices": shoppingItemPrices, "similarShoppingItems": similarShoppingItems,
         "shoppingReceiptMatches": shoppingReceiptMatches, "previewShoppingImport": previewShoppingImport,
         "createShoppingList": createShoppingList, "renameShoppingList": renameShoppingList, "deleteShoppingList": deleteShoppingList,
         "shareShoppingList": shareShoppingList, "unshareShoppingList": unshareShoppingList,
@@ -1389,6 +1394,16 @@ extension Connection {
         return try await execute(
             Documents.shoppingItemPrices, variables: ["shoppingItemId": .string(shoppingItemId)], as: Answer.self
         ).ListShoppingItemPrices
+    }
+
+    /// The items that read like what is about to be added, on this list and
+    /// the person's others, nearest first.
+    public func similarShoppingItems(shoppingListId: String, itemDescription: String) async throws -> [ShoppingItem] {
+        struct Answer: Decodable, Sendable { let ListSimilarShoppingItems: [ShoppingItem] }
+        return try await execute(
+            Documents.similarShoppingItems,
+            variables: ["shoppingListId": .string(shoppingListId), "itemDescription": .string(itemDescription)], as: Answer.self
+        ).ListSimilarShoppingItems
     }
 
     /// What one of the person's receipts did to their lists.

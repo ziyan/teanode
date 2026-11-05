@@ -70,7 +70,7 @@ final class ShoppingTests: XCTestCase {
             "shoppingLists": "ListShoppingLists", "shoppingList": "GetShoppingList", "shoppingItem": "GetShoppingItem",
             "shoppingListShares": "ListShoppingListShares", "shoppingStores": "ListShoppingStores",
             "shoppingStoreItems": "ListShoppingStoreItems", "openShoppingTrips": "ListOpenShoppingTrips",
-            "shoppingItemPrices": "ListShoppingItemPrices", "shoppingReceiptMatches": "ListShoppingReceiptMatches",
+            "shoppingItemPrices": "ListShoppingItemPrices", "similarShoppingItems": "ListSimilarShoppingItems", "shoppingReceiptMatches": "ListShoppingReceiptMatches",
             "previewShoppingImport": "PreviewShoppingImport", "createShoppingList": "CreateShoppingList",
             "renameShoppingList": "RenameShoppingList", "deleteShoppingList": "DeleteShoppingList", "shareShoppingList": "ShareShoppingList",
             "unshareShoppingList": "UnshareShoppingList", "setShoppingListReminder": "SetShoppingListReminder",
