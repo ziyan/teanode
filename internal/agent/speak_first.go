@@ -386,7 +386,7 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 // person asked for says so in place of "nobody asked": told both, the
 // model believed the first and declined a check they had just asked for.
 func speakFirstMessage(owner *models.User, now time.Time, what string, prepared map[string]string) string {
-	who := " Nobody asked for this turn: you are starting the conversation, and what you write is the first thing " + personName(owner) + " reads when they look at the chat. They have their dashboard open."
+	who := " Nobody asked for this turn: you are starting the conversation, and what you write is the first thing " + personName(owner) + " reads when they look at the chat. They may not be looking now: it reaches them as a notification, so the first line has to say why it is worth opening."
 	if prepared[preparedIsAsked] == "true" {
 		who = " " + personName(owner) + " asked for this just now, with the button on their dashboard or by saying so. Whatever was said earlier, or is in the note on the earlier conversation, about waiting until they ask or only going on if they engage, this is them asking: begin now. They are looking at the chat."
 	}
