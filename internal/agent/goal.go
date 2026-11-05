@@ -487,7 +487,7 @@ func goalCheckIn(conversation *models.AgentConversation, agent *models.Agent, ow
 		"It is "+now.In(Location(owner)).Format("Monday 2 January, 15:04")+" where they are.",
 		"",
 		"Work toward the goal with the tools you have: look, act, schedule what should happen on a clock, start background work for anything long. "+unattendedLine(agent)+" Read back what happened in this conversation before starting again on something already done.",
-		"Whatever you write in the goal tool is for the person to read: plain words, no ids, no tool names. End by calling the goal tool exactly once. met, with text saying how it ended, as soon as what the goal is for is done. note, with status saying where it stands in one line and the minutes until your next turn, and activity only when something happened worth their reading later. wait, with status saying what you need from them in a sentence they can answer; that, and only that, is said to them in their main conversation.",
+		"Whatever you write in the goal tool is for the person to read: plain words, no ids, no tool names. End by calling the goal tool exactly once. met, with text saying how it ended and what came of it, as soon as what the goal is for is done. note, with status saying where it stands in one line and the minutes until your next turn, and activity only when something happened worth their reading later. wait, with status saying what you need from them in a sentence they can answer. What you say with met and with wait, and only that, is said to them in their main conversation.",
 	)
 	return strings.Join(lines, "\n")
 }

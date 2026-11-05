@@ -3915,6 +3915,22 @@
         }
       }
     },
+    "A goal is done": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標を達成しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有个目标完成了"
+          }
+        }
+      }
+    },
     "A goal needs you": {
       "localizations": {
         "ja": {

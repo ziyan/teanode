@@ -397,12 +397,12 @@ func scheduleCheckIn(schedule *models.AgentSchedule, agent *models.Agent, owner 
 // goalScheduleLines is what a schedule's turn is told when the schedule
 // belongs to a goal: its runs are the goal's turns, the goal takes none of
 // its own, and nobody reads this conversation, so the turn ends with the
-// goal tool like any goal turn, and only a wait reaches the person.
+// goal tool like any goal turn, and only a wait or a met reaches the person.
 func goalScheduleLines(goal *models.AgentConversation) string {
 	return strings.Join([]string{
 		"This schedule belongs to the goal " + strconv.Quote(goalTitleOf(goal)) + ", which you keep at in the background: " + goal.Goal,
 		"Its runs are the goal's turns; the goal takes none of its own while it has a schedule, and the person does not read this conversation.",
-		"End by calling the goal tool exactly once: note, with status saying where it stands in one line and activity only when something happened worth their reading later; wait, with status saying what you need from them, when they have to act; met, when what the goal is for is done.",
+		"End by calling the goal tool exactly once: note, with status saying where it stands in one line and activity only when something happened worth their reading later; wait, with status saying what you need from them, when they have to act; met, with text saying what came of it, when what the goal is for is done. Only a wait and a met are said to them.",
 	}, "\n")
 }
 

@@ -3937,6 +3937,7 @@ export const ja: Catalog = {
   'goals.activity': 'アクティビティ',
   'goals.noActivity': 'まだ何も起きていません。',
   'agentDrawer.goalNeedsYouTurn': '目標があなたを必要としています',
+  'agentDrawer.goalDoneTurn': '目標を達成しました',
   'agentDrawer.herdrQuestionTurn': 'コーディングセッションからの質問',
   'agentDrawer.herdrSessionTurn': 'コーディングセッションが終わりました',
   'agentDrawer.restartResumeTurn': '再起動のあと、続きを進めています',

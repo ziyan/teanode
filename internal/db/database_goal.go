@@ -35,7 +35,7 @@ type GoalOperation interface {
 
 	// ListAgentGoalsToSurface is every goal, across agents, that waits on
 	// its person and has not yet been said in their main conversation.
-	ListAgentGoalsToSurface(limit int) ([]*models.AgentConversation, error)
+	ListAgentGoalsToSurface(metSince time.Time, limit int) ([]*models.AgentConversation, error)
 }
 
 type agentGoalActivityModel struct {
@@ -102,13 +102,13 @@ func (self *transaction) ListAgentGoalsWithoutNextTurn(limit int) ([]*models.Age
 	return conversations, nil
 }
 
-func (self *transaction) ListAgentGoalsToSurface(limit int) ([]*models.AgentConversation, error) {
+func (self *transaction) ListAgentGoalsToSurface(metSince time.Time, limit int) ([]*models.AgentConversation, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	var found []agentConversationModel
-	if err := self.tx.Where(`"kind" = ? AND "goal_state" = ? AND "goal_surfaced_at" IS NULL AND "goal" <> ''`,
-		string(models.AgentConversationGoal), string(models.GoalWaiting)).
+	if err := self.tx.Where(`"kind" = ? AND "goal_surfaced_at" IS NULL AND "goal" <> '' AND ("goal_state" = ? OR ("goal_state" = ? AND "modified_at" >= ?))`,
+		string(models.AgentConversationGoal), string(models.GoalWaiting), string(models.GoalMet), metSince).
 		Order(`"modified_at" ASC`).Limit(limit).Find(&found).Error; err != nil {
 		return nil, err
 	}

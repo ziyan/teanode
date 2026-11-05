@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -300,5 +301,146 @@ func TestAGoalsScheduleEdges(t *testing.T) {
 	world.worker.Wait()
 	if after := len(messagesOf(t, world, goal.ID)); after != before {
 		t.Fatalf("the schedule of a goal that is done ran: %d messages, were %d", after, before)
+	}
+}
+
+// A goal a turn finished with nobody there is said in the main conversation
+// once, with what came of it; another sweep says nothing more. The person
+// hears it there, rather than having to open the Goals tab to find out.
+func TestABackgroundGoalFinishedAloneIsSaidOnce(t *testing.T) {
+	world, goal := startBackgroundGoal(t, []string{goalMetRound, answerRound})
+	defer world.close()
+
+	world.runGoalTurn(t, 1)
+	for range 2 {
+		if err := world.worker.Tick(context.Background()); err != nil {
+			t.Fatalf("Tick: %s", err)
+		}
+		world.worker.Wait()
+	}
+	main := messagesOf(t, world, world.conversation.ID)
+	if len(main) != 2 || !strings.HasPrefix(main[0].Content, models.GoalDoneMarker+" "+goal.ID+" Invoices filed") || main[1].Role != "assistant" ||
+		!strings.Contains(main[1].Content, "Invoices filed") || !strings.Contains(main[1].Content, "all five are filed") {
+		t.Fatalf("the main conversation should hear once how the goal ended: %+v", main)
+	}
+	if !models.IsOwnTurn(main[0].Content) {
+		t.Fatalf("what the person hears must not read as their own words: %q", main[0].Content)
+	}
+	if done, _ := readGoal(t, world, goal.ID); done.GoalState != models.GoalMet || done.GoalSurfacedAt == nil {
+		t.Fatalf("the goal is met, said: %+v", done)
+	}
+}
+
+// The person marking a goal done needs no telling.
+func TestAGoalThePersonMarkedDoneIsNotSaid(t *testing.T) {
+	world, goal := startBackgroundGoal(t, []string{answerRound})
+	defer world.close()
+
+	if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+		return world.worker.SetGoalState(tx, world.found, goal.ID, models.GoalMet)
+	}); err != nil {
+		t.Fatalf("SetGoalState: %s", err)
+	}
+	if err := world.worker.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	world.worker.Wait()
+	if main := messagesOf(t, world, world.conversation.ID); len(main) != 0 {
+		t.Fatalf("the person who said it is done was told it is done: %+v", main)
+	}
+}
+
+// A goal taken up again and finished alone is news again, though the first
+// ending was said.
+func TestAGoalReopenedAndFinishedAloneIsSaidAgain(t *testing.T) {
+	world, goal := startBackgroundGoal(t, []string{goalMetRound, answerRound, goalMetRound, answerRound})
+	defer world.close()
+
+	world.runGoalTurn(t, 1)
+	if err := world.worker.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	world.worker.Wait()
+	if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+		return world.worker.SetGoalState(tx, world.found, goal.ID, models.GoalWorking)
+	}); err != nil {
+		t.Fatalf("SetGoalState: %s", err)
+	}
+	world.runGoalTurn(t, 2)
+	if err := world.worker.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	world.worker.Wait()
+	if main := messagesOf(t, world, world.conversation.ID); len(main) != 4 {
+		t.Fatalf("both endings should be said: %+v", main)
+	}
+}
+
+// A goal finished before this was said, or long enough ago to be old news,
+// stays on the Goals tab: a first start must not announce the past.
+func TestAGoalMetLongAgoIsNotSaid(t *testing.T) {
+	world, goal := startBackgroundGoal(t, []string{answerRound})
+	defer world.close()
+
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.UpdateAgentConversation(goal.ID, func(conversation *models.AgentConversation) error {
+			conversation.GoalState, conversation.GoalNextAt, conversation.GoalSurfacedAt = models.GoalMet, nil, nil
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateAgentConversation: %s", err)
+		}
+		found, err := tx.ListAgentGoalsToSurface(time.Now().Add(time.Hour), 10)
+		if err != nil || len(found) != 0 {
+			t.Fatalf("a goal met before the limit was listed: %+v %v", found, err)
+		}
+		found, err = tx.ListAgentGoalsToSurface(time.Now().Add(-time.Hour), 10)
+		if err != nil || len(found) != 1 || found[0].ID != goal.ID {
+			t.Fatalf("a goal met within the limit was not listed: %+v %v", found, err)
+		}
+	})
+}
+
+// A real turn is sent what is going on for the person, after the history,
+// read once however many rounds the turn takes.
+func TestATurnIsToldWhereThePersonIsAndWhatIsOpen(t *testing.T) {
+	world, _ := startBackgroundGoal(t, []string{goalProgressRound, answerRound})
+	defer world.close()
+
+	arrivedAt := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	world.operations.answers = map[string]string{
+		"GetLocation": `{"GetLocation":{"latestPoint":null,"pause":null,"openVisit":{"arrivedAt":"` + arrivedAt + `","place":{"placeName":"","isNamedByPerson":false,"placeLabel":"","latitudeDegrees":40,"longitudeDegrees":-75,"radiusMeters":100,"osmName":"Pine Hollow Cabins","addressText":"12 Ridge Road"}}}}`,
+	}
+	dueOn := time.Now().AddDate(0, 0, 3).Format(time.DateOnly)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, _, err := tx.UpsertAgentFollowUp(&models.AgentFollowUp{
+			AgentID: world.found.ID, FollowUpKind: models.AgentFollowUpBill, FollowUpKey: "water", FollowUpTitle: "Water bill",
+			Amount: "84.00", CurrencyCode: "USD", DueOn: dueOn, FollowUpState: models.AgentFollowUpOpen, SourceItemIDs: []string{},
+		}); err != nil {
+			t.Fatalf("UpsertAgentFollowUp: %s", err)
+		}
+	})
+
+	world.runGoalTurn(t, 1)
+	if len(*world.requests) < 2 {
+		t.Fatalf("the turn should have taken two rounds: %d", len(*world.requests))
+	}
+	for round, request := range *world.requests {
+		raw, err := json.Marshal(request)
+		if err != nil {
+			t.Fatalf("Marshal: %s", err)
+		}
+		body := string(raw)
+		if !strings.Contains(body, "right_now") || !strings.Contains(body, "At Pine Hollow Cabins (12 Ridge Road) since") || !strings.Contains(body, "bill: Water bill, 84.00 USD, due") {
+			t.Fatalf("round %d was not told what is going on: %s", round, body)
+		}
+	}
+	reads := 0
+	for _, document := range world.operations.documents {
+		if strings.Contains(document, "GetLocation") {
+			reads++
+		}
+	}
+	if reads != 1 {
+		t.Fatalf("the location should be read once a turn, not %d times", reads)
 	}
 }

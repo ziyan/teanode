@@ -3981,6 +3981,7 @@ export const en = {
   'goals.activity': 'Activity',
   'goals.noActivity': 'Nothing has happened yet.',
   'agentDrawer.goalNeedsYouTurn': 'A goal needs you',
+  'agentDrawer.goalDoneTurn': 'A goal is done',
   'agentDrawer.herdrQuestionTurn': 'A coding session asks you',
   'agentDrawer.herdrSessionTurn': 'A coding session finished',
   'agentDrawer.restartResumeTurn': 'Carrying on after a restart',

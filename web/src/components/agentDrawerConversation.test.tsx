@@ -1,11 +1,14 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { APIError, graphql } from '../api'
 import { TranslationProvider } from '../i18n/i18n'
 import {
+  CheckInLine,
   QuestionCard,
   cardsOf,
+  checkInOriginOf,
   citationsIn,
   readConversationSnapshot,
   sharedFilesOf,
@@ -151,6 +154,25 @@ it('draws a kept take-over request as a card that opens the Browser page', () =>
   fireEvent.click(screen.getByRole('button', { name: 'Take over the tab' }))
   expect(onTakeOver).toHaveBeenCalledTimes(1)
   expect(screen.getByRole('button', { name: 'Chat about it' })).toBeTruthy()
+})
+
+// A goal finished with nobody there is said in the main conversation under a
+// line of its own, which opens the goal, and is never drawn as the person's
+// own words.
+it('draws a finished goal as a line that opens the goal', () => {
+  const text = '[goal done] goal-1 Invoices filed\nNobody asked for this.'
+  const origin = checkInOriginOf(text)
+  expect(origin).toBe('goalDone')
+  if (!origin) throw new Error('not an own turn')
+  render(
+    <TranslationProvider>
+      <MemoryRouter>
+        <CheckInLine text={text} origin={origin} />
+      </MemoryRouter>
+    </TranslationProvider>,
+  )
+  expect(screen.getByText('A goal is done')).toBeTruthy()
+  expect(screen.getByRole('link').getAttribute('href')).toBe('/settings/agent/goals?goal=goal-1')
 })
 
 // A turn the person wrote into while it ran replays after the transcript was

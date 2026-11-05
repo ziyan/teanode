@@ -263,16 +263,19 @@ alert mutes its turns made, which the tools note in `agent_goal_artifact`. A
 goal's turn may start background work; it wakes the goal's conversation, never
 the main one.
 
-The main conversation hears from a goal **only when it needs the person**: when
-a turn says `wait`, or the goal stalls after twenty-four turns alone. The
+The main conversation hears from a goal **when it needs the person, and when
+it is done without them**: when a turn says `wait`, the goal stalls after
+twenty-four turns alone, or a turn nobody was present for says `met`. The
 worker's sweep (`surfaceGoals`) then writes one exchange there, as an alert is
-written: a line opening with `models.GoalNeedsYouMarker` (`[goal needs you]`),
-the goal's id and title, and the agent's sentence saying what it needs; it
-publishes the events so an open drawer shows it, and the chat-app relay
-forwards it. It writes once, recorded in `goal_surfaced_at`, and waits while a
-turn runs in the main conversation. Progress, failures and meeting the goal are
-not said there; they are in its activity. The mail a waiting goal sends is
-kept.
+written: a line opening with `models.GoalNeedsYouMarker` (`[goal needs you]`)
+or `models.GoalDoneMarker` (`[goal done]`), the goal's id and title, and the
+agent's sentence saying what it needs or what came of it; it publishes the
+events so an open drawer shows it, and the chat-app relay forwards it. It
+writes once, recorded in `goal_surfaced_at`, and waits while a turn runs in the
+main conversation. A goal the person marks done, or that is met in front of
+them, is not said, and one met more than a day ago is no longer news. Progress
+and failures are not said there; they are in its activity. The mail a waiting
+goal sends is kept.
 
 The prompt of a turn in the main conversation lists the goals waiting on the
 person, with their ids, so an answer given there is passed on with `tell`: the

@@ -326,6 +326,13 @@ const FILE_SENT_SURFACE = 'file_sent'
 const GOAL_NEEDS_YOU_MARKER = '[goal needs you]'
 const GOAL_NEEDS_YOU_SURFACE = 'goal_needs_you'
 
+// The marker a goal kept in the background is written under in the main
+// conversation when a turn nobody watched finished it, followed by the
+// goal's id, which is models.GoalDoneMarker on the server. Its surface opens
+// the drawer as an alert's does.
+const GOAL_DONE_MARKER = '[goal done]'
+const GOAL_DONE_SURFACE = 'goal_done'
+
 // The marker a question from one of the person's herdr coding sessions is
 // written under in the main conversation, followed by the computer, the
 // pane and the question's fingerprint, which is models.HerdrQuestionMarker
@@ -374,6 +381,7 @@ const REPLY_QUOTE_CHARACTERS = 1000
 type CheckInOrigin =
   | 'goal'
   | 'goalNeedsYou'
+  | 'goalDone'
   | 'background'
   | 'backgroundWork'
   | 'schedule'
@@ -394,9 +402,10 @@ const ANSWERING_MARKER = '[answering]'
 const APPROVED_MARKER = '[approved]'
 const DECLINED_MARKER = '[declined]'
 
-function checkInOriginOf(text: string): CheckInOrigin | null {
+export function checkInOriginOf(text: string): CheckInOrigin | null {
   if (text.startsWith(GOAL_CHECK_IN_MARKER)) return 'goal'
   if (text.startsWith(GOAL_NEEDS_YOU_MARKER)) return 'goalNeedsYou'
+  if (text.startsWith(GOAL_DONE_MARKER)) return 'goalDone'
   if (text.startsWith(BACKGROUND_COMMAND_MARKER)) return 'background'
   if (text.startsWith(BACKGROUND_WORK_MARKER)) return 'backgroundWork'
   if (text.startsWith(SCHEDULE_MARKER)) return 'schedule'
@@ -2602,6 +2611,7 @@ function goalStateKey(state: GoalState): `agentDrawer.goal.${GoalState}` {
 const CHECK_IN_LABEL = {
   goal: 'agentDrawer.goal.checkIn',
   goalNeedsYou: 'agentDrawer.goalNeedsYouTurn',
+  goalDone: 'agentDrawer.goalDoneTurn',
   background: 'agentDrawer.backgroundEnded',
   backgroundWork: 'agentDrawer.backgroundWorkEnded',
   schedule: 'agentDrawer.scheduleTurn',
@@ -2629,10 +2639,11 @@ function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
   return <TargetIcon size={12} />
 }
 
-// goalIdOf is the goal a "[goal needs you]" line names: the id right after
-// the marker.
+// goalIdOf is the goal a "[goal needs you]" or "[goal done]" line names: the
+// id right after the marker.
 function goalIdOf(text: string): string {
-  return text.slice(GOAL_NEEDS_YOU_MARKER.length).trim().split(/\s+/)[0] ?? ''
+  const marker = text.startsWith(GOAL_DONE_MARKER) ? GOAL_DONE_MARKER : GOAL_NEEDS_YOU_MARKER
+  return text.slice(marker.length).trim().split(/\s+/)[0] ?? ''
 }
 
 // herdrQuestionOf is the question a "[herdr question]" line names: the
@@ -2891,7 +2902,7 @@ function HerdrQuestionLine({
 // line rather than a bubble; pressing it shows the words the turn was
 // given, because a person watching the agent wants to know what it was told
 // as much as what it did.
-function CheckInLine({ at, text, origin }: { at?: string; text: string; origin: CheckInOrigin }) {
+export function CheckInLine({ at, text, origin }: { at?: string; text: string; origin: CheckInOrigin }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   return (
@@ -2906,7 +2917,7 @@ function CheckInLine({ at, text, origin }: { at?: string; text: string; origin: 
         {t(CHECK_IN_LABEL[origin])}
         {at ? ` · ${clockTime(at)}` : ''}
       </button>
-      {origin === 'goalNeedsYou' && goalIdOf(text) ? (
+      {(origin === 'goalNeedsYou' || origin === 'goalDone') && goalIdOf(text) ? (
         <Link className="button-quiet agent-checkin-goal" to={`/settings/agent/goals?goal=${goalIdOf(text)}`}>
           {t('agentDrawer.openGoal')}
         </Link>
@@ -3778,6 +3789,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             note === ALERT_SURFACE ||
             note === FILE_SENT_SURFACE ||
             note === GOAL_NEEDS_YOU_SURFACE ||
+            note === GOAL_DONE_SURFACE ||
             note === HERDR_QUESTION_SURFACE
           )
         )

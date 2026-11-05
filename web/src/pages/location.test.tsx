@@ -2039,7 +2039,7 @@ it('offers the Travel tab on a person who shares their history', async () => {
   renderAt('/location?person=person-b&tab=travel')
 
   expect(await screen.findByText('Travel of Person B')).toBeTruthy()
-  expect(calls('ListTravelTotals(')[0][1]).toMatchObject({ userId: 'person-b' })
+  await waitFor(() => expect(calls('ListTravelTotals(')[0]?.[1]).toMatchObject({ userId: 'person-b' }))
 })
 
 it('forgets one of the own visits after asking, and reads the visits and trips again', async () => {

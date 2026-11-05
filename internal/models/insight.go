@@ -364,7 +364,7 @@ const ScheduleMarker = "[schedule]"
 // OwnTurnMarkers are the markers of every turn the agent takes on its own
 // in a person's conversation: what anything looking for the person's own
 // last word must pass over.
-var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker, AlertMarker, GoalNeedsYouMarker, HerdrQuestionMarker, HerdrSessionMarker, RestartResumeMarker, FileSentMarker}
+var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker, AlertMarker, GoalNeedsYouMarker, GoalDoneMarker, HerdrQuestionMarker, HerdrSessionMarker, RestartResumeMarker, FileSentMarker}
 
 // FileSentMarker begins the line a file sent to the person's main chat is
 // posted under: by a program over MCP, from another conversation, or by a
@@ -407,6 +407,11 @@ const AlertMarker = "[alert]"
 // then its title. The agent's sentence saying what it needs comes after,
 // as an alert's words do. It is the only thing a goal says there.
 const GoalNeedsYouMarker = "[goal needs you]"
+
+// GoalDoneMarker begins the line a goal is written under in the main
+// conversation when a turn nobody was present for finished it, followed by
+// the goal's id and title, as GoalNeedsYouMarker is.
+const GoalDoneMarker = "[goal done]"
 
 // HerdrQuestionMarker began the line a question from one of the person's
 // herdr coding sessions was written under in the main conversation, followed

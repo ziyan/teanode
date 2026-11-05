@@ -43,6 +43,7 @@ const (
 // conversation, and, unless the goal is empty, a goal of its own that is
 // already due.
 type goalWorld struct {
+	operations   *fakeOperations
 	database     db.Database
 	worker       *agent.Agent
 	owner        *models.User
@@ -81,7 +82,7 @@ func startGoalWorld(t *testing.T, script []string, goal string) *goalWorld {
 	operations := &fakeOperations{permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailRead}})}
 	worker.SetOperationsFactory(func(context.Context, *models.User) (agent.Operations, error) { return operations, nil })
 
-	world := &goalWorld{database: database, worker: worker, sender: sender, requests: requests}
+	world := &goalWorld{database: database, worker: worker, sender: sender, requests: requests, operations: operations}
 	world.close = func() {
 		worker.Stop()
 		model.Close()

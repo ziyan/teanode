@@ -93,6 +93,14 @@ One system message after the history, rebuilt each round:
   granted to the agent, as the calendar tool does, and is left out of a chat
   with other people. The event text is fenced, because an invitation is
   somebody else's words.
+- `<right_now>`: where the person is, and the bills, deadlines, parcels and
+  events the agent follows for them that fall in the next two weeks or are
+  late, read once per turn (`right_now.go`). The place is read through the same
+  operation as the location tool, so nothing is said without the permission or
+  while recording is paused, and an open visit the latest position contradicts
+  is treated as over. What does not fit is counted. It is left out of a chat
+  with other people, and fenced, because a place's name and a bill's title are
+  somebody else's words.
 - `<budget>` — only once four fifths of whichever cap binds first is gone.
 - `<now>` — always, in the person's zone.
 

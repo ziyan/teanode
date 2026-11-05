@@ -414,7 +414,7 @@ struct ConversationView: View {
             case .tool:
                 return isShowingToolCalls || isMCPRecord || !AgentFile.of(toolResult: line.text).isEmpty
             case .checkIn:
-                return isShowingWorkingNotes || line.detail == CheckInOrigin.goalNeedsYou.rawValue
+                return isShowingWorkingNotes || line.detail == CheckInOrigin.goalNeedsYou.rawValue || line.detail == CheckInOrigin.goalDone.rawValue
             case .note:
                 return isShowingWorkingNotes || !TranscriptPreference.workingNoteKinds.contains(line.detail)
             default:
@@ -1965,6 +1965,7 @@ struct CheckInLine: View {
         switch CheckInOrigin(rawValue: marker) {
         case .goal: String(localized: "Goal check-in")
         case .goalNeedsYou: String(localized: "A goal needs you")
+        case .goalDone: String(localized: "A goal is done")
         case .background: String(localized: "Background command ended")
         case .backgroundWork: String(localized: "Background work finished")
         case .schedule: String(localized: "Scheduled turn")
@@ -1982,7 +1983,7 @@ struct CheckInLine: View {
 
     static func symbol(of marker: String) -> String {
         switch CheckInOrigin(rawValue: marker) {
-        case .goal, .goalNeedsYou: "target"
+        case .goal, .goalNeedsYou, .goalDone: "target"
         case .background, .herdrSession: "terminal"
         case .herdrQuestion, .alert: "exclamationmark.triangle"
         case .backgroundWork: "list.bullet"

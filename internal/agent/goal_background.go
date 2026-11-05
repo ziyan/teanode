@@ -30,13 +30,21 @@ const (
 	// it is for and what done looks like, a paragraph.
 	goalDescriptionCharacters = 2000
 
-	// goalSurfaceBatch is how many waiting goals one sweep says in the
+	// goalSurfaceBatch is how many goals one sweep says in the
 	// main conversation, across every agent.
 	goalSurfaceBatch = 20
 
 	// goalSurface is what a goal's call for the person is said on: the
 	// note of the events the drawer hears it by, as an alert's is.
 	goalSurface = "goal_needs_you"
+
+	// goalDoneSurface is the same for a goal that was finished.
+	goalDoneSurface = "goal_done"
+
+	// goalDoneToldWithin is how long after it was finished a goal is still
+	// news. A server that was down for a week says nothing of last week's,
+	// and a goal finished before finishing was said is never said.
+	goalDoneToldWithin = 24 * time.Hour
 )
 
 // ErrTooManyGoals is starting a goal while the operator's limit of goals
@@ -157,9 +165,13 @@ func (self *Agent) SetGoalState(tx db.Transaction, agent *models.Agent, conversa
 		if after, err = tx.UpdateAgentConversation(goal.ID, func(conversation *models.AgentConversation) error {
 			conversation.GoalState = goalState
 			conversation.GoalNextAt = nil
+			now := time.Now()
 			if goalState == models.GoalWorking {
-				now := time.Now()
 				conversation.GoalNextAt = &now
+			}
+			// They said it is done, so there is nothing to tell them.
+			if goalState == models.GoalMet {
+				conversation.GoalSurfacedAt = &now
 			}
 			return nil
 		}); err != nil {
@@ -209,13 +221,14 @@ func addGoalActivity(tx db.Transaction, goal *models.AgentConversation, activity
 }
 
 // surfaceGoals says, in each person's main conversation, the goals that
-// came to need them and have not been said there yet. A goal whose main
+// came to need them, or that a turn they were not at finished, and have not
+// been said there yet. A goal whose main
 // conversation has a turn running is left for the next sweep, a few
 // seconds later.
 func (self *Agent) surfaceGoals(ctx context.Context) {
 	var waiting []*models.AgentConversation
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		waiting, err = tx.ListAgentGoalsToSurface(goalSurfaceBatch)
+		waiting, err = tx.ListAgentGoalsToSurface(time.Now().Add(-goalDoneToldWithin), goalSurfaceBatch)
 		return err
 	}); err != nil {
 		log.Warningf("cannot list the goals that need their person: %s", err)
@@ -231,15 +244,18 @@ func (self *Agent) surfaceGoals(ctx context.Context) {
 	}
 }
 
-// surfaceGoal writes one goal's call for the person into their main
-// conversation, as an alert is written: a marker line naming the goal,
-// then the agent's sentence saying what it needs. Under the lock turns
+// surfaceGoal writes one goal's call for the person, or how it ended, into
+// their main conversation, as an alert is written: a marker line naming the
+// goal, then the agent's sentence saying what it needs or what came of it. Under the lock turns
 // start with, and in the transaction that marks the goal said, so it is
 // said once.
 func (self *Agent) surfaceGoal(ctx context.Context, goal *models.AgentConversation) error {
 	var main *models.AgentConversation
 	var said *models.AgentMessage
-	checkIn, need := goalNeedsYouCheckIn(goal), goalNeed(goal)
+	checkIn, need, surface := goalNeedsYouCheckIn(goal), goalNeed(goal), goalSurface
+	if goal.GoalState == models.GoalMet {
+		checkIn, need, surface = goalDoneCheckIn(goal), goalOutcome(goal), goalDoneSurface
+	}
 	var mainId string
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		main, err = scheduleConversation(tx, goal.AgentID, "")
@@ -256,7 +272,7 @@ func (self *Agent) surfaceGoal(ctx context.Context, goal *models.AgentConversati
 			isToSay := false
 			now := time.Now()
 			if _, err := tx.UpdateAgentConversation(goal.ID, func(conversation *models.AgentConversation) error {
-				if conversation.GoalState != models.GoalWaiting || conversation.GoalSurfacedAt != nil {
+				if conversation.GoalState != goal.GoalState || conversation.GoalSurfacedAt != nil {
 					return nil
 				}
 				isToSay, conversation.GoalSurfacedAt = true, &now
@@ -281,10 +297,10 @@ func (self *Agent) surfaceGoal(ctx context.Context, goal *models.AgentConversati
 	if said == nil {
 		return nil
 	}
-	log.Noticef("goal %q told its person it needs them", goal.ID)
+	log.Noticef("goal %q told its person it is %s", goal.ID, goal.GoalState)
 	runId, at := security.NewULID(), time.Now()
 	for sequence, event := range []Event{
-		{Kind: EventAsked, Text: checkIn, Note: goalSurface},
+		{Kind: EventAsked, Text: checkIn, Note: surface},
 		{Kind: EventMessage, Text: need},
 		{Kind: EventDone},
 	} {
@@ -312,6 +328,25 @@ func goalNeed(goal *models.AgentConversation) string {
 		need = "It needs you before it can go on."
 	}
 	return "**" + goalTitleOf(goal) + "**: " + need
+}
+
+// goalDoneCheckIn is the marker line a finished goal is written under in the
+// main conversation, the way a goal's call for the person is.
+func goalDoneCheckIn(goal *models.AgentConversation) string {
+	return models.GoalDoneMarker + " " + goal.ID + " " + goalTitleOf(goal) + "\n" +
+		"Nobody asked for this just now: you finished a goal you kept at in the background and told them, unasked. What follows is your own work and your own words, and you stand behind it as you would any answer. " +
+		"If they want more done on it, the goal tool's reopen and goal_id " + goal.ID + " takes it up again; the goal tool's show has its whole log."
+}
+
+// goalOutcome is what the agent says in the main conversation about a goal
+// it finished: the goal by its title, and how it ended, as the turn that
+// finished it wrote it.
+func goalOutcome(goal *models.AgentConversation) string {
+	outcome := strings.TrimSpace(goal.GoalNote)
+	if outcome == "" {
+		outcome = "It is done."
+	}
+	return "**" + goalTitleOf(goal) + "**: " + outcome
 }
 
 // goalTitleOf is what a goal is called: its title, or the start of its

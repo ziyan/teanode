@@ -283,6 +283,7 @@ public struct CodingQuestion: Hashable, Sendable {
 public enum CheckInOrigin: String, CaseIterable, Sendable {
     case goal = "[goal check-in]"
     case goalNeedsYou = "[goal needs you]"
+    case goalDone = "[goal done]"
     case background = "[background command]"
     case backgroundWork = "[background work]"
     case schedule = "[schedule]"
