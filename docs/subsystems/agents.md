@@ -239,7 +239,7 @@ for every mailbox the agent sorts (`AgentMailbox.alerts`, absent meaning
 on). The night and the day's most are theirs to change (`alertQuietStart`,
 `alertQuietEnd`, `alertDailyMost`; the same time at both ends is no night), as
 are the day and time of the look around.
-"Don't tell me about these" is a **mute**, a row of `agent_alert_mute`
+Saying an alert was theirs, or that it is handled, settles that alert and mutes nothing: the next decision reads their answer. "Don't tell me about these" is a **mute**, a row of `agent_alert_mute`
 naming a sender's address, a domain (and its subdomains), a subject key, or
 a kind: `burst`, or a category of the sorting such as `notification`. The
 candidate step and the alert job both read the mutes, and what matches is

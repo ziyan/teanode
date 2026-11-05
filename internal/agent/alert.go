@@ -997,7 +997,7 @@ func alertSubjectKey(subjectKey string, candidate *models.AgentAlertCandidate) s
 // back, so that an answer to it is understood as one. The alert's id is in
 // it, so that "not these" said about an earlier alert mutes that one.
 func alertCheckIn(owner *models.User, alertId string) string {
-	return models.AlertMarker + " Nobody asked for this: " + personName(owner) + "'s mail showed something they should know, and you told them, unasked (alert " + alertId + "). What you said follows. If they answer, it is about this; if they say they do not want to hear about things like it, mute it with agent_profile's mute_alert and alert_id " + alertId + ", and if they want no alerts at all, no_alerts."
+	return models.AlertMarker + " Nobody asked for this: " + personName(owner) + "'s mail showed something they should know, and you told them, unasked (alert " + alertId + "). What you said follows. If they answer, it is about this. When they say it was them, or that it is handled, that settles this one alert and mutes nothing: thank them and remember it, and stop a follow-up it was about with agent_profile's stop_follow_up. Only if they say they do not want to hear about things like it, mute it with agent_profile's mute_alert and alert_id " + alertId + ", leaving mute_scope out so that the mute reaches what this alert was about and no further; a mute of a kind silences that kind from everybody, so use it only when they ask for that in words. If they want no alerts at all, no_alerts."
 }
 
 // deliverAlert says one alert in the main conversation and records it, in

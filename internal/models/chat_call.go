@@ -81,11 +81,6 @@ type ChatCallMember struct {
 	LeftAt    *time.Time        `json:"leftAt,omitempty"`
 	IsVideoOn bool              `json:"isVideoOn,omitempty"`
 	IsMuted   bool              `json:"isMuted,omitempty"`
-
-	// TranscriptionConsent is "yes" for everybody while the call is
-	// transcribed, as everybody on it is, and empty otherwise. Nobody
-	// answers it any more; it stays for app builds that still read it.
-	TranscriptionConsent string `json:"transcriptionConsent,omitempty"`
 }
 
 // IsGoing says the call has not ended.

@@ -389,3 +389,63 @@ func TestADeliveryNoticeClosesTheParcelByAnyOfItsNumbers(t *testing.T) {
 		}
 	})
 }
+
+// A late notice has another day in it, so another key. When the person
+// stopped the bill, the notice joins that bill and nothing starts again;
+// another payee's bill is not touched by it.
+func TestALateNoticeDoesNotBringBackABillThePersonStopped(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		created, err := tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true})
+		if err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		bill := func(payee, key, dueOn, mailId string) agent.FollowUpFinding {
+			return agent.FollowUpFinding{FollowUp: models.AgentFollowUp{
+				AgentID: created.ID, FollowUpKind: models.AgentFollowUpBill, FollowUpKey: key, FollowUpTitle: payee,
+				Payee: payee, DueOn: dueOn, FollowUpState: models.AgentFollowUpOpen, SourceItemIDs: []string{mailId},
+			}}
+		}
+		if err := agent.StoreFollowUps(tx, []agent.FollowUpFinding{bill("Example Water", "bill:water:1", "2030-03-01", "first")}); err != nil {
+			t.Fatalf("StoreFollowUps: %s", err)
+		}
+		open, err := tx.ListOpenAgentFollowUps(created.ID)
+		if err != nil || len(open) != 1 {
+			t.Fatalf("open = %v, %v", open, err)
+		}
+		if _, err := tx.UpdateAgentFollowUp(open[0].ID, func(locked *models.AgentFollowUp) error {
+			locked.FollowUpState = models.AgentFollowUpStopped
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateAgentFollowUp: %s", err)
+		}
+		if err := agent.StoreFollowUps(tx, []agent.FollowUpFinding{
+			bill(" example water ", "bill:water:2", "2030-03-20", "late"),
+			bill("Example Power", "bill:power:1", "2030-03-20", "other"),
+		}); err != nil {
+			t.Fatalf("StoreFollowUps: %s", err)
+		}
+		open, err = tx.ListOpenAgentFollowUps(created.ID)
+		if err != nil {
+			t.Fatalf("ListOpenAgentFollowUps: %s", err)
+		}
+		if len(open) != 1 || open[0].Payee != "Example Power" {
+			t.Fatalf("open = %+v", open)
+		}
+		all, err := tx.ListAgentFollowUps(created.ID, 10)
+		if err != nil {
+			t.Fatalf("ListAgentFollowUps: %s", err)
+		}
+		for _, followUp := range all {
+			if followUp.FollowUpState == models.AgentFollowUpStopped && len(followUp.SourceItemIDs) != 2 {
+				t.Fatalf("the late notice did not join the stopped bill: %+v", followUp)
+			}
+		}
+	})
+}

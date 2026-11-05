@@ -379,3 +379,17 @@ func TestMuteOfAFollowUpAlertOffersItsKind(t *testing.T) {
 		t.Fatalf("a mail alert whose wording starts with a kind is still muted by its sender: %s", scope)
 	}
 }
+
+// A kind nothing can match is refused, since it would show as muted and
+// silence nothing, and the person's own categories are kinds too.
+func TestAKindToMuteIsAKindThereIs(t *testing.T) {
+	agent := &models.Agent{Categories: []models.AgentCategory{{Name: "School"}}}
+	for kind, isKind := range map[string]bool{
+		"burst": true, "budget": true, "follow_up": true, "nearby": true, "bill": true, "notification": true, "school": true,
+		"notifications": false, "emails": false,
+	} {
+		if got := isAlertKind(agent, kind); got != isKind {
+			t.Errorf("%s: %v, want %v", kind, got, isKind)
+		}
+	}
+}

@@ -251,6 +251,21 @@ func normalizedSubjectKey(subjectKey string) string {
 	return strings.Join(strings.Fields(strings.ToLower(subjectKey)), " ")
 }
 
+// isAlertKind says a word names a kind a mute can match: what the candidates
+// are made of, or a category the sorting can give, the agent's own included.
+func isAlertKind(agent *models.Agent, kind string) bool {
+	switch kind {
+	case models.AlertKindBurst, models.AlertKindBudget, models.AlertKindFollowUp, models.AlertKindNearby:
+		return true
+	}
+	if models.AgentFollowUpKind(kind).IsValid() || slices.Contains(models.AgentCategories, kind) {
+		return true
+	}
+	return slices.ContainsFunc(agent.Categories, func(category models.AgentCategory) bool {
+		return strings.EqualFold(strings.TrimSpace(category.Name), kind)
+	})
+}
+
 // NormalizeAlertMute checks a scope and puts its target in the form it is
 // matched in: an address or a domain in lower case, a subject key as the
 // alerts keep them, a kind as a word. The kinds are burst, budget,
@@ -580,6 +595,9 @@ func MuteAlert(tx db.Transaction, agent *models.Agent, alertId string, muteScope
 		normalized, err := NormalizeAlertMute(muteScope, target)
 		if err != nil {
 			return nil, err
+		}
+		if muteScope == models.AlertMuteKind && !isAlertKind(agent, normalized) {
+			return nil, fmt.Errorf("%q is not a kind of alert, so muting it would silence nothing: burst, budget, follow_up, bill, parcel, deadline, event, nearby, or a category of the sorting such as notification", normalized)
 		}
 		mute, err := tx.CreateAgentAlertMute(&models.AgentAlertMute{AgentID: agent.ID, MuteScope: muteScope, MuteTarget: normalized, AlertID: alertId})
 		if err != nil {

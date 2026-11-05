@@ -172,6 +172,8 @@ func (self *Agent) runExtract(ctx context.Context, run *Run) error {
 		"Zone":       Location(run.Owner).String(),
 		"Sender":     strings.TrimSpace(mail.From),
 		"Message":    strings.TrimSpace(message.Render()),
+		"ComingUp":   self.comingUpForRun(ctx, run, time.Now()),
+		"Remembered": rememberedBlock(self.recalledFacts(ctx, run, message.From+" "+message.Subject)),
 	})
 	if err != nil {
 		return err
@@ -421,6 +423,19 @@ func StoreFollowUps(tx db.Transaction, findings []FollowUpFinding) error {
 	for _, finding := range findings {
 		followUp := finding.FollowUp
 		if !finding.Resolves {
+			stopped, err := stoppedBillOf(tx, &followUp, now)
+			if err != nil {
+				return err
+			}
+			if stopped != nil {
+				if _, err := tx.UpdateAgentFollowUp(stopped.ID, func(locked *models.AgentFollowUp) error {
+					locked.SourceItemIDs = append(locked.SourceItemIDs, followUp.SourceItemIDs...)
+					return nil
+				}); err != nil {
+					return err
+				}
+				continue
+			}
 			if _, _, err := tx.UpsertAgentFollowUp(&followUp); err != nil {
 				return err
 			}
@@ -459,6 +474,37 @@ func StoreFollowUps(tx db.Transaction, findings []FollowUpFinding) error {
 		}
 	}
 	return nil
+}
+
+// stoppedBillRecently is how long a person's stopping a bill speaks for what
+// the same payee sends next, and stoppedBillsRead how many of the newest
+// follow-ups are read for one.
+const (
+	stoppedBillRecently = 45 * 24 * time.Hour
+	stoppedBillsRead    = 200
+)
+
+// stoppedBillOf is the bill the person recently stopped from the same payee,
+// when followUp is a new bill from them. A bill's key has its day in it, so a
+// late notice with another day would otherwise be a new bill, told about
+// after the person said it was dealt with.
+func stoppedBillOf(tx db.Transaction, followUp *models.AgentFollowUp, now time.Time) (*models.AgentFollowUp, error) {
+	payee := strings.ToLower(strings.TrimSpace(followUp.Payee))
+	if followUp.FollowUpKind != models.AgentFollowUpBill || payee == "" {
+		return nil, nil
+	}
+	recent, err := tx.ListAgentFollowUps(followUp.AgentID, stoppedBillsRead)
+	if err != nil {
+		return nil, err
+	}
+	for _, candidate := range recent {
+		if candidate.FollowUpKind == models.AgentFollowUpBill && candidate.FollowUpState == models.AgentFollowUpStopped &&
+			candidate.FollowUpKey != followUp.FollowUpKey && now.Sub(candidate.UpdatedAt) < stoppedBillRecently &&
+			strings.ToLower(strings.TrimSpace(candidate.Payee)) == payee {
+			return candidate, nil
+		}
+	}
+	return nil, nil
 }
 
 // noteParcelDelivered writes the alert candidate that a parcel arrived and
