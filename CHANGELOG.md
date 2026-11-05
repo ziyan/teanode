@@ -6,6 +6,24 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.220.0] - 2026-11-05
+
+### Added
+
+- A few days before a trip on your calendar, your agent offers the forecast, the drive, what is still open from the booking, and things to do there. Once per trip, and `teanode agent speak-first --reason trip` asks for it. (#731)
+- Your agent keeps your calendar in mind in every conversation without being asked. It is left out of chats with other people. (#731)
+
+### Removed
+
+- `transcriptionConsent` on a call's members, which nobody has answered since calls stopped asking. (#731)
+
+### Fixed
+
+- A booking confirmation by mail is now offered for your calendar. (#731)
+- Cancelling a held reply in conversation teaches the next reply, and a fact you tell your agent to forget stays forgotten. (#731)
+- Telling your agent an alert was yours no longer mutes that kind of alert, and a late notice no longer brings back a bill you stopped. (#731)
+- Alerts, mail sorting and watches check what is on your calendar and what your agent remembers before calling a charge or a sign-in unexpected, and an alert you answered is not raised again. (#731)
+
 ## [0.219.0] - 2026-11-05
 
 ### Added
