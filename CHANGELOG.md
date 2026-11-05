@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.221.0] - 2026-11-05
+
+### Added
+
+- Your agent now knows where you are and which bills, deadlines and parcels are near, in every conversation, without being told. (#733)
+- When a goal finishes while you are away, your agent tells you how it ended in your main chat. (#733)
+
+### Fixed
+
+- `teanode agent conversation show` no longer prints the agent's own instructions as if you had said them. (#733)
+
 ## [0.220.1] - 2026-11-05
 
 ### Fixed
