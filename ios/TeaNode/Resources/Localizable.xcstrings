@@ -5023,6 +5023,22 @@
         }
       }
     },
+    "Open TestFlight": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TestFlightを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 TestFlight"
+          }
+        }
+      }
+    },
     "Open a coding session": {
       "localizations": {
         "ja": {
@@ -30697,6 +30713,22 @@
         }
       }
     },
+    "Open the App Store": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Storeを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 App Store"
+          }
+        }
+      }
+    },
     "Open the conversation": {
       "localizations": {
         "ja": {
@@ -46704,6 +46736,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "接下来"
+          }
+        }
+      }
+    },
+    "Update available": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートがあります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有可用更新"
           }
         }
       }
@@ -82746,6 +82794,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "符号"
+          }
+        }
+      }
+    },
+    "TeaNode %@ is ready to install.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode %@ をインストールできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode %@ 可以安装了。"
           }
         }
       }

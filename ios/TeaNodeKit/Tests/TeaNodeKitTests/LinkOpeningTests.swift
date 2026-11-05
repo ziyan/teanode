@@ -25,6 +25,10 @@ final class LinkOpeningTests: XCTestCase {
         }
     }
 
+    func testAnAppsPageOpensTheAppStore() throws {
+        XCTAssertEqual(try way("https://apps.apple.com/app/id1"), .system)
+    }
+
     func testAppleMapsOpensTheMapsApp() throws {
         XCTAssertEqual(try way("https://maps.apple.com/?daddr=1%20Example%20Road&dirflg=d"), .system)
         XCTAssertEqual(try way("https://maps.apple/p/example"), .system)

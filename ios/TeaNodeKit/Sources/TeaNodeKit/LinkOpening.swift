@@ -12,8 +12,9 @@ public enum LinkOpening {
     }
 
     /// Hosts whose pages belong to an app of the system. Directions, and a
-    /// place shared from Maps, open the Maps app.
-    private static let systemHosts: Set<String> = ["maps.apple.com", "maps.apple"]
+    /// place shared from Maps, open the Maps app, and an app's page opens
+    /// the App Store.
+    private static let systemHosts: Set<String> = ["maps.apple.com", "maps.apple", "apps.apple.com"]
 
     /// Where this app's own universal links are: teanode.com/app/*, which iOS
     /// opens in the app when it is installed.

@@ -294,6 +294,10 @@ jobs:
           shoot chats-light light large -TeaNodeDemo -TeaNodeTab agent
           shoot chats-dark dark large -TeaNodeDemo -TeaNodeTab agent
           shoot chats-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab agent
+          shoot chats-app-update-light light large -TeaNodeDemo -TeaNodeTab agent -TeaNodeScreen app-update
+          shoot chats-app-update-dark dark large -TeaNodeDemo -TeaNodeTab agent -TeaNodeScreen app-update
+          shoot chats-app-update-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab agent -TeaNodeScreen app-update
+          shoot settings-app-update-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen app-update
           shoot mail-light light large -TeaNodeDemo -TeaNodeTab mail
           shoot mail-dark dark large -TeaNodeDemo -TeaNodeTab mail
           shoot mail-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab mail

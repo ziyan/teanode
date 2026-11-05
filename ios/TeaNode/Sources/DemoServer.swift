@@ -206,6 +206,8 @@
                 answer = Self.goals
             } else if query.contains("GetSession") {
                 answer = Self.session
+            } else if query.contains("GetAppUpdate") {
+                answer = Self.screen == "app-update" ? Self.appUpdate : #"{"data":{"GetAppUpdate":null}}"#
             } else {
                 answer = #"{"data":{}}"#
             }
@@ -505,6 +507,9 @@
         /// could not be backed up and `photos-backup-refused-files` the list of them; the
         /// engine takes its invented counts from
         /// this name (PhotoBackupEngine.applyDemo), so no server is asked.
+        /// A build newer than any the screenshots run on.
+        static let appUpdate = #"{"data":{"GetAppUpdate":{"updateChannel":"testflight","version":"99.0.0","buildNumber":"1234","installUrl":"itms-beta://beta.itunes.apple.com/v1/app/1"}}}"#
+
         static var screen: String? {
             let arguments = ProcessInfo.processInfo.arguments
             guard let index = arguments.firstIndex(of: "-TeaNodeScreen"), index + 1 < arguments.count else { return nil }

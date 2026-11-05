@@ -1,0 +1,53 @@
+name: iPhone update channel
+
+# Keeps a small public file saying which build testers can install, which the
+# server reads for the app (internal/appupdate): Apple gives an app no way to
+# ask, and only App Store Connect knows when a build has passed review. The
+# file holds a version, a build number and the link TestFlight opens.
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-update-channel
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    env:
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      GH_TOKEN: ${{ github.token }}
+      TAG: ios-update-channel
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Read the newest build testers can install
+        env:
+          KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          export APP_STORE_CONNECT_KEY_PATH="$RUNNER_TEMP/key.p8"
+          printf '%s' "$KEY" > "$APP_STORE_CONNECT_KEY_PATH"
+          python3 .github/scripts/ios-update-channel.py > testflight.json
+          rm "$APP_STORE_CONNECT_KEY_PATH"
+          cat testflight.json
+
+      # A prerelease, so that GitHub's latest release stays the server's: the
+      # server reads that one to find its own upgrades.
+      - name: Publish it
+        run: |
+          if [ "$(cat testflight.json)" = "{}" ]; then
+            echo "no build is with testers"
+            exit 0
+          fi
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --prerelease --latest=false \
+              --title "iPhone update channel" \
+              --notes "What the server reads to tell the app which build testers can install."
+          fi
+          gh release upload "$TAG" testflight.json --clobber

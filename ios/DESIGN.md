@@ -167,6 +167,12 @@ its pull request is opened.
   swipe from the left edge. A row's swipe actions are for the obvious things;
   whatever they do not hold goes in the long-press menu.
 
+- A newer app is offered at the top of Chats, on the cards' surface: what can
+  be installed, the button that opens where it comes from (TestFlight or the
+  App Store, whichever this copy came from) and Not now, which is kept for that
+  update and no other. Settings goes on offering it under Version, after Not
+  now too, so the person can always get to it.
+
 ## Navigation
 
 - The app is a `TabView` (`.tabViewStyle(.sidebarAdaptable)`) of icons only:

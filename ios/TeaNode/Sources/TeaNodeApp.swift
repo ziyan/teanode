@@ -125,6 +125,12 @@ struct ConversationsList: View {
                 }
                 ForEach(found) { conversation in listRow(conversation) }
             } else {
+                if let update = app.appUpdates.updateToOffer {
+                    AppUpdateCard(update: update)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                }
                 // A person with no agent has no main chat to open. A new
                 // side chat, a chat with someone and a group are started
                 // from the button at the top, so the list is only chats.
@@ -501,6 +507,7 @@ struct ConversationsList: View {
 /// what it is told about, and signs it out.
 struct SettingsForm: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.openURL) private var openURL
     @Environment(MailModel.self) private var mail: MailModel?
     @State private var isConfirmingSignOut = false
     private static let signOutRowId = "sign-out"
@@ -728,6 +735,14 @@ struct SettingsForm: View {
                 }
                 Section("About") {
                     LabeledContent("Version", value: Self.version)
+                    if let update = app.appUpdates.update, let address = URL(string: update.installUrl) {
+                        Button {
+                            openURL(address)
+                        } label: {
+                            Label("Update to \(update.versionText)", systemImage: "arrow.down.circle")
+                                .actionColor()
+                        }
+                    }
                 }
             }
             .navigationTitle("Settings")
@@ -773,7 +788,7 @@ struct SettingsForm: View {
                         }
                         return
                     }
-                    guard !hasShownDemoScreen, let screen = DemoServer.screen, screen != "settings" else { return }
+                    guard !hasShownDemoScreen, let screen = DemoServer.screen, screen != "settings", screen != "app-update" else { return }
                     hasShownDemoScreen = true
                     isShowingDemoScreen = true
                 }
