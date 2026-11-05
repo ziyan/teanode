@@ -170,6 +170,19 @@ or fourteen sign-in codes overnight that nobody asked for. For those the
 agent speaks first. `docs/decisions/20260929-the-agent-tells-the-person-what-their-mail-says.md`
 says why it is built this way.
 
+The agent also starts a conversation for reasons of its own
+(`internal/agent/speak_first.go`): its introduction, a new phone's tour, a trip,
+a memory check, an idea. The person need not have the app open, since what it
+says reaches their phone. It holds to its rules all the same: not within half an
+hour of their last word, once a day but for the introduction and a tour, never
+while snoozed, and, with no app or dashboard in front of them, not during their
+quiet hours. Somebody with no phone taking notifications and no chat app could
+not read it, so for them it waits until they come.
+
+A trip (`speak_first_trip.go`) is spoken about up to three days ahead with a plan
+worked out in hours, and once more the day before with what has arrived since,
+reading the pages the host's messages link to.
+
 Two things make a **candidate** (`internal/agent/alert_candidate.go`). The
 sorting says a message is worth telling now or today (`alert_signal` on the
 insight), or a count notices a **burst**: five or more messages received
