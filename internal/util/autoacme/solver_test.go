@@ -177,18 +177,17 @@ func TestIsALPNChallenge(t *testing.T) {
 	}
 }
 
-func TestRoute53SolverChallengeRecordNames(t *testing.T) {
-	solver := &route53Solver{hosts: []string{"example.com", "*.example.com", "mail.other.example"}}
-
-	names := solver.challengeRecordNames()
-	want := []string{"_acme-challenge.example.com", "_acme-challenge.mail.other.example"}
+func TestRoute53SolverPublishesOnlyTheNamesOfTheOrder(t *testing.T) {
+	// The bare domain and its wildcard, as an order authorizes them: two
+	// challenges for one name. Nothing here asks about the server's other
+	// certificates, whose names may be in a zone this solver cannot write.
+	names := challengeRecordNames([]Challenge{{Domain: "example.com"}, {Domain: "example.com"}, {Domain: "*.mail.example.com"}})
+	want := []string{"_acme-challenge.example.com", "_acme-challenge.mail.example.com"}
 	if len(names) != len(want) {
 		t.Fatalf("got %v, want %v", names, want)
 	}
 	for index, name := range names {
 		if name != want[index] {
-			// A wildcard is authorized under its bare domain, so
-			// example.com and *.example.com share one record.
 			t.Errorf("record %d is %q, want %q", index, name, want[index])
 		}
 	}

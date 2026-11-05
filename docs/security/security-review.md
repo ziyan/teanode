@@ -817,10 +817,6 @@ the answer to every message on screen.
   fresh delivery of the bounce to the sender's alias target. The holder is
   the receiving server, so this is bounded; a window after which a delivery
   no longer accepts notifications would close it.
-- The `dns-01` solver writes challenge records for every configured host
-  into the one hosted zone, so `perDomain` with `dns-01` and a domain
-  outside that zone fails the server's own order. An availability bug
-  rather than a security one.
 - The IMAP `SEARCH TEXT` reads and parses every message in the folder from
   storage per command, and `APPEND` files a message as outgoing mail from
   whatever `From` it carries, which an auditor of the domain then sees.

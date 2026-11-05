@@ -16,7 +16,7 @@ import (
 // An unset list must therefore mean "find them", never "skip the wait".
 func TestAnUnsetNameserverListDoesNotSkipTheWait(t *testing.T) {
 	t.Parallel()
-	solver := &route53Solver{hosts: []string{"example.com"}}
+	solver := &route53Solver{}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -47,7 +47,6 @@ func TestAnUnsetNameserverListDoesNotSkipTheWait(t *testing.T) {
 func TestConfiguredNameserversWin(t *testing.T) {
 	t.Parallel()
 	solver := &route53Solver{
-		hosts:       []string{"example.com"},
 		nameservers: []string{"192.0.2.1:53", "192.0.2.2:53"},
 	}
 	nameservers, err := solver.nameserversFor(context.Background(), "_acme-challenge.example.com")
