@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.220.1] - 2026-11-05
+
+### Fixed
+
+- A server with `perDomain` certificates and `dns-01` for its own wildcard can renew that wildcard when it serves domains outside the hosted zone. (#732)
+
 ## [0.220.0] - 2026-11-05
 
 ### Added
