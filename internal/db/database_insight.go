@@ -186,6 +186,11 @@ type InsightOperation interface {
 	// any of their own conversations: their words, not a goal check-in.
 	// Nil when they never have.
 	LastAgentPersonWordAt(agentId string) (*time.Time, error)
+
+	// GetAgentPersonWordAfter is the first thing the person wrote in a
+	// conversation after a message and before a moment, passing over the
+	// turns the agent opened itself. Nil when they wrote nothing.
+	GetAgentPersonWordAfter(conversationId, afterMessageId string, before time.Time) (*models.AgentMessage, error)
 }
 
 type mailInsightModel struct {
@@ -1353,6 +1358,18 @@ func (self *transaction) LastAgentPersonWordAt(agentId string) (*time.Time, erro
 		return nil, nil
 	}
 	return &last[0], nil
+}
+
+func (self *transaction) GetAgentPersonWordAfter(conversationId, afterMessageId string, before time.Time) (*models.AgentMessage, error) {
+	query := self.tx.Where("\"conversation_id\" = ? AND \"id\" > ? AND \"created_at\" < ? AND \"role\" = ?", conversationId, afterMessageId, before, "user")
+	var found []agentMessageModel
+	if err := withoutOwnTurns(query, "\"content\"").Order("\"created_at\" ASC, \"id\" ASC").Limit(1).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return messageFromModel(&found[0])
 }
 
 // withoutOwnTurns leaves out the messages that open a turn the agent took

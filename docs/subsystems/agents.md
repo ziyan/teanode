@@ -205,8 +205,12 @@ has looked at.
 The **alert job** (`internal/agent/alert.go`) waits two minutes for
 candidates to gather, so that three messages about one incident are one
 alert, then asks the synthesize model once, with the person's triage
-memories, the pages their memory holds about the senders, and what they
-were told this week. The model writes the alerts in the agent's voice; the
+memories, their calendar for the next three weeks, what memory holds about
+each candidate (looked up one by one, since one search for every sender
+finds none of them), and what they were told this week with what they
+answered. The sorting and a watch's judgement read the same calendar and
+look their one item up the same way, so a charge for a booked trip is not
+called unexpected at any of the three. The model writes the alerts in the agent's voice; the
 code keeps the bounds, because a model talked into interrupting somebody
 by a stranger's message is what bounds are for:
 

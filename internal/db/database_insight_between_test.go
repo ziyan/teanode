@@ -91,3 +91,49 @@ func TestAgentConversationActivityBetweenCountsWhatWasSaidInTheStretch(t *testin
 		}
 	})
 }
+
+// What the person said back to something the agent told them is the next
+// thing they wrote, passing over the turns the agent opened itself, and only
+// inside the time given.
+func TestThePersonsWordAfterAMessagePassesOverTheAgentsOwnTurns(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner := newCircleTestUser(t, tx, "answer-ada")
+		agent, err := tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		conversation, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: agent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		say := func(role, content string) *models.AgentMessage {
+			message, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: role, Content: content})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return message
+		}
+		told := say("assistant", "A new sign-in to your account.")
+		soon := time.Now().Add(time.Hour)
+		if found, err := tx.GetAgentPersonWordAfter(conversation.ID, told.ID, soon); err != nil || found != nil {
+			t.Fatalf("nothing said yet: %+v, %v", found, err)
+		}
+		say("user", models.AlertMarker+" Nobody asked for this")
+		say("assistant", "Another thing.")
+		say("user", "that was me")
+		say("user", "and something else")
+		found, err := tx.GetAgentPersonWordAfter(conversation.ID, told.ID, soon)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if found == nil || found.Content != "that was me" {
+			t.Fatalf("found %+v", found)
+		}
+		if found, err := tx.GetAgentPersonWordAfter(conversation.ID, told.ID, time.Now().Add(-time.Hour)); err != nil || found != nil {
+			t.Fatalf("said too late to be the answer: %+v, %v", found, err)
+		}
+	})
+}

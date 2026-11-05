@@ -23,7 +23,7 @@ type AgentSpeakFirstMutation interface {
 	ReportAgentPresence(ctx context.Context, arguments ReportAgentPresenceArguments) (bool, error)
 
 	// Have the agent start a conversation now, for a reason: onboarding,
-	// phone_tour, memory_check or idea. Outside the rules about when it may, which are
+	// phone_tour, trip, memory_check or idea. Outside the rules about when it may, which are
 	// for the times nobody asked. Needs agent:use.
 	SpeakFirstNow(ctx context.Context, arguments SpeakFirstNowArguments) (bool, error)
 }
