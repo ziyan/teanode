@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ziyan/teanode/internal/agent/feedback"
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -105,7 +106,12 @@ func runReplyQueue(ctx context.Context, call *tools.Call) (*tools.Result, error)
 				reply.DraftItemID = ""
 				return nil
 			})
-			return err
+			if err != nil {
+				return err
+			}
+			// Told in the conversation or on the dashboard, a declined reply
+			// is the same lesson for the next one.
+			return feedback.RecordReplyDeclined(tx, cancelled, "cancelled by the person, through the agent")
 		}); err != nil {
 			return nil, err
 		}

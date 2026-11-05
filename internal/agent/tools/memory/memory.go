@@ -1635,6 +1635,11 @@ func forgetAction(ctx context.Context, run tools.Run, arguments *memoryArguments
 			if fact == nil {
 				return fmt.Errorf("there is no %s", path+"#"+strconv.Itoa(arguments.Number))
 			}
+			// Kept as struck, as a fact struck on the dashboard is, or the
+			// next filing of the same conversation writes it back.
+			if _, err := tx.CreateAgentFeedback(&models.AgentFeedback{AgentID: agentId, Kind: models.FeedbackUnlearned, Said: fact.Text}); err != nil {
+				return err
+			}
 			if err := tx.DeleteAgentFact(agentId, fact.ID); err != nil {
 				return err
 			}

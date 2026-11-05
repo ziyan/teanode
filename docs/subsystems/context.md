@@ -87,6 +87,12 @@ One system message after the history, rebuilt each round:
   `<pending>`, `<introduction>`, `<memory_check>`. Only tools that are sent,
   like guidance: a tool behind `tool_search` says nothing until it is loaded.
   A merged tool asks each of its actions' overlays.
+- `<coming_up>`: the person's calendar for the next three weeks, what others
+  share with them included, read once per turn (`coming_up.go`). A repeat is
+  said once and what runs overnight is kept first. It needs their own calendar
+  granted to the agent, as the calendar tool does, and is left out of a chat
+  with other people. The event text is fenced, because an invitation is
+  somebody else's words.
 - `<budget>` — only once four fifths of whichever cap binds first is gone.
 - `<now>` — always, in the person's zone.
 

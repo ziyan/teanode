@@ -142,6 +142,7 @@ var surfaces = map[string]surface{
 	},
 	"mcp": {
 		situationLine: "You are answering a program that reached you through the Model Context Protocol, for the person.",
+		overlay:       terminalOverlay,
 	},
 	backgroundSurface: {
 		situationLine: "This turn was woken by a command you left running in the background, not by the person; what you say is read in the conversation when they look.",

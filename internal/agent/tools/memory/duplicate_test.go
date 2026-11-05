@@ -216,3 +216,44 @@ func TestReadingTheGraphIsNotAWrite(t *testing.T) {
 		}
 	}
 }
+
+// A fact forgotten in conversation is kept as struck, as one struck on the
+// dashboard is, so that filing the same conversation does not write it back.
+func TestAFactForgottenInConversationIsKeptAsStruck(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	run := &fakeRun{database: database}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "forgetful", Name: "Sam Example"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		run.owner = owner
+		if run.agent, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if run.conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: run.agent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+	})
+	ctx := tools.WithRun(context.Background(), run)
+	tool := find(t, "memory")
+	for _, arguments := range []string{
+		`{"action":"note","path":"things/marigold","kind":"thing","name":"Marigold","text":"The boat is painted red."}`,
+		`{"action":"forget","path":"things/marigold","number":1}`,
+	} {
+		if _, err := tool.Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(arguments)}); err != nil {
+			t.Fatalf("%s: %s", arguments, err)
+		}
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		struck, err := tx.ListAgentFeedback(run.agent.ID, []models.AgentFeedbackKind{models.FeedbackUnlearned}, 5)
+		if err != nil {
+			t.Fatalf("ListAgentFeedback: %s", err)
+		}
+		if len(struck) != 1 || struck[0].Said != "The boat is painted red." {
+			t.Fatalf("struck = %+v", struck)
+		}
+	})
+}

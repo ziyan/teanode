@@ -400,6 +400,11 @@ func (self *AskRun) sayNote(kind models.AgentNoteKind, detail string) {
 
 // AskRun is one turn in flight.
 type AskRun struct {
+	// comingUpBlock is the turn's <coming_up> overlay, read once: every
+	// round of a turn would otherwise read every calendar again.
+	comingUpBlock   string
+	hasReadComingUp bool
+
 	// recordedAt is when the run was recorded as running (turn_record.go),
 	// zero for one that was not: a run steered into another, or one with no
 	// database to record it in.
@@ -3023,6 +3028,9 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 		}
 	}
 	if block := self.sharedIndexOverlay(ctx); block != "" {
+		blocks = append(blocks, block)
+	}
+	if block := self.comingUpOverlay(ctx); block != "" {
 		blocks = append(blocks, block)
 	}
 	_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {

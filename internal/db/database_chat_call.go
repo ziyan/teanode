@@ -58,19 +58,14 @@ func chatCallFromModel(model *chatCallModel, members []chatCallMemberModel) *mod
 		RecordingID:                valueOfString(model.RecordingID),
 		Members:                    []models.ChatCallMember{},
 	}
-	transcriptionConsent := ""
-	if call.TranscriptionAskedByUserID != "" {
-		transcriptionConsent = "yes"
-	}
 	for _, member := range members {
 		call.Members = append(call.Members, models.ChatCallMember{
-			UserID:               member.UserID,
-			RingState:            models.ChatCallRingState(member.RingState),
-			JoinedAt:             localTime(member.JoinedAt),
-			LeftAt:               localTime(member.LeftAt),
-			IsVideoOn:            member.IsVideoOn,
-			IsMuted:              member.IsMuted,
-			TranscriptionConsent: transcriptionConsent,
+			UserID:    member.UserID,
+			RingState: models.ChatCallRingState(member.RingState),
+			JoinedAt:  localTime(member.JoinedAt),
+			LeftAt:    localTime(member.LeftAt),
+			IsVideoOn: member.IsVideoOn,
+			IsMuted:   member.IsMuted,
 		})
 	}
 	return call

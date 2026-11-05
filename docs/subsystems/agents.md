@@ -205,8 +205,12 @@ has looked at.
 The **alert job** (`internal/agent/alert.go`) waits two minutes for
 candidates to gather, so that three messages about one incident are one
 alert, then asks the synthesize model once, with the person's triage
-memories, the pages their memory holds about the senders, and what they
-were told this week. The model writes the alerts in the agent's voice; the
+memories, their calendar for the next three weeks, what memory holds about
+each candidate (looked up one by one, since one search for every sender
+finds none of them), and what they were told this week with what they
+answered. The sorting and a watch's judgement read the same calendar and
+look their one item up the same way, so a charge for a booked trip is not
+called unexpected at any of the three. The model writes the alerts in the agent's voice; the
 code keeps the bounds, because a model talked into interrupting somebody
 by a stranger's message is what bounds are for:
 
@@ -235,7 +239,7 @@ for every mailbox the agent sorts (`AgentMailbox.alerts`, absent meaning
 on). The night and the day's most are theirs to change (`alertQuietStart`,
 `alertQuietEnd`, `alertDailyMost`; the same time at both ends is no night), as
 are the day and time of the look around.
-"Don't tell me about these" is a **mute**, a row of `agent_alert_mute`
+Saying an alert was theirs, or that it is handled, settles that alert and mutes nothing: the next decision reads their answer. "Don't tell me about these" is a **mute**, a row of `agent_alert_mute`
 naming a sender's address, a domain (and its subdomains), a subject key, or
 a kind: `burst`, or a category of the sorting such as `notification`. The
 candidate step and the alert job both read the mutes, and what matches is

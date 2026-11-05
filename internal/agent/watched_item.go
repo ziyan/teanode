@@ -565,7 +565,9 @@ func (self *Agent) watchOne(ctx context.Context, run *Run, skill *skills.Skill, 
 		return err
 	}
 	rendered := renderWatchedItem(skill, item, content)
-	judgement, err := self.judgeWatchedItem(ctx, run, skill, watch, item, content, rendered, memories, corrections)
+	comingUp := self.comingUpForRun(ctx, run, time.Now())
+	remembered := self.recalledFacts(ctx, run, item.From+" "+item.Title)
+	judgement, err := self.judgeWatchedItem(ctx, run, skill, watch, item, content, rendered, memories, corrections, comingUp, remembered)
 	if err != nil {
 		return err
 	}
@@ -605,7 +607,7 @@ func renderWatchedItem(skill *skills.Skill, item *skills.WatchedItem, content st
 // judgeWatchedItem asks the model whether the person should hear about
 // the item: as mail, with the sorting's prompt, or as an item, with the
 // watch's guidance. Nil, and no error, when the answer could not be read.
-func (self *Agent) judgeWatchedItem(ctx context.Context, run *Run, skill *skills.Skill, watch *skills.Watch, item *skills.WatchedItem, content, rendered string, memories, corrections []string) (*watchedJudgement, error) {
+func (self *Agent) judgeWatchedItem(ctx context.Context, run *Run, skill *skills.Skill, watch *skills.Watch, item *skills.WatchedItem, content, rendered string, memories, corrections []string, comingUp string, remembered []string) (*watchedJudgement, error) {
 	title := fmt.Sprintf("Watching %s: %q", skill.Name, cutRunes(firstNonEmpty(item.Title, item.From, item.ID), 80))
 	if watch.Kind == skills.WatchKindMail {
 		messages, err := TriagePrompt(&TriageInput{
@@ -614,7 +616,7 @@ func (self *Agent) judgeWatchedItem(ctx context.Context, run *Run, skill *skills
 				From: item.From, Subject: item.Title, Date: item.At, Text: content,
 				Facts: []string{"read from the person's mailbox through the " + skill.Name + " skill; this server did not receive it, so it has no authentication results of its own"},
 			},
-			Memories: memories, Corrections: corrections,
+			Memories: memories, Corrections: corrections, ComingUp: comingUp, Remembered: remembered,
 		})
 		if err != nil {
 			return nil, err
@@ -637,7 +639,7 @@ func (self *Agent) judgeWatchedItem(ctx context.Context, run *Run, skill *skills
 	prompt, err := render("watched_item.txt", map[string]any{
 		"PersonName": personName(run.Owner), "SkillName": skill.Name, "WatchDescription": watch.Description,
 		"Guidance": strings.TrimSpace(watch.Guidance), "Language": languageName(KnowledgeLanguage(run.Agent, run.Owner)),
-		"Memories": memories, "Item": fenced(rendered),
+		"Memories": memories, "ComingUp": comingUp, "Remembered": rememberedBlock(remembered), "Item": fenced(rendered),
 	})
 	if err != nil {
 		return nil, err

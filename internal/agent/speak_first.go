@@ -55,6 +55,7 @@ const (
 	SpeakFirstPhoneTour   = "phone_tour"
 	SpeakFirstMemoryCheck = "memory_check"
 	SpeakFirstIdea        = "idea"
+	SpeakFirstTrip        = "trip"
 )
 
 // speakFirstReason is one reason to speak first: when it is due, and what
@@ -91,9 +92,10 @@ type speakFirstReason struct {
 
 // speakFirstReasons is every reason, in the order they are asked: an
 // introduction before anything else, then a tour of a phone just connected,
-// then a memory check, then an idea.
+// then a trip about to start, which will not wait, then a memory check, then
+// an idea.
 func (self *Agent) speakFirstReasons() []speakFirstReason {
-	return []speakFirstReason{self.onboardingReason(), self.phoneTourReason(), self.memoryCheckReason(), self.ideaReason()}
+	return []speakFirstReason{self.onboardingReason(), self.phoneTourReason(), self.tripReason(), self.memoryCheckReason(), self.ideaReason()}
 }
 
 func (self *Agent) speakFirstReasonNamed(name string) (speakFirstReason, bool) {
@@ -137,6 +139,7 @@ func (self *Agent) queueSpeakingFirst(ctx context.Context, now time.Time) {
 		if !isPresent {
 			continue
 		}
+		self.lookForTrip(ctx, agent, now)
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 			reason, err := self.dueSpeakFirstReason(ctx, tx, agent, idle, now)
 			if err != nil || reason == "" {
@@ -237,7 +240,7 @@ func (self *Agent) whileNoTurnRuns(conversationId string, work func() error) (bo
 // line. One already queued or running is left to run.
 func (self *Agent) SpeakFirstNow(tx db.Transaction, agent *models.Agent, reason string) error {
 	if _, ok := self.speakFirstReasonNamed(reason); !ok {
-		return fmt.Errorf("the agent speaks first for %s, %s, %s or %s, not %q", SpeakFirstOnboarding, SpeakFirstPhoneTour, SpeakFirstMemoryCheck, SpeakFirstIdea, reason)
+		return fmt.Errorf("the agent speaks first for %s, %s, %s, %s or %s, not %q", SpeakFirstOnboarding, SpeakFirstPhoneTour, SpeakFirstTrip, SpeakFirstMemoryCheck, SpeakFirstIdea, reason)
 	}
 	open, err := tx.CountAgentJobs(&db.AgentJobFilter{
 		AgentID:  agent.ID,

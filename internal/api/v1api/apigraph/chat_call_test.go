@@ -15,7 +15,7 @@ import (
 )
 
 const chatCallTestFields = `{ id conversationId chatTitle isGroup startedByName isGoing endReason askerRingState isAskerOn answeredAt
-	transcriptionAskedByUserId members { userId name avatarUrl avatarColorIndex ringState isOn isVideoOn isMuted transcriptionConsent } }`
+	transcriptionAskedByUserId members { userId name avatarUrl avatarColorIndex ringState isOn isVideoOn isMuted } }`
 
 // callWorld is a chat world whose server has a media server.
 func newCallWorld(t *testing.T) *chatWorld {
@@ -221,7 +221,7 @@ func TestATranscriptIsTurnedOnForEverybody(t *testing.T) {
 	}
 	world.callView(t, world.grace, fmt.Sprintf(`JoinChatCall(callId: %q)`, callId))
 	asked := world.callView(t, world.frank, fmt.Sprintf(`AskChatCallTranscription(callId: %q)`, callId))
-	if asked["transcriptionAskedByUserId"] != world.frank.ID || memberOf(asked, world.grace)["transcriptionConsent"] != "yes" {
+	if asked["transcriptionAskedByUserId"] != world.frank.ID {
 		t.Fatalf("after Frank asked: %v", asked)
 	}
 	again := world.callView(t, world.grace, fmt.Sprintf(`AskChatCallTranscription(callId: %q)`, callId))

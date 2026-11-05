@@ -38,6 +38,13 @@ type TriageInput struct {
 	Source        *models.AgentMailbox
 	Message       *MessageContext
 	Memories      []string
+
+	// ComingUp is what is on their calendar, ready for the prompt, and
+	// Remembered what memory holds about this message. Both say whether a
+	// charge or a sign-in is something they did.
+	ComingUp   string
+	Remembered []string
+
 	Corrections   []string
 	ResearchNotes []string
 
@@ -75,6 +82,8 @@ func TriagePrompt(input *TriageInput) ([]llm.ChatMessage, error) {
 		"DirectOnly":    directOnly,
 		"ResearchNotes": input.ResearchNotes,
 		"Memories":      input.Memories,
+		"ComingUp":      input.ComingUp,
+		"Remembered":    rememberedBlock(input.Remembered),
 		"Corrections":   input.Corrections,
 		"Message":       input.Message.Render(),
 	})
@@ -172,6 +181,10 @@ func InterpretTriage(answer *TriageAnswer, agent *models.Agent) (*models.MailIns
 	}, nil
 }
 
+// triageContextWithin is how recent a message must be for its sorting to read
+// the calendar and look the message up in memory.
+const triageContextWithin = 3 * 24 * time.Hour
+
 // runTriage is the handler for a triage job.
 func (self *Agent) runTriage(ctx context.Context, run *Run) error {
 	if run.Mailbox == nil || run.Source == nil || !run.Source.Granted || run.Source.Triage == nil || !run.Source.Triage.Enabled {
@@ -228,6 +241,14 @@ func (self *Agent) runTriage(ctx context.Context, run *Run) error {
 	if err != nil {
 		return err
 	}
+	// Only what is arriving now: mail read again from long ago is sorted
+	// for what it is, and this week's calendar says nothing about it.
+	var comingUp string
+	var remembered []string
+	if now := time.Now(); now.Sub(mail.ReceivedAt) < triageContextWithin {
+		comingUp = self.comingUpForRun(ctx, run, now)
+		remembered = self.recalledFacts(ctx, run, message.From+" "+message.Subject)
+	}
 	input := &TriageInput{
 		Configuration: configuration,
 		Agent:         run.Agent,
@@ -236,6 +257,8 @@ func (self *Agent) runTriage(ctx context.Context, run *Run) error {
 		Source:        run.Source,
 		Message:       message,
 		Memories:      memories,
+		ComingUp:      comingUp,
+		Remembered:    remembered,
 		Corrections:   corrections,
 		ResearchNotes: researchNotes,
 		Tools:         true,

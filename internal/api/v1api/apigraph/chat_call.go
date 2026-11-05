@@ -233,10 +233,6 @@ type ChatCallMemberView struct {
 	IsVideoOn bool   `json:"isVideoOn"`
 	IsMuted   bool   `json:"isMuted"`
 
-	// yes for everybody while the call is transcribed; it stays for app
-	// builds that still read it (transcriptionAskedByUserId says the same)
-	TranscriptionConsent string `json:"transcriptionConsent"`
-
 	JoinedAt *time.Time `json:"joinedAt"`
 	LeftAt   *time.Time `json:"leftAt"`
 }
@@ -385,7 +381,7 @@ func describeChatCall(session *chatSession, chatCall *models.ChatCall, now time.
 		part := &chatCall.Members[index]
 		memberView := &ChatCallMemberView{
 			UserID: part.UserID, RingState: string(part.RingState), IsOn: part.IsOn(), IsVideoOn: part.IsVideoOn,
-			IsMuted: part.IsMuted, TranscriptionConsent: part.TranscriptionConsent, JoinedAt: part.JoinedAt, LeftAt: part.LeftAt,
+			IsMuted: part.IsMuted, JoinedAt: part.JoinedAt, LeftAt: part.LeftAt,
 			AvatarColorIndex: avatar.InitialColorIndex(part.UserID),
 		}
 		// Drawn as the chat draws them (describeChatMembers), without

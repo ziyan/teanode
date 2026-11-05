@@ -48,10 +48,16 @@ const (
 	// reads: enough to know what it is, not the whole of a newsletter.
 	alertMessageCharacters = 1500
 
-	// What the decision is shown of the person's memory: the pages the
-	// senders and subjects find, this many, each cut to this length.
-	alertPageCount      = 6
-	alertPageCharacters = 500
+	// alertRecallsAtMost is how many candidates are looked up in memory one
+	// by one, the ones that came first. Each is a search, and the rest
+	// are decided on the rest of what the decision reads.
+	alertRecallsAtMost = 12
+
+	// alertAnswerWithin is how long after an alert what the person says in
+	// the conversation is read as their answer to it, and
+	// alertAnswerCharacters how much of it the decision reads.
+	alertAnswerWithin     = 6 * time.Hour
+	alertAnswerCharacters = 240
 
 	// alertSurface is what an alert is said on: the note of the events
 	// the dashboard hears it by, and opens the drawer for.
@@ -100,9 +106,14 @@ type AlertInput struct {
 	Language     string
 	Now          time.Time
 	Memories     []string
-	Pages        []string
 	RecentAlerts []*models.AgentAlert
-	Candidates   []*labeledCandidate
+
+	// AlertAnswers is what the person said back to an alert, by its id.
+	AlertAnswers map[string]string
+
+	// ComingUp is what is on their calendar, ready for the prompt.
+	ComingUp   string
+	Candidates []*labeledCandidate
 }
 
 // labeledCandidate is a candidate as the decision sees it: a short label
@@ -119,6 +130,9 @@ type labeledCandidate struct {
 
 	// followUps are the follow-ups a follow_up candidate is about.
 	followUps []*models.AgentFollowUp
+
+	// remembered is what memory holds about this candidate.
+	remembered []string
 }
 
 // AlertPrompt renders the decision's prompt. The mail, and everything the
@@ -128,7 +142,17 @@ func AlertPrompt(input *AlertInput) (string, error) {
 	location := Location(input.Owner)
 	recent := make([]string, 0, len(input.RecentAlerts))
 	for _, alert := range input.RecentAlerts {
-		recent = append(recent, fmt.Sprintf("%s [%s] %s", alert.SentAt.In(location).Format("Monday 2 January, 15:04"), alert.SubjectKey, alert.AlertText))
+		line := fmt.Sprintf("%s [%s] %s", alert.SentAt.In(location).Format("Monday 2 January, 15:04"), alert.SubjectKey, alert.AlertText)
+		if answer := input.AlertAnswers[alert.ID]; answer != "" {
+			line += fmt.Sprintf(" They answered: %q", answer)
+		}
+		recent = append(recent, line)
+	}
+	var remembered []string
+	for _, labeled := range input.Candidates {
+		if len(labeled.remembered) > 0 {
+			remembered = append(remembered, labeled.label+": "+strings.Join(labeled.remembered, " | "))
+		}
 	}
 	candidates := make([]string, 0, len(input.Candidates))
 	for _, labeled := range input.Candidates {
@@ -139,7 +163,8 @@ func AlertPrompt(input *AlertInput) (string, error) {
 		"Language":     input.Language,
 		"Now":          input.Now.In(location).Format("Monday 2 January, 15:04"),
 		"Memories":     input.Memories,
-		"Pages":        input.Pages,
+		"Remembered":   rememberedBlock(remembered),
+		"ComingUp":     input.ComingUp,
 		"RecentAlerts": recent,
 		"Candidates":   candidates,
 	})
@@ -288,6 +313,7 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 	categoriesByMail := map[string]string{}
 	followUpsById := map[string]*models.AgentFollowUp{}
 	var gone []string
+	var answers map[string]string
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if err := RequireBudget(tx, configuration, run.Agent, run.Owner, now); err != nil {
 			return err
@@ -296,6 +322,9 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 			return err
 		}
 		if recent, err = tx.ListAgentAlertsSince(run.Agent.ID, now.Add(-alertRepeatWindow)); err != nil {
+			return err
+		}
+		if answers, err = alertAnswers(tx, recent); err != nil {
 			return err
 		}
 		if memories, err = memoryLines(tx, run.Agent.ID, models.AudienceTriage, promptRunMemories, false); err != nil {
@@ -471,9 +500,10 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 		return alertBehindTurn(now)
 	}
 
+	self.rememberCandidates(ctx, run, labeled)
 	prompt, err := AlertPrompt(&AlertInput{
 		Owner: run.Owner, Language: languageName(KnowledgeLanguage(run.Agent, run.Owner)), Now: now,
-		Memories: memories, Pages: self.alertPages(ctx, run, labeled), RecentAlerts: recent, Candidates: labeled,
+		Memories: memories, RecentAlerts: recent, AlertAnswers: answers, ComingUp: self.comingUpForRun(ctx, run, now), Candidates: labeled,
 	})
 	if err != nil {
 		return err
@@ -611,53 +641,70 @@ func (self *Agent) alertFollowUp(ctx context.Context, run *Run, labeled []*label
 	return &Deferral{Until: until, Reason: reason}
 }
 
-// alertPages is what the person's memory holds about the candidates'
-// senders and subjects, found the way a turn's recall finds it and read
-// only: whose school it is, which bank, which service they use.
-func (self *Agent) alertPages(ctx context.Context, run *Run, labeled []*labeledCandidate) []string {
-	var words []string
+// rememberCandidates looks each candidate up in the person's memory, by who
+// it is from and what it says: whose school it is, which bank, and whether
+// the charge is the booking they told you about. Candidates from one sender
+// about one thing are looked up once.
+func (self *Agent) rememberCandidates(ctx context.Context, run *Run, labeled []*labeledCandidate) {
+	found := map[string][]string{}
 	for _, entry := range labeled {
-		if entry.candidate.CandidateKind == models.AlertCandidateWatched {
-			words = append(words, entry.candidate.WatchedSender, entry.candidate.WatchedTitle)
+		question := alertCandidateQuestion(entry)
+		if question == "" {
 			continue
 		}
-		for _, followUp := range entry.followUps {
-			words = append(words, followUp.Payee, followUp.FollowUpTitle)
+		remembered, isLookedUp := found[question]
+		if !isLookedUp {
+			if len(found) == alertRecallsAtMost {
+				continue
+			}
+			remembered = self.recalledFacts(ctx, run, question)
+			found[question] = remembered
 		}
-		if entry.message == nil {
-			continue
-		}
+		entry.remembered = remembered
+	}
+}
+
+// alertCandidateQuestion is what a candidate is looked up in memory by.
+func alertCandidateQuestion(entry *labeledCandidate) string {
+	var words []string
+	if entry.candidate.CandidateKind == models.AlertCandidateWatched {
+		words = append(words, entry.candidate.WatchedSender, entry.candidate.WatchedTitle, entry.candidate.WatchedCategory)
+	}
+	for _, followUp := range entry.followUps {
+		words = append(words, followUp.Payee, followUp.FollowUpTitle)
+	}
+	if entry.message != nil {
 		words = append(words, entry.message.From, entry.message.Subject)
 	}
-	question := cutRunes(strings.Join(words, "; "), 600)
-	if strings.TrimSpace(question) == "" {
-		return nil
+	kept := make([]string, 0, len(words))
+	for _, word := range words {
+		if word = strings.TrimSpace(word); word != "" {
+			kept = append(kept, word)
+		}
 	}
-	pages, err := self.RecallForQuestion(ctx, run.Agent, run.Owner, question)
-	if err != nil {
-		log.Debugf("the alert decision of agent %q has no memory to hand: %s", run.Agent.ID, err)
-		return nil
-	}
-	lines := []string{}
-	for _, page := range pages {
-		if len(lines) == alertPageCount {
-			break
-		}
-		parts := []string{}
-		if page.Summary != "" {
-			parts = append(parts, page.Summary)
-		} else if page.Overview != "" {
-			parts = append(parts, page.Overview)
-		}
-		for _, fact := range page.Facts {
-			parts = append(parts, fact.Text)
-		}
-		if len(parts) == 0 {
+	return strings.Join(kept, " ")
+}
+
+// alertAnswers is what the person said back to the alerts, by alert: the
+// first thing they said in the conversation after one, when it came soon
+// enough to be about it. An answer lives in the conversation, where only a
+// turn reads it, and an alert that cannot see "that was me" raises the same
+// thing again.
+func alertAnswers(tx db.Transaction, alerts []*models.AgentAlert) (map[string]string, error) {
+	answers := map[string]string{}
+	for _, alert := range alerts {
+		if alert.ConversationID == "" || alert.MessageID == "" {
 			continue
 		}
-		lines = append(lines, cutRunes(page.Path+": "+strings.Join(parts, " "), alertPageCharacters))
+		answer, err := tx.GetAgentPersonWordAfter(alert.ConversationID, alert.MessageID, alert.SentAt.Add(alertAnswerWithin))
+		if err != nil {
+			return nil, err
+		}
+		if answer != nil {
+			answers[alert.ID] = cutRunes(strings.TrimSpace(answer.Content), alertAnswerCharacters)
+		}
 	}
-	return lines
+	return answers, nil
 }
 
 // plannedAlert is an alert that passed every bound and is to be said.
@@ -950,7 +997,7 @@ func alertSubjectKey(subjectKey string, candidate *models.AgentAlertCandidate) s
 // back, so that an answer to it is understood as one. The alert's id is in
 // it, so that "not these" said about an earlier alert mutes that one.
 func alertCheckIn(owner *models.User, alertId string) string {
-	return models.AlertMarker + " Nobody asked for this: " + personName(owner) + "'s mail showed something they should know, and you told them, unasked (alert " + alertId + "). What you said follows. If they answer, it is about this; if they say they do not want to hear about things like it, mute it with agent_profile's mute_alert and alert_id " + alertId + ", and if they want no alerts at all, no_alerts."
+	return models.AlertMarker + " Nobody asked for this: " + personName(owner) + "'s mail showed something they should know, and you told them, unasked (alert " + alertId + "). What you said follows. If they answer, it is about this. When they say it was them, or that it is handled, that settles this one alert and mutes nothing: thank them and remember it, and stop a follow-up it was about with agent_profile's stop_follow_up. Only if they say they do not want to hear about things like it, mute it with agent_profile's mute_alert and alert_id " + alertId + ", leaving mute_scope out so that the mute reaches what this alert was about and no further; a mute of a kind silences that kind from everybody, so use it only when they ask for that in words. If they want no alerts at all, no_alerts."
 }
 
 // deliverAlert says one alert in the main conversation and records it, in

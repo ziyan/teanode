@@ -142,10 +142,6 @@ shared with, and names the recording to open. The sweep picks up a call a
 stopped server left with its files on disk, and a recording ready for its
 summary.
 
-A member's `transcriptionConsent` is `yes` for everybody while a call is
-transcribed. Nobody answers it any more; it stays for app builds that still
-read it.
-
 ## Surfaces
 
 The dashboard and the iPhone app start, ring, answer and show calls. A call

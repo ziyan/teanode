@@ -59,9 +59,9 @@ func NewAgentCommand() *cli.Command {
 			newAgentPricesCommand(),
 			{
 				Name:  "speak-first",
-				Usage: "have your agent start a conversation now, as it would on its own: onboarding, phone_tour, memory_check or idea",
+				Usage: "have your agent start a conversation now, as it would on its own: onboarding, phone_tour, trip, memory_check or idea",
 				Flags: []cli.Flag{
-					&cli.StringFlag{Name: "reason", Usage: "onboarding, phone_tour, memory_check or idea", Required: true},
+					&cli.StringFlag{Name: "reason", Usage: "onboarding, phone_tour, trip, memory_check or idea", Required: true},
 				},
 				Action: runAgentSpeakFirst,
 			},
