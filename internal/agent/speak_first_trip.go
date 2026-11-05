@@ -139,7 +139,8 @@ func (self *Agent) tripReason() speakFirstReason {
 			if err := json.Unmarshal([]byte(prepared[preparedTrip]), &trip); err != nil {
 				return "", err
 			}
-			if err := noteTripTold(tx, agent.ID, &trip, now); err != nil {
+			isClaimed, err := noteTripTold(tx, agent.ID, &trip, Location(owner), now, prepared[preparedIsAsked] == "true")
+			if err != nil || !isClaimed {
 				return "", err
 			}
 			if trip.IsToldBefore {
@@ -166,7 +167,10 @@ func (self *Agent) tripToSpeakAbout(ctx context.Context, agent *models.Agent, ow
 		log.Debugf("no calendar to look for a trip in for agent %q: %s", agent.ID, err)
 		return nil, false, nil
 	}
+	// A trip is known by its event, and by its first day as well: the same
+	// trip on two calendars is two events, and one message.
 	toldAt := map[string]*time.Time{}
+	toldOn := map[string]*time.Time{}
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		followUps, err := tx.ListOpenAgentFollowUps(agent.ID)
 		if err != nil {
@@ -175,6 +179,9 @@ func (self *Agent) tripToSpeakAbout(ctx context.Context, agent *models.Agent, ow
 		for _, followUp := range followUps {
 			if followUp.ToldState != "" && followUp.ToldAt != nil {
 				toldAt[followUp.FollowUpKey] = followUp.ToldAt
+				if known := toldOn[followUp.DueOn]; strings.HasPrefix(followUp.FollowUpKey, followUpKeyOfTrip("")) && (known == nil || followUp.ToldAt.After(*known)) {
+					toldOn[followUp.DueOn] = followUp.ToldAt
+				}
 			}
 		}
 		return nil
@@ -182,10 +189,17 @@ func (self *Agent) tripToSpeakAbout(ctx context.Context, agent *models.Agent, ow
 		return nil, false, err
 	}
 	location := Location(owner)
+	lastTold := func(event *comingUpEvent) *time.Time {
+		byEvent, byDay := toldAt[followUpKeyOfTrip(event.ID)], toldOn[event.firstDay(location).Format(time.DateOnly)]
+		if byEvent == nil || (byDay != nil && byDay.After(*byEvent)) {
+			return byDay
+		}
+		return byEvent
+	}
 	trip := nextTrip(events, location, now, func(event *comingUpEvent) bool {
-		return !isAsked && isTripTold(toldAt[followUpKeyOfTrip(event.ID)], event.firstDay(location), location, now)
+		return !isAsked && isTripTold(lastTold(event), event.firstDay(location), location, now)
 	})
-	return trip, trip != nil && toldAt[followUpKeyOfTrip(trip.ID)] != nil, nil
+	return trip, trip != nil && lastTold(trip) != nil, nil
 }
 
 // prepareTrip finds the trip for the turn, and says nothing when there is
@@ -207,21 +221,33 @@ func (self *Agent) prepareTrip(ctx context.Context, run *Run, now time.Time) (ma
 }
 
 // noteTripTold keeps that the agent spoke about the trip, as a follow-up the
-// sweep lets go when the day has passed.
-func noteTripTold(tx db.Transaction, agentId string, trip *tripNote, now time.Time) error {
+// sweep lets go when the day has passed, and says whether this run is the one
+// to speak. The look before the turn holds no lock: this one, under the
+// follow-up's row, is what makes the message go out once, as goal_surfaced_at
+// does for a goal.
+func noteTripTold(tx db.Transaction, agentId string, trip *tripNote, location *time.Location, now time.Time, isAsked bool) (bool, error) {
 	followUp, _, err := tx.UpsertAgentFollowUp(&models.AgentFollowUp{
 		AgentID: agentId, FollowUpKind: models.AgentFollowUpEvent, FollowUpKey: followUpKeyOfTrip(trip.EventID),
 		FollowUpTitle: cutRunes(trip.Summary, 200), Place: cutRunes(trip.Place, 200), DueOn: trip.FirstOn,
 		FollowUpState: models.AgentFollowUpOpen, SourceItemIDs: []string{},
 	})
 	if err != nil {
-		return err
+		return false, err
 	}
+	firstDay, err := time.Parse(time.DateOnly, trip.FirstOn)
+	if err != nil {
+		return false, err
+	}
+	isClaimed := false
 	_, err = tx.UpdateAgentFollowUp(followUp.ID, func(locked *models.AgentFollowUp) error {
+		if !isAsked && locked.ToldState != "" && isTripTold(locked.ToldAt, firstDay, location, now) {
+			return nil
+		}
+		isClaimed = true
 		locked.ToldState, locked.ToldAt = models.AgentFollowUpToldReminded, &now
 		return nil
 	})
-	return err
+	return isClaimed, err
 }
 
 // tripLookingUp is what a good assistant reads before somebody leaves.
