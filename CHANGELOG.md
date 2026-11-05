@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.219.0] - 2026-11-05
+
+### Added
+
+- Adding a shopping item lists similar items already on your lists, on the dashboard and iPhone, so you can open one instead of adding a duplicate. `teanode shopping similar` and the agent's shopping tool do the same comparison. (#730)
+- A bought shopping item can be needed again from its own dialog or sheet. (#730)
+
 ## [0.218.2] - 2026-11-04
 
 ### Fixed
