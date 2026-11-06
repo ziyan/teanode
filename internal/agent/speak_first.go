@@ -332,6 +332,15 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 		if conversation, err = scheduleConversation(tx, run.Agent.ID, ""); err != nil {
 			return err
 		}
+		// Looked at under the agent's row, held until this commits, so that
+		// of two runs that both found it due, only one speaks.
+		isSpent := false
+		if _, err := tx.UpdateAgent(run.Agent.ID, func(found *models.Agent) error {
+			isSpent = !isAsked && isSpeakingFirstSpent(found.SpokeFirstAt, run.Job.CreatedAt, reason.isDailyLimited, now)
+			return nil
+		}); err != nil || isSpent {
+			return err
+		}
 		if message, err = reason.checkIn(ctx, tx, run.Agent, run.Owner, now, prepared); err != nil || strings.TrimSpace(message) == "" {
 			return err
 		}
@@ -379,6 +388,18 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 	}
 	log.Noticef("the %s turn of agent %q did nothing; nudged once", reason.name, run.Agent.ID)
 	return took(models.SpeakFirstMarker + " " + reason.nudge)
+}
+
+// isSpeakingFirstSpent says a job must not speak after all. The agent spoke
+// since the job was queued: a run put back in the queue after a crash, whose
+// turn already went out and may be carrying on by itself, would say it a second
+// time, and what it says next is often something else, the next idea. Or the
+// day's turn has gone to another reason since the sweep looked.
+func isSpeakingFirstSpent(spokeFirstAt *time.Time, queuedAt time.Time, isDailyLimited bool, now time.Time) bool {
+	if spokeFirstAt == nil {
+		return false
+	}
+	return !spokeFirstAt.Before(queuedAt) || (isDailyLimited && now.Sub(*spokeFirstAt) < speakFirstApart)
 }
 
 // speakFirstMessage is the start every spoken-first turn's message shares:

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -60,7 +61,7 @@ func (self *Agent) noteMailForSchedules(tx db.Transaction, agent *models.Agent, 
 			}
 		}
 		if _, err := tx.UpdateAgentSchedule(schedule.ID, func(schedule *models.AgentSchedule) error {
-			schedule.MailArrivals = append(schedule.MailArrivals, *arrival)
+			schedule.MailArrivals = withArrival(schedule.MailArrivals, *arrival)
 			if extra := len(schedule.MailArrivals) - models.MaximumScheduleArrivals; extra > 0 {
 				schedule.MailArrivals = schedule.MailArrivals[extra:]
 			}
@@ -73,6 +74,17 @@ func (self *Agent) noteMailForSchedules(tx db.Transaction, agent *models.Agent, 
 			log.Warningf("cannot note message %q on schedule %q: %s", mail.ID, schedule.ID, err)
 		}
 	}
+}
+
+// withArrival is the messages waiting with one more: a message tells a run
+// about itself once, however it came to be noted twice.
+func withArrival(arrivals []models.AgentScheduleArrival, arrival models.AgentScheduleArrival) []models.AgentScheduleArrival {
+	if slices.ContainsFunc(arrivals, func(known models.AgentScheduleArrival) bool {
+		return known.MailboxItemID == arrival.MailboxItemID
+	}) {
+		return arrivals
+	}
+	return append(arrivals, arrival)
 }
 
 // mailConditionsHold is whether a message passes every one of a schedule's

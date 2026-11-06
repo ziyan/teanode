@@ -543,3 +543,72 @@ func TestTheAgentWaitsForSomebodyItCannotReach(t *testing.T) {
 		t.Fatalf("nobody would read it: %+v", jobs)
 	}
 }
+
+// spokenFirstCount is how many turns the agent started in the main conversation.
+func (self *speakFirstWorld) spokenFirstCount(t *testing.T) int {
+	t.Helper()
+	count := 0
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		main, err := tx.MainAgentConversation(self.agent.ID, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		messages, err := tx.ListAgentMessages(main.ID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, message := range messages {
+			if message.Role == "user" && strings.HasPrefix(message.Content, models.SpeakFirstMarker) {
+				count++
+			}
+		}
+	})
+	return count
+}
+
+// A job back in the queue after a crash took its turn already, which may be
+// carrying on by itself: it says nothing more.
+func TestAJobQueuedBeforeTheAgentSpokeSaysNothing(t *testing.T) {
+	world := awayWorld(t, true, "00:00", "00:00")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		later := time.Now().Add(time.Minute)
+		if err := tx.MarkAgentSpokeFirst(world.agent.ID, &later, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := world.worker.Enqueue(tx, models.AgentJobSpeakFirst, world.agent.ID, "", agent.SpeakFirstTrip); err != nil {
+			t.Fatal(err)
+		}
+	})
+	world.tick(t)
+	if spoken := world.spokenFirstCount(t); spoken != 0 {
+		t.Fatalf("a job spoke again: %d turns", spoken)
+	}
+}
+
+// The same trip on two calendars is two events and one message, even once the
+// day's limit has passed.
+func TestATripOnTwoCalendarsIsSpokenAboutOnce(t *testing.T) {
+	world := awayWorld(t, true, "00:00", "00:00")
+	starts := time.Now().UTC().Add(24 * time.Hour).Truncate(24 * time.Hour)
+	world.operations.answers = map[string]string{
+		"ListCalendars {":    `{"ListCalendars":[{"id":"own","agentGranted":true,"calendarKind":"events","shareLevel":"owner"}]}`,
+		"ListCalendarEvents": fmt.Sprintf(`{"ListCalendarEvents":[{"id":"first","summary":"Lake weekend","location":"Example Lake","allDay":true,"startsAt":%[1]q,"endsAt":%[2]q},{"id":"second","summary":"Lake trip","location":"Example Lake","allDay":true,"startsAt":%[1]q,"endsAt":%[2]q}]}`, starts.Format(time.RFC3339), starts.Add(72*time.Hour).Format(time.RFC3339)),
+	}
+	world.tick(t)
+	if spoken := world.spokenFirstCount(t); spoken != 1 {
+		t.Fatalf("%d turns, want one", spoken)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		longAgo := time.Now().Add(-48 * time.Hour)
+		if err := tx.MarkAgentSpokeFirst(world.agent.ID, &longAgo, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := world.worker.Enqueue(tx, models.AgentJobSpeakFirst, world.agent.ID, "", agent.SpeakFirstTrip); err != nil {
+			t.Fatal(err)
+		}
+	})
+	world.tick(t)
+	if spoken := world.spokenFirstCount(t); spoken != 1 {
+		t.Fatalf("%d turns, want one", spoken)
+	}
+}
