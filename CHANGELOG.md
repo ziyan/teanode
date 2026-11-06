@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.222.1] - 2026-11-06
+
+### Fixed
+
+- A trip note, idea or greeting can no longer be sent twice after a server restart, or when the same trip is on two calendars. (#736)
+
 ## [0.222.0] - 2026-11-05
 
 ### Added
