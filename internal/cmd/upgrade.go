@@ -18,6 +18,13 @@ func NewUpgradeCommand() *cli.Command {
 		Usage: "the server's version, the newest release, and installing it",
 		Commands: []*cli.Command{
 			{
+				Name:      "app",
+				Usage:     "the newest TeaNode iPhone app testers or the App Store can install, as the app asks this server",
+				ArgsUsage: "<testflight|appstore>",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runUpgradeApp,
+			},
+			{
 				Name:    "status",
 				Aliases: []string{"get", "show"},
 				Usage:   "what is running, what is available, and whether this deployment can install it",
@@ -160,5 +167,32 @@ func runUpgradeApply(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("the upgrade did not start: %s", upgrade.Error)
 	}
 	fmt.Printf("installing %s; the server restarts when the download is checked. 'teanode upgrade status' says when it is done.\n", target)
+	return nil
+}
+
+func runUpgradeApp(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return fmt.Errorf("say which channel: testflight or appstore")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	update, err := client.GetAppUpdate(ctx, connection, command.Args().First())
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(update)
+	}
+	if update == nil {
+		fmt.Println("nothing to offer on this channel yet, or this server does not look for releases")
+		return nil
+	}
+	version := update.Version
+	if update.BuildNumber != "" {
+		version += " (" + update.BuildNumber + ")"
+	}
+	fmt.Printf("%s\n%s\n", version, update.InstallURL)
 	return nil
 }

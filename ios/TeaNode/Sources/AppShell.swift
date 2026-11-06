@@ -130,6 +130,12 @@ struct MainView: View {
             .task(id: "\(scenePhase)-\(app.account?.accountKey ?? "")") {
                 await refreshCodingPresenceSlowly()
             }
+            // Whether a newer app can be installed, asked as the app comes to the front.
+            .task(id: "\(scenePhase)-update-\(app.account?.accountKey ?? "")") {
+                if scenePhase == .active, let connection = app.connection {
+                    await app.appUpdates.refresh(connection: connection)
+                }
+            }
             // Passwords that is open stays covered while the app is away, locks if its time is up (before the
             // cover comes off, so no frame of the items shows), and is brought up to date when the app comes back.
             .onChange(of: scenePhase) { _, current in

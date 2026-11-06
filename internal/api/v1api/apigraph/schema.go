@@ -92,6 +92,7 @@ type Query interface {
 	ChatCallQuery
 	ServerQuery
 	UpgradeQuery
+	AppUpdateQuery
 	CredentialQuery
 	MailQuery
 	ContentQuery

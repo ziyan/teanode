@@ -139,7 +139,7 @@ so one command serves a person and a script.
 | `settings` | the optional integrations; `settings set <section> key=value` |
 | `server` | the running instance: `status`, `restart`, `addresses`, `identity` |
 | `services` | which hosted services this server offers: `get`, `set`, and `assistant --kind openai`, which starts the assistant in one step (the key is checked, a model chosen, agents offered and your own agent turned on; `--base-url` for a model server of your own, `--restart` to restart afterwards) |
-| `upgrade` | the newest release, and installing it: `status [--check]`, `apply` |
+| `upgrade` | the newest release, and installing it: `status [--check]`, `apply`; `app testflight\|appstore` says the newest iPhone app on a channel, as the app asks this server |
 | `mail` | handled mail: `list` with filters, `get`, `content`, `download`, `opens`, `count`, `send` |
 | `delivery` | what happened on the way out, and `delivery pending`, the queue |
 | `report` | DMARC aggregate reports received about your domains |

@@ -29,6 +29,8 @@ final class AppModel {
     /// The Add account sheet, over the signed-in app.
     var isAddingAccount = false
     private(set) var connection: Connection?
+    /// Whether a newer app can be installed.
+    let appUpdates = AppUpdateModel()
 
     private(set) var services: ServiceCapabilities?
     /// What the person may do on this server, as the access pages read it;
