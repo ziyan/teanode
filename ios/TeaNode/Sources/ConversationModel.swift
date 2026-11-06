@@ -131,6 +131,8 @@ final class ConversationModel {
 
     private let app: AppModel
     let connection: Connection
+    /// Reads a message aloud; the conversation's banner stops it.
+    let reader = MessageReader()
     private var answeredLocationCalls: Set<String> = []
 
     /// How recent a question must be for typing to answer it rather than
@@ -672,6 +674,11 @@ final class ConversationModel {
         } catch {
             sendProblemText = app.describe(error)
         }
+    }
+
+    /// Reads a line aloud, in place of any other being read.
+    func readAloud(_ line: TranscriptLine) {
+        reader.read(line, connection: connection)
     }
 
     /// Replies to a line: its words are quoted with what is sent next.

@@ -112,6 +112,10 @@ its pull request is opened.
   own universal links, Maps, and a configuration profile. Every link goes
   through the environment's `openURL`, set once at the root; nothing calls
   `UIApplication.shared.open` for a web page itself.
+- A message held offers Read aloud, in the voice the person chose for their
+  agent, or the phone's own when the server has none. While it reads, a banner
+  at the top of the conversation says so and stops it on a tap, and leaving the
+  conversation stops it.
 - The composer is one rounded field with its buttons inside it: the words on
   top, adding files at the bottom left, dictating (a microphone), calling and
   sending at the bottom right. In a chat the waveform button is not a call:

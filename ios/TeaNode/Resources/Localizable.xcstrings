@@ -33391,6 +33391,22 @@
         }
       }
     },
+    "Read aloud": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み上げ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "朗读"
+          }
+        }
+      }
+    },
     "Read as a receipt": {
       "localizations": {
         "ja": {
@@ -33611,6 +33627,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "读取来源"
+          }
+        }
+      }
+    },
+    "Reading aloud. Tap to stop.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み上げ中。タップで停止します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在朗读。轻点可停止。"
           }
         }
       }
@@ -40613,6 +40645,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止发布该标识？"
+          }
+        }
+      }
+    },
+    "Stop reading": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み上げを停止"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止朗读"
           }
         }
       }

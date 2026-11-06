@@ -33,6 +33,10 @@ const (
 	// person choosing the one their answers are read in.
 	PathAgentVoiceSample = Prefix + "/agent/voice/sample"
 
+	// PathAgentVoiceRead is a piece of a message said in the person's voice,
+	// for reading a message aloud.
+	PathAgentVoiceRead = Prefix + "/agent/voice/read"
+
 	// PathAgentComputer is the websocket `teanode computer` attaches the
 	// person's computer through.
 	PathAgentComputer = Prefix + "/agent/computer"
