@@ -678,6 +678,7 @@ final class ConversationModel {
 
     /// Reads a line aloud, in place of any other being read.
     func readAloud(_ line: TranscriptLine) {
+        reader.onProblem = { [weak self] problemText in self?.voiceProblemText = problemText }
         reader.read(line, connection: connection)
     }
 

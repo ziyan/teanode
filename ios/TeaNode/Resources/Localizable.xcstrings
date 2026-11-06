@@ -33631,6 +33631,54 @@
         }
       }
     },
+    "This phone could not play the message: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このiPhoneではメッセージを再生できませんでした：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台手机无法播放此消息：%@"
+          }
+        }
+      }
+    },
+    "This phone could not play the message, so it will read it in its own voice.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このiPhoneではメッセージを再生できなかったため、端末の音声で読み上げます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台手机无法播放此消息，将用手机自带的声音朗读。"
+          }
+        }
+      }
+    },
+    "Your phone's volume is all the way down.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhoneの音量が最小になっています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手机音量已调到最低。"
+          }
+        }
+      }
+    },
     "Reading aloud. Tap to stop.": {
       "localizations": {
         "ja": {
