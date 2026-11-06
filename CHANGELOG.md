@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.223.0] - 2026-11-06
+
+### Added
+
+- The iPhone app tells you when a newer build or version can be installed, from TestFlight or the App Store, whichever you installed it from. Not now hides that update; Settings still offers it. (#735)
+- `teanode upgrade app testflight|appstore` says the newest iPhone app on a channel. (#735)
+
 ## [0.222.1] - 2026-11-06
 
 ### Fixed
