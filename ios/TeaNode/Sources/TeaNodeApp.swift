@@ -512,6 +512,7 @@ struct SettingsForm: View {
     @State private var isConfirmingSignOut = false
     private static let signOutRowId = "sign-out"
     private static let photoBackupRowId = "photo-backup"
+    private static let versionRowId = "version"
     /// Whether the account may open the management pages, as the dashboard
     /// shows its Manage side.
     @State private var isOperator = false
@@ -735,6 +736,7 @@ struct SettingsForm: View {
                 }
                 Section("About") {
                     LabeledContent("Version", value: Self.version)
+                        .id(Self.versionRowId)
                     if let update = app.appUpdates.update, let address = URL(string: update.installUrl) {
                         Button {
                             openURL(address)
@@ -770,6 +772,15 @@ struct SettingsForm: View {
                 .onAppear {
                     // `-TeaNodeScreen settings-sign-out`: the sign-out confirmation open, to show where it points.
                     // `settings-photo-backup-other-account`: the Photo backup row as it reads when backup is on for another account.
+                    // `app-update`: the About section, with the row that installs the update.
+                    if DemoServer.screen == "app-update", !hasShownDemoScreen {
+                        hasShownDemoScreen = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            withAnimation { scroller.scrollTo(Self.versionRowId, anchor: .center) }
+                        }
+                        return
+                    }
                     if DemoServer.screen == "settings-photo-backup-other-account", !hasShownDemoScreen {
                         hasShownDemoScreen = true
                         Task {
@@ -788,7 +799,7 @@ struct SettingsForm: View {
                         }
                         return
                     }
-                    guard !hasShownDemoScreen, let screen = DemoServer.screen, screen != "settings", screen != "app-update" else { return }
+                    guard !hasShownDemoScreen, let screen = DemoServer.screen, screen != "settings" else { return }
                     hasShownDemoScreen = true
                     isShowingDemoScreen = true
                 }

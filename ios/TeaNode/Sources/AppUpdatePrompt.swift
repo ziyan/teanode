@@ -78,9 +78,14 @@ struct AppUpdateCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Update available", systemImage: "arrow.down.circle")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            // Not a Label: inside a list it takes the rows' wide icon column.
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.down.circle")
+                    .accessibilityHidden(true)
+                Text("Update available")
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
             Text("TeaNode \(update.versionText) is ready to install.")
                 .font(.body)
                 .fixedSize(horizontal: false, vertical: true)
