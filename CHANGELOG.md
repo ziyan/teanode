@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.224.0] - 2026-11-06
+
+### Added
+
+- Hold a message in an iPhone chat and choose Read aloud to hear it in your agent's voice, or in the phone's own voice when the server has none. (#737)
+
 ## [0.223.0] - 2026-11-06
 
 ### Added
