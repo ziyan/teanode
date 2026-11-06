@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.224.1] - 2026-11-06
+
+### Fixed
+
+- iPhone: Read aloud says why a message cannot be heard and falls back to the phone's own voice, warns when the volume is all the way down, and no longer disturbs a meeting recording. (#738)
+
 ## [0.224.0] - 2026-11-06
 
 ### Added
