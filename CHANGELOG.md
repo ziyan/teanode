@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.224.2] - 2026-11-08
+
+### Fixed
+
+- iPhone: a coding session no longer shows a blank screen below its last turn until you scroll up. (#739)
+
 ## [0.224.1] - 2026-11-06
 
 ### Fixed
