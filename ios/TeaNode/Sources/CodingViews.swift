@@ -705,6 +705,10 @@ struct CodingSessionView: View {
             findEndIfPast()
         }
         .defaultScrollAnchor(.bottom)
+        // Held at the bottom when the turns change size, as the chat is: a
+        // working bubble that goes away or a question answered shortens the
+        // list under the view.
+        .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.immediately)
         .overlay {
             if !isRead {

@@ -190,7 +190,7 @@ struct ConversationView: View {
                 findEndIfPast()
             }
             .defaultScrollAnchor(.bottom)
-            .defaultScrollAnchor(.bottom, for: .sizeChanges)
+            .defaultScrollAnchor(sizeChangeAnchor, for: .sizeChanges)
             .scrollDismissesKeyboard(.immediately)
             .overlay(alignment: .bottomTrailing) {
                 if !isAtEnd {
@@ -280,6 +280,17 @@ struct ConversationView: View {
                 }
             #endif
         }
+    }
+
+    /// Where the view holds on when what it holds changes size: at the
+    /// bottom, so that the newest message stays in sight.
+    private var sizeChangeAnchor: UnitPoint? {
+        #if DEBUG
+            // `-TeaNodeScreen conversation-past-end`: not held, as the coding session is not, so that a list
+            // shortened under the view leaves it below the last line, and only finding the end again brings it back.
+            if DemoServer.isRequested, DemoServer.screen?.hasPrefix("conversation-past-end") == true { return nil }
+        #endif
+        return .bottom
     }
 
     /// Finds the end again when the scroll has come to rest below the last
