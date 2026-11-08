@@ -649,7 +649,12 @@ struct CodingSessionView: View {
 
     private func transcript(_ session: HerdrSession) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
+            // Not lazy: a lazy stack places the turns it has not drawn by
+            // estimated heights, and every read moves each turn up a place,
+            // so a jump to the end could land where nothing is drawn. The
+            // read holds at most greatestTurnCount turns, so all of them are
+            // measured.
+            VStack(alignment: .leading, spacing: 12) {
                 if isTruncated, turnCount < Self.greatestTurnCount {
                     // As the chat's earlier messages: a small capsule in the
                     // middle, and reaching it after scrolling up reads them.
@@ -661,8 +666,10 @@ struct CodingSessionView: View {
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
                     .frame(maxWidth: .infinity)
-                    .onAppear {
-                        if !isAtEnd { turnCount = Self.greatestTurnCount }
+                    // When scrolled into sight: in a stack that is not lazy,
+                    // onAppear comes with the first layout.
+                    .onScrollVisibilityChange { isVisible in
+                        if isVisible, !isAtEnd { turnCount = Self.greatestTurnCount }
                     }
                 }
                 ForEach(Array(turns.enumerated()), id: \.offset) { _, turn in
