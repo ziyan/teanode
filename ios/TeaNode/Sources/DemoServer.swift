@@ -90,7 +90,7 @@
             } else if query.contains("GetServiceCapabilities") {
                 answer = #"{"data":{"GetServiceCapabilities":{"isMailRoutingEnabled":true,"isMailboxEnabled":true,"isCalendarEnabled":true,"isRemindersEnabled":true,"isContactsEnabled":true,"isPhotosEnabled":true,"isAssistantEnabled":true,"hasPendingServiceRestart":false,"hasCompletedSetup":true}}}"#
             } else if query.contains("ReadAgentConversation") {
-                if Self.screen?.hasPrefix("conversation-long-message") == true || Self.screen?.hasPrefix("conversation-past-end") == true {
+                if Self.screen?.hasPrefix("conversation-long-message") == true {
                     answer = Self.longMessageConversation
                 } else if Self.screen == "conversation-link" {
                     answer = Self.linkConversation
@@ -677,12 +677,10 @@
         /// Whether a screenshot opens on the main conversation instead of the
         /// list of conversations: `-TeaNodeScreen conversation`, `conversation-link`
         /// with a message that holds a link, and the screens named
-        /// `conversation-long-message` that open one with a long message, also
-        /// opened at its end by `conversation-past-end`.
+        /// `conversation-long-message` that open one with a long message.
         static var opensMainChat: Bool {
             guard isRequested, let screen else { return false }
             return screen == "conversation" || screen == "conversation-link" || screen.hasPrefix("conversation-long-message")
-                || screen.hasPrefix("conversation-past-end")
         }
 
         /// What the Search tab finds for the words, as the server answers a

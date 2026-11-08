@@ -39,21 +39,12 @@ struct ConversationView: View {
     /// and reading the page before then left the conversation at that
     /// page's edge, in the middle, rather than at its end.
     @State private var hasPersonScrolled = false
-    /// Whether the view is below the last line, and whether the scroll is
-    /// at rest, when the end is found again (ScrollEnd).
-    @State private var isPastEnd = false
-    @State private var scrollPhase = ScrollPhase.idle
     @State private var status = StatusModel()
     @State private var isShowingStatus = false
     /// The sheet that chooses who a call in a group rings.
     @State private var isChoosingCallPeople = false
 
     private static let endId = "end"
-    #if DEBUG
-        /// Room below the end that goes away after a jump to it, as a row
-        /// measured shorter than estimated does (`conversation-past-end`).
-        @State private var demoTailHeight: CGFloat = 0
-    #endif
 
     var body: some View {
         framed
@@ -174,23 +165,19 @@ struct ConversationView: View {
             // The jump to the end is offered only when the end is well out
             // of sight, judged from where the scroll is rather than from a
             // last line, which a new conversation may not have laid out.
-            .onScrollGeometryChange(for: ScrollEnd.self) { geometry in
-                ScrollEnd(geometry, nearEndHeight: 160)
-            } action: { _, scrollEnd in
-                isAtEnd = scrollEnd.isNearEnd
-                isPastEnd = scrollEnd.isPastEnd
-                findEndIfPast()
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentSize.height - geometry.visibleRect.maxY < 160
+            } action: { _, isNearEnd in
+                isAtEnd = isNearEnd
             }
             .onScrollPhaseChange { _, phase in
-                scrollPhase = phase
                 if phase == .interacting {
                     hasPersonScrolled = true
                     lastScrolledAt = .now
                 }
-                findEndIfPast()
             }
             .defaultScrollAnchor(.bottom)
-            .defaultScrollAnchor(sizeChangeAnchor, for: .sizeChanges)
+            .defaultScrollAnchor(.bottom, for: .sizeChanges)
             .scrollDismissesKeyboard(.immediately)
             .overlay(alignment: .bottomTrailing) {
                 if !isAtEnd {
@@ -240,19 +227,6 @@ struct ConversationView: View {
             }
             #if DEBUG
                 .task(id: model.isLoaded) {
-                    // `-TeaNodeScreen conversation-past-end`: the end jumped to, then the
-                    // list made shorter under it; the newest message shows again.
-                    guard DemoServer.isRequested, let screen = DemoServer.screen, screen.hasPrefix("conversation-past-end"), model.isLoaded
-                    else { return }
-                    // Quick, so that it is over well before the screenshot's
-                    // first look, five seconds in.
-                    demoTailHeight = 4000
-                    try? await Task.sleep(for: .milliseconds(400))
-                    scrollPosition.scrollTo(edge: .bottom)
-                    try? await Task.sleep(for: .milliseconds(600))
-                    demoTailHeight = 0
-                }
-                .task(id: model.isLoaded) {
                     // `-TeaNodeScreen conversation-long-message`: scrolled back to the top, where the long message starts;
                     // `conversation-long-message-read`: the whole of it open.
                     guard DemoServer.isRequested, let screen = DemoServer.screen, screen.hasPrefix("conversation-long-message"), model.isLoaded
@@ -280,28 +254,6 @@ struct ConversationView: View {
                 }
             #endif
         }
-    }
-
-    /// Where the view holds on when what it holds changes size: at the
-    /// bottom, so that the newest message stays in sight.
-    private var sizeChangeAnchor: UnitPoint? {
-        #if DEBUG
-            // `-TeaNodeScreen conversation-past-end`: not held, as the coding session is not, so that a list
-            // shortened under the view leaves it below the last line, and only finding the end again brings it back.
-            if DemoServer.isRequested, DemoServer.screen?.hasPrefix("conversation-past-end") == true { return nil }
-        #endif
-        return .bottom
-    }
-
-    /// Finds the end again when the scroll has come to rest below the last
-    /// line, which would otherwise show nothing until the person scrolled up.
-    private func findEndIfPast() {
-        guard isPastEnd, scrollPhase == .idle else { return }
-        #if DEBUG
-            // `-TeaNodeScreen conversation-past-end-unfound`: left past the end, to show what this prevents.
-            if DemoServer.isRequested, DemoServer.screen == "conversation-past-end-unfound" { return }
-        #endif
-        scrollPosition.scrollTo(edge: .bottom)
     }
 
     /// Asks for the cards of the messages read so far, the newest first, so
@@ -379,11 +331,6 @@ struct ConversationView: View {
                 }
             }
             Color.clear.frame(height: 1).id(Self.endId)
-            #if DEBUG
-                if demoTailHeight > 0 {
-                    Color.clear.frame(height: demoTailHeight)
-                }
-            #endif
         }
     }
 

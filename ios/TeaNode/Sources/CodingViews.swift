@@ -507,10 +507,6 @@ struct CodingSessionView: View {
     /// not said again each time.
     @State private var failureText: String?
     @State private var scrollPosition = ScrollPosition(edge: .bottom)
-    /// Whether the view is below the last line, and whether the scroll is
-    /// at rest, when the end is found again (ScrollEnd).
-    @State private var isPastEnd = false
-    @State private var scrollPhase = ScrollPhase.idle
 
     /// How many turns are read at first, and the most the server gives.
     static let initialTurnCount = 50
@@ -653,7 +649,12 @@ struct CodingSessionView: View {
 
     private func transcript(_ session: HerdrSession) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
+            // Not lazy: a lazy stack places the turns it has not drawn by
+            // estimated heights, and every read moves each turn up a place,
+            // so a jump to the end could land where nothing is drawn. The
+            // read holds at most greatestTurnCount turns, so all of them are
+            // measured.
+            VStack(alignment: .leading, spacing: 12) {
                 if isTruncated, turnCount < Self.greatestTurnCount {
                     // As the chat's earlier messages: a small capsule in the
                     // middle, and reaching it after scrolling up reads them.
@@ -665,8 +666,10 @@ struct CodingSessionView: View {
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
                     .frame(maxWidth: .infinity)
-                    .onAppear {
-                        if !isAtEnd { turnCount = Self.greatestTurnCount }
+                    // When scrolled into sight: in a stack that is not lazy,
+                    // onAppear comes with the first layout.
+                    .onScrollVisibilityChange { isVisible in
+                        if isVisible, !isAtEnd { turnCount = Self.greatestTurnCount }
                     }
                 }
                 ForEach(Array(turns.enumerated()), id: \.offset) { _, turn in
@@ -693,22 +696,12 @@ struct CodingSessionView: View {
             .padding(.vertical, 12)
         }
         .scrollPosition($scrollPosition)
-        .onScrollGeometryChange(for: ScrollEnd.self) { geometry in
-            ScrollEnd(geometry, nearEndHeight: 120)
-        } action: { _, scrollEnd in
-            isAtEnd = scrollEnd.isNearEnd
-            isPastEnd = scrollEnd.isPastEnd
-            findEndIfPast()
-        }
-        .onScrollPhaseChange { _, phase in
-            scrollPhase = phase
-            findEndIfPast()
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.contentSize.height - geometry.visibleRect.maxY < 120
+        } action: { _, isNearEnd in
+            isAtEnd = isNearEnd
         }
         .defaultScrollAnchor(.bottom)
-        // Held at the bottom when the turns change size, as the chat is: a
-        // working bubble that goes away or a question answered shortens the
-        // list under the view.
-        .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.immediately)
         .overlay {
             if !isRead {
@@ -732,13 +725,6 @@ struct CodingSessionView: View {
         .onChange(of: sentCount) {
             withAnimation { scrollPosition.scrollTo(edge: .bottom) }
         }
-    }
-
-    /// Finds the end again when the scroll has come to rest below the last
-    /// line, which would otherwise show nothing until the person scrolled up.
-    private func findEndIfPast() {
-        guard isPastEnd, scrollPhase == .idle else { return }
-        scrollPosition.scrollTo(edge: .bottom)
     }
 
     /// The screen as the program in the pane colored it, on a terminal's

@@ -3,7 +3,7 @@ import Foundation
 import Vision
 
 // Inspect rendered content so a conversation screenshot shows what it was taken for: a message many screens tall,
-// scrolled back to its first line, the whole of it open to read, and the newest message after the list shrank.
+// scrolled back to its first line, and the whole of it open to read.
 guard CommandLine.arguments.count == 3 else {
     fputs("Provide the screenshot name and PNG path.\n", stderr)
     exit(1)
@@ -18,8 +18,6 @@ if let appearanceSuffix = appearanceSuffixes.first(where: { screenName.hasSuffix
 let expectedMarkersByScreen: [String: [String]] = [
     "conversation-long-message": ["thefirstlineofalongmessage", "showall"],
     "conversation-long-message-read": ["thewholemessage", "thefirstlineofalongmessage"],
-    // Opened at its end and left below it by a list made shorter: the newest message shows again.
-    "conversation-past-end": ["readallofit"],
 ]
 guard var expectedMarkers = expectedMarkersByScreen[screenName] else {
     fputs("No rendered-content assertion for \(screenName).\n", stderr)
