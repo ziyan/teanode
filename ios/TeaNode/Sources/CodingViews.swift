@@ -507,6 +507,10 @@ struct CodingSessionView: View {
     /// not said again each time.
     @State private var failureText: String?
     @State private var scrollPosition = ScrollPosition(edge: .bottom)
+    /// Whether the view is below the last line, and whether the scroll is
+    /// at rest, when the end is found again (ScrollEnd).
+    @State private var isPastEnd = false
+    @State private var scrollPhase = ScrollPhase.idle
 
     /// How many turns are read at first, and the most the server gives.
     static let initialTurnCount = 50
@@ -689,10 +693,16 @@ struct CodingSessionView: View {
             .padding(.vertical, 12)
         }
         .scrollPosition($scrollPosition)
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentSize.height - geometry.visibleRect.maxY < 120
-        } action: { _, isNearEnd in
-            isAtEnd = isNearEnd
+        .onScrollGeometryChange(for: ScrollEnd.self) { geometry in
+            ScrollEnd(geometry, nearEndHeight: 120)
+        } action: { _, scrollEnd in
+            isAtEnd = scrollEnd.isNearEnd
+            isPastEnd = scrollEnd.isPastEnd
+            findEndIfPast()
+        }
+        .onScrollPhaseChange { _, phase in
+            scrollPhase = phase
+            findEndIfPast()
         }
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.immediately)
@@ -718,6 +728,13 @@ struct CodingSessionView: View {
         .onChange(of: sentCount) {
             withAnimation { scrollPosition.scrollTo(edge: .bottom) }
         }
+    }
+
+    /// Finds the end again when the scroll has come to rest below the last
+    /// line, which would otherwise show nothing until the person scrolled up.
+    private func findEndIfPast() {
+        guard isPastEnd, scrollPhase == .idle else { return }
+        scrollPosition.scrollTo(edge: .bottom)
     }
 
     /// The screen as the program in the pane colored it, on a terminal's

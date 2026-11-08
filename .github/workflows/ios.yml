@@ -245,13 +245,13 @@ jobs:
             xcrun simctl launch "$device" "$bundle" "$@"
             settle "screenshots/$name.png"
             case "$name" in
-              recordings-*|recording-*|device-setup-*|knowledge-records-*|conversation-long-message-*)
+              recordings-*|recording-*|device-setup-*|knowledge-records-*|conversation-long-message-*|conversation-past-end-light|conversation-past-end-largest-text)
                 # The screen may still be loading its demo answers: look
                 # again a few times before calling it wrong.
                 case "$name" in
                   device-setup-*) assertion=build/assert-device-setup-screenshot ;;
                   knowledge-records-*) assertion=build/assert-knowledge-screenshot ;;
-                  conversation-long-message-*) assertion=build/assert-conversation-screenshot ;;
+                  conversation-long-message-*|conversation-past-end-*) assertion=build/assert-conversation-screenshot ;;
                   *) assertion=build/assert-recording-screenshot ;;
                 esac
                 is_setup_ready=false
@@ -292,6 +292,11 @@ jobs:
           shoot conversation-reading-light light large -TeaNodeDemo -TeaNodeScreen conversation-long-message-reading
           shoot conversation-reading-dark dark large -TeaNodeDemo -TeaNodeScreen conversation-long-message-reading
           shoot conversation-long-message-read-light light large -TeaNodeDemo -TeaNodeScreen conversation-long-message-read
+          # Left below the last line by a list that shrank: the end is found again. The control without that is
+          # only photographed, to show the trick does leave it blank.
+          shoot conversation-past-end-light light large -TeaNodeDemo -TeaNodeScreen conversation-past-end
+          shoot conversation-past-end-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeScreen conversation-past-end
+          shoot conversation-past-end-unfound-light light large -TeaNodeDemo -TeaNodeScreen conversation-past-end-unfound
           # The tab bar of icons, and each tab's first screen: Chats' list of conversations, Mail's list
           # of folders and the inbox pushed from it, then Photos and Calendar below, More, and Search.
           shoot chats-light light large -TeaNodeDemo -TeaNodeTab agent
