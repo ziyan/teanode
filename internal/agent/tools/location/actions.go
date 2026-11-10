@@ -31,9 +31,10 @@ const (
   GetLocation(userId: $userId) { username name shareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } pause { ` + pauseFields + ` } notificationMute { ` + muteFields + ` } }
 }`
 	documentListSharedLocations = `query {
-  ListSharedLocations { userId username name shareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } pause { ` + pauseFields + ` } notificationMute { ` + muteFields + ` } }
+  ListSharedLocations { userId username name shareLevel grantedShareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } pause { ` + pauseFields + ` } notificationMute { ` + muteFields + ` } }
 }`
-	documentListVisits = `query ($userId: String, $from: DateTime, $until: DateTime, $placeId: String, $placeLabel: String, $offset: Int, $limitCount: Int) {
+	documentReadSharingLimit = `query { ReadLocationSharingLimit { shareLevelLimit sharingLimitReason } }`
+	documentListVisits       = `query ($userId: String, $from: DateTime, $until: DateTime, $placeId: String, $placeLabel: String, $offset: Int, $limitCount: Int) {
   ListLocationVisits(userId: $userId, from: $from, until: $until, placeId: $placeId, placeLabel: $placeLabel, offset: $offset, limitCount: $limitCount) {
     nextOffset placeVisits { ` + listedVisitFields + ` }
   }
@@ -153,13 +154,16 @@ type muteData struct {
 }
 
 type locationData struct {
-	UserID      string     `json:"userId"`
-	Username    string     `json:"username"`
-	Name        string     `json:"name"`
-	ShareLevel  string     `json:"shareLevel"`
-	LatestPoint *pointData `json:"latestPoint"`
-	OpenVisit   *visitData `json:"openVisit"`
-	Pause       *pauseData `json:"pause"`
+	UserID     string `json:"userId"`
+	Username   string `json:"username"`
+	Name       string `json:"name"`
+	ShareLevel string `json:"shareLevel"`
+	// GrantedShareLevel is what their shares give; ShareLevel is what the
+	// person sees of it, less when they share less back.
+	GrantedShareLevel string     `json:"grantedShareLevel"`
+	LatestPoint       *pointData `json:"latestPoint"`
+	OpenVisit         *visitData `json:"openVisit"`
+	Pause             *pauseData `json:"pause"`
 
 	NotificationMute *muteData `json:"notificationMute"`
 }
@@ -283,6 +287,9 @@ func (self *scope) personId(ctx context.Context, username string, doesNeedHistor
 	}
 	for _, each := range result.ListSharedLocations {
 		if strings.EqualFold(each.Username, username) {
+			if each.ShareLevel == "" {
+				return nil, fmt.Errorf("the person sees nothing of %s's location, since they share none of their own with them; people says why", each.Username)
+			}
 			if doesNeedHistory && each.ShareLevel != "history" {
 				return nil, fmt.Errorf("%s shares only where they are now", each.Username)
 			}
@@ -1474,10 +1481,30 @@ func runPeople(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err := here.operations.Execute(ctx, documentListSharedLocations, nil, &result); err != nil {
 		return nil, err
 	}
+	var limitResult struct {
+		ReadLocationSharingLimit struct {
+			ShareLevelLimit    string `json:"shareLevelLimit"`
+			SharingLimitReason string `json:"sharingLimitReason"`
+		} `json:"ReadLocationSharingLimit"`
+	}
+	if err := here.operations.Execute(ctx, documentReadSharingLimit, nil, &limitResult); err != nil {
+		return nil, err
+	}
+	limit := limitResult.ReadLocationSharingLimit
 	rows := make([]map[string]any, 0, len(result.ListSharedLocations))
 	for index := range result.ListSharedLocations {
 		each := &result.ListSharedLocations[index]
 		row := map[string]any{"person": each.Username, "name": each.Name, "share_level": each.ShareLevel}
+		// Less is seen than they share when the person shares less back: the
+		// words say so, and what to change.
+		if words := models.LocationShareBackWords(each.Name, models.LocationShareLevel(each.ShareLevel), models.LocationShareLevel(each.GrantedShareLevel), models.LocationShareLevel(limit.ShareLevelLimit)); words != "" {
+			row["shared_with_them"] = each.GrantedShareLevel
+			row["why_less_is_seen"] = words
+		}
+		if each.ShareLevel == "" {
+			rows = append(rows, row)
+			continue
+		}
 		here.addNotificationMute(row, each.NotificationMute)
 		if each.Pause != nil {
 			for key, value := range here.pausedRow(each.Name, each.Pause) {
@@ -1492,7 +1519,13 @@ func runPeople(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		row["at"] = here.openVisitRow(each.OpenVisit)
 		rows = append(rows, row)
 	}
-	return untrusted(tools.JSONResult(map[string]any{"timezone": here.where.String(), "people": rows}))
+	answer := map[string]any{"timezone": here.where.String(), "people": rows}
+	// Nobody sees more of others' locations than they share: their phone or a
+	// pause limits all of it, said once.
+	if words := models.LocationSharingLimitReason(limit.SharingLimitReason).Words(); words != "" {
+		answer["sharing_limit"] = words
+	}
+	return untrusted(tools.JSONResult(answer))
 }
 
 func runShares(ctx context.Context, call *tools.Call) (*tools.Result, error) {

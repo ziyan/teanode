@@ -58,6 +58,9 @@ export type LocationView = {
   avatarColorIndex: number
   // "owner" for the person signed in, else what they share: current or history.
   shareLevel: string
+  // What this person's shares give the caller, before the caller's own sharing
+  // back and limit lower it. Only the list of people reads it.
+  grantedShareLevel?: string
   latestPoint: LocationPoint | null
   openVisit: Pick<PlaceVisit, 'id' | 'place' | 'arrivedAt'> | null
   // The pause in effect. While it is, somebody else's view has no latestPoint
@@ -380,3 +383,16 @@ export function travelRange(period: TravelPeriod, pageIndex: number, now: Date):
   const from = periodsFrom(period, until, -count)
   return { from: from.toISOString(), until: until.toISOString() }
 }
+
+// Why the person sees less of everybody: their own limit, from the phone's
+// location permission, the recording switch or a pause.
+export type LocationSharingLimit = {
+  shareLevelLimit: string
+  sharingLimitReason: string
+  phonePermission: string | null
+  isRecordingOn: boolean | null
+  reportedAt: string | null
+}
+
+// How much of a person a share level shows, the higher the more.
+export const SHARE_LEVEL_RANKS: Record<string, number> = { '': 0, current: 1, history: 2 }

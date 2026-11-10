@@ -187,6 +187,8 @@ function answerWith(shown: {
   // The pauses ListLocationPauses answers with.
   pauses?: LocationPause[]
   failSharedLocations?: boolean
+  // What ReadLocationSharingLimit answers with; none when the person is not limited.
+  sharingLimit?: { shareLevelLimit: string; sharingLimitReason: string }
   // Answers the visits asked for, when what is asked changes the answer.
   visitsFor?: (variables: Record<string, unknown>) => PlaceVisit[] | Promise<PlaceVisit[]>
   people?: { userId: string; username: string; name: string }[]
@@ -204,6 +206,16 @@ function answerWith(shown: {
     if (document.includes('ListSharedLocations')) {
       if (shown.failSharedLocations) throw new Error('Cannot query field "ListSharedLocations"')
       return { ListSharedLocations: shown.sharedViews ?? [] } as never
+    }
+    if (document.includes('ReadLocationSharingLimit')) {
+      return {
+        ReadLocationSharingLimit: {
+          phonePermission: null,
+          isRecordingOn: null,
+          reportedAt: null,
+          ...(shown.sharingLimit ?? { shareLevelLimit: 'history', sharingLimitReason: '' }),
+        },
+      } as never
     }
     if (document.includes('ListLocationVisits')) {
       const placeVisits = shown.visitsFor
@@ -396,6 +408,50 @@ it('says in a toast that the people sharing cannot be read, and still shows the 
   expect(screen.getByText('Person A')).toBeTruthy()
   expect(screen.getByTestId('map').textContent).toBe('1 people, 1 places')
   expect(await screen.findByText(/Cannot query field "ListSharedLocations"/)).toBeTruthy()
+})
+
+it('says the visits cannot be seen while the phone location is set to While Using', async () => {
+  answerWith({
+    sharingLimit: { shareLevelLimit: 'current', sharingLimitReason: 'phone_while_using' },
+    sharedViews: [{ ...PERSON_B_VIEW, shareLevel: 'current', grantedShareLevel: 'history' }],
+  })
+  renderAt('/location')
+
+  expect(await screen.findByText("You can't see anyone's visits")).toBeTruthy()
+  expect(screen.getByText(/Location is set to While Using on your iPhone/)).toBeTruthy()
+  expect(screen.queryByText('You see less of some people')).toBeNull()
+})
+
+it('names the people seen less of because of what the person shares back, and gives them no pin', async () => {
+  answerWith({
+    sharedViews: [
+      {
+        ...PERSON_B_VIEW,
+        shareLevel: '',
+        grantedShareLevel: 'history',
+        latestPoint: null,
+        openVisit: null,
+        pause: null,
+      },
+    ],
+  })
+  renderAt('/location')
+
+  expect(await screen.findByText('You see less of some people')).toBeTruthy()
+  expect(screen.getByText("You don't share your location with Person B, so you can't see theirs.")).toBeTruthy()
+  expect(screen.getByText('Share your location to see theirs')).toBeTruthy()
+  const banner = screen.getByText('You see less of some people').closest('.notice') as HTMLElement
+  expect(within(banner).getByRole('button', { name: 'Sharing' })).toBeTruthy()
+  expect(screen.getByTestId('map').textContent).toBe('1 people, 0 places')
+})
+
+it('shows no banner when nothing is restricted', async () => {
+  answerWith({ sharedViews: [{ ...PERSON_B_VIEW, grantedShareLevel: 'history' }] })
+  renderAt('/location')
+
+  expect(await screen.findByText('Person B')).toBeTruthy()
+  expect(screen.queryByText("You can't see anyone's location")).toBeNull()
+  expect(screen.queryByText('You see less of some people')).toBeNull()
 })
 
 it("gives a person's arrival its day when it was not today", async () => {

@@ -237,6 +237,10 @@ func TestReadPersonCardAShareThatIsOffIsNotShared(test *testing.T) {
 		if _, err := transaction.ShareLocation(world.ada.ID, &models.LocationShare{GranteeUserID: world.ben.ID, ShareLevel: models.LocationShareLevelCurrent}); err != nil {
 			test.Fatal(err)
 		}
+		// Ben shares his back: nobody sees more of a location than they share.
+		if _, err := transaction.ShareLocation(world.ben.ID, &models.LocationShare{GranteeUserID: world.ada.ID, ShareLevel: models.LocationShareLevelHistory}); err != nil {
+			test.Fatal(err)
+		}
 		if _, err := transaction.SetHealthShare(world.ada.ID, &models.HealthShare{GranteeUserID: world.ben.ID, HealthCategories: []string{"activity"}}); err != nil {
 			test.Fatal(err)
 		}

@@ -54,6 +54,10 @@ final class LocationModel {
     /// The people sharing their location with the person, as the server last
     /// said.
     private(set) var people: [PersonLocation] = []
+    /// What limits the people the person sees (their phone's permission, the
+    /// recording switch, a pause), as the server last said; nil until it has,
+    /// and from a server that cannot say.
+    private(set) var sharingLimit: LocationSharingLimit?
     /// The shares of the person's own location.
     private(set) var shares: [LocationShare] = []
     /// The circles the person is in, for the setup and the share sheet.
@@ -109,6 +113,9 @@ final class LocationModel {
     /// The person's own user identifier, once their location is read.
     var ownUserId: String? { location?.userId }
 
+    /// The notice at the top of the people, if one applies.
+    var sharingBanner: LocationSharingBanner? { LocationSharingNotice.banner(limit: sharingLimit, people: people) }
+
     /// The visits and pauses grouped by day, newest first.
     var days: [LocationVisitDay] { LocationDays.group(visits, pauses: pauses, trips: trips) }
 
@@ -153,6 +160,7 @@ final class LocationModel {
         let (locationResult, visitsResult, placesResult) = await (readLocation, readVisits, readPlaces)
         let (peopleResult, sharesResult, circlesResult, homesResult) = await (readPeople, readShares, readCircles, readHomes)
         apply(people: peopleResult, shares: sharesResult, circles: circlesResult, homes: homesResult)
+        await readSharingLimit()
         var failure: Error?
         switch locationResult {
         case .success(let read):
@@ -396,7 +404,7 @@ final class LocationModel {
                     id: open.id, place: saved, arrivedAt: open.arrivedAt, departedAt: open.departedAt, durationSeconds: open.durationSeconds,
                     latitudeDegrees: open.latitudeDegrees, longitudeDegrees: open.longitudeDegrees, accuracyMeters: open.accuracyMeters,
                     visitSource: open.visitSource),
-                pause: current.pause)
+                pause: current.pause, grantedShareLevel: current.grantedShareLevel)
         }
     }
 
@@ -624,6 +632,22 @@ final class LocationModel {
     private func refreshEveryone() async {
         await refreshOwn()
         await refreshPeople()
+        await readSharingLimit()
+    }
+
+    /// Reads what limits the people the person sees. A failed read, or a
+    /// server that cannot say, leaves the limit as it was.
+    private func readSharingLimit() async {
+        guard let read = try? await connection.locationSharingLimit() else { return }
+        sharingLimit = read
+    }
+
+    /// The server took something that changes what the person sees (their
+    /// phone's permission, the recording switch, a pause): reads the people
+    /// and the limit again.
+    func sharingLimitDidChange() async {
+        await refreshPeople()
+        await readSharingLimit()
     }
 
     // MARK: The selected person

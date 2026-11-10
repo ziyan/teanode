@@ -87,8 +87,12 @@ struct LocationPeopleRows: View {
 struct LocationPeopleSection: View {
     let model: LocationModel
     let showPeople: () -> Void
+    /// Opens the sharing list, from the banner that says the person sees
+    /// less of somebody because of what they share.
+    let showSharing: () -> Void
 
     var body: some View {
+        LocationSharingBannerSection(model: model, showSharing: showSharing)
         if model.location != nil || !model.people.isEmpty {
             Section {
                 LocationPeopleRows(model: model, showPeople: showPeople)

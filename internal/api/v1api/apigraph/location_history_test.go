@@ -48,6 +48,15 @@ func newLocationWorld(t *testing.T) *locationWorld {
 	return world
 }
 
+// sharesBack has the viewer share their own location with the owner at
+// history, so that a test of what the owner's shares give is not also a test
+// of what the viewer shares back: nobody sees more of a location than they
+// share with its owner.
+func (self *locationWorld) sharesBack(t *testing.T, viewer, owner *models.User) {
+	t.Helper()
+	self.call(t, viewer, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "history") { id } }`, owner.ID))
+}
+
 // A moment a little before now, written for a query.
 func ago(duration time.Duration) string {
 	return time.Now().Add(-duration).UTC().Format(time.RFC3339)
@@ -321,6 +330,7 @@ func TestErasingHistory(t *testing.T) {
 // while the two share a circle.
 func TestWhoReachesWhoseLocation(t *testing.T) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	world.report(t, world.ada, pointInput(40, -75, ago(5*time.Minute)), visitInput("k1", 40, -75, ago(60*time.Minute), ago(30*time.Minute)))
 	asAda := fmt.Sprintf(`userId: %q`, world.ada.ID)
 
@@ -779,7 +789,21 @@ func TestListSharedLocationsDescribesEverySharer(t *testing.T) {
 	world.report(t, world.ada, pointInput(40.0, -75.0, ago(5*time.Minute)), visitInput("ada-here", 40.0, -75.0, ago(30*time.Minute), ""))
 	world.report(t, world.cora, pointInput(41.0, -75.0, ago(5*time.Minute)), "")
 
-	people := world.call(t, world.ben, `query { ListSharedLocations { username latestPoint { latitudeDegrees } openVisit { id } } }`)["ListSharedLocations"].([]any)
+	// Ben shares nothing back: both are listed, with what they share, and
+	// nothing of where they are.
+	people := world.call(t, world.ben, `query { ListSharedLocations { username shareLevel grantedShareLevel latestPoint { latitudeDegrees } openVisit { id } } }`)["ListSharedLocations"].([]any)
+	if len(people) != 2 {
+		t.Fatalf("two people share: %v", people)
+	}
+	for _, each := range people {
+		person := each.(map[string]any)
+		if person["shareLevel"] != "" || person["grantedShareLevel"] != "current" || person["latestPoint"] != nil || person["openVisit"] != nil {
+			t.Errorf("ben shares nothing and sees nothing: %v", person)
+		}
+	}
+
+	world.call(t, world.ben, fmt.Sprintf(`mutation { ShareLocation(granteeCircleId: %q, shareLevel: "current") { id } }`, circleId))
+	people = world.call(t, world.ben, `query { ListSharedLocations { username latestPoint { latitudeDegrees } openVisit { id } } }`)["ListSharedLocations"].([]any)
 	if len(people) != 2 {
 		t.Fatalf("two people share: %v", people)
 	}
@@ -1114,6 +1138,7 @@ func TestMakingHomeFromAnAddressReusesAnOwnPlaceThere(t *testing.T) {
 // level; not below it, and an unknown id is not found.
 func TestReadPlaceByID(t *testing.T) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	world.report(t, world.ada, pointInput(40, -75, ago(5*time.Minute)), visitInput("k1", 40, -75, ago(60*time.Minute), ago(30*time.Minute)))
 	listed := world.call(t, world.ada, `query { ListPlaces { places { id } } }`)["ListPlaces"].(map[string]any)["places"].([]any)
 	if len(listed) != 1 {
@@ -1139,4 +1164,46 @@ func TestReadPlaceByID(t *testing.T) {
 		t.Errorf("at history, the place: %v", seen)
 	}
 	world.refused(t, world.ada, `query { ReadPlace(placeId: "no-such-place") `+fields+` }`)
+}
+
+// The app says what the phone lets it record, and the limit that puts on
+// what the caller sees comes back and shows in what they see: While Using
+// sees where people are and no visits, Location off sees nobody.
+func TestAPhoneThatCannotRecordVisitsSeesNobodysVisits(t *testing.T) {
+	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
+	world.report(t, world.ada, pointInput(40, -75, ago(5*time.Minute)), visitInput("k1", 40, -75, ago(60*time.Minute), ago(30*time.Minute)))
+	world.call(t, world.ada, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "history") { id } }`, world.ben.ID))
+	asAda := fmt.Sprintf(`userId: %q`, world.ada.ID)
+
+	limit := world.call(t, world.ben, `query { ReadLocationSharingLimit { shareLevelLimit sharingLimitReason phonePermission isRecordingOn } }`)["ReadLocationSharingLimit"].(map[string]any)
+	if limit["shareLevelLimit"] != "history" || limit["sharingLimitReason"] != "" || limit["phonePermission"] != nil {
+		t.Fatalf("an app that never said is not limited: %v", limit)
+	}
+	world.call(t, world.ben, fmt.Sprintf(`query { ListLocationVisits(%s) { nextOffset } }`, asAda))
+
+	limit = world.call(t, world.ben, `mutation { ReportLocationPermission(phonePermission: "while_using", isRecordingOn: true) { shareLevelLimit sharingLimitReason phonePermission isRecordingOn } }`)["ReportLocationPermission"].(map[string]any)
+	if limit["shareLevelLimit"] != "current" || limit["sharingLimitReason"] != "phone_while_using" || limit["phonePermission"] != "while_using" || limit["isRecordingOn"] != true {
+		t.Fatalf("while using: %v", limit)
+	}
+	people := world.call(t, world.ben, `query { ListSharedLocations { shareLevel grantedShareLevel latestPoint { latitudeDegrees } } }`)["ListSharedLocations"].([]any)
+	if len(people) != 1 || people[0].(map[string]any)["shareLevel"] != "current" || people[0].(map[string]any)["grantedShareLevel"] != "history" || people[0].(map[string]any)["latestPoint"] == nil {
+		t.Fatalf("ben sees where ada is, not her visits: %v", people)
+	}
+	world.refused(t, world.ben, fmt.Sprintf(`query { ListLocationVisits(%s) { nextOffset } }`, asAda))
+
+	limit = world.call(t, world.ben, `mutation { ReportLocationPermission(phonePermission: "off", isRecordingOn: true) { shareLevelLimit sharingLimitReason } }`)["ReportLocationPermission"].(map[string]any)
+	if limit["shareLevelLimit"] != "" || limit["sharingLimitReason"] != "phone_location_off" {
+		t.Fatalf("location off: %v", limit)
+	}
+	people = world.call(t, world.ben, `query { ListSharedLocations { shareLevel latestPoint { latitudeDegrees } } }`)["ListSharedLocations"].([]any)
+	if len(people) != 1 || people[0].(map[string]any)["shareLevel"] != "" || people[0].(map[string]any)["latestPoint"] != nil {
+		t.Fatalf("ben sees nothing of ada: %v", people)
+	}
+	world.refused(t, world.ben, fmt.Sprintf(`query { GetLocation(%s) { username } }`, asAda))
+	world.refused(t, world.ben, `mutation { ReportLocationPermission(phonePermission: "sometimes", isRecordingOn: true) { shareLevelLimit } }`)
+
+	// Ada is not limited by ben's phone in what she sees of him.
+	world.call(t, world.ben, `mutation { ReportLocationPermission(phonePermission: "always", isRecordingOn: true) { shareLevelLimit } }`)
+	world.call(t, world.ada, fmt.Sprintf(`query { ListLocationVisits(userId: %q) { nextOffset } }`, world.ben.ID))
 }

@@ -124,6 +124,7 @@ func (self *graph) ListSharedLocations(ctx context.Context) ([]*LocationView, er
 			continue
 		}
 		view := locationViewOf(&locationReach{User: user, ShareLevel: sharer.ShareLevel}, latestPoints[user.ID], openVisits[user.ID], pauses[user.ID])
+		view.GrantedShareLevel = string(sharer.GrantedShareLevel)
 		view.NotificationMute = describeLocationNotificationMute(mutes[user.ID])
 		views = append(views, view)
 	}
@@ -205,14 +206,14 @@ func (self *graph) UnshareLocation(ctx context.Context, arguments UnshareLocatio
 	// Who the location reaches before and after, to tell the ones it stops
 	// reaching: they are not shown the event for a location they can no longer
 	// see, and their map would keep the last position.
-	before, err := tx.ListLocationGrantees(principal.User.ID)
+	before, err := tx.ListLocationGrantees(principal.User.ID, models.LocationShareLevelCurrent)
 	if err != nil {
 		return false, err
 	}
 	if err := tx.UnshareLocation(principal.User.ID, strings.TrimSpace(arguments.ShareID)); err != nil {
 		return false, locationFailure(err)
 	}
-	after, err := tx.ListLocationGrantees(principal.User.ID)
+	after, err := tx.ListLocationGrantees(principal.User.ID, models.LocationShareLevelCurrent)
 	if err != nil {
 		return false, err
 	}

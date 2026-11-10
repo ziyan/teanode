@@ -60,9 +60,13 @@ func TestLocationParity(test *testing.T) {
 		"CheckIn":                     {"checkin", "check_in"},
 		"EraseLocationHistory":        {"erase", "erase"},
 		"ListSharedLocations":         {"people", "people"},
-		"ListLocationShares":          {"shares", "shares"},
-		"ShareLocation":               {"share", "share"},
-		"UnshareLocation":             {"unshare", "unshare"},
+		// What limits the caller's own view is said with the people they see.
+		"ReadLocationSharingLimit": {"people", "people"},
+		// Only the phone knows what it lets the app record.
+		"ReportLocationPermission": {"", ""},
+		"ListLocationShares":       {"shares", "shares"},
+		"ShareLocation":            {"share", "share"},
+		"UnshareLocation":          {"unshare", "unshare"},
 		// A subscription is followed by the dashboard and the app; nothing
 		// on a command line or in a conversation follows a map.
 		"LocationEvents": {"", ""},
@@ -201,6 +205,7 @@ func locationServerAnswering(test *testing.T, replacements map[string]string) (*
 		"CheckIn":                     `{"id":"v3","arrivedAt":"2026-10-17T12:00:00Z","place":` + place + `}`,
 		"EraseLocationHistory":        `{"pointCount":10,"visitCount":2,"placeCount":1}`,
 		"ListSharedLocations":         `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"history"},{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"current"}]`,
+		"ReadLocationSharingLimit":    `{"shareLevelLimit":"history","sharingLimitReason":""}`,
 		"PauseLocation":               `{"id":"pause1","startedAt":"2026-10-17T12:00:00Z","endedAt":"2026-10-17T13:30:00Z"}`,
 		"ResumeLocation":              `true`,
 		"MuteLocationNotifications":   `{"mutedUntil":"2026-10-17T13:30:00Z"}`,
@@ -970,5 +975,23 @@ func TestLocationTravelModeSetsAndClearsAWay(test *testing.T) {
 	}
 	if _, err := runLocationCommand(test, refused, "travel-mode", "leg2"); err == nil {
 		test.Error("a way is needed")
+	}
+}
+
+// The people listing says first what limits what the caller sees: their
+// phone, and a person they share less with than that person shares with them.
+func TestLocationPeopleSaysWhyLessIsSeen(test *testing.T) {
+	server, _ := locationServerAnswering(test, map[string]string{
+		"ReadLocationSharingLimit": `{"shareLevelLimit":"current","sharingLimitReason":"phone_while_using","phonePermission":"while_using","isRecordingOn":true}`,
+		"ListSharedLocations": `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"current","grantedShareLevel":"history"},
+			{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"","grantedShareLevel":"history"}]`,
+	})
+	output, err := runLocationCommand(test, server, "people")
+	if err != nil || !strings.Contains(output, "While Using") || !strings.Contains(output, "You do not share your location with cleo") ||
+		strings.Contains(output, "with ben") || !regexp.MustCompile(`cleo +none +not seen`).MatchString(output) {
+		test.Errorf("the people, and why less is seen: %q %v", output, err)
+	}
+	if _, err := runLocationCommand(test, server, "now", "--person", "cleo"); err == nil || !strings.Contains(err.Error(), "you see nothing of cleo") {
+		test.Errorf("cleo, who is not seen: %v", err)
 	}
 }
