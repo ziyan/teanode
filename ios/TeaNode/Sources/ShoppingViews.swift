@@ -897,10 +897,8 @@ struct ShoppingAddItemSheet: View {
                         isStoreFocused = false
                     } label: {
                         Label(suggestion, systemImage: "storefront")
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                            .contentShape(.rect)
+                            .actionColor()
                     }
-                    .shoppingWordsButton()
                     .accessibilityHint(Text("Sets the store"))
                 }
             }
