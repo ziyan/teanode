@@ -128,7 +128,7 @@ struct ShoppingScreen: View {
         /// `shopping-store-pictures` show those two as pictures.
         private func openDemoScreen() {
             guard DemoServer.isRequested, path.isEmpty, let screen = DemoServer.screen else { return }
-            if screen.hasPrefix("shopping-list") || screen == "shopping-item" || screen == "shopping-import" || screen == "shopping-add-similar" {
+            if screen.hasPrefix("shopping-list") || screen == "shopping-item" || screen == "shopping-import" || screen.hasPrefix("shopping-add-") {
                 path = [.list(ShoppingDemo.groceriesListId)]
             } else if screen.hasPrefix("shopping-store") {
                 path = [.store(ShoppingDemo.exampleMarket, listIds: [])]
@@ -283,6 +283,9 @@ struct ShoppingListScreen: View {
     @State private var needingAgain: ShoppingItem?
     @State private var removing: ShoppingItem?
     @State private var isAdding = false
+    /// The store of the section an item is being added under; empty from the
+    /// add button, which adds for any store.
+    @State private var addingStoreName = ""
     @State private var isImporting = false
     @State private var isSharing = false
     @State private var isRenaming = false
@@ -366,6 +369,9 @@ struct ShoppingListScreen: View {
                         .labelsHidden()
                     }
                 }
+                // With no card behind them, they line up with the title and
+                // the cards' edges rather than with the words inside a card.
+                .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
             }
@@ -388,7 +394,7 @@ struct ShoppingListScreen: View {
                     Section {
                         ForEach(group.items) { item in row(item) }
                     } header: {
-                        Text(verbatim: groupTitle(group))
+                        groupHeader(group)
                     }
                 }
                 if !model.notNeeded.isEmpty {
@@ -398,6 +404,38 @@ struct ShoppingListScreen: View {
                 }
             }
         }
+    }
+
+    /// A group's heading. A store's has an add button, which adds an item
+    /// for that store without typing it.
+    @ViewBuilder
+    private func groupHeader(_ group: ShoppingGroup) -> some View {
+        let title = groupTitle(group)
+        if grouping == .store {
+            HStack {
+                Text(verbatim: title)
+                Spacer(minLength: 8)
+                Button {
+                    add(storeName: group.title)
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(minWidth: 44, minHeight: 32)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.accentColor)
+                .accessibilityLabel(group.isUnnamed ? Text("Add an item for any store") : Text("Add an item at \(title)"))
+            }
+        } else {
+            Text(verbatim: title)
+        }
+    }
+
+    /// Opens the add sheet with the store set; empty for any store.
+    private func add(storeName: String) {
+        addingStoreName = storeName
+        isAdding = true
     }
 
     private var groups: [ShoppingGroup] {
@@ -584,7 +622,7 @@ struct ShoppingListScreen: View {
                 Button("Any store") { open(storeName: "") }
             }
             Button {
-                isAdding = true
+                add(storeName: "")
             } label: {
                 Image(systemName: "plus")
                     .font(.title3.weight(.semibold))
@@ -627,19 +665,19 @@ struct ShoppingListScreen: View {
     private var sheets: ShoppingListSheets {
         ShoppingListSheets(
             connection: connection, model: model, listId: listId, editing: $editing, needingAgain: $needingAgain, isAdding: $isAdding,
-            isImporting: $isImporting, isSharing: $isSharing, isRenaming: $isRenaming, newName: $newName)
+            addingStoreName: addingStoreName, isImporting: $isImporting, isSharing: $isSharing, isRenaming: $isRenaming, newName: $newName)
     }
 
     #if DEBUG
         /// `-TeaNodeScreen shopping-item` opens the apples, `shopping-import` the import sheet,
-        /// `shopping-add-similar` the add sheet with something typed.
+        /// the screens named `shopping-add-` the add sheet (ShoppingAddItemSheet.openDemo).
         private func openDemoSheet() {
             guard DemoServer.isRequested else { return }
             if DemoServer.screen == "shopping-item" {
                 editing = model.items.first { $0.itemDescription == "Apples" }
             } else if DemoServer.screen == "shopping-import" {
                 isImporting = true
-            } else if DemoServer.screen == "shopping-add-similar" {
+            } else if DemoServer.screen?.hasPrefix("shopping-add-") == true {
                 isAdding = true
             }
         }
@@ -655,6 +693,9 @@ struct ShoppingListSheets: ViewModifier {
     @Binding var editing: ShoppingItem?
     @Binding var needingAgain: ShoppingItem?
     @Binding var isAdding: Bool
+    /// The store an item being added is for, from the store it was added
+    /// under; empty for any store.
+    let addingStoreName: String
     @Binding var isImporting: Bool
     @Binding var isSharing: Bool
     @Binding var isRenaming: Bool
@@ -672,17 +713,17 @@ struct ShoppingListSheets: ViewModifier {
                 ShoppingItemSheet(
                     connection: connection, item: item, onChanged: { model.replace($0) },
                     onRemove: { removed in await model.remove(removed) },
-                    onNeedAgain: { quantity in await model.needAgain(item, quantity: quantity) })
+                    onNeedAgain: { quantity in _ = await model.needAgain(item, quantity: quantity) })
             }
             .sheet(item: $needingAgain) { item in
-                ShoppingNeedAgainSheet(item: item) { quantity in Task { await model.needAgain(item, quantity: quantity) } }
+                ShoppingNeedAgainSheet(item: item) { quantity in Task { _ = await model.needAgain(item, quantity: quantity) } }
             }
             // The item chosen opens once the add sheet has gone: a sheet asked
             // for while another is still leaving does not appear.
             .sheet(isPresented: $isAdding, onDismiss: openChosenItem) {
                 ShoppingAddItemSheet(
-                    connection: connection, listId: listId, onAdd: { entry in await model.add([entry]) },
-                    onOpen: { chosenItem = $0 })
+                    connection: connection, listId: listId, initialStoreName: addingStoreName, onAdd: { entry in await model.add([entry]) },
+                    onOpen: { chosenItem = $0 }, onNeedAgain: { item, quantity in await model.needAgain(item, quantity: quantity) })
             }
             .sheet(isPresented: $isImporting) {
                 ShoppingImportSheet(connection: connection, initialListId: listId) { Task { await model.load() } }
@@ -751,8 +792,10 @@ struct ShoppingNeedAgainSheet: View {
 }
 
 /// ShoppingAddItemSheet adds one item to a list: what it is, how many, and
-/// where to get it. What reads like it is listed as it is typed, to go to that
-/// item instead of adding a second one.
+/// where to get it. What reads like it is listed as it is typed, and asked
+/// about again before adding, so an item already on a list is used rather
+/// than added twice. The store is chosen from the ones the lists have as it
+/// is typed.
 struct ShoppingAddItemSheet: View {
     let connection: Connection
     let listId: String
@@ -760,14 +803,39 @@ struct ShoppingAddItemSheet: View {
     let onAdd: (ShoppingItemEntry) async -> Bool
     /// Goes to an item that already exists, in place of adding one.
     let onOpen: (ShoppingItem) -> Void
+    /// Needs a bought item of this list again with a count, in place of
+    /// adding one like it; true when it was done.
+    let onNeedAgain: (ShoppingItem, String) async -> Bool
     @Environment(\.dismiss) private var dismiss
     @State private var itemDescription = ""
     @State private var itemDetails = ""
     @State private var quantity = 1.0
     @State private var quantityUnit = ""
-    @State private var storeName = ""
+    @State private var storeName: String
     @State private var isWorking = false
     @State private var similarItems: [ShoppingItem] = []
+    /// What reads like the item, read again when Add was tapped, to choose
+    /// from before adding.
+    @State private var alikeItems: [ShoppingItem] = []
+    @State private var isAskingAboutAlike = false
+    /// The stores the lists have items for, those with the most to buy first.
+    @State private var storeNames: [String] = []
+    @FocusState private var isStoreFocused: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// initialStoreName is the store the item is for when the sheet opens,
+    /// empty for any store.
+    init(
+        connection: Connection, listId: String, initialStoreName: String = "", onAdd: @escaping (ShoppingItemEntry) async -> Bool,
+        onOpen: @escaping (ShoppingItem) -> Void, onNeedAgain: @escaping (ShoppingItem, String) async -> Bool
+    ) {
+        self.connection = connection
+        self.listId = listId
+        self.onAdd = onAdd
+        self.onOpen = onOpen
+        self.onNeedAgain = onNeedAgain
+        _storeName = State(initialValue: initialStoreName)
+    }
 
     var body: some View {
         NavigationStack {
@@ -777,21 +845,19 @@ struct ShoppingAddItemSheet: View {
                     TextField("Details, such as a brand or a size", text: $itemDetails, axis: .vertical)
                 }
                 if !similarItems.isEmpty {
-                    similarSection
+                    Section("Already on your lists") {
+                        ForEach(similarItems) { item in similarRow(item) }
+                    }
                 }
+                // Above the count, so the stores offered under it stay above
+                // the keyboard.
+                storeSection
                 Section("How many") {
                     Stepper(value: $quantity, in: 1...999, step: 1) {
                         Text(verbatim: String(localized: "Need \(ShoppingQuantity.text(of: quantity))"))
                             .monospacedDigit()
                     }
                     TextField("Unit, such as lb or bunch", text: $quantityUnit)
-                }
-                Section {
-                    TextField("Store", text: $storeName)
-                } header: {
-                    Text("Where")
-                } footer: {
-                    Text("Leave the store empty for an item any store has.")
                 }
             }
             .navigationTitle("Add an item")
@@ -801,52 +867,163 @@ struct ShoppingAddItemSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { add() }
-                        .disabled(isWorking || itemDescription.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("Add") { Task { await add() } }
+                        .disabled(isWorking || typedDescription.isEmpty)
                 }
             }
+            .navigationDestination(isPresented: $isAskingAboutAlike) { alikeChoice }
             .task(id: itemDescription) { await readSimilarItems() }
+            .task { await readStores() }
             #if DEBUG
-                .onAppear {
-                    // `-TeaNodeScreen shopping-add-similar` has something typed.
-                    if DemoServer.isRequested, DemoServer.screen == "shopping-add-similar" { itemDescription = "Paper" }
-                }
+                .task { await openDemo() }
             #endif
         }
         .presentationDetents([.large])
     }
 
-    private var similarSection: some View {
-        Section("Already on your lists") {
-            ForEach(similarItems) { item in
-                Button {
-                    onOpen(item)
-                    dismiss()
-                } label: {
-                    HStack(spacing: 12) {
-                        ShoppingPictureView(item: item, size: 44)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: item.itemDescription)
-                            Text(verbatim: ShoppingWords.similarItemDetail(item, onListId: listId))
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                        .multilineTextAlignment(.leading)
-                        Spacer(minLength: 8)
+    private var typedDescription: String { itemDescription.trimmingCharacters(in: .whitespaces) }
+
+    // MARK: The store
+
+    /// The store, with the lists' stores that match what is typed under it
+    /// while it is being typed in, to choose one rather than type it again.
+    private var storeSection: some View {
+        Section {
+            TextField("Store", text: $storeName)
+                .focused($isStoreFocused)
+                .textInputAutocapitalization(.words)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+            if isStoreFocused {
+                ForEach(ShoppingStoreSuggestions.names(matching: storeName, among: storeNames), id: \.self) { suggestion in
+                    Button {
+                        storeName = suggestion
+                        isStoreFocused = false
+                    } label: {
+                        Label(suggestion, systemImage: "storefront")
+                            .actionColor()
                     }
-                    .frame(minHeight: 44)
-                    .contentShape(.rect)
+                    .accessibilityHint(Text("Sets the store"))
                 }
-                .shoppingWordsButton()
+            }
+        } header: {
+            Text("Where")
+        } footer: {
+            Text("Leave the store empty for an item any store has.")
+        }
+    }
+
+    /// Reads the stores to offer. Only a help, so a failure leaves none.
+    private func readStores() async {
+        guard let stores = try? await connection.shoppingStores() else { return }
+        storeNames = stores.enumerated()
+            .sorted { ($1.element.neededCount, $0.offset) < ($0.element.neededCount, $1.offset) }
+            .map { $0.element.storeName }
+    }
+
+    // MARK: What is alike
+
+    private func similarRow(_ item: ShoppingItem) -> some View {
+        Button {
+            onOpen(item)
+            dismiss()
+        } label: {
+            alikeLabel(item, isNeededAgain: false)
+        }
+        .shoppingWordsButton()
+    }
+
+    /// An item like the one being added: its picture, what it is and where,
+    /// and what choosing it does.
+    private func alikeLabel(_ item: ShoppingItem, isNeededAgain: Bool) -> some View {
+        HStack(spacing: 12) {
+            ShoppingPictureView(item: item, size: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: item.itemDescription)
+                Text(verbatim: ShoppingWords.similarItemDetail(item, onListId: listId))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                // At the largest sizes it goes under the words, which
+                // otherwise break mid-word beside it.
+                if isNeededAgain, dynamicTypeSize.isAccessibilitySize {
+                    needAgainText
+                }
+            }
+            .multilineTextAlignment(.leading)
+            Spacer(minLength: 8)
+            if isNeededAgain {
+                if !dynamicTypeSize.isAccessibilitySize {
+                    needAgainText
+                }
+            } else {
+                Image(systemName: "chevron.forward")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
         }
+        .frame(minHeight: 44)
+        .contentShape(.rect)
+    }
+
+    private var needAgainText: some View {
+        Text("Need again")
+            .font(.subheadline)
+            .foregroundStyle(Color.accentColor)
+    }
+
+    /// Asked when Add finds items like the one typed: use one of them, or
+    /// add it all the same.
+    private var alikeChoice: some View {
+        Form {
+            Section {
+                ForEach(alikeItems) { item in
+                    let isNeededAgain = isNeededAgainHere(item)
+                    Button {
+                        Task { await use(item) }
+                    } label: {
+                        alikeLabel(item, isNeededAgain: isNeededAgain)
+                    }
+                    .shoppingWordsButton()
+                    .disabled(isWorking)
+                }
+            } header: {
+                Text("Already on your lists")
+            } footer: {
+                Text("Choose one to use it instead of adding \(typedDescription).")
+            }
+            Section {
+                Button("Add \(typedDescription) anyway", systemImage: "plus") { Task { await addEntry() } }
+                    .actionColor()
+                    .disabled(isWorking)
+            }
+        }
+        .navigationTitle("Is it one of these?")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Whether choosing an item needs it again here: a bought item of this
+    /// list. Anything else opens, to be seen or changed.
+    private func isNeededAgainHere(_ item: ShoppingItem) -> Bool {
+        item.shoppingListId == listId && item.isNotNeeded
+    }
+
+    private func use(_ item: ShoppingItem) async {
+        guard isNeededAgainHere(item) else {
+            onOpen(item)
+            dismiss()
+            return
+        }
+        isWorking = true
+        let isDone = await onNeedAgain(item, ShoppingQuantity.text(of: quantity))
+        isWorking = false
+        if isDone { dismiss() }
     }
 
     /// Reads what is like the words once typing pauses: a new word cancels
     /// the wait. Only a help to whoever is adding, so a failure says nothing
     /// and leaves what was shown.
     private func readSimilarItems() async {
-        let typed = itemDescription.trimmingCharacters(in: .whitespaces)
+        let typed = typedDescription
         guard typed.count >= 2 else {
             similarItems = []
             return
@@ -859,16 +1036,54 @@ struct ShoppingAddItemSheet: View {
         }
     }
 
-    private func add() {
-        let entry = ShoppingItemEntry(
-            itemDescription: itemDescription.trimmingCharacters(in: .whitespaces), itemDetails: itemDetails,
-            storeName: storeName.trimmingCharacters(in: .whitespaces), neededQuantity: ShoppingQuantity.text(of: quantity),
-            quantityUnit: quantityUnit)
+    // MARK: Adding
+
+    /// Adds the item, or first asks about the items like it. What is alike
+    /// is read again for the words as they stand, since the list shown may
+    /// be for words typed before; when it cannot be read, the item is added.
+    private func add() async {
         isWorking = true
-        Task {
-            let isAdded = await onAdd(entry)
-            isWorking = false
-            if isAdded { dismiss() }
+        let alike = (try? await connection.similarShoppingItems(shoppingListId: listId, itemDescription: typedDescription)) ?? []
+        isWorking = false
+        guard alike.isEmpty else {
+            alikeItems = alike
+            isAskingAboutAlike = true
+            return
         }
+        await addEntry()
     }
+
+    private func addEntry() async {
+        let entry = ShoppingItemEntry(
+            itemDescription: typedDescription, itemDetails: itemDetails, storeName: storeName.trimmingCharacters(in: .whitespaces),
+            neededQuantity: ShoppingQuantity.text(of: quantity), quantityUnit: quantityUnit)
+        isWorking = true
+        let isAdded = await onAdd(entry)
+        isWorking = false
+        if isAdded { dismiss() }
+    }
+
+    #if DEBUG
+        /// `-TeaNodeScreen shopping-add-similar` has something typed, `shopping-add-alike` has
+        /// Add tapped on it, and `shopping-add-store` has a store being typed.
+        private func openDemo() async {
+            guard DemoServer.isRequested, let screen = DemoServer.screen else { return }
+            switch screen {
+            case "shopping-add-similar":
+                itemDescription = "Paper"
+            case "shopping-add-alike":
+                // Bought before, so choosing it needs it again.
+                itemDescription = "Banana"
+                try? await Task.sleep(for: .milliseconds(500))
+                await add()
+            case "shopping-add-store":
+                itemDescription = "Rice"
+                storeName = "Co"
+                try? await Task.sleep(for: .milliseconds(500))
+                isStoreFocused = true
+            default:
+                return
+            }
+        }
+    #endif
 }

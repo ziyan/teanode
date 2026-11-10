@@ -96366,6 +96366,102 @@
           }
         }
       }
+    },
+    "Is it one of these?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これのどれかですか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这是其中之一吗？"
+          }
+        }
+      }
+    },
+    "Add %@ anyway": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "それでも %@ を追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍然添加 %@"
+          }
+        }
+      }
+    },
+    "Choose one to use it instead of adding %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を追加する代わりに、使うものを選んでください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一个来使用它，而不是添加 %@。"
+          }
+        }
+      }
+    },
+    "Add an item at %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の項目を追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 %@ 添加物品"
+          }
+        }
+      }
+    },
+    "Add an item for any store": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どの店舗でも買える項目を追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加任何商店都有的物品"
+          }
+        }
+      }
+    },
+    "Sets the store": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "店舗を設定します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置商店"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

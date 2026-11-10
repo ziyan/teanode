@@ -333,6 +333,15 @@ export function ShoppingListPage() {
             onEdit={(shoppingItem) => setOpened({ dialogKind: 'item', target: { shoppingItem } })}
             onRemove={(shoppingItem) => setOpened({ dialogKind: 'removeItem', shoppingItem })}
             onNeedAgain={(shoppingItem) => setOpened({ dialogKind: 'needAgain', shoppingItem })}
+            onAddAt={
+              tab === 'to-buy'
+                ? (storeName, aisleName) =>
+                    setOpened({
+                      dialogKind: 'item',
+                      target: { shoppingListId: shoppingList.id, shoppingItem: null, storeName, aisleName },
+                    })
+                : undefined
+            }
           />
         )}
         {tabItems.length > pageSize || pageIndex > 0 ? (

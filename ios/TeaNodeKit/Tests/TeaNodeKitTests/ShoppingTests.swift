@@ -564,4 +564,21 @@ final class ShoppingTests: XCTestCase {
         let event = try JSONDecoder().decode(ShoppingEvent.self, from: Data(#"{"shoppingListId":"list-1"}"#.utf8))
         XCTAssertEqual(event.shoppingListId, "list-1")
     }
+
+    func testStoresOfferedForWhatIsTypedBeginWithItFirst() {
+        let stores = ["Corner Grocer", "Example Market", "Café Mercado", "The Market Hall", "Supermarket Two"]
+        XCTAssertEqual(ShoppingStoreSuggestions.names(matching: "", among: stores, limit: 3), ["Corner Grocer", "Example Market", "Café Mercado"])
+        // A word that begins with it, in the order given, then a name that holds it.
+        XCTAssertEqual(ShoppingStoreSuggestions.names(matching: "mar", among: stores), ["Example Market", "The Market Hall", "Supermarket Two"])
+        XCTAssertEqual(ShoppingStoreSuggestions.names(matching: "co", among: stores), ["Corner Grocer"])
+        XCTAssertEqual(ShoppingStoreSuggestions.names(matching: "cafe", among: stores), ["Café Mercado"])
+        XCTAssertEqual(ShoppingStoreSuggestions.names(matching: "examplem", among: stores), ["Example Market"])
+        XCTAssertEqual(ShoppingStoreSuggestions.names(matching: "  CORNER ", among: stores), ["Corner Grocer"])
+    }
+
+    func testAStoreAlreadyTypedIsNotOfferedAgain() {
+        let stores = ["Example Market", "Example Market Express"]
+        XCTAssertEqual(ShoppingStoreSuggestions.names(matching: "example market", among: stores), ["Example Market Express"])
+        XCTAssertEqual(ShoppingStoreSuggestions.names(matching: "zzz", among: stores), [])
+    }
 }

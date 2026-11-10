@@ -153,6 +153,20 @@ it('keeps the tab in the address and offers Need again on the items that are not
   })
 })
 
+it('adds an item under a heading with its store and aisle set, on the tab of what is to buy', async () => {
+  serve()
+  renderShopping('/shopping/lists/list-1')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Example Market · Frozen: Add an item here' }))
+  expect((screen.getByLabelText('Store') as HTMLInputElement).value).toBe('Example Market')
+  expect((screen.getByLabelText('Aisle') as HTMLInputElement).value).toBe('Frozen')
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+  fireEvent.click(screen.getByRole('button', { name: /^Not needed/ }))
+  await screen.findByText('Rice')
+  expect(screen.queryByRole('button', { name: /Add an item here/ })).toBeNull()
+})
+
 it('removes an item only after asking', async () => {
   serve()
   renderShopping('/shopping/lists/list-1')
@@ -376,6 +390,10 @@ it('lists the lists and the stores in the column, and asks to choose one at /sho
 
   expect(await screen.findByText('Choose a list or a store.')).toBeTruthy()
   const column = screen.getByRole('navigation', { name: 'Lists' })
-  expect(within(column).getByRole('link', { name: /Groceries/ }).getAttribute('href')).toBe('/shopping/lists/list-1')
+  expect(
+    within(column)
+      .getByRole('link', { name: /Groceries/ })
+      .getAttribute('href'),
+  ).toBe('/shopping/lists/list-1')
   expect(await within(column).findByRole('link', { name: /Example Market/ })).toBeTruthy()
 })

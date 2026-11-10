@@ -415,12 +415,12 @@ jobs:
             shoot "$passwords_screen-light" light large -TeaNodeDemo -TeaNodeTab passwords -TeaNodeScreen "$passwords_screen"
           done
           # Shopping (docs/planning/shopping-lists-execplan.md): the lists, one list at home and the store being
-          # shopped (each as rows and as pictures), an item's sheet, the import sheet and the add sheet offering what is alike
-          # (the last three over the list), each in light, dark and the largest text.
+          # shopped (each as rows and as pictures), an item's sheet, the import sheet and the add sheet offering what is alike, asking about it on Add and
+          # offering the stores as one is typed (the last five over the list), each in light, dark and the largest text.
           shoot shopping-light light large -TeaNodeDemo -TeaNodeTab shopping
           shoot shopping-dark dark large -TeaNodeDemo -TeaNodeTab shopping
           shoot shopping-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab shopping
-          for shopping_screen in shopping-list shopping-list-pictures shopping-store shopping-store-pictures shopping-item shopping-import shopping-add-similar; do
+          for shopping_screen in shopping-list shopping-list-pictures shopping-store shopping-store-pictures shopping-item shopping-import shopping-add-similar shopping-add-alike shopping-add-store; do
             shoot "$shopping_screen-light" light large -TeaNodeDemo -TeaNodeTab shopping -TeaNodeScreen "$shopping_screen"
             shoot "$shopping_screen-dark" dark large -TeaNodeDemo -TeaNodeTab shopping -TeaNodeScreen "$shopping_screen"
             shoot "$shopping_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab shopping -TeaNodeScreen "$shopping_screen"

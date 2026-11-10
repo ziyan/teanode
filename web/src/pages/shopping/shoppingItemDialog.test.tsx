@@ -283,3 +283,76 @@ it('adds a new item to the list it was opened on', async () => {
   expect(screen.queryByRole('button', { name: 'Find another' })).toBeNull()
   expect(callsOf('ListShoppingItemPrices')).toHaveLength(0)
 })
+
+it('asks about what reads like a new item before adding it, and adds it when told to', async () => {
+  serve([], [shoppingItem({ id: 'item-2', itemDescription: 'Whole milk', neededQuantity: '2' })])
+  const { onOpenItem } = openToAdd()
+
+  fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Milk' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Add item' }))
+
+  expect(await screen.findByText('Is it one of these?')).toBeTruthy()
+  expect(callsOf('AddShoppingItems')).toHaveLength(0)
+  const choices = screen.getByRole('region', { name: 'Already on your lists' })
+  expect(within(choices).getByRole('button', { name: /Whole milk.*Open/ })).toBeTruthy()
+
+  // Back to the item as typed, then on again.
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+  expect((screen.getByLabelText('Description') as HTMLInputElement).value).toBe('Milk')
+  fireEvent.click(screen.getByRole('button', { name: 'Add item' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Add Milk anyway' }))
+
+  await waitFor(() => expect(callsOf('AddShoppingItems')).toHaveLength(1))
+  expect(onOpenItem).not.toHaveBeenCalled()
+})
+
+it('needs a bought item of the list again in place of adding one like it', async () => {
+  const bought = shoppingItem({ id: 'item-2', itemDescription: 'Bananas', shoppingItemState: 'not_needed' })
+  serve([], [bought])
+  openToAdd()
+
+  fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Banana' } })
+  fireEvent.change(screen.getByLabelText('Need'), { target: { value: '3' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Add item' }))
+  fireEvent.click(await screen.findByRole('button', { name: /Bananas.*Need again/ }))
+
+  await waitFor(() => expect(callsOf('SetShoppingItemNeed')).toHaveLength(1))
+  expect(callsOf('SetShoppingItemNeed')[0][1]).toEqual({
+    shoppingItemId: 'item-2',
+    isNeeded: true,
+    neededQuantity: '3',
+  })
+  expect(callsOf('AddShoppingItems')).toHaveLength(0)
+})
+
+it('opens an item that is still to buy, or on another list, in place of adding one like it', async () => {
+  const onAnother = shoppingItem({
+    id: 'item-3',
+    shoppingListId: 'list-2',
+    listName: 'Warehouse',
+    itemDescription: 'Oat milk',
+  })
+  serve([], [onAnother])
+  const { onOpenItem } = openToAdd()
+
+  fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'oat milk' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Add item' }))
+  fireEvent.click(await screen.findByRole('button', { name: /Oat milk.*Warehouse.*Open/ }))
+
+  expect(onOpenItem).toHaveBeenCalledWith(onAnother)
+  expect(callsOf('AddShoppingItems')).toHaveLength(0)
+})
+
+it('starts a new item with the store and aisle it is added under', () => {
+  serve()
+  renderInProviders(
+    <ShoppingItemDialog
+      target={{ shoppingListId: 'list-1', shoppingItem: null, storeName: 'Example Market', aisleName: 'Frozen' }}
+      onSaved={vi.fn()}
+      onClose={vi.fn()}
+    />,
+  )
+
+  expect((screen.getByLabelText('Store') as HTMLInputElement).value).toBe('Example Market')
+  expect((screen.getByLabelText('Aisle') as HTMLInputElement).value).toBe('Frozen')
+})

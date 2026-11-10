@@ -617,8 +617,8 @@ struct CodingSessionView: View {
                 composer(session)
             }
         }
-        // The box is the session's own bottom bar, so the tab bar gives way to it.
-        .toolbarVisibility(.hidden, for: .tabBar)
+        // The box is the session's own bottom bar, so a tab bar there gives way to it.
+        .tabBarHiddenWhenAtBottom()
     }
 
     /// The round glass button that chooses what the session shows.

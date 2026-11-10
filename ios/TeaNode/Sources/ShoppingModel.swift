@@ -211,12 +211,14 @@ final class ShoppingListModel {
         }
     }
 
-    /// Needs a bought item again, with a count.
-    func needAgain(_ item: ShoppingItem, quantity: String) async {
+    /// Needs a bought item again, with a count; true when it was done.
+    @discardableResult
+    func needAgain(_ item: ShoppingItem, quantity: String) async -> Bool {
         let isDone = await attempt {
             replace(try await connection.setShoppingItemNeed(shoppingItemId: item.id, isNeeded: true, neededQuantity: quantity))
         }
         if isDone { doneText = String(localized: "\(item.itemDescription) is on the list again") }
+        return isDone
     }
 
     func remove(_ item: ShoppingItem) async {
