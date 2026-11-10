@@ -6,6 +6,21 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.225.0] - 2026-11-10
+
+### Added
+
+- Shopping: the iPhone store field suggests your stores as you type, and each store heading has a + that adds an item already set to that store (and aisle, on the dashboard). (#746)
+
+### Changed
+
+- Shopping: adding an item that reads like one already on your lists asks first, so you can need the bought one again or open it instead of adding a second. (#746)
+
+### Fixed
+
+- iPad: the tabs floating along the top stay on screen in a chat and a coding session. (#746)
+- iPhone: a shopping list's shoppers line and By store / By aisle toggle line up with the title and cards instead of sitting further in. (#746)
+
 ## [0.224.3] - 2026-11-10
 
 ### Changed
