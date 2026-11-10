@@ -549,6 +549,7 @@ func TestErasingHistoryLeavesThePauseInEffect(t *testing.T) {
 // they read again and show the pause, and a report inside a pause is not news.
 func TestPausingAndResumingAreNewsToTheMapsFollowingThePerson(t *testing.T) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	world.call(t, world.ada, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "current") { id } }`, world.ben.ID))
 	hub := &world.graph.locationEvents
 	benEvents, releaseBen, err := hub.subscribe(world.database, world.ben.ID)

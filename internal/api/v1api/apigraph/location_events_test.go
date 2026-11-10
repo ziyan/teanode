@@ -38,6 +38,7 @@ func received(events <-chan db.LocationEvent, userId string, wait time.Duration)
 // news.
 func TestAMapFollowsOnlyThoseSharingWithIt(t *testing.T) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	hub := &world.graph.locationEvents
 	adaEvents, releaseAda, err := hub.subscribe(world.database, world.ada.ID)
 	if err != nil {
