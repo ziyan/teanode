@@ -490,16 +490,17 @@ public struct Transcript: Sendable {
     /// are read a moment apart and a time is read to the second.
     static let openingStoredLeeway: TimeInterval = 5
 
-    /// The person's words a turn began with, read back with the transcript,
-    /// when other words of theirs come after them: the same words, stored on
-    /// or after the moment the turn was asked, the earliest such. A turn
+    /// The person's words a turn began with, or the check-in of a turn the
+    /// agent took on its own, read back with the transcript, when other
+    /// words of theirs come after them: the same words, stored on or after
+    /// the moment the turn was asked, the earliest such. A turn
     /// waiting behind another stores them only when it starts, so there is
     /// no limit after; an older message with the same words, a "yes" of last
     /// week, was stored before and is not this turn.
     func storedOpeningIndex(of text: String, runId: String, askedAt: String?) -> Int? {
         guard let asked = ServerTime.date(askedAt) else { return nil }
         return lines.firstIndex { line in
-            guard line.kind == .person, line.text == text, line.runId.isEmpty || line.runId == runId,
+            guard line.kind == .person || line.kind == .checkIn, line.text == text, line.runId.isEmpty || line.runId == runId,
                 let stored = ServerTime.date(line.at)
             else { return false }
             return stored.timeIntervalSince(asked) >= -Self.openingStoredLeeway
@@ -705,6 +706,11 @@ public struct Transcript: Sendable {
             // went into it, stored after its opening. The opening is still
             // the turn as far as it was stored, and goes from there the same
             // way; the later words come back with their own turns' openings.
+            // So does a turn the agent took on its own, read back while it
+            // still runs (a question of it waiting for the person): left
+            // there, the open card read with the transcript stayed where it
+            // was and the replayed turn was drawn under it, the newest
+            // question above everything it followed.
             if let index = storedOpeningIndex(of: text, runId: event.runId, askedAt: event.at) {
                 lines.removeSubrange((index + 1)...)
                 lines[index].runId = event.runId

@@ -366,6 +366,56 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(transcript.lines[2].runId, "r1")
     }
 
+    func testATurnOfTheAgentsOwnWaitingOnAQuestionKeepsTheQuestionLastWhenItReplays() {
+        // The agent began a check on its own, asked twice, and waits on its
+        // third question. Read back, the open card comes last; then the feed
+        // replays the turn, which still runs, from its start.
+        let checkIn = "[speaking first] a few questions."
+        let messages = [
+            AgentMessage(id: "0", createdAt: "2026-10-10T08:00:00Z", role: "assistant", content: "Good morning."),
+            AgentMessage(id: "1", createdAt: "2026-10-10T09:00:00Z", role: "user", content: checkIn),
+            AgentMessage(
+                id: "2", createdAt: "2026-10-10T09:00:01Z", role: "assistant", content: "I'd like to check a few things.",
+                toolCalls: [AgentToolCall(id: "c1", name: "ask_user", arguments: "{}")]),
+            AgentMessage(id: "3", createdAt: "2026-10-10T09:00:02Z", role: "tool", content: "Yes", toolCallId: "c1"),
+            AgentMessage(
+                id: "4", createdAt: "2026-10-10T09:00:03Z", role: "assistant", content: "",
+                toolCalls: [AgentToolCall(id: "c2", name: "ask_user", arguments: "{}")]),
+            AgentMessage(id: "5", createdAt: "2026-10-10T09:00:04Z", role: "tool", content: "Yes", toolCallId: "c2"),
+            AgentMessage(
+                id: "6", createdAt: "2026-10-10T09:00:05Z", role: "assistant", content: "",
+                toolCalls: [AgentToolCall(id: "c3", name: "ask_user", arguments: "{}")]),
+        ]
+        let open = AgentInteraction(
+            runId: "r", callId: "c3", interactionKind: "question", toolName: "ask_user", interactionText: "Anything new?",
+            interactionChoices: ["No"], createdAt: "2026-10-10T09:00:05Z")
+        var transcript = Transcript(messages: messages, interactions: [open])
+        XCTAssertEqual(transcript.lines.last?.text, "Anything new?")
+        transcript.apply(AgentEvent(kind: "asked", runId: "r", sequence: 0, at: "2026-10-10T09:00:00.200Z", text: checkIn))
+        transcript.apply(AgentEvent(kind: "message", runId: "r", sequence: 1, text: "I'd like to check a few things."))
+        for (sequence, callId) in [(2, "c1"), (5, "c2")] {
+            transcript.apply(AgentEvent(kind: "tool_call", runId: "r", sequence: sequence, tool: "ask_user", callId: callId))
+            transcript.apply(AgentEvent(kind: "question", runId: "r", sequence: sequence + 1, text: "Yes\nNo", callId: callId, note: "Right?"))
+            transcript.apply(AgentEvent(kind: "tool_result", runId: "r", sequence: sequence + 2, text: "Yes", callId: callId))
+        }
+        transcript.apply(AgentEvent(kind: "tool_call", runId: "r", sequence: 8, tool: "ask_user", callId: "c3"))
+        transcript.apply(AgentEvent(kind: "question", runId: "r", sequence: 9, text: "No", callId: "c3", note: "Anything new?"))
+        let shown = transcript.lines.filter { $0.kind != .tool }
+        XCTAssertEqual(shown.map(\.text), ["Good morning.", checkIn, "I'd like to check a few things.", "Right?", "Right?", "Anything new?"])
+        XCTAssertEqual(transcript.openQuestion?.text, "Anything new?")
+    }
+
+    func testAWeeklyCheckInDoesNotTakeLastWeeksTurnWithIt() {
+        // The same words as last week's, but a new turn: last week's answer stays.
+        let checkIn = "[schedule] the weekly review."
+        var transcript = Transcript(messages: [
+            AgentMessage(id: "1", createdAt: "2026-10-03T09:00:00Z", role: "user", content: checkIn),
+            AgentMessage(id: "2", createdAt: "2026-10-03T09:00:05Z", role: "assistant", content: "Last week's review."),
+        ])
+        transcript.apply(AgentEvent(kind: "asked", runId: "r2", sequence: 0, at: "2026-10-10T09:00:00Z", text: checkIn))
+        XCTAssertTrue(transcript.lines.contains { $0.text == "Last week's review." })
+    }
+
     func testAFileSentFromThisAppKeepsItsFileWhenTheTurnStarts() {
         var transcript = Transcript(messages: [])
         transcript.addSent("Here it is.", attachments: [AgentAttachment(id: "a1", name: "receipt.jpg", contentType: "image/jpeg", size: 10)])
