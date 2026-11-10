@@ -137,13 +137,30 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 
 // draftedFact is a fact offered for a question.
 type draftedFact struct {
-	FactID       string `json:"fact_id"`
-	Citation     string `json:"citation"`
-	FactText     string `json:"text"`
-	HappenedAt   string `json:"happened,omitempty"`
-	FactsToCheck string `json:"sort"`
-	ReplacedBy   string `json:"now_reads,omitempty"`
+	FactID       string   `json:"fact_id"`
+	Citation     string   `json:"citation"`
+	FactText     string   `json:"text"`
+	HappenedAt   string   `json:"happened,omitempty"`
+	FactsToCheck string   `json:"sort"`
+	ReplacedBy   string   `json:"now_reads,omitempty"`
+	AskingText   string   `json:"ask"`
+	Choices      []string `json:"choices"`
 }
+
+// What a question asks depends on whether the fact can still change. Where
+// they live can, so they are asked whether it is right and still the case.
+// A trip they took, or anything else that happened on a date, cannot: asking
+// whether it "has changed" offers an answer that makes no sense, so they are
+// only asked whether it is right.
+const (
+	askingStanding = "Put it as what you remember, and ask whether it is right and still the case: \"I have that you keep bees on the roof. Is that right, and still the case?\""
+	askingHappened = "It happened at a time and stays as it was, so never ask whether it is still true or has changed. Put it as what you remember, with when, and ask only whether you have it right: \"I have that you ran a half marathon in April 2021. Is that right?\""
+)
+
+var (
+	choicesStanding = []string{"Yes, that's right", "It has changed", "Not sure", "Skip this one", "Stop for now"}
+	choicesHappened = []string{"Yes, that's right", "That's not right", "Not sure", "Skip this one", "Stop for now"}
+)
 
 func draft(tx db.Transaction, current tools.Run, agent *models.Agent) (*tools.Result, error) {
 	// Facts already asked about are not asked about again.
@@ -200,15 +217,17 @@ func draft(tx db.Transaction, current tools.Run, agent *models.Agent) (*tools.Re
 		item := draftedFact{
 			FactID: fact.ID, Citation: fmt.Sprintf("%s#%d", pathOf[fact.NodeID], fact.Number),
 			FactText: fact.Text, FactsToCheck: sorts[fact.ID], ReplacedBy: replacementText[fact.SupersededBy],
+			AskingText: askingStanding, Choices: choicesStanding,
 		}
 		if fact.HappenedAt != nil {
 			item.HappenedAt = fact.HappenedAt.In(location).Format("2006-01-02")
+			item.AskingText, item.Choices = askingHappened, choicesHappened
 		}
 		drafted = append(drafted, item)
 	}
 	return tools.JSONResult(map[string]any{
 		"facts": drafted,
-		"note":  "Put each to them as what you remember, and ask whether it is right and still true; they should never have to recall anything. Pass over any fact about somebody else's work or that they would have to look up. With ask, record the plain question the fact answers and the answer you believe; for a fact that changed, what it used to be as outdated_answer. One at a time.",
+		"note":  "Put each to them as what you remember, the way its ask says, with ask_user and its choices in their language; they should never have to recall anything. A fact about something that happened (a trip, an event, a move) is asked whether it is right, never whether it is still true, even when it has no date here. Pass over any fact about somebody else's work or that they would have to look up. With ask, record the plain question the fact answers and the answer you believe; for a fact that changed, what it used to be as outdated_answer. One at a time.",
 	})
 }
 

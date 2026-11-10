@@ -3,6 +3,7 @@ package memorycheck_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -133,6 +134,35 @@ func TestADraftAsksAboutThePersonsOwnStatedFacts(t *testing.T) {
 	}
 	if !sawChange {
 		t.Fatalf("one fact that changed: %v", facts)
+	}
+}
+
+// Something that happened stays as it was: a dated fact is asked only
+// whether it is right, never whether it has changed, while a fact that can
+// change is still asked both.
+func TestADraftNeverAsksWhetherSomethingThatHappenedHasChanged(t *testing.T) {
+	world := newCheckWorld(t)
+	sawHappened, sawStanding := false, false
+	for _, each := range world.call(t, `{"action":"draft"}`)["facts"].([]any) {
+		fact := each.(map[string]any)
+		choices := fmt.Sprint(fact["choices"])
+		if fact["happened"] != nil {
+			sawHappened = true
+			if strings.Contains(choices, "It has changed") || !strings.Contains(choices, "That's not right") {
+				t.Fatalf("a dated fact is asked whether it is right: %v", fact)
+			}
+			if strings.Contains(fact["ask"].(string), "still the case?") {
+				t.Fatalf("a dated fact is not asked whether it is still the case: %v", fact)
+			}
+		} else {
+			sawStanding = true
+			if !strings.Contains(choices, "It has changed") {
+				t.Fatalf("a fact that can change offers that it has: %v", fact)
+			}
+		}
+	}
+	if !sawHappened || !sawStanding {
+		t.Fatalf("a draft of both: happened %v, standing %v", sawHappened, sawStanding)
 	}
 }
 
