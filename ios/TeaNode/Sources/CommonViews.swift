@@ -274,6 +274,25 @@ extension View {
     }
 }
 
+extension View {
+    /// Hides the tab bar where it runs along the bottom, an iPhone or an iPad
+    /// window as narrow as one, for a screen with a bar of its own there. On
+    /// a wider iPad the tabs float along the top, clear of it, and stay, so
+    /// they can be reached from a chat as from anywhere else.
+    func tabBarHiddenWhenAtBottom() -> some View {
+        modifier(TabBarHiddenWhenAtBottom())
+    }
+}
+
+/// TabBarHiddenWhenAtBottom is `tabBarHiddenWhenAtBottom()`.
+private struct TabBarHiddenWhenAtBottom: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    func body(content: Content) -> some View {
+        content.toolbarVisibility(horizontalSizeClass == .compact ? .hidden : .automatic, for: .tabBar)
+    }
+}
+
 /// ActionColor is `actionColor()`. It reads whether the button can be
 /// pressed from below `.disabled`, which says so to everything inside it.
 private struct ActionColor: ViewModifier {
