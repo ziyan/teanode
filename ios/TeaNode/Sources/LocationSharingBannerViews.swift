@@ -13,25 +13,33 @@ struct LocationSharingBannerSection: View {
     /// Opens the person's own shares.
     let showSharing: () -> Void
     private let recorder = LocationRecorder.shared
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         if let banner = model.sharingBanner {
             Section {
-                Label {
+                if dynamicTypeSize.isAccessibilitySize {
+                    // At the largest sizes the icon takes the first line of
+                    // the title and the rest runs under it, so the body
+                    // follows at the full width too, not indented beside an
+                    // icon that is no longer beside it.
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(verbatim: Self.titleText(of: banner))
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                        ForEach(Self.bodyLines(of: banner), id: \.self) { line in
-                            Text(verbatim: line)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                        Label {
+                            titleView(of: banner)
+                        } icon: {
+                            iconView(of: banner)
                         }
+                        bodyView(of: banner)
                     }
-                } icon: {
-                    Image(systemName: Self.symbolName(of: banner))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.primary)
+                } else {
+                    Label {
+                        VStack(alignment: .leading, spacing: 4) {
+                            titleView(of: banner)
+                            bodyView(of: banner)
+                        }
+                    } icon: {
+                        iconView(of: banner)
+                    }
                 }
                 Button(Self.actionTitle(of: banner), systemImage: Self.actionSymbolName(of: banner)) {
                     perform(banner)
@@ -39,6 +47,26 @@ struct LocationSharingBannerSection: View {
                 .actionColor()
             }
         }
+    }
+
+    private func titleView(of banner: LocationSharingBanner) -> some View {
+        Text(verbatim: Self.titleText(of: banner))
+            .font(.headline)
+            .foregroundStyle(.primary)
+    }
+
+    private func bodyView(of banner: LocationSharingBanner) -> some View {
+        ForEach(Self.bodyLines(of: banner), id: \.self) { line in
+            Text(verbatim: line)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func iconView(of banner: LocationSharingBanner) -> some View {
+        Image(systemName: Self.symbolName(of: banner))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(.primary)
     }
 
     private func perform(_ banner: LocationSharingBanner) {
