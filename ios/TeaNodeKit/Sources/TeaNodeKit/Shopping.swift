@@ -188,6 +188,46 @@ public enum ShoppingStoreKey {
     }
 }
 
+/// ShoppingStoreSuggestions are the stores offered under a store field as it
+/// is typed in, so a store the lists already have is chosen rather than typed
+/// again.
+public enum ShoppingStoreSuggestions {
+    /// The names among storeNames that match what is typed, in that order:
+    /// those that begin with it, then those with a word that does, then those
+    /// that hold it anywhere, ignoring case, accents, spaces and punctuation.
+    /// Nothing typed matches every name in the order given. A name that is
+    /// already what is typed is not offered.
+    public static func names(matching typed: String, among storeNames: [String], limit: Int = 5) -> [String] {
+        let typedKey = ShoppingStoreKey.key(of: typed)
+        let typedFolded = folded(typed.trimmingCharacters(in: .whitespaces))
+        var ranked: [(rank: Int, name: String)] = []
+        for name in storeNames {
+            let nameKey = ShoppingStoreKey.key(of: name)
+            if nameKey.isEmpty || (!typedKey.isEmpty && nameKey == typedKey) { continue }
+            if typedKey.isEmpty {
+                ranked.append((0, name))
+                continue
+            }
+            let nameFolded = folded(name)
+            let nameWords = nameFolded.split { !$0.isLetter && !$0.isNumber }
+            if nameFolded.hasPrefix(typedFolded) || folded(nameKey).hasPrefix(folded(typedKey)) {
+                ranked.append((0, name))
+            } else if nameWords.contains(where: { $0.hasPrefix(typedFolded) }) {
+                ranked.append((1, name))
+            } else if folded(nameKey).contains(folded(typedKey)) {
+                ranked.append((2, name))
+            }
+        }
+        // Stable: within a rank, the order given.
+        let ordered = ranked.enumerated().sorted { ($0.element.rank, $0.offset) < ($1.element.rank, $1.offset) }
+        return Array(ordered.map { $0.element.name }.prefix(max(limit, 0)))
+    }
+
+    private static func folded(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+    }
+}
+
 // MARK: Items
 
 /// ShoppingItemState is where an item is: wanted, put in the cart at the

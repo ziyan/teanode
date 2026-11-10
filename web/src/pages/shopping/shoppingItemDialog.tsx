@@ -41,9 +41,12 @@ import { ShoppingPicture } from './shoppingParts'
 // Saving changes only what was edited; a changed price is remembered as a new
 // price seen today rather than written over the old ones. While an item is
 // being made, what reads like it is listed under its description, to go to
-// that item instead of adding a second one.
+// that item instead of adding a second one, and asked about again on Add.
 
-export type ShoppingItemDialogTarget = { shoppingListId: string; shoppingItem: null } | { shoppingItem: ShoppingItem }
+// A new item may start with the store and aisle it is added under.
+export type ShoppingItemDialogTarget =
+  | { shoppingListId: string; shoppingItem: null; storeName?: string; aisleName?: string }
+  | { shoppingItem: ShoppingItem }
 
 export function ShoppingItemDialog({
   target,
@@ -61,17 +64,21 @@ export function ShoppingItemDialog({
   const { t } = useTranslation()
   const toast = useToast()
   const item = target.shoppingItem
+  const preset = 'shoppingListId' in target ? target : null
   const stores = useQuery(() => listShoppingStores(), [], { refresh: false })
   const [itemDescription, setItemDescription] = useState(item?.itemDescription ?? '')
   const [itemDetails, setItemDetails] = useState(item?.itemDetails ?? '')
-  const [storeName, setStoreName] = useState(item?.storeName ?? '')
+  const [storeName, setStoreName] = useState(item?.storeName ?? preset?.storeName ?? '')
   const [isStoreBrand, setIsStoreBrand] = useState(item?.isStoreBrand ?? false)
-  const [aisleName, setAisleName] = useState(item?.aisleName ?? '')
+  const [aisleName, setAisleName] = useState(item?.aisleName ?? preset?.aisleName ?? '')
   const [neededQuantity, setNeededQuantity] = useState(item ? plainNumber(item.neededQuantity) : '1')
   const [quantityUnit, setQuantityUnit] = useState(item?.quantityUnit ?? '')
   const [unitPriceAmount, setUnitPriceAmount] = useState(item ? plainNumber(item.unitPriceAmount) : '')
   const [isBusy, setIsBusy] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
+  // What reads like a new item, read again when Add was pressed, to choose
+  // from before adding; null until then.
+  const [alikeItems, setAlikeItems] = useState<ShoppingItem[] | null>(null)
   const pictureInput = useRef<HTMLInputElement>(null)
 
   const canSubmit =
@@ -94,9 +101,30 @@ export function ShoppingItemDialog({
     }
   }
 
+  // add asks about what reads like the new item before adding it. What is
+  // alike is read again for the words as they stand; when it cannot be read,
+  // the item is added.
+  async function add() {
+    if (!preset) return
+    setIsBusy(true)
+    let alike: ShoppingItem[]
+    try {
+      alike = await listSimilarShoppingItems(preset.shoppingListId, itemDescription.trim())
+    } catch {
+      alike = []
+    } finally {
+      setIsBusy(false)
+    }
+    if (alike.length > 0) {
+      setAlikeItems(alike)
+      return
+    }
+    await save()
+  }
+
   async function save() {
     if (!item) {
-      const shoppingListId = 'shoppingListId' in target ? target.shoppingListId : ''
+      const shoppingListId = preset?.shoppingListId ?? ''
       await run(async () => {
         const added = await addShoppingItems(shoppingListId, [
           {
@@ -164,6 +192,65 @@ export function ShoppingItemDialog({
     )
   }
 
+  if (preset && alikeItems) {
+    const shoppingListId = preset.shoppingListId
+    return (
+      <FormDialog
+        title={t('shopping.alikeTitle')}
+        submitLabel={t('shopping.addAnyway', { itemDescription: itemDescription.trim() })}
+        busy={isBusy}
+        canSubmit={canSubmit}
+        onSubmit={() => void save()}
+        onClose={onClose}
+        otherAction={
+          <button type="button" disabled={isBusy} onClick={() => setAlikeItems(null)}>
+            {t('shopping.alikeBack')}
+          </button>
+        }
+      >
+        <p className="muted">{t('shopping.alikeBody', { itemDescription: itemDescription.trim() })}</p>
+        <section className="shopping-similar" aria-label={t('shopping.similarItems')}>
+          <ul>
+            {alikeItems.map((shoppingItem) => {
+              // A bought item of this list is needed again; anything else
+              // opens, to be seen or changed.
+              const isNeededAgain =
+                shoppingItem.shoppingListId === shoppingListId && shoppingItem.shoppingItemState === 'not_needed'
+              return (
+                <li key={shoppingItem.id}>
+                  <ShoppingPicture item={shoppingItem} />
+                  <button
+                    type="button"
+                    className="is-choice"
+                    disabled={isBusy}
+                    onClick={() => {
+                      if (!isNeededAgain) {
+                        onOpenItem?.(shoppingItem)
+                        return
+                      }
+                      void run(async () => {
+                        await setShoppingItemNeed(shoppingItem.id, true, neededQuantity.trim() || '1')
+                        return t('shopping.neededAgain', { itemDescription: shoppingItem.itemDescription })
+                      })
+                    }}
+                  >
+                    <span className="shopping-similar-words">
+                      <strong>{shoppingItem.itemDescription}</strong>
+                      <span className="muted">{similarItemLine(shoppingItem, shoppingListId, t)}</span>
+                    </span>
+                    <span className="shopping-similar-action">
+                      {isNeededAgain ? t('shopping.needAgain') : t('shopping.openItem')}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      </FormDialog>
+    )
+  }
+
   return (
     <FormDialog
       wide
@@ -171,7 +258,7 @@ export function ShoppingItemDialog({
       submitLabel={item ? t('common.save') : t('shopping.addItem')}
       busy={isBusy}
       canSubmit={canSubmit}
-      onSubmit={() => void save()}
+      onSubmit={() => void (item ? save() : add())}
       onClose={onClose}
       otherAction={
         item ? (
@@ -355,22 +442,6 @@ function SimilarItems({
   const items = similar.data ?? []
   if (items.length === 0) return null
 
-  function itemLine(shoppingItem: ShoppingItem): string {
-    const stateText =
-      shoppingItem.shoppingItemState === 'needed'
-        ? `${t('shopping.tabToBuy')} ${quantityText(shoppingItem)}`
-        : shoppingItem.shoppingItemState === 'in_cart'
-          ? t('shopping.tabInCart')
-          : t('shopping.tabNotNeeded')
-    return [
-      shoppingItem.shoppingListId === shoppingListId ? '' : shoppingItem.listName,
-      stateText,
-      shoppingItem.storeName,
-    ]
-      .filter(Boolean)
-      .join(' · ')
-  }
-
   return (
     <section className="shopping-similar" aria-label={t('shopping.similarItems')}>
       <h4>{t('shopping.similarItems')}</h4>
@@ -380,13 +451,35 @@ function SimilarItems({
             <ShoppingPicture item={shoppingItem} />
             <button type="button" onClick={() => onOpenItem(shoppingItem)}>
               <strong>{shoppingItem.itemDescription}</strong>
-              <span className="muted">{itemLine(shoppingItem)}</span>
+              <span className="muted">{similarItemLine(shoppingItem, shoppingListId, t)}</span>
             </button>
           </li>
         ))}
       </ul>
     </section>
   )
+}
+
+// similarItemLine is the line under an item like the one being added: its
+// list when it is another, what state it is in, and its store.
+function similarItemLine(
+  shoppingItem: ShoppingItem,
+  shoppingListId: string,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  const stateText =
+    shoppingItem.shoppingItemState === 'needed'
+      ? `${t('shopping.tabToBuy')} ${quantityText(shoppingItem)}`
+      : shoppingItem.shoppingItemState === 'in_cart'
+        ? t('shopping.tabInCart')
+        : t('shopping.tabNotNeeded')
+  return [
+    shoppingItem.shoppingListId === shoppingListId ? '' : shoppingItem.listName,
+    stateText,
+    shoppingItem.storeName,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 // PriceHistory is what an item has cost: a line of the prices over time when

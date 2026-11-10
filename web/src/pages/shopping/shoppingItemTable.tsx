@@ -1,5 +1,5 @@
 import { formatMoney } from '../../components/common'
-import { PencilIcon, RestoreIcon, TrashIcon } from '../../components/icons'
+import { PencilIcon, PlusIcon, RestoreIcon, TrashIcon } from '../../components/icons'
 import { Tooltip } from '../../components/tooltip'
 import { useTranslation } from '../../i18n/i18n'
 import { formatDay } from '../finance/financeApi'
@@ -11,7 +11,8 @@ import { ShoppingItemCard } from './shoppingView'
 // The items of one tab of a list, as a table grouped under a heading for each
 // store and aisle ("Example Market · Frozen"), the items that can be got
 // anywhere under "Any store". A table stays a table on a phone: it scrolls
-// sideways inside its box.
+// sideways inside its box. Given onAddAt, each heading has a button that adds
+// an item for its store and aisle without typing them.
 
 export function ShoppingItemTable({
   shoppingItems,
@@ -21,6 +22,7 @@ export function ShoppingItemTable({
   onEdit,
   onRemove,
   onNeedAgain,
+  onAddAt,
 }: {
   shoppingItems: ShoppingItem[]
   tab: ShoppingTab
@@ -29,6 +31,7 @@ export function ShoppingItemTable({
   onEdit: (shoppingItem: ShoppingItem) => void
   onRemove: (shoppingItem: ShoppingItem) => void
   onNeedAgain: (shoppingItem: ShoppingItem) => void
+  onAddAt?: (storeName: string, aisleName: string) => void
 }) {
   const { t } = useTranslation()
   const groups = groupShoppingItems(shoppingItems)
@@ -57,7 +60,22 @@ export function ShoppingItemTable({
           <tbody key={`${group.storeName}\u0000${group.aisleName}`}>
             <tr className="shopping-group-row">
               <th colSpan={columnCount} scope="colgroup">
-                {[group.storeName || t('shopping.anyStore'), group.aisleName].filter(Boolean).join(' · ')}
+                <span className="shopping-group-heading">
+                  {groupHeading(group.storeName, group.aisleName, t)}
+                  {onAddAt ? (
+                    <Tooltip label={t('shopping.addItemHere')}>
+                      <button
+                        type="button"
+                        className="icon-action"
+                        aria-label={`${groupHeading(group.storeName, group.aisleName, t)}: ${t('shopping.addItemHere')}`}
+                        disabled={isBusy}
+                        onClick={() => onAddAt(group.storeName, group.aisleName)}
+                      >
+                        <PlusIcon size={16} />
+                      </button>
+                    </Tooltip>
+                  ) : null}
+                </span>
               </th>
             </tr>
             {group.shoppingItems.map((shoppingItem) => (
@@ -126,7 +144,7 @@ export function ShoppingItemGrid({
           <ShoppingItemCard
             key={shoppingItem.id}
             shoppingItem={shoppingItem}
-            groupName={[group.storeName || t('shopping.anyStore'), group.aisleName].filter(Boolean).join(' · ')}
+            groupName={groupHeading(group.storeName, group.aisleName, t)}
             check={<ListItemCheck shoppingItem={shoppingItem} tab={tab} isBusy={isBusy} onCheck={onCheck} />}
             facts={[
               shoppingItem.shoppingItemState === 'not_needed'
@@ -249,4 +267,10 @@ function ListItemActions({
       </Tooltip>
     </>
   )
+}
+
+// groupHeading names a group of items: its store, or "Any store", and its
+// aisle.
+function groupHeading(storeName: string, aisleName: string, t: ReturnType<typeof useTranslation>['t']): string {
+  return [storeName || t('shopping.anyStore'), aisleName].filter(Boolean).join(' · ')
 }

@@ -22092,6 +22092,14 @@ button.person-row:focus-visible {
   font-weight: 600;
 }
 
+/* The heading's words, then its add button at the far end. */
+.shopping-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .shopping-table td {
   vertical-align: middle;
 }
@@ -22369,6 +22377,28 @@ button.person-row:focus-visible {
 
 .shopping-similar li button:hover strong {
   text-decoration: underline;
+}
+
+/* Asked on Add: each row is one button, what it is on the left and what
+   choosing it does on the right. */
+.shopping-similar li button.is-choice {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.shopping-similar-words {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.shopping-similar-action {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--text-label);
 }
 
 /* The item's dialog and the import's are wide, as their tables need: the
