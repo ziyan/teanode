@@ -289,7 +289,7 @@ private struct TabBarHiddenWhenAtBottom: ViewModifier {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     func body(content: Content) -> some View {
-        content.toolbarVisibility(horizontalSizeClass == .compact ? .hidden : .automatic, for: .tabBar)
+        content.toolbarVisibility(horizontalSizeClass == .compact ? .hidden : .visible, for: .tabBar)
     }
 }
 

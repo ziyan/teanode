@@ -479,6 +479,7 @@ struct CodingSessionView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedId: String
     @State private var part = CodingPart.turns
     @State private var turns: [HerdrTurn] = []
@@ -555,6 +556,14 @@ struct CodingSessionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if let session {
+                // On a wide iPad the tabs float in the middle of the top bar.
+                // The name goes in a capsule, which the bar places under them
+                // as it does a chat's, so neither covers the other.
+                if horizontalSizeClass == .regular {
+                    ToolbarItem(placement: .principal) {
+                        CodingSessionTitle(title: session.workspaceTitle, computer: session.computer)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     actionsMenu(session)
                 }
@@ -1451,5 +1460,28 @@ extension Color {
 
     init(terminal color: TerminalColor) {
         self.init(red: Double(color.red) / 255, green: Double(color.green) / 255, blue: Double(color.blue) / 255)
+    }
+}
+
+/// CodingSessionTitle is a session's name and its computer in a glass
+/// capsule, the way a chat shows its name.
+private struct CodingSessionTitle: View {
+    let title: String
+    let computer: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(title)
+                .font(.headline)
+            Text(computer)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .lineLimit(1)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .glassEffect(in: .capsule)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 }
