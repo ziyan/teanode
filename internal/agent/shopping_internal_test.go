@@ -2,6 +2,8 @@ package agent
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"image"
 	"image/jpeg"
 	"strings"
@@ -175,10 +177,10 @@ func TestAShoppingPictureIsKeptOnlyWhenTheModelSeesTheItem(t *testing.T) {
 		t.Fatal(err)
 	}
 	item := &models.ShoppingItem{ItemDescription: "Frozen petite peas", StoreName: "Example Market"}
-	page := websearch.Result{Title: "Petite peas", URL: "https://shop.example.com/peas"}
+	page := shoppingPictureCandidate{pageTitle: "Petite peas", pageURL: "https://shop.example.com/peas"}
 	picture := &linkpreview.Image{Content: encoded.Bytes(), WidthPixels: 8, HeightPixels: 8}
 	for attempt, want := range []bool{true, false, false} {
-		isMatch, err := fixture.worker.isShoppingPictureOfItem(t.Context(), fixture.run(), item, page, picture)
+		isMatch, err := fixture.worker.isShoppingPictureOfItem(t.Context(), fixture.run(), item, page, picture, shoppingPictureOfProduct)
 		if err != nil {
 			t.Fatalf("attempt %d: %s", attempt, err)
 		}
@@ -188,5 +190,144 @@ func TestAShoppingPictureIsKeptOnlyWhenTheModelSeesTheItem(t *testing.T) {
 	}
 	if len(model.prompts) != 3 || !strings.Contains(model.prompts[0], "image") || !strings.Contains(model.prompts[0], "Frozen petite peas") {
 		t.Fatalf("the model was not shown the picture with the item: %d prompts", len(model.prompts))
+	}
+}
+
+// inventedShoppingPictureSources is a search service and a web of invented
+// pages: the pages and pictures a search finds, the picture each page names,
+// and the pictures that can be fetched. It records the image searches.
+type inventedShoppingPictureSources struct {
+	pages        []websearch.Result
+	images       []websearch.ImageResult
+	pagePictures map[string]string
+	pictures     map[string]bool
+	imageQueries []string
+}
+
+func (self *inventedShoppingPictureSources) SearchPages(ctx context.Context, query string, count int) ([]websearch.Result, error) {
+	return self.pages, nil
+}
+
+func (self *inventedShoppingPictureSources) SearchImages(ctx context.Context, query string, count int) ([]websearch.ImageResult, error) {
+	self.imageQueries = append(self.imageQueries, query)
+	return self.images, nil
+}
+
+func (self *inventedShoppingPictureSources) PagePictureURL(ctx context.Context, pageURL string) (string, error) {
+	if pictureURL, isThere := self.pagePictures[pageURL]; isThere {
+		return pictureURL, nil
+	}
+	return "", errors.New("the page refused the request")
+}
+
+func (self *inventedShoppingPictureSources) FetchPicture(ctx context.Context, pictureURL string) (*linkpreview.Image, error) {
+	if !self.pictures[pictureURL] {
+		return nil, errors.New("no such picture")
+	}
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 8, 8)), nil); err != nil {
+		return nil, err
+	}
+	return &linkpreview.Image{Content: encoded.Bytes(), WidthPixels: 8, HeightPixels: 8}, nil
+}
+
+// findInventedShoppingPicture adds item to a new list, runs the picture job
+// for it over sources, and reads the item back.
+func findInventedShoppingPicture(t *testing.T, fixture *financeFixture, item *models.ShoppingItem, sources shoppingPictureSources) *models.ShoppingItem {
+	t.Helper()
+	var itemId string
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		dbtest.GrantPermission(t, tx, fixture.owner.ID, models.PermissionShoppingUse)
+		list, err := tx.CreateShoppingList(fixture.owner.ID, "Groceries")
+		if err != nil {
+			t.Fatalf("CreateShoppingList: %s", err)
+		}
+		items, _, err := tx.AddShoppingItems(fixture.owner.ID, list.ID, []*models.ShoppingItem{item})
+		if err != nil {
+			t.Fatalf("AddShoppingItems: %s", err)
+		}
+		itemId = items[0].ID
+	})
+	run := fixture.run()
+	run.Job = &models.AgentJob{ID: "job-picture", AgentID: fixture.agent.ID, Kind: models.AgentJobShoppingPicture, SubjectID: itemId}
+	if err := fixture.worker.findShoppingPicture(t.Context(), run, sources); err != nil {
+		t.Fatalf("findShoppingPicture: %s", err)
+	}
+	var found *models.ShoppingItem
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		var err error
+		if found, err = tx.GetShoppingItem(fixture.owner.ID, itemId); err != nil {
+			t.Fatalf("GetShoppingItem: %s", err)
+		}
+	})
+	return found
+}
+
+// A store's product page that refuses the server still gives the item its
+// picture: the copy the search service keeps of it.
+func TestAProductPictureIsTakenFromTheSearchWhenThePageRefuses(t *testing.T) {
+	fixture, _ := receiptJobFixture(t, `{"resultNumber": 1, "thingName": "oat milk"}`, `{"isMatch": true}`)
+	sources := &inventedShoppingPictureSources{
+		pages:    []websearch.Result{{Title: "Oat milk, half gallon", URL: "https://market.example.com/oat-milk", PictureURL: "https://pictures.example.com/oat-milk.jpg"}},
+		pictures: map[string]bool{"https://pictures.example.com/oat-milk.jpg": true},
+	}
+	found := findInventedShoppingPicture(t, fixture, &models.ShoppingItem{ItemDescription: "Oat milk", StoreName: "Example Market"}, sources)
+	if found.PictureFileID == "" || found.PicturePageURL != "https://market.example.com/oat-milk" {
+		t.Fatalf("the item's picture: %q from %q", found.PictureFileID, found.PicturePageURL)
+	}
+	if len(sources.imageQueries) != 0 {
+		t.Errorf("the product's picture was kept, yet pictures of the thing were searched: %v", sources.imageQueries)
+	}
+}
+
+// When no page shows the product, the item is shown a picture of the thing,
+// searched by what the model said it is, without who it is for; a picture
+// the model turns down is passed over.
+func TestAShoppingItemGetsAPictureOfTheThingWhenNoPageShowsIt(t *testing.T) {
+	fixture, model := receiptJobFixture(t, `{"resultNumber": 1, "thingName": "croissants"}`, `{"isMatch": false}`, `{"isMatch": false}`, `{"isMatch": true}`)
+	sources := &inventedShoppingPictureSources{
+		pages: []websearch.Result{
+			{Title: "Butter croissant recipe", URL: "https://recipes.example.com/croissants", PictureURL: "https://pictures.example.com/dish.jpg"},
+			{Title: "Bakery", URL: "https://bakery.example.com/"},
+		},
+		images: []websearch.ImageResult{
+			{Title: "Croissants stock photo", PageURL: "https://stock.example.com/croissants", PictureURL: "https://stock.example.com/marked.jpg"},
+			{Title: "Croissants on a board", PageURL: "https://photos.example.com/croissants", PictureURL: "https://photos.example.com/croissants.jpg"},
+		},
+		pictures: map[string]bool{
+			"https://pictures.example.com/dish.jpg":     true,
+			"https://stock.example.com/marked.jpg":      true,
+			"https://photos.example.com/croissants.jpg": true,
+		},
+	}
+	found := findInventedShoppingPicture(t, fixture, &models.ShoppingItem{ItemDescription: "Croissants for the bake sale"}, sources)
+	if found.PictureFileID == "" || found.PicturePageURL != "https://photos.example.com/croissants" {
+		t.Fatalf("the item's picture: %q from %q", found.PictureFileID, found.PicturePageURL)
+	}
+	if len(sources.imageQueries) != 1 || sources.imageQueries[0] != "croissants" {
+		t.Errorf("pictures of the thing were searched as %v", sources.imageQueries)
+	}
+	model.mutex.Lock()
+	defer model.mutex.Unlock()
+	if len(model.prompts) != 4 || !strings.Contains(model.prompts[3], "need not be that product") {
+		t.Fatalf("the thing's picture was not checked as a thing's: %d prompts", len(model.prompts))
+	}
+}
+
+// A store's own brand is never shown another picture than its own: with no
+// page showing it, it keeps no picture and is marked searched.
+func TestAStoreBrandIsNotShownAPictureOfTheThing(t *testing.T) {
+	fixture, _ := receiptJobFixture(t, `{"resultNumber": 1, "thingName": "olive oil"}`, `{"isMatch": false}`)
+	sources := &inventedShoppingPictureSources{
+		pages:    []websearch.Result{{Title: "Olive oil", URL: "https://elsewhere.example.com/olive-oil", PictureURL: "https://pictures.example.com/other-brand.jpg"}},
+		images:   []websearch.ImageResult{{Title: "Olive oil", PageURL: "https://photos.example.com/olive-oil", PictureURL: "https://photos.example.com/olive-oil.jpg"}},
+		pictures: map[string]bool{"https://pictures.example.com/other-brand.jpg": true, "https://photos.example.com/olive-oil.jpg": true},
+	}
+	found := findInventedShoppingPicture(t, fixture, &models.ShoppingItem{ItemDescription: "Olive oil", StoreName: "Example Market", IsStoreBrand: true}, sources)
+	if found.PictureFileID != "" || found.PictureSearchedAt == nil {
+		t.Fatalf("a store brand's picture: %q, searched %v", found.PictureFileID, found.PictureSearchedAt)
+	}
+	if len(sources.imageQueries) != 0 {
+		t.Errorf("a store brand was searched for pictures of the thing: %v", sources.imageQueries)
 	}
 }
