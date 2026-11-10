@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.224.3] - 2026-11-10
+
+### Changed
+
+- Shopping items get a picture far more often: from the search service when a store's page refuses, and otherwise a clear photo of the thing when no page shows the very product (never for a store's own brand). (#747)
+
 ## [0.224.2] - 2026-11-08
 
 ### Fixed
