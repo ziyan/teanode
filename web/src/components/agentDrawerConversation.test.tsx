@@ -200,3 +200,25 @@ describe('storedOpeningIndex', () => {
     expect(storedOpeningIndex(lines, 'Import the statement.', undefined)).toBe(-1)
   })
 })
+
+// A turn the agent took on its own replays while a question of it waits:
+// its stored check-in is found by time, so the turn is drawn once and the
+// open question stays last; last week's check-in with the same words is not
+// this turn.
+describe('storedOpeningIndex of a check-in', () => {
+  const checkIn = '[speaking first] a few questions.'
+  const lines = [
+    { kind: 'checkin' as const, key: '0', text: checkIn, at: '2026-10-03T09:00:00Z', origin: 'speakFirst' as const },
+    { kind: 'assistant' as const, key: '0a', text: 'Last week.', at: '2026-10-03T09:00:05Z' },
+    { kind: 'checkin' as const, key: '1', text: checkIn, at: '2026-10-10T09:00:00.4Z', origin: 'speakFirst' as const },
+    { kind: 'assistant' as const, key: '2', text: 'I would like to check a few things.', at: '2026-10-10T09:00:01Z' },
+  ]
+
+  it('finds the check-in stored as the turn began', () => {
+    expect(storedOpeningIndex(lines, checkIn, '2026-10-10T09:00:00.123Z')).toBe(2)
+  })
+
+  it("finds nothing for a new turn with last week's words", () => {
+    expect(storedOpeningIndex(lines.slice(0, 2), checkIn, '2026-10-10T09:00:00Z')).toBe(-1)
+  })
+})

@@ -2680,7 +2680,8 @@ function herdrSummaryOf(text: string): { asked: string; who: string } {
 const OPENING_STORED_LEEWAY_MS = 5000
 
 // storedOpeningIndex is where the person's words a replayed turn began with
-// were read back, when other words of theirs come after them: the same
+// were read back, or the check-in of a turn the agent took on its own, when
+// other words of theirs come after them: the same
 // words, stored on or after the moment the turn was asked, the earliest such.
 // A turn waiting behind another stores them only when it starts, so there is
 // no limit after; an older message with the same words, a "yes" of last
@@ -2689,7 +2690,7 @@ export function storedOpeningIndex(lines: Line[], text: string, askedAt: string 
   const asked = askedAt ? Date.parse(askedAt) : NaN
   if (Number.isNaN(asked)) return -1
   return lines.findIndex((line) => {
-    if (line.kind !== 'user' || line.text !== text || !line.at) return false
+    if ((line.kind !== 'user' && line.kind !== 'checkin') || line.text !== text || !line.at) return false
     const stored = Date.parse(line.at)
     return !Number.isNaN(stored) && stored >= asked - OPENING_STORED_LEEWAY_MS
   })
@@ -4467,6 +4468,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       // Only near the end: a weekly schedule says the same words every week,
       // and last week's line is not this one.
       setLines((previous) => {
+        // Read back while it still runs (a question of it waiting for the
+        // person): what it stored is drawn again by the replay, so it goes.
+        // Left there, the open question read with the conversation stayed
+        // above the turn drawn again under it.
+        const stored = storedOpeningIndex(previous, event.text ?? '', event.at)
+        if (stored >= 0) {
+          return [
+            ...previous.slice(0, stored),
+            { kind: 'checkin', key: `${event.runId}-asked`, at: event.at, text: event.text ?? '', origin },
+          ]
+        }
         const tail = Math.max(0, previous.length - 8)
         const kept = previous.filter(
           (line, index) =>
