@@ -818,6 +818,7 @@ struct ShoppingAddItemSheet: View {
     /// The stores the lists have items for, those with the most to buy first.
     @State private var storeNames: [String] = []
     @FocusState private var isStoreFocused: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// initialStoreName is the store the item is for when the sheet opens,
     /// empty for any store.
@@ -939,13 +940,18 @@ struct ShoppingAddItemSheet: View {
                 Text(verbatim: ShoppingWords.similarItemDetail(item, onListId: listId))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                // At the largest sizes it goes under the words, which
+                // otherwise break mid-word beside it.
+                if isNeededAgain, dynamicTypeSize.isAccessibilitySize {
+                    needAgainText
+                }
             }
             .multilineTextAlignment(.leading)
             Spacer(minLength: 8)
             if isNeededAgain {
-                Text("Need again")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.accentColor)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    needAgainText
+                }
             } else {
                 Image(systemName: "chevron.forward")
                     .font(.footnote.weight(.semibold))
@@ -954,6 +960,12 @@ struct ShoppingAddItemSheet: View {
         }
         .frame(minHeight: 44)
         .contentShape(.rect)
+    }
+
+    private var needAgainText: some View {
+        Text("Need again")
+            .font(.subheadline)
+            .foregroundStyle(Color.accentColor)
     }
 
     /// Asked when Add finds items like the one typed: use one of them, or
