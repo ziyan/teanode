@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.225.1] - 2026-11-10
+
+### Fixed
+
+- A memory check asks only whether something that happened, like a past trip, is right, instead of whether it has changed. (#748)
+- iPhone and dashboard: a question the agent is waiting on stays at the bottom of the chat when you come back to it, instead of showing above the messages before it. (#748)
+
 ## [0.225.0] - 2026-11-10
 
 ### Added
