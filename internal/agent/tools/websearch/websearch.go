@@ -40,12 +40,23 @@ func init() {
 	})
 }
 
-// Result is one page a search found.
+// Result is one page a search found. PictureURL is the picture the search
+// service keeps for the page, when it has one: often a product page's own
+// photo, which the page itself may refuse to a server that asks for it.
 type Result struct {
 	Title       string `json:"title"`
 	URL         string `json:"url"`
 	Description string `json:"description"`
 	Age         string `json:"age"`
+	PictureURL  string `json:"pictureUrl,omitempty"`
+}
+
+// ImageResult is one picture an image search found: where it is, and the
+// page it is on.
+type ImageResult struct {
+	Title      string `json:"title"`
+	PageURL    string `json:"pageUrl"`
+	PictureURL string `json:"pictureUrl"`
 }
 
 // Search asks the configured search service for pages about query: count of
@@ -53,15 +64,70 @@ type Result struct {
 // month, year, or anything when empty). The web_search tool and the server's
 // own jobs (finding a shopping item's picture) both ask through it.
 func Search(ctx context.Context, search config.AgentSearch, query string, count int, freshness string) ([]Result, error) {
+	values := url.Values{}
+	if freshness := map[string]string{"day": "pd", "week": "pw", "month": "pm", "year": "py"}[freshness]; freshness != "" {
+		values.Set("freshness", freshness)
+	}
+	var decoded struct {
+		Web struct {
+			Results []struct {
+				Title       string `json:"title"`
+				URL         string `json:"url"`
+				Description string `json:"description"`
+				Age         string `json:"age"`
+				Thumbnail   struct {
+					Original string `json:"original"`
+				} `json:"thumbnail"`
+			} `json:"results"`
+		} `json:"web"`
+	}
+	if err := ask(ctx, search, "web", query, count, values, &decoded); err != nil {
+		return nil, err
+	}
+	results := make([]Result, 0, len(decoded.Web.Results))
+	for _, each := range decoded.Web.Results {
+		results = append(results, Result{Title: each.Title, URL: each.URL, Description: each.Description, Age: each.Age, PictureURL: each.Thumbnail.Original})
+	}
+	return results, nil
+}
+
+// SearchImages asks the configured search service for pictures of query,
+// count of them (5 when zero, 20 at most). A shopping item with no picture
+// of its very product is shown a picture of the thing found this way.
+func SearchImages(ctx context.Context, search config.AgentSearch, query string, count int) ([]ImageResult, error) {
+	var decoded struct {
+		Results []struct {
+			Title      string `json:"title"`
+			URL        string `json:"url"`
+			Properties struct {
+				URL string `json:"url"`
+			} `json:"properties"`
+		} `json:"results"`
+	}
+	if err := ask(ctx, search, "images", query, count, url.Values{}, &decoded); err != nil {
+		return nil, err
+	}
+	results := make([]ImageResult, 0, len(decoded.Results))
+	for _, each := range decoded.Results {
+		if each.Properties.URL != "" {
+			results = append(results, ImageResult{Title: each.Title, PageURL: each.URL, PictureURL: each.Properties.URL})
+		}
+	}
+	return results, nil
+}
+
+// ask sends one search of kind (web or images) and decodes the answer into
+// decoded.
+func ask(ctx context.Context, search config.AgentSearch, kind, query string, count int, values url.Values, decoded any) error {
 	if search.Kind == "" || search.APIKey == "" {
-		return nil, fmt.Errorf("no search service is configured on this server")
+		return fmt.Errorf("no search service is configured on this server")
 	}
 	if search.Kind != "brave" {
-		return nil, fmt.Errorf("the search service %q is not supported", search.Kind)
+		return fmt.Errorf("the search service %q is not supported", search.Kind)
 	}
 	query = strings.TrimSpace(query)
 	if query == "" {
-		return nil, fmt.Errorf("nothing to search for")
+		return fmt.Errorf("nothing to search for")
 	}
 	if count <= 0 {
 		count = 5
@@ -69,34 +135,24 @@ func Search(ctx context.Context, search config.AgentSearch, query string, count 
 	if count > 20 {
 		count = 20
 	}
-	values := url.Values{"q": {query}, "count": {strconv.Itoa(count)}}
-	if freshness := map[string]string{"day": "pd", "week": "pw", "month": "pm", "year": "py"}[freshness]; freshness != "" {
-		values.Set("freshness", freshness)
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.search.brave.com/res/v1/web/search?"+values.Encode(), nil)
+	values.Set("q", query)
+	values.Set("count", strconv.Itoa(count))
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.search.brave.com/res/v1/"+kind+"/search?"+values.Encode(), nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("X-Subscription-Token", search.APIKey)
 	client := &http.Client{Timeout: 20 * time.Second}
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("the search service did not answer: %w", err)
+		return fmt.Errorf("the search service did not answer: %w", err)
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("the search service answered %d", response.StatusCode)
+		return fmt.Errorf("the search service answered %d", response.StatusCode)
 	}
-	var decoded struct {
-		Web struct {
-			Results []Result `json:"results"`
-		} `json:"web"`
-	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&decoded); err != nil {
-		return nil, err
-	}
-	return decoded.Web.Results, nil
+	return json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(decoded)
 }
 
 type webSearchArguments struct {

@@ -143,14 +143,22 @@ candidate items.
 ## Pictures
 
 A new item queues `shopping_picture` on the agent of whoever added it. The job
-searches the web (the server's configured search, Brave), lets a model pick the
-result most likely to be the item's own product page, and keeps that page's
-picture, fetched through `safefetch`, scaled down and stored as the link
-preview code keeps one (`linkpreview.FetchImage`). "Find another" runs it again
-without the page the current picture came from. A person can upload a picture
-instead. Pictures are served from `/api/v1/shopping/pictures/{shoppingItemId}`
-to the people the list reaches, so a reader's device never loads anything from
-the page's site. With no search configured an item simply has no picture until
+searches the web (the server's configured search, Brave) and lets a model pick
+the result most likely to be the item's own product page. It tries that page's
+picture first, then the others': the copy the search service keeps of a page's
+picture, which a store's site that refuses servers still has, else the page's
+own. When none of three pictures is the product and the item is not a store's
+own brand, an image search for the thing in plain words (what the model said
+the item is, without who it is for or how many) finds a picture of the thing in
+general: a few pears, a plain carton of milk. Each picture is shown to a model
+before it is kept, with a stricter question for the product than for the
+thing, and a watermarked stock photo is refused either way. Pictures are
+fetched through `safefetch`, scaled down and stored as the link preview code
+keeps one (`linkpreview.FetchImage`). "Find another" runs the job again without
+the page the current picture came from. A person can upload a picture instead.
+Pictures are served from `/api/v1/shopping/pictures/{shoppingItemId}` to the
+people the list reaches, so a reader's device never loads anything from the
+page's site. With no search configured an item simply has no picture until
 somebody uploads one. A picture found after a person uploaded one, or after
 another search changed it, is thrown away.
 

@@ -162,18 +162,74 @@ func (self *Agent) runMatchShopping(ctx context.Context, run *Run) error {
 }
 
 // shoppingPictureAnswer is the search result the model picked, by number,
-// or zero for none.
+// or zero for none, and what the item is in a few plain words, which a
+// picture of the thing is searched for by when no page shows the product.
 type shoppingPictureAnswer struct {
-	ResultNumber int `json:"resultNumber"`
+	ResultNumber int    `json:"resultNumber"`
+	ThingName    string `json:"thingName"`
 }
 
-// shoppingPictureSearchCount is how many results are shown to the model, and
-// shoppingPictureFetchMost how many pages are read for a picture before
-// giving up.
+// shoppingPictureSearchCount is how many results each search asks for, and
+// shoppingPictureCheckMost how many pictures of each kind (the product, then
+// the thing) the model is shown before giving up.
 const (
 	shoppingPictureSearchCount = 8
-	shoppingPictureFetchMost   = 3
+	shoppingPictureCheckMost   = 3
 )
+
+// The two checks a picture goes through: of the very product, from a page
+// about it; or of the thing in general, when no page showed the product.
+const (
+	shoppingPictureOfProduct = "shopping_picture_check.txt"
+	shoppingPictureOfThing   = "shopping_picture_thing_check.txt"
+)
+
+// shoppingPictureSources is where the picture job looks: the search service
+// and the web. runShoppingPicture asks the real ones; a test hands its own.
+type shoppingPictureSources interface {
+	SearchPages(ctx context.Context, query string, count int) ([]websearch.Result, error)
+	SearchImages(ctx context.Context, query string, count int) ([]websearch.ImageResult, error)
+	PagePictureURL(ctx context.Context, pageURL string) (string, error)
+	FetchPicture(ctx context.Context, pictureURL string) (*linkpreview.Image, error)
+}
+
+// webShoppingPictureSources is the configured search service and the web,
+// read through the link preview's fetcher.
+type webShoppingPictureSources struct {
+	search  config.AgentSearch
+	fetcher *linkpreview.Fetcher
+}
+
+func (self webShoppingPictureSources) SearchPages(ctx context.Context, query string, count int) ([]websearch.Result, error) {
+	return websearch.Search(ctx, self.search, query, count, "")
+}
+
+func (self webShoppingPictureSources) SearchImages(ctx context.Context, query string, count int) ([]websearch.ImageResult, error) {
+	return websearch.SearchImages(ctx, self.search, query, count)
+}
+
+func (self webShoppingPictureSources) PagePictureURL(ctx context.Context, pageURL string) (string, error) {
+	page, err := self.fetcher.FetchPage(ctx, pageURL)
+	if err != nil {
+		return "", err
+	}
+	return page.ImageURL, nil
+}
+
+func (self webShoppingPictureSources) FetchPicture(ctx context.Context, pictureURL string) (*linkpreview.Image, error) {
+	return self.fetcher.FetchImage(ctx, pictureURL)
+}
+
+// shoppingPictureCandidate is one picture an item may be given: where the
+// picture is, if known, and the page it is on. isPageRead says the page
+// itself may be read for its picture when the address is missing or fails,
+// as a product page found by a web search may.
+type shoppingPictureCandidate struct {
+	pageTitle  string
+	pageURL    string
+	pictureURL string
+	isPageRead bool
+}
 
 // shoppingPictureQuery is what is searched for an item: the store's name
 // with a store brand, so its own packaging is found, and the description
@@ -195,6 +251,22 @@ func (self *Agent) runShoppingPicture(ctx context.Context, run *Run) error {
 	if !run.Agent.Active() {
 		return nil
 	}
+	var sources shoppingPictureSources
+	if search := run.Configuration().Agent.Search; search.Kind != "" && search.APIKey != "" {
+		sources = webShoppingPictureSources{search: search, fetcher: linkpreview.NewFetcher()}
+	}
+	return self.findShoppingPicture(ctx, run, sources)
+}
+
+// findShoppingPicture gives the job's item a picture. First of the product
+// itself: the pages a web search finds for it, the one the model picks
+// first, each by the picture the search service keeps for it or else the
+// page's own. When none of those is the product, and the item is not a
+// store's own brand, a picture of the thing in general found by an image
+// search, as a list of things to buy shows best with a fair picture of
+// each. Each picture is shown to the model before it is kept; with none
+// kept the item is marked searched and keeps its letter.
+func (self *Agent) findShoppingPicture(ctx context.Context, run *Run, sources shoppingPictureSources) error {
 	var item *models.ShoppingItem
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		item, err = tx.GetShoppingItem(run.Owner.ID, run.Job.SubjectID)
@@ -210,14 +282,15 @@ func (self *Agent) runShoppingPicture(ctx context.Context, run *Run) error {
 			return tx.MarkShoppingItemPictureSearched(item.ID)
 		})
 	}
-	search := run.Configuration().Agent.Search
-	if search.Kind == "" || search.APIKey == "" || run.Storage() == nil {
+	// Without a model to choose a page and look at its picture, no picture
+	// is set: a wrong picture is worse than none.
+	if sources == nil || run.Storage() == nil || !self.canThink(run.Configuration()) || self.settings.Registry == nil {
 		return markSearched()
 	}
-	results, err := websearch.Search(ctx, search, shoppingPictureQuery(item), shoppingPictureSearchCount, "")
+	thingName := item.ItemDescription
+	results, err := sources.SearchPages(ctx, shoppingPictureQuery(item), shoppingPictureSearchCount)
 	if err != nil {
 		log.Debugf("cannot search for a shopping item's picture: %s", err)
-		return markSearched()
 	}
 	// The page the item has a picture from now is not offered again: asking
 	// again means "find another".
@@ -227,93 +300,147 @@ func (self *Agent) runShoppingPicture(ctx context.Context, run *Run) error {
 			offered = append(offered, result)
 		}
 	}
-	if len(offered) == 0 {
-		return markSearched()
-	}
-	// Without a model to choose a page and look at its picture, no picture
-	// is set: a wrong picture is worse than none.
-	if !self.canThink(run.Configuration()) || self.settings.Registry == nil {
-		return markSearched()
-	}
-	order := make([]int, 0, len(offered))
-	var resultsText strings.Builder
-	for index, result := range offered {
-		fmt.Fprintf(&resultsText, "result %d: %s\n%s\n%s\n\n", index+1, result.Title, result.URL, result.Description)
-	}
-	prompt, err := render("shopping_picture.txt", map[string]any{
-		"Item":    fenced(item.ItemDescription + "\n" + item.ItemDetails + "\nstore: " + item.StoreName),
-		"Results": fenced(resultsText.String()),
-	})
-	if err != nil {
-		return err
-	}
-	thinking, err := self.thinkAbout(ctx, run, "Finding a picture of "+item.ItemDescription, prompt, nil, noTools, 1,
-		models.AgentJobShoppingPicture, config.AgentWorkScan)
-	if err != nil {
-		return err
-	}
-	answer := readModelAnswer[shoppingPictureAnswer](thinking.Text, "resultNumber")
-	if answer.IsValid && answer.Value.ResultNumber >= 1 && answer.Value.ResultNumber <= len(offered) {
-		order = append(order, answer.Value.ResultNumber-1)
-	} else if answer.IsValid && answer.Value.ResultNumber == 0 {
-		return markSearched()
-	}
-	for index := range offered {
-		if len(order) == 0 || order[0] != index {
-			order = append(order, index)
+	products := []shoppingPictureCandidate{}
+	if len(offered) > 0 {
+		var resultsText strings.Builder
+		for index, result := range offered {
+			fmt.Fprintf(&resultsText, "result %d: %s\n%s\n%s\n\n", index+1, result.Title, result.URL, result.Description)
 		}
-	}
-	fetcher := linkpreview.NewFetcher()
-	for attempt, index := range order {
-		if attempt >= shoppingPictureFetchMost {
-			break
-		}
-		page, err := fetcher.FetchPage(ctx, offered[index].URL)
-		if err != nil || page.ImageURL == "" {
-			continue
-		}
-		image, err := fetcher.FetchImage(ctx, page.ImageURL)
-		if err != nil {
-			continue
-		}
-		isMatch, err := self.isShoppingPictureOfItem(ctx, run, item, offered[index], image)
+		prompt, err := render("shopping_picture.txt", map[string]any{
+			"Item":    fenced(item.ItemDescription + "\n" + item.ItemDetails + "\nstore: " + item.StoreName),
+			"Results": fenced(resultsText.String()),
+		})
 		if err != nil {
 			return err
 		}
-		if !isMatch {
-			continue
-		}
-		pictureFileId := "shopping-picture-" + item.ID + "-" + strconv.FormatInt(time.Now().UnixNano(), 10)
-		if err := run.Storage().PutFile(ctx, pictureFileId, image.Content); err != nil {
+		thinking, err := self.thinkAbout(ctx, run, "Finding a picture of "+item.ItemDescription, prompt, nil, noTools, 1,
+			models.AgentJobShoppingPicture, config.AgentWorkScan)
+		if err != nil {
 			return err
 		}
-		var previousFileId string
-		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-			// Written only if nobody gave the item a picture meanwhile, and
-			// only while the item is still on a list its owner reaches.
-			if _, err := tx.GetShoppingItem(run.Owner.ID, item.ID); err != nil {
-				return err
-			}
-			previousFileId, err = tx.SetShoppingItemPicture(item.ID, pictureFileId, offered[index].URL, models.ShoppingPictureSourceWeb, item.PictureFileID)
-			return err
-		}); err != nil {
-			_ = run.Storage().DeleteFile(ctx, pictureFileId)
-			if errors.Is(err, db.ErrShoppingPictureChanged) || errors.Is(err, db.ErrNotFound) {
-				return nil
-			}
-			return err
+		answer := readModelAnswer[shoppingPictureAnswer](thinking.Text, "resultNumber")
+		if answer.IsValid && strings.TrimSpace(answer.Value.ThingName) != "" {
+			thingName = strings.TrimSpace(answer.Value.ThingName)
 		}
-		if previousFileId != "" {
-			if err := run.Storage().DeleteFile(ctx, previousFileId); err != nil {
-				log.Warningf("cannot remove a shopping item's old picture: %s", err)
+		// None of the pages fits: no product picture, but a picture of the
+		// thing may still do.
+		if !answer.IsValid || answer.Value.ResultNumber != 0 {
+			order := []int{}
+			if answer.IsValid && answer.Value.ResultNumber >= 1 && answer.Value.ResultNumber <= len(offered) {
+				order = append(order, answer.Value.ResultNumber-1)
+			}
+			for index := range offered {
+				if len(order) == 0 || order[0] != index {
+					order = append(order, index)
+				}
+			}
+			for _, index := range order {
+				result := offered[index]
+				products = append(products, shoppingPictureCandidate{pageTitle: result.Title, pageURL: result.URL, pictureURL: result.PictureURL, isPageRead: true})
 			}
 		}
-		if err := run.Database().NotifyShoppingEvent(item.ShoppingListID); err != nil {
-			log.Warningf("cannot announce a change to a shopping list: %s", err)
+	}
+	if isKept, err := self.tryShoppingPictures(ctx, run, item, sources, products, shoppingPictureOfProduct); isKept || err != nil {
+		return err
+	}
+	// A store's own brand is its packaging; another picture would mislead.
+	if item.IsStoreBrand {
+		return markSearched()
+	}
+	images, err := sources.SearchImages(ctx, thingName, shoppingPictureSearchCount)
+	if err != nil {
+		log.Debugf("cannot search for pictures of a shopping item: %s", err)
+	}
+	things := []shoppingPictureCandidate{}
+	for _, image := range images {
+		if image.PageURL != item.PicturePageURL {
+			things = append(things, shoppingPictureCandidate{pageTitle: image.Title, pageURL: image.PageURL, pictureURL: image.PictureURL})
 		}
-		return nil
+	}
+	if isKept, err := self.tryShoppingPictures(ctx, run, item, sources, things, shoppingPictureOfThing); isKept || err != nil {
+		return err
 	}
 	return markSearched()
+}
+
+// tryShoppingPictures shows the model the candidates' pictures in order,
+// at most shoppingPictureCheckMost of them, with check's question, and keeps
+// the first it says is right. It says whether one was kept.
+func (self *Agent) tryShoppingPictures(ctx context.Context, run *Run, item *models.ShoppingItem, sources shoppingPictureSources, candidates []shoppingPictureCandidate, check string) (bool, error) {
+	checkedCount := 0
+	for _, candidate := range candidates {
+		if checkedCount >= shoppingPictureCheckMost {
+			break
+		}
+		image := fetchShoppingPicture(ctx, sources, candidate)
+		if image == nil {
+			continue
+		}
+		checkedCount++
+		isMatch, err := self.isShoppingPictureOfItem(ctx, run, item, candidate, image, check)
+		if err != nil {
+			return false, err
+		}
+		if isMatch {
+			return true, self.keepShoppingPicture(ctx, run, item, candidate.pageURL, image)
+		}
+	}
+	return false, nil
+}
+
+// fetchShoppingPicture fetches a candidate's picture: at its address, else,
+// when the page may be read, at the address the page gives. Nil when neither
+// answers.
+func fetchShoppingPicture(ctx context.Context, sources shoppingPictureSources, candidate shoppingPictureCandidate) *linkpreview.Image {
+	if candidate.pictureURL != "" {
+		if image, err := sources.FetchPicture(ctx, candidate.pictureURL); err == nil {
+			return image
+		}
+	}
+	if !candidate.isPageRead {
+		return nil
+	}
+	pictureURL, err := sources.PagePictureURL(ctx, candidate.pageURL)
+	if err != nil || pictureURL == "" || pictureURL == candidate.pictureURL {
+		return nil
+	}
+	image, err := sources.FetchPicture(ctx, pictureURL)
+	if err != nil {
+		return nil
+	}
+	return image
+}
+
+// keepShoppingPicture stores the picture and gives it to the item, unless
+// somebody gave the item a picture meanwhile or it left the owner's lists.
+func (self *Agent) keepShoppingPicture(ctx context.Context, run *Run, item *models.ShoppingItem, pageURL string, image *linkpreview.Image) error {
+	pictureFileId := "shopping-picture-" + item.ID + "-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	if err := run.Storage().PutFile(ctx, pictureFileId, image.Content); err != nil {
+		return err
+	}
+	var previousFileId string
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		if _, err := tx.GetShoppingItem(run.Owner.ID, item.ID); err != nil {
+			return err
+		}
+		previousFileId, err = tx.SetShoppingItemPicture(item.ID, pictureFileId, pageURL, models.ShoppingPictureSourceWeb, item.PictureFileID)
+		return err
+	}); err != nil {
+		_ = run.Storage().DeleteFile(ctx, pictureFileId)
+		if errors.Is(err, db.ErrShoppingPictureChanged) || errors.Is(err, db.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	if previousFileId != "" {
+		if err := run.Storage().DeleteFile(ctx, previousFileId); err != nil {
+			log.Warningf("cannot remove a shopping item's old picture: %s", err)
+		}
+	}
+	if err := run.Database().NotifyShoppingEvent(item.ShoppingListID); err != nil {
+		log.Warningf("cannot announce a change to a shopping list: %s", err)
+	}
+	return nil
 }
 
 // shoppingPictureCheckAnswer is the model's word on a fetched picture.
@@ -322,14 +449,15 @@ type shoppingPictureCheckAnswer struct {
 }
 
 // isShoppingPictureOfItem shows the model a picture fetched for an item and
-// says whether it is a clear picture of that item. A page's picture is often
-// not its product: a recipe's dish, a store's aisle, a site's banner or a
-// stock photo of groceries. An answer the model did not give plainly counts
-// as no.
-func (self *Agent) isShoppingPictureOfItem(ctx context.Context, run *Run, item *models.ShoppingItem, page websearch.Result, image *linkpreview.Image) (bool, error) {
-	prompt, err := render("shopping_picture_check.txt", map[string]any{
+// asks check's question of it: whether it is a clear picture of the product
+// (shoppingPictureOfProduct), or of the thing as somebody shopping for it
+// would know it (shoppingPictureOfThing). A page's picture is often not its
+// product: a recipe's dish, a store's aisle, a site's banner or a stock
+// photo of groceries. An answer the model did not give plainly counts as no.
+func (self *Agent) isShoppingPictureOfItem(ctx context.Context, run *Run, item *models.ShoppingItem, candidate shoppingPictureCandidate, image *linkpreview.Image, check string) (bool, error) {
+	prompt, err := render(check, map[string]any{
 		"Item": fenced(item.ItemDescription + "\n" + item.ItemDetails + "\nstore: " + item.StoreName + storeBrandNote(item)),
-		"Page": fenced(page.Title + "\n" + page.URL),
+		"Page": fenced(candidate.pageTitle + "\n" + candidate.pageURL),
 	})
 	if err != nil {
 		return false, err
