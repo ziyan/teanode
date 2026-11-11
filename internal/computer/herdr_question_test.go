@@ -113,6 +113,41 @@ func TestTheSameQuestionHasTheSameFingerprintAndAnotherDoesNot(t *testing.T) {
 	}
 }
 
+func TestTypingAnAnswerDoesNotMakeTheQuestionAnother(t *testing.T) {
+	cases := []struct {
+		fixture, freeTextLine, freeTextLabel string
+		freeTextOptionNumber                 int
+	}{
+		{"claude-single", "4. Type something.", "Type something", 4},
+		{"claude-multi", "4. [ ] Type something", "Type something", 4},
+		{"claude-plan", "3. Tell Claude what to change", "Tell Claude what to change", 3},
+	}
+	for _, testCase := range cases {
+		screen := readHerdrFixture(t, testCase.fixture)
+		if !strings.Contains(screen, testCase.freeTextLine) {
+			t.Fatalf("%s: the fixture has no %q", testCase.fixture, testCase.freeTextLine)
+		}
+		before := recognizeQuestion(CodingAgentKindClaude, screen)
+		if before == nil {
+			t.Fatalf("%s: no question recognized", testCase.fixture)
+		}
+		numberPrefix := testCase.freeTextLine[:strings.Index(testCase.freeTextLine, ".")+2]
+		for _, typed := range []string{"t", "the left one watches zone 2"} {
+			after := recognizeQuestion(CodingAgentKindClaude, strings.Replace(screen, testCase.freeTextLine, numberPrefix+typed, 1))
+			if after == nil {
+				t.Fatalf("%s %q: no question recognized", testCase.fixture, typed)
+			}
+			if after.QuestionFingerprint != before.QuestionFingerprint {
+				t.Errorf("%s %q: typing made another question", testCase.fixture, typed)
+			}
+			freeText := after.Options[testCase.freeTextOptionNumber-1]
+			if freeText.HerdrOptionKind != HerdrOptionKindFreeText || freeText.OptionLabel != testCase.freeTextLabel {
+				t.Errorf("%s %q: the typed-into option is %+v", testCase.fixture, typed, freeText)
+			}
+		}
+	}
+}
+
 func TestAFormWithoutNumbersIsAnsweredWithTheArrows(t *testing.T) {
 	question := recognizeQuestion(CodingAgentKindClaude, readHerdrFixture(t, "claude-trust"))
 	if question == nil {

@@ -275,11 +275,17 @@ func recognizeNumbered(lines []string) *HerdrQuestion {
 	}
 
 	question := &HerdrQuestion{}
-	for _, option := range options {
+	for index, option := range options {
 		label := strings.Join(option.label, " ")
 		kind := HerdrOptionKindChoice
+		// What the person types into the free-text option is shown in its
+		// place, a key at a time, so it is known by where it stands: right
+		// above "Chat about this". Read by its words, every key typed would
+		// make the question another one, told to the phone again.
+		isAboveChat := isQuestionForm && index+1 < len(options) &&
+			strings.HasPrefix(strings.Join(options[index+1].label, " "), "Chat about this")
 		switch {
-		case strings.HasPrefix(label, "Type something"):
+		case isAboveChat || strings.HasPrefix(label, "Type something"):
 			kind = HerdrOptionKindFreeText
 			label = "Type something"
 		case strings.HasPrefix(label, "Tell Claude what to change"):
@@ -303,6 +309,12 @@ func recognizeNumbered(lines []string) *HerdrQuestion {
 	switch {
 	case strings.Contains(text, "Would you like to proceed?") && strings.Contains(text, "plan"):
 		question.HerdrQuestionKind = HerdrQuestionKindPlanApproval
+		// The plan's last option takes what the person types the same way,
+		// shown in its place: it is known by where it stands.
+		last := &question.Options[len(question.Options)-1]
+		if !strings.HasPrefix(last.OptionLabel, "Yes") {
+			last.OptionLabel, last.HerdrOptionKind = "Tell Claude what to change", HerdrOptionKindFreeText
+		}
 	case strings.Contains(text, "Do you want to") || strings.Contains(text, "Would you like to run") ||
 		strings.Contains(text, "Would you like to make") || strings.Contains(text, "Would you like to allow"):
 		question.HerdrQuestionKind = HerdrQuestionKindToolApproval
