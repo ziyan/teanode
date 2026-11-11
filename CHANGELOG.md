@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.226.1] - 2026-11-11
+
+### Fixed
+
+- Mail whose signing domain is a parent or sibling of the From domain now passes DMARC under relaxed alignment, instead of being refused under a reject policy. (#750)
+- Mail forwarded by Gmail that passed DMARC when it reached Gmail is accepted, on the strength of Gmail's ARC seal, even when the forwarding broke its signature. (#750)
+- Mail that passed DMARC is no longer marked as failing its checks on the dashboard, the iPhone app or the command line because SPF or a signature failed on the way. (#750)
+
 ## [0.226.0] - 2026-11-11
 
 ### Added
