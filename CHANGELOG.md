@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.226.0] - 2026-11-11
+
+### Added
+
+- Location: a banner on the iPhone and the dashboard says what you can't see and why, with a button to fix it (Settings, Resume, Turn On Recording or Sharing). `teanode location people` and the agent say the same. (#749)
+
+### Changed
+
+- Location: you see no more of a circle member's location than you share with them. Share your visits to see theirs, share where you are to see where they are, or share nothing and see nothing. A phone set to While Using shares no visits, and Location off, recording off or a pause shares nothing. (#749)
+- Location: arrival and departure notices about others come only while you share your own visits. (#749)
+
 ## [0.225.1] - 2026-11-10
 
 ### Fixed
