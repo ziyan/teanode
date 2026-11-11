@@ -469,6 +469,7 @@ export interface AuthenticationResults {
     dkimAlignment?: string
     spfAlignment?: string
     result?: string
+    passedAtForwarderDomain?: string
   }
   dkims?: { domain?: string; selector?: string; identifier?: string; result?: string }[]
   arc?: { result?: string; instances?: number }

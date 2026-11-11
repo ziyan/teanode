@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { MailboxThreadItem, MailboxThreadView, graphql, setAgentViewing } from '../api'
-import { ErrorMessage, Loading } from '../components/common'
+import { ErrorMessage, Loading, isDmarcPassed } from '../components/common'
 import { ConfirmDialog } from '../components/dialog'
 import { useToast } from '../components/toast'
 import { EnvelopeTrail } from '../components/envelopeTrail'
@@ -88,7 +88,7 @@ const READ = `
           mail {
             id from fromName sender subject recipients receivedAt size kind status messageId
             listKey listName listOneClick logoDomain
-            authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
+            authenticationResults { spf { result } dkims { result } dmarc { result passedAtForwarderDomain } spamFilter { score } }
           }
         }
       }
@@ -881,7 +881,7 @@ function SubscriptionReader({
             // The list's standing answer applies to a message that is
             // authenticated as from the list. A List-Id is a header anyone
             // can write, and the server applies the same rule.
-            allowImages={!!subscription.imagesAt && entry.item.mail?.authenticationResults?.dmarc?.result === 'pass'}
+            allowImages={!!subscription.imagesAt && isDmarcPassed(entry.item.mail?.authenticationResults)}
             open={opened.has(entry.item.id)}
             onToggle={() => {
               const opening = !opened.has(entry.item.id)

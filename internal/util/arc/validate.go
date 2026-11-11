@@ -28,6 +28,16 @@ const (
 type Validation struct {
 	Status    Status
 	Instances int
+
+	// SealerDomain is the d= of the newest seal, the last service to forward
+	// the message, set only when the chain passed.
+	SealerDomain string
+
+	// SealerAuthenticationResults is what that service recorded about the
+	// message when it arrived there, its ARC-Authentication-Results without
+	// the instance tag, in the form of an Authentication-Results header. Set
+	// only when the chain passed: only then does the seal vouch for it.
+	SealerAuthenticationResults string
 }
 
 type arcSet struct {
@@ -100,10 +110,29 @@ func Validate(ctx context.Context, headers []string, body []byte, resolver Resol
 		return nil, err
 	}
 
+	newest := sets[len(sets)-1]
+	_, aarValue := mailparse.SplitHeader(headers[newest.aarHeaderIndex])
 	return &Validation{
-		Status:    StatusPass,
-		Instances: len(sets),
+		Status:                      StatusPass,
+		Instances:                   len(sets),
+		SealerDomain:                strings.ToLower(strings.TrimSpace(newest.asParameters["d"])),
+		SealerAuthenticationResults: withoutInstanceTag(aarValue),
 	}, nil
+}
+
+// withoutInstanceTag is an ARC-Authentication-Results value with its leading
+// "i=N;" removed, which leaves an Authentication-Results value, RFC 8617
+// section 4.1.1.
+func withoutInstanceTag(value string) string {
+	value = strings.TrimSpace(value)
+	position := strings.Index(value, ";")
+	if position < 0 {
+		return value
+	}
+	if key, _, found := strings.Cut(strings.TrimSpace(value[:position]), "="); found && strings.EqualFold(strings.TrimSpace(key), "i") {
+		return strings.TrimSpace(value[position+1:])
+	}
+	return value
 }
 
 func findArcSets(headers []string) ([]arcSet, error) {

@@ -128,3 +128,30 @@ func hopsName(hops int) string {
 	}
 	return strings.Join([]string{itoa(hops), "hops"}, " ")
 }
+
+// TestValidateSaysWhoSealedAndWhatTheyFound is what lets a receiver take a
+// forwarder's word: the newest seal's domain and the results it recorded on
+// arrival, which only a passing chain vouches for.
+func TestValidateSaysWhoSealedAndWhatTheyFound(t *testing.T) {
+	t.Parallel()
+
+	message := testmail.Build(&testmail.Options{
+		ExtraHeaders: []string{
+			"Authentication-Results: mx.forwarder.example.com; dkim=pass header.d=example.net; dmarc=pass (p=reject) header.from=example.net",
+		},
+	})
+	resolver := testmail.NewResolver()
+	headers := seal(t, message.Headers, message.Body, "Forwarder.example.com", "arc1", resolver)
+
+	validation, err := arc.Validate(context.Background(), headers, message.Body, resolver)
+	if err != nil {
+		t.Fatalf("failed to validate: %s", err)
+	}
+	if validation.SealerDomain != "forwarder.example.com" {
+		t.Errorf("sealer domain is %q, want forwarder.example.com", validation.SealerDomain)
+	}
+	want := "mx.forwarder.example.com; dkim=pass header.d=example.net; dmarc=pass (p=reject) header.from=example.net"
+	if validation.SealerAuthenticationResults != want {
+		t.Errorf("sealer results are %q, want %q", validation.SealerAuthenticationResults, want)
+	}
+}

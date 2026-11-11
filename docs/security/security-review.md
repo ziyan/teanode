@@ -836,12 +836,17 @@ Beyond the first review's list, and named so nobody repeats the work:
   resolves; more than one record, more than one `redirect=`, and more than
   ten MX hosts are `permerror`; `%{p}` is never resolved; macro output
   cannot carry a `/`.
-- **DMARC**: organizational domain from the public suffix list; `sp=`
-  applied only when the record came from above; no reports are *sent*, so
+- **DMARC**: organizational domain from the public suffix list, for
+  finding the policy and for relaxed alignment, which compares the
+  organizational domains of the From domain and the authenticated one;
+  `sp=` applied only when the record came from above; no reports are *sent*, so
   external destination verification does not arise; Go's XML has no entity
   expansion.
-- **ARC**: not consulted by the verdict, so no trusted-sealer list is
-  needed; capped at fifty sets.
+- **ARC**: consulted by the verdict only when DMARC fails here, and then
+  only the newest seal of a chain that validates, only when its domain is on
+  the fixed trusted-forwarder list (`trustedForwarderDomains` in
+  `internal/mx`), and only for a recorded `dmarc=pass` for the same From
+  domain; a seal anybody can make vouches for nothing. Capped at fifty sets.
 - **IMAP**: every folder and item is resolved through the signed-in
   mailbox, so a UID or name of another mailbox's is not found;
   `LOGINDISABLED` and `AUTHENTICATE` both wait for TLS; literals are

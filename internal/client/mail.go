@@ -37,7 +37,7 @@ const mailFields = `{
 	authenticationResults {
 		spf { domain ip result }
 		dkims { result domain selector }
-		dmarc { domain policy }
+		dmarc { domain policy result passedAtForwarderDomain }
 		arc { result instances }
 		spamFilter { score result symbols checks { symbol score description } }
 		antivirus { viruses }

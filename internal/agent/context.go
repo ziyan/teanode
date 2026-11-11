@@ -217,6 +217,9 @@ func MailFacts(mail *models.Mail) []string {
 		if results.DMARC.Policy != "" {
 			line += " (policy " + results.DMARC.Policy + ")"
 		}
+		if results.DMARC.PassedAtForwarderDomain != "" {
+			line += ", but it passed at " + results.DMARC.PassedAtForwarderDomain + ", which forwarded it"
+		}
 		lines = append(lines, line)
 	}
 	if results.SpamFilter != nil {
