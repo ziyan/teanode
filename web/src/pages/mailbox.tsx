@@ -115,7 +115,7 @@ const THREADS = `
           insight { category priority needsReply summary actionItems notes }
           mail {
             id from fromName sender subject recipients receivedAt size kind status logoDomain
-            authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
+            authenticationResults { spf { result } dkims { result } dmarc { result passedAtForwarderDomain } spamFilter { score } }
           }
         }
       }
@@ -137,7 +137,7 @@ const THREAD = `
           mail {
             id from fromName sender subject recipients receivedAt size kind status messageId
             listKey listName listOneClick logoDomain
-            authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
+            authenticationResults { spf { result } dkims { result } dmarc { result passedAtForwarderDomain } spamFilter { score } }
           }
         }
       }

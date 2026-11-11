@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { CheckIcon, CopyIcon, ShieldIcon } from './icons'
 import { Tooltip } from './tooltip'
 import { useToast } from './toast'
-import { Mail, graphql } from '../api'
+import { AuthenticationResults, Mail, graphql } from '../api'
 import { Key, useTranslation } from '../i18n/i18n'
 
 // A tag with nothing to say draws nothing, rather than an empty pill.
@@ -46,6 +46,7 @@ export function verdictOf(
   }
   const spf = (results.spf?.result ?? '').toLowerCase()
   const dmarc = (results.dmarc?.result ?? '').toLowerCase()
+  const forwarderDomain = results.dmarc?.passedAtForwarderDomain
   const dkim = (results.dkims ?? []).map((each) => (each.result ?? '').toLowerCase())
   const score = results.spamFilter?.score
 
@@ -56,7 +57,9 @@ export function verdictOf(
   if (dkim.length > 0) {
     parts.push(`DKIM ${dkim.includes('pass') ? 'pass' : dkim[0]}`)
   }
-  if (dmarc) {
+  if (forwarderDomain) {
+    parts.push(t('mailbox.dmarcPassedAtForwarder', { domain: forwarderDomain }))
+  } else if (dmarc) {
     parts.push(`DMARC ${dmarc}`)
   }
   if (score !== undefined && score !== null) {
@@ -66,12 +69,18 @@ export function verdictOf(
     return null
   }
 
+  // A message that satisfied its sender's DMARC policy has proved where it
+  // came from, whatever SPF or a signature said on their own: mail forwarded
+  // by iCloud or Gmail fails SPF and often breaks the original signature,
+  // and calling that a failure painted most forwarded mail red.
+  const dmarcPassed = isDmarcPassed(results)
   const failed =
-    dmarc === 'fail' ||
-    spf === 'fail' ||
-    spf === 'hardfail' ||
-    (dkim.length > 0 && !dkim.includes('pass') && dkim.includes('fail'))
-  const authenticated = dmarc === 'pass' || (spf === 'pass' && dkim.includes('pass'))
+    !dmarcPassed &&
+    (dmarc === 'fail' ||
+      spf === 'fail' ||
+      spf === 'hardfail' ||
+      (dkim.length > 0 && !dkim.includes('pass') && dkim.includes('fail')))
+  const authenticated = dmarcPassed || (spf === 'pass' && dkim.includes('pass'))
   const spammy = score !== undefined && score !== null && score >= 5
 
   let tone: MailVerdict['tone']
@@ -83,6 +92,14 @@ export function verdictOf(
     tone = 'good'
   }
   return { tone, detail: parts.join(' · '), score: score ?? undefined }
+}
+
+// isDmarcPassed is whether a message satisfies its sender's DMARC policy: it
+// passed here, or it failed here only because a forwarder the server trusts
+// changed it, and that forwarder's ARC seal records it passing there.
+export function isDmarcPassed(results?: AuthenticationResults | null): boolean {
+  const dmarc = results?.dmarc
+  return (dmarc?.result ?? '').toLowerCase() === 'pass' || !!dmarc?.passedAtForwarderDomain
 }
 
 // VerdictMark is that answer in the width of one character: a shield, colored

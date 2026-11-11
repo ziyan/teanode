@@ -227,8 +227,7 @@ func (self *Mail) SenderDomain() string {
 // condition on showing that domain's mark: a claim about who sent something,
 // made on unproven mail, helps whoever is pretending to be them.
 func (self *Mail) DMARCPassed() bool {
-	return self != nil && self.AuthenticationResults.DMARC != nil &&
-		strings.EqualFold(self.AuthenticationResults.DMARC.Result, "pass")
+	return self != nil && self.AuthenticationResults.DMARC.IsPassed()
 }
 
 // SubmittedHere says the message came from somebody who signed in to this
@@ -262,7 +261,7 @@ func (self *Mail) LooksLikeSpam() bool {
 	if results.SpamFilter != nil && results.SpamFilter.Result == "fail" {
 		return true
 	}
-	if results.DMARC != nil && results.DMARC.Result == "fail" && results.DMARC.Policy == "quarantine" {
+	if results.DMARC != nil && !results.DMARC.IsPassed() && results.DMARC.Result == "fail" && results.DMARC.Policy == "quarantine" {
 		return true
 	}
 	return false
@@ -335,6 +334,21 @@ type DMARCResult struct {
 
 	// DMARC result
 	Result string `json:"result,omitempty"`
+
+	// PassedAtForwarderDomain is the domain of a mail service that forwarded the
+	// message and recorded, under a valid ARC seal, that it passed DMARC when
+	// it arrived there. Set only when it failed here: forwarding rewrites the
+	// envelope sender and can break a signature, so a failure here says what
+	// the forwarding did, and the forwarder's word says what the sender did.
+	// Mail with it set is held to a pass, the "trusted_forwarder" override
+	// of RFC 7489 section 7.2.1.
+	PassedAtForwarderDomain string `json:"passedAtForwarderDomain,omitempty"`
+}
+
+// IsPassed is whether the message satisfies its sender's DMARC policy: it
+// passed here, or failed here only because a trusted forwarder changed it.
+func (self *DMARCResult) IsPassed() bool {
+	return self != nil && (strings.EqualFold(self.Result, "pass") || self.PassedAtForwarderDomain != "")
 }
 
 // SPFResult holds authentication results related to SPF.

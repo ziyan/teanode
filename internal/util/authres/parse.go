@@ -322,9 +322,9 @@ func Parse(field string) (identifier string, results []Result, err error) {
 }
 
 func parseResult(text string) (Result, error) {
-	// TODO: ignore header comments in parenthesis
-
-	parts := strings.Fields(text)
+	// A comment is not a property: "dmarc=pass (p=reject) header.from=x"
+	// carries two properties and a note.
+	parts := strings.Fields(withoutComments(text))
 	if len(parts) == 0 || parts[0] == "none" {
 		return nil, nil
 	}

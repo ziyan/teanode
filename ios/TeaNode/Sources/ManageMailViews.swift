@@ -919,22 +919,34 @@ private struct AuthenticationSection: View {
 
     private var checkRows: [CheckRow] {
         var rows: [CheckRow] = []
+        // Once the sender's DMARC policy is satisfied, an SPF or signature
+        // failure is what forwarding does to a message: the word stays, the
+        // red goes.
+        let isDMARCPassed = results.dmarc?.isPassed ?? false
+        func toneUnderDMARC(_ resultText: String?) -> ManagedTone {
+            let tone = ManagedTone.of(resultText)
+            return isDMARCPassed && tone == .bad ? .plain : tone
+        }
         func add(_ checkName: String, _ verdictText: String?, tone: ManagedTone, detailText: String) {
             let verdict = (verdictText ?? "").isEmpty ? String(localized: "none") : verdictText ?? ""
             rows.append(CheckRow(id: rows.count, checkName: checkName, verdictText: verdict, tone: tone, detailText: detailText))
         }
         if let spf = results.spf {
-            add("SPF", spf.spfResult, tone: ManagedTone.of(spf.spfResult), detailText: spfDetail(spf))
+            add("SPF", spf.spfResult, tone: toneUnderDMARC(spf.spfResult), detailText: spfDetail(spf))
         }
         for dkim in results.dkims ?? [] {
             var detailText = ManagedWords.dkimRecordName(selector: dkim.selector, domainName: dkim.domain)
             if let identifier = dkim.identifier, !identifier.isEmpty {
                 detailText += " · " + String(localized: "signed for \(identifier)")
             }
-            add("DKIM", dkim.dkimResult, tone: ManagedTone.of(dkim.dkimResult), detailText: detailText)
+            add("DKIM", dkim.dkimResult, tone: toneUnderDMARC(dkim.dkimResult), detailText: detailText)
         }
         if let dmarc = results.dmarc {
+            let forwarderDomain = dmarc.passedAtForwarderDomain ?? ""
             var parts = [dmarc.domain ?? ""]
+            if !forwarderDomain.isEmpty {
+                parts.insert(String(localized: "Failed here after forwarding. \(forwarderDomain) sealed that it passed there."), at: 0)
+            }
             if let policy = dmarc.policy, !policy.isEmpty { parts.append("p=\(policy)") }
             if let subdomainPolicy = dmarc.subdomainPolicy, !subdomainPolicy.isEmpty { parts.append("sp=\(subdomainPolicy)") }
             var alignments: [String] = []
@@ -947,7 +959,10 @@ private struct AuthenticationSection: View {
                 alignments.append(String(localized: "SPF alignment \(modeText)"))
             }
             parts.append(alignments.joined(separator: ", "))
-            add("DMARC", dmarc.dmarcResult, tone: ManagedTone.of(dmarc.dmarcResult), detailText: parts.filter { !$0.isEmpty }.joined(separator: " · "))
+            add(
+                "DMARC", forwarderDomain.isEmpty ? dmarc.dmarcResult : String(localized: "pass at \(forwarderDomain)"),
+                tone: forwarderDomain.isEmpty ? ManagedTone.of(dmarc.dmarcResult) : .good,
+                detailText: parts.filter { !$0.isEmpty }.joined(separator: " · "))
         }
         if let arc = results.arc {
             let instanceCount = arc.instanceCount ?? 0

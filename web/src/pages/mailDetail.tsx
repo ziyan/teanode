@@ -12,6 +12,7 @@ import {
   Tag,
   formatBytes,
   formatTime,
+  isDmarcPassed,
   toneFor,
   useEnumLabel,
 } from '../components/common'
@@ -60,7 +61,7 @@ const MAIL = `
         senderMx { domain mailServers }
         fromMx { domain mailServers }
         spf { domain ip result }
-        dmarc { domain policy subdomainPolicy dkimAlignment spfAlignment result }
+        dmarc { domain policy subdomainPolicy dkimAlignment spfAlignment result passedAtForwarderDomain }
         dkims { domain selector identifier result }
         arc { result instances }
         spamFilter { score result symbols checks { symbol score description } }
@@ -797,12 +798,20 @@ function spfDetailKey(result?: string | null): Key {
 function Authentication({ results }: { results: AuthenticationResults }) {
   const { t } = useTranslation()
   const checks: Check[] = []
+  // Once the sender's DMARC policy is satisfied, an SPF or signature failure
+  // is what forwarding does to a message, not a sign of forgery: the word
+  // stays, the red goes.
+  const dmarcPassed = isDmarcPassed(results)
+  const toneUnderDmarc = (result?: string) => {
+    const tone = toneFor(result)
+    return dmarcPassed && tone === 'bad' ? undefined : tone
+  }
 
   if (results.spf) {
     checks.push({
       label: 'SPF',
       verdict: results.spf.result || t('common.none'),
-      tone: toneFor(results.spf.result),
+      tone: toneUnderDmarc(results.spf.result),
       // SPF is a question about one pair: may this address send for this
       // domain. Saying which pair, and what the domain said, is the answer.
       detail: t(spfDetailKey(results.spf.result), {
@@ -816,7 +825,7 @@ function Authentication({ results }: { results: AuthenticationResults }) {
     checks.push({
       label: 'DKIM',
       verdict: dkim.result || t('common.none'),
-      tone: toneFor(dkim.result),
+      tone: toneUnderDmarc(dkim.result),
       // The name of the record that was looked up: paste it into dig and you
       // are looking at the key that either verified or did not.
       detail: (
@@ -841,14 +850,18 @@ function Authentication({ results }: { results: AuthenticationResults }) {
     ]
       .filter(Boolean)
       .join(', ')
+    const forwarderDomain = results.dmarc.passedAtForwarderDomain
     checks.push({
       label: 'DMARC',
-      verdict: results.dmarc.result || t('common.none'),
-      tone: toneFor(results.dmarc.result),
+      verdict: forwarderDomain
+        ? t('mailDetail.dmarcPassedAtForwarder', { domain: forwarderDomain })
+        : results.dmarc.result || t('common.none'),
+      tone: forwarderDomain ? 'good' : toneFor(results.dmarc.result),
       // The policy is what a receiver was told to do with a failure, and the
       // alignment modes are what "aligned" meant for this domain. Both were
       // in the record and neither was on the page.
       detail: [
+        forwarderDomain ? t('mailDetail.dmarcForwarded', { domain: forwarderDomain }) : '',
         results.dmarc.domain ?? '',
         results.dmarc.policy ? `p=${results.dmarc.policy}` : '',
         results.dmarc.subdomainPolicy ? `sp=${results.dmarc.subdomainPolicy}` : '',
@@ -1077,7 +1090,7 @@ function verdictLine(
     if (results?.spamFilter?.result === 'fail') {
       return t('mailDetail.whySpam', { score: formatScore(results.spamFilter.score) })
     }
-    if (results?.dmarc?.result && toneFor(results.dmarc.result) === 'bad') {
+    if (results?.dmarc?.result && toneFor(results.dmarc.result) === 'bad' && !isDmarcPassed(results)) {
       return t('mailDetail.whyDmarc', { policy: results.dmarc.policy ?? 'none' })
     }
     if (results?.errors?.length) {

@@ -448,33 +448,11 @@ func (self *exchange) checkDmarcSpfDkim(authenticator *authenticator, from strin
 		dmarcResult := authres.ResultNone
 		if dmarcPolicy != nil && dmarcPolicy.Record != nil {
 			dmarcRecord := dmarcPolicy.Record
-			var spfPassedAndAligned, dkimPassedAndAligned bool
-			switch spfResult {
-			case spf.ResultPass:
-				switch dmarcRecord.SPFAlignment {
-				case dmarc.AlignmentStrict:
-					if senderDomain == fromDomain {
-						spfPassedAndAligned = true
-					}
-				case dmarc.AlignmentRelaxed:
-					if senderDomain == fromDomain || strings.HasSuffix(senderDomain, "."+fromDomain) {
-						spfPassedAndAligned = true
-					}
-				}
-			}
+			spfPassedAndAligned := spfResult == spf.ResultPass && dmarc.IsAligned(senderDomain, fromDomain, dmarcRecord.SPFAlignment)
+			dkimPassedAndAligned := false
 			for _, dkimResult := range dkimResults {
-				if dkimResult.Result != dkim.ResultPass {
-					continue
-				}
-				switch dmarcRecord.DKIMAlignment {
-				case dmarc.AlignmentStrict:
-					if dkimResult.Domain == fromDomain {
-						dkimPassedAndAligned = true
-					}
-				case dmarc.AlignmentRelaxed:
-					if dkimResult.Domain == fromDomain || strings.HasSuffix(dkimResult.Domain, "."+fromDomain) {
-						dkimPassedAndAligned = true
-					}
+				if dkimResult.Result == dkim.ResultPass && dmarc.IsAligned(dkimResult.Domain, fromDomain, dmarcRecord.DKIMAlignment) {
+					dkimPassedAndAligned = true
 				}
 			}
 			if spfPassedAndAligned || dkimPassedAndAligned {
@@ -496,6 +474,9 @@ func (self *exchange) checkDmarcSpfDkim(authenticator *authenticator, from strin
 			// policy from one inherited from the domain above it.
 			if dmarcPolicy.Organizational {
 				authenticationResults.DMARC.PolicyDomain = dmarcPolicy.Domain
+			}
+			if dmarcResult == authres.ResultFail {
+				authenticationResults.DMARC.PassedAtForwarderDomain = forwarderThatPassedDMARC(ctx, headers, body, fromDomain, self.resolver)
 			}
 			log.Debugf("found dmarc record for %q at %q: %v, spfPassedAndAligned = %v, dkimPassedAndAligned = %v", fromDomain, dmarcPolicy.Domain, dmarcRecord, spfPassedAndAligned, dkimPassedAndAligned)
 		}
@@ -525,7 +506,11 @@ func (self *exchange) checkDmarcSpfDkim(authenticator *authenticator, from strin
 			return authenticationResults, nil, mailparse.ErrDMARCAlignmentFailed
 		}
 
-		if err := authenticationVerdict(spfResult, dkimResults, dmarcResult, dmarcPolicy); err != nil {
+		enforcedDMARCResult := dmarcResult
+		if authenticationResults.DMARC.IsPassed() {
+			enforcedDMARCResult = authres.ResultPass
+		}
+		if err := authenticationVerdict(spfResult, dkimResults, enforcedDMARCResult, dmarcPolicy); err != nil {
 			log.Errorf("refusing mail from ip %q, domain %q, sender %q: spf %q, dmarc %q: %s", envelope.IP, senderDomain, envelope.Sender, spfResult, dmarcResult, err)
 			return authenticationResults, nil, err
 		}
@@ -550,6 +535,50 @@ func (self *exchange) checkDmarcSpfDkim(authenticator *authenticator, from strin
 		})
 		return authenticationResults, results, nil
 	})
+}
+
+// trustedForwarderDomains are the mail services whose ARC seal is taken as
+// proof that a message passed DMARC before they forwarded it. Forwarding from
+// one of them rewrites the envelope sender, so SPF no longer aligns, and can
+// alter the message enough to break the original signature, so DMARC fails
+// here on mail its sender sent properly; under a reject policy it bounced.
+// A seal is only as good as the service behind it: a domain belongs here
+// when anyone can forward mail through it but nobody can make it record a
+// result it did not find.
+var trustedForwarderDomains = map[string]bool{
+	"google.com": true,
+}
+
+// forwarderThatPassedDMARC is the domain of the trusted forwarder whose
+// valid ARC seal records the message passing DMARC for its From domain when
+// it arrived there, or empty when there is none. Only the newest seal is
+// asked: that is the service that handed the message over, and the chain's
+// validity is what makes its record trustworthy.
+func forwarderThatPassedDMARC(ctx context.Context, headers []string, body []byte, fromDomain string, resolver arc.Resolver) string {
+	validation, err := arc.Validate(ctx, headers, body, resolver)
+	if err != nil || validation.Status != arc.StatusPass || !trustedForwarderDomains[validation.SealerDomain] {
+		return ""
+	}
+	if !sealerFoundDMARCPass(validation.SealerAuthenticationResults, fromDomain) {
+		return ""
+	}
+	return validation.SealerDomain
+}
+
+// sealerFoundDMARCPass is whether a forwarder's recorded results say DMARC
+// passed for the From domain.
+func sealerFoundDMARCPass(sealerAuthenticationResults, fromDomain string) bool {
+	_, results, err := authres.Parse(sealerAuthenticationResults)
+	if err != nil {
+		return false
+	}
+	for _, result := range results {
+		dmarcResult, ok := result.(*authres.DMARCResult)
+		if ok && dmarcResult.Value == authres.ResultPass && strings.EqualFold(strings.TrimSuffix(dmarcResult.From, "."), strings.TrimSuffix(fromDomain, ".")) {
+			return true
+		}
+	}
+	return false
 }
 
 func (self *exchange) checkArc(authenticator *authenticator, headers []string, body []byte) {

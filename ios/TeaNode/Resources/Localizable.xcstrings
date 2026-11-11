@@ -96638,6 +96638,38 @@
           }
         }
       }
+    },
+    "Failed here after forwarding. %@ sealed that it passed there.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "転送後、ここでは不合格でした。%@ の封印には、そこで合格したと記録されています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转发后在这里未通过。%@ 封存的记录显示它在那里通过了。"
+          }
+        }
+      }
+    },
+    "pass at %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ で合格"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 %@ 通过"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

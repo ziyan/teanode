@@ -356,6 +356,13 @@ func dmarcChecks(authentication *models.AuthenticationResults) []check {
 	if authentication.DMARC == nil {
 		return nil
 	}
+	if authentication.DMARC.PassedAtForwarderDomain != "" {
+		return []check{{
+			symbol:      symbolDMARCPass,
+			score:       dmarcPassScore,
+			description: "passed DMARC at the service that forwarded it, as its ARC seal records",
+		}}
+	}
 	switch authres.ResultValue(authentication.DMARC.Result) {
 	case authres.ResultPass:
 		return []check{{

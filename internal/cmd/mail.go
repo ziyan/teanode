@@ -321,8 +321,11 @@ func authenticationSummary(raw json.RawMessage) [][2]string {
 	var results struct {
 		SPF   *struct{ Result, Domain string } `json:"spf"`
 		DKIMs []struct{ Result, Domain, Selector string }
-		DMARC *struct{ Domain, Policy string } `json:"dmarc"`
-		ARC   *struct {
+		DMARC *struct {
+			Domain, Policy, Result  string
+			PassedAtForwarderDomain string
+		} `json:"dmarc"`
+		ARC *struct {
 			Result    string
 			Instances int
 		} `json:"arc"`
@@ -350,7 +353,14 @@ func authenticationSummary(raw json.RawMessage) [][2]string {
 		fields = append(fields, [2]string{"dkim", fmt.Sprintf("%s for %s (selector %s)", dkim.Result, dkim.Domain, dkim.Selector)})
 	}
 	if results.DMARC != nil && results.DMARC.Domain != "" {
-		fields = append(fields, [2]string{"dmarc", fmt.Sprintf("policy %s at %s", results.DMARC.Policy, results.DMARC.Domain)})
+		dmarc := fmt.Sprintf("policy %s at %s", results.DMARC.Policy, results.DMARC.Domain)
+		if results.DMARC.Result != "" {
+			dmarc = results.DMARC.Result + ", " + dmarc
+		}
+		if results.DMARC.PassedAtForwarderDomain != "" {
+			dmarc += "; passed at " + results.DMARC.PassedAtForwarderDomain + ", which forwarded it"
+		}
+		fields = append(fields, [2]string{"dmarc", dmarc})
 	}
 	if results.ARC != nil && results.ARC.Result != "" {
 		fields = append(fields, [2]string{"arc", fmt.Sprintf("%s, %d instances", results.ARC.Result, results.ARC.Instances)})

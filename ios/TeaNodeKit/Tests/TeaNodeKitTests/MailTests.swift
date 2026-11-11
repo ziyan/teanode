@@ -37,6 +37,12 @@ final class MailTests: XCTestCase {
         XCTAssertEqual(MailVerdict.of(try verdicts(#"{"dkims":[{"result":"fail"},{"result":"pass"}],"dmarc":{"result":"pass"}}"#)), .good)
         XCTAssertEqual(MailVerdict.of(try verdicts(#"{"dmarc":{"result":"pass"},"dkims":[],"spamFilter":{"score":7.5}}"#)), .warn)
         XCTAssertEqual(MailVerdict.of(nil), .unknown)
+        // Forwarding breaks the original signature and SPF; once DMARC is
+        // satisfied, here or at a trusted forwarder, neither is a failure.
+        XCTAssertEqual(MailVerdict.of(try verdicts(#"{"spf":{"result":"pass"},"dkims":[{"result":"fail"}],"dmarc":{"result":"pass"}}"#)), .good)
+        let forwarded = try verdicts(#"{"spf":{"result":"pass"},"dkims":[{"result":"fail"}],"dmarc":{"result":"fail","passedAtForwarderDomain":"forwarder.example.com"}}"#)
+        XCTAssertEqual(MailVerdict.of(forwarded), .good)
+        XCTAssertEqual(MailVerdict.detail(forwarded), "SPF pass · DKIM fail · DMARC pass at forwarder.example.com")
         XCTAssertEqual(MailVerdict.detail(try verdicts(#"{"spf":{"result":"pass"},"dkims":[{"result":"pass"}],"dmarc":{"result":"pass"},"spamFilter":{"score":0.4}}"#)), "SPF pass · DKIM pass · DMARC pass · spam 0.4")
     }
 

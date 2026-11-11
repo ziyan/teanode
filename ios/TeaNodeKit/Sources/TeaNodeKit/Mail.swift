@@ -139,10 +139,23 @@ public struct MailMessage: Codable, Hashable, Sendable {
     public struct Verdicts: Codable, Hashable, Sendable {
         public struct Outcome: Codable, Hashable, Sendable { public let result: String }
         public struct Spam: Codable, Hashable, Sendable { public let score: Double }
+        /// DMARCOutcome is DMARC's result here, and the forwarder whose ARC
+        /// seal records the message passing there when it failed here only
+        /// because of the forwarding.
+        public struct DMARCOutcome: Codable, Hashable, Sendable {
+            public let result: String
+            public var passedAtForwarderDomain: String? = nil
+        }
         public let spf: Outcome?
         public let dkims: [Outcome?]?
-        public let dmarc: Outcome?
+        public let dmarc: DMARCOutcome?
         public let spamFilter: Spam?
+
+        /// Whether the message satisfies its sender's DMARC policy, here or at
+        /// a trusted forwarder.
+        public var isDMARCPassed: Bool {
+            dmarc?.result.lowercased() == "pass" || !(dmarc?.passedAtForwarderDomain ?? "").isEmpty
+        }
     }
 
     public let id: String
@@ -180,9 +193,12 @@ public enum MailVerdict: String, Sendable {
         let spf = results.spf?.result.lowercased() ?? ""
         let dkims = (results.dkims ?? []).compactMap { $0?.result.lowercased() }
         let isDKIMPassed = dkims.contains("pass")
-        if dmarc == "fail" || spf == "fail" || spf == "hardfail" || (dkims.contains("fail") && !isDKIMPassed) { return .bad }
+        // Once DMARC is satisfied, an SPF or signature failure is what
+        // forwarding does to a message, not a sign of forgery.
+        let isDMARCPassed = results.isDMARCPassed
+        if !isDMARCPassed && (dmarc == "fail" || spf == "fail" || spf == "hardfail" || (dkims.contains("fail") && !isDKIMPassed)) { return .bad }
         if let score = results.spamFilter?.score, score >= 5 { return .warn }
-        if dmarc == "pass" || (spf == "pass" && isDKIMPassed) { return .good }
+        if isDMARCPassed || (spf == "pass" && isDKIMPassed) { return .good }
         return .unknown
     }
 
@@ -193,7 +209,11 @@ public enum MailVerdict: String, Sendable {
         if let spf = results.spf?.result, !spf.isEmpty { parts.append("SPF \(spf)") }
         let dkims = (results.dkims ?? []).compactMap { $0?.result }.filter { !$0.isEmpty }
         if !dkims.isEmpty { parts.append("DKIM \(dkims.joined(separator: "/"))") }
-        if let dmarc = results.dmarc?.result, !dmarc.isEmpty { parts.append("DMARC \(dmarc)") }
+        if let forwarderDomain = results.dmarc?.passedAtForwarderDomain, !forwarderDomain.isEmpty {
+            parts.append("DMARC pass at \(forwarderDomain)")
+        } else if let dmarc = results.dmarc?.result, !dmarc.isEmpty {
+            parts.append("DMARC \(dmarc)")
+        }
         if let score = results.spamFilter?.score { parts.append(String(format: "spam %.1f", score)) }
         return parts.joined(separator: " · ")
     }
@@ -572,7 +592,7 @@ extension Documents {
           proposals { kind because status summary starts ends location allDay name organization title emails phones note contactId } }
         mail {
           id from fromName sender subject recipients receivedAt size attachmentCount messageId listKey listName logoDomain
-          authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
+          authenticationResults { spf { result } dkims { result } dmarc { result passedAtForwarderDomain } spamFilter { score } }
         }
         """
     public static let mailThreads = """

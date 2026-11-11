@@ -219,10 +219,19 @@ public struct MailAuthenticationResults: Codable, Hashable, Sendable {
         public let dkimAlignment: String?
         public let spfAlignment: String?
         public let dmarcResult: String?
+        /// The forwarder whose ARC seal records the message passing DMARC
+        /// there, set when it failed here only because of the forwarding.
+        public var passedAtForwarderDomain: String? = nil
 
         enum CodingKeys: String, CodingKey {
-            case domain, policy, subdomainPolicy, dkimAlignment, spfAlignment
+            case domain, policy, subdomainPolicy, dkimAlignment, spfAlignment, passedAtForwarderDomain
             case dmarcResult = "result"
+        }
+
+        /// Whether the message satisfies its sender's DMARC policy, here or
+        /// at a trusted forwarder.
+        public var isPassed: Bool {
+            dmarcResult?.lowercased() == "pass" || !(passedAtForwarderDomain ?? "").isEmpty
         }
     }
 
@@ -497,7 +506,7 @@ public enum MailOutcome: Hashable, Sendable {
             let results = mail.authenticationResults
             if let viruses = results?.antivirus?.viruses, !viruses.isEmpty { return .rejectedForViruses(viruses) }
             if let spamFilter = results?.spamFilter, spamFilter.spamResult == "fail" { return .rejectedAsSpam(score: spamFilter.score) }
-            if let dmarc = results?.dmarc, let dmarcResult = dmarc.dmarcResult, !dmarcResult.isEmpty, ManagedTone.of(dmarcResult) == .bad {
+            if let dmarc = results?.dmarc, let dmarcResult = dmarc.dmarcResult, !dmarcResult.isEmpty, ManagedTone.of(dmarcResult) == .bad, !dmarc.isPassed {
                 return .rejectedByDMARC(policy: dmarc.policy ?? "none")
             }
             if let errorMessages = results?.errorMessages, !errorMessages.isEmpty { return .rejectedWithErrors(errorMessages) }
@@ -1168,7 +1177,7 @@ extension Documents {
               senderMx { domain mailServers }
               fromMx { domain mailServers }
               spf { domain ip result }
-              dmarc { domain policy subdomainPolicy dkimAlignment spfAlignment result }
+              dmarc { domain policy subdomainPolicy dkimAlignment spfAlignment result passedAtForwarderDomain }
               dkims { domain selector identifier result }
               arc { result instances }
               spamFilter { score result symbols checks { symbol score description } }
