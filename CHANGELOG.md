@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.226.2] - 2026-11-11
+
+### Fixed
+
+- The iPhone app no longer closes as soon as it opens when an account is signed in. (#751)
+
 ## [0.226.1] - 2026-11-11
 
 ### Fixed
