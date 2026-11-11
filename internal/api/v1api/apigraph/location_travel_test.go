@@ -123,6 +123,7 @@ func TestATripIsBuiltFromAReportAndKeepsItsCorrection(t *testing.T) {
 // Trips are seen at the history level and corrected only by the person.
 func TestTripsAreSeenWithHistoryAndCorrectedOnlyByThePerson(t *testing.T) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	base := time.Now().Add(-6 * time.Hour).UTC().Truncate(time.Second)
 	at := func(minutes float64) string {
 		return base.Add(time.Duration(minutes * float64(time.Minute))).Format(time.RFC3339)
@@ -188,6 +189,7 @@ func tripsWithPlaces(t *testing.T, world *locationWorld, from, until string) []m
 // visits shows them, without the owner's own records of them.
 func TestTripPlacesAreReducedForSomeoneTheyAreSharedWith(t *testing.T) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	base := time.Now().Add(-6 * time.Hour).UTC().Truncate(time.Second)
 	at := func(minutes float64) string {
 		return base.Add(time.Duration(minutes * float64(time.Minute))).Format(time.RFC3339)

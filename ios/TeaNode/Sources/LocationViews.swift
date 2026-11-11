@@ -209,6 +209,11 @@ struct LocationScreen: View {
         .task { await model.follow() }
         .onAppear { recorder.viewerAppeared() }
         .onDisappear { recorder.viewerDisappeared() }
+        // The server took the phone's permission, the recording switch or a
+        // pause, which changes what the person sees of the others.
+        .onChange(of: recorder.sharingLimitRevision) {
+            Task { await model.sharingLimitDidChange() }
+        }
         .onChange(of: recorder.authorizationStatus, initial: true) {
             if model.hasLoaded, recorder.shouldExplainAlways, !model.isSetupShown || isAllowingLocation { isExplainingAlways = true }
             model.finishSetupIfDone()
@@ -273,6 +278,12 @@ struct LocationScreen: View {
         path.append(.people)
     }
 
+    /// Opens the person's own shares, from the banner that says they see less
+    /// of somebody because of what they share.
+    private func showSharing() {
+        segment = .sharing
+    }
+
     /// The top of the drawer: the lists to choose between, or, while a person
     /// sharing is chosen, who they are and the way back to everyone.
     @ViewBuilder
@@ -313,7 +324,7 @@ struct LocationScreen: View {
         } else if model.isSetupShown {
             LocationSetupList(
                 model: model, recorder: recorder, isShowingPeople: isShowingPeople, allowLocation: allowLocation,
-                allowMotion: allowMotion, showPeople: showPeople)
+                allowMotion: allowMotion, showPeople: showPeople, showSharing: showSharing)
                 .contentMargins(.top, 0, for: .scrollContent)
         } else {
             content.contentMargins(.top, 0, for: .scrollContent)
@@ -328,7 +339,7 @@ struct LocationScreen: View {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             switch segment {
-            case .visits: LocationVisitsList(model: model, recorder: recorder, showPeople: showPeople)
+            case .visits: LocationVisitsList(model: model, recorder: recorder, showPeople: showPeople, showSharing: showSharing)
             case .places: LocationPlacesList(model: model)
             case .sharing: LocationSharingList(model: model)
             }
@@ -347,6 +358,8 @@ struct LocationScreen: View {
         /// people than fit under the map), `location-checkin` (the check-in
         /// sheet), `location-address` (the address search of a place);
         /// `location-setup` is the server having no position yet;
+        /// `location-limited` is Location set to While Using on the phone,
+        /// with the banner that says so and a person shown as nothing;
         /// `location-full` and `location-collapsed` are the drawer at full
         /// height and collapsed to its header. MainView
         /// chooses the list (Places for `location-places`, `location-place`
@@ -536,12 +549,13 @@ struct LocationVisitsList: View {
     let model: LocationModel
     let recorder: LocationRecorder
     let showPeople: () -> Void
+    let showSharing: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var forgettingVisit: PlaceVisit?
 
     var body: some View {
         List {
-            LocationPeopleSection(model: model, showPeople: showPeople)
+            LocationPeopleSection(model: model, showPeople: showPeople, showSharing: showSharing)
             Section {
                 NavigationLink(value: LocationRoute.travel) {
                     Label("Travel", systemImage: "figure.walk")

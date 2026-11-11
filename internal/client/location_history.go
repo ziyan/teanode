@@ -88,13 +88,16 @@ type LocationNotificationMute struct {
 // Location is where a person is. While Pause is set, anybody but the person
 // themselves is shown no latest point and no open visit.
 type Location struct {
-	UserID      string         `json:"userId"`
-	Username    string         `json:"username"`
-	Name        string         `json:"name"`
-	ShareLevel  string         `json:"shareLevel"`
-	LatestPoint *LocationPoint `json:"latestPoint"`
-	OpenVisit   *PlaceVisit    `json:"openVisit"`
-	Pause       *LocationPause `json:"pause"`
+	UserID     string `json:"userId"`
+	Username   string `json:"username"`
+	Name       string `json:"name"`
+	ShareLevel string `json:"shareLevel"`
+	// GrantedShareLevel is what their shares give the caller; ShareLevel is
+	// what the caller sees of it, less when the caller shares less back.
+	GrantedShareLevel string         `json:"grantedShareLevel"`
+	LatestPoint       *LocationPoint `json:"latestPoint"`
+	OpenVisit         *PlaceVisit    `json:"openVisit"`
+	Pause             *LocationPause `json:"pause"`
 
 	// NotificationMute is the caller's mute of this person's arrived and left
 	// notices, null when not muted. Always null on the caller's own location.
@@ -715,7 +718,7 @@ const (
 
 	DocumentListSharedLocations = `query {
   ListSharedLocations {
-    userId username name shareLevel
+    userId username name shareLevel grantedShareLevel
     latestPoint { ` + locationPointFields + ` }
     openVisit { ` + placeVisitFields + ` }
     pause { ` + locationPauseFields + ` }
@@ -731,6 +734,29 @@ const (
 
 	DocumentUnshareLocation = `mutation ($shareId: String!) { UnshareLocation(shareId: $shareId) }`
 )
+
+// LocationSharingLimit is the most of anybody's location the caller sees
+// because of their own phone and pause, and why.
+type LocationSharingLimit struct {
+	ShareLevelLimit    string     `json:"shareLevelLimit"`
+	SharingLimitReason string     `json:"sharingLimitReason"`
+	PhonePermission    *string    `json:"phonePermission"`
+	IsRecordingOn      *bool      `json:"isRecordingOn"`
+	ReportedAt         *time.Time `json:"reportedAt"`
+}
+
+const DocumentReadLocationSharingLimit = `query { ReadLocationSharingLimit { shareLevelLimit sharingLimitReason phonePermission isRecordingOn reportedAt } }`
+
+// ReadLocationSharingLimit is the caller's own limit.
+func ReadLocationSharingLimit(ctx context.Context, connection *Client) (*LocationSharingLimit, error) {
+	var result struct {
+		ReadLocationSharingLimit *LocationSharingLimit `json:"ReadLocationSharingLimit"`
+	}
+	if err := connection.Execute(ctx, DocumentReadLocationSharingLimit, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.ReadLocationSharingLimit, nil
+}
 
 // ListSharedLocations are the people whose location is shared with the caller.
 func ListSharedLocations(ctx context.Context, connection *Client) ([]*Location, error) {

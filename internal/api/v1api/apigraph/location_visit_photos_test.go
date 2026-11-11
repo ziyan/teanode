@@ -55,6 +55,7 @@ func firstVisitOf(t *testing.T, data map[string]any) map[string]any {
 // Photos, get nulls.
 func TestVisitsListThePhotosTakenDuringThem(t *testing.T) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	world.allowPhotos(t, world.ada)
 	arrival := time.Now().Add(-3 * time.Hour).UTC().Truncate(time.Second)
 	departure := arrival.Add(time.Hour)

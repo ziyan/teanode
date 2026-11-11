@@ -32,6 +32,8 @@ import {
   placeSubtitle,
   placeTitle,
   tomorrowMorning,
+  LocationSharingLimit,
+  SHARE_LEVEL_RANKS,
   TRAVEL_MODES,
   TRAVEL_PERIODS,
   TRAVEL_TOTAL_FIELDS,
@@ -105,7 +107,13 @@ const MAXIMUM_RADIUS_METERS = 2000
 
 const GET_LOCATION = `query ($userId: String) { GetLocation(userId: $userId) { ${PERSON_FIELDS} } }`
 const LOCATION_EVENTS = `subscription { LocationEvents { userId } }`
-const LIST_SHARED_LOCATIONS = `query { ListSharedLocations { ${PERSON_FIELDS} } }`
+const LIST_SHARED_LOCATIONS = `query { ListSharedLocations { ${PERSON_FIELDS} grantedShareLevel } }`
+const READ_LOCATION_SHARING_LIMIT = `query {
+  ReadLocationSharingLimit { shareLevelLimit sharingLimitReason phonePermission isRecordingOn reportedAt }
+}`
+// The people named in the banner about what the person shares back, before
+// "and N more".
+const MAXIMUM_REDUCED_PEOPLE_SHOWN = 3
 const LIST_VISITS = `query ($userId: String, $from: DateTime, $until: DateTime, $placeId: String,
   $offset: Int, $limitCount: Int) {
   ListLocationVisits(userId: $userId, from: $from, until: $until, placeId: $placeId,
@@ -347,6 +355,15 @@ function LocationContent({ userId }: { userId: string }) {
   const shared = useQuery(
     async () =>
       (await graphql<{ ListSharedLocations: LocationView[] | null }>(LIST_SHARED_LOCATIONS)).ListSharedLocations ?? [],
+    [userId],
+    { refresh: false },
+  )
+  // Why the person sees less of everybody, if they do. A failed reading only
+  // leaves the banner out.
+  const sharingLimit = useQuery(
+    async () =>
+      (await graphql<{ ReadLocationSharingLimit: LocationSharingLimit | null }>(READ_LOCATION_SHARING_LIMIT))
+        .ReadLocationSharingLimit,
     [userId],
     { refresh: false },
   )
@@ -717,6 +734,8 @@ function LocationContent({ userId }: { userId: string }) {
         // Somebody who paused has no pin, whatever the page last read of
         // them: the person's own is still where their phone last was.
         if (view.pause && view.shareLevel !== 'owner') return []
+        // Somebody the person sees nothing of has no pin either.
+        if (view.shareLevel === '') return []
         // The browser's position is the person's pin when it is drawn, not a
         // second one beside the place their visit is at.
         if (view.shareLevel === 'owner' && hasNoOwnPosition && browserPosition) return []
@@ -998,6 +1017,47 @@ function LocationContent({ userId }: { userId: string }) {
     }
   }
 
+  // The banner over the people: the person's own limit first, else the people
+  // they see less of because of what they share back.
+  const sharingBanner = useMemo(() => {
+    const limit = sharingLimit.data
+    if (limit && limit.sharingLimitReason) {
+      const reason = limit.sharingLimitReason
+      const keys: Record<string, { title: Key; body: Key } | undefined> = {
+        paused: { title: 'location.limitNoneTitle', body: 'location.limitPausedBody' },
+        recording_off: { title: 'location.limitNoneTitle', body: 'location.limitRecordingOffBody' },
+        phone_location_off: { title: 'location.limitNoneTitle', body: 'location.limitPhoneOffBody' },
+        phone_while_using: { title: 'location.limitVisitsTitle', body: 'location.limitWhileUsingBody' },
+      }
+      const found = keys[reason]
+      if (!found) return null
+      return {
+        title: t(found.title),
+        lines: [t(found.body)],
+        // A pause has its own row with Resume right above the banner.
+        action: null,
+      }
+    }
+    const limitRank = SHARE_LEVEL_RANKS[limit?.shareLevelLimit ?? 'history'] ?? SHARE_LEVEL_RANKS.history
+    const reduced = (shared.data ?? []).filter((view) => {
+      if (view.shareLevel === 'owner' || view.grantedShareLevel === undefined) return false
+      const grantedRank = SHARE_LEVEL_RANKS[view.grantedShareLevel] ?? 0
+      return (SHARE_LEVEL_RANKS[view.shareLevel] ?? 0) < Math.min(grantedRank, limitRank)
+    })
+    if (reduced.length === 0) return null
+    const lines = reduced
+      .slice(0, MAXIMUM_REDUCED_PEOPLE_SHOWN)
+      .map((view) =>
+        view.shareLevel === ''
+          ? t('location.reducedNoShare', { name: personName(view) })
+          : t('location.reducedCurrentOnly', { name: personName(view) }),
+      )
+    if (reduced.length > MAXIMUM_REDUCED_PEOPLE_SHOWN) {
+      lines.push(t('location.reducedMore', { moreCount: reduced.length - MAXIMUM_REDUCED_PEOPLE_SHOWN }))
+    }
+    return { title: t('location.reducedTitle'), lines, action: 'sharing' as const }
+  }, [sharingLimit.data, shared.data, t])
+
   async function resumeRecording() {
     setIsChangingPause(true)
     try {
@@ -1005,6 +1065,8 @@ function LocationContent({ userId }: { userId: string }) {
       toast.done(t('location.resumed'))
       void me.reload(true)
       void pauses.reload(true)
+      void sharingLimit.reload(true)
+      void shared.reload(true)
     } catch (failure) {
       toast.failed(failure instanceof Error && failure.message ? failure.message : t('location.resumeFailed'))
     } finally {
@@ -1379,6 +1441,21 @@ function LocationContent({ userId }: { userId: string }) {
             </button>
           </div>
         )}
+        {sharingBanner && (
+          <div className="notice" role="status">
+            <strong>{sharingBanner.title}</strong>
+            {sharingBanner.lines.map((line) => (
+              <p key={line} className="muted">
+                {line}
+              </p>
+            ))}
+            {sharingBanner.action === 'sharing' && (
+              <button type="button" onClick={() => changeParameters({ tab: 'sharing', person: null, place: null })}>
+                {t('location.sharingButton')}
+              </button>
+            )}
+          </div>
+        )}
         <div className="location-people">
           {views.map((view) => {
             const name = personName(view)
@@ -1398,7 +1475,9 @@ function LocationContent({ userId }: { userId: string }) {
                 <span className="location-row-body">
                   <strong>{name}</strong>
                   <span className="muted">
-                    {view.pause && !isOwner ? (
+                    {view.shareLevel === '' ? (
+                      t('location.shareToSee')
+                    ) : view.pause && !isOwner ? (
                       view.pause.endedAt ? (
                         t('location.pausedOtherUntil', { time: arrivalOf(view.pause.endedAt) })
                       ) : (

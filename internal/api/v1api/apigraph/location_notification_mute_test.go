@@ -12,6 +12,7 @@ import (
 // unmutes. Muting again changes the end.
 func TestAPersonMutesAndUnmutesASharersNotifications(t *testing.T) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	world.call(t, world.ada, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "current") { id } }`, world.ben.ID))
 
 	mutedUntil := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
@@ -56,6 +57,7 @@ func TestAPersonMutesAndUnmutesASharersNotifications(t *testing.T) {
 // the caller themselves, and a mute ends after now and within 30 days.
 func TestAMuteNeedsASharerAndAnEndAheadWithinThirtyDays(t *testing.T) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	world.refused(t, world.ben, fmt.Sprintf(`mutation { MuteLocationNotifications(userId: %q) { mutedUntil } }`, world.ada.ID))
 	world.refused(t, world.ben, fmt.Sprintf(`mutation { MuteLocationNotifications(userId: %q) { mutedUntil } }`, world.ben.ID))
 

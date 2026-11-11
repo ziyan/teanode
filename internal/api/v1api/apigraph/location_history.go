@@ -96,10 +96,18 @@ type LocationQuery interface {
 	ListTravelTotals(ctx context.Context, arguments ListTravelTotalsArguments) ([]*TravelTotalView, error)
 
 	// Every person whose location is shared with the caller, directly or
-	// through a circle, at the highest level any share gives: their latest
-	// position and the visit in progress, or that they have paused. Needs
-	// location:use.
+	// through a circle: their latest position and the visit in progress, or
+	// that they have paused. The caller sees no more of anybody's location
+	// than they share with them, and no more than their own phone and pause
+	// let anybody see of theirs (ReadLocationSharingLimit): grantedShareLevel
+	// is what the person's shares give, shareLevel what the caller sees of
+	// it, empty when nothing. Needs location:use.
 	ListSharedLocations(ctx context.Context) ([]*LocationView, error)
+
+	// The most of anybody's location the caller sees because of their own
+	// phone and pause, and why, for a screen that says what to change. Needs
+	// location:use.
+	ReadLocationSharingLimit(ctx context.Context) (*LocationSharingLimitView, error)
 
 	// The shares the caller has made of their own location, and with whom.
 	// Needs location:use.
@@ -118,6 +126,13 @@ type LocationMutation interface {
 	// OpenStreetMap anything: a place made here is named afterwards. Needs
 	// location:use.
 	ReportLocation(ctx context.Context, arguments ReportLocationArguments) (*ReportLocationView, error)
+
+	// What the phone lets TeaNode record, as the app finds it: its location
+	// permission (always, while_using or off) and whether the app's switch
+	// for recording is on. The app says it when it opens and whenever either
+	// changes. It limits what the caller sees of other people's locations,
+	// and the answer is the limit now. Needs location:use.
+	ReportLocationPermission(ctx context.Context, arguments ReportLocationPermissionArguments) (*LocationSharingLimitView, error)
 
 	// Name, rename, label, move or resize a place, or make one at coordinates
 	// when no place is given. A name sets the caller's own name for it; an
@@ -204,9 +219,15 @@ type LocationView struct {
 	AvatarURL        *string `json:"avatarUrl"`
 	AvatarColorIndex int     `json:"avatarColorIndex"`
 
-	// ShareLevel is owner for the caller's own location, otherwise the highest
-	// level any share gives the caller: current or history.
+	// ShareLevel is owner for the caller's own location, otherwise how much
+	// of it the caller sees: current or history, or empty for nothing, when
+	// the caller shares nothing back. Never more than GrantedShareLevel.
 	ShareLevel string `json:"shareLevel"`
+
+	// GrantedShareLevel is owner for the caller's own location, otherwise the
+	// highest level the person's shares give the caller, before what the
+	// caller shares back is counted.
+	GrantedShareLevel string `json:"grantedShareLevel"`
 
 	// LatestPoint is the newest position reported, null when there is none.
 	LatestPoint *LocationPointView `json:"latestPoint"`
@@ -988,7 +1009,13 @@ func locationViewOf(reach *locationReach, latest *models.LocationPoint, visit *m
 	view := &LocationView{
 		UserID: reach.User.ID, Username: reach.User.Username, Name: reach.User.Name,
 		AvatarURL: avatarUrl(reach.User), AvatarColorIndex: avatar.InitialColorIndex(reach.User.ID),
-		ShareLevel: string(reach.ShareLevel), Pause: describeLocationPause(pause),
+		ShareLevel: string(reach.ShareLevel), GrantedShareLevel: string(reach.ShareLevel), Pause: describeLocationPause(pause),
+	}
+	// Somebody the caller sees nothing of is only a name: not even whether
+	// they have paused.
+	if reach.ShareLevel.Rank() == 0 {
+		view.Pause = nil
+		return view
 	}
 	if pause != nil && reach.ShareLevel != models.LocationShareLevelOwner {
 		return view

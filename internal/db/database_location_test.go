@@ -1273,6 +1273,7 @@ func TestFilterLocationGranteesAndTheOwnersPermission(t *testing.T) {
 	defer release()
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		world := newLocationShareWorld(t, tx)
+		shareLocationBack(t, tx, world.ben, world.ada)
 		if _, err := tx.ShareLocation(world.ada.ID, &models.LocationShare{GranteeUserID: world.ben.ID, ShareLevel: models.LocationShareLevelCurrent}); err != nil {
 			t.Fatalf("ShareLocation: %s", err)
 		}

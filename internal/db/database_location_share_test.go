@@ -30,6 +30,17 @@ func newLocationShareWorld(t *testing.T, tx db.Transaction) *shareWorld {
 	return world
 }
 
+// shareLocationBack has the viewer share their own location with the owner
+// at history, so that a test of what the owner's shares give is not also a
+// test of what the viewer shares back: nobody sees more of a location than
+// they share with its owner.
+func shareLocationBack(t *testing.T, tx db.Transaction, viewer, owner *models.User) {
+	t.Helper()
+	if _, err := tx.ShareLocation(viewer.ID, &models.LocationShare{GranteeUserID: owner.ID, ShareLevel: models.LocationShareLevelHistory}); err != nil {
+		t.Fatalf("ShareLocation back: %s", err)
+	}
+}
+
 func locationLevelOf(t *testing.T, tx db.Transaction, viewerUserId, ownerUserId string) models.LocationShareLevel {
 	t.Helper()
 	level, err := tx.GetLocationShareLevel(viewerUserId, ownerUserId)
@@ -101,6 +112,7 @@ func TestOnlyTheSharerTakesALocationShareBack(t *testing.T) {
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		world := newLocationShareWorld(t, tx)
+		shareLocationBack(t, tx, world.ben, world.ada)
 		share, err := tx.ShareLocation(world.ada.ID, &models.LocationShare{GranteeUserID: world.ben.ID, ShareLevel: models.LocationShareLevelCurrent})
 		if err != nil {
 			t.Fatalf("ShareLocation: %s", err)
@@ -134,8 +146,14 @@ func TestAViewerGetsTheHighestLocationLevelReachingThem(t *testing.T) {
 		if level := locationLevelOf(t, tx, world.ada.ID, world.ada.ID); level != models.LocationShareLevelOwner {
 			t.Fatalf("their own: %q", level)
 		}
+		shareLocationBack(t, tx, world.ben, world.ada)
 		if level := locationLevelOf(t, tx, world.ben.ID, world.ada.ID); level != "" {
 			t.Fatalf("before any share: %q", level)
+		}
+		// A share is one way: ben's own share gives ada nothing of his while
+		// she shares nothing with him.
+		if level := locationLevelOf(t, tx, world.ada.ID, world.ben.ID); level != "" {
+			t.Fatalf("ben's share while ada shares nothing: %q", level)
 		}
 		if _, err := tx.ShareLocation(world.ada.ID, &models.LocationShare{GranteeCircleID: world.home.ID, ShareLevel: models.LocationShareLevelCurrent}); err != nil {
 			t.Fatalf("ShareLocation: %s", err)
@@ -149,8 +167,8 @@ func TestAViewerGetsTheHighestLocationLevelReachingThem(t *testing.T) {
 		if level := locationLevelOf(t, tx, world.ben.ID, world.ada.ID); level != models.LocationShareLevelHistory {
 			t.Fatalf("the better of direct and circle: %q", level)
 		}
-		// A share is one way.
-		if level := locationLevelOf(t, tx, world.ada.ID, world.ben.ID); level != "" {
+		// Now both share their visits, each sees the other's.
+		if level := locationLevelOf(t, tx, world.ada.ID, world.ben.ID); level != models.LocationShareLevelHistory {
 			t.Fatalf("the other way: %q", level)
 		}
 		// Cora is in "club", not "home", and dave in nothing.
@@ -209,6 +227,7 @@ func TestLocationSharersAndGranteesAreTheTwoSidesOfTheShares(t *testing.T) {
 				t.Fatalf("ShareLocation: %s", err)
 			}
 		}
+		shareLocationBack(t, tx, world.ada, world.ben)
 
 		sharers, err := tx.ListLocationSharers(world.ada.ID)
 		if err != nil || len(sharers) != 1 || sharers[0].UserID != world.ben.ID || sharers[0].ShareLevel != models.LocationShareLevelHistory ||
@@ -220,14 +239,14 @@ func TestLocationSharersAndGranteesAreTheTwoSidesOfTheShares(t *testing.T) {
 			t.Fatalf("cora sees ben, through the circle: %+v %v", sharers, err)
 		}
 		sharers, err = tx.ListLocationSharers(world.ben.ID)
-		if err != nil || len(sharers) != 1 || sharers[0].UserID != world.cora.ID {
-			t.Fatalf("ben sees cora, not himself: %+v %v", sharers, err)
+		if err != nil || len(sharers) != 2 || sharers[0].UserID == world.ben.ID || sharers[1].UserID == world.ben.ID {
+			t.Fatalf("ben sees ada, who shares back, and cora, not himself: %+v %v", sharers, err)
 		}
 		if sharers, _ := tx.ListLocationSharers(world.dave.ID); len(sharers) != 0 {
 			t.Fatalf("dave sees nobody: %+v", sharers)
 		}
 
-		grantees, err := tx.ListLocationGrantees(world.ben.ID)
+		grantees, err := tx.ListLocationGrantees(world.ben.ID, models.LocationShareLevelCurrent)
 		if err != nil || len(grantees) != 2 {
 			t.Fatalf("ben's location reaches ada and cora once each: %+v %v", grantees, err)
 		}
@@ -250,7 +269,7 @@ func TestLocationSharersAndGranteesAreTheTwoSidesOfTheShares(t *testing.T) {
 				t.Fatalf("DeleteAgent: %s", err)
 			}
 		}
-		grantees, err = tx.ListLocationGrantees(world.ben.ID)
+		grantees, err = tx.ListLocationGrantees(world.ben.ID, models.LocationShareLevelCurrent)
 		if err != nil || len(grantees) != 2 {
 			t.Fatalf("dave has no agent: %d grantees, %v", len(grantees), err)
 		}
@@ -276,6 +295,7 @@ func TestLeavingACircleEndsLocationSharesAtOnce(t *testing.T) {
 			{world.ben.ID, &models.LocationShare{GranteeCircleID: world.home.ID, ShareLevel: models.LocationShareLevelCurrent}},
 			// Ben and cora keep sharing through "club".
 			{world.ben.ID, &models.LocationShare{GranteeUserID: world.cora.ID, ShareLevel: models.LocationShareLevelCurrent}},
+			{world.cora.ID, &models.LocationShare{GranteeCircleID: world.club.ID, ShareLevel: models.LocationShareLevelCurrent}},
 		} {
 			if _, err := tx.ShareLocation(each.sharer, each.share); err != nil {
 				t.Fatalf("ShareLocation: %s", err)
@@ -395,6 +415,7 @@ func TestALocationDoesNotReachSomeoneDisabledOrWithoutThePermission(t *testing.T
 				}
 			}
 		}
+		shareLocationBack(t, tx, world.ada, world.ben)
 		// Ben shares with ada directly and with cora through "club".
 		for _, share := range []*models.LocationShare{
 			{GranteeUserID: world.ada.ID, ShareLevel: models.LocationShareLevelCurrent},
@@ -411,7 +432,7 @@ func TestALocationDoesNotReachSomeoneDisabledOrWithoutThePermission(t *testing.T
 		if sharers, err := tx.ListLocationSharers(world.cora.ID); err != nil || len(sharers) != 0 {
 			t.Errorf("cora has no location:use and is offered sharers: %+v %v", sharers, err)
 		}
-		grantees, err := tx.ListLocationGrantees(world.ben.ID)
+		grantees, err := tx.ListLocationGrantees(world.ben.ID, models.LocationShareLevelCurrent)
 		if err != nil || len(grantees) != 1 || grantees[0].UserID != world.ada.ID {
 			t.Fatalf("only ada, who can use Location, is told: %+v %v", grantees, err)
 		}
@@ -430,8 +451,116 @@ func TestALocationDoesNotReachSomeoneDisabledOrWithoutThePermission(t *testing.T
 		if level := locationLevelOf(t, tx, world.ada.ID, world.ben.ID); level != "" {
 			t.Errorf("a disabled ada sees ben at %q", level)
 		}
-		if grantees, err := tx.ListLocationGrantees(world.ben.ID); err != nil || len(grantees) != 0 {
+		if grantees, err := tx.ListLocationGrantees(world.ben.ID, models.LocationShareLevelCurrent); err != nil || len(grantees) != 0 {
 			t.Errorf("a disabled ada is told: %+v %v", grantees, err)
+		}
+	})
+}
+
+// Nobody sees more of somebody's location than they share with them: sharing
+// visits sees visits, sharing where they are sees where the other is, sharing
+// nothing sees nothing. Their phone and a pause count too: a phone set to
+// While Using records no visits, so shares none, and one with Location off or
+// recording switched off, or a pause, shares nothing. An app that never said
+// is judged by its shares alone.
+func TestALocationIsSeenOnlyAsFarAsTheViewerSharesBack(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newLocationShareWorld(t, tx)
+		// Ada shares her visits with "home", where ben is.
+		if _, err := tx.ShareLocation(world.ada.ID, &models.LocationShare{GranteeCircleID: world.home.ID, ShareLevel: models.LocationShareLevelHistory}); err != nil {
+			t.Fatalf("ShareLocation: %s", err)
+		}
+		sharers, err := tx.ListLocationSharers(world.ben.ID)
+		if err != nil || len(sharers) != 1 || sharers[0].ShareLevel != "" || sharers[0].GrantedShareLevel != models.LocationShareLevelHistory {
+			t.Fatalf("ben shares nothing: ada is listed, granted history, seen nothing: %+v %v", sharers, err)
+		}
+		if grantees, err := tx.ListLocationGrantees(world.ada.ID, models.LocationShareLevelCurrent); err != nil || len(grantees) != 0 {
+			t.Fatalf("ben, who sees nothing, is not told: %+v %v", grantees, err)
+		}
+
+		share, err := tx.ShareLocation(world.ben.ID, &models.LocationShare{GranteeUserID: world.ada.ID, ShareLevel: models.LocationShareLevelCurrent})
+		if err != nil {
+			t.Fatalf("ShareLocation: %s", err)
+		}
+		if level := locationLevelOf(t, tx, world.ben.ID, world.ada.ID); level != models.LocationShareLevelCurrent {
+			t.Fatalf("ben shares where he is: he sees where ada is, not her visits: %q", level)
+		}
+		if reached, err := tx.FilterLocationGrantees(world.ada.ID, []string{world.ben.ID}); err != nil || len(reached) != 1 {
+			t.Fatalf("his open map follows her: %v %v", reached, err)
+		}
+		if grantees, err := tx.ListLocationGrantees(world.ada.ID, models.LocationShareLevelHistory); err != nil || len(grantees) != 0 {
+			t.Fatalf("no arrivals and departures without his visits shared: %+v %v", grantees, err)
+		}
+		// Ada shares only where she is with cora, who shares her visits back:
+		// cora is told of ada's arrivals, as somebody shown where she is.
+		if _, err := tx.AddCircleMember(world.home.ID, world.cora.ID, models.MemberRoleMember, world.ada.ID); err != nil {
+			t.Fatalf("AddCircleMember: %s", err)
+		}
+		if _, err := tx.ShareLocation(world.ada.ID, &models.LocationShare{GranteeUserID: world.cora.ID, ShareLevel: models.LocationShareLevelCurrent}); err != nil {
+			t.Fatalf("ShareLocation: %s", err)
+		}
+		shareLocationBack(t, tx, world.cora, world.ada)
+		if grantees, err := tx.ListLocationGrantees(world.ada.ID, models.LocationShareLevelHistory); err != nil || len(grantees) != 1 || grantees[0].UserID != world.cora.ID {
+			t.Fatalf("cora shares her visits and is told: %+v %v", grantees, err)
+		}
+
+		if _, err := tx.ShareLocation(world.ben.ID, &models.LocationShare{GranteeUserID: world.ada.ID, ShareLevel: models.LocationShareLevelHistory}); err != nil {
+			t.Fatalf("ShareLocation: %s", err)
+		}
+		if level := locationLevelOf(t, tx, world.ben.ID, world.ada.ID); level != models.LocationShareLevelHistory {
+			t.Fatalf("ben shares his visits: he sees hers: %q", level)
+		}
+
+		// His phone, as his app last said.
+		now := time.Now()
+		for _, each := range []struct {
+			phonePermission models.LocationPhonePermission
+			isRecordingOn   bool
+			seen            models.LocationShareLevel
+		}{
+			{models.LocationPhonePermissionWhileUsing, true, models.LocationShareLevelCurrent},
+			{models.LocationPhonePermissionOff, true, ""},
+			{models.LocationPhonePermissionAlways, false, ""},
+			{models.LocationPhonePermissionAlways, true, models.LocationShareLevelHistory},
+		} {
+			if err := tx.ReportLocationPermission(&models.LocationPermission{
+				UserID: world.ben.ID, PhonePermission: each.phonePermission, IsRecordingOn: each.isRecordingOn, ReportedAt: now,
+			}); err != nil {
+				t.Fatalf("ReportLocationPermission: %s", err)
+			}
+			if level := locationLevelOf(t, tx, world.ben.ID, world.ada.ID); level != each.seen {
+				t.Errorf("ben's phone %s, recording %v: sees %q, want %q", each.phonePermission, each.isRecordingOn, level, each.seen)
+			}
+		}
+		if err := tx.ReportLocationPermission(&models.LocationPermission{UserID: world.ben.ID, PhonePermission: "sometimes", ReportedAt: now}); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("a permission that is not one of the three: %v", err)
+		}
+
+		// A pause shares nothing while it lasts.
+		if _, _, err := tx.PauseLocation(world.ben.ID, nil, now.Add(-time.Minute)); err != nil {
+			t.Fatalf("PauseLocation: %s", err)
+		}
+		if level := locationLevelOf(t, tx, world.ben.ID, world.ada.ID); level != "" {
+			t.Errorf("paused, ben sees ada at %q", level)
+		}
+		limits, err := tx.GetLocationSharingLimits([]string{world.ben.ID, world.ada.ID}, time.Now())
+		if err != nil || limits[world.ben.ID].SharingLimitReason != models.LocationSharingLimitReasonPaused ||
+			limits[world.ada.ID] != (models.LocationSharingLimit{ShareLevelLimit: models.LocationShareLevelHistory}) {
+			t.Errorf("the limits say why: %+v %v", limits, err)
+		}
+		if _, err := tx.ResumeLocation(world.ben.ID, time.Now()); err != nil {
+			t.Fatalf("ResumeLocation: %s", err)
+		}
+
+		// Stopping sharing altogether sees nothing again.
+		if err := tx.UnshareLocation(world.ben.ID, share.ID); err != nil {
+			t.Fatalf("UnshareLocation: %s", err)
+		}
+		if level := locationLevelOf(t, tx, world.ben.ID, world.ada.ID); level != "" {
+			t.Errorf("ben shares nothing and sees ada at %q", level)
 		}
 	})
 }

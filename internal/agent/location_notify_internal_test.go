@@ -47,6 +47,11 @@ func newLocationNotifyFixture(t *testing.T, shareLevel models.LocationShareLevel
 			if _, err := tx.ShareLocation(fixture.sharer.ID, &models.LocationShare{GranteeUserID: fixture.owner.ID, ShareLevel: shareLevel}); err != nil {
 				t.Fatalf("ShareLocation: %s", err)
 			}
+			// The person told shares their visits back: nobody is told of
+			// arrivals and departures without sharing their own.
+			if _, err := tx.ShareLocation(fixture.owner.ID, &models.LocationShare{GranteeUserID: fixture.sharer.ID, ShareLevel: models.LocationShareLevelHistory}); err != nil {
+				t.Fatalf("ShareLocation back: %s", err)
+			}
 		}
 	})
 	return fixture
@@ -467,5 +472,35 @@ func TestAReceiverWhoLeftBeforeTheArrivalIsTold(t *testing.T) {
 	fixture.worker.Phones().NotifyPlaceVisitAt(context.Background(), fixture.sharer.ID, visit, true, time.Now())
 	if fixture.told() != 1 {
 		t.Errorf("the phone was sent %d notifications, not one", fixture.told())
+	}
+}
+
+// Arrivals and departures are visits: a person who shares only where they
+// are, or whose phone records no visits, is not told of anybody's.
+func TestNobodyIsToldOfArrivalsWithoutSharingTheirOwnVisits(t *testing.T) {
+	fixture := newLocationNotifyFixture(t, models.LocationShareLevelHistory)
+	visit := fixture.visitTo(t, &models.Place{PlaceName: "Corner Cafe", IsNamedByPerson: true})
+	dbtest.Exec(t, fixture.database, `UPDATE "location_share" SET "created_at" = now() - interval '1 hour'`)
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		if err := tx.ReportLocationPermission(&models.LocationPermission{
+			UserID: fixture.owner.ID, PhonePermission: models.LocationPhonePermissionWhileUsing, IsRecordingOn: true, ReportedAt: time.Now(),
+		}); err != nil {
+			t.Fatalf("ReportLocationPermission: %s", err)
+		}
+	})
+	fixture.worker.Phones().NotifyPlaceVisitAt(context.Background(), fixture.sharer.ID, visit, true, time.Now())
+	if fixture.told() != 0 {
+		t.Fatalf("a phone set to While Using was sent %d notifications", fixture.told())
+	}
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		if err := tx.ReportLocationPermission(&models.LocationPermission{
+			UserID: fixture.owner.ID, PhonePermission: models.LocationPhonePermissionAlways, IsRecordingOn: true, ReportedAt: time.Now(),
+		}); err != nil {
+			t.Fatalf("ReportLocationPermission: %s", err)
+		}
+	})
+	fixture.worker.Phones().NotifyPlaceVisitAt(context.Background(), fixture.sharer.ID, visit, false, time.Now())
+	if fixture.told() != 1 {
+		t.Errorf("set to Always, the departure was sent %d notifications, not one", fixture.told())
 	}
 }

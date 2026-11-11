@@ -460,6 +460,9 @@ func locationSharingPerson(ctx context.Context, command *cli.Command, connection
 	}
 	for _, each := range people {
 		if strings.EqualFold(each.Username, username) {
+			if each.ShareLevel == "" {
+				return "", fmt.Errorf("you see nothing of %s's location; 'teanode location people' says why", each.Username)
+			}
 			if doesNeedHistory && each.ShareLevel != string(models.LocationShareLevelHistory) {
 				return "", fmt.Errorf("%s shares only where they are now", each.Username)
 			}
@@ -1336,8 +1339,26 @@ func runLocationPeople(ctx context.Context, command *cli.Command) error {
 		fmt.Println("nobody shares their location with you")
 		return nil
 	}
+	// What the caller sees is limited by what they share: said first, as
+	// the app's banner says it.
+	limit, err := client.ReadLocationSharingLimit(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if words := models.LocationSharingLimitReason(limit.SharingLimitReason).Words(); words != "" {
+		fmt.Println(words)
+	}
+	for _, each := range people {
+		if words := models.LocationShareBackWords(each.Username, models.LocationShareLevel(each.ShareLevel), models.LocationShareLevel(each.GrantedShareLevel), models.LocationShareLevel(limit.ShareLevelLimit)); words != "" {
+			fmt.Println(words)
+		}
+	}
 	rows := make([][]string, 0, len(people))
 	for _, each := range people {
+		if each.ShareLevel == "" {
+			rows = append(rows, []string{each.Username, "none", "not seen", "", "", ""})
+			continue
+		}
 		where, since := "no position yet", ""
 		muteCell := ""
 		if each.NotificationMute != nil {

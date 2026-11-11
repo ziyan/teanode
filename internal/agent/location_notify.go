@@ -203,7 +203,7 @@ func (self *PhoneNotifier) NotifyPlaceVisitAt(ctx context.Context, ownerUserId s
 		if owner, err = tx.GetUser(ownerUserId); err != nil || owner == nil {
 			return err
 		}
-		allGrantees, err := tx.ListLocationGrantees(ownerUserId)
+		allGrantees, err := tx.ListLocationGrantees(ownerUserId, models.LocationShareLevelHistory)
 		if err != nil {
 			return err
 		}

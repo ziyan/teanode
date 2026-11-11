@@ -217,6 +217,9 @@ enum LocationText {
     /// there is no position yet ("No position recorded yet" on the person's
     /// own row).
     static func whereText(of person: PersonLocation, isOwn: Bool = false) -> String {
+        // Listed, but the server sends nothing of them: the person shares
+        // nothing with them, or has no way to see anybody's.
+        if !isOwn, person.isHiddenFromCaller { return String(localized: "Share your location to see theirs") }
         if !isOwn, let pause = person.pause, pause.isInEffect(at: Date()) { return locationPaused(pause) }
         let placeName = person.openVisit?.place.shownName
         // A reading at or a moment ahead of this iPhone's clock reads as "1

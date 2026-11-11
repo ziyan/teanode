@@ -165,12 +165,32 @@
             #"{"mutedUntil":"\#(CalendarDates.text(personMuteEndsAt))"}"#
         }
 
+        // `-TeaNodeScreen location-limited`: the person's phone has Location set
+        // to While Using, so they see where the first person is but not their
+        // visits, and the second person shares with them but is shown as
+        // nothing, since the person shares nothing with them.
+        static var isLimitedScreen: Bool { DemoServer.screen == "location-limited" }
+
+        /// What `ReadLocationSharingLimit` and `ReportLocationPermission` give.
+        static var sharingLimitJSON: String {
+            let reportedAt = CalendarDates.text(Date())
+            if isLimitedScreen {
+                return #"{"shareLevelLimit":"current","sharingLimitReason":"phone_while_using","phonePermission":"while_using","isRecordingOn":true,"reportedAt":"\#(reportedAt)"}"#
+            }
+            return #"{"shareLevelLimit":"history","sharingLimitReason":"","phonePermission":"always","isRecordingOn":true,"reportedAt":"\#(reportedAt)"}"#
+        }
+
         /// A person as `GetLocation` and `ListSharedLocations` give them.
         static func sharedPersonJSON(userId: String) -> String {
             let person = DemoServer.demoPerson(userId)
             if isPauseScreen, userId == currentPersonId {
                 return #"""
-                    {"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"shareLevel":"current","latestPoint":null,"openVisit":null,"pause":\#(sharedPauseJSON)}
+                    {"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"shareLevel":"current","grantedShareLevel":"current","latestPoint":null,"openVisit":null,"pause":\#(sharedPauseJSON)}
+                    """#
+            }
+            if isLimitedScreen, userId == currentPersonId {
+                return #"""
+                    {"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"shareLevel":"","grantedShareLevel":"current","latestPoint":null,"openVisit":null,"pause":null}
                     """#
             }
             let isHistory = userId == historyPersonId
@@ -181,8 +201,10 @@
                 #"{"latitudeDegrees":\#(latitude),"longitudeDegrees":\#(longitude),"accuracyMeters":12,"altitudeMeters":null,"speedMetersPerSecond":null,"courseDegrees":null,"measuredAt":"\#(CalendarDates.text(measuredAt))","locationSource":"phone"}"#
             let open = isHistory ? historyPersonVisits[0] : "null"
             let notificationMute = isHistory && isPersonMuteScreen ? personMuteJSON : "null"
+            // Under the While Using limit the first person is seen at current.
+            let shownLevel = isHistory && !isLimitedScreen ? "history" : "current"
             return #"""
-                {"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"shareLevel":"\#(isHistory ? "history" : "current")","latestPoint":\#(point),"openVisit":\#(open),"notificationMute":\#(notificationMute)}
+                {"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"shareLevel":"\#(shownLevel)","grantedShareLevel":"\#(isHistory ? "history" : "current")","latestPoint":\#(point),"openVisit":\#(open),"notificationMute":\#(notificationMute)}
                 """#
         }
 
@@ -267,6 +289,10 @@
             let isSetupScreen = screen == "location-setup"
             if query.contains("GetLocation("), let userId = variables["userId"] as? String {
                 return #"{"data":{"GetLocation":\#(LocationDemo.sharedPersonJSON(userId: userId))}}"#
+            }
+            if query.contains("ReadLocationSharingLimit") || query.contains("ReportLocationPermission(") {
+                let name = query.contains("ReadLocationSharingLimit") ? "ReadLocationSharingLimit" : "ReportLocationPermission"
+                return #"{"data":{"\#(name)":\#(LocationDemo.sharingLimitJSON)}}"#
             }
             if query.contains("ListSharedLocations") {
                 // `-TeaNodeScreen location-people`: more people than fit under the map.

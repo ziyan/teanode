@@ -141,6 +141,127 @@ func (self LocationShareLevel) AtLeast(other LocationShareLevel) bool {
 	return self.Rank() >= other.Rank() && self.Rank() > 0
 }
 
+// LessLocationShareLevel is the lower of two levels, the empty level when
+// either is empty.
+func LessLocationShareLevel(first, second LocationShareLevel) LocationShareLevel {
+	if first.Rank() <= second.Rank() {
+		return first
+	}
+	return second
+}
+
+// LocationPhonePermission is what a person's phone lets TeaNode record of
+// where they are.
+type LocationPhonePermission string
+
+const (
+	// LocationPhonePermissionAlways records visits in the background.
+	LocationPhonePermissionAlways LocationPhonePermission = "always"
+	// LocationPhonePermissionWhileUsing records only where they are while
+	// the app is open, so no visits.
+	LocationPhonePermissionWhileUsing LocationPhonePermission = "while_using"
+	// LocationPhonePermissionOff records nothing: Location is off for the
+	// app, or the person has not answered the phone's question yet.
+	LocationPhonePermissionOff LocationPhonePermission = "off"
+)
+
+// IsKnown reports whether the permission is one of the three.
+func (self LocationPhonePermission) IsKnown() bool {
+	switch self {
+	case LocationPhonePermissionAlways, LocationPhonePermissionWhileUsing, LocationPhonePermissionOff:
+		return true
+	}
+	return false
+}
+
+// LocationPermission is what a person's app last said about their phone: its
+// permission, and whether the app's own switch for recording is on.
+type LocationPermission struct {
+	UserID          string                  `json:"userId"`
+	PhonePermission LocationPhonePermission `json:"phonePermission"`
+	IsRecordingOn   bool                    `json:"isRecordingOn"`
+	ReportedAt      time.Time               `json:"reportedAt"`
+}
+
+// LocationSharingLimitReason is why a person's own location shares less than
+// their shares say, and so why they see less of other people's.
+type LocationSharingLimitReason string
+
+const (
+	// LocationSharingLimitReasonNone is no limit: the shares say it all.
+	LocationSharingLimitReasonNone LocationSharingLimitReason = ""
+	// LocationSharingLimitReasonPaused is a pause in effect.
+	LocationSharingLimitReasonPaused LocationSharingLimitReason = "paused"
+	// LocationSharingLimitReasonRecordingOff is the app's switch for
+	// recording turned off.
+	LocationSharingLimitReasonRecordingOff LocationSharingLimitReason = "recording_off"
+	// LocationSharingLimitReasonPhoneLocationOff is Location off for the app
+	// on the phone.
+	LocationSharingLimitReasonPhoneLocationOff LocationSharingLimitReason = "phone_location_off"
+	// LocationSharingLimitReasonPhoneWhileUsing is Location set to While
+	// Using on the phone, which records no visits.
+	LocationSharingLimitReasonPhoneWhileUsing LocationSharingLimitReason = "phone_while_using"
+)
+
+// LocationSharingLimit is the most of a person's location their phone and
+// their pause let anybody see, whatever their shares say, and why. Nobody
+// sees more of another person's location than they share with them, so it is
+// also the most they see of anybody else's.
+type LocationSharingLimit struct {
+	ShareLevelLimit    LocationShareLevel
+	SharingLimitReason LocationSharingLimitReason
+}
+
+// LocationSharingLimitOf is the limit for a person with this permission (nil
+// for an app that never reported one, which is judged by its shares alone)
+// and this pause in effect (nil for none).
+func LocationSharingLimitOf(permission *LocationPermission, pause *LocationPause) LocationSharingLimit {
+	switch {
+	case pause != nil:
+		return LocationSharingLimit{SharingLimitReason: LocationSharingLimitReasonPaused}
+	case permission == nil:
+		return LocationSharingLimit{ShareLevelLimit: LocationShareLevelHistory}
+	case !permission.IsRecordingOn:
+		return LocationSharingLimit{SharingLimitReason: LocationSharingLimitReasonRecordingOff}
+	case permission.PhonePermission == LocationPhonePermissionAlways:
+		return LocationSharingLimit{ShareLevelLimit: LocationShareLevelHistory}
+	case permission.PhonePermission == LocationPhonePermissionWhileUsing:
+		return LocationSharingLimit{ShareLevelLimit: LocationShareLevelCurrent, SharingLimitReason: LocationSharingLimitReasonPhoneWhileUsing}
+	}
+	return LocationSharingLimit{SharingLimitReason: LocationSharingLimitReasonPhoneLocationOff}
+}
+
+// Words returns what the limit means for what the person sees, and what to
+// change, in a sentence; empty for no limit. The command line and the agent
+// say it as the app's banner does.
+func (self LocationSharingLimitReason) Words() string {
+	switch self {
+	case LocationSharingLimitReasonPaused:
+		return "Your location is paused, so you see nobody's location until you resume."
+	case LocationSharingLimitReasonRecordingOff:
+		return "Recording is off in the TeaNode app, so you see nobody's location. Turn recording on to see people again."
+	case LocationSharingLimitReasonPhoneLocationOff:
+		return "Location is off for TeaNode on your phone, so you see nobody's location. Set it to Always in the phone's Settings to see where people are and their visits."
+	case LocationSharingLimitReasonPhoneWhileUsing:
+		return "Location is set to While Using on your phone, so TeaNode cannot record your visits, and you see where people are but not their visits. Set it to Always in the phone's Settings to see visits again."
+	}
+	return ""
+}
+
+// LocationShareBackWords says why a person sees less of someone's location
+// than that person shares, when what they share back is why: seen is what
+// they see, granted what is shared with them, and limit their own limit.
+// Empty when what they share back is not why.
+func LocationShareBackWords(name string, seen, granted, limit LocationShareLevel) string {
+	if seen.Rank() >= LessLocationShareLevel(granted, limit).Rank() {
+		return ""
+	}
+	if seen.Rank() == 0 {
+		return "You do not share your location with " + name + ", so you see nothing of theirs. Share yours to see where they are."
+	}
+	return "You share only where you are with " + name + ", so you see where they are but not their visits. Share your visits to see theirs."
+}
+
 // LocationPoint is one position a phone or browser reported. The optional
 // measurements are nil when the device did not give them.
 type LocationPoint struct {

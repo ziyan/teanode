@@ -19,6 +19,8 @@ struct LocationSetupList: View {
     let allowMotion: () -> Void
     /// Opens the screen of everyone sharing.
     let showPeople: () -> Void
+    /// Opens the sharing list.
+    let showSharing: () -> Void
     @State private var isWorking = false
     @State private var isTypingAddress = false
 
@@ -26,7 +28,7 @@ struct LocationSetupList: View {
         let setup = model.setup
         List {
             if isShowingPeople {
-                LocationPeopleSection(model: model, showPeople: showPeople)
+                LocationPeopleSection(model: model, showPeople: showPeople, showSharing: showSharing)
             }
             Section {
                 LocationSetupRow(

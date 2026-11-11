@@ -38,27 +38,33 @@ type LocationShareOperation interface {
 	ListLocationShares(sharerUserId string) ([]*models.LocationShare, error)
 
 	// GetLocationShareLevel is how much of the owner's location the viewer
-	// may see: LocationShareLevelOwner for their own, the highest of the
-	// shares reaching them for another person's, and the empty level for
-	// anything else. A share to a person reaches them only while the two
-	// still share a circle, and a share to a circle only while both are in it.
+	// may see: LocationShareLevelOwner for their own, and for another
+	// person's the lower of what the owner shares with the viewer and what
+	// the viewer shares back (seenLocationShareLevel), the empty level for
+	// nothing. A share to a person reaches them only while the two still
+	// share a circle, and a share to a circle only while both are in it.
 	GetLocationShareLevel(viewerUserId, ownerUserId string) (models.LocationShareLevel, error)
 
-	// ListLocationSharers are the people whose location reaches the viewer,
-	// once each at the highest level, by name. Not the viewer.
+	// ListLocationSharers are the people who share their location with the
+	// viewer, once each, by name, with what their shares give and what the
+	// viewer sees of it. One the viewer sees nothing of, because the viewer
+	// shares nothing back, is still listed, so a screen can say why. Not the
+	// viewer.
 	ListLocationSharers(viewerUserId string) ([]*LocationSharer, error)
 
-	// ListLocationGrantees are the people the owner's location reaches now,
-	// once each, who have an agent row their phones hang from. Not the owner,
-	// and not a person whose account is disabled or whose roles no longer give
-	// location:use: they cannot read the location, so they are not told of it
-	// either.
-	ListLocationGrantees(ownerUserId string) ([]*LocationGrantee, error)
+	// ListLocationGrantees are the people who see the owner's location now,
+	// by GetLocationShareLevel, and share at least neededSharedBackLevel of
+	// their own back (arrivals and departures are told only to people who
+	// share their visits), once each, who have an agent row their phones
+	// hang from. Not the owner, and not a person whose
+	// account is disabled or whose roles no longer give location:use: they
+	// cannot read the location, so they are not told of it either.
+	ListLocationGrantees(ownerUserId string, neededSharedBackLevel models.LocationShareLevel) ([]*LocationGrantee, error)
 
-	// FilterLocationGrantees answers which of the people named by userIds the
-	// owner's location reaches now, by the conditions of ListLocationGrantees
-	// but for the people given and without needing them to have an agent: one
-	// query for all the maps open on an instance.
+	// FilterLocationGrantees answers which of the people named by userIds see
+	// the owner's current location now, by the conditions of
+	// ListLocationGrantees but for the people given and without needing them
+	// to have an agent: one query for all the maps open on an instance.
 	FilterLocationGrantees(ownerUserId string, userIds []string) ([]string, error)
 }
 
@@ -68,8 +74,12 @@ type LocationSharer struct {
 	Username string
 	// Name is the name they gave, or their username.
 	Name string
-	// ShareLevel is the highest level any share gives the viewer.
+	// ShareLevel is how much of their location the viewer sees: the empty
+	// level when the viewer shares nothing back.
 	ShareLevel models.LocationShareLevel
+	// GrantedShareLevel is the highest level their shares give the viewer,
+	// before what the viewer shares back is counted.
+	GrantedShareLevel models.LocationShareLevel
 	// User holds the fields the picture's address and color are made from.
 	User *models.User
 }
@@ -291,10 +301,86 @@ type reachingLocationShareRow struct {
 	CreatedAt       time.Time `gorm:"column:created_at"`
 }
 
-// reachingLocationLevels is the highest level each owner shares their
+// sharedLocationLevelsQuery selects the people a sharer's location shares
+// reach, with the level of each share: a share to a person reaches them
+// while the two share a circle, and a share to a circle reaches its other
+// members while the sharer is in it. Both come down to a circle row of the
+// reached person in a circle the sharer is in. @reached narrows it to one
+// person, or is empty for all.
+const sharedLocationLevelsQuery = `
+SELECT reached.user_id AS reached_user_id, share.share_level AS share_level
+FROM "location_share" share
+JOIN "circle_member" reached
+  ON reached.user_id = share.grantee_user_id OR reached.circle_id = share.grantee_circle_id
+WHERE share.user_id = @sharer AND reached.user_id <> @sharer
+  AND (@reached = '' OR reached.user_id = @reached)
+  AND EXISTS (SELECT 1 FROM "circle_member" mine WHERE mine.user_id = @sharer AND mine.circle_id = reached.circle_id)`
+
+// sharedLocationLevels is the highest level the sharer's shares reach each
+// person at, for one person or, with an empty identifier, for all of them. It
+// says nothing of the accounts: the callers read it beside a reach that does.
+func (self *transaction) sharedLocationLevels(sharerUserId, reachedUserId string) (map[string]models.LocationShareLevel, error) {
+	var rows []struct {
+		ReachedUserID string `gorm:"column:reached_user_id"`
+		ShareLevel    string `gorm:"column:share_level"`
+	}
+	if err := self.tx.Raw(sharedLocationLevelsQuery, sql.Named("sharer", sharerUserId), sql.Named("reached", reachedUserId)).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	levels := make(map[string]models.LocationShareLevel, len(rows))
+	for _, row := range rows {
+		level := models.LocationShareLevel(row.ShareLevel)
+		if level.Rank() > levels[row.ReachedUserID].Rank() {
+			levels[row.ReachedUserID] = level
+		}
+	}
+	return levels, nil
+}
+
+// seenLocationShareLevel is how much of a person's location another sees:
+// what the person's shares give them, no more than what they share back, and
+// no more than their own phone and pause let anybody see of theirs. Nobody
+// sees more of somebody's location than they let that person see of their
+// own, so a person who stops sharing visits sees nobody's visits, and one
+// who stops sharing at all sees nobody.
+func seenLocationShareLevel(granted, sharedBack models.LocationShareLevel, limit models.LocationSharingLimit) models.LocationShareLevel {
+	return models.LessLocationShareLevel(granted, models.LessLocationShareLevel(sharedBack, limit.ShareLevelLimit))
+}
+
+// reachingLocationLevel is what one owner's shares give a viewer, and what
+// the viewer sees of it.
+type reachingLocationLevel struct {
+	granted models.LocationShareLevel
+	seen    models.LocationShareLevel
+}
+
+// reachingLocationLevels is, for each owner whose shares reach the viewer,
+// the level they give and the level the viewer sees, for one owner or, with
+// an empty identifier, for all of them.
+func (self *transaction) reachingLocationLevels(viewerUserId, ownerUserId string) (map[string]reachingLocationLevel, error) {
+	granted, err := self.grantedLocationLevels(viewerUserId, ownerUserId)
+	if err != nil || len(granted) == 0 {
+		return map[string]reachingLocationLevel{}, err
+	}
+	sharedBack, err := self.sharedLocationLevels(viewerUserId, ownerUserId)
+	if err != nil {
+		return nil, err
+	}
+	limits, err := self.GetLocationSharingLimits([]string{viewerUserId}, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	levels := make(map[string]reachingLocationLevel, len(granted))
+	for ownerId, level := range granted {
+		levels[ownerId] = reachingLocationLevel{granted: level, seen: seenLocationShareLevel(level, sharedBack[ownerId], limits[viewerUserId])}
+	}
+	return levels, nil
+}
+
+// grantedLocationLevels is the highest level each owner shares their
 // location with the viewer at, for one owner or, with an empty identifier,
-// for all of them.
-func (self *transaction) reachingLocationLevels(viewerUserId, ownerUserId string) (map[string]models.LocationShareLevel, error) {
+// for all of them, before what the viewer shares back is counted.
+func (self *transaction) grantedLocationLevels(viewerUserId, ownerUserId string) (map[string]models.LocationShareLevel, error) {
 	var rows []reachingLocationShareRow
 	if err := self.tx.Raw(reachingLocationSharesQuery,
 		sql.Named("viewer", viewerUserId), sql.Named("owner", ownerUserId),
@@ -322,7 +408,7 @@ func (self *transaction) GetLocationShareLevel(viewerUserId, ownerUserId string)
 	if err != nil {
 		return "", err
 	}
-	return levels[ownerUserId], nil
+	return levels[ownerUserId].seen, nil
 }
 
 func (self *transaction) ListLocationSharers(viewerUserId string) ([]*LocationSharer, error) {
@@ -348,7 +434,7 @@ func (self *transaction) ListLocationSharers(viewerUserId string) ([]*LocationSh
 			continue
 		}
 		sharers = append(sharers, &LocationSharer{
-			UserID: ownerId, Username: user.Username, Name: user.DisplayName(), ShareLevel: level, User: user,
+			UserID: ownerId, Username: user.Username, Name: user.DisplayName(), ShareLevel: level.seen, GrantedShareLevel: level.granted, User: user,
 		})
 	}
 	sort.Slice(sharers, func(first, second int) bool {
@@ -390,7 +476,7 @@ WHERE grantee.user_id <> @owner AND {GRANTEE_FILTER}
 		WHERE user_group.user_id = @owner AND role_permission.permission_key = @permission)
 GROUP BY grantee.user_id`
 
-func (self *transaction) ListLocationGrantees(ownerUserId string) ([]*LocationGrantee, error) {
+func (self *transaction) ListLocationGrantees(ownerUserId string, neededSharedBackLevel models.LocationShareLevel) ([]*LocationGrantee, error) {
 	if ownerUserId == "" {
 		return []*LocationGrantee{}, nil
 	}
@@ -406,11 +492,50 @@ ORDER BY reached.user_id ASC`, sql.Named("owner", ownerUserId),
 		sql.Named("permission", string(models.PermissionLocationUse))).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
+	userIds := make([]string, 0, len(rows))
+	for _, row := range rows {
+		userIds = append(userIds, row.UserID)
+	}
+	seeing, err := self.seeingLocation(ownerUserId, userIds, neededSharedBackLevel)
+	if err != nil {
+		return nil, err
+	}
 	grantees := make([]*LocationGrantee, 0, len(rows))
 	for _, row := range rows {
-		grantees = append(grantees, &LocationGrantee{UserID: row.UserID, AgentID: row.AgentID, SharedAt: row.SharedAt.In(time.Local)})
+		if seeing[row.UserID] {
+			grantees = append(grantees, &LocationGrantee{UserID: row.UserID, AgentID: row.AgentID, SharedAt: row.SharedAt.In(time.Local)})
+		}
 	}
 	return grantees, nil
+}
+
+// seeingLocation says which of the people the owner's location reaches see
+// it, by seenLocationShareLevel (what the owner shares with each, what each
+// shares back, and each one's own limit), and share at least
+// neededSharedBackLevel of their own back, within their limit.
+func (self *transaction) seeingLocation(ownerUserId string, userIds []string, neededSharedBackLevel models.LocationShareLevel) (map[string]bool, error) {
+	seeing := map[string]bool{}
+	if len(userIds) == 0 {
+		return seeing, nil
+	}
+	granted, err := self.sharedLocationLevels(ownerUserId, "")
+	if err != nil {
+		return nil, err
+	}
+	sharedBack, err := self.grantedLocationLevels(ownerUserId, "")
+	if err != nil {
+		return nil, err
+	}
+	limits, err := self.GetLocationSharingLimits(userIds, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	for _, userId := range userIds {
+		isSeen := seenLocationShareLevel(granted[userId], sharedBack[userId], limits[userId]).AtLeast(models.LocationShareLevelCurrent)
+		isSharedBack := models.LessLocationShareLevel(sharedBack[userId], limits[userId].ShareLevelLimit).AtLeast(neededSharedBackLevel)
+		seeing[userId] = isSeen && isSharedBack
+	}
+	return seeing, nil
 }
 
 func (self *transaction) FilterLocationGrantees(ownerUserId string, userIds []string) ([]string, error) {
@@ -424,7 +549,17 @@ ORDER BY reached.user_id ASC`, sql.Named("owner", ownerUserId), sql.Named("candi
 		sql.Named("permission", string(models.PermissionLocationUse))).Scan(&reached).Error; err != nil {
 		return nil, err
 	}
-	return reached, nil
+	seeing, err := self.seeingLocation(ownerUserId, reached, models.LocationShareLevelCurrent)
+	if err != nil {
+		return nil, err
+	}
+	kept := make([]string, 0, len(reached))
+	for _, userId := range reached {
+		if seeing[userId] {
+			kept = append(kept, userId)
+		}
+	}
+	return kept, nil
 }
 
 // endLocationSharesOutsideCircles deletes the location shares that only a

@@ -266,6 +266,43 @@ exist, are the same answer, "not found". The command line and the agent say
 "<name> shares only where they are now" for the one case where the person is
 known to the viewer and shares less than what was asked.
 
+### You see no more than you share
+
+A share is what the owner offers; what a viewer sees of it is never more than
+what they share back. The level a viewer gets is the lowest of three:
+
+- what the owner's shares give them,
+- what their own shares give the owner, and
+- their own **limit**: what their phone and a pause let anybody see of theirs.
+
+So a person who shares their visits with someone sees that person's visits; one
+who shares only where they are sees only where the other is; one who shares
+nothing sees nothing. The rule is in the same one place as the rest
+(`seenLocationShareLevel` behind `GetLocationShareLevel`), so the dashboard, the
+app, the command line, the agent and the live map all follow it.
+
+The limit comes from the app. It reports the phone's location permission and
+its own recording switch (`ReportLocationPermission`) when it opens and when
+either changes, and the server keeps the newest report (`location_permission`):
+
+| What the app said, or a pause | Limit | Reason |
+| --- | --- | --- |
+| a pause in effect | nothing | `paused` |
+| recording switched off in the app | nothing | `recording_off` |
+| Location off for the app, or not answered yet | nothing | `phone_location_off` |
+| While Using, which records no visits | `current` | `phone_while_using` |
+| Always | `history` | none |
+| nothing yet, from an app older than this | `history` | none |
+
+`ReadLocationSharingLimit` answers the caller's limit and its reason, and
+`ListSharedLocations` lists everyone who shares with the caller with
+`grantedShareLevel` (what they offer) beside `shareLevel` (what the caller
+sees); a person the caller sees nothing of is still listed, with no position,
+so the screen can say why. The app and the dashboard show a banner saying what
+is limited and what to change (Settings, Resume, or the Sharing screen), and
+the command line's `people` and the agent's `people` action say it in the same
+words (`LocationSharingLimitReason.Words`, `LocationShareBackWords`).
+
 A viewer never gets the owner's records about a place, only what draws it: the
 id, name, label, address, coordinates and kind. Not when the owner first went
 there, how naming went, the radius or the OpenStreetMap object. At `current` the
@@ -291,7 +328,9 @@ on their phones ("arrived home"). Not for a place the server only found a name
 for. Only for an arrival or departure within the last 15 minutes and after the
 share was made, so a phone that was offline for a day does not tell the family
 about yesterday; the same arrival is told once to one receiver in ten minutes;
-and only to receivers who may use Location and whose account is enabled. A
+only to receivers who may use Location and whose account is enabled, and only
+to receivers who share their own visits back with the person, within their
+limit: arrivals and departures are visits. A
 notification needs no agent: it goes through the same carrier chats use.
 
 An arrival at a place's circle is told three minutes after it, once the visit

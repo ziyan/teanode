@@ -81,3 +81,60 @@ func TestALocationPauseIsInEffectFromItsStartUntilItsEnd(t *testing.T) {
 		}
 	}
 }
+
+// The limit a phone and a pause put on a person's location: a pause or a
+// switch off shares nothing, While Using shares no visits, an app that never
+// reported is not limited.
+func TestALocationSharingLimitComesFromThePhoneAndThePause(t *testing.T) {
+	always := &LocationPermission{PhonePermission: LocationPhonePermissionAlways, IsRecordingOn: true}
+	whileUsing := &LocationPermission{PhonePermission: LocationPhonePermissionWhileUsing, IsRecordingOn: true}
+	off := &LocationPermission{PhonePermission: LocationPhonePermissionOff, IsRecordingOn: true}
+	switchedOff := &LocationPermission{PhonePermission: LocationPhonePermissionAlways}
+	for _, each := range []struct {
+		permission *LocationPermission
+		pause      *LocationPause
+		want       LocationSharingLimit
+	}{
+		{nil, nil, LocationSharingLimit{ShareLevelLimit: LocationShareLevelHistory}},
+		{always, nil, LocationSharingLimit{ShareLevelLimit: LocationShareLevelHistory}},
+		{whileUsing, nil, LocationSharingLimit{ShareLevelLimit: LocationShareLevelCurrent, SharingLimitReason: LocationSharingLimitReasonPhoneWhileUsing}},
+		{off, nil, LocationSharingLimit{SharingLimitReason: LocationSharingLimitReasonPhoneLocationOff}},
+		{switchedOff, nil, LocationSharingLimit{SharingLimitReason: LocationSharingLimitReasonRecordingOff}},
+		{always, &LocationPause{}, LocationSharingLimit{SharingLimitReason: LocationSharingLimitReasonPaused}},
+		{nil, &LocationPause{}, LocationSharingLimit{SharingLimitReason: LocationSharingLimitReasonPaused}},
+	} {
+		if got := LocationSharingLimitOf(each.permission, each.pause); got != each.want {
+			t.Errorf("%+v paused %v: %+v, want %+v", each.permission, each.pause != nil, got, each.want)
+		}
+	}
+	if LessLocationShareLevel(LocationShareLevelHistory, LocationShareLevelCurrent) != LocationShareLevelCurrent ||
+		LessLocationShareLevel(LocationShareLevelCurrent, "") != "" {
+		t.Error("the lower of two levels")
+	}
+}
+
+// What a person is told: a limit of their own phone or pause in its own
+// words, and a share they did not make back only when that is why.
+func TestTheWordsSayWhyLessIsSeen(t *testing.T) {
+	for _, reason := range []LocationSharingLimitReason{LocationSharingLimitReasonPaused, LocationSharingLimitReasonRecordingOff, LocationSharingLimitReasonPhoneLocationOff, LocationSharingLimitReasonPhoneWhileUsing} {
+		if reason.Words() == "" {
+			t.Errorf("%q has no words", reason)
+		}
+	}
+	if LocationSharingLimitReasonNone.Words() != "" {
+		t.Error("no limit, no words")
+	}
+	history, current := LocationShareLevelHistory, LocationShareLevelCurrent
+	if words := LocationShareBackWords("Sam", "", history, history); words == "" {
+		t.Error("nothing shared back")
+	}
+	if words := LocationShareBackWords("Sam", current, history, history); words == "" {
+		t.Error("only where they are shared back")
+	}
+	if words := LocationShareBackWords("Sam", current, history, current); words != "" {
+		t.Errorf("the phone is why, not the shares: %q", words)
+	}
+	if words := LocationShareBackWords("Sam", current, current, history); words != "" {
+		t.Errorf("Sam shares only where they are: %q", words)
+	}
+}

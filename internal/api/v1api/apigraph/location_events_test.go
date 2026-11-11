@@ -38,6 +38,7 @@ func received(events <-chan db.LocationEvent, userId string, wait time.Duration)
 // news.
 func TestAMapFollowsOnlyThoseSharingWithIt(t *testing.T) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	hub := &world.graph.locationEvents
 	adaEvents, releaseAda, err := hub.subscribe(world.database, world.ada.ID)
 	if err != nil {
@@ -235,6 +236,7 @@ func TestCheckingInWhereYouAreChangesNothing(t *testing.T) {
 // the owner's own records about it.
 func TestAViewerSeesAReducedPlace(t *testing.T) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	world.report(t, world.ada, pointInput(40, -75, ago(5*time.Minute)), visitInput("k1", 40, -75, ago(60*time.Minute), ""))
 	placeId := world.call(t, world.ada, `query { ListPlaces { places { id } } }`)["ListPlaces"].(map[string]any)["places"].([]any)[0].(map[string]any)["id"].(string)
 	world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, placeName: "Elm Cafe", placeLabel: "work", radiusMeters: 80) { id } }`, placeId))

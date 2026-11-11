@@ -1090,3 +1090,31 @@ func TestTravelModeSetsAndClearsAWay(t *testing.T) {
 		t.Error("a leg is needed")
 	}
 }
+
+// people says what limits what the person sees: their phone, once, and a
+// person they share less with than that person shares with them; somebody
+// they see nothing of is named, with why, and nothing else.
+func TestPeopleSaysWhyLessIsSeen(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ReadLocationSharingLimit": `{"shareLevelLimit":"current","sharingLimitReason":"phone_while_using"}`,
+		"ListSharedLocations": `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"current","grantedShareLevel":"history","latestPoint":null,"openVisit":null},
+			{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"","grantedShareLevel":"current","latestPoint":null,"openVisit":null}]`,
+	}}
+	answer, _, err := act(t, runOf(operations), "people", `{}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if words, _ := answer["sharing_limit"].(string); !strings.Contains(words, "While Using") {
+		t.Errorf("the phone's limit: %v", answer)
+	}
+	people := answer["people"].([]any)
+	if ben := people[0].(map[string]any); ben["why_less_is_seen"] != nil {
+		t.Errorf("ben is limited by the phone, not by the shares: %v", ben)
+	}
+	if cleo := people[1].(map[string]any); !strings.Contains(fmt.Sprint(cleo["why_less_is_seen"]), "do not share your location with Cleo") || cleo["at"] != nil {
+		t.Errorf("cleo is not seen, and why: %v", cleo)
+	}
+	if _, _, err := act(t, runOf(operations), "now", `{"person":"cleo"}`, false); err == nil || !strings.Contains(err.Error(), "sees nothing of cleo") {
+		t.Errorf("cleo's location: %v", err)
+	}
+}

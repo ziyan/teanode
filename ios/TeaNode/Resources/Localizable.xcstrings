@@ -96462,6 +96462,182 @@
           }
         }
       }
+    },
+    "You can't see anyone's location": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "誰の位置情報も見られません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你看不到任何人的位置"
+          }
+        }
+      }
+    },
+    "You can't see anyone's visits": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "誰の訪問履歴も見られません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你看不到任何人的到访记录"
+          }
+        }
+      }
+    },
+    "You see less of some people": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一部の人について見られる内容が少なくなっています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你对部分人能看到的内容较少"
+          }
+        }
+      }
+    },
+    "Your location is paused. Resume to see where people are again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報が一時停止中です。再開すると、みんなの居場所をまた見られます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的位置已暂停。恢复后即可再次看到大家在哪里。"
+          }
+        }
+      }
+    },
+    "Recording is off. Turn it on to see where people are again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記録がオフです。オンにすると、みんなの居場所をまた見られます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记录已关闭。打开后即可再次看到大家在哪里。"
+          }
+        }
+      }
+    },
+    "Location is off for TeaNode. Set it to Always in Settings to see where people are and their visits.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode の位置情報がオフです。「設定」で「常に」にすると、みんなの居場所と訪問履歴を見られます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 的位置功能已关闭。请在“设置”中将其设为“始终”，即可看到大家的位置和到访记录。"
+          }
+        }
+      }
+    },
+    "Location is set to While Using, so TeaNode can't record your visits. You see where people are now, but not where they've been. Set it to Always in Settings to see visits again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報が「使用中のみ」に設定されているため、TeaNode は訪問を記録できません。みんなの現在地は見られますが、行った場所は見られません。「設定」で「常に」にすると、訪問履歴をまた見られます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置权限设为“使用期间”，TeaNode 无法记录你的到访。你能看到大家现在的位置，但看不到他们去过哪里。请在“设置”中将其设为“始终”，即可再次看到到访记录。"
+          }
+        }
+      }
+    },
+    "You don't share your location with %@, so you can't see theirs.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ さんと位置情報を共有していないため、相手の位置情報は見られません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你没有与 %@ 共享你的位置，所以看不到对方的位置。"
+          }
+        }
+      }
+    },
+    "You share only where you are with %@, so you can't see their visits.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ さんには現在地だけを共有しているため、相手の訪問履歴は見られません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你只与 %@ 共享你当前所在的位置，所以看不到对方的到访记录。"
+          }
+        }
+      }
+    },
+    "Turn On Recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記録をオンにする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开记录"
+          }
+        }
+      }
+    },
+    "Share your location to see theirs": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報を共有すると、相手の位置情報を見られます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享你的位置，即可看到对方的位置"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

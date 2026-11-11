@@ -248,6 +248,11 @@ final class LocationRecorder {
     /// What the server said when it refused a pause or a resume made on the
     /// phone, until a screen has said it.
     private(set) var pauseRefusalText: String?
+    /// Counts the times the limit on the people the person sees may have
+    /// changed: the server took the phone's permission and recording switch,
+    /// or took a pause or a resume. The Location screen reads the people and
+    /// the limit again at each.
+    private(set) var sharingLimitRevision = 0
 
     /// The pause in effect now, with any change made on the phone applied.
     var activePause: LocationPause? {
@@ -340,6 +345,13 @@ final class LocationRecorder {
     /// Whether the places are being given to iOS again after a pause, so
     /// that two changes in a row do not do it twice at once.
     @ObservationIgnored private var isWatchingPlacesAgain = false
+    /// The permission and recording switch the server last took, and the
+    /// account it took them for; the one being sent is kept apart until the
+    /// server answers, so a second trigger does not send it twice.
+    @ObservationIgnored private var lastReportedPermission: LocationPermissionReport?
+    @ObservationIgnored private var lastReportedPermissionAccountKey: String?
+    @ObservationIgnored private var sendingPermission: LocationPermissionReport?
+    @ObservationIgnored private var sendingPermissionAccountKey: String?
     private let defaults: UserDefaults
     private let outboxDirectory: URL?
 
@@ -430,6 +442,7 @@ final class LocationRecorder {
             startLiveUpdates()
             schedulePauseEnd()
             sendPendingPauseChange(isForced: true)
+            reportPermissionIfChanged()
             Task {
                 await refreshPauseFromServer()
                 await flush(isForced: true)
@@ -487,6 +500,7 @@ final class LocationRecorder {
         }
         applyMonitoring()
         pauseDidChange()
+        reportPermissionIfChanged()
         Task { await flush(isForced: true) }
     }
 
@@ -544,6 +558,7 @@ final class LocationRecorder {
         applyMonitoring()
         startLiveUpdates()
         if !isOn, viewerCount == 0 { stopLiveUpdates() }
+        reportPermissionIfChanged()
     }
 
     // MARK: Pausing
@@ -752,6 +767,9 @@ final class LocationRecorder {
                 guard outbox.accountKey == accountKey else { return }
                 pauseTracker.changeWasTaken(change, answer: answer, at: Date())
                 pauseDidChange()
+                // The limit the server gives the people the person sees
+                // follows the pause.
+                sharingLimitRevision += 1
             } catch {
                 guard !Task.isCancelled, outbox.accountKey == accountKey else { return }
                 switch LocationPauseFailure.classify(error) {
@@ -848,7 +866,63 @@ final class LocationRecorder {
         applyMonitoring()
         startServiceSession()
         startLiveUpdates()
+        reportPermissionIfChanged()
         Task { await refreshPlaceWatch(isForced: true) }
+    }
+
+    // MARK: Telling the server what limits the people the person sees
+
+    /// The phone's permission and the recording switch as the server takes
+    /// them: Always, While Using, or off (denied, restricted or not chosen).
+    var permissionReport: LocationPermissionReport {
+        let phonePermission: LocationPhonePermission
+        switch authorizationStatus {
+        case .authorizedAlways: phonePermission = .always
+        case .authorizedWhenInUse: phonePermission = .whileUsing
+        case .notDetermined, .denied, .restricted: phonePermission = .off
+        @unknown default: phonePermission = .off
+        }
+        return LocationPermissionReport(phonePermission: phonePermission, isRecordingOn: isRecordingOn)
+    }
+
+    /// Tells the server the permission and the recording switch when they
+    /// differ from what it was last told for this account. Never waits: a
+    /// failed try is made again at the next trigger (the app becoming active,
+    /// a change of permission or of the switch, another account).
+    func reportPermissionIfChanged() {
+        #if DEBUG
+            if DemoServer.isRequested { return }
+        #endif
+        guard let connection = AppModel.shared.connection else { return }
+        let report = permissionReport
+        let accountKey = connection.accountKey
+        if lastReportedPermission == report, lastReportedPermissionAccountKey == accountKey { return }
+        if sendingPermission == report, sendingPermissionAccountKey == accountKey { return }
+        sendingPermission = report
+        sendingPermissionAccountKey = accountKey
+        Task { [weak self] in
+            let isTaken: Bool
+            do {
+                try await connection.reportLocationPermission(report)
+                isTaken = true
+            } catch {
+                isTaken = false
+            }
+            self?.permissionReportDidEnd(report, accountKey: accountKey, isTaken: isTaken)
+        }
+    }
+
+    private func permissionReportDidEnd(_ report: LocationPermissionReport, accountKey: String, isTaken: Bool) {
+        if sendingPermission == report, sendingPermissionAccountKey == accountKey {
+            sendingPermission = nil
+            sendingPermissionAccountKey = nil
+        }
+        guard isTaken else { return }
+        lastReportedPermission = report
+        lastReportedPermissionAccountKey = accountKey
+        sharingLimitRevision += 1
+        // What changed while the report was on its way is told now.
+        reportPermissionIfChanged()
     }
 
     // MARK: Monitoring

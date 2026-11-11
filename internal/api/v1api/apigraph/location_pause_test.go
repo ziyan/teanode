@@ -67,6 +67,7 @@ func TestAViewerSeesThePauseAndNoPositionWhilePaused(t *testing.T) {
 // viewerSeesThePause is one level of TestAViewerSeesThePauseAndNoPositionWhilePaused.
 func viewerSeesThePause(t *testing.T, level string) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	world.report(t, world.ada, pointInput(40, -75, ago(5*time.Minute)), visitInput("home", 40, -75, ago(20*time.Minute), ""))
 	world.call(t, world.ada, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: %q) { id } }`, world.ben.ID, level))
 	const viewed = `{ userId latestPoint { latitudeDegrees } openVisit { id } pause { ` + pauseFieldsForTest + ` } }`
@@ -126,6 +127,7 @@ func viewerSeesThePause(t *testing.T, level string) {
 // it was before.
 func TestAPauseThatEndedIsNotShown(t *testing.T) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	world.report(t, world.ada, pointInput(40, -75, ago(3*time.Hour)), "")
 	world.call(t, world.ada, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "current") { id } }`, world.ben.ID))
 	world.pastPause(t, world.ada, 2*time.Hour, time.Hour)
@@ -503,6 +505,7 @@ func TestAPositionTheBrowserGaveWaitsForTheLock(t *testing.T) {
 // history only, by the reach rules of the visits.
 func TestPausesAreListedByTheReachRulesOfVisits(t *testing.T) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	world.pastPause(t, world.ada, 3*time.Hour, 2*time.Hour)
 	world.pastPause(t, world.ada, 10*time.Hour, 9*time.Hour)
 	listing := func(userId string) string {
@@ -546,6 +549,7 @@ func TestErasingHistoryLeavesThePauseInEffect(t *testing.T) {
 // they read again and show the pause, and a report inside a pause is not news.
 func TestPausingAndResumingAreNewsToTheMapsFollowingThePerson(t *testing.T) {
 	world := newLocationWorld(t)
+	world.sharesBack(t, world.ben, world.ada)
 	world.call(t, world.ada, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "current") { id } }`, world.ben.ID))
 	hub := &world.graph.locationEvents
 	benEvents, releaseBen, err := hub.subscribe(world.database, world.ben.ID)

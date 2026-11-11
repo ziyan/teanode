@@ -207,6 +207,11 @@ public struct PersonLocation: Codable, Identifiable, Hashable, Sendable {
     public let avatarColorIndex: Int?
     /// "owner" for the person's own, else current or history.
     public let shareLevel: String
+    /// What the person's own shares give the caller: current, history, or
+    /// "" for nothing. `shareLevel` is the lower of this, what the caller
+    /// shares back and the caller's own limit; nil from a server that does
+    /// not say.
+    public let grantedShareLevel: String?
     public let latestPoint: LocationPoint?
     public let openVisit: PlaceVisit?
     /// The pause in effect, when the person has paused. For somebody else
@@ -219,6 +224,9 @@ public struct PersonLocation: Codable, Identifiable, Hashable, Sendable {
 
     public var id: String { userId }
     public var level: LocationShareLevel { LocationShareLevel(rawValue: shareLevel) ?? .current }
+    /// Whether the caller sees nothing of this person: they are listed, but
+    /// the server sends no position, visit or pause.
+    public var isHiddenFromCaller: Bool { shareLevel.isEmpty }
     public var displayName: String {
         guard let name, !name.isEmpty else { return username }
         return name
@@ -227,7 +235,7 @@ public struct PersonLocation: Codable, Identifiable, Hashable, Sendable {
     public init(
         userId: String, username: String, name: String? = nil, avatarUrl: String? = nil, avatarColorIndex: Int? = nil,
         shareLevel: String = "owner", latestPoint: LocationPoint? = nil, openVisit: PlaceVisit? = nil, pause: LocationPause? = nil,
-        notificationMute: LocationNotificationMute? = nil
+        notificationMute: LocationNotificationMute? = nil, grantedShareLevel: String? = nil
     ) {
         self.userId = userId
         self.username = username
@@ -235,6 +243,7 @@ public struct PersonLocation: Codable, Identifiable, Hashable, Sendable {
         self.avatarUrl = avatarUrl
         self.avatarColorIndex = avatarColorIndex
         self.shareLevel = shareLevel
+        self.grantedShareLevel = grantedShareLevel
         self.latestPoint = latestPoint
         self.openVisit = openVisit
         self.pause = pause
@@ -572,7 +581,7 @@ extension Documents {
         id startedAt endedAt
         """
     static let personLocationFields = """
-        userId username name avatarUrl avatarColorIndex shareLevel
+        userId username name avatarUrl avatarColorIndex shareLevel grantedShareLevel
         pause { id startedAt endedAt }
         notificationMute { mutedUntil }
         latestPoint { latitudeDegrees longitudeDegrees accuracyMeters altitudeMeters speedMetersPerSecond courseDegrees measuredAt locationSource }
@@ -583,6 +592,9 @@ extension Documents {
             visitCount lastVisitAt namingErrorMessage createdAt updatedAt
           }
         }
+        """
+    static let locationSharingLimitFields = """
+        shareLevelLimit sharingLimitReason phonePermission isRecordingOn reportedAt
         """
     static let foundPlaceFields = """
         placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson
@@ -714,6 +726,14 @@ extension Documents {
     public static let unshareLocation = """
         mutation ($shareId: String!) { UnshareLocation(shareId: $shareId) }
         """
+    public static let locationSharingLimit = """
+        query { ReadLocationSharingLimit { \(locationSharingLimitFields) } }
+        """
+    public static let reportLocationPermission = """
+        mutation ($phonePermission: String!, $isRecordingOn: Boolean!) {
+          ReportLocationPermission(phonePermission: $phonePermission, isRecordingOn: $isRecordingOn) { \(locationSharingLimitFields) }
+        }
+        """
     public static let locationEvents = """
         subscription { LocationEvents { userId } }
         """
@@ -727,7 +747,8 @@ extension Documents {
         "pauseLocation": pauseLocation, "resumeLocation": resumeLocation,
         "muteLocationNotifications": muteLocationNotifications, "unmuteLocationNotifications": unmuteLocationNotifications,
         "sharedLocations": sharedLocations, "locationShares": locationShares, "shareLocation": shareLocation,
-        "unshareLocation": unshareLocation, "locationEvents": locationEvents,
+        "unshareLocation": unshareLocation, "locationSharingLimit": locationSharingLimit,
+        "reportLocationPermission": reportLocationPermission, "locationEvents": locationEvents,
     ]
 }
 
@@ -927,6 +948,24 @@ extension Connection {
     public func sharedLocations() async throws -> [PersonLocation] {
         struct Answer: Decodable, Sendable { let ListSharedLocations: [PersonLocation] }
         return try await execute(Documents.sharedLocations, as: Answer.self).ListSharedLocations
+    }
+
+    /// What limits the caller's view of the people sharing with them: their
+    /// phone's location permission, the recording switch and a pause.
+    public func locationSharingLimit() async throws -> LocationSharingLimit {
+        struct Answer: Decodable, Sendable { let ReadLocationSharingLimit: LocationSharingLimit }
+        return try await execute(Documents.locationSharingLimit, as: Answer.self).ReadLocationSharingLimit
+    }
+
+    /// Tells the server the phone's location permission and whether the app
+    /// is recording, and gets the limit that follows from them.
+    @discardableResult
+    public func reportLocationPermission(_ permission: LocationPermissionReport) async throws -> LocationSharingLimit {
+        struct Answer: Decodable, Sendable { let ReportLocationPermission: LocationSharingLimit }
+        let variables: [String: JSONValue] = [
+            "phonePermission": .string(permission.phonePermission.rawValue), "isRecordingOn": .bool(permission.isRecordingOn),
+        ]
+        return try await execute(Documents.reportLocationPermission, variables: variables, as: Answer.self).ReportLocationPermission
     }
 
     /// The shares of the person's own location.
