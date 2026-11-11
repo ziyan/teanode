@@ -498,10 +498,17 @@ final class LocationRecorder {
             placeWatchRefreshedAt = .distantPast
             if hadPreviousAccount { arePlacesWatchedForPreviousAccount = true }
         }
-        applyMonitoring()
-        pauseDidChange()
-        reportPermissionIfChanged()
-        Task { await flush(isForced: true) }
+        // What follows reads the account and the connection from the model
+        // (the monitoring, the pause ending a visit open where it began, the
+        // permission report), and at launch the model is still being made:
+        // reading it from inside its own making stops the app. So it waits
+        // for the model, like the flush does.
+        Task {
+            applyMonitoring()
+            pauseDidChange()
+            reportPermissionIfChanged()
+            await flush(isForced: true)
+        }
     }
 
     /// An account was removed from the phone: what it had not sent can never
