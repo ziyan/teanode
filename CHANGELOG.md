@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.226.3] - 2026-11-11
+
+### Fixed
+
+- Typing an answer to a Claude Code question or plan no longer notifies the phone again with every key. (#752)
+
 ## [0.226.2] - 2026-11-11
 
 ### Fixed
