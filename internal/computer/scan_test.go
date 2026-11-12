@@ -1822,3 +1822,27 @@ func TestAProfileKeepsEveryAuthorAndSaysTheReadmeContinues(t *testing.T) {
 		t.Fatalf("the README's opening, saying where the rest is: %q", profile.Readme[len(profile.Readme)-80:])
 	}
 }
+
+// A profile says origin is where the repository lives, though git lists
+// a remote named before it first: another computer's checkout is matched
+// to the project by that remote, and a path on some other machine matches
+// nothing.
+func TestAProfileNamesOriginFirst(t *testing.T) {
+	root := t.TempDir()
+	run := func(arguments ...string) {
+		t.Helper()
+		command := exec.Command("git", arguments...)
+		command.Dir = root
+		command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Skipf("git is not usable here: %s: %s", err, output)
+		}
+	}
+	run("init", "-q", "-b", "main")
+	run("remote", "add", "origin", "git@git.example.com:garden/seedling.git")
+	run("remote", "add", "laptop", "laptop:/srv/alice/code/seedling/.git")
+	profile := repositoryProfile(context.Background(), root, nil)
+	if strings.Join(profile.Remotes, " ") != "git@git.example.com:garden/seedling.git laptop:/srv/alice/code/seedling/.git" {
+		t.Fatalf("every remote, origin first: %q", profile.Remotes)
+	}
+}

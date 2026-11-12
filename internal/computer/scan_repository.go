@@ -85,11 +85,20 @@ func repositoryProfile(ctx context.Context, directory string, tracked []string) 
 		profile.NewestTag = strings.TrimSpace(tag)
 	}
 	if remotes, err := git(ctx, directory, "remote", "-v"); err == nil {
+		// Origin first: git lists remotes by name, and the first one is
+		// what the profile says the repository lives at, which is how a
+		// checkout on another computer is matched to it. A remote named
+		// before origin may be a path on some other machine.
 		seen := map[string]bool{}
 		for _, line := range strings.Split(remotes, "\n") {
 			fields := strings.Fields(line)
-			if len(fields) >= 2 && !seen[fields[1]] {
-				seen[fields[1]] = true
+			if len(fields) < 2 || seen[fields[1]] {
+				continue
+			}
+			seen[fields[1]] = true
+			if fields[0] == "origin" {
+				profile.Remotes = append([]string{fields[1]}, profile.Remotes...)
+			} else {
 				profile.Remotes = append(profile.Remotes, fields[1])
 			}
 		}
