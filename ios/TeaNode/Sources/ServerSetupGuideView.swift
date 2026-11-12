@@ -47,12 +47,14 @@ struct ServerSetupGuideView: View {
                 Text("Run it on that computer. It installs Docker on Linux if it is missing, then starts TeaNode and its database.")
             }
             Section {
-                Text("Open http://127.0.0.1:8080 on that computer. The first person to open it creates the administrator account. Then choose the model service your agent thinks with, OpenAI, Anthropic, Gemini or your own, and press Start my assistant.")
+                // Addresses to type are code, so they are not links: on the phone
+                // they would open the phone itself.
+                Text("Open `http://127.0.0.1:8080` on that computer. The first person to open it creates the administrator account. Then choose the model service your agent thinks with, OpenAI, Anthropic, Gemini or your own, and press Start my assistant.")
             } header: {
                 Text("3. Claim the first account")
             }
             Section {
-                Text("This app signs in only over https. Put a reverse proxy with a certificate in front of port 8080, such as Caddy, nginx with Let's Encrypt, or a tunnel service, on a name such as teanode.example.com.")
+                Text("This app signs in only over https. Put a reverse proxy with a certificate in front of port 8080, such as Caddy, nginx with Let's Encrypt, or a tunnel service, on a name such as `teanode.example.com`.")
             } header: {
                 Text("4. Give it an https address")
             }

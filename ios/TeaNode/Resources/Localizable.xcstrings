@@ -96847,22 +96847,6 @@
         }
       }
     },
-    "Open http://127.0.0.1:8080 on that computer. The first person to open it creates the administrator account. Then choose the model service your agent thinks with, OpenAI, Anthropic, Gemini or your own, and press Start my assistant.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "そのコンピュータで http://127.0.0.1:8080 を開きます。最初に開いた人が管理者アカウントを作ります。次に、エージェントが考えるのに使うモデルサービス（OpenAI、Anthropic、Gemini、または自前のもの）を選び、「アシスタントを始める」を押します。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在那台电脑上打开 http://127.0.0.1:8080。第一个打开它的人会创建管理员账户。然后选择你的代理用来思考的模型服务（OpenAI、Anthropic、Gemini 或你自己的），再点“启动我的助手”。"
-          }
-        }
-      }
-    },
     "3. Claim the first account": {
       "localizations": {
         "ja": {
@@ -96875,22 +96859,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "3. 创建第一个账户"
-          }
-        }
-      }
-    },
-    "This app signs in only over https. Put a reverse proxy with a certificate in front of port 8080, such as Caddy, nginx with Let's Encrypt, or a tunnel service, on a name such as teanode.example.com.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このアプリは https でのみサインインします。ポート 8080 の前に証明書付きのリバースプロキシ（Caddy、Let's Encrypt を使う nginx、トンネルサービスなど）を置き、teanode.example.com のような名前にします。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这个应用只通过 https 登录。在 8080 端口前放一个带证书的反向代理，比如 Caddy、配合 Let's Encrypt 的 nginx 或隧道服务，使用 teanode.example.com 这样的域名。"
           }
         }
       }
@@ -96987,6 +96955,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "完整指南也介绍了如何托管你自己的邮件。"
+          }
+        }
+      }
+    },
+    "Open `http://127.0.0.1:8080` on that computer. The first person to open it creates the administrator account. Then choose the model service your agent thinks with, OpenAI, Anthropic, Gemini or your own, and press Start my assistant.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのコンピュータで `http://127.0.0.1:8080` を開きます。最初に開いた人が管理者アカウントを作ります。次に、エージェントが考えるのに使うモデルサービス（OpenAI、Anthropic、Gemini、または自前のもの）を選び、「アシスタントを始める」を押します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在那台电脑上打开 `http://127.0.0.1:8080`。第一个打开它的人会创建管理员账户。然后选择你的代理用来思考的模型服务（OpenAI、Anthropic、Gemini 或你自己的），再点“启动我的助手”。"
+          }
+        }
+      }
+    },
+    "This app signs in only over https. Put a reverse proxy with a certificate in front of port 8080, such as Caddy, nginx with Let's Encrypt, or a tunnel service, on a name such as `teanode.example.com`.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリは https でのみサインインします。ポート 8080 の前に証明書付きのリバースプロキシ（Caddy、Let's Encrypt を使う nginx、トンネルサービスなど）を置き、`teanode.example.com` のような名前にします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个应用只通过 https 登录。在 8080 端口前放一个带证书的反向代理，比如 Caddy、配合 Let's Encrypt 的 nginx 或隧道服务，使用 `teanode.example.com` 这样的域名。"
           }
         }
       }
