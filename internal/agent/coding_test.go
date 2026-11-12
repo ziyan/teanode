@@ -179,6 +179,45 @@ func TestACheckoutElsewhereIsKnownByItsRemote(t *testing.T) {
 	}
 }
 
+// A checkout with a second remote, another repository it is only
+// compared against, is the repository its first known remote names: the
+// other repository's page is not shown. When memory does not know the
+// first, the next one it knows is the checkout's.
+func TestACheckoutIsTheRepositoryOfItsFirstKnownRemote(t *testing.T) {
+	world := newCodingWorld(t)
+	other := world.page(t, "projects/greenhouse", "greenhouse", "Greenhouse keeps the shared build images.",
+		"Greenhouse images are rebuilt every week.")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := putKeyedRepositoryFact(tx, world.agent.ID, other.ID, "remote", "Lives at git@git.example.com:garden/greenhouse.git.", "0abcdef"); err != nil {
+			t.Fatalf("putKeyedRepositoryFact: %s", err)
+		}
+		if err := putKeyedRepositoryFact(tx, world.agent.ID, world.project.ID, "remote", "Lives at git@git.example.com:garden/seedling.git.", "0123456"); err != nil {
+			t.Fatalf("putKeyedRepositoryFact: %s", err)
+		}
+	})
+	start := func(remotes ...string) *CodingContext {
+		request := &CodingRequest{Directory: "/work/checkouts/seedling", ComputerName: "laptop", HomeDirectory: "/srv/alice", RemoteURLs: remotes}
+		shown, err := world.run.agent.CodingSessionStart(context.Background(), world.agent, world.run.settings.Owner, request)
+		if err != nil {
+			t.Fatalf("CodingSessionStart: %s", err)
+		}
+		return shown
+	}
+
+	shown := start("ssh://git@git.example.com/garden/seedling", "https://git.example.com/garden/greenhouse.git")
+	if shown.ProjectPath != "projects/seedling" {
+		t.Fatalf("the first remote names the checkout's repository: %q", shown.ProjectPath)
+	}
+	if strings.Contains(shown.Text, "projects/greenhouse") {
+		t.Fatalf("the other remote's page is not this checkout's:\n%s", shown.Text)
+	}
+
+	unknownFirst := start("https://git.example.com/someone/seedling-fork.git", "git@git.example.com:garden/seedling.git")
+	if unknownFirst.ProjectPath != "projects/seedling" {
+		t.Fatalf("a remote memory does not know is passed over: %q", unknownFirst.ProjectPath)
+	}
+}
+
 func TestRemotesAreComparedAsRepositories(t *testing.T) {
 	for remote, want := range map[string]string{
 		"ssh://git@git.example.com:22/garden/seedling.git": "git.example.com/garden/seedling",

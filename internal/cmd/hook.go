@@ -222,9 +222,15 @@ func codingPlaceAt(ctx context.Context, command *cli.Command, directory, session
 	}
 	// With -z each entry is the key, a newline and the value, ended by a
 	// NUL, so a value is read whole whatever it holds.
+	// Origin first: the server takes the first remote it knows as the
+	// checkout's repository, and another remote may be a different one.
 	for _, entry := range strings.Split(git("config", "-z", "--get-regexp", `^remote\..*\.url$`), "\x00") {
-		if _, remote, isEntry := strings.Cut(entry, "\n"); isEntry && remote != "" {
-			place.RemoteURLs = append(place.RemoteURLs, remote)
+		if key, remote, isEntry := strings.Cut(entry, "\n"); isEntry && remote != "" {
+			if key == "remote.origin.url" {
+				place.RemoteURLs = append([]string{remote}, place.RemoteURLs...)
+			} else {
+				place.RemoteURLs = append(place.RemoteURLs, remote)
+			}
 		}
 	}
 	return place
