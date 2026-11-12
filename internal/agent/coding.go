@@ -86,7 +86,8 @@ type CodingRequest struct {
 	// the commit it is at, and its top directory. A checkout on another
 	// computer is the same project only when it is the same repository,
 	// whatever its path, and memory read at another commit may not say
-	// what is here.
+	// what is here. The remotes come origin first, and the first one
+	// memory knows names the repository.
 	RemoteURLs   []string
 	Head         string
 	CheckoutRoot string
@@ -498,21 +499,14 @@ func checkoutByPath(tx db.Transaction, agentId string, request *CodingRequest, d
 }
 
 func checkoutByRemote(tx db.Transaction, agentId string, request *CodingRequest, directory string) (*codingCheckout, error) {
-	wanted := map[string]bool{}
-	for _, remote := range request.RemoteURLs {
-		if normalized := normalizeRemote(remote); normalized != "" {
-			wanted[normalized] = true
-		}
-	}
-	if len(wanted) == 0 {
+	if len(request.RemoteURLs) == 0 {
 		return nil, nil
 	}
 	facts, err := tx.ListAgentFactsStartingWith(agentId, remoteLinePrefix, 0)
 	if err != nil {
 		return nil, err
 	}
-	var holding []*models.AgentFact
-	repository := ""
+	linesOf := map[string][]*models.AgentFact{}
 	for _, fact := range facts {
 		// The line a profile wrote, not a sentence of the person's that
 		// happens to start the same way ("Lives at the old house.").
@@ -520,9 +514,20 @@ func checkoutByRemote(tx db.Transaction, agentId string, request *CodingRequest,
 			continue
 		}
 		remote := strings.TrimSuffix(strings.TrimPrefix(fact.Text, remoteLinePrefix), ".")
-		if normalized := normalizeRemote(remote); wanted[normalized] {
-			holding = append(holding, fact)
-			repository = path.Base(normalized)
+		if normalized := normalizeRemote(remote); normalized != "" {
+			linesOf[normalized] = append(linesOf[normalized], fact)
+		}
+	}
+	// The checkout is one repository: the first of its remotes memory
+	// knows, origin coming first. Another remote may be a different
+	// repository the checkout only compares against, and its pages are
+	// not this checkout's.
+	var holding []*models.AgentFact
+	repository := ""
+	for _, remote := range request.RemoteURLs {
+		if normalized := normalizeRemote(remote); len(linesOf[normalized]) > 0 {
+			holding, repository = linesOf[normalized], path.Base(normalized)
+			break
 		}
 	}
 	if len(holding) == 0 {
@@ -920,7 +925,7 @@ func cutWords(text string, limit int) string {
 func renderCodingStart(result *CodingContext) string {
 	var text strings.Builder
 	if result.ProjectPath != "" {
-		fmt.Fprintf(&text, "TeaNode, the person's agent, remembers this about the checkout at %s (page %s). Facts are cited as page#number; its memory tool reads a page whole.\n", result.CheckoutDirectory, result.ProjectPath)
+		fmt.Fprintf(&text, "TeaNode, the person's agent, remembers this about the checkout at %s (page %s). Facts are cited as page#number; its memory tool, or `teanode agent memory get <page>`, reads a page whole.\n", result.CheckoutDirectory, result.ProjectPath)
 		if result.ReadFrom != "" {
 			text.WriteString(result.ReadFrom + "\n")
 		}

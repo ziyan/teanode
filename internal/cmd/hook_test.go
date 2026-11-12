@@ -207,8 +207,8 @@ func TestTheHookReadsTheCheckoutFromGit(t *testing.T) {
 	}
 	run("init", "-q")
 	run("commit", "-q", "--allow-empty", "-m", "first")
-	run("remote", "add", "origin", "git@git.example.com:garden/seedling.git")
 	run("remote", "add", "mirror", "https://git.example.net/garden/seedling")
+	run("remote", "add", "origin", "git@git.example.com:garden/seedling.git")
 
 	command := &cli.Command{Flags: []cli.Flag{&cli.StringFlag{Name: "computer", Value: "workbench"}}}
 	place := codingPlaceAt(context.Background(), command, filepath.Join(root, "cmd"), "session")
@@ -218,9 +218,10 @@ func TestTheHookReadsTheCheckoutFromGit(t *testing.T) {
 	if len(place.Head) != 40 {
 		t.Fatalf("the commit: %q", place.Head)
 	}
-	slices.Sort(place.RemoteURLs)
+	// Origin first, wherever git keeps it: the server takes the first
+	// remote it knows as the checkout's repository.
 	if strings.Join(place.RemoteURLs, " ") != "git@git.example.com:garden/seedling.git https://git.example.net/garden/seedling" {
-		t.Fatalf("every remote: %q", place.RemoteURLs)
+		t.Fatalf("every remote, origin first: %q", place.RemoteURLs)
 	}
 }
 
