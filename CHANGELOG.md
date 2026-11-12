@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.226.4] - 2026-11-12
+
+### Fixed
+
+- A Claude Code or Codex session in a checkout with more than one git remote is shown its own repository's memory, not another remote's, and a checkout on one computer is matched to the same repository profiled on another even when that one has a second remote. (#753)
+
 ## [0.226.3] - 2026-11-11
 
 ### Fixed
