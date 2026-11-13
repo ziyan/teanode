@@ -238,3 +238,9 @@ private fun ProposedRow(entry: ShoppingReceiptEntry, receipt: ShoppingReceipt, i
         }
     }
 }
+
+/** The sheet of what a receipt did to the shopping lists, for the Finance screens that show a receipt. */
+@Composable
+fun ShoppingReceiptSheetOf(connection: Connection, financeReceiptId: String, onDismiss: () -> Unit) {
+    ShoppingReceiptSheet(connection, financeReceiptId, onDismiss, onChanged = {})
+}
