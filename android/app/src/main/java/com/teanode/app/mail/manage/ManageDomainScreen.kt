@@ -1,5 +1,8 @@
 package com.teanode.app.mail.manage
 
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -77,7 +80,15 @@ import com.teanode.kit.mail.updateDomainAlias
 import com.teanode.kit.mail.updateDomainDkimSelector
 import com.teanode.kit.mail.updateDomainLinkHost
 import com.teanode.kit.mail.updateDomainMailServers
+import com.teanode.kit.mail.DomainLayout
+import com.teanode.kit.mail.DomainTemplate
+import com.teanode.kit.mail.deleteDomainLayout
+import com.teanode.kit.mail.deleteDomainLogo
+import com.teanode.kit.mail.deleteDomainTemplate
+import com.teanode.kit.mail.uploadDomainLogo
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** What is loaded for the page of one domain. */
 class DomainPage(val domain: ManagedDomain, val overview: DomainOverview?, val templates: DomainTemplates?, val mailboxes: List<ServerMailbox>)
@@ -102,6 +113,29 @@ fun DomainScreen(domainId: String, onBack: () -> Unit, connection: Connection = 
     var editing by remember { mutableStateOf<String?>(null) }
     var editedText by remember { mutableStateOf("") }
     var isConfirmingKey by remember { mutableStateOf(false) }
+    var subPage by remember { mutableStateOf<DomainSubPage?>(null) }
+    var removingTemplate by remember { mutableStateOf<DomainTemplate?>(null) }
+    var removingLayout by remember { mutableStateOf<DomainLayout?>(null) }
+    var isRemovingLogo by remember { mutableStateOf(false) }
+    val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { address ->
+        if (address != null) {
+            scope.launch {
+                try {
+                    val bytes = withContext(Dispatchers.IO) { context.contentResolver.openInputStream(address)?.use { stream -> stream.readBytes() } ?: ByteArray(0) }
+                    val fileName = withContext(Dispatchers.IO) {
+                        context.contentResolver.query(address, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                    } ?: "logo.svg"
+                    connection.uploadDomainLogo(domainId, fileName, bytes)
+                    snackbar.show(context.getString(R.string.mail_manage_logo_published))
+                    page.refresh()
+                } catch (failed: kotlinx.coroutines.CancellationException) {
+                    throw failed
+                } catch (failed: Throwable) {
+                    snackbar.showError(failed)
+                }
+            }
+        }
+    }
 
     fun run(said: String?, work: suspend () -> Unit) {
         scope.launch {
@@ -117,6 +151,13 @@ fun DomainScreen(domainId: String, onBack: () -> Unit, connection: Connection = 
         }
     }
 
+    subPage?.let { opened ->
+        DomainSubPageScreen(
+            opened, page.value?.domain?.domainName.orEmpty(), onBack = { subPage = null },
+            onChanged = { said -> subPage = null; snackbar.show(said); scope.launch { page.refresh() } },
+        )
+        return
+    }
     TeaNodeScreen(
         title = page.value?.domain?.domainName ?: stringResource(R.string.mail_manage_domain),
         onBack = onBack,
@@ -136,13 +177,27 @@ fun DomainScreen(domainId: String, onBack: () -> Unit, connection: Connection = 
                 TeaNodeSectionHeader(stringResource(R.string.mail_manage_dns_records))
                 val records = domain.dnsCheck?.records ?: emptyList()
                 if (records.isEmpty()) Text(stringResource(R.string.mail_manage_dns_not_checked), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                for (record in records) DnsRecordRow(record)
+                for (record in records) DnsRecordRow(record, onOpen = { subPage = DomainSubPage.Record(record) })
                 domain.dnsCheck?.errorMessage?.takeIf { text -> text.isNotEmpty() }?.let { text -> Text(text, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 TeaNodeSectionHeader(stringResource(R.string.mail_manage_settings))
                 TeaNodeRow(headline = stringResource(R.string.mail_manage_mail_servers), supporting = (domain.mailServers ?: emptyList()).joinToString(", ").ifEmpty { stringResource(R.string.mail_manage_none_set) }, onClick = { editing = "servers"; editedText = (domain.mailServers ?: emptyList()).joinToString(", ") })
                 TeaNodeRow(headline = stringResource(R.string.mail_manage_link_host), supporting = (domain.linkHost ?: domain.linkHostname).orEmpty().ifEmpty { stringResource(R.string.mail_manage_none_set) }, onClick = { editing = "link"; editedText = domain.linkHost.orEmpty() })
                 TeaNodeRow(headline = stringResource(R.string.mail_manage_dkim_selector), supporting = domain.dkimSelector.orEmpty().ifEmpty { stringResource(R.string.mail_manage_none_set) }, onClick = { editing = "selector"; editedText = domain.dkimSelector.orEmpty() })
                 TeaNodeRow(headline = stringResource(R.string.mail_manage_regenerate_key), supporting = stringResource(if (domain.hasDkimKey == true) R.string.mail_manage_has_key else R.string.mail_manage_no_key), onClick = { isConfirmingKey = true })
+                TeaNodeSectionHeader(stringResource(R.string.mail_manage_your_logo))
+                val logo = domain.logo
+                if (logo != null) {
+                    DetailRow(stringResource(R.string.mail_manage_file), logo.filename)
+                    logo.title?.takeIf { text -> text.isNotEmpty() }?.let { text -> Text(stringResource(R.string.mail_manage_logo_titled, text), Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    DetailRow(stringResource(R.string.mail_manage_uploaded), ManageLabels.fullTime(logo.uploadedAt))
+                } else {
+                    Text(stringResource(R.string.mail_manage_no_logo), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { logoPicker.launch(arrayOf("image/svg+xml")) }) { Text(stringResource(if (logo == null) R.string.mail_manage_upload_logo else R.string.mail_manage_replace_logo)) }
+                    if (logo != null) OutlinedButton(onClick = { isRemovingLogo = true }) { Text(stringResource(R.string.mail_manage_remove_logo), color = MaterialTheme.colorScheme.error) }
+                }
+                Text(stringResource(R.string.mail_manage_logo_footer), Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TeaNodeSectionHeader(stringResource(R.string.mail_manage_aliases))
                 val aliases = domain.aliases ?: emptyList()
                 if (aliases.isEmpty()) Text(stringResource(R.string.mail_manage_no_aliases), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -158,7 +213,11 @@ fun DomainScreen(domainId: String, onBack: () -> Unit, connection: Connection = 
                 if (credentials.isEmpty()) Text(stringResource(R.string.mail_manage_no_credentials), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 for (credential in credentials) {
                     TeaNodeRow(
-                        headline = credential.comment?.ifEmpty { null } ?: stringResource(R.string.mail_manage_unnamed_credential), supporting = credential.alias?.takeIf { alias -> alias.isNotEmpty() }?.let { alias -> stringResource(R.string.mail_manage_only_as, alias) },
+                        headline = credential.comment?.ifEmpty { null } ?: stringResource(R.string.mail_manage_unnamed_credential), supporting = listOfNotNull(
+                            credential.alias?.takeIf { alias -> alias.isNotEmpty() }?.let { alias -> stringResource(R.string.mail_manage_only_as, alias) },
+                            if (credential.isDisabled == true) stringResource(R.string.mail_manage_disabled) else null,
+                        ).joinToString(" · ").ifEmpty { null },
+                        onClick = { subPage = DomainSubPage.Credential(credential) },
                         trailing = { IconButton(onClick = { removingCredential = credential }) { Icon(Icons.Outlined.Delete, stringResource(R.string.mail_remove), tint = MaterialTheme.colorScheme.error) } },
                     )
                 }
@@ -166,9 +225,49 @@ fun DomainScreen(domainId: String, onBack: () -> Unit, connection: Connection = 
                 val templates = loaded.templates
                 if (templates != null) {
                     TeaNodeSectionHeader(stringResource(R.string.mail_manage_templates))
-                    if (templates.templates.isEmpty() && templates.layouts.isEmpty()) Text(stringResource(R.string.mail_manage_no_templates), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    for (template in templates.templates) TeaNodeRow(headline = template.name, supporting = template.locales.joinToString(", ").ifEmpty { null })
-                    for (layout in templates.layouts) TeaNodeRow(headline = layout.comment?.ifEmpty { null } ?: stringResource(R.string.mail_manage_layout), supporting = layout.locales.joinToString(", ").ifEmpty { null })
+                    if (templates.templates.isEmpty()) Text(stringResource(R.string.mail_manage_no_templates), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val layoutTitles = templates.layouts.associate { layout -> layout.id to (layout.comment?.ifEmpty { null } ?: stringResource(R.string.mail_manage_untitled_layout)) }
+                    for (template in templates.templates) {
+                        val layoutName = template.layoutId?.takeIf { id -> id.isNotEmpty() }?.let { id -> layoutTitles[id] }
+                        val variables = template.variables ?: emptyList()
+                        val details = listOfNotNull(
+                            if (layoutName != null) stringResource(R.string.mail_manage_in_layout, layoutName) else stringResource(R.string.mail_manage_no_layout),
+                            if (variables.isEmpty()) stringResource(R.string.mail_manage_reads_no_variables) else stringResource(R.string.mail_manage_reads_variables, variables.joinToString(", ")),
+                            ManageLabels.relativeTime(template.modifiedAt)?.let { changed -> stringResource(R.string.mail_manage_changed_ago, changed) },
+                        ).joinToString(" · ")
+                        TeaNodeRow(
+                            headline = template.name, supporting = listOfNotNull(template.comment?.ifEmpty { null }, details).joinToString("\n"),
+                            onClick = { subPage = DomainSubPage.Template(template.id, layoutName) },
+                            trailing = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(template.locales.joinToString(" "), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    IconButton(onClick = { removingTemplate = template }) { Icon(Icons.Outlined.Delete, stringResource(R.string.mail_remove), tint = MaterialTheme.colorScheme.error) }
+                                }
+                            },
+                        )
+                    }
+                    Text(stringResource(R.string.mail_manage_templates_footer), Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TeaNodeSectionHeader(stringResource(R.string.mail_manage_layouts))
+                    if (templates.layouts.isEmpty()) Text(stringResource(R.string.mail_manage_no_layouts), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val usedCounts = DomainLayout.templateCountByLayoutId(templates.templates)
+                    for (layout in templates.layouts) {
+                        val usedCount = usedCounts[layout.id] ?: 0
+                        val details = listOfNotNull(
+                            if (usedCount == 1) stringResource(R.string.mail_manage_used_by_one) else stringResource(R.string.mail_manage_used_by_many, usedCount),
+                            ManageLabels.relativeTime(layout.modifiedAt)?.let { changed -> stringResource(R.string.mail_manage_changed_ago, changed) },
+                        ).joinToString(" · ")
+                        TeaNodeRow(
+                            headline = layout.comment?.ifEmpty { null } ?: stringResource(R.string.mail_manage_untitled_layout), supporting = details,
+                            onClick = { subPage = DomainSubPage.Layout(layout.id) },
+                            trailing = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(layout.locales.joinToString(" "), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    IconButton(onClick = { removingLayout = layout }) { Icon(Icons.Outlined.Delete, stringResource(R.string.mail_remove), tint = MaterialTheme.colorScheme.error) }
+                                }
+                            },
+                        )
+                    }
+                    Text(stringResource(R.string.mail_manage_layouts_footer) + "\n" + stringResource(R.string.mail_manage_written_on_dashboard), Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             if (isAddingAlias || editedAlias != null) {
@@ -188,6 +287,27 @@ fun DomainScreen(domainId: String, onBack: () -> Unit, connection: Connection = 
         }
     }
 
+    removingTemplate?.let { template ->
+        ConfirmationDialog(
+            title = stringResource(R.string.mail_manage_remove_template_question, template.name), text = stringResource(R.string.mail_manage_remove_template_message), confirmLabel = stringResource(R.string.mail_remove), isDestructive = true,
+            onConfirm = { removingTemplate = null; run(context.getString(R.string.mail_manage_removed)) { connection.deleteDomainTemplate(template.id) } }, onDismiss = { removingTemplate = null },
+        )
+    }
+    removingLayout?.let { layout ->
+        val usedCount = DomainLayout.templateCountByLayoutId(page.value?.templates?.templates ?: emptyList())[layout.id] ?: 0
+        ConfirmationDialog(
+            title = stringResource(R.string.mail_manage_remove_layout_question),
+            text = if (usedCount > 0) stringResource(R.string.mail_manage_remove_layout_used, usedCount) else stringResource(R.string.mail_manage_remove_layout_unused),
+            confirmLabel = stringResource(R.string.mail_remove), isDestructive = true,
+            onConfirm = { removingLayout = null; run(context.getString(R.string.mail_manage_removed)) { connection.deleteDomainLayout(layout.id) } }, onDismiss = { removingLayout = null },
+        )
+    }
+    if (isRemovingLogo) {
+        ConfirmationDialog(
+            title = stringResource(R.string.mail_manage_remove_logo_question), text = stringResource(R.string.mail_manage_remove_logo_message), confirmLabel = stringResource(R.string.mail_manage_remove_logo), isDestructive = true,
+            onConfirm = { isRemovingLogo = false; run(context.getString(R.string.mail_manage_logo_removed)) { connection.deleteDomainLogo(domainId) } }, onDismiss = { isRemovingLogo = false },
+        )
+    }
     removingAlias?.let { alias ->
         ConfirmationDialog(
             title = stringResource(R.string.mail_manage_remove_alias_question, alias.pattern.orEmpty()), text = stringResource(R.string.mail_manage_remove_alias_message), confirmLabel = stringResource(R.string.mail_remove), isDestructive = true,
@@ -268,14 +388,11 @@ private fun aliasDestination(alias: DomainAlias, mailboxes: List<ServerMailbox>)
 
 /** One DNS record a domain should publish: what, where, what it should say, and whether it is there. */
 @Composable
-fun DnsRecordRow(record: DNSRecord) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+fun DnsRecordRow(record: DNSRecord, onOpen: (() -> Unit)? = null) {
+    Column(Modifier.fillMaxWidth().then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier).padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("${record.recordType.orEmpty()}  ${record.name.orEmpty()}", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
-            ManageTag(
-                stringResource(if (record.isVerified == true) R.string.mail_manage_dns_published else if (record.isOptional == true) R.string.mail_manage_dns_optional else R.string.mail_manage_dns_missing_record),
-                if (record.isVerified == true) ManagedTone.Good else if (record.isOptional == true) ManagedTone.Plain else ManagedTone.Warn,
-            )
+            DnsRecordTag(record)
         }
         SelectionContainer { Text(record.publishedValue, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         record.purpose?.takeIf { purpose -> purpose.isNotEmpty() }?.let { purpose -> Text(purpose, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }

@@ -16,10 +16,10 @@ import com.teanode.kit.Connection
 import com.teanode.kit.contacts.AddressBook
 import com.teanode.kit.contacts.ContactAccount
 import com.teanode.kit.contacts.ContactAccountSuggestion
-import com.teanode.kit.contacts.ContactCircle
+import com.teanode.kit.circles.PeopleCircle
+import com.teanode.kit.circles.circles
 import com.teanode.kit.contacts.ContactSummary
 import com.teanode.kit.contacts.addressBooks
-import com.teanode.kit.contacts.circles
 import com.teanode.kit.contacts.contactAccountSuggestions
 import com.teanode.kit.contacts.contacts
 import com.teanode.kit.contacts.createCircleAddressBook
@@ -47,7 +47,7 @@ class ContactsModel(val connection: Connection, private val context: Context) {
         private set
     var books by mutableStateOf(emptyList<AddressBook>())
         private set
-    var circlesWithoutBook by mutableStateOf(emptyList<ContactCircle>())
+    var circlesWithoutBook by mutableStateOf(emptyList<PeopleCircle>())
         private set
     var contacts by mutableStateOf(emptyList<ContactSummary>())
         private set
@@ -155,7 +155,7 @@ class ContactsModel(val connection: Connection, private val context: Context) {
         circlesWithoutBook = circles.filter { circle -> !withBook.contains(circle.id) }
     }
 
-    suspend fun makeBook(circle: ContactCircle) {
+    suspend fun makeBook(circle: PeopleCircle) {
         try {
             val made = connection.createCircleAddressBook(circle.id)
             say(context.getString(R.string.contacts_book_made))

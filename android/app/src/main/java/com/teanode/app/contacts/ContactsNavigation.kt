@@ -73,7 +73,7 @@ fun NavGraphBuilder.contactsRoutes(navigator: AppNavigator) {
     }
     composable(ContactsRoutes.VISITS, arguments = listOf(stringArgument("userId")), deepLinks = Routes.deepLinks(ContactsRoutes.VISITS)) { entry ->
         val nav = LocalAppNavigator.current
-        PersonVisitsScreen(LocalConnection.current, entry.arguments?.getString("userId").orEmpty(), onBack = { nav.back() })
+        PersonVisitsScreen(entry.arguments?.getString("userId").orEmpty(), onBack = { nav.back() })
     }
 }
 
