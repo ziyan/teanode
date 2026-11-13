@@ -429,9 +429,11 @@ fun DomainLayout.languages(): List<TemplateLanguage> =
 fun TemplateContentSections(languages: List<TemplateLanguage>, chosenLocale: String, onChoose: (String) -> Unit) {
     val chosen = languages.firstOrNull { language -> language.locale == chosenLocale } ?: languages.firstOrNull() ?: return
     if (languages.size > 1) {
-        ChipRow {
-            for (language in languages) {
-                FilterChip(selected = language.locale == chosen.locale, onClick = { onChoose(language.locale) }, label = { Text(language.locale.ifEmpty { stringResource(R.string.mail_manage_default) }) })
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            ChipRow {
+                for (language in languages) {
+                    FilterChip(selected = language.locale == chosen.locale, onClick = { onChoose(language.locale) }, label = { Text(language.locale.ifEmpty { stringResource(R.string.mail_manage_default) }) })
+                }
             }
         }
     }

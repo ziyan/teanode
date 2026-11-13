@@ -107,6 +107,22 @@ object ContactsDemoData {
               {"id":"visit-0","place":{"id":"place-2","placeName":"Corner Cafe","latitudeDegrees":10.6,"longitudeDegrees":20.6,"isNamedByPerson":true,"placeLabel":"","addressText":"2 Example Road","visitCount":9,"lastVisitAt":"${hoursAgo(5)}"},"arrivedAt":"${hoursAgo(8)}","departedAt":"${hoursAgo(5)}","durationSeconds":10800,"latitudeDegrees":10.6,"longitudeDegrees":20.6,"photoCount":0}],"nextOffset":null}
         """.trimIndent()
 
+    val points: String
+        get() = (0 until 8).joinToString(",", "[", "]") { step ->
+            """{"latitudeDegrees":${10.50 + step * 0.0015},"longitudeDegrees":${20.50 + step * 0.0012},"accuracyMeters":12,"measuredAt":"${hoursAgo(8L - step)}"}"""
+        }
+
+    val pauses: String
+        get() = """[{"id":"pause-1","startedAt":"${hoursAgo(5)}","endedAt":"${hoursAgo(4)}"}]"""
+
+    val trips: String
+        get() = """
+            {"trips":[{"id":"trip-1","startedAt":"${hoursAgo(5)}","endedAt":"${hoursAgo(4)}","durationSeconds":1800,"distanceMeters":2400,
+              "fromPlace":{"id":"place-2","placeName":"Corner Cafe","latitudeDegrees":10.6,"longitudeDegrees":20.6},
+              "toPlace":{"id":"place-1","placeName":"Fixture Park","latitudeDegrees":10.5,"longitudeDegrees":20.5},
+              "legs":[{"id":"leg-1","startedAt":"${hoursAgo(5)}","endedAt":"${hoursAgo(4)}","durationSeconds":1800,"distanceMeters":2400,"travelMode":"walk","detectedTravelMode":"walk","isTravelModeCorrected":false,"detectionSource":"motion"}]}],"nextOffset":null}
+        """.trimIndent()
+
     val places: String = """
         {"places":[{"id":"place-1","placeName":"Fixture Park","latitudeDegrees":10.5,"longitudeDegrees":20.5,"isNamedByPerson":false,"placeLabel":"","addressText":"","visitCount":3,"lastVisitAt":null},
                    {"id":"place-2","placeName":"Corner Cafe","latitudeDegrees":10.6,"longitudeDegrees":20.6,"isNamedByPerson":true,"placeLabel":"","addressText":"2 Example Road","visitCount":9,"lastVisitAt":null},
@@ -129,6 +145,9 @@ object ContactsDemoData {
         graphQLField("ListCirclePeople") { _ -> "[$PERSON_SAM,$PERSON_ALEXA,$PERSON_PAT]" },
         graphQLField("ReadPersonCard") { variables -> personCard(variables) },
         graphQLField("ListLocationVisits") { _ -> visits },
+        graphQLField("ListLocationPoints") { _ -> points },
+        graphQLField("ListLocationPauses") { _ -> pauses },
+        graphQLField("ListTrips") { _ -> trips },
         graphQLField("ListPlaces") { _ -> places },
         graphQLField("SaveContact") { _ -> """{"id":"contact-new","name":"New Contact"}""" },
         graphQLField("DeleteContact", "true"),
