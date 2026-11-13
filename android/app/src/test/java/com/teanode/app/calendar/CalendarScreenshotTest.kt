@@ -94,8 +94,9 @@ class CalendarScreenshotTest {
 
     @Test fun `find a time light`() {
         draw(Look.Light) { FindATimeScreen(rememberCalendarModel(), "demo-user") }
-        composeRule.onNodeWithText("Ben Example (ben)").performClick()
-        composeRule.onNodeWithText("Cora Example (cora)").performClick()
+        settle()
+        composeRule.onNodeWithText("Sam Rivera (sam)").performClick()
+        composeRule.onNodeWithText("Alex Chen (alex)").performClick()
         composeRule.onNodeWithText("Find times").performClick()
         settle()
         composeRule.photograph("calendar-find-a-time-light")
