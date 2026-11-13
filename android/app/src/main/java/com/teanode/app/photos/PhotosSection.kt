@@ -115,7 +115,7 @@ fun PhotosSection(
     val context = androidx.compose.ui.platform.LocalContext.current
     var section by rememberSaveable { mutableStateOf(initialSection) }
     var scale by rememberSaveable { mutableStateOf(initialScale) }
-    var filter by remember { mutableStateOf(PhotoFilter()) }
+    var filter by remember { mutableStateOf(PhotoFilterRequest.take() ?: PhotoFilter()) }
     var isSearching by rememberSaveable { mutableStateOf(false) }
     var searchText by rememberSaveable { mutableStateOf("") }
     var isSelecting by rememberSaveable { mutableStateOf(initialIsSelecting) }

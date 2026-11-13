@@ -77,9 +77,9 @@ fun LocationChosenPersonHeader(person: PersonLocation, close: () -> Unit, mute: 
 
 /** The visits and places of the person chosen: their day when they share their history, else a line saying only where they are is shared. */
 @Composable
-fun LocationChosenPersonVisits(state: PersonVisitsState, person: PersonLocation, onOpenPlace: (LocationPlace) -> Unit) {
+fun LocationChosenPersonVisits(state: PersonVisitsState, person: PersonLocation, onOpenPlace: (LocationPlace) -> Unit, onOpenPersonTravel: ((String) -> Unit)? = null) {
     if (person.level == LocationShareLevel.History) {
-        LocationPersonVisitsList(state, onOpenPlace)
+        LocationPersonVisitsList(state, onOpenPlace, onOpenTravel = onOpenPersonTravel?.let { open -> { open(person.userId) } })
     } else {
         Text(stringResource(R.string.location_shares_where_now_only, person.displayName), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
