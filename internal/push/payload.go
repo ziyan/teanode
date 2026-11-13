@@ -239,6 +239,45 @@ func (self *Delivery) voipNotification(now time.Time) (*Notification, error) {
 	return &Notification{PushType: PushTypeVoIP, Priority: 10, ExpiresAt: expiresAt, Payload: payload}, nil
 }
 
+// fcmMessage is the delivery as Firebase takes it for an Android phone: data
+// only, the sealed content and what the app needs before it has decrypted
+// anything. There is nothing for the system to draw, so the app does, after
+// decrypting; the relay and Google never see the words.
+//
+// A ring (the phone's voip registration) is a call-kind message of high
+// priority that lives only voipLifetime, for the app to show a full-screen
+// incoming call; it is never collapsed with another, as two calls are two
+// rings. An ordinary alert is high priority too, since a chat message that
+// waits for the phone to wake is late.
+func (self *Delivery) fcmMessage(pushType string, now time.Time) (*FCMMessage, error) {
+	if pushType == PushTypeLiveActivity {
+		return nil, fmt.Errorf("%w: Live Activities are the iPhone's", ErrRefused)
+	}
+	lifetime, lifetimeMost, pushKind := deliveryLifetime, deliveryLifetimeMost, FCMPushKindNotification
+	if pushType == PushTypeVoIP {
+		lifetime, lifetimeMost, pushKind = voipLifetime, voipLifetimeMost, FCMPushKindCall
+	}
+	expiresAt, err := self.sealedExpiry(now, lifetime, lifetimeMost)
+	if err != nil {
+		return nil, err
+	}
+	message := &FCMMessage{
+		Data:           map[string]string{FCMDataSealed: self.Sealed, FCMDataPushKind: pushKind},
+		IsHighPriority: true,
+		TimeToLive:     expiresAt.Sub(now),
+	}
+	if pushType != PushTypeVoIP {
+		message.CollapseKey = self.CollapseID
+		if self.ThreadID != "" {
+			message.Data[FCMDataThreadID] = self.ThreadID
+		}
+	}
+	if fcmDataBytes(message.Data) > payloadBytesMost {
+		return nil, ErrTooLarge
+	}
+	return message, nil
+}
+
 // activityNotification is the delivery as Apple takes it for a Live
 // Activity: written here from the state alone.
 func (self *Delivery) activityNotification(now time.Time) (*Notification, error) {

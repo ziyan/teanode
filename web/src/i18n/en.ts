@@ -1051,6 +1051,8 @@ export const en = {
   'phones.none': 'No phones yet. Connect one to talk to your agent from it and be told when something needs you.',
   'phones.unnamed': 'A phone with no name',
   'phones.notified': 'Notifications on',
+  'phones.platformIos': 'iPhone',
+  'phones.platformAndroid': 'Android',
   'phones.notRegistered': 'Notifications off on this phone',
   'phones.lastFailed': 'Last notification failed',
   'phones.test': 'Send a test notification',

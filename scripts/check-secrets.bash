@@ -125,6 +125,19 @@ readonly ALLOWED_HOSTS=(
   # sends to.
   .apple.com
 
+  # Google's public services, which the Android app's push relay and update
+  # channel name: the Firebase Cloud Messaging API and the OAuth endpoint its
+  # service account trades with, the type URL its error answers carry, and
+  # the two places an Android update is installed from (Firebase's tester
+  # distribution and Google Play).
+  fcm.googleapis.com
+  oauth2.googleapis.com
+  www.googleapis.com
+  type.googleapis.com
+  appdistribution.firebase.google.com
+  appdistribution.firebase.dev
+  play.google.com
+
   # The iPhone app's bundle and app group identifiers. They are written like
   # host names in reverse, from the project's own domain, and name no
   # machine. A leading dot also allows group.com.teanode.app.
