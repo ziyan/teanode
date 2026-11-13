@@ -117,6 +117,8 @@ class SettingsScreenshotTest {
     @Test fun `agent when away light`() = shoot("settings-agent-when-away-light") { AgentSettingsPartScreen(AgentSettingsPart.WhenAway, onBack = {}) }
 
     @Test fun `manage light`() = shoot("settings-manage-light") { ManageScreen(onBack = {}, onOpen = {}) }
+    @Test fun `manage dark`() = shoot("settings-manage-dark", AppearanceChoice.Dark) { ManageScreen(onBack = {}, onOpen = {}) }
+    @Test fun `manage largest text`() = shoot("settings-manage-largest-text", fontScale = 2f) { ManageScreen(onBack = {}, onOpen = {}) }
     @Test fun `people light`() = shoot("settings-people-light") { PeopleScreen(onBack = {}) }
     @Test fun `people dark`() = shoot("settings-people-dark", AppearanceChoice.Dark) { PeopleScreen(onBack = {}) }
     @Test fun `people largest text`() = shoot("settings-people-largest-text", fontScale = 2f) { PeopleScreen(onBack = {}) }
@@ -171,4 +173,31 @@ class SettingsScreenshotTest {
     @Test fun `circle new dialog light`() = shoot("settings-dialog-circle-new-light", before = tap("New circle")) { CirclesScreen(onBack = {}, onOpenCircle = {}, onOpenSharing = {}) }
     @Test fun `skill lend dialog light`() = shoot("settings-dialog-skill-lend-light", before = tap("Lend a skill")) { SkillSharingScreen(onBack = {}) }
     @Test fun `circles offer largest text`() = shoot("settings-dialog-circle-new-largest-text", fontScale = 2f, before = tap("New circle")) { CirclesScreen(onBack = {}, onOpenCircle = {}, onOpenSharing = {}) }
+
+    @Test fun `sources largest text`() = shoot("settings-sources-largest-text", fontScale = 2f) { KnowledgeSourcesScreen(onBack = {}) }
+    @Test fun `memory largest text`() = shoot("settings-memory-largest-text", fontScale = 2f) { AgentMemorySettingsScreen(onBack = {}) }
+    @Test fun `schedules largest text`() = shoot("settings-schedules-largest-text", fontScale = 2f) { SchedulesScreen(onBack = {}) }
+    @Test fun `connections largest text`() = shoot("settings-connections-largest-text", fontScale = 2f) { ConnectionsScreen(onBack = {}) }
+    @Test fun `activity largest text`() = shoot("settings-activity-largest-text", fontScale = 2f) { AgentActivityScreen(onBack = {}) }
+    @Test fun `agents-admin largest text`() = shoot("settings-agents-admin-largest-text", fontScale = 2f) { AgentAdminScreen(onBack = {}) }
+    @Test fun `server-about largest text`() = shoot("settings-server-about-largest-text", fontScale = 2f) { ServerSettingsScreen(onBack = {}) }
+    @Test fun `circle member dark`() = shoot("settings-circle-member-dark", AppearanceChoice.Dark) { CircleDetailScreen("circle-club", onBack = {}) }
+    @Test fun `circle member largest text`() = shoot("settings-circle-member-largest-text", fontScale = 2f) { CircleDetailScreen("circle-club", onBack = {}) }
+    @Test fun `server setup light`() = shoot("settings-server-setup-light", before = { composeRule.onNodeWithText("Setup").performClick() }) { ServerSettingsScreen(onBack = {}) }
+    @Test fun `server setup dark`() = shoot("settings-server-setup-dark", AppearanceChoice.Dark, before = { composeRule.onNodeWithText("Setup").performClick() }) { ServerSettingsScreen(onBack = {}) }
+    @Test fun `server setup largest text`() = shoot("settings-server-setup-largest-text", fontScale = 2f, before = { composeRule.onNodeWithText("Setup").performClick() }) { ServerSettingsScreen(onBack = {}) }
+    @Test fun `server mail dark`() = shoot("settings-server-mail-dark", AppearanceChoice.Dark, before = { composeRule.onNodeWithText("Mail").performClick() }) { ServerSettingsScreen(onBack = {}) }
+    @Test fun `server mail largest text`() = shoot("settings-server-mail-largest-text", fontScale = 2f) { ServerSettingsScreen(onBack = {}, initialTab = com.teanode.kit.manage.ServerSettingsTab.Mail) }
+    @Test fun `server sending light`() = shoot("settings-server-sending-light", before = { composeRule.onNodeWithText("Sending").performClick() }) { ServerSettingsScreen(onBack = {}) }
+    @Test fun `server sending largest text`() = shoot("settings-server-sending-largest-text", fontScale = 2f) { ServerSettingsScreen(onBack = {}, initialTab = com.teanode.kit.manage.ServerSettingsTab.Sending) }
+    @Test fun `server sso light`() = shoot("settings-server-sso-light") { ServerSettingsScreen(onBack = {}, initialTab = com.teanode.kit.manage.ServerSettingsTab.Sso) }
+    @Test fun `server sso dark`() = shoot("settings-server-sso-dark", AppearanceChoice.Dark) { ServerSettingsScreen(onBack = {}, initialTab = com.teanode.kit.manage.ServerSettingsTab.Sso) }
+    @Test fun `server sso largest text`() = shoot("settings-server-sso-largest-text", fontScale = 2f) { ServerSettingsScreen(onBack = {}, initialTab = com.teanode.kit.manage.ServerSettingsTab.Sso) }
+    @Test fun `people edit dialog light`() = shoot("settings-dialog-person-new-light", before = tap("New user")) { PeopleScreen(onBack = {}) }
+    @Test fun `people edit dialog dark`() = shoot("settings-dialog-person-new-dark", AppearanceChoice.Dark, before = tap("New user")) { PeopleScreen(onBack = {}) }
+    @Test fun `submission dialog light`() = shoot("settings-dialog-submission-light", before = { composeRule.onNodeWithText("Setup").performClick(); composeRule.waitForIdle(); composeRule.onAllNodes(androidx.compose.ui.test.hasScrollAction())[1].performScrollToNode(androidx.compose.ui.test.hasText("What to tell a mail client")); composeRule.onNodeWithText("What to tell a mail client").performClick() }) { ServerSettingsScreen(onBack = {}) }
+    @Test fun `mail program dialog dark`() = shoot("settings-dialog-mail-program-dark", AppearanceChoice.Dark, before = { composeRule.onNodeWithText("Setup").performClick(); composeRule.waitForIdle(); composeRule.onAllNodes(androidx.compose.ui.test.hasScrollAction())[1].performScrollToNode(androidx.compose.ui.test.hasText("Reading mail in a mail program")); composeRule.onNodeWithText("Reading mail in a mail program").performClick() }) { ServerSettingsScreen(onBack = {}) }
+    @Test fun `schedule editor largest text`() = shoot("settings-dialog-schedule-new-largest-text", fontScale = 2f, before = tap("New schedule")) { SchedulesScreen(onBack = {}) }
+    @Test fun `source editor typed dark`() = shoot("settings-dialog-source-typed-dark", AppearanceChoice.Dark, before = { tap("Add a source")(); composeRule.onNodeWithText("Kind of source").performClick(); composeRule.waitForIdle(); composeRule.onNodeWithText("webfeed").performClick() }) { KnowledgeSourcesScreen(onBack = {}) }
+    @Test fun `token dialog dark`() = shoot("settings-dialog-token-new-dark", AppearanceChoice.Dark, before = tap("New token")) { TokensScreen(onBack = {}) }
 }

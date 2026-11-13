@@ -224,7 +224,7 @@ fun FormDialog(
             androidx.compose.material3.Surface(shape = MaterialTheme.shapes.extraLarge, tonalElevation = 6.dp, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(title, style = MaterialTheme.typography.headlineSmall)
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { content() }
+                    Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(4.dp)) { content() }
                     androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
                         TextButton(onClick = onConfirm, enabled = isConfirmEnabled && !isWorking) { Text(confirmLabel) }

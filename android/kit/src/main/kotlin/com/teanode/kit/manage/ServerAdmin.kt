@@ -57,6 +57,7 @@ data class ServerUpgrade(
 
 /** One of the tabs of the server's settings page, with the sections of `GetSettings` it edits. */
 enum class ServerSettingsTab(val serverName: String, val sections: List<String>) {
+    Setup("setup", emptyList()),
     Identity("identity", listOf("identity")),
     Mail("mail", listOf("smtp")),
     Sending("sending", listOf("relay", "proxy")),

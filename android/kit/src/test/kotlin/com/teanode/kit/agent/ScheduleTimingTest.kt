@@ -57,4 +57,36 @@ class ScheduleTimingTest {
         assertFalse(ScheduleMailTrigger.isComplete(listOf(ScheduleMailCondition("header", header = "", value = "x"))))
         assertTrue(ScheduleMailTrigger.isComplete(listOf(ScheduleMailCondition("header", header = "List-Id", value = "x"), ScheduleMailCondition("from", value = "a@example.com"))))
     }
+
+    private fun spaced(text: String): String = text.replace('\u202F', ' ').replace('\u00A0', ' ')
+
+    @Test
+    fun aPlainCronLineIsDescribedAndAnyOtherIsLeftAlone() {
+        assertEquals(ScheduleTiming.DayPattern.Weekdays, ScheduleTiming.of("30 7 * * 1-5")!!.dayPattern)
+        assertEquals(7, ScheduleTiming.of("30 7 * * 1-5")!!.hour)
+        assertEquals(30, ScheduleTiming.of("30 7 * * 1-5")!!.minute)
+        assertEquals(ScheduleTiming.DayPattern.OneDay(7), ScheduleTiming.of("0 9 * * 0")!!.dayPattern)
+        assertEquals(ScheduleTiming.DayPattern.EveryDay, ScheduleTiming.of("0 9 * * 1,2,3,4,5,6,0")!!.dayPattern)
+        assertEquals(ScheduleTiming.DayPattern.Weekends, ScheduleTiming.of("0 10 * * 6,0")!!.dayPattern)
+        assertEquals(ScheduleTiming.DayPattern.SomeDays(listOf(1, 3, 5)), ScheduleTiming.of("0 9 * * 1,3,5")!!.dayPattern)
+        for (unplain in listOf("*/15 * * * *", "0 9 1 * *", "0 9 * 6 1", "0 9 * * 1-5/2", "@in 20m", "@at 2030-01-02 09:00", "60 9 * * *", "0 24 * * *", "0 +9 * * *", "0 9 * *")) {
+            assertNull(ScheduleTiming.of(unplain), unplain)
+        }
+    }
+
+    @Test
+    fun aTimeIsWrittenTheLocalesWay() {
+        assertEquals("7:30 AM", spaced(ScheduleTiming.of("30 7 * * 1-5")!!.timeText(java.util.Locale.US)))
+        assertEquals("5:00 PM", spaced(ScheduleTiming.of("0 17 * * 5")!!.timeText(java.util.Locale.US)))
+        assertEquals("17:00", ScheduleTiming.of("0 17 * * 5")!!.timeText(java.util.Locale.UK))
+    }
+
+    @Test
+    fun daysAreNamedTheLocalesWay() {
+        assertEquals("Friday", ScheduleWeekday.name(5, java.util.Locale.US))
+        assertTrue(ScheduleWeekday.name(5, java.util.Locale.JAPAN) != "Friday")
+        assertEquals("Mon, Wed, and Fri", ScheduleWeekday.shortNamesText(listOf(1, 3, 5), java.util.Locale.US))
+        assertEquals("Mon and Fri", ScheduleWeekday.shortNamesText(listOf(5, 1), java.util.Locale.US))
+        assertEquals("Sun", ScheduleWeekday.shortNamesText(listOf(7), java.util.Locale.US))
+    }
 }

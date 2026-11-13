@@ -38,7 +38,7 @@ in `android/app/src/main/java/com/teanode/app/settings` and `.../search`; screen
 | AgentUpkeep.swift | `agent/AgentUpkeep.kt`, `agent/KnowledgeSources.kt`, `agent/ScheduleTiming.kt` | `AgentUpkeepTest`, `KnowledgeSourcesTest`, `ScheduleTimingTest` | done |
 | Circles.swift | `circles/Circles.kt` | `CirclesTest` | done |
 | DeviceSetup.swift | `devicesetup/DeviceSetup.kt` | `DeviceSetupTest` | done |
-| ManageServer.swift | `manage/AgentAdmin.kt`, `manage/ServerAdmin.kt` | `AgentAdminTest`, `ServerAdminTest` | partly (no Setup tab) |
+| ManageServer.swift | `manage/AgentAdmin.kt`, `manage/ServerAdmin.kt` | `AgentAdminTest`, `ServerAdminTest` | done |
 | Services.swift | `services/Services.kt` (capabilities are the foundation's) | none | done |
 | Sharing.swift | `sharing/Sharing.kt` (the stop calls carry the mutations of each kind) | `SharingTest` | done |
 | SkillSharing.swift | `skillsharing/SkillSharing.kt` | `SkillSharingTest` | done |
@@ -66,7 +66,7 @@ are the iPhone app's documents character for character.
 
 | iOS file | Android | Status |
 | --- | --- | --- |
-| ManageServerViews.swift: Server tabs | `ServerScreens.kt` (+ kit `manage/ServerAdmin.kt`, `ServerAdminTest`): tabs for identity, mail, sending, listeners, certificates, storage, resolver, scanning, sessions and SSO, built from the sections `GetSettings` returns (switch, number, text, list of words, secret, shown value) with a Save for each section. Secrets are never read back: a sealed value is shown as kept, sent only when typed, cleared with an empty value | partly: the Setup tab (addresses and submission access) and editing SSO providers are not ported; SSO providers are shown read-only |
+| ManageServerViews.swift: Server tabs | `ServerScreens.kt` (+ kit `manage/ServerAdmin.kt`, `ServerAdminTest`): tabs for identity, mail, sending, listeners, certificates, storage, resolver, scanning, sessions and SSO, built from the sections `GetSettings` returns (switch, number, text, list of words, secret, shown value) with a Save for each section. Secrets are never read back: a sealed value is shown as kept, sent only when typed, cleared with an empty value | done in round 4 (the Setup tab and SSO editing are below) |
 | ManageServerViews.swift: About, restart | About tab: instance, version and commit, running since, settings waiting for a restart, Restart the server, check for and apply an upgrade | done |
 | ManageServerViews.swift: mail delivery | the Manage hub links to the mail area's delivery pages (`mail/manage/*`) | done (those pages belong to the mail part) |
 | ManageServerViews.swift: Usage | `AgentUsageScreen` (+ kit `AgentUsageRow`, `AgentDeadJob`, `usageBounds`): group by day, agent or model, range, tokens, calls and cost, jobs given up on | done |
@@ -80,3 +80,16 @@ are the iPhone app's documents character for character.
 
 Not verified: everything that needs a real server, phone or credential (saving a server section, a restart, an upgrade, a
 source secret reaching a computer). The kit tests and the demo screenshots cover the calls and the screens only.
+
+
+## Round 4
+
+| iOS file | Android | Status |
+| --- | --- | --- |
+| ManageServerViews.swift: Setup tab | `ServerSetupScreens.kt` (+ kit `manage/ServerSetup.kt`, `ServerSetupTest`): this server's address (A, AAAA, why none), how outgoing mail identifies itself (sends from, reverse name, greeting name, each with OK or Change and the advice), what to tell a mail client and a mail program, each opening a form that follows the server when empty | done |
+| ManageServerViews.swift: identity providers | `SsoProvidersTab`: every provider (ID, button text, issuer URL, client ID, client secret, groups claim, create accounts), add, remove, the redirect URL to register. The secret is never read back: a stored one shows "Kept as stored; type to replace" and is sent only when typed | done |
+| ManageServerViews.swift: Server tabs | the tab row is now About, Setup and the ten settings tabs | done |
+| AgentUpkeepViews.swift: schedule words | `UpkeepWords.kt` (+ kit `ScheduleTiming.timeText`, `ScheduleWeekday.name`, `shortNamesText`; tests `ScheduleTimingTest`, `UpkeepWordsTest`): "Weekdays at 7:30 AM", "Fridays at 5:00 PM", "Every Mon, Wed, and Fri at 9:00 AM", "When mail arrives: From contains ..."; any other line is shown as written | done |
+| AgentUpkeepViews.swift: memory words | question state, question kind and answer verdict in the reader's words | done |
+| ManageMailViews.swift (mail delivery pages) | already covered by the mail part: `mail/manage/*` has the overview, all mail, one message with its authentication, spam rules, deliveries, rendered body, source and headers, the queue, reports and one report with its records, domains, one domain with its settings, DNS records, aliases, credentials, templates and layout. Checked page by page against the iOS list; nothing duplicated here, and the Manage hub links to them | done |
+| People edit dialog picture | the demo now answers the access session as an operator, so People, Groups and Roles show their buttons | done |

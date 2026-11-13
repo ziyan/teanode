@@ -80,6 +80,19 @@ val settingsDemoAnswerers: List<DemoAnswerer> = listOf(
           "settings":[{"name":"feedUrl","description":"where the feed is","settingType":"string","pattern":"","itemPattern":"","isRequired":true},{"name":"maximumItems","description":"how many items to keep","settingType":"integer","pattern":"","itemPattern":"","isRequired":false,"minimum":1,"maximum":500}],
           "secrets":[{"key":"accessToken","description":"the token the feed asks for","isOptional":true}]}]""",
     ),
+    // The access session the People, Groups and Roles pages read: an operator, so their buttons show.
+    DemoAnswerer { request ->
+        if (request.document.contains("impersonatorUsername")) {
+            DemoResponse("""{"data":{"GetSession":{"userId":"demo-user","permissions":{"everywhere":["circle:use","location:use","health:use","journal:use","passwords:use","shopping:use","photos:use","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","domain:manage"]},"impersonatorUsername":null}}}""")
+        } else {
+            null
+        }
+    },
+    graphQLFields(
+        "GetServerAddresses" to """{"ipv4":"192.0.2.10","ipv6":null,"error":null}""",
+        "GetOutgoingIdentity" to """{"address":"192.0.2.10","via":"direct","reverseName":"mail.example.com","forwardAddresses":["192.0.2.11"],"confirmed":false,"helloName":"mail.example.com","helloAddresses":["192.0.2.10"],"helloMatches":true,"unknown":null}""",
+        "GetSettings" to """{"submission":{"host":null,"port":0,"effectiveHost":"mail.example.com","effectivePort":"587"},"imap":{"host":null,"port":0,"tlsPort":0,"effectiveHost":"mail.example.com","effectivePort":"143","effectiveTlsPort":"993"}}""",
+    ),
     graphQLField("GetServerStatus", """{"instance":"server-1","version":"1.42.0","commit":"abcdef0123456789abcdef","startedAt":"2030-01-01T00:00:00Z","uptimeSeconds":345600,"pendingRestart":["listen.https"],"supervision":"container","restarting":false}"""),
     graphQLField("GetUpgrade", """{"current":"1.42.0","latest":"1.43.0","available":true,"notes":"Fixes and a faster mail queue.","checkedAt":"2030-01-05T00:00:00Z","applicable":true,"automatic":false,"enabled":true,"upgrading":false}"""),
     graphQLField(

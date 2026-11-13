@@ -92,6 +92,24 @@ object ScheduleWeekday {
         return numbers.toList()
     }
 
+    /** A day's name as the locale writes it: "Friday". */
+    fun name(dayNumber: Int, locale: java.util.Locale = java.util.Locale.getDefault()): String =
+        java.time.DayOfWeek.of(dayNumber).getDisplayName(java.time.format.TextStyle.FULL, locale)
+
+    /** Some days' short names in week order and in a list the locale's way: "Mon, Wed, and Fri", "Mon and Fri". */
+    fun shortNamesText(dayNumbers: List<Int>, locale: java.util.Locale = java.util.Locale.getDefault()): String {
+        val names = dayNumbers.distinct().sorted().map { day -> java.time.DayOfWeek.of(day).getDisplayName(java.time.format.TextStyle.SHORT, locale) }
+        return when (locale.language) {
+            "en" -> when (names.size) {
+                0, 1 -> names.joinToString("")
+                2 -> names.joinToString(" and ")
+                else -> names.dropLast(1).joinToString(", ") + ", and " + names.last()
+            }
+            "ja", "zh" -> names.joinToString("\u3001")
+            else -> names.joinToString(", ")
+        }
+    }
+
     /** A cron day-of-week field for these day numbers: `*` for all, else a list. */
     fun cronField(dayNumbers: List<Int>): String {
         val days = dayNumbers.distinct().sorted()
@@ -110,6 +128,10 @@ data class ScheduleTiming(val hour: Int, val minute: Int, val dayNumbers: List<I
     }
 
     val dayPattern: DayPattern get() = dayPattern(dayNumbers)
+
+    /** The time of day as the locale writes it: "7:30 AM" or "07:30". */
+    fun timeText(locale: java.util.Locale = java.util.Locale.getDefault()): String =
+        java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT).withLocale(locale).format(java.time.LocalTime.of(hour, minute))
 
     /** The cron line for this timing. */
     val cron: String get() = "$minute $hour * * ${ScheduleWeekday.cronField(dayNumbers)}"

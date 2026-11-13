@@ -51,16 +51,21 @@ import kotlinx.serialization.json.JsonObject
 
 /** The server page: what it is and its restart and upgrade, then the tabs of its settings. */
 @Composable
-fun ServerSettingsScreen(onBack: () -> Unit) {
-    var tabIndex by remember { mutableStateOf(0) }
+fun ServerSettingsScreen(onBack: () -> Unit, initialTab: ServerSettingsTab? = null) {
     val tabs = ServerSettingsTab.entries
+    var tabIndex by remember { mutableStateOf(initialTab?.let { tab -> tabs.indexOf(tab) + 1 } ?: 0) }
     TeaNodeScreen(title = stringResource(R.string.settings_server_title), onBack = onBack) { contentPadding ->
         Column(Modifier.padding(contentPadding)) {
             ScrollableTabRow(selectedTabIndex = tabIndex, edgePadding = 8.dp) {
                 Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }, text = { Text(stringResource(R.string.settings_server_about)) })
                 tabs.forEachIndexed { index, tab -> Tab(selected = tabIndex == index + 1, onClick = { tabIndex = index + 1 }, text = { Text(serverTabTitle(tab)) }) }
             }
-            if (tabIndex == 0) ServerAboutTab() else ServerSectionsTab(tabs[tabIndex - 1])
+            when {
+                tabIndex == 0 -> ServerAboutTab()
+                tabs[tabIndex - 1] == ServerSettingsTab.Setup -> ServerSetupTab()
+                tabs[tabIndex - 1] == ServerSettingsTab.Sso -> SsoProvidersTab()
+                else -> ServerSectionsTab(tabs[tabIndex - 1])
+            }
         }
     }
 }
@@ -68,6 +73,7 @@ fun ServerSettingsScreen(onBack: () -> Unit) {
 @Composable
 private fun serverTabTitle(tab: ServerSettingsTab): String = stringResource(
     when (tab) {
+        ServerSettingsTab.Setup -> R.string.settings_server_setup
         ServerSettingsTab.Identity -> R.string.settings_server_identity
         ServerSettingsTab.Mail -> R.string.settings_server_mail
         ServerSettingsTab.Sending -> R.string.settings_server_sending

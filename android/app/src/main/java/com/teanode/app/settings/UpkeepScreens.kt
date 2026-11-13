@@ -235,6 +235,7 @@ fun MutedAlertsScreen(onBack: () -> Unit) {
 /** What the agent does at a time: list, switch on and off, run now, delete, and make one. */
 @Composable
 fun SchedulesScreen(onBack: () -> Unit) {
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
     val connection = LocalConnection.current
     val actions = rememberActionRunner()
     val loaded = rememberLoad { connection.agentSchedules() }
@@ -256,7 +257,7 @@ fun SchedulesScreen(onBack: () -> Unit) {
             val last = ServerTime.instant(schedule.lastRunAt)?.let { instant -> stringResource(R.string.settings_last_used, relativeTimeText(instant.toEpochMilli())) }
             TeaNodeRow(
                 onClick = { editing = schedule },
-                headline = schedule.name, supporting = listOfNotNull(if (schedule.isTriggeredByMail) stringResource(R.string.settings_schedules_on_mail) else schedule.cron, next, last, schedule.prompt.ifEmpty { null }).joinToString("\n"), supportingMaxLines = 5,
+                headline = schedule.name, supporting = listOfNotNull(if (schedule.isTriggeredByMail) UpkeepWords.scheduleMailText(resources, schedule.mailConditions.orEmpty()) else UpkeepWords.scheduleTimingText(resources, schedule.cron) ?: schedule.cron, next, last, schedule.prompt.ifEmpty { null }).joinToString("\n"), supportingMaxLines = 5,
                 trailing = {
                     androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         IconButton(onClick = { actions.run(ranText) { connection.runAgentSchedule(schedule.id) } }) { Icon(Icons.Outlined.PlayArrow, stringResource(R.string.settings_schedules_run)) }
@@ -401,6 +402,7 @@ private fun DailyBriefCard(schedules: List<AgentSchedule>, actions: ActionRunner
 /** What the agent has learned and been corrected on, the questions that check it, and how each grading went. */
 @Composable
 fun AgentMemorySettingsScreen(onBack: () -> Unit) {
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
     val connection = LocalConnection.current
     val actions = rememberActionRunner()
     val loaded = rememberLoad { MemoryPage(connection.learnedFacts(), connection.agentCorrections(), connection.memoryCheckQuestions(), connection.memoryCheckRuns()) }
@@ -442,7 +444,7 @@ fun AgentMemorySettingsScreen(onBack: () -> Unit) {
         if (questions.isEmpty()) item { TeaNodeRow(headline = stringResource(R.string.settings_memory_no_questions)) }
         items(questions.size) { index ->
             val question = questions[index]
-            TeaNodeRow(headline = question.questionText, supporting = stringResource(R.string.settings_memory_expected, question.expectedAnswer) + "\n" + question.questionState, supportingMaxLines = 4, onClick = { editing = question })
+            TeaNodeRow(headline = question.questionText, supporting = stringResource(R.string.settings_memory_expected, question.expectedAnswer) + "\n" + UpkeepWords.questionState(resources, question.questionState), supportingMaxLines = 4, onClick = { editing = question })
         }
         item { TeaNodeSectionHeader(stringResource(R.string.settings_memory_learned)) }
         if (page.facts.isEmpty()) item { TeaNodeRow(headline = stringResource(R.string.settings_memory_nothing_learned)) }
@@ -470,8 +472,8 @@ fun AgentMemorySettingsScreen(onBack: () -> Unit) {
                 FormField(draft.questionText.orEmpty(), { draft = draft.copy(questionText = it) }, stringResource(R.string.settings_memory_question), isSingleLine = false, minLines = 2)
                 FormField(draft.expectedAnswer.orEmpty(), { draft = draft.copy(expectedAnswer = it) }, stringResource(R.string.settings_memory_expected_answer), isSingleLine = false, minLines = 2)
                 FormField(draft.outdatedAnswer.orEmpty(), { draft = draft.copy(outdatedAnswer = it) }, stringResource(R.string.settings_memory_outdated_answer))
-                ChoiceRow(stringResource(R.string.settings_memory_kind), com.teanode.kit.agent.MemoryCheckQuestions.questionKinds, draft.questionKind.orEmpty(), label = { kind -> kind }, onSelect = { draft = draft.copy(questionKind = it) })
-                ChoiceRow(stringResource(R.string.settings_memory_state), com.teanode.kit.agent.MemoryCheckQuestions.questionStates, draft.questionState.orEmpty(), label = { state -> state }, onSelect = { draft = draft.copy(questionState = it) })
+                ChoiceRow(stringResource(R.string.settings_memory_kind), com.teanode.kit.agent.MemoryCheckQuestions.questionKinds, draft.questionKind.orEmpty(), label = { kind -> UpkeepWords.questionKind(resources, kind) }, onSelect = { draft = draft.copy(questionKind = it) })
+                ChoiceRow(stringResource(R.string.settings_memory_state), com.teanode.kit.agent.MemoryCheckQuestions.questionStates, draft.questionState.orEmpty(), label = { state -> UpkeepWords.questionState(resources, state) }, onSelect = { draft = draft.copy(questionState = it) })
             }
         }
     }
@@ -491,6 +493,7 @@ private fun memoryAnswerSourceName(source: String): String = stringResource(
 /** What the agent answered to each question in one grading, from each place, and what the grader made of it. */
 @Composable
 private fun MemoryRunDialog(run: com.teanode.kit.agent.MemoryCheckRun, questions: List<com.teanode.kit.agent.MemoryCheckQuestion>, onDismiss: () -> Unit) {
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
     val connection = LocalConnection.current
     val loaded = rememberLoad(run.id) { connection.memoryCheckAnswers(run.id) }
     FormDialog(title = stringResource(R.string.settings_memory_run_answers), confirmLabel = stringResource(R.string.common_done), isConfirmEnabled = true, onConfirm = onDismiss, onDismiss = onDismiss) {
@@ -501,7 +504,7 @@ private fun MemoryRunDialog(run: com.teanode.kit.agent.MemoryCheckRun, questions
                 val question = questions.firstOrNull { candidate -> candidate.id == answer.questionId }
                 TeaNodeRow(
                     headline = question?.questionText ?: answer.questionId,
-                    supporting = listOfNotNull("${memoryAnswerSourceName(answer.answerFrom)}: ${answer.answerVerdict}", answer.answerText.ifEmpty { null }, answer.verdictReason.ifEmpty { null }).joinToString("\n"), supportingMaxLines = 8,
+                    supporting = listOfNotNull("${memoryAnswerSourceName(answer.answerFrom)}: ${UpkeepWords.verdict(resources, answer.answerVerdict)}", answer.answerText.ifEmpty { null }, answer.verdictReason.ifEmpty { null }).joinToString("\n"), supportingMaxLines = 8,
                 )
             }
         }
@@ -596,7 +599,7 @@ fun KnowledgeSourcesScreen(onBack: () -> Unit) {
             )
             TeaNodeRow(
                 onClick = { editingSource = source },
-                headline = source.name, overline = source.kind.ifEmpty { null }, supporting = lines.joinToString("\n"), supportingMaxLines = 5,
+                headline = source.name, overline = source.kind.ifEmpty { null }, supporting = lines.joinToString("\n"), supportingMaxLines = 10,
                 trailing = {
                     androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         IconButton(onClick = { actions.run(syncedText) { connection.syncKnowledgeSource(source.id) } }) { Icon(Icons.Outlined.PlayArrow, stringResource(R.string.settings_sources_sync)) }
