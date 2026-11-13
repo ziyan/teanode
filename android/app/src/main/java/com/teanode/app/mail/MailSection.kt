@@ -111,7 +111,7 @@ fun MailboxesScreen(
                 mail.loadFailure != null && !mail.isLoaded -> ErrorState(mail.loadFailure?.message.orEmpty(), onRetry = { mail.reload() })
                 !mail.isLoaded -> LoadingState()
                 mail.entries.isEmpty() -> EmptyState(Icons.Outlined.Inbox, stringResource(R.string.mail_no_mailbox_yet), description = stringResource(R.string.mail_no_mailbox_description))
-                entry != null && inbox != null -> LazyColumn(Modifier.fillMaxSize()) {
+                entry != null && inbox != null -> LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 88.dp)) {
                     item { FolderLink(Icons.Outlined.Inbox, stringResource(R.string.mail_inbox), inbox.unread, 0) { onOpenPlace(MailPlace.Folder(inbox.id)) } }
                     for (row in childRows(mail, inbox.id)) {
                         item(key = "child-" + row.folder.id) { FolderLink(MailNames.icon(row.folder), row.folder.name, row.folder.unread, row.depth) { onOpenPlace(MailPlace.Folder(row.folder.id)) } }

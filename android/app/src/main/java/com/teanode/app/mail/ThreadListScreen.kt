@@ -58,15 +58,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,6 +72,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.pluralStringResource
@@ -130,6 +134,7 @@ fun ThreadListScreen(
     var searchText by remember(list) { mutableStateOf(list.filter.searchText) }
 
     val folder = (place as? MailPlace.Folder)?.let { shown -> mail.folderById(shown.folderId) }
+    LaunchedEffect(mail) { if (!mail.isLoaded) mail.load() }
     LaunchedEffect(list, mail.isLoaded) { if (mail.isLoaded) list.load(mail) }
     LaunchedEffect(startsSelecting) {
         if (startsSelecting && selection.isEmpty()) list.threads.take(2).forEach { thread -> selection.add(thread.id) }
@@ -476,7 +481,7 @@ private fun ThreadRows(
         if (shouldLoadMore && lastIndex >= state.layoutInfo.totalItemsCount - 4) onMore()
     }
     val archive = mail.folderOfKind("archive")
-    LazyColumn(state = state, modifier = Modifier.fillMaxSize()) {
+    LazyColumn(state = state, modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 88.dp)) {
         for (periodRows in periods) {
             item(key = "period-" + periodRows.period.toString()) { ListPeriodHeader(periodRows.period) }
             items(periodRows.rows, key = { thread -> thread.id }) { thread ->
@@ -538,33 +543,45 @@ fun ListPeriodHeader(period: ListPeriod) {
 /** What a swipe does: its symbol, its word and the color behind. */
 class SwipeAction(val icon: ImageVector, val label: String, val color: Color, val perform: () -> Unit)
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * A row that is dragged sideways to do something: far enough to the right does the first action, to the left the second,
+ * and the row slides back. The color and symbol of the action show behind it while it is dragged.
+ */
 @Composable
 private fun SwipeableRow(isEnabled: Boolean, startToEnd: SwipeAction, endToStart: SwipeAction, content: @Composable () -> Unit) {
-    val state = rememberSwipeToDismissBoxState(confirmValueChange = { target ->
-        when (target) {
-            SwipeToDismissBoxValue.StartToEnd -> startToEnd.perform()
-            SwipeToDismissBoxValue.EndToStart -> endToStart.perform()
-            SwipeToDismissBoxValue.Settled -> Unit
+    var offsetPixels by remember { mutableFloatStateOf(0f) }
+    val thresholdPixels = with(LocalDensity.current) { 96.dp.toPx() }
+    val action = when {
+        offsetPixels > 0f -> startToEnd
+        offsetPixels < 0f -> endToStart
+        else -> null
+    }
+    Box(Modifier.fillMaxWidth()) {
+        if (action != null) {
+            Box(
+                Modifier.matchParentSize().background(action.color).padding(horizontal = 24.dp),
+                contentAlignment = if (offsetPixels > 0f) Alignment.CenterStart else Alignment.CenterEnd,
+            ) { Icon(action.icon, contentDescription = action.label, tint = MaterialTheme.colorScheme.surface) }
         }
-        // A seen mark leaves the row where it is; a move or a delete takes it off the list, which the list does itself.
-        false
-    })
-    SwipeToDismissBox(
-        state = state,
-        enableDismissFromStartToEnd = isEnabled,
-        enableDismissFromEndToStart = isEnabled,
-        backgroundContent = {
-            val action = when (state.dismissDirection) {
-                SwipeToDismissBoxValue.StartToEnd -> startToEnd
-                SwipeToDismissBoxValue.EndToStart -> endToStart
-                SwipeToDismissBoxValue.Settled -> null
-            }
-            Box(Modifier.fillMaxSize().background(action?.color ?: Color.Transparent).padding(horizontal = 24.dp), contentAlignment = if (state.dismissDirection == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd) {
-                if (action != null) Icon(action.icon, contentDescription = action.label, tint = MaterialTheme.colorScheme.surface)
-            }
-        },
-    ) { content() }
+        Box(
+            Modifier
+                .offset { IntOffset(offsetPixels.roundToInt(), 0) }
+                .pointerInput(isEnabled) {
+                    if (!isEnabled) return@pointerInput
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            val finished = offsetPixels
+                            offsetPixels = 0f
+                            if (finished > thresholdPixels) startToEnd.perform() else if (finished < -thresholdPixels) endToStart.perform()
+                        },
+                        onDragCancel = { offsetPixels = 0f },
+                    ) { change, drag ->
+                        change.consume()
+                        offsetPixels += drag
+                    }
+                },
+        ) { content() }
+    }
 }
 
 /**

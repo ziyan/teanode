@@ -450,6 +450,37 @@ fun MessageCard(mail: MailModel, entry: MailThreadView.Entry, item: MailItem, is
                             },
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp),
                         )
+                        if (isOpen) {
+                    Box {
+                    IconButton(onClick = { isMenuOpen = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.mail_message_actions)) }
+                    DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
+                        DropdownMenuItem(text = { Text(stringResource(if (isShowingDetails) R.string.mail_hide_details else R.string.mail_show_details)) }, leadingIcon = { Icon(Icons.Outlined.Info, null) }, onClick = { isMenuOpen = false; isShowingDetails = !isShowingDetails })
+                        DropdownMenuItem(
+                            text = { Text(stringResource(if (isShowingHeaders) R.string.mail_hide_headers else R.string.mail_show_headers)) }, leadingIcon = { Icon(Icons.Outlined.ViewList, null) },
+                            enabled = !content?.rawHeaders.isNullOrEmpty(), onClick = { isMenuOpen = false; isShowingHeaders = !isShowingHeaders },
+                        )
+                        if (message != null) {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.mail_save_sender)) }, leadingIcon = { Icon(Icons.Outlined.PersonAdd, null) }, onClick = {
+                                isMenuOpen = false
+                                scope.launch { saveSender(mail, message) }
+                            })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.mail_read_as_receipt)) }, leadingIcon = { Icon(Icons.Outlined.Receipt, null) }, onClick = {
+                                isMenuOpen = false
+                                scope.launch { mail.act(context.getString(R.string.mail_reading_receipt)) { mail.connection.readReceipt(item.id) } }
+                            })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.mail_read_as_tax_document)) }, leadingIcon = { Icon(Icons.Outlined.Description, null) }, onClick = {
+                                isMenuOpen = false
+                                scope.launch { mail.act(context.getString(R.string.mail_reading_tax_document)) { mail.connection.readTaxDocument(item.id) } }
+                            })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.mail_download_original)) }, leadingIcon = { Icon(Icons.Outlined.DownloadForOffline, null) }, onClick = {
+                                isMenuOpen = false
+                                scope.launch { runCatching { openServerFile(context, mail.connection, "/api/v1/mail/${message.id}/raw", "${message.id}.eml") }.onFailure { failed -> mail.snackbar?.showError(failed) } }
+                            })
+                        }
+                        DropdownMenuItem(text = { Text(stringResource(if (isOriginalLook) R.string.mail_show_dark else R.string.mail_show_original_look)) }, leadingIcon = { Icon(Icons.Outlined.InvertColors, null) }, onClick = { isMenuOpen = false; isOriginalLook = !isOriginalLook })
+                    }
+                }
+                        }
                     }
                     if (isOtherFolder) Text(entry.folderName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (!isOpen) {
@@ -466,37 +497,6 @@ fun MessageCard(mail: MailModel, entry: MailThreadView.Entry, item: MailItem, is
                 }
             }
             if (isOpen) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Box {
-                        IconButton(onClick = { isMenuOpen = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.mail_message_actions)) }
-                        DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
-                            DropdownMenuItem(text = { Text(stringResource(if (isShowingDetails) R.string.mail_hide_details else R.string.mail_show_details)) }, leadingIcon = { Icon(Icons.Outlined.Info, null) }, onClick = { isMenuOpen = false; isShowingDetails = !isShowingDetails })
-                            DropdownMenuItem(
-                                text = { Text(stringResource(if (isShowingHeaders) R.string.mail_hide_headers else R.string.mail_show_headers)) }, leadingIcon = { Icon(Icons.Outlined.ViewList, null) },
-                                enabled = !content?.rawHeaders.isNullOrEmpty(), onClick = { isMenuOpen = false; isShowingHeaders = !isShowingHeaders },
-                            )
-                            if (message != null) {
-                                DropdownMenuItem(text = { Text(stringResource(R.string.mail_save_sender)) }, leadingIcon = { Icon(Icons.Outlined.PersonAdd, null) }, onClick = {
-                                    isMenuOpen = false
-                                    scope.launch { saveSender(mail, message) }
-                                })
-                                DropdownMenuItem(text = { Text(stringResource(R.string.mail_read_as_receipt)) }, leadingIcon = { Icon(Icons.Outlined.Receipt, null) }, onClick = {
-                                    isMenuOpen = false
-                                    scope.launch { mail.act(context.getString(R.string.mail_reading_receipt)) { mail.connection.readReceipt(item.id) } }
-                                })
-                                DropdownMenuItem(text = { Text(stringResource(R.string.mail_read_as_tax_document)) }, leadingIcon = { Icon(Icons.Outlined.Description, null) }, onClick = {
-                                    isMenuOpen = false
-                                    scope.launch { mail.act(context.getString(R.string.mail_reading_tax_document)) { mail.connection.readTaxDocument(item.id) } }
-                                })
-                                DropdownMenuItem(text = { Text(stringResource(R.string.mail_download_original)) }, leadingIcon = { Icon(Icons.Outlined.DownloadForOffline, null) }, onClick = {
-                                    isMenuOpen = false
-                                    scope.launch { runCatching { openServerFile(context, mail.connection, "/api/v1/mail/${message.id}/raw", "${message.id}.eml") }.onFailure { failed -> mail.snackbar?.showError(failed) } }
-                                })
-                            }
-                            DropdownMenuItem(text = { Text(stringResource(if (isOriginalLook) R.string.mail_show_dark else R.string.mail_show_original_look)) }, leadingIcon = { Icon(Icons.Outlined.InvertColors, null) }, onClick = { isMenuOpen = false; isOriginalLook = !isOriginalLook })
-                        }
-                    }
-                }
                 if (isShowingDetails && message != null) MessageDetails(message, item.insight)
                 val rawHeaders = content?.rawHeaders
                 if (isShowingHeaders && !rawHeaders.isNullOrEmpty()) {
