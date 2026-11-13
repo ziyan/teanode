@@ -79,8 +79,10 @@ fun CallTile(
         when {
             isVideoOn && track != null -> CallVideoView(track, Modifier.fillMaxSize(), isMirrored = isOwn)
             // The picture is on its way.
+            // In a small tile it sits at the top, clear of the name under it.
             isVideoOn -> Icon(
-                Icons.Filled.Videocam, contentDescription = null, modifier = Modifier.align(Alignment.Center).size(40.dp),
+                Icons.Filled.Videocam, contentDescription = null,
+                modifier = if (isSmall) Modifier.align(Alignment.TopCenter).padding(top = 8.dp).size(28.dp) else Modifier.align(Alignment.Center).size(40.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             // In a small tile the picture sits at the top, clear of the name under it.

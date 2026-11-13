@@ -74,6 +74,7 @@
     <string name="recordings_speaker_letter">話者%1$s</string>
     <string name="recordings_speakers_list">話者: %1$s</string>
     <string name="recordings_start">録音を開始</string>
+    <string name="recordings_ready">準備完了</string>
     <string name="recordings_starting">開始しています</string>
     <string name="recordings_status_failed">失敗</string>
     <string name="recordings_status_paused">一時停止中</string>

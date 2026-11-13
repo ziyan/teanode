@@ -90,6 +90,10 @@
     <string name="signin_not_signed_in">The server did not sign this phone in.</string>
     <string name="signin_server_did_not_accept">%1$s did not accept the sign-in it gave this phone.</string>
     <string name="signin_signed_out_of">Signed out of %1$s: %2$s</string>
+    <string name="signin_link_ask_title">Connect to %1$s?</string>
+    <string name="signin_link_ask_body">A link asked this app to sign in to %1$s. Continue only if you know this server and expected this link.</string>
+    <string name="signin_add_keep">Add it, keep using %1$s</string>
+    <string name="signin_add_switch">Add it and switch to it</string>
     <string name="signin_confirm_title">Connect to %1$s?</string>
     <string name="signin_confirm_body">This phone will be signed in as %1$s, and can do anything you can do on the dashboard.</string>
     <string name="signin_server_placeholder">mail.example.com</string>

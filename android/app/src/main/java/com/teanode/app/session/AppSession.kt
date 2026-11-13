@@ -264,12 +264,19 @@ class AppSession(
     }
 
     /** Keeps a sign-in the person confirmed. */
-    fun confirm(connecting: PendingConnection) {
+    fun confirm(connecting: PendingConnection, isSwitching: Boolean = true) {
         pending.value = null
+        val inUse = activeConnection.value?.account
         store.add(connecting.account)
         addingAccount.value = false
         signedOutMessage.value = null
         openedConnectLink.value = null
+        if (!isSwitching && inUse != null) {
+            // Added beside the account in use, which stays the one the app acts as until the person switches.
+            store.activate(inUse.accountKey)
+            accountRing.value = store.accounts()
+            return
+        }
         use(connecting.account)
     }
 
@@ -331,6 +338,7 @@ class AppSession(
         val gone = leaving?.server?.host.orEmpty()
         runCatching { store.delete() }
         val next = runCatching { store.load() }.getOrNull()
+        if (leaving != null && !isDemo) AccountEraser(context, secrets).erase(leaving, isLastAccount = next == null)
         factsJob?.cancel()
         currentFacts.value = SectionFacts()
         hasReadFactsFlag.value = false
@@ -352,6 +360,7 @@ class AppSession(
         }
         scope.launch { SignIn(other.server, transport).revoke(other) }
         store.remove(other.accountKey)
+        if (!isDemo) AccountEraser(context, secrets).erase(other, isLastAccount = false)
         accountRing.value = store.accounts()
     }
 

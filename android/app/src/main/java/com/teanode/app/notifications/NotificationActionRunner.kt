@@ -67,7 +67,7 @@ class NotificationActionRunner(private val context: Context, private val push: P
                 mapOf(
                     "conversationId" to (press.conversationId?.let { id -> JsonPrimitive(id) } ?: JsonNull),
                     "message" to JsonPrimitive(press.text),
-                    "surface" to JsonPrimitive(TYPED_SURFACE),
+                    "surface" to JsonPrimitive(com.teanode.kit.chats.Surface.TYPED),
                     "drawerId" to JsonPrimitive(push.drawerId()),
                     "attachmentIds" to JsonArray(emptyList()),
                 ),
@@ -91,10 +91,5 @@ class NotificationActionRunner(private val context: Context, private val push: P
             .setAutoCancel(true)
             .build()
         manager.notify(text.hashCode(), notification)
-    }
-
-    private companion object {
-        /** The surface the app names on its turns (internal/agent/surface.go); the chats part names the same. */
-        const val TYPED_SURFACE = "ios"
     }
 }

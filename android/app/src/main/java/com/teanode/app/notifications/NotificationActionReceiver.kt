@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
  */
 class NotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (!OwnIntentSeal.isOwn(context, intent)) return
         val info = intent.getStringExtra(NotificationBuilder.EXTRA_INFO)
             ?.let { text -> runCatching { TeaNodeJson.decodeFromString(NotificationInfo.serializer(), text) }.getOrNull() } ?: return
         val actionId = intent.getStringExtra(NotificationBuilder.EXTRA_ACTION) ?: return

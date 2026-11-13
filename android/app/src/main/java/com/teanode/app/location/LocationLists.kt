@@ -119,7 +119,7 @@ fun LocationVisitsList(
     onOpenPeople: () -> Unit,
     onOpenTravel: () -> Unit,
     onShowSharing: () -> Unit,
-    onOpenPhotos: () -> Unit,
+    onOpenPhotos: (PlaceVisit) -> Unit,
 ) {
     val recording = LocalLocationRecording.current
     val isRecordingOn by recording.isRecordingOn.collectAsState()
@@ -187,7 +187,7 @@ fun ForgetVisitDialog(onDismiss: () -> Unit, onForget: () -> Unit) {
 fun LocationTimelineRow(
     entry: LocationTimelineEntry,
     onOpenPlace: ((LocationPlace) -> Unit)? = null,
-    onOpenPhotos: (() -> Unit)? = null,
+    onOpenPhotos: ((PlaceVisit) -> Unit)? = null,
     correctLeg: ((TripLeg, TravelMode?) -> Unit)? = null,
     askToForgetVisit: ((PlaceVisit) -> Unit)? = null,
 ) {
@@ -199,7 +199,7 @@ fun LocationTimelineRow(
 }
 
 @Composable
-fun LocationVisitRow(visit: PlaceVisit, onOpenPlace: ((LocationPlace) -> Unit)?, onOpenPhotos: (() -> Unit)?, askToForget: ((PlaceVisit) -> Unit)?) {
+fun LocationVisitRow(visit: PlaceVisit, onOpenPlace: ((LocationPlace) -> Unit)?, onOpenPhotos: ((PlaceVisit) -> Unit)?, askToForget: ((PlaceVisit) -> Unit)?) {
     val text = rememberLocationText()
     var isMenuOpen by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().then(if (onOpenPlace != null) Modifier.clickable { onOpenPlace(visit.place) } else Modifier).padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -230,11 +230,11 @@ fun LocationVisitRow(visit: PlaceVisit, onOpenPlace: ((LocationPlace) -> Unit)?,
 
 /** The first few photos taken during a visit, and how many more there are. */
 @Composable
-fun VisitPhotoStrip(visit: PlaceVisit, photos: List<VisitPhoto>, onOpenPhotos: (() -> Unit)?) {
+fun VisitPhotoStrip(visit: PlaceVisit, photos: List<VisitPhoto>, onOpenPhotos: ((PlaceVisit) -> Unit)?) {
     val totalCount = maxOf(visit.photoCount ?: photos.size, photos.size)
     val remainingCount = totalCount - photos.size
     Row(
-        Modifier.padding(start = 40.dp, top = 8.dp).then(if (onOpenPhotos != null) Modifier.clickable(onClick = onOpenPhotos) else Modifier),
+        Modifier.padding(start = 40.dp, top = 8.dp).then(if (onOpenPhotos != null) Modifier.clickable { onOpenPhotos(visit) } else Modifier),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         photos.forEach { photo ->

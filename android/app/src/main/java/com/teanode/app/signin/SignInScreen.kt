@@ -207,11 +207,18 @@ fun SignInRoute(isAdding: Boolean = false, onCancel: (() -> Unit)? = null) {
     @Suppress("DEPRECATION") // LocalClipboard only has suspend functions; a button's click wants the plain ones.
     val clipboard = LocalClipboardManager.current
 
-    // A link opened from a message or the camera app. The connection runs in the session, which outlives this screen.
-    androidx.compose.runtime.LaunchedEffect(openedLink) {
-        val link = openedLink ?: return@LaunchedEffect
-        session.linkWasUsed()
-        session.connect(link.url)
+    // A link opened from a message, a page or the camera app. Anyone can send one that names their own server, so nothing is
+    // asked of that server until the person has seen its name and said to go on. The connection then runs in the session.
+    openedLink?.let { link ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { session.linkWasUsed() },
+            title = { androidx.compose.material3.Text(stringResource(R.string.signin_link_ask_title, link.server.host)) },
+            text = { androidx.compose.material3.Text(stringResource(R.string.signin_link_ask_body, link.server.host)) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { session.linkWasUsed(); session.connect(link.url) }) { androidx.compose.material3.Text(stringResource(R.string.signin_connect)) }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { session.linkWasUsed() }) { androidx.compose.material3.Text(stringResource(android.R.string.cancel)) } },
+        )
     }
 
     when {

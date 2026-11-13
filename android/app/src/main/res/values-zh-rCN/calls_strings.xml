@@ -64,4 +64,6 @@
     <string name="calls_voice_microphone_failed">无法启动麦克风：%1$s</string>
     <string name="calls_voice_silent_microphone">麦克风没有声音。请检查是否有其他应用正在使用它，或试试耳机或扬声器。</string>
     <string name="calls_voice_approval_on_screen">需要你在屏幕上批准：%1$s</string>
+    <string name="calls_call_offer_body">要开始与助手的语音通话吗？</string>
+    <string name="calls_call_agent">给助手打电话</string>
 </resources>

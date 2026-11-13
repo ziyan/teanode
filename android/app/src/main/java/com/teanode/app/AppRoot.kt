@@ -20,6 +20,7 @@ import com.teanode.app.session.LocalConnection
 import com.teanode.app.session.LocalConnectionOrNull
 import com.teanode.app.shell.AppShell
 import com.teanode.app.signin.ConfirmConnectionSheet
+import com.teanode.app.signin.ConnectionAnswer
 import com.teanode.app.signin.SignInRoute
 import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.app.ui.components.rememberSnackbarController
@@ -56,6 +57,7 @@ fun AppRoot(session: AppSession, startRoute: String? = null, newIntents: Flow<In
                         CompositionLocalProvider(LocalConnection provides signedIn) {
                             if (!session.isDemo) PushEffects(signedIn)
                             CallPresenter { AppShell(startRoute = startRoute, newIntents = newIntents) }
+                            com.teanode.app.calls.CallOfferDialog()
                         }
                     }
                     if (isAddingAccount) {
@@ -64,7 +66,13 @@ fun AppRoot(session: AppSession, startRoute: String? = null, newIntents: Flow<In
                     }
                 }
                 pending?.let { waiting ->
-                    ConfirmConnectionSheet(waiting) { isConfirmed -> if (isConfirmed) session.confirm(waiting) else session.decline(waiting) }
+                    ConfirmConnectionSheet(waiting, activeHost = connection?.account?.server?.host) { answer ->
+                        when (answer) {
+                            ConnectionAnswer.Switch -> session.confirm(waiting)
+                            ConnectionAnswer.Keep -> session.confirm(waiting, isSwitching = false)
+                            ConnectionAnswer.Decline -> session.decline(waiting)
+                        }
+                    }
                 }
             }
         }

@@ -95,7 +95,7 @@ class AgentWidget : GlanceAppWidget() {
                         Spacer(GlanceModifier.width(8.dp))
                         WidgetButton(context.getString(R.string.widgets_call_your_agent), "C", actionStartActivity(openingIntent(context, "agent/home", isCall = true)))
                         Spacer(GlanceModifier.width(8.dp))
-                        WidgetButton(context.getString(R.string.widgets_start_recording), "R", actionStartActivity(openingIntent(context, "recordings/home")))
+                        WidgetButton(context.getString(R.string.widgets_start_recording), "R", actionStartActivity(openingIntent(context, "recordings/capture")))
                     }
                 }
             }
@@ -126,7 +126,7 @@ class WaitingWidget : GlanceAppWidget() {
         val count = entry.glance?.waitingCount ?: 0
         val newest = entry.glance?.newestWaiting
         val open = NotificationInfo(accountKey = entry.accountKey, notificationKind = "message", conversationId = newest?.conversationId.orEmpty())
-        val intent = Intent(context, MainActivity::class.java)
+        val intent = com.teanode.app.notifications.OwnIntentSeal.mark(context, Intent(context, MainActivity::class.java))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             .putExtra(NotificationBuilder.EXTRA_INFO, TeaNodeJson.encodeToString(NotificationInfo.serializer(), open))
             .putExtra(NotificationBuilder.EXTRA_ACTION, "open")

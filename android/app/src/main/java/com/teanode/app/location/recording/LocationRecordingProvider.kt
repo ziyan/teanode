@@ -23,6 +23,7 @@ import androidx.navigation.NavDeepLink
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
 import com.teanode.app.location.DemoLocationRecording
+import com.teanode.app.location.LocationDemo
 import com.teanode.app.location.AlwaysExplanation
 import com.teanode.app.location.LocalLocationRecording
 import com.teanode.app.location.LocationPermissionRequest
@@ -33,6 +34,11 @@ import com.teanode.app.session.LocalAppSession
 fun ProvideLocationRecording(content: @Composable () -> Unit) {
     val session = LocalAppSession.current
     val context = LocalContext.current
+    // The demo's Location answers apply while a Location screen is on screen; asked before any child loads.
+    if (session.isDemo) {
+        remember { LocationDemo.activate() }
+        androidx.compose.runtime.DisposableEffect(Unit) { onDispose { LocationDemo.deactivate() } }
+    }
     val recording = remember(session.isDemo) { if (session.isDemo) DemoLocationRecording() else LocationRecorder.get(context) }
     CompositionLocalProvider(LocalLocationRecording provides recording) {
         content()

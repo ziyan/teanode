@@ -7,6 +7,34 @@ object SharedFiles {
     /** The most one message carries (the server's maxAttachmentBytes, 25 MB unless the operator changed it). */
     const val BYTES_MOST = 25 shl 20
 
+    /**
+     * Whether another app may hand this address in to be read: only a content address of someone else. A file address
+     * could name the app's own private files, and a content address of the app's own providers could do the same.
+     */
+    fun isReadableAddress(scheme: String?, authority: String?, ownPackageName: String): Boolean {
+        if (scheme?.lowercase() != "content") return false
+        val host = authority?.lowercase()?.substringAfterLast('@') ?: return false
+        val own = ownPackageName.lowercase()
+        return host.isNotEmpty() && host != own && !host.startsWith("$own.")
+    }
+
+    /**
+     * Reads a stream, and stops one byte past [BYTES_MOST]: the file then reads as too large to send without being
+     * held whole in memory, however large the sharing app's file is.
+     */
+    fun readCapped(stream: java.io.InputStream, limitBytes: Int = BYTES_MOST): ByteArray {
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(64 * 1024)
+        val most = limitBytes.toLong() + 1
+        while (output.size() < most) {
+            val wanted = minOf(buffer.size.toLong(), most - output.size()).toInt()
+            val read = stream.read(buffer, 0, wanted)
+            if (read < 0) break
+            output.write(buffer, 0, read)
+        }
+        return output.toByteArray()
+    }
+
     private val statementExtensions = setOf("ofx", "qfx", "qbo")
 
     /** A paystub or a tax form is a PDF or a picture. */

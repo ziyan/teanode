@@ -69,9 +69,10 @@ fun MailBody(html: String, mailId: String, connection: Connection, isShowingPict
                 webViewClient = object : WebViewClient() {
                     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                         val address = request.url
-                        if (address.host == PICTURE_HOST) {
+                        if (address.host == PICTURE_HOST && request.method == "GET") {
                             val path = address.encodedPath.orEmpty() + (address.encodedQuery?.let { query -> "?$query" } ?: "")
-                            val answer = runCatching { runBlocking { connection.get(path) } }.getOrNull()
+                            // The sender's HTML may name any path: only this message's own files are read as the person.
+                            val answer = if (MailWords.isOwnMessagePath(path, mailId)) runCatching { runBlocking { connection.get(path) } }.getOrNull() else null
                             if (answer != null && answer.statusCode == 200) {
                                 return WebResourceResponse("image/*", null, ByteArrayInputStream(answer.body))
                             }
@@ -82,6 +83,8 @@ fun MailBody(html: String, mailId: String, connection: Connection, isShowingPict
 
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         val target = request.url
+                        // A page that sends the person away by itself (a refresh tag) is not a tap.
+                        if (!request.hasGesture()) return true
                         if (target.scheme == "http" || target.scheme == "https" || target.scheme == "mailto") {
                             runCatching { view.context.startActivity(Intent(Intent.ACTION_VIEW, target).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                         }

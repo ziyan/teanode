@@ -39,7 +39,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 shrinks and obfuscates the release build; the keep rules are in proguard-rules.pro.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (isReleaseSigningAvailable) signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -99,6 +102,7 @@ dependencies {
     implementation(libs.osmdroid.android)
 
     implementation(libs.androidx.core)
+    implementation(libs.androidx.core.telecom)
 
     // Push and calls. Firebase Messaging is used only when the Firebase project's config file is there (see below); without
     // it the library is inert and the code never asks it for anything.

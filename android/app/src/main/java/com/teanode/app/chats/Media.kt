@@ -121,8 +121,7 @@ fun canBeSavedAsRecording(contentType: String): Boolean {
 /** Writes a file the server keeps into the cache and hands it to another app, which is what Share does. */
 suspend fun shareServerFile(context: Context, connection: Connection, path: String, name: String, contentType: String) {
     val bytes = connection.download(path)
-    val directory = File(context.cacheDir, "chat-files").also { made -> made.mkdirs() }
-    val file = File(directory, name.ifEmpty { "file" }.replace("/", "-"))
+    val file = File(ChatFilesCache.directory(context), ChatFilesCache.safeName(name))
     file.writeBytes(bytes)
     val address = FileProvider.getUriForFile(context, "${context.packageName}.chatfiles", file)
     val intent = Intent(Intent.ACTION_SEND).apply {
@@ -400,7 +399,12 @@ fun ArtifactCard(file: AgentFile, modifier: Modifier = Modifier) {
                     pageAddress != null -> AndroidView(
                         factory = { context ->
                             WebView(context).apply {
+                                // An artifact is an interactive page the agent wrote, so its scripts run. They hold no token of the person's
+                                // (the signed address is the only credential), and the page cannot read the phone's files or load plain http.
                                 settings.javaScriptEnabled = true
+                                settings.allowFileAccess = false
+                                settings.allowContentAccess = false
+                                settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
                                 webViewClient = object : WebViewClient() {
                                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                                         // The page itself and frames inside it from the same server stay; a link the person taps opens in the browser.

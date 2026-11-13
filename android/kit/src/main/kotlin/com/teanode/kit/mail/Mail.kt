@@ -525,6 +525,19 @@ object MailWords {
         }
     }
 
+    /**
+     * Whether a path (with its query) that a message's page asks for through the server is one of that same message's own
+     * files. The page is a sender's HTML, and the phone reads what it asks for as the person, so nothing else under the
+     * API may be read for it.
+     */
+    fun isOwnMessagePath(path: String, mailId: String): Boolean {
+        if (mailId.isEmpty()) return false
+        val prefix = "/api/v1/mail/${URLEncoder.encode(mailId, "UTF-8").replace("+", "%20")}/"
+        if (!path.startsWith(prefix) || path.length == prefix.length) return false
+        val lowered = path.substringBefore('?').lowercase()
+        return !lowered.contains("..") && !lowered.contains("%2e") && !lowered.contains("%2f") && !lowered.contains("%5c") && !lowered.contains('\\')
+    }
+
     /** Percent-encoding that keeps letters, digits and -_.!~*'() as the browser's encodeURIComponent does. */
     private fun percentEncoded(text: String): String = URLEncoder.encode(text, "UTF-8").replace("+", "%20")
         .replace("%21", "!").replace("%7E", "~").replace("%27", "'").replace("%28", "(").replace("%29", ")").replace("%2A", "*")

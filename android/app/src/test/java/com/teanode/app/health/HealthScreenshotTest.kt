@@ -128,15 +128,9 @@ class HealthScreenshotTest {
     }
 
     @Test fun `setup`() {
-        draw(Look.Light) { HealthSetupContent(isTurningOn = false, problemText = null, onContinue = {}, onCancel = {}) }
+        draw(Look.Light) { HealthSetupContent(isTurningOn = false, onContinue = {}, onCancel = {}) }
         composeRule.waitForIdle()
         composeRule.photograph("health-setup-light")
-    }
-
-    @Test fun `setup with a problem`() {
-        draw(Look.Dark) { HealthSetupContent(isTurningOn = false, problemText = "Health could not be turned on. Try again.", onContinue = {}, onCancel = {}) }
-        composeRule.waitForIdle()
-        composeRule.photograph("health-setup-problem-dark")
     }
 
     @Test fun `share sheet`() {

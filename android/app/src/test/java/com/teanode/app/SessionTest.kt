@@ -88,6 +88,25 @@ class SessionTest {
     }
 
     @Test
+    fun aLinkOpenedFromOutsideAsksNothingOfItsServerUntilTheDialogIsAnswered() {
+        session.open(ConnectLink(ServerAddress.parse("elsewhere.example.net"), "robin"))
+        assertEquals("elsewhere.example.net", session.openedLink.value?.server?.host)
+        assertTrue("no request goes to the server the link names", server.sent.isEmpty())
+        assertNull(session.pendingConnection.value)
+    }
+
+    @Test
+    fun anAccountAddedBesideTheOneInUseDoesNotReplaceItWhenTheyChoseToKeepIt() {
+        session.connect(ConnectLink(ServerAddress.parse("mail.example.com"), "robin").url)
+        session.confirm(session.pendingConnection.value!!)
+        session.connect(ConnectLink(ServerAddress.parse("mail.example.org"), "sam").url)
+        session.confirm(session.pendingConnection.value!!, isSwitching = false)
+        assertEquals("robin", session.connection.value?.account?.username)
+        assertEquals(2, session.accounts.value.accounts.size)
+        assertEquals("robin", session.accounts.value.active?.username)
+    }
+
+    @Test
     fun declining_aConnectCodeGivesTheSignInBack() {
         session.connect(ConnectLink(ServerAddress.parse("mail.example.com"), "robin").url)
         session.decline(session.pendingConnection.value!!)

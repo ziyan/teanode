@@ -87,6 +87,7 @@ class CallCenter(
     private val environment: CallEnvironment,
     private val mediaFactory: CallMediaFactory,
     private val audio: CallAudio,
+    private val system: CallSystem? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
 ) {
     private val ledger = ChatCallLedger()
@@ -164,6 +165,7 @@ class CallCenter(
         ringingCalls.value = ledger.ringingEntries.map { entry ->
             IncomingRing(entry.entryId, entry.callId.orEmpty(), entry.conversationId, entry.title, entry.accountKey)
         }
+        ringingCalls.value.forEach { ring -> system?.hostRing(ring, this) }
         environment.callStateChanged()
     }
 
@@ -327,6 +329,7 @@ class CallCenter(
             callId = existingCallId, isCameraOn = isVideoOn, ringUserIds = userIds,
         )
         environment.callStateChanged()
+        currentSession.value?.let { placed -> system?.hostCall(placed, this) }
         scope.launch { runPlaced(entry.entryId) }
     }
 
@@ -413,6 +416,7 @@ class CallCenter(
             isOutgoing = false, callId = entry.callId,
         )
         publishRinging()
+        currentSession.value?.let { answered -> system?.hostCall(answered, this) }
         scope.launch { runAnswered(entryId) }
     }
 
