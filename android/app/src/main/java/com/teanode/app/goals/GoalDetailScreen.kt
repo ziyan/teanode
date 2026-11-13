@@ -93,7 +93,7 @@ fun GoalDetailScreen(conversationId: String) {
                     TeaNodeRow(
                         headline = stringResource(R.string.goals_open_conversation),
                         leadingIcon = Icons.Outlined.ChatBubbleOutline,
-                        onClick = { navigator.navigate(ChatHandoff.conversation(found.conversationId)) },
+                        onClick = { ChatHandoff.open(navigator, found.conversationId) },
                     )
                 }
                 if (found.isOpen) {

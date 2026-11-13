@@ -1,14 +1,12 @@
 package com.teanode.app.knowledge
 
 import androidx.compose.runtime.Composable
-import com.teanode.app.shell.SectionPlaceholder
-import com.teanode.kit.AppSection
 
 /**
- * The first screen of Knowledge. Replace the placeholder with the real screen; take the connection from
- * `LocalConnection.current`, tell the person things with `LocalSnackbar.current`, and draw inside `TeaNodeScreen`.
+ * The first screen of Knowledge: the top folder of the pages the agent keeps, with what other people shared under it
+ * (ios KnowledgeViews.swift, KnowledgeScreen).
  */
 @Composable
-fun KnowledgeSection() {
-    SectionPlaceholder(AppSection.Knowledge)
+fun KnowledgeSection(initialSearch: String = "") {
+    KnowledgeFolderScreen(folderPath = "", initialSearch = initialSearch)
 }

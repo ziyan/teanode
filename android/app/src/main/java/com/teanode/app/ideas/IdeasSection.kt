@@ -84,7 +84,7 @@ fun IdeasSection() {
             try {
                 val started = connection.startIdea(idea.id, null, language)
                 val conversationId = started.conversationId
-                if (conversationId != null) navigator.navigate(ChatHandoff.conversation(conversationId, started.openingRequest))
+                if (conversationId != null) ChatHandoff.open(navigator, conversationId, started.openingRequest)
             } catch (failure: Exception) {
                 snackbar.showError(failure)
             }
@@ -122,7 +122,7 @@ fun IdeasSection() {
                         OpenIdeaRow(idea, isBusy, onTry = { start(idea) }, onDismiss = { setStatus(idea, "dismissed", saidDismissed) })
                     }
                 }
-                historySection(list.history, onOpenConversation = { conversationId -> navigator.navigate(ChatHandoff.conversation(conversationId)) },
+                historySection(list.history, onOpenConversation = { conversationId -> ChatHandoff.open(navigator, conversationId) },
                     onDone = { idea -> setStatus(idea, "done", saidDone) }, onRestore = { idea -> setStatus(idea, "open", saidRestored) })
             }
         }

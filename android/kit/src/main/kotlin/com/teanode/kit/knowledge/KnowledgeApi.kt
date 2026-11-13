@@ -106,6 +106,14 @@ children { path name opening }"""
 }"""
     const val SET_CONTACT = """mutation (${'$'}path: String!, ${'$'}contactId: String) { SetAgentNodeContact(path: ${'$'}path, contactId: ${'$'}contactId) }"""
 
+    /** The person's own address books and their contacts, for choosing the card a page is about (ios Calendar.swift addressBooks and contacts). */
+    const val ADDRESS_BOOKS = """query { ListAddressBooks { id name contacts } }"""
+    const val CONTACTS = """query (${'$'}addressBookId: String!, ${'$'}query: String, ${'$'}first: Int) {
+  ListContacts(addressBookId: ${'$'}addressBookId, query: ${'$'}query, first: ${'$'}first) {
+    id name organization emails phones hasPhoto addresses { written } accountUserId
+  }
+}"""
+
     const val SHARES = """query { ListAgentPageShares { id path pageName granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName isQuoteShared } }"""
     const val SHARE_PAGE = """mutation (${'$'}path: String!, ${'$'}granteeUserId: String, ${'$'}granteeCircleId: String, ${'$'}isQuoteShared: Boolean) {
   ShareAgentPage(path: ${'$'}path, granteeUserId: ${'$'}granteeUserId, granteeCircleId: ${'$'}granteeCircleId, isQuoteShared: ${'$'}isQuoteShared) { id }
@@ -213,6 +221,27 @@ private class RecordAnswer(
     val UnlinkAgentRecord: Boolean? = null,
     val SetAgentNodeContact: Boolean? = null,
 )
+
+/** KnowledgeContactChoice is a contact card as far as choosing the one a page is about needs it. */
+@Serializable
+data class KnowledgeContactChoice(
+    val id: String,
+    val name: String? = null,
+    val organization: String? = null,
+    val emails: List<String>? = null,
+) {
+    /** What the list calls them: their name, or else their first address. */
+    val shownName: String get() = name?.takeIf { text -> text.isNotEmpty() } ?: emails?.firstOrNull().orEmpty()
+}
+
+@Serializable
+private class AddressBookChoice(val id: String)
+
+@Serializable
+private class AddressBooksAnswer(val ListAddressBooks: List<AddressBookChoice>)
+
+@Serializable
+private class ContactsAnswer(val ListContacts: List<KnowledgeContactChoice>)
 
 @Serializable
 private class SharesAnswer(val ListAgentPageShares: List<KnowledgeShare>)
@@ -446,3 +475,14 @@ suspend fun Connection.sharedKnowledgePage(ownerUserId: String, path: String): S
     execute<SharedPageAnswer>(
         KnowledgeDocuments.SHARED_PAGE, mapOf("ownerUserId" to JsonPrimitive(ownerUserId), "path" to JsonPrimitive(path)),
     ).ReadSharedAgentPage
+
+/** The cards in the person's own address books that match some words (all of them for none), at most 30 from each book. */
+suspend fun Connection.contactChoices(words: String): List<KnowledgeContactChoice> {
+    val found = ArrayList<KnowledgeContactChoice>()
+    for (book in execute<AddressBooksAnswer>(KnowledgeDocuments.ADDRESS_BOOKS).ListAddressBooks) {
+        val variables = hashMapOf<String, JsonElement>("addressBookId" to JsonPrimitive(book.id), "first" to number(30))
+        if (words.isNotEmpty()) variables["query"] = JsonPrimitive(words)
+        found += execute<ContactsAnswer>(KnowledgeDocuments.CONTACTS, variables).ListContacts
+    }
+    return found
+}

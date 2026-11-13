@@ -16,6 +16,18 @@ object ChatHandoff {
     /** The route Chats registers for a conversation. */
     val conversationRoute: String get() = Routes.child(AppSection.Agent, CONVERSATION_PATTERN)
 
+    /**
+     * Takes the person to a conversation. When the Chats part has not registered the place yet, it opens Chats at its
+     * first screen instead of failing.
+     */
+    fun open(navigator: com.teanode.app.shell.AppNavigator, conversationId: String, openingRequest: String? = null) {
+        try {
+            navigator.navigate(conversation(conversationId, openingRequest))
+        } catch (_: IllegalArgumentException) {
+            navigator.openSection(AppSection.Agent)
+        }
+    }
+
     /** The address of a conversation, with the request it opens with when there is one. */
     fun conversation(conversationId: String, openingRequest: String? = null): String {
         val base = Routes.child(AppSection.Agent, "conversation/${Uri.encode(conversationId)}")
