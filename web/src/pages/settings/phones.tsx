@@ -18,6 +18,7 @@ type Phone = {
   id: string
   phoneName: string
   phoneModel: string
+  phonePlatform?: string
   phoneModelName: string
   notificationKinds: string[]
   canBeNotified: boolean
@@ -27,7 +28,7 @@ type Phone = {
 }
 
 const PHONE_FIELDS =
-  'id phoneName phoneModel phoneModelName notificationKinds canBeNotified lastSeenAt lastDeliveredAt lastDeliveryError'
+  'id phoneName phoneModel phonePlatform phoneModelName notificationKinds canBeNotified lastSeenAt lastDeliveredAt lastDeliveryError'
 
 // The documents the Phones section of Devices sends, by operation, which TestPhoneParity
 // reads to check the dashboard offers what the command line does.
@@ -101,6 +102,16 @@ export function PhonesPage() {
       setBusy(null)
     }
   }
+  // The phone's platform as people say it, unless its model's name says it already.
+  const platformOf = (phone: Phone) => {
+    const platformName =
+      phone.phonePlatform === 'android'
+        ? t('phones.platformAndroid')
+        : phone.phonePlatform === 'ios'
+          ? t('phones.platformIos')
+          : ''
+    return platformName && !phone.phoneModelName.toLowerCase().includes(platformName.toLowerCase()) ? platformName : ''
+  }
   const stateOf = (phone: Phone) => {
     if (!phone.canBeNotified) return <Tag value={t('phones.notRegistered')} tone="warn" />
     if (phone.lastDeliveryError) return <Tag value={t('phones.lastFailed')} tone="bad" />
@@ -124,7 +135,7 @@ export function PhonesPage() {
             phone.notificationKinds.length === 0 || phone.notificationKinds.length === kinds.length
               ? t('phones.notificationsAll')
               : t('phones.notificationsSome', { kinds: phone.notificationKinds.map(kindName).join(', ') })
-          const detail = [phone.phoneModelName, phone.canBeNotified ? told : '']
+          const detail = [platformOf(phone), phone.phoneModelName, phone.canBeNotified ? told : '']
           if (phone.lastDeliveryError) detail.push(phone.lastDeliveryError)
           return (
             <SettingsRow

@@ -10,6 +10,10 @@ export const SAME_IN_EVERY_LANGUAGE: ReadonlySet<Key> = new Set<Key>([
   // The product's name, and the dash that stands for nothing.
   'app.name',
   'common.none',
+  // The names of the two phone platforms, which are product names spelled
+  // the same in Japanese, and the iPhone's in Chinese too.
+  'phones.platformIos',
+  'phones.platformAndroid',
   // Apple's name for a picture with a few seconds of video, which the
   // Japanese iPhone itself writes in English.
   'photos.kindLivePhoto',

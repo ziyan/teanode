@@ -1046,6 +1046,8 @@ export const ja: Catalog = {
     'スマートフォンはまだありません。接続すると、そこからエージェントと話し、あなたの対応が必要なときに知らせを受け取れます。',
   'phones.unnamed': '名前のないスマートフォン',
   'phones.notified': '通知オン',
+  'phones.platformIos': 'iPhone',
+  'phones.platformAndroid': 'Android',
   'phones.notRegistered': 'この電話では通知がオフ',
   'phones.lastFailed': '前回の通知に失敗',
   'phones.test': 'テスト通知を送る',

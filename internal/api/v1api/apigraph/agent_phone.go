@@ -69,6 +69,9 @@ type AgentPhoneView struct {
 	PhoneName  string `json:"phoneName"`
 	PhoneModel string `json:"phoneModel"`
 
+	// PhonePlatform is ios or android: which app the phone runs
+	PhonePlatform string `json:"phonePlatform"`
+
 	// PhoneModelName is PhoneModel as people say it, such as iPhone 17 Pro
 	// Max; the identifier itself when it is not one we know
 	PhoneModelName string `json:"phoneModelName"`
@@ -89,8 +92,13 @@ type RegisterAgentPhoneArguments struct {
 	// PhoneName is what the phone calls itself
 	PhoneName string `json:"phoneName"`
 
-	// PhoneModel is what it is, such as iPhone17,1
+	// PhoneModel is what it is, such as iPhone17,1 or Pixel 9
 	PhoneModel string `json:"phoneModel"`
+
+	// PhonePlatform is the app the phone runs, ios or android; leaving it
+	// out is ios, which is what every app registered as before Android had
+	// one. The push relay's registrations are made for the same platform
+	PhonePlatform *string `json:"phonePlatform" graphapi:"nullable"`
 
 	// PushRegistration is the push relay's sealed registration for the
 	// phone, empty while it has not allowed notifications
@@ -141,7 +149,7 @@ func phoneView(phone *models.AgentPhone) *AgentPhoneView {
 	}
 	return &AgentPhoneView{
 		ID: phone.ID, PhoneName: phone.PhoneName, PhoneModel: phone.PhoneModel,
-		PhoneModelName: models.PhoneModelName(phone.PhoneModel), NotificationKinds: kinds,
+		PhonePlatform: phone.PhonePlatform, PhoneModelName: models.PhoneModelName(phone.PhoneModel), NotificationKinds: kinds,
 		CanBeNotified: phone.CanBeNotified(), CreatedAt: phone.CreatedAt, LastSeenAt: phone.LastSeenAt,
 		LastDeliveredAt: phone.LastDeliveredAt, LastDeliveryError: phone.LastDeliveryError,
 	}
@@ -187,6 +195,12 @@ func (self *graph) RegisterAgentPhone(ctx context.Context, arguments RegisterAge
 	if len(voipPushRegistration) > pushRegistrationLongest {
 		return nil, fmt.Errorf("%w: that is not a VoIP push registration", api.ErrInvalidArguments)
 	}
+	phonePlatform := models.PhonePlatformIOS
+	if arguments.PhonePlatform != nil && strings.TrimSpace(*arguments.PhonePlatform) != "" {
+		if phonePlatform = strings.TrimSpace(*arguments.PhonePlatform); !slices.Contains(models.PhonePlatforms, phonePlatform) {
+			return nil, fmt.Errorf("%w: %q is not a platform; the platforms are %s", api.ErrInvalidArguments, phonePlatform, strings.Join(models.PhonePlatforms, ", "))
+		}
+	}
 	sealedKey := ""
 	if key := strings.TrimSpace(arguments.PayloadKey); key != "" {
 		raw, err := base64.StdEncoding.DecodeString(key)
@@ -203,6 +217,7 @@ func (self *graph) RegisterAgentPhone(ctx context.Context, arguments RegisterAge
 		AgentID: found.ID, ClientID: clientId,
 		PhoneName:        api.DisplayName(arguments.PhoneName, phoneNameLongest),
 		PhoneModel:       api.DisplayName(arguments.PhoneModel, phoneModelLongest),
+		PhonePlatform:    phonePlatform,
 		PushRegistration: pushRegistration, VoIPPushRegistration: voipPushRegistration, PayloadKey: sealedKey,
 	})
 	if err != nil {
