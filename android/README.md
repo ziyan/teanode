@@ -148,5 +148,8 @@ The release key is the project's own and is never committed (`*.jks` is ignored)
 `teanode-release.jks` (alias `teanode`) and `store-password.txt` from the directory in `TEANODE_ANDROID_SIGNING_DIRECTORY`
 (default `~/.secrets/teanode-android`); without them the release build is unsigned. Push needs a Firebase project: the
 google-services plugin is applied only when `app/google-services.json` exists (also ignored), so a clean checkout builds
-and runs with push off. Testers get signed builds through Firebase App Distribution; the distribution script is added
-with the release workflow (Milestone 0 of the plan).
+and runs with push off. Testers get signed builds through Firebase App Distribution, sent from a person's machine
+(it holds the key) with `android/scripts/distribute.sh "release notes"`, or `distribute-integration.sh` for the
+integration branch; the build number is the commit count, passed as `-PteanodeVersionCode`. CI
+(`.github/workflows/android.yml`) runs the tests and the screenshots on every pull request that touches `android/` and
+keeps the pictures as the `android-screenshots` artifact.
