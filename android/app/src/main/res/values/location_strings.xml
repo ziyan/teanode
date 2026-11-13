@@ -258,4 +258,5 @@
     <string name="location_recording_channel">Location recording</string>
     <string name="location_recording_notification_title">Recording your location</string>
     <string name="location_recording_notification_text">Location is being recorded for your places and visits.</string>
+    <string name="location_who_is_here">Who is here</string>
 </resources>

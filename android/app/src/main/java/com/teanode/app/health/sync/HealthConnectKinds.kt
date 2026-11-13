@@ -21,6 +21,7 @@ import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
 import com.teanode.kit.health.HealthSampleInput
 import com.teanode.kit.health.HealthSleepStage
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import java.time.Instant
 import kotlin.reflect.KClass
@@ -92,17 +93,15 @@ object HealthConnectKinds {
         else -> "other"
     }
 
-    // The totals of a workout (energy, distance) come from Health Connect's aggregate of the session; this reads only the session itself, so they are left out of its metadata.
-    private val workout = HealthConnectKind("workout", ExerciseSessionRecord::class) { record ->
-        record as ExerciseSessionRecord
-        listOf(
-            HealthSampleInput(
-                healthSampleId = record.metadata.id, healthType = "workout", startedAt = record.startTime, endedAt = record.endTime,
-                workoutActivityType = workoutName(record.exerciseType), sourceName = ANDROID_SOURCE, sourceBundleId = sourceOf(record),
-                sampleMetadata = if (record.title != null) mapOf("title" to JsonPrimitive(record.title)) else emptyMap(),
-            ),
-        )
-    }
+    /** The workout's key for its energy and distance in the sample's metadata, which the day summary reads. */
+    fun workoutSample(record: ExerciseSessionRecord, totals: Map<String, JsonElement> = emptyMap()): HealthSampleInput = HealthSampleInput(
+        healthSampleId = record.metadata.id, healthType = "workout", startedAt = record.startTime, endedAt = record.endTime,
+        workoutActivityType = workoutName(record.exerciseType), sourceName = ANDROID_SOURCE, sourceBundleId = sourceOf(record),
+        sampleMetadata = (if (record.title != null) mapOf("title" to JsonPrimitive(record.title)) else emptyMap()) + totals,
+    )
+
+    // A session alone has neither its totals nor its route; HealthSync reads those and sends the sample again with them.
+    private val workout = HealthConnectKind("workout", ExerciseSessionRecord::class) { record -> listOf(workoutSample(record as ExerciseSessionRecord)) }
 
     val all: List<HealthConnectKind> = listOf(
         single("stepCount", "count", StepsRecord::class) { record -> interval(record.startTime, record.endTime, record.count.toDouble()) },

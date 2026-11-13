@@ -199,6 +199,7 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
         ConversationModel(environment, conversationId, conversationId?.let { id -> environment.known(id) })
     }
     DisposableEffect(model) { onDispose { model.close() } }
+    ConversationCallEffects(model)
     val navigator = LocalAppNavigator.current
     val snackbar = LocalSnackbar.current
     val scope = rememberCoroutineScope()
@@ -358,6 +359,7 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
                         }
                     }
                 } else {
+                    ConversationAgentCallButton(model)
                     IconButton(onClick = { isShowingStatus = true }) { Icon(Icons.Outlined.Tune, contentDescription = stringResource(R.string.chats_usage_and_devices)) }
                 }
             },

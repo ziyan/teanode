@@ -34,8 +34,11 @@ fun NavGraphBuilder.callsRoutes(navigator: AppNavigator) {
             callId = entry.arguments?.getString("callId").orEmpty(),
             title = entry.arguments?.getString("title").orEmpty(),
             onBack = { navigator.back() },
-            // The recording is in Recordings, which opens it there; one shared with the person is shown there as well.
-            onOpenRecording = { navigator.openSection(AppSection.Recordings) },
+            // The person's own recording opens in Recordings; one shared with them opens on its shared screen.
+            onOpenRecording = { detail ->
+                val recordingId = detail.recordingId.orEmpty()
+                navigator.navigate(Routes.child(AppSection.Recordings, if (detail.isRecordingOwned) "detail/$recordingId" else "shared/$recordingId"))
+            },
         )
     }
     // Demo mode (debug builds) reaches each screen and state of a call from `calls/demo/<name>`, with no server or other person.

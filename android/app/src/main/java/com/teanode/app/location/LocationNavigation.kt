@@ -25,6 +25,10 @@ fun NavGraphBuilder.locationRoutes(navigator: AppNavigator) {
     locationComposable(LocationRoutes.travel, deepLinks = Routes.deepLinks(LocationRoutes.travel)) {
         LocationTravelScreen(LocalConnection.current, onBack = { navigator.back() })
     }
+    locationComposable(LocationRoutes.personTravel, arguments = listOf(navArgument(LocationRoutes.USER_ARGUMENT) { type = NavType.StringType })) { entry ->
+        // Somebody's travel, as far as they share their history with the person.
+        LocationTravelScreen(LocalConnection.current, onBack = { navigator.back() }, userId = entry.arguments?.getString(LocationRoutes.USER_ARGUMENT))
+    }
     locationComposable(LocationRoutes.people, deepLinks = Routes.deepLinks(LocationRoutes.people)) {
         LocationPeopleScreen(rememberLocationModel(), onBack = { navigator.back() })
     }

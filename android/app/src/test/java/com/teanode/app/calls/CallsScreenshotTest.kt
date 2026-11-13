@@ -121,7 +121,7 @@ class CallsScreenshotTest {
     fun `incoming call dark`() = incoming_call(Look.Dark)
 
     private fun banner_of_a_chat_with_a_call_going(look: Look) {
-        composeRule.setContent { Shown(look) { ChatCallBannerContent(onCount = 2, onJoin = {}) } }
+        composeRule.setContent { Shown(look) { Column { ChatCallBannerContent(onCount = 2, onJoin = {}) } } }
         composeRule.photograph("calls-banner-${look.fileName}")
     }
 

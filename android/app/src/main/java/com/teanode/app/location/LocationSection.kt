@@ -1,5 +1,9 @@
 package com.teanode.app.location
 
+import java.time.Instant
+import com.teanode.kit.location.PlaceVisit
+import com.teanode.kit.location.ServerTime
+import com.teanode.app.photos.PhotoFilterRequest
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,6 +62,9 @@ object LocationRoutes {
     val settings: String = Routes.child(AppSection.Location, "settings")
     val travel: String = Routes.child(AppSection.Location, "travel")
     val people: String = Routes.child(AppSection.Location, "people")
+    const val USER_ARGUMENT = "userId"
+    val personTravel: String = Routes.child(AppSection.Location, "travel/{$USER_ARGUMENT}")
+    fun personTravel(userId: String): String = Routes.child(AppSection.Location, "travel/$userId")
     const val DAY_ARGUMENT = "day"
     const val PLACE_ARGUMENT = "placeId"
     val day: String = Routes.child(AppSection.Location, "day/{$DAY_ARGUMENT}")
@@ -126,9 +133,14 @@ fun LocationSection() {
         onOpenPlace = { place -> navigator.navigate(LocationRoutes.place(place.id)) },
         onOpenPeople = { navigator.navigate(LocationRoutes.people) },
         onOpenTravel = { navigator.navigate(LocationRoutes.travel) },
+        onOpenPersonTravel = { userId -> navigator.navigate(LocationRoutes.personTravel(userId)) },
         onOpenSettings = { navigator.navigate(LocationRoutes.settings) },
         onOpenHomeAddress = { navigator.navigate(LocationRoutes.homeAddress) },
-        onOpenPhotos = { navigator.navigate(Routes.home(AppSection.Photos)) },
+        onOpenPhotos = { visit ->
+            // Photos opens at exactly this visit: from its arrival to when the photos counted end, or now for a visit still going on.
+            PhotoFilterRequest.open(visit.arrivedInstant, visit.photosTakenBefore?.let { text -> ServerTime.instant(text) } ?: visit.departedInstant ?: Instant.now())
+            navigator.navigate(Routes.home(AppSection.Photos))
+        },
     )
 }
 
@@ -142,9 +154,10 @@ fun LocationHome(
     onOpenTravel: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenHomeAddress: () -> Unit,
-    onOpenPhotos: () -> Unit,
+    onOpenPhotos: (PlaceVisit) -> Unit,
     initialSheetValue: SheetValue = SheetValue.PartiallyExpanded,
     initialSegment: LocationSegment = LocationSegment.Visits,
+    onOpenPersonTravel: (String) -> Unit = {},
 ) {
     val recording = LocalLocationRecording.current
     var segment by rememberSaveable { mutableStateOf(initialSegment) }
@@ -198,7 +211,7 @@ fun LocationHome(
                     )
                     LocationDrawerContent(
                         model = model, segment = segment, isShowingPeople = isShowingPeople, onOpenDay = onOpenDay, onOpenPlace = onOpenPlace, onOpenPeople = onOpenPeople,
-                        onOpenTravel = onOpenTravel, onOpenHomeAddress = onOpenHomeAddress, onOpenPhotos = onOpenPhotos, onShowSharing = { segment = LocationSegment.Sharing },
+                        onOpenTravel = onOpenTravel, onOpenPersonTravel = onOpenPersonTravel, onOpenHomeAddress = onOpenHomeAddress, onOpenPhotos = onOpenPhotos, onShowSharing = { segment = LocationSegment.Sharing },
                         onRetry = { scope.launch { model.load() } },
                     )
                 }
@@ -256,8 +269,9 @@ private fun LocationDrawerContent(
     onOpenPlace: (com.teanode.kit.location.LocationPlace) -> Unit,
     onOpenPeople: () -> Unit,
     onOpenTravel: () -> Unit,
+    onOpenPersonTravel: (String) -> Unit = {},
     onOpenHomeAddress: () -> Unit,
-    onOpenPhotos: () -> Unit,
+    onOpenPhotos: (PlaceVisit) -> Unit,
     onShowSharing: () -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -265,7 +279,7 @@ private fun LocationDrawerContent(
     val chosenVisits = model.chosenPersonVisits
     val failure = model.loadFailedText
     when {
-        isShowingPeople && chosen != null && chosenVisits != null -> LocationChosenPersonVisits(state = chosenVisits, person = chosen, onOpenPlace = onOpenPlace)
+        isShowingPeople && chosen != null && chosenVisits != null -> LocationChosenPersonVisits(state = chosenVisits, person = chosen, onOpenPlace = onOpenPlace, onOpenPersonTravel = onOpenPersonTravel)
         model.isSetupShown -> LocationSetupList(
             model = model, isShowingPeople = isShowingPeople, onOpenPeople = onOpenPeople, onShowSharing = onShowSharing, onOpenHomeAddress = onOpenHomeAddress,
         )

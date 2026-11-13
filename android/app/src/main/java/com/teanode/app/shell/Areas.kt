@@ -26,7 +26,7 @@ import com.teanode.app.shopping.shoppingArea
  */
 object Areas {
     val all: List<Area> = listOf(
-        chatsArea, journalArea, goalsArea, ideasArea, mailArea, calendarArea, contactsArea, photosArea, locationArea,
+        chatsArea, journalArea, goalsArea, ideasArea, mailArea, calendarArea, locationArea, contactsArea, photosArea,
         healthArea, passwordsArea, shoppingArea, knowledgeArea, financeArea, recordingsArea, codingArea, settingsArea,
         searchArea,
     )

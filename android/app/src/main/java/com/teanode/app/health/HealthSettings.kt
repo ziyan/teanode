@@ -475,21 +475,22 @@ fun HealthSetupSheet(onDismiss: () -> Unit) {
     val syncing = LocalHealthSyncing.current
     val scope = rememberCoroutineScope()
     var isTurningOn by remember { mutableStateOf(false) }
-    var problem by remember { mutableStateOf<String?>(null) }
+    val snackbar = LocalSnackbar.current
     val couldNotTurnOn = stringResource(R.string.health_could_not_turn_on)
     val launcher = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { granted ->
         scope.launch {
             val didTurnOn = syncing.turnOn(granted)
             isTurningOn = false
-            if (didTurnOn) onDismiss() else problem = syncing.snapshot.value.problemText ?: couldNotTurnOn
+            onDismiss()
+            // A refusal is said in a snackbar over the screen, not inside the sheet.
+            if (!didTurnOn) snackbar.showProblem(syncing.snapshot.value.problemText ?: couldNotTurnOn)
         }
     }
     ModalBottomSheet(onDismissRequest = { if (!isTurningOn) onDismiss() }) {
         HealthSetupContent(
-            isTurningOn = isTurningOn, problemText = problem,
+            isTurningOn = isTurningOn,
             onContinue = {
                 isTurningOn = true
-                problem = null
                 val permissions = syncing.requiredPermissions
                 if (permissions.isEmpty()) {
                     scope.launch { syncing.turnOn(emptySet()); isTurningOn = false; onDismiss() }
@@ -503,7 +504,7 @@ fun HealthSetupSheet(onDismiss: () -> Unit) {
 }
 
 @Composable
-fun HealthSetupContent(isTurningOn: Boolean, problemText: String?, onContinue: () -> Unit, onCancel: () -> Unit) {
+fun HealthSetupContent(isTurningOn: Boolean, onContinue: () -> Unit, onCancel: () -> Unit) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Icon(Icons.Outlined.FavoriteBorder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Text(stringResource(R.string.health_setup_title), style = MaterialTheme.typography.titleLarge)
@@ -511,7 +512,6 @@ fun HealthSetupContent(isTurningOn: Boolean, problemText: String?, onContinue: (
         SetupPoint(Icons.Outlined.Dns, stringResource(R.string.health_setup_where_title), stringResource(R.string.health_setup_where_text))
         SetupPoint(Icons.Outlined.AutoAwesome, stringResource(R.string.health_setup_who_title), stringResource(R.string.health_setup_who_text))
         Text(stringResource(R.string.health_setup_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        problemText?.let { problem -> Row { Icon(Icons.Outlined.Warning, contentDescription = null); Text(problem, Modifier.padding(start = 12.dp)) } }
         Button(onClick = onContinue, enabled = !isTurningOn, modifier = Modifier.fillMaxWidth()) {
             if (isTurningOn) CircularProgressIndicator(Modifier.width(20.dp), strokeWidth = 2.dp) else Text(stringResource(R.string.health_continue))
         }
