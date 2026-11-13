@@ -213,18 +213,42 @@ an upgrade were a thing you did on a day you chose.
 ## What your server relies on beyond your own machines
 
 Your mail, models, storage and backups are yours. A few things are not,
-because the iPhone app is published once for everybody:
+because the iPhone and Android apps are published once for everybody:
 
 - **Phone notifications go through `https://mail.teanode.com`.** Apple
-  delivers to an app only from the push key of the account that publishes
-  it, so every server sends through that relay, and the app registers each
-  phone there. What a server sends is encrypted for the phone before it
+  and Google deliver to an app only from the push credential of the account
+  that publishes it, so every server sends through that relay, and the app
+  registers each phone there, iPhone or Android. What a server sends is encrypted for the phone before it
   leaves, and the relay keeps nothing, so it learns only that a phone was
   sent something. Live Activities on the lock screen travel the same way.
   If the relay cannot be reached, phones get no notifications until it can;
   everything else works. `agent.push.relayUrl` names another relay, which
   helps only with an app you build and sign with a push key of your own (see
   `agent.push` and `agent.push.relay` in `docs/configuration.md`).
+
+  **Running a relay for an Android app.** A relay reaches Android phones
+  through Firebase Cloud Messaging, beside Apple. In the Firebase console of
+  the project the app is registered in, open Project settings, Service
+  accounts, and generate a new private key: that JSON file is the credential
+  (the account needs the Firebase Cloud Messaging API enabled and the role
+  "Firebase Cloud Messaging API Admin", or "Firebase Admin SDK Administrator
+  Service Agent", which the console's own service account already has). Set
+  it as `agent.push.relay.fcmServiceAccount`, from a pipe so it does not land
+  in your shell history (a piped secret is one line, so the file is made
+  compact first):
+
+      jq -c . service-account.json | teanode settings set agent \
+        'push:={"relay":{"enabled":true,"fcmServiceAccount":"-"}}'
+
+  It is a secret, redacted wherever the Apple key is. Leave it empty and the
+  relay refuses Android registrations; leave the Apple key empty and it
+  refuses iPhones. A relay that gains Android keeps every iPhone registration
+  it handed out. Replacing the Firebase credential of a relay that has no
+  Apple key makes its phones register again the next time their apps start.
+  Check it with `teanode agent phone test <phone-id>` on a connected Android
+  phone. The Android app asks its server for updates on the `android` channel,
+  which the server reads from the release asset `android-update-channel/android.json`
+  of `ziyan/teanode` (`teanode upgrade app android` shows what it reads).
 - **Connecting a phone by its code uses `https://teanode.com/app/connect`.**
   The code a server shows is that address, which the app claims, so a phone's
   camera opens the app. The server's address and the code follow the `#`,

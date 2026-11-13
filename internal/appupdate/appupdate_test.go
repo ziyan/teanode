@@ -18,6 +18,7 @@ func checkerOf(t *testing.T, handler http.HandlerFunc) (*Checker, *time.Time) {
 	checker.client = server.Client()
 	checker.testFlightEndpoint = server.URL + "/testflight.json"
 	checker.appStoreEndpoint = server.URL + "/lookup"
+	checker.androidEndpoint = server.URL + "/android.json"
 	checker.now = func() time.Time { return now }
 	return checker, &now
 }
@@ -109,5 +110,64 @@ func TestAnAnswerIsKeptAndOutlivesAFailure(t *testing.T) {
 func TestAnotherChannelIsRefused(t *testing.T) {
 	if _, err := New().Latest(context.Background(), "sideloaded"); !errors.Is(err, ErrUnknownChannel) {
 		t.Fatal(err)
+	}
+}
+
+// The Android channel reads the file the distribution script publishes, whose
+// build may be written as text or as the number it is.
+func TestTheAndroidChannelReadsItsOwnFile(t *testing.T) {
+	for name, build := range map[string]string{"text": `"42"`, "number": `42`} {
+		checker, _ := checkerOf(t, func(writer http.ResponseWriter, request *http.Request) {
+			if request.URL.Path != "/android.json" {
+				t.Errorf("asked %s", request.URL.Path)
+			}
+			_, _ = writer.Write([]byte(`{"version":"1.4.0","build":` + build + `,"installUrl":"https://appdistribution.firebase.google.com/testerapps/example"}`))
+		})
+		update, err := checker.Latest(context.Background(), ChannelAndroid)
+		if err != nil || update == nil || update.UpdateChannel != ChannelAndroid || update.Version != "1.4.0" || update.BuildNumber != "42" ||
+			update.InstallURL != "https://appdistribution.firebase.google.com/testerapps/example" {
+			t.Errorf("%s: %+v %v", name, update, err)
+		}
+	}
+}
+
+func TestTheAndroidChannelWithNothingYetAnswersNothing(t *testing.T) {
+	checker, _ := checkerOf(t, func(writer http.ResponseWriter, _ *http.Request) { writer.WriteHeader(http.StatusNotFound) })
+	if update, err := checker.Latest(context.Background(), ChannelAndroid); err != nil || update != nil {
+		t.Fatalf("%+v %v", update, err)
+	}
+}
+
+// The phone opens what this answers, so an answer leading anywhere but the
+// tester distribution or Google Play is refused, Apple's addresses included.
+func TestAnAndroidAnswerLeadingElsewhereIsRefused(t *testing.T) {
+	for name, installURL := range map[string]string{
+		"another host":     "https://appdistribution.firebase.google.com.example.net/testerapps/example",
+		"Apple":            "https://testflight.apple.com/v1/app/1",
+		"Apple's own kind": "itms-beta://beta.itunes.apple.com/v1/app/1",
+		"plain http":       "http://play.google.com/store/apps/details?id=com.example.app",
+		"another scheme":   "intent://example#Intent;end",
+	} {
+		checker, _ := checkerOf(t, func(writer http.ResponseWriter, _ *http.Request) {
+			_, _ = writer.Write([]byte(`{"version":"1.4.0","build":"42","installUrl":"` + installURL + `"}`))
+		})
+		if update, err := checker.Latest(context.Background(), ChannelAndroid); err == nil {
+			t.Errorf("%s: %+v", name, update)
+		}
+	}
+	// And Google's addresses do not lead an iPhone anywhere.
+	checker, _ := checkerOf(t, func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write([]byte(`{"version":"1.3.0","buildNumber":"42","installUrl":"https://play.google.com/store/apps/details?id=com.example.app"}`))
+	})
+	if update, err := checker.Latest(context.Background(), ChannelTestFlight); err == nil {
+		t.Errorf("an iPhone was sent to Google Play: %+v", update)
+	}
+	for _, allowed := range []string{"https://play.google.com/store/apps/details?id=com.example.app", "https://appdistribution.firebase.dev/i/example"} {
+		checker, _ := checkerOf(t, func(writer http.ResponseWriter, _ *http.Request) {
+			_, _ = writer.Write([]byte(`{"version":"1.4.0","build":"42","installUrl":"` + allowed + `"}`))
+		})
+		if _, err := checker.Latest(context.Background(), ChannelAndroid); err != nil {
+			t.Errorf("%s: %s", allowed, err)
+		}
 	}
 }
