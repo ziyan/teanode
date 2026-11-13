@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -45,7 +46,9 @@ class NavigationTest {
         composeRule.setContent { AppRoot(rememberDemoSession()) }
         barItem("agent").assertIsSelected()
         barItem("mail").assertIsNotSelected()
-        composeRule.onNodeWithText(placeholder).assertIsDisplayed()
+        // Chats is built: its first screen is the list of conversations, which starts with the main chat.
+        composeRule.waitUntil(15_000) { composeRule.onAllNodesWithText("Main chat").fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithText("Main chat").assertIsDisplayed()
     }
 
     @Test

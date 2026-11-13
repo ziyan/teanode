@@ -1,20 +1,26 @@
 package com.teanode.app.chats
 
 import androidx.navigation.NavGraphBuilder
+import androidx.navigation.NavType
 import androidx.navigation.compose.composable
-import com.teanode.app.shell.Area
+import androidx.navigation.navArgument
 import com.teanode.app.shell.AppNavigator
+import com.teanode.app.shell.Area
 import com.teanode.app.shell.Routes
 import com.teanode.kit.AppSection
 
-/**
- * The routes of Chats. Register every screen of this part here, with `Routes.child(AppSection.Agent, "...")`
- * names, and open one from a screen with `LocalAppNavigator.current.navigate(route)`.
- */
-@Suppress("UNUSED_PARAMETER")
+private val mainRoute = Routes.child(AppSection.Agent, "main")
+private val conversationRoute = Routes.child(AppSection.Agent, "conversation/{conversationId}")
+
+/** The routes of Chats: the list, the main conversation, and any other conversation by its id. */
 fun NavGraphBuilder.chatsRoutes(navigator: AppNavigator) {
-    composable(Routes.home(AppSection.Agent), deepLinks = Routes.deepLinks(Routes.home(AppSection.Agent))) {
-        ChatsSection()
+    composable(Routes.home(AppSection.Agent), deepLinks = Routes.deepLinks(Routes.home(AppSection.Agent))) { ChatsSection() }
+    composable(mainRoute, deepLinks = Routes.deepLinks(mainRoute)) {
+        ConversationScreen(conversationId = null, onBack = { navigator.back() }, onOpenConversation = { id -> navigator.navigate(Routes.child(AppSection.Agent, "conversation/$id")) })
+    }
+    composable(conversationRoute, arguments = listOf(navArgument("conversationId") { type = NavType.StringType }), deepLinks = Routes.deepLinks(conversationRoute)) { entry ->
+        val conversationId = entry.arguments?.getString("conversationId").orEmpty()
+        ConversationScreen(conversationId = conversationId, onBack = { navigator.back() }, onOpenConversation = { id -> navigator.navigate(Routes.child(AppSection.Agent, "conversation/$id")) })
     }
 }
 

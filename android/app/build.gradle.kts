@@ -102,6 +102,10 @@ dependencies {
     implementation(libs.stream.webrtc)
     implementation(libs.glance.appwidget)
     implementation(libs.glance.material3)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
+    implementation(libs.androidx.work.runtime)
+    implementation(libs.androidx.exifinterface)
 
     debugImplementation(libs.compose.ui.test.manifest)
 
