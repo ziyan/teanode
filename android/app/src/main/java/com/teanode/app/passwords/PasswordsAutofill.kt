@@ -46,15 +46,53 @@ internal class AutofillFields(
     val packageName: String?,
 )
 
+/** One field the page offers, with the page address of the frame it is in and whether the person can see it. */
+internal class FoundField<IdType>(val id: IdType, val kind: FieldKind, val webAddress: String?, val isVisible: Boolean)
+
+internal enum class FieldKind { UserName, Password, OneTimeCode }
+
+/** The apps whose web pages carry an address that can be trusted: any other app can claim any web domain in its own views. */
+internal object TrustedBrowsers {
+    val packageNames: Set<String> = setOf(
+        "com.android.chrome", "com.chrome.beta", "com.chrome.dev", "com.chrome.canary", "org.chromium.chrome",
+        "org.mozilla.firefox", "org.mozilla.firefox_beta", "org.mozilla.fenix", "org.mozilla.focus", "org.mozilla.klar",
+        "com.microsoft.emmx", "com.brave.browser", "com.sec.android.app.sbrowser", "com.opera.browser", "com.opera.mini.native",
+        "com.vivaldi.browser", "com.duckduckgo.mobile.android",
+    )
+
+    fun isTrusted(packageName: String?): Boolean = packageName != null && packageName in packageNames
+}
+
+/** What the picker chose: the fields of one frame of a trusted browser, and that frame's address. */
+internal class PickedFields<IdType>(val userNameIds: List<IdType>, val passwordIds: List<IdType>, val oneTimeCodeIds: List<IdType>, val webAddress: String?)
+
+/** Chooses what to fill from the fields found: only visible ones, and only those in the same frame as the first password or code field. */
+internal object AutofillFieldPicker {
+    fun <IdType> pick(found: List<FoundField<IdType>>, packageName: String?): PickedFields<IdType> {
+        val none = PickedFields<IdType>(emptyList(), emptyList(), emptyList(), null)
+        if (!TrustedBrowsers.isTrusted(packageName)) return none
+        val visible = found.filter { field -> field.isVisible && field.webAddress != null }
+        val anchor = visible.firstOrNull { field -> field.kind == FieldKind.Password } ?: visible.firstOrNull { field -> field.kind == FieldKind.OneTimeCode } ?: return none
+        // A field in another frame, such as an embedded page of another site, is never filled with this page's logins.
+        val sameFrame = visible.filter { field -> field.webAddress == anchor.webAddress }
+        return PickedFields(
+            userNameIds = sameFrame.filter { field -> field.kind == FieldKind.UserName }.map { field -> field.id },
+            passwordIds = sameFrame.filter { field -> field.kind == FieldKind.Password }.map { field -> field.id },
+            oneTimeCodeIds = sameFrame.filter { field -> field.kind == FieldKind.OneTimeCode }.map { field -> field.id },
+            webAddress = anchor.webAddress,
+        )
+    }
+}
+
 /** Reads an assist structure for the fields a login fills and the page they are on. */
 internal object AutofillStructureParser {
     fun parse(structure: AssistStructure): AutofillFields {
-        val userNameIds = mutableListOf<AutofillId>()
-        val passwordIds = mutableListOf<AutofillId>()
-        val oneTimeCodeIds = mutableListOf<AutofillId>()
-        var webDomain: String? = null
-        var webScheme: String? = null
-        fun visit(node: AssistStructure.ViewNode) {
+        val found = mutableListOf<FoundField<AutofillId>>()
+        fun visit(node: AssistStructure.ViewNode, inheritedDomain: String?, inheritedScheme: String?) {
+            // The address of a field is the one of the nearest page above it, not of whatever node was read last.
+            val ownDomain = node.webDomain?.takeIf { domain -> domain.isNotEmpty() }
+            val domain = ownDomain ?: inheritedDomain
+            val scheme = if (ownDomain != null) node.webScheme else inheritedScheme
             val id = node.autofillId
             if (id != null && node.autofillType == View.AUTOFILL_TYPE_TEXT) {
                 val hints = node.autofillHints?.toList() ?: emptyList()
@@ -68,14 +106,18 @@ internal object AutofillStructureParser {
                     (inputType and InputType.TYPE_MASK_VARIATION == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS) ||
                     (node.htmlInfo?.attributes?.any { attribute -> attribute.first == "autocomplete" && attribute.second.contains("username") } == true)
                 val isOneTimeCode = hints.any { hint -> hint.equals("smsOTPCode", true) || hint.equals("oneTimeCode", true) || hint.equals("one-time-code", true) }
-                if (isOneTimeCode) oneTimeCodeIds.add(id) else if (isPassword) passwordIds.add(id) else if (isUserName) userNameIds.add(id)
+                val kind = if (isOneTimeCode) FieldKind.OneTimeCode else if (isPassword) FieldKind.Password else if (isUserName) FieldKind.UserName else null
+                if (kind != null) {
+                    val isVisible = node.visibility == View.VISIBLE && node.width > 0 && node.height > 0
+                    found.add(FoundField(id, kind, domain?.let { shown -> "${scheme ?: "https"}://$shown" }, isVisible))
+                }
             }
-            node.webDomain?.takeIf { domain -> domain.isNotEmpty() }?.let { domain -> webDomain = domain; webScheme = node.webScheme }
-            for (index in 0 until node.childCount) visit(node.getChildAt(index))
+            for (index in 0 until node.childCount) visit(node.getChildAt(index), domain, scheme)
         }
-        for (index in 0 until structure.windowNodeCount) visit(structure.getWindowNodeAt(index).rootViewNode)
-        val address = webDomain?.let { domain -> "${webScheme ?: "https"}://$domain" }
-        return AutofillFields(userNameIds, passwordIds, oneTimeCodeIds, address, structure.activityComponent?.packageName)
+        for (index in 0 until structure.windowNodeCount) visit(structure.getWindowNodeAt(index).rootViewNode, null, null)
+        val packageName = structure.activityComponent?.packageName
+        val picked = AutofillFieldPicker.pick(found, packageName)
+        return AutofillFields(picked.userNameIds, picked.passwordIds, picked.oneTimeCodeIds, picked.webAddress, packageName)
     }
 }
 
