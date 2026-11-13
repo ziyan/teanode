@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.227.0] - 2026-11-13
+
+### Added
+
+- The iPhone app's sign-in screen explains how to set up your own TeaNode server, with the install command to copy. (#754)
+
 ## [0.226.4] - 2026-11-12
 
 ### Fixed
