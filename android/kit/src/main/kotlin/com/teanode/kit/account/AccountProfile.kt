@@ -262,3 +262,12 @@ suspend fun Connection.passkeys(): PasskeyList {
 suspend fun Connection.deletePasskey(passkeyId: String) {
     execute<kotlinx.serialization.json.JsonObject>(AccountProfileDocuments.DELETE_PASSKEY, variablesOf("passkeyId" to passkeyId))
 }
+
+/** Chooses which kinds of notification a phone gets; none is every kind. Copied from the iPhone app's Documents (Operations). */
+private const val UPDATE_PHONE = """mutation (${'$'}phoneId: String!, ${'$'}notificationKinds: [String!]) {
+  UpdateAgentPhone(phoneId: ${'$'}phoneId, notificationKinds: ${'$'}notificationKinds) { id notificationKinds canBeNotified }
+}"""
+
+suspend fun Connection.updatePhone(phoneId: String, notificationKinds: List<String>) {
+    execute<kotlinx.serialization.json.JsonObject>(UPDATE_PHONE, variablesOf("phoneId" to phoneId, "notificationKinds" to notificationKinds))
+}

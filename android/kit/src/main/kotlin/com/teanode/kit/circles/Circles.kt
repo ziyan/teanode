@@ -33,8 +33,8 @@ data class CircleMember(
     /** Which of the twelve colors their initial is drawn on without a picture. */
     val avatarColorIndex: Int? = null,
     /** admin or member. */
-    val memberRole: String,
-    val joinedAt: String,
+    val memberRole: String = CircleMemberRole.Member.serverName,
+    val joinedAt: String = "",
     /** What this person is to the caller, such as parent or spouse; empty when neither has said, and for the caller's own row. */
     val relationshipKind: String = "",
     /** masculine, feminine or neutral: the gender of the word to show for the relationship. Empty when there is none. */
@@ -261,11 +261,11 @@ data class PeopleCircle(
     val id: String,
     val name: String,
     /** family, friends or colleagues. */
-    val circleKind: String,
-    val createdAt: String,
+    val circleKind: String = CircleKind.Family.serverName,
+    val createdAt: String = "",
     /** The caller's own role in it: admin or member. */
-    val memberRole: String,
-    val members: List<CircleMember>,
+    val memberRole: String = CircleMemberRole.Member.serverName,
+    val members: List<CircleMember> = emptyList(),
     /** Who is still being waited for. Empty for somebody who is not an admin. */
     val pendingInvitations: List<CircleInvitation> = emptyList(),
 ) {

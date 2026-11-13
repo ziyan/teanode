@@ -1,5 +1,6 @@
 package com.teanode.kit.access
 
+import com.teanode.kit.AccessSession
 import com.teanode.kit.Connection
 import com.teanode.kit.sortedByKeys
 import com.teanode.kit.settings.trimmedText
@@ -11,32 +12,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
-/** The part of the person's permissions the access pages read: the ones held everywhere. */
-@Serializable
-data class AccessSessionPermissions(val everywhere: List<String> = emptyList())
-
-/**
- * What the access pages need to know about the person reading them: who they are, so their own row is marked and kept
- * from being disabled or removed, and the server permissions they hold, which decide what each page offers to change.
- */
-@Serializable
-data class AccessSession(
-    val userId: String? = null,
-    val permissions: AccessSessionPermissions? = null,
-    /** The operator signed in as this account, when somebody is. */
-    val impersonatorUsername: String? = null,
-) {
-    /** Whether the person holds this permission everywhere, such as user:manage. */
-    fun holds(permissionKey: String): Boolean = permissions?.everywhere?.contains(permissionKey) ?: false
-
-    val canManageUsers: Boolean get() = holds("user:manage")
-    val canManageGroups: Boolean get() = holds("group:manage")
-    val canManageRoles: Boolean get() = holds("role:manage")
-    val canReadAudit: Boolean get() = holds("audit:read")
-
-    /** Whether the person may keep a photo library and back a device up to it. */
-    val canUsePhotos: Boolean get() = holds("photos:use")
-}
+val AccessSession.canManageUsers: Boolean get() = holds("user:manage")
+val AccessSession.canManageGroups: Boolean get() = holds("group:manage")
+val AccessSession.canManageRoles: Boolean get() = holds("role:manage")
+val AccessSession.canReadAudit: Boolean get() = holds("audit:read")
 
 /** Somebody with an account on the server, as the people page lists them. */
 @Serializable
@@ -240,8 +219,6 @@ data class AuditEvent(
 @Serializable
 data class AuditEventPage(val events: List<AuditEvent>, val total: Int)
 
-@Serializable private class GetSessionAnswer(val GetSession: AccessSession)
-
 @Serializable private class ListUsersAnswer(val ListUsers: List<AccessUser>)
 
 @Serializable private class CreateUserAnswer(val CreateUser: AccessUser)
@@ -265,9 +242,6 @@ data class AuditEventPage(val events: List<AuditEvent>, val total: Int)
 @Serializable private class ListDomainsAnswer(val ListDomains: List<AccessDomain>)
 
 @Serializable private class ListAuditEventsAnswer(val ListAuditEvents: AuditEventPage)
-
-/** Who is reading the access pages, and what they may change there. */
-suspend fun Connection.accessSession(): AccessSession = execute<GetSessionAnswer>(AccessManagementDocuments.ACCESS_SESSION).GetSession
 
 /** Everybody with an account. Needs user:manage. */
 suspend fun Connection.accessUsers(): List<AccessUser> = execute<ListUsersAnswer>(AccessManagementDocuments.ACCESS_USERS).ListUsers

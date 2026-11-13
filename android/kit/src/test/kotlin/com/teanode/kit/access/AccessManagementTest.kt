@@ -1,5 +1,6 @@
 package com.teanode.kit.access
 
+import com.teanode.kit.AccessSession
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -11,7 +12,7 @@ import org.junit.jupiter.api.Test
 class AccessManagementTest {
     @Test
     fun theSessionHoldsOnlyWhatItWasGiven() {
-        val session = AccessSession("u", AccessSessionPermissions(listOf("user:manage", "photos:use")))
+        val session = AccessSession("u", AccessSession.AccessSessionPermissions(listOf("user:manage", "photos:use")))
         assertTrue(session.canManageUsers)
         assertTrue(session.canUsePhotos)
         assertFalse(session.canReadAudit)

@@ -156,8 +156,14 @@ val photosDemoAnswerers: List<DemoAnswerer> = listOf(
     graphQLField("ReadPhotoFaceGroup") { variables -> PhotosDemoData.faceGroupsJson().firstOrNull { json -> json.contains("\"id\":\"${variables.text("photoFaceGroupId")}\"") } ?: PhotosDemoData.faceGroupsJson().first() },
     graphQLField("ListPhotoAlbumShares", """[{"id":"s1","photoAlbumId":"a1","granteeUserId":"user-alex","granteeUsername":"alex","granteeName":"Alex Example","granteeAvatarColorIndex":3,"shareLevel":"contribute","isLocationIncluded":true,"isFaceNamesIncluded":false,"createdAt":"2026-10-13T00:00:00Z"},
         {"id":"s2","photoAlbumId":"a1","granteeCircleId":"c1","granteeCircleName":"Family","shareLevel":"view","isLocationIncluded":false,"isFaceNamesIncluded":false,"createdAt":"2026-10-14T00:00:00Z"}]""".replace("\n", " ")),
-    graphQLField("ListCircles", """[{"id":"c1","name":"Family","members":[{"userId":"user-alex","username":"alex","name":"Alex Example","avatarColorIndex":3},{"userId":"user-sam","username":"sam","name":"Sam Sample","avatarColorIndex":6}]},{"id":"c2","name":"Book club","members":[{"userId":"user-robin","username":"robin","name":"Robin Reader","avatarColorIndex":9}]}]"""),
+    // Settings answers the full circles read, which names pendingInvitations; this is only the narrow one Photos sends.
+    narrowCirclesAnswerer("""[{"id":"c1","name":"Family","members":[{"userId":"user-alex","username":"alex","name":"Alex Example","avatarColorIndex":3},{"userId":"user-sam","username":"sam","name":"Sam Sample","avatarColorIndex":6}]},{"id":"c2","name":"Book club","members":[{"userId":"user-robin","username":"robin","name":"Robin Reader","avatarColorIndex":9}]}]"""),
     graphQLField("ListAddressBooks", """[{"id":"b1","name":"Contacts","contacts":3}]"""),
     graphQLField("ListContacts", """[{"id":"k1","name":"Alex Example","emails":["alex@example.com"]},{"id":"k2","name":"Robin Reader","emails":["robin@example.com"]}]"""),
     graphQLField("FindPhotos", "[]"),
 )
+
+private fun narrowCirclesAnswerer(valueJson: String): DemoAnswerer {
+    val circles = graphQLField("ListCircles", valueJson)
+    return DemoAnswerer { request -> if (request.document.contains("pendingInvitations")) null else circles.answer(request) }
+}
