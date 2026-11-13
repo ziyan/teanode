@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widgets_agent_name">你的助手</string>
+    <string name="widgets_agent_description">向你的助手提问、与它通话，或开始录音。</string>
+    <string name="widgets_ask_anything">随便问</string>
+    <string name="widgets_ask_your_agent">问你的助手</string>
+    <string name="widgets_call_your_agent">给助手打电话</string>
+    <string name="widgets_start_recording">开始录音</string>
+    <string name="widgets_waiting_name">等待你处理</string>
+    <string name="widgets_waiting_description">你的助手在等你回答的问题和批准。</string>
+    <string name="widgets_nothing_waits">没有等你回复的事</string>
+    <string name="widgets_approve">要批准吗？</string>
+    <string name="widgets_asks_you">在问你</string>
+    <string name="widgets_waiting_count">%1$d 项待回复</string>
+    <string name="widgets_next_name">接下来</string>
+    <string name="widgets_next_description">你接下来的日程和未读邮件。</string>
+    <string name="widgets_nothing_coming_up">接下来没有安排</string>
+    <string name="widgets_no_title">（无标题）</string>
+    <string name="widgets_today_all_day">今天，全天</string>
+    <string name="widgets_unread">%1$d 封未读</string>
+    <string name="widgets_not_connected">请先打开 TeaNode 并连接到你的服务器。</string>
+</resources>
