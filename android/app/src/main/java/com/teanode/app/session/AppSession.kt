@@ -331,6 +331,7 @@ class AppSession(
         val gone = leaving?.server?.host.orEmpty()
         runCatching { store.delete() }
         val next = runCatching { store.load() }.getOrNull()
+        if (leaving != null && !isDemo) AccountEraser(context, secrets).erase(leaving, isLastAccount = next == null)
         factsJob?.cancel()
         currentFacts.value = SectionFacts()
         hasReadFactsFlag.value = false
@@ -352,6 +353,7 @@ class AppSession(
         }
         scope.launch { SignIn(other.server, transport).revoke(other) }
         store.remove(other.accountKey)
+        if (!isDemo) AccountEraser(context, secrets).erase(other, isLastAccount = false)
         accountRing.value = store.accounts()
     }
 
