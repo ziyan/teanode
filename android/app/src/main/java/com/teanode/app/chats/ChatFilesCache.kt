@@ -14,7 +14,7 @@ object ChatFilesCache {
     fun clean(context: Context, nowEpochMS: Long = System.currentTimeMillis()) {
         val doomed = File(context.cacheDir, "chat-files").listFiles().orEmpty().toList() +
             context.cacheDir.listFiles { file -> file.isFile && file.name.startsWith("Voice message") }.orEmpty().toList()
-        for (file in doomed) if (nowEpochMS - file.lastModified() > MOST_AGE_MS) file.deleteRecursively()
+        for (file in doomed) if (nowEpochMS - file.lastModified() > MOST_AGE_MS) file.delete()
     }
 
     /** A file name from another app or the server that cannot name a place outside the directory. */
