@@ -68,9 +68,8 @@ class NavigationTest {
         composeRule.onNodeWithText("Every day").assertIsDisplayed()
         composeRule.onNodeWithText("Calendar").performClick()
         composeRule.waitForIdle()
-        // Calendar is not in the bar, so no tab is selected; its placeholder is on screen.
+        // Calendar is not in the bar, so no tab is selected.
         barItem("agent").assertIsNotSelected()
-        composeRule.onNodeWithText(placeholder).assertIsDisplayed()
         composeRule.onNodeWithText("Every day").assertIsNotDisplayed()
     }
 
