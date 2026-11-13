@@ -132,7 +132,7 @@ fun ContactsScreen(
                     }
                     for (circle in model.circlesWithoutBook) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(if (circle.isFamily) R.string.contacts_make_family_book else R.string.contacts_make_shared_book, circle.name)) },
+                            text = { Text(stringResource(if (circle.circleKind == "family") R.string.contacts_make_family_book else R.string.contacts_make_shared_book, circle.name)) },
                             leadingIcon = { Icon(Icons.Outlined.Contacts, null) },
                             onClick = { isMoreMenuOpen = false; scope.launch { model.makeBook(circle) } },
                         )

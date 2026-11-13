@@ -16,6 +16,11 @@ object PhotoFilterRequest {
         pending = PhotoFilter(takenAfter = takenAfter, takenBefore = takenBefore)
     }
 
+    /** Asks for Photos to open at the photos of one person sharing with the person, as the iPhone app's `openedPhotoPerson` does. */
+    fun openPerson(userId: String, name: String) {
+        pending = PhotoFilter(accountUserId = userId, accountName = name)
+    }
+
     /** The filter asked for, once. */
     fun take(): PhotoFilter? = pending.also { pending = null }
 }

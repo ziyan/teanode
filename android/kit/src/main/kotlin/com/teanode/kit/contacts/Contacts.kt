@@ -9,17 +9,8 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
-/** ContactAccount is an account on the server, as a contact is tied to it and as the card names somebody. */
-@Serializable
-data class ContactAccount(
-    val userId: String,
-    val username: String = "",
-    val name: String? = null,
-    val avatarUrl: String? = null,
-    val avatarColorIndex: Int? = null,
-) {
-    val displayName: String get() = if (name.isNullOrEmpty()) username else name
-}
+/** ContactAccount is an account on the server, as a contact is tied to it: the same person the chats name. */
+typealias ContactAccount = com.teanode.kit.chats.ChatPerson
 
 /**
  * AddressBook is an address book the person can use: their own, or one a circle they are in keeps for itself, which

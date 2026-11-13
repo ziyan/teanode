@@ -5,7 +5,7 @@ import com.teanode.app.shell.AppNavigator
 import com.teanode.app.shell.Routes
 import com.teanode.kit.AppSection
 import com.teanode.kit.contacts.PersonCardTarget
-import com.teanode.kit.contacts.openDirectChat
+import com.teanode.kit.chats.openDirectChat
 
 /** The routes of Contacts, built in one place so a screen and the graph agree. */
 object ContactsRoutes {
@@ -29,12 +29,8 @@ object ContactsRoutes {
     val home: String get() = Routes.home(AppSection.Contacts)
 }
 
-/**
- * Opens the direct chat with somebody and goes to it. The chat is made when there is none; the conversation's own screen
- * belongs to Chats, so when this app has no route for it yet the Chats list opens instead.
- */
+/** Opens the direct chat with somebody (made when there is none) and goes to its conversation. */
 suspend fun openDirectChat(model: ContactsModel, navigator: AppNavigator, userId: String) {
     val conversationId = model.connection.openDirectChat(userId)
-    val isOpened = runCatching { navigator.navigate("agent/conversation/${Uri.encode(conversationId)}") }.isSuccess
-    if (!isOpened) navigator.openSection(AppSection.Agent)
+    navigator.navigate(Routes.child(AppSection.Agent, "conversation/${Uri.encode(conversationId)}"))
 }
