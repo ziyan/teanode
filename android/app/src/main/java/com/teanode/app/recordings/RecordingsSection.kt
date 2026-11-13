@@ -121,20 +121,22 @@ fun RecordingsSection(initialLocalRecordings: List<LocalRecording>? = null, init
         }
     }
     // While a recording is uploading or being transcribed its row is read again every few seconds, as the iPhone app does.
-    LaunchedEffect(read, localRecordings) {
+    LaunchedEffect(read?.recordings, localRecordings) {
         while (true) {
             if (initialLocalRecordings == null) localRecordings = journal.recordings(connection.accountKey)
             val current = read ?: break
             val rows = RecordingLibrary.rows(current.recordings, localRecordings, current.progress)
             val changing = rows.filter { row -> row.recording != null && row.isStillChanging(System.currentTimeMillis()) }
-            if (changing.isEmpty() && localRecordings.none { local -> local.id in com.teanode.kit.recordings.RecordingLibraryProgress.pendingLocalRecordingIds(listOf(local)) }) break
-            delay(4_000)
+            val hasUploadsToWatch = localRecordings.any { local -> local.id in com.teanode.kit.recordings.RecordingLibraryProgress.pendingLocalRecordingIds(listOf(local)) }
+            if (changing.isEmpty() && !hasUploadsToWatch) break
             val progress = current.progress.toMutableMap()
             for (row in changing) {
                 val recordingId = row.recording?.id ?: continue
                 runCatching { connection.recording(recordingId) }.getOrNull()?.let { view -> progress[recordingId] = RecordingServerProgress.of(view) }
             }
-            runCatching { connection.recordings(searchText = searchText.trim()) }.getOrNull()?.let { listed -> read = RecordingsRead(listed, progress) }
+            if (progress != current.progress) read = RecordingsRead(current.recordings, progress)
+            delay(4_000)
+            runCatching { connection.recordings(searchText = searchText.trim()) }.getOrNull()?.let { listed -> read = RecordingsRead(listed, read?.progress ?: progress) }
         }
     }
 
