@@ -81,6 +81,23 @@ var surfaces = map[string]surface{
 		canLocate:           true,
 		hasReactions:        true,
 	},
+	// The TeaNode app on the person's Android phone: the same as the iPhone's,
+	// without Siri.
+	"android": {
+		situationLine:       "You are talking with them in the TeaNode app on their Android phone.",
+		overlay:             "<surface>\nThe TeaNode app on a phone: Markdown renders; keep it short, and no table wider than a phone. " + picturesLine + "\n</surface>",
+		hasSuggestedReplies: true,
+		canShowPages:        true,
+		canLocate:           true,
+		hasReactions:        true,
+	},
+	"android_voice": {
+		situationLine:       "You are on a call with them in the TeaNode app on their Android phone: they spoke, and what you read is a transcription of it, so a name or a word may have been misheard.",
+		overlay:             voiceOverlay,
+		hasSuggestedReplies: true,
+		canShowPages:        true,
+		canLocate:           true,
+	},
 	"ios_voice": {
 		situationLine:       "You are on a call with them in the TeaNode app on their iPhone: they spoke, and what you read is a transcription of it, so a name or a word may have been misheard.",
 		overlay:             voiceOverlay,
@@ -176,7 +193,7 @@ func isWokenSurface(surfaceName string) bool {
 
 // isAppSurface reports whether a turn was asked from the TeaNode app.
 func isAppSurface(surfaceName string) bool {
-	return surfaceName == "ios" || surfaceName == "ios_voice" || surfaceName == "siri"
+	return surfaceName == "ios" || surfaceName == "ios_voice" || surfaceName == "android" || surfaceName == "android_voice" || surfaceName == "siri"
 }
 
 // terminalOverlay is how to write for a terminal: the CLI and the API.
