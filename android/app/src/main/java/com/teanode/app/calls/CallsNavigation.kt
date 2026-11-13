@@ -5,6 +5,7 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.teanode.app.BuildConfig
 import com.teanode.app.shell.AppNavigator
 import com.teanode.app.shell.Routes
 import com.teanode.kit.AppSection
@@ -36,6 +37,12 @@ fun NavGraphBuilder.callsRoutes(navigator: AppNavigator) {
             // The recording is in Recordings, which opens it there; one shared with the person is shown there as well.
             onOpenRecording = { navigator.openSection(AppSection.Recordings) },
         )
+    }
+    // Demo mode (debug builds) reaches each screen and state of a call from `calls/demo/<name>`, with no server or other person.
+    if (BuildConfig.DEBUG) {
+        composable("calls/demo/{name}", deepLinks = Routes.deepLinks("calls/demo/{name}")) { entry ->
+            CallsDemoScreen(entry.arguments?.getString("name").orEmpty())
+        }
     }
 }
 

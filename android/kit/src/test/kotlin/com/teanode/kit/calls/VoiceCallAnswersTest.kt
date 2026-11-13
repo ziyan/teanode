@@ -53,7 +53,7 @@ class VoiceCallAnswersTest {
         assertEquals("It is sunny.", interruption.heardText)
         assertEquals("Bring a hat. And a coat. Maybe gloves.", interruption.unheardText)
         // The server is told to stop the sentences not played.
-        assertEquals(listOf("call-2", "call-3"), queue.stop())
+        assertEquals(listOf("call-2", "call-3", "call-4"), queue.stop())
         assertFalse(queue.isBusy)
         assertFalse(queue.isKnown("call-2"))
     }
