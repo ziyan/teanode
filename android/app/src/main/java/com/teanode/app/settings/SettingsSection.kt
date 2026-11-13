@@ -172,11 +172,7 @@ fun SettingsSection() {
         }
     }
     if (isConfirmingSignOut) {
-        ConfirmationDialog(
-            title = stringResource(R.string.settings_sign_out_title), confirmLabel = stringResource(R.string.settings_sign_out), isDestructive = true,
-            text = stringResource(R.string.settings_sign_out_detail),
-            onConfirm = { isConfirmingSignOut = false; session.signOut() }, onDismiss = { isConfirmingSignOut = false },
-        )
+        com.teanode.app.session.SignOutConfirmation(accounts.active, onConfirm = { isConfirmingSignOut = false; session.signOut() }, onDismiss = { isConfirmingSignOut = false })
     }
 }
 

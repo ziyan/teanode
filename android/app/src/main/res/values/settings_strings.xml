@@ -532,6 +532,17 @@
     <string name="settings_sharing_with">With %s</string>
     <string name="settings_sharing_with_circle">With the circle %s</string>
     <string name="settings_sharing_with_you">Shared with you</string>
+    <string name="settings_sign_out_anyway">Sign out anyway</string>
+    <plurals name="settings_unsent_recordings">
+        <item quantity="one">%d recording has not finished uploading.</item>
+        <item quantity="other">%d recordings have not finished uploading.</item>
+    </plurals>
+    <plurals name="settings_unsent_locations">
+        <item quantity="one">%d location report has not been sent.</item>
+        <item quantity="other">%d location reports have not been sent.</item>
+    </plurals>
+    <string name="settings_unsent_mail">A message you wrote has not been sent.</string>
+    <string name="settings_unsent_deleted">Signing out deletes them from this phone.</string>
     <string name="settings_sign_out">Sign out</string>
     <string name="settings_sign_out_detail">This phone stops talking to your agent until you connect it again.</string>
     <string name="settings_sign_out_footer">To manage what this phone is told about, open Settings, then Devices, on your dashboard.</string>

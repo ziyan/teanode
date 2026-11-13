@@ -532,6 +532,15 @@
     <string name="settings_sharing_with">%1$s と共有</string>
     <string name="settings_sharing_with_circle">サークル「%1$s」と共有</string>
     <string name="settings_sharing_with_you">あなたと共有されているもの</string>
+    <string name="settings_sign_out_anyway">それでもログアウト</string>
+    <plurals name="settings_unsent_recordings">
+        <item quantity="other">録音 %d 件のアップロードが完了していません。</item>
+    </plurals>
+    <plurals name="settings_unsent_locations">
+        <item quantity="other">位置情報の報告 %d 件が未送信です。</item>
+    </plurals>
+    <string name="settings_unsent_mail">書いたメッセージが未送信です。</string>
+    <string name="settings_unsent_deleted">ログアウトすると、これらはこの端末から削除されます。</string>
     <string name="settings_sign_out">ログアウト</string>
     <string name="settings_sign_out_detail">もう一度接続するまで、この端末はエージェントと通信しなくなります。</string>
     <string name="settings_sign_out_footer">この端末への通知を管理するには、ダッシュボードで「設定」、「デバイス」の順に開きます。</string>

@@ -102,6 +102,10 @@ private fun AccountHeader() {
     val ring by session.accounts.collectAsState()
     val account = ring.active ?: return
     var isMenuOpen by remember { mutableStateOf(false) }
+    var isConfirmingSignOut by remember { mutableStateOf(false) }
+    if (isConfirmingSignOut) {
+        com.teanode.app.session.SignOutConfirmation(account, onConfirm = { isConfirmingSignOut = false; session.signOut() }, onDismiss = { isConfirmingSignOut = false })
+    }
     Row(
         Modifier.fillMaxWidth().clickable { isMenuOpen = true }.padding(horizontal = 28.dp, vertical = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -139,7 +143,7 @@ private fun AccountHeader() {
                 leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null) },
                 onClick = {
                     isMenuOpen = false
-                    session.signOut()
+                    isConfirmingSignOut = true
                 },
             )
         }
