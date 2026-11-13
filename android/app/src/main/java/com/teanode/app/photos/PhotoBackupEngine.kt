@@ -38,11 +38,13 @@ import com.teanode.kit.photos.PhotoBackupStatus
 import com.teanode.kit.photos.PhotoBackupTimeLeft
 import com.teanode.kit.photos.PhotoBackupUpload
 import com.teanode.kit.photos.createPhotoBackupCredential
+import com.teanode.kit.photos.revokePhotoBackupCredential
 import com.teanode.kit.photos.findPhotos
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -241,6 +243,9 @@ class PhotoBackupWorker(private val context: Context, parameters: WorkerParamete
     private companion object {
         const val NOTIFICATION_CHANNEL = "photo-backup"
         const val NOTIFICATION_ID = 4102
+
+        // Back up now and the periodic pass can start together; only one of them may make the device password.
+        val credentialLock = kotlinx.coroutines.sync.Mutex()
     }
 
     private val client = OkHttpClient.Builder().readTimeout(120, TimeUnit.SECONDS).writeTimeout(120, TimeUnit.SECONDS).callTimeout(0, TimeUnit.SECONDS).build()
@@ -259,11 +264,18 @@ class PhotoBackupWorker(private val context: Context, parameters: WorkerParamete
         } catch (failure: IOException) {
             PhotoBackupProgress.publish { status -> status.copy(phase = PhotoBackupPhase.WaitingForNetwork) }
             Result.retry()
+        } catch (failure: Exception) {
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            // Not the network: something on the phone. Shown on the backup screen rather than left as "listing".
+            PhotoBackupProgress.publish { status ->
+                status.copy(phase = PhotoBackupPhase.Idle, lastFailure = PhotoBackupFailure.SystemDescription(failure.message ?: failure.javaClass.simpleName))
+            }
+            Result.failure()
         }
     }
 
     private suspend fun pass(connection: Connection, settings: PhotoBackupSettings): Result {
-        val credential = settings.credential() ?: connection.createPhotoBackupCredential(deviceName()).also { created -> settings.saveCredential(created) }
+        val credential = credentialFor(connection, settings)
         PhotoBackupProgress.publish { status -> status.copy(phase = PhotoBackupPhase.Listing) }
         val items = MediaStoreLibrary.items(context, settings.includesHiddenFolders)
         val records = settings.records()
@@ -327,6 +339,22 @@ class PhotoBackupWorker(private val context: Context, parameters: WorkerParamete
             status.copy(phase = PhotoBackupPhase.Idle, lastPassFinishedEpochMS = settings.lastPassFinishedEpochMS, estimatedSecondsLeft = null, skippedFileCount = records.values.sumOf { record -> record.roles.values.count { role -> role.skippedAtEpochMS != null } })
         }
         return Result.success()
+    }
+
+    /**
+     * The device password backup signs in with, made once. A password the phone could not keep is taken back on the
+     * server before the failure goes on, so a failing phone does not leave a new valid password behind on every try.
+     */
+    private suspend fun credentialFor(connection: Connection, settings: PhotoBackupSettings): PhotoBackupCredential = credentialLock.withLock {
+        settings.credential()?.let { kept -> return@withLock kept }
+        val created = connection.createPhotoBackupCredential(deviceName())
+        try {
+            settings.saveCredential(created)
+        } catch (failure: Exception) {
+            runCatching { connection.revokePhotoBackupCredential(created.credentialId) }
+            throw IllegalStateException("the device password could not be kept on this phone", failure)
+        }
+        created
     }
 
     /** Asks the server which client ids it has, so items another phone or an earlier install sent are not sent again. */

@@ -241,6 +241,10 @@ mutation (${'$'}credentialName: String!) {
 }
 """.trimEnd()
 
+    val REVOKE_SYNC_CREDENTIAL = """
+mutation (${'$'}credentialId: String!) { RevokeSyncCredential(credentialId: ${'$'}credentialId) }
+""".trimEnd()
+
     val FIND_PHOTOS = """
 query (${'$'}clientPhotoIds: [String!]!) { FindPhotos(clientPhotoIds: ${'$'}clientPhotoIds) { id clientPhotoId photoKind photoFileRoles } }
 """.trimEnd()
