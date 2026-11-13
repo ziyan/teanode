@@ -296,8 +296,8 @@ class FinanceMoneyTest {
     fun moneyIsShownInItsCurrencyOrADashWhenThereIsNone() {
         assertEquals("$12.50", FinanceMoney.shown("12.5", "USD", Locale.US))
         assertEquals("-$3.00", FinanceMoney.shown("-3", "", Locale.US))
-        assertEquals("—", FinanceMoney.shown(null, "USD", Locale.US))
-        assertEquals("—", FinanceMoney.shown("", "USD", Locale.US))
+        assertEquals("-", FinanceMoney.shown(null, "USD", Locale.US))
+        assertEquals("-", FinanceMoney.shown("", "USD", Locale.US))
     }
 
     @Test

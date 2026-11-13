@@ -22,9 +22,9 @@ object FinanceMoney {
 
     private fun currencyOf(currencyCode: String?): String = if (currencyCode.isNullOrEmpty()) "USD" else currencyCode
 
-    /** An amount in its currency, or "—" when there is none. */
+    /** An amount in its currency, or "-" when there is none. */
     fun shown(text: String?, currencyCode: String?, locale: Locale = Locale.getDefault()): String {
-        val amount = decimal(text) ?: return "—"
+        val amount = decimal(text) ?: return "-"
         return currencyText(amount, currencyOf(currencyCode), locale)
     }
 
