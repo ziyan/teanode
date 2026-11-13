@@ -474,4 +474,71 @@ class PasswordsSessionTest {
         assertEquals(PasswordsCacheFailure.UnsupportedVersion, assertThrows<PasswordsCacheException> { PasswordsCache(storage).load() }.failure)
         assertArrayEquals(byteArrayOf(), byteArrayOf())
     }
+
+    // The agent
+
+    @Test fun `the agent seal opens with the agent private key and only that item key is in it`() = runBlocking {
+        val server = FakePasswordsServer()
+        val device = makeDevice(server)
+        device.session.setUp("the passphrase", iterationCount)
+        val created = device.session.save(loginFields())
+        val other = device.session.save(loginFields(name = "Other"))
+        val allowed = device.session.setUsableByAgent(created.id, true)
+        assertTrue(allowed.isUsableByAgent)
+        assertEquals(2L, allowed.verifiedAccess?.recordVersion)
+        assertTrue(allowed.verifiedAccess!!.isUsableByAgent)
+        val unlocked = device.session.unlockWithPassphrase("the passphrase")
+        val storedKey = PasswordsCrypto.open(PasswordsSealedValue.fromJsonText(server.storedItem(created.id)!!.itemKey), unlocked.accountKey, PasswordsCrypto.itemKeyAssociatedData(created.id))
+        val seal = PasswordsKeyPairSealedValue.fromJsonText(server.agentCopyOf(created.id)!!)
+        val agentOpened = PasswordsCrypto.openForKeyPair(seal, server.agentKeyPair.privateKey, PasswordsCrypto.keyPair(unlocked.keyPair.privateKey).publicKey, "user-ada", PasswordsCrypto.AGENT_RECIPIENT_ID, created.id)
+        assertArrayEquals(storedKey, agentOpened)
+        assertNull(server.agentCopyOf(other.id))
+    }
+
+    @Test fun `turning the agent off stops it at once and gives the item a new key`() = runBlocking {
+        val server = FakePasswordsServer()
+        val device = makeDevice(server)
+        device.session.setUp("the passphrase", iterationCount)
+        val created = device.session.save(loginFields())
+        device.session.setUsableByAgent(created.id, true)
+        val keyBefore = server.storedItem(created.id)!!.itemKey
+        val stopped = device.session.setUsableByAgent(created.id, false)
+        assertFalse(stopped.isUsableByAgent)
+        assertFalse(stopped.verifiedAccess!!.isUsableByAgent)
+        assertNull(server.agentCopyOf(created.id))
+        assertNotEquals(keyBefore, server.storedItem(created.id)!!.itemKey)
+        assertFalse(server.storedItem(created.id)!!.needsNewKey)
+        assertEquals(emptyList<String>(), device.session.itemIdsNeedingNewKey())
+    }
+
+    @Test fun `a card cannot be used by the agent`() = runBlocking {
+        val device = makeDevice(FakePasswordsServer())
+        device.session.setUp("the passphrase", iterationCount)
+        val card = device.session.save(PasswordsItemFields.Card(PasswordsCardFields(name = "Card", number = "4111111111111111")))
+        assertEquals(PasswordsError.CardCannotBeUsedByAgent, assertThrows<PasswordsError> { runBlocking { device.session.setUsableByAgent(card.id, true) } })
+    }
+
+    @Test fun `a deleted item cannot be given to the agent or taken back`() = runBlocking {
+        val device = makeDevice(FakePasswordsServer())
+        device.session.setUp("the passphrase", iterationCount)
+        val created = device.session.save(loginFields())
+        device.session.delete(created.id)
+        assertEquals(PasswordsError.ItemNotFound, assertThrows<PasswordsError> { runBlocking { device.session.setUsableByAgent(created.id, true) } })
+        assertEquals(PasswordsError.ItemNotFound, assertThrows<PasswordsError> { runBlocking { device.session.setUsableByAgent(created.id, false) } })
+    }
+
+    @Test fun `a record the person did not sign cannot be built on for the agent`() = runBlocking {
+        val server = FakePasswordsServer()
+        val device = makeDevice(server)
+        device.session.setUp("the passphrase", iterationCount)
+        val created = device.session.save(loginFields())
+        // The server hands back the fields without any record: the version one record is gone.
+        val unlocked = device.session.unlockWithPassphrase("the passphrase")
+        val itemKey = PasswordsCrypto.open(PasswordsSealedValue.fromJsonText(server.storedItem(created.id)!!.itemKey), unlocked.accountKey, PasswordsCrypto.itemKeyAssociatedData(created.id))
+        val bare = loginFields()
+        server.replaceStoredFields(created.id, PasswordsCrypto.sealItemFields(bare, itemKey, created.id).jsonText, server.storedItem(created.id)!!.itemKey)
+        device.session.sync()
+        assertEquals(PasswordsSharingCheck.Unverified, device.session.item(created.id).sharingCheck)
+        assertEquals(PasswordsError.SharingCouldNotBeChecked(created.id), assertThrows<PasswordsError> { runBlocking { device.session.setUsableByAgent(created.id, true) } })
+    }
 }

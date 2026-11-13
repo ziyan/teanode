@@ -59,6 +59,9 @@ sealed class PasswordsError(message: String) : Exception(message) {
     /** The server answered a restore of an earlier version with other sealed fields or another item key than the one listed. */
     data object RestoredAnotherVersion : PasswordsError("The server restored something else.")
 
+    /** The agent was stopped or somebody was removed, but the item could not be given a new key afterwards. The change stands; [PasswordsSession.giveNewKey] tries again. */
+    data class ItemNeedsNewKey(val itemId: String) : PasswordsError("Removed. The item could not be given a new key.")
+
     /** The item's access record is missing, not signed by the person's devices, or older than one this device has seen. */
     data class SharingCouldNotBeChecked(val itemId: String) : PasswordsError("Sharing could not be checked. Set sharing again.")
 
@@ -740,6 +743,125 @@ class PasswordsSession(
         val view = itemView(itemId) ?: throw PasswordsError.ItemNotFound
         if (view.isSharedWithMe) throw PasswordsError.OnlyOwnerCanChangeItem
         return view
+    }
+
+    // The agent
+
+    /**
+     * Lets the agent use an item the person owns, or stops it. The owner's own record, sealed inside the item's fields and
+     * signed with the account key, is the consent; the server's flag alone is not.
+     *
+     * - Turning it on saves the fields with the new record first, then seals the item key for the server's agent key and
+     *   tells the server, so the server can open this item and nothing else.
+     * - Turning it off tells the server first, which stops the agent at once, then gives the item a new item key whose
+     *   fields carry the record with the agent off, so a copy of the old agent key opens nothing saved later. If that
+     *   fails after the server was told, this throws [PasswordsError.ItemNeedsNewKey]; [giveNewKey] tries again.
+     *
+     * A card cannot be used by the agent, and only the owner can allow it. An item whose record was not checked cannot be
+     * turned on: [PasswordsError.SharingCouldNotBeChecked].
+     */
+    suspend fun setUsableByAgent(itemId: String, isUsable: Boolean): PasswordItem = mutex.withLock {
+        val current = requireOpener()
+        var view = ownedView(itemId)
+        // The server keeps no key for the agent on a deleted item; do not ask it to.
+        if (view.deletedAt != null) throw PasswordsError.ItemNotFound
+        val opened = current.open(view)
+        val isRecordOn = opened.verifiedAccess?.isUsableByAgent == true
+        if (!isUsable) {
+            // Off. Nothing to do when neither the record nor the server says the agent may use it.
+            if (!isRecordOn && !view.isUsableByAgent) return@withLock opened
+            if (view.isUsableByAgent) {
+                val answered = call { api.setPasswordItemUsableByAgent(itemId, false, null) }
+                keep(answered, itemId, current)
+            }
+            return@withLock try {
+                rekey(itemId, AccessEdit.AgentUse(false))
+            } catch (error: Exception) {
+                throw PasswordsError.ItemNeedsNewKey(itemId)
+            }
+        }
+        if (view.itemKind == PasswordsItemKind.Card.rawValue) throw PasswordsError.CardCannotBeUsedByAgent
+        // The record is the person's consent: one that was not checked cannot be built on.
+        if (opened.sharingCheck != PasswordsSharingCheck.Verified) throw PasswordsError.SharingCouldNotBeChecked(itemId)
+        if (!isRecordOn) {
+            val newAccess = PasswordsItemAccess.accessWithAgentUse(opened.verifiedAccess, true)
+            val signed = PasswordsCrypto.withSignedAccess(current.accountKey, itemId, opened.itemKind, opened.fields, newAccess, highestRecordVersion(opened))
+            saveFields(signed, view, current)
+            view = ownedView(itemId)
+        }
+        val sealedItemKey = agentCopy(current.itemKey(view), itemId, current)
+        val answered = call { api.setPasswordItemUsableByAgent(itemId, true, sealedItemKey) }
+        keep(answered, itemId, current)
+    }
+
+    /** The item key sealed for the server's agent key. */
+    private suspend fun agentCopy(itemKey: ByteArray, itemId: String, current: PasswordsOpener): String {
+        val agentKeyText = call { api.readPasswordsAgentKey() }
+        val agentPublicKey = runCatching { unbase64(agentKeyText) }.getOrNull()
+        if (agentPublicKey == null || agentPublicKey.size != PasswordsCrypto.PUBLIC_KEY_BYTE_COUNT) throw PasswordsError.InvalidServerAnswer
+        return PasswordsCrypto.sealForKeyPair(itemKey, current.keyPair, userId, agentPublicKey, PasswordsCrypto.AGENT_RECIPIENT_ID, itemId).jsonText
+    }
+
+    /** The highest access record version this device has seen for an item with a valid signature, counting the record the item shows now. */
+    private fun highestRecordVersion(item: PasswordItem): Long =
+        maxOf(currentPins().itemMemories[item.id]?.highestRecordVersion ?: 0, item.verifiedAccess?.recordVersion ?: 0)
+
+    /** What a new key changes in the item's access record, on top of the fields it re-seals. */
+    private sealed interface AccessEdit {
+        data object None : AccessEdit
+
+        data class AgentUse(val isUsableByAgent: Boolean) : AccessEdit
+    }
+
+    /**
+     * Gives the item a new item key now, because the person asked: the retry after the agent was stopped but the new key
+     * could not be made. It seals for the agent too when the person's record says so. [PasswordsError.SharingCouldNotBeChecked]
+     * when the item's record is not the person's own.
+     */
+    suspend fun giveNewKey(itemId: String): PasswordItem = mutex.withLock {
+        ownedView(itemId)
+        rekey(itemId, AccessEdit.None)
+    }
+
+    /** The person's own items the server marked as needing a new key, deleted ones not included. */
+    fun itemIdsNeedingNewKey(): List<String> =
+        loadedContents()?.items.orEmpty().filter { view -> !view.isSharedWithMe && view.needsNewKey && view.deletedAt == null }.map { view -> view.id }
+
+    /**
+     * Makes a new item key for an item the person owns and seals everything with it: the fields (with `accessEdit` applied
+     * to their access record and signed again), the person's copy, and the agent's copy when the record says the agent
+     * may use the item. Nobody is sealed for but the person and the agent: sharing is not part of this port.
+     */
+    private suspend fun rekey(itemId: String, accessEdit: AccessEdit): PasswordItem {
+        val current = requireOpener()
+        val view = ownedView(itemId)
+        if (view.deletedAt != null) throw PasswordsError.ItemNotFound
+        val opened = current.open(view)
+        // A new key given without the person choosing who has access builds on the record, so the record has to be the person's own.
+        if (accessEdit is AccessEdit.None && opened.sharingCheck != PasswordsSharingCheck.Verified) throw PasswordsError.SharingCouldNotBeChecked(itemId)
+        var fields = opened.fields
+        if (accessEdit is AccessEdit.AgentUse) {
+            val edited = PasswordsItemAccess.accessWithAgentUse(opened.verifiedAccess, accessEdit.isUsableByAgent)
+            fields = PasswordsCrypto.withSignedAccess(current.accountKey, itemId, opened.itemKind, fields, edited, highestRecordVersion(opened))
+        }
+        val newItemKey = PasswordsCrypto.makeKey()
+        val sealedFields = PasswordsCrypto.sealItemFields(fields, newItemKey, itemId)
+        val sealedItemKey = PasswordsCrypto.seal(newItemKey, current.accountKey, PasswordsCrypto.itemKeyAssociatedData(itemId))
+        var agentCopyText: String? = null
+        if (fields.access?.isUsableByAgent == true && view.isUsableByAgent && view.itemKind != PasswordsItemKind.Card.rawValue) {
+            agentCopyText = agentCopy(newItemKey, itemId, current)
+        }
+        val input = PasswordItemRekeyInput(itemId, view.revision, sealedFields.jsonText, sealedItemKey.jsonText, emptyList(), agentCopyText)
+        val answered = call { api.rekeyPasswordItem(input) }
+        return keep(answered, itemId, current)
+    }
+
+    /** Saves fields over an owned item with the key it has, based on the revision the copy holds. */
+    private suspend fun saveFields(fields: PasswordsItemFields, view: PasswordItemView, current: PasswordsOpener): PasswordItem {
+        val sealedFields = PasswordsCrypto.sealItemFields(fields, current.itemKey(view), view.id)
+        val input = PasswordItemSaveInput(view.id, view.itemKind, sealedFields.jsonText, view.itemKey, view.revision)
+        val answered = call { api.savePasswordItem(input) }
+        return keep(answered, view.id, current)
     }
 
     // Settings

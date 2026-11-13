@@ -15,6 +15,9 @@ class FakePasswordsServer(private val userId: String = "me") : PasswordsApi {
         var itemKeyByAccountKey: String,
         var revision: Long,
         var deletedAt: String? = null,
+        var itemKeyByAgentKey: String? = null,
+        var isUsableByAgent: Boolean = false,
+        var needsNewKey: Boolean = false,
     )
 
     private class StoredVersion(
@@ -31,7 +34,8 @@ class FakePasswordsServer(private val userId: String = "me") : PasswordsApi {
     private val versions = mutableMapOf<String, MutableList<StoredVersion>>()
     private var revisionCounter = 0L
     private var versionCounter = 0
-    private val agentKeyPair = PasswordsCrypto.makeKeyPair()
+    /** The server agent's key pair: the real server keeps the private half, and the tests open the agent's copy with it. */
+    val agentKeyPair = PasswordsCrypto.makeKeyPair()
 
     /** When true, every call fails the way a missing connection does. */
     @Volatile var isOffline = false
@@ -151,7 +155,8 @@ class FakePasswordsServer(private val userId: String = "me") : PasswordsApi {
     private fun view(stored: StoredItem): PasswordItemView = PasswordItemView(
         id = stored.id, ownerUserId = userId, ownerName = "", ownerPublicKey = setup?.publicKey ?: "", itemKind = stored.itemKind,
         encryptedFields = stored.encryptedFields, itemKey = stored.itemKeyByAccountKey, isSharedWithMe = false, revision = stored.revision,
-        isUsableByAgent = false, deletedAt = stored.deletedAt, createdAt = time(), updatedAt = time(), shares = emptyList(),
+        isUsableByAgent = stored.isUsableByAgent, deletedAt = stored.deletedAt, createdAt = time(), updatedAt = time(), shares = emptyList(),
+        needsNewKey = stored.needsNewKey,
     )
 
     override suspend fun listPasswordItems(sinceRevision: Long?): PasswordItemListView {
@@ -209,7 +214,10 @@ class FakePasswordsServer(private val userId: String = "me") : PasswordsApi {
     override suspend fun deletePasswordItem(id: String): PasswordItemView {
         requireOnline()
         val stored = owned(id)
+        if (stored.isUsableByAgent) stored.needsNewKey = true
         stored.deletedAt = time()
+        stored.isUsableByAgent = false
+        stored.itemKeyByAgentKey = null
         stored.revision = nextRevision()
         return view(stored)
     }
@@ -236,10 +244,40 @@ class FakePasswordsServer(private val userId: String = "me") : PasswordsApi {
 
     override suspend fun addPasswordShareKeys(keys: List<PasswordItemShareKeyInput>): Int = refuse("Sharing is not kept by this stand-in server.")
 
-    override suspend fun setPasswordItemUsableByAgent(itemId: String, isUsableByAgent: Boolean, itemKeyByAgentKey: String?): PasswordItemView =
-        refuse("The agent is not kept by this stand-in server.")
+    /** The sealed copy the server holds for the agent, by item id. */
+    @Synchronized
+    fun agentCopyOf(itemId: String): String? = items[itemId]?.itemKeyByAgentKey
 
-    override suspend fun rekeyPasswordItem(input: PasswordItemRekeyInput): PasswordItemView = refuse("Re-keying is not kept by this stand-in server.")
+    override suspend fun setPasswordItemUsableByAgent(itemId: String, isUsableByAgent: Boolean, itemKeyByAgentKey: String?): PasswordItemView {
+        requireOnline()
+        val stored = owned(itemId)
+        if (stored.itemKind == "card") refuse("api: invalid arguments: A card cannot be used by the agent.")
+        if (isUsableByAgent) {
+            if (itemKeyByAgentKey == null) refuse("api: invalid arguments: The agent needs a copy of the item key.")
+            stored.itemKeyByAgentKey = itemKeyByAgentKey
+        } else {
+            // Access narrowed while the item keeps the key the agent held: it needs a new one.
+            if (stored.isUsableByAgent) stored.needsNewKey = true
+            stored.itemKeyByAgentKey = null
+        }
+        stored.isUsableByAgent = isUsableByAgent
+        stored.revision = nextRevision()
+        return view(stored)
+    }
+
+    override suspend fun rekeyPasswordItem(input: PasswordItemRekeyInput): PasswordItemView {
+        requireOnline()
+        val stored = owned(input.id)
+        if (input.baseRevision != stored.revision) refuse("This item changed on another device. Open it again.")
+        keepVersion(stored)
+        stored.encryptedFields = input.encryptedFields
+        stored.itemKeyByAccountKey = input.itemKey
+        stored.itemKeyByAgentKey = input.itemKeyByAgentKey
+        stored.isUsableByAgent = input.itemKeyByAgentKey != null
+        stored.needsNewKey = false
+        stored.revision = nextRevision()
+        return view(stored)
+    }
 
     override suspend fun listPasswordItemVersions(itemId: String): List<PasswordItemVersionView> {
         requireOnline()
