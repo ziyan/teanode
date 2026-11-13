@@ -64,5 +64,6 @@
     <string name="calls_voice_microphone_failed">マイクを起動できませんでした：%1$s</string>
     <string name="calls_voice_silent_microphone">マイクから音が出ていません。ほかのアプリが使っていないか確認するか、ヘッドセットやスピーカーを試してください。</string>
     <string name="calls_voice_approval_on_screen">画面で承認が必要です：%1$s</string>
+    <string name="calls_call_offer_body">エージェントとの通話を開始しますか？</string>
     <string name="calls_call_agent">エージェントに電話</string>
 </resources>

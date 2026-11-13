@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
     private fun handle(intent: Intent) {
         // A notification, or one of its buttons that opens the app, pressed: the kit decides where it goes.
         intent.getStringExtra(NotificationBuilder.EXTRA_INFO)?.let { text -> openedFromNotification(text, intent.getStringExtra(NotificationBuilder.EXTRA_ACTION)) }
-        if (intent.getBooleanExtra("com.teanode.app.extra.CALL_AGENT", false)) OpeningRequests.requestCall()
+        if (intent.getBooleanExtra("com.teanode.app.extra.CALL_AGENT", false)) OpeningRequests.offerCall()
         val address: Uri = intent.data ?: return
         val session = (application as TeaNodeApplication).session
         when {

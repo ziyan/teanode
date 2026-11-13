@@ -50,17 +50,38 @@ fun NavGraphBuilder.callsRoutes(navigator: AppNavigator) {
 }
 
 /**
- * What the app's icon menu and the widgets ask for that the chats part carries out: the call with the agent starts when
- * the chats open. The chats part clears the request with [consume] once it has started the call.
+ * What the app's icon menu, the widgets and the call button ask for that the chats part carries out: the call with the
+ * agent starts when the chats open. A call starts only from the person's own tap. The button inside the app is one
+ * ([requestCall]); the icon menu, a widget and a link arrive as an intent that any app could also send, so they only
+ * [offerCall], and the person answers a question before [acceptOffer] makes it a request. The chats part clears the
+ * request with [consume] once it has started the call.
  */
 object OpeningRequests {
     private val callRequested = kotlinx.coroutines.flow.MutableStateFlow(false)
+    private val callOffered = kotlinx.coroutines.flow.MutableStateFlow(false)
 
-    /** Whether the person asked, from the icon or a widget, for a call with the agent. */
+    /** Whether the person asked, with a tap inside the app, for a call with the agent. */
     val isCallRequested: kotlinx.coroutines.flow.StateFlow<Boolean> = callRequested
+
+    /** Whether an intent asked for a call and the person has not yet said yes. */
+    val isCallOffered: kotlinx.coroutines.flow.StateFlow<Boolean> = callOffered
 
     fun requestCall() {
         callRequested.value = true
+    }
+
+    /** A call asked for by an intent: nothing starts until the person accepts. */
+    fun offerCall() {
+        callOffered.value = true
+    }
+
+    fun acceptOffer() {
+        if (callOffered.value) callRequested.value = true
+        callOffered.value = false
+    }
+
+    fun declineOffer() {
+        callOffered.value = false
     }
 
     fun consume() {

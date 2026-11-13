@@ -56,6 +56,7 @@ fun AppRoot(session: AppSession, startRoute: String? = null, newIntents: Flow<In
                         CompositionLocalProvider(LocalConnection provides signedIn) {
                             if (!session.isDemo) PushEffects(signedIn)
                             CallPresenter { AppShell(startRoute = startRoute, newIntents = newIntents) }
+                            com.teanode.app.calls.CallOfferDialog()
                         }
                     }
                     if (isAddingAccount) {
