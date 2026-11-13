@@ -31,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.outlined.QuestionAnswer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -296,14 +297,13 @@ fun FinanceTransactionDetailScreen(transactionId: String) {
     TeaNodeScreen(
         title = transaction?.shownName.orEmpty(), onBack = { navigator.back() },
         actions = {
-            transaction?.let { shown ->
-                TextButton(onClick = {
-                    // The chat takes no reference from another screen yet, so the charge goes on the clipboard for the person to paste.
-                    val summary = listOfNotNull(shown.shownName, shown.postedOn, FinanceMoney.shown(shown.amount, shown.currencyCode), shown.id).joinToString(" · ")
-                    (context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("charge", summary))
-                    snackbar.show(context.getString(R.string.finance_ask_agent_copied))
-                    navigator.navigate(com.teanode.app.shell.Routes.child(com.teanode.kit.AppSection.Agent, "main"))
-                }) { Text(stringResource(R.string.finance_ask_agent)) }
+            transaction?.let { asked ->
+                androidx.compose.material3.IconButton(onClick = {
+                    com.teanode.app.chats.ChatsHooks.askAbout(
+                        navigator,
+                        com.teanode.kit.chats.AgentReference.transaction(asked.id, asked.postedOn, asked.amount, asked.currencyCode, asked.merchantName, asked.description),
+                    )
+                }) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Outlined.QuestionAnswer, contentDescription = stringResource(R.string.chats_ask_about_this)) }
             }
         },
     ) { padding ->

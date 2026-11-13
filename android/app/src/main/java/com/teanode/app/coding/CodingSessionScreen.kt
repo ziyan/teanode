@@ -106,7 +106,7 @@ import com.teanode.kit.coding.readHerdrScreen
 import com.teanode.kit.coding.readHerdrSession
 import com.teanode.kit.coding.readHerdrSubagents
 import com.teanode.kit.coding.sendHerdrSession
-import com.teanode.kit.coding.terminalRuns
+import com.teanode.kit.chats.terminalRuns
 import com.teanode.kit.coding.watchHerdrSession
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch

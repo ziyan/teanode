@@ -266,4 +266,21 @@
     <string name="chats_share_send_to">%1$s に送る</string>
     <string name="chats_share_send_to_agent">エージェントに送る</string>
     <string name="chats_share_sent">送信しました</string>
+    <string name="chats_save_as_recording">録音として保存</string>
+    <string name="chats_ask_about_this">エージェントに質問</string>
+    <string name="chats_share_to_agent">エージェントへ</string>
+    <string name="chats_share_as_tax">税務書類として読み取る</string>
+    <string name="chats_share_as_statements">明細として取り込む</string>
+    <string name="chats_share_as_recording">録音として保存</string>
+    <string name="chats_share_read">読む</string>
+    <string name="chats_share_import">読み込む</string>
+    <string name="chats_share_save_recording">録音を保存</string>
+    <string name="chats_share_tax_read_one">1 件の税務書類を読み取っています。読み取ると「家計」の「税金」に表示されます。</string>
+    <string name="chats_share_tax_read_several">%1$d 件の税務書類を読み取っています。読み取ると「家計」の「税金」に表示されます。</string>
+    <string name="chats_share_left_out_tax">PDF でも画像でもないファイルは除きました。</string>
+    <string name="chats_share_left_out_statements">OFX の明細ではないファイルは除きました。</string>
+    <string name="chats_share_statement_summary">追加 %1$d 件、更新 %2$d 件、変更なし %3$d 件</string>
+    <string name="chats_share_tax_detail">PDF や画像は 1 つずつ給与明細、W-2、1099、1098 のいずれかとして読み取られ、サーバーはその文字を保存しません。メモは送られません。</string>
+    <string name="chats_share_statements_detail">OFX、QFX、QBO ファイルは口座に取り込まれます。2 回取り込んだ取引は 1 件だけ残ります。メモは送られません。</string>
+    <string name="chats_share_recording_detail">ファイルはまずエージェントに渡され、続いて録音が開き、そこから録音が作られます。</string>
 </resources>
