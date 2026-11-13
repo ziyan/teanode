@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notifications_account_gone">That notification came from an account that is no longer on this phone.</string>
+    <string name="notifications_account_unknown">That notification does not say which account it is from. Answer it in TeaNode.</string>
+    <string name="notifications_button_do_it">Do it</string>
+    <string name="notifications_button_dont">Don’t</string>
+    <string name="notifications_button_open">Open</string>
+    <string name="notifications_button_reply">Reply</string>
+    <string name="notifications_channel_agent">Your agent</string>
+    <string name="notifications_channel_chats">Chats</string>
+    <string name="notifications_channel_circles">Circles</string>
+    <string name="notifications_channel_coding">Coding</string>
+    <string name="notifications_channel_journal">Journal</string>
+    <string name="notifications_channel_other">Other</string>
+    <string name="notifications_channel_photos">Photos</string>
+    <string name="notifications_channel_places">Places and shopping</string>
+    <string name="notifications_channel_problems">Problems</string>
+    <string name="notifications_channel_turns">Your agent at work</string>
+    <string name="notifications_did_not_reach_agent">That did not reach your agent: %1$s</string>
+    <string name="notifications_did_not_reach_chat">That did not reach the chat: %1$s</string>
+    <string name="notifications_did_not_reach_journal">That did not reach your journal: %1$s</string>
+    <string name="notifications_mood_awful">Awful</string>
+    <string name="notifications_mood_good">Good</string>
+    <string name="notifications_mood_great">Great</string>
+    <string name="notifications_mood_low">Low</string>
+    <string name="notifications_mood_okay">Okay</string>
+    <string name="notifications_new_message">New message</string>
+    <string name="notifications_reply_hint_agent">Ask your agent…</string>
+    <string name="notifications_reply_hint_message">Message…</string>
+    <string name="notifications_update_available">Update available</string>
+    <string name="notifications_update_install">Open the install page</string>
+    <string name="notifications_update_not_now">Not now</string>
+    <string name="notifications_update_ready">TeaNode %1$s is ready to install.</string>
+    <string name="notifications_shortcut_record">Start recording</string>
+    <string name="notifications_shortcut_call_agent">Call your agent</string>
+    <string name="notifications_shortcut_ask_agent">Ask your agent</string>
+    <string name="notifications_turn_working">Working on it</string>
+    <string name="notifications_turn_waiting">Waiting for you</string>
+    <string name="notifications_turn_done">Done</string>
+    <string name="notifications_turn_failed">Stopped with a problem</string>
+</resources>

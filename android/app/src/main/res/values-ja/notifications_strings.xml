@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notifications_account_gone">この通知は、このスマートフォンにはもうないアカウントからのものです。</string>
+    <string name="notifications_account_unknown">この通知はどのアカウントからのものか分かりません。TeaNode で返答してください。</string>
+    <string name="notifications_button_do_it">実行する</string>
+    <string name="notifications_button_dont">やめる</string>
+    <string name="notifications_button_open">開く</string>
+    <string name="notifications_button_reply">返信</string>
+    <string name="notifications_channel_agent">あなたのエージェント</string>
+    <string name="notifications_channel_chats">チャット</string>
+    <string name="notifications_channel_circles">サークル</string>
+    <string name="notifications_channel_coding">コーディング</string>
+    <string name="notifications_channel_journal">ジャーナル</string>
+    <string name="notifications_channel_other">その他</string>
+    <string name="notifications_channel_photos">写真</string>
+    <string name="notifications_channel_places">場所と買い物</string>
+    <string name="notifications_channel_problems">問題</string>
+    <string name="notifications_channel_turns">エージェントの作業中</string>
+    <string name="notifications_did_not_reach_agent">エージェントに届きませんでした：%1$s</string>
+    <string name="notifications_did_not_reach_chat">チャットに届きませんでした：%1$s</string>
+    <string name="notifications_did_not_reach_journal">ジャーナルに届きませんでした：%1$s</string>
+    <string name="notifications_mood_awful">最悪</string>
+    <string name="notifications_mood_good">良い</string>
+    <string name="notifications_mood_great">最高</string>
+    <string name="notifications_mood_low">低</string>
+    <string name="notifications_mood_okay">ふつう</string>
+    <string name="notifications_new_message">新しいメッセージ</string>
+    <string name="notifications_reply_hint_agent">エージェントに尋ねる…</string>
+    <string name="notifications_reply_hint_message">メッセージ…</string>
+    <string name="notifications_update_available">アップデートがあります</string>
+    <string name="notifications_update_install">インストールページを開く</string>
+    <string name="notifications_update_not_now">今はしない</string>
+    <string name="notifications_update_ready">TeaNode %1$s をインストールできます。</string>
+    <string name="notifications_shortcut_record">録音を開始</string>
+    <string name="notifications_shortcut_call_agent">エージェントに電話</string>
+    <string name="notifications_shortcut_ask_agent">エージェントに聞く</string>
+    <string name="notifications_turn_working">作業中</string>
+    <string name="notifications_turn_waiting">あなたを待っています</string>
+    <string name="notifications_turn_done">完了</string>
+    <string name="notifications_turn_failed">問題が起きて止まりました</string>
+</resources>

@@ -6,10 +6,16 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.teanode.app.calls.OpeningRequests
 import com.teanode.app.demo.DemoServer
+import com.teanode.app.notifications.NotificationBuilder
+import com.teanode.app.notifications.NotificationOpening
 import com.teanode.app.ui.components.openWebPage
 import com.teanode.kit.ConnectLink
+import com.teanode.kit.TeaNodeJson
 import com.teanode.kit.appRedirectScheme
+import com.teanode.kit.notifications.NotificationInfo
+import com.teanode.kit.notifications.NotificationPress
 import kotlinx.coroutines.flow.MutableSharedFlow
 
 /**
@@ -40,7 +46,27 @@ class MainActivity : ComponentActivity() {
         handle(intent)
     }
 
+    private fun openedFromNotification(infoText: String, actionId: String?) {
+        val info = runCatching { TeaNodeJson.decodeFromString(NotificationInfo.serializer(), infoText) }.getOrNull() ?: return
+        val application = application as TeaNodeApplication
+        val kept = application.push.accountStore.accounts()
+        val press = NotificationPress.decide(info, actionId ?: NotificationPress.DEFAULT_ACTION, null, kept.accounts.map { account -> account.accountKey })
+        when (press) {
+            is NotificationPress.Open -> {
+                kept.accounts.firstOrNull { account -> account.accountKey == press.accountKey }?.let { account -> application.session.switchTo(account) }
+                NotificationOpening.open(press.destination)
+            }
+            is NotificationPress.UnknownAccount -> NotificationOpening.tell(
+                getString(if (press.doesNameAccount) R.string.notifications_account_gone else R.string.notifications_account_unknown),
+            )
+            else -> Unit
+        }
+    }
+
     private fun handle(intent: Intent) {
+        // A notification, or one of its buttons that opens the app, pressed: the kit decides where it goes.
+        intent.getStringExtra(NotificationBuilder.EXTRA_INFO)?.let { text -> openedFromNotification(text, intent.getStringExtra(NotificationBuilder.EXTRA_ACTION)) }
+        if (intent.getBooleanExtra("com.teanode.app.extra.CALL_AGENT", false)) OpeningRequests.requestCall()
         val address: Uri = intent.data ?: return
         val session = (application as TeaNodeApplication).session
         when {
