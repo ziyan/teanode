@@ -207,7 +207,7 @@ private fun soFarText(day: JournalDay?, text: JournalText): String? {
     day?.weather?.let { weather ->
         val name = text.weatherName(weather.kind)
         val temperature = text.temperatureText(weather.highCelsius)
-        sentences.add(if (name.isEmpty()) temperature else stringResource(R.string.journal_temperature_and, temperature, name))
+        sentences.add((if (name.isEmpty()) temperature else stringResource(R.string.journal_temperature_and, temperature, name)) + ".")
     }
     val counted = ArrayList<String>()
     day?.facts?.let { facts ->
