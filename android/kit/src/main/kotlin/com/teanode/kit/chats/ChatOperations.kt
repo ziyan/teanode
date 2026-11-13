@@ -170,7 +170,7 @@ suspend fun Connection.conversation(conversationId: String?, first: Int = 100, o
     val answer = execute(ChatDocuments.CONVERSATION, ConversationAnswer.serializer(), variables)
     return ConversationPage(
         conversation = answer.read.conversation, messages = answer.read.messages, interactions = answer.interactions ?: emptyList(),
-        total = answer.read.total, todos = answer.read.todos ?: emptyList(), actingAs = answer.read.actingAs,
+        total = answer.read.total, todos = answer.read.todos ?: emptyList(), actingAs = answer.read.actingAs?.takeIf { name -> name.isNotEmpty() },
     )
 }
 
