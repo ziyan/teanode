@@ -40,6 +40,9 @@ private class SharePeopleAnswer(val ListCirclePeople: List<CalendarSharePerson>)
 private class ShareCirclesAnswer(val ListCircles: List<CalendarShareCircle>)
 
 @Serializable
+private class CircleRolesAnswer(val ListCircles: List<CalendarCircle>)
+
+@Serializable
 private class EventsAnswer(val ListCalendarEvents: List<CalendarEvent>)
 
 @Serializable
@@ -137,6 +140,9 @@ suspend fun Connection.saveCalendar(calendar: AgentCalendar, name: String) {
         ),
     )
 }
+
+/** The circles the person is in with their role in each: the ones they are an admin of may have a calendar made, renamed and deleted. */
+suspend fun Connection.calendarCircles(): List<CalendarCircle> = execute<CircleRolesAnswer>(CalendarDocuments.CIRCLE_ROLES).ListCircles
 
 /** Makes the calendar a circle keeps for itself. Admins only. */
 suspend fun Connection.createCircleCalendar(circleId: String) {

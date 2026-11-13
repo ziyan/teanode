@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="knowledge_a_guess">A guess</string>
+    <string name="knowledge_in_memory">In memory</string>
+    <string name="knowledge_kind_contact">Contact card</string>
+    <string name="knowledge_kind_mail">Mail</string>
+    <string name="knowledge_kind_calendar_event">Calendar event</string>
+    <string name="knowledge_kind_reminder">Reminder</string>
+    <string name="knowledge_kind_conversation">Conversation</string>
+    <string name="knowledge_kind_transaction">Transaction</string>
+    <string name="knowledge_kind_receipt">Receipt</string>
+    <string name="knowledge_kind_recording">Recording</string>
+    <string name="knowledge_relation_wrote">Wrote</string>
+    <string name="knowledge_relation_received">Received</string>
+    <string name="knowledge_relation_attended">Attended</string>
+    <string name="knowledge_relation_organized">Organized</string>
+    <string name="knowledge_relation_spoke_in">Spoke in</string>
+    <string name="knowledge_relation_mentioned_in">Mentioned in</string>
+    <string name="knowledge_relation_paid">Was paid</string>
+    <string name="knowledge_relation_paid_by">Paid</string>
+    <string name="knowledge_relation_receipt_for">Receipt for</string>
+    <string name="knowledge_relation_about">About</string>
+</resources>

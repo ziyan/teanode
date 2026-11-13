@@ -296,3 +296,18 @@ object CalendarDates {
 
     internal fun localDate(day: CalendarDay): LocalDate = day.toLocalDate()
 }
+
+/** CalendarCircle is a circle the person is in, as far as the calendar needs it: whether they are an admin, who may rename and delete its calendar and make one. */
+@Serializable
+data class CalendarCircle(
+    val id: String,
+    val name: String,
+    /** family, friends or colleagues. */
+    val circleKind: String,
+    /** The caller's own role in it: admin or member. */
+    val memberRole: String,
+) {
+    val isAdmin: Boolean get() = memberRole == "admin"
+
+    val isFamily: Boolean get() = circleKind == "family"
+}

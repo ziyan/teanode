@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="knowledge_a_guess">推測</string>
+    <string name="knowledge_in_memory">メモリー内</string>
+    <string name="knowledge_kind_contact">連絡先カード</string>
+    <string name="knowledge_kind_mail">メール</string>
+    <string name="knowledge_kind_calendar_event">予定</string>
+    <string name="knowledge_kind_reminder">リマインダー</string>
+    <string name="knowledge_kind_conversation">会話</string>
+    <string name="knowledge_kind_transaction">取引</string>
+    <string name="knowledge_kind_receipt">レシート</string>
+    <string name="knowledge_kind_recording">録音</string>
+    <string name="knowledge_relation_wrote">差出人</string>
+    <string name="knowledge_relation_received">受信日時</string>
+    <string name="knowledge_relation_attended">出席</string>
+    <string name="knowledge_relation_organized">主催</string>
+    <string name="knowledge_relation_spoke_in">発言</string>
+    <string name="knowledge_relation_mentioned_in">言及されている</string>
+    <string name="knowledge_relation_paid">支払いを受けた</string>
+    <string name="knowledge_relation_paid_by">支払った</string>
+    <string name="knowledge_relation_receipt_for">対応するレシート</string>
+    <string name="knowledge_relation_about">このアプリについて</string>
+</resources>

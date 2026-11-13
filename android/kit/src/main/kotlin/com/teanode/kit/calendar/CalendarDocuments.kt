@@ -41,6 +41,8 @@ object CalendarDocuments {
 }"""
     const val UNSHARE_CALENDAR = """mutation (${'$'}shareId: String!) { UnshareCalendar(shareId: ${'$'}shareId) }"""
     const val CALENDAR_SHARE_PEOPLE = """query { ListCirclePeople { userId username name avatarUrl avatarColorIndex } }"""
+    /** The circles with the caller's role in each, to know which calendars they may rename and delete. Fields of ios Circles.swift circleFields. */
+    const val CIRCLE_ROLES = """query { ListCircles { id name circleKind memberRole } }"""
     const val CALENDAR_SHARE_CIRCLES = """query { ListCircles { id name members { userId } } }"""
     const val SAVE_CALENDAR = """mutation (${'$'}id: String!, ${'$'}name: String, ${'$'}description: String, ${'$'}colour: String, ${'$'}timezone: String, ${'$'}weekStart: String) {
   SaveCalendar(id: ${'$'}id, name: ${'$'}name, description: ${'$'}description, colour: ${'$'}colour, timezone: ${'$'}timezone, weekStart: ${'$'}weekStart) { id name }

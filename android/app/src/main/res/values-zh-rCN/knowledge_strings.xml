@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="knowledge_a_guess">推测</string>
+    <string name="knowledge_in_memory">在记忆中</string>
+    <string name="knowledge_kind_contact">联系人卡片</string>
+    <string name="knowledge_kind_mail">邮件</string>
+    <string name="knowledge_kind_calendar_event">日历事件</string>
+    <string name="knowledge_kind_reminder">提醒</string>
+    <string name="knowledge_kind_conversation">对话</string>
+    <string name="knowledge_kind_transaction">交易</string>
+    <string name="knowledge_kind_receipt">收据</string>
+    <string name="knowledge_kind_recording">录音</string>
+    <string name="knowledge_relation_wrote">撰写</string>
+    <string name="knowledge_relation_received">收到时间</string>
+    <string name="knowledge_relation_attended">出席</string>
+    <string name="knowledge_relation_organized">组织</string>
+    <string name="knowledge_relation_spoke_in">发言于</string>
+    <string name="knowledge_relation_mentioned_in">被提及于</string>
+    <string name="knowledge_relation_paid">收款方</string>
+    <string name="knowledge_relation_paid_by">付款方</string>
+    <string name="knowledge_relation_receipt_for">对应的收据</string>
+    <string name="knowledge_relation_about">关于</string>
+</resources>
