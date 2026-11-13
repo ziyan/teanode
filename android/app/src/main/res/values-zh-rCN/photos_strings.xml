@@ -214,6 +214,23 @@
     <string name="photos_video_back">后退 5 秒</string>
     <string name="photos_video_forward">前进 5 秒</string>
     <string name="photos_video_pause">暂停</string>
+    <string name="photos_backup_channel_name">照片备份</string>
+    <string name="photos_backup_notification_title">正在备份照片</string>
+    <string name="photos_backup_notification_text">%1$d / %2$d 个文件</string>
+    <string name="photos_backup_files_title">未备份的文件</string>
+    <string name="photos_backup_files_empty">没有需要重试的文件</string>
+    <string name="photos_backup_files_empty_text">所有可以备份的文件都已备份。</string>
+    <string name="photos_backup_files_refused">无法备份</string>
+    <string name="photos_backup_files_refused_text">立即备份会再次尝试这些文件。你跳过的文件会一直被排除，直到你重试它。</string>
+    <string name="photos_backup_files_skip">跳过</string>
+    <string name="photos_backup_files_skipped">已跳过</string>
+    <string name="photos_backup_files_skipped_text">跳过的文件不会发送，也不算作问题。</string>
+    <string name="photos_backup_hidden">包含隐藏文件夹</string>
+    <string name="photos_backup_hidden_text">名为“Hidden”或以点开头的文件夹默认不会备份，开启后才会包含。</string>
+    <string name="photos_error_could_not_read">无法读取这张照片的文件。</string>
+    <string name="photos_error_not_available">文件不可用。它可能已被删除，或者你没有它。</string>
+    <string name="photos_error_nothing_to_save">这张照片还没有可保存的文件或预览。</string>
+    <string name="photos_error_no_address_book">你没有可以添加新联系人的通讯录。</string>
     <plurals name="photos_backup_left_days">
         <item quantity="other">大约还剩 %1$d 天</item>
     </plurals>
