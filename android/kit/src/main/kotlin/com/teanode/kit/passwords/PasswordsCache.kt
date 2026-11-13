@@ -78,11 +78,53 @@ data class PasswordsItemMemory(
         return version == highestRecordVersion && mac != remembered
     }
 
+    /** The memory after this device sealed an item key itself; the people are sorted and capped. */
+    fun sealing(change: PasswordsSealedChange): PasswordsItemMemory {
+        val people = if (change.isReplacing) change.userIds.toSet() else (sealedForUserIds + change.userIds).toSet()
+        var sealed = copy(sealedForUserIds = people.sorted().take(MOST_SEALED_FOR_USER_IDS))
+        change.didMakeAgentCopy?.let { made -> sealed = sealed.copy(didMakeAgentCopy = made) }
+        change.chosenUserIds?.let { chosen -> sealed = sealed.copy(chosenUserIds = chosen.toSet().sorted().take(MOST_SEALED_FOR_USER_IDS)) }
+        val notices = sealed.circleShares.toMutableList()
+        for (circleShare in change.circleShares) if (notices.none { held -> held.recipientUserId == circleShare.recipientUserId }) notices.add(circleShare)
+        return sealed.copy(circleShares = notices.takeLast(MOST_CIRCLE_SHARES))
+    }
+
+    /**
+     * The memory when two copies of it are kept: it keeps the higher record version with its mac, everybody either one
+     * sealed for or chose, and the agent copy only when both made it, so the result is never looser than either.
+     */
+    fun merging(other: PasswordsItemMemory): PasswordsItemMemory {
+        var merged = this
+        if (other.highestRecordVersion > highestRecordVersion) {
+            merged = merged.copy(highestRecordVersion = other.highestRecordVersion, highestRecordMac = other.highestRecordMac)
+        } else if (other.highestRecordVersion == highestRecordVersion && highestRecordMac == null) {
+            merged = merged.copy(highestRecordMac = other.highestRecordMac)
+        }
+        val notices = merged.circleShares.toMutableList()
+        for (circleShare in other.circleShares) if (notices.none { held -> held.recipientUserId == circleShare.recipientUserId }) notices.add(circleShare)
+        return merged.copy(
+            sealedForUserIds = (sealedForUserIds + other.sealedForUserIds).toSet().sorted().take(MOST_SEALED_FOR_USER_IDS),
+            chosenUserIds = (chosenUserIds + other.chosenUserIds).toSet().sorted().take(MOST_SEALED_FOR_USER_IDS),
+            didMakeAgentCopy = didMakeAgentCopy && other.didMakeAgentCopy,
+            circleShares = notices.takeLast(MOST_CIRCLE_SHARES),
+        )
+    }
+
     companion object {
         const val MOST_SEALED_FOR_USER_IDS = 1000
         const val MOST_CIRCLE_SHARES = 100
     }
 }
+
+/** What one sealing of an item key by this device changes in what it remembers about the item. */
+data class PasswordsSealedChange(
+    val userIds: List<String>,
+    /** Whether the people replace the ones remembered (a new key reaches only them) or join them. */
+    val isReplacing: Boolean,
+    val didMakeAgentCopy: Boolean? = null,
+    val chosenUserIds: List<String>? = null,
+    val circleShares: List<PasswordsCircleShare> = emptyList(),
+)
 
 /**
  * The public keys this device holds for other people, and what it remembers about each item the person owns. They are
@@ -271,7 +313,9 @@ class PasswordsCache(private val storage: PasswordsStorage) {
         } catch (_: Exception) {
             throw PasswordsCacheException(PasswordsCacheFailure.Unreadable)
         }
-        return if (pins.userId == userId) pins else PasswordsPins(userId = userId)
+        // Another person's keys are not this person's, but what is remembered about an item is kept by the item's id,
+        // which the server's word for the person does not change.
+        return if (pins.userId == userId) pins else PasswordsPins(userId = userId, itemMemories = pins.itemMemories)
     }
 
     private fun updatePins(userId: String, change: (PasswordsPins) -> PasswordsPins) {
@@ -291,7 +335,8 @@ class PasswordsCache(private val storage: PasswordsStorage) {
     fun recordChangedKey(userId: String, otherUserId: String, publicKey: String) {
         updatePins(userId) { pins ->
             val known = pins.knownPublicKeys[otherUserId]
-            if (known == null || known == publicKey) pins
+            if (known == null) pins.copy(knownPublicKeys = pins.knownPublicKeys + (otherUserId to publicKey))
+            else if (known == publicKey) pins
             else pins.copy(
                 knownPublicKeys = pins.knownPublicKeys + (otherUserId to publicKey),
                 changedPublicKeys = pins.changedPublicKeys + (otherUserId to known),
@@ -301,7 +346,13 @@ class PasswordsCache(private val storage: PasswordsStorage) {
 
     /** Records that the person compared safety codes for this person's key. */
     fun recordCompared(userId: String, otherUserId: String, publicKey: String) {
-        updatePins(userId) { pins -> pins.copy(comparedPublicKeys = pins.comparedPublicKeys + (otherUserId to publicKey)) }
+        updatePins(userId) { pins ->
+            pins.copy(
+                knownPublicKeys = if (pins.knownPublicKeys[otherUserId] == null) pins.knownPublicKeys + (otherUserId to publicKey) else pins.knownPublicKeys,
+                comparedPublicKeys = pins.comparedPublicKeys + (otherUserId to publicKey),
+                changedPublicKeys = pins.changedPublicKeys - otherUserId,
+            )
+        }
     }
 
     /** Dismisses the notice that a person's key changed. */
@@ -314,6 +365,22 @@ class PasswordsCache(private val storage: PasswordsStorage) {
         updatePins(userId) { pins ->
             val current = pins.itemMemories[itemId] ?: PasswordsItemMemory()
             pins.copy(itemMemories = pins.itemMemories + (itemId to current.seeingRecord(version, mac)))
+        }
+    }
+
+    /** Remembers what this device itself sealed for an item. */
+    fun recordSealed(userId: String, itemId: String, change: PasswordsSealedChange) {
+        updatePins(userId) { pins ->
+            val current = pins.itemMemories[itemId] ?: PasswordsItemMemory()
+            pins.copy(itemMemories = pins.itemMemories + (itemId to current.sealing(change)))
+        }
+    }
+
+    /** Dismisses the notice that somebody got an item through a circle. */
+    fun dismissCircleShare(userId: String, itemId: String, recipientUserId: String) {
+        updatePins(userId) { pins ->
+            val current = pins.itemMemories[itemId] ?: return@updatePins pins
+            pins.copy(itemMemories = pins.itemMemories + (itemId to current.copy(circleShares = current.circleShares.filter { share -> share.recipientUserId != recipientUserId })))
         }
     }
 

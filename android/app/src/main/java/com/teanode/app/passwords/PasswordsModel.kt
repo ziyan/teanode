@@ -558,6 +558,10 @@ class PasswordsModel(
             PasswordsError.InvalidServerAnswer -> text(R.string.passwords_error_invalid_answer)
             is PasswordsError.ItemNeedsNewKey -> text(R.string.passwords_error_new_key)
             is PasswordsError.SharingCouldNotBeChecked -> text(R.string.passwords_error_unchecked)
+            is PasswordsError.ItemNeedsAttention -> text(R.string.passwords_error_needs_attention)
+            is PasswordsError.ItemNeedsYou -> text(R.string.passwords_error_needs_you)
+            PasswordsError.ItemNotInSharingPlan -> text(R.string.passwords_error_not_in_plan)
+            PasswordsError.SharingPlanOutOfDate -> text(R.string.passwords_error_plan_out_of_date)
             PasswordsError.AnsweredAboutAnotherItem -> text(R.string.passwords_error_another_item)
             PasswordsError.RestoredAnotherVersion -> text(R.string.passwords_error_restored_other)
         }

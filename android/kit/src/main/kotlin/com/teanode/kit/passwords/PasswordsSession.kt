@@ -65,6 +65,18 @@ sealed class PasswordsError(message: String) : Exception(message) {
     /** The item's access record is missing, not signed by the person's devices, or older than one this device has seen. */
     data class SharingCouldNotBeChecked(val itemId: String) : PasswordsError("Sharing could not be checked. Set sharing again.")
 
+    /** A new key is wanted but was given a moment ago, or this session already gave the most it gives by itself. The item is listed in [PasswordsSession.itemIdsNeedingAttention]. */
+    data class ItemNeedsAttention(val itemId: String) : PasswordsError("This item needs a new key, but one was given a moment ago.")
+
+    /** This device has no memory of the item from before this session or from something it did itself, so it does nothing to it by itself: the person opens the item and finishes the sharing. */
+    data class ItemNeedsYou(val itemId: String) : PasswordsError("Open this item to finish sharing it.")
+
+    /** The item is not in the sharing plan the person confirmed. */
+    data object ItemNotInSharingPlan : PasswordsError("That item was not in what you confirmed.")
+
+    /** The server marked the item for a new key after the person confirmed a plan made while it was not marked: nothing is sealed and the person confirms a new plan. */
+    data object SharingPlanOutOfDate : PasswordsError("Sharing for that item changed after you confirmed. Review who gets it and finish again.")
+
     companion object {
         /**
          * The sentences the server refuses with, which have a case of their own. The server sends no code beside its
@@ -301,6 +313,27 @@ class PasswordsSession(
     private var opener: PasswordsOpener? = null
     private var openedItems: MutableMap<String, PasswordItem> = mutableMapOf()
 
+    /** When this session last gave each item a new key by itself, by item id. */
+    private val lastAutomaticRekeyAtEpochMS: MutableMap<String, Long> = mutableMapOf()
+    private var automaticRekeyCount = 0
+    private val heldBackItemIds: MutableSet<String> = mutableSetOf()
+
+    /**
+     * The items this device had a memory of when the session read its pins for the first time: from an earlier session. A
+     * memory made by looking at an item during this session does not count, because a device that has just met an item
+     * cannot tell an old signed record from the newest one.
+     */
+    private var itemIdsRememberedBefore: Set<String>? = null
+
+    /** The items the person changed or shared on this device during this session: this device's own action is a memory too. */
+    private val itemIdsActedOn: MutableSet<String> = mutableSetOf()
+
+    /** The marked items an automatic new key left for the person, because this device has no memory of them. */
+    private var keyItemIdsLeftForPerson: MutableSet<String> = mutableSetOf()
+
+    /** The items with a waiting share that completing by itself would have sealed for somebody this device never sealed for, or for an item it has no memory of. */
+    private var shareItemIdsLeftForPerson: MutableSet<String> = mutableSetOf()
+
     /** The pins as they were the last time the store could be read, kept for when it cannot be. */
     private var lastReadPins: PasswordsPins? = null
 
@@ -358,6 +391,9 @@ class PasswordsSession(
     private fun currentPins(): PasswordsPins {
         runCatching { cache.loadPins(userId) }.getOrNull()?.let { read ->
             lastReadPins = read
+            if (itemIdsRememberedBefore == null) {
+                itemIdsRememberedBefore = read.itemMemories.filter { entry -> entry.value.highestRecordVersion > 0 }.keys.toSet()
+            }
             return read
         }
         return lastReadPins ?: PasswordsPins(userId = userId)
@@ -402,6 +438,22 @@ class PasswordsSession(
         runCatching { cache.recordSeenRecord(userId, item.id, version, access.recordMac) }
         val pins = lastReadPins ?: return
         lastReadPins = pins.copy(itemMemories = pins.itemMemories + (item.id to seen))
+    }
+
+    /**
+     * Whether this device may act on an item by itself (a new key given because the server marked it, a waiting share
+     * completed): it remembered the item before this session, or the person changed or shared it on this device in this session.
+     */
+    private fun isRememberedForAutomaticAction(itemId: String): Boolean {
+        currentPins()
+        return itemIdsActedOn.contains(itemId) || itemIdsRememberedBefore?.contains(itemId) == true
+    }
+
+    /** Records what this device sealed for an item itself. Best effort, after the server took the keys: a store that cannot be written makes a later automatic action stricter, never looser. */
+    private fun recordSealed(itemId: String, change: PasswordsSealedChange) {
+        runCatching { cache.recordSealed(userId, itemId, change) }
+        val pins = lastReadPins ?: return
+        lastReadPins = pins.copy(itemMemories = pins.itemMemories + (itemId to (pins.itemMemories[itemId] ?: PasswordsItemMemory()).sealing(change)))
     }
 
     /** The cache as read from the file once, or as kept in memory since. A file that is damaged, or is another person's, counts as no cache. */
@@ -545,7 +597,9 @@ class PasswordsSession(
      * erased or set up again elsewhere, the copy is dropped (the pinned keys of other people stay), the session locks, and
      * this throws [PasswordsError.NotSetUp] or [PasswordsError.NeedsPassphrase].
      */
-    suspend fun sync(isFull: Boolean = false): PasswordsMergeResult = mutex.withLock {
+    suspend fun sync(isFull: Boolean = false): PasswordsMergeResult = mutex.withLock { syncLocked(isFull) }
+
+    private suspend fun syncLocked(isFull: Boolean = false): PasswordsMergeResult {
         val current = requireOpener()
         val setup = readSetup()
         if (!setup.isSetUp) {
@@ -570,7 +624,7 @@ class PasswordsSession(
         store(merged)
         for (itemId in result.changedItemIds + result.removedItemIds) openedItems.remove(itemId)
         recordOwnerKeys(current)
-        result
+        return result
     }
 
     private fun isMissingItem(listed: List<String>, contents: PasswordsCacheContents, brought: List<PasswordItemView>): Boolean {
@@ -657,6 +711,20 @@ class PasswordsSession(
             if (view.isSharedWithMe) throw PasswordsError.OnlyOwnerCanChangeItem
             if (view.itemKind != fields.itemKind.rawValue) throw PasswordsError.ItemKindCannotChange
             fieldsToSeal = fields.withAccess(current.open(view).fields.access)
+            // The key this item has was known to somebody who lost access to it: this save is the chance to give it a new one,
+            // with the new fields sealed by it, as far as a new key given by itself may go. When it may not, the fields are
+            // sealed with the key the item has.
+            if (view.needsNewKey) {
+                try {
+                    return@withLock rekey(id, fieldsToSeal, baseRevision ?: view.revision, AccessEdit.None, RekeyOrigin.Automatic)
+                } catch (error: PasswordsError.ItemNeedsAttention) {
+                    // Saved below, with the key the item has.
+                } catch (error: PasswordsError.SharingCouldNotBeChecked) {
+                    // Saved below.
+                } catch (error: PasswordsError.ItemNeedsYou) {
+                    // Saved below.
+                }
+            }
             itemId = id
             itemKey = current.itemKey(view)
             sealedItemKey = view.itemKey
@@ -664,6 +732,7 @@ class PasswordsSession(
         } else {
             // Lower case, as the server writes it back: the id is part of what is encrypted.
             itemId = UUID.randomUUID().toString().lowercase()
+            itemIdsActedOn.add(itemId)
             // A record that grants nobody, signed: an item with none could not be told from one whose record somebody removed.
             fieldsToSeal = PasswordsCrypto.withSignedAccess(current.accountKey, itemId, fields.itemKind, fields, null, 0)
             itemKey = PasswordsCrypto.makeKey()
@@ -698,11 +767,23 @@ class PasswordsSession(
         openedItems.remove(id)
     }
 
-    /** Brings a deleted item back. */
+    /**
+     * Brings a deleted item back. The server keeps its mark when the item had to be given a new key (it had shares or an
+     * agent copy when it was deleted), and the item is given one now, sealed only for people (and the agent) this device
+     * itself sealed it for before: a device that never saw the item may be looking at a record from before the person
+     * narrowed it, so the rest waits for "Finish sharing". If the new key fails the restored item is returned and
+     * [giveNewKey] or the next save tries again.
+     */
     suspend fun restore(id: String): PasswordItem = mutex.withLock {
         val current = requireOpener()
         val view = call { api.restorePasswordItem(id) }
-        keep(view, id, current)
+        val kept = keep(view, id, current)
+        if (!view.needsNewKey || view.isSharedWithMe) return@withLock kept
+        try {
+            rekey(id, null, null, AccessEdit.None, RekeyOrigin.Restore)
+        } catch (_: Exception) {
+            kept
+        }
     }
 
     // Earlier versions
@@ -750,33 +831,34 @@ class PasswordsSession(
         val currentAccess = before.verifiedAccess
         if (before.sharingCheck != PasswordsSharingCheck.Verified || currentAccess == null) throw PasswordsError.SharingCouldNotBeChecked(itemId)
         val highestVersion = highestRecordVersion(before)
+        // Asked before the restore, which makes this device remember the item.
+        val isRemembered = isRememberedForAutomaticAction(itemId)
         val answered = call { api.restorePasswordItemVersion(itemId, versionId, view.revision) }
         if (answered.id != itemId) throw PasswordsError.AnsweredAboutAnotherItem
         if ((answered.encryptedFields to answered.itemKey) != listed) throw PasswordsError.RestoredAnotherVersion
         val kept = keep(answered, itemId, current)
+        if (isRemembered) itemIdsActedOn.add(itemId)
         try {
             val signed = PasswordsCrypto.withSignedAccess(current.accountKey, itemId, kept.itemKind, kept.fields, currentAccess, highestVersion)
             saveFields(signed, ownedView(itemId), current)
-            rekey(itemId, AccessEdit.None)
+            rekey(itemId, null, null, AccessEdit.None, if (isRemembered) RekeyOrigin.Request else RekeyOrigin.Restore)
         } catch (error: PasswordsError.Locked) {
             throw error
         } catch (_: Exception) {
             // The restore stands; the item is marked and the person can finish it.
         }
-        itemOrNull(itemId) ?: kept
+        item(itemId)
     }
 
-    private fun itemOrNull(id: String): PasswordItem? = runCatching { item(id) }.getOrNull()
-
     /** Puts a kept item the server answered with into the copy, opens it, and remembers its record. The answer must be about `itemId`. */
-    private fun keep(view: PasswordItemView, itemId: String, current: PasswordsOpener): PasswordItem {
+    private fun keep(view: PasswordItemView, itemId: String, current: PasswordsOpener, isRemembering: Boolean = true): PasswordItem {
         if (view.id != itemId) throw PasswordsError.AnsweredAboutAnotherItem
         val updated = loadedContents() ?: throw PasswordsError.NeedsPassphrase
         store(updated.replacing(view))
         openedItems.remove(view.id)
         val opened = current.open(view)
         openedItems[view.id] = opened
-        remember(opened)
+        if (isRemembering) remember(opened)
         return opened
     }
 
@@ -786,11 +868,479 @@ class PasswordsSession(
         return view
     }
 
+    // Sharing
+
+    /**
+     * The people a share with this person or circle would reach, with the safety code of each one's public key, whether it
+     * is the key this device knows ([PasswordRecipient.keyTrust]) and whether the person compared codes. A person who has
+     * not set up Passwords has no key yet.
+     */
+    suspend fun recipients(granteeUserId: String? = null, granteeCircleId: String? = null): List<PasswordRecipient> = mutex.withLock {
+        requireOpener()
+        val views = call { api.listPasswordRecipients(granteeUserId, granteeCircleId) }
+        makeRecipients(views, granteeCircleId?.let { circleId -> listOf(circleId) } ?: emptyList())
+    }
+
+    /** The same recipients as [recipients] for views the server already sent (the owner's `shares` of an item); `circleId` is the circle of the share they came from, if it is a circle's. */
+    fun recipients(views: List<PasswordRecipientView>, circleId: String? = null): List<PasswordRecipient> =
+        makeRecipients(views, circleId?.let { listOf(it) } ?: emptyList())
+
+    /** Recipients marked with what this device knows of each key. */
+    private fun makeRecipients(views: List<PasswordRecipientView>, circleIds: List<String>): List<PasswordRecipient> {
+        val pins = currentPins()
+        return views.map { view ->
+            PasswordRecipient(view, pins.knownPublicKeys[view.userId], pins.comparedPublicKeys[view.userId], circleIds)
+        }
+    }
+
+    /** A recipient marked with what the opener knows of their key. */
+    private fun recipientOf(view: PasswordRecipientView, current: PasswordsOpener): PasswordRecipient =
+        PasswordRecipient(view, current.knownPublicKeys[view.userId], current.comparedPublicKeys[view.userId])
+
+    /**
+     * Replaces who the item is shared with by `grantees`. The owner's own record decides who may have the item: the list of
+     * grantees is sealed inside the item's fields (`access`, signed with the account key), and a key is sealed for a person
+     * only if that record reaches them and they have a key. The calls go in the order that keeps the sealed record from
+     * ever being wider than what the person chose:
+     *
+     * - When somebody is added, the fields are saved with the new, signed record first, then the server is told with the
+     *   keys sealed for the new recipients.
+     * - When somebody is removed (the record before has a grantee the record now lacks, or the server lists a share the new
+     *   list does not have, whatever the server answers), the server is told, then the item is given a new item key whose
+     *   fields carry the narrower record, so the removed person's old copy opens nothing saved later. If that fails after
+     *   the removal went through, this throws [PasswordsError.ItemNeedsNewKey]: the removal stands, the server marks the
+     *   item, and [giveNewKey] tries again.
+     *
+     * An item whose record was not checked is treated as shared with nobody: this call writes a fresh signed record with the
+     * grantees given, which is how the person sets sharing again, and gives the item a new key when the server lists any
+     * share or agent copy for it, because whoever wrote the record may hold the old key.
+     *
+     * `recipients` are the people the grantees reach (from [recipients]). Each one the record reaches who has a key gets a
+     * key sealed for the public key the server gives, at once: a first-seen key is recorded as the known one, and a key that
+     * differs from the known one is accepted and recorded with a notice ([keyChanges]). A recipient that already has a key
+     * is not sealed for again. A recipient without a public key is left out and shows up in [waitingShares]. Only the owner
+     * shares; a recipient never shares onward.
+     */
+    suspend fun setShares(itemId: String, grantees: List<PasswordShareGranteeInput>, recipients: List<PasswordRecipient>): PasswordItem = mutex.withLock {
+        var current = requireOpener()
+        var view = ownedView(itemId)
+        if (view.deletedAt != null) throw PasswordsError.ItemNotFound
+        itemIdsActedOn.add(itemId)
+        val previouslySealedUserIds = currentPins().itemMemories[itemId]?.sealedForUserIds?.toSet() ?: emptySet()
+        // An item that still has the key somebody lost access to is given a new one before anything else, as far as one given by itself may go.
+        if (view.needsNewKey && rekeyIfAllowed(itemId)) {
+            current = requireOpener()
+            view = ownedView(itemId)
+        }
+        val opened = current.open(view)
+        val isRecordChecked = opened.sharingCheck == PasswordsSharingCheck.Verified
+        val oldGrantees = opened.verifiedAccess?.grantees ?: emptyList()
+        val newGrantees = mutableListOf<PasswordsGrantee>()
+        val chosenInputs = mutableListOf<PasswordShareGranteeInput>()
+        for (input in grantees) {
+            val grantee = granteeOf(input) ?: continue
+            if (newGrantees.contains(grantee)) continue
+            newGrantees.add(grantee)
+            chosenInputs.add(input)
+        }
+        val newAccess = PasswordsItemAccess.accessWithGrantees(opened.verifiedAccess, newGrantees)
+        val isNarrowing = oldGrantees.any { grantee -> !newGrantees.contains(grantee) }
+        val isWidening = newGrantees.any { grantee -> !oldGrantees.contains(grantee) }
+        // The server lists somebody the new list leaves out, whatever the record said.
+        val isRemovingListedShare = view.shares.any { share ->
+            val grantee = granteeOf(share)
+            grantee != null && !newGrantees.contains(grantee) && share.recipients.isNotEmpty()
+        }
+        // A record that was not checked may have been written by somebody who holds the item key.
+        val isReplacingUntrustedRecord = !isRecordChecked && (view.shares.isNotEmpty() || view.isUsableByAgent)
+
+        if (isWidening || !isRecordChecked) {
+            val signed = PasswordsCrypto.withSignedAccess(current.accountKey, itemId, opened.itemKind, opened.fields, newAccess, highestRecordVersion(opened))
+            saveFields(signed, view, current)
+            view = ownedView(itemId)
+        }
+
+        val itemKey = current.itemKey(view)
+        val alreadyKeyedUserIds = view.shares.flatMap { share -> share.recipients }.filter { recipient -> recipient.hasKey }.map { recipient -> recipient.userId }.toSet()
+        val circleIdsByUserId = mutableMapOf<String, List<String>>()
+        for (recipient in recipients) circleIdsByUserId[recipient.userId] = (circleIdsByUserId[recipient.userId] ?: emptyList()) + recipient.circleIds
+        val keys = mutableListOf<PasswordShareKeyInput>()
+        val sealedKeys = linkedMapOf<String, String>()
+        val sealedUserIds = mutableSetOf<String>()
+        for (recipient in recipients) {
+            if (recipient.userId == userId || alreadyKeyedUserIds.contains(recipient.userId)) continue
+            val publicKey = recipient.publicKey ?: continue
+            if (recipient.hasTooMuchShared) continue
+            if (!sealedUserIds.add(recipient.userId)) continue
+            // The record the owner sealed decides, not the server's list of shares.
+            val circleIds = (circleIdsByUserId[recipient.userId] ?: emptyList()) + circleIdsListing(recipient.userId, view)
+            if (!PasswordsItemAccess.isReachedByAccess(newAccess, recipient.userId, circleIds)) continue
+            keys.add(shareKey(itemKey, itemId, current.keyPair, recipient.userId, publicKey, view.itemKey))
+            sealedKeys[recipient.userId] = base64(publicKey)
+        }
+        // The keys sealed for are recorded before the server is told, so a pin store that cannot be written stops the share before anything is sealed for them.
+        recordSealedKeys(sealedKeys)
+        val answered = call { api.setPasswordItemShares(itemId, chosenInputs, keys) }
+        val kept = keep(answered, itemId, current)
+        recordSealed(
+            itemId,
+            PasswordsSealedChange(
+                userIds = sealedKeys.keys.toList(),
+                isReplacing = false,
+                chosenUserIds = newGrantees.filterIsInstance<PasswordsGrantee.Person>().map { grantee -> grantee.userId },
+                circleShares = circleSharesFor(sealedKeys.keys.toList(), previouslySealedUserIds, answered, newAccess),
+            ),
+        )
+        // Somebody lost access, and they may hold the item key: it gets replaced. The person's own record says so; a server
+        // that answers with the shares unchanged cannot prevent it. A mark the server set on its own is followed as well,
+        // which only ever re-keys more.
+        if (!(isNarrowing || isRemovingListedShare || isReplacingUntrustedRecord || answered.needsNewKey)) return@withLock kept
+        try {
+            rekey(itemId, null, null, AccessEdit.Grantees(newGrantees), RekeyOrigin.Choice)
+        } catch (_: Exception) {
+            throw PasswordsError.ItemNeedsNewKey(itemId)
+        }
+    }
+
+    /** The grantee of the access record that a share target is. */
+    private fun granteeOf(input: PasswordShareGranteeInput): PasswordsGrantee? {
+        val userIdText = input.granteeUserId
+        val circleIdText = input.granteeCircleId
+        return when {
+            userIdText != null && circleIdText == null && userIdText.isNotEmpty() -> PasswordsGrantee.Person(userIdText)
+            userIdText == null && circleIdText != null && circleIdText.isNotEmpty() -> PasswordsGrantee.Circle(circleIdText)
+            else -> null
+        }
+    }
+
+    /** The grantee of a share the server lists. */
+    private fun granteeOf(share: PasswordShareView): PasswordsGrantee? {
+        share.granteeCircleId?.let { circleId -> return PasswordsGrantee.Circle(circleId) }
+        share.granteeUserId?.let { shareUserId -> return PasswordsGrantee.Person(shareUserId) }
+        return null
+    }
+
+    /** The circles the server lists a person as a member of among the shares the copy holds of an item. */
+    private fun circleIdsListing(recipientUserId: String, view: PasswordItemView): List<String> =
+        view.shares.mapNotNull { share ->
+            val circleId = share.granteeCircleId ?: return@mapNotNull null
+            if (share.recipients.any { member -> member.userId == recipientUserId }) circleId else null
+        }
+
+    /**
+     * The people among `userIds` who are reached only through a circle of the record and whom this device never sealed the
+     * item for before: the ones the person is told about. Who is in a circle is the server's word, so this is the one place
+     * the person is shown where it was relied on. A person the record names itself is not listed.
+     */
+    private fun circleSharesFor(
+        userIds: List<String>,
+        previouslySealedUserIds: Set<String>,
+        view: PasswordItemView,
+        access: PasswordsItemAccess?,
+    ): List<PasswordsCircleShare> {
+        if (access == null) return emptyList()
+        val circleShares = mutableListOf<PasswordsCircleShare>()
+        for (recipientUserId in userIds.sorted()) {
+            if (previouslySealedUserIds.contains(recipientUserId)) continue
+            if (access.grantees.contains(PasswordsGrantee.Person(recipientUserId))) continue
+            for (share in view.shares) {
+                val circleId = share.granteeCircleId ?: continue
+                if (!access.grantees.contains(PasswordsGrantee.Circle(circleId))) continue
+                val member = share.recipients.firstOrNull { recipient -> recipient.userId == recipientUserId } ?: continue
+                circleShares.add(PasswordsCircleShare(recipientUserId, member.name, share.granteeName))
+                break
+            }
+        }
+        return circleShares
+    }
+
+    /** The highest access record version this device has seen for an item with a valid signature, counting the record the item shows now. */
+    private fun highestRecordVersion(item: PasswordItem): Long =
+        maxOf(currentPins().itemMemories[item.id]?.highestRecordVersion ?: 0, item.verifiedAccess?.recordVersion ?: 0)
+
+    private fun sealedForRecipient(itemKey: ByteArray, itemId: String, ownerKeyPair: PasswordsKeyPair, recipientUserId: String, recipientPublicKey: ByteArray): String =
+        PasswordsCrypto.sealForKeyPair(itemKey, ownerKeyPair, userId, recipientPublicKey, recipientUserId, itemId).jsonText
+
+    /**
+     * The key for `setPasswordItemShares`. `accountSealedItemKey` is the item key sealed with the account key, exactly as
+     * the item showed it when this device opened it to seal this key: the server refuses the key when the item has another by now.
+     */
+    private fun shareKey(
+        itemKey: ByteArray,
+        itemId: String,
+        ownerKeyPair: PasswordsKeyPair,
+        recipientUserId: String,
+        recipientPublicKey: ByteArray,
+        accountSealedItemKey: String,
+    ): PasswordShareKeyInput = PasswordShareKeyInput(
+        recipientUserId = recipientUserId,
+        itemKeyByRecipientKey = sealedForRecipient(itemKey, itemId, ownerKeyPair, recipientUserId, recipientPublicKey),
+        recipientPublicKey = base64(recipientPublicKey),
+        itemKey = accountSealedItemKey,
+    )
+
+    private fun itemShareKey(
+        itemKey: ByteArray,
+        itemId: String,
+        ownerKeyPair: PasswordsKeyPair,
+        recipient: PasswordRecipient,
+        recipientPublicKey: ByteArray,
+        accountSealedItemKey: String? = null,
+    ): PasswordItemShareKeyInput = PasswordItemShareKeyInput(
+        itemId = itemId,
+        recipientUserId = recipient.userId,
+        itemKeyByRecipientKey = sealedForRecipient(itemKey, itemId, ownerKeyPair, recipient.userId, recipientPublicKey),
+        recipientPublicKey = base64(recipientPublicKey),
+        itemKey = accountSealedItemKey,
+    )
+
+    /**
+     * The people whose key changed from the one this device knew (as an item's owner, or as a recipient the person shared
+     * with), each once, until the person dismisses the notice. The new key was accepted: nothing waits on the notice.
+     */
+    fun keyChanges(): List<PasswordsKeyChange> {
+        val pins = currentPins()
+        val names = mutableMapOf<String, String>()
+        for (view in loadedContents()?.items.orEmpty()) {
+            if (view.isSharedWithMe) names[view.ownerUserId] = view.ownerName
+            for (recipient in view.shares.flatMap { share -> share.recipients }) names[recipient.userId] = recipient.name
+        }
+        val changes = mutableListOf<PasswordsKeyChange>()
+        for ((otherUserId, previousPublicKey) in pins.changedPublicKeys) {
+            val currentPublicKey = pins.knownPublicKeys[otherUserId] ?: continue
+            changes.add(
+                PasswordsKeyChange(
+                    userId = otherUserId,
+                    name = names[otherUserId] ?: "",
+                    oldSafetyCode = PasswordsOpener.safetyCodeText(previousPublicKey),
+                    newSafetyCode = PasswordsOpener.safetyCodeText(currentPublicKey),
+                    newPublicKey = currentPublicKey,
+                ),
+            )
+        }
+        return changes.sortedWith(compareBy<PasswordsKeyChange> { change -> change.name }.thenBy { change -> change.userId })
+    }
+
+    /** The people this device sealed an item for through a circle for the first time, each until the person dismisses the notice. An item that is not in the copy any more is left out. */
+    fun circleShareNotices(): List<PasswordsCircleShareNotice> {
+        val pins = currentPins()
+        val current = opener ?: return emptyList()
+        val held = loadedContents() ?: return emptyList()
+        val notices = mutableListOf<PasswordsCircleShareNotice>()
+        for ((itemId, memory) in pins.itemMemories) {
+            if (memory.circleShares.isEmpty()) continue
+            val view = held.item(itemId) ?: continue
+            if (view.deletedAt != null) continue
+            val opened = runCatching { current.open(view) }.getOrNull() ?: continue
+            for (share in memory.circleShares) {
+                notices.add(PasswordsCircleShareNotice(itemId, opened.name, share.recipientUserId, share.recipientName, share.circleName))
+            }
+        }
+        return notices.sortedWith(
+            compareBy<PasswordsCircleShareNotice> { notice -> notice.recipientName }.thenBy { notice -> notice.itemName }.thenBy { notice -> notice.id },
+        )
+    }
+
+    /** Dismisses the notice that somebody got an item through a circle. */
+    fun dismissCircleShareNotice(itemId: String, recipientUserId: String) {
+        requireOpener()
+        cache.dismissCircleShare(userId, itemId, recipientUserId)
+        val pins = lastReadPins ?: return
+        val memory = pins.itemMemories[itemId] ?: return
+        lastReadPins = pins.copy(
+            itemMemories = pins.itemMemories + (itemId to memory.copy(circleShares = memory.circleShares.filter { share -> share.recipientUserId != recipientUserId })),
+        )
+    }
+
+    /** Dismisses the notice of a changed key. The key stays accepted. */
+    fun dismissKeyChange(otherUserId: String) {
+        requireOpener()
+        cache.dismissChangedKey(userId, otherUserId)
+    }
+
+    /**
+     * Marks the key as compared after the person read the safety codes with its owner. `publicKey` is the key whose code the
+     * person was shown (standard base64); it is recorded as the known key when the device does not know it yet or knew
+     * another, and the person's changed-key notice is cleared. It never gates sharing or opening.
+     */
+    fun markCompared(otherUserId: String, publicKey: String) {
+        requireOpener()
+        val data = runCatching { unbase64(publicKey) }.getOrNull()
+        if (data == null || !PasswordsCrypto.isPublicKeyValid(data) || otherUserId == userId) throw PasswordsError.InvalidServerAnswer
+        val known = currentPins().knownPublicKeys[otherUserId]
+        if (known != null && known != publicKey) cache.recordChangedKey(userId, otherUserId, publicKey)
+        cache.recordCompared(userId, otherUserId, publicKey)
+        openedItems = mutableMapOf()
+    }
+
+    /**
+     * Records the keys (user id to standard base64) this device is about to seal item keys for: the first one seen for a
+     * person becomes their known key, and one that differs from the known key replaces it and leaves a notice. Nothing is asked.
+     */
+    private fun recordSealedKeys(keys: Map<String, String>) {
+        val pins = currentPins()
+        for ((otherUserId, publicKey) in keys.toSortedMap()) {
+            val known = pins.knownPublicKeys[otherUserId]
+            if (known == null) {
+                cache.recordKnownIfAbsent(userId, otherUserId, publicKey)
+                continue
+            }
+            if (known != publicKey) cache.recordChangedKey(userId, otherUserId, publicKey)
+        }
+    }
+
+    /** The recipients of the person's items who cannot open them yet, each with what the device knows of their key. */
+    suspend fun waitingShares(): List<PasswordWaitingShare> = mutex.withLock {
+        val current = requireOpener()
+        val views = call { api.listWaitingPasswordShares() }
+        views.map { view ->
+            val name = itemView(view.itemId)?.let { held -> runCatching { current.open(held).name }.getOrNull() }
+            PasswordWaitingShare(view.itemId, name, recipientOf(view.recipient, current), view.hasMoreWaiting)
+        }
+    }
+
+    /** What [completeWaitingShares] works out from the server's list of waiting recipients and the copy. */
+    private class WaitingPlan {
+        val keys = mutableListOf<PasswordItemShareKeyInput>()
+
+        /** The key each recipient sealed for was given, user id to standard base64. */
+        val sealedKeys = linkedMapOf<String, String>()
+
+        /** The people sealed for in each item, by item id. */
+        val sealedUserIdsByItemId = linkedMapOf<String, MutableList<String>>()
+
+        /** The people sealed for through a circle for the first time, by item id. */
+        val circleSharesByItemId = linkedMapOf<String, MutableList<PasswordsCircleShare>>()
+
+        /** The items with somebody waiting that this plan did not seal for because it is not the person's own action and this device cannot vouch for it. */
+        val itemIdsLeftForPerson = mutableSetOf<String>()
+
+        /** The server names an item the copy does not hold, or a person the owner's record would reach but the copy's shares do not list. */
+        var isCopyBehind = false
+
+        /** The names of waiting people who have too much shared with them already: skipped. */
+        val tooMuchSharedNames = mutableSetOf<String>()
+    }
+
+    /**
+     * `isByPerson` is whether the person started this (they opened the item and pressed the button): then every waiting
+     * recipient the owner's verified record reaches is sealed for. Otherwise the device acts by itself and seals only for an
+     * item it remembers and for people it sealed that item for before; the rest is left for the person.
+     */
+    private fun waitingPlan(waiting: List<PasswordWaitingShareView>, current: PasswordsOpener, isByPerson: Boolean): WaitingPlan {
+        val plan = WaitingPlan()
+        val memories = currentPins().itemMemories
+        for (entry in waiting) {
+            val recipient = recipientOf(entry.recipient, current)
+            val publicKey = recipient.publicKey ?: continue
+            if (recipient.userId == userId) continue
+            val view = itemView(entry.itemId)
+            if (view == null) {
+                plan.isCopyBehind = true
+                continue
+            }
+            if (view.isSharedWithMe || view.deletedAt != null) continue
+            val opened = runCatching { current.open(view) }.getOrNull() ?: continue
+            // A record that is not the person's own (missing, not signed by them, or an older one the server sent back) reaches nobody: nothing is sealed from it.
+            val access = opened.verifiedAccess ?: continue
+            val circleIds = circleIdsListing(recipient.userId, view)
+            if (!PasswordsItemAccess.isReachedByAccess(access, recipient.userId, circleIds)) {
+                // The server lists somebody the owner's record does not reach: nothing is sealed. But if the record would
+                // reach them as a member of one of its circles, the copy of the circle may be old.
+                val circleIdsOfRecord = access.grantees.filterIsInstance<PasswordsGrantee.Circle>().map { grantee -> grantee.circleId }
+                if (PasswordsItemAccess.isReachedByAccess(access, recipient.userId, circleIdsOfRecord)) plan.isCopyBehind = true
+                continue
+            }
+            val itemKey = runCatching { current.itemKey(view) }.getOrNull() ?: continue
+            // The server stores no key for somebody who has too much shared with them: sealing one would only be tried again on every pass.
+            if (recipient.hasTooMuchShared) {
+                plan.tooMuchSharedNames.add(recipient.name)
+                continue
+            }
+            val memory = memories[entry.itemId] ?: PasswordsItemMemory()
+            if (!isByPerson && !(isRememberedForAutomaticAction(entry.itemId) && (memory.sealedForUserIds.contains(recipient.userId) || memory.chosenUserIds.contains(recipient.userId)))) {
+                plan.itemIdsLeftForPerson.add(entry.itemId)
+                continue
+            }
+            plan.sealedKeys[recipient.userId] = base64(publicKey)
+            plan.sealedUserIdsByItemId.getOrPut(entry.itemId) { mutableListOf() }.add(recipient.userId)
+            plan.circleSharesByItemId.getOrPut(entry.itemId) { mutableListOf() }
+                .addAll(circleSharesFor(listOf(recipient.userId), memory.sealedForUserIds.toSet(), view, access))
+            plan.keys.add(itemShareKey(itemKey, entry.itemId, current.keyPair, recipient, publicKey, view.itemKey))
+        }
+        return plan
+    }
+
+    /**
+     * Seals the keys of items whose recipients were waiting (they set up Passwords, or set it up again with a new key, after
+     * the share was made) for their current public keys, at once, but only when the owner's sealed record reaches the
+     * recipient (a person grantee by user id, a circle grantee when the server lists them as a member). The key given for a
+     * first-seen person is recorded as their known key; one that differs from the known key replaces it and leaves a notice.
+     *
+     * Done by itself, this seals only for an item the device remembers from before this session or from something it did
+     * itself, and only for people it sealed that item for before or that the person named directly when they set who it is
+     * shared with on this device (a circle's members are the server's word, so a member who joined later is not one of
+     * them). Everything else is left for the person ([itemIdsNeedingYou], [finishSharing]): a device that has never seen an
+     * item cannot tell an old signed record from the newest one, and a person added to an old record is exactly what an old
+     * record would bring back. When the server names an item the copy does not hold, or somebody the record would reach but
+     * the copy's shares do not list, the copy is read in full once and the list checked again.
+     */
+    suspend fun completeWaitingShares(): PasswordsCompletedShares = mutex.withLock {
+        completeWaitingSharesLocked(null, null, isByPerson = false)
+    }
+
+    /** The same for one item, started by the person: every waiting recipient the owner's verified record reaches gets a key, whether or not this device sealed for them before. */
+    suspend fun completeWaitingShares(onlyItemId: String): PasswordsCompletedShares = mutex.withLock {
+        itemIdsActedOn.add(onlyItemId)
+        completeWaitingSharesLocked(onlyItemId, null, isByPerson = true)
+    }
+
+    private suspend fun completeWaitingSharesLocked(onlyItemId: String?, onlyUserIds: Set<String>?, isByPerson: Boolean): PasswordsCompletedShares {
+        var isFullReadDone = false
+        var isRetriedAfterChange = false
+        while (true) {
+            val current = requireOpener()
+            var waiting = call { api.listWaitingPasswordShares() }
+            val hasMoreWaiting = waiting.any { entry -> entry.hasMoreWaiting }
+            if (onlyItemId != null) waiting = waiting.filter { entry -> entry.itemId == onlyItemId }
+            if (onlyUserIds != null) waiting = waiting.filter { entry -> onlyUserIds.contains(entry.recipient.userId) }
+            val plan = waitingPlan(waiting, current, isByPerson)
+            val tooMuchSharedNames = plan.tooMuchSharedNames.sorted()
+            if (plan.isCopyBehind && !isFullReadDone) {
+                isFullReadDone = true
+                syncLocked(isFull = true)
+                continue
+            }
+            if (onlyItemId != null) shareItemIdsLeftForPerson.remove(onlyItemId) else {
+                shareItemIdsLeftForPerson = plan.itemIdsLeftForPerson.toMutableSet()
+            }
+            if (plan.keys.isEmpty()) return PasswordsCompletedShares(0, tooMuchSharedNames, hasMoreWaiting)
+            recordSealedKeys(plan.sealedKeys)
+            try {
+                val addedKeyCount = call { api.addPasswordShareKeys(plan.keys) }
+                // The server stores at most the keys it was given: a count past that is not about them.
+                if (addedKeyCount < 0 || addedKeyCount > plan.keys.size) throw PasswordsError.InvalidServerAnswer
+                for ((sealedItemId, sealedUserIds) in plan.sealedUserIdsByItemId) {
+                    recordSealed(sealedItemId, PasswordsSealedChange(sealedUserIds, isReplacing = false, circleShares = plan.circleSharesByItemId[sealedItemId] ?: emptyList()))
+                }
+                // The copy's shares still say these people have no key: read the changed items again.
+                if (addedKeyCount > 0) runCatching { syncLocked() }
+                return PasswordsCompletedShares(addedKeyCount, tooMuchSharedNames, hasMoreWaiting)
+            } catch (error: PasswordsError.ItemChangedOnAnotherDevice) {
+                if (isRetriedAfterChange) throw error
+                // An item got a new key since the copy was made: read it again, then seal from that.
+                isRetriedAfterChange = true
+                syncLocked()
+            }
+        }
+    }
+
     // The agent
 
     /**
-     * Lets the agent use an item the person owns, or stops it. The owner's own record, sealed inside the item's fields and
-     * signed with the account key, is the consent; the server's flag alone is not.
+     * Lets the agent use one item, or stops it. The owner's record sealed in the item's fields (`access.isUsableByAgent`) is
+     * what says so; the server's flag follows it, and the agent's opener refuses an item whose record says no. The calls go
+     * in the order that keeps the record from ever being wider than what the person chose:
      *
      * - Turning it on saves the fields with the new record first, then seals the item key for the server's agent key and
      *   tells the server, so the server can open this item and nothing else.
@@ -799,30 +1349,39 @@ class PasswordsSession(
      *   fails after the server was told, this throws [PasswordsError.ItemNeedsNewKey]; [giveNewKey] tries again.
      *
      * A card cannot be used by the agent, and only the owner can allow it. An item whose record was not checked cannot be
-     * turned on: [PasswordsError.SharingCouldNotBeChecked].
+     * turned on: [PasswordsError.SharingCouldNotBeChecked], until the person sets sharing again with [setShares].
      */
     suspend fun setUsableByAgent(itemId: String, isUsable: Boolean): PasswordItem = mutex.withLock {
-        val current = requireOpener()
+        setUsableByAgentLocked(itemId, isUsable)
+    }
+
+    private suspend fun setUsableByAgentLocked(itemId: String, isUsable: Boolean): PasswordItem {
+        var current = requireOpener()
         var view = ownedView(itemId)
         // The server keeps no key for the agent on a deleted item; do not ask it to.
         if (view.deletedAt != null) throw PasswordsError.ItemNotFound
+        itemIdsActedOn.add(itemId)
+        if (view.needsNewKey && rekeyIfAllowed(itemId)) {
+            current = requireOpener()
+            view = ownedView(itemId)
+        }
         val opened = current.open(view)
         val isRecordOn = opened.verifiedAccess?.isUsableByAgent == true
         if (!isUsable) {
             // Off. Nothing to do when neither the record nor the server says the agent may use it.
-            if (!isRecordOn && !view.isUsableByAgent) return@withLock opened
+            if (!isRecordOn && !view.isUsableByAgent) return opened
             if (view.isUsableByAgent) {
                 val answered = call { api.setPasswordItemUsableByAgent(itemId, false, null) }
                 keep(answered, itemId, current)
             }
-            return@withLock try {
-                rekey(itemId, AccessEdit.AgentUse(false))
-            } catch (error: Exception) {
+            return try {
+                rekey(itemId, null, null, AccessEdit.AgentUse(false), RekeyOrigin.Choice)
+            } catch (_: Exception) {
                 throw PasswordsError.ItemNeedsNewKey(itemId)
             }
         }
         if (view.itemKind == PasswordsItemKind.Card.rawValue) throw PasswordsError.CardCannotBeUsedByAgent
-        // The record is the person's consent: one that was not checked cannot be built on.
+        // The record is the person's consent: one that was not checked cannot be built on. The person sets sharing again first, which writes a record that can.
         if (opened.sharingCheck != PasswordsSharingCheck.Verified) throw PasswordsError.SharingCouldNotBeChecked(itemId)
         if (!isRecordOn) {
             val newAccess = PasswordsItemAccess.accessWithAgentUse(opened.verifiedAccess, true)
@@ -832,7 +1391,9 @@ class PasswordsSession(
         }
         val sealedItemKey = agentCopy(current.itemKey(view), itemId, current)
         val answered = call { api.setPasswordItemUsableByAgent(itemId, true, sealedItemKey) }
-        keep(answered, itemId, current)
+        val kept = keep(answered, itemId, current)
+        recordSealed(itemId, PasswordsSealedChange(userIds = emptyList(), isReplacing = false, didMakeAgentCopy = true))
+        return kept
     }
 
     /** The item key sealed for the server's agent key. */
@@ -843,58 +1404,365 @@ class PasswordsSession(
         return PasswordsCrypto.sealForKeyPair(itemKey, current.keyPair, userId, agentPublicKey, PasswordsCrypto.AGENT_RECIPIENT_ID, itemId).jsonText
     }
 
-    /** The highest access record version this device has seen for an item with a valid signature, counting the record the item shows now. */
-    private fun highestRecordVersion(item: PasswordItem): Long =
-        maxOf(currentPins().itemMemories[item.id]?.highestRecordVersion ?: 0, item.verifiedAccess?.recordVersion ?: 0)
-
-    /** What a new key changes in the item's access record, on top of the fields it re-seals. */
-    private sealed interface AccessEdit {
-        data object None : AccessEdit
-
-        data class AgentUse(val isUsableByAgent: Boolean) : AccessEdit
-    }
+    // A new item key
 
     /**
-     * Gives the item a new item key now, because the person asked: the retry after the agent was stopped but the new key
-     * could not be made. It seals for the agent too when the person's record says so. [PasswordsError.SharingCouldNotBeChecked]
-     * when the item's record is not the person's own.
+     * The items that still need a new key but were held back by the 10 minute wait or the limit per session. The person can
+     * ask for the key ([giveNewKey]), which is not held back.
      */
-    suspend fun giveNewKey(itemId: String): PasswordItem = mutex.withLock {
-        ownedView(itemId)
-        rekey(itemId, AccessEdit.None)
+    fun itemIdsNeedingAttention(): Set<String> = heldBackItemIds.intersect(itemIdsNeedingNewKey().toSet())
+
+    /** Whether the server marked the item as left with an old key that somebody who lost access may still hold. */
+    fun needsNewKey(itemId: String): Boolean {
+        val view = itemView(itemId) ?: return false
+        return !view.isSharedWithMe && view.needsNewKey
     }
 
-    /** The person's own items the server marked as needing a new key, deleted ones not included. */
+    /** The person's own items the server marked as needing a new key ([giveNewKey]), deleted ones not included. */
     fun itemIdsNeedingNewKey(): List<String> =
         loadedContents()?.items.orEmpty().filter { view -> !view.isSharedWithMe && view.needsNewKey && view.deletedAt == null }.map { view -> view.id }
 
     /**
-     * Makes a new item key for an item the person owns and seals everything with it: the fields (with `accessEdit` applied
-     * to their access record and signed again), the person's copy, and the agent's copy when the record says the agent
-     * may use the item. Nobody is sealed for but the person and the agent: sharing is not part of this port.
+     * Gives the item a new item key now, because the person asked: the retry after a removal whose re-key failed, or the
+     * button on an item this device would not give a key by itself ([itemIdsNeedingYou]). It is the person's own action, so
+     * it seals for everyone the owner's verified record reaches who has a key, and for the agent if the record says so.
+     * [PasswordsError.SharingCouldNotBeChecked] when the item's record is not the person's own.
      */
-    private suspend fun rekey(itemId: String, accessEdit: AccessEdit): PasswordItem {
+    suspend fun giveNewKey(itemId: String): PasswordItem = mutex.withLock {
+        ownedView(itemId)
+        rekey(itemId, null, null, AccessEdit.None, RekeyOrigin.Request)
+    }
+
+    /** The same as part of finishing a plan the person confirmed: sealed only for the people the plan names for the item, and the agent's copy only if it says so. */
+    private suspend fun giveNewKey(itemId: String, plan: PasswordsFinishPlan.Item) {
+        ownedView(itemId)
+        rekey(itemId, null, null, AccessEdit.None, RekeyOrigin.Request, plan)
+    }
+
+    /**
+     * Finishes the sharing of one item the person opened: gives it a new key when the server marked it, a key to everybody
+     * waiting whom the owner's verified record reaches, and the agent's copy again when the record says the agent may use
+     * the item and the server has none. The screen shows [finishPlan] and asks first, and passes that plan here: keys are
+     * sealed only for the people it names for this item (whoever the server lists by now), and the agent's copy is made only
+     * if it says so. An item the plan does not name is refused ([PasswordsError.ItemNotInSharingPlan]). When the server
+     * marked the item after the plan was made and the new key would take the key from people who hold one and are not in the
+     * plan, nothing is sealed ([PasswordsError.SharingPlanOutOfDate]) and the person confirms a new plan.
+     */
+    suspend fun finishSharing(itemId: String, plan: PasswordsFinishPlan) = mutex.withLock {
+        val itemPlan = plan.items.firstOrNull { item -> item.itemId == itemId } ?: throw PasswordsError.ItemNotInSharingPlan
+        val view = ownedView(itemId)
+        if (view.deletedAt != null) throw PasswordsError.ItemNotFound
+        if (view.needsNewKey) {
+            // The new key replaces every key the server holds. A plan made before the server marked the item names only the
+            // people who were waiting, so sealing it now would take the key from everyone else who holds one and the record
+            // still reaches. The person confirms again instead.
+            if (sealingPlanWouldDropKeyHolders(view, itemPlan)) throw PasswordsError.SharingPlanOutOfDate
+            giveNewKey(itemId, itemPlan)
+        }
+        itemIdsActedOn.add(itemId)
+        completeWaitingSharesLocked(itemId, itemPlan.recipientUserIds.toSet(), isByPerson = true)
+        if (itemPlan.isAgentIncluded && itemIdsWithLostAgentCopy().contains(itemId)) setUsableByAgentLocked(itemId, true)
+        keyItemIdsLeftForPerson.remove(itemId)
+        shareItemIdsLeftForPerson.remove(itemId)
+    }
+
+    /**
+     * Whether a new key sealed for exactly this plan would take the key from somebody who holds one now and whom the item's
+     * record still reaches, or the agent's copy when the record lets the agent use the item. False when the record is not
+     * the person's own: the new key is refused then.
+     */
+    private fun sealingPlanWouldDropKeyHolders(view: PasswordItemView, plan: PasswordsFinishPlan.Item): Boolean {
+        val opened = requireOpener().open(view)
+        val access = opened.verifiedAccess
+        if (opened.sharingCheck != PasswordsSharingCheck.Verified || access == null) return false
+        for (recipient in view.shares.flatMap { share -> share.recipients }) {
+            if (recipient.userId == userId || !recipient.hasKey || recipient.hasTooMuchShared || plan.recipientUserIds.contains(recipient.userId)) continue
+            val publicKeyData = recipient.publicKey?.let { text -> runCatching { unbase64(text) }.getOrNull() }
+            if (publicKeyData == null || !PasswordsCrypto.isPublicKeyValid(publicKeyData)) continue
+            if (PasswordsItemAccess.isReachedByAccess(access, recipient.userId, circleIdsListing(recipient.userId, view))) return true
+        }
+        return access.isUsableByAgent && view.isUsableByAgent && view.itemKind != PasswordsItemKind.Card.rawValue && !plan.isAgentIncluded
+    }
+
+    /**
+     * What [finishSharing] would do for these items, from the phone's copy: for each owned item whose record is the person's
+     * own, the people it would seal a key for, whether it would give the item a new key, and whether it would make the
+     * agent's copy again. An item with nothing to do is left out of the count. Nothing is sealed or sent.
+     */
+    fun finishPlan(itemIds: List<String>): PasswordsFinishPlan {
+        val current = currentOpener() ?: return PasswordsFinishPlan(0, emptyList(), 0, 0)
+        val held = loadedContents() ?: return PasswordsFinishPlan(0, emptyList(), 0, 0)
+        val lostAgentCopyItemIds = itemIdsWithLostAgentCopy()
+        var itemCount = 0
+        var newKeyItemCount = 0
+        var agentItemCount = 0
+        val planItems = mutableListOf<PasswordsFinishPlan.Item>()
+        val countsByUserId = mutableMapOf<String, Int>()
+        val namesByUserId = mutableMapOf<String, String>()
+        val seenItemIds = mutableSetOf<String>()
+        for (itemId in itemIds) {
+            if (!seenItemIds.add(itemId)) continue
+            val view = held.item(itemId) ?: continue
+            if (view.isSharedWithMe || view.deletedAt != null) continue
+            val opened = runCatching { current.open(view) }.getOrNull() ?: continue
+            val access = opened.verifiedAccess ?: continue
+            val recipientUserIds = mutableSetOf<String>()
+            for (recipient in view.shares.flatMap { share -> share.recipients }) {
+                if (recipient.userId == userId) continue
+                val publicKeyData = recipient.publicKey?.let { text -> runCatching { unbase64(text) }.getOrNull() }
+                if (publicKeyData == null || !PasswordsCrypto.isPublicKeyValid(publicKeyData)) continue
+                // A new key is sealed for everyone the record reaches who has a key; otherwise only for those waiting without
+                // one (and not past what the server lets others share with them).
+                if (!(view.needsNewKey || (!recipient.hasKey && !recipient.hasTooMuchShared))) continue
+                if (!PasswordsItemAccess.isReachedByAccess(access, recipient.userId, circleIdsListing(recipient.userId, view))) continue
+                recipientUserIds.add(recipient.userId)
+                namesByUserId[recipient.userId] = recipient.name
+            }
+            val isAgentCopyLost = lostAgentCopyItemIds.contains(itemId)
+            if (recipientUserIds.isEmpty() && !view.needsNewKey && !isAgentCopyLost) continue
+            itemCount++
+            if (view.needsNewKey) newKeyItemCount++
+            if (isAgentCopyLost) agentItemCount++
+            for (recipientUserId in recipientUserIds) countsByUserId[recipientUserId] = (countsByUserId[recipientUserId] ?: 0) + 1
+            // The new key keeps the agent's copy of an item the agent already uses, so that copy is in the plan too.
+            val isAgentCopyKept = view.needsNewKey && view.isUsableByAgent && access.isUsableByAgent && view.itemKind != PasswordsItemKind.Card.rawValue
+            planItems.add(PasswordsFinishPlan.Item(itemId, recipientUserIds.sorted(), isAgentCopyLost || isAgentCopyKept))
+        }
+        val people = countsByUserId.map { (personUserId, count) -> PasswordsFinishPlan.Person(personUserId, namesByUserId[personUserId] ?: "", count) }
+            .sortedWith(compareBy<PasswordsFinishPlan.Person> { person -> person.name.lowercase() }.thenBy { person -> person.userId })
+        return PasswordsFinishPlan(itemCount, people, newKeyItemCount, agentItemCount, planItems)
+    }
+
+    /**
+     * The items an automatic action left for the person, because this device has no memory of them from before this session
+     * or from something it did itself, or because a waiting person is somebody it never sealed for: the screen says "Open
+     * this item to finish sharing it" for each, and [finishSharing] does it.
+     */
+    fun itemIdsNeedingYou(): Set<String> =
+        keyItemIdsLeftForPerson.intersect(itemIdsNeedingNewKey().toSet()) + shareItemIdsLeftForPerson + itemIdsWithLostAgentCopy()
+
+    /**
+     * The person's own items whose record, checked as theirs, says the agent may use them but for which the server holds no
+     * copy for the agent: another device re-keyed the item without making one, or a restore dropped it. Nothing happens by
+     * itself: the person finishes them ([finishSharing]), which makes the copy again. A card never counts.
+     */
+    fun itemIdsWithLostAgentCopy(): Set<String> {
+        val current = currentOpener() ?: return emptySet()
+        val held = loadedContents() ?: return emptySet()
+        val itemIds = mutableSetOf<String>()
+        for (view in held.items) {
+            if (view.isSharedWithMe || view.deletedAt != null || view.isUsableByAgent || view.itemKind == PasswordsItemKind.Card.rawValue) continue
+            val known = openedItems[view.id]
+            val opened = if (known != null && known.revision == view.revision) known else runCatching { current.open(view) }.getOrNull() ?: continue
+            if (opened.sharingCheck == PasswordsSharingCheck.Verified && opened.fields.access?.isUsableByAgent == true) itemIds.add(view.id)
+        }
+        return itemIds
+    }
+
+    /**
+     * Gives a new key to every one of the person's items the server marked, after a sync, as far as a new key given by
+     * itself may go: only for an item this device remembers from before this session or from something it did itself, only
+     * to people this device sealed it for before who are still in the record it checked, at most once in ten minutes for an
+     * item and [MOST_AUTOMATIC_REKEYS_PER_SESSION] in a session. Returns the ids of those that got one; an item that could
+     * not is left marked for the next time ([itemIdsNeedingAttention] names the ones held back by the wait or the limit,
+     * [itemIdsNeedingYou] the ones left for the person).
+     */
+    suspend fun giveNewKeysToMarkedItems(): List<String> = mutex.withLock {
+        val givenItemIds = mutableListOf<String>()
+        keyItemIdsLeftForPerson = mutableSetOf()
+        for (itemId in itemIdsNeedingNewKey()) {
+            val given = try {
+                rekey(itemId, null, null, AccessEdit.None, RekeyOrigin.Automatic)
+            } catch (_: Exception) {
+                null
+            }
+            if (given != null) givenItemIds.add(itemId)
+        }
+        givenItemIds
+    }
+
+    /**
+     * Gives the item a new key first when it was marked, as far as one given by itself may go. False when it may not (the
+     * record is not the person's own, or one was given a moment ago), so the caller goes on with the key the item has; any
+     * other failure is thrown.
+     */
+    private suspend fun rekeyIfAllowed(itemId: String): Boolean {
+        try {
+            rekey(itemId, null, null, AccessEdit.None, RekeyOrigin.Automatic)
+            return true
+        } catch (error: PasswordsError.ItemNeedsAttention) {
+            return false
+        } catch (error: PasswordsError.SharingCouldNotBeChecked) {
+            return false
+        } catch (error: PasswordsError.ItemNeedsYou) {
+            return false
+        }
+    }
+
+    /** What a re-key changes in the item's access record, on top of the fields it re-seals. */
+    private sealed interface AccessEdit {
+        data object None : AccessEdit
+
+        /** The grantees the person now chose. */
+        data class Grantees(val grantees: List<PasswordsGrantee>) : AccessEdit
+
+        /** Whether the agent may use the item. */
+        data class AgentUse(val isUsableByAgent: Boolean) : AccessEdit
+    }
+
+    /** Who asked for a new key, which decides who it is sealed for. */
+    private enum class RekeyOrigin {
+        /** The person chose who has access (they removed somebody, or turned the agent off): the key is sealed for everyone the new record reaches who has a key. */
+        Choice,
+
+        /** The person asked for a new key without choosing who (the button on the item, the retry after a removal): sealed for everyone the verified record reaches who has a key. */
+        Request,
+
+        /** Nobody asked (the server marked the item, a save found it marked): only for an item this device remembers, only for people this device sealed for before, and at most once in ten minutes for an item and 20 in a session. */
+        Automatic,
+
+        /** The person restored a deleted item, or an earlier version of one: sealed only for people and the agent this device sealed for before, with no wait and no limit. */
+        Restore,
+        ;
+
+        /** Whether the new key reaches only the people and the agent this device itself sealed for. */
+        val isLimitedToWhatThisDeviceSealed: Boolean get() = this == Automatic || this == Restore
+    }
+
+    /**
+     * Makes a new item key for an item the person owns and seals everything with it: the fields (`replacing` when a save
+     * brings new ones, else the item's own, with `accessEdit` applied to their access record and signed again), the
+     * person's copy, a copy for each recipient the owner's record still reaches and who has a key, and the agent's copy when
+     * the record says the agent may use the item.
+     *
+     * For the automatic origin the new key never reaches further than what this device did itself: the item has to be one
+     * the device remembers, a recipient has to be somebody this device sealed the item for before
+     * ([PasswordsItemMemory.sealedForUserIds]), and the agent copy is made only if this device made one
+     * ([PasswordsItemMemory.didMakeAgentCopy]) and only from a record that is the person's own. Anybody else waits for the
+     * person. One the record does not reach gets nothing, whatever the server's list of shares says. When the server says
+     * the item changed on another device and the change was not based on a revision the caller gave, the copy is brought up
+     * to date and this is tried once more. With a `plan` only the people it names get a key and the agent a copy only if it
+     * says so, also on that second try.
+     */
+    private suspend fun rekey(
+        itemId: String,
+        replacing: PasswordsItemFields?,
+        baseRevision: Long?,
+        accessEdit: AccessEdit,
+        origin: RekeyOrigin,
+        plan: PasswordsFinishPlan.Item? = null,
+    ): PasswordItem {
+        if (origin == RekeyOrigin.Automatic) {
+            // An item whose record is not the person's own is not given a key by itself, and does not use up a slot.
+            if (requireOpener().open(ownedView(itemId)).sharingCheck != PasswordsSharingCheck.Verified) throw PasswordsError.SharingCouldNotBeChecked(itemId)
+            // An item this device has no memory of is left for the person.
+            if (!isRememberedForAutomaticAction(itemId)) {
+                keyItemIdsLeftForPerson.add(itemId)
+                throw PasswordsError.ItemNeedsYou(itemId)
+            }
+            reserveAutomaticRekey(itemId)
+        }
+        try {
+            return rekeyOnce(itemId, replacing, baseRevision, accessEdit, origin, plan)
+        } catch (error: PasswordsError.ItemChangedOnAnotherDevice) {
+            if (baseRevision != null) throw error
+            syncLocked()
+            return rekeyOnce(itemId, null, null, accessEdit, origin, plan)
+        }
+    }
+
+    /** Counts one new key given by itself, or refuses it: not for the same item within ten minutes, and not more than [MOST_AUTOMATIC_REKEYS_PER_SESSION] in all. A refused item is listed in [itemIdsNeedingAttention]. */
+    private fun reserveAutomaticRekey(itemId: String) {
+        val nowEpochMS = clock()
+        val lastEpochMS = lastAutomaticRekeyAtEpochMS[itemId]
+        if (lastEpochMS != null && nowEpochMS - lastEpochMS < AUTOMATIC_REKEY_COOLDOWN_MS) {
+            heldBackItemIds.add(itemId)
+            throw PasswordsError.ItemNeedsAttention(itemId)
+        }
+        if (automaticRekeyCount >= MOST_AUTOMATIC_REKEYS_PER_SESSION) {
+            heldBackItemIds.add(itemId)
+            throw PasswordsError.ItemNeedsAttention(itemId)
+        }
+        lastAutomaticRekeyAtEpochMS[itemId] = nowEpochMS
+        automaticRekeyCount++
+        heldBackItemIds.remove(itemId)
+    }
+
+    private suspend fun rekeyOnce(
+        itemId: String,
+        replacing: PasswordsItemFields?,
+        baseRevision: Long?,
+        accessEdit: AccessEdit,
+        origin: RekeyOrigin,
+        plan: PasswordsFinishPlan.Item?,
+    ): PasswordItem {
         val current = requireOpener()
         val view = ownedView(itemId)
         if (view.deletedAt != null) throw PasswordsError.ItemNotFound
         val opened = current.open(view)
         // A new key given without the person choosing who has access builds on the record, so the record has to be the person's own.
-        if (accessEdit is AccessEdit.None && opened.sharingCheck != PasswordsSharingCheck.Verified) throw PasswordsError.SharingCouldNotBeChecked(itemId)
-        var fields = opened.fields
-        if (accessEdit is AccessEdit.AgentUse) {
-            val edited = PasswordsItemAccess.accessWithAgentUse(opened.verifiedAccess, accessEdit.isUsableByAgent)
-            fields = PasswordsCrypto.withSignedAccess(current.accountKey, itemId, opened.itemKind, fields, edited, highestRecordVersion(opened))
+        if (origin != RekeyOrigin.Choice && opened.sharingCheck != PasswordsSharingCheck.Verified) throw PasswordsError.SharingCouldNotBeChecked(itemId)
+        var fields: PasswordsItemFields
+        if (replacing != null) {
+            if (view.itemKind != replacing.itemKind.rawValue) throw PasswordsError.ItemKindCannotChange
+            fields = replacing
+        } else {
+            fields = opened.fields
         }
+        // What the record is edited from is the record the person owns; a record that was not checked counts as one that
+        // grants nobody and does not let the agent in.
+        when (accessEdit) {
+            is AccessEdit.None -> Unit
+            is AccessEdit.Grantees -> {
+                val edited = PasswordsItemAccess.accessWithGrantees(opened.verifiedAccess, accessEdit.grantees)
+                fields = PasswordsCrypto.withSignedAccess(current.accountKey, itemId, opened.itemKind, fields, edited, highestRecordVersion(opened))
+            }
+            is AccessEdit.AgentUse -> {
+                val edited = PasswordsItemAccess.accessWithAgentUse(opened.verifiedAccess, accessEdit.isUsableByAgent)
+                fields = PasswordsCrypto.withSignedAccess(current.accountKey, itemId, opened.itemKind, fields, edited, highestRecordVersion(opened))
+            }
+        }
+        val memory = currentPins().itemMemories[itemId] ?: PasswordsItemMemory()
+        if (origin != RekeyOrigin.Automatic && origin != RekeyOrigin.Restore) itemIdsActedOn.add(itemId)
+        // A restore on a device with no memory of the item starts from a record it cannot tell from an old one: that record is not remembered either.
+        val isRemembering = origin != RekeyOrigin.Restore || memory.highestRecordVersion > 0
         val newItemKey = PasswordsCrypto.makeKey()
         val sealedFields = PasswordsCrypto.sealItemFields(fields, newItemKey, itemId)
         val sealedItemKey = PasswordsCrypto.seal(newItemKey, current.accountKey, PasswordsCrypto.itemKeyAssociatedData(itemId))
+        val shareKeys = mutableListOf<PasswordItemShareKeyInput>()
+        val sealedKeys = linkedMapOf<String, String>()
+        val seenUserIds = mutableSetOf<String>()
+        for (recipientView in view.shares.flatMap { share -> share.recipients }) {
+            if (recipientView.userId == userId || !seenUserIds.add(recipientView.userId)) continue
+            if (!PasswordsItemAccess.isReachedByAccess(fields.access, recipientView.userId, circleIdsListing(recipientView.userId, view))) continue
+            if (origin.isLimitedToWhatThisDeviceSealed && !memory.sealedForUserIds.contains(recipientView.userId)) continue
+            // A key sealed for a confirmed plan goes only to the people the plan names.
+            if (plan != null && !plan.recipientUserIds.contains(recipientView.userId)) continue
+            val recipient = recipientOf(recipientView, current)
+            val publicKey = recipient.publicKey ?: continue
+            sealedKeys[recipient.userId] = base64(publicKey)
+            shareKeys.add(itemShareKey(newItemKey, itemId, current.keyPair, recipient, publicKey))
+        }
         var agentCopyText: String? = null
-        if (fields.access?.isUsableByAgent == true && view.isUsableByAgent && view.itemKind != PasswordsItemKind.Card.rawValue) {
+        val isAgentCopyAllowed = (!origin.isLimitedToWhatThisDeviceSealed || memory.didMakeAgentCopy) && (plan?.isAgentIncluded ?: true)
+        if (isAgentCopyAllowed && fields.access?.isUsableByAgent == true && view.isUsableByAgent && view.itemKind != PasswordsItemKind.Card.rawValue) {
             agentCopyText = agentCopy(newItemKey, itemId, current)
         }
-        val input = PasswordItemRekeyInput(itemId, view.revision, sealedFields.jsonText, sealedItemKey.jsonText, emptyList(), agentCopyText)
+        recordSealedKeys(sealedKeys)
+        val input = PasswordItemRekeyInput(itemId, baseRevision ?: view.revision, sealedFields.jsonText, sealedItemKey.jsonText, shareKeys, agentCopyText)
         val answered = call { api.rekeyPasswordItem(input) }
-        return keep(answered, itemId, current)
+        val kept = keep(answered, itemId, current, isRemembering)
+        recordSealed(
+            itemId,
+            PasswordsSealedChange(
+                userIds = sealedKeys.keys.toList(),
+                isReplacing = true,
+                didMakeAgentCopy = agentCopyText != null,
+                circleShares = circleSharesFor(sealedKeys.keys.toList(), memory.sealedForUserIds.toSet(), view, fields.access),
+            ),
+        )
+        keyItemIdsLeftForPerson.remove(itemId)
+        return kept
     }
 
     /** Saves fields over an owned item with the key it has, based on the revision the copy holds. */
@@ -986,5 +1854,11 @@ class PasswordsSession(
     companion object {
         /** The lock time a person starts with, until the server says otherwise. */
         const val DEFAULT_LOCK_AFTER_MINUTES = 15
+
+        /** How long an item waits after a new key this session gave it by itself (the server marked it, or a save found it marked) before it gives another one. */
+        const val AUTOMATIC_REKEY_COOLDOWN_MS = 600_000L
+
+        /** The most new keys one session gives by itself. Past it, items are listed in [itemIdsNeedingAttention] and wait for the person. */
+        const val MOST_AUTOMATIC_REKEYS_PER_SESSION = 20
     }
 }
