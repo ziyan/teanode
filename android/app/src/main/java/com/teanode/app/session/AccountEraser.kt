@@ -21,9 +21,15 @@ import java.security.KeyStore
  * When it was the last account, everything the app keeps in its private files and preferences goes, except the look
  * of the app (appearance and tab bar).
  */
-class AccountEraser(private val context: Context, private val secrets: SecretStore) {
+class AccountEraser(
+    private val context: Context,
+    private val secrets: SecretStore,
+    private val stopLocation: (accountKey: String) -> Unit = { accountKey -> com.teanode.app.location.recording.LocationRecorder.get(context).stopFollowing(accountKey) },
+) {
     fun erase(account: Account, isLastAccount: Boolean) {
         val accountKey = account.accountKey
+        // The location service and the geofences go first, so nothing writes the account's files again after they are erased.
+        runCatching { stopLocation(accountKey) }
         // Passwords: the sealed copy, the autofill pointer when it points here, and the key that opens it with the fingerprint.
         File(context.filesDir, "passwords/" + Uri.encode(accountKey)).deleteRecursively()
         if (PasswordsAutofillPointer.read(context) == accountKey) File(context.filesDir, "passwords/active").delete()

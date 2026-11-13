@@ -35,6 +35,25 @@ class SettingsScreenshotTest {
         composeRule.photograph(name)
     }
 
+    @Test fun `sign out with unsent data light`() = shoot("settings-sign-out-unsent-light") {
+        com.teanode.app.session.SignOutConfirmationContent(com.teanode.kit.session.UnsentData(unfinishedRecordingCount = 2, unsentLocationReportCount = 14, hasUnsentMail = true), {}, {})
+    }
+    @Test fun `sign out with unsent data dark`() = shoot("settings-sign-out-unsent-dark", AppearanceChoice.Dark) {
+        com.teanode.app.session.SignOutConfirmationContent(com.teanode.kit.session.UnsentData(unfinishedRecordingCount = 2), {}, {})
+    }
+    @Test fun `sign out with nothing unsent keeps the plain question`() {
+        composeRule.setContent { DemoHost { com.teanode.app.session.SignOutConfirmationContent(com.teanode.kit.session.UnsentData(), {}, {}) } }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("This phone stops talking to your agent until you connect it again.").assertExists()
+    }
+    @Test fun `sign out with unsent data names it and offers sign out anyway`() {
+        composeRule.setContent { DemoHost { com.teanode.app.session.SignOutConfirmationContent(com.teanode.kit.session.UnsentData(unfinishedRecordingCount = 2), {}, {}) } }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Sign out anyway").assertExists()
+        composeRule.onNodeWithText("2 recordings have not finished uploading.", substring = true).assertExists()
+        composeRule.onNodeWithText("Signing out deletes them from this phone.", substring = true).assertExists()
+    }
+
     @Test fun `home light`() = shoot("settings-home-light") { SettingsSection() }
     @Test fun `home dark`() = shoot("settings-home-dark", AppearanceChoice.Dark) { SettingsSection() }
     @Test fun `home largest text`() = shoot("settings-home-largest-text", fontScale = 2f) { SettingsSection() }

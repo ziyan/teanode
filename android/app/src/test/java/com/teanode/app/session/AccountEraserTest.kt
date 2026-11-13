@@ -26,6 +26,7 @@ import java.io.File
 class AccountEraserTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val secrets = MemorySecretStore()
+    private val stopped = mutableListOf<String>()
     private val alex = Account(ServerAddress.parse("https://mail.example.com"), "client", "access", "refresh", 0, "alex")
     private val sam = Account(ServerAddress.parse("https://tea.example.org"), "client", "access", "refresh", 0, "sam")
 
@@ -58,7 +59,7 @@ class AccountEraserTest {
         File(context.cacheDir, "chat-files").mkdirs()
         File(context.cacheDir, "chat-files/camera.jpg").writeText("x")
 
-        AccountEraser(context, secrets).erase(alex, isLastAccount = false)
+        AccountEraser(context, secrets, stopLocation = { stopped.add(it) }).erase(alex, isLastAccount = false)
 
         assertFalse(existsFor(alex))
         assertTrue(existsFor(sam))
@@ -74,9 +75,14 @@ class AccountEraserTest {
         assertTrue(context.getSharedPreferences("mail", Context.MODE_PRIVATE).contains("mail-pending-send.sam"))
     }
 
+    @Test fun `the location service and geofences of the account are stopped`() {
+        AccountEraser(context, secrets, stopLocation = { stopped.add(it) }).erase(alex, isLastAccount = false)
+        assertEquals(listOf(alex.accountKey), stopped)
+    }
+
     @Test fun `the pointer of another account stays`() {
         PasswordsAutofillPointer.write(context, sam.accountKey)
-        AccountEraser(context, secrets).erase(alex, isLastAccount = false)
+        AccountEraser(context, secrets, stopLocation = { stopped.add(it) }).erase(alex, isLastAccount = false)
         assertEquals(sam.accountKey, PasswordsAutofillPointer.read(context))
     }
 
@@ -86,7 +92,7 @@ class AccountEraserTest {
         context.getSharedPreferences("teanode", Context.MODE_PRIVATE).edit().putString("appearance", "dark").putString("drawerId", "d").commit()
         context.getSharedPreferences("calendar", Context.MODE_PRIVATE).edit().putStringSet("other-key", setOf("a")).commit()
 
-        AccountEraser(context, secrets).erase(alex, isLastAccount = true)
+        AccountEraser(context, secrets, stopLocation = { stopped.add(it) }).erase(alex, isLastAccount = true)
 
         assertEquals(emptyList<String>(), context.filesDir.listFiles().orEmpty().map { file -> file.name }.filter { name -> name != "secrets" })
         assertEquals("dark", context.getSharedPreferences("teanode", Context.MODE_PRIVATE).getString("appearance", null))
