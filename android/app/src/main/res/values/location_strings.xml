@@ -255,4 +255,7 @@
         <item quantity="one">%d person</item>
         <item quantity="other">%d people</item>
     </plurals>
+    <string name="location_recording_channel">Location recording</string>
+    <string name="location_recording_notification_title">Recording your location</string>
+    <string name="location_recording_notification_text">Location is being recorded for your places and visits.</string>
 </resources>

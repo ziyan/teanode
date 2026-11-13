@@ -252,4 +252,7 @@
     <plurals name="location_member_count">
         <item quantity="other">%d 人</item>
     </plurals>
+    <string name="location_recording_channel">位置情報の記録</string>
+    <string name="location_recording_notification_title">位置情報を記録中</string>
+    <string name="location_recording_notification_text">場所と訪問のために位置情報を記録しています。</string>
 </resources>

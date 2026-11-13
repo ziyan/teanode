@@ -252,4 +252,7 @@
     <plurals name="location_member_count">
         <item quantity="other">%d 人</item>
     </plurals>
+    <string name="location_recording_channel">位置记录</string>
+    <string name="location_recording_notification_title">正在记录你的位置</string>
+    <string name="location_recording_notification_text">正在为你的地点和到访记录位置。</string>
 </resources>

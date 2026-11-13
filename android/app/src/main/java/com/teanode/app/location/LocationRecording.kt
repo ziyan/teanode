@@ -27,6 +27,24 @@ enum class LocationPermissionState {
 /** The phone's position now, as the recorder last read it. */
 data class LivePosition(val latitudeDegrees: Double, val longitudeDegrees: Double, val accuracyMeters: Double, val measuredAt: Instant)
 
+/** What the recorder needs the screen to do about the phone's permission: ask the system, explain first, or send the person to the settings. */
+enum class LocationPermissionRequest {
+    /** Ask for location while the app is open (the system's question). */
+    Foreground,
+
+    /** Say why recording while the app is closed needs "all the time", then ask. */
+    ExplainAlways,
+
+    /** Ask for location all the time (the system's question, or its settings page from Android 11 on). */
+    Background,
+
+    /** Ask for the phone's activity recognition. */
+    Activity,
+
+    /** Open the app's page in the system settings. */
+    Settings,
+}
+
 /**
  * LocationRecording is what the Location screens ask of the recorder that follows the phone: whether it is on, its
  * pause, what waits to be sent, and the phone's permission. The real one is [com.teanode.app.location.recording.LocationRecorder];
@@ -50,6 +68,15 @@ interface LocationRecording {
 
     /** Why a pause or a resume made here was refused by the server, until [clearPauseRefusal]. */
     val pauseRefusalText: StateFlow<String?>
+
+    /** What the recorder wants the screen to ask of the system next. */
+    val permissionRequests: kotlinx.coroutines.flow.SharedFlow<LocationPermissionRequest>
+
+    /** The person answered the system's question: read the permission again. */
+    fun permissionAnswered()
+
+    /** The person said "Not now" to the explanation of "all the time". */
+    fun declineAlwaysExplanation()
 
     fun setRecording(isOn: Boolean)
     fun pauseRecording(choice: LocationPauseChoice)
@@ -116,6 +143,10 @@ class DemoLocationRecording(
     override val livePosition: StateFlow<LivePosition?> = live.asStateFlow()
     override val sharingLimitRevision: StateFlow<Int> = MutableStateFlow(0)
     override val pauseRefusalText: StateFlow<String?> = MutableStateFlow(null)
+
+    override val permissionRequests: kotlinx.coroutines.flow.SharedFlow<LocationPermissionRequest> = kotlinx.coroutines.flow.MutableSharedFlow()
+    override fun permissionAnswered() = Unit
+    override fun declineAlwaysExplanation() = Unit
 
     override fun setRecording(isOn: Boolean) {
         recording.value = isOn
