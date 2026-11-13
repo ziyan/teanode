@@ -452,3 +452,85 @@ suspend fun Connection.closeHerdrSession(computer: String, paneId: String): Herd
     HerdrDocuments.CLOSE_HERDR_SESSION, "CloseAgentHerdrSession", serializer(),
     mapOf("computer" to JsonPrimitive(computer), "paneId" to JsonPrimitive(paneId)),
 )
+
+/** The document that answers a coding session's question (ios/TeaNodeKit Operations.swift). */
+object CodingQuestionDocuments {
+    const val ANSWER_CODING_QUESTION =
+        "mutation (\$computer: String, \$paneId: String!, \$questionFingerprint: String!, \$optionNumbers: [Int!], \$optionLabels: [String!], \$freeText: String) {\n" +
+            "  AnswerAgentHerdrQuestion(computer: \$computer, paneId: \$paneId, questionFingerprint: \$questionFingerprint, optionNumbers: \$optionNumbers, optionLabels: \$optionLabels, freeText: \$freeText) { isAnswerAccepted answeredWith }\n}"
+}
+
+@Serializable
+private data class AnsweredCodingQuestion(val isAnswerAccepted: Boolean, val answeredWith: String)
+
+/** Answers a coding session's question: the options chosen, or what to type. Returns how the session took it, in its words. */
+suspend fun Connection.answerCodingQuestion(question: CodingQuestion, options: List<CodingQuestion.Option>, freeText: String?): String {
+    val variables = mutableMapOf<String, JsonElement>(
+        "computer" to JsonPrimitive(question.computer), "paneId" to JsonPrimitive(question.paneId),
+        "questionFingerprint" to JsonPrimitive(question.questionFingerprint),
+    )
+    if (freeText != null) {
+        variables["freeText"] = JsonPrimitive(freeText)
+    } else {
+        variables["optionNumbers"] = kotlinx.serialization.json.JsonArray(options.map { option -> JsonPrimitive(option.optionNumber) })
+        variables["optionLabels"] = kotlinx.serialization.json.JsonArray(options.map { option -> JsonPrimitive(option.optionLabel) })
+    }
+    val answered: AnsweredCodingQuestion = field(CodingQuestionDocuments.ANSWER_CODING_QUESTION, "AnswerAgentHerdrQuestion", serializer(), variables)
+    if (!answered.isAnswerAccepted) throw TeaNodeError.Refused("The coding session did not take that answer. It may have moved on.")
+    return answered.answeredWith
+}
+
+/** One computer's workspaces, and what its sessions are doing, for its heading in the list. */
+data class CodingComputer(val name: String, val workspaces: List<CodingWorkspace>) {
+    val sessions: List<HerdrSession> get() = workspaces.flatMap { workspace -> workspace.sessions }
+    val askingCount: Int get() = sessions.count { session -> session.isAsking }
+    val workingCount: Int get() = sessions.count { session -> session.isWorking }
+}
+
+/** The coding sessions of one herdr workspace on one computer, in tab order. */
+data class CodingWorkspace(val id: String, val computer: String, val title: String, val sessions: List<HerdrSession>)
+
+/** The list of coding sessions grouped as the list shows them: by computer in name order, then workspace number, then tab number. */
+fun HerdrList.computers(): List<CodingComputer> {
+    val computerList = computerNames.toMutableList()
+    for (session in sessions) if (!computerList.contains(session.computer)) computerList.add(session.computer)
+    computerList.sortWith(String.CASE_INSENSITIVE_ORDER)
+    val result = mutableListOf<CodingComputer>()
+    for (computer in computerList) {
+        val onComputer = sessions.filter { session -> session.computer == computer }
+        val seen = mutableListOf<String>()
+        for (session in onComputer) if (!seen.contains(session.workspaceId)) seen.add(session.workspaceId)
+        val grouped = seen.map { workspaceId ->
+            val inWorkspace = onComputer.filter { session -> session.workspaceId == workspaceId }.sortedBy { session -> session.tabNumber }
+            CodingWorkspace(
+                id = "$computer/$workspaceId", computer = computer,
+                // A computer program too old to say where a pane is gives no workspace: its sessions are listed under no heading.
+                title = if (workspaceId.isEmpty()) "" else inWorkspace.firstOrNull()?.workspaceTitle ?: computer,
+                sessions = inWorkspace,
+            )
+        }
+        val workspaces = grouped.sortedBy { workspace -> workspace.sessions.firstOrNull()?.workspaceNumber ?: 0 }
+        if (workspaces.isNotEmpty()) result.add(CodingComputer(computer, workspaces))
+    }
+    return result
+}
+
+/** The list after one session as the server just answered it is put in (or replaces its old self), so a change shows before the list is read again. */
+fun HerdrList.upserting(session: HerdrSession): HerdrList {
+    val updated = sessions.toMutableList()
+    val index = updated.indexOfFirst { held -> held.id == session.id }
+    if (index >= 0) updated[index] = session else updated.add(session)
+    return copy(sessions = updated)
+}
+
+fun HerdrList.removing(sessionId: String): HerdrList = copy(sessions = sessions.filter { session -> session.id != sessionId })
+
+/**
+ * The list as read now, keeping the sessions last known for a computer that did not answer this time, so a session open on
+ * screen does not vanish for one slow answer.
+ */
+fun HerdrList.carryingFailedComputersFrom(previous: HerdrList?): HerdrList {
+    if (previous == null || failedComputerNames.isEmpty()) return this
+    val carried = previous.sessions.filter { session -> failedComputerNames.contains(session.computer) }
+    return copy(sessions = sessions.filter { session -> !failedComputerNames.contains(session.computer) } + carried)
+}

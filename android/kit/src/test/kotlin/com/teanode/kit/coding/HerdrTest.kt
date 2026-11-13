@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 
 class HerdrTest {
     private val sessionJson = """
@@ -297,5 +298,60 @@ class HerdrTest {
         val long = question("word ".repeat(60) + "?")
         assertEquals(158, long.headline.length)
         assertTrue(long.headline.endsWith("…"))
+    }
+
+    // The answer to a coding question and the list's grouping
+
+    @Test fun `a refused answer is shown in its words`() {
+        val (connection, _) = connection("""{"errors":[{"message":"that question was already answered"}],"data":{"AnswerAgentHerdrQuestion":null}}""")
+        val asked = CodingQuestion("desk", "pane-1", "print", "claude", "notes", "Which one?", false, emptyList())
+        val error = assertThrows<com.teanode.kit.TeaNodeError.Refused> { runBlocking { connection.answerCodingQuestion(asked, emptyList(), "the first") } }
+        assertEquals("that question was already answered", error.message)
+    }
+
+    @Test fun `an answer carries the options chosen or the typed text`() = runBlocking {
+        val (connection, fake) = connection("""{"data":{"AnswerAgentHerdrQuestion":{"isAnswerAccepted":true,"answeredWith":"Apple"}}}""")
+        val asked = CodingQuestion("desk", "pane-1", "print", "claude", "notes", "Which one?", false, listOf(CodingQuestion.Option(1, "Apple", "", "choice")))
+        assertEquals("Apple", connection.answerCodingQuestion(asked, asked.choices, null))
+        val chosen = sentVariables(fake)
+        assertEquals(JsonArray(listOf(JsonPrimitive(1))), chosen["optionNumbers"])
+        assertEquals(JsonArray(listOf(JsonPrimitive("Apple"))), chosen["optionLabels"])
+        assertNull(chosen["freeText"])
+        connection.answerCodingQuestion(asked, emptyList(), "Pear")
+        val typed = sentVariables(fake)
+        assertEquals(JsonPrimitive("Pear"), typed["freeText"])
+        assertNull(typed["optionNumbers"])
+    }
+
+    private fun session(computer: String, paneId: String, workspaceId: String, workspaceNumber: Int, tabNumber: Int, state: String = "idle"): HerdrSession =
+        decodedSession("", "t").copy(
+            computer = computer, paneId = paneId, workspaceId = workspaceId, workspaceLabel = if (workspaceId.isEmpty()) "" else "ws $workspaceId",
+            workspaceNumber = workspaceNumber, tabNumber = tabNumber, herdrSessionState = state, question = null,
+        )
+
+    @Test fun `the list groups by computer in name order then workspace then tab`() {
+        val list = HerdrList(
+            computerNames = listOf("laptop", "desk"), failedComputerNames = emptyList(),
+            sessions = listOf(
+                session("laptop", "p3", "w1", 1, 3), session("laptop", "p1", "w1", 1, 1, "working"), session("laptop", "p9", "w2", 2, 1),
+                session("desk", "p4", "w5", 1, 1), session("laptop", "p0", "", 0, 1),
+            ),
+        )
+        val computers = list.computers()
+        assertEquals(listOf("desk", "laptop"), computers.map { computer -> computer.name })
+        val laptop = computers[1]
+        assertEquals(listOf("", "ws w1", "ws w2"), laptop.workspaces.map { workspace -> workspace.title })
+        assertEquals(listOf("p1", "p3"), laptop.workspaces[1].sessions.map { session -> session.paneId })
+        assertEquals(1, laptop.workingCount)
+        assertEquals(0, laptop.askingCount)
+    }
+
+    @Test fun `a computer that did not answer keeps the sessions last known for it`() {
+        val before = HerdrList(listOf("a", "b"), emptyList(), listOf(session("a", "p1", "w", 1, 1), session("b", "p2", "w", 1, 1)))
+        val read = HerdrList(listOf("a", "b"), listOf("b"), listOf(session("a", "p1", "w", 1, 1)))
+        assertEquals(listOf("a/p1", "b/p2"), read.carryingFailedComputersFrom(before).sessions.map { entry -> entry.id })
+        assertEquals(read, read.carryingFailedComputersFrom(null))
+        assertEquals(listOf("a/p1", "b/p2", "a/p3"), before.upserting(session("a", "p3", "w", 1, 2)).sessions.map { entry -> entry.id })
+        assertEquals(listOf("b/p2"), before.removing("a/p1").sessions.map { entry -> entry.id })
     }
 }
