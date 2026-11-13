@@ -50,6 +50,7 @@ class FakePasswordsServer(private val defaultUserId: String = "me") : PasswordsA
     /** The earlier versions of each item, oldest first. */
     private val versions = mutableMapOf<String, MutableList<StoredVersion>>()
     private val circles = mutableMapOf<String, List<String>>()
+    private val circleNames = mutableMapOf<String, String>()
     private var revisionCounter = 0L
     private var versionCounter = 0
 
@@ -94,8 +95,8 @@ class FakePasswordsServer(private val defaultUserId: String = "me") : PasswordsA
 
     fun listCallsSinceMark(): List<Long?> = listCalls.drop(listCallMark)
 
-    fun addPerson(userId: String, name: String) {
-        people[userId] = Person(userId, name, name.lowercase())
+    fun addPerson(userId: String, name: String, username: String = name.lowercase()) {
+        people[userId] = Person(userId, name, username)
     }
 
     fun setHasTooMuchShared(userId: String, isTooMuch: Boolean) {
@@ -114,7 +115,8 @@ class FakePasswordsServer(private val defaultUserId: String = "me") : PasswordsA
      * Sets the members of a circle. Somebody an item no longer reaches loses its key, and the item is marked as needing a
      * new key, as the real server does when a member leaves.
      */
-    fun setCircle(circleId: String, members: List<String>) {
+    fun setCircle(circleId: String, members: List<String>, name: String = circleId) {
+        circleNames[circleId] = name
         val reachedBefore = items.mapValues { entry -> reached(entry.value).toSet() }
         circles[circleId] = members
         for ((itemId, item) in items) {
@@ -307,7 +309,8 @@ class FakePasswordsServer(private val defaultUserId: String = "me") : PasswordsA
                 val members = grantee.granteeUserId?.let { memberUserId -> listOf(memberUserId) } ?: (circles[grantee.granteeCircleId ?: ""] ?: emptyList())
                 PasswordShareView(
                     id = "share-${item.id}-$index", granteeUserId = grantee.granteeUserId, granteeCircleId = grantee.granteeCircleId,
-                    granteeName = grantee.granteeUserId?.let { granteeUserId -> people[granteeUserId]?.name } ?: grantee.granteeCircleId ?: "",
+                    granteeName = grantee.granteeUserId?.let { granteeUserId -> people[granteeUserId]?.let { person -> person.name.ifEmpty { person.username } } }
+                        ?: grantee.granteeCircleId?.let { circleId -> circleNames[circleId] ?: circleId } ?: "",
                     recipients = members.filter { memberUserId -> memberUserId != item.ownerUserId }.map { memberUserId -> recipientView(memberUserId, item) },
                 )
             }

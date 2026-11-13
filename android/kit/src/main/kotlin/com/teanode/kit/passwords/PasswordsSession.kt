@@ -1516,7 +1516,7 @@ class PasswordsSession(
                 if (!(view.needsNewKey || (!recipient.hasKey && !recipient.hasTooMuchShared))) continue
                 if (!PasswordsItemAccess.isReachedByAccess(access, recipient.userId, circleIdsListing(recipient.userId, view))) continue
                 recipientUserIds.add(recipient.userId)
-                namesByUserId[recipient.userId] = recipient.name
+                namesByUserId[recipient.userId] = recipient.name.ifEmpty { recipient.username }
             }
             val isAgentCopyLost = lostAgentCopyItemIds.contains(itemId)
             if (recipientUserIds.isEmpty() && !view.needsNewKey && !isAgentCopyLost) continue

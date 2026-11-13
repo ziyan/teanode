@@ -301,6 +301,10 @@ private fun PasswordsListScreen(model: PasswordsModel) {
                 )
                 shownItems.isEmpty() -> EmptyState(Icons.Outlined.Search, filterTitle, description = stringResource(R.string.passwords_nothing_here))
                 else -> LazyColumn(Modifier.fillMaxSize()) {
+                    if (searchText.isEmpty()) {
+                        item("notices") { PasswordsListNotices(model) }
+                        item("needs-you") { PasswordsNeedsYouRows(model, onOpenItem = { waiting -> navigator.navigate("passwords/item/${android.net.Uri.encode(waiting.id)}") }) }
+                    }
                     items(shownItems, key = { item -> item.id }) { item -> PasswordsItemRow(model, item, onClick = { navigator.navigate("passwords/item/${android.net.Uri.encode(item.id)}") }) }
                     if (model.unreadableItemCount > 0) {
                         item {
@@ -336,8 +340,8 @@ internal fun PasswordsItemRow(model: PasswordsModel, item: PasswordItem, onClick
         ) {
             Icon(item.itemKind.icon(), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Column(Modifier.weight(1f)) {
-                Text(item.name.ifEmpty { stringResource(R.string.passwords_untitled) }, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
-                if (item.subtitle.isNotEmpty()) Text(item.subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                Text(item.name.ifEmpty { stringResource(R.string.passwords_untitled) }, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                if (item.subtitle.isNotEmpty()) Text(item.subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 if (item.isSharedWithMe) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Group, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
