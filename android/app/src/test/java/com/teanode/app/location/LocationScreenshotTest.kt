@@ -1,6 +1,8 @@
 package com.teanode.app.location
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.ui.Modifier
 import androidx.compose.material3.SheetValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -243,5 +245,22 @@ class LocationScreenshotTest {
         draw(Look.Light) { AlwaysExplanation({}, {}) }
         composeRule.waitForIdle()
         composeRule.photograph("location-always-explanation-light")
+    }
+
+    @Test fun `map pictures grouped`() {
+        draw(Look.Light) {
+            val here = MapCoordinate(10.5, 20.5)
+            val pins = listOf(
+                MapPin("", here, "Riley", null, 2, isChosen = false),
+                MapPin("sam", MapCoordinate(10.50001, 20.50001), "Sam Example", null, 4, isChosen = true),
+                MapPin("alex", MapCoordinate(10.50002, 20.5), "Alex Sample", null, 1, isChosen = false),
+                MapPin("jo", MapCoordinate(10.5, 20.50002), "Jo Sample", null, 5, isChosen = false),
+                MapPin("kim", MapCoordinate(10.50001, 20.5), "Kim Sample", null, 3, isChosen = false),
+                MapPin("lee", MapCoordinate(10.502, 20.503), "Lee Sample", null, 0, isChosen = false),
+            )
+            TeaNodeMap(MapContent(pins = pins), MapFocus(listOf(here, MapCoordinate(10.502, 20.503))), Modifier.fillMaxSize())
+        }
+        composeRule.waitForIdle()
+        composeRule.photograph("location-map-pictures-grouped-light")
     }
 }

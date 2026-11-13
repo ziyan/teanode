@@ -152,12 +152,12 @@ fun LocationHome(
     onOpenPlace: (com.teanode.kit.location.LocationPlace) -> Unit,
     onOpenPeople: () -> Unit,
     onOpenTravel: () -> Unit,
-    onOpenPersonTravel: (String) -> Unit = {},
     onOpenSettings: () -> Unit,
     onOpenHomeAddress: () -> Unit,
     onOpenPhotos: (PlaceVisit) -> Unit,
     initialSheetValue: SheetValue = SheetValue.PartiallyExpanded,
     initialSegment: LocationSegment = LocationSegment.Visits,
+    onOpenPersonTravel: (String) -> Unit = {},
 ) {
     val recording = LocalLocationRecording.current
     var segment by rememberSaveable { mutableStateOf(initialSegment) }

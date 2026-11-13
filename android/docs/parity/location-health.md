@@ -42,9 +42,9 @@ Every row names its iOS file.
 | --- | --- | --- |
 | Location screen: map of the whole screen with a drawer (Visits, Places, Sharing), check-in and settings buttons | LocationViews.swift, LocationDrawer.swift | Done as a bottom sheet over the map (Material 3 `BottomSheetScaffold`). Side panel for wide screens: not ported (phones only). |
 | Map: own position, people pictures, named places, chosen person's day path and places, focus on a person, own focus | LocationViews.swift (LocationMapHeader) | Done. |
-| Map pins that would overlap are grouped and listed on a tap | LocationMapPins.swift | Partly: each person is a pin of its own; grouping is not ported. |
+| Map pins that would overlap are grouped and listed on a tap | LocationMapPins.swift | Done (`LocationMapPinGrouping` in the kit, tested; stacked pictures with a count, a tap lists who is there). On the real map the groups are worked out again at each zoom (not verified on a device). |
 | Visits list: banner, people card, Travel row, days with Map links, timeline rows, load more, empty state (recording on or off), credit | LocationViews.swift | Done. |
-| Visit row with photo strip (count, first photos, opens Photos) | LocationViews.swift | Partly: opens the Photos part, not filtered to the visit. |
+| Visit row with photo strip (count, first photos, opens Photos) | LocationViews.swift | Done: opens Photos filtered to the visit (`PhotoFilterRequest`, a small addition in the Photos package that its library reads once when it opens). |
 | Forget a visit (not for one in progress), confirmation | LocationPauseViews.swift | Done (overflow menu in place of a swipe). |
 | Pause row; own pause note over the drawer | LocationPauseViews.swift | Done. |
 | Trip rows with legs; correct a leg's way of travel or take it back | LocationTripViews.swift | Done. |
@@ -54,7 +54,7 @@ Every row names its iOS file.
 | Address search (place's address, "keep as typed", home setup) | LocationAddressViews.swift | Done. |
 | Check-in sheet: here (with precision), nearby, search, more | LocationPlaceViews.swift | Done. |
 | People rows: own row, people card, more than three open the People screen, distance, "Nearby" | LocationPeopleViews.swift | Done. |
-| Chosen person: header, mute menu, unmute, close, their day with previous and next day, travel, places, "shares where they are now" | LocationDrawer.swift, PersonVisitsScreen.swift | Done (the Travel row of a person's day is in `LocationPersonVisitsList`; the route is not registered, see the report). |
+| Chosen person: header, mute menu, unmute, close, their day with previous and next day, travel, places, "shares where they are now" | LocationDrawer.swift, PersonVisitsScreen.swift | Done (the Travel row of a person's day opens the route `location/travel/{userId}`). |
 | Sharing banner (paused, recording off, phone location off, while using, shares less) with its action | LocationSharingBannerViews.swift | Done. |
 | Sharing list, change level, stop sharing, share sheet with person or circle picker | LocationSharingViews.swift | Done. |
 | Setup list (allow location, motion, home, type address, family circles, not now) | LocationSetupViews.swift | Done. |
@@ -78,7 +78,7 @@ kit's and is tested.
 | Visits from the dwell detector, and arrival or departure at watched places by geofence | Written, not verified. |
 | Pause and resume applied at once and retried until the server has them | Written, not verified. |
 | Permission report to the server (`ReportLocationPermission`) | Written, not verified. |
-| Activity recognition for the way of travel | Not ported: the way is guessed by the server from speed. |
+| Activity recognition for the way of travel | Written, not verified: Activity Recognition transitions (driving, cycling, running, walking, still) become motion activities in the outbox, sent with the positions. `LocationMotion` in the kit is tested. Android gives no confidence, so "medium" is sent. |
 
 ## Health screens (`com.teanode.app.health`)
 
@@ -104,9 +104,10 @@ Not verified on a phone: Health Connect needs a device with it.
 | --- | --- |
 | Permissions, availability, turning on and off | Written, not verified. |
 | Reading steps, distance, active energy, floors, heart rate, resting heart rate, oxygen, respiratory rate, weight, height, body fat, blood pressure (both numbers), glucose, temperature, VO2 max, hydration, sleep sessions with stages, exercise sessions | Written, not verified. |
-| Workout routes and workout energy and distance totals | Not ported: the session is sent without them (needs the route consent and an aggregate read). |
+| Workout energy and distance totals | Written, not verified: read with Health Connect's aggregate over the session and sent in the sample's metadata. |
+| Workout routes | Partly: sent when Health Connect returns the route; for a workout written by another app it asks the person's consent per workout, and that consent screen is not built, so those routes are not sent. |
 | Characteristics (date of birth, blood type and the like) | Not ported: Health Connect has none. |
 | First pass over the history (a year with the history permission, else 29 days), then Health Connect's changes token; day summaries worked out here and sent | Written, not verified. |
 | Deletions | Partly: a deleted single reading is sent as deleted and its days are worked out again; the points of a deleted series (heart rate, sleep stages) are not named by Health Connect, so they stay on the server. |
 | Kinds Health Connect does not have (HealthKit only: audiograms, ECG, State of Mind, cycle tracking, and many more) | Not ported: the platform has no such data. |
-| Observers that wake the app on new data | Partly: an hourly WorkManager job and a pass when Health is turned on; no wake-up on new data. |
+| Observers that wake the app on new data | Partly: Health Connect has no callback for new data. A WorkManager job runs every 15 minutes (its shortest period; Android may delay it asleep), and a pass runs whenever a Health screen opens. |
