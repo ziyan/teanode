@@ -31,6 +31,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.LocalConnection
@@ -58,13 +59,20 @@ fun RecordingCaptureScreen(onBack: () -> Unit, previewState: RecordingCaptureSta
     // A stopped capture leaves the screen: its recording is in the list, uploading.
     LaunchedEffect(state.isRecording, previewState) { if (previewState == null && !state.isRecording && state.localRecordingId == null && state.problemMessageId == null) { kotlinx.coroutines.delay(1500); if (!RecordingCaptureService.state.value.isRecording) onBack() } }
     TeaNodeScreen(title = stringResource(R.string.recordings_recording_title), onBack = onBack) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(32.dp, Alignment.CenterVertically)) {
+        Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically)) {
             Text(VideoControls.timeText(state.elapsedMS / 1000.0), style = MaterialTheme.typography.displayLarge)
             Text(
                 stringResource(if (state.isPaused) R.string.recordings_status_paused else if (state.isRecording) R.string.recordings_status_recording else R.string.recordings_starting),
                 color = if (state.isPaused || !state.isRecording) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.titleMedium,
             )
             LevelMeter(state.levelBars, Modifier.fillMaxWidth().height(72.dp))
+            if (state.isInterrupted) Text(stringResource(R.string.recordings_interrupted), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            if (state.liveUtterances.isNotEmpty()) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(stringResource(R.string.recordings_live_heading), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    for (utterance in state.liveUtterances.takeLast(3)) Text(utterance.transcriptText, style = MaterialTheme.typography.bodyLarge, maxLines = 3)
+                }
+            }
             state.problemMessageId?.let { messageId -> Text(stringResource(messageId), color = MaterialTheme.colorScheme.error) }
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
                 FilledIconButton(

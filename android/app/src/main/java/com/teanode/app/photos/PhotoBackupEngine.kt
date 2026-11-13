@@ -24,6 +24,7 @@ import com.teanode.kit.photos.PhotoBackupFailure
 import com.teanode.kit.photos.PhotoBackupFileRole
 import com.teanode.kit.photos.PhotoBackupHeader
 import com.teanode.kit.photos.PhotoBackupItem
+import com.teanode.kit.photos.PhotoBackupLocation
 import com.teanode.kit.photos.PhotoBackupMediaKind
 import com.teanode.kit.photos.PhotoBackupOutcome
 import com.teanode.kit.photos.PhotoBackupPhase
@@ -76,6 +77,9 @@ class PhotoBackupSettings(private val context: Context, private val accountKey: 
     var usesMobileData: Boolean
         get() = preferences.getBoolean(key("usesMobileData"), false)
         set(isOn) = preferences.edit().putBoolean(key("usesMobileData"), isOn).apply()
+    var includesHiddenFolders: Boolean
+        get() = preferences.getBoolean(key("includesHiddenFolders"), false)
+        set(isOn) = preferences.edit().putBoolean(key("includesHiddenFolders"), isOn).apply()
     var lastPassFinishedEpochMS: Long?
         get() = preferences.getLong(key("lastPassFinishedEpochMS"), -1).takeIf { time -> time >= 0 }
         set(time) = preferences.edit().putLong(key("lastPassFinishedEpochMS"), time ?: -1).apply()
@@ -122,14 +126,30 @@ object MediaStoreLibrary {
         Build.VERSION.SDK_INT >= 34 && !hasFullAccess(context) &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED
 
+    /** Whether the person allowed reading where pictures were taken (their EXIF position), which is a separate permission. */
+    fun hasMediaLocationAccess(context: Context): Boolean =
+        Build.VERSION.SDK_INT < 29 || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_MEDIA_LOCATION) == PackageManager.PERMISSION_GRANTED
+
     val permissions: Array<String>
         get() = when {
-            Build.VERSION.SDK_INT >= 34 -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
-            Build.VERSION.SDK_INT >= 33 -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
-            else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+            Build.VERSION.SDK_INT >= 34 -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED, Manifest.permission.ACCESS_MEDIA_LOCATION)
+            Build.VERSION.SDK_INT >= 33 -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.ACCESS_MEDIA_LOCATION)
+            else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.ACCESS_MEDIA_LOCATION)
         }
 
-    fun items(context: Context): List<PhotoBackupItem> {
+    /** Whether a folder is one the person keeps out of sight: named Hidden, or starting with a dot. */
+    fun isHiddenFolder(relativePath: String): Boolean = relativePath.split('/').any { part -> part.startsWith(".") || part.equals("Hidden", ignoreCase = true) }
+
+    /** Where a picture was taken, from its EXIF, when the person allowed it. Videos carry theirs elsewhere and are left out. */
+    fun locationOf(context: Context, localIdentifier: String): PhotoBackupLocation? {
+        if (localIdentifier.startsWith("video:") || !hasMediaLocationAccess(context)) return null
+        return runCatching {
+            val uri = if (Build.VERSION.SDK_INT >= 29) MediaStore.setRequireOriginal(uriOf(localIdentifier)) else uriOf(localIdentifier)
+            context.contentResolver.openInputStream(uri)?.use { stream -> androidx.exifinterface.media.ExifInterface(stream).latLong?.let { position -> PhotoBackupLocation(position[0], position[1]) } }
+        }.getOrNull()
+    }
+
+    fun items(context: Context, includesHiddenFolders: Boolean = false): List<PhotoBackupItem> {
         val items = mutableListOf<PhotoBackupItem>()
         for (isVideo in listOf(false, true)) {
             val collection = if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -146,11 +166,12 @@ object MediaStoreLibrary {
                     val takenMS = cursor.getLong(4).takeIf { time -> time > 0 } ?: (cursor.getLong(5) * 1000)
                     val folder = cursor.getString(7).orEmpty()
                     val identifier = (if (isVideo) "video:" else "image:") + id
+                    if (!includesHiddenFolders && isHiddenFolder(folder)) continue
                     items.add(
                         PhotoBackupItem(
                             localIdentifier = identifier, creationInstant = if (takenMS > 0) Instant.ofEpochMilli(takenMS) else null,
                             modificationInstant = Instant.ofEpochSecond(cursor.getLong(6)),
-                            isScreenshot = folder.contains("Screenshots", ignoreCase = true),
+                            isScreenshot = folder.contains("Screenshots", ignoreCase = true), isInHiddenFolder = isHiddenFolder(folder),
                             mediaKind = if (isVideo) PhotoBackupMediaKind.Video else PhotoBackupMediaKind.Picture,
                             resources = listOf(PhotoBackupResource(PhotoBackupFileRole.Original, name, contentType, true, sizeBytes)),
                         ),
@@ -217,6 +238,11 @@ object PhotoBackupScheduler {
  * newest first, over the resumable upload protocol (create, ask the offset, send the rest) with the device password.
  */
 class PhotoBackupWorker(private val context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
+    private companion object {
+        const val NOTIFICATION_CHANNEL = "photo-backup"
+        const val NOTIFICATION_ID = 4102
+    }
+
     private val client = OkHttpClient.Builder().readTimeout(120, TimeUnit.SECONDS).writeTimeout(120, TimeUnit.SECONDS).callTimeout(0, TimeUnit.SECONDS).build()
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -239,11 +265,16 @@ class PhotoBackupWorker(private val context: Context, parameters: WorkerParamete
     private suspend fun pass(connection: Connection, settings: PhotoBackupSettings): Result {
         val credential = settings.credential() ?: connection.createPhotoBackupCredential(deviceName()).also { created -> settings.saveCredential(created) }
         PhotoBackupProgress.publish { status -> status.copy(phase = PhotoBackupPhase.Listing) }
-        val items = MediaStoreLibrary.items(context)
+        val items = MediaStoreLibrary.items(context, settings.includesHiddenFolders)
         val records = settings.records()
         markWhatTheServerHas(connection, items, records)
         settings.saveRecords(records)
-        val uploads = PhotoBackupPlanner.plan(items, records)
+        // Where a picture was taken is read only for the ones about to go up: reading every file's header would take long.
+        val firstPlan = PhotoBackupPlanner.plan(items, records)
+        val unsent = firstPlan.map { upload -> upload.localIdentifier }.toSet()
+        val located = items.map { item -> if (item.localIdentifier in unsent) item.copy(location = MediaStoreLibrary.locationOf(context, item.localIdentifier)) else item }
+        val uploads = PhotoBackupPlanner.plan(located, records)
+        if (uploads.isNotEmpty()) runCatching { setForeground(foregroundInfo(0, uploads.size)) }
         val backedUp = items.count { item -> records[item.localIdentifier]?.isOriginalOnServer == true }
         PhotoBackupProgress.publish { status -> status.copy(phase = PhotoBackupPhase.Uploading, libraryItemCount = items.size, backedUpItemCount = backedUp, plannedFileCount = uploads.size, finishedFileCount = 0) }
         val timeLeft = PhotoBackupTimeLeft()
@@ -255,6 +286,7 @@ class PhotoBackupWorker(private val context: Context, parameters: WorkerParamete
             val outcome = send(settings, connection, credential, upload)
             val record = records.getOrPut(upload.localIdentifier) { PhotoBackupRecord(upload.clientPhotoId) }
             val role = record.roles.getOrPut(upload.role.serverName) { PhotoBackupRoleRecord() }
+            role.originalFilename = upload.filename
             when (outcome) {
                 is PhotoBackupOutcome.Uploaded -> {
                     role.isOnServer = true; role.serverPhotoId = outcome.serverPhotoId; role.assetModificationEpochMS = upload.assetModificationInstant?.toEpochMilli(); role.refusalCount = 0
@@ -262,6 +294,7 @@ class PhotoBackupWorker(private val context: Context, parameters: WorkerParamete
                 }
                 is PhotoBackupOutcome.Refused -> {
                     role.refusalCount += 1; refused += 1; lastFailure = outcome.failure; finished += 1
+                    role.refusalReason = (outcome.failure as? PhotoBackupFailure.FileRefused)?.serverReason ?: (outcome.failure as? PhotoBackupFailure.SystemDescription)?.description
                 }
                 PhotoBackupOutcome.SignInNeeded -> {
                     settings.forgetCredential()
@@ -280,7 +313,10 @@ class PhotoBackupWorker(private val context: Context, parameters: WorkerParamete
             }
             val backedUpNow = items.count { item -> records[item.localIdentifier]?.isOriginalOnServer == true }
             timeLeft.record(System.currentTimeMillis() / 1000.0, backedUpNow, true)
-            if (finished % 5 == 0) settings.saveRecords(records)
+            if (finished % 5 == 0) {
+                settings.saveRecords(records)
+                runCatching { setForeground(foregroundInfo(finished, uploads.size)) }
+            }
             PhotoBackupProgress.publish { status ->
                 status.copy(backedUpItemCount = backedUpNow, finishedFileCount = finished, refusedFileCount = refused, lastFailure = lastFailure, estimatedSecondsLeft = timeLeft.estimatedSecondsLeft(items.size - backedUpNow))
             }
@@ -309,6 +345,16 @@ class PhotoBackupWorker(private val context: Context, parameters: WorkerParamete
                 }
             }
         }
+    }
+
+    /** The notification shown while a long pass runs, so the system keeps the upload going with the app closed. */
+    private fun foregroundInfo(finished: Int, planned: Int): androidx.work.ForegroundInfo {
+        val manager = context.getSystemService(android.app.NotificationManager::class.java)
+        manager.createNotificationChannel(android.app.NotificationChannel(NOTIFICATION_CHANNEL, context.getString(com.teanode.app.R.string.photos_backup_channel_name), android.app.NotificationManager.IMPORTANCE_LOW))
+        val notification = androidx.core.app.NotificationCompat.Builder(context, NOTIFICATION_CHANNEL).setSmallIcon(com.teanode.app.R.mipmap.ic_launcher)
+            .setContentTitle(context.getString(com.teanode.app.R.string.photos_backup_notification_title)).setContentText(context.getString(com.teanode.app.R.string.photos_backup_notification_text, finished, planned))
+            .setProgress(planned, finished, false).setOngoing(true).setOnlyAlertOnce(true).build()
+        return if (Build.VERSION.SDK_INT >= 29) androidx.work.ForegroundInfo(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else androidx.work.ForegroundInfo(NOTIFICATION_ID, notification)
     }
 
     private fun deviceName(): String = "Android " + (Build.MODEL ?: "phone")

@@ -216,6 +216,7 @@ private fun NamePersonSheet(group: PhotoFaceGroup, onNamed: (NamedPhotoFaceGroup
     val connection = LocalConnection.current
     val snackbar = LocalSnackbar.current
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var typed by remember { mutableStateOf("") }
     var contacts by remember { mutableStateOf<List<PhotoNamingContact>?>(null) }
     LaunchedEffect(typed) {
@@ -235,7 +236,7 @@ private fun NamePersonSheet(group: PhotoFaceGroup, onNamed: (NamedPhotoFaceGroup
                 TeaNodeRow(
                     headline = stringResource(R.string.photos_new_contact, PhotoNaming.trimmedName(typed)), leadingIcon = Icons.Outlined.PersonAdd,
                     onClick = {
-                        scope.launch { try { choose(connection.createNamedContact(PhotoNaming.trimmedName(typed)).id) } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) } }
+                        scope.launch { try { choose(connection.createNamedContact(PhotoNaming.trimmedName(typed)).id) } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { if (failure is com.teanode.kit.photos.PhotoError) snackbar.showProblem(photoErrorWords(context, failure)) else snackbar.showError(failure) } }
                     },
                 )
             }

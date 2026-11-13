@@ -107,6 +107,21 @@ class PhotosScreenshotTest {
     @Test fun `backup largest text`() = shoot("photos-backup-largest-text", fontScale = 2f) {
         PhotoBackupScreen(onBack = {}, initialIsEnabled = true, statusOverride = PhotoBackupStatus(PhotoBackupPhase.Uploading, 420, 1280, 860, 300, 2, 0, null, null, 3_900))
     }
+    @Test fun `backup files light`() = shoot("photos-backup-files-light") {
+        PhotoBackupFilesScreen(
+            onBack = {},
+            previewRecords = mapOf(
+                "a" to com.teanode.kit.photos.PhotoBackupRecord("local:a", mutableMapOf("original" to com.teanode.kit.photos.PhotoBackupRoleRecord(refusalCount = 3, refusalReason = "The file is larger than the server takes.", originalFilename = "IMG_0042.mov"))),
+                "b" to com.teanode.kit.photos.PhotoBackupRecord("local:b", mutableMapOf("original" to com.teanode.kit.photos.PhotoBackupRoleRecord(refusalCount = 3, originalFilename = "IMG_0043.jpg"), "edited" to com.teanode.kit.photos.PhotoBackupRoleRecord(skippedAtEpochMS = 5, originalFilename = "IMG_0044.jpg"))),
+            ),
+        )
+    }
+
+    @Test fun `backup files empty dark`() = shoot("photos-backup-files-empty-dark", AppearanceChoice.Dark) { PhotoBackupFilesScreen(onBack = {}, previewRecords = emptyMap()) }
+
+    @Test fun `backup files largest text`() = shoot("photos-backup-files-largest-text", fontScale = 2f) {
+        PhotoBackupFilesScreen(onBack = {}, previewRecords = mapOf("a" to com.teanode.kit.photos.PhotoBackupRecord("local:a", mutableMapOf("original" to com.teanode.kit.photos.PhotoBackupRoleRecord(refusalCount = 3, refusalReason = "The file is larger than the server takes.", originalFilename = "IMG_0042.mov")))))
+    }
 }
 
 private fun demoPhoto(id: String): com.teanode.kit.photos.Photo =

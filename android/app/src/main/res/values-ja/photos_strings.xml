@@ -214,6 +214,23 @@
     <string name="photos_video_back">5秒戻る</string>
     <string name="photos_video_forward">5秒進む</string>
     <string name="photos_video_pause">一時停止</string>
+    <string name="photos_backup_channel_name">写真のバックアップ</string>
+    <string name="photos_backup_notification_title">写真をバックアップ中</string>
+    <string name="photos_backup_notification_text">%2$d件中%1$d件</string>
+    <string name="photos_backup_files_title">バックアップされていないファイル</string>
+    <string name="photos_backup_files_empty">やり直すものはありません</string>
+    <string name="photos_backup_files_empty_text">バックアップできるファイルはすべてバックアップ済みです。</string>
+    <string name="photos_backup_files_refused">バックアップできませんでした</string>
+    <string name="photos_backup_files_refused_text">「今すぐバックアップ」でこれらを再試行します。スキップしたファイルは、再試行するまで対象外のままです。</string>
+    <string name="photos_backup_files_skip">スキップ</string>
+    <string name="photos_backup_files_skipped">スキップ済み</string>
+    <string name="photos_backup_files_skipped_text">スキップしたファイルは送信されず、問題としても数えられません。</string>
+    <string name="photos_backup_hidden">非表示フォルダを含める</string>
+    <string name="photos_backup_hidden_text">「Hidden」という名前や、ドットで始まるフォルダは、オンにしない限り対象外です。</string>
+    <string name="photos_error_could_not_read">写真のファイルを読み込めませんでした。</string>
+    <string name="photos_error_not_available">ファイルを利用できません。削除されたか、アクセス権がない可能性があります。</string>
+    <string name="photos_error_nothing_to_save">この写真には、まだ保存できるファイルやプレビューがありません。</string>
+    <string name="photos_error_no_address_book">新しい連絡先を入れる連絡先帳がありません。</string>
     <plurals name="photos_backup_left_days">
         <item quantity="other">あと約%1$d日</item>
     </plurals>
