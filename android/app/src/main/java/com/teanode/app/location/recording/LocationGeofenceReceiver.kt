@@ -27,3 +27,18 @@ class LocationBootReceiver : BroadcastReceiver() {
         LocationRecorder.get(context).applyRecording()
     }
 }
+
+/** Hears Android's activity transitions (driving, cycling, running, walking, still) and tells the recorder. */
+class LocationActivityReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (!com.google.android.gms.location.ActivityTransitionResult.hasResult(intent)) return
+        val result = com.google.android.gms.location.ActivityTransitionResult.extractResult(intent) ?: return
+        val recorder = LocationRecorder.get(context)
+        val now = Instant.now()
+        val nowElapsedNanos = android.os.SystemClock.elapsedRealtimeNanos()
+        for (event in result.transitionEvents) {
+            val happened = com.teanode.kit.location.LocationMotion.transitionInstant(now, nowElapsedNanos, event.elapsedRealTimeNanos)
+            recorder.onActivityTransition(event.activityType, event.transitionType == com.google.android.gms.location.ActivityTransition.ACTIVITY_TRANSITION_ENTER, happened)
+        }
+    }
+}
