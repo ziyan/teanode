@@ -67,10 +67,10 @@ object ContactsDemoData {
 
     private fun samCard(): String = """
         {"person":$SAM_MEMBER,"contact":${contact("contact-sam")},"sharedCircles":[{"circleId":"circle-home","circleName":"Home","circleKind":"family"},{"circleId":"circle-book","circleName":"Book club","circleKind":"friends"}],"canMessage":true,
-         "location":${section("shown", ""","location":{"userId":"user-sam","shareLevel":"history","latestPoint":{"latitudeDegrees":10.5,"longitudeDegrees":20.5,"measuredAt":"${hoursAgo(1)}"},"openVisit":{"id":"visit-1","place":{"id":"place-1","placeName":"Fixture Park"},"arrivedAt":"${hoursAgo(3)}","departedAt":null},"pause":null},"todayVisits":[{"id":"visit-1","place":{"id":"place-1","placeName":"Fixture Park"},"arrivedAt":"${hoursAgo(3)}","departedAt":null},{"id":"visit-0","place":{"id":"place-2","placeName":"Corner Cafe"},"arrivedAt":"${hoursAgo(8)}","departedAt":"${hoursAgo(5)}"}],"hasMoreTodayVisits":false""")},
-         "health":${section("shown", ""","healthTypes":[{"healthType":"stepCount","typeName":"Steps","quantityUnit":"count","summaryKind":"sum","latestDaySummary":{"summaryDay":"${LocalDate.now()}","sumValue":8214,"averageValue":null,"quantityUnit":"count"}}],"hasMore":false""")},
-         "finance":${section("shown", ""","allFinanceShareLevel":"spending","financeAccounts":[{"financeAccountId":"account-1","ownerName":"Sam Fixture","financeShareLevel":"balance","accountName":"Everyday checking","accountMask":"4242","accountKind":"checking","currencyCode":"USD","currentBalance":1280.5,"balanceAt":"${hoursAgo(2)}"}],"hasMore":false""")},
-         "photos":{"photosState":"shown","photos":[{"id":"photo-1","smallPreviewUrl":null,"placeName":"","takenAt":"${daysAgo(1)}"},{"id":"photo-2","smallPreviewUrl":null,"placeName":"","takenAt":"${daysAgo(2)}"},{"id":"photo-3","smallPreviewUrl":null,"placeName":"","takenAt":"${daysAgo(3)}"}],"hasMorePhotos":true,"albumsState":"shown","albums":[{"id":"album-1","albumTitle":"Picnic","photoCount":12,"coverPreviewUrl":null,"isOwnedByCaller":false,"ownerName":"Sam Fixture"}],"hasMoreAlbums":false},
+         "location":${section("shown", ""","location":{"userId":"user-sam","username":"sam","shareLevel":"history","latestPoint":{"latitudeDegrees":10.5,"longitudeDegrees":20.5,"accuracyMeters":12,"measuredAt":"${hoursAgo(1)}"},"openVisit":{"id":"visit-1","place":{"id":"place-1","placeName":"Fixture Park","latitudeDegrees":10.5,"longitudeDegrees":20.5},"latitudeDegrees":10.5,"longitudeDegrees":20.5,"arrivedAt":"${hoursAgo(3)}","departedAt":null},"pause":null},"todayVisits":[{"id":"visit-1","place":{"id":"place-1","placeName":"Fixture Park","latitudeDegrees":10.5,"longitudeDegrees":20.5},"latitudeDegrees":10.5,"longitudeDegrees":20.5,"arrivedAt":"${hoursAgo(3)}","departedAt":null},{"id":"visit-0","place":{"id":"place-2","placeName":"Corner Cafe","latitudeDegrees":10.6,"longitudeDegrees":20.6},"latitudeDegrees":10.6,"longitudeDegrees":20.6,"arrivedAt":"${hoursAgo(8)}","departedAt":"${hoursAgo(5)}"}],"hasMoreTodayVisits":false""")},
+         "health":${section("shown", ""","healthTypes":[{"healthType":"stepCount","healthCategory":"activity","valueKind":"quantity","typeName":"Steps","quantityUnit":"count","summaryKind":"sum","latestDaySummary":{"summaryDay":"${LocalDate.now()}","sumValue":8214,"averageValue":null,"quantityUnit":"count"}}],"hasMore":false""")},
+         "finance":${section("shown", ""","allFinanceShareLevel":"spending","financeAccounts":[{"financeAccountId":"account-1","ownerUserId":"user-sam","ownerUsername":"sam","ownerName":"Sam Fixture","financeShareLevel":"balance","accountName":"Everyday checking","accountMask":"4242","accountKind":"checking","currencyCode":"USD","currentBalance":"1280.50","balanceAt":"${hoursAgo(2)}"}],"hasMore":false""")},
+         "photos":{"photosState":"shown","photos":[{"id":"photo-1","createdAt":"2030-01-01T00:00:00Z","photoKind":"picture","smallPreviewUrl":"","placeName":"","takenAt":"${daysAgo(1)}"},{"id":"photo-2","createdAt":"2030-01-01T00:00:00Z","photoKind":"picture","smallPreviewUrl":"","placeName":"","takenAt":"${daysAgo(2)}"},{"id":"photo-3","createdAt":"2030-01-01T00:00:00Z","photoKind":"picture","smallPreviewUrl":"","placeName":"","takenAt":"${daysAgo(3)}"}],"hasMorePhotos":true,"albumsState":"shown","albums":[{"id":"album-1","albumTitle":"Picnic","photoCount":12,"coverPreviewUrl":"","isOwnedByCaller":false,"ownerName":"Sam Fixture"}],"hasMoreAlbums":false},
          "mail":${section("shown", ""","mails":[{"mailboxItemId":"item-lunch","mailboxId":"mailbox-1","folderPath":"Inbox","subject":"Lunch on Friday?","fromAddress":"sam@example.org","fromName":"Sam Fixture","isFromPerson":true,"isUnread":true,"receivedAt":"${hoursAgo(1)}","snippet":"Sam suggests the noodle place."},{"mailboxItemId":"item-lunch-2","mailboxId":"mailbox-1","folderPath":"Sent","subject":"Re: Lunch on Friday?","fromAddress":"alex@example.com","fromName":"","isFromPerson":false,"isUnread":false,"receivedAt":"${hoursAgo(20)}","snippet":""}],"hasMore":true""")},
          "recordings":${section("shown", ""","recordings":[{"recordingId":"recording-1","title":"Planning the picnic","recordedAt":"${daysAgo(2)}","durationMS":600000,"spokenPassageCount":12}],"hasMore":false""")},
          "memory":${section("shown", ""","pages":[{"nodePath":"people/sam","nodeName":"Sam","nodeKind":"person","summary":"Likes tea.","updatedAt":"${daysAgo(1)}"},{"nodePath":"people/sam-park","nodeName":"Park picnics","nodeKind":"topic","summary":"Plans for the next picnic.","updatedAt":"${daysAgo(4)}","isMatchedByName":true}],"hasMore":false""")}}
@@ -78,9 +78,9 @@ object ContactsDemoData {
 
     private fun alexaCard(): String = """
         {"person":$ALEXA_MEMBER,"contact":null,"sharedCircles":[{"circleId":"circle-friends","circleName":"Book club","circleKind":"friends"}],"canMessage":true,
-         "location":${section("shown", ""","location":{"userId":"user-alex","shareLevel":"current","latestPoint":{"latitudeDegrees":10.5,"longitudeDegrees":20.5,"measuredAt":"${hoursAgo(1)}"},"openVisit":null,"pause":null},"todayVisits":[],"hasMoreTodayVisits":false""")},
+         "location":${section("shown", ""","location":{"userId":"user-alex","username":"alexa","shareLevel":"current","latestPoint":{"latitudeDegrees":10.5,"longitudeDegrees":20.5,"accuracyMeters":12,"measuredAt":"${hoursAgo(1)}"},"openVisit":null,"pause":null},"todayVisits":[],"hasMoreTodayVisits":false""")},
          "health":${section("notShared", ""","healthTypes":[],"hasMore":false""")},
-         "photos":{"photosState":"needsContact","photos":[],"hasMorePhotos":false,"albumsState":"shown","albums":[{"id":"album-1","albumTitle":"Spring walk","photoCount":14,"coverPreviewUrl":null,"isOwnedByCaller":false,"ownerName":"Alexa Demo"}],"hasMoreAlbums":false},
+         "photos":{"photosState":"needsContact","photos":[],"hasMorePhotos":false,"albumsState":"shown","albums":[{"id":"album-1","albumTitle":"Spring walk","photoCount":14,"coverPreviewUrl":"","isOwnedByCaller":false,"ownerName":"Alexa Demo"}],"hasMoreAlbums":false},
          "mail":${section("needsContact", ""","mails":[],"hasMore":false""")},
          "recordings":${section("needsContact", ""","recordings":[],"hasMore":false""")},
          "memory":${section("needsContact", ""","pages":[],"hasMore":false""")}}
@@ -103,14 +103,30 @@ object ContactsDemoData {
     val visits: String
         get() = """
             {"placeVisits":[
-              {"id":"visit-1","place":{"id":"place-1","placeName":"Fixture Park","isNamedByPerson":false,"placeLabel":"","addressText":"","visitCount":3,"lastVisitAt":"${hoursAgo(3)}"},"arrivedAt":"${hoursAgo(3)}","departedAt":null,"durationSeconds":null,"photoCount":2},
-              {"id":"visit-0","place":{"id":"place-2","placeName":"Corner Cafe","isNamedByPerson":true,"placeLabel":"","addressText":"2 Example Road","visitCount":9,"lastVisitAt":"${hoursAgo(5)}"},"arrivedAt":"${hoursAgo(8)}","departedAt":"${hoursAgo(5)}","durationSeconds":10800,"photoCount":0}],"nextOffset":null}
+              {"id":"visit-1","place":{"id":"place-1","placeName":"Fixture Park","latitudeDegrees":10.5,"longitudeDegrees":20.5,"isNamedByPerson":false,"placeLabel":"","addressText":"","visitCount":3,"lastVisitAt":"${hoursAgo(3)}"},"arrivedAt":"${hoursAgo(3)}","departedAt":null,"durationSeconds":null,"latitudeDegrees":10.5,"longitudeDegrees":20.5,"photoCount":2},
+              {"id":"visit-0","place":{"id":"place-2","placeName":"Corner Cafe","latitudeDegrees":10.6,"longitudeDegrees":20.6,"isNamedByPerson":true,"placeLabel":"","addressText":"2 Example Road","visitCount":9,"lastVisitAt":"${hoursAgo(5)}"},"arrivedAt":"${hoursAgo(8)}","departedAt":"${hoursAgo(5)}","durationSeconds":10800,"latitudeDegrees":10.6,"longitudeDegrees":20.6,"photoCount":0}],"nextOffset":null}
+        """.trimIndent()
+
+    val points: String
+        get() = (0 until 8).joinToString(",", "[", "]") { step ->
+            """{"latitudeDegrees":${10.50 + step * 0.0015},"longitudeDegrees":${20.50 + step * 0.0012},"accuracyMeters":12,"measuredAt":"${hoursAgo(8L - step)}"}"""
+        }
+
+    val pauses: String
+        get() = """[{"id":"pause-1","startedAt":"${hoursAgo(5)}","endedAt":"${hoursAgo(4)}"}]"""
+
+    val trips: String
+        get() = """
+            {"trips":[{"id":"trip-1","startedAt":"${hoursAgo(5)}","endedAt":"${hoursAgo(4)}","durationSeconds":1800,"distanceMeters":2400,
+              "fromPlace":{"id":"place-2","placeName":"Corner Cafe","latitudeDegrees":10.6,"longitudeDegrees":20.6},
+              "toPlace":{"id":"place-1","placeName":"Fixture Park","latitudeDegrees":10.5,"longitudeDegrees":20.5},
+              "legs":[{"id":"leg-1","startedAt":"${hoursAgo(5)}","endedAt":"${hoursAgo(4)}","durationSeconds":1800,"distanceMeters":2400,"travelMode":"walk","detectedTravelMode":"walk","isTravelModeCorrected":false,"detectionSource":"motion"}]}],"nextOffset":null}
         """.trimIndent()
 
     val places: String = """
-        {"places":[{"id":"place-1","placeName":"Fixture Park","isNamedByPerson":false,"placeLabel":"","addressText":"","visitCount":3,"lastVisitAt":null},
-                   {"id":"place-2","placeName":"Corner Cafe","isNamedByPerson":true,"placeLabel":"","addressText":"2 Example Road","visitCount":9,"lastVisitAt":null},
-                   {"id":"place-3","placeName":"Sample Library","isNamedByPerson":false,"placeLabel":"","addressText":"5 Example Street","visitCount":2,"lastVisitAt":null}],"nextOffset":null}
+        {"places":[{"id":"place-1","placeName":"Fixture Park","latitudeDegrees":10.5,"longitudeDegrees":20.5,"isNamedByPerson":false,"placeLabel":"","addressText":"","visitCount":3,"lastVisitAt":null},
+                   {"id":"place-2","placeName":"Corner Cafe","latitudeDegrees":10.6,"longitudeDegrees":20.6,"isNamedByPerson":true,"placeLabel":"","addressText":"2 Example Road","visitCount":9,"lastVisitAt":null},
+                   {"id":"place-3","placeName":"Sample Library","latitudeDegrees":10.7,"longitudeDegrees":20.7,"isNamedByPerson":false,"placeLabel":"","addressText":"5 Example Street","visitCount":2,"lastVisitAt":null}],"nextOffset":null}
     """.trimIndent()
 
     val answerers: List<DemoAnswerer> = listOf(
@@ -129,6 +145,9 @@ object ContactsDemoData {
         graphQLField("ListCirclePeople") { _ -> "[$PERSON_SAM,$PERSON_ALEXA,$PERSON_PAT]" },
         graphQLField("ReadPersonCard") { variables -> personCard(variables) },
         graphQLField("ListLocationVisits") { _ -> visits },
+        graphQLField("ListLocationPoints") { _ -> points },
+        graphQLField("ListLocationPauses") { _ -> pauses },
+        graphQLField("ListTrips") { _ -> trips },
         graphQLField("ListPlaces") { _ -> places },
         graphQLField("SaveContact") { _ -> """{"id":"contact-new","name":"New Contact"}""" },
         graphQLField("DeleteContact", "true"),

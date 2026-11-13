@@ -73,127 +73,34 @@ object PersonCardSectionStateSerializer : KSerializer<PersonCardSectionState> {
     override fun serialize(encoder: Encoder, value: PersonCardSectionState) = encoder.encodeString(value.wireName)
 }
 
-/** PersonCardMember is the account as a member of the person's circles; its relationship fields are only between the two. */
-@Serializable
-data class PersonCardMember(
-    val userId: String,
-    val username: String = "",
-    val name: String? = null,
-    val avatarUrl: String? = null,
-    val avatarColorIndex: Int? = null,
-    val memberRole: String = "member",
-    val joinedAt: String = "",
-    /** What this person is to the caller, such as parent or spouse; empty when neither of them has said. */
-    val relationshipKind: String = "",
-    /** masculine, feminine or neutral: the gender of the word to show for the relationship. */
-    val relationshipTermGender: String = "",
-    /** The relationship in English, such as father; shown only for a kind the app does not know. */
-    val relationshipWord: String = "",
-    /** The caller's own contact that is this person, or empty. Private to the caller. */
-    val linkedContactId: String = "",
-) {
-    val displayName: String get() = if (name.isNullOrEmpty()) username else name
-    val isLinkedToContact: Boolean get() = linkedContactId.isNotEmpty()
-    val hasRelationship: Boolean get() = relationshipKind.isNotEmpty()
-}
-
 /** PersonCardCircle is a circle the person and the other share. */
 @Serializable
 data class PersonCardCircle(val circleId: String, val circleName: String = "", /** family, friends or colleagues. */ val circleKind: String = "") {
     val id: String get() = circleId
 }
 
-@Serializable
-data class PersonCardPoint(val latitudeDegrees: Double, val longitudeDegrees: Double, val measuredAt: String? = null)
-
-@Serializable
-data class PersonCardPlace(
-    val id: String = "",
-    val placeName: String = "",
-    val placeLabel: String = "",
-    val addressText: String = "",
-    val latitudeDegrees: Double = 0.0,
-    val longitudeDegrees: Double = 0.0,
-)
-
-@Serializable
-data class PersonCardVisit(
-    val id: String,
-    val place: PersonCardPlace,
-    val arrivedAt: String? = null,
-    val departedAt: String? = null,
-    val durationSeconds: Double? = null,
-)
-
-@Serializable
-data class PersonCardPause(val id: String = "", val startedAt: String? = null, val endedAt: String? = null)
-
-/** What the card shows of a person's location: where they are, in the share level they gave. */
-@Serializable
-data class PersonCardLocation(
-    val userId: String,
-    /** "owner" for the person's own, else current or history. */
-    val shareLevel: String = "current",
-    val latestPoint: PersonCardPoint? = null,
-    val openVisit: PersonCardVisit? = null,
-    val pause: PersonCardPause? = null,
-) {
-    val isHistoryShared: Boolean get() = shareLevel == "history" || shareLevel == "owner"
-}
-
 /** PersonCardLocationSection is where they are, as the Location part shows it. */
 @Serializable
 data class PersonCardLocationSection(
     val sectionState: PersonCardSectionState,
-    val location: PersonCardLocation? = null,
+    val location: com.teanode.kit.location.PersonLocation? = null,
     /** Their visits today, newest first, when they share where they have been. */
-    val todayVisits: List<PersonCardVisit>? = null,
+    val todayVisits: List<com.teanode.kit.location.PlaceVisit>? = null,
     val hasMoreTodayVisits: Boolean = false,
-)
-
-@Serializable
-data class PersonCardHealthDay(
-    val summaryDay: String,
-    val sumValue: Double? = null,
-    val averageValue: Double? = null,
-    val quantityUnit: String? = null,
-)
-
-@Serializable
-data class PersonCardHealthType(
-    val healthType: String,
-    val typeName: String = "",
-    val quantityUnit: String? = null,
-    val summaryKind: String? = null,
-    val latestDaySummary: PersonCardHealthDay? = null,
 )
 
 /** PersonCardHealthSection is the health they share with the person: each kind with its latest day, steps first. */
 @Serializable
 data class PersonCardHealthSection(
     val sectionState: PersonCardSectionState,
-    val healthTypes: List<PersonCardHealthType>? = null,
+    val healthTypes: List<com.teanode.kit.health.HealthTypeView>? = null,
     val hasMore: Boolean = false,
 ) {
     companion object {
         /** Whether the kind's latest day is the day given, written "YYYY-MM-DD" in the phone's calendar. Only then is it said to be today. */
-        fun isToday(type: PersonCardHealthType, today: java.time.LocalDate): Boolean = type.latestDaySummary?.summaryDay == today.toString()
+        fun isToday(type: com.teanode.kit.health.HealthTypeView, today: java.time.LocalDate): Boolean = type.latestDaySummary?.summaryDay == today.toString()
     }
 }
-
-@Serializable
-data class PersonCardFinanceAccount(
-    val financeAccountId: String,
-    val ownerName: String? = null,
-    val ownerUsername: String? = null,
-    val financeShareLevel: String = "",
-    val accountName: String = "",
-    val accountMask: String? = null,
-    val accountKind: String = "",
-    val currencyCode: String = "USD",
-    val currentBalance: Double? = null,
-    val balanceAt: String? = null,
-)
 
 /** PersonCardFinanceSection is the finance accounts they share with the person, each as the level it was shared at shows it. */
 @Serializable
@@ -201,21 +108,8 @@ data class PersonCardFinanceSection(
     val sectionState: PersonCardSectionState,
     /** Spending or transactions when they share all of their finance with the person, else empty or absent (an older server). */
     val allFinanceShareLevel: String? = null,
-    val financeAccounts: List<PersonCardFinanceAccount>? = null,
+    val financeAccounts: List<com.teanode.kit.finance.SharedFinanceAccount>? = null,
     val hasMore: Boolean = false,
-)
-
-@Serializable
-data class PersonCardPhoto(val id: String, val smallPreviewUrl: String? = null, val placeName: String = "", val takenAt: String? = null)
-
-@Serializable
-data class PersonCardAlbum(
-    val id: String,
-    val albumTitle: String = "",
-    val photoCount: Int = 0,
-    val coverPreviewUrl: String? = null,
-    val isOwnedByCaller: Boolean = false,
-    val ownerName: String? = null,
 )
 
 /**
@@ -225,10 +119,10 @@ data class PersonCardAlbum(
 @Serializable
 data class PersonCardPhotosSection(
     val photosState: PersonCardSectionState,
-    val photos: List<PersonCardPhoto>? = null,
+    val photos: List<com.teanode.kit.photos.Photo>? = null,
     val hasMorePhotos: Boolean = false,
     val albumsState: PersonCardSectionState,
-    val albums: List<PersonCardAlbum>? = null,
+    val albums: List<com.teanode.kit.photos.PhotoAlbum>? = null,
     val hasMoreAlbums: Boolean = false,
 )
 
@@ -307,7 +201,7 @@ data class PersonCardMemorySection(
 @Serializable
 data class PersonCard(
     /** The account, as a member of the person's circles; null for a contact that is not one. */
-    val person: PersonCardMember? = null,
+    val person: com.teanode.kit.circles.CircleMember? = null,
     /** The person's own contact for them: the one asked for, or the one linked to the account. Null when there is none. */
     val contact: ContactDetail? = null,
     /** The circles both are in; none for a contact without an account. */

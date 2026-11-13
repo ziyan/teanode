@@ -9,6 +9,11 @@ import com.teanode.app.shell.AppNavigator
 import com.teanode.app.shell.Routes
 import com.teanode.kit.AppSection
 
+/** The routes other parts open Photos on. */
+object PhotoRoutes {
+    val albums: String = Routes.child(AppSection.Photos, "albums")
+}
+
 /**
  * The routes of Photos: the library, an album (and who it is shared with), a person, and photo backup. A photo opens in
  * the viewer over the screen it was chosen on, not as a route of its own, so going back lands where the person was.
@@ -17,6 +22,8 @@ fun NavGraphBuilder.photosRoutes(navigator: AppNavigator) {
     composable(Routes.home(AppSection.Photos), deepLinks = Routes.deepLinks(Routes.home(AppSection.Photos))) {
         PhotosSection()
     }
+    // Where another part's "Show all" lands for the albums.
+    composable(PhotoRoutes.albums) { PhotosSection(initialSection = PhotoSectionChoice.Albums) }
     val albumRoute = Routes.child(AppSection.Photos, "album/{albumId}")
     composable(albumRoute, arguments = listOf(navArgument("albumId") { type = NavType.StringType }), deepLinks = Routes.deepLinks(albumRoute)) { entry ->
         AlbumScreen(entry.arguments?.getString("albumId").orEmpty(), onBack = { navigator.back() })

@@ -22,10 +22,10 @@ object ManageDemoData {
     private val mailDetail: String = """
         {"id":"mail-3","sender":"support@examp1e-login.test","from":"Account Team <support@examp1e-login.test>","subject":"Verify your account now","recipients":["alex@example.com"],"status":"rejected","kind":"incoming","size":2100,"receivedAt":"${hoursAgo(5)}",
          "ip":"203.0.113.7","rdns":"mail.examp1e-login.test.","hello":"mail.examp1e-login.test","messageId":"<phish-1@examp1e-login.test>","envelopeId":"env-1","tlsVersion":"TLSv1.3","tlsCipherSuite":"TLS_AES_256_GCM_SHA384","location":{"city":"Sampleton","country":"Exampleland"},
-         "authenticationResults":{"senderMx":null,"fromMx":null,"spf":{"domain":"examp1e-login.test","ip":"203.0.113.7","result":"fail"},
+         "authenticationResults":{"senderMx":{"domain":"examp1e-login.test","mailServers":["mx1.examp1e-login.test","mx2.examp1e-login.test"]},"fromMx":null,"spf":{"domain":"examp1e-login.test","ip":"203.0.113.7","result":"fail"},
            "dmarc":{"domain":"examp1e-login.test","policy":"reject","subdomainPolicy":"reject","dkimAlignment":"r","spfAlignment":"r","result":"fail","passedAtForwarderDomain":null},
            "dkims":[{"domain":"examp1e-login.test","selector":"mail","identifier":"@examp1e-login.test","result":"fail"}],"arc":null,
-           "spamFilter":{"score":9.1,"result":"fail","symbols":["PHISHING"],"checks":[{"symbol":"PHISHING","score":6.0,"description":"Looks like a phishing page"}]},"antivirus":{"viruses":[]},"contentFilter":null,"errors":[]}}
+           "spamFilter":{"score":9.1,"result":"fail","symbols":["PHISHING"],"checks":[{"symbol":"PHISHING","score":6.0,"description":"Looks like a phishing page"},{"symbol":"FORGED_SENDER","score":3.1,"description":"The sender does not match the signing domain"},{"symbol":"HAS_LIST_UNSUBSCRIBE","score":-0.1,"description":""}]},"antivirus":{"viruses":[]},"contentFilter":null,"errors":[]}}
     """.trimIndent()
 
     private val deliveries: String = """
@@ -59,12 +59,21 @@ object ManageDemoData {
         {"id":"domain-1","domain":"example.com","subdomain":"","comment":"Main domain","spamFilterScoreThreshold":5.0,
          "aliases":[{"id":"alias-1","pattern":"alex","comment":"Alex","kind":"mailbox","email":"","webhook":"","mailboxId":"mailbox-1","disabled":false,"mailServer":null},
                     {"id":"alias-2","pattern":"*","comment":"Catch all","kind":"email","email":"alex@example.com","webhook":"","mailboxId":"","disabled":true,"mailServer":null}],
-         "credentials":[{"id":"credential-1","comment":"Printer","alias":"scanner","disabled":false}],
+         "credentials":[{"id":"credential-1","comment":"Printer","alias":"scanner","disabled":false},{"id":"credential-2","comment":"Old laptop","alias":"","disabled":true}],
          "records":{"checkedAt":"${hoursAgo(2)}","error":"","records":[
             {"type":"MX","name":"example.com","expected":"mail.example.com","priority":10,"optional":false,"found":["10 mail.example.com"],"verified":true,"purpose":"Receives the domain's mail","blocked":""},
             {"type":"TXT","name":"mail._domainkey.example.com","expected":"v=DKIM1; k=rsa; p=EXAMPLEKEY","priority":0,"optional":false,"found":[],"verified":false,"purpose":"Signs outgoing mail","blocked":""},
             {"type":"TXT","name":"_dmarc.example.com","expected":"v=DMARC1; p=none","priority":0,"optional":true,"found":[],"verified":false,"purpose":"Asks receivers for reports","blocked":""}]},
-         "mailServers":["mail.example.com"],"mailHosts":["mail.example.com"],"linkHost":"links.example.com","linkHostname":"links.example.com","dkimSelector":"mail","hasDkimKey":true,"logo":null}
+         "mailServers":["mail.example.com"],"mailHosts":["mail.example.com"],"linkHost":"links.example.com","linkHostname":"links.example.com","dkimSelector":"mail","hasDkimKey":true,"logo":{"filename":"example-mark.svg","title":"Example mark","url":"/api/v1/logo","publicUrl":"https://links.example.com/logo.svg","uploadedAt":"${hoursAgo(48)}"}}
+    """.trimIndent()
+
+    private val template: String = """
+        {"id":"template-1","domainId":"domain-1","layoutId":"layout-1","name":"Welcome","comment":"Sent when somebody joins","locale":"en","subject":"Welcome, {{name}}","htmlContent":"<p>Hello {{name}}, welcome.</p>","textContent":"Hello {{name}}, welcome.","variables":["name"],"modifiedAt":"${hoursAgo(72)}",
+         "translations":[{"locale":"ja","subject":"Welcome ja","htmlContent":"<p>Hello ja</p>","textContent":"Hello ja"}]}
+    """.trimIndent()
+
+    private val layout: String = """
+        {"id":"layout-1","domainId":"domain-1","comment":"Plain layout","locale":"en","htmlContent":"<html><body>{{content}}</body></html>","textContent":"{{content}}","modifiedAt":"${hoursAgo(96)}","translations":[]}
     """.trimIndent()
 
     val answerers: List<DemoAnswerer> = listOf(
@@ -92,11 +101,13 @@ object ManageDemoData {
         },
         DemoAnswerer { request ->
             if (request.document.contains("ListTemplates")) {
-                DemoResponse("""{"data":{"ListTemplates":[{"id":"template-1","domainId":"domain-1","layoutId":"layout-1","name":"Welcome","comment":"","locale":"en","subject":"Welcome","variables":[],"modifiedAt":null,"translations":[{"locale":"ja"}]}],"ListLayouts":[{"id":"layout-1","domainId":"domain-1","comment":"Plain layout","locale":"en","modifiedAt":null,"translations":[]}]}}""")
+                DemoResponse("""{"data":{"ListTemplates":[{"id":"template-1","domainId":"domain-1","layoutId":"layout-1","name":"Welcome","comment":"","locale":"en","subject":"Welcome","variables":["name"],"modifiedAt":"${hoursAgo(72)}","translations":[{"locale":"ja"}]}],"ListLayouts":[{"id":"layout-1","domainId":"domain-1","comment":"Plain layout","locale":"en","modifiedAt":"${hoursAgo(96)}","translations":[]}]}}""")
             } else {
                 null
             }
         },
+        graphQLField("GetTemplate") { _ -> template },
+        graphQLField("GetLayout") { _ -> layout },
         graphQLField("ListPendingDeliveries") { _ -> deliveries },
         graphQLField("ListReports") { _ -> reports },
         graphQLField("GetReport") { _ -> report },
@@ -113,6 +124,10 @@ object ManageDemoData {
         graphQLField("DeleteAlias", "true"),
         graphQLField("CreateCredential", """{"username":"scanner@example.com","password":"demo-secret-0000","host":"mail.example.com","port":"587"}"""),
         graphQLField("DeleteCredential", "true"),
+        graphQLField("UpdateCredential", "true"),
+        graphQLField("DeleteTemplate", "true"),
+        graphQLField("DeleteLayout", "true"),
+        graphQLField("DeleteDomainLogo", "true"),
         graphQLField("UpdateDomain", """{"id":"domain-1"}"""),
         graphQLField("RegenerateDomainKey", """{"id":"domain-1"}"""),
     )

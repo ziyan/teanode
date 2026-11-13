@@ -77,7 +77,7 @@ class ContactsScreenshotTest {
 
     @Test fun `contact picker`() {
         show(Look.Light, waitsFor = "Pat Sample") { model ->
-            val person = com.teanode.kit.contacts.PersonCardMember(userId = "user-pat", username = "pat", name = "Pat Sample")
+            val person = com.teanode.kit.circles.CircleMember(userId = "user-pat", username = "pat", name = "Pat Sample")
             PersonContactPickerScreen(model, person, onBack = {}, onLinked = {})
         }
         composeRule.photograph("contacts-contact-picker-light")
@@ -104,6 +104,6 @@ class ContactsScreenshotTest {
     @Test fun `import denied`() { show(Look.Light, waitsFor = "Contacts access is off") { model -> importing(model, false, emptyList()) }; composeRule.photograph("contacts-import-denied-light") }
     @Test fun `import empty`() { show(Look.Dark, waitsFor = "No contacts on this phone") { model -> importing(model, true, emptyList()) }; composeRule.photograph("contacts-import-empty-dark") }
 
-    @Test fun `visits`() { show(Look.Light, waitsFor = "Fixture Park") { _ -> PersonVisitsScreen(LocalConnection.current, "user-sam", onBack = {}) }; composeRule.photograph("contacts-visits-light") }
-    @Test fun `visits dark`() { show(Look.Dark, waitsFor = "Corner Cafe") { _ -> PersonVisitsScreen(LocalConnection.current, "user-sam", onBack = {}) }; composeRule.photograph("contacts-visits-dark") }
+    @Test fun `visits`() { show(Look.Light, waitsFor = "Fixture Park") { _ -> PersonVisitsScreen("user-sam", onBack = {}) }; composeRule.photograph("contacts-visits-light") }
+    @Test fun `visits dark`() { show(Look.Dark, waitsFor = "Corner Cafe") { _ -> PersonVisitsScreen("user-sam", onBack = {}) }; composeRule.photograph("contacts-visits-dark") }
 }

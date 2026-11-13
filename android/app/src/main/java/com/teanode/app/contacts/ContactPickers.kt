@@ -33,8 +33,8 @@ import com.teanode.kit.contacts.ContactAccount
 import com.teanode.kit.contacts.ContactAccountSuggestion
 import com.teanode.kit.contacts.ContactDetail
 import com.teanode.kit.contacts.ContactSummary
-import com.teanode.kit.contacts.PersonCardMember
-import com.teanode.kit.contacts.chatPeople
+import com.teanode.kit.circles.CircleMember
+import com.teanode.kit.chats.chatPeople
 import com.teanode.kit.contacts.contactAccountSuggestions
 import com.teanode.kit.contacts.contacts
 import kotlinx.coroutines.delay
@@ -105,7 +105,7 @@ fun ContactAccountPickerScreen(model: ContactsModel, contact: ContactDetail, onB
  * from the contact screen. The contacts the server thinks are them come first, then a search of the address book.
  */
 @Composable
-fun PersonContactPickerScreen(model: ContactsModel, person: PersonCardMember, onBack: () -> Unit, onLinked: () -> Unit) {
+fun PersonContactPickerScreen(model: ContactsModel, person: CircleMember, onBack: () -> Unit, onLinked: () -> Unit) {
     val scope = rememberCoroutineScope()
     var suggestions by remember { mutableStateOf(emptyList<ContactAccountSuggestion>()) }
     var found by remember { mutableStateOf(emptyList<ContactSummary>()) }

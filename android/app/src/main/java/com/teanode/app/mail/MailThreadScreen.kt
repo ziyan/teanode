@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.MarkEmailRead
 import androidx.compose.material.icons.outlined.MarkEmailUnread
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.QuestionAnswer
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Receipt
 import androidx.compose.material.icons.outlined.Report
@@ -128,6 +129,7 @@ fun MailThreadScreen(
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val navigator = com.teanode.app.shell.LocalAppNavigator.current
     var thread by remember { mutableStateOf<MailThreadView?>(null) }
     var failure by remember { mutableStateOf<Throwable?>(null) }
     val expanded = remember { mutableStateListOf<String>() }
@@ -223,6 +225,17 @@ fun MailThreadScreen(
                             scope.launch {
                                 mail.act(context.getString(if (isAnyUnread) R.string.mail_marked_read else R.string.mail_marked_unread)) { mail.connection.setMailFlags(ids, isSeen = isAnyUnread) }
                                 load()
+                            }
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.chats_ask_about_this)) }, leadingIcon = { Icon(Icons.Outlined.QuestionAnswer, null) },
+                        onClick = {
+                            isMenuOpen = false
+                            val asked = newest
+                            val message = asked?.mail
+                            if (asked != null && message != null) {
+                                com.teanode.app.chats.ChatsHooks.askAbout(navigator, com.teanode.kit.chats.AgentReference.mail(asked.id, thread?.threadId, message.subject, message.shownSender))
                             }
                         },
                     )
@@ -326,6 +339,7 @@ fun MailThreadScreen(
                         },
                     )
                 }
+                com.teanode.app.knowledge.InMemoryCard("mail", itemId)
             }
             failure != null -> ErrorState((failure?.message ?: "").asReasonSentence(), onRetry = { failure = null; scope.launch { load() } })
             else -> LoadingState(Modifier.padding(contentPadding))

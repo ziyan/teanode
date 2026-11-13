@@ -157,12 +157,12 @@ fun AlbumsContent(onOpenAlbum: (PhotoAlbum) -> Unit) {
 private fun androidx.compose.foundation.lazy.LazyListScope.albumRows(albums: List<PhotoAlbum>, onOpen: (PhotoAlbum) -> Unit) {
     items(albums.size) { index ->
         val album = albums[index]
-        AlbumRow(album) { onOpen(album) }
+        PhotoAlbumRow(album) { onOpen(album) }
     }
 }
 
 @Composable
-private fun AlbumRow(album: PhotoAlbum, onClick: () -> Unit) {
+fun PhotoAlbumRow(album: PhotoAlbum, onClick: () -> Unit) {
     val cover = rememberServerPicture(album.coverPreviewUrl.ifEmpty { null })
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Box(Modifier.size(64.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
