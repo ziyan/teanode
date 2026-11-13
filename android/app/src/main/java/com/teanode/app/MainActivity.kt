@@ -10,6 +10,7 @@ import com.teanode.app.calls.OpeningRequests
 import com.teanode.app.demo.DemoServer
 import com.teanode.app.notifications.NotificationBuilder
 import com.teanode.app.notifications.NotificationOpening
+import com.teanode.app.notifications.OwnIntentSeal
 import com.teanode.app.ui.components.openWebPage
 import com.teanode.kit.ConnectLink
 import com.teanode.kit.TeaNodeJson
@@ -65,7 +66,8 @@ class MainActivity : ComponentActivity() {
 
     private fun handle(intent: Intent) {
         // A notification, or one of its buttons that opens the app, pressed: the kit decides where it goes.
-        intent.getStringExtra(NotificationBuilder.EXTRA_INFO)?.let { text -> openedFromNotification(text, intent.getStringExtra(NotificationBuilder.EXTRA_ACTION)) }
+        // Another app can start this activity with any extras: only an intent the app built for itself is believed.
+        if (OwnIntentSeal.isOwn(this, intent)) intent.getStringExtra(NotificationBuilder.EXTRA_INFO)?.let { text -> openedFromNotification(text, intent.getStringExtra(NotificationBuilder.EXTRA_ACTION)) }
         if (intent.getBooleanExtra("com.teanode.app.extra.CALL_AGENT", false)) OpeningRequests.offerCall()
         val address: Uri = intent.data ?: return
         val session = (application as TeaNodeApplication).session

@@ -141,20 +141,20 @@ object NotificationBuilder {
         return row
     }
 
-    private fun extrasOf(intent: Intent, actionId: String?, info: NotificationInfo, notificationId: Int): Intent = intent
+    private fun extrasOf(context: Context, intent: Intent, actionId: String?, info: NotificationInfo, notificationId: Int): Intent = OwnIntentSeal.mark(context, intent)
         .putExtra(EXTRA_INFO, TeaNodeJson.encodeToString(NotificationInfo.serializer(), info))
         .putExtra(EXTRA_ACTION, actionId)
         .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
 
     private fun broadcastIntent(context: Context, spec: NotificationButtonSpec, info: NotificationInfo, notificationId: Int): PendingIntent {
-        val intent = extrasOf(Intent(context, NotificationActionReceiver::class.java), spec.actionId, info, notificationId)
+        val intent = extrasOf(context, Intent(context, NotificationActionReceiver::class.java), spec.actionId, info, notificationId)
         // A typed answer is written into the intent by the system, so the intent must be mutable.
         val mutability = if (spec.isTextInput && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE
         return PendingIntent.getBroadcast(context, requestCode(notificationId, spec.actionId), intent, PendingIntent.FLAG_UPDATE_CURRENT or mutability)
     }
 
     private fun openIntent(context: Context, actionId: String?, notificationId: Int, info: NotificationInfo): PendingIntent {
-        val intent = extrasOf(Intent(context, MainActivity::class.java), actionId ?: "default", info, notificationId)
+        val intent = extrasOf(context, Intent(context, MainActivity::class.java), actionId ?: "default", info, notificationId)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         return PendingIntent.getActivity(context, requestCode(notificationId, actionId ?: "default"), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
