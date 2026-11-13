@@ -13,8 +13,9 @@ suspend inline fun <reified Value> Connection.graphQLField(
     document: String,
     fieldName: String,
     variables: Map<String, JsonElement> = emptyMap(),
+    requestTimeoutMS: Long? = null,
 ): Value? {
-    val data: JsonObject = execute(document, variables)
+    val data: JsonObject = execute(document, variables, requestTimeoutMS)
     val element = data[fieldName] ?: return null
     if (element is JsonNull) return null
     return TeaNodeJson.decodeFromJsonElement<Value>(element)
