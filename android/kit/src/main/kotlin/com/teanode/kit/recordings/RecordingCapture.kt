@@ -133,3 +133,72 @@ data class RecordingLink(val recordingId: String, val recordingTranscriptRunId: 
         }
     }
 }
+
+enum class RecordingCutReason { UtteranceEnd, LevelPause, MaximumLength }
+
+/**
+ * Where a capture is cut into pieces to upload and transcribe: never before twenty seconds, at the first sentence end the
+ * live stream hears after that (or, without a stream, when the level falls to near its lowest for a quarter of a second),
+ * and always at a minute.
+ */
+class RecordingCutPolicy {
+    private class LevelReading(val atMS: Long, val decibels: Float)
+
+    private var levelReadings = mutableListOf<LevelReading>()
+    private var pieceStartMS: Long = 0
+    private var utteranceEndHeardAtMS: Long? = null
+
+    fun startPiece(atMS: Long) {
+        pieceStartMS = atMS
+        utteranceEndHeardAtMS = null
+    }
+
+    fun recordLevel(decibels: Float, atMS: Long) {
+        levelReadings.add(LevelReading(atMS, if (decibels.isFinite()) decibels else -160f))
+        val oldestMS = atMS - LEVEL_WINDOW_MS
+        val firstKept = levelReadings.indexOfFirst { reading -> reading.atMS >= oldestMS }
+        if (firstKept > 0) levelReadings = levelReadings.subList(firstKept, levelReadings.size).toMutableList()
+    }
+
+    fun recordUtteranceEnd(atMS: Long) {
+        utteranceEndHeardAtMS = atMS
+    }
+
+    fun cutReason(atMS: Long, isStreamConnected: Boolean): RecordingCutReason? {
+        val pieceMS = atMS - pieceStartMS
+        if (pieceMS >= MAXIMUM_PIECE_MS) return RecordingCutReason.MaximumLength
+        if (pieceMS < MINIMUM_PIECE_MS) return null
+        if (isStreamConnected) {
+            val heardAtMS = utteranceEndHeardAtMS
+            return if (heardAtMS != null && heardAtMS - pieceStartMS >= MINIMUM_PIECE_MS) RecordingCutReason.UtteranceEnd else null
+        }
+        return if (isLevelPaused(atMS)) RecordingCutReason.LevelPause else null
+    }
+
+    private fun isLevelPaused(atMS: Long): Boolean {
+        val windowReadings = levelReadings.filter { reading -> reading.atMS >= atMS - LEVEL_WINDOW_MS && reading.atMS <= atMS }
+        val lowestDecibels = windowReadings.minOfOrNull { reading -> reading.decibels } ?: return false
+        val holdStartMS = atMS - PAUSE_HOLD_MS
+        val holdReadings = windowReadings.filter { reading -> reading.atMS >= holdStartMS }
+        val firstHold = holdReadings.firstOrNull() ?: return false
+        if (firstHold.atMS > holdStartMS + LEVEL_READING_TOLERANCE_MS || holdReadings.size < 2) return false
+        if (atMS - holdReadings.last().atMS > LEVEL_READING_TOLERANCE_MS) return false
+        return holdReadings.all { reading -> reading.decibels <= lowestDecibels + PAUSE_MARGIN_DECIBELS }
+    }
+
+    companion object {
+        const val MINIMUM_PIECE_MS = 20_000L
+        const val MAXIMUM_PIECE_MS = 60_000L
+        const val LEVEL_WINDOW_MS = 10_000L
+        const val PAUSE_HOLD_MS = 250L
+        const val PAUSE_MARGIN_DECIBELS = 6f
+        const val LEVEL_READING_TOLERANCE_MS = 100L
+    }
+}
+
+/** How long the live stream waits to connect again after failing: a second, doubling, never over a minute. */
+object RecordingLiveBackoff {
+    const val LONGEST_DELAY_SECONDS = 60.0
+
+    fun delaySeconds(failureCount: Int): Double = if (failureCount <= 0) 0.0 else minOf(LONGEST_DELAY_SECONDS, (1L shl minOf(failureCount - 1, 10)).toDouble())
+}

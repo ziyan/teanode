@@ -51,6 +51,8 @@ data class RecordingTranscriptSegment(
     val mergedTemporarySpeakerLabel: String? = null,
     val isFiller: Boolean? = null,
 ) {
+    companion object
+
     /** The speaker's name when the person confirmed it or the server recognized the voice; null for a guess. */
     val confirmedSpeakerName: String?
         get() {
