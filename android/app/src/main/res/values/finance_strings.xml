@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="finance_share_choose">Choose a person or a circle</string>
+    <string name="finance_share_with">Share with</string>
+    <string name="finance_share_everyone_in">Everyone in %1$s</string>
+    <string name="finance_share_everyone_in_circle">Everyone in %1$s (%2$s)</string>
+    <plurals name="finance_member_count">
+        <item quantity="one">%d person</item>
+        <item quantity="other">%d people</item>
+    </plurals>
+</resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="finance_share_choose">选择一个人或圈子</string>
+    <string name="finance_share_with">共享给</string>
+    <string name="finance_share_everyone_in">%1$s的所有人</string>
+    <string name="finance_share_everyone_in_circle">%1$s 中的所有人（%2$s）</string>
+    <plurals name="finance_member_count">
+        <item quantity="other">%d 人</item>
+    </plurals>
+</resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="finance_share_choose">人またはサークルを選択</string>
+    <string name="finance_share_with">共有する相手</string>
+    <string name="finance_share_everyone_in">%1$sの全員</string>
+    <string name="finance_share_everyone_in_circle">%1$s のみんな（%2$s）</string>
+    <plurals name="finance_member_count">
+        <item quantity="other">%d 人</item>
+    </plurals>
+</resources>
