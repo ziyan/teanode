@@ -232,4 +232,48 @@ class PasswordsVectorsTest {
             }
         }
     }
+
+    @Test fun `one time codes`() {
+        val sections = vectors.list("oneTimeCodes")
+        assertFalse(sections.isEmpty())
+        for (section in sections) {
+            val uri = section.text("uri")
+            val settings = PasswordsOneTimeCode.parse(uri)
+            val unixSeconds = (section["unixSeconds"] as JsonPrimitive).long
+            assertEquals(section.text("code"), PasswordsOneTimeCode.code(settings, unixSeconds), uri)
+        }
+    }
+
+    @Test fun `passkey`() {
+        val section = vectors.obj("passkey")
+        val privateKey = section.bytes("privateKey")
+        val publicKeyX = section.bytes("publicKeyX")
+        val publicKeyY = section.bytes("publicKeyY")
+        val relyingPartyId = section.text("relyingPartyId")
+        val credentialId = section.bytes("credentialId")
+        val isVerified = (section["isVerified"] as JsonPrimitive).boolean
+
+        val (x, y) = PasswordsPasskey.publicKeyCoordinates(privateKey)
+        assertArrayEquals(publicKeyX, x)
+        assertArrayEquals(publicKeyY, y)
+        // The key is read from Go's PKCS#8, and written back in the same bytes.
+        val scalar = PasswordsPasskey.scalarFromDer(privateKey)!!
+        assertArrayEquals(privateKey, PasswordsPasskey.pkcs8(scalar, byteArrayOf(4) + publicKeyX + publicKeyY))
+
+        assertArrayEquals(section.bytes("cosePublicKey"), PasswordsPasskey.cosePublicKey(publicKeyX, publicKeyY))
+        val registrationData = PasswordsPasskey.registrationAuthenticatorData(relyingPartyId, credentialId, publicKeyX, publicKeyY, isVerified)
+        assertArrayEquals(section.bytes("registrationAuthenticatorData"), registrationData)
+        assertArrayEquals(section.bytes("attestationObject"), PasswordsPasskey.attestationObject(registrationData))
+        val registration = PasswordsPasskey.register(relyingPartyId, isVerified, privateKey, credentialId)
+        assertArrayEquals(registrationData, registration.authenticatorData)
+
+        val assertionData = PasswordsPasskey.assertionAuthenticatorData(relyingPartyId, isVerified)
+        assertArrayEquals(section.bytes("assertionAuthenticatorData"), assertionData)
+        val clientDataHash = section.bytes("clientDataHash")
+
+        // The signature Go made verifies here, and one made here verifies too.
+        assertTrue(PasswordsPasskey.isSignatureValid(section.bytes("signature"), publicKeyX, publicKeyY, assertionData, clientDataHash))
+        val ownSignature = PasswordsPasskey.sign(privateKey, assertionData, clientDataHash)
+        assertTrue(PasswordsPasskey.isSignatureValid(ownSignature, publicKeyX, publicKeyY, assertionData, clientDataHash))
+    }
 }
