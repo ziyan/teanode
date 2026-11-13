@@ -313,6 +313,29 @@ readonly ALLOWED_HOSTS=(
   pressed.info
   selection.pin.in
   arrow.up.forward.app
+
+  # Not hostnames: Kotlin in the Android app that reads as one. The Java and
+  # Android packages it imports (`java.io`, `android.net`), and kotlinx's
+  # `.int` accessor on a JSON value. Listed exactly, as the Swift ones above.
+  java.io
+  java.net
+  javax.net
+  android.net
+  android.app
+  androidx.core.app
+  androidx.test.core.app
+  kotlinx.serialization.json.int
+  primitive.int
+
+  # The Android app's public neighbours: the XML namespace of every Android
+  # resource, where the Gradle wrapper downloads Gradle, the maps links a chat
+  # opens in the maps app, and the package names of browsers autofill trusts,
+  # which are written like host names in reverse.
+  schemas.android.com
+  services.gradle.org
+  maps.google.com
+  com.chrome.dev
+  com.sec.android.app
 )
 
 # Top-level domains worth looking for. Restricted rather than open-ended so a
