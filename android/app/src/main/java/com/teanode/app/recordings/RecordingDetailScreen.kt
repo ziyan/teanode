@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
@@ -58,6 +59,7 @@ import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.app.ui.components.TeaNodeSectionHeader
 import com.teanode.kit.AppSection
+import com.teanode.kit.asReasonSentence
 import com.teanode.kit.photos.PhotoTimeline
 import com.teanode.kit.photos.ServerTime
 import com.teanode.kit.recordings.RecordingConversation
@@ -75,10 +77,16 @@ import com.teanode.kit.recordings.correctRecordingTranscriptText
 import com.teanode.kit.recordings.correctRecordingSpeaker
 import com.teanode.kit.recordings.deleteRecording
 import com.teanode.kit.recordings.recording
+import com.teanode.kit.recordings.nextRunEpochMS
+import com.teanode.kit.recordings.recordingLearning
+import com.teanode.kit.recordings.state
 import com.teanode.kit.recordings.recordingLimits
 import com.teanode.kit.recordings.recordingSpeakers
+import com.teanode.kit.recordings.recordingTranscript
+import com.teanode.kit.recordings.recordingTranscriptPassageOffset
 import com.teanode.kit.recordings.recordingTranscriptTimeline
 import com.teanode.kit.recordings.requestRecordingTranscription
+import com.teanode.kit.recordings.resumeRecordingLearning
 import com.teanode.kit.recordings.retryRecordingTranscription
 import com.teanode.kit.recordings.suggestRecordingSpeakerNames
 import com.teanode.kit.recordings.updateRecordingMetadata
@@ -94,6 +102,7 @@ internal class DetailRead(
     val limits: RecordingLimits?,
     val speakers: RecordingSpeakersView?,
     val timeline: RecordingTranscriptTimeline?,
+    val learning: com.teanode.kit.recordings.RecordingLearningView? = null,
 )
 
 /**
@@ -118,6 +127,7 @@ fun RecordingDetailScreen(recordingId: String, onBack: () -> Unit, link: Recordi
     var isReprocessing by remember { mutableStateOf(false) }
     var isDetailsOpen by remember { mutableStateOf(false) }
     var namingBubble by remember { mutableStateOf<RecordingConversationBubble?>(null) }
+    var memorySegment by remember { mutableStateOf<com.teanode.kit.recordings.RecordingTranscriptSegment?>(null) }
     var correcting by remember { mutableStateOf<com.teanode.kit.recordings.RecordingTranscriptSegment?>(null) }
     var loadedSegments by remember { mutableStateOf<List<com.teanode.kit.recordings.RecordingTranscriptSegment>>(emptyList()) }
     val player = remember(connection) { RecordingPlayerController(context, connection, scope) }
@@ -129,8 +139,19 @@ fun RecordingDetailScreen(recordingId: String, onBack: () -> Unit, link: Recordi
             val limits = runCatching { connection.recordingLimits() }.getOrNull()
             val speakers = runCatching { connection.recordingSpeakers(recordingId) }.getOrNull()
             val timeline = runCatching { connection.recordingTranscriptTimeline(recordingId) }.getOrNull()
-            read = DetailRead(view, limits, speakers, timeline)
+            val learning = runCatching { connection.recordingLearning(recordingId) }.getOrNull()
+            read = DetailRead(view, limits, speakers, timeline, learning)
             loadedSegments = timeline?.segments.orEmpty()
+            // A cited passage that is not on the first page: read the page of that version that holds it.
+            val runId = link?.recordingTranscriptRunId
+            val start = link?.passageStartMS
+            val end = link?.passageEndMS
+            if (runId != null && start != null && end != null && loadedSegments.none { segment -> link.includes(segment) }) {
+                runCatching {
+                    val offset = connection.recordingTranscriptPassageOffset(runId, start, end)
+                    loadedSegments = connection.recordingTranscript(runId, segmentOffset = offset).segments
+                }
+            }
             failure = null
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -156,7 +177,7 @@ fun RecordingDetailScreen(recordingId: String, onBack: () -> Unit, link: Recordi
 
     val current = read
     TeaNodeScreen(
-        title = current?.view?.recording?.recordingTitle?.ifEmpty { null } ?: stringResource(R.string.recordings_details_title), onBack = onBack,
+        title = current?.view?.recording?.recordingTitle?.ifEmpty { null } ?: if (current != null) stringResource(R.string.recordings_untitled) else stringResource(R.string.recordings_details_title), onBack = onBack,
         actions = {
             if (current != null) Box {
                 IconButton(onClick = { isMenuOpen = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.common_more)) }
@@ -172,6 +193,8 @@ fun RecordingDetailScreen(recordingId: String, onBack: () -> Unit, link: Recordi
                         DropdownMenuItem(text = { Text(stringResource(R.string.recordings_retry_transcription)) }, onClick = { isMenuOpen = false; act(R.string.recordings_transcribing_message) { connection.retryRecordingTranscription(run.id) } })
                     }
                     DropdownMenuItem(text = { Text(stringResource(R.string.recordings_share)) }, onClick = { isMenuOpen = false; navigator.navigate(Routes.child(AppSection.Recordings, "share/$recordingId")) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.recordings_speakers_title)) }, onClick = { isMenuOpen = false; navigator.navigate(Routes.child(AppSection.Recordings, "speakers/$recordingId")) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.recordings_edit_history)) }, onClick = { isMenuOpen = false; navigator.navigate(Routes.child(AppSection.Recordings, "edits/$recordingId")) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.recordings_details)) }, onClick = { isMenuOpen = false; isDetailsOpen = true })
                     DropdownMenuItem(text = { Text(stringResource(R.string.recordings_delete), color = MaterialTheme.colorScheme.error) }, onClick = { isMenuOpen = false; isDeleting = true })
                 }
@@ -184,13 +207,13 @@ fun RecordingDetailScreen(recordingId: String, onBack: () -> Unit, link: Recordi
                 current == null -> LoadingState()
                 else -> DetailBody(
                     current, loadedSegments, player, link,
-                    onName = { bubble -> namingBubble = bubble }, onCorrect = { segment -> correcting = segment },
+                    onName = { bubble -> namingBubble = bubble }, onCorrect = { segment -> correcting = segment }, onMemory = { segment -> memorySegment = segment },
                     onLoadMore = {
                         scope.launch {
                             try {
                                 val more = connection.recordingTranscriptTimeline(recordingId, segmentOffset = loadedSegments.size)
                                 loadedSegments = loadedSegments + more.segments
-                                read = DetailRead(current.view, current.limits, current.speakers, more.copy(hasMoreSegments = more.hasMoreSegments, segments = loadedSegments))
+                                read = DetailRead(current.view, current.limits, current.speakers, more.copy(hasMoreSegments = more.hasMoreSegments, segments = loadedSegments), current.learning)
                             } catch (error: CancellationException) { throw error } catch (error: Throwable) { snackbar.showError(error) }
                         }
                     },
@@ -231,8 +254,14 @@ fun RecordingDetailScreen(recordingId: String, onBack: () -> Unit, link: Recordi
         )
     }
     if (isDetailsOpen && current != null) {
-        ModalBottomSheet(onDismissRequest = { isDetailsOpen = false }) { RecordingDetailsSheet(current.view) }
+        ModalBottomSheet(onDismissRequest = { isDetailsOpen = false }) {
+            RecordingDetailsSheet(
+                current.view, current.learning, onResumeLearning = { act(null) { current.learning?.let { learning -> connection.resumeRecordingLearning(recordingId, learning.sourceGeneration) } } },
+                onOpenKnowledge = { isDetailsOpen = false; navigator.openSection(AppSection.Knowledge) },
+            )
+        }
     }
+    memorySegment?.let { segment -> PassageMemorySheet(recordingId, segment, onDismiss = { memorySegment = null }, onOpen = { memorySegment = null; navigator.openSection(AppSection.Knowledge) }) }
     namingBubble?.let { bubble ->
         NameSpeakerSheet(
             bubble, recordingId, current?.view?.recording?.sourceGeneration ?: 0,
@@ -259,6 +288,7 @@ private fun DetailBody(
     link: RecordingLink?,
     onName: (RecordingConversationBubble) -> Unit,
     onCorrect: (com.teanode.kit.recordings.RecordingTranscriptSegment) -> Unit,
+    onMemory: (com.teanode.kit.recordings.RecordingTranscriptSegment) -> Unit,
     onLoadMore: () -> Unit,
 ) {
     val recording = read.view.recording
@@ -268,10 +298,13 @@ private fun DetailBody(
     val playableFiles = read.view.mediaFiles.filter { media -> media.recordingUploadState == "complete" }
     val bubbles = RecordingConversation.bubbles(segments, read.timeline?.liveUtterances.orEmpty())
     val unnamedCount = bubbles.count { bubble -> bubble.confirmedSpeakerName == null && !bubble.isLive }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 32.dp)) {
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // A cited passage is scrolled to: the header, the player and the transcript heading come before the bubbles.
+    val highlightedIndex = if (link?.passageStartMS != null) bubbles.indexOfFirst { bubble -> link.includes(bubble.segments.first()) } else -1
+    LaunchedEffect(highlightedIndex, bubbles.size) { if (highlightedIndex >= 0) listState.scrollToItem(highlightedIndex + 2 + if (playableFiles.isNotEmpty()) 1 else 0) }
+    LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 32.dp)) {
         item {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(recording.recordingTitle.ifEmpty { stringResource(R.string.recordings_untitled) }, style = MaterialTheme.typography.headlineSmall)
                 val whenText = (ServerTime.instant(recording.recordedAt) ?: ServerTime.instant(recording.createdAt))?.let { instant ->
                     java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM, java.time.format.FormatStyle.SHORT).format(instant.atZone(java.time.ZoneId.systemDefault()))
                 }
@@ -293,7 +326,7 @@ private fun DetailBody(
             }
         }
         items(bubbles, key = { bubble -> bubble.id }) { bubble ->
-            Bubble(bubble, onPlay = { player.playFrom(playableFiles, bubble.startMS) }, onName = { onName(bubble) }, onCorrect = { onCorrect(bubble.segments.first()) }, isHighlighted = link?.includes(bubble.segments.first()) == true && link.passageStartMS != null)
+            Bubble(bubble, onPlay = { player.playFrom(playableFiles, bubble.startMS) }, onName = { onName(bubble) }, onCorrect = { onCorrect(bubble.segments.first()) }, onMemory = { onMemory(bubble.segments.first()) }, isHighlighted = link?.includes(bubble.segments.first()) == true && link.passageStartMS != null)
         }
         if (read.timeline?.hasMoreSegments == true) item {
             TextButton(onClick = onLoadMore, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.recordings_load_more)) }
@@ -339,6 +372,7 @@ private fun Bubble(
     onPlay: () -> Unit,
     onName: () -> Unit,
     onCorrect: () -> Unit,
+    onMemory: () -> Unit,
     isHighlighted: Boolean,
 ) {
     var isMenuOpen by remember { mutableStateOf(false) }
@@ -365,6 +399,7 @@ private fun Bubble(
                 DropdownMenuItem(text = { Text(stringResource(R.string.recordings_play_from_here)) }, onClick = { isMenuOpen = false; onPlay() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.recordings_name_speaker)) }, onClick = { isMenuOpen = false; onName() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.recordings_correct_text)) }, onClick = { isMenuOpen = false; onCorrect() })
+                DropdownMenuItem(text = { Text(stringResource(R.string.recordings_in_memory)) }, onClick = { isMenuOpen = false; onMemory() })
             }
             val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
             DropdownMenuItem(text = { Text(stringResource(R.string.recordings_copy)) }, onClick = { isMenuOpen = false; clipboard.setText(androidx.compose.ui.text.AnnotatedString(bubble.bubbleText)) })
@@ -459,8 +494,13 @@ private fun NameSpeakerSheet(bubble: RecordingConversationBubble, recordingId: S
 }
 
 @Composable
-internal fun RecordingDetailsSheet(view: RecordingView) {
-    Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+internal fun RecordingDetailsSheet(
+    view: RecordingView,
+    learning: com.teanode.kit.recordings.RecordingLearningView? = null,
+    onResumeLearning: () -> Unit = {},
+    onOpenKnowledge: () -> Unit = {},
+) {
+    Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(stringResource(R.string.recordings_details), style = MaterialTheme.typography.titleLarge)
         if (view.recording.captureGaps.isNotEmpty()) {
             Text(stringResource(R.string.recordings_capture_gaps), style = MaterialTheme.typography.titleSmall)
@@ -476,5 +516,43 @@ internal fun RecordingDetailsSheet(view: RecordingView) {
             Text(stringResource(R.string.recordings_transcription_details), style = MaterialTheme.typography.titleSmall)
             for (run in runs) Text(stringResource(R.string.recordings_run_line, run.versionNumber, run.recordingProcessingState, run.providerModelName))
         }
+        if (learning != null) {
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            LearningCard(learning, onResumeLearning, onOpenKnowledge)
+        }
     }
+}
+
+/** The Learning card: whether the agent reads this recording's transcript into its knowledge, and how far it has come. */
+@Composable
+internal fun LearningCard(learning: com.teanode.kit.recordings.RecordingLearningView, onResume: () -> Unit, onOpenKnowledge: () -> Unit) {
+    val context = LocalContext.current
+    Text(stringResource(R.string.recordings_learning), style = MaterialTheme.typography.titleSmall)
+    when (learning.state) {
+        com.teanode.kit.recordings.RecordingLearningState.StoppedReading -> {
+            Text(stringResource(R.string.recordings_learning_stopped), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = onResume) { Text(stringResource(R.string.recordings_learning_resume)) }
+            Text(stringResource(R.string.recordings_learning_stopped_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        com.teanode.kit.recordings.RecordingLearningState.NoAgent -> Text(stringResource(R.string.recordings_learning_no_agent), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        com.teanode.kit.recordings.RecordingLearningState.WaitingForTranscript -> Text(stringResource(R.string.recordings_learning_waiting), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        com.teanode.kit.recordings.RecordingLearningState.Reading -> {
+            val source = learning.knowledgeSource!!
+            LearningLine(stringResource(R.string.recordings_learning_pending), learning.pendingDocumentCount.toString())
+            LearningLine(stringResource(R.string.recordings_learning_digested), learning.digestedDocumentCount.toString())
+            ServerTime.instant(source.lastRunAt)?.let { instant -> LearningLine(stringResource(R.string.recordings_learning_last_pass), java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM).format(instant.atZone(java.time.ZoneId.systemDefault()))) }
+            val next = source.nextRunEpochMS
+            if (next != null) LearningLine(stringResource(R.string.recordings_learning_next_pass), com.teanode.app.ui.components.RelativeTime.text(context, next))
+            else if (source.cron.isEmpty()) Text(stringResource(R.string.recordings_learning_only_when_asked), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (source.lastError.isNotEmpty()) Text(source.lastError.asReasonSentence(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = onOpenKnowledge) { Text(stringResource(R.string.recordings_learning_knowledge_source)) }
+        }
+    }
+    if (learning.isCurationPending) Text(stringResource(R.string.recordings_learning_curation), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(stringResource(R.string.recordings_learning_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun LearningLine(label: String, text: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(text) }
 }

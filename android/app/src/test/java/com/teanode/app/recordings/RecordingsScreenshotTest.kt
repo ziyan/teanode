@@ -97,4 +97,55 @@ class RecordingsScreenshotTest {
     @Test fun `shared transcript light`() = shoot("recordings-shared-transcript-light") { SharedRecordingScreen("sr1", onBack = {}) }
 
     @Test fun `shared summary only dark`() = shoot("recordings-shared-summary-dark", AppearanceChoice.Dark) { SharedRecordingScreen("sr2", onBack = {}) }
+
+    @Test fun `capture live words light`() = shoot("recordings-capture-live-light") {
+        RecordingCaptureScreen(
+            onBack = {},
+            previewState = RecordingCaptureState(
+                "l", isRecording = true, elapsedMS = 95_000, isLiveConnected = true, levelBars = List(48) { index -> if (index < 10) 0.0 else 0.3 + (index % 5) * 0.1 },
+                liveUtterances = listOf(
+                    com.teanode.kit.recordings.RecordingLiveUtterance("u1", 60_000, 64_000, "We should move the launch by a week."),
+                    com.teanode.kit.recordings.RecordingLiveUtterance("partial", 70_000, 70_000, "and test the checkout with"),
+                ),
+            ),
+        )
+    }
+
+    @Test fun `capture interrupted dark`() = shoot("recordings-capture-interrupted-dark", AppearanceChoice.Dark) {
+        RecordingCaptureScreen(onBack = {}, previewState = RecordingCaptureState("l", isRecording = true, isPaused = true, isInterrupted = true, elapsedMS = 95_000))
+    }
+
+    @Test fun `details sheet with learning light`() = shoot("recordings-details-learning-light") {
+        val view = TeaNodeJson.decodeFromString(RecordingView.serializer(), """{"recording":{"id":"r1","createdAt":"2026-11-10T15:00:00Z","updatedAt":"2026-11-10T15:00:00Z","clientRecordingId":"c","recordingTitle":"Weekly planning","recordingOrigin":"capture","recordingCaptureState":"stopped","timelineDurationMS":1412000}}""")
+        val learning = TeaNodeJson.decodeFromString(
+            com.teanode.kit.recordings.RecordingLearningView.serializer(),
+            """{"sourceGeneration":4,"hasAgent":true,"knowledgeSource":{"id":"s","cron":"0 * * * *","nextRunAt":"2026-11-13T12:00:00Z","lastRunAt":"2026-11-13T11:00:00Z"},"pendingDocumentCount":2,"digestedDocumentCount":14,"isCurationPending":true}""",
+        )
+        Surface(Modifier.fillMaxSize()) { RecordingDetailsSheet(view, learning) }
+    }
+
+    @Test fun `details sheet learning stopped dark`() = shoot("recordings-details-learning-stopped-dark", AppearanceChoice.Dark) {
+        val view = TeaNodeJson.decodeFromString(RecordingView.serializer(), """{"recording":{"id":"r1","createdAt":"2026-11-10T15:00:00Z","updatedAt":"2026-11-10T15:00:00Z","clientRecordingId":"c","recordingTitle":"Weekly planning","recordingOrigin":"capture","recordingCaptureState":"stopped","timelineDurationMS":1412000}}""")
+        Surface(Modifier.fillMaxSize()) { RecordingDetailsSheet(view, com.teanode.kit.recordings.RecordingLearningView(hasAgent = true, hasStoppedReading = true)) }
+    }
+
+    @Test fun `memory pages light`() = shoot("recordings-memory-light") {
+        Surface(Modifier.fillMaxSize()) {
+            PassageMemoryBody(
+                listOf(com.teanode.kit.recordings.RecordingMemoryLink("l1", "people/alex", "Alex Example", "person", "confirmed"), com.teanode.kit.recordings.RecordingMemoryLink("l2", "projects/launch", "Launch plan", "project", "proposed")), onOpen = {},
+            )
+        }
+    }
+
+    @Test fun `memory none dark`() = shoot("recordings-memory-none-dark", AppearanceChoice.Dark) { Surface(Modifier.fillMaxSize()) { PassageMemoryBody(emptyList(), onOpen = {}) } }
+
+    @Test fun `speakers light`() = shoot("recordings-speakers-light") { RecordingSpeakersScreen("r1", onBack = {}) }
+
+    @Test fun `speakers largest text`() = shoot("recordings-speakers-largest-text", fontScale = 2f) { RecordingSpeakersScreen("r1", onBack = {}) }
+
+    @Test fun `edit history dark`() = shoot("recordings-edit-history-dark", AppearanceChoice.Dark) { RecordingEditHistoryScreen("r1", onBack = {}) }
+
+    @Test fun `import attachment light`() = shoot("recordings-import-attachment-light") {
+        RecordingAttachmentImportScreen(com.teanode.kit.recordings.RecordingAttachment("att1", "Team call.m4a", "audio/mp4", 4_200_000), onBack = {}, onOpenRecording = {})
+    }
 }

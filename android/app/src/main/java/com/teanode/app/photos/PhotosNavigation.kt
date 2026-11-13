@@ -31,8 +31,9 @@ fun NavGraphBuilder.photosRoutes(navigator: AppNavigator) {
     }
     val backupRoute = Routes.child(AppSection.Photos, "backup")
     composable(backupRoute, deepLinks = Routes.deepLinks(backupRoute)) {
-        PhotoBackupScreen(onBack = { navigator.back() })
+        PhotoBackupScreen(onBack = { navigator.back() }, onOpenFiles = { navigator.navigate(Routes.child(AppSection.Photos, "backup/files")) })
     }
+    composable(Routes.child(AppSection.Photos, "backup/files")) { PhotoBackupFilesScreen(onBack = { navigator.back() }) }
 }
 
 /** What Photos plugs into the shell; listed in `Areas`. */
