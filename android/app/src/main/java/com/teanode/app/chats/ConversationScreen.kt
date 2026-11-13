@@ -292,6 +292,7 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
             onBack = onBack,
             actions = {
                 if (model.isChat) {
+                    ConversationCallButton(model)
                     Box {
                         IconButton(onClick = { isMenuOpen = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.chats_chat_options)) }
                         DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
@@ -326,6 +327,7 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
             },
         ) { contentPadding ->
             Column(Modifier.padding(contentPadding).fillMaxSize().imePadding()) {
+                if (model.isChat) ConversationCallBanner(model)
                 ConversationBanners(model, reader, onBackToMain = { navigator.navigate(Routes.child(AppSection.Agent, "main")) }, onOpenGoal = { isShowingGoal = true })
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     if (!model.isLoaded) {
@@ -486,7 +488,7 @@ private fun ConversationItemView(
             val previousLine = (previous as? ConversationItem.Line)?.line
             val holdable = Modifier.pointerInput(line.id) { detectTapGestures(onLongPress = { onLongPress(line) }) }
             when {
-                line.kind == TranscriptLine.Kind.Person && line.isCallLine -> ChatCallLine(line)
+                line.kind == TranscriptLine.Kind.Person && line.isCallLine -> ConversationCallLine(line, model)
                 line.kind == TranscriptLine.Kind.Person -> {
                     val author = line.author
                     if (author != null) {
@@ -534,18 +536,6 @@ private fun ConversationItemView(
             }
         }
     }
-}
-
-/** The line of a call in a chat: drawn from the call and not as words. The calls part of the app draws the full card. */
-@Composable
-fun ChatCallLine(line: TranscriptLine) {
-    val call = line.chatCall
-    val words = when {
-        call == null -> stringResource(R.string.chats_call)
-        call.isGoing -> stringResource(R.string.chats_call_going, call.onCount)
-        else -> stringResource(R.string.chats_call_ended)
-    }
-    Banner(Icons.Outlined.People, words)
 }
 
 private fun dayText(startMS: Long, today: String, yesterday: String): String {

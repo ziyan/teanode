@@ -67,3 +67,21 @@ The iPhone scope of this area, item by item, with the Android port. Status: `don
 | Widgets: Your agent (ask, call, record), Waiting for you, Up next | TeaNodeWidgets | `widgets/` (Glance) | done (not verified on a launcher) |
 | Control Center controls, Dynamic Island | TeaNodeWidgets | not ported: iOS only; the widgets and shortcuts cover the same actions | not ported (iOS only; the widgets and the icon menu cover the same actions) |
 | TurnSideways UI test helper | TeaNodeTurn | not ported: iOS screenshot CI helper | not ported (the iOS screenshot CI helper) |
+
+
+## Where the other parts hook in
+
+- Chats: the call button, the banner and the line of a call are placed in `ConversationScreen` through `chats/ConversationCalls.kt`
+  (a small, additive edit of `ConversationScreen.kt`; the placeholder `ChatCallLine` was removed).
+- Chats, still to wire: `OpeningRequests.isCallRequested` (the icon menu and the widget ask for a call with the agent; the chats part starts
+  `AgentVoiceCall` and hands it to `CallCenter.beginAgentVoice`), `TurnNotification.show/end` from the conversation's feed, and the notification
+  reply surface (`ios` is used as the typed surface, as the chats part does).
+- Every part that a notification opens reads the detail (a conversation, a person, a store or list, a session, a day) from
+  `NotificationOpening.destination` and calls `consume()`; the shell goes to the part by itself.
+- Settings: `PushSystem.registrar` (`wants`, `setNotificationKind`, `phonesByAccount`) is the phone's notification kinds, and
+  `PushSystem.appUpdates.update` is the update Settings keeps offering.
+- Shared edits: `AppShell` (the calls' routes, the update card over the chats, a pressed notification's part), `AppRoot` (the call presenter and
+  the push effects), `DemoServer` (the calls' answers), `TeaNodeApplication` (the push system, notification channels), `MainActivity`
+  (what a pressed notification, the icon menu and the widgets send), `AndroidManifest.xml`, `libs.versions.toml` and `app/build.gradle.kts`.
+- Demo mode: a debug build opened with `--ez com.teanode.app.extra.DEMO true --es com.teanode.app.extra.ROUTE calls/demo/<name>` shows `screen`,
+  `featured`, `chosen`, `ringing`, `reconnecting`, `incoming`, `bar`, `banner`, `lines`, `who` or `transcript`.
