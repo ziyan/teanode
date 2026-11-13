@@ -121,3 +121,28 @@ class PhotoBackupTest {
         assertNull(PhotoBackupRequest.creation(server, credential, upload, 1000, "xyz").header(PhotoBackupHeader.DECLARED_SHA256))
     }
 }
+
+class PhotoBackupRefusalsTest {
+    private fun records() = mutableMapOf(
+        "a" to PhotoBackupRecord("local:a", mutableMapOf("original" to PhotoBackupRoleRecord(refusalCount = 3, refusalReason = "too big", originalFilename = "a.jpg"))),
+        "b" to PhotoBackupRecord("local:b", mutableMapOf("original" to PhotoBackupRoleRecord(refusalCount = 1, originalFilename = "b.jpg"), "edited" to PhotoBackupRoleRecord(skippedAtEpochMS = 5, originalFilename = "b.jpg"))),
+    )
+
+    @Test
+    fun onlyFilesRefusedAsOftenAsTheBackupTriesNeedAnAnswer() {
+        assertEquals(listOf("a|original"), PhotoBackupRefusals.refused(records()).map { file -> file.id })
+        assertEquals(listOf("b|edited"), PhotoBackupRefusals.skipped(records()).map { file -> file.id })
+    }
+
+    @Test
+    fun tryingAgainForgetsTheRefusalsAndSkippingStopsTheFile() {
+        val all = records()
+        PhotoBackupRefusals.tryAgain(all, "a", PhotoBackupFileRole.Original)
+        assertTrue(PhotoBackupRefusals.refused(all).isEmpty())
+        assertEquals(1, PhotoBackupPlanner.plan(listOf(PhotoBackupItem("a", resources = listOf(PhotoBackupResource(PhotoBackupFileRole.Original, "a.jpg", "image/jpeg", true)))), all).size)
+        PhotoBackupRefusals.skip(all, "a", PhotoBackupFileRole.Original, 9)
+        assertEquals(setOf("a|original", "b|edited"), PhotoBackupRefusals.skipped(all).map { file -> file.id }.toSet())
+        PhotoBackupRefusals.tryAgain(all, "b", PhotoBackupFileRole.Edited)
+        assertFalse(PhotoBackupRefusals.skipped(all).any { file -> file.id == "b|edited" })
+    }
+}

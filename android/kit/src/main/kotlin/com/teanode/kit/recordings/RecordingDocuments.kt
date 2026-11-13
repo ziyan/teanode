@@ -287,4 +287,14 @@ RemoveRecordingTranscriptTextCorrection(recordingId: ${'$'}recordingId, recordin
 ${'$'}recordingTranscriptTextCorrectionId, expectedSourceGeneration: ${'$'}expectedSourceGeneration) }
 """.trimEnd()
 
+    val RECORD_LINK_FIELDS = """
+id nodePath nodeName nodeKind recordKind recordId recordRelation linkStatus passageStartMS passageEndMS transcriptRunId passageCount note happenedAt createdAt recordTitle recordHappenedAt dashboardPath isUnavailable
+""".trimEnd()
+
+    val READ_RECORD_MEMORY_LINKS = """
+query (${'$'}recordKind: String!, ${'$'}recordId: String!, ${'$'}passageStartMS: Int64, ${'$'}passageEndMS: Int64) {
+  ReadRecordMemoryLinks(recordKind: ${'$'}recordKind, recordId: ${'$'}recordId, passageStartMS: ${'$'}passageStartMS, passageEndMS: ${'$'}passageEndMS) { ${RECORD_LINK_FIELDS} }
+}
+""".trimEnd()
+
 }

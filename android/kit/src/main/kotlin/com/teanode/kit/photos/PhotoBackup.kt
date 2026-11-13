@@ -64,6 +64,8 @@ data class PhotoBackupItem(
     val isScreenshot: Boolean = false,
     val mediaKind: PhotoBackupMediaKind = PhotoBackupMediaKind.Picture,
     val resources: List<PhotoBackupResource>,
+    /** Whether the item is in a folder the person keeps out of sight (a folder named Hidden, or one starting with a dot). */
+    val isInHiddenFolder: Boolean = false,
 )
 
 /** What the server answers when asked which of these client ids it already has. */
@@ -122,6 +124,7 @@ data class PhotoBackupRoleRecord(
     var assetModificationEpochMS: Long? = null,
     var refusalCount: Int = 0,
     var refusalReason: String? = null,
+    var originalFilename: String = "",
     var skippedAtEpochMS: Long? = null,
 )
 
@@ -425,4 +428,44 @@ suspend fun Connection.findPhotos(clientPhotoIds: List<String>): List<PhotoBacku
 suspend fun Connection.createPhotoBackupCredential(credentialName: String): PhotoBackupCredential {
     val created = execute<CreateCredentialAnswer>(PhotoDocuments.CREATE_PHOTO_BACKUP_CREDENTIAL, mapOf("credentialName" to JsonPrimitive(credentialName))).CreateSyncCredential
     return PhotoBackupCredential(created.credential.id, created.credential.credentialName, created.username, created.password)
+}
+
+/** One file the backup gave up on (the server refused it too often) or the person chose to skip. */
+data class PhotoBackupRefusedFile(
+    val localIdentifier: String,
+    val clientPhotoId: String,
+    val role: PhotoBackupFileRole,
+    val filename: String,
+    val refusalReason: String?,
+    val refusalCount: Int,
+    val skippedAtEpochMS: Long?,
+) {
+    val id: String get() = PhotoBackupUpload.key(localIdentifier, role)
+    val isSkipped: Boolean get() = skippedAtEpochMS != null
+}
+
+/** The files the backup left alone, and what the person can do about each: try it again, or skip it for good. */
+object PhotoBackupRefusals {
+    private fun entries(records: Map<String, PhotoBackupRecord>): List<PhotoBackupRefusedFile> = records.flatMap { (localIdentifier, record) ->
+        record.roles.mapNotNull { (roleName, state) ->
+            val role = PhotoBackupFileRole.entries.firstOrNull { candidate -> candidate.serverName == roleName } ?: return@mapNotNull null
+            PhotoBackupRefusedFile(localIdentifier, record.clientPhotoId, role, state.originalFilename.ifEmpty { localIdentifier }, state.refusalReason, state.refusalCount, state.skippedAtEpochMS)
+        }
+    }
+
+    /** Files refused as often as the backup tries, not skipped by the person: they need an answer. */
+    fun refused(records: Map<String, PhotoBackupRecord>): List<PhotoBackupRefusedFile> =
+        entries(records).filter { file -> !file.isSkipped && file.refusalCount >= PhotoBackupPlanner.MAXIMUM_REFUSAL_COUNT }.sortedBy { file -> file.filename }
+
+    fun skipped(records: Map<String, PhotoBackupRecord>): List<PhotoBackupRefusedFile> =
+        entries(records).filter { file -> file.isSkipped }.sortedBy { file -> file.filename }
+
+    /** Forgets the refusals and the skip of one file, so the next pass sends it again. */
+    fun tryAgain(records: MutableMap<String, PhotoBackupRecord>, localIdentifier: String, role: PhotoBackupFileRole) {
+        records[localIdentifier]?.roles?.get(role.serverName)?.let { state -> state.refusalCount = 0; state.refusalReason = null; state.skippedAtEpochMS = null }
+    }
+
+    fun skip(records: MutableMap<String, PhotoBackupRecord>, localIdentifier: String, role: PhotoBackupFileRole, nowEpochMS: Long) {
+        records[localIdentifier]?.roles?.get(role.serverName)?.let { state -> state.skippedAtEpochMS = nowEpochMS }
+    }
 }

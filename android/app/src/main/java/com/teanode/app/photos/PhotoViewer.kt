@@ -118,7 +118,7 @@ fun PhotoViewer(
 
     fun fail(failure: Throwable) {
         if (failure is CancellationException) throw failure
-        snackbar.showError(failure)
+        if (failure is com.teanode.kit.photos.PhotoError) snackbar.showProblem(photoErrorWords(context, failure)) else snackbar.showError(failure)
     }
 
     fun act(message: Int?, work: suspend () -> Unit) {

@@ -8,6 +8,7 @@ import com.teanode.app.shell.AppNavigator
 import com.teanode.app.shell.Area
 import com.teanode.app.shell.Routes
 import com.teanode.kit.AppSection
+import com.teanode.kit.recordings.RecordingAttachment
 import com.teanode.kit.recordings.RecordingLink
 
 /**
@@ -38,6 +39,27 @@ fun NavGraphBuilder.recordingsRoutes(navigator: AppNavigator) {
     composable(captureRoute, deepLinks = Routes.deepLinks(captureRoute)) { RecordingCaptureScreen(onBack = { navigator.back() }) }
     composable(Routes.child(AppSection.Recordings, "share/{recordingId}"), arguments = idArgument) { entry ->
         RecordingShareScreen(entry.arguments?.getString("recordingId").orEmpty(), onBack = { navigator.back() })
+    }
+    composable(Routes.child(AppSection.Recordings, "speakers/{recordingId}"), arguments = idArgument) { entry ->
+        RecordingSpeakersScreen(entry.arguments?.getString("recordingId").orEmpty(), onBack = { navigator.back() })
+    }
+    composable(Routes.child(AppSection.Recordings, "edits/{recordingId}"), arguments = idArgument) { entry ->
+        RecordingEditHistoryScreen(entry.arguments?.getString("recordingId").orEmpty(), onBack = { navigator.back() })
+    }
+    // Opened from a chat's audio or video attachment: recordings/import/<attachmentId>?name=..&type=..&size=..
+    val importRoute = Routes.child(AppSection.Recordings, "import/{attachmentId}?name={name}&type={type}&size={size}")
+    composable(
+        importRoute,
+        arguments = listOf(
+            navArgument("attachmentId") { type = NavType.StringType }, navArgument("name") { type = NavType.StringType; defaultValue = "recording" },
+            navArgument("type") { type = NavType.StringType; defaultValue = "audio/mp4" }, navArgument("size") { type = NavType.LongType; defaultValue = 0L },
+        ),
+        deepLinks = Routes.deepLinks(importRoute),
+    ) { entry ->
+        val attachment = RecordingAttachment(
+            entry.arguments?.getString("attachmentId").orEmpty(), entry.arguments?.getString("name").orEmpty(), entry.arguments?.getString("type").orEmpty(), entry.arguments?.getLong("size") ?: 0,
+        )
+        RecordingAttachmentImportScreen(attachment, onBack = { navigator.back() }, onOpenRecording = { recordingId -> navigator.navigate(Routes.child(AppSection.Recordings, "detail/$recordingId")) })
     }
     composable(Routes.child(AppSection.Recordings, "shared")) { SharedRecordingsScreen(onBack = { navigator.back() }) }
     composable(Routes.child(AppSection.Recordings, "shared/{recordingId}"), arguments = idArgument) { entry ->
