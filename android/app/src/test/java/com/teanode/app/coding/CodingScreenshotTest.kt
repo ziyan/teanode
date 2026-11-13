@@ -109,3 +109,29 @@ class CodingScreenshotTest {
 
     @Test fun `open dark`() { draw(Look.Dark) { CodingOpenScreen({}, { _, _ -> }) }; composeRule.photograph("coding-open-dark") }
 }
+
+private class DemoDevicePassword(override val passwordCreatedAt: String?, override val passwordLastUsedAt: String?) : com.teanode.kit.passwords.DevicePassword
+
+/** The row the Settings part draws its sync and mail password lists with. */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [34], qualifiers = PHONE_QUALIFIERS)
+class DevicePasswordRowScreenshotTest {
+    @get:Rule
+    val composeRule = createComposeRule()
+
+    @Test fun `device password rows`() {
+        val now = java.time.Instant.parse("2030-06-01T12:00:00Z").toEpochMilli()
+        composeRule.setContent {
+            DemoHost(appearance = Look.Light.appearance) {
+                androidx.compose.foundation.layout.Column {
+                    com.teanode.app.passwords.DevicePasswordRow("Phone", DemoDevicePassword("2030-06-01T11:30:00Z", null), nowEpochMS = now)
+                    com.teanode.app.passwords.DevicePasswordRow("Old laptop", DemoDevicePassword("2029-01-01T00:00:00Z", "2030-01-01T00:00:00Z"), scopes = "Calendar and contacts", nowEpochMS = now)
+                    com.teanode.app.passwords.DevicePasswordRow("Tablet", DemoDevicePassword("2030-05-20T08:00:00Z", "2030-05-31T08:00:00Z"), nowEpochMS = now)
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.photograph("coding-device-password-rows-light")
+    }
+}

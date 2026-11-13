@@ -96,10 +96,6 @@
     <string name="coding_preview_shown_heading">セッションに見せる内容</string>
     <string name="coding_preview_nothing">何もありません。エージェントはそのディレクトリを含むチェックアウトを知らないか、質問がそのプロジェクトから何も思い出しません。</string>
     <string name="coding_close">閉じる</string>
-    <string name="coding_device_password_may_delete">削除しても問題ない可能性があります</string>
-    <string name="coding_device_password_created">作成 %1$s</string>
-    <string name="coding_device_password_last_used">最終使用：%1$s</string>
-    <string name="coding_device_password_never_used">未使用</string>
     <plurals name="coding_agents_count">
         <item quantity="one">%1$d 件のエージェント</item>
         <item quantity="other">%1$d 件のエージェント</item>

@@ -34,7 +34,6 @@ import com.teanode.kit.passwords.PasswordsOpenedVersions
 import com.teanode.kit.passwords.PasswordsSession
 import com.teanode.kit.passwords.PasswordsSharingCheck
 import com.teanode.kit.passwords.folders
-import java.io.File
 import java.util.WeakHashMap
 import kotlinx.coroutines.CancellationException
 
@@ -587,7 +586,9 @@ class PasswordsModel(
                             PasswordsDemoStore.iterationCount, demoStart,
                         )
                     } else {
-                        val directory = File(context.applicationContext.filesDir, "passwords/" + android.net.Uri.encode(connection.accountKey))
+                        val directory = PasswordsAutofillPointer.directory(context.applicationContext, connection.accountKey)
+                        // The autofill service, in this same process, reads the copy of the sign-in in use.
+                        PasswordsAutofillPointer.write(context.applicationContext, connection.accountKey)
                         PasswordsModel(
                             connection, context.applicationContext, false, AndroidPasswordsKeyStore(context.applicationContext, connection.accountKey),
                             FilePasswordsStorage(directory), PasswordsCrypto.PASSPHRASE_ITERATION_COUNT,
