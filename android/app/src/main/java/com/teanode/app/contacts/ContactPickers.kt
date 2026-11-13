@@ -3,19 +3,17 @@ package com.teanode.app.contacts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,6 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.ui.components.AvatarView
+import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.kit.asReasonSentence
 import com.teanode.kit.contacts.ContactAccount
 import com.teanode.kit.contacts.ContactAccountSuggestion
@@ -43,7 +42,7 @@ import kotlinx.coroutines.launch
 
 /** Chooses which account in the person's circles a contact is, from the people they share a circle with. Only the person sees the choice. */
 @Composable
-fun ContactAccountPickerDialog(model: ContactsModel, contact: ContactDetail, onDismiss: () -> Unit, onLinked: () -> Unit) {
+fun ContactAccountPickerScreen(model: ContactsModel, contact: ContactDetail, onBack: () -> Unit, onLinked: () -> Unit) {
     val scope = rememberCoroutineScope()
     var people by remember { mutableStateOf(emptyList<ContactAccount>()) }
     var hasReadPeople by remember { mutableStateOf(false) }
@@ -70,38 +69,35 @@ fun ContactAccountPickerDialog(model: ContactsModel, contact: ContactDetail, onD
     }
     val words = searchText.trim()
     val shown = people.filter { person -> !takenAccountIds.contains(person.userId) }.filter { person -> words.isEmpty() || person.displayName.contains(words, ignoreCase = true) || person.username.contains(words, ignoreCase = true) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.contacts_is_in_your_circles_as)) },
-        text = {
-            Column {
-                failureText?.let { text -> Text(text, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp)) }
-                Text(stringResource(R.string.contacts_choose_who_is, contact.name.orEmpty()), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(searchText, { typed -> searchText = typed }, Modifier.fillMaxWidth().padding(vertical = 8.dp), singleLine = true, placeholder = { Text(stringResource(R.string.contacts_search_people)) })
-                if (hasReadPeople && people.isEmpty()) Text(stringResource(R.string.contacts_no_shared_circle), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                LazyColumn(Modifier.heightIn(max = 320.dp)) {
-                    items(shown, key = { person -> person.userId }) { person ->
-                        Row(Modifier.fillMaxWidth().clickable(enabled = !isLinking) {
-                            isLinking = true
-                            scope.launch {
-                                if (model.link(contact.id, person, contact.name.orEmpty(), isQuiet = true)) onLinked() else failureText = noLinkText
-                                isLinking = false
-                            }
-                        }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            AvatarView(person.displayName, person.avatarUrl, person.avatarColorIndex, size = 36.dp)
-                            Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                                Text(person.displayName)
-                                if (person.displayName != person.username) Text(person.username, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            if (person.userId == contact.accountUserId) Icon(Icons.Outlined.Check, stringResource(R.string.contacts_current_choice), tint = MaterialTheme.colorScheme.primary)
+    TeaNodeScreen(title = stringResource(R.string.contacts_is_in_your_circles_as), onBack = onBack) { contentPadding ->
+        LazyColumn(Modifier.padding(contentPadding).fillMaxSize()) {
+            failureText?.let { text -> item { Text(text, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) } }
+            item {
+                OutlinedTextField(searchText, { typed -> searchText = typed }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), singleLine = true, placeholder = { Text(stringResource(R.string.contacts_search_people)) })
+            }
+            items(shown, key = { person -> person.userId }) { person ->
+                Row(
+                    Modifier.fillMaxWidth().clickable(enabled = !isLinking) {
+                        isLinking = true
+                        scope.launch {
+                            if (model.link(contact.id, person, contact.name.orEmpty(), isQuiet = true)) onLinked() else failureText = noLinkText
+                            isLinking = false
                         }
+                    }.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AvatarView(person.displayName, person.avatarUrl, person.avatarColorIndex, size = 36.dp)
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(person.displayName)
+                        if (person.displayName != person.username) Text(person.username, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    if (person.userId == contact.accountUserId) Icon(Icons.Outlined.Check, stringResource(R.string.contacts_current_choice), tint = MaterialTheme.colorScheme.primary)
                 }
             }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
-    )
+            if (hasReadPeople && people.isEmpty()) item { Text(stringResource(R.string.contacts_no_shared_circle), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item { Text(stringResource(R.string.contacts_choose_who_is, contact.name.orEmpty()), Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    }
 }
 
 /**
@@ -109,7 +105,7 @@ fun ContactAccountPickerDialog(model: ContactsModel, contact: ContactDetail, onD
  * from the contact screen. The contacts the server thinks are them come first, then a search of the address book.
  */
 @Composable
-fun PersonContactPickerDialog(model: ContactsModel, person: PersonCardMember, onDismiss: () -> Unit, onLinked: () -> Unit) {
+fun PersonContactPickerScreen(model: ContactsModel, person: PersonCardMember, onBack: () -> Unit, onLinked: () -> Unit) {
     val scope = rememberCoroutineScope()
     var suggestions by remember { mutableStateOf(emptyList<ContactAccountSuggestion>()) }
     var found by remember { mutableStateOf(emptyList<ContactSummary>()) }
@@ -147,34 +143,28 @@ fun PersonContactPickerDialog(model: ContactsModel, person: PersonCardMember, on
         }
     }
 
-    @Composable
-    fun ContactChoice(contact: ContactSummary) {
-        Column(Modifier.fillMaxWidth().clickable(enabled = !isLinking) { choose(contact) }.padding(vertical = 8.dp)) {
-            Text(contact.shownName.ifEmpty { stringResource(R.string.contacts_no_name) })
-            val detail = listOf(contact.organization, contact.emails?.firstOrNull(), contact.phones?.firstOrNull()).filterNotNull().firstOrNull { text -> text.isNotEmpty() && text != contact.shownName }
-            if (detail != null) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    TeaNodeScreen(title = stringResource(R.string.contacts_link_a_contact_title), onBack = onBack) { contentPadding ->
+        LazyColumn(Modifier.padding(contentPadding).fillMaxSize()) {
+            failureText?.let { text -> item { Text(text, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) } }
+            item {
+                OutlinedTextField(searchText, { typed -> searchText = typed }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), singleLine = true, placeholder = { Text(stringResource(R.string.contacts_name_address_or_phone)) })
+            }
+            if (searchText.isEmpty() && offered.isNotEmpty()) {
+                item { Text(stringResource(R.string.contacts_may_be_people_in_circles), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary) }
+                items(offered, key = { contact -> "offered-" + contact.id }) { contact -> ContactChoice(contact, isLinking) { choose(contact) } }
+            }
+            items(others, key = { contact -> contact.id }) { contact -> ContactChoice(contact, isLinking) { choose(contact) } }
+            if (hasReadContacts && found.isEmpty()) item { Text(stringResource(R.string.contacts_no_contacts_yet_short), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item { Text(stringResource(R.string.contacts_choose_which_contact_is, person.displayName), Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
+}
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.contacts_link_a_contact_title)) },
-        text = {
-            Column {
-                failureText?.let { text -> Text(text, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp)) }
-                OutlinedTextField(searchText, { typed -> searchText = typed }, Modifier.fillMaxWidth().padding(bottom = 8.dp), singleLine = true, placeholder = { Text(stringResource(R.string.contacts_name_address_or_phone)) })
-                LazyColumn(Modifier.heightIn(max = 320.dp)) {
-                    if (searchText.isEmpty() && offered.isNotEmpty()) {
-                        item { Text(stringResource(R.string.contacts_may_be_people_in_circles), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary) }
-                        items(offered, key = { contact -> "offered-" + contact.id }) { contact -> ContactChoice(contact) }
-                    }
-                    items(others, key = { contact -> contact.id }) { contact -> ContactChoice(contact) }
-                    if (hasReadContacts && found.isEmpty()) item { Text(stringResource(R.string.contacts_no_contacts_yet_short), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    item { Text(stringResource(R.string.contacts_choose_which_contact_is, person.displayName), Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
-    )
+@Composable
+private fun ContactChoice(contact: ContactSummary, isLinking: Boolean, onChoose: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clickable(enabled = !isLinking, onClick = onChoose).padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(contact.shownName.ifEmpty { stringResource(R.string.contacts_no_name) })
+        val detail = listOf(contact.organization, contact.emails?.firstOrNull(), contact.phones?.firstOrNull()).filterNotNull().firstOrNull { text -> text.isNotEmpty() && text != contact.shownName }
+        if (detail != null) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }

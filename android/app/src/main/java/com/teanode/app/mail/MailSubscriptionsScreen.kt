@@ -53,6 +53,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -114,9 +116,10 @@ fun SubscriptionsScreen(mail: MailModel, onBack: () -> Unit, onOpen: (MailSubscr
     LaunchedEffect(mail.isLoaded, mail.mailbox?.id) { if (!mail.isLoaded) mail.load() }
     LaunchedEffect(isLeft, mail.mailbox?.id, requestCount) { if (mail.mailbox != null) load() }
     val listState = rememberLazyListState()
-    val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-    LaunchedEffect(lastVisible, subscriptions.size) {
-        if (subscriptions.isNotEmpty() && lastVisible >= subscriptions.size - 3 && subscriptions.size < (page?.total ?: 0)) load(isMore = true)
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo.let { info -> info.totalItemsCount > 0 && (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 3 } }
+            .distinctUntilChanged()
+            .collect { isNearEnd -> if (isNearEnd && subscriptions.size < (page?.total ?: 0)) load(isMore = true) }
     }
 
     TeaNodeScreen(title = stringResource(R.string.mail_subscriptions), onBack = onBack) { contentPadding ->

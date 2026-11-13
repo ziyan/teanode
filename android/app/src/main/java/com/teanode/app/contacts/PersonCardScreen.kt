@@ -1,6 +1,7 @@
 package com.teanode.app.contacts
 
 import android.content.ClipData
+import androidx.activity.compose.BackHandler
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -144,6 +145,18 @@ fun PersonCardScreen(model: ContactsModel, target: PersonCardTarget, onBack: () 
         contactBookId == bookId
     }
 
+    if (isEditingAccount && contact != null) {
+        BackHandler { isEditingAccount = false }
+        ContactAccountPickerScreen(model, contact, onBack = { isEditingAccount = false }, onLinked = { isEditingAccount = false; scope.launch { load() } })
+        return
+    }
+    val linkingPerson = shownCard?.person
+    if (isLinkingContact && linkingPerson != null) {
+        BackHandler { isLinkingContact = false }
+        PersonContactPickerScreen(model, linkingPerson, onBack = { isLinkingContact = false }, onLinked = { isLinkingContact = false; scope.launch { load() } })
+        return
+    }
+
     TeaNodeScreen(
         title = shownCard?.displayName?.ifEmpty { null } ?: stringResource(R.string.contacts_title),
         onBack = onBack,
@@ -180,13 +193,6 @@ fun PersonCardScreen(model: ContactsModel, target: PersonCardTarget, onBack: () 
         }
     }
 
-    if (isEditingAccount && contact != null) {
-        ContactAccountPickerDialog(model, contact, onDismiss = { isEditingAccount = false }, onLinked = { isEditingAccount = false; scope.launch { load() } })
-    }
-    val person = shownCard?.person
-    if (isLinkingContact && person != null) {
-        PersonContactPickerDialog(model, person, onDismiss = { isLinkingContact = false }, onLinked = { isLinkingContact = false; scope.launch { load() } })
-    }
     if (isConfirmingDelete && contact != null) {
         ConfirmationDialog(
             title = stringResource(R.string.contacts_delete_named_question, contact.name.orEmpty()), text = stringResource(R.string.contacts_delete_message),

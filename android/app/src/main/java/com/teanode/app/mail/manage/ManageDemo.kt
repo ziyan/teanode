@@ -74,15 +74,35 @@ object ManageDemoData {
         },
         graphQLField("ListMailOpens") { _ -> """[{"mailId":"mail-4","trackable":true,"opened":true,"openedAt":"${hoursAgo(10)}","lastOpenedAt":"${hoursAgo(9)}","openCount":2,"ip":null},{"mailId":"mail-2","trackable":true,"opened":false,"openedAt":null,"lastOpenedAt":null,"openCount":0,"ip":null}]""" },
         graphQLField("ListMails") { variables -> if (variables.containsKey("pagination")) mails else """[{"receivedAt":"${hoursAgo(1)}"}]""" },
-        graphQLField("CountMailsBy") { _ -> """[{"value":"accepted","count":120},{"value":"rejected","count":14}]""" },
-        graphQLField("GetMail") { _ -> mailDetail },
+        // The page of one message asks for its training, the filter settings, the message, its content, pictures and deliveries together.
+        DemoAnswerer { request ->
+            if (request.document.contains("GetSpamTraining")) {
+                DemoResponse("""{"data":{"GetSpamTraining":{"label":""},"GetSettings":{"antispam":{"effectiveEngine":"builtin","bayesEnabled":true,"bayesMinimumMessages":200,"bayesLearnedSpam":12,"bayesLearnedHam":30}},"GetMail":$mailDetail,"GetMailContent":{"mailId":"mail-3","available":true,"text":"Please verify your account at the address below.","html":"","hasRemoteContent":false,"imagesAllowed":false,"size":2100,"rawHeaders":"Received: from mail.examp1e-login.test\nSubject: Verify your account now","headers":[],"attachments":[]},"GetMailOpens":{"trackable":true,"opened":false,"openedAt":null,"lastOpenedAt":null,"openCount":0,"ip":null},"ListDeliveriesByMail":[]}}""")
+            } else {
+                null
+            }
+        },
+        // The first page of a domain asks for its mail counts, its newest message and its waiting deliveries together.
+        DemoAnswerer { request ->
+            if (request.document.contains("CountMailsBy")) {
+                DemoResponse("""{"data":{"CountMailsBy":[{"value":"accepted","count":120},{"value":"rejected","count":14}],"ListMails":[{"id":"mail-1","receivedAt":"${hoursAgo(1)}"}],"ListPendingDeliveries":$deliveries}}""")
+            } else {
+                null
+            }
+        },
+        DemoAnswerer { request ->
+            if (request.document.contains("ListTemplates")) {
+                DemoResponse("""{"data":{"ListTemplates":[{"id":"template-1","domainId":"domain-1","layoutId":"layout-1","name":"Welcome","comment":"","locale":"en","subject":"Welcome","variables":[],"modifiedAt":null,"translations":[{"locale":"ja"}]}],"ListLayouts":[{"id":"layout-1","domainId":"domain-1","comment":"Plain layout","locale":"en","modifiedAt":null,"translations":[]}]}}""")
+            } else {
+                null
+            }
+        },
         graphQLField("ListPendingDeliveries") { _ -> deliveries },
         graphQLField("ListReports") { _ -> reports },
         graphQLField("GetReport") { _ -> report },
         graphQLField("ListDomains") { _ -> domains },
         graphQLField("GetDomain") { _ -> domainDetail },
         graphQLField("ListAllMailboxes") { _ -> """[{"id":"mailbox-1","name":"Alex Example","userId":"user-1","username":"alex","userName":"Alex Example"}]""" },
-        graphQLField("ListTemplates") { _ -> """[{"id":"template-1","domainId":"domain-1","layoutId":"layout-1","name":"Welcome","comment":"","locale":"en","subject":"Welcome","variables":[],"modifiedAt":null,"translations":[{"locale":"ja"}]}]""" },
         graphQLField("RetryDelivery", "true"),
         graphQLField("MarkMail") { _ -> """{"label":"spam","learnedSpam":10,"learnedHam":20}""" },
         graphQLField("ForgetMail") { _ -> """{"label":"","learnedSpam":9,"learnedHam":20}""" },

@@ -178,7 +178,14 @@ object MailDemoData {
         graphQLField("GetMailboxDraft", draft),
         graphQLField("ListMailboxSubscriptions") { variables -> if (variables.text("left") == "true") leftSubscriptions else subscriptions },
         graphQLField("ReadMailboxSubscription") { _ -> subscriptionRead },
-        graphQLField("ListMailboxAppPasswords") { _ -> appPasswords },
+        // The mail programs page asks for the passwords and the program settings together.
+        DemoAnswerer { request ->
+            if (request.document.contains("ListMailboxAppPasswords")) {
+                com.teanode.app.demo.DemoResponse("""{"data":{"ListMailboxAppPasswords":$appPasswords,"GetMailProgramSettings":{"imapHost":"mail.example.com","imapPort":143,"imapsPort":993,"submissionHost":"mail.example.com","submissionPort":587,"davHost":"dav.example.com"}}}""")
+            } else {
+                null
+            }
+        },
         graphQLField("TestMailboxRules") { _ -> ruleTrials },
         graphQLField("ReadAgent", """{"categories":["personal","work","newsletter","receipt","other"]}"""),
         graphQLField("ListCalendars", """[{"id":"calendar-1","calendarKind":"events","shareLevel":null,"timezone":"UTC"}]"""),
@@ -213,4 +220,5 @@ object MailDemoData {
  * What demo mode answers for Mail: one `graphQLField("<Field>", """<json>""")` per document the screens send, so every
  * screen and state can be reached and photographed without a server. Most specific first.
  */
-val mailDemoAnswerers: List<DemoAnswerer> = MailDemoData.answerers + mailManageDemoAnswerers
+// The operator's pages come first: their documents ask for fields the mailbox answers also know (GetMailContent) together with others.
+val mailDemoAnswerers: List<DemoAnswerer> = mailManageDemoAnswerers + MailDemoData.answerers

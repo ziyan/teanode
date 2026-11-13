@@ -44,7 +44,7 @@ object ContactsDemoData {
 
     private const val PERSON_SAM = """{"userId":"user-sam","username":"sam","name":"Sam Fixture","avatarUrl":null,"avatarColorIndex":2}"""
     private const val PERSON_ALEXA = """{"userId":"user-alex","username":"alexa","name":"Alexa Demo","avatarUrl":null,"avatarColorIndex":5}"""
-    private const val PERSON_PAT = """{"userId":"user-pat","username":"pat","name":"Pat Sample","avatarUrl":null,"avatarColorIndex":7}"""
+    private const val PERSON_PAT = """{"userId":"user-pat","username":"pat","name":"Patricia Sample","avatarUrl":null,"avatarColorIndex":7}"""
 
     val suggestions: String = """
         [{"addressBookId":"book-own","contact":${summary("contact-pat", "Pat Sample", "Sample Trains", """["pat@example.net"]""", """[]""")},"account":$PERSON_PAT}]

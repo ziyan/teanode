@@ -42,7 +42,7 @@ class ContactsScreenshotTest {
 
     @Test fun `list light`() { show(Look.Light, waitsFor = "Sam Fixture") { model -> list(model) }; composeRule.photograph("contacts-list-light") }
     @Test fun `list dark`() { show(Look.Dark, waitsFor = "Sam Fixture") { model -> list(model) }; composeRule.photograph("contacts-list-dark") }
-    @Test fun `list largest text`() { show(Look.Light, 2f, "Sam Fixture") { model -> list(model) }; composeRule.photograph("contacts-list-largest-text-light") }
+    @Test fun `list largest text`() { show(Look.Light, 2f, "Alex Example") { model -> list(model) }; composeRule.photograph("contacts-list-largest-text-light") }
     @Test fun `circle book`() {
         show(Look.Light, waitsFor = "Sam Fixture") { model -> list(model) }
         composeRule.onNodeWithContentDescription("Address book").performClick()
@@ -70,7 +70,7 @@ class ContactsScreenshotTest {
     @Test fun `account picker`() {
         show(Look.Light, waitsFor = "Alexa Demo") { model ->
             val contact = com.teanode.kit.contacts.ContactDetail(id = "contact-pat", name = "Pat Sample")
-            ContactAccountPickerDialog(model, contact, onDismiss = {}, onLinked = {})
+            ContactAccountPickerScreen(model, contact, onBack = {}, onLinked = {})
         }
         composeRule.photograph("contacts-account-picker-light")
     }
@@ -78,7 +78,7 @@ class ContactsScreenshotTest {
     @Test fun `contact picker`() {
         show(Look.Light, waitsFor = "Pat Sample") { model ->
             val person = com.teanode.kit.contacts.PersonCardMember(userId = "user-pat", username = "pat", name = "Pat Sample")
-            PersonContactPickerDialog(model, person, onDismiss = {}, onLinked = {})
+            PersonContactPickerScreen(model, person, onBack = {}, onLinked = {})
         }
         composeRule.photograph("contacts-contact-picker-light")
     }

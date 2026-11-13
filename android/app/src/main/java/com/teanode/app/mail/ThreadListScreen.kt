@@ -62,7 +62,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -148,6 +149,9 @@ fun ThreadListScreen(
         isSelecting = false
         selection.clear()
     }
+
+    // Back leaves choosing before it leaves the list.
+    androidx.activity.compose.BackHandler(enabled = isSelecting) { finishSelecting() }
 
     fun chosen(threads: List<MailThread>? = null): List<MailThread> = threads ?: list.threads.filter { thread -> selection.contains(thread.id) }
 
@@ -472,13 +476,12 @@ private fun ThreadRows(
 ) {
     val state = rememberLazyListState()
     val periods = MailTimes.periods(list.threads) { thread -> MailTimes.moment(thread.item?.mail?.receivedAt ?: thread.item?.addedAt) }
-    val lastId = list.threads.lastOrNull()?.id
-    val shouldLoadMore by remember(lastId, list.total, list.threads.size, list.isLoading) {
-        derivedStateOf { lastId != null && list.threads.size < list.total && !list.isLoading }
-    }
-    val lastIndex = state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-    LaunchedEffect(shouldLoadMore, lastIndex) {
-        if (shouldLoadMore && lastIndex >= state.layoutInfo.totalItemsCount - 4) onMore()
+    // The next page is asked for when the end of the list comes near. It is watched outside composition: reading the
+    // list's layout while composing makes the list compose again after every layout.
+    LaunchedEffect(state, list) {
+        snapshotFlow { state.layoutInfo.let { info -> info.totalItemsCount > 0 && (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 4 } }
+            .distinctUntilChanged()
+            .collect { isNearEnd -> if (isNearEnd && list.threads.size < list.total && !list.isLoading) onMore() }
     }
     val archive = mail.folderOfKind("archive")
     LazyColumn(state = state, modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 88.dp)) {
