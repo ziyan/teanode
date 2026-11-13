@@ -26,3 +26,12 @@ object AvatarColor {
     fun index(serverIndex: Int?, fallbackText: String): Int =
         if (serverIndex != null && serverIndex in 0 until COLOR_COUNT) serverIndex else index(fallbackText)
 }
+
+/** Monogram is the letter a person without a picture is drawn with. */
+object Monogram {
+    /** The first letter or digit of a name; "?" when it has none. */
+    fun letter(name: String): String {
+        val first = name.codePoints().toArray().firstOrNull { codePoint -> Character.isLetterOrDigit(codePoint) } ?: return "?"
+        return String(Character.toChars(first)).uppercase()
+    }
+}

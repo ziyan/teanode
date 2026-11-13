@@ -73,8 +73,9 @@ class OkHttpSubscriptions(
                 close()
             }
 
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                close(t)
+            @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
+            override fun onFailure(webSocket: WebSocket, failure: Throwable, response: Response?) {
+                close(failure)
             }
         })
         // A connection a phone lost while asleep can stay open without saying so; the server sends a keep-alive every

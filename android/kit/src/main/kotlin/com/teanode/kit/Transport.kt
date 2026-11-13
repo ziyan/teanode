@@ -68,8 +68,9 @@ class OkHttpTransport(val client: OkHttpClient = defaultClient) : HTTPTransport 
         return suspendCancellableCoroutine { continuation ->
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    if (continuation.isActive) continuation.resumeWithException(e)
+                @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
+                override fun onFailure(call: Call, failure: IOException) {
+                    if (continuation.isActive) continuation.resumeWithException(failure)
                 }
 
                 override fun onResponse(call: Call, response: Response) {

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- A leaf on the logo's green: the blade, and the stem that runs to its tip. -->
+    <path
+        android:fillColor="#FFFBFAD3"
+        android:pathData="M72,34 C72,58 58,76 38,78 C34,58 46,36 72,34 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M36,80 L58,54"
+        android:strokeColor="#FF729D39"
+        android:strokeWidth="3"
+        android:strokeLineCap="round" />
+</vector>

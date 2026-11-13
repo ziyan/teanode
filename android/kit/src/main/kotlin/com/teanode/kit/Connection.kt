@@ -183,6 +183,9 @@ class Connection(
         requestTimeoutMS: Long? = null,
     ): Answer = execute(document, kotlinx.serialization.serializer<Answer>(), variables, requestTimeoutMS)
 
+    /** Reads a path on the server (a picture, a file) as the person; the answer is whatever the server sent, status included. */
+    suspend fun get(path: String): HTTPResponse = send(HTTPRequest(account.server.endpoint(path).toString(), "GET"))
+
     /** Opens a GraphQL subscription and streams each event's data until the server completes it or the connection drops. */
     fun subscribe(document: String, variables: Map<String, JsonElement> = emptyMap()): Flow<JsonElement> {
         val transportForSubscriptions = subscriptions ?: throw IllegalStateException("this connection has no websocket transport")

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The window behind the first frame; the theme in code draws the same surface color. -->
+    <color name="teanode_window_background">#FBFDF7</color>
+    <!-- TeaNode green, from the logo (the dashboard calls it leaf). -->
+    <color name="teanode_leaf">#729D39</color>
+</resources>

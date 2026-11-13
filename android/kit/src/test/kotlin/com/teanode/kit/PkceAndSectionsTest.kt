@@ -100,3 +100,24 @@ class SectionFactsTest {
         assertEquals(2, beforePhotos.sent.size)
     }
 }
+
+class ReasonSentenceTest {
+    @Test
+    fun aPhraseBecomesASentence() {
+        assertEquals("Photo storage is unavailable.", "  photo storage is unavailable ".asReasonSentence())
+        assertEquals("Already a sentence!", "Already a sentence!".asReasonSentence())
+        assertEquals("已经是一句话。", "已经是一句话。".asReasonSentence())
+        assertEquals("", "   ".asReasonSentence())
+    }
+}
+
+class MonogramTest {
+    @Test
+    fun theFirstLetterOrDigitOfANameIsItsMonogram() {
+        assertEquals("A", Monogram.letter("alex"))
+        assertEquals("7", Monogram.letter("  7th floor"))
+        assertEquals("中", Monogram.letter("中文"))
+        assertEquals("S", Monogram.letter("-- sam"))
+        assertEquals("?", Monogram.letter("..."))
+    }
+}
