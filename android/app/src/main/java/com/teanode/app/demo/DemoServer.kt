@@ -119,7 +119,7 @@ object DemoServer {
     )
 
     /** The answerers of every part, then the foundation's. */
-    fun transport(): DemoTransport = DemoTransport(Areas.all.flatMap { area -> area.demoAnswerers } + foundationAnswerers)
+    fun transport(): DemoTransport = DemoTransport(Areas.all.flatMap { area -> area.demoAnswerers } + com.teanode.app.calls.callsDemoAnswerers + foundationAnswerers)
 }
 
 /** The value under a key of the variables, as text. */

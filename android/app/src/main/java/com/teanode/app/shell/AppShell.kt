@@ -18,12 +18,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
+import com.teanode.app.calls.callsRoutes
+import com.teanode.app.notifications.AppUpdateHost
+import com.teanode.app.notifications.NotificationOpening
 import com.teanode.app.search.searchRoutes
 import com.teanode.app.session.LocalAppSession
 import com.teanode.app.ui.components.DrawerController
@@ -78,6 +82,11 @@ fun AppShell(
             controller.navigate(startRoute)
         }
     }
+    // A notification pressed opens the part it is about; the part reads the detail from NotificationOpening.
+    val openedDestination by NotificationOpening.destination.collectAsState()
+    LaunchedEffect(openedDestination) {
+        openedDestination?.let { destination -> navigator.openSection(NotificationOpening.sectionOf(destination)) }
+    }
     LaunchedEffect(newIntents) {
         newIntents?.collect { intent -> controller.handleDeepLink(intent) }
     }
@@ -122,6 +131,7 @@ fun AppShell(
             ) { innerPadding ->
                 Box(Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)) {
                     NavHost(navController = controller, startDestination = Routes.graph(startSection)) {
+                        callsRoutes(navigator)
                         for (area in Areas.all) {
                             val section = area.section
                             if (section == null) {
@@ -133,6 +143,8 @@ fun AppShell(
                             }
                         }
                     }
+                    // A newer app, offered over the chats until the person installs it or says not now.
+                    if (isHome && currentSection == AppSection.Agent) AppUpdateHost(Modifier.align(Alignment.BottomCenter))
                 }
             }
         }
