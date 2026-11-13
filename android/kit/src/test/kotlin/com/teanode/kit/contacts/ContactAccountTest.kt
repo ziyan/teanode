@@ -144,3 +144,21 @@ class ContactAccountTest {
         assertEquals("b2", text(sentVariables(deleting.sent.first()), "addressBookId"))
     }
 }
+
+class ContactLetterSectionTest {
+    private fun contact(name: String?, email: String? = null) = ContactSummary(id = name ?: email ?: "none", name = name, emails = email?.let { listOf(it) })
+
+    @Test
+    fun contactsAreSortedByNameAndGroupedByLetter() {
+        val sections = ContactLetterSection.sections(listOf(contact("Sam Fixture"), contact("alex Sample"), contact("Alice Example"), contact(null, "zed@example.org"), contact("42 Plumbing"), contact(null)), java.util.Locale.ENGLISH)
+        assertEquals(listOf("#", "4", "A", "S", "Z"), sections.map { section -> section.letter })
+        assertEquals(listOf("alex Sample", "Alice Example"), sections[2].contacts.map { found -> found.shownName })
+    }
+
+    @Test
+    fun anAddressIsWrittenOnItsLines() {
+        val written = ContactWords.written(ContactAddress("1 Example Road", "Sampleton", "", "00000", "Exampleland"))
+        assertEquals("1 Example Road\nSampleton 00000\nExampleland", written)
+        assertEquals("", ContactWords.written(ContactAddress()))
+    }
+}

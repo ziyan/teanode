@@ -113,3 +113,30 @@ class ContactImportTest {
         assertTrue(ContactImportDocuments.IMPORT_CONTACT.contains("SaveContact(addressBookId: \$addressBookId, card: \$card)"))
     }
 }
+
+class ContactCardWriterTest {
+    @Test
+    fun aPhoneContactIsWrittenAsACardTheServerCanRead() {
+        val card = ContactCardWriter.card(
+            PhoneContactFields(
+                identifier = "phone-7", givenName = "Ada", familyName = "Sample", fullName = "Ada Sample", organization = "Example, Inc.",
+                emails = listOf("ada@example.com"), phones = listOf("555 010 1234"), note = "Met at the fair;\nsays hello",
+            ),
+        )
+        assertEquals(
+            listOf(
+                "BEGIN:VCARD", "VERSION:3.0", "N:Sample;Ada;;;", "FN:Ada Sample", "ORG:Example\\, Inc.;", "EMAIL;TYPE=INTERNET:ada@example.com",
+                "TEL:555 010 1234", "NOTE:Met at the fair\\;\\nsays hello", "UID:phone-7", "END:VCARD", "",
+            ).joinToString("\r\n"),
+            card,
+        )
+        assertTrue(ContactCard.fits(card))
+        assertEquals(card, ContactCard.removingPhoto(card))
+    }
+
+    @Test
+    fun aContactWithOnlyAnOrganizationIsNamedByIt() {
+        val card = ContactCardWriter.card(PhoneContactFields(identifier = "phone-8", organization = "Example Books"))
+        assertTrue(card.contains("FN:Example Books"))
+    }
+}
