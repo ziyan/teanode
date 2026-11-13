@@ -132,6 +132,7 @@ fun JournalWriteEditor(target: JournalTarget, request: JournalWords?) {
         title = stringResource(if (isForDay) R.string.journal_your_words else R.string.journal_looking_back),
         onBack = { if (!isWorking) close() },
         actions = {
+            JournalDictationButton({ original }, { text -> original = text }, isEnabled = !isWorking)
             if (isWorking) {
                 CircularProgressIndicator(Modifier.padding(end = 16.dp).heightIn(max = 24.dp), strokeWidth = 2.dp)
             } else {
@@ -221,6 +222,7 @@ fun JournalCorrectionScreen(periodKind: JournalPeriodKind?, day: String) {
     TeaNodeScreen(
         title = stringResource(R.string.journal_something_wrong), onBack = { if (!isWorking) navigator.back() },
         actions = {
+            JournalDictationButton({ correctionText }, { text -> correctionText = text }, isEnabled = !isWorking)
             if (isWorking) CircularProgressIndicator(Modifier.padding(end = 16.dp).heightIn(max = 24.dp), strokeWidth = 2.dp)
             else TextButton(enabled = isSendable, onClick = {
                 scope.launch {

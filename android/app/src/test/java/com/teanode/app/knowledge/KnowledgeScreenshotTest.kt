@@ -1,6 +1,13 @@
 package com.teanode.app.knowledge
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color as AndroidColor
+import android.graphics.Paint
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -61,4 +68,42 @@ class KnowledgeScreenshotTest {
     @Test fun `shared page light`() { draw(Look.Light) { SharedKnowledgePageScreen("user-2", "people/sam-example") }; composeRule.photograph("knowledge-shared-light") }
 
     @Test fun `share page dark`() { draw(Look.Dark) { KnowledgeShareScreen("people/sam-example", onClose = {}) }; composeRule.photograph("knowledge-share-dark") }
+
+    @Test fun `page with files and a table light`() {
+        draw(Look.Light) { KnowledgePageScreen("people/sam-example") }
+        composeRule.onAllNodes(hasScrollAction())[0].performScrollToNode(hasText("bed-plan.docx"))
+        composeRule.waitForIdle()
+        composeRule.photograph("knowledge-page-files-light")
+    }
+
+    @Test fun `pdf preview and viewer dark`() {
+        val pages = (1..3).map { number ->
+            Bitmap.createBitmap(400, 560, Bitmap.Config.ARGB_8888).also { bitmap ->
+                val canvas = Canvas(bitmap)
+                canvas.drawColor(AndroidColor.WHITE)
+                val paint = Paint().apply { color = AndroidColor.DKGRAY; textSize = 28f }
+                canvas.drawText("Seed order, page $number", 30f, 60f, paint)
+                for (line in 1..8) canvas.drawText("Seed potatoes, 10 kg", 30f, 60f + line * 40f, paint)
+            }
+        }
+        draw(Look.Dark) {
+            androidx.compose.foundation.layout.Column {
+                PdfPreviewCard("seed-order.pdf", pages) {}
+            }
+        }
+        composeRule.photograph("knowledge-pdf-preview-dark")
+    }
+
+    @Test fun `pdf viewer light`() {
+        val pages = (1..3).map { number ->
+            Bitmap.createBitmap(400, 560, Bitmap.Config.ARGB_8888).also { bitmap ->
+                val canvas = Canvas(bitmap)
+                canvas.drawColor(AndroidColor.WHITE)
+                val paint = Paint().apply { color = AndroidColor.DKGRAY; textSize = 28f }
+                canvas.drawText("Seed order, page $number", 30f, 60f, paint)
+            }
+        }
+        draw(Look.Light) { PdfViewerDialog("seed-order.pdf", pages) {} }
+        composeRule.photograph("knowledge-pdf-viewer-light")
+    }
 }

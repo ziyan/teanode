@@ -33,16 +33,16 @@ private fun pageJson(path: String): String {
     }
     val kind = if (isPerson) "person" else "project"
     val summary = if (isPerson) "Sam lives with Alex. Works in a bookshop and cooks on Sundays." else "A plan for the beds: what goes where, and what to order."
-    return """{"node":${node(path, kind, name, summary, pinned = path == "people/sam-example", contactId = if (isPerson) "card-1" else null, aliases = if (isPerson) "[\"Sammy\"]" else "[]", overview = "A longer story of **$name**, written from mail, conversations and the calendar. It is read about once a week.")},
+    return """{"node":${node(path, kind, name, summary, pinned = path == "people/sam-example", contactId = if (isPerson) "card-1" else null, aliases = if (isPerson) "[\"Sammy\"]" else "[]", overview = "A longer story of **$name**, written from mail, conversations and the calendar. It is read about once a week.\\n\\n| Day | Plan |\\n| --- | --- |\\n| Monday | Dig the beds |\\n| Friday | Plant the seed potatoes |")},
         "facts":[
           {"id":"f1","number":1,"kind":"fact","text":"Lives with Alex in the flat above the bakery.","happenedAt":"2024-05","inferred":false,"evidence":[{"kind":"conversation","id":"c1","quote":"we moved in on a Saturday"}],"audiences":["triage","reply"]},
           {"id":"f2","number":2,"kind":"preference","text":"Prefers tea in the afternoon and coffee only before ten.","happenedAt":null,"inferred":true,"evidence":[{"kind":"mail","id":"m1","quote":""}],"audiences":[]},
           {"id":"f3","number":3,"kind":"decision","text":"Decided to repaint the kitchen in the spring.","happenedAt":"2026-10-12","inferred":false,"evidence":[{"kind":"calendar_event","id":"e1","quote":"kitchen paint day"}],"audiences":[]},
           {"id":"f4","number":4,"kind":"reflection","text":"Plans slip in spring when the garden needs attention.","happenedAt":null,"inferred":true,"evidence":[{"kind":"dream","id":"d1","quote":"reflection: pattern"},{"kind":"memory","id":"","quote":"projects/garden-planner#3"}],"audiences":[]},
-          {"id":"f5","number":5,"kind":"fact","text":"Keeps the receipts in a blue folder.","happenedAt":null,"inferred":false,"evidence":[{"kind":"document","id":"doc7[page 2]","quote":""}],"audiences":[]}],
+          {"id":"f5","number":5,"kind":"fact","text":"Keeps the receipts in a blue folder.","happenedAt":null,"inferred":false,"evidence":[{"kind":"document","id":"doc7[page 2]","quote":""},{"kind":"document","id":"doc8","quote":""},{"kind":"document","id":"doc9","quote":""}],"audiences":[]}],
         "folded":[{"into":1,"fact":{"id":"f9","number":9,"text":"Moved in during May."}}],
         "children":[${node("$path/notes", "thing", "Notes", "Small things worth keeping.")}],
-        "attachments":[{"documentId":"doc7","name":"folder.jpg","contentType":"image/jpeg","channel":"photos","path":""}],
+        "attachments":[{"documentId":"doc7","name":"folder.jpg","contentType":"image/jpeg","channel":"photos","path":""},{"documentId":"doc8","name":"seed-order.pdf","contentType":"application/pdf","channel":"mail","path":"/files/doc8"},{"documentId":"doc9","name":"bed-plan.docx","contentType":"application/vnd.openxmlformats-officedocument.wordprocessingml.document","channel":"mail","path":"/files/doc9"}],
         "contact":${if (isPerson) """{"id":"card-1","name":"Sam Example","emails":["sam@example.com"],"organization":""}""" else "null"},
         "recordLinks":[
           {"id":"l1","nodePath":"$path","nodeName":"$name","nodeKind":"$kind","recordKind":"mail","recordId":"m1","recordRelation":"wrote","linkStatus":"stated","passageStartMS":0,"passageEndMS":0,"transcriptRunId":"","note":"","happenedAt":null,"createdAt":"${daysAgo(9)}","recordTitle":"Dinner on Friday?","recordHappenedAt":"${daysAgo(3)}","dashboardPath":"/mailbox/starred/m1","isUnavailable":false},

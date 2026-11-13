@@ -183,4 +183,7 @@
     <string name="knowledge_worked_out_not_told">推測で、伝えられたものではない</string>
     <string name="knowledge_written">%1$s に作成</string>
     <string name="knowledge_you">あなた</string>
+    <string name="knowledge_could_not_open_file">ファイルを開けませんでした。</string>
+    <string name="knowledge_open_in_another_app">別のアプリで開く</string>
+    <string name="knowledge_close">閉じる</string>
 </resources>

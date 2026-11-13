@@ -1,6 +1,7 @@
 package com.teanode.app.calendar
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -95,8 +96,9 @@ class CalendarScreenshotTest {
     @Test fun `find a time light`() {
         draw(Look.Light) { FindATimeScreen(rememberCalendarModel(), "demo-user") }
         settle()
-        composeRule.onNodeWithText("Sam Rivera (sam)").performClick()
-        composeRule.onNodeWithText("Alex Chen (alex)").performClick()
+        // Whoever the demo lists as sharing their calendar: the first two, so the picture does not depend on the order of other parts' demo data.
+        composeRule.onAllNodes(isToggleable())[0].performClick()
+        composeRule.onAllNodes(isToggleable())[1].performClick()
         composeRule.onNodeWithText("Find times").performClick()
         settle()
         composeRule.photograph("calendar-find-a-time-light")

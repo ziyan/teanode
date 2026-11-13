@@ -196,4 +196,5 @@
     <string name="calendar_which">何番目</string>
     <string name="calendar_will_no_longer_see">%1$sには、あなたのカレンダーが表示されなくなります。</string>
     <string name="calendar_with">一緒に</string>
+    <string name="calendar_open_circle">%1$s を開く</string>
 </resources>

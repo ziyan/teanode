@@ -183,4 +183,7 @@
     <string name="knowledge_worked_out_not_told">推断得出，并非被告知</string>
     <string name="knowledge_written">写于 %1$s</string>
     <string name="knowledge_you">你</string>
+    <string name="knowledge_could_not_open_file">无法打开该文件。</string>
+    <string name="knowledge_open_in_another_app">用其他应用打开</string>
+    <string name="knowledge_close">关闭</string>
 </resources>

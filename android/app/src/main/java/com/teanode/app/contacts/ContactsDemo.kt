@@ -123,7 +123,8 @@ object ContactsDemoData {
             "[" + shown.joinToString(",") + "]"
         },
         graphQLField("GetContact") { variables -> contact(variables.text("id").orEmpty()) },
-        graphQLField("AgentGraphPage") { _ -> """{"contact":{"id":"contact-alex"}}""" },
+        // The person card asks only for the contact of a memory page; the Knowledge screens ask for the whole page (its facts), which Knowledge answers.
+        graphQLField("AgentGraphPage") { _ -> """{"contact":{"id":"contact-alex"}}""" }.let { contactOnly -> DemoAnswerer { request -> if (request.document.contains("facts")) null else contactOnly.answer(request) } },
         graphQLField("ListContactAccountSuggestions") { _ -> suggestions },
         graphQLField("ListCircles") { _ -> """[{"id":"circle-home","name":"Home","circleKind":"family"},{"id":"circle-book","name":"Book club","circleKind":"friends"}]""" },
         graphQLField("ListCirclePeople") { _ -> "[$PERSON_SAM,$PERSON_ALEXA,$PERSON_PAT]" },

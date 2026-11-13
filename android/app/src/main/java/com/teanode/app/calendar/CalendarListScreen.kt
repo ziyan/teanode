@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.AddBox
@@ -38,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
+import com.teanode.app.settings.SettingsRoutes
 import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.ui.components.AvatarView
 import com.teanode.app.ui.components.ConfirmationDialog
@@ -160,6 +162,15 @@ fun CalendarListScreen(model: CalendarModel) {
                     Text(
                         stringResource(R.string.calendar_share_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(16.dp),
+                    )
+                }
+            }
+            val circleCalendars = model.calendars.filter { calendar -> calendar.isCircleCalendar == true && calendar.circleId != null }
+            if (circleCalendars.isNotEmpty()) {
+                items(circleCalendars, key = { calendar -> "circle-link-${calendar.id}" }) { calendar ->
+                    TeaNodeRow(
+                        headline = stringResource(R.string.calendar_open_circle, calendar.circleName ?: calendar.name), leadingIcon = Icons.Outlined.Group,
+                        onClick = { navigator.navigate(SettingsRoutes.circle(calendar.circleId.orEmpty())) },
                     )
                 }
             }

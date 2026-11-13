@@ -457,7 +457,7 @@ fun FactRow(fact: KnowledgeFact, attachments: List<KnowledgeAttachment>, onEdit:
                 when {
                     file.path.isEmpty() -> Text(stringResource(R.string.knowledge_file_missing, file.name), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     file.contentType.startsWith("image/") -> RemotePicture(file.path, file.name)
-                    else -> Text(file.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    else -> KnowledgeFilePreview(file.path, file.name, file.contentType)
                 }
             }
         }

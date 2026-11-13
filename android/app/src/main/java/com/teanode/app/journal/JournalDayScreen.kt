@@ -64,6 +64,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.teanode.app.R
+import com.teanode.app.location.LocationRoutes
+import com.teanode.app.location.MapContent
+import com.teanode.app.location.MapCoordinate
+import com.teanode.app.location.MapFocus
+import com.teanode.app.location.MapMarker
+import com.teanode.app.location.TeaNodeMap
 import com.teanode.app.goals.ChatHandoff
 import com.teanode.app.session.LocalAppSession
 import com.teanode.app.session.LocalConnection
@@ -214,7 +220,7 @@ private fun DayContent(host: JournalModel, model: JournalDayModel, journalDay: J
         mailSection(journalDay, state, model, scope, onOpen = ::open)
         if (journalDay.photos.isNotEmpty()) photosSection(journalDay, state, onOpenInPhotos = { navigator.openSection(AppSection.Photos) })
         if (journalDay.moments.isNotEmpty()) momentsSection(journalDay, state, text, model, scope, onOpen = ::open)
-        if (journalDay.visits.isNotEmpty()) placesSection(journalDay, state, text, onOpenPlaces = { navigator.openSection(AppSection.Location) })
+        if (journalDay.visits.isNotEmpty()) placesSection(journalDay, state, text, onOpenPlaces = { navigator.navigate(JournalDayPlaces.route(journalDay.day)) })
         talkedSection(journalDay, state, onOpenConversation = { id -> ChatHandoff.open(navigator, id) })
         if (journalDay.recordings.isNotEmpty()) recordingsSection(journalDay, state, text, onOpen = ::open)
         journalDay.health?.takeIf { health -> hasHealth(health) }?.let { health -> healthSection(health, text) }
@@ -371,6 +377,16 @@ fun JournalMomentRow(moment: JournalMoment, text: JournalText, canPin: Boolean, 
 
 private fun LazyListScope.placesSection(journalDay: JournalDay, state: DayScreenState, text: JournalText, onOpenPlaces: () -> Unit) {
     item(key = "places-header") { Heading(stringOf(R.string.journal_places)) }
+    val mapCoordinates = journalDay.visits.filter { visit -> !(visit.latitude == 0.0 && visit.longitude == 0.0) }.map { visit -> MapCoordinate(visit.latitude, visit.longitude) }
+    if (mapCoordinates.isNotEmpty()) {
+        item(key = "places-map") {
+            TeaNodeMap(
+                content = MapContent(markers = journalDay.visits.filter { visit -> !(visit.latitude == 0.0 && visit.longitude == 0.0) }.map { visit -> MapMarker(MapCoordinate(visit.latitude, visit.longitude), visit.placeName) }),
+                focus = MapFocus(mapCoordinates), isInteractive = false,
+                modifier = Modifier.fillMaxWidth().height(180.dp), description = stringResource(R.string.journal_places),
+            )
+        }
+    }
     item(key = "places-summary") {
         val placeCount = journalDay.facts?.placeCount ?: journalDay.visits.size
         val places = stringResource(R.string.journal_places_count, placeCount.toString())
@@ -680,4 +696,9 @@ internal fun weatherIcon(kind: com.teanode.kit.journal.JournalWeatherKind?): and
     com.teanode.kit.journal.JournalWeatherKind.Snow -> Icons.Outlined.AcUnit
     com.teanode.kit.journal.JournalWeatherKind.Thunderstorm -> Icons.Outlined.Bolt
     null -> Icons.Outlined.WbCloudy
+}
+
+/** Where the places of a journal day open: the day in Location, with its map and visits. */
+internal object JournalDayPlaces {
+    fun route(day: String): String = java.time.LocalDate.parse(day).let(LocationRoutes::day)
 }

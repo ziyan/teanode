@@ -1,6 +1,9 @@
 package com.teanode.app.journal
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.teanode.app.demo.DemoHost
 import com.teanode.app.screenshots.Look
@@ -69,4 +72,11 @@ class JournalScreenshotTest {
     @Test fun `settings light`() { draw(Look.Light) { JournalSettingsScreen() }; composeRule.photograph("journal-settings-light") }
 
     @Test fun `settings dark`() { draw(Look.Dark) { JournalSettingsScreen() }; composeRule.photograph("journal-settings-dark") }
+
+    @Test fun `places with the map light`() {
+        draw(Look.Light) { JournalDayScreen(today) }
+        composeRule.onNode(hasScrollAction().and(androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange))).performScrollToNode(hasText("River park"))
+        composeRule.waitForIdle()
+        composeRule.photograph("journal-day-places-light")
+    }
 }

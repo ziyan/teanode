@@ -183,4 +183,7 @@
     <string name="knowledge_worked_out_not_told">Worked out, not told</string>
     <string name="knowledge_written">Written %1$s</string>
     <string name="knowledge_you">You</string>
+    <string name="knowledge_could_not_open_file">Could not open the file.</string>
+    <string name="knowledge_open_in_another_app">Open in another app</string>
+    <string name="knowledge_close">Close</string>
 </resources>

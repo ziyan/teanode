@@ -165,6 +165,19 @@ object ChatsHooks {
 
     internal fun takePendingReference(): AgentReference? = pendingReference.also { pendingReference = null }
 
+    private val openingRequests = HashMap<String, String>()
+
+    /**
+     * Opens a conversation, and sends [openingRequest] in it once it is on screen, as the iPhone app does for an idea
+     * that was started from another screen. Without a request it only opens the conversation.
+     */
+    fun openConversation(navigator: com.teanode.app.shell.AppNavigator, conversationId: String, openingRequest: String? = null) {
+        if (!openingRequest.isNullOrEmpty()) openingRequests[conversationId] = openingRequest
+        navigator.navigate(Routes.child(AppSection.Agent, "conversation/$conversationId"))
+    }
+
+    internal fun takeOpeningRequest(conversationId: String): String? = openingRequests.remove(conversationId)
+
     /** Opens a person's card; set by the part that has the cards. Until then a tap on a picture or a name does nothing. */
     var openPerson: ((String) -> Unit)? = null
 }
@@ -234,6 +247,9 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
     // A screen asked about something: it goes in the main conversation's reference strip.
     LaunchedEffect(model, ChatsHooks.pendingReference) {
         if (conversationId == null) ChatsHooks.takePendingReference()?.let { reference -> model.refer(reference) }
+    }
+    LaunchedEffect(model) {
+        if (conversationId != null) ChatsHooks.takeOpeningRequest(conversationId)?.let { request -> model.sendSuggestion(request) }
     }
 
     // Things that went wrong are told in a snackbar, once.
