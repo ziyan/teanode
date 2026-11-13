@@ -321,3 +321,39 @@ suspend fun Connection.attachToDraft(
     }
     return MailDraftAttachments(itemId, uploaded.attachments ?: emptyList())
 }
+
+@Serializable
+private class CalendarsAnswer(@SerialName("ListCalendars") val calendars: List<ProposalCalendar>) {
+    @Serializable
+    class ProposalCalendar(val id: String, val calendarKind: String? = null, val shareLevel: String? = null, val timezone: String? = null) {
+        val isOwn: Boolean get() = shareLevel == null || shareLevel == "owner"
+    }
+}
+
+/**
+ * Adds the event the agent found in a message to the person's own calendar of events, as the calendar's change is made:
+ * with an id of its own, so one whose answer was lost is not made twice.
+ */
+suspend fun Connection.addProposedEvent(proposal: MailProposal, requestId: String = java.util.UUID.randomUUID().toString().replace("-", "")) {
+    val calendar = execute<CalendarsAnswer>(MailProposalDocuments.CALENDARS).calendars.firstOrNull { calendar -> calendar.calendarKind == "events" && calendar.isOwn }
+        ?: throw TeaNodeError.Refused("There is no calendar to add it to.")
+    execute<JsonElement>(
+        MailProposalDocuments.SAVE_CALENDAR_EVENT,
+        mapOf(
+            "requestId" to JsonPrimitive(requestId), "calendarId" to JsonPrimitive(calendar.id), "summary" to JsonPrimitive(proposal.summary),
+            "location" to JsonPrimitive(proposal.location), "startsAt" to JsonPrimitive(proposal.starts),
+            "endsAt" to JsonPrimitive(proposal.ends.ifEmpty { proposal.starts }), "allDay" to JsonPrimitive(proposal.allDay),
+            "timezone" to JsonPrimitive(if (proposal.allDay) "" else calendar.timezone ?: ""),
+        ),
+    )
+}
+
+/** Has the agent read a mail as a receipt. */
+suspend fun Connection.readReceipt(mailboxItemId: String) {
+    execute<JsonElement>(MailProposalDocuments.READ_RECEIPT, mapOf("mailboxItemId" to JsonPrimitive(mailboxItemId)))
+}
+
+/** Has the agent read each PDF and picture a message carries as a paystub or a tax form. */
+suspend fun Connection.readTaxDocument(mailboxItemId: String) {
+    execute<JsonElement>(MailProposalDocuments.READ_TAX_DOCUMENT, mapOf("mailboxItemId" to JsonPrimitive(mailboxItemId)))
+}

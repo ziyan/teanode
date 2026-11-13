@@ -535,6 +535,7 @@ object MailWords {
 }
 
 /** MailOutgoing is a message being written, as the server takes it. */
+@Serializable
 data class MailOutgoing(
     val from: String = "",
     val to: List<String> = emptyList(),
@@ -574,6 +575,7 @@ internal fun strings(texts: List<String>): JsonArray = JsonArray(texts.map { tex
  * MailSending is a send whose answer may have been lost, kept on the phone with its own id, so it is asked about before
  * it is sent again.
  */
+@Serializable
 data class MailSending(
     val mailboxId: String,
     val message: MailOutgoing,
