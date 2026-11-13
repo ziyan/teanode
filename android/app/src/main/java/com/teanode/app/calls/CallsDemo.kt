@@ -217,7 +217,7 @@ object CallsDemo {
             """{"call":$call,"transcript":[$segments],"recordingId":"recording-1","isRecordingOwned":true}"""
         },
         graphQLField("GetAppUpdate") { _ ->
-            """{"updateChannel":"android","version":"1.4.0","buildNumber":"42","installUrl":"https://appdistribution.firebase.dev/i/example"}"""
+            """{"updateChannel":"android","version":"1.4.0","buildNumber":"42","installUrl":"https://appdistribution.firebase.google.com/testerapps/example/releases/example"}"""
         },
     )
 }
