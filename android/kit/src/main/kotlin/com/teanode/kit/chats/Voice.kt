@@ -72,3 +72,25 @@ object SpokenText {
         return Sentences(sentences, consumed)
     }
 }
+
+/** VoiceEvent is one thing the server says on the voice socket (`/api/v1/agent/voice`, the same socket the dashboard's call uses). */
+@Serializable
+data class VoiceEvent(
+    /** ready, speechStarted, speechStopped, transcriptDelta, transcriptFinal, transcriptFailed, answerAudio, answerAudioDone, answerAudioFailed, problem, refused or error. */
+    val voiceEvent: String,
+    val utteranceId: String? = null,
+    val transcriptText: String? = null,
+    val errorMessage: String? = null,
+    val answerSegmentId: String? = null,
+    /** Some of a spoken answer: base64 of mono 16-bit PCM at 24000 Hz. */
+    val answerAudio: String? = null,
+    /** On the recording live socket, where an utterance began and ended, in milliseconds on the recording's timeline. */
+    val utteranceStartMS: Long? = null,
+    val utteranceEndMS: Long? = null,
+)
+
+/** What a person dictating has said so far, put after the text the dictation started on: a space between unless the text is empty or already ends in white space. */
+fun appendingDictation(words: String, existing: String): String {
+    val last = existing.lastOrNull()
+    return if (last == null || last.isWhitespace()) existing + words else "$existing $words"
+}

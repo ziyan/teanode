@@ -435,3 +435,19 @@ class LinkPreviewTest {
         assertNotNull(lines)
     }
 }
+
+class VoiceEventTest {
+    @Test
+    fun aVoiceEventIsRead() {
+        val event = TeaNodeJson.decodeFromString(VoiceEvent.serializer(), """{"voiceEvent":"transcriptFinal","utteranceId":"u1","transcriptText":"Hello"}""")
+        assertEquals("Hello", event.transcriptText)
+    }
+
+    @Test
+    fun dictatedWordsJoinWithASpaceUnlessThereIsOne() {
+        assertEquals("hello world", appendingDictation("world", "hello"))
+        assertEquals("hello world", appendingDictation("world", "hello "))
+        assertEquals("world", appendingDictation("world", ""))
+        assertEquals("a\nworld", appendingDictation("world", "a\n"))
+    }
+}
