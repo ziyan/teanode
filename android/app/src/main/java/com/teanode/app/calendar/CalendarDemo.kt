@@ -186,7 +186,7 @@ val calendarDemoAnswerers: List<DemoAnswerer> = listOf(
     graphQLField("UnshareCalendar", "true"),
     graphQLField("ListCirclePeople", sharePeopleJson),
     DemoAnswerer { request ->
-        if (!request.document.contains("ListCircles")) return@DemoAnswerer null
+        if (!request.document.contains("ListCircles") || request.document.contains("pendingInvitations")) return@DemoAnswerer null
         val isRoles = request.document.contains("memberRole")
         DemoResponse(
             if (isRoles) {

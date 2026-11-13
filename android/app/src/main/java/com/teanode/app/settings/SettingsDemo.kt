@@ -49,11 +49,76 @@ private const val AGENT_SETTINGS = """{
   "categories":["personal","work","newsletter","notification","receipt","promotion","social","invitation","phishing","junk","other","club"]}"""
 
 val settingsDemoAnswerers: List<DemoAnswerer> = listOf(
+    graphQLFields(
+        "ListAgents" to """[
+          {"agentId":"agent-1","userId":"demo-user","username":"robin","name":"Juniper","enabled":true,"dailyTokens":100000,"dailyCost":0,"dead":0,"queued":2,"today":{"used":1200,"limit":100000,"cost":0.25,"costLimit":0,"currency":"USD"}},
+          {"agentId":"agent-2","userId":"user-alex","username":"alex","name":"","enabled":true,"operatorDisabledAt":"2030-01-02T00:00:00Z","dailyTokens":0,"dailyCost":2.5,"dead":3,"queued":0,"today":{"used":0,"limit":0,"cost":0,"costLimit":2.5,"currency":"USD"}}
+        ]""",
+        "AgentServerUsage" to """[
+          {"key":"2030-01-05","cost":0.42,"currency":"USD","billedAmount":0.4,"billedCurrencyCode":"USD","totals":{"promptTokens":120000,"completionTokens":30000,"cacheReadTokens":80000,"cacheWriteTokens":0,"audioInputTokens":0,"calls":64}},
+          {"key":"2030-01-04","cost":0.18,"currency":"USD","totals":{"promptTokens":50000,"completionTokens":9000,"cacheReadTokens":20000,"cacheWriteTokens":0,"audioInputTokens":0,"calls":21}}
+        ]""",
+        "ListAgentDeadLetters" to """[{"id":"dead1","agentId":"agent-2","kind":"triage","attempts":3,"error":"The model did not answer."}]""",
+    ),
+    graphQLField(
+        "ListAgentEvaluationRuns",
+        """[
+          {"id":"run2","startedAt":"2030-01-05T02:00:00Z","finishedAt":"2030-01-05T02:09:00Z","questionCount":12,"cost":0.31,"sourceScores":[{"answerFrom":"memory","answeredCount":12,"scorePercent":83.0,"scorePercentWithoutFiledAfter":88.0,"filedAfterCount":1},{"answerFrom":"sources","answeredCount":12,"scorePercent":58.0,"scorePercentWithoutFiledAfter":60.0,"filedAfterCount":1}]},
+          {"id":"run1","startedAt":"2030-01-02T02:00:00Z","finishedAt":"2030-01-02T02:08:00Z","questionCount":10,"cost":0.27,"sourceScores":[{"answerFrom":"memory","answeredCount":10,"scorePercent":70.0,"scorePercentWithoutFiledAfter":70.0,"filedAfterCount":0}]}
+        ]""",
+    ),
+    graphQLField(
+        "ListAgentEvaluationAnswers",
+        """[
+          {"id":"ans1","runId":"run2","questionId":"q1","answerFrom":"memory","answerVerdict":"correct","verdictReason":"Matches the expected answer.","answerText":"The club meets on Thursdays."},
+          {"id":"ans2","runId":"run2","questionId":"q2","answerFrom":"memory","answerVerdict":"missed","verdictReason":"The agent said it did not know.","answerText":"I do not know."}
+        ]""",
+    ),
+    graphQLField(
+        "ListAgentSourceTypes",
+        """[{"name":"webfeed","description":"reads a feed of articles from a web address","isLocal":false,"reader":"feed","requires":[],"readable":true,"problem":null,
+          "settings":[{"name":"feedUrl","description":"where the feed is","settingType":"string","pattern":"","itemPattern":"","isRequired":true},{"name":"maximumItems","description":"how many items to keep","settingType":"integer","pattern":"","itemPattern":"","isRequired":false,"minimum":1,"maximum":500}],
+          "secrets":[{"key":"accessToken","description":"the token the feed asks for","isOptional":true}]}]""",
+    ),
+    // The access session the People, Groups and Roles pages read: an operator, so their buttons show.
+    DemoAnswerer { request ->
+        if (request.document.contains("impersonatorUsername")) {
+            DemoResponse("""{"data":{"GetSession":{"userId":"demo-user","permissions":{"everywhere":["circle:use","location:use","health:use","journal:use","passwords:use","shopping:use","photos:use","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","domain:manage"]},"impersonatorUsername":null}}}""")
+        } else {
+            null
+        }
+    },
+    graphQLFields(
+        "GetServerAddresses" to """{"ipv4":"192.0.2.10","ipv6":null,"error":null}""",
+        "GetOutgoingIdentity" to """{"address":"192.0.2.10","via":"direct","reverseName":"mail.example.com","forwardAddresses":["192.0.2.11"],"confirmed":false,"helloName":"mail.example.com","helloAddresses":["192.0.2.10"],"helloMatches":true,"unknown":null}""",
+        "GetSettings" to """{"submission":{"host":null,"port":0,"effectiveHost":"mail.example.com","effectivePort":"587"},"imap":{"host":null,"port":0,"tlsPort":0,"effectiveHost":"mail.example.com","effectivePort":"143","effectiveTlsPort":"993"}}""",
+    ),
+    graphQLField("GetServerStatus", """{"instance":"server-1","version":"1.42.0","commit":"abcdef0123456789abcdef","startedAt":"2030-01-01T00:00:00Z","uptimeSeconds":345600,"pendingRestart":["listen.https"],"supervision":"container","restarting":false}"""),
+    graphQLField("GetUpgrade", """{"current":"1.42.0","latest":"1.43.0","available":true,"notes":"Fixes and a faster mail queue.","checkedAt":"2030-01-05T00:00:00Z","applicable":true,"automatic":false,"enabled":true,"upgrading":false}"""),
+    graphQLField(
+        "GetSettings",
+        """{"s3":{"enabled":true,"bucket":"example-mail","region":"eu-west-1","endpoint":null,"pathStyle":false,"accessKeyId":"AKIAEXAMPLE","hasSecretAccessKey":true,"credentialsFile":""},
+          "route53":{"enabled":false,"zoneId":"","region":"","accessKeyId":"","hasSecretAccessKey":false,"credentialsFile":""},
+          "antivirus":{"enabled":false,"host":"","port":3310},
+          "antispam":{"enabled":true,"engine":"builtin","effectiveEngine":"builtin","host":"","port":0,"signalsEnabled":true,"dnsEnabled":true,"bayesEnabled":true,"rulesEnabled":true,"bayesMinimumMessages":200,"bayesLearnedSpam":1200,"bayesLearnedHam":3400},
+          "relay":{"enabled":true,"host":"smtp.example.com","port":587,"security":"starttls","username":"relay-user","hasPassword":true},
+          "proxy":{"socks5":""},
+          "certificates":{"perDomain":true,"hosts":["mail.example.com"],"acmeEnabled":true,"acmeEmail":"admin@example.com","acmeDirectoryUrl":"https://acme.example.com/directory","acmeChallenge":"http","certificateFile":"","privateKeyFile":""},
+          "smtp":{"maxMessageSize":52428800,"maxRecipientsIncoming":100,"maxRecipientsOutgoing":50,"greylistDelay":300,"authRateLimit":5,"authRateBurst":10,"trustedSenders":["partner.example.com"]},
+          "resolver":{"nameserver":"1.1.1.1","checkInterval":3600,"externalAddressServices":["https://addr.example.com"]},
+          "session":{"lifetime":2592000},
+          "passkey":{"enabled":true,"relyingPartyId":"example.com","displayName":"Example","origins":["https://mail.example.com"],"maximumPerUser":10},
+          "listen":{"smtpIncoming":":25","smtpOutgoing":":587","imap":":143","imaps":":993","http":":80","https":":443","debug":""},
+          "sso":{"providers":[{"id":"idp","name":"Example SSO","issuer":"https://sso.example.com","clientId":"teanode","hasClientSecret":true,"groupsClaim":"groups","createUsers":true}]},
+          "identity":{"name":"Example Mail","mailServers":["mail.example.com"],"externalAddresses":["203.0.113.5"],"logLevel":"info","dataDirectory":"/var/lib/example"},
+          "storage":{"directory":"/var/lib/example/mail","spoolRetention":"168h"},
+          "geoip":{"enabled":false,"databaseFile":""},
+          "places":{"providerKind":"nominatim","providerUrl":"https://places.example.com","mapStyleUrl":""}}""".replace("\n", " "),
+    ),
     graphQLField(
         "ListAgents",
         """[
-          {"agentId":"agent-1","userId":"demo-user","username":"robin","name":"Juniper","enabled":true,"dailyTokens":100000,"dailyCost":0,"dead":0,"queued":2,"today":{"used":1200,"limit":100000,"cost":0.25,"costLimit":0,"currency":"USD"}},
-          {"agentId":"agent-2","userId":"user-alex","username":"alex","name":"","enabled":true,"operatorDisabledAt":"2030-01-02T00:00:00Z","dailyTokens":0,"dailyCost":2.5,"dead":3,"queued":0,"today":{"used":0,"limit":0,"cost":0,"costLimit":2.5,"currency":"USD"}}
+          {"agentId":"agent-1","userId":"demo-user","username":"robin","name":"Juniper","enabled":true,"dailyTokens":100000,"dailyCost":0,"dead":0,"queued":2,"today":{"used":1200,"limit":100000,"cost":0.25,"costLimit":0,"currency":"USD"}}
         ]""",
     ),
     graphQLField(

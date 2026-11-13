@@ -35,13 +35,13 @@ in `android/app/src/main/java/com/teanode/app/settings` and `.../search`; screen
 | AccessManagement.swift | `access/AccessManagement.kt`, `access/OperatorAccess.kt` (from ManageMail.swift, the part the settings need) | `AccessManagementTest` | done (the session is the foundation's `AccessSession`) |
 | AgentBilling.swift | `agent/AgentBilling.kt` | none | ported, not tested, no screen |
 | AgentSettings.swift | `agent/AgentSettings.kt` | `AgentSettingsTest` | done except the speech audio calls |
-| AgentUpkeep.swift | documents only | none | not ported |
+| AgentUpkeep.swift | `agent/AgentUpkeep.kt`, `agent/KnowledgeSources.kt`, `agent/ScheduleTiming.kt` | `AgentUpkeepTest`, `KnowledgeSourcesTest`, `ScheduleTimingTest` | done |
 | Circles.swift | `circles/Circles.kt` | `CirclesTest` | done |
 | DeviceSetup.swift | `devicesetup/DeviceSetup.kt` | `DeviceSetupTest` | done |
-| ManageServer.swift | documents only | none | not ported |
+| ManageServer.swift | `manage/AgentAdmin.kt`, `manage/ServerAdmin.kt` | `AgentAdminTest`, `ServerAdminTest` | done |
 | Services.swift | `services/Services.kt` (capabilities are the foundation's) | none | done |
 | Sharing.swift | `sharing/Sharing.kt` (the stop calls carry the mutations of each kind) | `SharingTest` | done |
-| SkillSharing.swift | documents only | none | not ported |
+| SkillSharing.swift | `skillsharing/SkillSharing.kt` | `SkillSharingTest` | done |
 | Search.swift, PlaceSearch.swift | `search/Search.kt` | `SearchTest` | done |
 
 GraphQL documents are generated from the Swift text by a script (`$` escaped, interpolated field lists kept), so they
@@ -60,3 +60,36 @@ are the iPhone app's documents character for character.
 | CirclesView.swift | the address book of a circle (make, shown), the circle's photo albums (list, new), the question after accepting an invitation (calendar level, and for a family where the person is) | done (the Photos row on a member is not ported) |
 | AgentSettingsViews.swift | Listen to a speaking voice (the server's WAV sample played with MediaPlayer), the hours of "outside my hours" answering editable | done (the days of the week are kept as they are) |
 | SearchTab.swift | "Show all in Mail" opens `mail/search?words=...` with the typed words | partly: Mail is the only part whose route takes words; the others open their first screen |
+
+
+## Round 3
+
+| iOS file | Android | Status |
+| --- | --- | --- |
+| ManageServerViews.swift: Server tabs | `ServerScreens.kt` (+ kit `manage/ServerAdmin.kt`, `ServerAdminTest`): tabs for identity, mail, sending, listeners, certificates, storage, resolver, scanning, sessions and SSO, built from the sections `GetSettings` returns (switch, number, text, list of words, secret, shown value) with a Save for each section. Secrets are never read back: a sealed value is shown as kept, sent only when typed, cleared with an empty value | done in round 4 (the Setup tab and SSO editing are below) |
+| ManageServerViews.swift: About, restart | About tab: instance, version and commit, running since, settings waiting for a restart, Restart the server, check for and apply an upgrade | done |
+| ManageServerViews.swift: mail delivery | the Manage hub links to the mail area's delivery pages (`mail/manage/*`) | done (those pages belong to the mail part) |
+| ManageServerViews.swift: Usage | `AgentUsageScreen` (+ kit `AgentUsageRow`, `AgentDeadJob`, `usageBounds`): group by day, agent or model, range, tokens, calls and cost, jobs given up on | done |
+| AgentUpkeepViews.swift: schedules | `ScheduleEditorDialog`: name, a time with weekday chips or mail conditions (field, header, operator, value), deliver by mail or into the conversation, the prompt; the daily brief card (switch, time, weekdays, send one now). Kit: `agent/ScheduleTiming.kt`, `ScheduleTimingTest` | done |
+| AgentUpkeepViews.swift: memory | the scores of each source with the change in points and history, the list of gradings, the answers of a grading (verdict, reason, answer), editing, dropping and confirming a check question, show dropped | done |
+| AgentUpkeepViews.swift: sources | `KnowledgeSourceEditorDialog`: files on a computer (computer, path, root, cron) and every typed source the server offers (its settings as fields, its secrets as password fields that are never filled in again, kept or new), the list opens it, a button adds one | partly: sources of the journal, records, sent mail and finance shapes cannot be edited |
+| CirclesView.swift: member photos | a Photos item in the menu of a member linked to a contact, opening that member's photos | done |
+| SkillSharingViews.swift: answer note | a note field on Approve and Deny, shown on the call | done |
+| AgentSettingsViews.swift: days | weekday chips for "outside my hours" answering | done |
+| Open pictures | every picture of rounds 2 and 3 was opened; the ones that showed an empty circle, a failed memory page, a missing tab and a raw section name were fixed (see the report) | done |
+
+Not verified: everything that needs a real server, phone or credential (saving a server section, a restart, an upgrade, a
+source secret reaching a computer). The kit tests and the demo screenshots cover the calls and the screens only.
+
+
+## Round 4
+
+| iOS file | Android | Status |
+| --- | --- | --- |
+| ManageServerViews.swift: Setup tab | `ServerSetupScreens.kt` (+ kit `manage/ServerSetup.kt`, `ServerSetupTest`): this server's address (A, AAAA, why none), how outgoing mail identifies itself (sends from, reverse name, greeting name, each with OK or Change and the advice), what to tell a mail client and a mail program, each opening a form that follows the server when empty | done |
+| ManageServerViews.swift: identity providers | `SsoProvidersTab`: every provider (ID, button text, issuer URL, client ID, client secret, groups claim, create accounts), add, remove, the redirect URL to register. The secret is never read back: a stored one shows "Kept as stored; type to replace" and is sent only when typed | done |
+| ManageServerViews.swift: Server tabs | the tab row is now About, Setup and the ten settings tabs | done |
+| AgentUpkeepViews.swift: schedule words | `UpkeepWords.kt` (+ kit `ScheduleTiming.timeText`, `ScheduleWeekday.name`, `shortNamesText`; tests `ScheduleTimingTest`, `UpkeepWordsTest`): "Weekdays at 7:30 AM", "Fridays at 5:00 PM", "Every Mon, Wed, and Fri at 9:00 AM", "When mail arrives: From contains ..."; any other line is shown as written | done |
+| AgentUpkeepViews.swift: memory words | question state, question kind and answer verdict in the reader's words | done |
+| ManageMailViews.swift (mail delivery pages) | already covered by the mail part: `mail/manage/*` has the overview, all mail, one message with its authentication, spam rules, deliveries, rendered body, source and headers, the queue, reports and one report with its records, domains, one domain with its settings, DNS records, aliases, credentials, templates and layout. Checked page by page against the iOS list; nothing duplicated here, and the Manage hub links to them | done |
+| People edit dialog picture | the demo now answers the access session as an operator, so People, Groups and Roles show their buttons | done |

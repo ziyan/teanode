@@ -1,6 +1,11 @@
 package com.teanode.app.settings
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.padding
+import com.teanode.kit.agent.runDailyBrief
+import com.teanode.kit.agent.setDailyBrief
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -51,6 +56,14 @@ import com.teanode.kit.agent.disconnectServer
 import com.teanode.kit.agent.dreamNow
 import com.teanode.kit.agent.gradeMemoryNow
 import com.teanode.kit.agent.learnedFacts
+import com.teanode.kit.agent.attachedComputers
+import com.teanode.kit.agent.knowledgeSourceSecrets
+import com.teanode.kit.agent.knowledgeSourceTypes
+import com.teanode.kit.agent.saveKnowledgeSource
+import com.teanode.kit.agent.setKnowledgeSourceSecret
+import com.teanode.kit.agent.memoryCheckRuns
+import com.teanode.kit.agent.memoryCheckAnswers
+import com.teanode.kit.agent.updateMemoryCheckQuestion
 import com.teanode.kit.agent.knowledgeSourceDetails
 import com.teanode.kit.agent.syncKnowledgeSource
 import com.teanode.kit.agent.switchKnowledgeSource
@@ -222,25 +235,29 @@ fun MutedAlertsScreen(onBack: () -> Unit) {
 /** What the agent does at a time: list, switch on and off, run now, delete, and make one. */
 @Composable
 fun SchedulesScreen(onBack: () -> Unit) {
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
     val connection = LocalConnection.current
     val actions = rememberActionRunner()
     val loaded = rememberLoad { connection.agentSchedules() }
     var removing by remember { mutableStateOf<AgentSchedule?>(null) }
     var isAdding by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<AgentSchedule?>(null) }
     val ranText = stringResource(R.string.settings_schedules_ran)
     val savedText = stringResource(R.string.settings_saved)
     val removedText = stringResource(R.string.settings_access_removed)
     LoadedSettingsPage(
         stringResource(R.string.settings_schedules_title), onBack, loaded,
         floatingActionButton = { FloatingActionButton(onClick = { isAdding = true }) { Icon(Icons.Outlined.Add, stringResource(R.string.settings_schedules_new)) } },
-        isEmpty = { list -> list.isEmpty() }, empty = { EmptyState(Icons.Outlined.NightsStay, stringResource(R.string.settings_schedules_none), description = stringResource(R.string.settings_schedules_none_detail)) },
     ) { schedules ->
-        items(schedules.size) { index ->
-            val schedule = schedules[index]
+        item { DailyBriefCard(schedules, actions, onChanged = { loaded.refresh() }) }
+        if (schedules.none { schedule -> schedule.name != com.teanode.kit.agent.DailyBrief.SCHEDULE_NAME }) item { TeaNodeRow(headline = stringResource(R.string.settings_schedules_none)) }
+        items(schedules.filter { schedule -> schedule.name != com.teanode.kit.agent.DailyBrief.SCHEDULE_NAME }.size) { index ->
+            val schedule = schedules.filter { candidate -> candidate.name != com.teanode.kit.agent.DailyBrief.SCHEDULE_NAME }[index]
             val next = ServerTime.instant(schedule.nextRunAt)?.let { instant -> stringResource(R.string.settings_schedules_next, shortDateTime(instant)) }
             val last = ServerTime.instant(schedule.lastRunAt)?.let { instant -> stringResource(R.string.settings_last_used, relativeTimeText(instant.toEpochMilli())) }
             TeaNodeRow(
-                headline = schedule.name, supporting = listOfNotNull(if (schedule.isTriggeredByMail) stringResource(R.string.settings_schedules_on_mail) else schedule.cron, next, last, schedule.prompt.ifEmpty { null }).joinToString("\n"), supportingMaxLines = 5,
+                onClick = { editing = schedule },
+                headline = schedule.name, supporting = listOfNotNull(if (schedule.isTriggeredByMail) UpkeepWords.scheduleMailText(resources, schedule.mailConditions.orEmpty()) else UpkeepWords.scheduleTimingText(resources, schedule.cron) ?: schedule.cron, next, last, schedule.prompt.ifEmpty { null }).joinToString("\n"), supportingMaxLines = 5,
                 trailing = {
                     androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         IconButton(onClick = { actions.run(ranText) { connection.runAgentSchedule(schedule.id) } }) { Icon(Icons.Outlined.PlayArrow, stringResource(R.string.settings_schedules_run)) }
@@ -257,54 +274,240 @@ fun SchedulesScreen(onBack: () -> Unit) {
             onConfirm = { removing = null; actions.run(removedText, onSuccess = { loaded.refresh() }) { connection.deleteAgentSchedule(schedule.id) } }, onDismiss = { removing = null },
         )
     }
-    if (isAdding) {
-        var name by remember { mutableStateOf("") }
-        var cron by remember { mutableStateOf("0 9 * * 1-5") }
-        var prompt by remember { mutableStateOf("") }
-        FormDialog(
-            title = stringResource(R.string.settings_schedules_new), confirmLabel = stringResource(R.string.settings_create), isConfirmEnabled = name.isNotBlank() && cron.isNotBlank() && prompt.isNotBlank(), isWorking = actions.isWorking,
-            onConfirm = { actions.run(savedText, onSuccess = { isAdding = false; loaded.refresh() }) { connection.saveAgentSchedule(name = name.trim(), cron = cron.trim(), prompt = prompt.trim()) } },
-            onDismiss = { isAdding = false },
-        ) {
-            FormField(name, { name = it }, stringResource(R.string.settings_profile_name))
-            FormField(cron, { cron = it }, stringResource(R.string.settings_schedules_cron))
-            FormField(prompt, { prompt = it }, stringResource(R.string.settings_schedules_prompt), isSingleLine = false, minLines = 3)
+    if (isAdding || editing != null) {
+        ScheduleEditorDialog(editing, actions, onDismiss = { isAdding = false; editing = null }, onSaved = { isAdding = false; editing = null; loaded.refresh() })
+    }
+}
+
+/** The days of a weekly timing as chips, Monday first. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun WeekdayChips(dayNumbers: List<Int>, onChange: (List<Int>) -> Unit) {
+    androidx.compose.foundation.layout.FlowRow(androidx.compose.ui.Modifier.padding(horizontal = 16.dp)) {
+        (1..7).forEach { day ->
+            androidx.compose.material3.FilterChip(
+                selected = dayNumbers.contains(day), modifier = androidx.compose.ui.Modifier.padding(end = 6.dp),
+                onClick = { onChange(if (dayNumbers.contains(day)) dayNumbers - day else (dayNumbers + day).sorted()) },
+                label = { Text(java.time.DayOfWeek.of(day).getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())) },
+            )
         }
     }
 }
 
-/** What the agent has learned and been corrected on, and the questions that check it. */
+/** Makes or changes a schedule: when (a time on some days, or when mail arrives), what it does, and where the answer goes. */
+@Composable
+private fun ScheduleEditorDialog(edited: AgentSchedule?, actions: ActionRunner, onDismiss: () -> Unit, onSaved: () -> Unit) {
+    val connection = LocalConnection.current
+    val savedText = stringResource(R.string.settings_saved)
+    var name by remember(edited?.id) { mutableStateOf(edited?.name.orEmpty()) }
+    var prompt by remember(edited?.id) { mutableStateOf(edited?.prompt.orEmpty()) }
+    var isByMail by remember(edited?.id) { mutableStateOf(edited?.isDeliveredByMail == true) }
+    var isOnMail by remember(edited?.id) { mutableStateOf(edited?.isTriggeredByMail == true) }
+    val timing = remember(edited?.id) { edited?.cron?.let { cron -> com.teanode.kit.agent.ScheduleTiming.of(cron) } }
+    var hasTiming by remember(edited?.id) { mutableStateOf(edited == null || timing != null || edited.isTriggeredByMail) }
+    var time by remember(edited?.id) { mutableStateOf(timing?.let { found -> UpkeepClock.text(found.hour, found.minute) } ?: "08:00") }
+    var days by remember(edited?.id) { mutableStateOf(timing?.dayNumbers ?: (1..5).toList()) }
+    var rawCron by remember(edited?.id) { mutableStateOf(edited?.cron.orEmpty()) }
+    var conditions by remember(edited?.id) { mutableStateOf(edited?.mailConditions ?: listOf(com.teanode.kit.agent.ScheduleMailCondition("any", value = null))) }
+    val usesRawCron = edited != null && timing == null && !edited.isTriggeredByMail
+    val clock = UpkeepClock.hourAndMinute(time)
+    val cron = if (usesRawCron) rawCron.trim() else clock?.let { (hour, minute) -> com.teanode.kit.agent.ScheduleTiming(hour, minute, days).cron }.orEmpty()
+    val isValid = name.isNotBlank() && prompt.isNotBlank() && days.isNotEmpty() && (if (isOnMail) com.teanode.kit.agent.ScheduleMailTrigger.isComplete(conditions) else cron.isNotEmpty())
+    FormDialog(
+        title = stringResource(if (edited == null) R.string.settings_schedules_new else R.string.settings_schedules_edit), confirmLabel = stringResource(R.string.settings_save), isConfirmEnabled = isValid, isWorking = actions.isWorking,
+        onConfirm = {
+            actions.run(savedText, onSuccess = onSaved) {
+                connection.saveAgentSchedule(
+                    scheduleId = edited?.id, name = name.trim(), cron = if (isOnMail) edited?.cron?.ifEmpty { null } ?: "0 0 * * *" else cron, prompt = prompt.trim(), deliver = if (isByMail) "mail" else "drawer",
+                    mailConditions = if (isOnMail) conditions else if (edited?.isTriggeredByMail == true) emptyList() else null,
+                )
+            }
+        },
+        onDismiss = onDismiss,
+    ) {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            FormField(name, { name = it }, stringResource(R.string.settings_profile_name))
+            ChoiceRow(
+                stringResource(R.string.settings_schedules_when), listOf(false, true), isOnMail,
+                label = { onMail -> stringResource(if (onMail) R.string.settings_schedules_on_mail else R.string.settings_schedules_at_a_time) }, onSelect = { isOnMail = it },
+            )
+            if (isOnMail) {
+                conditions.forEachIndexed { index, condition ->
+                    ChoiceRow(
+                        stringResource(R.string.settings_schedules_field), com.teanode.kit.agent.ScheduleMailTrigger.fields, condition.mailField, label = { field -> mailFieldName(field) },
+                        onSelect = { field -> conditions = conditions.toMutableList().also { list -> list[index] = condition.copy(mailField = field, value = if (field == "any") null else condition.value ?: "") } },
+                    )
+                    if (condition.mailField == "header") FormField(condition.header.orEmpty(), { typed -> conditions = conditions.toMutableList().also { list -> list[index] = condition.copy(header = typed) } }, stringResource(R.string.settings_schedules_header))
+                    if (!condition.isBare) {
+                        ChoiceRow(
+                            stringResource(R.string.settings_schedules_compare), listOf("contains", "equals", "matches"), condition.comparisonOperator.ifEmpty { "contains" },
+                            label = { operator -> stringResource(when (operator) { "equals" -> R.string.settings_schedules_is; "matches" -> R.string.settings_schedules_matches; else -> R.string.settings_schedules_contains }) },
+                            onSelect = { operator -> conditions = conditions.toMutableList().also { list -> list[index] = condition.copy(comparisonOperator = operator) } },
+                        )
+                        FormField(condition.value.orEmpty(), { typed -> conditions = conditions.toMutableList().also { list -> list[index] = condition.copy(value = typed) } }, stringResource(R.string.settings_schedules_value))
+                    }
+                    if (conditions.size > 1) TeaNodeRow(headline = stringResource(R.string.settings_schedules_remove_condition), leadingIcon = Icons.Outlined.Delete, onClick = { conditions = conditions.toMutableList().also { list -> list.removeAt(index) } })
+                }
+                TeaNodeRow(headline = stringResource(R.string.settings_schedules_add_condition), leadingIcon = Icons.Outlined.Add, onClick = { conditions = conditions + com.teanode.kit.agent.ScheduleMailCondition("from") })
+                FooterText(stringResource(R.string.settings_schedules_mail_footer))
+            } else if (usesRawCron) {
+                FormField(rawCron, { rawCron = it }, stringResource(R.string.settings_schedules_cron))
+            } else {
+                ClockField(stringResource(R.string.settings_schedules_time), time) { time = it }
+                WeekdayChips(days) { days = it }
+            }
+            ChoiceRow(
+                stringResource(R.string.settings_schedules_deliver), listOf(false, true), isByMail,
+                label = { byMail -> stringResource(if (byMail) R.string.settings_schedules_by_mail else R.string.settings_schedules_into_conversation) }, onSelect = { isByMail = it },
+            )
+            FormField(prompt, { prompt = it }, stringResource(R.string.settings_schedules_prompt), isSingleLine = false, minLines = 3)
+            FooterText(stringResource(R.string.settings_schedules_footer))
+        }
+    }
+}
+
+@Composable
+private fun mailFieldName(field: String): String = stringResource(
+    when (field) {
+        "from" -> R.string.settings_schedules_field_from
+        "to" -> R.string.settings_schedules_field_to
+        "subject" -> R.string.settings_schedules_field_subject
+        "header" -> R.string.settings_schedules_field_header
+        else -> R.string.settings_schedules_field_any
+    },
+)
+
+/** The morning brief: switch it on, choose when, and send one now. */
+@Composable
+private fun DailyBriefCard(schedules: List<AgentSchedule>, actions: ActionRunner, onChanged: () -> Unit) {
+    val connection = LocalConnection.current
+    val brief = com.teanode.kit.agent.DailyBrief.schedule(schedules)
+    var time by remember(brief?.cron) { mutableStateOf(com.teanode.kit.agent.DailyBrief.time(brief?.cron)) }
+    var days by remember(brief?.cron) { mutableStateOf(com.teanode.kit.agent.DailyBrief.dayNumbers(brief?.cron)) }
+    val onText = stringResource(R.string.settings_brief_on)
+    val offText = stringResource(R.string.settings_brief_off)
+    val sentText = stringResource(R.string.settings_brief_sent)
+    TeaNodeSectionHeader(stringResource(R.string.settings_brief_title))
+    SwitchRow(stringResource(R.string.settings_brief_title), brief?.enabled == true, { isOn -> actions.run(if (isOn) onText else offText, onSuccess = onChanged) { connection.setDailyBrief(isOn, time, days) } })
+    ClockField(stringResource(R.string.settings_schedules_time), time) { time = it }
+    WeekdayChips(days) { days = it }
+    if (UpkeepClock.hourAndMinute(time) != null && days.isNotEmpty() && (time != com.teanode.kit.agent.DailyBrief.time(brief?.cron) || days != com.teanode.kit.agent.DailyBrief.dayNumbers(brief?.cron))) {
+        TeaNodeRow(headline = stringResource(R.string.settings_save), onClick = { actions.run(onText, onSuccess = onChanged) { connection.setDailyBrief(brief?.enabled ?: true, time, days) } })
+    }
+    TeaNodeRow(headline = stringResource(R.string.settings_brief_send_now), leadingIcon = Icons.Outlined.PlayArrow, onClick = { actions.run(sentText) { connection.runDailyBrief() } })
+    FooterText(stringResource(R.string.settings_brief_footer))
+    TeaNodeSectionHeader(stringResource(R.string.settings_schedules_title))
+}
+
+/** What the agent has learned and been corrected on, the questions that check it, and how each grading went. */
 @Composable
 fun AgentMemorySettingsScreen(onBack: () -> Unit) {
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
     val connection = LocalConnection.current
     val actions = rememberActionRunner()
-    val loaded = rememberLoad { Triple(connection.learnedFacts(), connection.agentCorrections(), connection.memoryCheckQuestions()) }
+    val loaded = rememberLoad { MemoryPage(connection.learnedFacts(), connection.agentCorrections(), connection.memoryCheckQuestions(), connection.memoryCheckRuns()) }
+    var editing by remember { mutableStateOf<com.teanode.kit.agent.MemoryCheckQuestion?>(null) }
+    var viewingRun by remember { mutableStateOf<com.teanode.kit.agent.MemoryCheckRun?>(null) }
+    var isShowingDropped by remember { mutableStateOf(false) }
     val startedText = stringResource(R.string.settings_memory_check_started)
     val gradedText = stringResource(R.string.settings_memory_graded)
-    LoadedSettingsPage(stringResource(R.string.settings_memory_title), onBack, loaded) { (facts, corrections, questions) ->
+    val savedText = stringResource(R.string.settings_saved)
+    LoadedSettingsPage(stringResource(R.string.settings_memory_title), onBack, loaded) { page ->
         item {
             TeaNodeRow(headline = stringResource(R.string.settings_memory_check), leadingIcon = Icons.Outlined.PlayArrow, onClick = if (actions.isWorking) null else ({ actions.run(startedText) { connection.startMemoryCheck() } }))
-            TeaNodeRow(headline = stringResource(R.string.settings_memory_grade), leadingIcon = Icons.Outlined.PlayArrow, onClick = if (actions.isWorking) null else ({ actions.run(gradedText) { connection.gradeMemoryNow() } }))
-            TeaNodeSectionHeader(stringResource(R.string.settings_memory_learned))
+            TeaNodeRow(headline = stringResource(R.string.settings_memory_grade), leadingIcon = Icons.Outlined.PlayArrow, onClick = if (actions.isWorking) null else ({ actions.run(gradedText, onSuccess = { loaded.refresh() }) { connection.gradeMemoryNow() } }))
+            TeaNodeSectionHeader(stringResource(R.string.settings_memory_scores))
         }
-        if (facts.isEmpty()) item { TeaNodeRow(headline = stringResource(R.string.settings_memory_nothing_learned)) }
-        items(facts.size) { index ->
-            val learned = facts[index]
-            TeaNodeRow(headline = learned.fact.text, supporting = learned.name.ifEmpty { learned.path }.ifEmpty { null }, supportingMaxLines = 2)
+        com.teanode.kit.agent.MemoryCheckScore.answerSources.forEach { source ->
+            val history = com.teanode.kit.agent.MemoryCheckRun.scoreHistory(page.runs, source)
+            if (history.isNotEmpty()) item {
+                val change = com.teanode.kit.agent.MemoryCheckRun.scoreChangePoints(history)
+                TeaNodeRow(
+                    headline = memoryAnswerSourceName(source), supporting = listOfNotNull("${Math.round(history.last().scorePercent)}%", change?.let { points -> stringResource(R.string.settings_memory_change, points) }, history.takeIf { points -> points.size > 1 }?.joinToString(" → ") { point -> Math.round(point.scorePercent).toString() }).joinToString(" · "), supportingMaxLines = 4,
+                )
+            }
         }
-        item { TeaNodeSectionHeader(stringResource(R.string.settings_memory_corrections)) }
-        if (corrections.isEmpty()) item { TeaNodeRow(headline = stringResource(R.string.settings_memory_no_corrections)) }
-        items(corrections.size) { index ->
-            val correction = corrections[index]
-            TeaNodeRow(headline = correction.said, supporting = correction.kind.ifEmpty { null })
+        item { TeaNodeSectionHeader(stringResource(R.string.settings_memory_runs)) }
+        if (page.runs.isEmpty()) item { TeaNodeRow(headline = stringResource(R.string.settings_memory_no_runs)) }
+        items(page.runs.size) { index ->
+            val run = page.runs[index]
+            val whenText = ServerTime.instant(run.startedAt)?.let { instant -> shortDateTime(instant) }.orEmpty()
+            val scores = com.teanode.kit.agent.MemoryCheckScore.answerSources.mapNotNull { source -> run.score(source)?.let { score -> "${memoryAnswerSourceName(source)} ${Math.round(score.scorePercent)}%" } }
+            TeaNodeRow(
+                headline = whenText, supporting = listOfNotNull(stringResource(R.string.settings_memory_questions_count, run.questionCount), scores.joinToString(", ").ifEmpty { null }, if (run.isFinished) null else stringResource(R.string.settings_memory_grading)).joinToString("\n"),
+                supportingMaxLines = 5, onClick = if (run.isFinished) ({ viewingRun = run }) else null,
+            )
         }
         item { TeaNodeSectionHeader(stringResource(R.string.settings_memory_questions)) }
+        item { SwitchRow(stringResource(R.string.settings_memory_show_dropped), isShowingDropped, { isShowingDropped = it }) }
+        val questions = com.teanode.kit.agent.MemoryCheckQuestions.visible(page.questions, isShowingDropped)
         if (questions.isEmpty()) item { TeaNodeRow(headline = stringResource(R.string.settings_memory_no_questions)) }
         items(questions.size) { index ->
             val question = questions[index]
-            TeaNodeRow(headline = question.questionText, supporting = stringResource(R.string.settings_memory_expected, question.expectedAnswer), supportingMaxLines = 3)
+            TeaNodeRow(headline = question.questionText, supporting = stringResource(R.string.settings_memory_expected, question.expectedAnswer) + "\n" + UpkeepWords.questionState(resources, question.questionState), supportingMaxLines = 4, onClick = { editing = question })
+        }
+        item { TeaNodeSectionHeader(stringResource(R.string.settings_memory_learned)) }
+        if (page.facts.isEmpty()) item { TeaNodeRow(headline = stringResource(R.string.settings_memory_nothing_learned)) }
+        items(page.facts.size) { index ->
+            val learned = page.facts[index]
+            TeaNodeRow(headline = learned.fact.text, supporting = learned.name.ifEmpty { learned.path }.ifEmpty { null }, supportingMaxLines = 2)
+        }
+        item { TeaNodeSectionHeader(stringResource(R.string.settings_memory_corrections)) }
+        if (page.corrections.isEmpty()) item { TeaNodeRow(headline = stringResource(R.string.settings_memory_no_corrections)) }
+        items(page.corrections.size) { index ->
+            val correction = page.corrections[index]
+            TeaNodeRow(headline = correction.said, supporting = correction.kind.ifEmpty { null })
         }
         item { FooterText(stringResource(R.string.settings_memory_footer)) }
+    }
+    editing?.let { question ->
+        var draft by remember(question.id) { mutableStateOf(com.teanode.kit.agent.MemoryCheckQuestionChange(question.questionKind, question.questionText, question.expectedAnswer, question.outdatedAnswer.orEmpty(), question.questionState)) }
+        val change = com.teanode.kit.agent.MemoryCheckQuestionChange.between(question, draft)
+        FormDialog(
+            title = stringResource(R.string.settings_memory_edit_question), confirmLabel = stringResource(R.string.settings_save), isConfirmEnabled = !change.isEmpty && draft.questionText.orEmpty().isNotBlank() && draft.expectedAnswer.orEmpty().isNotBlank(), isWorking = actions.isWorking,
+            onConfirm = { actions.run(savedText, onSuccess = { editing = null; loaded.refresh() }) { connection.updateMemoryCheckQuestion(question.id, change) } },
+            onDismiss = { editing = null },
+        ) {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                FormField(draft.questionText.orEmpty(), { draft = draft.copy(questionText = it) }, stringResource(R.string.settings_memory_question), isSingleLine = false, minLines = 2)
+                FormField(draft.expectedAnswer.orEmpty(), { draft = draft.copy(expectedAnswer = it) }, stringResource(R.string.settings_memory_expected_answer), isSingleLine = false, minLines = 2)
+                FormField(draft.outdatedAnswer.orEmpty(), { draft = draft.copy(outdatedAnswer = it) }, stringResource(R.string.settings_memory_outdated_answer))
+                ChoiceRow(stringResource(R.string.settings_memory_kind), com.teanode.kit.agent.MemoryCheckQuestions.questionKinds, draft.questionKind.orEmpty(), label = { kind -> UpkeepWords.questionKind(resources, kind) }, onSelect = { draft = draft.copy(questionKind = it) })
+                ChoiceRow(stringResource(R.string.settings_memory_state), com.teanode.kit.agent.MemoryCheckQuestions.questionStates, draft.questionState.orEmpty(), label = { state -> UpkeepWords.questionState(resources, state) }, onSelect = { draft = draft.copy(questionState = it) })
+            }
+        }
+    }
+    viewingRun?.let { run -> MemoryRunDialog(run, loaded.value?.questions.orEmpty(), onDismiss = { viewingRun = null }) }
+}
+
+private class MemoryPage(
+    val facts: List<com.teanode.kit.agent.AgentLearnedFact>, val corrections: List<com.teanode.kit.agent.AgentCorrection>,
+    val questions: List<com.teanode.kit.agent.MemoryCheckQuestion>, val runs: List<com.teanode.kit.agent.MemoryCheckRun>,
+)
+
+@Composable
+private fun memoryAnswerSourceName(source: String): String = stringResource(
+    when (source) { "memory" -> R.string.settings_memory_from_memory; "sources" -> R.string.settings_memory_from_sources; else -> R.string.settings_memory_from_both },
+)
+
+/** What the agent answered to each question in one grading, from each place, and what the grader made of it. */
+@Composable
+private fun MemoryRunDialog(run: com.teanode.kit.agent.MemoryCheckRun, questions: List<com.teanode.kit.agent.MemoryCheckQuestion>, onDismiss: () -> Unit) {
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
+    val connection = LocalConnection.current
+    val loaded = rememberLoad(run.id) { connection.memoryCheckAnswers(run.id) }
+    FormDialog(title = stringResource(R.string.settings_memory_run_answers), confirmLabel = stringResource(R.string.common_done), isConfirmEnabled = true, onConfirm = onDismiss, onDismiss = onDismiss) {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            val answers = loaded.value
+            if (answers == null) Text(stringResource(R.string.common_loading))
+            answers?.sortedByDescending { answer -> answer.isMissedOrWrong }?.forEach { answer ->
+                val question = questions.firstOrNull { candidate -> candidate.id == answer.questionId }
+                TeaNodeRow(
+                    headline = question?.questionText ?: answer.questionId,
+                    supporting = listOfNotNull("${memoryAnswerSourceName(answer.answerFrom)}: ${UpkeepWords.verdict(resources, answer.answerVerdict)}", answer.answerText.ifEmpty { null }, answer.verdictReason.ifEmpty { null }).joinToString("\n"), supportingMaxLines = 8,
+                )
+            }
+        }
     }
 }
 
@@ -375,11 +578,14 @@ fun KnowledgeSourcesScreen(onBack: () -> Unit) {
     val actions = rememberActionRunner()
     val loaded = rememberLoad { connection.knowledgeSourceDetails() }
     var removing by remember { mutableStateOf<com.teanode.kit.agent.KnowledgeSourceRow?>(null) }
+    var isAddingSource by remember { mutableStateOf(false) }
+    var editingSource by remember { mutableStateOf<com.teanode.kit.agent.KnowledgeSourceRow?>(null) }
     val syncedText = stringResource(R.string.settings_sources_syncing)
     val savedText = stringResource(R.string.settings_saved)
     val removedText = stringResource(R.string.settings_access_removed)
     LoadedSettingsPage(
         stringResource(R.string.settings_sources_title), onBack, loaded, isEmpty = { details -> details.sources.isEmpty() },
+        floatingActionButton = { FloatingActionButton(onClick = { isAddingSource = true }) { Icon(Icons.Outlined.Add, stringResource(R.string.settings_sources_add)) } },
         empty = { EmptyState(Icons.Outlined.NightsStay, stringResource(R.string.settings_sources_none), description = stringResource(R.string.settings_sources_none_detail)) },
     ) { details ->
         items(details.sources.size) { index ->
@@ -392,7 +598,8 @@ fun KnowledgeSourcesScreen(onBack: () -> Unit) {
                 source.lastError.ifEmpty { null },
             )
             TeaNodeRow(
-                headline = source.name, overline = source.kind.ifEmpty { null }, supporting = lines.joinToString("\n"), supportingMaxLines = 5,
+                onClick = { editingSource = source },
+                headline = source.name, overline = source.kind.ifEmpty { null }, supporting = lines.joinToString("\n"), supportingMaxLines = 10,
                 trailing = {
                     androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         IconButton(onClick = { actions.run(syncedText) { connection.syncKnowledgeSource(source.id) } }) { Icon(Icons.Outlined.PlayArrow, stringResource(R.string.settings_sources_sync)) }
@@ -404,6 +611,9 @@ fun KnowledgeSourcesScreen(onBack: () -> Unit) {
         }
         item { FooterText(stringResource(R.string.settings_sources_footer)) }
     }
+    if (isAddingSource || editingSource != null) {
+        KnowledgeSourceEditorDialog(editingSource, actions, onDismiss = { isAddingSource = false; editingSource = null }, onSaved = { isAddingSource = false; editingSource = null; loaded.refresh() })
+    }
     removing?.let { source ->
         ConfirmationDialog(
             title = stringResource(R.string.settings_sources_remove, source.name), confirmLabel = stringResource(R.string.settings_remove), isDestructive = true, text = stringResource(R.string.settings_sources_remove_detail),
@@ -411,3 +621,96 @@ fun KnowledgeSourcesScreen(onBack: () -> Unit) {
         )
     }
 }
+
+/** Makes or changes a source: its type, name, where it reads, the type's settings, and its secrets, which are sealed on the server and never shown again. */
+@Composable
+private fun KnowledgeSourceEditorDialog(edited: com.teanode.kit.agent.KnowledgeSourceRow?, actions: ActionRunner, onDismiss: () -> Unit, onSaved: () -> Unit) {
+    val connection = LocalConnection.current
+    val types = rememberLoad { connection.knowledgeSourceTypes() }
+    val computers = rememberLoad { runCatching { connection.attachedComputers() }.getOrDefault(emptyList()) }
+    val secretStates = rememberLoad(edited?.id) { edited?.id?.let { id -> runCatching { connection.knowledgeSourceSecrets(id) }.getOrDefault(emptyList()) } ?: emptyList() }
+    val savedText = stringResource(R.string.settings_saved)
+    val offered = com.teanode.kit.agent.KnowledgeSourceType.offered(types.value.orEmpty())
+    val filesName = stringResource(R.string.settings_sources_files_type)
+    var typeName by remember(edited?.id) { mutableStateOf(edited?.specification?.type?.ifEmpty { null } ?: if (edited != null) FILES_CHOICE else null) }
+    val chosenType = offered.firstOrNull { type -> type.name == typeName }
+    var name by remember(edited?.id) { mutableStateOf(edited?.name.orEmpty()) }
+    var computer by remember(edited?.id) { mutableStateOf(edited?.specification?.computer.orEmpty()) }
+    var path by remember(edited?.id) { mutableStateOf(edited?.specification?.path.orEmpty()) }
+    var rootPath by remember(edited?.id) { mutableStateOf(edited?.rootPath.orEmpty()) }
+    var cron by remember(edited?.id) { mutableStateOf(edited?.cron.orEmpty()) }
+    var draft by remember(edited?.id, chosenType?.name) { mutableStateOf(chosenType?.draft(edited?.specification?.storedSettings.orEmpty()) ?: com.teanode.kit.agent.KnowledgeSourceType.Draft()) }
+    var secretValues by remember(edited?.id, chosenType?.name) { mutableStateOf(mapOf<String, String>()) }
+    val isFiles = typeName == FILES_CHOICE
+    val isEditable = edited == null || edited.kind == "computer" || !edited.specification.type.isEmpty()
+    val problem = chosenType?.firstProblem(draft)
+    val isReady = isEditable && name.isNotBlank() && (isFiles && path.isNotBlank() && computer.isNotBlank() || chosenType != null && problem == null && (!chosenType.isReadOnComputer || computer.isNotBlank()))
+    FormDialog(
+        title = stringResource(if (edited == null) R.string.settings_sources_add else R.string.settings_sources_edit), confirmLabel = stringResource(R.string.settings_save), isConfirmEnabled = isReady, isWorking = actions.isWorking,
+        onConfirm = {
+            actions.run(savedText, onSuccess = onSaved) {
+                val savedId = if (isFiles) {
+                    connection.saveKnowledgeSource(com.teanode.kit.agent.KnowledgeSourceChange(sourceId = edited?.id, name = name.trim(), kind = "computer", computer = computer.trim(), path = path.trim(), format = "files", rootPath = rootPath.trim().ifEmpty { null }, cron = cron.trim().ifEmpty { null }))
+                } else {
+                    val type = chosenType ?: return@run
+                    connection.saveKnowledgeSource(
+                        com.teanode.kit.agent.KnowledgeSourceChange(
+                            sourceId = edited?.id, name = name.trim(), computer = if (type.isReadOnComputer) computer.trim() else null, rootPath = rootPath.trim().ifEmpty { null }, cron = cron.trim().ifEmpty { null },
+                            type = type.name, settings = type.values(draft),
+                        ),
+                    )
+                }
+                chosenType?.secrets?.forEach { secret ->
+                    val value = secretValues[secret.key].orEmpty()
+                    if (value.isNotEmpty()) connection.setKnowledgeSourceSecret(savedId, secret.key, value)
+                }
+            }
+        },
+        onDismiss = onDismiss,
+    ) {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            if (!isEditable) Text(stringResource(R.string.settings_sources_not_editable), style = MaterialTheme.typography.bodyMedium)
+            if (edited == null) {
+                ChoiceRow(
+                    stringResource(R.string.settings_sources_type), listOf<String?>(null, FILES_CHOICE) + offered.filter { type -> type.reader != "files" }.map { type -> type.name }, typeName,
+                    label = { choice -> when (choice) { null -> stringResource(R.string.settings_skills_choose); FILES_CHOICE -> filesName; else -> choice } }, onSelect = { typeName = it },
+                )
+            }
+            chosenType?.description?.takeIf { text -> text.isNotEmpty() }?.let { text -> Text(com.teanode.kit.agent.KnowledgeSourceType.asSentence(text), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp)) }
+            if (typeName != null) {
+                FormField(name, { name = it }, stringResource(R.string.settings_profile_name))
+                if (isFiles || chosenType?.isReadOnComputer == true) {
+                    val names = computers.value.orEmpty().map { attached -> attached.name }
+                    ChoiceRow(stringResource(R.string.settings_sources_computer), listOf("") + names, computer, label = { choice -> choice.ifEmpty { stringResource(R.string.settings_skills_choose) } }, onSelect = { computer = it })
+                }
+                if (isFiles) FormField(path, { path = it }, stringResource(R.string.settings_sources_path))
+                chosenType?.settings?.forEach { setting ->
+                    val label = com.teanode.kit.agent.KnowledgeSourceType.label(setting.name)
+                    if (setting.isBoolean) {
+                        SwitchRow(label, draft.switches[setting.name] == true, { isOn -> draft = draft.copy(switches = draft.switches + (setting.name to isOn)) }, supporting = setting.description.ifEmpty { null }?.let { text -> com.teanode.kit.agent.KnowledgeSourceType.asSentence(text) })
+                    } else if (setting.choices != null) {
+                        ChoiceRow(label, listOf("") + setting.choices.orEmpty(), draft.texts[setting.name].orEmpty(), label = { choice -> choice.ifEmpty { stringResource(R.string.settings_sources_default) } }, onSelect = { chosen -> draft = draft.copy(texts = draft.texts + (setting.name to chosen)) })
+                    } else {
+                        FormField(
+                            draft.texts[setting.name].orEmpty(), { typed -> draft = draft.copy(texts = draft.texts + (setting.name to typed)) }, label + if (setting.isRequired) " *" else "",
+                            supporting = setting.description.ifEmpty { null }?.let { text -> com.teanode.kit.agent.KnowledgeSourceType.asSentence(text) }, isError = setting.problem(draft) != null,
+                            keyboardType = if (setting.settingType == "integer") KeyboardType.Number else KeyboardType.Text,
+                        )
+                    }
+                }
+                chosenType?.secrets?.forEach { secret ->
+                    val isKept = secretStates.value.orEmpty().any { state -> state.key == secret.key && state.isSet }
+                    FormField(
+                        secretValues[secret.key].orEmpty(), { typed -> secretValues = secretValues + (secret.key to typed) }, com.teanode.kit.agent.KnowledgeSourceType.label(secret.key), isPassword = true,
+                        supporting = stringResource(if (isKept) R.string.settings_sources_secret_kept else R.string.settings_sources_secret_new) + (secret.description.ifEmpty { null }?.let { text -> " " + com.teanode.kit.agent.KnowledgeSourceType.asSentence(text) } ?: ""),
+                    )
+                }
+                FormField(rootPath, { rootPath = it }, stringResource(R.string.settings_sources_root_path))
+                FormField(cron, { cron = it }, stringResource(R.string.settings_schedules_cron))
+                chosenType?.problem?.takeIf { text -> text.isNotEmpty() }?.let { text -> Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) }
+            }
+        }
+    }
+}
+
+private const val FILES_CHOICE = "__files__"

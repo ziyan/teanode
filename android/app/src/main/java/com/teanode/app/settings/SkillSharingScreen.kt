@@ -101,18 +101,22 @@ private fun SkillShareCallsDialog(share: SkillShare, onDismiss: () -> Unit) {
     val loaded = rememberLoad(share.id) { connection.skillShareCalls(share.id) }
     val approvedText = stringResource(R.string.settings_skills_approved)
     val deniedText = stringResource(R.string.settings_skills_denied)
+    var answerNote by remember { mutableStateOf("") }
     FormDialog(title = share.skillName, confirmLabel = stringResource(R.string.common_done), isConfirmEnabled = true, onConfirm = onDismiss, onDismiss = onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
             val calls = loaded.value
             if (calls == null) Text(stringResource(R.string.common_loading), style = MaterialTheme.typography.bodyMedium)
             else if (calls.isEmpty()) Text(stringResource(R.string.settings_skills_no_calls), style = MaterialTheme.typography.bodyMedium)
+            if (share.isOwnedByCaller && calls?.any { call -> call.isWaiting } == true) {
+                FormField(answerNote, { answerNote = it }, stringResource(R.string.settings_skills_answer_note), isSingleLine = false, minLines = 2)
+            }
             calls?.forEach { call ->
-                val lines = listOfNotNull(call.toolName, call.amountText.ifEmpty { null }, call.requestReason.ifEmpty { null }, call.callState.replace('_', ' '))
+                val lines = listOfNotNull(call.toolName, call.amountText.ifEmpty { null }, call.requestReason.ifEmpty { null }, call.callState.replace('_', ' '), call.answerNote.ifEmpty { null })
                 TeaNodeRow(headline = call.shownGrantee, supporting = lines.joinToString("\n"), supportingMaxLines = 5)
                 if (call.isWaiting && share.isOwnedByCaller) {
                     androidx.compose.foundation.layout.Row {
-                        TextButton(onClick = { actions.run(approvedText, onSuccess = { loaded.refresh() }) { connection.answerSkillShareCall(call.id, true, null) } }) { Text(stringResource(R.string.settings_skills_approve)) }
-                        TextButton(onClick = { actions.run(deniedText, onSuccess = { loaded.refresh() }) { connection.answerSkillShareCall(call.id, false, null) } }) { Text(stringResource(R.string.settings_skills_deny)) }
+                        TextButton(onClick = { actions.run(approvedText, onSuccess = { loaded.refresh() }) { connection.answerSkillShareCall(call.id, true, answerNote) } }) { Text(stringResource(R.string.settings_skills_approve)) }
+                        TextButton(onClick = { actions.run(deniedText, onSuccess = { loaded.refresh() }) { connection.answerSkillShareCall(call.id, false, answerNote) } }) { Text(stringResource(R.string.settings_skills_deny)) }
                     }
                 }
             }

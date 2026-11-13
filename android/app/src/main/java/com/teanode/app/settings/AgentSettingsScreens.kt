@@ -1,6 +1,7 @@
 package com.teanode.app.settings
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
@@ -503,6 +504,7 @@ private fun AgentReachPage(model: AgentSettingsModel, onBack: () -> Unit) {
     openMailbox?.let { source -> AgentMailboxDialog(model, source, onDismiss = { openMailbox = null }) }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AgentMailboxDialog(model: AgentSettingsModel, source: MailboxSource, onDismiss: () -> Unit) {
     val settings = model.settings ?: return
@@ -550,6 +552,18 @@ private fun AgentMailboxDialog(model: AgentSettingsModel, source: MailboxSource,
                         val hours = reply.hours ?: MailboxHours.workingHours
                         FormField(hours.from, { typed -> policy = policy.copy(autoReply = reply.copy(hours = hours.copy(from = typed))) }, stringResource(R.string.settings_dreams_from), placeholder = "HH:MM", isError = AgentSettings.clockParts(hours.from) == null)
                         FormField(hours.until, { typed -> policy = policy.copy(autoReply = reply.copy(hours = hours.copy(until = typed))) }, stringResource(R.string.settings_dreams_until), placeholder = "HH:MM", isError = AgentSettings.clockParts(hours.until) == null)
+                    }
+                    if (reply.`when` == "outsideHours") {
+                        val hours = reply.hours ?: MailboxHours.workingHours
+                        androidx.compose.foundation.layout.FlowRow(Modifier.padding(horizontal = 16.dp)) {
+                            listOf(1, 2, 3, 4, 5, 6, 0).forEach { day ->
+                                androidx.compose.material3.FilterChip(
+                                    selected = hours.days.contains(day), modifier = Modifier.padding(end = 6.dp),
+                                    onClick = { policy = policy.copy(autoReply = reply.copy(hours = hours.copy(days = if (hours.days.contains(day)) hours.days - day else (hours.days + day).sorted()))) },
+                                    label = { Text(weekdayShortName(day)) },
+                                )
+                            }
+                        }
                     }
                     FormField(AgentSettings.joinList(reply.allow), { typed -> policy = policy.copy(autoReply = reply.copy(allow = AgentSettings.splitList(typed))) }, stringResource(R.string.settings_agent_allow_list), placeholder = "example.com, someone@example.org")
                     FormField(AgentSettings.joinList(reply.never), { typed -> policy = policy.copy(autoReply = reply.copy(never = AgentSettings.splitList(typed))) }, stringResource(R.string.settings_agent_never_list), placeholder = "example.net")
@@ -640,3 +654,7 @@ private suspend fun playSample(context: android.content.Context, wave: ByteArray
         file.delete()
     }
 }
+
+/** The short name of a day, 0 being Sunday, in the person's language. */
+private fun weekdayShortName(day: Int): String =
+    java.time.DayOfWeek.of(if (day == 0) 7 else day).getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())

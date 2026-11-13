@@ -1,6 +1,7 @@
 package com.teanode.app.contacts
 
 import com.teanode.app.demo.DemoAnswerer
+import com.teanode.app.demo.unlessAsking
 import com.teanode.app.demo.graphQLField
 import com.teanode.app.demo.text
 import com.teanode.kit.mail.ServerTime
@@ -141,7 +142,7 @@ object ContactsDemoData {
         graphQLField("GetContact") { variables -> contact(variables.text("id").orEmpty()) },
         graphQLField("AgentGraphPage") { _ -> """{"contact":{"id":"contact-alex"}}""" },
         graphQLField("ListContactAccountSuggestions") { _ -> suggestions },
-        graphQLField("ListCircles") { _ -> """[{"id":"circle-home","name":"Home","circleKind":"family"},{"id":"circle-book","name":"Book club","circleKind":"friends"}]""" },
+        graphQLField("ListCircles") { _ -> """[{"id":"circle-home","name":"Home","circleKind":"family"},{"id":"circle-book","name":"Book club","circleKind":"friends"}]""" }.unlessAsking("pendingInvitations"),
         graphQLField("ListCirclePeople") { _ -> "[$PERSON_SAM,$PERSON_ALEXA,$PERSON_PAT]" },
         graphQLField("ReadPersonCard") { variables -> personCard(variables) },
         graphQLField("ListLocationVisits") { _ -> visits },

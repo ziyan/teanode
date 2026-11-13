@@ -19,6 +19,8 @@ import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.ToggleOn
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavType
@@ -48,7 +50,14 @@ fun NavGraphBuilder.settingsRoutes(navigator: AppNavigator) {
         CirclesScreen(onBack = { navigator.back() }, onOpenCircle = { circleId -> navigator.navigate(SettingsRoutes.circle(circleId)) }, onOpenSharing = { navigator.navigate(SettingsRoutes.SHARING) })
     }
     composable(SettingsRoutes.CIRCLE, arguments = listOf(navArgument("circleId") { type = NavType.StringType }), deepLinks = Routes.deepLinks(SettingsRoutes.CIRCLE)) { entry ->
-        CircleDetailScreen(entry.arguments?.getString("circleId").orEmpty(), onBack = { navigator.back() })
+        val facts by com.teanode.app.session.LocalAppSession.current.facts.collectAsState()
+        CircleDetailScreen(
+            entry.arguments?.getString("circleId").orEmpty(), onBack = { navigator.back() }, canOpenPhotos = facts.isAvailable(AppSection.Photos),
+            onOpenMemberPhotos = { userId, name -> navigator.navigate(SettingsRoutes.memberPhotos(userId, name)) },
+        )
+    }
+    composable(SettingsRoutes.MEMBER_PHOTOS, arguments = listOf(navArgument("userId") { type = NavType.StringType }, navArgument("name") { type = NavType.StringType })) { entry ->
+        MemberPhotosScreen(entry.arguments?.getString("userId").orEmpty(), entry.arguments?.getString("name").orEmpty(), onBack = { navigator.back() })
     }
     settingsPage(SettingsRoutes.SHARING) { SharingScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.PASSWORD) { ChangePasswordScreen(onBack = { navigator.back() }) }
@@ -89,6 +98,8 @@ fun NavGraphBuilder.settingsRoutes(navigator: AppNavigator) {
     settingsPage(SettingsRoutes.ACTIVITY) { AgentActivityScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.SKILLS) { SkillSharingScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.MANAGE_AGENTS) { AgentAdminScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.MANAGE_SERVER) { ServerSettingsScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.MANAGE_USAGE) { AgentUsageScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.APPS) { ConnectedAppsScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.SESSIONS) { SessionsScreen(onBack = { navigator.back() }) }
 }
@@ -125,6 +136,8 @@ fun settingsPlaces(): List<AppPlace> = listOf(
     managePlace("roles", R.string.settings_roles_title, SettingsRoutes.MANAGE_ROLES, Icons.Outlined.Shield),
     managePlace("audit-log", R.string.settings_audit_title, SettingsRoutes.MANAGE_AUDIT, Icons.Outlined.History),
     managePlace("agents", R.string.settings_agents_title, SettingsRoutes.MANAGE_AGENTS, Icons.Outlined.Person),
+    managePlace("server", R.string.settings_server_title, SettingsRoutes.MANAGE_SERVER, Icons.Outlined.Dns),
+    managePlace("usage", R.string.settings_usage_title, SettingsRoutes.MANAGE_USAGE, Icons.Outlined.History),
     managePlace("services", R.string.settings_services_title, SettingsRoutes.MANAGE_SERVICES, Icons.Outlined.ToggleOn),
 ) + listOf(
     AgentSettingsPart.About to R.string.settings_agent_about, AgentSettingsPart.Instructions to R.string.settings_agent_instructions, AgentSettingsPart.Language to R.string.settings_agent_language,
