@@ -87,7 +87,8 @@ class NavigationTest {
         composeRule.setContent { AppRoot(rememberDemoSession(), startRoute = "settings/home") }
         composeRule.waitForIdle()
         barItem("agent").assertIsNotSelected()
-        composeRule.onNodeWithText(placeholder).assertIsDisplayed()
+        // Settings is built, so its own first screen is on screen, not the placeholder.
+        composeRule.onNodeWithText("Your account").assertIsDisplayed()
     }
 
     @Test
