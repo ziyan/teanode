@@ -279,7 +279,8 @@ private fun streamsOf(intent: Intent): List<Uri> {
 }
 
 private fun sharedFiles(activity: android.content.Context, intent: Intent): List<PendingFile> =
-    streamsOf(intent).mapIndexedNotNull { index, address ->
+    // Any app can send this activity any address: file addresses and the app's own providers would read its private files.
+    streamsOf(intent).filter { address -> SharedFiles.isReadableAddress(address.scheme, address.authority, activity.packageName) }.mapIndexedNotNull { index, address ->
         val type = activity.contentResolver.getType(address).orEmpty()
         if (type.startsWith("image/")) PendingFiles.picture(activity, address, index) else PendingFiles.file(activity, address)
     }

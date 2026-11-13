@@ -7,6 +7,7 @@ import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.teanode.kit.chats.SharedFiles
 import java.io.ByteArrayOutputStream
 import java.util.UUID
 import kotlin.math.max
@@ -16,9 +17,14 @@ object PendingFiles {
     /** The longest side a picture is sent at: plenty for the agent to read a receipt or a screen, and a fraction of what a camera takes. */
     private const val LONGEST_SIDE_PIXELS = 2048
 
+    private fun readCapped(context: Context, address: Uri): ByteArray? =
+        runCatching { context.contentResolver.openInputStream(address)?.use { stream -> SharedFiles.readCapped(stream) } }.getOrNull()
+
     /** A picture from the library or the camera, as a JPEG at most [LONGEST_SIDE_PIXELS] on its longest side, whatever it was taken as. */
     fun picture(context: Context, address: Uri, index: Int): PendingFile? {
-        val bytes = runCatching { context.contentResolver.openInputStream(address)?.use { stream -> stream.readBytes() } }.getOrNull() ?: return null
+        val bytes = readCapped(context, address) ?: return null
+        // A picture too large to send is not decoded: it is kept as it came so the sheet says it is too large.
+        if (bytes.size > SharedFiles.BYTES_MOST) return file(context, address)
         return picture(bytes, index)
     }
 
@@ -51,7 +57,7 @@ object PendingFiles {
 
     /** A file from the document picker, sent as it is. */
     fun file(context: Context, address: Uri): PendingFile? {
-        val bytes = runCatching { context.contentResolver.openInputStream(address)?.use { stream -> stream.readBytes() } }.getOrNull() ?: return null
+        val bytes = readCapped(context, address) ?: return null
         var name = address.lastPathSegment ?: "file"
         context.contentResolver.query(address, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst() && cursor.getString(0) != null) name = cursor.getString(0)
