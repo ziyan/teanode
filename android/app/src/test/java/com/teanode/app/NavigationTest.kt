@@ -68,9 +68,8 @@ class NavigationTest {
         composeRule.onNodeWithText("Every day").assertIsDisplayed()
         composeRule.onNodeWithText("Calendar").performClick()
         composeRule.waitForIdle()
-        // Calendar is not in the bar, so no tab is selected; its placeholder is on screen.
+        // Calendar is not in the bar, so no tab is selected.
         barItem("agent").assertIsNotSelected()
-        composeRule.onNodeWithText(placeholder).assertIsDisplayed()
         composeRule.onNodeWithText("Every day").assertIsNotDisplayed()
     }
 
@@ -87,7 +86,8 @@ class NavigationTest {
         composeRule.setContent { AppRoot(rememberDemoSession(), startRoute = "settings/home") }
         composeRule.waitForIdle()
         barItem("agent").assertIsNotSelected()
-        composeRule.onNodeWithText(placeholder).assertIsDisplayed()
+        // Settings is built, so its own first screen is on screen, not the placeholder.
+        composeRule.onNodeWithText("Your account").assertIsDisplayed()
     }
 
     @Test

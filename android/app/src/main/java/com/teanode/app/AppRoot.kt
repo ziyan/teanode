@@ -10,6 +10,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import com.teanode.app.calls.CallPresenter
+import com.teanode.app.calls.LocalCallCenter
+import com.teanode.app.notifications.PushEffects
 import com.teanode.app.session.AppSession
 import com.teanode.app.session.LocalAppSession
 import com.teanode.app.session.LocalConnection
@@ -34,10 +38,13 @@ fun AppRoot(session: AppSession, startRoute: String? = null, newIntents: Flow<In
         val connection by session.connection.collectAsState()
         val isAddingAccount by session.isAddingAccount.collectAsState()
         val pending by session.pendingConnection.collectAsState()
+        // The calls of the phone. Demo mode has none: nothing there is a real call.
+        val callCenter = if (session.isDemo) null else (LocalContext.current.applicationContext as? TeaNodeApplication)?.push?.calls
         CompositionLocalProvider(
             LocalAppSession provides session,
             LocalSnackbar provides snackbar,
             LocalConnectionOrNull provides connection,
+            LocalCallCenter provides callCenter,
         ) {
             Surface(Modifier.fillMaxSize()) {
                 val signedIn = connection
@@ -47,7 +54,8 @@ fun AppRoot(session: AppSession, startRoute: String? = null, newIntents: Flow<In
                     // The whole app is drawn again for another account.
                     key(signedIn.accountKey) {
                         CompositionLocalProvider(LocalConnection provides signedIn) {
-                            AppShell(startRoute = startRoute, newIntents = newIntents)
+                            if (!session.isDemo) PushEffects(signedIn)
+                            CallPresenter { AppShell(startRoute = startRoute, newIntents = newIntents) }
                         }
                     }
                     if (isAddingAccount) {
