@@ -211,6 +211,20 @@ class LocationRecorder private constructor(private val context: Context) : Locat
         scope.launch { watchMotion(isAllowed && motionAuthorized.value && isMotionAvailable) }
     }
 
+    /**
+     * Stops following the phone for an account that is being signed out: the service, the geofences around its places and the
+     * activity updates. Nothing of another account is touched.
+     */
+    fun stopFollowing(signedOutAccountKey: String) {
+        if (accountKey != signedOutAccountKey) return
+        LocationRecordingService.stop(context)
+        watchedPlaces = emptyList()
+        scope.launch {
+            runCatching { LocationServices.getGeofencingClient(context).removeGeofences(geofencePendingIntent()).await() }
+            watchMotion(false)
+        }
+    }
+
     /** Asks Android to say when the person starts driving, cycling, running, walking or standing still, or stops asking. */
     @SuppressLint("MissingPermission")
     private suspend fun watchMotion(isWanted: Boolean) {

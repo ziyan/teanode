@@ -655,6 +655,15 @@
     <string name="settings_sharing_with">共享给 %1$s</string>
     <string name="settings_sharing_with_circle">共享给圈子“%1$s”</string>
     <string name="settings_sharing_with_you">与你共享的内容</string>
+    <string name="settings_sign_out_anyway">仍然退出</string>
+    <plurals name="settings_unsent_recordings">
+        <item quantity="other">有 %d 条录音尚未上传完成。</item>
+    </plurals>
+    <plurals name="settings_unsent_locations">
+        <item quantity="other">有 %d 条位置报告尚未发送。</item>
+    </plurals>
+    <string name="settings_unsent_mail">你写的一封邮件尚未发送。</string>
+    <string name="settings_unsent_deleted">退出登录会将它们从这部手机上删除。</string>
     <string name="settings_sign_out">退出登录</string>
     <string name="settings_sign_out_detail">在你重新连接之前，这部手机将不再与你的智能体通信。</string>
     <string name="settings_sign_out_footer">要管理这部手机收到的通知，请在你的控制台中打开“设置”，再打开“设备”。</string>
