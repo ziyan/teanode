@@ -303,3 +303,48 @@ class FakePasswordsServer(private val userId: String = "me") : PasswordsApi {
         return view(stored)
     }
 }
+
+/**
+ * Answers a GraphQL document of Passwords the way the real server's schema does, from this stand-in, so demo mode (which
+ * speaks GraphQL like the app does) reaches it. Null when the document is not one of Passwords'. A refusal is an `errors`
+ * answer carrying the server's sentence.
+ */
+suspend fun FakePasswordsServer.answerGraphQL(document: String, variables: kotlinx.serialization.json.JsonObject): String? {
+    fun asks(name: String) = Regex("""\b$name\s*[({]""").containsMatchIn(document) || Regex("""\b$name\s*\}""").containsMatchIn(document)
+    val json = com.teanode.kit.TeaNodeJson
+    fun <Input> input(serializer: kotlinx.serialization.KSerializer<Input>): Input = json.decodeFromJsonElement(serializer, variables)
+    fun text(key: String): String = (variables[key] as kotlinx.serialization.json.JsonPrimitive).content
+    fun optionalText(key: String): String? = (variables[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.content
+    fun long(key: String): Long? = optionalText(key)?.toLongOrNull()
+    fun <Answer> reply(name: String, serializer: kotlinx.serialization.KSerializer<Answer>, answer: Answer) =
+        """{"data":{"$name":${json.encodeToString(serializer, answer)}}}"""
+    return try {
+        when {
+            asks("ReadPasswordsSetup") -> reply("ReadPasswordsSetup", PasswordsSetupView.serializer(), readPasswordsSetup())
+            asks("SetUpPasswords") -> reply("SetUpPasswords", PasswordsSetupView.serializer(), setUpPasswords(input(PasswordsSetUpInput.serializer())))
+            asks("UnlockPasswords") -> reply("UnlockPasswords", PasswordsUnlockView.serializer(), unlockPasswords(text("proof"), optionalText("isRecoveryKey") == "true"))
+            asks("ChangePasswordsPassphrase") -> reply("ChangePasswordsPassphrase", PasswordsSetupView.serializer(), changePasswordsPassphrase(input(PasswordsChangePassphraseInput.serializer())))
+            asks("ReplacePasswordsRecoveryKey") -> reply("ReplacePasswordsRecoveryKey", PasswordsSetupView.serializer(), replacePasswordsRecoveryKey(input(PasswordsReplaceRecoveryKeyInput.serializer())))
+            asks("UpdatePasswordsSettings") -> reply("UpdatePasswordsSettings", PasswordsSetupView.serializer(), updatePasswordsSettings(text("lockAfterMinutes").toInt()))
+            asks("ErasePasswords") -> """{"data":{"ErasePasswords":${erasePasswords()}}}"""
+            asks("ListPasswordItemVersions") -> reply("ListPasswordItemVersions", kotlinx.serialization.builtins.ListSerializer(PasswordItemVersionView.serializer()), listPasswordItemVersions(text("itemId")))
+            asks("ListPasswordItems") -> reply("ListPasswordItems", PasswordItemListView.serializer(), listPasswordItems(long("sinceRevision")))
+            asks("ListPasswordRecipients") -> reply("ListPasswordRecipients", kotlinx.serialization.builtins.ListSerializer(PasswordRecipientView.serializer()), emptyList())
+            asks("ListWaitingPasswordShares") -> reply("ListWaitingPasswordShares", kotlinx.serialization.builtins.ListSerializer(PasswordWaitingShareView.serializer()), emptyList())
+            asks("ReadPasswordsAgentKey") -> """{"data":{"ReadPasswordsAgentKey":"${base64(agentKeyPair.publicKey)}"}}"""
+            asks("SavePasswordItem") -> reply("SavePasswordItem", PasswordItemView.serializer(), savePasswordItem(input(PasswordItemSaveInput.serializer())))
+            asks("DeletePasswordItem") -> reply("DeletePasswordItem", PasswordItemView.serializer(), deletePasswordItem(text("id")))
+            asks("RestorePasswordItemVersion") -> reply("RestorePasswordItemVersion", PasswordItemView.serializer(), restorePasswordItemVersion(text("itemId"), text("versionId"), long("baseRevision")!!))
+            asks("RestorePasswordItem") -> reply("RestorePasswordItem", PasswordItemView.serializer(), restorePasswordItem(text("id")))
+            asks("PurgePasswordItem") -> """{"data":{"PurgePasswordItem":${purgePasswordItem(text("id"))}}}"""
+            asks("SetPasswordItemUsableByAgent") -> reply(
+                "SetPasswordItemUsableByAgent", PasswordItemView.serializer(),
+                setPasswordItemUsableByAgent(text("itemId"), optionalText("isUsableByAgent") == "true", optionalText("itemKeyByAgentKey")),
+            )
+            asks("RekeyPasswordItem") -> reply("RekeyPasswordItem", PasswordItemView.serializer(), rekeyPasswordItem(input(PasswordItemRekeyInput.serializer())))
+            else -> null
+        }
+    } catch (error: com.teanode.kit.TeaNodeError.Refused) {
+        """{"errors":[{"message":${kotlinx.serialization.json.JsonPrimitive(error.reason)}}],"data":null}"""
+    }
+}
