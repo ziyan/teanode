@@ -37,7 +37,7 @@ private const val CIRCLES = """[
  * reached and photographed without a server. Most specific first.
  */
 private const val AGENT_SETTINGS = """{
-  "agent":{"id":"agent-1","name":"Juniper","enabled":true,"instructions":"I am the treasurer of the sailing club; anything from the club is important; sign as R.","language":"","knowledgeLanguage":"en","askModel":"","speechVoice":"","operatorDisabledAt":null,"confirm":["calendar","mail_send"],"unattendedAllowedRisks":["money"],"isMemoryCheckEnabled":true,"isIdeasEnabled":false,
+  "agent":{"id":"agent-1","name":"Juniper","enabled":true,"instructions":"I am the treasurer of the sailing club; anything from the club is important; sign as R.","language":"","knowledgeLanguage":"en","askModel":"","speechVoice":"","operatorDisabledAt":null,"confirm":["calendar","mail_send"],"unattendedAllowedRisks":["money"],"isMemoryCheckEnabled":true,"isIdeasEnabled":false,"dreamFrom":"01:00","dreamUntil":"06:00","isAlertsEnabled":true,"alertQuietStart":"22:00","alertQuietEnd":"07:00","alertDailyMost":5,
     "voice":{"tone":"formal","length":null,"greeting":"Hello","signoff":null},"categories":[{"name":"club","description":"The sailing club"}]},
   "sources":[
     {"mailboxId":"mailbox-1","name":"Robin","addresses":["robin@example.com"],"policy":{"granted":true,"draftReplies":true,"search":false,"research":false,"triage":{"enabled":true,"backfill":"","replyExpectation":"any"},"summaries":null,"autoReply":{"enabled":true,"guidance":"Confirm appointments.","scope":"known","when":"outsideHours","hours":{"from":"09:00","until":"17:30","days":[1,2,3,4,5]}},"alerts":null}},
@@ -49,6 +49,70 @@ private const val AGENT_SETTINGS = """{
   "categories":["personal","work","newsletter","notification","receipt","promotion","social","invitation","phishing","junk","other","club"]}"""
 
 val settingsDemoAnswerers: List<DemoAnswerer> = listOf(
+    graphQLField(
+        "ListAgents",
+        """[
+          {"agentId":"agent-1","userId":"demo-user","username":"robin","name":"Juniper","enabled":true,"dailyTokens":100000,"dailyCost":0,"dead":0,"queued":2,"today":{"used":1200,"limit":100000,"cost":0.25,"costLimit":0,"currency":"USD"}},
+          {"agentId":"agent-2","userId":"user-alex","username":"alex","name":"","enabled":true,"operatorDisabledAt":"2030-01-02T00:00:00Z","dailyTokens":0,"dailyCost":2.5,"dead":3,"queued":0,"today":{"used":0,"limit":0,"cost":0,"costLimit":2.5,"currency":"USD"}}
+        ]""",
+    ),
+    graphQLField(
+        "ListSkillShares",
+        """[
+          {"id":"ss1","skillName":"Travel booking","toolNames":["search_flights","book_flight"],"ownerUserId":"demo-user","ownerUsername":"robin","ownerName":"Robin Example","granteeUserId":"user-alex","granteeUsername":"alex","granteeName":"Alex Sample","paymentLimitMinor":50000,"monthlyLimitMinor":200000,"currencyCode":"usd","isApprovalRequired":true,"isOwnedByCaller":true,"waitingCallCount":1,"monthTotalMinor":12000},
+          {"id":"ss2","skillName":"Recipes","toolNames":["find_recipe"],"ownerUserId":"user-sam","ownerUsername":"sam","ownerName":"","granteeUserId":"demo-user","granteeUsername":"robin","granteeName":"Robin Example","currencyCode":"","isApprovalRequired":false,"isOwnedByCaller":false,"waitingCallCount":0,"monthTotalMinor":0}
+        ]""",
+    ),
+    graphQLField(
+        "ListSkillShareCalls",
+        """[{"id":"call1","skillShareId":"ss1","skillName":"Travel booking","granteeUserId":"user-alex","granteeUsername":"alex","granteeName":"Alex Sample","ownerName":"Robin Example","toolName":"book_flight","toolArguments":"{}","requestReason":"A flight to the coast on Friday.","amountMinor":18900,"currencyCode":"usd","callState":"waiting_for_approval","toolOutput":"","answerNote":"","createdAt":"2030-01-05T09:00:00Z"}]""",
+    ),
+    graphQLField("ListAgentSkills", """[{"name":"Travel booking","description":"Search and book flights","enabled":true,"readable":true,"tools":[{"name":"search_flights","description":"Search flights"},{"name":"book_flight","description":"Book a flight","isAmountDeclared":true}]}]"""),
+    graphQLField(
+        "ListAgentDreams",
+        """[
+          {"id":"d1","startedAt":"2030-01-05T01:10:00Z","finishedAt":"2030-01-05T01:48:00Z","digested":24,"filed":12,"merged":2,"rewritten":3,"moved":0,"dormant":1,"embedded":40,"backlog":0,"coarse":false,"strengthened":5,"associated":4,"rehearsed":3,"gaps":1,"unknown":0,"revised":0,"overviewsWritten":1,"themesMade":0,"themesUpdated":0,"reflectionsWritten":2,"cost":0.42,"currency":"USD"},
+          {"id":"d2","startedAt":"2030-01-04T01:05:00Z","finishedAt":"2030-01-04T01:07:00Z","digested":0,"filed":0,"merged":0,"rewritten":0,"moved":0,"dormant":0,"embedded":0,"backlog":0,"coarse":false,"strengthened":0,"associated":0,"rehearsed":0,"gaps":0,"unknown":0,"revised":0,"overviewsWritten":0,"themesMade":0,"themesUpdated":0,"reflectionsWritten":0,"lastError":"The model did not answer.","cost":0,"currency":"USD"}
+        ]""",
+    ),
+    graphQLField("AgentDreamState", """{"dreamJobStatus":""}"""),
+    graphQLField("AgentReadingProgress", """{"waiting":120,"read":480,"perHour":40,"hoursLeft":3,"bootstrapping":false,"spent":1.2,"costLeft":0.4,"currency":"USD","dreams":3}"""),
+    graphQLField(
+        "ListAgentSchedules",
+        """[
+          {"id":"s1","name":"Morning brief","cron":"0 8 * * 1-5","prompt":"Tell me what is on today.","deliver":"drawer","enabled":true,"lastRunAt":"2030-01-05T08:00:00Z","nextRunAt":"2999-01-06T08:00:00Z"},
+          {"id":"s2","name":"Friday round-up","cron":"0 17 * * 5","prompt":"Summarize the week.","deliver":"mail","enabled":false}
+        ]""",
+    ),
+    graphQLFields(
+        "ListAgentAlerts" to """[
+          {"id":"a1","alertText":"Your flight tomorrow was moved to 9:40.","sentAt":"2030-01-05T07:00:00Z","subjectKey":"flight","isUrgent":true,"covered":[{"mailId":"m1","subject":"Flight change","fromAddress":"airline@example.com"}],"muteChoices":[{"muteScope":"sender","muteTarget":"airline@example.com"}]},
+          {"id":"a2","alertText":"A new invoice arrived.","sentAt":"2030-01-04T07:00:00Z","subjectKey":"invoice","isUrgent":false,"covered":[],"muteChoices":[]}
+        ]""",
+        "ListAgentAlertMutes" to """[{"id":"mute1","muteScope":"sender","muteTarget":"news@example.com","createdAt":"2030-01-02T00:00:00Z"}]""",
+    ),
+    graphQLField("ListAgentLearned", """[{"fact":{"id":"f1","number":1,"kind":"preference","text":"Prefers tea in the afternoon.","inferred":false},"path":"people/robin","name":"Robin"},{"fact":{"id":"f2","number":2,"kind":"plan","text":"Plans a trip to the coast in spring.","inferred":true},"path":"plans/coast","name":"Coast trip"}]"""),
+    graphQLField("ListAgentCorrections", """[{"id":"c1","createdAt":"2030-01-03T00:00:00Z","kind":"fact","said":"The club meets on Thursdays, not Fridays."}]"""),
+    graphQLField("ListAgentEvaluationQuestions", """[{"id":"q1","questionText":"Which day does the club meet?","expectedAnswer":"Thursday","questionState":"confirmed","questionKind":"direct"}]"""),
+    graphQLField(
+        "ListAgentServers",
+        """[{"name":"notes","transport":"http","auth":"user","oauthRedirect":"","headless":false,"enabled":true,"status":"connected","tools":6},{"name":"calendar-tools","transport":"http","auth":"oauth","oauthRedirect":"","headless":false,"enabled":true,"status":"failed","lastError":"The server did not answer.","tools":0}]""",
+    ),
+    graphQLField(
+        "ListAgentBackgroundWork",
+        """[{"id":"w1","workKind":"survey","workStatus":"running","title":"Survey of the club mail","errorMessage":"","runIds":[],"createdAt":"2030-01-05T09:00:00Z"},{"id":"w2","workKind":"survey","workStatus":"done","title":"Trip ideas","errorMessage":"","runIds":["r1"],"createdAt":"2030-01-04T09:00:00Z","finishedAt":"2030-01-04T09:05:00Z","resultText":"Three options found."}]""",
+    ),
+    graphQLField(
+        "ListAgentRuns",
+        """{"total":2,"runs":[{"id":"r1","title":"Sorted new mail","jobKind":"triage","lastAt":"2030-01-05T09:00:00Z","usage":{"promptTokens":1200,"completionTokens":300,"cost":0.004,"cacheReadTokens":800}},{"id":"r2","title":"Morning brief","jobKind":"schedule","lastAt":"2030-01-05T08:00:00Z","usage":{"promptTokens":4000,"completionTokens":900,"cost":0.02}}]}""",
+    ),
+    graphQLFields(
+        "ListAgentKnowledgeSources" to """[
+          {"id":"src1","kind":"folder","name":"Notes folder","rootPath":"notes","enabled":true,"cron":"0 * * * *","lastRunAt":"2030-01-05T09:00:00Z","lastError":"","documentCount":120,"chunkCount":900,"refusedCount":2,"more":false},
+          {"id":"src2","kind":"repository","name":"Club website","rootPath":"club","enabled":false,"cron":"","lastError":"The path is not readable.","documentCount":0,"chunkCount":0,"refusedCount":0,"more":false}
+        ]""",
+        "ListAgentSourceAttachments" to """[{"sourceId":"src1","undecided":3,"declined":1,"described":5}]""",
+    ),
     graphQLField("ReadAgentVoice", """{"isVoiceAvailable":true,"sampleRate":24000,"speechVoice":"","speechVoices":["alto","breeze","cedar"],"serverSpeechVoice":"alto"}"""),
     graphQLField("ReadAgent", AGENT_SETTINGS),
     graphQLField("UpdateAgent", AGENT_SETTINGS),

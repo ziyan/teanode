@@ -265,7 +265,7 @@ fun PeopleScreen(onBack: () -> Unit) {
             }
             TeaNodeRow(
                 headline = user.displayName, supporting = (listOf(user.username).filter { name -> name != user.displayName } + listOfNotNull(user.email?.ifEmpty { null }) + tags).joinToString(" · ").ifEmpty { null },
-                leading = { AvatarView(user.displayName, user.avatarUrl, user.avatarColorIndex, size = 40.dp) },
+                leading = { AvatarView(user.displayName, user.avatarUrl, user.avatarColorIndex, size = 40.dp) }, supportingMaxLines = 5,
                 onClick = if (canManage) ({ editing = user }) else null,
             )
         }
@@ -561,6 +561,7 @@ fun ManageScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             item { TeaNodeNavigationRow(stringResource(R.string.settings_roles_title), { onOpen(SettingsRoutes.MANAGE_ROLES) }, leadingIcon = Icons.Outlined.Shield) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_audit_title), { onOpen(SettingsRoutes.MANAGE_AUDIT) }, leadingIcon = Icons.Outlined.History) }
         }
+        if (operator.canOpenAgentAdmin) item { TeaNodeNavigationRow(stringResource(R.string.settings_agents_title), { onOpen(SettingsRoutes.MANAGE_AGENTS) }, leadingIcon = Icons.Outlined.Person) }
         if (operator.canManageServer) item { TeaNodeNavigationRow(stringResource(R.string.settings_services_title), { onOpen(SettingsRoutes.MANAGE_SERVICES) }, leadingIcon = Icons.Outlined.ToggleOn) }
     }
 }

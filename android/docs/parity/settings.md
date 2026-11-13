@@ -46,3 +46,17 @@ in `android/app/src/main/java/com/teanode/app/settings` and `.../search`; screen
 
 GraphQL documents are generated from the Swift text by a script (`$` escaped, interpolated field lists kept), so they
 are the iPhone app's documents character for character.
+
+
+## Round 2 (second pass over what was not ported)
+
+| iOS file | Android | Status |
+| --- | --- | --- |
+| AgentUpkeepViews.swift: Dreams, Alerts, Schedules, Memory, Connections, Activity, Sources | `UpkeepScreens.kt` (+ kit `agent/AgentUpkeep.kt`, `agent/KnowledgeSources.kt`, tests `AgentUpkeepTest`): dreams (state, dream now, hours, reading progress, each dream with what it did and cost), alerts (switch, quiet hours and daily most, recent alerts with mute, mutes with unmute), schedules (list, switch, run now, delete, new with a cron line), memory (learned lately, corrections, check questions, start a check, grade now), connections (servers, status, disconnect), activity (background work with stop, recent runs), sources (list with counts, switch, read again, forget) | partly: no editor for a schedule's mail conditions or the daily brief, no memory check run history or answers, no source editor or secrets, no source types, no connecting a server, no skill secrets, reaches or chat channels, no per-run detail, no usage page |
+| ManageServerViews.swift: Agents | `AgentAdminScreen.kt` (+ kit `manage/AgentAdmin.kt`, `AgentAdminTest`): everybody's agents with today's use, daily token and cost limits, switch off by an operator | partly: no usage table, dead letters or the other tabs |
+| ManageServerViews.swift: Server, mail delivery, About | not ported: the Server settings tabs (about, setup, identity, mail, sending, listeners, certificates, storage, resolver, scanning, spam, sessions, SSO) and the restart page are 4,000 lines of forms for an operator at a desk | not ported |
+| SkillSharingViews.swift | `SkillSharingScreen.kt` (+ kit `skillsharing/SkillSharing.kt`, `SkillSharingTest`): shares lent by you and to you, lend a skill (tools, person from the circles, limits in the currency's digits, approval), stop lending, the calls of a share with Approve and Deny | done (the answer note is not asked for) |
+| Settings home | Health settings (`health/settings`), Journal (`journal/settings`), People in Photos (Photos' People collection in a Settings route), Skill sharing, Sources, Memory, Dreams, Schedules, Alerts, Connections, Activity rows; the Notifications section (a switch for each kind from `PushSystem.registrar`, or the way into Android's notification settings), the update row from `PushSystem.appUpdates` | done |
+| CirclesView.swift | the address book of a circle (make, shown), the circle's photo albums (list, new), the question after accepting an invitation (calendar level, and for a family where the person is) | done (the Photos row on a member is not ported) |
+| AgentSettingsViews.swift | Listen to a speaking voice (the server's WAV sample played with MediaPlayer), the hours of "outside my hours" answering editable | done (the days of the week are kept as they are) |
+| SearchTab.swift | "Show all in Mail" opens `mail/search?words=...` with the typed words | partly: Mail is the only part whose route takes words; the others open their first screen |

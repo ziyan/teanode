@@ -107,4 +107,27 @@ class SettingsScreenshotTest {
     @Test fun `services light`() = shoot("settings-services-light") { ServerServicesScreen(onBack = {}) }
     @Test fun `services dark`() = shoot("settings-services-dark", AppearanceChoice.Dark) { ServerServicesScreen(onBack = {}) }
     @Test fun `sync light`() = shoot("settings-sync-light") { SyncCredentialsScreen(onBack = {}) }
+
+    @Test fun `sources light`() = shoot("settings-sources-light") { KnowledgeSourcesScreen(onBack = {}) }
+    @Test fun `sources dark`() = shoot("settings-sources-dark", AppearanceChoice.Dark) { KnowledgeSourcesScreen(onBack = {}) }
+    @Test fun `memory light`() = shoot("settings-memory-light") { AgentMemorySettingsScreen(onBack = {}) }
+    @Test fun `memory dark`() = shoot("settings-memory-dark", AppearanceChoice.Dark) { AgentMemorySettingsScreen(onBack = {}) }
+    @Test fun `dreams light`() = shoot("settings-dreams-light") { DreamsScreen(onBack = {}) }
+    @Test fun `dreams dark`() = shoot("settings-dreams-dark", AppearanceChoice.Dark) { DreamsScreen(onBack = {}) }
+    @Test fun `dreams largest text`() = shoot("settings-dreams-largest-text", fontScale = 2f) { DreamsScreen(onBack = {}) }
+    @Test fun `schedules light`() = shoot("settings-schedules-light") { SchedulesScreen(onBack = {}) }
+    @Test fun `schedules dark`() = shoot("settings-schedules-dark", AppearanceChoice.Dark) { SchedulesScreen(onBack = {}) }
+    @Test fun `alerts light`() = shoot("settings-alerts-light") { MutedAlertsScreen(onBack = {}) }
+    @Test fun `alerts dark`() = shoot("settings-alerts-dark", AppearanceChoice.Dark) { MutedAlertsScreen(onBack = {}) }
+    @Test fun `connections light`() = shoot("settings-connections-light") { ConnectionsScreen(onBack = {}) }
+    @Test fun `connections dark`() = shoot("settings-connections-dark", AppearanceChoice.Dark) { ConnectionsScreen(onBack = {}) }
+    @Test fun `activity light`() = shoot("settings-activity-light") { AgentActivityScreen(onBack = {}) }
+    @Test fun `activity dark`() = shoot("settings-activity-dark", AppearanceChoice.Dark) { AgentActivityScreen(onBack = {}) }
+
+    @Test fun `skill sharing light`() = shoot("settings-skills-light") { SkillSharingScreen(onBack = {}) }
+    @Test fun `skill sharing dark`() = shoot("settings-skills-dark", AppearanceChoice.Dark) { SkillSharingScreen(onBack = {}) }
+    @Test fun `skill sharing largest text`() = shoot("settings-skills-largest-text", fontScale = 2f) { SkillSharingScreen(onBack = {}) }
+
+    @Test fun `agents admin light`() = shoot("settings-agents-admin-light") { AgentAdminScreen(onBack = {}) }
+    @Test fun `agents admin dark`() = shoot("settings-agents-admin-dark", AppearanceChoice.Dark) { AgentAdminScreen(onBack = {}) }
 }

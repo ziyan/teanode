@@ -79,6 +79,16 @@ fun NavGraphBuilder.settingsRoutes(navigator: AppNavigator) {
     settingsPage(SettingsRoutes.MANAGE_AUDIT) { AuditLogScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.MANAGE_SERVICES) { ServerServicesScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.SYNC) { SyncCredentialsScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.PHOTO_PEOPLE) { com.teanode.app.photos.PhotosSection(com.teanode.app.photos.PhotoSectionChoice.People) }
+    settingsPage(SettingsRoutes.SOURCES) { KnowledgeSourcesScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.MEMORY) { AgentMemorySettingsScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.DREAMS) { DreamsScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.SCHEDULES) { SchedulesScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.ALERTS) { MutedAlertsScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.CONNECTIONS) { ConnectionsScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.ACTIVITY) { AgentActivityScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.SKILLS) { SkillSharingScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.MANAGE_AGENTS) { AgentAdminScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.APPS) { ConnectedAppsScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.SESSIONS) { SessionsScreen(onBack = { navigator.back() }) }
 }
@@ -101,11 +111,20 @@ fun settingsPlaces(): List<AppPlace> = listOf(
     place("apps", R.string.settings_apps_title, SettingsRoutes.APPS, Icons.Outlined.Apps),
     place("sessions", R.string.settings_sessions_title, SettingsRoutes.SESSIONS, Icons.Outlined.Devices),
     place("agent-settings", R.string.settings_agent_title, SettingsRoutes.AGENT, Icons.Outlined.Tune),
+    place("sources", R.string.settings_sources_title, SettingsRoutes.SOURCES, Icons.Outlined.Tune),
+    place("memory", R.string.settings_memory_title, SettingsRoutes.MEMORY, Icons.Outlined.Tune),
+    place("dreams", R.string.settings_dreams_title, SettingsRoutes.DREAMS, Icons.Outlined.Tune),
+    place("schedules", R.string.settings_schedules_title, SettingsRoutes.SCHEDULES, Icons.Outlined.Tune),
+    place("alerts", R.string.settings_alerts_title, SettingsRoutes.ALERTS, Icons.Outlined.Tune),
+    place("connections", R.string.settings_connections_title, SettingsRoutes.CONNECTIONS, Icons.Outlined.Tune),
+    place("activity", R.string.settings_activity_title, SettingsRoutes.ACTIVITY, Icons.Outlined.Tune),
+    place("skill-sharing", R.string.settings_skills_title, SettingsRoutes.SKILLS, Icons.Outlined.Tune),
     place("manage", R.string.settings_manage, SettingsRoutes.MANAGE, Icons.Outlined.Dns),
     managePlace("people", R.string.settings_people_title, SettingsRoutes.MANAGE_PEOPLE, Icons.Outlined.Person),
     managePlace("groups", R.string.settings_groups_title, SettingsRoutes.MANAGE_GROUPS, Icons.Outlined.Groups),
     managePlace("roles", R.string.settings_roles_title, SettingsRoutes.MANAGE_ROLES, Icons.Outlined.Shield),
     managePlace("audit-log", R.string.settings_audit_title, SettingsRoutes.MANAGE_AUDIT, Icons.Outlined.History),
+    managePlace("agents", R.string.settings_agents_title, SettingsRoutes.MANAGE_AGENTS, Icons.Outlined.Person),
     managePlace("services", R.string.settings_services_title, SettingsRoutes.MANAGE_SERVICES, Icons.Outlined.ToggleOn),
 ) + listOf(
     AgentSettingsPart.About to R.string.settings_agent_about, AgentSettingsPart.Instructions to R.string.settings_agent_instructions, AgentSettingsPart.Language to R.string.settings_agent_language,

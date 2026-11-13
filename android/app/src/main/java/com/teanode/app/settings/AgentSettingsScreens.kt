@@ -74,6 +74,7 @@ import com.teanode.kit.agent.grantAgentCollection
 import com.teanode.kit.agent.grantAgentMailbox
 import com.teanode.kit.agent.revokeAgentMailbox
 import com.teanode.kit.agent.speechVoices
+import com.teanode.kit.agent.speechVoiceSample
 import com.teanode.kit.agent.updateAgent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -375,6 +376,18 @@ private fun AgentSpeakingVoicePage(model: AgentSettingsModel, onBack: () -> Unit
                     label = { voice -> if (voice.isEmpty()) serverText else voice }, onSelect = { voice -> model.update(AgentChange(speechVoice = voice), savedText) },
                 )
                 FooterText(stringResource(R.string.settings_agent_speaking_voice_footer))
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val actions = rememberActionRunner()
+                val listening = remember { mutableStateOf(false) }
+                val heard = chosen.ifEmpty { voices.serverSpeechVoice.orEmpty() }
+                val connection = LocalConnection.current
+                TeaNodeRow(
+                    headline = stringResource(if (listening.value) R.string.settings_agent_playing else R.string.settings_agent_listen), leadingIcon = Icons.Outlined.RecordVoiceOver,
+                    onClick = if (listening.value || heard.isEmpty()) null else ({
+                        listening.value = true
+                        actions.run(onSuccess = { listening.value = false }) { playSample(context, connection.speechVoiceSample(heard)) }
+                    }),
+                )
             }
         }
     }
@@ -500,7 +513,7 @@ private fun AgentMailboxDialog(model: AgentSettingsModel, source: MailboxSource,
     var policy by remember(source.mailboxId, current.policy) { mutableStateOf(current.shownPolicy) }
     var isConfirmingRevoke by remember { mutableStateOf(false) }
     FormDialog(
-        title = source.name, confirmLabel = stringResource(if (current.isGranted) R.string.settings_save else R.string.settings_agent_let_it_reach), isConfirmEnabled = true, isWorking = model.isBusy,
+        title = source.name, confirmLabel = stringResource(if (current.isGranted) R.string.settings_save else R.string.settings_agent_let_it_reach), isConfirmEnabled = policy.autoReply?.hours?.let { hours -> AgentSettings.clockParts(hours.from) != null && AgentSettings.clockParts(hours.until) != null } ?: true, isWorking = model.isBusy,
         onConfirm = { model.mutate(savedText, onDone = { isDone -> if (isDone) onDismiss() }) { connection -> connection.grantAgentMailbox(source.mailboxId, policy) } },
         onDismiss = onDismiss,
     ) {
@@ -533,6 +546,11 @@ private fun AgentMailboxDialog(model: AgentSettingsModel, source: MailboxSource,
                         label = { whenChoice -> stringResource(when (whenChoice) { "outsideHours" -> R.string.settings_agent_when_outside_hours; "whenAway" -> R.string.settings_agent_when_away_only; else -> R.string.settings_agent_when_always }) },
                         onSelect = { whenChoice -> policy = policy.copy(autoReply = reply.copy(`when` = whenChoice, hours = if (whenChoice == "outsideHours") reply.hours ?: MailboxHours.workingHours else reply.hours)) },
                     )
+                    if (reply.`when` == "outsideHours") {
+                        val hours = reply.hours ?: MailboxHours.workingHours
+                        FormField(hours.from, { typed -> policy = policy.copy(autoReply = reply.copy(hours = hours.copy(from = typed))) }, stringResource(R.string.settings_dreams_from), placeholder = "HH:MM", isError = AgentSettings.clockParts(hours.from) == null)
+                        FormField(hours.until, { typed -> policy = policy.copy(autoReply = reply.copy(hours = hours.copy(until = typed))) }, stringResource(R.string.settings_dreams_until), placeholder = "HH:MM", isError = AgentSettings.clockParts(hours.until) == null)
+                    }
                     FormField(AgentSettings.joinList(reply.allow), { typed -> policy = policy.copy(autoReply = reply.copy(allow = AgentSettings.splitList(typed))) }, stringResource(R.string.settings_agent_allow_list), placeholder = "example.com, someone@example.org")
                     FormField(AgentSettings.joinList(reply.never), { typed -> policy = policy.copy(autoReply = reply.copy(never = AgentSettings.splitList(typed))) }, stringResource(R.string.settings_agent_never_list), placeholder = "example.net")
                     FormField(AgentSettings.joinList(reply.categories), { typed -> policy = policy.copy(autoReply = reply.copy(categories = AgentSettings.splitList(typed))) }, stringResource(R.string.settings_agent_only_categories), placeholder = stringResource(R.string.settings_agent_any))
@@ -601,5 +619,24 @@ private fun AgentCategoriesPage(model: AgentSettingsModel, onBack: () -> Unit) {
                 onDismiss = { removing = null },
             )
         }
+    }
+}
+
+/** Plays a WAV sample once and returns when it has finished. */
+private suspend fun playSample(context: android.content.Context, wave: ByteArray) {
+    val file = java.io.File.createTempFile("voice-sample", ".wav", context.cacheDir)
+    file.writeBytes(wave)
+    try {
+        kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
+            val player = android.media.MediaPlayer()
+            continuation.invokeOnCancellation { player.release() }
+            player.setDataSource(file.path)
+            player.setOnCompletionListener { player.release(); if (continuation.isActive) continuation.resumeWith(Result.success(Unit)) }
+            player.setOnErrorListener { _, _, _ -> player.release(); if (continuation.isActive) continuation.resumeWith(Result.failure(IllegalStateException("The sample could not be played."))); true }
+            player.prepare()
+            player.start()
+        }
+    } finally {
+        file.delete()
     }
 }

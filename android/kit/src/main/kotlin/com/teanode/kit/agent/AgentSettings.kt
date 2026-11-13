@@ -1,6 +1,7 @@
 package com.teanode.kit.agent
 
 import com.teanode.kit.Connection
+import com.teanode.kit.TeaNodeJson
 import com.teanode.kit.settings.trimmedText
 import com.teanode.kit.settings.variablesOf
 import kotlinx.serialization.Serializable
@@ -472,3 +473,13 @@ suspend fun Connection.agentTools(): List<AgentTool> = execute<ListAgentToolsAns
 
 /** Whether the server speaks, and the voices the person may choose. */
 suspend fun Connection.speechVoices(): VoiceAvailability = execute<ReadAgentVoiceAnswer>(AgentSettingsDocuments.SPEECH_VOICES).ReadAgentVoice
+
+@Serializable private class SpeechRefusal(val error: String? = null)
+
+/** A few words in a voice, as a WAV file, to hear it before choosing. It is paid for like any speech. */
+suspend fun Connection.speechVoiceSample(speechVoice: String): ByteArray {
+    val response = get("/api/v1/agent/voice/sample?speechVoice=" + java.net.URLEncoder.encode(speechVoice, "UTF-8"))
+    if (response.statusCode == 200) return response.body
+    val reason = runCatching { TeaNodeJson.decodeFromString(SpeechRefusal.serializer(), response.body.decodeToString()).error }.getOrNull()
+    throw com.teanode.kit.TeaNodeError.Refused(reason ?: "The sample could not be played (${response.statusCode}).")
+}
