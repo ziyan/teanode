@@ -264,12 +264,19 @@ class AppSession(
     }
 
     /** Keeps a sign-in the person confirmed. */
-    fun confirm(connecting: PendingConnection) {
+    fun confirm(connecting: PendingConnection, isSwitching: Boolean = true) {
         pending.value = null
+        val inUse = activeConnection.value?.account
         store.add(connecting.account)
         addingAccount.value = false
         signedOutMessage.value = null
         openedConnectLink.value = null
+        if (!isSwitching && inUse != null) {
+            // Added beside the account in use, which stays the one the app acts as until the person switches.
+            store.activate(inUse.accountKey)
+            accountRing.value = store.accounts()
+            return
+        }
         use(connecting.account)
     }
 

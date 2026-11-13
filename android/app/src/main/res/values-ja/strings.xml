@@ -90,6 +90,10 @@
     <string name="signin_not_signed_in">サーバーはこのスマートフォンをサインインさせませんでした。</string>
     <string name="signin_server_did_not_accept">%1$s は、このスマートフォンに発行したサインインを受け付けませんでした。</string>
     <string name="signin_signed_out_of">%1$s からサインアウトしました：%2$s</string>
+    <string name="signin_link_ask_title">%1$s に接続しますか？</string>
+    <string name="signin_link_ask_body">リンクがこのアプリに %1$s へのサインインを求めています。このサーバーを知っていて、このリンクを予期していた場合のみ続けてください。</string>
+    <string name="signin_add_keep">追加して %1$s を使い続ける</string>
+    <string name="signin_add_switch">追加して切り替える</string>
     <string name="signin_confirm_title">%1$s に接続しますか？</string>
     <string name="signin_confirm_body">このスマートフォンは %1$s としてサインインし、ダッシュボードでできることはすべて行えるようになります。</string>
     <string name="signin_server_placeholder">mail.example.com</string>

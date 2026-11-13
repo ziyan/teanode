@@ -90,6 +90,10 @@
     <string name="signin_not_signed_in">服务器没有让这部手机登录。</string>
     <string name="signin_server_did_not_accept">%1$s 没有接受它给这部手机的登录。</string>
     <string name="signin_signed_out_of">已退出 %1$s：%2$s</string>
+    <string name="signin_link_ask_title">连接到 %1$s？</string>
+    <string name="signin_link_ask_body">有链接要求此应用登录到 %1$s。只有在你认识这个服务器并且预期会收到此链接时才继续。</string>
+    <string name="signin_add_keep">添加，继续使用 %1$s</string>
+    <string name="signin_add_switch">添加并切换到它</string>
     <string name="signin_confirm_title">连接到 %1$s？</string>
     <string name="signin_confirm_body">这部手机将以 %1$s 的身份登录，可以做你在控制台能做的一切。</string>
     <string name="signin_server_placeholder">mail.example.com</string>

@@ -25,15 +25,18 @@ import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.PendingConnection
 
+/** What the person answered about a sign-in waiting to be kept. */
+enum class ConnectionAnswer { Switch, Keep, Decline }
+
 /**
  * ConfirmConnectionSheet asks whether this is the right server and the right account before the phone keeps the
  * sign-in: a link names the server it connects to, so one sent by somebody else could name theirs.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConfirmConnectionSheet(pending: PendingConnection, onAnswer: (isConfirmed: Boolean) -> Unit) {
+fun ConfirmConnectionSheet(pending: PendingConnection, activeHost: String? = null, onAnswer: (answer: ConnectionAnswer) -> Unit) {
     ModalBottomSheet(
-        onDismissRequest = { onAnswer(false) },
+        onDismissRequest = { onAnswer(ConnectionAnswer.Decline) },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
         Column(
@@ -50,8 +53,14 @@ fun ConfirmConnectionSheet(pending: PendingConnection, onAnswer: (isConfirmed: B
                 stringResource(R.string.signin_confirm_body, pending.account.username),
                 color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
             )
-            Button(onClick = { onAnswer(true) }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text(stringResource(R.string.signin_connect)) }
-            OutlinedButton(onClick = { onAnswer(false) }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text(stringResource(R.string.signin_not_this_one)) }
+            if (activeHost == null) {
+                Button(onClick = { onAnswer(ConnectionAnswer.Switch) }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text(stringResource(R.string.signin_connect)) }
+            } else {
+                // Another account is in use: adding this one never takes its place without a tap that says so.
+                Button(onClick = { onAnswer(ConnectionAnswer.Keep) }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text(stringResource(R.string.signin_add_keep, activeHost)) }
+                OutlinedButton(onClick = { onAnswer(ConnectionAnswer.Switch) }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text(stringResource(R.string.signin_add_switch)) }
+            }
+            OutlinedButton(onClick = { onAnswer(ConnectionAnswer.Decline) }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text(stringResource(R.string.signin_not_this_one)) }
         }
     }
 }
