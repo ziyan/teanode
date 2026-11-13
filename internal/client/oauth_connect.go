@@ -33,6 +33,7 @@ type AgentPhone struct {
 	ID                string     `json:"id"`
 	PhoneName         string     `json:"phoneName"`
 	PhoneModel        string     `json:"phoneModel"`
+	PhonePlatform     string     `json:"phonePlatform"`
 	PhoneModelName    string     `json:"phoneModelName"`
 	NotificationKinds []string   `json:"notificationKinds"`
 	CanBeNotified     bool       `json:"canBeNotified"`
@@ -49,7 +50,7 @@ type AgentPhoneList struct {
 	NotificationKinds []string      `json:"notificationKinds"`
 }
 
-const agentPhoneFields = `id phoneName phoneModel phoneModelName notificationKinds canBeNotified createdAt lastSeenAt lastDeliveredAt lastDeliveryError`
+const agentPhoneFields = `id phoneName phoneModel phonePlatform phoneModelName notificationKinds canBeNotified createdAt lastSeenAt lastDeliveredAt lastDeliveryError`
 
 const (
 	DocumentListAgentPhones = `query {
