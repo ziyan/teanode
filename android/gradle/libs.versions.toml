@@ -15,6 +15,11 @@ zxing = "3.5.3"
 junit = "5.11.4"
 robolectric = "4.16"
 roborazzi = "1.76.0"
+playServicesLocation = "21.3.0"
+healthConnect = "1.1.0"
+osmdroid = "6.1.20"
+workManager = "2.10.0"
+guava = "33.4.0-android"
 
 [libraries]
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
@@ -45,6 +50,11 @@ junit-vintage-engine = { module = "org.junit.vintage:junit-vintage-engine", vers
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 roborazzi = { module = "io.github.takahirom.roborazzi:roborazzi", version.ref = "roborazzi" }
 roborazzi-compose = { module = "io.github.takahirom.roborazzi:roborazzi-compose", version.ref = "roborazzi" }
+play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
+health-connect-client = { module = "androidx.health.connect:connect-client", version.ref = "healthConnect" }
+osmdroid-android = { module = "org.osmdroid:osmdroid-android", version.ref = "osmdroid" }
+guava = { module = "com.google.guava:guava", version.ref = "guava" }
+androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "workManager" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
