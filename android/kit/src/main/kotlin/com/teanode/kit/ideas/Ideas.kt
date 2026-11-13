@@ -13,6 +13,9 @@ object IdeaDocuments {
     ideaCategories { ideaCategory emojis }
   }
 }"""
+    const val START_IDEA = """mutation (${'$'}ideaId: String!, ${'$'}conversationId: String, ${'$'}language: String) {
+  StartAgentIdea(ideaId: ${'$'}ideaId, conversationId: ${'$'}conversationId, language: ${'$'}language) { conversation { id } openingRequest }
+}"""
     const val SET_IDEA_STATUS = """mutation (${'$'}ideaId: String!, ${'$'}ideaStatus: String!) { SetAgentIdeaStatus(ideaId: ${'$'}ideaId, ideaStatus: ${'$'}ideaStatus) { id ideaStatus } }"""
 }
 
@@ -84,4 +87,24 @@ suspend fun Connection.allIdeas(language: String): IdeaList =
 /** Says what became of an idea: done, dismissed, or open again. */
 suspend fun Connection.setIdeaStatus(ideaId: String, ideaStatus: String) {
     execute<IdeaStatusAnswer>(IdeaDocuments.SET_IDEA_STATUS, mapOf("ideaId" to JsonPrimitive(ideaId), "ideaStatus" to JsonPrimitive(ideaStatus)))
+}
+
+/** StartedIdea is what trying an idea came to: the conversation it goes to and the request to send first. */
+data class StartedIdea(val conversationId: String?, val openingRequest: String)
+
+@Serializable
+private class StartedConversation(val id: String)
+
+@Serializable
+private class StartedIdeaAnswerBody(val conversation: StartedConversation? = null, val openingRequest: String)
+
+@Serializable
+private class StartIdeaAnswer(val StartAgentIdea: StartedIdeaAnswerBody)
+
+/** Starts an idea: the conversation it goes to and what to ask. */
+suspend fun Connection.startIdea(ideaId: String, conversationId: String?, language: String): StartedIdea {
+    val variables = hashMapOf<String, JsonElement>("ideaId" to JsonPrimitive(ideaId), "language" to JsonPrimitive(language))
+    if (conversationId != null) variables["conversationId"] = JsonPrimitive(conversationId)
+    val started = execute<StartIdeaAnswer>(IdeaDocuments.START_IDEA, variables).StartAgentIdea
+    return StartedIdea(started.conversation?.id, started.openingRequest)
 }

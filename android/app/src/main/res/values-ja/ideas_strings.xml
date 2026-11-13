@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ideas_title">アイデア</string>
+    <string name="ideas_for_you">あなた向け</string>
+    <string name="ideas_for_you_empty">まだありません。エージェントは毎晩、あなたのメールと記憶からアイデアを探します。</string>
+    <string name="ideas_for_you_footer">あなたのメール、記憶、カレンダーから見つけたものです。最初の依頼を送るまで何も始まりません。</string>
+    <string name="ideas_history">履歴</string>
+    <string name="ideas_try_it">試す</string>
+    <string name="ideas_dismiss">閉じる</string>
+    <string name="ideas_done">完了</string>
+    <string name="ideas_restore">戻す</string>
+    <string name="ideas_more_actions">その他の操作</string>
+    <string name="ideas_opens_conversation">その会話を開きます</string>
+    <string name="ideas_said_dismissed">却下しました。戻したいときは履歴にあります。</string>
+    <string name="ideas_said_done">完了にしました。</string>
+    <string name="ideas_said_restored">開いているアイデアに戻しました。</string>
+    <string name="ideas_category_assistant">エージェントをもっと活用する</string>
+    <string name="ideas_category_family">家族</string>
+    <string name="ideas_category_fun">余暇</string>
+    <string name="ideas_category_health">医療・健康</string>
+    <string name="ideas_category_home">住まい</string>
+    <string name="ideas_category_mail">メール</string>
+    <string name="ideas_category_money">お金</string>
+    <string name="ideas_category_paperwork">書類</string>
+    <string name="ideas_category_shopping">ショッピング</string>
+    <string name="ideas_category_travel">旅行</string>
+    <string name="ideas_category_work">仕事</string>
+    <string name="ideas_status_done">完了</string>
+    <string name="ideas_status_dismissed">閉じました</string>
+    <string name="ideas_status_started">進行中</string>
+    <string name="ideas_status_expired">期限切れ</string>
+</resources>

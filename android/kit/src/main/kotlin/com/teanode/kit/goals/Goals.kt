@@ -27,6 +27,9 @@ object GoalDocuments {
     const val MOVE_SCHEDULE_TO_GOAL = """mutation (${'$'}scheduleId: String!, ${'$'}conversationId: String!) {
   MoveAgentScheduleToGoal(scheduleId: ${'$'}scheduleId, conversationId: ${'$'}conversationId) { id }
 }"""
+    /** The agent's schedules, which a goal can take over (ios/TeaNodeKit AgentUpkeep.swift). */
+    const val AGENT_SCHEDULES =
+        """query { ListAgentSchedules { id name cron prompt deliver enabled lastRunAt nextRunAt conversationId mailConditions { field header operator value } } }"""
     const val SET_GOAL_STATE = """mutation (${'$'}conversationId: String!, ${'$'}goalState: String!) {
   SetAgentGoalState(conversationId: ${'$'}conversationId, goalState: ${'$'}goalState) { conversationId }
 }"""
@@ -39,6 +42,23 @@ data class GoalMailCondition(
     val header: String? = null,
     @SerialName("operator") val comparisonOperator: String = "contains",
     val value: String? = null,
+)
+
+/** AgentSchedule is one of the agent's schedules, as far as choosing one for a goal needs it; the Settings part holds the full form. */
+@Serializable
+data class AgentSchedule(
+    val id: String,
+    val name: String,
+    val cron: String,
+    val prompt: String = "",
+    /** drawer, a turn in the conversation, or mail. */
+    val deliver: String = "drawer",
+    val enabled: Boolean = true,
+    val lastRunAt: String? = null,
+    val nextRunAt: String? = null,
+    /** The conversation its answers go to: a goal's, for a schedule that runs a goal. */
+    val conversationId: String? = null,
+    val mailConditions: List<GoalMailCondition>? = null,
 )
 
 /** AgentGoal is something the agent works toward on its own, in a conversation of its own. */
@@ -104,6 +124,9 @@ private class TellGoalAnswer(val TellAgentGoal: StartedGoal? = null)
 private class SetGoalStateAnswer(val SetAgentGoalState: StartedGoal? = null)
 
 @Serializable
+private class SchedulesAnswer(val ListAgentSchedules: List<AgentSchedule?>)
+
+@Serializable
 private class MovedSchedule(val id: String)
 
 @Serializable
@@ -140,3 +163,5 @@ suspend fun Connection.moveScheduleToGoal(scheduleId: String, conversationId: St
         GoalDocuments.MOVE_SCHEDULE_TO_GOAL, mapOf("scheduleId" to JsonPrimitive(scheduleId), "conversationId" to JsonPrimitive(conversationId)),
     )
 }
+
+suspend fun Connection.agentSchedules(): List<AgentSchedule> = execute<SchedulesAnswer>(GoalDocuments.AGENT_SCHEDULES).ListAgentSchedules.filterNotNull()

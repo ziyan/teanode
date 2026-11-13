@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ideas_title">Ideas</string>
+    <string name="ideas_for_you">For you</string>
+    <string name="ideas_for_you_empty">Nothing yet. Your agent looks for ideas in your own mail and memory each night.</string>
+    <string name="ideas_for_you_footer">Found in your own mail, memory and calendar. Nothing starts until you send the request it opens with.</string>
+    <string name="ideas_history">History</string>
+    <string name="ideas_try_it">Try it</string>
+    <string name="ideas_dismiss">Dismiss</string>
+    <string name="ideas_done">Done</string>
+    <string name="ideas_restore">Restore</string>
+    <string name="ideas_more_actions">More actions</string>
+    <string name="ideas_opens_conversation">Opens its conversation</string>
+    <string name="ideas_said_dismissed">Dismissed. It is under History if you want it back.</string>
+    <string name="ideas_said_done">Marked done.</string>
+    <string name="ideas_said_restored">It is back among the open ideas.</string>
+    <string name="ideas_category_assistant">Getting more from your agent</string>
+    <string name="ideas_category_family">Family</string>
+    <string name="ideas_category_fun">Free time</string>
+    <string name="ideas_category_health">Health</string>
+    <string name="ideas_category_home">Home</string>
+    <string name="ideas_category_mail">Mail</string>
+    <string name="ideas_category_money">Money</string>
+    <string name="ideas_category_paperwork">Paperwork</string>
+    <string name="ideas_category_shopping">Shopping</string>
+    <string name="ideas_category_travel">Travel</string>
+    <string name="ideas_category_work">Work</string>
+    <string name="ideas_status_done">Done</string>
+    <string name="ideas_status_dismissed">Dismissed</string>
+    <string name="ideas_status_started">Started</string>
+    <string name="ideas_status_expired">Out of date</string>
+</resources>
