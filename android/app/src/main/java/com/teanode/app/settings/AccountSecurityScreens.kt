@@ -61,8 +61,9 @@ import java.util.Date
 /** A date and time as the person's locale writes them, short. */
 fun shortDateTime(instant: Instant): String = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date.from(instant))
 
+/** Copies a token or its commands as a sensitive clip that the clipboard drops after a minute and a half. */
 private fun copyToClipboard(context: Context, text: String) {
-    (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("TeaNode", text))
+    com.teanode.app.passwords.PasswordsClipboard.copy(context, text)
 }
 
 /** The browsers signed in to the account, newest first, with the one reading the list at the top. */
@@ -197,6 +198,7 @@ fun TokensScreen(onBack: () -> Unit) {
         FormDialog(
             title = stringResource(R.string.settings_tokens_new), confirmLabel = stringResource(R.string.common_done), isConfirmEnabled = true, onConfirm = { issuedSecret = null }, onDismiss = { issuedSecret = null },
         ) {
+            com.teanode.app.ui.components.SecureWindow()
             Text(secret, style = MaterialTheme.typography.bodyLarge, fontFamily = FontFamily.Monospace)
             TeaNodeRow(headline = stringResource(R.string.settings_tokens_copy), leadingIcon = Icons.Outlined.ContentCopy, onClick = { copyToClipboard(context, secret) })
             Text(stringResource(R.string.settings_tokens_secret_footer), style = MaterialTheme.typography.bodySmall)

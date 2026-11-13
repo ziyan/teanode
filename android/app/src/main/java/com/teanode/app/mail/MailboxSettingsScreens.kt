@@ -336,11 +336,11 @@ fun MailAppPasswordsScreen(mail: MailModel, onBack: () -> Unit) {
             title = { Text(stringResource(R.string.mail_app_password)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.teanode.app.ui.components.SecureWindow()
                     SettingLine(stringResource(R.string.mail_user_name), shownPassword.username)
                     SelectionContainer { SettingLine(stringResource(R.string.mail_password), shownPassword.password, isMonospace = true) }
                     TextButton(onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("password", shownPassword.password))
+                        com.teanode.app.passwords.PasswordsClipboard.copy(context, shownPassword.password)
                         mail.snackbar?.show(context.getString(R.string.mail_copied))
                     }) { Text(stringResource(R.string.mail_copy_password)) }
                     Text(stringResource(R.string.mail_shown_this_once), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
