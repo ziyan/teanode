@@ -156,6 +156,7 @@ fun PersonScreen(photoFaceGroupId: String, onBack: () -> Unit) {
 
     fun fail(failure: Throwable) { if (failure is CancellationException) throw failure else snackbar.showError(failure) }
 
+    Box(Modifier.fillMaxSize()) {
     TeaNodeScreen(
         title = current?.let { person -> PhotoNaming.shownName(person) } ?: stringResource(R.string.photos_unnamed_person), onBack = onBack,
         actions = {
@@ -189,12 +190,13 @@ fun PersonScreen(photoFaceGroupId: String, onBack: () -> Unit) {
                     )
                 }
             }
-            val opened = list.photos.firstOrNull { photo -> photo.id == openedPhotoId }
+        }
+    }
+    val opened = list.photos.firstOrNull { photo -> photo.id == openedPhotoId }
             if (opened != null) {
                 androidx.activity.compose.BackHandler { openedPhotoId = null }
                 PhotoViewer(photos = list.photos, initialPhotoId = opened.id, onClose = { openedPhotoId = null }, library = null, onPhotoChanged = { photo -> list.replace(photo) }, onPhotosGone = { ids -> list.remove(ids) })
             }
-        }
     }
     if (isNaming && current != null) {
         NamePersonSheet(

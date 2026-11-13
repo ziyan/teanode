@@ -245,6 +245,7 @@ fun AlbumScreen(photoAlbumId: String, onBack: () -> Unit) {
 
     fun fail(failure: Throwable) { if (failure is CancellationException) throw failure else snackbar.showError(failure) }
 
+    Box(Modifier.fillMaxSize()) {
     TeaNodeScreen(
         title = if (isSelecting) stringResource(R.string.photos_selected_count, selectedIds.size) else current?.albumTitle ?: "",
         onBack = { if (isSelecting) { isSelecting = false; selectedIds = emptySet() } else onBack() },
@@ -289,7 +290,9 @@ fun AlbumScreen(photoAlbumId: String, onBack: () -> Unit) {
                     onShowed = { photo -> list.showed(photo.id) }, state = rememberLazyGridState(),
                 )
             }
-            val opened = list.photos.firstOrNull { photo -> photo.id == openedPhotoId }
+        }
+    }
+    val opened = list.photos.firstOrNull { photo -> photo.id == openedPhotoId }
             if (opened != null) {
                 androidx.activity.compose.BackHandler { openedPhotoId = null }
                 PhotoViewer(
@@ -298,7 +301,6 @@ fun AlbumScreen(photoAlbumId: String, onBack: () -> Unit) {
                     album = current, onAlbumChanged = { updated -> album = updated },
                 )
             }
-        }
     }
     if (isRenaming && current != null) {
         NewAlbumDialog(

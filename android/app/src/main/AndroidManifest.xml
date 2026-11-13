@@ -4,6 +4,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- Photos: backup reads the phone's pictures and videos (READ_EXTERNAL_STORAGE up to Android 12). -->
+    <!-- Recordings: the microphone, kept going by a foreground service while the screen is off. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
@@ -56,5 +61,6 @@
                 <data android:scheme="teanode" android:host="app" />
             </intent-filter>
         </activity>
+        <service android:name=".recordings.RecordingCaptureService" android:exported="false" android:foregroundServiceType="microphone" />
     </application>
 </manifest>

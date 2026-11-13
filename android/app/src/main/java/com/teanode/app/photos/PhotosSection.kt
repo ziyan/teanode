@@ -193,6 +193,7 @@ fun PhotosSection(
         }
     }
 
+    Box(Modifier.fillMaxSize()) {
     val title = if (isSelecting) stringResource(R.string.photos_selected_count, selectedIds.size) else section.title()
     TeaNodeScreen(
         title = title,
@@ -276,7 +277,9 @@ fun PhotosSection(
                     }
                 }
             }
-            val opened = list?.photos?.firstOrNull { photo -> photo.id == openedPhotoId }
+        }
+    }
+    val opened = list?.photos?.firstOrNull { photo -> photo.id == openedPhotoId }
             if (opened != null && list != null) {
                 PhotoViewer(
                     photos = list.photos, initialPhotoId = opened.id, onClose = { openedPhotoId = null }, library = library,
@@ -285,7 +288,6 @@ fun PhotosSection(
                     onShowNear = { photo -> com.teanode.kit.photos.PhotoNearFilter.near(photo)?.let { near -> section = PhotoSectionChoice.Library; filter = PhotoFilter(photoNearFilter = near); openedPhotoId = null } },
                 )
             }
-        }
     }
     if (isFilterOpen) PhotoFilterSheet(filter, onApply = { applied -> filter = applied; isFilterOpen = false }, onDismiss = { isFilterOpen = false })
     if (isTrashConfirming) {
