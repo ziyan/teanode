@@ -43,6 +43,8 @@ private fun stringArgument(name: String, isOptional: Boolean = false): NamedNavA
  */
 @Suppress("UNUSED_PARAMETER")
 fun NavGraphBuilder.contactsRoutes(navigator: AppNavigator) {
+    // A tap on a person's picture or name in a conversation opens their card.
+    com.teanode.app.chats.ChatsHooks.openPerson = { userId -> navigator.navigate(ContactsRoutes.person(PersonCardTarget.Account(userId))) }
     composable(Routes.home(AppSection.Contacts), deepLinks = Routes.deepLinks(Routes.home(AppSection.Contacts))) { ContactsSection() }
     composable(ContactsRoutes.CONTACT, arguments = listOf(stringArgument("contactId")), deepLinks = Routes.deepLinks(ContactsRoutes.CONTACT)) { entry ->
         val model = rememberContactsModel()
@@ -71,7 +73,7 @@ fun NavGraphBuilder.contactsRoutes(navigator: AppNavigator) {
     }
     composable(ContactsRoutes.VISITS, arguments = listOf(stringArgument("userId")), deepLinks = Routes.deepLinks(ContactsRoutes.VISITS)) { entry ->
         val nav = LocalAppNavigator.current
-        PersonVisitsScreen(LocalConnection.current, entry.arguments?.getString("userId").orEmpty(), onBack = { nav.back() })
+        PersonVisitsScreen(entry.arguments?.getString("userId").orEmpty(), onBack = { nav.back() })
     }
 }
 

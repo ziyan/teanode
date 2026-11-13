@@ -84,8 +84,26 @@ import com.teanode.kit.contacts.ContactDetail
 import com.teanode.kit.contacts.ContactWords
 import com.teanode.kit.contacts.PersonCard
 import com.teanode.kit.contacts.PersonCardHealthSection
-import com.teanode.kit.contacts.PersonCardLocation
-import com.teanode.kit.contacts.PersonCardMember
+import com.teanode.app.finance.AmountText
+import com.teanode.app.finance.FinanceRoutes
+import com.teanode.app.health.HealthRoutes
+import com.teanode.app.health.HealthTypeRow
+import com.teanode.app.health.rememberHealthModel
+import androidx.compose.material.icons.outlined.PauseCircle
+import com.teanode.app.location.LocationVisitRow
+import com.teanode.app.location.placeIcon
+import com.teanode.app.location.rememberLocationModel
+import com.teanode.app.location.rememberLocationText
+import com.teanode.app.photos.PhotoAlbumRow
+import com.teanode.app.photos.PhotoCell
+import com.teanode.app.photos.PhotoFilterRequest
+import com.teanode.app.photos.PhotoRoutes
+import com.teanode.app.shell.Routes
+import com.teanode.kit.finance.shownName
+import com.teanode.kit.location.LocationShareLevel
+import com.teanode.kit.location.PersonLocation
+import com.teanode.kit.circles.CircleMember
+import com.teanode.app.settings.relationshipWordOf
 import com.teanode.kit.contacts.PersonCardSectionState
 import com.teanode.kit.contacts.PersonCardTarget
 import com.teanode.kit.contacts.readPersonCard
@@ -226,7 +244,7 @@ fun PersonCardHeader(card: PersonCard, isMine: Boolean, model: ContactsModel) {
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(card.displayName.ifEmpty { stringResource(R.string.contacts_no_name) }, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
-            val relationship = if (person != null) RelationshipWords.word(context, person)?.let { word -> stringResource(R.string.contacts_your_relationship, word) } else contact?.organization?.ifEmpty { null }
+            val relationship = if (person != null) relationshipWordOf(person)?.let { word -> stringResource(R.string.contacts_your_relationship, word) } else contact?.organization?.ifEmpty { null }
             if (relationship != null) Text(relationship, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (person != null && person.displayName != person.username) Text("@${person.username}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (isMine) Text(stringResource(R.string.contacts_this_is_you), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -315,6 +333,7 @@ private fun PersonCardLocationRows(card: PersonCard) {
     val section = card.location ?: return
     if (!section.sectionState.isListed) return
     val navigator = LocalAppNavigator.current
+    val locationModel = rememberLocationModel()
     TeaNodeSectionHeader(stringResource(R.string.section_location))
     if (section.sectionState != PersonCardSectionState.Shown) {
         StateRow(section.sectionState, stringResource(R.string.contacts_location_not_shared, card.displayName))
@@ -326,45 +345,35 @@ private fun PersonCardLocationRows(card: PersonCard) {
         return
     }
     WhereRow(location)
-    if (location.shareLevel == "current") Text(stringResource(R.string.contacts_shares_where_now, card.displayName), Modifier.padding(horizontal = 16.dp, vertical = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (location.level == LocationShareLevel.Current) Text(stringResource(R.string.contacts_shares_where_now, card.displayName), Modifier.padding(horizontal = 16.dp, vertical = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     val openVisitId = location.openVisit?.id
     for (visit in (section.todayVisits ?: emptyList()).filter { visit -> visit.id != openVisitId }) {
-        val arrived = ServerTime.instant(visit.arrivedAt)
-        TeaNodeRow(
-            headline = visit.place.placeName.ifEmpty { stringResource(R.string.contacts_a_place) }, leadingIcon = Icons.Outlined.Place,
-            supporting = visitTimes(visit.arrivedAt, visit.departedAt),
-        )
+        LocationVisitRow(visit, onOpenPlace = null, onOpenPhotos = null, askToForget = null)
     }
-    if (location.shareLevel == "history") {
+    if (location.level == LocationShareLevel.History) {
         TeaNodeRow(headline = stringResource(R.string.contacts_visits_and_places), leadingIcon = Icons.Outlined.Schedule, onClick = { navigator.navigate(ContactsRoutes.visits(location.userId)) })
     }
-    ShowAllRow(stringResource(R.string.section_location)) { navigator.openSection(AppSection.Location) }
-}
-
-@Composable
-private fun visitTimes(arrivedAt: String?, departedAt: String?): String {
-    val arrived = ServerTime.instant(arrivedAt)
-    val departed = ServerTime.instant(departedAt)
-    return when {
-        arrived != null && departed != null -> MailTimes.timeOfDay(arrived) + " - " + MailTimes.timeOfDay(departed)
-        arrived != null -> stringResource(R.string.contacts_since_time, MailTimes.timeOfDay(arrived))
-        else -> ""
+    // Opens Location with them chosen and the map centered on them.
+    ShowAllRow(stringResource(R.string.section_location)) {
+        locationModel.select(location.userId)
+        navigator.openSection(AppSection.Location)
     }
 }
 
 @Composable
-private fun WhereRow(location: PersonCardLocation) {
-    val pause = location.pause
-    val pauseInEffect = pause != null && (ServerTime.instant(pause.endedAt)?.isAfter(Instant.now()) ?: true) && pause.startedAt != null
-    val measured = ServerTime.instant(location.latestPoint?.measuredAt)
+private fun WhereRow(location: PersonLocation) {
+    val text = rememberLocationText()
+    val pause = location.pause?.takeIf { pause -> location.isPaused() }
+    val measured = location.latestPoint?.measuredInstant
     val fresh = if (measured == null) stringResource(R.string.contacts_no_position_yet) else android.text.format.DateUtils.getRelativeTimeSpanString(minOf(measured.toEpochMilli(), System.currentTimeMillis() - 1000), System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS).toString()
     val visit = location.openVisit
     val title = when {
-        pauseInEffect -> stringResource(R.string.contacts_location_paused)
-        else -> visit?.place?.placeName?.ifEmpty { null } ?: fresh
+        pause != null -> text.locationPaused(pause)
+        visit != null -> text.shownName(visit.place)
+        else -> fresh
     }
-    val detail = if (!pauseInEffect && visit != null) visitTimes(visit.arrivedAt, null).ifEmpty { fresh }.let { since -> if (since == fresh) fresh else "$since · $fresh" } else null
-    TeaNodeRow(headline = title, supporting = detail, leadingIcon = if (pauseInEffect) Icons.Outlined.Schedule else Icons.Outlined.Place)
+    val detail = if (pause == null && visit != null) text.times(visit).ifEmpty { fresh }.let { since -> if (since == fresh) fresh else "$since \u00b7 $fresh" } else null
+    TeaNodeRow(headline = title, supporting = detail, leadingIcon = if (pause != null) Icons.Outlined.PauseCircle else placeIcon(visit?.place))
 }
 
 @Composable
@@ -372,6 +381,8 @@ private fun PersonCardHealthRows(card: PersonCard) {
     val section = card.health ?: return
     if (!section.sectionState.isListed) return
     val navigator = LocalAppNavigator.current
+    val healthModel = rememberHealthModel()
+    val scope = rememberCoroutineScope()
     TeaNodeSectionHeader(stringResource(R.string.section_health))
     if (section.sectionState != PersonCardSectionState.Shown) {
         StateRow(section.sectionState, stringResource(R.string.contacts_health_not_shared, card.displayName))
@@ -382,17 +393,15 @@ private fun PersonCardHealthRows(card: PersonCard) {
         PlainText(stringResource(R.string.contacts_no_health_data_yet))
         return
     }
-    for (type in types) {
-        val day = type.latestDaySummary
-        val amount = day?.sumValue ?: day?.averageValue
-        TeaNodeRow(
-            headline = type.typeName.ifEmpty { type.healthType },
-            supporting = day?.summaryDay?.let { summaryDay -> if (PersonCardHealthSection.isToday(type, LocalDate.now())) stringResource(R.string.contacts_today) else summaryDay },
-            trailing = { Text(listOfNotNull(amount?.let { value -> if (value == value.toLong().toDouble()) value.toLong().toString() else String.format("%.1f", value) }, (day?.quantityUnit ?: type.quantityUnit)?.takeIf { unit -> unit != "count" }).joinToString(" ")) },
-            onClick = { navigator.openSection(AppSection.Health) },
-        )
+    // Opens Health on their data, on one kind's chart when one is named.
+    fun open(healthType: String?) {
+        scope.launch {
+            healthModel.select(card.person?.userId)
+            navigator.navigate(if (healthType == null) HealthRoutes.home else HealthRoutes.type(healthType))
+        }
     }
-    if (section.hasMore) ShowAllRow(stringResource(R.string.section_health)) { navigator.openSection(AppSection.Health) }
+    for (type in types) HealthTypeRow(healthModel, type, onClick = { open(type.healthType) })
+    if (section.hasMore) ShowAllRow(stringResource(R.string.section_health)) { open(null) }
 }
 
 @Composable
@@ -414,11 +423,18 @@ private fun PersonCardFinanceRows(card: PersonCard) {
     }
     for (account in section.financeAccounts ?: emptyList()) {
         TeaNodeRow(
-            headline = account.accountName, supporting = account.accountMask?.takeIf { mask -> mask.isNotEmpty() }?.let { mask -> "•••• $mask" },
-            trailing = { account.currentBalance?.let { balance -> Text(java.text.NumberFormat.getCurrencyInstance().apply { runCatching { currency = java.util.Currency.getInstance(account.currencyCode) } }.format(balance)) } },
+            headline = account.shownName, supporting = account.accountMask?.takeIf { mask -> mask.isNotEmpty() }?.let { mask -> "\u2022\u2022\u2022\u2022 $mask" },
+            trailing = { AmountText(account.currentBalance, account.currencyCode) },
+            onClick = { navigator.navigate(FinanceRoutes.sharedAccount(account.financeAccountId)) },
         )
     }
-    if (section.hasMore || allLevel != null) ShowAllRow(stringResource(R.string.section_finance)) { navigator.openSection(AppSection.Finance) }
+    // Opens Finance on what they share.
+    val sharerId = card.person?.userId
+    if (section.hasMore || allLevel != null) ShowAllRow(stringResource(R.string.section_finance)) {
+        navigator.navigate(
+            if (sharerId == null) Routes.home(AppSection.Finance) else if (section.financeAccounts.isNullOrEmpty()) FinanceRoutes.sharedAllOf(sharerId) else FinanceRoutes.shared(sharerId),
+        )
+    }
 }
 
 @Composable
@@ -426,16 +442,17 @@ private fun PersonCardPhotosRows(card: PersonCard) {
     val section = card.photos ?: return
     if (!section.photosState.isListed && !section.albumsState.isListed) return
     val navigator = LocalAppNavigator.current
+    val person = card.person
+    // Tapping a picture opens their photos, when they are an account the photos can be filtered by.
+    val openPhotos: (() -> Unit)? = person?.let { who -> { PhotoFilterRequest.openPerson(who.userId, who.displayName); navigator.openSection(AppSection.Photos) } }
+    val openAlbums = { navigator.navigate(PhotoRoutes.albums) }
     TeaNodeSectionHeader(stringResource(R.string.section_photos))
     if (section.photosState == PersonCardSectionState.Shown) {
         val photos = section.photos ?: emptyList()
         if (photos.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (photo in photos) {
-                    val picture = rememberServerPicture(photo.smallPreviewUrl)
-                    Box(Modifier.size(76.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable { navigator.openSection(AppSection.Photos) }) {
-                        if (picture != null) androidx.compose.foundation.Image(picture, photo.placeName.ifEmpty { stringResource(R.string.contacts_photo) }, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-                    }
+                    PhotoCell(photo, isSelecting = false, isSelected = false, onClick = { openPhotos?.invoke() }, onLongClick = {}, modifier = Modifier.size(76.dp).clip(RoundedCornerShape(8.dp)))
                 }
             }
         } else if ((section.albums ?: emptyList()).isEmpty()) {
@@ -445,14 +462,12 @@ private fun PersonCardPhotosRows(card: PersonCard) {
         StateRow(section.photosState, stringResource(R.string.contacts_nothing_yet))
     }
     if (section.albumsState == PersonCardSectionState.Shown) {
-        for (album in section.albums ?: emptyList()) {
-            TeaNodeRow(headline = album.albumTitle, supporting = pluralStringResource(R.plurals.contacts_photos_count, album.photoCount, album.photoCount), onClick = { navigator.openSection(AppSection.Photos) })
-        }
+        for (album in section.albums ?: emptyList()) PhotoAlbumRow(album) { openAlbums() }
     } else if (section.albumsState == PersonCardSectionState.Failed) {
         StateRow(PersonCardSectionState.Failed, stringResource(R.string.contacts_nothing_yet))
     }
-    if (section.hasMorePhotos) ShowAllRow(stringResource(R.string.section_photos)) { navigator.openSection(AppSection.Photos) }
-    if (section.hasMoreAlbums) ShowAllRow(stringResource(R.string.contacts_albums)) { navigator.openSection(AppSection.Photos) }
+    if (section.hasMorePhotos && openPhotos != null) ShowAllRow(stringResource(R.string.section_photos)) { openPhotos() }
+    if (section.hasMoreAlbums) ShowAllRow(stringResource(R.string.contacts_albums)) { openAlbums() }
 }
 
 @Composable
@@ -590,9 +605,9 @@ private fun PersonCardCirclesRows(card: PersonCard) {
 private fun PersonCardRelationshipRows(card: PersonCard) {
     val person = card.person ?: return
     val context = LocalContext.current
-    val word = RelationshipWords.word(context, person)
+    val word = relationshipWordOf(person)
     TeaNodeSectionHeader(stringResource(R.string.contacts_relationship))
-    TeaNodeRow(headline = stringResource(R.string.contacts_relationship), trailing = { Text(word?.let { shown -> RelationshipWords.capitalized(shown) } ?: stringResource(R.string.contacts_none), color = MaterialTheme.colorScheme.onSurfaceVariant) })
+    TeaNodeRow(headline = stringResource(R.string.contacts_relationship), trailing = { Text(word?.let { shown -> shown.replaceFirstChar { first -> first.uppercase() } } ?: stringResource(R.string.contacts_none), color = MaterialTheme.colorScheme.onSurfaceVariant) })
 }
 
 /** What the person can do about their contact for them: say which account they are, mark them as the person, take their picture off, delete them. */

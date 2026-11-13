@@ -69,6 +69,7 @@ import com.teanode.app.ui.components.LoadedContent
 import com.teanode.app.ui.components.LoadingState
 import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.app.ui.components.TeaNodeNavigationRow
+import com.teanode.app.ui.components.TeaNodeNavigationRow
 import com.teanode.app.ui.components.TeaNodeRow
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.app.ui.components.TeaNodeSectionHeader
@@ -377,6 +378,11 @@ fun AuditedMailScreen(mailId: String, onBack: () -> Unit, connection: Connection
     var trainingLabel by remember(mailId) { mutableStateOf<String?>(null) }
     var hasTrainingChanged by remember(mailId) { mutableStateOf(false) }
     var isTeaching by remember { mutableStateOf(false) }
+    var subPage by remember { mutableStateOf<AuditSubPage?>(null) }
+    subPage?.let { opened ->
+        AuditSubPageScreen(opened, onBack = { subPage = null })
+        return
+    }
     TeaNodeScreen(title = stringResource(R.string.mail_manage_message), onBack = onBack) { contentPadding ->
         LoadedContent(detail, modifier = Modifier.padding(contentPadding)) { shown: AuditedMailDetail ->
             val mail = shown.mail
@@ -444,7 +450,7 @@ fun AuditedMailScreen(mailId: String, onBack: () -> Unit, connection: Connection
                 DetailRow(stringResource(R.string.mail_manage_connection), connectionText(mail))
                 DetailRow(stringResource(R.string.mail_manage_message_id), mail.messageId, isMonospaced = true)
                 DetailRow(stringResource(R.string.mail_manage_size), ManageLabels.byteText(mail.byteCount))
-                mail.authenticationResults?.let { results -> AuthenticationRows(results) }
+                mail.authenticationResults?.let { results -> AuthenticationRows(results, onOpenSpamRules = { rules -> subPage = AuditSubPage.SpamRules(rules) }) }
                 val opens = shown.opens
                 if (opens != null && opens.isTrackable) {
                     TeaNodeSectionHeader(stringResource(R.string.mail_manage_pictures_fetched))
@@ -456,21 +462,44 @@ fun AuditedMailScreen(mailId: String, onBack: () -> Unit, connection: Connection
                 }
                 TeaNodeSectionHeader(stringResource(R.string.mail_manage_deliveries))
                 if (shown.deliveries.isEmpty()) Text(stringResource(R.string.mail_manage_no_deliveries), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                for (delivery in shown.deliveries) DeliveryRow(delivery)
+                for (delivery in shown.deliveries) DeliveryRow(delivery, Modifier.clickable { subPage = AuditSubPage.DeliveryDetail(delivery) })
                 val content = shown.content
                 if (content != null) {
                     TeaNodeSectionHeader(stringResource(R.string.mail_manage_message))
-                    if (!content.available) Text(stringResource(R.string.mail_no_longer_stored), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    for (file in content.presentAttachments) TeaNodeRow(headline = file.filename.ifEmpty { stringResource(R.string.mail_attachment) }, supporting = fileSize(file.size.toLong()))
-                    if (content.text.isNotEmpty()) SelectionContainer { Text(content.text, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium) }
-                    val raw = content.rawHeaders
-                    if (!raw.isNullOrEmpty()) {
-                        TeaNodeSectionHeader(stringResource(R.string.mail_show_headers))
-                        SelectionContainer { Text(raw, Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace) }
+                    if (!content.available) {
+                        Text(stringResource(R.string.mail_no_longer_stored), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        if (content.html.isNotEmpty()) TeaNodeNavigationRow(headline = stringResource(R.string.mail_manage_rendered), onClick = { subPage = AuditSubPage.Rendered(content) })
+                        if (content.text.isNotEmpty()) TeaNodeNavigationRow(headline = stringResource(R.string.mail_manage_text), onClick = { subPage = AuditSubPage.Source(context.getString(R.string.mail_manage_text), content.text, false) })
+                        if (content.html.isNotEmpty()) TeaNodeNavigationRow(headline = stringResource(R.string.mail_manage_html), onClick = { subPage = AuditSubPage.Source(context.getString(R.string.mail_manage_html), content.html, true) })
+                        TeaNodeNavigationRow(headline = stringResource(R.string.mail_manage_headers), onClick = { subPage = AuditSubPage.Headers((content.headers ?: emptyList()).filterNotNull()) })
+                        val raw = content.rawHeaders
+                        if (!raw.isNullOrEmpty()) TeaNodeNavigationRow(headline = stringResource(R.string.mail_manage_raw_headers), onClick = { subPage = AuditSubPage.Source(context.getString(R.string.mail_manage_raw_headers), raw, true) })
+                        TeaNodeRow(headline = stringResource(R.string.mail_manage_download_eml), onClick = {
+                            scope.launch { openFile(context, connection, snackbar, "/api/v1/mail/${mail.id}/raw", mail.id + ".eml") }
+                        })
+                        for (file in content.presentAttachments) {
+                            TeaNodeRow(
+                                headline = file.filename.ifEmpty { stringResource(R.string.mail_attachment) },
+                                supporting = listOf(file.contentType, ManageLabels.byteText(file.size)).filter { part -> part.isNotEmpty() }.joinToString(" · "),
+                                onClick = { scope.launch { openFile(context, connection, snackbar, "/api/v1/mail/${mail.id}/attachment/${file.index}", file.filename) } },
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+/** Opens a file of a message the operator is looking at, saying so when it cannot be fetched. */
+private suspend fun openFile(context: android.content.Context, connection: Connection, snackbar: com.teanode.app.ui.components.SnackbarController, path: String, name: String) {
+    try {
+        com.teanode.app.mail.openServerFile(context, connection, path, name)
+    } catch (failed: kotlinx.coroutines.CancellationException) {
+        throw failed
+    } catch (failed: Throwable) {
+        snackbar.showError(failed)
     }
 }
 
@@ -483,33 +512,101 @@ private fun connectionText(mail: AuditedMail): String {
     return parts.joinToString("\n")
 }
 
-/** The checks a message went through on arrival, each with what it looked at to decide. */
+/** The checks a message went through on arrival, each with what it looked at to decide, and where the domains it claims receive mail. */
 @Composable
-fun AuthenticationRows(results: MailAuthenticationResults) {
+fun AuthenticationRows(results: MailAuthenticationResults, onOpenSpamRules: (List<MailAuthenticationResults.SpamRule>) -> Unit = {}) {
+    val context = LocalContext.current
     TeaNodeSectionHeader(stringResource(R.string.mail_manage_authentication))
-    results.spf?.let { spf -> CheckRow("SPF", spf.spfResult, listOfNotNull(spf.domain, spf.ip).joinToString(" · ")) }
+    // Once the sender's DMARC policy is satisfied, an SPF or signature failure is what forwarding does to a message: the word stays, the red goes.
+    val isDmarcPassed = results.dmarc?.isPassed ?: false
+    fun toneUnderDmarc(result: String?): ManagedTone = ManagedTone.of(result).let { tone -> if (isDmarcPassed && tone == ManagedTone.Bad) ManagedTone.Plain else tone }
+    val none = stringResource(R.string.mail_manage_none)
+    var checkCount = 0
+    results.spf?.let { spf ->
+        checkCount += 1
+        val domain = spf.domain.orEmpty()
+        val address = spf.ip.orEmpty()
+        val detail = when ((spf.spfResult ?: "").lowercase()) {
+            "pass" -> context.getString(R.string.mail_manage_spf_pass, domain, address)
+            "fail" -> context.getString(R.string.mail_manage_spf_fail, domain, address)
+            "softfail" -> context.getString(R.string.mail_manage_spf_softfail, domain, address)
+            "neutral" -> context.getString(R.string.mail_manage_spf_neutral, domain, address)
+            "none" -> context.getString(R.string.mail_manage_spf_none, domain, address)
+            "temperror", "permerror" -> context.getString(R.string.mail_manage_spf_error, domain, address)
+            else -> context.getString(R.string.mail_manage_spf_other, domain, address)
+        }
+        CheckRow("SPF", spf.spfResult?.ifEmpty { null } ?: none, toneUnderDmarc(spf.spfResult), detail)
+    }
+    for (dkim in results.dkims ?: emptyList()) {
+        checkCount += 1
+        var detail = ManagedWords.dkimRecordName(dkim.selector, dkim.domain)
+        dkim.identifier?.takeIf { identifier -> identifier.isNotEmpty() }?.let { identifier -> detail += " · " + context.getString(R.string.mail_manage_signed_for, identifier) }
+        CheckRow("DKIM", dkim.dkimResult?.ifEmpty { null } ?: none, toneUnderDmarc(dkim.dkimResult), detail)
+    }
     results.dmarc?.let { dmarc ->
-        val result = if (!dmarc.passedAtForwarderDomain.isNullOrEmpty()) stringResource(R.string.mail_manage_pass_at, dmarc.passedAtForwarderDomain.orEmpty()) else dmarc.dmarcResult
+        checkCount += 1
+        val forwarderDomain = dmarc.passedAtForwarderDomain.orEmpty()
+        val parts = mutableListOf(dmarc.domain.orEmpty())
+        if (forwarderDomain.isNotEmpty()) parts.add(0, context.getString(R.string.mail_manage_failed_after_forwarding, forwarderDomain))
+        dmarc.policy?.takeIf { policy -> policy.isNotEmpty() }?.let { policy -> parts.add("p=$policy") }
+        dmarc.subdomainPolicy?.takeIf { policy -> policy.isNotEmpty() }?.let { policy -> parts.add("sp=$policy") }
+        val alignments = listOfNotNull(
+            dmarc.dkimAlignment?.takeIf { mode -> mode.isNotEmpty() }?.let { mode -> context.getString(R.string.mail_manage_dkim_alignment, ManageLabels.alignmentMode(context, mode)) },
+            dmarc.spfAlignment?.takeIf { mode -> mode.isNotEmpty() }?.let { mode -> context.getString(R.string.mail_manage_spf_alignment, ManageLabels.alignmentMode(context, mode)) },
+        )
+        parts.add(alignments.joinToString(", "))
         CheckRow(
-            "DMARC", result,
-            listOfNotNull(dmarc.domain, dmarc.policy?.let { policy -> "p=$policy" }, dmarc.dkimAlignment?.let { mode -> "adkim=$mode" }, dmarc.spfAlignment?.let { mode -> "aspf=$mode" }).joinToString(" · "),
+            "DMARC", if (forwarderDomain.isEmpty()) dmarc.dmarcResult?.ifEmpty { null } ?: none else context.getString(R.string.mail_manage_pass_at, forwarderDomain),
+            if (forwarderDomain.isEmpty()) ManagedTone.of(dmarc.dmarcResult) else ManagedTone.Good, parts.filter { part -> part.isNotEmpty() }.joinToString(" · "),
         )
     }
-    for (dkim in results.dkims ?: emptyList()) CheckRow("DKIM", dkim.dkimResult, listOfNotNull(dkim.domain, dkim.selector?.let { selector -> "s=$selector" }).joinToString(" · "))
-    results.arc?.let { arc -> CheckRow("ARC", arc.arcResult, arc.instanceCount?.let { count -> stringResource(R.string.mail_manage_arc_seals, count) }.orEmpty()) }
-    results.spamFilter?.let { spam -> CheckRow(stringResource(R.string.mail_manage_spam_filter), spam.spamResult, stringResource(R.string.mail_manage_score, ManagedWords.score(spam.score))) }
-    results.antivirus?.let { antivirus -> CheckRow(stringResource(R.string.mail_manage_antivirus), if ((antivirus.viruses ?: emptyList()).isEmpty()) "pass" else "fail", (antivirus.viruses ?: emptyList()).joinToString(", ")) }
+    results.arc?.let { arc ->
+        checkCount += 1
+        val instances = arc.instanceCount ?: 0
+        CheckRow("ARC", arc.arcResult?.ifEmpty { null } ?: none, ManagedTone.of(arc.arcResult), if (instances > 0) context.getString(R.string.mail_manage_sealed_times, instances) else context.getString(R.string.mail_manage_no_sealed_chain))
+    }
+    results.spamFilter?.let { spam ->
+        checkCount += 1
+        val symbols = spam.symbols ?: emptyList()
+        val detail = if ((spam.checks ?: emptyList()).isEmpty()) (if (symbols.isEmpty()) context.getString(R.string.mail_manage_no_rules_matched) else symbols.joinToString(" ")) else ""
+        CheckRow(context.getString(R.string.mail_manage_spam), ManagedWords.score(spam.score), if (spam.spamResult == "fail") ManagedTone.Bad else ManagedTone.Good, detail)
+    }
+    results.antivirus?.let { antivirus ->
+        checkCount += 1
+        val viruses = antivirus.viruses ?: emptyList()
+        CheckRow(context.getString(R.string.mail_manage_virus), context.getString(if (viruses.isEmpty()) R.string.mail_manage_clean else R.string.mail_manage_infected), if (viruses.isEmpty()) ManagedTone.Good else ManagedTone.Bad, viruses.joinToString(", "))
+    }
+    results.contentFilter?.unsafeExtensions?.takeIf { extensions -> extensions.isNotEmpty() }?.let { extensions ->
+        checkCount += 1
+        CheckRow(context.getString(R.string.mail_manage_attachments), context.getString(R.string.mail_manage_unsafe), ManagedTone.Bad, extensions.joinToString(", "))
+    }
+    if (checkCount == 0) Text(stringResource(R.string.mail_manage_nothing_checked), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val spamRules = results.spamFilter?.checks
+    if (!spamRules.isNullOrEmpty()) TeaNodeNavigationRow(headline = stringResource(R.string.mail_manage_spam_filter_rules), onClick = { onOpenSpamRules(spamRules) })
+    val senderServers = results.senderMx?.mailServers
+    if (results.senderMx != null && !senderServers.isNullOrEmpty()) MxRow(results.senderMx?.domain.orEmpty(), senderServers)
+    val fromServers = results.fromMx?.mailServers
+    if (results.fromMx != null && !fromServers.isNullOrEmpty() && (results.fromMx?.domain != results.senderMx?.domain || (results.senderMx?.mailServers ?: emptyList()).isEmpty())) MxRow(results.fromMx?.domain.orEmpty(), fromServers)
     for (message in results.errorMessages ?: emptyList()) Text(message, Modifier.padding(horizontal = 16.dp, vertical = 2.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
 }
 
+/** Where a domain the message claims receives its mail. */
 @Composable
-private fun CheckRow(name: String, result: String?, detail: String) {
+private fun MxRow(domainName: String, mailServers: List<String>) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+        Text(stringResource(R.string.mail_manage_mail_servers_for, domainName), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SelectionContainer { Text(mailServers.joinToString(", "), style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace) }
+    }
+}
+
+@Composable
+private fun CheckRow(name: String, result: String, tone: ManagedTone, detail: String) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.Top) {
         Column(Modifier.weight(1f)) {
             Text(name, style = MaterialTheme.typography.bodyMedium)
-            if (detail.isNotEmpty()) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (detail.isNotEmpty()) SelectionContainer { Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
-        if (!result.isNullOrEmpty()) ManageTag(result, ManagedTone.of(result))
+        ManageTag(result, tone)
     }
 }
 
@@ -659,6 +756,11 @@ fun ReportsScreen(onBack: () -> Unit, onOpenReport: (String) -> Unit, connection
 fun ReportDetailScreen(reportId: String, onBack: () -> Unit, connection: Connection = LocalConnection.current) {
     val context = LocalContext.current
     val report = rememberLoad(reportId) { connection.dmarcReport(reportId) }
+    var openedRecord by remember { mutableStateOf<DMARCReport.FeedbackRecord?>(null) }
+    openedRecord?.let { record ->
+        FeedbackRecordPage(record, onBack = { openedRecord = null })
+        return
+    }
     TeaNodeScreen(title = stringResource(R.string.mail_manage_report), onBack = onBack) { contentPadding ->
         LoadedContent(report, modifier = Modifier.padding(contentPadding), isEmpty = { found -> found == null }, empty = { EmptyState(Icons.Outlined.Search, stringResource(R.string.mail_manage_not_found)) }) { found: DMARCReport? ->
             val shown = found ?: return@LoadedContent
@@ -679,18 +781,10 @@ fun ReportDetailScreen(reportId: String, onBack: () -> Unit, connection: Connect
                     DetailRow(stringResource(R.string.mail_manage_report_id), feedback.reportId, isMonospaced = true)
                     DetailRow(stringResource(R.string.mail_manage_policy_seen), feedback.policyText)
                     DetailRow(stringResource(R.string.mail_manage_alignment), listOfNotNull(feedback.dkimAlignment?.let { mode -> "DKIM " + ManageLabels.alignmentMode(context, mode) }, feedback.spfAlignment?.let { mode -> "SPF " + ManageLabels.alignmentMode(context, mode) }).joinToString(" · "))
+                    TeaNodeSectionHeader(stringResource(R.string.mail_manage_what_they_did))
                     for (record in feedback.records ?: emptyList()) {
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                        DetailRow(stringResource(R.string.mail_manage_source), record.sourceIp, isMonospaced = true)
-                        DetailRow(stringResource(R.string.mail_manage_messages), record.messageCount?.toString())
-                        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            record.dkimEvaluation?.takeIf { text -> text.isNotEmpty() }?.let { result -> ManageTag("DKIM $result", ManagedTone.of(result)) }
-                            record.spfEvaluation?.takeIf { text -> text.isNotEmpty() }?.let { result -> ManageTag("SPF $result", ManagedTone.of(result)) }
-                            record.disposition?.takeIf { text -> text.isNotEmpty() }?.let { result -> ManageTag(result, ManagedTone.Plain) }
-                        }
-                        DetailRow(stringResource(R.string.mail_manage_reason), listOfNotNull(record.reasonType, record.reasonComment).joinToString(": "))
-                        DetailRow(stringResource(R.string.mail_manage_header_from), record.headerFrom)
-                        DetailRow(stringResource(R.string.mail_manage_envelope_sender), record.envelopeFrom)
+                        Column(Modifier.clickable { openedRecord = record }) { FeedbackRecordSummary(record) }
+                        HorizontalDivider()
                     }
                 }
             }
