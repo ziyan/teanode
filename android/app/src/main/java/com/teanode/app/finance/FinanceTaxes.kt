@@ -4,10 +4,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -25,11 +27,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.LocalConnection
+import com.teanode.app.shopping.readPendingFile
 import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.ui.components.ConfirmationDialog
 import com.teanode.app.ui.components.LoadedContent
@@ -65,6 +69,7 @@ import com.teanode.kit.finance.isFromW2
 import com.teanode.kit.finance.kindName
 import com.teanode.kit.finance.lines
 import com.teanode.kit.finance.regenerateTaxDocumentAddress
+import com.teanode.kit.finance.readTaxDocumentOfAttachment
 import com.teanode.kit.finance.rows
 import com.teanode.kit.finance.setTaxFilingStatus
 import com.teanode.kit.finance.setTaxYearSetting
@@ -111,6 +116,20 @@ fun FinanceTaxesScreen() {
     val read = rememberLoad(connection, year, filingStatus) {
         TaxesRead(connection.taxYear(year, filingStatus), connection.financePaystubs(year).financePaystubs.filterNotNull(), connection.financeTaxForms(year).taxForms.filterNotNull(), connection.taxDocumentAddress())
     }
+    val uploadPicker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            try {
+                for (uri in uris) {
+                    val file = context.readPendingFile(uri, "tax-document")
+                    val id = connection.upload(file.name, file.contentType, file.data, isTaxDocument = true)
+                    connection.readTaxDocumentOfAttachment(id)
+                }
+                snackbar.show(context.getString(R.string.finance_tax_being_read))
+            } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
+            read.refresh()
+        }
+    }
     fun act(saying: String, work: suspend () -> Unit) {
         scope.launch { try { work(); snackbar.show(saying) } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }; read.refresh() }
     }
@@ -123,6 +142,14 @@ fun FinanceTaxesScreen() {
                 summary?.taxYearEstimate?.let { estimate ->
                     item("estimate-header") { TeaNodeSectionHeader(stringResource(R.string.finance_tax_estimate)) }
                     item("estimate-total") { LabeledValue(stringResource(R.string.finance_tax_total_tax), FinanceMoney.shown(estimate.totalTaxAmount, currency), supporting = estimate.shareOfPay(estimate.totalTaxAmount)?.let { share -> stringResource(R.string.finance_tax_of_income, FinanceMoney.percent(share)) }) }
+                    item("ring") {
+                        val colors = listOf(FinancePalette.color(0), FinancePalette.color(1), MaterialTheme.colorScheme.error, MaterialTheme.colorScheme.surfaceVariant)
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            DonutChart(estimate.slices.map { slice -> DonutSlice(slice.sliceKind.name, slice.amountValue, colors[slice.sliceKind.ordinal]) }, null) {
+                                Text(FinanceMoney.shown(estimate.totalTaxAmount, currency), style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                    }
                     for (slice in estimate.slices) {
                         item("slice-" + slice.sliceKind.name) {
                             val label = when (slice.sliceKind) {
@@ -181,6 +208,16 @@ fun FinanceTaxesScreen() {
                     val taxForm = form.financeTaxForm ?: continue
                     item("form-" + form.id) { TeaNodeRow(taxForm.payerName.orEmpty(), supporting = "${taxForm.kindName} · ${taxForm.taxYear ?: ""}", trailing = { if (form.disagreeingCount > 0) Text(stringResource(R.string.finance_tax_disagrees, form.disagreeingCount), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium) }, onClick = { navigator.navigate(FinanceRoutes.taxForm(form.id)) }) }
                 }
+                item("upload") {
+                    OutlinedButton(onClick = { uploadPicker.launch("*/*") }, modifier = Modifier.padding(horizontal = 16.dp)) { Text(stringResource(R.string.finance_tax_upload_documents)) }
+                    Footnote(stringResource(R.string.finance_tax_upload_footer))
+                }
+                item("entry") {
+                    Row(Modifier.padding(horizontal = 8.dp)) {
+                        TextButton(onClick = { navigator.navigate(FinanceRoutes.paystubEntry) }) { Text(stringResource(R.string.finance_entry_paystub_title)) }
+                        TextButton(onClick = { navigator.navigate(FinanceRoutes.taxFormEntry) }) { Text(stringResource(R.string.finance_entry_tax_form_title)) }
+                    }
+                }
                 item("address-header") { TeaNodeSectionHeader(stringResource(R.string.finance_tax_documents_address)) }
                 item("address") {
                     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -191,7 +228,7 @@ fun FinanceTaxesScreen() {
                     }
                 }
             }
-            if (isEditingSettings) TaxSettingsDialog(year, onDismiss = { isEditingSettings = false }) { change -> isEditingSettings = false; act(context.getString(R.string.finance_saved)) { connection.setTaxYearSetting(year, change) } }
+            if (isEditingSettings) TaxSettingsDialog(year, summary?.taxYearSetting, onDismiss = { isEditingSettings = false }) { change -> isEditingSettings = false; act(context.getString(R.string.finance_saved)) { connection.setTaxYearSetting(year, change) } }
         }
     }
 }
@@ -205,22 +242,48 @@ private fun statusWords(status: TaxFilingStatus?): Int = when (status) {
 }
 
 @Composable
-private fun TaxSettingsDialog(year: Int, onDismiss: () -> Unit, onSave: (TaxYearSettingChange) -> Unit) {
-    var children by remember { mutableStateOf("") }
-    var otherIncome by remember { mutableStateOf("") }
-    var charity by remember { mutableStateOf("") }
+private fun TaxSettingsDialog(year: Int, existing: com.teanode.kit.finance.TaxYearSetting?, onDismiss: () -> Unit, onSave: (TaxYearSettingChange) -> Unit) {
+    var children by remember { mutableStateOf(existing?.childCount?.toString().orEmpty()) }
+    var otherDependents by remember { mutableStateOf(existing?.otherDependentCount?.toString().orEmpty()) }
+    var dependentCare by remember { mutableStateOf(existing?.dependentCareExpenseAmount.orEmpty()) }
+    var otherIncome by remember { mutableStateOf(existing?.otherIncomeAmount.orEmpty()) }
+    var charity by remember { mutableStateOf(existing?.charitableContributionAmount.orEmpty()) }
+    var propertyTax by remember { mutableStateOf(existing?.propertyTaxAmount.orEmpty()) }
+    var stateTax by remember { mutableStateOf(existing?.stateIncomeTaxPaidAmount.orEmpty()) }
+    var shortGain by remember { mutableStateOf(existing?.estimatedShortTermGainAmount.orEmpty()) }
+    var longGain by remember { mutableStateOf(existing?.estimatedLongTermGainAmount.orEmpty()) }
+    var gainNote by remember { mutableStateOf(existing?.estimatedGainNote.orEmpty()) }
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text(stringResource(R.string.finance_tax_year_settings, year)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(children, { children = it }, label = { Text(stringResource(R.string.finance_tax_children)) }, singleLine = true)
+                OutlinedTextField(otherDependents, { otherDependents = it }, label = { Text(stringResource(R.string.finance_tax_other_dependents)) }, singleLine = true)
+                OutlinedTextField(dependentCare, { dependentCare = it }, label = { Text(stringResource(R.string.finance_tax_dependent_care_expense)) }, singleLine = true)
                 OutlinedTextField(otherIncome, { otherIncome = it }, label = { Text(stringResource(R.string.finance_tax_other_income)) }, singleLine = true)
                 OutlinedTextField(charity, { charity = it }, label = { Text(stringResource(R.string.finance_tax_charity)) }, singleLine = true)
+                OutlinedTextField(propertyTax, { propertyTax = it }, label = { Text(stringResource(R.string.finance_tax_property_tax)) }, singleLine = true)
+                OutlinedTextField(stateTax, { stateTax = it }, label = { Text(stringResource(R.string.finance_tax_state_tax_paid)) }, singleLine = true)
+                OutlinedTextField(shortGain, { shortGain = it }, label = { Text(stringResource(R.string.finance_tax_short_gain)) }, singleLine = true)
+                OutlinedTextField(longGain, { longGain = it }, label = { Text(stringResource(R.string.finance_tax_long_gain)) }, singleLine = true)
+                OutlinedTextField(gainNote, { gainNote = it }, label = { Text(stringResource(R.string.finance_tax_gain_note)) })
                 Text(stringResource(R.string.finance_tax_settings_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(TaxYearSettingChange(childCount = children.trim().toIntOrNull(), otherIncomeAmount = otherIncome.trim().ifEmpty { null }, charitableContributionAmount = charity.trim().ifEmpty { null })) }) { Text(stringResource(R.string.finance_save)) }
+            TextButton(onClick = {
+                fun changed(text: String, before: String?): String? = text.trim().takeIf { value -> value != before.orEmpty() }
+                onSave(
+                    TaxYearSettingChange(
+                        childCount = children.trim().toIntOrNull()?.takeIf { value -> value != existing?.childCount },
+                        otherDependentCount = otherDependents.trim().toIntOrNull()?.takeIf { value -> value != existing?.otherDependentCount },
+                        dependentCareExpenseAmount = changed(dependentCare, existing?.dependentCareExpenseAmount), otherIncomeAmount = changed(otherIncome, existing?.otherIncomeAmount),
+                        charitableContributionAmount = changed(charity, existing?.charitableContributionAmount), propertyTaxAmount = changed(propertyTax, existing?.propertyTaxAmount),
+                        stateIncomeTaxPaidAmount = changed(stateTax, existing?.stateIncomeTaxPaidAmount), estimatedShortTermGainAmount = changed(shortGain, existing?.estimatedShortTermGainAmount),
+                        estimatedLongTermGainAmount = changed(longGain, existing?.estimatedLongTermGainAmount), estimatedGainNote = changed(gainNote, existing?.estimatedGainNote),
+                    ),
+                )
+            }) { Text(stringResource(R.string.finance_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.finance_cancel)) } },
     )
