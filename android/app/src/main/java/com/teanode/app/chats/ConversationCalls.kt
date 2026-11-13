@@ -8,6 +8,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.material.icons.outlined.Phone
+import com.teanode.app.calls.AgentVoiceCall
+import com.teanode.app.calls.OpeningRequests
+import com.teanode.app.notifications.TurnNotification
+import com.teanode.kit.chats.SpokenText
+import com.teanode.kit.chats.ask
 import com.teanode.app.calls.CallsRoutes
 import com.teanode.app.calls.ChatCallBanner
 import com.teanode.app.calls.ChatCallButton
@@ -77,4 +84,70 @@ fun ConversationCallLine(line: TranscriptLine, model: ConversationModel) {
         nameOf = { userId -> chat?.member(userId)?.displayName },
         onOpenTranscript = { navigator.navigate(CallsRoutes.transcript(line.chatCallId, title)) },
     )
+}
+
+/** The button that starts a call with the agent, in the main conversation, when the server offers voice. */
+@Composable
+fun ConversationAgentCallButton(model: ConversationModel) {
+    if (model.conversationId != null || model.voiceSampleRate == null) return
+    androidx.compose.material3.IconButton(onClick = { OpeningRequests.requestCall() }) {
+        androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Outlined.Phone, contentDescription = androidx.compose.ui.res.stringResource(com.teanode.app.R.string.calls_call_agent))
+    }
+}
+
+/**
+ * What the calls part adds to a conversation: a call with the agent started from the icon menu, a widget or the button
+ * (`OpeningRequests.isCallRequested`), whose answers are read out as the conversation's feed brings them; and the
+ * notification of a turn left running while the app is not in front.
+ */
+@Composable
+fun ConversationCallEffects(model: ConversationModel) {
+    val context = LocalContext.current
+    val center = LocalCallCenter.current
+    val requestPermissions = rememberCallPermissionRequester()
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val isRequested by OpeningRequests.isCallRequested.collectAsState()
+    val connection = com.teanode.app.session.LocalConnection.current
+    val drawerId = ChatsEnvironment.of(context, connection, com.teanode.app.session.LocalAppSession.current).drawerId
+    androidx.compose.runtime.DisposableEffect(model, center) {
+        model.onEvent = { event ->
+            center?.agentVoice?.value?.follow(event.runId, event.kind, event.text, event.note)
+            if (!model.isChat) {
+                val isInFront = lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+                val state = when (event.kind) {
+                    "asked" -> "working"
+                    "confirmation", "question" -> "waiting"
+                    "done" -> "done"
+                    "error" -> "failed"
+                    else -> null
+                }
+                if (state != null) {
+                    if (isInFront) TurnNotification.end(context) else TurnNotification.show(context, "TeaNode", state)
+                }
+            }
+        }
+        onDispose { model.onEvent = null }
+    }
+    androidx.compose.runtime.LaunchedEffect(isRequested, model.voiceSampleRate, model.conversationId) {
+        val sampleRate = model.voiceSampleRate ?: return@LaunchedEffect
+        if (!isRequested || center == null || model.conversationId != null || model.isChat) return@LaunchedEffect
+        OpeningRequests.consume()
+        requestPermissions(false) {
+            val call = AgentVoiceCall(
+                context = context, connection = connection, sampleRate = sampleRate, agentName = model.title.ifEmpty { "TeaNode" },
+                sendSpoken = { text, interrupted ->
+                    runCatching {
+                        connection.ask(
+                            text, model.conversationId, drawerId, surface = com.teanode.kit.chats.Surface.VOICE,
+                            interruptedAnswer = interrupted?.let { found -> com.teanode.kit.chats.InterruptedAnswer(found.heardText, found.unheardText) },
+                        ).runId
+                    }.getOrNull()
+                },
+                sentencesOf = { text -> SpokenText.sentences(text).sentences },
+                spokenTextOf = { markdown -> SpokenText.of(markdown) },
+            )
+            center.beginAgentVoice(call)
+            call.start()
+        }
+    }
 }

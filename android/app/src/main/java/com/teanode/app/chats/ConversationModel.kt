@@ -366,9 +366,13 @@ class ConversationModel(
 
     // MARK: Events
 
+    /** Told of every event of the conversation's feed; the calls part follows a turn with it (see `ConversationCalls.kt`). */
+    var onEvent: ((AgentEvent) -> Unit)? = null
+
     private fun apply(event: AgentEvent) {
         current.apply(event)
         publish()
+        onEvent?.invoke(event)
         when (event.kind) {
             "asked" -> if (event.runId !in runningRunIds) runningRunIds = runningRunIds + event.runId
             "done", "error" -> {

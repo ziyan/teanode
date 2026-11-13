@@ -64,4 +64,5 @@
     <string name="calls_voice_microphone_failed">The microphone could not be started: %1$s</string>
     <string name="calls_voice_silent_microphone">The microphone gives no sound. Check that nothing else is using it, or try a headset or the speaker.</string>
     <string name="calls_voice_approval_on_screen">I need your approval on screen: %1$s</string>
+    <string name="calls_call_agent">Call your agent</string>
 </resources>
