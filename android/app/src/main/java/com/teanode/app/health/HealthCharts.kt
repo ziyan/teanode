@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -55,7 +56,10 @@ private fun HealthChartCanvas(plan: HealthChartPlan, selectedKey: String?, onSel
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val labelStyle = TextStyle(fontSize = 11.sp, color = labelColor)
     val description = plan.plots.joinToString("; ") { plot -> plot.titleText + ": " + plot.spokenText }
-    val leftPadding = with(density) { 44.dp.toPx() }
+    val axis = remember(plan) { VerticalAxis.of(plan) }
+    // The numbers beside the grid set how much room they get, so that text at the largest size does not run into the bars.
+    val widestLabelPixels = axis.tickValues.maxOfOrNull { value -> measurer.measure(plan.axisText(value), labelStyle).size.width } ?: 0
+    val leftPadding = widestLabelPixels + with(density) { 8.dp.toPx() }
     val bottomPadding = with(density) { 24.dp.toPx() }
     val topPadding = with(density) { 8.dp.toPx() }
     Canvas(
@@ -75,20 +79,24 @@ private fun HealthChartCanvas(plan: HealthChartPlan, selectedKey: String?, onSel
         fun xOf(key: String): Float = leftPadding + keys.indexOf(key) * slot + slot / 2
 
         // The vertical range: from zero for what adds up, from the lowest reading for a level.
-        val (low, high) = verticalRange(plan)
+        val low = axis.low
+        val high = axis.high
         fun yOf(value: Double): Float = (topPadding + chartHeight - ((value - low) / (high - low)).toFloat() * chartHeight)
 
         // The horizontal grid and its numbers.
-        for (tick in 0..4) {
-            val value = low + (high - low) * tick / 4
+        for (value in axis.tickValues) {
             val y = yOf(value)
             drawLine(axisColor, Offset(leftPadding, y), Offset(size.width, y), strokeWidth = 1f)
             drawLabel(measurer, plan.axisText(value), labelStyle, Offset(0f, y - 7.dp.toPx()))
         }
+        // A date that would be drawn over the one before it is left out.
+        var lastLabelRight = Float.NEGATIVE_INFINITY
         for (key in plan.labelledKeys) {
             val label = plan.axisLabel(key)
             val measured = measurer.measure(label, labelStyle)
             val x = (xOf(key) - measured.size.width / 2f).coerceIn(leftPadding, size.width - measured.size.width)
+            if (x < lastLabelRight + 6.dp.toPx()) continue
+            lastLabelRight = x + measured.size.width
             drawText(measured, topLeft = Offset(x, size.height - bottomPadding + 4.dp.toPx()))
         }
         val color = ChartPalette.seriesColor(0)
@@ -150,6 +158,26 @@ private fun keyAt(plan: HealthChartPlan, x: Float, width: Float, leftPadding: Fl
     val index = ((x - leftPadding) / slot).toInt().coerceIn(0, keys.size - 1)
     // Only a period that has something drawn can be chosen.
     return keys[index].takeIf { key -> plan.plots.any { plot -> plot.periodKey == key } }
+}
+
+/** The vertical axis: its lowest and highest values and the round numbers between, drawn as grid lines. */
+private class VerticalAxis(val low: Double, val high: Double, val tickValues: List<Double>) {
+    companion object {
+        /** The roundest step (1, 2, 2.5, 5 or 10 times a power of ten) that gives about four steps over the range. */
+        private fun stepOf(range: Double): Double {
+            val raw = range / 4
+            val magnitude = Math.pow(10.0, Math.floor(Math.log10(raw)))
+            return listOf(1.0, 2.0, 2.5, 5.0, 10.0).map { each -> each * magnitude }.first { each -> each >= raw }
+        }
+
+        fun of(plan: HealthChartPlan): VerticalAxis {
+            val (rawLow, rawHigh) = verticalRange(plan)
+            val step = stepOf(rawHigh - rawLow)
+            val low = Math.floor(rawLow / step) * step
+            val count = Math.ceil((rawHigh - low) / step).toInt().coerceAtLeast(1)
+            return VerticalAxis(low, low + step * count, (0..count).map { index -> low + step * index })
+        }
+    }
 }
 
 /** The range the vertical axis covers: from zero for what adds up, a little around the readings for a level. */

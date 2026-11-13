@@ -263,13 +263,13 @@
     <string name="health_setup_what_title">What is copied</string>
     <string name="health_setup_where_title">Where it goes</string>
     <string name="health_setup_who_title">Who reads it</string>
-    <string name="health_setup_what_text">The Health data you allow on the Health Connect permissions screen, which opens next: steps, heart rate, sleep, workouts with their routes, and more. TeaNode copies your history first, then keeps it up to date.</string>
+    <string name="health_setup_what_text">The Health data you allow on the Health Connect permissions screen, which opens next: steps, heart rate, sleep, workouts, and more. TeaNode copies your history first, then keeps it up to date.</string>
     <string name="health_setup_where_text">Only to your own TeaNode server, and nowhere else.</string>
     <string name="health_setup_who_text">Your agent reads it only if you turn on Let the agent read Health data, and what it reads goes to the provider of its model. Nobody else sees it unless you share some of it.</string>
     <string name="health_setup_footer">You can turn Health off, or erase everything copied, in Health settings.</string>
     <string name="health_could_not_turn_on">Health could not be turned on. Try again.</string>
     <plurals name="health_readings_kept">
-        <item quantity="one">%d reading kept</item>
-        <item quantity="other">%d readings kept</item>
+        <item quantity="one">%s reading kept</item>
+        <item quantity="other">%s readings kept</item>
     </plurals>
 </resources>

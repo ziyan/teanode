@@ -215,7 +215,7 @@ fun HealthSettingsScreen(onBack: () -> Unit, onOpenShare: (HealthShareView) -> U
                     Text(
                         when (serverSettings.sampleCount) {
                             0 -> stringResource(R.string.health_no_readings_kept)
-                            else -> pluralStringResource(R.plurals.health_readings_kept, serverSettings.sampleCount, serverSettings.sampleCount)
+                            else -> pluralStringResource(R.plurals.health_readings_kept, serverSettings.sampleCount, "%,d".format(serverSettings.sampleCount))
                         },
                         Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     )

@@ -122,7 +122,8 @@ fun HealthScreen(model: HealthModel, onOpenType: (HealthTypeView) -> Unit, onOpe
     LaunchedEffect(snapshot.sentSampleCount) { if (model.types.isEmpty()) model.load() }
     HealthNoticeEffect(model)
     TeaNodeScreen(
-        title = text.title,
+        // Whose Health this is, once somebody else's is shown.
+        title = model.selectedSharer?.displayName ?: text.title,
         actions = {
             if (model.sharers.isNotEmpty()) HealthPersonMenu(model)
             IconButton(onClick = onOpenSettings) { Icon(Icons.Outlined.Settings, contentDescription = stringResource(R.string.health_settings_title)) }

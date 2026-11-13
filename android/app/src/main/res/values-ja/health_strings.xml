@@ -263,12 +263,12 @@
     <string name="health_setup_what_title">コピーされるもの</string>
     <string name="health_setup_where_title">送信先</string>
     <string name="health_setup_who_title">読み取れる人</string>
-    <string name="health_setup_what_text">次に開くヘルスコネクトの権限画面で許可したヘルスのデータ（歩数、心拍数、睡眠、ルート付きのワークアウトなど）です。TeaNode はまず履歴をコピーし、その後は最新の状態に保ちます。</string>
+    <string name="health_setup_what_text">次に開くヘルスコネクトの権限画面で許可したヘルスのデータ（歩数、心拍数、睡眠、ワークアウトなど）です。TeaNode はまず履歴をコピーし、その後は最新の状態に保ちます。</string>
     <string name="health_setup_where_text">あなた自身の TeaNode サーバーにだけ送られ、それ以外には送られません。</string>
     <string name="health_setup_who_text">エージェントが読み取るのは、「エージェントにヘルスケアのデータの読み取りを許可する」をオンにした場合だけで、読み取った内容はそのモデルの提供元に送られます。一部を共有しない限り、ほかの人には表示されません。</string>
     <string name="health_setup_footer">ヘルスケアの設定で、ヘルスケアをオフにしたり、コピーしたデータをすべて消去したりできます。</string>
     <string name="health_could_not_turn_on">ヘルスケアをオンにできませんでした。もう一度お試しください。</string>
     <plurals name="health_readings_kept">
-        <item quantity="other">%d 件の測定値を保存</item>
+        <item quantity="other">%s 件の測定値を保存</item>
     </plurals>
 </resources>

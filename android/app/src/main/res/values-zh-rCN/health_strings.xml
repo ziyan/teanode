@@ -263,12 +263,12 @@
     <string name="health_setup_what_title">复制哪些内容</string>
     <string name="health_setup_where_title">发送到哪里</string>
     <string name="health_setup_who_title">谁能读取</string>
-    <string name="health_setup_what_text">你在接下来打开的健康连接权限界面中允许的健康数据：步数、心率、睡眠、带路线的运动等。TeaNode 会先复制你的历史记录，然后保持更新。</string>
+    <string name="health_setup_what_text">你在接下来打开的健康连接权限界面中允许的健康数据：步数、心率、睡眠、运动等。TeaNode 会先复制你的历史记录，然后保持更新。</string>
     <string name="health_setup_where_text">只会发往你自己的 TeaNode 服务器，不会发往其他任何地方。</string>
     <string name="health_setup_who_text">只有在你开启“允许助手读取健康数据”后，助手才会读取，读取的内容会发送给其模型的提供方。除非你共享其中一部分，否则其他人都看不到。</string>
     <string name="health_setup_footer">你可以在健康设置中关闭健康功能，或清除已复制的全部数据。</string>
     <string name="health_could_not_turn_on">无法开启健康。请再试一次。</string>
     <plurals name="health_readings_kept">
-        <item quantity="other">已保存 %d 条读数</item>
+        <item quantity="other">已保存 %s 条读数</item>
     </plurals>
 </resources>
