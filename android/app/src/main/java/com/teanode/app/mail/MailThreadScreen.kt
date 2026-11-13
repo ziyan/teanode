@@ -436,10 +436,9 @@ fun MessageCard(mail: MailModel, entry: MailThreadView.Entry, item: MailItem, is
                         Text(
                             message?.shownSender?.ifEmpty { null } ?: stringResource(R.string.mail_unknown_sender),
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = if (item.seen) FontWeight.Normal else FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
+                            modifier = Modifier.weight(1f),
                         )
                         if (item.draft) Text(" " + stringResource(R.string.mail_draft_marker), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
-                        Spacer(Modifier.weight(1f))
                         VerdictShield(message?.authenticationResults)
                         val shortTime = MailTimes.short(MailTimes.moment(message?.receivedAt ?: item.addedAt))
                         Text(

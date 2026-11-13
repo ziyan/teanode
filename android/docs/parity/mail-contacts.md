@@ -5,6 +5,8 @@ The iPhone files of the mail and contacts area, and what the Android app does wi
 `ContactsDemo.kt`) and a Roborazzi picture in light and dark (`MailScreenshotTest`, `ManageScreenshotTest`,
 `ContactsScreenshotTest`; the dense ones also at the largest text).
 
+Count of the rows below: 42 in all, 28 done, 12 partly, 2 not ported.
+
 Android packages: `com.teanode.kit.mail`, `com.teanode.kit.contacts`, `com.teanode.app.mail`,
 `com.teanode.app.mail.manage`, `com.teanode.app.contacts`. Strings: `mail_strings.xml`, `mail_manage_strings.xml`,
 `contacts_strings.xml` (English, zh-rCN, ja).

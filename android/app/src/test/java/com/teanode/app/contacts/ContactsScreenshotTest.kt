@@ -68,7 +68,7 @@ class ContactsScreenshotTest {
     @Test fun `edit contact dark`() { show(Look.Dark, waitsFor = "Likes tea") { model -> ContactEditorScreen(model, "contact-sam", onBack = {}) }; composeRule.photograph("contacts-editor-edit-dark") }
 
     @Test fun `account picker`() {
-        show(Look.Light, waitsFor = "Alexa Demo") { model ->
+        show(Look.Light, waitsFor = "Choose who Pat Sample is") { model ->
             val contact = com.teanode.kit.contacts.ContactDetail(id = "contact-pat", name = "Pat Sample")
             ContactAccountPickerScreen(model, contact, onBack = {}, onLinked = {})
         }
