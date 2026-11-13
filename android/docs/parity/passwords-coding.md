@@ -19,14 +19,14 @@ stand-in server (`FakePasswordsServer`), which keeps only sealed text, in the JV
 | PasswordsCrypto.swift | PasswordsCrypto.kt (JCA: AES-GCM, PBKDF2, HMAC, ECDH; HKDF and the P-256 public key by hand) | done, byte for byte against internal/passwords/testdata/vectors.json |
 | PasswordsFields.swift | PasswordsFields.kt | done (the strict access record reading included) |
 | PasswordsAPI.swift | PasswordsApi.kt (the documents copied as they are, the views, the inputs, `ConnectionPasswordsApi`) | done |
-| PasswordsSession.swift | PasswordsSession.kt | partly: setup, unlock (passphrase, recovery key, kept key), sync, list, save, delete, restore, purge, earlier versions and restoring one, the agent switch (on and off with a new item key), a new key, passphrase and recovery key changes, lock time, erase, the record signature and its replay check. Not ported: sharing (`setShares`, recipients, waiting shares, `completeWaitingShares`, `finishSharing`, `finishPlan`), key change notices and codes compared, circle notices, the automatic re-key with its cooldown, the items an automatic action leaves for the person |
+| PasswordsSession.swift | PasswordsSession.kt, PasswordsSharing.kt (the recipient, key trust, waiting share, key change, circle notice, completed shares and finish plan types) | done, including sharing: `recipients`, `setShares`, `waitingShares`, `completeWaitingShares`, `finishSharing`, `finishPlan`, `itemIdsNeedingYou`, `itemIdsWithLostAgentCopy`, `giveNewKeysToMarkedItems`, the origin-aware `rekey` (choice, request, automatic, restore) with its ten minute wait and the limit of twenty a session, `keyChanges`, `circleShareNotices`, `markCompared`. The session takes a lock around each public call, so the calls that call each other (finish sharing, set shares, rekey, sync) use unlocked inner functions. Not ported: the on-demand loading and the autofill summary (the Android service runs in the app's process) |
 | PasswordsCache.swift | PasswordsCache.kt | partly: one document and one pins file, written whole (the Android autofill service runs in the app's own process, so there are no per-item files, no file coordination and no memory-limited loading); no sealed summary file |
-| PasswordsPinStore.swift | PasswordsCache.kt (`PasswordsPins`, `PasswordsItemMemory`) | partly: the pins live in a second file of the app's private storage, not a keychain group; the record version and mac memory is ported, the sealed-for and circle memory is stored but unused (no sharing) |
+| PasswordsPinStore.swift | PasswordsCache.kt (`PasswordsPins`, `PasswordsItemMemory`, `PasswordsSealedChange`) | done except the keychain: the pins live in a second file of the app's private storage; item memories follow the item id and not the user id, a changed key is recorded when none was known, comparing codes clears the notice, `merging` and `sealing` are ported |
 | PasswordsKeyStore.swift | PasswordsKeyStore.kt (`AndroidPasswordsKeyStore`, `MemoryPasswordsKeyStore`) | partly: the Android Keystore key behind the framework biometric prompt, not verified on a phone |
 | PasswordsLockPolicy.swift | PasswordsLockPolicy.kt | done |
 | PasswordsGenerator.swift | PasswordsGenerator.kt (and the passphrase strength) | done |
 | PasswordsOneTimeCode.swift | PasswordsOneTimeCode.kt | done, against internal/passwords/testdata/onetimecode.json |
-| PasswordsPasskey.swift | PasswordsPasskey.kt | done (the authenticator as functions); the Credential Manager provider that would use it is not ported |
+| PasswordsPasskey.swift | PasswordsPasskey.kt, PasswordsPasskeyRequests.kt | done (the authenticator as functions, and the mapping between the Credential Manager's JSON and the authenticator, tested without a phone) |
 | PasswordsSiteMatch.swift | PasswordsSiteMatch.kt (and the identity records) | done, against internal/passwords/testdata/sitematch.json |
 | PasswordsFields drafts (PasswordsEditorViews.swift `PasswordsDraft`) | PasswordsDraft.kt | done |
 | PasswordsWords.swift (the filters, the line under a name, search, formats) | PasswordsFormat.kt | done |
@@ -51,14 +51,20 @@ stand-in server (`FakePasswordsServer`), which keeps only sealed text, in the JV
 | PasswordsPasskeyTests | PasswordsPasskeyTest (11) | done |
 | PasswordsSiteMatchTests | PasswordsSiteMatchTest (10) | done |
 | PasswordsDisplayTextTests | none | not ported (see PasswordsDisplayText) |
-| PasswordsSessionTests | PasswordsSessionTest | partly: the tests of setup, unlock, sync, save, delete, restore, settings, erase, the server's sentences; none of sharing |
-| PasswordsCacheTests | PasswordsSessionTest (merge, revision, pins, damaged and newer copies) | partly: no per-item files, no summary file |
-| PasswordsPinTests, PasswordsReplayTests | PasswordsSessionTest (what a device remembers only goes up, a replayed record is not trusted, a dropped copy leaves the pins) | partly: nothing about sealing for people |
-| PasswordsRecordTests | PasswordsSessionTest (the signed record of a new item, an edit keeps it, an older record is a replay, the agent seal) | partly |
-| PasswordsRestoreAndPlanTests | PasswordsSessionTest (restoring a version, a version not listed is refused) | partly: no finish plan |
-| PasswordsAccessTests, PasswordsAccessFlowTests, PasswordsAnswerChecksTests, PasswordsRekeyTests, PasswordsSharingFollowUpTests | none | not ported (sharing and the automatic re-key) |
+| PasswordsSessionTests | PasswordsSessionTest (34), PasswordsSharingSessionTest (16) | done: the setup, unlock, sync, save, delete, restore, settings, erase and sentences tests, and every sharing test (recipients, key trust, waiting shares, key changes, comparing codes, the opener for autofill), plus two tests that a key sealed for the wrong person opens nothing |
+| PasswordsCacheTests | PasswordsSessionTest (merge, revision, damaged and newer copies), PasswordsCachePinsTest (3: pinned keys apart from the copy, an unreadable pins file never written over, erase keeping the pins) | done except the per-item files, the summary file and the keychain legacy migration tests (no such thing here) |
+| PasswordsPinTests | PasswordsPinTest (3) | done |
+| PasswordsReplayTests | PasswordsReplayTest (7) | done (the file test uses the file storage in place of `PasswordsLocation`) |
+| PasswordsRecordTests | PasswordsRecordTest (14) | done |
+| PasswordsRestoreAndPlanTests | PasswordsRestoreAndPlanTest (9) | done |
+| PasswordsAccessTests | PasswordsAccessTest (18) | done |
+| PasswordsAccessFlowTests | PasswordsAccessFlowTest (18) | done |
+| PasswordsAnswerChecksTests | PasswordsAnswerChecksTest (23) | done |
+| PasswordsRekeyTests | PasswordsRekeyTest (6) | done |
+| PasswordsSharingFollowUpTests | PasswordsSharingFollowUpTest (8) | done |
+| none | PasswordsPasskeyRequestsTest (15) | new, for the Credential Manager mapping |
 | PasswordsAutoFillSummaryTests | none | not ported (no summary) |
-| PasswordsFakeServer | FakePasswordsServer.kt (one person, no shares) | partly |
+| PasswordsFakeServer | FakePasswordsServer.kt (several people, circles, shares and their keys, waiting shares, too much shared, `setCircle`, `replacePublicKey`, `replaceShareKey`, the rekey refusal and count; each person's connection is `api(userId)`) | done |
 | DevicePasswordsTests | DevicePasswordsTest (3) | done |
 | HerdrTests | HerdrTest (24, with the headline tests, the answer and the list grouping) | done |
 | CodingSetupTests | CodingSetupTest (5) | done |
@@ -70,14 +76,15 @@ stand-in server (`FakePasswordsServer`), which keeps only sealed text, in the JV
 
 | iOS | Android | Status |
 | --- | --- | --- |
-| PasswordsModel.swift | PasswordsModel.kt | partly: the phases (loading, failed, not set up, recovery key, locked, unlocked), unlock three ways, locking (lock time, the phone's screen turning off), sync, every item change, settings. Not ported: the sharing parts, the notices of changed keys and circle shares, the app group and the credential identity store |
-| PasswordsViews.swift: the stack, intro, list, filter menu, new item menu, options menu, search, copy menu, recently deleted, row | PasswordsSection.kt, PasswordsItemScreen.kt (`PasswordsDeletedScreen`), PasswordsNavigation.kt | done except the finish sharing, key change and circle notices rows, and the app switcher cover (a `FLAG_SECURE` window while open covers the recents picture instead) |
+| PasswordsModel.swift | PasswordsModel.kt | done except the app group and the credential identity store: the phases (loading, failed, not set up, recovery key, locked, unlocked), unlock three ways, locking (lock time, the phone's screen turning off), sync (which now gives marked items a new key and waiting people their keys), every item change, settings, and the sharing state: key changes, circle notices, items needing the person, items held back, the finish plan and the finish of one or every item with its progress |
+| PasswordsViews.swift: the stack, intro, list, filter menu, new item menu, options menu, search, copy menu, recently deleted, row | PasswordsSection.kt, PasswordsItemScreen.kt (`PasswordsDeletedScreen`), PasswordsNavigation.kt, PasswordsSharingScreens.kt (the notices and the finish sharing rows at the top of the list) | done except the app switcher cover (a `FLAG_SECURE` window while open covers the recents picture instead) |
 | PasswordsSetupViews.swift: set up with strength, recovery key (copy, share, saved), biometric next time, unlock (passphrase, recovery key, fingerprint) | PasswordsSection.kt | done |
-| PasswordsItemViews.swift: the fields (reveal, copy), the one-time code counting down, sites, passkeys, notes, folder, the agent switch, a new key retry, the unchecked and replayed sharing notice, earlier versions row, delete, restore, delete forever | PasswordsItemScreen.kt | partly: no Share row, no finish sharing, no "server also lists" notice |
+| PasswordsItemViews.swift: the fields (reveal, copy), the one-time code counting down, sites, passkeys, notes, folder, the agent switch, a new key retry (and the held-back wording), finish sharing with its question, the unchecked and replayed sharing notice and "Set sharing again", the Share row with who it is shared with, the "server also lists" notice, earlier versions row, delete, restore, delete forever | PasswordsItemScreen.kt | done |
 | PasswordsEditorViews.swift: the editor for three kinds, rebase after a change elsewhere, the generator | PasswordsEditorScreen.kt | done |
 | PasswordsSettingsViews.swift: lock time, biometrics, change passphrase (with the recovery key), replace recovery key, safety code, autofill, erase | PasswordsSettingsScreen.kt | done; the "confirm it is the person" step before erase is the confirmation dialog only (the system's device credential check is not ported) |
 | PasswordsVersionViews.swift: the list, one version read-only, restore | PasswordsItemScreen.kt (`PasswordsVersionsScreen`, `PasswordsVersionScreen`) | done |
-| PasswordsSharingViews.swift (the share screen, who gets the item, compare codes, finish sharing) | none | not ported: the sharing half of the session is not ported |
+| PasswordsSharingViews.swift (the share screen, who gets the item, compare codes, key change and circle notice rows) | PasswordsSharingScreens.kt (`PasswordsShareScreen`, `PasswordsRecipientRow`, `PasswordsCompareCodesSheet`, `PasswordsKeyChangeNotice`, `PasswordsCircleShareNoticeRow`, the finish sharing question and rows) | done; the person and circle picker is the finance area's `ShareTargetPicker`, which reads the same people and circles. No "Open Circles" link: this app has no circles screen yet |
+| PasswordsVersionViews.swift: the finish sharing dialog | PasswordsSharingScreens.kt (`PasswordsFinishSharingDialog`) | done |
 | PasswordsDemo.swift | PasswordsDemo.kt (the stand-in server set up by an invented person's other device, with a login that has a one-time code and a passkey, an agent login, a card, a note, an item with an earlier version and a deleted item) | done for what is ported |
 | PasswordsIdentityStore.swift (the system's credential identity store) | none | not needed on Android: the autofill service finds logins when asked |
 | PasswordsWords.swift (the texts) | PasswordsModel.problemText, `passwords_strings.xml` | done |
@@ -88,7 +95,7 @@ stand-in server (`FakePasswordsServer`), which keeps only sealed text, in the JV
 | iOS | Android | Status |
 | --- | --- | --- |
 | CredentialProviderViewController.swift, AutoFillRequest.swift | PasswordsAutofill.kt (`PasswordsAutofillService`, `AutofillStructureParser`) | partly: an `AutofillService` that offers a locked entry for a web page with a password field |
-| AutoFillModel.swift, AutoFillViews.swift | PasswordsAutofill.kt (`PasswordsAutofillActivity`) | partly: asks for the fingerprint, opens the copy with no network, fills the logins whose site fits (the exact origin first, then related hosts), at most ten. No list to choose from, no search, no one-time code fill, no passkeys (the Credential Manager provider), nothing for native apps, and nothing without the key kept behind the fingerprint |
+| AutoFillModel.swift, AutoFillViews.swift | PasswordsAutofill.kt (`PasswordsAutofillActivity`), PasswordsCredentialProvider.kt (`PasswordsCredentialProviderService`, `PasswordsCredentialActivity`) | partly: asks for the fingerprint, opens the copy with no network, fills the logins whose site fits (the exact origin first, then related hosts), at most ten, and a one-time code; passkeys through the Credential Manager on Android 14 and later (a locked entry, then the passkeys that fit, signing with the one picked, and making a passkey into the login for that user and site, saved to the server before the website gets it). No search, nothing for native apps, nothing without the key kept behind the fingerprint |
 | AutoFillIndex.swift | none | not needed (see PasswordsAutoFillSummary) |
 
 ## Screens: Coding
@@ -111,6 +118,8 @@ and idle (light, dark, largest text), the actions menu, a session no longer open
 hooks (before and after installing), what a session sees, the open screen, the device password rows.
 
 ## Not verified
+
+Third round: the passkey provider has never run on a phone or an emulator (needs Android 14, a screen lock and a website or app that asks for a passkey), the privileged browser list (`assets/passwords_passkey_privileged_apps.json`, Google's published list) is only read by the platform call, and the sharing flows run only against the kit's stand-in server (the real server's sentences and limits are assumed from the iPhone's code).
 
 The fingerprint and Keystore, autofill, `FLAG_SECURE`, the clipboard expiry, the system picker, the screen-off receiver,
 the real server (only the kit's stand-in), and push. The strings are in English, Chinese and Japanese from the iPhone app's
@@ -136,3 +145,13 @@ Not done, and why:
   files, Android 14 `CredentialProviderService`) and cannot be run without a phone; the authenticator in the kit
   (`PasswordsPasskey`) is ready for it.
 - About 40 pictures are still unopened.
+
+## Third round
+
+Done: sharing (the kit port with every iPhone sharing test, 141 more kit tests for Passwords than before, 268 in all; the share screen, recipients with their safety codes, comparing codes, the waiting and "too much shared" wording, finish sharing for one item or every item with its question and progress, key change and circle notices, the Share row, the unchecked and replayed notices); passkeys through the Credential Manager (a `CredentialProviderService` and an activity, with the request and response mapping tested in the kit); the pictures.
+
+The shared build files changed for passkeys: `gradle/libs.versions.toml` (`credentials = "1.3.0"`, `androidx-credentials`) and `app/build.gradle.kts` (`implementation(libs.androidx.credentials)`).
+
+Porting the tests found three bugs in the kit that the earlier rounds had: an access record whose `isUsableByAgent` was the text "true" was accepted, a changed key was not recorded for a person this device had never seen, and comparing codes did not clear the changed-key notice. A test, a fourth difference, showed that what a device remembers about an item must follow the item id and not the user id the server names; the pins were reading another person's pins as empty.
+
+Not done: the progress row while "Finish sharing" runs for every item has no picture (it needs a running session); the finish question and the compare codes sheet are drawn in the page since a dialog or a sheet is a window of its own.

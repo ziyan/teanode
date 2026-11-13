@@ -97,6 +97,7 @@ dependencies {
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.exifinterface)
+    implementation(libs.androidx.credentials)
 
     debugImplementation(libs.compose.ui.test.manifest)
 
