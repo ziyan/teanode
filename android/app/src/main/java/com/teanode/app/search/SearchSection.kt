@@ -228,7 +228,7 @@ fun SearchSection() {
                             )
                         }
                     } else {
-                        answer.areas.forEach { areaResults -> areaResults.area?.let { area -> searchAreaSection(area, areaResults, navigator::navigate, navigator::openSection) } }
+                        answer.areas.forEach { areaResults -> areaResults.area?.let { area -> searchAreaSection(area, areaResults, navigator::navigate) { section -> if (section == AppSection.Mail && words != null) navigator.navigate("mail/search?words=${android.net.Uri.encode(words)}") else navigator.openSection(section) } } }
                         if (isPhotosOffered && !answer.areas.any { areaResults -> areaResults.area == SearchArea.Photos && areaResults.hasMore && areaResults.results.isNotEmpty() }) {
                             item {
                                 TeaNodeRow(headline = stringResource(R.string.search_photos), leadingIcon = Icons.Outlined.PhotoLibrary, onClick = { navigator.openSection(AppSection.Photos) }, supporting = stringResource(R.string.search_photos_explanation))

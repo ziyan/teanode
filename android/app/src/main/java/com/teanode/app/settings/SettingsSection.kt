@@ -19,6 +19,14 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Handyman
+import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.NightsStay
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.automirrored.outlined.ListAlt
+import com.teanode.app.shell.icon
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Terminal
@@ -27,6 +35,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.launch
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -132,10 +142,25 @@ fun SettingsSection() {
             if (facts.isAvailable(AppSection.Photos)) {
                 item { TeaNodeSectionHeader(stringResource(R.string.section_photos)) }
                 item { TeaNodeNavigationRow(stringResource(R.string.settings_photo_backup), { openPlace(Routes.child(AppSection.Photos, "backup")) }, leadingIcon = Icons.Outlined.CloudUpload) }
+                item { TeaNodeNavigationRow(stringResource(R.string.settings_photo_people), { navigator.navigate(SettingsRoutes.PHOTO_PEOPLE) }, leadingIcon = Icons.Outlined.AccountCircle) }
+            }
+            if (facts.isAvailable(AppSection.Health)) {
+                item { TeaNodeNavigationRow(stringResource(R.string.settings_health), { openPlace(Routes.child(AppSection.Health, "settings")) }, leadingIcon = AppSection.Health.icon) }
+            }
+            if (facts.isAvailable(AppSection.Journal)) {
+                item { TeaNodeNavigationRow(stringResource(R.string.settings_journal), { openPlace(Routes.child(AppSection.Journal, "settings")) }, leadingIcon = AppSection.Journal.icon) }
             }
 
             item { TeaNodeSectionHeader(stringResource(R.string.settings_your_agent)) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_agent_title), { navigator.navigate(SettingsRoutes.AGENT) }, leadingIcon = Icons.Outlined.Tune) }
+            item { TeaNodeNavigationRow(stringResource(R.string.settings_skills_title), { navigator.navigate(SettingsRoutes.SKILLS) }, leadingIcon = Icons.Outlined.Handyman) }
+            item { TeaNodeNavigationRow(stringResource(R.string.settings_sources_title), { navigator.navigate(SettingsRoutes.SOURCES) }, leadingIcon = Icons.Outlined.Inbox) }
+            item { TeaNodeNavigationRow(stringResource(R.string.settings_memory_title), { navigator.navigate(SettingsRoutes.MEMORY) }, leadingIcon = Icons.Outlined.Psychology) }
+            item { TeaNodeNavigationRow(stringResource(R.string.settings_dreams_title), { navigator.navigate(SettingsRoutes.DREAMS) }, leadingIcon = Icons.Outlined.NightsStay) }
+            item { TeaNodeNavigationRow(stringResource(R.string.settings_schedules_title), { navigator.navigate(SettingsRoutes.SCHEDULES) }, leadingIcon = Icons.Outlined.Schedule) }
+            item { TeaNodeNavigationRow(stringResource(R.string.settings_alerts_title), { navigator.navigate(SettingsRoutes.ALERTS) }, leadingIcon = Icons.Outlined.Notifications) }
+            item { TeaNodeNavigationRow(stringResource(R.string.settings_connections_title), { navigator.navigate(SettingsRoutes.CONNECTIONS) }, leadingIcon = Icons.Outlined.Hub) }
+            item { TeaNodeNavigationRow(stringResource(R.string.settings_activity_title), { navigator.navigate(SettingsRoutes.ACTIVITY) }, leadingIcon = Icons.AutoMirrored.Outlined.ListAlt) }
 
             val access = operatorAccess
             if (access != null && access.canOpenManage) {
@@ -165,10 +190,12 @@ fun SettingsSection() {
                 item { TeaNodeSectionHeader(stringResource(R.string.settings_mailbox)) }
                 item { TeaNodeNavigationRow(stringResource(R.string.settings_mailbox), { openPlace("mail/settings") }, leadingIcon = Icons.Outlined.Inbox) }
             }
+            notificationsSection(connection, context)
             item { TeaNodeRow(headline = if (accounts.accounts.size > 1) stringResource(R.string.settings_sign_out_of, accounts.active?.server?.host.orEmpty()) else stringResource(R.string.settings_sign_out), leadingIcon = Icons.AutoMirrored.Outlined.ExitToApp, onClick = { isConfirmingSignOut = true }) }
             item { FooterText(stringResource(R.string.settings_sign_out_footer)) }
             item { TeaNodeSectionHeader(stringResource(R.string.settings_about)) }
             item { TeaNodeRow(headline = stringResource(R.string.settings_version), trailing = { Text(version) }) }
+            item { AppUpdateRow(context) }
         }
     }
     if (isConfirmingSignOut) {
@@ -185,4 +212,48 @@ private fun versionText(context: android.content.Context): String = try {
     "${info.versionName} (${androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(info)})"
 } catch (missing: Exception) {
     ""
+}
+
+@Composable
+private fun appUpdates(context: android.content.Context): com.teanode.app.notifications.AppUpdateModel? =
+    remember { runCatching { (context.applicationContext as com.teanode.app.TeaNodeApplication).push.appUpdates }.getOrNull() }
+
+/** The row that installs a newer app, while one is waiting. */
+@Composable
+private fun AppUpdateRow(context: android.content.Context) {
+    val model = appUpdates(context) ?: return
+    val update by model.update.collectAsState()
+    val found = update ?: return
+    TeaNodeRow(
+        headline = stringResource(R.string.settings_update_to, found.versionText), leadingIcon = Icons.Outlined.SystemUpdate,
+        onClick = { com.teanode.app.ui.components.openWebPage(context, found.installUrl) },
+    )
+}
+
+/** What this phone is told about, and the way to turn notifications on when the person said no at first. */
+private fun androidx.compose.foundation.lazy.LazyListScope.notificationsSection(connection: com.teanode.kit.Connection, context: android.content.Context) {
+    item { TeaNodeSectionHeader(stringResource(R.string.settings_notifications)) }
+    item {
+        val registrar = remember { runCatching { (context.applicationContext as com.teanode.app.TeaNodeApplication).push.registrar }.getOrNull() }
+        if (registrar == null) return@item
+        val phones by registrar.phonesByAccount.collectAsState()
+        val problem by registrar.problemText.collectAsState()
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        val phone = phones[connection.accountKey]
+        val isAllowed = com.teanode.app.notifications.PushAvailability.areNotificationsAllowed(context)
+        androidx.compose.foundation.layout.Column {
+            if (isAllowed && phone?.canBeNotified == true) {
+                com.teanode.kit.notifications.AgentPhone.allNotificationKinds.forEach { kind ->
+                    SwitchRow(notificationKindLabel(kind), registrar.wants(connection.accountKey, kind), { isOn -> scope.launch { registrar.setNotificationKind(connection, kind, isOn) } })
+                }
+            } else {
+                FooterText(stringResource(R.string.settings_notifications_off))
+                TeaNodeRow(
+                    headline = stringResource(R.string.settings_notifications_open_settings), leadingIcon = Icons.Outlined.Notifications,
+                    onClick = { context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
+                )
+            }
+            problem?.let { text -> FooterText(text) }
+        }
+    }
 }

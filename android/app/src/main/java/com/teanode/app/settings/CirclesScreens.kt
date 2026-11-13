@@ -1,6 +1,9 @@
 package com.teanode.app.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -85,7 +88,19 @@ import com.teanode.kit.circles.renameCircle
 import com.teanode.kit.circles.saveRelationship
 import com.teanode.kit.circles.setCircleMemberRole
 import com.teanode.kit.circles.withdrawCircleInvitation
+import com.teanode.kit.calendar.CalendarShareLevel
+import com.teanode.kit.calendar.calendars
+import com.teanode.kit.calendar.shareCalendar
+import com.teanode.kit.contacts.AddressBook
+import com.teanode.kit.contacts.addressBooks
+import com.teanode.kit.contacts.createCircleAddressBook
+import com.teanode.kit.location.LocationShareLevel
+import com.teanode.kit.location.shareLocation
+import com.teanode.kit.photos.PhotoAlbum
 import com.teanode.kit.photos.ServerTime
+import com.teanode.kit.photos.createPhotoAlbum
+import com.teanode.kit.photos.photoAlbums
+import com.teanode.kit.circles.CircleCalendarOffer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -102,6 +117,18 @@ class CircleDirectory(private val connection: Connection, private val scope: Cor
     var isLoaded: Boolean by mutableStateOf(false)
     var loadError: Throwable? by mutableStateOf(null)
     var isBusy: Boolean by mutableStateOf(false)
+
+    /** The question asked once as an invitation is accepted: share the calendar, and for a family where the person is. */
+    var offer: CircleCalendarOffer? by mutableStateOf(null)
+
+    /** Works out what is offered for a circle just joined; nothing is asked for friends. */
+    fun askAboutSharing(invitation: CircleInvitation) {
+        scope.launch {
+            val calendarId = runCatching { connection.calendars().firstOrNull { calendar -> calendar.isOwn && calendar.calendarKind == "events" }?.id }.getOrNull()
+            val canShareLocation = runCatching { connection.accessSession().holds("location:use") }.getOrDefault(false)
+            offer = CircleCalendarOffer.accepting(invitation, calendarId, canShareLocation)
+        }
+    }
 
     fun circle(circleId: String): PeopleCircle? = circles.firstOrNull { circle -> circle.id == circleId }
 
@@ -254,6 +281,47 @@ fun CirclesScreen(onBack: () -> Unit, onOpenCircle: (String) -> Unit, onOpenShar
     if (isAdding) {
         CircleFormDialog(directory, editedCircle = null, onDismiss = { isAdding = false })
     }
+    directory.offer?.let { offer -> CircleSharingOfferDialog(directory, offer, onDismiss = { directory.offer = null }) }
+}
+
+/** The question asked once as a circle is joined: share the calendar at a level, and for a family where the person is, or not now. */
+@Composable
+private fun CircleSharingOfferDialog(directory: CircleDirectory, offer: CircleCalendarOffer, onDismiss: () -> Unit) {
+    val connection = LocalConnection.current
+    var calendarLevel by remember { mutableStateOf<CalendarShareLevel?>(null) }
+    var locationLevel by remember { mutableStateOf<LocationShareLevel?>(null) }
+    val doneText = stringResource(R.string.settings_circles_offer_done)
+    val notNow = stringResource(R.string.settings_circles_offer_not_now)
+    FormDialog(
+        title = stringResource(R.string.settings_circles_offer_title, offer.circleName), confirmLabel = stringResource(R.string.settings_save),
+        isConfirmEnabled = calendarLevel != null || locationLevel != null, isWorking = directory.isBusy,
+        onConfirm = {
+            directory.act(doneText, onDone = { isDone -> if (isDone) onDismiss() }) {
+                val calendarId = offer.calendarId
+                if (calendarId != null && calendarLevel != null) connection.shareCalendar(calendarId, null, offer.circleId, calendarLevel!!)
+                if (offer.isLocationOffered && locationLevel != null) connection.shareLocation(null, offer.circleId, locationLevel!!)
+            }
+        },
+        onDismiss = onDismiss,
+    ) {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            Text(stringResource(R.string.settings_circles_offer_detail), style = MaterialTheme.typography.bodyMedium)
+            if (offer.isCalendarOffered) {
+                ChoiceRow(
+                    stringResource(R.string.section_calendar), listOf<CalendarShareLevel?>(null, CalendarShareLevel.Busy, CalendarShareLevel.Titles, CalendarShareLevel.Details), calendarLevel,
+                    label = { level -> when (level) { null -> notNow; CalendarShareLevel.Busy -> stringResource(R.string.settings_sharing_level_busy); CalendarShareLevel.Titles -> stringResource(R.string.settings_sharing_level_titles); else -> stringResource(R.string.settings_sharing_level_details) } },
+                    onSelect = { calendarLevel = it },
+                )
+            }
+            if (offer.isLocationOffered) {
+                ChoiceRow(
+                    stringResource(R.string.section_location), listOf<LocationShareLevel?>(null, LocationShareLevel.History, LocationShareLevel.Current), locationLevel,
+                    label = { level -> when (level) { null -> notNow; LocationShareLevel.History -> stringResource(R.string.settings_sharing_level_history); else -> stringResource(R.string.settings_sharing_level_current) } },
+                    onSelect = { locationLevel = it },
+                )
+            }
+        }
+    }
 }
 
 private fun LazyListScope.invitationRows(directory: CircleDirectory) {
@@ -270,7 +338,9 @@ private fun LazyListScope.invitationRows(directory: CircleDirectory) {
             trailing = {
                 Row {
                     IconButton(onClick = { directory.act(declinedText) { connection.answerCircleInvitation(invitation.id, false) } }) { Icon(Icons.Outlined.Close, stringResource(R.string.settings_circles_decline)) }
-                    IconButton(onClick = { directory.act(joinedText) { connection.answerCircleInvitation(invitation.id, true) } }) { Icon(Icons.Outlined.Check, stringResource(R.string.settings_circles_accept)) }
+                    IconButton(onClick = {
+                        directory.act(joinedText, onDone = { isDone -> if (isDone) directory.askAboutSharing(invitation) }) { connection.answerCircleInvitation(invitation.id, true) }
+                    }) { Icon(Icons.Outlined.Check, stringResource(R.string.settings_circles_accept)) }
                 }
             },
         )
@@ -407,6 +477,9 @@ fun CircleDetailScreen(circleId: String, onBack: () -> Unit) {
                     TeaNodeRow(headline = stringResource(R.string.settings_circles_delete), leadingIcon = Icons.Outlined.Delete, onClick = { isConfirmingDelete = true })
                 }
             }
+            item {
+                CircleBookAndAlbums(circle, directory)
+            }
             item { TeaNodeRow(headline = stringResource(R.string.settings_circles_leave), leadingIcon = Icons.AutoMirrored.Outlined.ExitToApp, onClick = { isConfirmingLeave = true }) }
         }
         if (isRenaming) CircleFormDialog(directory, circle, onDismiss = { isRenaming = false })
@@ -495,5 +568,43 @@ private fun CircleRelationshipDialog(directory: CircleDirectory, member: CircleM
                 Text(stringResource(R.string.settings_profile_pronoun_footer), style = MaterialTheme.typography.bodySmall)
             }
         }
+    }
+}
+
+/** The circle's address book and its photo albums: what everyone in the circle reads and adds to. */
+@Composable
+private fun CircleBookAndAlbums(circle: PeopleCircle, directory: CircleDirectory) {
+    val connection = LocalConnection.current
+    val books = com.teanode.app.ui.components.rememberLoad(circle.id) { runCatching { connection.addressBooks() }.getOrDefault(emptyList()).filter { book -> book.circleId == circle.id } }
+    val albums = com.teanode.app.ui.components.rememberLoad(circle.id) { runCatching { connection.photoAlbums(circle.id) }.getOrDefault(emptyList()) }
+    var isNamingAlbum by remember { mutableStateOf(false) }
+    var albumTitle by remember { mutableStateOf("") }
+    val bookMadeText = stringResource(R.string.settings_circles_book_made)
+    val albumMadeText = stringResource(R.string.settings_circles_album_made, albumTitle)
+    Column {
+        TeaNodeSectionHeader(stringResource(R.string.settings_circles_book))
+        val book = books.value?.firstOrNull()
+        if (book != null) {
+            TeaNodeRow(headline = book.name, supporting = book.contacts?.let { count -> stringResource(R.string.settings_circles_people, count) })
+            FooterText(stringResource(R.string.settings_circles_book_footer))
+        } else if (books.value != null) {
+            TeaNodeRow(
+                headline = stringResource(if (circle.knownCircleKind == com.teanode.kit.circles.CircleKind.Family) R.string.settings_circles_book_make_family else R.string.settings_circles_book_make),
+                leadingIcon = Icons.Outlined.Add,
+                onClick = { directory.act(bookMadeText, onDone = { books.refresh() }) { connection.createCircleAddressBook(circle.id) } },
+            )
+            FooterText(stringResource(R.string.settings_circles_book_footer_none))
+        }
+        TeaNodeSectionHeader(stringResource(R.string.settings_circles_albums))
+        albums.value?.forEach { album -> TeaNodeRow(headline = album.albumTitle, supporting = stringResource(R.string.settings_circles_album_photos, album.photoCount)) }
+        TeaNodeRow(headline = stringResource(R.string.settings_circles_new_album), leadingIcon = Icons.Outlined.Add, onClick = { albumTitle = ""; isNamingAlbum = true })
+        FooterText(stringResource(R.string.settings_circles_albums_footer))
+    }
+    if (isNamingAlbum) {
+        FormDialog(
+            title = stringResource(R.string.settings_circles_new_album_for, circle.name), confirmLabel = stringResource(R.string.settings_create), isConfirmEnabled = albumTitle.isNotBlank(), isWorking = directory.isBusy,
+            onConfirm = { directory.act(albumMadeText, onDone = { isNamingAlbum = false; albums.refresh() }) { connection.createPhotoAlbum(albumTitle.trim(), circleId = circle.id) } },
+            onDismiss = { isNamingAlbum = false },
+        ) { FormField(albumTitle, { albumTitle = it }, stringResource(R.string.settings_circles_album_title)) }
     }
 }
