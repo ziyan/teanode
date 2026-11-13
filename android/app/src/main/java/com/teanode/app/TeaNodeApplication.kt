@@ -43,6 +43,7 @@ class TeaNodeApplication : Application() {
             preferences = getSharedPreferences("teanode", MODE_PRIVATE),
         )
         session.restore()
+        Thread { runCatching { com.teanode.app.chats.ChatFilesCache.clean(this) } }.start()
         NotificationChannels.create(this)
         CallService.createChannels(this)
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {

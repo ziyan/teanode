@@ -134,7 +134,7 @@
             android:foregroundServiceType="location" />
         <receiver android:name=".location.recording.LocationGeofenceReceiver" android:exported="false" />
         <receiver android:name=".location.recording.LocationActivityReceiver" android:exported="false" />
-        <receiver android:name=".location.recording.LocationBootReceiver" android:exported="true">
+        <receiver android:name=".location.recording.LocationBootReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
