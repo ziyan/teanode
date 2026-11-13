@@ -146,7 +146,7 @@ private fun cardsMessages(): List<AgentMessage> = listOf(
     ),
     message("k5", "note", """{"computer":"studio","paneId":"w1:p2","questionFingerprint":"f0","answerText":"1. README"}""", 3.55, name = "herdr_answered"),
     message("k6", "user", "[goal done] goal-1 Invoices filed", 3.3),
-    message("k7", "note", "Stopped.", 3.2, name = "stopped"),
+    message("k7", "note", "you asked it to stop", 3.2, name = "stopped"),
     message("k8", "note", "The earlier chat was folded into a note about the hotels and the dates.", 3.1, name = "compacted").copy(role = "compaction"),
 )
 
@@ -173,7 +173,7 @@ private fun samMessages(): List<AgentMessage> = listOf(
     chatMessage("c4", "assistant", "", 3.0, "person", "user-sam", "Sam Rivera", false) { each ->
         each.copy(
             isVoiceMessage = true, transcriptText = "Running ten minutes late, save me a seat.", transcriptState = "done",
-            attachments = listOf(AgentAttachment("voice-1", "Voice message.m4a", "audio/mp4", 9000, audioDurationMS = 7000, audioWaveform = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4v")),
+            attachments = listOf(AgentAttachment("voice-1", "Voice message.m4a", "audio/mp4", 9000, audioDurationMS = 7000, audioWaveform = "KFJ7oL7S29fHrYxlPTdZcoSMjIR3ZlRDNCkuMTIwLSspKCgoKSkoLTQ+SVVfZmll")),
         )
     },
     chatMessage("c5", "user", "No problem, I will order a starter.", 2.9, "person", "demo-user", "Robin", true) { each ->

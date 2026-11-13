@@ -54,6 +54,27 @@
             </intent-filter>
         </activity>
 
+        <!-- Chats: text, links, pictures and files shared from other apps go to the main conversation. -->
+        <activity
+            android:name=".chats.ShareReceiverActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.TeaNode.Share">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/*" />
+            </intent-filter>
+        </activity>
+
         <!-- Chats: pictures from the camera and files shared from a conversation go through this provider. -->
         <provider
             android:name="androidx.core.content.FileProvider"

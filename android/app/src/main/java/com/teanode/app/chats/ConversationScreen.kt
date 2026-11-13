@@ -61,6 +61,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
@@ -194,7 +195,7 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
         onPauseOrDispose { model.stopFollowing() }
     }
     LifecycleResumeEffect(model, status) {
-        val job = scope.launch { if (!session.isDemo) status.follow(connection, environment) { model.conversationId } }
+        val job = scope.launch { status.follow(connection, environment) { model.conversationId } }
         onPauseOrDispose { job.cancel() }
     }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -212,6 +213,8 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
             }
         }
     }
+
+    LaunchedEffect(environment) { if (!environment.hasReadAgentFacts) environment.loadAgentName() }
 
     // Things that went wrong are told in a snackbar, once.
     LaunchedEffect(model.problemText) {
@@ -330,7 +333,7 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
                         if (problem != null) ErrorState(problem, onRetry = { model.startFollowing() }) else LoadingState()
                     }
                     // The list is drawn from its bottom up, so the newest line is at the foot and the keyboard lifts it.
-                    LazyColumn(Modifier.fillMaxSize(), state = listState, reverseLayout = true, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LazyColumn(Modifier.fillMaxSize().testTag("conversation-list"), state = listState, reverseLayout = true, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (model.isLoaded && model.lines.isEmpty()) {
                             item(key = "empty") {
                                 if (model.isChat) {

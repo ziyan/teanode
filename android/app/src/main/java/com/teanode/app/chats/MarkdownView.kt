@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -222,13 +223,14 @@ fun MarkdownView(
                 }
                 is MarkdownBlock.Code -> CodeBlock(block.text)
                 is MarkdownBlock.Table -> Column(Modifier.horizontalScroll(rememberScrollState())) {
+                    // Each column is as wide as its widest cell, up to a limit past which the cell wraps.
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        for (cell in block.header) Text(inlineText(cell, style, mentions), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(110.dp))
-                    }
-                    HorizontalDivider(Modifier.padding(vertical = 4.dp).width((block.header.size * 124).dp))
-                    for (row in block.rows) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(vertical = 2.dp)) {
-                            for (cell in row) Text(inlineText(cell, style, mentions), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(110.dp))
+                        for ((columnIndex, headerCell) in block.header.withIndex()) {
+                            Column(Modifier.widthIn(max = 220.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(inlineText(headerCell, style, mentions), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                HorizontalDivider()
+                                for (row in block.rows) Text(inlineText(row.getOrElse(columnIndex) { "" }, style, mentions), style = MaterialTheme.typography.bodyMedium)
+                            }
                         }
                     }
                 }

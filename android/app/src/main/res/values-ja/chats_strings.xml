@@ -260,4 +260,10 @@
     <string name="chats_your_answer">あなたの回答</string>
     <string name="chats_you_reacted">あなたがリアクションしました</string>
     <string name="chats_yours">自分の</string>
+    <string name="chats_share_goes_to_main">メインの会話に届きます。</string>
+    <string name="chats_share_not_connected">先に TeaNode を開いてサーバーに接続してください。</string>
+    <string name="chats_share_note">エージェントへのメモを添える</string>
+    <string name="chats_share_send_to">%1$s に送る</string>
+    <string name="chats_share_send_to_agent">エージェントに送る</string>
+    <string name="chats_share_sent">送信しました</string>
 </resources>

@@ -211,7 +211,7 @@ fun ConversationsList(onChoose: (AgentConversation?) -> Unit) {
                 failure != null && conversations.isEmpty() -> ErrorState(failure, onRetry = { problemText = null; isLoaded = false; reloadCount += 1 })
                 !isLoaded -> LoadingState()
                 else -> PullToRefreshBox(isRefreshing = isRefreshing, onRefresh = { scope.launch { isRefreshing = true; load(); isRefreshing = false } }, modifier = Modifier.fillMaxSize()) {
-                    LazyColumn(Modifier.fillMaxSize()) {
+                    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 88.dp)) {
                         val results = found
                         if (results != null) {
                             if (results.isEmpty()) item { Text(stringResource(R.string.chats_nothing_matches), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }

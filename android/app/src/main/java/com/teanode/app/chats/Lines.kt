@@ -353,7 +353,7 @@ fun ReadMarks(readers: List<ChatMember>, words: ChatWords) {
     val label = stringResource(R.string.chats_read_by, names)
     Row(Modifier.semantics { contentDescription = label }, verticalAlignment = Alignment.CenterVertically) {
         for (member in readers.take(MOST_READ_AVATARS)) {
-            Box(Modifier.padding(end = 2.dp)) { AvatarView(member.displayName, member.avatarUrl, member.avatarColorIndex, size = 14.dp) }
+            Box(Modifier.padding(end = 2.dp)) { AvatarView(member.displayName, member.avatarUrl, member.avatarColorIndex, size = 16.dp) }
         }
         if (readers.size > MOST_READ_AVATARS) Text("+${readers.size - MOST_READ_AVATARS}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
