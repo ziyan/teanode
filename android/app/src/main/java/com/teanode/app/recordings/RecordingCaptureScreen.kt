@@ -24,6 +24,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -50,19 +55,17 @@ fun RecordingCaptureScreen(onBack: () -> Unit, previewState: RecordingCaptureSta
     val connection = LocalConnection.current
     val liveState by RecordingCaptureService.state.collectAsState()
     val state = previewState ?: liveState
-    LaunchedEffect(previewState) {
-        if (previewState == null && !RecordingCaptureService.state.value.isRecording) {
-            val userId = runCatching { connection.accessSession().userId }.getOrNull()
-            RecordingCaptureService.start(context, connection.accountKey, userId, "")
-        }
-    }
+    // A link or a widget opens this screen idle: the microphone starts only from the person's tap on Start.
+    var isStartRequested by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val canStart = previewState == null && !state.isRecording && (!isStartRequested || state.problemMessageId != null)
     // A stopped capture leaves the screen: its recording is in the list, uploading.
-    LaunchedEffect(state.isRecording, previewState) { if (previewState == null && !state.isRecording && state.localRecordingId == null && state.problemMessageId == null) { kotlinx.coroutines.delay(1500); if (!RecordingCaptureService.state.value.isRecording) onBack() } }
+    LaunchedEffect(state.isRecording, previewState, isStartRequested) { if (previewState == null && isStartRequested && !state.isRecording && state.localRecordingId == null && state.problemMessageId == null) { kotlinx.coroutines.delay(1500); if (!RecordingCaptureService.state.value.isRecording) onBack() } }
     TeaNodeScreen(title = stringResource(R.string.recordings_recording_title), onBack = onBack) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically)) {
             Text(VideoControls.timeText(state.elapsedMS / 1000.0), style = MaterialTheme.typography.displayLarge)
             Text(
-                stringResource(if (state.isPaused) R.string.recordings_status_paused else if (state.isRecording) R.string.recordings_status_recording else R.string.recordings_starting),
+                stringResource(if (state.isPaused) R.string.recordings_status_paused else if (state.isRecording) R.string.recordings_status_recording else if (canStart && !isStartRequested) R.string.recordings_ready else R.string.recordings_starting),
                 color = if (state.isPaused || !state.isRecording) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.titleMedium,
             )
             LevelMeter(state.levelBars, Modifier.fillMaxWidth().height(72.dp))
@@ -83,6 +86,15 @@ fun RecordingCaptureScreen(onBack: () -> Unit, previewState: RecordingCaptureSta
                     onClick = { RecordingCaptureService.send(context, RecordingCaptureService.ACTION_STOP); onBack() }, enabled = state.isRecording, modifier = Modifier.size(72.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
                 ) { Icon(Icons.Filled.Stop, contentDescription = stringResource(R.string.recordings_stop), modifier = Modifier.size(36.dp)) }
+            }
+            if (canStart) {
+                androidx.compose.material3.Button(onClick = {
+                    isStartRequested = true
+                    scope.launch {
+                        val userId = runCatching { connection.accessSession().userId }.getOrNull()
+                        RecordingCaptureService.start(context, connection.accountKey, userId, "")
+                    }
+                }) { Text(stringResource(R.string.recordings_start)) }
             }
             OutlinedButton(onClick = onBack) { Text(stringResource(R.string.recordings_close)) }
         }

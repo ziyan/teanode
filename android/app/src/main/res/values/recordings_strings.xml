@@ -74,6 +74,7 @@
     <string name="recordings_speaker_letter">Speaker %1$s</string>
     <string name="recordings_speakers_list">Speakers: %1$s</string>
     <string name="recordings_start">Start recording</string>
+    <string name="recordings_ready">Ready</string>
     <string name="recordings_starting">Starting</string>
     <string name="recordings_status_failed">Failed</string>
     <string name="recordings_status_paused">Paused</string>
