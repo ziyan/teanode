@@ -96,6 +96,8 @@
     <string name="coding_preview_shown_heading">会话看到的内容</string>
     <string name="coding_preview_nothing">没有内容：你的助手不知道哪个检出目录包含这个目录，或者这个问题在它的项目里什么都想不起来。</string>
     <string name="coding_close">关闭</string>
+    <string name="coding_paste_picture">粘贴图片</string>
+    <string name="coding_camera">相机</string>
     <plurals name="coding_agents_count">
         <item quantity="one">%1$d 个代理</item>
         <item quantity="other">%1$d 个代理</item>

@@ -323,7 +323,7 @@ fun CodingSessionScreen(initialId: String, onBack: () -> Unit) {
     }
 
     TeaNodeScreen(
-        title = session?.workspaceTitle ?: "",
+        title = session?.let { current -> "${current.workspaceTitle} · ${current.computer}" } ?: "",
         onBack = onBack,
         actions = {
             if (session != null) {
@@ -619,7 +619,7 @@ internal fun CodingAnswerCard(question: CodingQuestion, onAnswer: suspend (List<
             Icon(Icons.Outlined.Terminal, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
             Text(
                 listOf(question.codingAgentName, question.sessionName).filter { part -> part.isNotEmpty() }.joinToString(" · "),
-                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp).weight(1f),
             )
             TextButton(onClick = { isShowingDetails = !isShowingDetails }) {
@@ -690,6 +690,17 @@ internal fun CodingComposer(
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { addresses ->
         onFilesAdded(addresses.mapNotNull { address -> readPendingFile(context, address, pendingFiles.size + addresses.indexOf(address)) })
     }
+    // A picture from the camera is written to the app's cache first (the chat's file provider), then read as a file.
+    var cameraTarget by remember { mutableStateOf<java.io.File?>(null) }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { isTaken ->
+        val target = cameraTarget
+        if (isTaken && target != null) {
+            val address = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.chatfiles", target)
+            readPendingFile(context, address, pendingFiles.size)?.let { file -> onFilesAdded(listOf(file)) }
+        }
+        target?.delete()
+    }
+    var isAttachMenuOpen by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (pendingFiles.isNotEmpty()) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -702,8 +713,30 @@ internal fun CodingComposer(
             }
         }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            IconButton(onClick = { picker.launch("*/*") }, enabled = !isDisabled) {
-                Icon(Icons.Outlined.AttachFile, contentDescription = stringResource(R.string.coding_add_files))
+            Box {
+                IconButton(onClick = { isAttachMenuOpen = true }, enabled = !isDisabled) {
+                    Icon(Icons.Outlined.AttachFile, contentDescription = stringResource(R.string.coding_add_files))
+                }
+                DropdownMenu(isAttachMenuOpen, { isAttachMenuOpen = false }) {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.coding_photo_library)) }, onClick = { isAttachMenuOpen = false; picker.launch("image/*") })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.coding_camera)) }, onClick = {
+                        isAttachMenuOpen = false
+                        val directory = java.io.File(context.cacheDir, "chat-files").apply { mkdirs() }
+                        val target = java.io.File(directory, "coding-picture-${System.currentTimeMillis()}.jpg")
+                        cameraTarget = target
+                        runCatching { camera.launch(androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.chatfiles", target)) }
+                    })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.coding_files)) }, onClick = { isAttachMenuOpen = false; picker.launch("*/*") })
+                    // A picture copied elsewhere, a screenshot say, attached as the dashboard attaches a pasted one.
+                    val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                    val pastedAddress = clipboard?.primaryClip?.takeIf { clip -> clip.itemCount > 0 && clip.description.hasMimeType("image/*") }?.getItemAt(0)?.uri
+                    if (pastedAddress != null) {
+                        DropdownMenuItem(text = { Text(stringResource(R.string.coding_paste_picture)) }, onClick = {
+                            isAttachMenuOpen = false
+                            readPendingFile(context, pastedAddress, pendingFiles.size)?.let { file -> onFilesAdded(listOf(file)) }
+                        })
+                    }
+                }
             }
             OutlinedTextField(
                 value = draft, onValueChange = onDraftChange, modifier = Modifier.weight(1f), enabled = !isDisabled,

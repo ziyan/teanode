@@ -60,7 +60,7 @@ import kotlinx.coroutines.launch
  * [statusOverride] draws a given status (the demo and the screenshots); a real screen reads it from the worker's progress.
  */
 @Composable
-fun PhotoBackupScreen(onBack: () -> Unit, statusOverride: PhotoBackupStatus? = null, initialIsEnabled: Boolean? = null) {
+fun PhotoBackupScreen(onBack: () -> Unit, statusOverride: PhotoBackupStatus? = null, initialIsEnabled: Boolean? = null, onOpenFiles: () -> Unit = {}) {
     val context = LocalContext.current
     val connection = LocalConnection.current
     val snackbar = LocalSnackbar.current
@@ -69,6 +69,7 @@ fun PhotoBackupScreen(onBack: () -> Unit, statusOverride: PhotoBackupStatus? = n
     var isEnabled by remember { mutableStateOf(initialIsEnabled ?: settings.isEnabled) }
     var isPaused by remember { mutableStateOf(settings.isPaused) }
     var usesMobileData by remember { mutableStateOf(settings.usesMobileData) }
+    var includesHidden by remember { mutableStateOf(settings.includesHiddenFolders) }
     var isTurningOff by remember { mutableStateOf(false) }
     var library by remember { mutableStateOf<PhotoLibrary?>(null) }
     var isReading by remember { mutableStateOf(false) }
@@ -122,6 +123,7 @@ fun PhotoBackupScreen(onBack: () -> Unit, statusOverride: PhotoBackupStatus? = n
                     }) { Text(stringResource(if (isPaused) R.string.photos_backup_resume else R.string.photos_backup_pause)) }
                 }
                 if (isPaused) Text(stringResource(R.string.photos_backup_paused_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
+                if (status.refusedFileCount > 0 || status.skippedFileCount > 0) TextButton(onClick = onOpenFiles, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.photos_backup_files_title)) }
                 if (status.refusedFileCount > 0) {
                     Text(pluralStringResource(R.plurals.photos_backup_refused, status.refusedFileCount, status.refusedFileCount), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                 }
@@ -134,6 +136,8 @@ fun PhotoBackupScreen(onBack: () -> Unit, statusOverride: PhotoBackupStatus? = n
                 SwitchRow(stringResource(R.string.photos_backup_mobile_data), usesMobileData) { isOn ->
                     usesMobileData = isOn; settings.usesMobileData = isOn; PhotoBackupScheduler.schedule(context, isOn)
                 }
+                SwitchRow(stringResource(R.string.photos_backup_hidden), includesHidden) { isOn -> includesHidden = isOn; settings.includesHiddenFolders = isOn; if (isEnabled) PhotoBackupScheduler.backUpNow(context, usesMobileData) }
+                Text(stringResource(R.string.photos_backup_hidden_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
                 SwitchRow(stringResource(R.string.photos_backup_read_new), isReading) { isOn ->
                     scope.launch { try { connection.setPhotoReading(isOn); isReading = isOn } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) } }
                 }
