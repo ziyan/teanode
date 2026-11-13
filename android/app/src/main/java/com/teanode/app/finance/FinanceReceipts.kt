@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -58,7 +59,10 @@ fun FinanceReceiptsScreen() {
     val navigator = LocalAppNavigator.current
     var isUnmatchedOnly by remember { mutableStateOf(false) }
     val read = rememberLoad(connection, isUnmatchedOnly) { connection.financeReceipts(isUnmatched = isUnmatchedOnly, limit = 200).financeReceipts.filterNotNull() }
-    TeaNodeScreen(title = stringResource(R.string.finance_part_receipts), onBack = { navigator.back() }) { padding ->
+    TeaNodeScreen(
+        title = stringResource(R.string.finance_part_receipts), onBack = { navigator.back() },
+        actions = { androidx.compose.material3.IconButton(onClick = { navigator.navigate(FinanceRoutes.receiptEntry) }) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Outlined.Add, contentDescription = stringResource(R.string.finance_entry_receipt_title)) } },
+    ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.finance_only_unmatched), Modifier.weight(1f)); Switch(isUnmatchedOnly, { isUnmatchedOnly = it })

@@ -1,6 +1,8 @@
 package com.teanode.app.finance
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -68,9 +70,9 @@ internal fun DonutChart(slices: List<DonutSlice>, selectedId: String?, modifier:
 internal class BarPair(val label: String, val first: Double, val second: Double)
 
 @Composable
-internal fun PairedBarChart(pairs: List<BarPair>, firstColor: Color, secondColor: Color, modifier: Modifier = Modifier, height: Dp = 140.dp) {
+internal fun PairedBarChart(pairs: List<BarPair>, firstColor: Color, secondColor: Color, modifier: Modifier = Modifier, height: Dp = 140.dp, selectedIndex: Int? = null, onSelect: (Int?) -> Unit = {}) {
     val baseline = MaterialTheme.colorScheme.outlineVariant
-    Canvas(modifier.fillMaxWidth().height(height)) {
+    Canvas(modifier.fillMaxWidth().height(height).pointerInput(pairs) { detectTapGestures { offset -> val slot = size.width / maxOf(pairs.size, 1); onSelect((offset.x / slot).toInt().coerceIn(0, pairs.size - 1).takeIf { index -> index != selectedIndex }) } }) {
         val peak = pairs.maxOfOrNull { pair -> maxOf(pair.first, pair.second) }?.takeIf { value -> value > 0 } ?: 1.0
         val slot = size.width / maxOf(pairs.size, 1)
         val barWidth = slot * 0.32f
@@ -79,8 +81,9 @@ internal fun PairedBarChart(pairs: List<BarPair>, firstColor: Color, secondColor
             val left = slot * index + slot * 0.14f
             val firstHeight = (size.height * (pair.first / peak)).toFloat()
             val secondHeight = (size.height * (pair.second / peak)).toFloat()
-            drawRect(firstColor, Offset(left, size.height - firstHeight), Size(barWidth, firstHeight))
-            drawRect(secondColor, Offset(left + barWidth + 2.dp.toPx(), size.height - secondHeight), Size(barWidth, secondHeight))
+            val alpha = if (selectedIndex == null || selectedIndex == index) 1f else 0.35f
+            drawRect(firstColor.copy(alpha = alpha), Offset(left, size.height - firstHeight), Size(barWidth, firstHeight))
+            drawRect(secondColor.copy(alpha = alpha), Offset(left + barWidth + 2.dp.toPx(), size.height - secondHeight), Size(barWidth, secondHeight))
         }
     }
 }
@@ -89,9 +92,10 @@ internal fun PairedBarChart(pairs: List<BarPair>, firstColor: Color, secondColor
 internal class LineSeries(val values: List<Double>, val color: Color, val isDashed: Boolean = false)
 
 @Composable
-internal fun LineChart(series: List<LineSeries>, modifier: Modifier = Modifier, height: Dp = 140.dp, isZeroIncluded: Boolean = false) {
+internal fun LineChart(series: List<LineSeries>, modifier: Modifier = Modifier, height: Dp = 140.dp, isZeroIncluded: Boolean = false, selectedIndex: Int? = null, onSelect: (Int?) -> Unit = {}) {
     val baseline = MaterialTheme.colorScheme.outlineVariant
-    Canvas(modifier.fillMaxWidth().height(height)) {
+    val ruleColor = MaterialTheme.colorScheme.onSurfaceVariant
+    Canvas(modifier.fillMaxWidth().height(height).pointerInput(series) { detectTapGestures { offset -> val longest = series.maxOfOrNull { each -> each.values.size } ?: 0; if (longest > 1) onSelect(Math.round(offset.x / size.width * (longest - 1)).coerceIn(0, longest - 1).takeIf { index -> index != selectedIndex }) } }) {
         val all = series.flatMap { each -> each.values }
         if (all.isEmpty()) return@Canvas
         val low = if (isZeroIncluded) minOf(0.0, all.min()) else all.min()
@@ -99,6 +103,7 @@ internal fun LineChart(series: List<LineSeries>, modifier: Modifier = Modifier, 
         val span = if (high - low < 1e-9) 1.0 else high - low
         val longest = series.maxOf { each -> each.values.size }
         drawLine(baseline, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
+        if (selectedIndex != null && longest > 1) { val x = size.width * selectedIndex / (longest - 1); drawLine(ruleColor, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx()) }
         for (each in series) {
             if (each.values.isEmpty()) continue
             val path = Path()

@@ -43,6 +43,11 @@ internal object FinanceRoutes {
     val sharing = child("sharing")
     val setup = child("setup")
     val sharedAll = child("shared-all")
+    val receiptEntry = child("receipt-entry")
+    val paystubEntry = child("paystub-entry")
+    val taxFormEntry = child("tax-form-entry")
+    val importCredential = child("import-credential")
+    val importRows = child("import-rows")
 
     const val TRANSACTIONS_PATH = "transactions?from={from}&to={to}&account={account}&category={category}&text={text}&isUncategorized={isUncategorized}"
     val transactionsPattern = child(TRANSACTIONS_PATH)

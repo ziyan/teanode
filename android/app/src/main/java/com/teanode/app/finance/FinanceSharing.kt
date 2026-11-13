@@ -17,6 +17,9 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -288,6 +291,7 @@ fun FinanceSharedAllScreen(ownerUserId: String) {
     val navigator = LocalAppNavigator.current
     var currencyOverride by remember { mutableStateOf<String?>(null) }
     var period by remember { mutableStateOf<String?>(null) }
+    var isYear by remember { mutableStateOf(false) }
     val read = rememberLoad(connection, ownerUserId) {
         val sharer = connection.sharedAllFinance(ownerUserId).firstOrNull()
         val rows = connection.sharedAllFinanceSpending(ownerUserId)
@@ -299,7 +303,9 @@ fun FinanceSharedAllScreen(ownerUserId: String) {
             val currencies = SharedSpendingSummary.currencyCodes(loaded.rows)
             val currency = currencyOverride ?: currencies.firstOrNull().orEmpty()
             val months = SharedSpendingSummary.months(loaded.rows, currency)
-            val shownPeriod = period ?: SharedSpendingSummary.latestMonth(loaded.rows).orEmpty()
+            val latestMonth = SharedSpendingSummary.latestMonth(loaded.rows).orEmpty()
+            val shownMonth = period ?: latestMonth
+            val shownPeriod = if (isYear) shownMonth.take(4) else shownMonth
             val total = SharedSpendingSummary.total(months, shownPeriod)
             val lines = SharedSpendingSummary.lines(loaded.rows, currency, shownPeriod)
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -307,9 +313,28 @@ fun FinanceSharedAllScreen(ownerUserId: String) {
                 else {
                     if (currencies.size > 1) item("currencies") { Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { for (code in currencies) FilterChip(code == currency, { currencyOverride = code }, label = { Text(code) }) } }
                     item("period") {
-                        val latest = YearMonth.parse(SharedSpendingSummary.latestMonth(loaded.rows)!!)
-                        val shown = YearMonth.parse(shownPeriod.take(7).ifEmpty { latest.toString() })
-                        MonthStepper(shown, latest) { period = it.toString() }
+                        Column {
+                            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                                SegmentedButton(!isYear, { isYear = false }, SegmentedButtonDefaults.itemShape(0, 2)) { Text(stringResource(R.string.finance_month)) }
+                                SegmentedButton(isYear, { isYear = true }, SegmentedButtonDefaults.itemShape(1, 2)) { Text(stringResource(R.string.finance_year)) }
+                            }
+                            val latest = YearMonth.parse(latestMonth)
+                            if (isYear) {
+                                val first = SharedSpendingSummary.firstYear(loaded.rows) ?: latest.year
+                                YearStepper(shownMonth.take(4).toInt(), first, latest.year) { year -> period = "$year-12".let { text -> if (year == latest.year) latestMonth else text } }
+                            } else {
+                                MonthStepper(YearMonth.parse(shownMonth.take(7)), latest) { period = it.toString() }
+                            }
+                        }
+                    }
+                    item("bars") {
+                        val shownYear = shownMonth.take(4)
+                        val pairs = months.filter { month -> !isYear || month.spendingMonth.startsWith(shownYear) }.takeLast(12).map { month -> BarPair(month.spendingMonth.takeLast(2), month.moneyIn.toDouble(), month.moneyOut.toDouble()) }
+                        var selected by remember { mutableStateOf<Int?>(null) }
+                        if (pairs.isNotEmpty()) Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            PairedBarChart(pairs, FinancePalette.color(0), FinancePalette.color(1), selectedIndex = selected, onSelect = { selected = it })
+                            selected?.let { index -> pairs.getOrNull(index)?.let { pair -> Text(stringResource(R.string.finance_callout_shared_month, pair.label, FinanceMoney.shown(java.math.BigDecimal(pair.first), currency), FinanceMoney.shown(java.math.BigDecimal(pair.second), currency)), color = MaterialTheme.colorScheme.primary) } }
+                        }
                     }
                     item("out") { LabeledValue(stringResource(R.string.finance_money_out), FinanceMoney.shown(total.moneyOut, currency)) }
                     item("in") { LabeledValue(stringResource(R.string.finance_money_in), FinanceMoney.shown(total.moneyIn, currency)) }

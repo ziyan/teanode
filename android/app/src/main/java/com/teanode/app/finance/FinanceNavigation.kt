@@ -51,6 +51,11 @@ fun NavGraphBuilder.financeRoutes(navigator: AppNavigator) {
     screen(FinanceRoutes.sharedAccountPattern, listOf("id")) { entry -> FinanceSharedAccountScreen(entry.text("id")) }
     screen(FinanceRoutes.sharedAllPattern, listOf("ownerUserId")) { entry -> FinanceSharedAllScreen(entry.text("ownerUserId")) }
     screen(FinanceRoutes.setup) { FinanceSetupScreen() }
+    screen(FinanceRoutes.receiptEntry) { FinanceReceiptEntryScreen() }
+    screen(FinanceRoutes.paystubEntry) { FinancePaystubEntryScreen() }
+    screen(FinanceRoutes.taxFormEntry) { FinanceTaxFormEntryScreen() }
+    screen(FinanceRoutes.importCredential) { FinanceImportCredentialScreen() }
+    screen(FinanceRoutes.importRows) { FinanceImportRowsScreen() }
 }
 
 /** What Finance plugs into the shell; listed in `Areas`. */

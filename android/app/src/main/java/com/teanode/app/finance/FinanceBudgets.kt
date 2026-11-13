@@ -80,6 +80,7 @@ fun FinanceBudgetsScreen() {
     var ruleEditing by remember { mutableStateOf<RuleDraft?>(null) }
     var deletingCategory by remember { mutableStateOf<SpendingCategory?>(null) }
     var deletingRule by remember { mutableStateOf<SpendingRule?>(null) }
+    var isSuggesting by remember { mutableStateOf(false) }
 
     fun act(saying: String, state: LoadState<BudgetsRead>, work: suspend () -> Unit) {
         scope.launch {
@@ -126,6 +127,7 @@ fun FinanceBudgetsScreen() {
                     }
                 }
                 item("new-rule") { TextButton(onClick = { ruleEditing = RuleDraft() }, modifier = Modifier.padding(horizontal = 8.dp)) { Icon(Icons.Outlined.Add, null); Text(stringResource(R.string.finance_new_rule)) } }
+                item("suggest-rules") { TextButton(onClick = { isSuggesting = true }, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.finance_manage_suggest_rules)) } }
                 item("rules-footer") { Footnote(stringResource(R.string.finance_rules_footer)) }
             }
             budgetEditing?.let { draft ->
@@ -148,6 +150,7 @@ fun FinanceBudgetsScreen() {
                     }
                 }
             }
+            if (isSuggesting) SuggestRulesSheet(base, onDismiss = { isSuggesting = false }, onAdded = { read.refresh() })
             deletingCategory?.let { category ->
                 ConfirmationDialog(
                     title = stringResource(R.string.finance_delete_category_question, base.label(category)), text = stringResource(R.string.finance_delete_category_message),
