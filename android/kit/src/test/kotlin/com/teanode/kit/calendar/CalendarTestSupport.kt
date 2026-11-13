@@ -15,6 +15,6 @@ fun fakeConnection(answer: (String) -> String): Pair<Connection, FakeServer> {
     return Connection(account, fake) to fake
 }
 
-fun sentBody(fake: FakeServer): JsonObject = TeaNodeJson.parseToJsonElement(fake.sent.first().body!!.toString(Charsets.UTF_8)) as JsonObject
+fun sentBody(fake: FakeServer, index: Int = 0): JsonObject = TeaNodeJson.parseToJsonElement(fake.sent[index].body!!.toString(Charsets.UTF_8)) as JsonObject
 
-fun sentVariables(fake: FakeServer): Map<String, JsonElement> = sentBody(fake)["variables"] as JsonObject
+fun sentVariables(fake: FakeServer, index: Int = 0): Map<String, JsonElement> = sentBody(fake, index)["variables"] as JsonObject
