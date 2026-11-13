@@ -8,7 +8,7 @@
         android:shortcutShortLabel="@string/notifications_shortcut_record">
         <intent
             android:action="android.intent.action.VIEW"
-            android:data="teanode://app/recordings/home"
+            android:data="teanode://app/recordings/capture"
             android:targetClass="com.teanode.app.MainActivity"
             android:targetPackage="com.teanode.app" />
     </shortcut>

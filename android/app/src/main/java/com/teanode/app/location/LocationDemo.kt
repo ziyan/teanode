@@ -17,6 +17,16 @@ import java.time.ZonedDateTime
  */
 object LocationDemo {
     /** Which state of the invented world is on: the screenshot tests change it, demo mode keeps the first. */
+    private var activeScreenCount = 0
+
+    /** Whether a Location screen is on screen, so that Location's demo answers apply. */
+    val isActive: Boolean get() = activeScreenCount > 0
+
+    /** A Location screen came on screen; the count lets the next route compose before the last one leaves. */
+    @Synchronized fun activate() { activeScreenCount += 1 }
+
+    @Synchronized fun deactivate() { activeScreenCount = maxOf(0, activeScreenCount - 1) }
+
     enum class Scenario {
         /** The person has a position, visits, places, two people sharing. */
         Everyday,
@@ -310,4 +320,11 @@ object LocationDemo {
 }
 
 /** What demo mode answers for Location, so every screen and state can be reached and photographed without a server. */
-val locationDemoAnswerers: List<DemoAnswerer> = LocationDemo.answerers
+/**
+ * Location's answers are given only while a Location screen is on screen ([LocationDemo.activate]). Contacts answers some of
+ * the same documents (visits, places, circles) with its own small fixtures for a person's card, and the answerers are
+ * asked in the order of `Areas`, Location's first: without this, a Contacts screen would be answered by Location's data.
+ */
+val locationDemoAnswerers: List<DemoAnswerer> = LocationDemo.answerers.map { answerer ->
+    DemoAnswerer { request -> if (LocationDemo.isActive) answerer.answer(request) else null }
+}

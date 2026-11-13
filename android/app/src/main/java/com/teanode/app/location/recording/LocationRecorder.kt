@@ -9,6 +9,10 @@ import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.ActivityRecognition
+import com.google.android.gms.location.ActivityTransition
+import com.google.android.gms.location.ActivityTransitionRequest
+import com.google.android.gms.location.DetectedActivity
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
@@ -22,6 +26,7 @@ import com.teanode.kit.Connection
 import com.teanode.kit.TeaNodeJson
 import com.teanode.kit.location.LocationBatch
 import com.teanode.kit.location.LocationDwellDetector
+import com.teanode.kit.location.LocationMotion
 import com.teanode.kit.location.LocationOutbox
 import com.teanode.kit.location.LocationPause
 import com.teanode.kit.location.LocationPauseChange
@@ -203,6 +208,37 @@ class LocationRecorder private constructor(private val context: Context) : Locat
         val isAllowed = recording.value && permissionState.value != LocationPermissionState.Undecided && permissionState.value != LocationPermissionState.Denied && refusal.value == null
         if (isAllowed && connection != null) LocationRecordingService.start(context) else LocationRecordingService.stop(context)
         scope.launch { chooseWatchedPlaces() }
+        scope.launch { watchMotion(isAllowed && motionAuthorized.value && isMotionAvailable) }
+    }
+
+    /** Asks Android to say when the person starts driving, cycling, running, walking or standing still, or stops asking. */
+    @SuppressLint("MissingPermission")
+    private suspend fun watchMotion(isWanted: Boolean) {
+        val client = ActivityRecognition.getClient(context)
+        val pending = PendingIntent.getBroadcast(context, 1, Intent(context, LocationActivityReceiver::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
+        runCatching { client.removeActivityTransitionUpdates(pending).await() }
+        if (!isWanted) return
+        val transitions = listOf(DetectedActivity.IN_VEHICLE, DetectedActivity.ON_BICYCLE, DetectedActivity.RUNNING, DetectedActivity.WALKING, DetectedActivity.STILL).map { type ->
+            ActivityTransition.Builder().setActivityType(type).setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_ENTER).build()
+        }
+        runCatching { client.requestActivityTransitionUpdates(ActivityTransitionRequest(transitions), pending).await() }
+    }
+
+    /** Android said the person entered an activity: it starts a stretch of that kind, reported with the positions. */
+    fun onActivityTransition(androidActivityType: Int, isEntering: Boolean, at: Instant) {
+        val activity = LocationMotion.reportedActivity(androidActivityType, isEntering, at) ?: return
+        val key = accountKey ?: return
+        scope.launch {
+            mutex.withLock {
+                val current = loadOutbox(key)
+                // A stretch inside a pause is not recorded, as the positions are not.
+                tracker = tracker.settled(Instant.now())
+                if (!tracker.isRecordable(pointMeasuredAt = at)) return@withLock
+                current.addActivities(listOf(activity))
+                save(key)
+            }
+            report()
+        }
     }
 
     /** One position the service read: kept when the pause, the point filter and the server's rules allow, and stays noticed from it. */

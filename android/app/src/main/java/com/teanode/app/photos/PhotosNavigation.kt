@@ -8,15 +8,10 @@ import com.teanode.app.shell.Area
 import com.teanode.app.shell.AppNavigator
 import com.teanode.app.shell.Routes
 import com.teanode.kit.AppSection
-import com.teanode.kit.photos.PhotoFilter
-import android.net.Uri
 
 /** The routes other parts open Photos on. */
 object PhotoRoutes {
-    val ofPersonPattern: String = Routes.child(AppSection.Photos, "of/{userId}?name={name}")
     val albums: String = Routes.child(AppSection.Photos, "albums")
-
-    fun ofPerson(userId: String, name: String): String = Routes.child(AppSection.Photos, "of/${Uri.encode(userId)}?name=${Uri.encode(name)}")
 }
 
 /**
@@ -27,13 +22,7 @@ fun NavGraphBuilder.photosRoutes(navigator: AppNavigator) {
     composable(Routes.home(AppSection.Photos), deepLinks = Routes.deepLinks(Routes.home(AppSection.Photos))) {
         PhotosSection()
     }
-    // The person's photos of somebody sharing with them, and the albums: where another part's "Show all" lands.
-    composable(
-        PhotoRoutes.ofPersonPattern,
-        arguments = listOf(navArgument("userId") { type = NavType.StringType }, navArgument("name") { type = NavType.StringType; defaultValue = "" }),
-    ) { entry ->
-        PhotosSection(initialFilter = PhotoFilter(accountUserId = entry.arguments?.getString("userId").orEmpty(), accountName = entry.arguments?.getString("name").orEmpty()))
-    }
+    // Where another part's "Show all" lands for the albums.
     composable(PhotoRoutes.albums) { PhotosSection(initialSection = PhotoSectionChoice.Albums) }
     val albumRoute = Routes.child(AppSection.Photos, "album/{albumId}")
     composable(albumRoute, arguments = listOf(navArgument("albumId") { type = NavType.StringType }), deepLinks = Routes.deepLinks(albumRoute)) { entry ->

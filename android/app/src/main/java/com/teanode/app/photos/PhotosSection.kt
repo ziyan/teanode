@@ -107,7 +107,6 @@ fun PhotosSection(
     initialOpenedPhotoId: String? = null,
     initialIsSelecting: Boolean = false,
     initialSelectedIds: Set<String> = emptySet(),
-    initialFilter: PhotoFilter = PhotoFilter(),
 ) {
     val connection = LocalConnection.current
     val snackbar = LocalSnackbar.current
@@ -116,7 +115,7 @@ fun PhotosSection(
     val context = androidx.compose.ui.platform.LocalContext.current
     var section by rememberSaveable { mutableStateOf(initialSection) }
     var scale by rememberSaveable { mutableStateOf(initialScale) }
-    var filter by remember { mutableStateOf(initialFilter) }
+    var filter by remember { mutableStateOf(PhotoFilterRequest.take() ?: PhotoFilter()) }
     var isSearching by rememberSaveable { mutableStateOf(false) }
     var searchText by rememberSaveable { mutableStateOf("") }
     var isSelecting by rememberSaveable { mutableStateOf(initialIsSelecting) }

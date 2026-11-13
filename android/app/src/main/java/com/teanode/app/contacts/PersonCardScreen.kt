@@ -96,6 +96,7 @@ import com.teanode.app.location.rememberLocationModel
 import com.teanode.app.location.rememberLocationText
 import com.teanode.app.photos.PhotoAlbumRow
 import com.teanode.app.photos.PhotoCell
+import com.teanode.app.photos.PhotoFilterRequest
 import com.teanode.app.photos.PhotoRoutes
 import com.teanode.app.shell.Routes
 import com.teanode.kit.finance.shownName
@@ -443,7 +444,7 @@ private fun PersonCardPhotosRows(card: PersonCard) {
     val navigator = LocalAppNavigator.current
     val person = card.person
     // Tapping a picture opens their photos, when they are an account the photos can be filtered by.
-    val openPhotos: (() -> Unit)? = person?.let { who -> { navigator.navigate(PhotoRoutes.ofPerson(who.userId, who.displayName)) } }
+    val openPhotos: (() -> Unit)? = person?.let { who -> { PhotoFilterRequest.openPerson(who.userId, who.displayName); navigator.openSection(AppSection.Photos) } }
     val openAlbums = { navigator.navigate(PhotoRoutes.albums) }
     TeaNodeSectionHeader(stringResource(R.string.section_photos))
     if (section.photosState == PersonCardSectionState.Shown) {

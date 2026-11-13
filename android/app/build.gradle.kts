@@ -99,6 +99,7 @@ dependencies {
     implementation(libs.osmdroid.android)
 
     implementation(libs.androidx.core)
+    implementation(libs.androidx.core.telecom)
 
     // Push and calls. Firebase Messaging is used only when the Firebase project's config file is there (see below); without
     // it the library is inert and the code never asks it for anything.

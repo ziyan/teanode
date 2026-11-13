@@ -11,6 +11,7 @@ import com.teanode.app.calls.CallCenter
 import com.teanode.app.calls.CallEnvironment
 import com.teanode.app.calls.CallProblem
 import com.teanode.app.calls.CallService
+import com.teanode.app.calls.TelecomCallSystem
 import com.teanode.app.calls.WebRtcCallMedia
 import com.teanode.app.session.AppSession
 import com.teanode.app.session.ErrorWords
@@ -92,7 +93,7 @@ class PushSystem(
     }
 
     /** The calls of the phone. */
-    val calls: CallCenter = CallCenter(environment, { WebRtcCallMedia(context) }, CallAudioRouter(context))
+    val calls: CallCenter = CallCenter(environment, { WebRtcCallMedia(context) }, CallAudioRouter(context), TelecomCallSystem(context))
 
     /** Whether a newer app can be installed. */
     val appUpdates = AppUpdateModel(preferences)

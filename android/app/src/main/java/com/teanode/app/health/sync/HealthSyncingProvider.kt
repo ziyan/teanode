@@ -2,6 +2,7 @@ package com.teanode.app.health.sync
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NamedNavArgument
@@ -19,6 +20,8 @@ fun ProvideHealthSyncing(content: @Composable () -> Unit) {
     val session = LocalAppSession.current
     val context = LocalContext.current
     val syncing = remember(session.isDemo) { if (session.isDemo) DemoHealthSyncing() else HealthSync.get(context).also { each -> each.refresh() } }
+    // A pass when a Health screen opens, since Health Connect cannot say when there is new data.
+    LaunchedEffect(syncing) { if (syncing is HealthSync && syncing.snapshot.value.isOn) syncing.syncNow() }
     CompositionLocalProvider(LocalHealthSyncing provides syncing, content = content)
 }
 
