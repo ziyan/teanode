@@ -60,6 +60,7 @@ type agentPhoneModel struct {
 	ClientID             string     `gorm:"column:client_id"`
 	PhoneName            string     `gorm:"column:phone_name"`
 	PhoneModel           string     `gorm:"column:phone_model"`
+	PhonePlatform        string     `gorm:"column:phone_platform"`
 	PushRegistration     string     `gorm:"column:push_registration"`
 	VoIPPushRegistration string     `gorm:"column:voip_push_registration"`
 	PayloadKey           string     `gorm:"column:payload_key"`
@@ -80,7 +81,7 @@ func (self *agentPhoneModel) toModel() *models.AgentPhone {
 	}
 	return &models.AgentPhone{
 		ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, ClientID: self.ClientID,
-		PhoneName: self.PhoneName, PhoneModel: self.PhoneModel, PushRegistration: self.PushRegistration,
+		PhoneName: self.PhoneName, PhoneModel: self.PhoneModel, PhonePlatform: self.PhonePlatform, PushRegistration: self.PushRegistration,
 		VoIPPushRegistration: self.VoIPPushRegistration, PayloadKey: self.PayloadKey,
 		NotificationKinds: kinds, PushedThrough: self.PushedThrough, LastSeenAt: self.LastSeenAt,
 		LastDeliveredAt: self.LastDeliveredAt, LastDeliveryError: self.LastDeliveryError, TouredAt: self.TouredAt,
@@ -100,8 +101,11 @@ func (self *transaction) PutAgentPhone(phone *models.AgentPhone) (*models.AgentP
 	now := time.Now()
 	model := &agentPhoneModel{
 		ID: newID(), CreatedAt: now, ModifiedAt: now, AgentID: phone.AgentID, ClientID: phone.ClientID,
-		PhoneName: phone.PhoneName, PhoneModel: phone.PhoneModel, PushRegistration: phone.PushRegistration,
+		PhoneName: phone.PhoneName, PhoneModel: phone.PhoneModel, PhonePlatform: phone.PhonePlatform, PushRegistration: phone.PushRegistration,
 		VoIPPushRegistration: phone.VoIPPushRegistration, PayloadKey: phone.PayloadKey, LastSeenAt: &now,
+	}
+	if model.PhonePlatform == "" {
+		model.PhonePlatform = models.PhonePlatformIOS
 	}
 	if existing != nil {
 		model.ID, model.CreatedAt = existing.ID, existing.CreatedAt
@@ -124,7 +128,7 @@ func (self *transaction) PutAgentPhone(phone *models.AgentPhone) (*models.AgentP
 	}
 	if err := self.tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "agent_id"}, {Name: "client_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"modified_at", "phone_name", "phone_model", "push_registration", "voip_push_registration", "payload_key", "last_seen_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"modified_at", "phone_name", "phone_model", "phone_platform", "push_registration", "voip_push_registration", "payload_key", "last_seen_at"}),
 	}).Create(model).Error; err != nil {
 		return nil, err
 	}
