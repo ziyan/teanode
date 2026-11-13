@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widgets_agent_name">Your agent</string>
+    <string name="widgets_agent_description">Ask your agent, call it, or start a recording.</string>
+    <string name="widgets_ask_anything">Ask anything</string>
+    <string name="widgets_ask_your_agent">Ask your agent</string>
+    <string name="widgets_call_your_agent">Call your agent</string>
+    <string name="widgets_start_recording">Start recording</string>
+    <string name="widgets_waiting_name">Waiting for you</string>
+    <string name="widgets_waiting_description">The questions and approvals your agent waits on.</string>
+    <string name="widgets_nothing_waits">Nothing waits for you</string>
+    <string name="widgets_approve">Approve?</string>
+    <string name="widgets_asks_you">Asks you</string>
+    <string name="widgets_waiting_count">%1$d waiting</string>
+    <string name="widgets_next_name">Up next</string>
+    <string name="widgets_next_description">Your next events and unread mail.</string>
+    <string name="widgets_nothing_coming_up">Nothing coming up</string>
+    <string name="widgets_no_title">(no title)</string>
+    <string name="widgets_today_all_day">Today, all day</string>
+    <string name="widgets_unread">%1$d unread</string>
+    <string name="widgets_not_connected">Open TeaNode and connect it to your server first.</string>
+</resources>

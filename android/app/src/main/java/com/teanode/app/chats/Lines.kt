@@ -323,7 +323,7 @@ fun GoalHeader(conversation: AgentConversation, goal: String, onOpen: () -> Unit
 fun ChatAvatars(chat: com.teanode.kit.chats.ChatSummary, ownUserId: String?, sizeDp: Int = 30) {
     val others = chat.otherMembers(ownUserId)
     val shown = others.take(if (chat.isGroup) 2 else 1)
-    Row(horizontalArrangement = Arrangement.spacedBy((-sizeDp * 0.3f).dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy((-sizeDp * 0.45f).dp)) {
         if (shown.isEmpty()) AvatarView(chat.title ?: "?", null, null, size = sizeDp.dp)
         for (member in shown) {
             Box(Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.surface).padding(2.dp)) {

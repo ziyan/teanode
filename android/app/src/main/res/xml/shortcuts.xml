@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the app's icon offers when it is pressed and held: the iPhone app's home screen actions. Each opens a place of the app. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="start_recording"
+        android:enabled="true"
+        android:icon="@drawable/ic_notification"
+        android:shortcutShortLabel="@string/notifications_shortcut_record">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="teanode://app/recordings/home"
+            android:targetClass="com.teanode.app.MainActivity"
+            android:targetPackage="com.teanode.app" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="call_agent"
+        android:enabled="true"
+        android:icon="@drawable/ic_notification"
+        android:shortcutShortLabel="@string/notifications_shortcut_call_agent">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="teanode://app/agent/home"
+            android:targetClass="com.teanode.app.MainActivity"
+            android:targetPackage="com.teanode.app">
+            <extra android:name="com.teanode.app.extra.CALL_AGENT" android:value="true" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="ask_agent"
+        android:enabled="true"
+        android:icon="@drawable/ic_notification"
+        android:shortcutShortLabel="@string/notifications_shortcut_ask_agent">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="teanode://app/agent/home"
+            android:targetClass="com.teanode.app.MainActivity"
+            android:targetPackage="com.teanode.app" />
+    </shortcut>
+</shortcuts>

@@ -451,3 +451,34 @@ class VoiceEventTest {
         assertEquals("a\nworld", appendingDictation("world", "a\n"))
     }
 }
+
+class SharedFilesTest {
+    @Test
+    fun aPaystubIsAPdfOrAPictureAndAStatementIsAnOfxFile() {
+        assertTrue(SharedFiles.isTaxDocument("application/pdf"))
+        assertTrue(SharedFiles.isTaxDocument("image/jpeg"))
+        assertFalse(SharedFiles.isTaxDocument("text/plain"))
+        assertTrue(SharedFiles.isStatement("export.QFX", ByteArray(0)))
+        assertTrue(SharedFiles.isStatement("export.txt", "OFXHEADER:100\nDATA:OFXSGML".toByteArray()))
+        assertFalse(SharedFiles.isStatement("notes.txt", "hello".toByteArray()))
+    }
+
+    @Test
+    fun theDestinationsFollowTheFiles() {
+        val picture = Triple("a.jpg", "image/jpeg", ByteArray(1))
+        val statement = Triple("a.ofx", "application/octet-stream", ByteArray(1))
+        val song = Triple("a.m4a", "audio/mp4", ByteArray(1))
+        assertEquals(listOf(ShareDestination.Agent), SharedFiles.destinations(emptyList(), true))
+        assertEquals(listOf(ShareDestination.Agent, ShareDestination.TaxDocuments), SharedFiles.destinations(listOf(picture), true))
+        assertEquals(listOf(ShareDestination.Agent, ShareDestination.Statements), SharedFiles.destinations(listOf(statement), true))
+        assertEquals(listOf(ShareDestination.Agent, ShareDestination.Recording), SharedFiles.destinations(listOf(song), true))
+        // A person with no recordings is not offered one.
+        assertEquals(listOf(ShareDestination.Agent), SharedFiles.destinations(listOf(song), false))
+    }
+
+    @Test
+    fun aFailureSaysHowManyWentBeforeIt() {
+        assertEquals("It broke.", SharedFiles.partialFailure("It broke.", 0, 3, "b.pdf"))
+        assertEquals("1 of 3 files went; b.pdf did not: It broke. Send again for the rest.", SharedFiles.partialFailure("It broke.", 1, 3, "b.pdf"))
+    }
+}

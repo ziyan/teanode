@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The expanded notification of a question with four choices, or of the evening question's five moods: Android shows three buttons beside a notification, so these are drawn in a row of their own. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="2dp"
+    android:paddingBottom="4dp">
+
+    <TextView
+        android:id="@+id/notification_choices_title"
+        style="@android:style/TextAppearance.Material.Notification.Title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <TextView
+        android:id="@+id/notification_choices_body"
+        style="@android:style/TextAppearance.Material.Notification"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxLines="3"
+        android:ellipsize="end" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/notification_button_1"
+            style="@android:style/Widget.Material.Button.Borderless.Small"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:minWidth="0dp"
+            android:paddingHorizontal="2dp" />
+
+        <Button
+            android:id="@+id/notification_button_2"
+            style="@android:style/Widget.Material.Button.Borderless.Small"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:minWidth="0dp"
+            android:paddingHorizontal="2dp" />
+
+        <Button
+            android:id="@+id/notification_button_3"
+            style="@android:style/Widget.Material.Button.Borderless.Small"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:minWidth="0dp"
+            android:paddingHorizontal="2dp" />
+
+        <Button
+            android:id="@+id/notification_button_4"
+            style="@android:style/Widget.Material.Button.Borderless.Small"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:minWidth="0dp"
+            android:paddingHorizontal="2dp" />
+
+        <Button
+            android:id="@+id/notification_button_5"
+            style="@android:style/Widget.Material.Button.Borderless.Small"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:minWidth="0dp"
+            android:paddingHorizontal="2dp" />
+    </LinearLayout>
+</LinearLayout>

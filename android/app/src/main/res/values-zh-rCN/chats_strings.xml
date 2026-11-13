@@ -266,4 +266,21 @@
     <string name="chats_share_send_to">发送给 %1$s</string>
     <string name="chats_share_send_to_agent">发送给你的助手</string>
     <string name="chats_share_sent">已发送</string>
+    <string name="chats_save_as_recording">存为录音</string>
+    <string name="chats_ask_about_this">向助手询问此项</string>
+    <string name="chats_share_to_agent">发给你的助手</string>
+    <string name="chats_share_as_tax">作为税务文件读取</string>
+    <string name="chats_share_as_statements">作为对账单导入</string>
+    <string name="chats_share_as_recording">存为录音</string>
+    <string name="chats_share_read">阅读</string>
+    <string name="chats_share_import">导入</string>
+    <string name="chats_share_save_recording">保存录音</string>
+    <string name="chats_share_tax_read_one">正在读取 1 份税务文件，读取后会显示在“财务”的“税费”中。</string>
+    <string name="chats_share_tax_read_several">正在读取 %1$d 份税务文件，读取后会显示在“财务”的“税费”中。</string>
+    <string name="chats_share_left_out_tax">不是 PDF 或图片的文件已略过。</string>
+    <string name="chats_share_left_out_statements">不是 OFX 对账单的文件已略过。</string>
+    <string name="chats_share_statement_summary">新增 %1$d 笔，更新 %2$d 笔，未变 %3$d 笔</string>
+    <string name="chats_share_tax_detail">每个 PDF 或图片会单独作为工资单、W-2、1099 或 1098 读取，服务器不会保存其中的文字。备注不会一起发送。</string>
+    <string name="chats_share_statements_detail">每个 OFX、QFX 或 QBO 文件都会导入你的账户；重复导入的交易只保留一笔。备注不会一起发送。</string>
+    <string name="chats_share_recording_detail">文件会先发给你的助手，然后打开“录音”，用它制作录音。</string>
 </resources>

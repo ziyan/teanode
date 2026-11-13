@@ -47,7 +47,7 @@ part may replace it; `CodingQuestion` is defined here because the transcript rea
 | `ConversationModel.swift` | `ConversationModel.kt`, `ChatsEnvironment.kt` (the parts of `AppModel` conversations read) | done, minus calls (below) |
 | `ConversationView.swift` | `ConversationScreen.kt`, `Bubbles.kt`, `Lines.kt`, `Cards.kt`, `Composer.kt`, `MarkdownView.kt` | done, minus calls and the Live Activity |
 | `ChatViews.swift` | `ChatSheets.kt`, `Lines.kt` (avatars, read marks, typing line, frame), `Composer.kt` (mention menu) | done |
-| `MediaViews.swift` | `Media.kt` | partly: no Quick Look, no photo viewer (photos), no "Save as recording" (recordings) |
+| `MediaViews.swift` | `Media.kt` | done: pictures open a zoomable full-screen viewer (photos has no viewer for a URL or single-photo read), audio and video have "Save as recording" (recordings import route); no Quick Look (files open in the system's viewer) |
 | `LinkViews.swift`, `LinkPreviewDemo.swift` | `LinkCards.kt`, `ChatsDemo.kt` | done |
 | `VoiceMessageRecorder.swift`, `VoiceMessageViews.swift` | `VoiceMessages.kt`, `Bubbles.kt`, `Composer.kt` | done (not run on a phone) |
 | `Dictation.swift` | `Dictation.kt` (AudioRecord to the same voice socket) | done (not run on a phone) |
@@ -57,7 +57,7 @@ part may replace it; `CodingQuestion` is defined here because the transcript rea
 | `TurnActivities.swift` | not ported: a Live Activity; the ongoing notification for a running turn is calls-notifications' | not ported |
 | `InMemoryViews.swift` | not ported: the knowledge page chips belong to the knowledge part | not ported |
 | `WeekdayChecklist.swift` | not ported: used by the calendar's repeat screen only | not ported |
-| `ios/TeaNodeShare` | `ShareReceiverActivity.kt` (text, links, pictures and files to the main conversation) | partly: no tax documents, statements or recordings destinations (finance, recordings) |
+| `ios/TeaNodeShare` | `ShareReceiverActivity.kt` (text, links, pictures and files to the main conversation) | done: destinations agent, tax documents, statements and recording (the file is handed to the agent and Recordings opens its import screen) |
 
 ### Screens and states
 
@@ -89,8 +89,7 @@ part may replace it; `CodingQuestion` is defined here because the transcript rea
 - Siri, App Intents, Live Activities: no Android equivalent here; notifications are calls-notifications'.
 - The badge on the bar while Chats is not open: it is set when Chats reads (on opening and every 30 s while it is open);
   keeping it fresh elsewhere needs the push of calls-notifications.
-- The server knows the turn's surface as "ios" and "ios_voice" only; the app sends those (`Surface`) until the server
-  has an Android surface.
+- The turn surface is "android" and "android_voice" (`internal/agent/surface.go`).
 
 ## Demo ids
 
@@ -102,3 +101,11 @@ chat), `demo-group` (a group with agents). Open one with
 
 `AndroidManifest.xml` (microphone, location permissions; the file provider; the share activity) and
 `res/xml/chat_file_paths.xml`, `res/values/chats_themes.xml`. Nothing else outside the part's own packages and files.
+
+## Round 2
+
+- `ChatsHooks.askAbout(navigator, reference)`: opens the main conversation with a reference strip (used by finance's
+  transaction detail, "Ask the agent about this"). The reference is `AgentReference.transaction/mail/knowledgePage/...`.
+- Terminal text: one parser, `com.teanode.kit.chats.terminalRuns`; coding uses it.
+- Server: surfaces `android` and `android_voice` (`internal/agent/surface.go`, `ask.go`), with Go tests.
+- The chats list's rows share a leading column of one width, so titles line up with a group's overlapped pictures.

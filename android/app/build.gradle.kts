@@ -93,15 +93,33 @@ dependencies {
     implementation(libs.androidx.camera.view)
     implementation(libs.zxing.core)
     implementation(libs.kotlinx.coroutines.android)
+    // Location and Health: the fused location provider and geofences, Health Connect, an API-key-free map.
+    implementation(libs.play.services.location)
+    implementation(libs.health.connect.client)
+    implementation(libs.osmdroid.android)
+
+    implementation(libs.androidx.core)
+
+    // Push and calls. Firebase Messaging is used only when the Firebase project's config file is there (see below); without
+    // it the library is inert and the code never asks it for anything.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
+    implementation(libs.stream.webrtc)
+    implementation(libs.glance.appwidget)
+    implementation(libs.glance.material3)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.exifinterface)
     implementation(libs.androidx.credentials)
+    // CameraX and WorkManager both hand out ListenableFuture; this keeps the one real class on the classpath.
+    implementation(libs.guava)
 
     debugImplementation(libs.compose.ui.test.manifest)
 
     testImplementation(libs.junit.jupiter)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     // Screenshot tests run on the JVM under Robolectric, which speaks JUnit 4; Roborazzi draws the pictures.
     testImplementation(libs.robolectric)

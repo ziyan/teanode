@@ -7,10 +7,7 @@ import com.teanode.app.shell.AppNavigator
 import com.teanode.app.shell.Routes
 import com.teanode.kit.AppSection
 
-/**
- * The routes of Ideas. Register every screen of this part here, with `Routes.child(AppSection.Ideas, "...")`
- * names, and open one from a screen with `LocalAppNavigator.current.navigate(route)`.
- */
+/** The routes of Ideas: its one screen. */
 @Suppress("UNUSED_PARAMETER")
 fun NavGraphBuilder.ideasRoutes(navigator: AppNavigator) {
     composable(Routes.home(AppSection.Ideas), deepLinks = Routes.deepLinks(Routes.home(AppSection.Ideas))) {

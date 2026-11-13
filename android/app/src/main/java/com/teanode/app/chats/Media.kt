@@ -11,6 +11,7 @@ import android.webkit.WebViewClient
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Share
@@ -73,7 +75,12 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import com.teanode.app.R
+import com.teanode.app.session.LocalAppSession
 import com.teanode.app.session.LocalConnection
+import com.teanode.app.shell.LocalAppNavigator
+import com.teanode.app.shell.Routes
+import com.teanode.kit.AppSection
+import androidx.compose.runtime.collectAsState
 import com.teanode.app.session.LocalConnectionOrNull
 import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.app.ui.components.openWebPage
@@ -98,6 +105,17 @@ fun byteCountText(size: Int): String = when {
     size >= 1_000_000 -> "%.1f MB".format(size / 1_000_000.0)
     size >= 1_000 -> "%.0f KB".format(size / 1_000.0)
     else -> "$size B"
+}
+
+/** The route of the recordings part that saves a chat's audio or video attachment as a recording. */
+fun recordingImportRoute(attachmentId: String, name: String, contentType: String, size: Int): String =
+    Routes.child(AppSection.Recordings, "import/${Uri.encode(attachmentId)}?name=${Uri.encode(name)}&type=${Uri.encode(contentType)}&size=$size")
+
+/** Whether a file can be saved as a recording, and the person has recordings. */
+@Composable
+fun canBeSavedAsRecording(contentType: String): Boolean {
+    val facts by LocalAppSession.current.facts.collectAsState()
+    return (contentType.startsWith("audio/") || contentType.startsWith("video/")) && facts.isAvailable(AppSection.Recordings)
 }
 
 /** Writes a file the server keeps into the cache and hands it to another app, which is what Share does. */
@@ -177,6 +195,13 @@ fun PictureLightbox(path: String, name: String, sharePath: String, onClose: () -
                     picture, contentDescription = name, contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
                         .pointerInput(Unit) {
+                            detectTapGestures(onDoubleTap = {
+                                scale = if (scale > 1f) 1f else 3f
+                                offsetX = 0f
+                                offsetY = 0f
+                            })
+                        }
+                        .pointerInput(Unit) {
                             detectTransformGestures { _, pan, zoom, _ ->
                                 scale = (scale * zoom).coerceIn(1f, 6f)
                                 if (scale > 1f) {
@@ -238,12 +263,20 @@ fun AttachmentView(attachment: AgentAttachment, modifier: Modifier = Modifier) {
     } else if (attachment.contentType.startsWith("image/")) {
         RemotePicture(path, attachment.name, modifier.widthIn(max = 200.dp), maxHeightDp = 160)
     } else {
-        Chip(
-            Icons.Outlined.AttachFile, "${attachment.name} · ${byteCountText(attachment.size)}",
-            modifier.clickable {
-                if (connection != null) scope.launch { runCatching { openServerFile(context, connection, attachment.id) }.onFailure { failure -> snackbar.showError(failure) } }
-            },
-        )
+        val navigator = LocalAppNavigator.current
+        val canSave = canBeSavedAsRecording(attachment.contentType)
+        var isMenuOpen by remember { mutableStateOf(false) }
+        val open = { if (connection != null) scope.launch { runCatching { openServerFile(context, connection, attachment.id) }.onFailure { failure -> snackbar.showError(failure) } } }
+        Box {
+            Chip(Icons.Outlined.AttachFile, "${attachment.name} · ${byteCountText(attachment.size)}", modifier.clickable { if (canSave) isMenuOpen = true else open() })
+            DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
+                DropdownMenuItem(text = { Text(stringResource(R.string.chats_open)) }, leadingIcon = { Icon(Icons.Outlined.OpenInNew, null) }, onClick = { isMenuOpen = false; open() })
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.chats_save_as_recording)) }, leadingIcon = { Icon(Icons.Outlined.GraphicEq, null) },
+                    onClick = { isMenuOpen = false; navigator.navigate(recordingImportRoute(attachment.id, attachment.name, attachment.contentType, attachment.size)) },
+                )
+            }
+        }
     }
 }
 
@@ -270,6 +303,8 @@ fun FileCard(file: AgentFile, modifier: Modifier = Modifier) {
     val snackbar = LocalSnackbar.current
     var isMenuOpen by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
+    val navigator = LocalAppNavigator.current
+    val canSaveAsRecording = canBeSavedAsRecording(file.contentType)
     CardSurface(modifier = modifier.widthIn(max = 420.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -299,6 +334,15 @@ fun FileCard(file: AgentFile, modifier: Modifier = Modifier) {
                                 scope.launch { runCatching { shareServerFile(context, connection, file.path, file.name, file.contentType) }.onFailure { failure -> snackbar.showError(failure) } }
                             },
                         )
+                        if (canSaveAsRecording) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.chats_save_as_recording)) }, leadingIcon = { Icon(Icons.Outlined.GraphicEq, null) },
+                                onClick = {
+                                    isMenuOpen = false
+                                    navigator.navigate(recordingImportRoute(file.attachmentId, file.name, file.contentType, file.size))
+                                },
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.chats_copy_link)) }, leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
                             onClick = {

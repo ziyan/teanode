@@ -2,7 +2,9 @@ package com.teanode.app.chats
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -178,7 +180,7 @@ fun ConversationsList(onChoose: (AgentConversation?) -> Unit) {
         },
         floatingActionButton = {
             if (environment.canChat || environment.isAgentOn) {
-                androidx.compose.foundation.layout.Box {
+                Box {
                     FloatingActionButton(onClick = {
                         if (environment.canChat) isNewMenuOpen = true else scope.launch { runCatching { connection.startConversation(null) }.onSuccess { started -> onChoose(started) }.onFailure { failure -> report(failure) } }
                     }) { Icon(Icons.Outlined.AddComment, contentDescription = stringResource(R.string.chats_new_conversation)) }
@@ -224,7 +226,7 @@ fun ConversationsList(onChoose: (AgentConversation?) -> Unit) {
                                 item(key = "main") {
                                     val main = conversations.firstOrNull { conversation -> conversation.isMain }
                                     TeaNodeRow(
-                                        headline = stringResource(R.string.chats_main_chat), leadingIcon = Icons.Outlined.ChatBubbleOutline, onClick = { onChoose(null) },
+                                        headline = stringResource(R.string.chats_main_chat), leading = { Box(Modifier.width(56.dp)) { Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null) } }, onClick = { onChoose(null) },
                                         supporting = if (main != null && waitingByConversation[main.id] != null) stringResource(R.string.chats_waiting_for_you) else null,
                                     )
                                 }
@@ -352,7 +354,7 @@ private fun ConversationRow(
                 )
             }
             if (unreadCount > 0) UnreadBadge(unreadCount)
-            androidx.compose.foundation.layout.Box {
+            Box {
                 IconButton(onClick = { isMenuOpen = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.chats_conversation_options, name)) }
                 DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
                     if (chat != null) {
@@ -397,7 +399,7 @@ private fun ConversationRow(
     if (chat != null) {
         TeaNodeRow(
             headline = name, onClick = { onChoose(conversation) }, supporting = lastAt, isHeadlineBold = unreadCount > 0,
-            leading = { ChatAvatars(chat, environment.ownUserId, 36) }, trailing = trailing,
+            leading = { Box(Modifier.width(56.dp)) { ChatAvatars(chat, environment.ownUserId, 36) } }, trailing = trailing,
         )
     } else {
         val waiting = waitingByConversation[conversation.id] != null
@@ -405,7 +407,7 @@ private fun ConversationRow(
         TeaNodeRow(
             headline = name, onClick = { onChoose(if (conversation.isMain) null else conversation) },
             supporting = listOfNotNull(if (waiting) stringResource(R.string.chats_waiting_for_you) else null, summary.ifEmpty { null }, lastAt).joinToString("\n").ifEmpty { null },
-            supportingMaxLines = 3, leadingIcon = Icons.Outlined.ChatBubbleOutline, trailing = trailing,
+            supportingMaxLines = 3, leading = { Box(Modifier.width(56.dp)) { Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null) } }, trailing = trailing,
         )
     }
 }
