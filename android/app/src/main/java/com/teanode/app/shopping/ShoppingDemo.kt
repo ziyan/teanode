@@ -1,6 +1,7 @@
 package com.teanode.app.shopping
 
 import com.teanode.app.demo.DemoAnswerer
+import com.teanode.app.demo.unlessAsking
 import com.teanode.app.demo.graphQLField
 import com.teanode.app.demo.text
 
@@ -132,7 +133,7 @@ val shoppingDemoAnswerers: List<DemoAnswerer> = listOf(
     graphQLField("PreviewShoppingImport", ShoppingDemoData.IMPORT_PREVIEW),
     graphQLField("ListWatchedStores", "[]"),
     graphQLField("ListCirclePeople", ShoppingDemoData.PEOPLE),
-    graphQLField("ListCircles", ShoppingDemoData.CIRCLES),
+    graphQLField("ListCircles", ShoppingDemoData.CIRCLES).unlessAsking("pendingInvitations"),
     graphQLField("CheckShoppingItem") { variables ->
         val isChecked = variables.text("isChecked") == "true"
         ShoppingDemoData.itemById(variables.text("shoppingItemId").orEmpty()).json(if (isChecked) "in_cart" else "needed")

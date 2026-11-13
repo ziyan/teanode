@@ -57,6 +57,9 @@ fun graphQLField(fieldName: String, valueJson: (variables: JsonObject) -> String
 
 fun graphQLField(fieldName: String, valueJson: String): DemoAnswerer = graphQLField(fieldName) { _ -> valueJson }
 
+/** This answerer, except for a document that also asks for [word]: a fuller read of the same field belongs to a later answerer. */
+fun DemoAnswerer.unlessAsking(word: String): DemoAnswerer = DemoAnswerer { request -> if (request.document.contains(word)) null else answer(request) }
+
 /**
  * DemoTransport stands in for the server in demo mode, so a screen can be drawn and photographed without one. It
  * answers what the parts' demo answerers answer, and refuses the rest with a GraphQL error naming the document, so a

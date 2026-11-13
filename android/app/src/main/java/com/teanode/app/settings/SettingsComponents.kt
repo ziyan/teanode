@@ -1,6 +1,8 @@
 package com.teanode.app.settings
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -200,6 +202,9 @@ fun BarTextAction(label: String, onClick: () -> Unit, isEnabled: Boolean = true,
     }
 }
 
+/** Whether a form dialog is drawn in place of the screen instead of in a window of its own. Screenshot tests set it, since a picture of the screen leaves a window out. */
+val LocalDialogsInline = androidx.compose.runtime.staticCompositionLocalOf { false }
+
 /** A dialog with a form: a title, the fields, and a confirming button that stays off until the form can be sent. */
 @Composable
 fun FormDialog(
@@ -211,6 +216,24 @@ fun FormDialog(
     isWorking: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    if (LocalDialogsInline.current) {
+        androidx.compose.foundation.layout.Box(
+            Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f)).padding(24.dp),
+            contentAlignment = androidx.compose.ui.Alignment.Center,
+        ) {
+            androidx.compose.material3.Surface(shape = MaterialTheme.shapes.extraLarge, tonalElevation = 6.dp, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(title, style = MaterialTheme.typography.headlineSmall)
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { content() }
+                    androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+                        TextButton(onClick = onConfirm, enabled = isConfirmEnabled && !isWorking) { Text(confirmLabel) }
+                    }
+                }
+            }
+        }
+        return
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },

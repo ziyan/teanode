@@ -129,7 +129,7 @@ data class AgentSchedule(
     val lastRunAt: String? = null,
     val nextRunAt: String? = null,
     val conversationId: String? = null,
-    val mailConditions: List<JsonObject>? = null,
+    val mailConditions: List<ScheduleMailCondition>? = null,
 ) {
     val isDeliveredByMail: Boolean get() = deliver == "mail"
     val isTriggeredByMail: Boolean get() = !mailConditions.isNullOrEmpty()
@@ -302,7 +302,10 @@ suspend fun Connection.setDreamBootstrap(isBootstrapping: Boolean) {
 
 suspend fun Connection.agentSchedules(): List<AgentSchedule> = execute<ListAgentSchedulesAnswer>(AgentUpkeepDocuments.AGENT_SCHEDULES).ListAgentSchedules.filterNotNull()
 
-suspend fun Connection.saveAgentSchedule(scheduleId: String? = null, name: String? = null, cron: String? = null, prompt: String? = null, deliver: String? = null, isEnabled: Boolean? = null) {
+suspend fun Connection.saveAgentSchedule(
+    scheduleId: String? = null, name: String? = null, cron: String? = null, prompt: String? = null, deliver: String? = null, isEnabled: Boolean? = null,
+    mailConditions: List<ScheduleMailCondition>? = null,
+) {
     val variables = mutableMapOf<String, JsonElement>()
     scheduleId?.let { variables.putAll(variablesOf("scheduleId" to it)) }
     name?.let { variables.putAll(variablesOf("name" to it)) }
@@ -310,6 +313,7 @@ suspend fun Connection.saveAgentSchedule(scheduleId: String? = null, name: Strin
     prompt?.let { variables.putAll(variablesOf("prompt" to it)) }
     deliver?.let { variables.putAll(variablesOf("deliver" to it)) }
     isEnabled?.let { variables.putAll(variablesOf("enabled" to it)) }
+    mailConditions?.let { conditions -> variables["mailConditions"] = ScheduleMailTrigger.variables(conditions) }
     execute<JsonObject>(AgentUpkeepDocuments.SAVE_AGENT_SCHEDULE, variables)
 }
 
@@ -370,3 +374,122 @@ suspend fun Connection.stopBackgroundWork(workId: String) {
 
 suspend fun Connection.agentRuns(first: Int = 50, offset: Int = 0): AgentRunPage =
     execute<ListAgentRunsAnswer>(AgentUpkeepDocuments.AGENT_RUNS, variablesOf("first" to first, "offset" to offset)).ListAgentRuns
+
+/** Turns the morning brief on or off, at a time on some days (1 is Monday, 7 is Sunday); no days is the schedule's own. */
+suspend fun Connection.setDailyBrief(isEnabled: Boolean, time: String, days: List<Int>) {
+    val variables = mutableMapOf<String, JsonElement>("enabled" to kotlinx.serialization.json.JsonPrimitive(isEnabled), "at" to kotlinx.serialization.json.JsonPrimitive(time))
+    if (days.isNotEmpty()) variables["days"] = kotlinx.serialization.json.JsonArray(days.map { day -> kotlinx.serialization.json.JsonPrimitive(day) })
+    execute<JsonObject>(AgentUpkeepDocuments.SET_DAILY_BRIEF, variables)
+}
+
+/** Sends the brief now. */
+suspend fun Connection.runDailyBrief() {
+    execute<JsonObject>(AgentUpkeepDocuments.RUN_DAILY_BRIEF)
+}
+
+/** How well the agent answered the check questions from one place: its memory, the sources, or both. */
+@Serializable
+data class MemoryCheckScore(
+    val answerFrom: String,
+    val answeredCount: Int = 0,
+    val scorePercent: Double = 0.0,
+    val scorePercentWithoutFiledAfter: Double = 0.0,
+    val filedAfterCount: Int = 0,
+) {
+    companion object {
+        val answerSources = listOf("memory", "sources", "both")
+    }
+}
+
+/** One grading of the agent: when, how many questions, what it cost, and the scores. */
+@Serializable
+data class MemoryCheckRun(
+    val id: String,
+    val startedAt: String,
+    val finishedAt: String? = null,
+    val questionCount: Int = 0,
+    val cost: Double = 0.0,
+    val sourceScores: List<MemoryCheckScore> = emptyList(),
+) {
+    val isFinished: Boolean get() = finishedAt != null
+
+    /** The score from one place, when any question was answered from it. */
+    fun score(answerFrom: String): MemoryCheckScore? = sourceScores.firstOrNull { score -> score.answerFrom == answerFrom && score.answeredCount > 0 }
+
+    data class Point(val runId: String, val startedAt: String, val scorePercent: Double)
+
+    companion object {
+        /** The finished runs' scores from one place, oldest first. */
+        fun scoreHistory(runs: List<MemoryCheckRun>, answerFrom: String): List<Point> =
+            runs.filter { run -> run.isFinished }.mapNotNull { run -> run.score(answerFrom)?.let { score -> Point(run.id, run.startedAt, score.scorePercent) } }.sortedBy { point -> point.startedAt }
+
+        /** How many points the score moved from the first run to the last; null with fewer than two. */
+        fun scoreChangePoints(history: List<Point>): Int? {
+            if (history.size < 2) return null
+            return Math.round(history.last().scorePercent).toInt() - Math.round(history.first().scorePercent).toInt()
+        }
+    }
+}
+
+/** What the agent answered to one question in one run, from one place, and what the grader made of it. */
+@Serializable
+data class MemoryCheckAnswer(
+    val id: String,
+    val runId: String = "",
+    val questionId: String,
+    val answerFrom: String = "memory",
+    val answerVerdict: String,
+    val verdictReason: String = "",
+    val answerText: String = "",
+) {
+    val isMissedOrWrong: Boolean get() = listOf("missed", "wrong", "invented", "stale").contains(answerVerdict)
+    val isRight: Boolean get() = answerVerdict == "correct" || answerVerdict == "not_known"
+}
+
+/** What an edit of a check question changes; what is left null stays. */
+data class MemoryCheckQuestionChange(
+    val questionKind: String? = null, val questionText: String? = null, val expectedAnswer: String? = null, val outdatedAnswer: String? = null, val questionState: String? = null,
+) {
+    val isEmpty: Boolean get() = variables.isEmpty()
+
+    val variables: Map<String, JsonElement>
+        get() = buildMap {
+            questionKind?.let { put("questionKind", kotlinx.serialization.json.JsonPrimitive(it)) }
+            questionText?.let { put("questionText", kotlinx.serialization.json.JsonPrimitive(it)) }
+            expectedAnswer?.let { put("expectedAnswer", kotlinx.serialization.json.JsonPrimitive(it)) }
+            outdatedAnswer?.let { put("outdatedAnswer", kotlinx.serialization.json.JsonPrimitive(it)) }
+            questionState?.let { put("questionState", kotlinx.serialization.json.JsonPrimitive(it)) }
+        }
+
+    companion object {
+        /** Only what the edit changed from the question. */
+        fun between(question: MemoryCheckQuestion, edited: MemoryCheckQuestionChange): MemoryCheckQuestionChange = MemoryCheckQuestionChange(
+            edited.questionKind?.takeIf { kind -> kind != question.questionKind }, edited.questionText?.takeIf { text -> text != question.questionText },
+            edited.expectedAnswer?.takeIf { answer -> answer != question.expectedAnswer }, edited.outdatedAnswer?.takeIf { outdated -> outdated != (question.outdatedAnswer ?: "") },
+            edited.questionState?.takeIf { state -> state != question.questionState },
+        )
+    }
+}
+
+val MemoryCheckQuestion.isDropped: Boolean get() = questionState == "dropped"
+
+object MemoryCheckQuestions {
+    val questionKinds = listOf("direct", "paraphrase", "changed", "multihop", "abstain")
+    val questionStates = listOf("asked", "confirmed", "corrected", "unsure", "dropped")
+
+    fun visible(questions: List<MemoryCheckQuestion>, isShowingDropped: Boolean): List<MemoryCheckQuestion> = if (isShowingDropped) questions else questions.filter { question -> !question.isDropped }
+}
+
+@Serializable private class ListEvaluationRunsAnswer(val ListAgentEvaluationRuns: List<MemoryCheckRun?>)
+
+@Serializable private class ListEvaluationAnswersAnswer(val ListAgentEvaluationAnswers: List<MemoryCheckAnswer?>)
+
+suspend fun Connection.memoryCheckRuns(first: Int = 16): List<MemoryCheckRun> =
+    execute<ListEvaluationRunsAnswer>(AgentUpkeepDocuments.MEMORY_CHECK_RUNS, variablesOf("first" to first)).ListAgentEvaluationRuns.filterNotNull()
+
+suspend fun Connection.memoryCheckAnswers(runId: String): List<MemoryCheckAnswer> =
+    execute<ListEvaluationAnswersAnswer>(AgentUpkeepDocuments.MEMORY_CHECK_ANSWERS, variablesOf("runId" to runId)).ListAgentEvaluationAnswers.filterNotNull()
+
+suspend fun Connection.updateMemoryCheckQuestion(questionId: String, change: MemoryCheckQuestionChange) {
+    execute<JsonObject>(AgentUpkeepDocuments.UPDATE_MEMORY_CHECK_QUESTION, change.variables + variablesOf("questionId" to questionId))
+}

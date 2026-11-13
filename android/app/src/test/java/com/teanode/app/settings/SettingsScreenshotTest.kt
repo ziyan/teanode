@@ -1,10 +1,12 @@
 package com.teanode.app.settings
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import com.teanode.app.demo.DemoHost
 import com.teanode.app.screenshots.PHONE_QUALIFIERS
 import com.teanode.app.screenshots.WithFontScale
@@ -25,7 +27,7 @@ class SettingsScreenshotTest {
     @get:Rule val composeRule = createComposeRule()
 
     private fun shoot(name: String, appearance: AppearanceChoice = AppearanceChoice.Light, fontScale: Float = 1f, before: () -> Unit = {}, content: @Composable () -> Unit) {
-        composeRule.setContent { DemoHost(appearance = appearance) { WithFontScale(fontScale) { content() } } }
+        composeRule.setContent { DemoHost(appearance = appearance) { WithFontScale(fontScale) { CompositionLocalProvider(LocalDialogsInline provides true) { content() } } } }
         composeRule.mainClock.advanceTimeBy(500)
         composeRule.waitForIdle()
         before()
@@ -36,6 +38,8 @@ class SettingsScreenshotTest {
     @Test fun `home light`() = shoot("settings-home-light") { SettingsSection() }
     @Test fun `home dark`() = shoot("settings-home-dark", AppearanceChoice.Dark) { SettingsSection() }
     @Test fun `home largest text`() = shoot("settings-home-largest-text", fontScale = 2f) { SettingsSection() }
+
+    @Test fun `home notifications light`() = shoot("settings-home-notifications-light", before = { composeRule.onNode(androidx.compose.ui.test.hasScrollAction()).performScrollToNode(androidx.compose.ui.test.hasText("Notifications")) }) { SettingsSection() }
 
     @Test fun `profile light`() = shoot("settings-profile-light") { ProfileScreen(onBack = {}) }
     @Test fun `profile dark`() = shoot("settings-profile-dark", AppearanceChoice.Dark) { ProfileScreen(onBack = {}) }
@@ -59,7 +63,6 @@ class SettingsScreenshotTest {
     @Test fun `tokens light`() = shoot("settings-tokens-light") { TokensScreen(onBack = {}) }
     @Test fun `tokens dark`() = shoot("settings-tokens-dark", AppearanceChoice.Dark) { TokensScreen(onBack = {}) }
     @Test fun `tokens largest text`() = shoot("settings-tokens-largest-text", fontScale = 2f) { TokensScreen(onBack = {}) }
-    @Test fun `new token light`() = shoot("settings-tokens-new-light", before = { composeRule.mainClock.autoAdvance = false; composeRule.onNodeWithContentDescription("New token").performClick(); composeRule.mainClock.advanceTimeBy(500) }) { TokensScreen(onBack = {}) }
 
     @Test fun `apps light`() = shoot("settings-apps-light") { ConnectedAppsScreen(onBack = {}) }
     @Test fun `apps dark`() = shoot("settings-apps-dark", AppearanceChoice.Dark) { ConnectedAppsScreen(onBack = {}) }
@@ -130,4 +133,23 @@ class SettingsScreenshotTest {
 
     @Test fun `agents admin light`() = shoot("settings-agents-admin-light") { AgentAdminScreen(onBack = {}) }
     @Test fun `agents admin dark`() = shoot("settings-agents-admin-dark", AppearanceChoice.Dark) { AgentAdminScreen(onBack = {}) }
+
+    private fun tap(description: String) = { composeRule.onNodeWithContentDescription(description).performClick(); Unit }
+
+    @Test fun `server about light`() = shoot("settings-server-about-light") { ServerSettingsScreen(onBack = {}) }
+    @Test fun `server about dark`() = shoot("settings-server-about-dark", AppearanceChoice.Dark) { ServerSettingsScreen(onBack = {}) }
+    @Test fun `server storage light`() = shoot("settings-server-mail-light", before = { composeRule.onNodeWithText("Mail").performClick() }) { ServerSettingsScreen(onBack = {}) }
+    @Test fun `server sending dark`() = shoot("settings-server-sending-dark", AppearanceChoice.Dark, before = { composeRule.onNodeWithText("Sending").performClick() }) { ServerSettingsScreen(onBack = {}) }
+    @Test fun `usage light`() = shoot("settings-usage-light") { AgentUsageScreen(onBack = {}) }
+    @Test fun `usage dark`() = shoot("settings-usage-dark", AppearanceChoice.Dark) { AgentUsageScreen(onBack = {}) }
+    @Test fun `usage largest text`() = shoot("settings-usage-largest-text", fontScale = 2f) { AgentUsageScreen(onBack = {}) }
+
+    @Test fun `token dialog light`() = shoot("settings-dialog-token-new-light", before = tap("New token")) { TokensScreen(onBack = {}) }
+    @Test fun `source editor light`() = shoot("settings-dialog-source-new-light", before = tap("Add a source")) { KnowledgeSourcesScreen(onBack = {}) }
+    @Test fun `schedule editor light`() = shoot("settings-dialog-schedule-new-light", before = tap("New schedule")) { SchedulesScreen(onBack = {}) }
+    @Test fun `schedule editor dark`() = shoot("settings-dialog-schedule-new-dark", AppearanceChoice.Dark, before = tap("New schedule")) { SchedulesScreen(onBack = {}) }
+    @Test fun `source editor typed light`() = shoot("settings-dialog-source-typed-light", before = { tap("Add a source")(); composeRule.onNodeWithText("Kind of source").performClick(); composeRule.waitForIdle(); composeRule.onNodeWithText("webfeed").performClick() }) { KnowledgeSourcesScreen(onBack = {}) }
+    @Test fun `circle new dialog light`() = shoot("settings-dialog-circle-new-light", before = tap("New circle")) { CirclesScreen(onBack = {}, onOpenCircle = {}, onOpenSharing = {}) }
+    @Test fun `skill lend dialog light`() = shoot("settings-dialog-skill-lend-light", before = tap("Lend a skill")) { SkillSharingScreen(onBack = {}) }
+    @Test fun `circles offer largest text`() = shoot("settings-dialog-circle-new-largest-text", fontScale = 2f, before = tap("New circle")) { CirclesScreen(onBack = {}, onOpenCircle = {}, onOpenSharing = {}) }
 }

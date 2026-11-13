@@ -1,6 +1,7 @@
 package com.teanode.app.location
 
 import com.teanode.app.demo.DemoAnswerer
+import com.teanode.app.demo.unlessAsking
 import com.teanode.app.demo.DemoRequest
 import com.teanode.app.demo.DemoResponse
 import com.teanode.app.demo.graphQLField
@@ -296,7 +297,7 @@ object LocationDemo {
         graphQLField("ListCirclePeople") { """[{"userId":"sam","username":"sam","name":"Sam Example","avatarUrl":null,"avatarColorIndex":3},{"userId":"alex","username":"alex","name":"Alex Sample","avatarUrl":null,"avatarColorIndex":7}]""" },
         DemoAnswerer { request ->
             if (Regex("""\bListCircles\b\s*[({]""").containsMatchIn(request.document)) DemoResponse("""{"data":{"ListCircles":${circles(request)}}}""") else null
-        },
+        }.unlessAsking("pendingInvitations"),
         graphQLField("SavePlace") { variables ->
             val place = variables.text("placeId")?.let { id -> placeById(id) } ?: places[0]
             val label = variables.text("placeLabel") ?: place.label

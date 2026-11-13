@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.History
@@ -562,6 +563,8 @@ fun ManageScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             item { TeaNodeNavigationRow(stringResource(R.string.settings_audit_title), { onOpen(SettingsRoutes.MANAGE_AUDIT) }, leadingIcon = Icons.Outlined.History) }
         }
         if (operator.canOpenAgentAdmin) item { TeaNodeNavigationRow(stringResource(R.string.settings_agents_title), { onOpen(SettingsRoutes.MANAGE_AGENTS) }, leadingIcon = Icons.Outlined.Person) }
+        if (operator.canManageServer) item { TeaNodeNavigationRow(stringResource(R.string.settings_server_title), { onOpen(SettingsRoutes.MANAGE_SERVER) }, leadingIcon = Icons.Outlined.Dns) }
+        if (operator.canOpenAgentAdmin) item { TeaNodeNavigationRow(stringResource(R.string.settings_usage_title), { onOpen(SettingsRoutes.MANAGE_USAGE) }, leadingIcon = Icons.Outlined.History) }
         if (operator.canManageServer) item { TeaNodeNavigationRow(stringResource(R.string.settings_services_title), { onOpen(SettingsRoutes.MANAGE_SERVICES) }, leadingIcon = Icons.Outlined.ToggleOn) }
     }
 }

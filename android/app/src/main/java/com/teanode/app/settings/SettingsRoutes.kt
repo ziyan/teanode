@@ -34,6 +34,9 @@ object SettingsRoutes {
     val ACTIVITY = Routes.child(AppSection.Settings, "activity")
     val SKILLS = Routes.child(AppSection.Settings, "skill-sharing")
     val MANAGE_AGENTS = Routes.child(AppSection.Settings, "manage/agents")
+    val MEMBER_PHOTOS = Routes.child(AppSection.Settings, "member-photos/{userId}/{name}")
+    val MANAGE_SERVER = Routes.child(AppSection.Settings, "manage/server")
+    val MANAGE_USAGE = Routes.child(AppSection.Settings, "manage/usage")
     val MANAGE = Routes.child(AppSection.Settings, "manage")
     val APPS = Routes.child(AppSection.Settings, "apps")
     val SESSIONS = Routes.child(AppSection.Settings, "sessions")
@@ -41,6 +44,8 @@ object SettingsRoutes {
     fun circle(circleId: String): String = Routes.child(AppSection.Settings, "circles/$circleId")
 
     fun agentPart(part: String): String = Routes.child(AppSection.Settings, "agent/$part")
+
+    fun memberPhotos(userId: String, name: String): String = Routes.child(AppSection.Settings, "member-photos/${android.net.Uri.encode(userId)}/${android.net.Uri.encode(name)}")
 
     fun phone(phoneId: String): String = Routes.child(AppSection.Settings, "devices/phones/$phoneId")
 }

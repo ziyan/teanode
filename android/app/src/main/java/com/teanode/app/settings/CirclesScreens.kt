@@ -7,6 +7,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
+import com.teanode.kit.photos.photos
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
@@ -387,7 +390,7 @@ private fun CircleFormDialog(directory: CircleDirectory, editedCircle: PeopleCir
 
 /** One circle: who is in it, and for an admin the form to invite somebody, the invitations still waiting, renaming and deleting. */
 @Composable
-fun CircleDetailScreen(circleId: String, onBack: () -> Unit) {
+fun CircleDetailScreen(circleId: String, onBack: () -> Unit, canOpenPhotos: Boolean = false, onOpenMemberPhotos: (String, String) -> Unit = { _, _ -> }) {
     val directory = rememberCircleDirectory()
     val connection = LocalConnection.current
     val circle = directory.circle(circleId)
@@ -429,6 +432,9 @@ fun CircleDetailScreen(circleId: String, onBack: () -> Unit) {
                             IconButton(onClick = { openMenuUserId = member.userId }) { Icon(Icons.Outlined.Edit, stringResource(R.string.common_more)) }
                             DropdownMenu(expanded = openMenuUserId == member.userId, onDismissRequest = { openMenuUserId = null }) {
                                 DropdownMenuItem(text = { Text(stringResource(R.string.settings_circles_relationship)) }, onClick = { openMenuUserId = null; relationshipMember = member })
+                                if (member.isLinkedToContact && canOpenPhotos) {
+                                    DropdownMenuItem(text = { Text(stringResource(R.string.section_photos)) }, onClick = { openMenuUserId = null; onOpenMemberPhotos(member.userId, member.displayName) })
+                                }
                                 if (circle.isAdmin) {
                                     DropdownMenuItem(
                                         text = { Text(stringResource(if (member.isAdmin) R.string.settings_circles_make_member else R.string.settings_circles_make_admin)) },
@@ -606,5 +612,28 @@ private fun CircleBookAndAlbums(circle: PeopleCircle, directory: CircleDirectory
             onConfirm = { directory.act(albumMadeText, onDone = { isNamingAlbum = false; albums.refresh() }) { connection.createPhotoAlbum(albumTitle.trim(), circleId = circle.id) } },
             onDismiss = { isNamingAlbum = false },
         ) { FormField(albumTitle, { albumTitle = it }, stringResource(R.string.settings_circles_album_title)) }
+    }
+}
+
+/** The photos of a member the person linked to one of their contacts, which only the person knows of. */
+@Composable
+fun MemberPhotosScreen(userId: String, name: String, onBack: () -> Unit) {
+    val connection = LocalConnection.current
+    val loaded = com.teanode.app.ui.components.rememberLoad(userId) { connection.photos(com.teanode.kit.photos.PhotoCollection.Library, com.teanode.kit.photos.PhotoFilter(accountUserId = userId, accountName = name)) }
+    LoadedSettingsPage(
+        stringResource(R.string.settings_circles_member_photos, name), onBack, loaded, isEmpty = { list -> list.isEmpty() },
+        empty = { EmptyState(Icons.Outlined.Group, stringResource(R.string.settings_circles_member_photos_none)) },
+    ) { photos ->
+        item {
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            androidx.compose.foundation.layout.FlowRow(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                photos.forEach { photo ->
+                    val picture = com.teanode.app.ui.components.rememberServerPicture(photo.gridPreviewPath)
+                    androidx.compose.foundation.layout.Box(Modifier.size(88.dp).background(MaterialTheme.colorScheme.surfaceVariant)) {
+                        if (picture != null) androidx.compose.foundation.Image(picture, null, contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.size(88.dp))
+                    }
+                }
+            }
+        }
     }
 }

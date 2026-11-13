@@ -122,7 +122,8 @@ val knowledgeDemoAnswerers: List<DemoAnswerer> = listOf(
     graphQLField("ReadAgentDocument") {
         """{"documentId":"doc-1","title":"Garden notes","author":"Alex","source":"Notes","happenedAt":null,"text":"The beds by the shed get the afternoon sun; the north bed stays shaded until June.\n\nOrder the seed potatoes in February, and the lettuce in March.","total":4200,"next":140}"""
     },
-    graphQLField("ListAgentKnowledgeSources", """[{"id":"source-notes","name":"Notes"},{"id":"source-mail","name":"Mail"}]"""),
+    // Settings answers the fuller read of sources, which also asks for ListAgentSourceAttachments; this is only the narrow one.
+    narrowSourcesAnswerer("""[{"id":"source-notes","name":"Notes"},{"id":"source-mail","name":"Mail"}]"""),
     graphQLField("ListSharedAgentPages") {
         """[{"ownerUserId":"ada-id","ownerUsername":"ada","ownerName":"Ada Example","ownerAvatarUrl":null,"ownerAvatarColorIndex":2,"path":"people/a-grandparent","name":"A grandparent","nodeKind":"person","opening":"Lives by the sea.","isQuoteShared":true},
             {"ownerUserId":"ada-id","ownerUsername":"ada","ownerName":"Ada Example","ownerAvatarUrl":null,"ownerAvatarColorIndex":2,"path":"projects/garden","name":"","nodeKind":"project","opening":"","isQuoteShared":false},
@@ -158,3 +159,8 @@ val knowledgeDemoAnswerers: List<DemoAnswerer> = listOf(
             {"id":"card-3","name":null,"organization":"","emails":["noreply@example.com"],"phones":[],"hasPhoto":false,"addresses":[],"accountUserId":null}]"""
     },
 )
+
+private fun narrowSourcesAnswerer(valueJson: String): DemoAnswerer {
+    val sources = graphQLField("ListAgentKnowledgeSources", valueJson)
+    return DemoAnswerer { request -> if (request.document.contains("ListAgentSourceAttachments")) null else sources.answer(request) }
+}
