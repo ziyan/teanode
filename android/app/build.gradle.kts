@@ -93,10 +93,16 @@ dependencies {
     implementation(libs.androidx.camera.view)
     implementation(libs.zxing.core)
     implementation(libs.kotlinx.coroutines.android)
+    // Location and Health: the fused location provider and geofences, Health Connect, an API-key-free map.
+    implementation(libs.play.services.location)
+    implementation(libs.health.connect.client)
+    implementation(libs.osmdroid.android)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.exifinterface)
+    // CameraX and WorkManager both hand out ListenableFuture; this keeps the one real class on the classpath.
+    implementation(libs.guava)
 
     debugImplementation(libs.compose.ui.test.manifest)
 
