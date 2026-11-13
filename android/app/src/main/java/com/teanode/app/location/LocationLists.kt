@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -399,7 +400,7 @@ fun LocationPeopleCard(model: LocationModel, onOpenPeople: () -> Unit) {
             LocationOwnRow(model, isHighlightedWhenChosen = true)
             if (model.people.size > MOST_ROWS) {
                 HorizontalDivider()
-                Row(Modifier.fillMaxWidth().clickable(onClick = onOpenPeople).padding(horizontal = 16.dp).height(60.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().clickable(onClick = onOpenPeople).padding(horizontal = 16.dp).heightIn(min = 60.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.People, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.width(44.dp))
                     Text(pluralStringResource(R.plurals.location_people_count, model.people.size, model.people.size), modifier = Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.bodyLarge)
                     Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -441,7 +442,7 @@ fun LocationPeopleRowLabel(
     person: PersonLocation, nameText: String, whereText: String, distanceText: String?, isSelected: Boolean, isHighlightedWhenChosen: Boolean, onClick: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().height(60.dp)
+        Modifier.fillMaxWidth().heightIn(min = 60.dp)
             .background(if (isSelected && isHighlightedWhenChosen) MaterialTheme.colorScheme.surfaceContainerHighest else androidx.compose.ui.graphics.Color.Transparent)
             .clickable(onClick = onClick).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
