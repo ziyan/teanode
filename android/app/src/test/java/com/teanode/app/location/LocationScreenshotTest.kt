@@ -38,6 +38,7 @@ class LocationScreenshotTest {
 
     @After
     fun resetScenario() {
+        LocationDemo.deactivate()
         LocationDemo.scenario = LocationDemo.Scenario.Everyday
     }
 
@@ -51,6 +52,7 @@ class LocationScreenshotTest {
         content: @Composable () -> Unit,
     ) {
         LocationDemo.scenario = scenario
+        LocationDemo.activate()
         composeRule.setContent {
             DemoHost(appearance = look.appearance) {
                 CompositionLocalProvider(LocalLocationRecording provides recording) { WithFontScale(fontScale, content) }
