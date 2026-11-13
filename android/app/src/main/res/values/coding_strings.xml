@@ -96,6 +96,8 @@
     <string name="coding_preview_shown_heading">What the session is shown</string>
     <string name="coding_preview_nothing">Nothing: your agent knows no checkout holding that directory, or the question recalls nothing from its project.</string>
     <string name="coding_close">Close</string>
+    <string name="coding_paste_picture">Paste picture</string>
+    <string name="coding_camera">Camera</string>
     <plurals name="coding_agents_count">
         <item quantity="one">%1$d agent</item>
         <item quantity="other">%1$d agents</item>

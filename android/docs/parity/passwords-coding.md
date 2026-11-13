@@ -115,3 +115,24 @@ hooks (before and after installing), what a session sees, the open screen, the d
 The fingerprint and Keystore, autofill, `FLAG_SECURE`, the clipboard expiry, the system picker, the screen-off receiver,
 the real server (only the kit's stand-in), and push. The strings are in English, Chinese and Japanese from the iPhone app's
 catalog (the words that name the iPhone say phone here); the autofill words are new.
+
+## Second round
+
+Done: the computer shows in the session title bar; the coding composer adds a camera picture (through the chat's file
+provider) and a pasted picture, besides photos and files; autofill fills a one-time code field (hints `smsOTPCode`,
+`oneTimeCode`) with the code of the moment, and the datasets it returns are the list the system shows to choose from.
+Looked at 12 more pictures (largest text, dark, filter menu, versions, deleted, locked) and made the question card's
+heading wrap to two lines.
+
+Not done, and why:
+- Sharing (the share screen, `setShares`, waiting shares, `finishSharing`, key change notices, the Share row, the shared
+  stand-in server and the access, rekey and answer-check tests): a port of about 1,300 lines of session logic and its
+  tests, which are the security core (a key sealed for the wrong person is a leak). It needs its own round and its own
+  review; it was not started rather than half done.
+- The sealed autofill summary: the iPhone needs it because its extension runs under a memory limit and must not open the
+  whole copy. The Android service runs in the app's process and opens only the logins it fills, so the summary has no
+  job here. Porting it would add a file and its tests for nothing.
+- Passkeys through the Credential Manager provider: needs `androidx.credentials` (a new dependency in the shared build
+  files, Android 14 `CredentialProviderService`) and cannot be run without a phone; the authenticator in the kit
+  (`PasswordsPasskey`) is ready for it.
+- About 40 pictures are still unopened.

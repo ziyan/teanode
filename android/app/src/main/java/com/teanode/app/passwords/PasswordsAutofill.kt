@@ -39,6 +39,8 @@ import kotlinx.coroutines.launch
 internal class AutofillFields(
     val userNameIds: List<AutofillId>,
     val passwordIds: List<AutofillId>,
+    /** The fields a one-time code goes in. */
+    val oneTimeCodeIds: List<AutofillId>,
     /** The web address of the page when a browser says it (`https://example.com`), else null. */
     val webAddress: String?,
     val packageName: String?,
@@ -49,6 +51,7 @@ internal object AutofillStructureParser {
     fun parse(structure: AssistStructure): AutofillFields {
         val userNameIds = mutableListOf<AutofillId>()
         val passwordIds = mutableListOf<AutofillId>()
+        val oneTimeCodeIds = mutableListOf<AutofillId>()
         var webDomain: String? = null
         var webScheme: String? = null
         fun visit(node: AssistStructure.ViewNode) {
@@ -64,14 +67,15 @@ internal object AutofillStructureParser {
                 val isUserName = hints.contains(View.AUTOFILL_HINT_USERNAME) || hints.contains(View.AUTOFILL_HINT_EMAIL_ADDRESS) ||
                     (inputType and InputType.TYPE_MASK_VARIATION == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS) ||
                     (node.htmlInfo?.attributes?.any { attribute -> attribute.first == "autocomplete" && attribute.second.contains("username") } == true)
-                if (isPassword) passwordIds.add(id) else if (isUserName) userNameIds.add(id)
+                val isOneTimeCode = hints.any { hint -> hint.equals("smsOTPCode", true) || hint.equals("oneTimeCode", true) || hint.equals("one-time-code", true) }
+                if (isOneTimeCode) oneTimeCodeIds.add(id) else if (isPassword) passwordIds.add(id) else if (isUserName) userNameIds.add(id)
             }
             node.webDomain?.takeIf { domain -> domain.isNotEmpty() }?.let { domain -> webDomain = domain; webScheme = node.webScheme }
             for (index in 0 until node.childCount) visit(node.getChildAt(index))
         }
         for (index in 0 until structure.windowNodeCount) visit(structure.getWindowNodeAt(index).rootViewNode)
         val address = webDomain?.let { domain -> "${webScheme ?: "https"}://$domain" }
-        return AutofillFields(userNameIds, passwordIds, address, structure.activityComponent?.packageName)
+        return AutofillFields(userNameIds, passwordIds, oneTimeCodeIds, address, structure.activityComponent?.packageName)
     }
 }
 
@@ -111,7 +115,7 @@ class PasswordsAutofillService : AutofillService() {
         val structure = request.fillContexts.lastOrNull()?.structure
         val fields = structure?.let { assist -> AutofillStructureParser.parse(assist) }
         // Only a page with a password field, and only a web page: a login is for a site.
-        if (fields == null || fields.passwordIds.isEmpty() || fields.webAddress == null || PasswordsAutofillPointer.read(this) == null) {
+        if (fields == null || (fields.passwordIds.isEmpty() && fields.oneTimeCodeIds.isEmpty()) || fields.webAddress == null || PasswordsAutofillPointer.read(this) == null) {
             callback.onSuccess(null)
             return
         }
@@ -119,13 +123,14 @@ class PasswordsAutofillService : AutofillService() {
             .putExtra(PasswordsAutofillActivity.EXTRA_WEB_ADDRESS, fields.webAddress)
             .putParcelableArrayListExtra(PasswordsAutofillActivity.EXTRA_USER_NAME_IDS, ArrayList(fields.userNameIds))
             .putParcelableArrayListExtra(PasswordsAutofillActivity.EXTRA_PASSWORD_IDS, ArrayList(fields.passwordIds))
+            .putParcelableArrayListExtra(PasswordsAutofillActivity.EXTRA_ONE_TIME_CODE_IDS, ArrayList(fields.oneTimeCodeIds))
         val pending = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_MUTABLE)
         val presentation = RemoteViews(packageName, R.layout.passwords_autofill_item).apply {
             setTextViewText(R.id.passwords_autofill_title, getString(R.string.passwords_title))
             setTextViewText(R.id.passwords_autofill_detail, getString(R.string.passwords_autofill_locked_entry))
         }
         val response = FillResponse.Builder()
-            .setAuthentication((fields.userNameIds + fields.passwordIds).toTypedArray(), pending.intentSender, presentation)
+            .setAuthentication((fields.userNameIds + fields.passwordIds + fields.oneTimeCodeIds).toTypedArray(), pending.intentSender, presentation)
             .build()
         callback.onSuccess(response)
     }
@@ -146,6 +151,7 @@ class PasswordsAutofillActivity : androidx.activity.ComponentActivity() {
         val webAddress = intent.getStringExtra(EXTRA_WEB_ADDRESS)
         val userNameIds = intent.getParcelableArrayListExtra<AutofillId>(EXTRA_USER_NAME_IDS) ?: arrayListOf()
         val passwordIds = intent.getParcelableArrayListExtra<AutofillId>(EXTRA_PASSWORD_IDS) ?: arrayListOf()
+        val oneTimeCodeIds = intent.getParcelableArrayListExtra<AutofillId>(EXTRA_ONE_TIME_CODE_IDS) ?: arrayListOf()
         val signInAccountKey = PasswordsAutofillPointer.read(this)
         if (signInAccountKey == null || webAddress == null) {
             finish()
@@ -181,6 +187,13 @@ class PasswordsAutofillActivity : androidx.activity.ComponentActivity() {
                     }
                     for (id in userNameIds) dataset.setValue(id, AutofillValue.forText(fields.userName), presentation)
                     for (id in passwordIds) dataset.setValue(id, AutofillValue.forText(fields.password), presentation)
+                    // The code of the moment, when the login has one and the page asks for it.
+                    val codeSettings = runCatching { com.teanode.kit.passwords.PasswordsOneTimeCode.parse(fields.oneTimeCodeUri) }.getOrNull()
+                    if (codeSettings != null) {
+                        val code = com.teanode.kit.passwords.PasswordsOneTimeCode.code(codeSettings, System.currentTimeMillis() / 1000)
+                        for (id in oneTimeCodeIds) dataset.setValue(id, AutofillValue.forText(code), presentation)
+                    }
+                    if (userNameIds.isEmpty() && passwordIds.isEmpty() && (codeSettings == null || oneTimeCodeIds.isEmpty())) continue
                     response.addDataset(dataset.build())
                 }
                 if (logins.isEmpty()) {
@@ -199,6 +212,7 @@ class PasswordsAutofillActivity : androidx.activity.ComponentActivity() {
         const val EXTRA_WEB_ADDRESS = "com.teanode.app.extra.AUTOFILL_WEB_ADDRESS"
         const val EXTRA_USER_NAME_IDS = "com.teanode.app.extra.AUTOFILL_USER_NAME_IDS"
         const val EXTRA_PASSWORD_IDS = "com.teanode.app.extra.AUTOFILL_PASSWORD_IDS"
+        const val EXTRA_ONE_TIME_CODE_IDS = "com.teanode.app.extra.AUTOFILL_ONE_TIME_CODE_IDS"
         private const val MOST_LOGINS_OFFERED = 10
     }
 }
