@@ -169,7 +169,7 @@ class PasswordsCryptoTest {
         assertThrows<PasswordsCryptoException> { PasswordsCrypto.parseRecoveryKey("Ａ" + letters.drop(1)) }
         assertThrows<PasswordsCryptoException> { PasswordsCrypto.parseRecoveryKey("ß" + letters.drop(1)) }
         assertThrows<PasswordsCryptoException> { PasswordsCrypto.parseRecoveryKey(letters.take(4) + " " + letters.drop(4)) }
-        assertThrows<PasswordsCryptoException> { PasswordsCrypto.parseRecoveryKey(letters.take(4) + "–" + letters.drop(4)) }
+        assertThrows<PasswordsCryptoException> { PasswordsCrypto.parseRecoveryKey(letters.take(4) + "\u2013" + letters.drop(4)) }
     }
 
     @Test fun `a key pair has a 32 byte scalar and a 65 byte point`() {
