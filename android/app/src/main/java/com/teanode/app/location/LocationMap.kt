@@ -57,6 +57,16 @@ import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Polyline
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.res.stringResource
+import com.teanode.app.R
+import com.teanode.kit.location.LocationMapPinGrouping
+import com.teanode.kit.location.LocationMapPinPoint
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
@@ -159,6 +169,9 @@ private fun OpenStreetMap(
     val latestOnMapTap by rememberUpdatedState(onMapTap)
     val isDark = MaterialTheme.colorScheme.background.let { color -> (0.299f * color.red + 0.587f * color.green + 0.114f * color.blue) < 0.5f }
     val accent = MaterialTheme.colorScheme.primary
+    val latestPins by rememberUpdatedState(content.pins)
+    var chooserGroup by remember { mutableStateOf<List<MapPin>?>(null) }
+    val pinOverlays = remember { mutableListOf<Marker>() }
     val mapView = remember {
         Configuration.getInstance().apply {
             userAgentValue = context.packageName
@@ -173,6 +186,44 @@ private fun OpenStreetMap(
             controller.setZoom(15.0)
         }
     }
+    // Pictures that would cover each other at this zoom are drawn as one, so they are worked out again when the zoom changes.
+    val rebuildPins = remember(mapView) {
+        {
+            mapView.overlays.removeAll(pinOverlays.toSet())
+            pinOverlays.clear()
+            val pins = latestPins
+            val isPlaced = mapView.width > 0 && mapView.height > 0
+            val points = pins.map { pin ->
+                val pixels = if (isPlaced) mapView.projection.toPixels(GeoPoint(pin.coordinate.latitudeDegrees, pin.coordinate.longitudeDegrees), null) else null
+                LocationMapPinPoint(pin.id, (pixels?.x ?: 0) / density.density.toDouble(), (pixels?.y ?: 0) / density.density.toDouble())
+            }
+            val chosenId = pins.firstOrNull { pin -> pin.isChosen }?.id ?: NO_CHOSEN_PIN_ID
+            for (ids in LocationMapPinGrouping.groups(points, chosenId, isPlaced)) {
+                val group = ids.mapNotNull { id -> pins.firstOrNull { pin -> pin.id == id } }
+                val first = group.firstOrNull() ?: continue
+                val marker = Marker(mapView).apply {
+                    position = GeoPoint(first.coordinate.latitudeDegrees, first.coordinate.longitudeDegrees)
+                    title = group.joinToString { pin -> pin.name }
+                    icon = BitmapDrawable(mapView.resources, groupBitmap(group, isDark, density.density, accent.toArgb()))
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    setOnMarkerClickListener { _, _ -> if (group.size == 1) latestOnPinTap(first.id) else chooserGroup = group; true }
+                }
+                pinOverlays.add(marker)
+                mapView.overlays.add(marker)
+            }
+            mapView.invalidate()
+        }
+    }
+    val latestRebuildPins by rememberUpdatedState(rebuildPins)
+    DisposableEffect(mapView) {
+        val listener = object : org.osmdroid.events.MapListener {
+            override fun onScroll(event: org.osmdroid.events.ScrollEvent?): Boolean = false
+            override fun onZoom(event: org.osmdroid.events.ZoomEvent?): Boolean { latestRebuildPins(); return false }
+        }
+        mapView.addMapListener(listener)
+        onDispose { mapView.removeMapListener(listener) }
+    }
+    chooserGroup?.let { group -> PinGroupChooser(group, onChoose = { id -> chooserGroup = null; latestOnPinTap(id) }, onDismiss = { chooserGroup = null }) }
     DisposableEffect(mapView) {
         mapView.onResume()
         onDispose { mapView.onPause(); mapView.onDetach() }
@@ -230,37 +281,70 @@ private fun OpenStreetMap(
             content.pickedCoordinate?.let { picked ->
                 view.overlays.add(Marker(view).apply { position = GeoPoint(picked.latitudeDegrees, picked.longitudeDegrees); setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM) })
             }
-            for (pin in content.pins) {
-                view.overlays.add(
-                    Marker(view).apply {
-                        position = GeoPoint(pin.coordinate.latitudeDegrees, pin.coordinate.longitudeDegrees)
-                        title = pin.name
-                        icon = BitmapDrawable(view.resources, monogramBitmap(context, pin, isDark, density.density, accent.toArgb()))
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        setOnMarkerClickListener { _, _ -> latestOnPinTap(pin.id); true }
-                    },
-                )
-            }
+            pinOverlays.clear()
+            rebuildPins()
             view.invalidate()
         },
     )
 }
 
-/** A person's picture on the real map: their first letter on the color the server chose, ringed in the accent when chosen. */
-private fun monogramBitmap(@Suppress("UNUSED_PARAMETER") context: Context, pin: MapPin, isDark: Boolean, scale: Float, accent: Int): Bitmap {
-    val diameter = (36 * scale).toInt()
-    val bitmap = Bitmap.createBitmap(diameter, diameter, Bitmap.Config.ARGB_8888)
-    val canvas = AndroidCanvas(bitmap)
+/** A person's picture drawn at a left edge: their first letter on the color the server chose, ringed in the accent when chosen. */
+private fun drawMonogram(canvas: AndroidCanvas, pin: MapPin, left: Float, diameter: Int, isDark: Boolean, scale: Float, accent: Int) {
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    val centerX = left + diameter / 2f
     paint.color = (if (pin.isChosen) accent else android.graphics.Color.WHITE)
-    canvas.drawCircle(diameter / 2f, diameter / 2f, diameter / 2f, paint)
+    canvas.drawCircle(centerX, diameter / 2f, diameter / 2f, paint)
     paint.color = AvatarPalette.color(AvatarColor.index(pin.avatarColorIndex, pin.name), isDark).toArgb()
-    canvas.drawCircle(diameter / 2f, diameter / 2f, diameter / 2f - 3 * scale, paint)
+    canvas.drawCircle(centerX, diameter / 2f, diameter / 2f - 3 * scale, paint)
     paint.color = android.graphics.Color.WHITE
     paint.textSize = diameter * 0.46f
     paint.textAlign = Paint.Align.CENTER
-    canvas.drawText(Monogram.letter(pin.name), diameter / 2f, diameter / 2f - (paint.descent() + paint.ascent()) / 2, paint)
+    canvas.drawText(Monogram.letter(pin.name), centerX, diameter / 2f - (paint.descent() + paint.ascent()) / 2, paint)
+}
+
+/** A group's pictures overlapping, the first in front, and how many more as a count beside them. */
+private fun groupBitmap(group: List<MapPin>, isDark: Boolean, scale: Float, accent: Int): Bitmap {
+    val diameter = (36 * scale).toInt()
+    val shown = group.take(LocationMapPinGrouping.PICTURE_COUNT_MOST)
+    val moreCount = group.size - shown.size
+    val step = diameter / 2
+    val countWidth = if (moreCount > 0) (32 * scale).toInt() else 0
+    val bitmap = Bitmap.createBitmap(diameter + step * (shown.size - 1) + countWidth, diameter, Bitmap.Config.ARGB_8888)
+    val canvas = AndroidCanvas(bitmap)
+    // The last is drawn first, so the first is in front.
+    for (index in shown.indices.reversed()) drawMonogram(canvas, shown[index], (index * step).toFloat(), diameter, isDark, scale, accent)
+    if (moreCount > 0) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.color = if (isDark) android.graphics.Color.DKGRAY else android.graphics.Color.WHITE
+        val left = (diameter + step * (shown.size - 1)).toFloat()
+        canvas.drawRoundRect(left + 2 * scale, diameter / 2f - 13 * scale, left + countWidth - 2 * scale, diameter / 2f + 13 * scale, 13 * scale, 13 * scale, paint)
+        paint.color = if (isDark) android.graphics.Color.WHITE else android.graphics.Color.BLACK
+        paint.textSize = 13 * scale
+        paint.isFakeBoldText = true
+        paint.textAlign = Paint.Align.CENTER
+        canvas.drawText("+$moreCount", left + countWidth / 2f, diameter / 2f - (paint.descent() + paint.ascent()) / 2, paint)
+    }
     return bitmap
+}
+
+/** The pin that is never a person's, so that nobody is chosen. */
+private const val NO_CHOSEN_PIN_ID = "\u0000none"
+
+/** Lists who is in a group of pictures, to choose one, as the iPhone app's menu does. */
+@Composable
+private fun PinGroupChooser(group: List<MapPin>, onChoose: (String) -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.location_not_now)) } },
+        title = { Text(stringResource(R.string.location_who_is_here)) },
+        text = {
+            Column {
+                group.forEach { pin ->
+                    androidx.compose.material3.TextButton(onClick = { onChoose(pin.id) }) { Text((if (pin.isChosen) "\u2713 " else "") + pin.name.ifEmpty { stringResource(R.string.location_you) }) }
+                }
+            }
+        },
+    )
 }
 
 /** The drawn stand-in: a plain ground with a grid, the path, the places, and the pictures of people, projected to fit the focus. */
@@ -272,6 +356,7 @@ private fun SchematicMap(content: MapContent, focus: MapFocus, modifier: Modifie
     val accent = MaterialTheme.colorScheme.primary
     val onAccent = MaterialTheme.colorScheme.onPrimary
     val bounds = focus.bounds() ?: MapBounds(-0.005, 0.005, -0.005, 0.005)
+    var chooserGroup by remember { mutableStateOf<List<MapPin>?>(null) }
     BoxWithConstraints(modifier.background(ground)) {
         val widthPixels = with(LocalDensity.current) { maxWidth.toPx() }
         val heightPixels = with(LocalDensity.current) { maxHeight.toPx() }
@@ -347,21 +432,36 @@ private fun SchematicMap(content: MapContent, focus: MapFocus, modifier: Modifie
                 )
             }
         }
-        for (pin in content.pins) {
-            val point = project(pin.coordinate)
-            val ring = if (pin.isChosen) accent else Color.White
-            Box(
+        val density = LocalDensity.current.density
+        val chosenId = content.pins.firstOrNull { pin -> pin.isChosen }?.id ?: NO_CHOSEN_PIN_ID
+        val points = content.pins.map { pin -> project(pin.coordinate).let { point -> LocationMapPinPoint(pin.id, point.x / density.toDouble(), point.y / density.toDouble()) } }
+        for (ids in LocationMapPinGrouping.groups(points, chosenId)) {
+            val group = ids.mapNotNull { id -> content.pins.firstOrNull { pin -> pin.id == id } }
+            val first = group.firstOrNull() ?: continue
+            val point = project(first.coordinate)
+            val shown = group.take(LocationMapPinGrouping.PICTURE_COUNT_MOST)
+            val moreCount = group.size - shown.size
+            Row(
                 Modifier
                     .offset { androidx.compose.ui.unit.IntOffset((point.x - 20.dp.toPx()).toInt(), (point.y - 20.dp.toPx()).toInt()) }
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(ring)
-                    .clickable { onPinTap(pin.id) },
-                contentAlignment = Alignment.Center,
+                    .clickable { if (group.size == 1) onPinTap(first.id) else chooserGroup = group },
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                AvatarView(pin.name, pin.avatarUrl, pin.avatarColorIndex, size = 34.dp)
+                // The first picture is in front: they are drawn last to first, each overlapping the one before.
+                Box {
+                    for (index in shown.indices.reversed()) {
+                        val pin = shown[index]
+                        Box(
+                            Modifier.offset(x = (18 * index).dp).size(40.dp).clip(CircleShape).background(if (pin.isChosen) accent else Color.White),
+                            contentAlignment = Alignment.Center,
+                        ) { AvatarView(pin.name, pin.avatarUrl, pin.avatarColorIndex, size = 34.dp) }
+                    }
+                    Spacer(Modifier.size(width = (40 + 18 * (shown.size - 1)).dp, height = 40.dp))
+                }
+                if (moreCount > 0) Text("+$moreCount", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 4.dp).background(MaterialTheme.colorScheme.surface, CircleShape).padding(horizontal = 8.dp, vertical = 4.dp))
             }
         }
+        chooserGroup?.let { group -> PinGroupChooser(group, onChoose = { id -> chooserGroup = null; onPinTap(id) }, onDismiss = { chooserGroup = null }) }
         Text(
             OPEN_STREET_MAP_CREDIT,
             style = MaterialTheme.typography.labelSmall,
