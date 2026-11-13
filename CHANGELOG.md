@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.227.1] - 2026-11-13
+
+### Changed
+
+- The iPhone app's sign-in field shows example.com as its example address. (#755)
+
 ## [0.227.0] - 2026-11-13
 
 ### Added
