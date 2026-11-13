@@ -541,4 +541,32 @@ class PasswordsSessionTest {
         assertEquals(PasswordsSharingCheck.Unverified, device.session.item(created.id).sharingCheck)
         assertEquals(PasswordsError.SharingCouldNotBeChecked(created.id), assertThrows<PasswordsError> { runBlocking { device.session.setUsableByAgent(created.id, true) } })
     }
+
+    // Restoring an earlier version
+
+    @Test fun `restoring an old version puts its content back and keeps the sharing record as it is now`() = runBlocking {
+        val server = FakePasswordsServer()
+        val device = makeDevice(server)
+        device.session.setUp("the passphrase", iterationCount)
+        val created = device.session.save(loginFields(password = "first"))
+        device.session.save(loginFields(password = "second"), id = created.id)
+        val versions = device.session.versions(created.id)
+        val firstVersion = versions.versions.first { version -> (version.fields as PasswordsItemFields.Login).fields.password == "first" }
+        val restored = device.session.restoreVersion(created.id, firstVersion.id)
+        assertEquals("first", (restored.fields as PasswordsItemFields.Login).fields.password)
+        // The record was written again one version above the highest this device had seen, and the item has a new key.
+        assertEquals(PasswordsSharingCheck.Verified, restored.sharingCheck)
+        assertTrue(restored.verifiedAccess!!.recordVersion!! > 1L)
+        assertFalse(restored.needsNewKey)
+        // What it was before the restore stays as an earlier version.
+        assertTrue(device.session.versions(created.id).versions.any { version -> (version.fields as PasswordsItemFields.Login).fields.password == "second" })
+    }
+
+    @Test fun `restoring a version not listed in this session is refused`() = runBlocking {
+        val device = makeDevice(FakePasswordsServer())
+        device.session.setUp("the passphrase", iterationCount)
+        val created = device.session.save(loginFields())
+        device.session.save(loginFields(password = "second"), id = created.id)
+        assertEquals(PasswordsError.ItemNotFound, assertThrows<PasswordsError> { runBlocking { device.session.restoreVersion(created.id, "version-1") } })
+    }
 }

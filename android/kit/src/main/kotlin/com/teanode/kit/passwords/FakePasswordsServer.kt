@@ -295,6 +295,10 @@ class FakePasswordsServer(private val userId: String = "me") : PasswordsApi {
         keepVersion(stored)
         stored.encryptedFields = version.encryptedFields
         stored.itemKeyByAccountKey = version.itemKeyByAccountKey
+        // The server drops the agent's copy with the restore and marks the item as needing a new key.
+        if (stored.isUsableByAgent) stored.needsNewKey = true
+        stored.isUsableByAgent = false
+        stored.itemKeyByAgentKey = null
         stored.revision = nextRevision()
         return view(stored)
     }

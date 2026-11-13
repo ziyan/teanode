@@ -727,6 +727,47 @@ class PasswordsSession(
         PasswordsOpenedVersions(versions, unreadableVersionCount)
     }
 
+    /**
+     * Puts an earlier version's content back as the item's own, on the person's tap, and only the content: who the item is
+     * shared with and whether the agent may use it stay as they are now.
+     *
+     * - The version has to be one [versions] listed in this session, and the item's record has to be the person's own now
+     *   ([PasswordsError.SharingCouldNotBeChecked]); with either missing nothing is sent.
+     * - The server's answer has to carry exactly the sealed fields and item key that were listed; anything else is
+     *   [PasswordsError.RestoredAnotherVersion] and nothing more is done with the answer.
+     * - The restored fields are then written with the record this device held before the restore, signed one version above
+     *   the highest this device has seen, and the item is given a new key at once. The restored version's own record is
+     *   never used.
+     *
+     * If a step after the restore fails, the restored item is returned and [giveNewKey] or the next save tries again.
+     */
+    suspend fun restoreVersion(itemId: String, versionId: String): PasswordItem = mutex.withLock {
+        val current = requireOpener()
+        val view = ownedView(itemId)
+        if (view.deletedAt != null) throw PasswordsError.ItemNotFound
+        val listed = listedVersionTexts[itemId]?.get(versionId) ?: throw PasswordsError.ItemNotFound
+        val before = current.open(view)
+        val currentAccess = before.verifiedAccess
+        if (before.sharingCheck != PasswordsSharingCheck.Verified || currentAccess == null) throw PasswordsError.SharingCouldNotBeChecked(itemId)
+        val highestVersion = highestRecordVersion(before)
+        val answered = call { api.restorePasswordItemVersion(itemId, versionId, view.revision) }
+        if (answered.id != itemId) throw PasswordsError.AnsweredAboutAnotherItem
+        if ((answered.encryptedFields to answered.itemKey) != listed) throw PasswordsError.RestoredAnotherVersion
+        val kept = keep(answered, itemId, current)
+        try {
+            val signed = PasswordsCrypto.withSignedAccess(current.accountKey, itemId, kept.itemKind, kept.fields, currentAccess, highestVersion)
+            saveFields(signed, ownedView(itemId), current)
+            rekey(itemId, AccessEdit.None)
+        } catch (error: PasswordsError.Locked) {
+            throw error
+        } catch (_: Exception) {
+            // The restore stands; the item is marked and the person can finish it.
+        }
+        itemOrNull(itemId) ?: kept
+    }
+
+    private fun itemOrNull(id: String): PasswordItem? = runCatching { item(id) }.getOrNull()
+
     /** Puts a kept item the server answered with into the copy, opens it, and remembers its record. The answer must be about `itemId`. */
     private fun keep(view: PasswordItemView, itemId: String, current: PasswordsOpener): PasswordItem {
         if (view.id != itemId) throw PasswordsError.AnsweredAboutAnotherItem
