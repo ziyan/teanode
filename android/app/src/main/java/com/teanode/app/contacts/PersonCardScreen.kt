@@ -346,7 +346,7 @@ private fun visitTimes(arrivedAt: String?, departedAt: String?): String {
     val arrived = ServerTime.instant(arrivedAt)
     val departed = ServerTime.instant(departedAt)
     return when {
-        arrived != null && departed != null -> MailTimes.timeOfDay(arrived) + " – " + MailTimes.timeOfDay(departed)
+        arrived != null && departed != null -> MailTimes.timeOfDay(arrived) + " - " + MailTimes.timeOfDay(departed)
         arrived != null -> stringResource(R.string.contacts_since_time, MailTimes.timeOfDay(arrived))
         else -> ""
     }

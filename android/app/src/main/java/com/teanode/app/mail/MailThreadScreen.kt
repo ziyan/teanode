@@ -643,7 +643,7 @@ private fun proposalWhen(proposal: MailProposal): String {
     val start = ServerTime.instant(proposal.starts) ?: return proposal.starts
     if (proposal.allDay) return MailTimes.wholeDate(start, java.time.ZoneOffset.UTC)
     val end = ServerTime.instant(proposal.ends)
-    return if (end != null) "${MailTimes.dateAndTime(start)} – ${MailTimes.timeOfDay(end)}" else MailTimes.dateAndTime(start)
+    return if (end != null) "${MailTimes.dateAndTime(start)} - ${MailTimes.timeOfDay(end)}" else MailTimes.dateAndTime(start)
 }
 
 /** The facts of a message: who, to whom, when, the checks, and what the agent made of it. */
@@ -742,7 +742,7 @@ private fun invitationWhen(invitation: MailInvitation): String {
     val start = ServerTime.instant(invitation.startsAt) ?: return ""
     if (invitation.allDay) return MailTimes.wholeDate(start, java.time.ZoneOffset.UTC)
     val end = ServerTime.instant(invitation.endsAt) ?: start
-    return "${MailTimes.dateAndTime(start)} – ${MailTimes.timeOfDay(end)}"
+    return "${MailTimes.dateAndTime(start)} - ${MailTimes.timeOfDay(end)}"
 }
 
 /** Whether a message is from who it says: a green shield when checked, orange when it looks like spam, red when it failed. */

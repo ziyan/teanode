@@ -100,7 +100,7 @@ fun PersonVisitsScreen(connection: Connection, userId: String, onBack: () -> Uni
                 TeaNodeRow(
                     headline = visit.place.placeName.ifEmpty { stringResource(R.string.contacts_a_place) }, leadingIcon = Icons.Outlined.Place,
                     supporting = when {
-                        arrived != null && departed != null -> MailTimes.timeOfDay(arrived) + " – " + MailTimes.timeOfDay(departed)
+                        arrived != null && departed != null -> MailTimes.timeOfDay(arrived) + " - " + MailTimes.timeOfDay(departed)
                         arrived != null -> stringResource(R.string.contacts_since_time, MailTimes.timeOfDay(arrived))
                         else -> ""
                     },
