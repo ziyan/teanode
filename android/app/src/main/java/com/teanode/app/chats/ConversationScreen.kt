@@ -84,6 +84,7 @@ import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.app.ui.components.openWebPage
 import com.teanode.kit.AppSection
 import com.teanode.kit.chats.AgentFile
+import com.teanode.kit.chats.AgentReference
 import com.teanode.kit.chats.ChatNotificationLevel
 import com.teanode.kit.chats.LinkOpening
 import com.teanode.kit.chats.LinkPreview
@@ -149,6 +150,21 @@ fun openLinkAsChosen(context: Context, address: String) {
 
 /** What other parts of the app may plug into a conversation. */
 object ChatsHooks {
+    /** What the main conversation's next message asks about, set by [askAbout] and taken by the conversation when it opens. */
+    var pendingReference: AgentReference? by androidx.compose.runtime.mutableStateOf(null)
+        private set
+
+    /**
+     * Opens the main conversation with [reference] (a mail, a transaction, a page, a recording or a photo) in its
+     * reference strip, as the iPhone app does when a screen says "Ask the agent".
+     */
+    fun askAbout(navigator: com.teanode.app.shell.AppNavigator, reference: AgentReference) {
+        pendingReference = reference
+        navigator.navigate(Routes.child(AppSection.Agent, "main"))
+    }
+
+    internal fun takePendingReference(): AgentReference? = pendingReference.also { pendingReference = null }
+
     /** Opens a person's card; set by the part that has the cards. Until then a tap on a picture or a name does nothing. */
     var openPerson: ((String) -> Unit)? = null
 }
@@ -215,6 +231,10 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
     }
 
     LaunchedEffect(environment) { if (!environment.hasReadAgentFacts) environment.loadAgentName() }
+    // A screen asked about something: it goes in the main conversation's reference strip.
+    LaunchedEffect(model, ChatsHooks.pendingReference) {
+        if (conversationId == null) ChatsHooks.takePendingReference()?.let { reference -> model.refer(reference) }
+    }
 
     // Things that went wrong are told in a snackbar, once.
     LaunchedEffect(model.problemText) {

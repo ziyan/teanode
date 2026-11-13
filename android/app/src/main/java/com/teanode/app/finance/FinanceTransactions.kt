@@ -31,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.outlined.QuestionAnswer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,6 +50,7 @@ import com.teanode.app.session.LocalConnection
 import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.shopping.ShoppingSheet
 import com.teanode.app.shopping.readPendingFile
+import com.teanode.app.shopping.toPendingFile
 import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
@@ -263,12 +265,11 @@ fun FinanceTransactionDetailScreen(transactionId: String) {
         }
     }
 
-    val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    fun readReceiptFrom(pick: () -> com.teanode.app.shopping.ShoppingPendingFile) {
         scope.launch {
             readingText = context.getString(R.string.finance_reading_receipt)
             try {
-                val file = context.readPendingFile(uri, "receipt.jpg")
+                val file = pick()
                 val attachmentId = connection.upload(file.name, file.contentType, file.data)
                 connection.readReceipt(attachmentId = attachmentId, transactionId = transactionId)
                 repeat(30) {
@@ -290,8 +291,22 @@ fun FinanceTransactionDetailScreen(transactionId: String) {
             }
         }
     }
+    val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) readReceiptFrom { context.readPendingFile(uri, "receipt.jpg") } }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap -> if (bitmap != null) readReceiptFrom { bitmap.toPendingFile("receipt.jpg") } }
 
-    TeaNodeScreen(title = transaction?.shownName.orEmpty(), onBack = { navigator.back() }) { padding ->
+    TeaNodeScreen(
+        title = transaction?.shownName.orEmpty(), onBack = { navigator.back() },
+        actions = {
+            transaction?.let { asked ->
+                androidx.compose.material3.IconButton(onClick = {
+                    com.teanode.app.chats.ChatsHooks.askAbout(
+                        navigator,
+                        com.teanode.kit.chats.AgentReference.transaction(asked.id, asked.postedOn, asked.amount, asked.currencyCode, asked.merchantName, asked.description),
+                    )
+                }) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Outlined.QuestionAnswer, contentDescription = stringResource(R.string.chats_ask_about_this)) }
+            }
+        },
+    ) { padding ->
         val shown = transaction
         val loadedBase = base
         val problem = failure
@@ -380,7 +395,10 @@ fun FinanceTransactionDetailScreen(transactionId: String) {
                 item("add-receipt") {
                     val isMoneyIn = (FinanceMoney.decimal(shown.amount)?.signum() ?: 0) > 0
                     Column(Modifier.padding(horizontal = 16.dp)) {
-                        OutlinedButton(onClick = { photoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !isMoneyIn) { Text(stringResource(R.string.finance_add_receipt)) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { photoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !isMoneyIn) { Text(stringResource(R.string.finance_add_receipt_photo)) }
+                            OutlinedButton(onClick = { cameraLauncher.launch(null) }, enabled = !isMoneyIn) { Text(stringResource(R.string.finance_add_receipt_camera)) }
+                        }
                         if (isMoneyIn) Footnote(stringResource(R.string.finance_receipts_money_out))
                     }
                 }

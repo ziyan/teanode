@@ -27,6 +27,8 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,12 +46,13 @@ import com.teanode.kit.shopping.ShoppingMoney
 
 /** An item's picture, or its first letter on a soft ground where it has none. [size] null fills the width as a square. */
 @Composable
-internal fun ShoppingPictureView(item: ShoppingItem, modifier: Modifier = Modifier, size: Dp? = 44.dp) {
+internal fun ShoppingPictureView(item: ShoppingItem, modifier: Modifier = Modifier, size: Dp? = 44.dp, isZoomable: Boolean = false) {
+    var isOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val picture = rememberServerPicture(if (item.hasPicture) item.picturePath else null)
     val shape = RoundedCornerShape(if (size == null) 12.dp else 8.dp)
     val sizing = if (size == null) modifier.fillMaxWidth().aspectRatio(1f) else modifier.size(size)
     Box(
-        sizing.clip(shape).background(MaterialTheme.colorScheme.surfaceVariant),
+        (if (isZoomable && picture != null) sizing.clip(shape).clickable { isOpen = true } else sizing.clip(shape)).background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
         if (picture != null) {
@@ -59,6 +62,17 @@ internal fun ShoppingPictureView(item: ShoppingItem, modifier: Modifier = Modifi
                 item.initial, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = if (size == null) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.titleMedium,
             )
+        }
+    }
+    if (isOpen) PictureLightbox(item) { isOpen = false }
+}
+
+@Composable
+private fun PictureLightbox(item: ShoppingItem, onDismiss: () -> Unit) {
+    val picture = rememberServerPicture(item.picturePath)
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxWidth().background(Color.Black).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
+            if (picture != null) Image(picture, contentDescription = item.itemDescription, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().aspectRatio(1f))
         }
     }
 }
@@ -77,7 +91,7 @@ internal fun ShoppingListItemRow(item: ShoppingItem, words: ShoppingWords, onOpe
             )
         },
         supportingContent = { Text(words.listItemDetail(item), maxLines = 3, overflow = TextOverflow.Ellipsis) },
-        leadingContent = { ShoppingPictureView(item) },
+        leadingContent = { ShoppingPictureView(item, isZoomable = true) },
         trailingContent = if (price.isEmpty()) null else ({ Text(price, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = modifier.clickable(onClick = onOpen),

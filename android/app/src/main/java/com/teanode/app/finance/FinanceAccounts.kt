@@ -61,6 +61,8 @@ fun FinanceAccountsScreen() {
     val scope = rememberCoroutineScope()
     var renewed by remember { mutableStateOf<StatementImport?>(null) }
     var isRenewing by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<FinanceAccount?>(null) }
+    var deleting by remember { mutableStateOf<FinanceAccount?>(null) }
     val read = rememberLoad(connection) {
         val accounts = connection.financeAccounts()
         val usage = try { connection.creditUsage() } catch (failure: CancellationException) { throw failure } catch (_: Throwable) { null }
@@ -105,6 +107,14 @@ fun FinanceAccountsScreen() {
                                 onClick = { navigator.navigate(FinanceRoutes.transactions(com.teanode.kit.finance.FinanceTransactionFilter(financeAccountId = account.id))) },
                             )
                         }
+                        if (account.isFromStatements) {
+                            item("manage-" + account.id) {
+                                Row(Modifier.padding(start = 8.dp)) {
+                                    androidx.compose.material3.TextButton(onClick = { renaming = account }) { Text(stringResource(R.string.finance_manage_rename_account)) }
+                                    androidx.compose.material3.TextButton(onClick = { deleting = account }) { Text(stringResource(R.string.finance_delete), color = MaterialTheme.colorScheme.error) }
+                                }
+                            }
+                        }
                         if (account.accountKind in setOf("investment", "brokerage", "retirement")) {
                             item("trades-" + account.id) { TeaNodeRow(stringResource(R.string.finance_trades), onClick = { navigator.navigate(FinanceRoutes.trades(account.id)) }, modifier = Modifier.padding(start = 16.dp)) }
                         }
@@ -139,6 +149,8 @@ fun FinanceAccountsScreen() {
             }
         }
     }
+    renaming?.let { account -> RenameStatementAccountDialog(account, onDismiss = { renaming = null }, onDone = { renaming = null; read.refresh() }) }
+    deleting?.let { account -> DeleteStatementAccountDialog(account, onDismiss = { deleting = null }, onDone = { deleting = null; read.refresh() }) }
     if (isRenewing) {
         ConfirmationDialog(
             title = stringResource(R.string.finance_new_address_question), text = stringResource(R.string.finance_new_address_message),

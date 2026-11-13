@@ -266,4 +266,21 @@
     <string name="chats_share_send_to">Send to %1$s</string>
     <string name="chats_share_send_to_agent">Send to your agent</string>
     <string name="chats_share_sent">Sent</string>
+    <string name="chats_save_as_recording">Save as recording</string>
+    <string name="chats_ask_about_this">Ask the agent about this</string>
+    <string name="chats_share_to_agent">To your agent</string>
+    <string name="chats_share_as_tax">Read as tax documents</string>
+    <string name="chats_share_as_statements">Import as statements</string>
+    <string name="chats_share_as_recording">Save as a recording</string>
+    <string name="chats_share_read">Read</string>
+    <string name="chats_share_import">Import</string>
+    <string name="chats_share_save_recording">Save recording</string>
+    <string name="chats_share_tax_read_one">Reading 1 tax document. It shows under Finance, Taxes once read.</string>
+    <string name="chats_share_tax_read_several">Reading %1$d tax documents. They show under Finance, Taxes once read.</string>
+    <string name="chats_share_left_out_tax">Files that are not a PDF or a picture were left out.</string>
+    <string name="chats_share_left_out_statements">Files that are not OFX statements were left out.</string>
+    <string name="chats_share_statement_summary">%1$d added, %2$d updated, %3$d unchanged</string>
+    <string name="chats_share_tax_detail">Each PDF or picture is read as a paystub, W-2, 1099 or 1098 on its own, and the server keeps no text of it. No note goes with them.</string>
+    <string name="chats_share_statements_detail">Each OFX, QFX or QBO file is imported into your accounts; a transaction imported twice is kept once. No note goes with them.</string>
+    <string name="chats_share_recording_detail">The file goes to your agent first, then Recordings opens to make the recording from it.</string>
 </resources>

@@ -14,7 +14,7 @@ func TestOnlyATurnThePersonStartedIsTheirs(t *testing.T) {
 	person := func(surface string) *AskRun {
 		return &AskRun{settings: &AskSettings{Surface: surface, Message: "sign in to my shop", IsPersonsTap: true}}
 	}
-	for _, surface := range []string{"drawer", "extension", "page", "voice", "ios", "ios_voice", "siri", "phone", "cli", "api"} {
+	for _, surface := range []string{"drawer", "extension", "page", "voice", "ios", "ios_voice", "android", "android_voice", "siri", "phone", "cli", "api"} {
 		if !person(surface).IsStartedByPerson() {
 			t.Errorf("a turn the person typed on %q", surface)
 		}
@@ -32,7 +32,7 @@ func TestOnlyATurnThePersonStartedIsTheirs(t *testing.T) {
 	// tap: the command line's token, an app password, OAuth or the
 	// extension's token claims the surface and gets nothing, and neither does
 	// an operator signed in as the person or speaking into their conversation.
-	for _, surface := range []string{"drawer", "extension", "page", "voice", "ios", "ios_voice", "siri", "phone", "cli", "api"} {
+	for _, surface := range []string{"drawer", "extension", "page", "voice", "ios", "ios_voice", "android", "android_voice", "siri", "phone", "cli", "api"} {
 		if (&AskRun{settings: &AskSettings{Surface: surface, Message: "sign in to my shop"}}).IsStartedByPerson() {
 			t.Errorf("a turn on %q that was not the person's tap", surface)
 		}

@@ -285,6 +285,7 @@ fun FinanceSavingsTargetsScreen() {
     val scope = rememberCoroutineScope()
     var isShowingClosed by remember { mutableStateOf(false) }
     var isAdding by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<SavingsTarget?>(null) }
     val read = rememberLoad(connection) { SavingsRead(connection.readFinanceBase(context), connection.savingsTargets()) }
     TeaNodeScreen(
         title = stringResource(R.string.finance_part_savings_targets), onBack = { navigator.back() },
@@ -316,6 +317,7 @@ fun FinanceSavingsTargetsScreen() {
                                     if (goalAmount > 0) LinearProgressIndicator(progress = { (saved / goalAmount).coerceIn(0.0, 1.0).toFloat() }, modifier = Modifier.fillMaxWidth())
                                     Text(stringResource(R.string.finance_saved_of_target, FinanceMoney.shown(progress?.savedAmount, goal.currencyCode), FinanceMoney.shown(goal.targetAmount, goal.currencyCode), goal.targetOn.orEmpty()), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     progress?.requiredMonthlyAmount?.takeIf { amount -> amount.isNotEmpty() }?.let { monthly -> Text(stringResource(R.string.finance_needs_a_month, FinanceMoney.shown(monthly, goal.currencyCode)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                    TextButton(onClick = { editing = target }) { Text(stringResource(R.string.finance_edit)) }
                                     TextButton(onClick = { scope.launch { try { connection.closeSavingsTarget(goal.id, isClosed); snackbar.show(context.getString(if (isClosed) R.string.finance_reopened else R.string.finance_closed)) } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }; read.refresh() } }) {
                                         Text(stringResource(if (isClosed) R.string.finance_reopen else R.string.finance_close))
                                     }
@@ -325,8 +327,14 @@ fun FinanceSavingsTargetsScreen() {
                     }
                 }
             }
+            editing?.let { target ->
+                SavingsTargetDialog(target, onDismiss = { editing = null }) { fields ->
+                    editing = null
+                    scope.launch { try { connection.saveSavingsTarget(target.id, fields); snackbar.show(context.getString(R.string.finance_saved)) } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }; read.refresh() }
+                }
+            }
             if (isAdding) {
-                SavingsTargetDialog(onDismiss = { isAdding = false }) { fields ->
+                SavingsTargetDialog(null, onDismiss = { isAdding = false }) { fields ->
                     isAdding = false
                     scope.launch { try { connection.saveSavingsTarget(null, fields); snackbar.show(context.getString(R.string.finance_target_added)) } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }; read.refresh() }
                 }
@@ -336,11 +344,12 @@ fun FinanceSavingsTargetsScreen() {
 }
 
 @Composable
-private fun SavingsTargetDialog(onDismiss: () -> Unit, onSave: (Map<String, JsonElement>) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
-    var day by remember { mutableStateOf(LocalDate.now().plusYears(1).toString()) }
-    var measure by remember { mutableStateOf("cash_flow") }
+private fun SavingsTargetDialog(existing: SavingsTarget?, onDismiss: () -> Unit, onSave: (Map<String, JsonElement>) -> Unit) {
+    val goal = existing?.savingsTarget
+    var name by remember { mutableStateOf(goal?.savingsTargetName.orEmpty()) }
+    var amount by remember { mutableStateOf(goal?.targetAmount.orEmpty()) }
+    var day by remember { mutableStateOf(goal?.targetOn ?: LocalDate.now().plusYears(1).toString()) }
+    var measure by remember { mutableStateOf(goal?.targetMeasure?.ifEmpty { null } ?: "cash_flow") }
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text(stringResource(R.string.finance_new_savings_target)) },
         text = {

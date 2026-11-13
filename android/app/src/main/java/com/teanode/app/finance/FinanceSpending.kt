@@ -145,11 +145,11 @@ fun FinanceSpendingScreen() {
                     val months = loaded.cashFlow?.cashFlowMonths.orEmpty().filterNotNull()
                     if (months.isNotEmpty()) {
                         item("cash-flow-header") { TeaNodeSectionHeader(stringResource(R.string.finance_cash_flow)) }
-                        item("cash-flow") { CashFlowChart(months.map { each -> BarPair(each.cashFlowMonth.takeLast(2), each.incomeAmount?.toDoubleOrNull() ?: 0.0, each.spendingAmount?.toDoubleOrNull() ?: 0.0) }) }
+                        item("cash-flow") { CashFlowChart(currency = currency, pairs = months.map { each -> BarPair(each.cashFlowMonth.takeLast(2), each.incomeAmount?.toDoubleOrNull() ?: 0.0, each.spendingAmount?.toDoubleOrNull() ?: 0.0) }) }
                     }
                     loaded.byDay?.let { byDay ->
                         item("by-day-header") { TeaNodeSectionHeader(stringResource(R.string.finance_day_by_day)) }
-                        item("by-day") { DayByDay(byDay) }
+                        item("by-day") { DayByDay(byDay, currency) }
                     }
                 } else {
                     val years = yearsOf(loaded.history)
@@ -271,13 +271,15 @@ internal fun BudgetRow(name: String, spent: String?, budget: String?, projected:
 }
 
 @Composable
-private fun CashFlowChart(pairs: List<BarPair>) {
+private fun CashFlowChart(pairs: List<BarPair>, currency: String = "USD") {
+    var selected by remember { mutableStateOf<Int?>(null) }
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             LegendEntry(stringResource(R.string.finance_income), FinancePalette.color(0))
             LegendEntry(stringResource(R.string.finance_part_spending), FinancePalette.color(1))
         }
-        PairedBarChart(pairs, FinancePalette.color(0), FinancePalette.color(1))
+        PairedBarChart(pairs, FinancePalette.color(0), FinancePalette.color(1), selectedIndex = selected, onSelect = { selected = it })
+        selected?.let { index -> pairs.getOrNull(index)?.let { pair -> Text(stringResource(R.string.finance_callout_cash_flow, pair.label, FinanceMoney.shown(java.math.BigDecimal(pair.first), currency), FinanceMoney.shown(java.math.BigDecimal(pair.second), currency), FinanceMoney.shown(java.math.BigDecimal(pair.first - pair.second), currency)), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) } }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             for (pair in pairs) Text(pair.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -294,7 +296,8 @@ private fun LegendEntry(label: String, color: Color) {
 
 /** The chosen month's spending added up day by day, and where the month before stood on the same days. */
 @Composable
-private fun DayByDay(byDay: SpendingByDay) {
+private fun DayByDay(byDay: SpendingByDay, currency: String = "USD") {
+    var selected by remember { mutableStateOf<Int?>(null) }
     val month = (byDay.monthDays.orEmpty().filterNotNull().map { day -> day.cumulativeSpendingAmount?.toDoubleOrNull() ?: 0.0 })
     val before = (byDay.compareMonthDays.orEmpty().filterNotNull().map { day -> day.cumulativeSpendingAmount?.toDoubleOrNull() ?: 0.0 })
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -305,7 +308,12 @@ private fun DayByDay(byDay: SpendingByDay) {
                 LegendEntry(monthName(byDay.month), FinancePalette.color(0))
                 LegendEntry(monthName(byDay.compareMonth), FinancePalette.color(1))
             }
-            LineChart(listOf(LineSeries(before, FinancePalette.color(1), isDashed = true), LineSeries(month, FinancePalette.color(0))), isZeroIncluded = true)
+            LineChart(listOf(LineSeries(before, FinancePalette.color(1), isDashed = true), LineSeries(month, FinancePalette.color(0))), isZeroIncluded = true, selectedIndex = selected, onSelect = { selected = it })
+            selected?.let { index ->
+                val spent = month.getOrNull(index); val spentBefore = before.getOrNull(index)
+                val text = listOfNotNull("${index + 1}", spent?.let { value -> FinanceMoney.shown(java.math.BigDecimal(value), currency) }, spentBefore?.let { value -> FinanceMoney.shown(java.math.BigDecimal(value), currency) }, if (spent != null && spentBefore != null) FinanceMoney.shown(java.math.BigDecimal(Math.abs(spent - spentBefore)), currency) + " " + stringResource(if (spent > spentBefore) R.string.finance_callout_more else if (spent < spentBefore) R.string.finance_callout_less else R.string.finance_callout_same) else null).joinToString(" · ")
+                Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
             Text(stringResource(R.string.finance_day_by_day_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

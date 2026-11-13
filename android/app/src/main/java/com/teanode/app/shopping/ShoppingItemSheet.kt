@@ -178,7 +178,7 @@ internal fun ShoppingItemSheet(
         isConfirmEnabled = !isWorking && itemDescription.isNotBlank(), onConfirm = ::save,
     ) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ShoppingPictureView(shown, size = 120.dp)
+            ShoppingPictureView(shown, size = 120.dp, isZoomable = true)
             if (isSearchingPicture) Text(stringResource(R.string.shopping_looking_for_picture), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = ::searchForPicture, enabled = !isWorking && !isSearchingPicture) { Text(stringResource(R.string.shopping_find_another)) }
