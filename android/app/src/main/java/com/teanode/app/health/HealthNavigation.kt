@@ -12,7 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Settings
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavType
-import androidx.navigation.compose.composable
+import com.teanode.app.health.sync.healthComposable
 import androidx.navigation.navArgument
 import com.teanode.app.R
 import com.teanode.app.session.LocalConnection
@@ -26,9 +26,9 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 
 /** The routes of Health: the kinds, one kind's chart and readings, a workout's route, and the settings. */
 fun NavGraphBuilder.healthRoutes(navigator: AppNavigator) {
-    composable(HealthRoutes.home, deepLinks = Routes.deepLinks(HealthRoutes.home)) { HealthSection() }
-    composable(HealthRoutes.settings, deepLinks = Routes.deepLinks(HealthRoutes.settings)) { HealthSettingsScreen(onBack = { navigator.back() }) }
-    composable(
+    healthComposable(HealthRoutes.home, deepLinks = Routes.deepLinks(HealthRoutes.home)) { HealthSection() }
+    healthComposable(HealthRoutes.settings, deepLinks = Routes.deepLinks(HealthRoutes.settings)) { HealthSettingsScreen(onBack = { navigator.back() }) }
+    healthComposable(
         HealthRoutes.type, arguments = listOf(navArgument(HealthRoutes.TYPE_ARGUMENT) { type = NavType.StringType }), deepLinks = Routes.deepLinks(HealthRoutes.type),
     ) { entry ->
         val model = rememberHealthModel()
@@ -48,7 +48,7 @@ fun NavGraphBuilder.healthRoutes(navigator: AppNavigator) {
             else -> HealthTypeMissing(onBack = { navigator.back() })
         }
     }
-    composable(
+    healthComposable(
         HealthRoutes.route, arguments = listOf(navArgument(HealthRoutes.SAMPLE_ARGUMENT) { type = NavType.StringType }), deepLinks = Routes.deepLinks(HealthRoutes.route),
     ) { entry ->
         val model = rememberHealthModel()

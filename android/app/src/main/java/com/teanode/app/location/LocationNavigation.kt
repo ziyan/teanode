@@ -2,7 +2,7 @@ package com.teanode.app.location
 
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavType
-import androidx.navigation.compose.composable
+import com.teanode.app.location.recording.locationComposable
 import androidx.navigation.navArgument
 import com.teanode.app.R
 import com.teanode.app.session.LocalConnection
@@ -18,23 +18,23 @@ import java.time.LocalDate
 
 /** The routes of Location: the map with its drawer, one day, one place, the people, Travel, the settings and the address search. */
 fun NavGraphBuilder.locationRoutes(navigator: AppNavigator) {
-    composable(LocationRoutes.home, deepLinks = Routes.deepLinks(LocationRoutes.home)) { LocationSection() }
-    composable(LocationRoutes.settings, deepLinks = Routes.deepLinks(LocationRoutes.settings)) {
+    locationComposable(LocationRoutes.home, deepLinks = Routes.deepLinks(LocationRoutes.home)) { LocationSection() }
+    locationComposable(LocationRoutes.settings, deepLinks = Routes.deepLinks(LocationRoutes.settings)) {
         LocationSettingsScreen(rememberLocationModel(), onBack = { navigator.back() })
     }
-    composable(LocationRoutes.travel, deepLinks = Routes.deepLinks(LocationRoutes.travel)) {
+    locationComposable(LocationRoutes.travel, deepLinks = Routes.deepLinks(LocationRoutes.travel)) {
         LocationTravelScreen(LocalConnection.current, onBack = { navigator.back() })
     }
-    composable(LocationRoutes.people, deepLinks = Routes.deepLinks(LocationRoutes.people)) {
+    locationComposable(LocationRoutes.people, deepLinks = Routes.deepLinks(LocationRoutes.people)) {
         LocationPeopleScreen(rememberLocationModel(), onBack = { navigator.back() })
     }
-    composable(
+    locationComposable(
         LocationRoutes.day, arguments = listOf(navArgument(LocationRoutes.DAY_ARGUMENT) { type = NavType.StringType }), deepLinks = Routes.deepLinks(LocationRoutes.day),
     ) { entry ->
         val day = runCatching { LocalDate.parse(entry.arguments?.getString(LocationRoutes.DAY_ARGUMENT)) }.getOrDefault(LocalDate.now())
         LocationDayScreen(rememberLocationModel(), day, onBack = { navigator.back() }, onOpenPlace = { place -> navigator.navigate(LocationRoutes.place(place.id)) })
     }
-    composable(
+    locationComposable(
         LocationRoutes.place, arguments = listOf(navArgument(LocationRoutes.PLACE_ARGUMENT) { type = NavType.StringType }), deepLinks = Routes.deepLinks(LocationRoutes.place),
     ) { entry ->
         LocationPlaceScreen(
@@ -42,7 +42,7 @@ fun NavGraphBuilder.locationRoutes(navigator: AppNavigator) {
             onChangeAddress = { place -> navigator.navigate(LocationRoutes.placeAddress(place.id)) },
         )
     }
-    composable(
+    locationComposable(
         LocationRoutes.placeAddress, arguments = listOf(navArgument(LocationRoutes.PLACE_ARGUMENT) { type = NavType.StringType }),
     ) { entry ->
         val model = rememberLocationModel()
@@ -60,7 +60,7 @@ fun NavGraphBuilder.locationRoutes(navigator: AppNavigator) {
             ).second
         }
     }
-    composable(LocationRoutes.homeAddress) {
+    locationComposable(LocationRoutes.homeAddress) {
         val model = rememberLocationModel()
         LocationAddressScreen(model, onBack = { navigator.back() }) { address -> model.markHome(address) }
     }

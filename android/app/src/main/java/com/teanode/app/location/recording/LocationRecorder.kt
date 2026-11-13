@@ -167,6 +167,11 @@ class LocationRecorder private constructor(private val context: Context) : Locat
         requests.tryEmit(if (motionAuthorized.value) LocationPermissionRequest.Settings else LocationPermissionRequest.Activity)
     }
 
+    /** The person read why and went on: the system's question for "all the time". */
+    fun requestAlways() {
+        requests.tryEmit(LocationPermissionRequest.Background)
+    }
+
     override fun declineAlwaysExplanation() {
         preferences.edit().putBoolean(DECLINED_ALWAYS_KEY, true).apply()
     }
