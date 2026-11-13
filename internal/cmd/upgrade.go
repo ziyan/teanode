@@ -19,8 +19,8 @@ func NewUpgradeCommand() *cli.Command {
 		Commands: []*cli.Command{
 			{
 				Name:      "app",
-				Usage:     "the newest TeaNode iPhone app testers or the App Store can install, as the app asks this server",
-				ArgsUsage: "<testflight|appstore>",
+				Usage:     "the newest TeaNode app testers or the App Store can install (iPhone: testflight, appstore; Android: android), as the app asks this server",
+				ArgsUsage: "<testflight|appstore|android>",
 				Flags:     []cli.Flag{JSONFlag()},
 				Action:    runUpgradeApp,
 			},
@@ -172,7 +172,7 @@ func runUpgradeApply(ctx context.Context, command *cli.Command) error {
 
 func runUpgradeApp(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() != 1 {
-		return fmt.Errorf("say which channel: testflight or appstore")
+		return fmt.Errorf("say which channel: testflight, appstore or android")
 	}
 	connection, err := openClient(command)
 	if err != nil {

@@ -37,6 +37,12 @@ type relayWorld struct {
 	store       config.Store
 	appleCalled int
 	appleStatus int
+
+	// Firebase stands in for Google's token endpoint and FCM.
+	firebase         *httptest.Server
+	firebaseMessages []map[string]any
+	firebaseStatus   int
+	firebaseAnswer   string
 }
 
 func newRelayWorld(test *testing.T, isRelayOn bool) *relayWorld {
@@ -51,6 +57,21 @@ func newRelayWorld(test *testing.T, isRelayOn bool) *relayWorld {
 	apple.EnableHTTP2 = true
 	apple.StartTLS()
 	test.Cleanup(apple.Close)
+
+	world.firebase = httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/token" {
+			_, _ = response.Write([]byte(`{"access_token":"an-access-token","expires_in":3600}`))
+			return
+		}
+		var sent map[string]any
+		_ = json.NewDecoder(request.Body).Decode(&sent)
+		world.firebaseMessages = append(world.firebaseMessages, sent)
+		if world.firebaseStatus != 0 {
+			response.WriteHeader(world.firebaseStatus)
+		}
+		_, _ = response.Write([]byte(world.firebaseAnswer))
+	}))
+	test.Cleanup(world.firebase.Close)
 
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	encoded, _ := x509.MarshalPKCS8PrivateKey(key)
@@ -73,6 +94,13 @@ func newRelayWorld(test *testing.T, isRelayOn bool) *relayWorld {
 		client, err := push.NewAPNs(keyID, teamID, topic, keyPEM)
 		if err == nil {
 			client.UseHosts(apple.Client(), apple.URL, apple.URL)
+		}
+		return client, err
+	}
+	relay.buildFCM = func(serviceAccountJSON string) (*push.FCM, error) {
+		client, err := push.NewFCM(serviceAccountJSON)
+		if err == nil {
+			client.UseHost(world.firebase.Client(), world.firebase.URL)
 		}
 		return client, err
 	}
