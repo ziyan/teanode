@@ -28,7 +28,7 @@ Logic is in `android/kit` (`com.teanode.kit.finance`, `com.teanode.kit.shopping`
 | ShoppingViews.swift: one list (group by store or aisle, rows or pictures, not needed, who is shopping, totals, Done, shop at a store, import, receipt, share, reminder, rename, delete) | ShoppingListScreen | done |
 | ShoppingViews.swift: add item sheet (similar items, store suggestions, "is it one of these"), need again | ShoppingSheets | done |
 | ShoppingStoreViews.swift: store screen, lists switches, cart progress, out of stock, reminder, receipt scan, Done | ShoppingStoreScreen | done (long press on a row opens the out of stock menu) |
-| ShoppingItemViews.swift: rows, tiles, picture, item sheet, price chart, prices | ShoppingComponents, ShoppingItemSheet | partly: no full screen picture (lightbox) |
+| ShoppingItemViews.swift: rows, tiles, picture, item sheet, price chart, prices | ShoppingComponents, ShoppingItemSheet | done (tap a picture) |
 | ShoppingReceiptViews.swift | ShoppingReceiptSheet | done (swipes became buttons) |
 | ShoppingImportViews.swift | ShoppingImportSheet | done |
 | ShoppingShareViews.swift | ShoppingShareSheet | done (no link to the circles screen, which is Settings') |
@@ -40,20 +40,20 @@ Logic is in `android/kit` (`com.teanode.kit.finance`, `com.teanode.kit.shopping`
 | iOS file | Android | Status |
 | --- | --- | --- |
 | FinanceViews.swift: part menu | FinanceSection (a list of the parts, and who shares with the person) | done |
-| FinanceViews.swift: Spending (month and year, cash flow, day by day, saving, budgets, where it went donut) | FinanceSpending | partly: no touch callouts on the charts |
-| FinanceViews.swift: Transactions, filter, detail (category, rule, note, duplicates, receipts) | FinanceTransactions | partly: photo library only (no camera), no memory section, no "ask the agent" |
+| FinanceViews.swift: Spending (month and year, cash flow, day by day, saving, budgets, where it went donut) | FinanceSpending | done (tap a bar or a day for its figures) |
+| FinanceViews.swift: Transactions, filter, detail (category, rule, note, duplicates, receipts) | FinanceTransactions | partly: no memory section; "ask the agent" opens the main chat with the charge copied (the chat takes no reference from another screen) |
 | FinanceViews.swift: Accounts, credit used, statement import address | FinanceAccounts | done |
-| FinanceMoreViews.swift: Budgets, categories, rules | FinanceBudgets | partly: no "suggest rules" |
+| FinanceMoreViews.swift: Budgets, categories, rules | FinanceBudgets | done |
 | FinanceMoreViews.swift: Net worth, assets | FinanceNetWorth | done (no memory section) |
-| FinanceMoreViews.swift: Savings targets | FinanceNetWorth | partly: add and close, no edit |
-| FinanceMoreViews.swift: Receipts, receipt detail | FinanceReceipts | partly: no "type in a receipt", no picture, matching through a sheet |
-| FinanceMoreViews.swift: Banks and currency | FinanceSetup | partly: currency, banks, sync, SimpleFIN; not "bring an existing connection" |
-| FinanceEntryViews.swift (type in a receipt, paystub, tax form) | kit only | not ported: the forms |
+| FinanceMoreViews.swift: Savings targets | FinanceNetWorth | done |
+| FinanceMoreViews.swift: Receipts, receipt detail | FinanceReceipts | partly: no picture; typing in a receipt is FinanceEntryScreens |
+| FinanceMoreViews.swift: Banks and currency | FinanceSetup | done |
+| FinanceEntryViews.swift (type in a receipt, paystub, tax form) | kit only | done (FinanceEntryScreens) |
 | FinanceManageViews.swift: trades | FinanceTrades | done |
-| FinanceManageViews.swift: rename or delete a statement account, suggest rules, import credential, import rows | kit only | not ported: the screens |
+| FinanceManageViews.swift: rename or delete a statement account, suggest rules, import credential, import rows | kit only | done (FinanceManageScreens, rename and delete on the accounts screen) |
 | FinanceSharingViews.swift, FinanceShareAllViews.swift | FinanceSharing | done (the "Showing" menu is the list on the first screen) |
-| SharedAllFinanceViews.swift | FinanceSharing (FinanceSharedAllScreen) | partly: month steps, no year view or chart |
-| FinanceTaxViews.swift | FinanceTaxes | partly: year, estimate, figures, comparisons, findings, paystubs, forms and their details, address, filing status, settings (a few fields); no ring chart, no upload of documents |
+| SharedAllFinanceViews.swift | FinanceSharing (FinanceSharedAllScreen) | done |
+| FinanceTaxViews.swift | FinanceTaxes | done (ring, upload, every setting) |
 | FinanceCategoryNames.swift, StatementImportWords.swift | FinanceBase, FinanceAccounts | done |
 | FinanceManageDemo.swift, FinanceSharingDemo.swift | FinanceDemo | done |
 

@@ -2,7 +2,11 @@ package com.teanode.app.finance
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.teanode.app.demo.DemoHost
 import com.teanode.app.screenshots.Look
 import com.teanode.app.screenshots.PHONE_QUALIFIERS
@@ -81,4 +85,33 @@ class FinanceScreenshotTest {
     @Test fun `shared all`() = shoot("shared-all") { FinanceSharedAllScreen(FinanceDemoData.WHOLE_SHARER_ID) }
     @Test fun `setup`() = shoot("setup") { FinanceSetupScreen() }
     @Test fun `setup dark`() = shoot("setup", Look.Dark) { FinanceSetupScreen() }
+
+    @Test fun `receipt entry`() = shoot("receipt-entry") { FinanceReceiptEntryScreen() }
+    @Test fun `receipt entry dark`() = shoot("receipt-entry", Look.Dark) { FinanceReceiptEntryScreen() }
+    @Test fun `paystub entry`() = shoot("paystub-entry") { FinancePaystubEntryScreen() }
+    @Test fun `tax form entry`() = shoot("tax-form-entry") { FinanceTaxFormEntryScreen() }
+    @Test fun `tax form entry largest text`() = shoot("tax-form-entry-largest-text", fontScale = 2f) { FinanceTaxFormEntryScreen() }
+    @Test fun `import credential`() = shoot("import-credential") { FinanceImportCredentialScreen() }
+    @Test fun `import credential dark`() = shoot("import-credential", Look.Dark) { FinanceImportCredentialScreen() }
+    @Test fun `import rows`() = shoot("import-rows") { FinanceImportRowsScreen() }
+    @Test fun `suggest rules`() = shoot("suggest-rules", isSheet = true) {
+        val connection = com.teanode.app.session.LocalConnection.current
+        val context = androidx.compose.ui.platform.LocalContext.current
+        var base by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<FinanceBase?>(null) }
+        androidx.compose.runtime.LaunchedEffect(Unit) { base = connection.readFinanceBase(context) }
+        base?.let { loaded -> SuggestRulesSheet(loaded, {}, {}) }
+    }
+    @Test fun `shared all by year`() {
+        composeRule.setContent { DemoHost { FinanceSharedAllScreen(FinanceDemoData.WHOLE_SHARER_ID) } }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Year").performClick()
+        composeRule.waitForIdle()
+        composeRule.photograph("finance-shared-all-year-light")
+    }
+    @Test fun `spending with a chosen month`() {
+        composeRule.setContent { DemoHost { FinanceSpendingScreen() } }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Cash flow").assertExists()
+        composeRule.photograph("finance-spending-callouts-light")
+    }
 }

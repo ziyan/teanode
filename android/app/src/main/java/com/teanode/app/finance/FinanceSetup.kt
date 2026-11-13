@@ -105,6 +105,8 @@ fun FinanceSetupScreen() {
                     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         if ("simplefin" in loaded.providerKinds) OutlinedButton(onClick = { isLinking = true }) { Text(stringResource(R.string.finance_link_simplefin)) }
                         if ("plaid" in loaded.providerKinds) Footnote(stringResource(R.string.finance_plaid_in_dashboard))
+                        OutlinedButton(onClick = { navigator.navigate(FinanceRoutes.importCredential) }) { Text(stringResource(R.string.finance_manage_bring_connection)) }
+                        OutlinedButton(onClick = { navigator.navigate(FinanceRoutes.importRows) }) { Text(stringResource(R.string.finance_manage_import_transactions)) }
                     }
                 }
             }

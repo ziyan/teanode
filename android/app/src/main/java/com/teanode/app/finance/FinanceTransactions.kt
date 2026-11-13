@@ -49,6 +49,7 @@ import com.teanode.app.session.LocalConnection
 import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.shopping.ShoppingSheet
 import com.teanode.app.shopping.readPendingFile
+import com.teanode.app.shopping.toPendingFile
 import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
@@ -263,12 +264,11 @@ fun FinanceTransactionDetailScreen(transactionId: String) {
         }
     }
 
-    val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    fun readReceiptFrom(pick: () -> com.teanode.app.shopping.ShoppingPendingFile) {
         scope.launch {
             readingText = context.getString(R.string.finance_reading_receipt)
             try {
-                val file = context.readPendingFile(uri, "receipt.jpg")
+                val file = pick()
                 val attachmentId = connection.upload(file.name, file.contentType, file.data)
                 connection.readReceipt(attachmentId = attachmentId, transactionId = transactionId)
                 repeat(30) {
@@ -290,8 +290,23 @@ fun FinanceTransactionDetailScreen(transactionId: String) {
             }
         }
     }
+    val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) readReceiptFrom { context.readPendingFile(uri, "receipt.jpg") } }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap -> if (bitmap != null) readReceiptFrom { bitmap.toPendingFile("receipt.jpg") } }
 
-    TeaNodeScreen(title = transaction?.shownName.orEmpty(), onBack = { navigator.back() }) { padding ->
+    TeaNodeScreen(
+        title = transaction?.shownName.orEmpty(), onBack = { navigator.back() },
+        actions = {
+            transaction?.let { shown ->
+                TextButton(onClick = {
+                    // The chat takes no reference from another screen yet, so the charge goes on the clipboard for the person to paste.
+                    val summary = listOfNotNull(shown.shownName, shown.postedOn, FinanceMoney.shown(shown.amount, shown.currencyCode), shown.id).joinToString(" · ")
+                    (context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("charge", summary))
+                    snackbar.show(context.getString(R.string.finance_ask_agent_copied))
+                    navigator.navigate(com.teanode.app.shell.Routes.child(com.teanode.kit.AppSection.Agent, "main"))
+                }) { Text(stringResource(R.string.finance_ask_agent)) }
+            }
+        },
+    ) { padding ->
         val shown = transaction
         val loadedBase = base
         val problem = failure
@@ -380,7 +395,10 @@ fun FinanceTransactionDetailScreen(transactionId: String) {
                 item("add-receipt") {
                     val isMoneyIn = (FinanceMoney.decimal(shown.amount)?.signum() ?: 0) > 0
                     Column(Modifier.padding(horizontal = 16.dp)) {
-                        OutlinedButton(onClick = { photoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !isMoneyIn) { Text(stringResource(R.string.finance_add_receipt)) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { photoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !isMoneyIn) { Text(stringResource(R.string.finance_add_receipt_photo)) }
+                            OutlinedButton(onClick = { cameraLauncher.launch(null) }, enabled = !isMoneyIn) { Text(stringResource(R.string.finance_add_receipt_camera)) }
+                        }
                         if (isMoneyIn) Footnote(stringResource(R.string.finance_receipts_money_out))
                     }
                 }
