@@ -11,10 +11,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.util.UUID
 
-/** The surface the app names on its turns (internal/agent/surface.go): the server knows the iPhone app's names, which the Android app sends until it has its own. */
+/** The surface the app names on its turns (internal/agent/surface.go): the server has surfaces for the Android app of its own. */
 object Surface {
-    const val TYPED = "ios"
-    const val VOICE = "ios_voice"
+    const val TYPED = "android"
+    const val VOICE = "android_voice"
 }
 
 /** How a turn ended, for a caller that waits for it without showing the conversation. */

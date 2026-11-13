@@ -31,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.outlined.QuestionAnswer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -291,7 +292,19 @@ fun FinanceTransactionDetailScreen(transactionId: String) {
         }
     }
 
-    TeaNodeScreen(title = transaction?.shownName.orEmpty(), onBack = { navigator.back() }) { padding ->
+    TeaNodeScreen(
+        title = transaction?.shownName.orEmpty(), onBack = { navigator.back() },
+        actions = {
+            transaction?.let { asked ->
+                androidx.compose.material3.IconButton(onClick = {
+                    com.teanode.app.chats.ChatsHooks.askAbout(
+                        navigator,
+                        com.teanode.kit.chats.AgentReference.transaction(asked.id, asked.postedOn, asked.amount, asked.currencyCode, asked.merchantName, asked.description),
+                    )
+                }) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Outlined.QuestionAnswer, contentDescription = stringResource(R.string.chats_ask_about_this)) }
+            }
+        },
+    ) { padding ->
         val shown = transaction
         val loadedBase = base
         val problem = failure
