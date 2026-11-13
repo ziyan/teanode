@@ -15,6 +15,7 @@ struct ConnectView: View {
     @State private var pending: PendingConnection?
     @State private var problemText: String?
     @State private var serverText = ""
+    @State private var isShowingSetupGuide = false
     @FocusState private var isServerFocused: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.webAuthenticationSession) private var webAuthenticationSession
@@ -109,6 +110,23 @@ struct ConnectView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
+                    // For somebody who came without a server: how to run one.
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("No server yet?")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Button {
+                            isShowingSetupGuide = true
+                        } label: {
+                            Label("Set up your own server", systemImage: "server.rack").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
+                        Text("TeaNode is free and open source. You run the server on a computer you control, and this app signs in to it.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // On a wide screen a form of a phone's width in the middle,
@@ -138,6 +156,15 @@ struct ConnectView: View {
                     }
                 }
             }
+            .navigationDestination(isPresented: $isShowingSetupGuide) {
+                ServerSetupGuideView()
+            }
+            #if DEBUG
+                // `-TeaNodeScreen server-setup`: the guide, for the screenshots CI takes.
+                .onAppear {
+                    if DemoServer.screen == "server-setup" { isShowingSetupGuide = true }
+                }
+            #endif
             .sheet(isPresented: $isScanning) {
                 ScanSheet { text in
                     isScanning = false

@@ -274,6 +274,9 @@ jobs:
           shoot connect-light light large
           shoot connect-dark dark large
           shoot connect-largest-text light accessibility-extra-extra-extra-large
+          shoot server-setup-light light large -TeaNodeScreen server-setup
+          shoot server-setup-dark dark large -TeaNodeScreen server-setup
+          shoot server-setup-largest-text light accessibility-extra-extra-extra-large -TeaNodeScreen server-setup
           shoot conversation-light light large -TeaNodeDemo -TeaNodeScreen conversation
           if [ -f screenshots/conversation-light.png ] && build/assert-recording-screenshot recordings-light screenshots/conversation-light.png; then
             echo "Recording content assertion accepted the conversation screen."
@@ -844,6 +847,7 @@ jobs:
             "passwords-settings|-TeaNodeTab passwords -TeaNodeScreen passwords-settings"
           )
           shoot ipad-connect-light light large
+          shoot ipad-server-setup-light light large -TeaNodeScreen server-setup
           for ipad_screen in "${ipad_screens[@]}"; do
             # The arguments are words with no spaces in them.
             # shellcheck disable=SC2086

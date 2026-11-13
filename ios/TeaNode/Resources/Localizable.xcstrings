@@ -96670,6 +96670,326 @@
           }
         }
       }
+    },
+    "No server yet?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーをまだお持ちでないですか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有服务器？"
+          }
+        }
+      }
+    },
+    "Set up your own server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分のサーバーを用意する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自行搭建服务器"
+          }
+        }
+      }
+    },
+    "TeaNode is free and open source. You run the server on a computer you control, and this app signs in to it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode は無料のオープンソースです。サーバーは自分で管理するコンピュータで動かし、このアプリはそこにサインインします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 免费且开源。服务器运行在你自己掌控的电脑上，这个应用登录到它。"
+          }
+        }
+      }
+    },
+    "Set up a server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーを用意する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搭建服务器"
+          }
+        }
+      }
+    },
+    "TeaNode is free and open source. You run the server yourself, on a computer you control, and this app signs in to it. There is nothing to buy and no TeaNode account to make.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode は無料のオープンソースです。サーバーは自分で、自分が管理するコンピュータで動かし、このアプリはそこにサインインします。購入するものはなく、TeaNode のアカウントを作る必要もありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 免费且开源。服务器由你自己运行，在你掌控的电脑上，这个应用登录到它。无需购买任何东西，也不用注册 TeaNode 账户。"
+          }
+        }
+      }
+    },
+    "A Linux computer you own or rent, or a Mac with Docker Desktop. The assistant needs no domain and no mail ports.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有またはレンタルの Linux コンピュータ、または Docker Desktop を入れた Mac。アシスタントにはドメインもメール用ポートも要りません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一台自己拥有或租用的 Linux 电脑，或装有 Docker Desktop 的 Mac。助手不需要域名，也不需要邮件端口。"
+          }
+        }
+      }
+    },
+    "1. A computer that stays on": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1. 電源を入れたままのコンピュータ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1. 一台一直开着的电脑"
+          }
+        }
+      }
+    },
+    "Copy command": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コマンドをコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制命令"
+          }
+        }
+      }
+    },
+    "Read the script first": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先にスクリプトを読む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先看看脚本"
+          }
+        }
+      }
+    },
+    "2. Install TeaNode": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2. TeaNode をインストール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2. 安装 TeaNode"
+          }
+        }
+      }
+    },
+    "Run it on that computer. It installs Docker on Linux if it is missing, then starts TeaNode and its database.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのコンピュータで実行します。Linux で Docker がなければインストールし、TeaNode とそのデータベースを起動します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在那台电脑上运行。在 Linux 上如果没有 Docker 会先安装，然后启动 TeaNode 和它的数据库。"
+          }
+        }
+      }
+    },
+    "3. Claim the first account": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3. 最初のアカウントを作る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3. 创建第一个账户"
+          }
+        }
+      }
+    },
+    "4. Give it an https address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4. https のアドレスを付ける"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4. 给它一个 https 地址"
+          }
+        }
+      }
+    },
+    "Go back and type that address, or open Settings, then Devices, then Connect a phone in the dashboard and scan its code.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "戻ってそのアドレスを入力するか、ダッシュボードで「設定」の「デバイス」から「スマートフォンを接続」を開き、そのコードを読み取ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回并输入那个地址，或在仪表板中打开设置，再打开设备，选择连接手机，然后扫描它的代码。"
+          }
+        }
+      }
+    },
+    "5. Sign in here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5. ここでサインイン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5. 在这里登录"
+          }
+        }
+      }
+    },
+    "Full setup guide": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳しいセットアップガイド"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完整的搭建指南"
+          }
+        }
+      }
+    },
+    "Source code on GitHub": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub のソースコード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub 上的源代码"
+          }
+        }
+      }
+    },
+    "The full guide also covers hosting your own mail.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳しいガイドでは自分のメールをホストする方法も説明しています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完整指南也介绍了如何托管你自己的邮件。"
+          }
+        }
+      }
+    },
+    "Open `http://127.0.0.1:8080` on that computer. The first person to open it creates the administrator account. Then choose the model service your agent thinks with, OpenAI, Anthropic, Gemini or your own, and press Start my assistant.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのコンピュータで `http://127.0.0.1:8080` を開きます。最初に開いた人が管理者アカウントを作ります。次に、エージェントが考えるのに使うモデルサービス（OpenAI、Anthropic、Gemini、または自前のもの）を選び、「アシスタントを始める」を押します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在那台电脑上打开 `http://127.0.0.1:8080`。第一个打开它的人会创建管理员账户。然后选择你的代理用来思考的模型服务（OpenAI、Anthropic、Gemini 或你自己的），再点“启动我的助手”。"
+          }
+        }
+      }
+    },
+    "This app signs in only over https. Put a reverse proxy with a certificate in front of port 8080, such as Caddy, nginx with Let's Encrypt, or a tunnel service, on a name such as `teanode.example.com`.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリは https でのみサインインします。ポート 8080 の前に証明書付きのリバースプロキシ（Caddy、Let's Encrypt を使う nginx、トンネルサービスなど）を置き、`teanode.example.com` のような名前にします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个应用只通过 https 登录。在 8080 端口前放一个带证书的反向代理，比如 Caddy、配合 Let's Encrypt 的 nginx 或隧道服务，使用 `teanode.example.com` 这样的域名。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
