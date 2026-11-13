@@ -2,7 +2,6 @@ package com.teanode.kit.photos
 
 import com.teanode.kit.Connection
 import com.teanode.kit.HTTPRequest
-import com.teanode.kit.HTTPResponse
 import com.teanode.kit.ServerAddress
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonPrimitive
@@ -327,10 +326,11 @@ object PhotoBackupRequest {
         )
 
     /** The upload path the server created, from its answer to a creation (201 with a Location), or the reason not. */
-    fun interpretCreation(response: HTTPResponse, locationHeader: String?, retryAfterHeader: String?): Pair<String?, PhotoBackupOutcome?> {
-        if (response.statusCode != 201) return null to interpretOtherwise(response.statusCode, response.text.take(2048), retryAfterHeader)
-        val path = locationHeader?.trim()?.let { location -> location.substringAfter("://", location).let { rest -> if (rest.startsWith("/")) rest else "/" + rest.substringAfter('/', "") } }?.substringBefore('?')
-        if (path == null || !isUploadPath(path)) return null to PhotoBackupOutcome.RetryLater(null, false)
+    fun interpretCreation(statusCode: Int, locationHeader: String?, bodyText: String?, retryAfterHeader: String?): Pair<String?, PhotoBackupOutcome?> {
+        if (statusCode != 201) return null to interpretOtherwise(statusCode, bodyText?.take(2048), retryAfterHeader)
+        val location = locationHeader?.trim().orEmpty()
+        val path = (if (location.contains("://")) "/" + location.substringAfter("://").substringAfter('/', "") else location).substringBefore('?')
+        if (!isUploadPath(path)) return null to PhotoBackupOutcome.RetryLater(null, false)
         return path to null
     }
 

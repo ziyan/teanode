@@ -245,4 +245,16 @@ mutation (${'$'}credentialName: String!) {
 query (${'$'}clientPhotoIds: [String!]!) { FindPhotos(clientPhotoIds: ${'$'}clientPhotoIds) { id clientPhotoId photoKind photoFileRoles } }
 """.trimEnd()
 
+    val ADDRESS_BOOKS = """
+query { ListAddressBooks { id name contacts } }
+""".trimEnd()
+
+    val CONTACTS = """
+query (${'$'}addressBookId: String!, ${'$'}query: String, ${'$'}first: Int) {
+  ListContacts(addressBookId: ${'$'}addressBookId, query: ${'$'}query, first: ${'$'}first) {
+    id name organization emails phones hasPhoto addresses { written } accountUserId
+  }
+}
+""".trimEnd()
+
 }

@@ -100,6 +100,14 @@ class PhotoBackupTest {
     }
 
     @Test
+    fun aCreatedUploadIsFoundFromItsLocation() {
+        assertEquals("/api/v1/photos/uploads/u1", PhotoBackupRequest.interpretCreation(201, "https://tea.example.com/api/v1/photos/uploads/u1", null, null).first)
+        assertEquals("/api/v1/photos/uploads/u1", PhotoBackupRequest.interpretCreation(201, "/api/v1/photos/uploads/u1", null, null).first)
+        assertEquals(PhotoBackupOutcome.RetryLater(null, false), PhotoBackupRequest.interpretCreation(201, "/elsewhere", null, null).second)
+        assertEquals(PhotoBackupOutcome.SignInNeeded, PhotoBackupRequest.interpretCreation(401, null, null, null).second)
+    }
+
+    @Test
     fun theCreationRequestAnnouncesTheLengthAndSignsInWithTheDevicePassword() {
         val server = ServerAddress.parse("https://tea.example.com")
         val credential = PhotoBackupCredential("c1", "Phone", "device", "secret")
