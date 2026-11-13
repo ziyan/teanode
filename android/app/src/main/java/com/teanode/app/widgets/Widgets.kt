@@ -95,7 +95,7 @@ class AgentWidget : GlanceAppWidget() {
                         Spacer(GlanceModifier.width(8.dp))
                         WidgetButton(context.getString(R.string.widgets_call_your_agent), "C", actionStartActivity(openingIntent(context, "agent/home", isCall = true)))
                         Spacer(GlanceModifier.width(8.dp))
-                        WidgetButton(context.getString(R.string.widgets_start_recording), "R", actionStartActivity(openingIntent(context, "recordings/home")))
+                        WidgetButton(context.getString(R.string.widgets_start_recording), "R", actionStartActivity(openingIntent(context, "recordings/capture")))
                     }
                 }
             }
