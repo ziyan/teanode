@@ -94,6 +94,25 @@ it('names a phone by its model as people say it, not by the identifier the phone
   expect(screen.queryByText(/iPhone18,2/)).toBeNull()
 })
 
+it('says a phone runs Android, with the model it reports', async () => {
+  answerEverything([
+    {
+      id: 'fixture-android-phone',
+      phoneName: 'Fixture Android phone',
+      phoneModel: 'Pixel 9',
+      phonePlatform: 'android',
+      phoneModelName: 'Pixel 9',
+      notificationKinds: [],
+      canBeNotified: true,
+      lastSeenAt: null,
+      lastDeliveredAt: null,
+      lastDeliveryError: '',
+    },
+  ])
+  renderAt('/settings/devices')
+  expect(await screen.findByText('Android · Pixel 9 · Notifications: all')).toBeTruthy()
+})
+
 it('opens the setup dialog from ?setup=1 on the Devices path', async () => {
   answerEverything()
   renderAt('/settings/devices?setup=1&mailboxId=fixture-mailbox')
