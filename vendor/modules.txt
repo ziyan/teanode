@@ -376,9 +376,10 @@ github.com/pion/ice/v4/internal/fakenet
 github.com/pion/ice/v4/internal/netutil
 github.com/pion/ice/v4/internal/stun
 github.com/pion/ice/v4/internal/taskloop
-# github.com/pion/interceptor v0.1.49
+# github.com/pion/interceptor v0.1.51
 ## explicit; go 1.24.0
 github.com/pion/interceptor
+github.com/pion/interceptor/internal/cc
 github.com/pion/interceptor/internal/ntp
 github.com/pion/interceptor/internal/rtpbuffer
 github.com/pion/interceptor/internal/sequencenumber
@@ -399,10 +400,10 @@ github.com/pion/mdns/v2
 # github.com/pion/randutil v0.1.0
 ## explicit; go 1.14
 github.com/pion/randutil
-# github.com/pion/rtcp v1.2.19
+# github.com/pion/rtcp v1.2.20
 ## explicit; go 1.24.0
 github.com/pion/rtcp
-# github.com/pion/rtp v1.10.5
+# github.com/pion/rtp v1.10.6
 ## explicit; go 1.24.0
 github.com/pion/rtp
 github.com/pion/rtp/codecs
