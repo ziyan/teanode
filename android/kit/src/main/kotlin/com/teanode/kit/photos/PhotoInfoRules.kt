@@ -82,3 +82,12 @@ object PhotoPositionText {
         return formatter.format(only)
     }
 }
+
+/** Hearts on several photos at once (ios PhotosModel.setFavorite and the selection bar's heart). */
+object PhotoFavorites {
+    /** What the heart of a selection does: take the heart away when every photo has one, else give every photo one. */
+    fun isFavoriteTarget(photos: List<Photo>): Boolean = photos.isEmpty() || !photos.all { photo -> photo.isFavorite }
+
+    /** The photos whose heart is not already as it should be; the others are not asked about. */
+    fun photosToChange(photos: List<Photo>, isFavorite: Boolean): List<Photo> = photos.filter { photo -> photo.isFavorite != isFavorite }
+}

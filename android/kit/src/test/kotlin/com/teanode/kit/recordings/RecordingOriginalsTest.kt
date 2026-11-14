@@ -40,3 +40,75 @@ class RecordingOriginalsTest {
         assertEquals("1:01:01 to 1:03:01", RecordingOriginals.title(second, 2) { start, end -> "$start to $end" })
     }
 }
+
+/** A server that streams a large file in chunks and fails if anything asks for it whole. */
+private class StreamingServer(private val totalBytes: Long, private val statusCode: Int = 200) : com.teanode.kit.HTTPTransport {
+    override suspend fun send(request: com.teanode.kit.HTTPRequest): com.teanode.kit.HTTPResponse = throw AssertionError("the file must not be read whole")
+
+    override suspend fun download(request: com.teanode.kit.HTTPRequest, destination: java.io.File): com.teanode.kit.HTTPResponse {
+        destination.outputStream().use { output ->
+            val chunk = ByteArray(1024 * 1024) { index -> (index % 251).toByte() }
+            var written = 0L
+            while (written < totalBytes) {
+                val count = minOf(chunk.size.toLong(), totalBytes - written).toInt()
+                output.write(chunk, 0, count)
+                written += count
+            }
+        }
+        return com.teanode.kit.HTTPResponse(statusCode)
+    }
+}
+
+class RecordingOriginalDownloadTest {
+    private val totalBytes = 192L * 1024 * 1024
+
+    private fun connection(server: com.teanode.kit.HTTPTransport) = com.teanode.kit.Connection(
+        com.teanode.kit.Account(com.teanode.kit.ServerAddress.parse("mail.example.com"), "a-client", "tnt", "", Long.MAX_VALUE / 4, "robin"), server,
+    )
+
+    private fun scratch(): java.io.File = java.io.File("build/tmp").also { folder -> folder.mkdirs() }.let { folder -> java.io.File.createTempFile("original-", ".bin", folder) }
+
+    private fun expectedDigest(): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        val chunk = ByteArray(1024 * 1024) { index -> (index % 251).toByte() }
+        var left = totalBytes
+        while (left > 0) { val count = minOf(chunk.size.toLong(), left).toInt(); digest.update(chunk, 0, count); left -= count }
+        return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+    }
+
+    private fun media(sizeBytes: Long, sha: String) = RecordingMedia(
+        id = "m1", recordingId = "r1", clientMediaId = "c1", originalFilename = "long.m4a", originalContentType = "audio/mp4", originalSizeBytes = sizeBytes,
+        originalSha256 = sha, timelineStartMS = 0, mediaDurationMS = 3_600_000, partCount = 1, recordingUploadState = "complete",
+    )
+
+    @Test
+    fun aLargeOriginalIsStreamedToAFileAndVerifiedWithoutBeingReadWhole() {
+        val file = scratch()
+        try {
+            kotlinx.coroutines.runBlocking { connection(StreamingServer(totalBytes)).downloadRecordingOriginal(media(totalBytes, expectedDigest()), file) }
+            assertEquals(totalBytes, file.length())
+        } finally { file.delete() }
+    }
+
+    @Test
+    fun anOriginalThatIsNotTheRecordedFileIsRefusedAndDeleted() {
+        val file = scratch()
+        try {
+            org.junit.jupiter.api.Assertions.assertThrows(com.teanode.kit.TeaNodeError::class.java) {
+                kotlinx.coroutines.runBlocking { connection(StreamingServer(totalBytes)).downloadRecordingOriginal(media(totalBytes, "0".repeat(64)), file) }
+            }
+            assertFalse(file.exists())
+        } finally { file.delete() }
+    }
+
+    @Test
+    fun aRefusedDownloadIsNotShared() {
+        val file = scratch()
+        try {
+            org.junit.jupiter.api.Assertions.assertThrows(com.teanode.kit.TeaNodeError::class.java) {
+                kotlinx.coroutines.runBlocking { connection(StreamingServer(1024, statusCode = 404)).downloadRecordingOriginal(media(1024, "0".repeat(64)), file) }
+            }
+            assertFalse(file.exists())
+        } finally { file.delete() }
+    }
+}

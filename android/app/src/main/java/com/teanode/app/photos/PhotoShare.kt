@@ -24,8 +24,10 @@ suspend fun Connection.sharePhotoFiles(context: Context, photos: List<Photo>, ph
     val folder = newShareFolder(context)
     val taken = mutableSetOf<String>()
     val files = photos.map { photo ->
-        val download = downloadPhotoFile(photo, photoFileRole)
-        writeSharedFile(context, folder, download.filename, download.bytes, download.contentType, taken)
+        val download = downloadPhotoFile(photo, folder, photoFileRole)
+        val file = folder.resolve(PhotoShareFiles.fileName(download.filename, taken).also { chosen -> taken += chosen })
+        download.file.renameTo(file)
+        sharedFileOf(context, file, download.contentType)
     }
     offerSharedFiles(context, files)
 }
@@ -38,13 +40,9 @@ internal fun newShareFolder(context: Context): File {
     return root.resolve(System.currentTimeMillis().toString()).also { folder -> folder.mkdirs() }
 }
 
-/** Writes one file of a share under a name no other file of it has, and says where other apps may read it. */
-internal fun writeSharedFile(context: Context, folder: File, wantedName: String, bytes: ByteArray, contentType: String, taken: MutableSet<String>): SharedPhotoFile {
-    val name = PhotoShareFiles.fileName(wantedName, taken).also { chosen -> taken += chosen }
-    val file = folder.resolve(name)
-    file.writeBytes(bytes)
-    return SharedPhotoFile(FileProvider.getUriForFile(context, "${context.packageName}.chatfiles", file), contentType)
-}
+/** Says where other apps may read a file of a share. */
+internal fun sharedFileOf(context: Context, file: File, contentType: String): SharedPhotoFile =
+    SharedPhotoFile(FileProvider.getUriForFile(context, "${context.packageName}.chatfiles", file), contentType)
 
 /** Opens the system share sheet for the files. */
 internal fun offerSharedFiles(context: Context, files: List<SharedPhotoFile>) {

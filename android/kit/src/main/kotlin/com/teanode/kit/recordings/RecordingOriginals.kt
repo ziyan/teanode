@@ -2,6 +2,8 @@ package com.teanode.kit.recordings
 
 import com.teanode.kit.Connection
 import com.teanode.kit.TeaNodeError
+import com.teanode.kit.FileDigest
+import java.io.File
 import java.security.MessageDigest
 
 /** The original files of a recording, as the person shares them (ios RecordingPlaybackScreen's "Share full original"). */
@@ -10,6 +12,9 @@ object RecordingOriginals {
 
     /** Whether the bytes are the file the server recorded: the same length and the same digest, nothing else is handed on. */
     fun isVerified(bytes: ByteArray, media: RecordingMedia): Boolean = bytes.size.toLong() == media.originalSizeBytes && sha256Text(bytes) == media.originalSha256
+
+    /** Whether the file is the one the server recorded, read in chunks: the same length and the same digest. */
+    fun isVerified(file: File, media: RecordingMedia): Boolean = file.length() == media.originalSizeBytes && FileDigest.sha256Text(file) == media.originalSha256
 
     /** The originals that are whole on the server, in the order of the recording. */
     fun completeFiles(mediaFiles: List<RecordingMedia>): List<RecordingMedia> =
@@ -30,9 +35,14 @@ object RecordingOriginals {
     }
 }
 
-/** Reads one original from the server, and refuses it when it is not the file the server says it holds. */
-suspend fun Connection.downloadRecordingOriginal(media: RecordingMedia): ByteArray {
-    val response = send(recordingPlaybackRequest(media.id))
-    if (response.statusCode != 200 || !RecordingOriginals.isVerified(response.body, media)) throw TeaNodeError.UnreadableAnswer
-    return response.body
+/**
+ * Reads one original from the server into [destination] as it arrives, and refuses it (deleting what was written) when it
+ * is not the file the server says it holds. The file is never held whole in memory.
+ */
+suspend fun Connection.downloadRecordingOriginal(media: RecordingMedia, destination: File) {
+    val response = download(recordingPlaybackRequest(media.id), destination)
+    if (response.statusCode != 200 || !RecordingOriginals.isVerified(destination, media)) {
+        destination.delete()
+        throw TeaNodeError.UnreadableAnswer
+    }
 }

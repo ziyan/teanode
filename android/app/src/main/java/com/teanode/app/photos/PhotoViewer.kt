@@ -184,7 +184,10 @@ fun PhotoViewer(
                             },
                             onSaveToGallery = { role ->
                                 isMenuOpen = false
-                                act(R.string.photos_saved_to_gallery) { saveToGallery(context, connection.downloadPhotoFile(photo, role)) }
+                                act(R.string.photos_saved_to_gallery) {
+                                    val download = connection.downloadPhotoFile(photo, java.io.File(context.cacheDir, "chat-files/photo-save"), role)
+                                    try { saveToGallery(context, download) } finally { download.file.delete() }
+                                }
                             },
                             onSaveToLibrary = { isMenuOpen = false; act(R.string.photos_saved_to_library) { connection.savePhotoToLibrary(photo.id) } },
                             onRetryPreviews = { isMenuOpen = false; act(R.string.photos_previews_again) { connection.retryPhotoProcessing(listOf(photo.id)); onPhotoChanged(connection.photoDetail(photo.id).photo) } },
