@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +47,12 @@ import com.teanode.kit.shopping.ShoppingList
 import com.teanode.kit.shopping.ShoppingStore
 import kotlinx.coroutines.launch
 
+/** What Shopping says to an account that may not use it: that is a permission, not a service the server has turned off (ios ShoppingNotAllowedView). */
+@Composable
+fun ShoppingNotAllowedView(modifier: Modifier = Modifier) {
+    EmptyState(Icons.Outlined.ShoppingCart, stringResource(R.string.shopping_not_available_to_you), modifier, description = stringResource(R.string.shopping_not_allowed_description))
+}
+
 /** The first screen of Shopping: the person's lists, the lists shared with them, and the stores their lists have items for. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,20 +64,24 @@ fun ShoppingSection() {
     val scope = rememberCoroutineScope()
     val words = rememberShoppingWords()
     val state = remember(connection) { ShoppingHomeState(connection, scope, snackbar) }
+    val facts by session.facts.collectAsState()
+    val hasReadFacts by session.hasReadFacts.collectAsState()
+    val isNotAllowed = hasReadFacts && !facts.isAvailable(AppSection.Shopping)
     var isCreating by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
-    androidx.compose.runtime.LaunchedEffect(state) { state.load() }
+    androidx.compose.runtime.LaunchedEffect(state, isNotAllowed) { if (!isNotAllowed) state.load() }
     FollowShopping(connection, session.isDemo) { state.load() }
 
     TeaNodeScreen(
         title = stringResource(R.string.shopping_title),
         actions = {
-            IconButton(onClick = { isCreating = true }) { Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.shopping_new_list)) }
+            if (!isNotAllowed) IconButton(onClick = { isCreating = true }) { Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.shopping_new_list)) }
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             val failure = state.loadFailure
             when {
+                isNotAllowed -> ShoppingNotAllowedView()
                 failure != null && !state.hasLoaded -> ErrorState(session.describeLoadProblem(failure), onRetry = { state.reload() })
                 !state.hasLoaded -> LoadingState()
                 state.lists.isEmpty() -> EmptyState(

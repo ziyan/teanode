@@ -159,4 +159,7 @@
     <string name="shopping_what">内容</string>
     <string name="shopping_where">地点</string>
     <string name="shopping_will_no_longer_see">%1$s 将不再能看到这个清单。</string>
+    <string name="shopping_item_taken_off_for_everyone">%1$s 将从所有共享对象的清单中移除。</string>
+    <string name="shopping_not_available_to_you">你无法使用购物功能</string>
+    <string name="shopping_not_allowed_description">你的账户不能创建购物清单。管理你的 TeaNode 服务器的人可以为你开启。</string>
 </resources>

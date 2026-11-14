@@ -159,4 +159,7 @@
     <string name="shopping_what">内容</string>
     <string name="shopping_where">場所</string>
     <string name="shopping_will_no_longer_see">%1$s はこのリストを見られなくなります。</string>
+    <string name="shopping_item_taken_off_for_everyone">%1$s は、共有しているすべての人のリストから削除されます。</string>
+    <string name="shopping_not_available_to_you">買い物機能は利用できません</string>
+    <string name="shopping_not_allowed_description">このアカウントでは買い物リストを使えません。TeaNode サーバーの管理者が許可できます。</string>
 </resources>
