@@ -75,6 +75,7 @@ import com.teanode.app.ui.components.ConfirmationDialog
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
 import com.teanode.app.ui.components.TeaNodeRow
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.app.ui.components.TeaNodeSectionHeader
 import com.teanode.app.ui.components.rememberServerPicture
@@ -185,26 +186,28 @@ fun PersonCardScreen(model: ContactsModel, target: PersonCardTarget, onBack: () 
         },
     ) { contentPadding ->
         when {
-            shownCard != null -> Column(Modifier.padding(contentPadding).fillMaxSize().verticalScroll(rememberScrollState())) {
-                PersonCardHeader(shownCard, isMine = contact != null && contact.id == model.myContactId, model = model)
-                if (shownCard.person != null && shownCard.needsContact) PersonCardLinkOffer(shownCard) { isLinkingContact = true }
-                PersonCardLocationRows(shownCard)
-                PersonCardHealthRows(shownCard)
-                PersonCardFinanceRows(shownCard)
-                PersonCardPhotosRows(shownCard)
-                PersonCardMailRows(shownCard)
-                PersonCardRecordingsRows(shownCard)
-                PersonCardMemoryRows(shownCard)
-                PersonCardDetailsRows(shownCard, model)
-                PersonCardCirclesRows(shownCard)
-                PersonCardRelationshipRows(shownCard)
-                if (isContactInLoadedBook && contact != null) {
-                    PersonCardManageRows(
-                        contact, model, onChooseAccount = { isEditingAccount = true }, onChanged = { scope.launch { load() } },
-                        onDelete = { isConfirmingDelete = true }, onRemovePicture = { isConfirmingRemovePicture = true },
-                    )
+            shownCard != null -> PullToRefresh(onRefresh = { load() }, modifier = Modifier.padding(contentPadding).fillMaxSize()) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    PersonCardHeader(shownCard, isMine = contact != null && contact.id == model.myContactId, model = model)
+                    if (shownCard.person != null && shownCard.needsContact) PersonCardLinkOffer(shownCard) { isLinkingContact = true }
+                    PersonCardLocationRows(shownCard)
+                    PersonCardHealthRows(shownCard)
+                    PersonCardFinanceRows(shownCard)
+                    PersonCardPhotosRows(shownCard)
+                    PersonCardMailRows(shownCard)
+                    PersonCardRecordingsRows(shownCard)
+                    PersonCardMemoryRows(shownCard)
+                    PersonCardDetailsRows(shownCard, model)
+                    PersonCardCirclesRows(shownCard)
+                    PersonCardRelationshipRows(shownCard)
+                    if (isContactInLoadedBook && contact != null) {
+                        PersonCardManageRows(
+                            contact, model, onChooseAccount = { isEditingAccount = true }, onChanged = { scope.launch { load() } },
+                            onDelete = { isConfirmingDelete = true }, onRemovePicture = { isConfirmingRemovePicture = true },
+                        )
+                    }
+                    Spacer(Modifier.height(24.dp))
                 }
-                Spacer(Modifier.height(24.dp))
             }
             cardModel.loadFailure != null -> ErrorState(cardModel.loadFailure?.message.orEmpty().asReasonSentence(), onRetry = { scope.launch { load() } }, modifier = Modifier.padding(contentPadding))
             else -> LoadingState(Modifier.padding(contentPadding))

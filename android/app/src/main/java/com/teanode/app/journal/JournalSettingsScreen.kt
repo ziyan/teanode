@@ -29,6 +29,7 @@ import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.ui.components.ConfirmationDialog
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.kit.journal.JournalEveningTime
 import kotlinx.coroutines.delay
@@ -61,19 +62,21 @@ fun JournalSettingsScreen() {
         when {
             settings == null && loadFailure != null -> ErrorState(session.describeLoadProblem(loadFailure), onRetry = { scope.launch { model.load() } }, modifier = Modifier.padding(contentPadding))
             settings == null -> LoadingState(Modifier.padding(contentPadding))
-            else -> Column(Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState())) {
-                SwitchRow(stringResource(R.string.journal_weather), settings.isWeatherOn, { isOn -> scope.launch { model.setWeather(isOn) } })
-                Footnote(stringResource(R.string.journal_weather_footer))
-                Heading(stringResource(R.string.journal_the_evening_question))
-                SwitchRow(stringResource(R.string.journal_ask_how_the_day_was), settings.isEveningQuestionOn, { isOn -> scope.launch { model.setEveningQuestion(isOn) } })
-                if (settings.isEveningQuestionOn) TimeField(stringResource(R.string.journal_time), pickedTime, { time -> pickedTime = time })
-                Footnote(stringResource(R.string.journal_evening_footer))
-                Heading(stringResource(R.string.journal_who_reads_it))
-                Text(
-                    if (settings.modelProviderName.isEmpty()) stringResource(R.string.journal_reading_text) else stringResource(R.string.journal_reading_text_provider, settings.modelProviderName),
-                    style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-                JournalAction(stringResource(R.string.journal_erase_the_journal), Icons.Outlined.DeleteOutline, isDestructive = true, isEnabled = !model.isBusy) { isConfirmingErase = true }
+            else -> PullToRefresh(onRefresh = { model.load() }, modifier = Modifier.fillMaxSize().padding(contentPadding)) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    SwitchRow(stringResource(R.string.journal_weather), settings.isWeatherOn, { isOn -> scope.launch { model.setWeather(isOn) } })
+                    Footnote(stringResource(R.string.journal_weather_footer))
+                    Heading(stringResource(R.string.journal_the_evening_question))
+                    SwitchRow(stringResource(R.string.journal_ask_how_the_day_was), settings.isEveningQuestionOn, { isOn -> scope.launch { model.setEveningQuestion(isOn) } })
+                    if (settings.isEveningQuestionOn) TimeField(stringResource(R.string.journal_time), pickedTime, { time -> pickedTime = time })
+                    Footnote(stringResource(R.string.journal_evening_footer))
+                    Heading(stringResource(R.string.journal_who_reads_it))
+                    Text(
+                        if (settings.modelProviderName.isEmpty()) stringResource(R.string.journal_reading_text) else stringResource(R.string.journal_reading_text_provider, settings.modelProviderName),
+                        style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                    JournalAction(stringResource(R.string.journal_erase_the_journal), Icons.Outlined.DeleteOutline, isDestructive = true, isEnabled = !model.isBusy) { isConfirmingErase = true }
+                }
             }
         }
     }

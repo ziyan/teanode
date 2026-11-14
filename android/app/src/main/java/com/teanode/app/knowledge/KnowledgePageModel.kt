@@ -53,7 +53,7 @@ class KnowledgePageModel(val connection: Connection, pagePath: String, private v
         } catch (failure: kotlinx.coroutines.CancellationException) {
             throw failure
         } catch (failure: Throwable) {
-            problem = failure
+            if (page != null) snackbar.showError(failure) else problem = failure
         }
     }
 

@@ -24,6 +24,7 @@ import com.teanode.app.location.TeaNodeMap
 import com.teanode.app.location.rememberLocationText
 import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.session.LocalConnection
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.TeaNodeScreen
 import java.time.ZoneId
 
@@ -52,7 +53,9 @@ fun PersonVisitsScreen(userId: String, onBack: () -> Unit, state: PersonVisitsSt
                 content = content, focus = MapFocus(coordinates.ifEmpty { listOf(MapCoordinate(0.0, 0.0)) }),
                 modifier = Modifier.fillMaxWidth().height(220.dp), description = stringResource(R.string.contacts_map_of_their_day),
             )
-            LocationPersonVisitsList(shown, onOpenPlace = { place -> navigator.navigate(LocationRoutes.place(place.id)) })
+            PullToRefresh(onRefresh = { shown.load() }, modifier = Modifier.weight(1f).fillMaxWidth()) {
+                LocationPersonVisitsList(shown, onOpenPlace = { place -> navigator.navigate(LocationRoutes.place(place.id)) })
+            }
         }
     }
 }

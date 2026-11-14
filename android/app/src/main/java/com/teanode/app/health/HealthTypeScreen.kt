@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.LocalAppSession
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.ConfirmationDialog
 import com.teanode.app.ui.components.TeaNodeRow
 import com.teanode.app.ui.components.TeaNodeScreen
@@ -113,62 +114,64 @@ fun HealthTypeScreen(model: HealthModel, type: HealthTypeView, onBack: () -> Uni
             }
         },
     ) { padding ->
-        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
-            item {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                        val choices = listOf(HealthRange.ThirtyDays to stringResource(R.string.health_range_30_days), HealthRange.NinetyDays to stringResource(R.string.health_range_90_days), HealthRange.Year to text.yearRangeTitle, HealthRange.All to stringResource(R.string.health_range_all))
-                        choices.forEachIndexed { index, (choice, label) ->
-                            SegmentedButton(
-                                selected = choice == range, onClick = { range = choice; selectedKey = null; if (!isPeriodChosen) period = choice.defaultPeriod },
-                                shape = SegmentedButtonDefaults.itemShape(index, choices.size),
-                            ) { Text(label, maxLines = 1) }
-                        }
-                    }
-                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                        val choices = listOf(HealthPeriod.Day to stringResource(R.string.health_period_day), HealthPeriod.Week to stringResource(R.string.health_period_week), HealthPeriod.Month to stringResource(R.string.health_period_month))
-                        choices.forEachIndexed { index, (choice, label) ->
-                            SegmentedButton(
-                                selected = choice == period, onClick = { isPeriodChosen = true; period = choice; selectedKey = null },
-                                shape = SegmentedButtonDefaults.itemShape(index, choices.size),
-                            ) { Text(label, maxLines = 1) }
-                        }
-                    }
-                    val current = plan
-                    when {
-                        current != null && current.hasData -> {
-                            val headline = current.figureRows.firstOrNull()
-                            Column {
-                                if (selectedKey == null && headline != null) {
-                                    Text(headline.valueText, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold))
-                                    Text(headline.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                } else {
-                                    // The callout of a touched period takes the headline's place.
-                                    Box(Modifier.padding(bottom = 0.dp))
-                                }
-                                HealthChartView(current, selectedKey, onSelect = { key -> selectedKey = key }, modifier = Modifier.padding(top = 8.dp))
-                                rangeCutText?.let { cut -> Text(cut, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        PullToRefresh(onRefresh = { load() }, modifier = Modifier.padding(padding).fillMaxSize()) {
+            LazyColumn(Modifier.fillMaxSize()) {
+                item {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                            val choices = listOf(HealthRange.ThirtyDays to stringResource(R.string.health_range_30_days), HealthRange.NinetyDays to stringResource(R.string.health_range_90_days), HealthRange.Year to text.yearRangeTitle, HealthRange.All to stringResource(R.string.health_range_all))
+                            choices.forEachIndexed { index, (choice, label) ->
+                                SegmentedButton(
+                                    selected = choice == range, onClick = { range = choice; selectedKey = null; if (!isPeriodChosen) period = choice.defaultPeriod },
+                                    shape = SegmentedButtonDefaults.itemShape(index, choices.size),
+                                ) { Text(label, maxLines = 1) }
                             }
                         }
-                        current != null -> Text(stringResource(R.string.health_nothing_recorded_in_range), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        loadFailed != null -> {
-                            Text(loadFailed.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            TextButton(onClick = { scope.launch { load() } }) { Text(stringResource(R.string.common_try_again)) }
+                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                            val choices = listOf(HealthPeriod.Day to stringResource(R.string.health_period_day), HealthPeriod.Week to stringResource(R.string.health_period_week), HealthPeriod.Month to stringResource(R.string.health_period_month))
+                            choices.forEachIndexed { index, (choice, label) ->
+                                SegmentedButton(
+                                    selected = choice == period, onClick = { isPeriodChosen = true; period = choice; selectedKey = null },
+                                    shape = SegmentedButtonDefaults.itemShape(index, choices.size),
+                                ) { Text(label, maxLines = 1) }
+                            }
                         }
-                        else -> Box(Modifier.fillMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.Center) { CircularProgressIndicator() }
+                        val current = plan
+                        when {
+                            current != null && current.hasData -> {
+                                val headline = current.figureRows.firstOrNull()
+                                Column {
+                                    if (selectedKey == null && headline != null) {
+                                        Text(headline.valueText, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold))
+                                        Text(headline.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    } else {
+                                        // The callout of a touched period takes the headline's place.
+                                        Box(Modifier.padding(bottom = 0.dp))
+                                    }
+                                    HealthChartView(current, selectedKey, onSelect = { key -> selectedKey = key }, modifier = Modifier.padding(top = 8.dp))
+                                    rangeCutText?.let { cut -> Text(cut, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                }
+                            }
+                            current != null -> Text(stringResource(R.string.health_nothing_recorded_in_range), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            loadFailed != null -> {
+                                Text(loadFailed.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                TextButton(onClick = { scope.launch { load() } }) { Text(stringResource(R.string.common_try_again)) }
+                            }
+                            else -> Box(Modifier.fillMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.Center) { CircularProgressIndicator() }
+                        }
                     }
                 }
-            }
-            val current = plan
-            if (current != null && current.hasData && current.figureRows.size > 1) {
-                items(current.figureRows.drop(1), key = { row -> row.label }) { row ->
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-                        Text(row.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                        Text(row.valueText, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val current = plan
+                if (current != null && current.hasData && current.figureRows.size > 1) {
+                    items(current.figureRows.drop(1), key = { row -> row.label }) { row ->
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                            Text(row.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                            Text(row.valueText, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
+                if (model.isViewingOwn) healthReadings(model, type, onOpenRoute)
             }
-            if (model.isViewingOwn) healthReadings(model, type, onOpenRoute)
         }
     }
     if (isConfirmingErase) {

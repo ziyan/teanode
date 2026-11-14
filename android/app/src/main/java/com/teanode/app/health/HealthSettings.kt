@@ -56,6 +56,7 @@ import com.teanode.app.location.readShareCandidates
 import com.teanode.app.location.shareTargetName
 import com.teanode.app.session.LocalAppSession
 import com.teanode.app.session.LocalConnection
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.ConfirmationDialog
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LocalSnackbar
@@ -187,95 +188,97 @@ fun HealthSettingsScreen(onBack: () -> Unit, onOpenShare: (HealthShareView) -> U
         return
     }
     TeaNodeScreen(title = text.title, onBack = onBack) { padding ->
-        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
-            val failure = state.loadFailedText
-            if (failure != null && state.settings == null) {
+        PullToRefresh(onRefresh = { state.load() }, modifier = Modifier.padding(padding).fillMaxSize()) {
+            LazyColumn(Modifier.fillMaxSize()) {
+                val failure = state.loadFailedText
+                if (failure != null && state.settings == null) {
+                    item {
+                        Row(Modifier.fillMaxWidth().padding(16.dp)) { Icon(Icons.Outlined.Warning, contentDescription = null); Text(failure, Modifier.padding(start = 12.dp)) }
+                        TextButton(onClick = { scope.launch { state.load() } }, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.common_try_again)) }
+                    }
+                }
                 item {
-                    Row(Modifier.fillMaxWidth().padding(16.dp)) { Icon(Icons.Outlined.Warning, contentDescription = null); Text(failure, Modifier.padding(start = 12.dp)) }
-                    TextButton(onClick = { scope.launch { state.load() } }, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.common_try_again)) }
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(text.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                        Switch(checked = snapshot.isOn, enabled = snapshot.isAvailable, onCheckedChange = { isOn -> if (isOn) isSettingUp = true else syncing.turnOff() })
+                    }
+                    if (snapshot.isAvailable) {
+                        // Why the switch is off, even though the person did not turn it off: the server was erased from somewhere else.
+                        if (!snapshot.isOn && snapshot.isStoppedByErase) Footer(text.erasedOnServerText)
+                        Footer(stringResource(R.string.health_copying_footer))
+                    } else {
+                        Footer(stringResource(R.string.health_not_available_on_device))
+                    }
+                    HorizontalDivider()
                 }
-            }
-            item {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(text.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                    Switch(checked = snapshot.isOn, enabled = snapshot.isAvailable, onCheckedChange = { isOn -> if (isOn) isSettingUp = true else syncing.turnOff() })
+                if (snapshot.isOn) item { HealthStatusSection(snapshot, onSendNow = { scope.launch { syncing.syncNow() } }) }
+                state.settings?.let { serverSettings ->
+                    item {
+                        Text(
+                            when (serverSettings.sampleCount) {
+                                0 -> stringResource(R.string.health_no_readings_kept)
+                                else -> pluralStringResource(R.plurals.health_readings_kept, serverSettings.sampleCount, "%,d".format(serverSettings.sampleCount))
+                            },
+                            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                        serverSettings.lastReceivedInstant?.let { received ->
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+                                Text(stringResource(R.string.health_last_received), Modifier.weight(1f))
+                                Text(RelativeTime.text(androidx.compose.ui.platform.LocalContext.current, received.toEpochMilli()), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        HorizontalDivider(Modifier.padding(top = 8.dp))
+                    }
                 }
-                if (snapshot.isAvailable) {
-                    // Why the switch is off, even though the person did not turn it off: the server was erased from somewhere else.
-                    if (!snapshot.isOn && snapshot.isStoppedByErase) Footer(text.erasedOnServerText)
-                    Footer(stringResource(R.string.health_copying_footer))
-                } else {
-                    Footer(stringResource(R.string.health_not_available_on_device))
-                }
-                HorizontalDivider()
-            }
-            if (snapshot.isOn) item { HealthStatusSection(snapshot, onSendNow = { scope.launch { syncing.syncNow() } }) }
-            state.settings?.let { serverSettings ->
                 item {
-                    Text(
-                        when (serverSettings.sampleCount) {
-                            0 -> stringResource(R.string.health_no_readings_kept)
-                            else -> pluralStringResource(R.plurals.health_readings_kept, serverSettings.sampleCount, "%,d".format(serverSettings.sampleCount))
-                        },
-                        Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    )
-                    serverSettings.lastReceivedInstant?.let { received ->
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-                            Text(stringResource(R.string.health_last_received), Modifier.weight(1f))
-                            Text(RelativeTime.text(androidx.compose.ui.platform.LocalContext.current, received.toEpochMilli()), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TeaNodeSectionHeader(stringResource(R.string.health_the_agent))
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.health_let_agent_read), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                        Switch(
+                            checked = state.settings?.canAgentReadHealth ?: false, enabled = state.settings != null && !state.isBusy,
+                            onCheckedChange = { canRead -> scope.launch { state.setAgentCanRead(canRead, saidAgentOn, saidAgentOff, couldNotSave) } },
+                        )
+                    }
+                    val provider = state.settings?.modelProviderName.orEmpty()
+                    val ownOnly = stringResource(R.string.health_agent_reads_only_your_own)
+                    Footer(if (provider.isEmpty()) stringResource(R.string.health_agent_goes_to_provider) + " " + ownOnly else stringResource(R.string.health_agent_goes_to, provider) + " " + ownOnly)
+                }
+                val aboutRows = state.aboutRows
+                if (aboutRows.isNotEmpty()) {
+                    item { TeaNodeSectionHeader(stringResource(R.string.health_about_you)) }
+                    items(aboutRows.size) { index ->
+                        val row = aboutRows[index]
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                            Text(row.labelText, Modifier.weight(1f))
+                            Text(row.valueText, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    HorizontalDivider(Modifier.padding(top = 8.dp))
+                    item { Footer(stringResource(R.string.health_about_footer)) }
                 }
-            }
-            item {
-                TeaNodeSectionHeader(stringResource(R.string.health_the_agent))
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.health_let_agent_read), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                    Switch(
-                        checked = state.settings?.canAgentReadHealth ?: false, enabled = state.settings != null && !state.isBusy,
-                        onCheckedChange = { canRead -> scope.launch { state.setAgentCanRead(canRead, saidAgentOn, saidAgentOff, couldNotSave) } },
-                    )
+                item {
+                    TeaNodeSectionHeader(stringResource(R.string.health_sharing))
+                    if (state.isOwnSharesKnown && state.ownShares.isEmpty()) Text(stringResource(R.string.health_you_do_not_share), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                val provider = state.settings?.modelProviderName.orEmpty()
-                val ownOnly = stringResource(R.string.health_agent_reads_only_your_own)
-                Footer(if (provider.isEmpty()) stringResource(R.string.health_agent_goes_to_provider) + " " + ownOnly else stringResource(R.string.health_agent_goes_to, provider) + " " + ownOnly)
-            }
-            val aboutRows = state.aboutRows
-            if (aboutRows.isNotEmpty()) {
-                item { TeaNodeSectionHeader(stringResource(R.string.health_about_you)) }
-                items(aboutRows.size) { index ->
-                    val row = aboutRows[index]
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-                        Text(row.labelText, Modifier.weight(1f))
-                        Text(row.valueText, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                items(state.ownShares.size) { index ->
+                    val ownShare = state.ownShares[index]
+                    Column(Modifier.fillMaxWidth().clickable { openedShare = ownShare }.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                        Text(HealthSharing.name(ownShare, text), style = MaterialTheme.typography.bodyLarge)
+                        Text(HealthSharing.categoriesText(ownShare, text), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                item { Footer(stringResource(R.string.health_about_footer)) }
-            }
-            item {
-                TeaNodeSectionHeader(stringResource(R.string.health_sharing))
-                if (state.isOwnSharesKnown && state.ownShares.isEmpty()) Text(stringResource(R.string.health_you_do_not_share), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            items(state.ownShares.size) { index ->
-                val ownShare = state.ownShares[index]
-                Column(Modifier.fillMaxWidth().clickable { openedShare = ownShare }.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                    Text(HealthSharing.name(ownShare, text), style = MaterialTheme.typography.bodyLarge)
-                    Text(HealthSharing.categoriesText(ownShare, text), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                item {
+                    TextButton(onClick = { isSharing = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
+                        Icon(Icons.Outlined.PersonAdd, contentDescription = null)
+                        Text(stringResource(R.string.health_share), Modifier.padding(start = 8.dp))
+                    }
+                    Footer(stringResource(R.string.health_sharing_footer))
+                    HorizontalDivider()
                 }
-            }
-            item {
-                TextButton(onClick = { isSharing = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
-                    Icon(Icons.Outlined.PersonAdd, contentDescription = null)
-                    Text(stringResource(R.string.health_share), Modifier.padding(start = 8.dp))
-                }
-                Footer(stringResource(R.string.health_sharing_footer))
-                HorizontalDivider()
-            }
-            item {
-                TextButton(onClick = { isConfirmingErase = true }, enabled = !state.isBusy, modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
-                    Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                    Text(stringResource(R.string.health_erase_all), Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.error)
+                item {
+                    TextButton(onClick = { isConfirmingErase = true }, enabled = !state.isBusy, modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                        Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.health_erase_all), Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.error)
+                    }
                 }
             }
         }
