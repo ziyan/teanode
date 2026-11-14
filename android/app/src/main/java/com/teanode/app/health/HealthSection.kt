@@ -40,6 +40,7 @@ import com.teanode.app.session.LocalAppSession
 import com.teanode.app.session.LocalConnection
 import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.shell.Routes
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
@@ -134,10 +135,12 @@ fun HealthScreen(model: HealthModel, onOpenType: (HealthTypeView) -> Unit, onOpe
             failure != null -> ErrorState(failure, onRetry = { scope.launch { model.load() } }, modifier = Modifier.padding(padding))
             !model.hasLoaded -> LoadingState(Modifier.padding(padding))
             model.types.isEmpty() -> HealthEmptyView(model, snapshot, onTurnOn = { isSettingUp = true }, modifier = Modifier.padding(padding))
-            else -> LazyColumn(Modifier.padding(padding).fillMaxSize()) {
-                model.groups.forEach { group ->
-                    item(key = "header-" + group.id) { TeaNodeSectionHeader(text.categoryName(group.healthCategory)) }
-                    items(group.types, key = { type -> type.healthType }) { type -> HealthTypeRow(model, type, onClick = { onOpenType(type) }) }
+            else -> PullToRefresh(onRefresh = { model.load() }, modifier = Modifier.padding(padding).fillMaxSize()) {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    model.groups.forEach { group ->
+                        item(key = "header-" + group.id) { TeaNodeSectionHeader(text.categoryName(group.healthCategory)) }
+                        items(group.types, key = { type -> type.healthType }) { type -> HealthTypeRow(model, type, onClick = { onOpenType(type) }) }
+                    }
                 }
             }
         }
