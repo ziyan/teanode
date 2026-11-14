@@ -432,6 +432,12 @@ suspend fun Connection.createPhotoBackupCredential(credentialName: String): Phot
     return PhotoBackupCredential(created.credential.id, created.credential.credentialName, created.username, created.password)
 }
 
+@Serializable private class RevokeCredentialAnswer(val RevokeSyncCredential: Boolean)
+
+/** Takes back a device password, so one the phone could not keep does not stay valid on the server. */
+suspend fun Connection.revokePhotoBackupCredential(credentialId: String): Boolean =
+    execute<RevokeCredentialAnswer>(PhotoDocuments.REVOKE_SYNC_CREDENTIAL, mapOf("credentialId" to JsonPrimitive(credentialId))).RevokeSyncCredential
+
 /** One file the backup gave up on (the server refused it too often) or the person chose to skip. */
 data class PhotoBackupRefusedFile(
     val localIdentifier: String,

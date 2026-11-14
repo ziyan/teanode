@@ -116,7 +116,7 @@ class NotificationBuilderTest {
     fun anUpdateIsOfferedOnceAndDismissedForThatUpdateAlone() {
         val preferences = context.getSharedPreferences("update-test", Context.MODE_PRIVATE).also { kept -> kept.edit().clear().apply() }
         val model = AppUpdateModel(preferences, isDebugBuild = false)
-        val first = AppUpdate("android", "9.0.0", "1", "https://appdistribution.firebase.dev/i/example")
+        val first = AppUpdate("android", "9.0.0", "1", "https://appdistribution.firebase.google.com/testerapps/example/releases/example")
         model.offer(first)
         assertEquals(first, model.update.value)
         model.dismiss()

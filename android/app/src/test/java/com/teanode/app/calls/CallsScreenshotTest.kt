@@ -246,7 +246,7 @@ class CallsScreenshotTest {
     private fun update_card(look: Look) {
         composeRule.setContent {
             Shown(look) {
-                Column { AppUpdateCard(AppUpdate("android", "1.4.0", "42", "https://appdistribution.firebase.dev/i/example"), onInstall = {}, onDismiss = {}) }
+                Column { AppUpdateCard(AppUpdate("android", "1.4.0", "42", "https://appdistribution.firebase.google.com/testerapps/example/releases/example"), onInstall = {}, onDismiss = {}) }
             }
         }
         composeRule.photograph("notifications-update-card-${look.fileName}")
@@ -262,7 +262,7 @@ class CallsScreenshotTest {
     fun `update card at the largest text`() {
         composeRule.setContent {
             Shown(Look.Dark, fontScale = 2f) {
-                Column { AppUpdateCard(AppUpdate("android", "1.4.0", "42", "https://appdistribution.firebase.dev/i/example"), onInstall = {}, onDismiss = {}) }
+                Column { AppUpdateCard(AppUpdate("android", "1.4.0", "42", "https://appdistribution.firebase.google.com/testerapps/example/releases/example"), onInstall = {}, onDismiss = {}) }
             }
         }
         composeRule.photograph("notifications-update-card-largest-text-dark")

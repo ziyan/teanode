@@ -36,7 +36,7 @@ class KeystoreSecretStore(context: Context, private val keyAlias: String = "tean
         cipher.init(Cipher.ENCRYPT_MODE, key())
         val sealed = cipher.iv + cipher.doFinal(secret)
         // Written beside the file and moved over it, so a crash never leaves half a sign-in.
-        val temporary = File(directory, escaped(name) + ".tmp")
+        val temporary = File(directory, secretFileName(name) + ".tmp")
         temporary.writeBytes(sealed)
         if (!temporary.renameTo(fileFor(name))) {
             fileFor(name).writeBytes(sealed)
@@ -49,15 +49,7 @@ class KeystoreSecretStore(context: Context, private val keyAlias: String = "tean
         fileFor(name).delete()
     }
 
-    /** A secret's name may hold "/" and ":" (the account key holds a server address), which a file name cannot. */
-    private fun fileFor(name: String) = File(directory, escaped(name) + ".bin")
-
-    private fun escaped(name: String): String = buildString {
-        for (character in name) {
-            if (character.isLetterOrDigit() && character.code < 128 || character == '-' || character == '_') append(character)
-            else append('.').append(character.code.toString(16).padStart(4, '0'))
-        }
-    }
+    private fun fileFor(name: String) = File(directory, secretFileName(name) + ".bin")
 
     private fun key(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
@@ -98,3 +90,10 @@ class MemorySecretStore : SecretStore {
         secrets.remove(name)
     }
 }
+
+/**
+ * The file a secret is kept in. A name may hold an account's key, which holds its server's address, and a slash there
+ * would point into a folder that does not exist: writing would fail every time. Slashes (and the escape character
+ * itself) are escaped; every other name is its own file name, so secrets kept before stay where they are.
+ */
+internal fun secretFileName(name: String): String = name.replace("%", "%25").replace("/", "%2F")
