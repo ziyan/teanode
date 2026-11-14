@@ -1275,7 +1275,7 @@ it('says how to add the first photos, with a button for each way that opens it',
   const pressFileInput = vi.spyOn(HTMLInputElement.prototype, 'click')
   show('/photos')
   await screen.findByText('No photos yet. There are three ways to add some.')
-  expect(screen.getByRole('heading', { name: 'Back up an iPhone' })).toBeTruthy()
+  expect(screen.getByRole('heading', { name: 'Back up a phone' })).toBeTruthy()
   // One Upload photos button is the page's own; the other is in the card for the computer.
   const uploadButtons = screen.getAllByRole('button', { name: 'Upload photos' })
   expect(uploadButtons).toHaveLength(2)
@@ -1296,7 +1296,7 @@ it('leaves the first-photos ways out of the Trash, favorites and a search that f
   for (const entry of ['/photos?view=trash', '/photos?view=favorites', '/photos?search=kite']) {
     show(entry)
     await screen.findByText(/The Trash is empty|No favorites yet|No photos match your search/)
-    expect(screen.queryByRole('heading', { name: 'Back up an iPhone' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Back up a phone' })).toBeNull()
     expect(screen.queryByText('teanode photo upload ~/Pictures')).toBeNull()
     cleanup()
   }

@@ -275,7 +275,7 @@ func TestPasswordsVersionsIsRefusedWithWhereItIsDone(test *testing.T) {
 	fake, _, _ := agentFake(test)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "secret-example")
 	_, err := fake.run(testToken, "", "versions", "example.com")
-	if err == nil || !strings.Contains(err.Error(), "dashboard") || !strings.Contains(err.Error(), "iPhone") || !strings.Contains(err.Error(), "Earlier versions") {
+	if err == nil || !strings.Contains(err.Error(), "dashboard") || !strings.Contains(err.Error(), "phone app") || !strings.Contains(err.Error(), "Earlier versions") {
 		test.Fatalf("versions: %v", err)
 	}
 }

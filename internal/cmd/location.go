@@ -36,7 +36,7 @@ func NewLocationCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "location",
 		Usage: "where you are and have been, and the places you go",
-		Description: "The TeaNode app on your iPhone reports where you go. Each visit is to a place.\n" +
+		Description: "The TeaNode app on your phone reports where you go. Each visit is to a place.\n" +
 			"Place names come from OpenStreetMap: your server sends the position of each new\n" +
 			"place to the place provider to look up its name. You can rename a place and give\n" +
 			"it a label (" + placeLabelWords() + "):\n\n" +
@@ -494,7 +494,7 @@ func runLocationNow(ctx context.Context, command *cli.Command) error {
 		return nil
 	}
 	if found.LatestPoint == nil && found.OpenVisit == nil {
-		fmt.Println("no position has been reported yet; the TeaNode app on your iPhone reports where you go")
+		fmt.Println("no position has been reported yet; the TeaNode app on your phone reports where you go")
 		return nil
 	}
 	fields := [][2]string{}

@@ -25,7 +25,7 @@ import (
 // passwordsTapPlace is where a change that needs the person's tap is done. Each
 // command puts what it does in front and any word on what does work from here
 // after.
-const passwordsTapPlace = " is done on the Passwords page of the dashboard or in the iPhone app; a command line cannot do this"
+const passwordsTapPlace = " is done on the Passwords page of the dashboard or in the TeaNode phone app; a command line cannot do this"
 
 // The sentence each command ends with when the server refuses it for want of
 // the person's tap.
@@ -43,7 +43,7 @@ const (
 // passwordsRestoreWords says where a deleted item is brought back. The command
 // line is refused that without the person's tap, so deleting and listing say
 // the same thing.
-const passwordsRestoreWords = "restore it on the Passwords page of the dashboard or in the iPhone app (Recently deleted) within 30 days"
+const passwordsRestoreWords = "restore it on the Passwords page of the dashboard or in the TeaNode phone app (Recently deleted) within 30 days"
 
 // clipboardClearSeconds is how long a copied secret stays on the clipboard
 // before the command clears it, the way pass does.
@@ -84,7 +84,7 @@ func NewPasswordsCommand() *cli.Command {
 					"ways to open your passwords, and if both are lost the only way out is to erase\n" +
 					"Passwords and start again. The server asks for your tap to set up, which a command\n" +
 					"line cannot give, and it is asked before the passphrase is: if it refuses, set up\n" +
-					"on the Passwords page of the dashboard or in the iPhone app, then 'teanode\n" +
+					"on the Passwords page of the dashboard or in the TeaNode phone app, then 'teanode\n" +
 					"passwords unlock' here.",
 				Flags:  []cli.Flag{JSONFlag(), passphraseFlag()},
 				Action: runPasswordsSetup,
@@ -117,7 +117,7 @@ func NewPasswordsCommand() *cli.Command {
 					JSONFlag(), passphraseFlag(),
 					&cli.StringFlag{Name: "kind", Usage: "only login, card or note"},
 					&cli.StringFlag{Name: "folder", Usage: "only this folder"},
-					&cli.BoolFlag{Name: "deleted", Usage: "list the recently deleted items instead, which the dashboard or the iPhone app brings back within 30 days"},
+					&cli.BoolFlag{Name: "deleted", Usage: "list the recently deleted items instead, which the dashboard or the TeaNode phone app brings back within 30 days"},
 				},
 				Action: runPasswordsList,
 			},
@@ -187,17 +187,17 @@ func NewPasswordsCommand() *cli.Command {
 				Usage:     "move an item to recently deleted, or remove it for good",
 				ArgsUsage: "<item>",
 				Description: "Moves the item to recently deleted, where the Passwords page of the dashboard or\n" +
-					"the iPhone app brings it back for 30 days (a command line cannot). With\n" +
+					"the TeaNode phone app brings it back for 30 days (a command line cannot). With\n" +
 					"--forever, an item that is already deleted is removed at once, with its old\n" +
 					"versions, instead of after 30 days. That is done on the\n" +
-					"Passwords page of the dashboard or in the iPhone app; a command line cannot do\n" +
+					"Passwords page of the dashboard or in the TeaNode phone app; a command line cannot do\n" +
 					"this, and says so before it asks for the passphrase.",
 				Flags: []cli.Flag{JSONFlag(), passphraseFlag(), ForceFlag(),
-					&cli.BoolFlag{Name: "forever", Usage: "remove an item that is already deleted for good, which needs your tap in the dashboard or the iPhone app"}},
+					&cli.BoolFlag{Name: "forever", Usage: "remove an item that is already deleted for good, which needs your tap in the dashboard or the TeaNode phone app"}},
 				Action: runPasswordsDelete,
 			},
-			{Name: "versions", Usage: "earlier versions of an item (needs your tap: done in the dashboard or the iPhone app)", ArgsUsage: "<item>", Flags: []cli.Flag{JSONFlag(), passphraseFlag()}, Action: runPasswordsVersions},
-			{Name: "restore", Usage: "bring back an item deleted in the last 30 days (needs your tap: done in the dashboard or the iPhone app)", ArgsUsage: "<item>", Flags: []cli.Flag{JSONFlag(), passphraseFlag()}, Action: runPasswordsRestore},
+			{Name: "versions", Usage: "earlier versions of an item (needs your tap: done in the dashboard or the TeaNode phone app)", ArgsUsage: "<item>", Flags: []cli.Flag{JSONFlag(), passphraseFlag()}, Action: runPasswordsVersions},
+			{Name: "restore", Usage: "bring back an item deleted in the last 30 days (needs your tap: done in the dashboard or the TeaNode phone app)", ArgsUsage: "<item>", Flags: []cli.Flag{JSONFlag(), passphraseFlag()}, Action: runPasswordsRestore},
 			{
 				Name:      "share",
 				Usage:     "share an item with a person or a circle",
@@ -216,7 +216,7 @@ func NewPasswordsCommand() *cli.Command {
 					"'teanode passwords share --waiting' seals for them once they have. People who\n" +
 					"already have the item keep the key they have. The people it reaches can use the\n" +
 					"item; only you change it. Adding somebody new is done on the Passwords page of the\n" +
-					"dashboard or in the iPhone app; a command line cannot do this, and says so before\n" +
+					"dashboard or in the TeaNode phone app; a command line cannot do this, and says so before\n" +
 					"it asks for anything. Taking somebody away works here.",
 				Flags: []cli.Flag{
 					JSONFlag(), passphraseFlag(),
@@ -295,7 +295,7 @@ func NewPasswordsCommand() *cli.Command {
 					"only on the item's own sites and never shows it to the model. A note the agent\n" +
 					"may use is read by the model. Off for every item until you turn it on. A card\n" +
 					"cannot be used by the agent, and only the owner can turn it on. Turning it on is\n" +
-					"done on the Passwords page of the dashboard or in the iPhone app; a command line\n" +
+					"done on the Passwords page of the dashboard or in the TeaNode phone app; a command line\n" +
 					"cannot do this, and says so before it asks for anything. Turning it off works\n" +
 					"here, and gives the item a new key so that a copy of the old key the agent\n" +
 					"could open (in a copy of the database, say) opens nothing saved later; the new\n" +
@@ -331,7 +331,7 @@ func NewPasswordsCommand() *cli.Command {
 					"not make a new account key and your items are not re-encrypted: only the key that\n" +
 					"opens them is sealed again, so a copy of the database from before still opens\n" +
 					"with the old passphrase. Done on the Passwords page of the dashboard or in the\n" +
-					"iPhone app; a command line cannot do this, and says so before it asks for\n" +
+					"TeaNode phone app; a command line cannot do this, and says so before it asks for\n" +
 					"anything.",
 				Flags:  []cli.Flag{JSONFlag(), passphraseFlag(), &cli.BoolFlag{Name: "recovery-key", Usage: "prove it with the recovery key instead of the current passphrase"}},
 				Action: runPasswordsChangePassphrase,
@@ -342,7 +342,7 @@ func NewPasswordsCommand() *cli.Command {
 				Description: "Asks for the passphrase, makes a new recovery key and prints it once. The old\n" +
 					"one no longer opens Passwords on this server. It does not make a new account key,\n" +
 					"so a copy of the database from before still opens with the old recovery key.\n" +
-					"Done on the Passwords page of the dashboard or in the iPhone app; a command line\n" +
+					"Done on the Passwords page of the dashboard or in the TeaNode phone app; a command line\n" +
 					"cannot do this, and says so before it asks for anything.",
 				Flags:  []cli.Flag{JSONFlag(), passphraseFlag()},
 				Action: runPasswordsNewRecoveryKey,
@@ -412,7 +412,7 @@ func NewPasswordsCommand() *cli.Command {
 				Description: "Deletes your setup, every item, its shares and keys, for you and for the people\n" +
 					"you share with. This cannot be undone. If you have lost both your passphrase and\n" +
 					"your recovery key it is the only way to start again. Done on the Passwords page\n" +
-					"of the dashboard or in the iPhone app; a command line cannot do this, and says\n" +
+					"of the dashboard or in the TeaNode phone app; a command line cannot do this, and says\n" +
 					"so before it asks you to confirm.",
 				Flags:  []cli.Flag{JSONFlag(), ForceFlag()},
 				Action: runPasswordsErase,
@@ -2264,7 +2264,7 @@ func runPasswordsSettings(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(map[string]any{"setup": setup, "isUnlockedHere": !unlockedUntil.IsZero(), "unlockedUntil": nullableTime(unlockedUntil)})
 	}
 	if !setup.IsSetUp {
-		fmt.Println("Passwords is not set up yet; 'teanode passwords setup' does it (or the Passwords page on the dashboard, or the iPhone app)")
+		fmt.Println("Passwords is not set up yet; 'teanode passwords setup' does it (or the Passwords page on the dashboard, or the TeaNode phone app)")
 		return nil
 	}
 	here := "locked"

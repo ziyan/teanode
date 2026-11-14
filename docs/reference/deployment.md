@@ -452,11 +452,11 @@ agent under Settings → Your agent.
 
 For remote access, put port 8080 behind a TLS reverse proxy and set its
 addresses as trusted proxies, so that secure cookies and profile downloads
-use the right origin. The iPhone app needs that HTTPS address. Mail DNS
+use the right origin. The phone apps (iPhone and Android) need that HTTPS address. Mail DNS
 checks appear only for hosted mail, and mail can be added later in
 Server → Setup without losing anything.
 
-### Photos and the iPhone app
+### Photos and the phone apps
 
 Photos is on from the first start, with nothing to choose and no restart: it
 costs no disk until somebody uploads. The welcome page that asks for a model
@@ -465,7 +465,7 @@ rail has a **Photos** row for everybody who may use it.
 
 1. Open **Photos** and upload from the page, or with
    `teanode photo upload <folder>` from a computer.
-2. Back up an iPhone: install the TeaNode app, sign in with this server's
+2. Back up a phone (iPhone or Android): install the TeaNode app, sign in with this server's
    address, then open Settings, **Photo backup** and turn it on. The empty
    library and **Settings → Devices** say the same, with this server's address
    filled in.
@@ -479,7 +479,8 @@ The iPhone app only signs in over https, with one exception: plain `http://` is
 accepted for `localhost`, `127.0.0.1`, `::1` and `*.localhost`, which a phone
 cannot reach, because they name the phone itself. The assistant compose file
 publishes port 8080 on the loopback interface alone, so a phone cannot reach
-it, and a plain `http://` address on the local network is refused by the app.
+it, and a plain `http://` address on the local network is refused by the app (the Android app
+refuses plain `http://` as well).
 Put a TLS reverse proxy in front of 8080 on a name such as `photos.example.com` with a certificate from a certificate
 authority the phone trusts (Caddy, nginx with Let's Encrypt, a tunnel
 service), list the proxy's address under `trustedProxies` (see
