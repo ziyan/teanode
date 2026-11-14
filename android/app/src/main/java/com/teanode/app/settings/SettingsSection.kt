@@ -32,9 +32,11 @@ import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.runtime.LaunchedEffect
@@ -49,6 +51,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.LocalAppSession
+import com.teanode.app.session.LocalConnectionOrNull
 import com.teanode.app.session.LocalConnection
 import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.shell.Routes
@@ -102,6 +105,8 @@ fun SettingsSection() {
     var operatorAccess by remember { mutableStateOf<OperatorAccess?>(null) }
     var invitationCount by remember { mutableStateOf(0) }
     var isConfirmingSignOut by remember { mutableStateOf(false) }
+    var signingOutAccount by remember { mutableStateOf<com.teanode.kit.Account?>(null) }
+    val profiles by session.accountProfiles.collectAsState()
     val canUseCircles = facts.session?.holds("circle:use") == true
     LaunchedEffect(connection) { operatorAccess = runCatching { connection.operatorAccess() }.getOrNull() }
     LaunchedEffect(connection, canUseCircles) { invitationCount = if (canUseCircles) runCatching { connection.circleInvitations().size }.getOrDefault(0) else 0 }
@@ -112,10 +117,25 @@ fun SettingsSection() {
             items(accounts.accounts.size) { index ->
                 val account = accounts.accounts[index]
                 val isActive = account.accountKey == accounts.active?.accountKey
+                // The person as their server shows them: picture and name, with the username beside the server it signs in to.
+                val profile = profiles[account.accountKey]
+                val displayName = profile?.displayName ?: account.username
+                LaunchedEffect(account.accountKey) { session.loadProfile(account) }
                 TeaNodeRow(
-                    headline = account.username, supporting = account.server.host,
-                    leading = { AvatarView(account.username, null, null, size = 36.dp) },
-                    trailing = if (isActive) ({ RadioButton(selected = true, onClick = null) }) else null,
+                    headline = displayName,
+                    // The username only when the name above is not it.
+                    supporting = if (displayName == account.username) account.server.host else "${account.username} · ${account.server.host}",
+                    leading = {
+                        // The picture is read from that account's own server.
+                        CompositionLocalProvider(LocalConnectionOrNull provides session.connectionFor(account)) {
+                            AvatarView(displayName, profile?.avatarUrl, profile?.avatarColorIndex, size = 36.dp)
+                        }
+                    },
+                    trailing = if (isActive) ({ RadioButton(selected = true, onClick = null) }) else ({
+                        IconButton(onClick = { signingOutAccount = account }) {
+                            Icon(Icons.AutoMirrored.Outlined.ExitToApp, contentDescription = stringResource(R.string.settings_sign_out_of, account.server.host))
+                        }
+                    }),
                     onClick = if (isActive) null else ({ session.switchTo(account) }),
                 )
             }
@@ -197,6 +217,9 @@ fun SettingsSection() {
             item { TeaNodeRow(headline = stringResource(R.string.settings_version), trailing = { Text(version) }) }
             item { AppUpdateRow(context) }
         }
+    }
+    signingOutAccount?.let { leaving ->
+        com.teanode.app.session.SignOutConfirmation(leaving, onConfirm = { signingOutAccount = null; session.signOut(leaving) }, onDismiss = { signingOutAccount = null })
     }
     if (isConfirmingSignOut) {
         com.teanode.app.session.SignOutConfirmation(accounts.active, onConfirm = { isConfirmingSignOut = false; session.signOut() }, onDismiss = { isConfirmingSignOut = false })
