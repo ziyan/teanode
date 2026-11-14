@@ -19,7 +19,7 @@ final class Dictation {
 
     /// Where the words go, as the server words its transcription prompt.
     enum Place: String {
-        case agent, chat, journal
+        case agent, chat, journal, coding
     }
 
     private(set) var dictationState: DictationState = .idle

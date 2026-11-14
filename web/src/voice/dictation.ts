@@ -10,7 +10,7 @@ import { TranscriptTracker, voiceSocketAddress, type VoiceEvent } from './voiceS
 
 // DictationPlace is where the words are going, which the server words its
 // transcription prompt by.
-export type DictationPlace = 'agent' | 'chat' | 'journal'
+export type DictationPlace = 'agent' | 'chat' | 'journal' | 'coding'
 
 // DictationCallbacks are what a dictation tells the box.
 export type DictationCallbacks = {

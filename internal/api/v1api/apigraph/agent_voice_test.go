@@ -229,11 +229,12 @@ func TestTheTranscriptionPromptFollowsThePurpose(t *testing.T) {
 		contains       []string
 		excludes       []string
 	}{
-		"a call":            {contains: []string{"talking to their personal agent, Bertie", "The person is Mira Example."}},
-		"into the agent":    {isDictation: true, dictationPlace: "agent", contains: []string{"dictating a message to their personal agent, Bertie"}, excludes: []string{"talking to"}},
-		"into a chat":       {isDictation: true, dictationPlace: "chat", contains: []string{"dictating a message to people in a chat"}, excludes: []string{"Bertie", "talking to"}},
-		"into the journal":  {isDictation: true, dictationPlace: "journal", contains: []string{"dictating their own words for a page of their journal"}, excludes: []string{"Bertie"}},
-		"nowhere in saying": {isDictation: true, contains: []string{"dictating a message to their personal agent, Bertie"}},
+		"a call":                {contains: []string{"talking to their personal agent, Bertie", "The person is Mira Example."}},
+		"into the agent":        {isDictation: true, dictationPlace: "agent", contains: []string{"dictating a message to their personal agent, Bertie"}, excludes: []string{"talking to"}},
+		"into a chat":           {isDictation: true, dictationPlace: "chat", contains: []string{"dictating a message to people in a chat"}, excludes: []string{"Bertie", "talking to"}},
+		"into the journal":      {isDictation: true, dictationPlace: "journal", contains: []string{"dictating their own words for a page of their journal"}, excludes: []string{"Bertie"}},
+		"into a coding session": {isDictation: true, dictationPlace: "coding", contains: []string{"instruction for a coding agent", "files, functions, commands"}, excludes: []string{"Bertie", "talking to"}},
+		"nowhere in saying":     {isDictation: true, contains: []string{"dictating a message to their personal agent, Bertie"}},
 	} {
 		prompt := voicePromptFor(found, owner, testCase.isDictation, testCase.dictationPlace)
 		for _, want := range testCase.contains {

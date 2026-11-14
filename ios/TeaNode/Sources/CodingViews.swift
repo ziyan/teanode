@@ -834,7 +834,7 @@ struct CodingSessionView: View {
         return CodingComposer(
             draft: Binding(get: { drafts[sessionId] ?? "" }, set: { drafts[sessionId] = $0 }),
             pendingFiles: Binding(get: { pendingFilesBySession[sessionId] ?? [] }, set: { pendingFilesBySession[sessionId] = $0 }),
-            isSending: isSending, isDisabled: session.isAsking
+            isSending: isSending, isDisabled: session.isAsking, connection: connection
         ) {
             Task { await send(session) }
         }
@@ -1170,13 +1170,21 @@ struct CodingAnswerCard: View {
 /// CodingComposer is where the person types into a session: one rounded field
 /// with the words on top, adding files at the bottom left and sending at the
 /// bottom right, as the conversation's is. It is off while the session asks,
-/// since a typed line would answer the question by accident.
+/// since a typed line would answer the question by accident. The microphone
+/// beside sending dictates into the field, as in a conversation, when the
+/// server offers voice.
 struct CodingComposer: View {
     @Binding var draft: String
     @Binding var pendingFiles: [PendingFile]
     let isSending: Bool
     let isDisabled: Bool
+    let connection: Connection
     let onSend: () -> Void
+    @State private var dictation = Dictation()
+    /// The rate the server's voice takes; nil while it is not known to offer voice, which hides the microphone.
+    @State private var dictationSampleRate: Int?
+    @State private var problemText: String?
+    @Environment(\.scenePhase) private var scenePhase
     @State private var pickedItems: [PhotosPickerItem] = []
     @State private var isPickingPhotos = false
     @State private var isTakingPicture = false
@@ -1213,6 +1221,15 @@ struct CodingComposer: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
                     .padding(.top, 14)
+                // The words being heard, until they are final and join the field.
+                if !dictation.captionText.isEmpty {
+                    Text(dictation.captionText)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                }
                 HStack(spacing: 4) {
                     Menu {
                         Button {
@@ -1257,6 +1274,11 @@ struct CodingComposer: View {
                     .disabled(isDisabled)
                     .accessibilityLabel("Add files")
                     Spacer()
+                    if let dictationSampleRate, !isDisabled {
+                        DictationButton(dictation: dictation) {
+                            dictation.toggle(into: $draft, place: .coding, connection: connection, sampleRate: dictationSampleRate)
+                        }
+                    }
                     Button(action: onSend) {
                         Group {
                             if isSending {
@@ -1292,6 +1314,25 @@ struct CodingComposer: View {
         }
         .padding(.horizontal)
         .padding(.bottom, 8)
+        .task {
+            if let voice = try? await connection.voiceAvailability(), voice.isVoiceAvailable {
+                dictationSampleRate = voice.sampleRate ?? 24000
+            }
+        }
+        // Sending, a question arriving, leaving the app or the screen all end
+        // dictating; the words already in the field stay.
+        .onChange(of: isSending) { dictation.stop() }
+        .onChange(of: isDisabled) { dictation.stop() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { dictation.stop() }
+        }
+        .onDisappear { dictation.stop() }
+        .onChange(of: dictation.problemText) { _, text in
+            guard let text else { return }
+            problemText = text
+            dictation.problemText = nil
+        }
+        .toast(done: .constant(nil), problem: $problemText)
         .photosPicker(isPresented: $isPickingPhotos, selection: $pickedItems, maxSelectionCount: 8, matching: .images)
         .cameraPicker(isPresented: $isTakingPicture) { picture in
             if let file = PendingFile(picture: picture, index: pendingFiles.count) {
