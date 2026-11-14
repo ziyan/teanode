@@ -69,6 +69,9 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.teanode.app.R
+import com.teanode.app.contacts.ContactsRoutes
+import com.teanode.kit.contacts.PersonCardTarget
+import com.teanode.app.shell.ShownConversation
 import com.teanode.app.shell.rememberAppLinkOpener
 import com.teanode.app.session.LocalAppSession
 import com.teanode.app.session.LocalConnection
@@ -218,12 +221,15 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
         if (session.isDemo) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             try {
+                // The shell repeats this every half minute while the app is in front (ShellPolling).
+                ShownConversation.show(if (model.isChat) model.conversationId.orEmpty() else "")
                 while (true) {
                     // A message in a chat is held back from the phone only while that chat is on screen.
                     runCatching { connection.reportPresence(true, if (model.isChat) model.conversationId.orEmpty() else "") }
                     delay(30_000)
                 }
             } finally {
+                ShownConversation.clear()
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { runCatching { connection.reportPresence(false, "") } }
             }
         }
@@ -309,9 +315,13 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
     CompositionLocalProvider(
         LocalUriHandler provides uriHandler, LocalLinkOpener provides openLink, LocalPictureConversationId provides model.conversationId, LocalChatsEnvironment provides environment,
     ) {
+        // In a chat with one other person, the title opens that person's card.
+        val directPersonUserId = chat?.takeIf { summary -> !summary.isGroup }?.otherMembers(model.ownUserId)?.firstOrNull()?.userId?.takeIf { userId -> userId.isNotEmpty() }
         TeaNodeScreen(
             title = model.title.ifEmpty { environment.agentTitle },
             onBack = onBack,
+            onTitleClick = directPersonUserId?.let { userId -> { navigator.navigate(ContactsRoutes.person(PersonCardTarget.Account(userId))) } },
+            titleClickLabel = if (directPersonUserId != null) stringResource(R.string.chats_opens_their_card) else null,
             actions = {
                 if (model.isChat) {
                     ConversationCallButton(model)

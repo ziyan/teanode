@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -91,6 +92,8 @@ fun Composer(model: ConversationModel, environment: ChatsEnvironment, dictation:
     val scope = rememberCoroutineScope()
     var loadingPictureCount by remember { mutableIntStateOf(0) }
     var isMenuOpen by remember { mutableStateOf(false) }
+    // Looked at when the menu opens, as the clipboard can change at any time.
+    val pastedPictureAddress = remember(isMenuOpen) { if (isMenuOpen) PendingFiles.pastedPictureAddress(context) else null }
     var cameraFile by remember { mutableStateOf<File?>(null) }
     val isVoiceMode = model.isChat && model.isVoiceMessageAvailable && model.canWrite && environment.composerMode == "voice" && model.pendingFiles.isEmpty()
 
@@ -214,6 +217,21 @@ fun Composer(model: ConversationModel, environment: ChatsEnvironment, dictation:
                                         filePicker.launch(arrayOf("*/*"))
                                     },
                                 )
+                                // A screenshot just taken, pasted as the dashboard takes one pasted into its box.
+                                if (pastedPictureAddress != null) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.chats_paste_picture)) }, leadingIcon = { Icon(Icons.Outlined.ContentPaste, null) },
+                                        onClick = {
+                                            isMenuOpen = false
+                                            pastedPictureAddress?.let { address ->
+                                                scope.launch {
+                                                    val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { PendingFiles.picture(context, address, model.pendingFiles.size) }
+                                                    if (file != null) model.addPendingFile(file)
+                                                }
+                                            }
+                                        },
+                                    )
+                                }
                             }
                         }
                         Box(Modifier.weight(1f))

@@ -98,6 +98,7 @@ fun AppShell(
     LaunchedEffect(newIntents) {
         newIntents?.collect { intent -> controller.handleDeepLink(intent) }
     }
+    ShellPolling(currentSection)
     BackHandler(enabled = drawerState.isOpen) { scope.launch { drawerState.close() } }
 
     val drawer = remember(drawerState) { DrawerController(open = { scope.launch { drawerState.open() } }) }

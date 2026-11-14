@@ -283,4 +283,10 @@
     <string name="chats_share_tax_detail">Each PDF or picture is read as a paystub, W-2, 1099 or 1098 on its own, and the server keeps no text of it. No note goes with them.</string>
     <string name="chats_share_statements_detail">Each OFX, QFX or QBO file is imported into your accounts; a transaction imported twice is kept once. No note goes with them.</string>
     <string name="chats_share_recording_detail">The file goes to your agent first, then Recordings opens to make the recording from it.</string>
+    <string name="chats_opens_their_card">Opens their card</string>
+    <string name="chats_paste_picture">Paste picture</string>
+    <string name="chats_open_in_photos">Open in Photos</string>
+    <string name="chats_save_to_library">Save to my library</string>
+    <string name="chats_saved_to_library">Saved to your library</string>
+    <string name="chats_cannot_show_photo">Cannot show this photo</string>
 </resources>

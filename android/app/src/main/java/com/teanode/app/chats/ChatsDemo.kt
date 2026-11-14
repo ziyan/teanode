@@ -150,6 +150,26 @@ private fun cardsMessages(): List<AgentMessage> = listOf(
     message("k8", "note", "The earlier chat was folded into a note about the hotels and the dates.", 3.1, name = "compacted").copy(role = "compaction"),
 )
 
+// A conversation that is not in the list: the files the agent hands over, which the Files screenshots open by its id.
+private fun filesMessages(): List<AgentMessage> = listOf(
+    message("f1", "user", "Show me the harbor photo, then send the clip and the voice note.", 1.0),
+    message("f2", "assistant", "", 0.99, toolCalls = listOf(AgentToolCall("call-f1", "photo", "{}"))),
+    message(
+        "f3", "tool",
+        """{"files":[{"attachment_id":"att-harbor","name":"harbor.jpg","content_type":"image/jpeg","size":98000,"url":"/api/v1/agent/attachments/att-harbor","photo_id":"p01","caption":"The harbor at sunset."}]}""",
+        0.98, toolCallId = "call-f1",
+    ),
+    message("f4", "assistant", "", 0.97, toolCalls = listOf(AgentToolCall("call-f2", "share_file", "{}"))),
+    message(
+        "f5", "tool",
+        """{"files":[{"attachment_id":"att-scan","name":"scan.png","content_type":"image/png","size":54000,"url":"/api/v1/agent/attachments/att-scan"},
+            {"attachment_id":"att-clip","name":"clip.mp4","content_type":"video/mp4","size":3400000,"url":"/api/v1/agent/attachments/att-clip"},
+            {"attachment_id":"att-note","name":"voice-note.m4a","content_type":"audio/mp4","size":240000,"url":"/api/v1/agent/attachments/att-note"}]}""".replace("\n", " "),
+        0.96, toolCallId = "call-f2",
+    ),
+    message("f6", "assistant", "Here they are.", 0.95),
+)
+
 private val cardsInteractions = listOf(
     AgentInteraction("run-cards", "approve-1", "approval", "mail_send", "Send the booking confirmation to **Sam Rivera**?", createdAt = hoursAgo(0.1)),
     AgentInteraction("run-cards", "approve-2", "approval", "files_delete", "Delete the folder `old-trip`? This cannot be undone.", toolRisk = "destructive", createdAt = hoursAgo(0.09)),
@@ -216,6 +236,7 @@ private fun runMessages(): List<AgentMessage> = listOf(
 private fun messagesOf(conversationId: String?): List<AgentMessage> = when (conversationId) {
     null, "demo-main" -> mainMessages()
     "demo-cards" -> cardsMessages()
+    "demo-files" -> filesMessages()
     "demo-sam" -> samMessages()
     "demo-group" -> groupMessages()
     "demo-long" -> longMessages()
@@ -303,7 +324,13 @@ private fun demoPicture(): ByteArray {
 }
 
 private val pictureAnswer = DemoAnswerer { request ->
-    if (request.path.contains("/picture") || request.path.contains("/link-preview/image") || request.path.contains("/api/v1/agent/attachments/att-park")) DemoResponse(demoPicture()) else null
+    if (request.path.contains("/picture") || request.path.contains("/link-preview/image") || request.path.contains("/api/v1/agent/attachments/att-park") ||
+        request.path.contains("/api/v1/agent/attachments/att-harbor") || request.path.contains("/api/v1/agent/attachments/att-scan")
+    ) {
+        DemoResponse(demoPicture())
+    } else {
+        null
+    }
 }
 
 private val people = listOf(
@@ -317,6 +344,8 @@ private val people = listOf(
 val chatsDemoAnswerers: List<DemoAnswerer> = listOf(
     statusAnswer,
     pictureAnswer,
+    // Keeping a picture of a conversation in the library answers with a photo of the demo library.
+    graphQLField("SavePhotoFromAttachment") { _ -> com.teanode.app.photos.PhotosDemoData.photoJson(com.teanode.app.photos.PhotosDemoData.photos[2]) },
     DemoAnswerer { request -> conversationAnswer(request) },
     DemoAnswerer { request -> conversationsAnswer(request) },
     DemoAnswerer { request -> linkPreviewAnswer(request) },
