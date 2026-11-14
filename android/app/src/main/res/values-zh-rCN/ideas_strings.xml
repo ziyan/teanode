@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ideas_title">想法</string>
+    <string name="ideas_for_you">为你</string>
+    <string name="ideas_for_you_empty">还没有。你的助手每晚会从你的邮件和记忆中寻找想法。</string>
+    <string name="ideas_for_you_footer">从你的邮件、记忆和日历中发现。在你发出它打开的请求之前，什么都不会开始。</string>
+    <string name="ideas_history">历史</string>
+    <string name="ideas_try_it">试试</string>
+    <string name="ideas_dismiss">忽略</string>
+    <string name="ideas_done">完成</string>
+    <string name="ideas_restore">恢复</string>
+    <string name="ideas_more_actions">更多操作</string>
+    <string name="ideas_opens_conversation">打开它的对话</string>
+    <string name="ideas_said_dismissed">已忽略。想找回时在历史中。</string>
+    <string name="ideas_said_done">已标记为完成。</string>
+    <string name="ideas_said_restored">已放回待选的想法中。</string>
+    <string name="ideas_category_assistant">更好地使用你的助手</string>
+    <string name="ideas_category_family">家庭</string>
+    <string name="ideas_category_fun">休闲</string>
+    <string name="ideas_category_health">医疗健康</string>
+    <string name="ideas_category_home">家居</string>
+    <string name="ideas_category_mail">邮件</string>
+    <string name="ideas_category_money">钱</string>
+    <string name="ideas_category_paperwork">文书</string>
+    <string name="ideas_category_shopping">购物</string>
+    <string name="ideas_category_travel">旅行</string>
+    <string name="ideas_category_work">工作</string>
+    <string name="ideas_status_done">完成</string>
+    <string name="ideas_status_dismissed">已忽略</string>
+    <string name="ideas_status_started">进行中</string>
+    <string name="ideas_status_expired">已过时</string>
+</resources>

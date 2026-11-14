@@ -1046,6 +1046,8 @@ export const ja: Catalog = {
     'スマートフォンはまだありません。接続すると、そこからエージェントと話し、あなたの対応が必要なときに知らせを受け取れます。',
   'phones.unnamed': '名前のないスマートフォン',
   'phones.notified': '通知オン',
+  'phones.platformIos': 'iPhone',
+  'phones.platformAndroid': 'Android',
   'phones.notRegistered': 'この電話では通知がオフ',
   'phones.lastFailed': '前回の通知に失敗',
   'phones.test': 'テスト通知を送る',
@@ -2398,7 +2400,7 @@ export const ja: Catalog = {
   'authorize.grantWholeAccount':
     'このデバイスで TeaNode アプリを開いてサインインしたところである場合にだけ許可してください。あなたがここでできることはすべてできるようになります。設定の「デバイス」または「アプリ」からいつでもサインアウトできます。',
   'authorize.approveOnlyIfJustStarted':
-    'iPhone の TeaNode アプリでサインインを開始したところである場合にだけ承認してください。',
+    'スマートフォンの TeaNode アプリでサインインを開始したところである場合にだけ承認してください。',
   'authorize.program': 'アプリ',
   'authorize.claimedName': '登録時に名乗った名前',
   'authorize.unnamed': '名前のないアプリ',
@@ -2409,7 +2411,7 @@ export const ja: Catalog = {
   'authorize.grant': 'あなたができることだけを行えます。設定の「アプリ」からいつでも取り消せます。',
   'connect.title': 'スマートフォンを接続する',
   'connect.intro':
-    'スマートフォンのカメラを開いて、このコードに向けてください。TeaNode アプリが開き（まだインストールしていなければ App Store が開きます）、あなたとしてこのサーバーに接続します。',
+    'スマートフォンのカメラを開いて、このコードに向けてください。TeaNode アプリが開き（iPhone でまだインストールしていなければ App Store が開きます）、あなたとしてこのサーバーに接続します。',
   'connect.qrAlt': 'TeaNode アプリをこのサーバーに接続するコード',
   'connect.expires': '{time} まで、一度だけ使えます。',
   'connect.warning':
@@ -2571,7 +2573,7 @@ export const ja: Catalog = {
   'access.permission.circle:use': 'このサーバー上の人たちとサークルを作り、参加する',
   'access.permission.location:use': '行った場所を記録し、共有する',
   'access.permission.photos:use': '写真ライブラリを持ち、デバイスをそこにバックアップする',
-  'access.permission.health:use': 'iPhone のヘルスケアデータを保存し、その一部を共有する',
+  'access.permission.health:use': 'スマートフォンのヘルスケアデータを保存し、その一部を共有する',
   'access.permission.passwords:use':
     'あなたのデバイスだけが読めるパスワード、パスキー、カード、メモを保存し、その一部を共有する',
   'access.permission.shopping:use': '買い物リストを持ち、共有して、みんなで購入済みにチェックを入れる',
@@ -5819,7 +5821,7 @@ export const ja: Catalog = {
   'deviceSetup.manualSync': 'コレクションの手動同期設定',
   'deviceSetup.manualMail': 'アプリ用パスワードを作成',
   'nav.photos': '写真',
-  'services.photos': '写真とビデオを保存し、iPhone をバックアップします。',
+  'services.photos': '写真とビデオを保存し、スマートフォンをバックアップします。',
   'welcome.servicesPrompt':
     '写真、メール、カレンダー、連絡先のためにお越しですか？このサーバーで保存するものを選んでください。アシスタントは後から追加できます。',
   'welcome.servicesButton': '写真などのサービスを設定',
@@ -5834,22 +5836,23 @@ export const ja: Catalog = {
   'services.optional': '任意',
   'services.openPhotos': '写真を開く',
   'services.openPhotosReady':
-    '写真が動いています。写真をアップロードするか、TeaNode アプリで iPhone をバックアップしてください。',
+    '写真が動いています。写真をアップロードするか、TeaNode アプリでスマートフォンをバックアップしてください。',
   'services.openPhotosWaiting': 'サーバーを再起動すると写真を開けます。',
   'services.restartStarting': '{services}は再起動後に使えるようになります。',
   'services.savedRestartBelow': '{note}下の手順でサーバーを再起動してください。',
   'services.waitingTitle': '{service}は再起動後に開始します',
   'services.waitingDetail': 'サービス設定で選択済みで、サーバーの再起動時に開始します。再起動は1分もかかりません。',
   'services.openSetup': 'サービス設定',
-  'photoBackup.title': 'iPhone をバックアップ',
-  'photoBackup.install': 'iPhone に TeaNode アプリをインストールします。',
+  'photoBackup.title': 'スマートフォンをバックアップ',
+  'photoBackup.install':
+    'スマートフォンに TeaNode アプリをインストールします。iPhone は App Store からです。Android アプリはまずテスターに提供されます。',
   'photoBackup.signIn': 'このサーバーのアドレスでサインインします：{address}',
   'photoBackup.turnOn': 'アプリで「設定」、「写真のバックアップ」の順に開き、オンにします。',
   'photoBackup.needsHttps':
-    'iPhone アプリにはこのサーバーの https アドレスが必要ですが、{address} はスマートフォンから使えません。先にサーバーを https にして、そのアドレスでサインインしてください。{guide}',
+    'TeaNode アプリにはこのサーバーの https アドレスが必要ですが、{address} はスマートフォンから使えません。先にサーバーを https にして、そのアドレスでサインインしてください。{guide}',
   'photoBackup.httpsGuide': 'サーバーを https にする方法',
   'photoBackup.connectHint':
-    'いちばん手軽なのは、iPhone のカメラでコードを読み取る方法です。アプリが開き（未インストールなら App Store が開きます）、あなたとしてサインインします。',
+    'いちばん手軽なのは、スマートフォンのカメラでコードを読み取る方法です。アプリが開き（iPhone で未インストールなら App Store が開きます）、あなたとしてサインインします。',
   'deviceSetup.noServicesPhotos':
     'このサーバーではメール、カレンダー、リマインダー、連絡先は設定されていません。写真は上の TeaNode アプリでバックアップします。',
   'photos.search': '写真を検索',
@@ -5869,7 +5872,7 @@ export const ja: Catalog = {
   'photos.dropToUpload': '写真やビデオをここにドロップしてアップロード',
   'photos.uploadIgnored': '写真でもビデオでもないファイルは除外されました。',
   'photos.emptyLibrary':
-    '写真はまだありません。アップロードするか、iPhone アプリで写真のバックアップをオンにしてください。',
+    '写真はまだありません。アップロードするか、スマートフォンの TeaNode アプリで写真のバックアップをオンにしてください。',
   'photos.emptyLibraryWays': '写真はまだありません。追加する方法は 3 つあります。',
   'photos.wayComputerTitle': 'このコンピュータからアップロード',
   'photos.wayComputer': '写真やビデオを選ぶか、このページのどこかにドロップします。',
@@ -6711,8 +6714,8 @@ export const ja: Catalog = {
   'location.checkInHereNote': 'ブラウザーが今判断している現在地を使います。',
   'location.checkedInHere': 'ここでチェックインしました',
   'location.checkInPrecision': 'ブラウザーはあなたを {accuracyMeters} m 以内と判断しています。',
-  'location.setupInstallButton': 'iPhone アプリを設定',
-  'location.setupInstall': 'iPhone に TeaNode アプリをインストール',
+  'location.setupInstallButton': 'スマートフォンアプリを設定',
+  'location.setupInstall': 'スマートフォンに TeaNode アプリをインストール',
   'location.setupInstallNote': 'バックグラウンドで行った場所を記録できるのはスマートフォンだけです。',
   'location.setupHome': 'ここが自宅',
   'location.setupHomeNote': '今いる場所を自宅として保存します。',
@@ -6754,9 +6757,9 @@ export const ja: Catalog = {
   'location.personNotSharing': 'その人はあなたに位置情報を共有していません。',
   'location.personNotRead': 'あなたと共有している人を読み込めなかったため、この一覧を表示できません。',
   'location.browserCoarse':
-    'ブラウザーはあなたを {accuracyMeters} m 以内までしか特定できません。パソコンには GPS がありません。iPhone なら正確です。',
+    'ブラウザーはあなたを {accuracyMeters} m 以内までしか特定できません。パソコンには GPS がありません。スマートフォンなら正確です。',
   'location.setupHomeNotFound':
-    '地図に見つかりません。iPhone で「今いる場所を使う」を選ぶか、自宅を作ってピンを動かしてください。',
+    '地図に見つかりません。スマートフォンで「今いる場所を使う」を選ぶか、自宅を作ってピンを動かしてください。',
   'location.keepAddressTyped': '入力した住所のまま保存',
   'location.keepAddressTypedNote': '「{address}」を住所として保存します。場所は動かしません。',
   'location.addressKept': '住所「{address}」を保存しました',
@@ -6778,11 +6781,11 @@ export const ja: Catalog = {
   'location.limitNoneTitle': '誰の位置情報も見られません',
   'location.limitVisitsTitle': '誰の訪問履歴も見られません',
   'location.limitPausedBody': '位置情報が一時停止中です。再開すると、みんなの居場所をまた見られます。',
-  'location.limitRecordingOffBody': 'iPhone の TeaNode アプリで記録がオフになっています。',
+  'location.limitRecordingOffBody': 'スマートフォンの TeaNode アプリで記録がオフになっています。',
   'location.limitPhoneOffBody':
-    'iPhone で TeaNode の位置情報がオフです。iPhone の設定で「常に」にすると、みんなの居場所と訪問履歴が見られます。',
+    'スマートフォンで TeaNode の位置情報がオフです。スマートフォンの設定で「常に」（iPhone）または「常に許可」（Android）にすると、みんなの居場所と訪問履歴が見られます。',
   'location.limitWhileUsingBody':
-    'iPhone の位置情報が「使用中のみ」になっているため、TeaNode は訪問を記録できません。みんなの現在地は見られますが、行った場所は見られません。iPhone の設定で「常に」にすると、訪問履歴をまた見られます。',
+    'スマートフォンの位置情報が「使用中のみ」になっているため、TeaNode は訪問を記録できません。みんなの現在地は見られますが、行った場所は見られません。スマートフォンの設定で「常に」（iPhone）または「常に許可」（Android）にすると、訪問履歴をまた見られます。',
   'location.reducedTitle': '一部の人については見られる範囲が狭くなっています',
   'location.reducedNoShare': '{name}さんに位置情報を共有していないため、相手の位置情報は見られません。',
   'location.reducedCurrentOnly': '{name}さんには現在地だけを共有しているため、相手の訪問履歴は見られません。',
@@ -6939,7 +6942,7 @@ export const ja: Catalog = {
   'agentDrawer.note.shareLevel.transactions': '残高、支出、取引',
   'health.title': 'ヘルスケア',
   'health.off':
-    'このアカウントには「ヘルスケア」App のデータをコピーまたは読み取る権限がありません。TeaNode サーバーの管理者が許可できます。',
+    'このアカウントには「ヘルスケア」App または Health Connect のデータをコピーまたは読み取る権限がありません。TeaNode サーバーの管理者が許可できます。',
   'health.tabData': 'データ',
   'health.tabSettings': '設定',
   'health.person': '表示する人',
@@ -6948,8 +6951,8 @@ export const ja: Catalog = {
   'health.personEmpty': '{name}さんはまだヘルスケアのデータを共有していません。',
   'health.emptyTitle': 'ヘルスケアのデータはまだありません',
   'health.emptyBody':
-    'ヘルスケアは、あなたの「ヘルスケア」App のデータを自分のサーバーにコピーします。データは iPhone の TeaNode アプリから届きます。アプリの「設定」でヘルスケアをオンにし、Apple のヘルスケアのアクセス許可画面で使いたいデータを許可してください。',
-  'health.emptyAction': 'iPhone アプリを設定する',
+    'ヘルスケアは、あなたの「ヘルスケア」App（iPhone）または Health Connect（Android）のデータを自分のサーバーにコピーします。データはスマートフォンの TeaNode アプリから届きます。アプリの「設定」でヘルスケアをオンにし、アクセス許可の画面で使いたいデータを許可してください。',
+  'health.emptyAction': 'スマートフォンアプリを設定する',
   'health.typesTitle': 'ヘルスケアのデータ',
   'health.typesLabel': 'ヘルスケアのデータの種類',
   'health.back': 'すべてのデータ',
@@ -7014,7 +7017,7 @@ export const ja: Catalog = {
   'health.eraseType': '{name}を消去',
   'health.eraseTypeTitle': '{name}を消去しますか？',
   'health.eraseTypeBody':
-    'このサーバーに保存されている{name}の記録、日ごとの集計、ルートをすべて消去します。ヘルスケアがオンの間、iPhone アプリは新しい記録を送り続けます。エージェントがヘルスケアについて会話の中で話した内容は、その会話に残ります。この操作は元に戻せません。',
+    'このサーバーに保存されている{name}の記録、日ごとの集計、ルートをすべて消去します。ヘルスケアがオンの間、TeaNode アプリは新しい記録を送り続けます。エージェントがヘルスケアについて会話の中で話した内容は、その会話に残ります。この操作は元に戻せません。',
   'health.settingsAgentTitle': 'エージェント',
   'health.agentSwitch': 'エージェントにヘルスケアのデータの読み取りを許可する',
   'health.agentProvider': 'エージェントが読み取った内容は{provider}に送られます。',
@@ -7028,7 +7031,7 @@ export const ja: Catalog = {
   'health.readingCount': '{count}件の記録を保存済み',
   'health.readingCountNone': '保存済みの記録はありません',
   'health.settingsNoData':
-    'まだ何も届いていません。iPhone の TeaNode アプリで「設定」からヘルスケアをオンにし、Apple のヘルスケアのアクセス許可画面でデータを許可してください。',
+    'まだ何も届いていません。スマートフォンの TeaNode アプリで「設定」からヘルスケアをオンにし、アクセス許可の画面（iPhone では Apple のもの、Android では Health Connect のもの）でデータを許可してください。',
   'health.lastReceived': '最後に受信',
   'health.shareTitle': '共有',
   'health.shareIntro':
@@ -7052,13 +7055,13 @@ export const ja: Catalog = {
   'health.eraseAll': 'ヘルスケアのデータをすべて消去',
   'health.eraseAllTitle': 'ヘルスケアのデータをすべて消去しますか？',
   'health.eraseAllBody':
-    'このサーバーに保存されている記録、日ごとの集計、ルートをすべて消去し、ヘルスケアを再びオンにするまで iPhone アプリは送信を停止します。エージェントがヘルスケアについて会話の中で話した内容は、その会話に残ります。この操作は元に戻せません。',
+    'このサーバーに保存されている記録、日ごとの集計、ルートをすべて消去し、ヘルスケアを再びオンにするまで TeaNode アプリは送信を停止します。エージェントがヘルスケアについて会話の中で話した内容は、その会話に残ります。この操作は元に戻せません。',
   'health.eraseConfirm': '消去',
   'health.erasedOne': '1件の記録を消去しました。',
   'health.erased': '{count}件の記録を消去しました。',
   'health.eraseFailed': 'ヘルスケアのデータを消去できませんでした。',
   'health.aboutTitle': 'あなたについて',
-  'health.aboutIntro': 'iPhone の「ヘルスケア」App で設定したものです。変更はそちらで行ってください。',
+  'health.aboutIntro': 'スマートフォンの「ヘルスケア」App で設定したものです。変更はそちらで行ってください。',
   'health.notSet': '未設定',
   'health.sex.female': '女性',
   'health.sex.male': '男性',

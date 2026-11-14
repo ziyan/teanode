@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="journal_photos_count">
+        <item quantity="other">写真 %1$d 枚</item>
+    </plurals>
+    <plurals name="journal_projects">
+        <item quantity="other">%1$d 件のプロジェクト</item>
+    </plurals>
+    <plurals name="journal_stretches_of_work">
+        <item quantity="other">作業 %1$d 回</item>
+    </plurals>
+    <plurals name="journal_n_meetings">
+        <item quantity="other">会議 %1$d 件</item>
+    </plurals>
+    <plurals name="journal_n_messages">
+        <item quantity="other">メッセージ %1$d 件</item>
+    </plurals>
+</resources>

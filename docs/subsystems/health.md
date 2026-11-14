@@ -1,7 +1,7 @@
 # Health
 
-The TeaNode app on a person's iPhone copies their Apple Health data to their
-own server: steps, heart rate, sleep, workouts and their routes, weight and
+The TeaNode app on a person's phone copies their Apple Health (iPhone) or
+Health Connect (Android) data to their own server: steps, heart rate, sleep, workouts and their routes, weight and
 everything else HealthKit lets an app read, except clinical records. The server
 keeps it, the dashboard and the app chart it, `teanode health` prints it, and
 the person may share some of it with people in their circles. Their agent reads
@@ -53,10 +53,10 @@ iOS type needs no server change.
 
 ## How it arrives
 
-Only the iPhone app sends Health data; nothing else can read it, because Apple
-keeps it on the phone. The person turns on Health in the app's Settings, reads
+Only the phone apps send Health data (the iPhone app from HealthKit, the Android
+app from Health Connect); nothing else can read it, because it stays on the phone. The person turns on Health in the app's Settings, reads
 one screen saying what is copied and where, and allows what to copy on Apple's
-Health permissions screen. The app is never told which kinds were refused: a refused kind looks like
+Health permissions screen or Health Connect's. The app is never told which kinds were refused: a refused kind looks like
 a kind with no data.
 
 For each type the app asks HealthKit what is new or deleted since its saved
@@ -96,7 +96,7 @@ of it; new readings of that type still arrive while Health is on.
 
 - **The person** sees everything they have, on the dashboard's Health page, in
   the app's Health screen, and with `teanode health`. Two things take the
-  person's own tap, on the dashboard or in the iPhone app: turning on the
+  person's own tap, on the dashboard or in the TeaNode phone app: turning on the
   agent's switch, and a share that adds categories the grantee does not
   already have (`UpdateHealthSettings` with the switch on, `SetHealthShare`
   widening). The server refuses them to a command line token. It cannot tell
@@ -120,7 +120,7 @@ of it; new readings of that type still arrive while Health is on.
 - **The agent** reads the person's own Health data through the read-only
   `health` tool (types, summary, samples, set_up) only after the person turns on
   **Let the agent read Health data**, on the Settings tab of the Health page on
-  the dashboard, or in Health in the iPhone app's Settings. Until then every action but set_up says so.
+  the dashboard, or in Health in the TeaNode phone app's Settings. Until then every action but set_up says so.
   It runs only in a conversation the person, or somebody acting as them, is in: a dream, a subagent, a
   turn woken by a background command or survey, a speak-first run or any other
   run nobody is watching is refused. So is a turn whose answer others could

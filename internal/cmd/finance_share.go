@@ -51,7 +51,7 @@ func financeShareCommands() []*cli.Command {
 				"Receipts, notes, the provider's data, paystubs, tax forms, budgets and rules are never\n" +
 				"shared, and neither is anything with your agent: it cannot read what is shared with you.\n" +
 				"Sharing again changes the level. Sharing an account with somebody new, or at a higher\n" +
-				"level, is done on the Settings tab of the Finance page on the dashboard or in the iPhone\n" +
+				"level, is done on the Settings tab of the Finance page on the dashboard or in the phone\n" +
 				"app, not from a command line; a lower level, and ending a share, work here:\n\n" +
 				"  teanode finance share \"Everyday Checking\" family --level balance\n\n" +
 				"Instead of an account, say all to share all of your finance at once, every account you\n" +
@@ -115,7 +115,7 @@ func ownFinanceAccountNamed(ctx context.Context, command *cli.Command, typed str
 // widening a share is not its to do.
 func tapRequiredForFinanceShare() error {
 	return &describedError{errors.New("sharing finance with somebody new, or at a higher level, is done on the Settings tab of the Finance page " +
-		"on the dashboard, or in Finance in the iPhone app's Settings, not from a command line; a lower level, and ending a share, work here")}
+		"on the dashboard, or in Finance in the TeaNode phone app's Settings, not from a command line; a lower level, and ending a share, work here")}
 }
 
 func runFinanceShare(ctx context.Context, command *cli.Command) error {

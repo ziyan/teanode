@@ -1,6 +1,6 @@
 # Location
 
-The TeaNode app on a person's iPhone reports where they go. The server keeps
+The TeaNode app on a person's phone reports where they go. The server keeps
 the positions, turns them into visits to places, names the places from
 OpenStreetMap, and shows the person where they have been. They can share where
 they are with the people in their circles, and their agent reads it all. This

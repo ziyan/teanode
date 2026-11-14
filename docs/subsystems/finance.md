@@ -1455,7 +1455,7 @@ reached.
 (`requireShareOwner`), so an owner who turned the agent off can still stop what
 they share), to someone they share a
 circle with or to a circle they are in. **Starting a share or widening one is
-the person's tap**, the dashboard or the iPhone app, as Health's is: a command
+the person's tap**, the dashboard or the TeaNode phone app, as Health's is: a command
 line token, an operator signed in as the person and the agent's own operations
 may keep a share, narrow it and end it, and are refused anything that shows
 more (`financeShareOnATap`, which the command line recognizes by
