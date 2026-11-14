@@ -378,7 +378,7 @@ type UnshareFinanceArguments struct {
 // financeShareOnATap is what a call is told when only a person's own tap may
 // make it. It begins with api.TapRequiredPhrase, which the command line
 // recognizes.
-const financeShareOnATap = api.TapRequiredPhrase + ": sharing a finance account, or all your finance, with somebody it is not already shared with, or at a higher level, is done on the Settings tab of the Finance page on the dashboard or in Finance in the iPhone app, not from a command line or an API token"
+const financeShareOnATap = api.TapRequiredPhrase + ": sharing a finance account, or all your finance, with somebody it is not already shared with, or at a higher level, is done on the Settings tab of the Finance page on the dashboard or in Finance in the TeaNode phone app, not from a command line or an API token"
 
 // requireFinanceNotAgent refuses the person's agent: it has no tool for
 // sharing finance or for reading what others share, and the API says the same

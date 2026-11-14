@@ -35,13 +35,13 @@ func newAgentSkillShareCommands() []*cli.Command {
 				"limits goes ahead; above them, with an amount the server cannot read, or\n" +
 				"with --ask-every-time, it waits for your approval: 'teanode agent skill\n" +
 				"calls' lists them with where to approve them, which is the dashboard or\n" +
-				"the iPhone app, and 'decline' says no. A tool that pays is not shared\n" +
+				"the TeaNode phone app, and 'decline' says no. A tool that pays is not shared\n" +
 				"without a limit or --ask-every-time. Sharing again changes the tools and\n" +
 				"limits.\n\n" +
 				"From a command line the server accepts only a share with --ask-every-time,\n" +
 				"or one that gives no more than the share it replaces: the same tools or\n" +
 				"fewer, the same currency, limits no higher. Any other share, even of a\n" +
-				"tool that pays nothing, is made on the dashboard or in the iPhone app.",
+				"tool that pays nothing, is made on the dashboard or in the TeaNode phone app.",
 			Flags: []cli.Flag{
 				JSONFlag(),
 				&cli.StringSliceFlag{Name: "tools", Usage: "the tools to share, by name (repeat or separate with commas)"},
@@ -83,7 +83,7 @@ func newAgentSkillShareCommands() []*cli.Command {
 			Usage:     "decline a call waiting for you",
 			ArgsUsage: "<call-id>",
 			Description: "Approving a call, which runs it on your computer and spends what it spends, is done on the\n" +
-				"dashboard or in the iPhone app; 'teanode agent skill calls' says where.",
+				"dashboard or in the TeaNode phone app; 'teanode agent skill calls' says where.",
 			Flags:  []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "note", Usage: "a word for the other person"}},
 			Action: runAgentSkillDecline,
 		},
@@ -174,7 +174,7 @@ func runAgentSkillShare(ctx context.Context, command *cli.Command) error {
 		IsApprovalRequired: command.Bool("ask-every-time"),
 	})
 	if client.IsTapRequired(err) {
-		return &describedError{fmt.Errorf("from a command line a skill is shared only with --ask-every-time, or with no more than the share it replaces allows (the same tools or fewer, the same currency, limits no higher); any other share is made on the dashboard or in the iPhone app: open %s", skillSharingAddress(connection))}
+		return &describedError{fmt.Errorf("from a command line a skill is shared only with --ask-every-time, or with no more than the share it replaces allows (the same tools or fewer, the same currency, limits no higher); any other share is made on the dashboard or in the TeaNode phone app: open %s", skillSharingAddress(connection))}
 	}
 	if err != nil {
 		return describeNotFound(command, err, "the skill "+command.Args().First()+" or "+command.Args().Get(1))
@@ -269,7 +269,7 @@ func runAgentSkillCalls(ctx context.Context, command *cli.Command) error {
 	if len(callStates) > 1 {
 		sort.SliceStable(calls, func(first, second int) bool { return calls[first].CreatedAt.After(calls[second].CreatedAt) })
 	}
-	// A call that waits is approved on the dashboard or in the iPhone app, so
+	// A call that waits is approved on the dashboard or in the TeaNode phone app, so
 	// each is listed with where.
 	for _, call := range calls {
 		if call.CallState == string(models.SkillShareCallWaitingForApproval) {

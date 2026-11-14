@@ -160,7 +160,7 @@ func TestPasswordsSetupNeedsATap(test *testing.T) {
 	fake.isTapRefused = true
 	for _, arguments := range [][]string{{"setup", "--passphrase-stdin"}, {"setup"}} {
 		_, err := fake.run(testToken, testPassphrase+"\n", arguments...)
-		if err == nil || !strings.Contains(err.Error(), "dashboard") || !strings.Contains(err.Error(), "iPhone app") || !strings.Contains(err.Error(), "unlock") {
+		if err == nil || !strings.Contains(err.Error(), "dashboard") || !strings.Contains(err.Error(), "TeaNode phone app") || !strings.Contains(err.Error(), "unlock") {
 			test.Fatalf("a refused setup (%v) said: %v", arguments, err)
 		}
 		// One sentence: the server's own refusal is not printed beside it.
@@ -800,17 +800,17 @@ func TestPasswordsAgent(test *testing.T) {
 	// Without a tap the server refuses, and the words say where to go.
 	fake.isTapRefused = true
 	_, err = fake.run(testToken, "", "agent", "on", "example.com", "--force")
-	if err == nil || !strings.Contains(err.Error(), "iPhone app") {
+	if err == nil || !strings.Contains(err.Error(), "TeaNode phone app") {
 		test.Fatalf("a refused agent: %v", err)
 	}
-	if want := "Letting the agent use an item is done on the Passwords page of the dashboard or in the iPhone app; a command line cannot do this, but turning it off works here."; err.Error() != want {
+	if want := "Letting the agent use an item is done on the Passwords page of the dashboard or in the TeaNode phone app; a command line cannot do this, but turning it off works here."; err.Error() != want {
 		test.Errorf("a refused agent said %q, want %q", err.Error(), want)
 	}
 	// Locked, with nothing on standard input, it is still refused at once
 	// rather than asking for a passphrase first; turning it off is not refused.
 	fake.mustRun(testToken, "", "lock")
 	_, err = fake.run(testToken, "", "agent", "on", "example.com", "--force")
-	if err == nil || strings.Contains(err.Error(), "terminal") || !strings.Contains(err.Error(), "iPhone app") {
+	if err == nil || strings.Contains(err.Error(), "terminal") || !strings.Contains(err.Error(), "TeaNode phone app") {
 		test.Errorf("a refused agent, locked: %v", err)
 	}
 	fake.mustRun(testToken, testPassphrase+"\n", "agent", "off", "example.com", "--passphrase-stdin")

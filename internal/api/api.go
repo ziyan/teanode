@@ -52,7 +52,7 @@ var (
 // it. A command line token is refused these, because an agent can drive the
 // person's command line, and says where to do it instead. The command line
 // recognizes this phrase to explain the refusal in its own words.
-const TapRequiredPhrase = "approve it on the dashboard or in the iPhone app"
+const TapRequiredPhrase = "approve it on the dashboard or in the TeaNode phone app"
 
 // AgentCommandHeader is the request header the command line sends, with the
 // value "1", when the computer program marked the command as one the agent ran
