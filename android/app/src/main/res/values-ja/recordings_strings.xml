@@ -144,7 +144,7 @@
     <string name="recordings_live_heading">ここまでに聞き取った内容</string>
     <string name="recordings_share_original">元のファイルを共有</string>
     <string name="recordings_ask_agent">%1$s に聞く</string>
-    <string name="recordings_original_range">%1$@ 〜 %2$@</string>
+    <string name="recordings_original_range">%1$s 〜 %2$s</string>
     <string name="recordings_transcription_usage">文字起こしの使用量</string>
     <string name="recordings_cost_actual">実際の費用：%1$s %2$s</string>
     <string name="recordings_cost_estimated">推定費用：%1$s %2$s</string>

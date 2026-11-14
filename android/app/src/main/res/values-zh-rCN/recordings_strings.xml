@@ -144,7 +144,7 @@
     <string name="recordings_live_heading">目前听到的内容</string>
     <string name="recordings_share_original">分享原文件</string>
     <string name="recordings_ask_agent">问 %1$s</string>
-    <string name="recordings_original_range">%1$@ 至 %2$@</string>
+    <string name="recordings_original_range">%1$s 至 %2$s</string>
     <string name="recordings_transcription_usage">转录用量</string>
     <string name="recordings_cost_actual">实际费用：%1$s %2$s</string>
     <string name="recordings_cost_estimated">估算费用：%1$s %2$s</string>
