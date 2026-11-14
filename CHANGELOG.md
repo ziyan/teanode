@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.228.0] - 2026-11-14
+
+### Added
+
+- Coding sessions on the dashboard and the iPhone app can be dictated to: the microphone beside Send puts what you say into the box. (#757)
+
 ## [0.227.1] - 2026-11-13
 
 ### Changed
