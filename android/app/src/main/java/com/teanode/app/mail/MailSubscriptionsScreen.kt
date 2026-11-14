@@ -69,6 +69,7 @@ import com.teanode.app.ui.components.ConfirmationDialog
 import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.app.ui.components.openWebPage
 import com.teanode.kit.mail.MailFolders
@@ -140,17 +141,19 @@ fun SubscriptionsScreen(mail: MailModel, onBack: () -> Unit, onOpen: (MailSubscr
                     SegmentedButton(isLeft, { isLeft = true }, SegmentedButtonDefaults.itemShape(1, 2)) { Text(stringResource(R.string.mail_unsubscribed_count, shownPage.left)) }
                 }
             }
-            when {
-                failure != null && !isLoaded -> ErrorState(failure?.message.orEmpty(), onRetry = { scope.launch { load() } })
-                !isLoaded -> LoadingState()
-                subscriptions.isEmpty() -> when {
-                    searchText.isNotEmpty() -> EmptyState(Icons.Outlined.Search, stringResource(R.string.mail_nothing_matches))
-                    isLeft -> EmptyState(Icons.Outlined.Newspaper, stringResource(R.string.mail_not_left_any_lists))
-                    else -> EmptyState(Icons.Outlined.Newspaper, stringResource(R.string.mail_no_lists_yet))
-                }
-                else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                    items(subscriptions, key = { subscription -> subscription.id }) { subscription ->
-                        SubscriptionRow(subscription, Modifier.clickable { onOpen(subscription) })
+            PullToRefresh(onRefresh = { load() }, modifier = Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    failure != null && !isLoaded -> ErrorState(failure?.message.orEmpty(), onRetry = { scope.launch { load() } })
+                    !isLoaded -> LoadingState()
+                    subscriptions.isEmpty() -> when {
+                        searchText.isNotEmpty() -> EmptyState(Icons.Outlined.Search, stringResource(R.string.mail_nothing_matches))
+                        isLeft -> EmptyState(Icons.Outlined.Newspaper, stringResource(R.string.mail_not_left_any_lists))
+                        else -> EmptyState(Icons.Outlined.Newspaper, stringResource(R.string.mail_no_lists_yet))
+                    }
+                    else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                        items(subscriptions, key = { subscription -> subscription.id }) { subscription ->
+                            SubscriptionRow(subscription, Modifier.clickable { onOpen(subscription) })
+                        }
                     }
                 }
             }

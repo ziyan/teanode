@@ -37,6 +37,7 @@ import com.teanode.app.ui.components.CountBadge
 import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.TeaNodeRow
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.app.ui.components.TeaNodeSectionHeader
@@ -106,7 +107,7 @@ fun MailboxesScreen(
     ) { contentPadding ->
         val entry = mail.current
         val inbox = mail.folderOfKind("inbox")
-        Box(Modifier.padding(contentPadding).fillMaxSize()) {
+        PullToRefresh(onRefresh = { mail.load() }, modifier = Modifier.padding(contentPadding).fillMaxSize()) {
             when {
                 mail.loadFailure != null && !mail.isLoaded -> ErrorState(mail.loadFailure?.message.orEmpty(), onRetry = { mail.reload() })
                 !mail.isLoaded -> LoadingState()

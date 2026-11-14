@@ -37,7 +37,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,6 +60,7 @@ import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.kit.journal.JournalDays
 import com.teanode.kit.journal.JournalDay
@@ -125,7 +125,7 @@ fun JournalSection() {
                 searchWords != null -> JournalSearchResults(search, searchWords, text, onOpen = { hit -> navigator.navigate(destinationOf(hit)) })
                 loadFailure != null -> ErrorState(session.describeLoadProblem(loadFailure), onRetry = { scope.launch { model.load() } })
                 !model.hasLoaded -> LoadingState()
-                else -> PullToRefreshBox(isRefreshing = false, onRefresh = { scope.launch { model.load(isRefreshing = true) } }, modifier = Modifier.weight(1f)) {
+                else -> PullToRefresh(onRefresh = { model.load(isRefreshing = true) }, modifier = Modifier.weight(1f)) {
                     LazyColumn(Modifier.fillMaxSize()) {
                         item(key = "today") {
                             JournalTodayCard(model.shownToday, model.todayDay, text, onSetMood = { level -> scope.launch { model.setTodayMood(level) } }, onWrite = { navigator.navigate(JournalRoutes.write(null, model.shownToday)) })

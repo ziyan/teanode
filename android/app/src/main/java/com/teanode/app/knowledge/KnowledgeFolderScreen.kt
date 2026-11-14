@@ -45,6 +45,7 @@ import com.teanode.app.ui.components.AvatarView
 import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.app.ui.components.TeaNodeSectionHeader
@@ -175,28 +176,36 @@ fun KnowledgeFolderScreen(folderPath: String, initialSearch: String = "") {
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), singleLine = true,
             )
             val failure = problem
-            when {
-                failure != null -> ErrorState(session.describeLoadProblem(failure), onRetry = { problem = null; reloadCount += 1 })
-                !isLoaded -> LoadingState()
-                else -> LazyColumn(Modifier.weight(1f)) {
-                    if (searchText.isNotEmpty()) {
-                        searchResults(found, foundNodes, foundFacts, sharedHits, hasMoreSharedHits, onOpenPage = { path -> navigator.navigate(KnowledgeRoutes.page(path)) },
-                            onOpenShared = { hit -> navigator.navigate(KnowledgeRoutes.shared(hit.ownerUserId, hit.path)) }, onMore = { searchCount += 1 })
-                    } else {
-                        if (rows.isEmpty()) {
-                            item { EmptyState(Icons.Outlined.Folder, stringResource(R.string.knowledge_nothing_filed_here_yet), Modifier.padding(top = 48.dp)) }
-                        }
-                        items(rows.mapNotNull { row -> row.node?.let { node -> row to node } }, key = { pair -> pair.second.path }) { (row, node) ->
-                            KnowledgeRowView(row, node, connection.account.username, onClick = {
-                                navigator.navigate(if (node.isFolder) KnowledgeRoutes.folder(node.path) else KnowledgeRoutes.page(node.path))
-                            })
-                            // The next fifty are read as the last row comes into view.
-                            if (node.path == rows.lastOrNull()?.node?.path && rows.size < total) {
-                                LaunchedEffect(rows.size) { load(isMore = true) }
+            PullToRefresh(
+                onRefresh = {
+                    load(isMore = false)
+                    if (isTop) sharedGroups = SharedKnowledgeOwnerGroup.grouped(runCatching { connection.sharedKnowledgeRoots() }.getOrDefault(emptyList()))
+                },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
+                when {
+                    failure != null -> ErrorState(session.describeLoadProblem(failure), onRetry = { problem = null; reloadCount += 1 })
+                    !isLoaded -> LoadingState()
+                    else -> LazyColumn(Modifier.fillMaxSize()) {
+                        if (searchText.isNotEmpty()) {
+                            searchResults(found, foundNodes, foundFacts, sharedHits, hasMoreSharedHits, onOpenPage = { path -> navigator.navigate(KnowledgeRoutes.page(path)) },
+                                onOpenShared = { hit -> navigator.navigate(KnowledgeRoutes.shared(hit.ownerUserId, hit.path)) }, onMore = { searchCount += 1 })
+                        } else {
+                            if (rows.isEmpty()) {
+                                item { EmptyState(Icons.Outlined.Folder, stringResource(R.string.knowledge_nothing_filed_here_yet), Modifier.padding(top = 48.dp)) }
                             }
+                            items(rows.mapNotNull { row -> row.node?.let { node -> row to node } }, key = { pair -> pair.second.path }) { (row, node) ->
+                                KnowledgeRowView(row, node, connection.account.username, onClick = {
+                                    navigator.navigate(if (node.isFolder) KnowledgeRoutes.folder(node.path) else KnowledgeRoutes.page(node.path))
+                                })
+                                // The next fifty are read as the last row comes into view.
+                                if (node.path == rows.lastOrNull()?.node?.path && rows.size < total) {
+                                    LaunchedEffect(rows.size) { load(isMore = true) }
+                                }
+                            }
+                            // What other people shared, at the top level only: a place of its own beside the folders, not a folder among them.
+                            if (isTop) sharedSection(sharedGroups) { root -> navigator.navigate(KnowledgeRoutes.shared(root.ownerUserId, root.path)) }
                         }
-                        // What other people shared, at the top level only: a place of its own beside the folders, not a folder among them.
-                        if (isTop) sharedSection(sharedGroups) { root -> navigator.navigate(KnowledgeRoutes.shared(root.ownerUserId, root.path)) }
                     }
                 }
             }
