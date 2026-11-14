@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -443,13 +444,14 @@ fun PasswordsSetUpScreen(demoPassphrase: String? = null) {
 
 /** A field for something secret: its letters are dots, with a switch to see them while the person types. */
 @Composable
-internal fun SecretField(value: String, onValueChange: (String) -> Unit, label: String, modifier: Modifier = Modifier, isMonospaced: Boolean = false, canReveal: Boolean = true) {
+internal fun SecretField(value: String, onValueChange: (String) -> Unit, label: String, modifier: Modifier = Modifier, isMonospaced: Boolean = false, canReveal: Boolean = true, onDone: (() -> Unit)? = null) {
     var isShown by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value, onValueChange = onValueChange, modifier = modifier.fillMaxWidth(), label = { Text(label) }, singleLine = true,
         visualTransformation = if (isShown) VisualTransformation.None else PasswordVisualTransformation(),
         textStyle = if (isMonospaced) MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace) else MaterialTheme.typography.bodyLarge,
-        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = androidx.compose.ui.text.input.KeyboardType.Password, imeAction = if (onDone != null) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Default),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onDone?.invoke() }),
         trailingIcon = if (canReveal) {
             {
                 IconButton(onClick = { isShown = !isShown }) {
@@ -560,7 +562,7 @@ private fun PasswordsUnlockScreen(model: PasswordsModel) {
     }
 
     TeaNodeScreen(title = stringResource(R.string.passwords_title), actions = { SettingsAction() }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Outlined.Lock, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -574,7 +576,7 @@ private fun PasswordsUnlockScreen(model: PasswordsModel) {
                     )
                     Text(stringResource(R.string.passwords_type_recovery_key_to_open), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
-                    SecretField(typedText, { typedText = it }, stringResource(R.string.passwords_passphrase))
+                    SecretField(typedText, { typedText = it }, stringResource(R.string.passwords_passphrase), onDone = { unlock() })
                     Text(stringResource(R.string.passwords_type_passphrase_to_open), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (model.canUseBiometry && !model.hasBiometricKey) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
