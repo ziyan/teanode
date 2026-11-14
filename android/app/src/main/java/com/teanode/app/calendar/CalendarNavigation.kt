@@ -43,6 +43,9 @@ object CalendarRoutes {
     fun view(mode: CalendarViewMode): String = Routes.child(AppSection.Calendar, "view/${mode.name.lowercase()}")
 
     const val NEW_REMINDER = "new"
+
+    /** The calendar of an event that is only known by its identifier, such as one a page of memory points to: the opener finds it. */
+    const val UNKNOWN_CALENDAR = "-"
 }
 
 @Composable

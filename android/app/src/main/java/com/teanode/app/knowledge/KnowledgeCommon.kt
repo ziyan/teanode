@@ -34,7 +34,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
+import android.net.Uri
+import com.teanode.app.calendar.CalendarRoutes
+import com.teanode.app.contacts.ContactsRoutes
+import com.teanode.app.finance.FinanceRoutes
 import com.teanode.app.goals.ChatHandoff
+import com.teanode.app.mail.MailRoutes
+import com.teanode.app.shell.Routes
 import com.teanode.app.shell.AppNavigator
 import com.teanode.kit.AppSection
 import com.teanode.kit.knowledge.RecordTarget
@@ -113,18 +119,23 @@ object KnowledgeWordsShown {
 }
 
 /**
- * Opens a record of the person's that a page of memory points to. The kind decides the part of the app: conversations
- * open in Chats, and every other kind opens the part that holds it (Mail, Contacts, Calendar, Finance, Recordings),
- * since each part registers its own places. A path the app has no screen for does nothing.
+ * Opens a record of the person's that a page of memory points to, on the screen of the part that holds it: a mail
+ * thread, a contact, a calendar event or reminder, a conversation, a finance transaction or receipt, a recording. A
+ * path the app has no screen for does nothing.
  */
 fun openRecord(navigator: AppNavigator, dashboardPath: String) {
     when (val target = RecordTarget.fromDashboardPath(dashboardPath)) {
-        is RecordTarget.Mail -> navigator.openSection(AppSection.Mail)
-        is RecordTarget.Contact -> navigator.openSection(AppSection.Contacts)
-        is RecordTarget.CalendarEvent, is RecordTarget.Reminder -> navigator.openSection(AppSection.Calendar)
+        is RecordTarget.Mail -> navigator.navigate(MailRoutes.thread(target.itemId, null))
+        is RecordTarget.Contact -> navigator.navigate(ContactsRoutes.contact(target.id))
+        is RecordTarget.CalendarEvent -> navigator.navigate(CalendarRoutes.event(CalendarRoutes.UNKNOWN_CALENDAR, target.id))
+        is RecordTarget.Reminder -> navigator.navigate(CalendarRoutes.reminder(target.id))
         is RecordTarget.Conversation -> ChatHandoff.open(navigator, target.id)
-        is RecordTarget.FinanceTransaction, is RecordTarget.FinanceReceipt -> navigator.openSection(AppSection.Finance)
-        is RecordTarget.Recording -> navigator.openSection(AppSection.Recordings)
+        is RecordTarget.FinanceTransaction -> navigator.navigate(FinanceRoutes.transaction(target.id))
+        is RecordTarget.FinanceReceipt -> navigator.navigate(FinanceRoutes.receipt(target.id))
+        is RecordTarget.Recording -> {
+            val recordingId = dashboardPath.substringBefore('?').split("/").filter { segment -> segment.isNotEmpty() }.getOrNull(1)
+            if (recordingId != null) navigator.navigate(Routes.child(AppSection.Recordings, "detail/${Uri.encode(recordingId)}")) else navigator.openSection(AppSection.Recordings)
+        }
         null -> Unit
     }
 }
@@ -163,5 +174,6 @@ private fun AnnotatedString.Builder.appendInline(text: String, codeColor: androi
 
 @Composable
 fun MarkdownText(text: String, modifier: Modifier = Modifier) {
-    Text(markdownText(text, MaterialTheme.colorScheme.onSurface), style = MaterialTheme.typography.bodyMedium, modifier = modifier)
+    // Chats' own drawing of Markdown: paragraphs, lists, quotes, code, tables and pictures.
+    com.teanode.app.chats.MarkdownView(text.trim(), modifier)
 }

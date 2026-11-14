@@ -56,11 +56,31 @@ fun EventOpenerScreen(model: CalendarModel, calendarId: String, eventId: String)
     var detail by remember { mutableStateOf<CalendarEventDetail?>(null) }
     var failure by remember { mutableStateOf<Throwable?>(null) }
     var attempt by remember { mutableStateOf(0) }
+    var resolvedCalendarId by remember { mutableStateOf(calendarId) }
     LaunchedEffect(calendarId, eventId, attempt) {
         failure = null
         try {
             if (model.calendars.isEmpty()) model.load()
-            detail = model.connection.calendarEvent(calendarId, eventId)
+            if (calendarId == CalendarRoutes.UNKNOWN_CALENDAR) {
+                // Only the event's identifier is known: it is in whichever calendar answers for it.
+                var found: Pair<String, CalendarEventDetail>? = null
+                for (candidate in model.calendars) {
+                    found = try {
+                        candidate.id to model.connection.calendarEvent(candidate.id, eventId)
+                    } catch (error: kotlinx.coroutines.CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    if (found != null) break
+                }
+                val (foundCalendarId, foundDetail) = found ?: throw IllegalStateException("event not found")
+                resolvedCalendarId = foundCalendarId
+                detail = foundDetail
+            } else {
+                resolvedCalendarId = calendarId
+                detail = model.connection.calendarEvent(calendarId, eventId)
+            }
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -69,10 +89,10 @@ fun EventOpenerScreen(model: CalendarModel, calendarId: String, eventId: String)
     }
     val read = detail
     val problem = failure
-    val target = model.calendar(calendarId)
+    val target = model.calendar(resolvedCalendarId)
     when {
         read != null && target != null && !target.canWrite -> EventReaderScreen(model, target, read)
-        read != null -> EventEditorScreen(model, EventDraft.of(read, calendarId, model.rules.zone))
+        read != null -> EventEditorScreen(model, EventDraft.of(read, resolvedCalendarId, model.rules.zone))
         problem != null -> TeaNodeScreen(title = stringResource(R.string.calendar_event), onBack = { navigator.back() }) { contentPadding ->
             ErrorState(model.describeError(problem), onRetry = { attempt += 1 }, modifier = Modifier.padding(contentPadding))
         }

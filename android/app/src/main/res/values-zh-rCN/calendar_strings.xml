@@ -196,4 +196,5 @@
     <string name="calendar_which">第几个</string>
     <string name="calendar_will_no_longer_see">%1$s将不再能看到你的日历。</string>
     <string name="calendar_with">和谁</string>
+    <string name="calendar_open_circle">打开%1$s</string>
 </resources>

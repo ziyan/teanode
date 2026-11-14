@@ -37,7 +37,7 @@ All Android paths are under `app/src/main/java/com/teanode/app/` (screens) and
 | CalendarView.swift: pending change box | CalendarDayViews.kt (PendingChangeBox) | done |
 | CalendarView.swift: lunar dates | kit CalendarMonth.kt (LunarDates), month cells | done |
 | CalendarRepeatViews.swift | CustomRepeatScreen.kt, CalendarRepeatWords.kt | done |
-| CalendarSharingViews.swift: people, levels, circle calendars offer | CalendarShareScreen.kt | partly: the link to Circles settings opens the section only |
+| CalendarSharingViews.swift: people, levels, circle calendars offer | CalendarShareScreen.kt, CalendarListScreen.kt (a row opens the exact circle in Settings) | done |
 | FindATimeViews.swift | FindATimeScreen.kt | done |
 | RemindersView.swift | RemindersViews.kt (To do and Done, tick, editor, due words) | done |
 
@@ -46,7 +46,7 @@ All Android paths are under `app/src/main/java/com/teanode/app/` (screens) and
 | iOS file | Android | Mark |
 | --- | --- | --- |
 | GoalsView.swift: list, detail, schedule picker, starter, drop confirmation | goals/GoalsSection.kt, GoalDetailScreen.kt, GoalSchedulePickerScreen.kt, GoalStarterScreen.kt | done |
-| GoalsView.swift: Ask agent hand-off | goals/ChatHandoff.kt | partly: opens `agent/conversation/{id}` when Part A registers it, else the agent section |
+| GoalsView.swift: Ask agent hand-off | goals/ChatHandoff.kt (Chats' ChatsHooks.openConversation) | done |
 | IdeasView.swift | ideas/IdeasSection.kt | done (the try-it hand-off uses ChatHandoff, same caveat) |
 
 ## Knowledge
@@ -56,9 +56,9 @@ All Android paths are under `app/src/main/java/com/teanode/app/` (screens) and
 | KnowledgeViews.swift: folders, search, pinned, pages, facts, links, neighbours | knowledge/KnowledgeFolderScreen.kt, KnowledgePageScreen.kt, KnowledgePageModel.kt | done |
 | KnowledgeViews.swift: editors (page, fact, links, contact, page picker) | knowledge/KnowledgeEditors.kt | done |
 | KnowledgeViews.swift: recall, documents, document reader | knowledge/KnowledgeSearchScreens.kt | done |
-| KnowledgeViews.swift: linked records open their screens | knowledge/KnowledgeCommon.kt (openRecord) | partly: depends on the route names of other areas, falls back to the section |
-| KnowledgeViews.swift: file and picture previews of attachments | knowledge/KnowledgePageScreen.kt (RemotePicture for images) | partly: no PDF or office preview |
-| KnowledgeViews.swift: markdown | KnowledgeCommon.kt (MarkdownText: bold, italic, code, lists, headings) | partly: no tables or images inside text |
+| KnowledgeViews.swift: linked records open their screens | knowledge/KnowledgeCommon.kt (openRecord to the real routes of Mail, Contacts, Calendar, Chats, Finance, Recordings) | done |
+| KnowledgeViews.swift: file and picture previews of attachments | knowledge/KnowledgePageScreen.kt (RemotePicture), knowledge/KnowledgeFiles.kt (PDF first page and viewer with PdfRenderer; other files open in another app) | done |
+| KnowledgeViews.swift: markdown | KnowledgeCommon.kt (MarkdownText uses Chats' MarkdownView: tables, images, lists, code) | done |
 | KnowledgeSharingViews.swift | knowledge/SharedKnowledgeScreens.kt (shared with you, shared page, share and preview) | done |
 | The in-memory card shown elsewhere | knowledge/InMemory.kt | done, offered to other areas for reuse |
 
@@ -68,7 +68,7 @@ All Android paths are under `app/src/main/java/com/teanode/app/` (screens) and
 | --- | --- | --- |
 | JournalViews.swift | journal/JournalSection.kt (search, today card, week groups, day picker, zoom) | done |
 | JournalModel.swift | journal/JournalModels.kt, JournalModelHost.kt | done |
-| JournalDayViews.swift | journal/JournalDayScreen.kt | done except the visits map |
+| JournalDayViews.swift | journal/JournalDayScreen.kt (visits map with Location's TeaNodeMap, places open the day in Location) | done |
 | JournalMoodViews.swift | journal/JournalParts.kt (faces, picker, bars, strips) | done |
 | JournalParts.swift | journal/JournalParts.kt, JournalIcons.kt | done |
 | JournalPeriodViews.swift | journal/JournalPeriodScreen.kt (week list, month grid, year months, totals, chapters) | done |
@@ -76,23 +76,20 @@ All Android paths are under `app/src/main/java/com/teanode/app/` (screens) and
 | JournalStoryViews.swift | journal/JournalStoryRows.kt (story, corrections, write again, remove) | done |
 | JournalText.swift | journal/JournalText.kt, res journal_strings.xml and journal_plurals.xml | done |
 | JournalWorkViews.swift | journal/JournalStoryRows.kt, JournalDayScreen.kt (projects, shipped work, sessions) | done |
-| JournalWriteViews.swift | journal/JournalWriteScreens.kt (write, touch up, stop, correction with 500 limit) | partly: no dictation |
+| JournalWriteViews.swift | journal/JournalWriteScreens.kt, JournalDictation.kt (Chats' Dictation) | done |
 | JournalDemo.swift | journal/JournalDemo.kt | done |
 
 ## Not ported
 
-- Dictation in the journal write screen and other text fields (needs the speech part of the app).
-- The "visits" map on a journal day: the visits are listed with times, without a map.
-- The location offer on a journal day (belongs with the location area).
-- Previews of PDF and office files in knowledge attachments.
-- Markdown tables and inline images.
-- Circles link inside calendar sharing opens the Circles section, not the exact circle.
+- Previews of office files inside the app: they open in another app (the phone's viewer), as the brief allowed.
+- The Ask agent button of the iOS goal screen goes through Chats' hook and sends the opening request once.
 
-## Assumptions about other areas
+## Hand-offs to other areas
 
-- `ChatHandoff` opens `agent/conversation/{conversationId}?openingRequest=` and falls back to the agent section.
-- Records of mail, recordings, photos, health and others open by the route names of the dashboard paths mapped in
-  `KnowledgeRecords.kt`; where an area has no route yet the section opens.
+- `ChatHandoff` calls `ChatsHooks.openConversation`, a small additive hook added to Chats' ConversationScreen.kt (it sends an
+  opening request once as the conversation opens).
+- A calendar event known only by its identifier opens through `CalendarRoutes.UNKNOWN_CALENDAR`, which finds its calendar.
+- Contacts' demo answerer for `AgentGraphPage` now defers to Knowledge for the whole-page query.
 
 ## Not verified
 
