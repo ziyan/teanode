@@ -61,6 +61,7 @@ import com.teanode.kit.agent.AgentTool
 import com.teanode.kit.agent.AgentUnattendedDraft
 import com.teanode.kit.agent.AgentVoiceDraft
 import com.teanode.kit.agent.CollectionSource
+import com.teanode.kit.agent.MailboxAlerts
 import com.teanode.kit.agent.MailboxAutoReply
 import com.teanode.kit.agent.MailboxHours
 import com.teanode.kit.agent.MailboxPolicy
@@ -523,10 +524,34 @@ private fun AgentMailboxDialog(model: AgentSettingsModel, source: MailboxSource,
             if (allowed.triage) {
                 val triage = policy.triage ?: MailboxTriage()
                 SwitchRow(stringResource(R.string.settings_agent_sorting), triage.enabled, { isOn -> policy = policy.copy(triage = triage.copy(enabled = isOn)) })
+                // Alerts follow the sorting: without it there is nothing to tell.
+                SwitchRow(
+                    stringResource(R.string.settings_agent_mail_alerts), policy.isAlertsEnabled && triage.enabled,
+                    { isOn -> policy = policy.copy(alerts = MailboxAlerts(enabled = isOn)) }, isEnabled = triage.enabled,
+                )
+                ChoiceRow(
+                    stringResource(R.string.settings_agent_mail_reply_when), listOf("direct", "any"), triage.replyExpectation?.ifEmpty { null } ?: "direct",
+                    label = { word -> stringResource(if (word == "any") R.string.settings_agent_mail_reply_any else R.string.settings_agent_mail_reply_direct) },
+                    onSelect = { word -> policy = policy.copy(triage = triage.copy(replyExpectation = word)) },
+                )
+                ChoiceRow(
+                    stringResource(R.string.settings_agent_mail_backfill), listOf("recent", "none", "all"), triage.backfill?.ifEmpty { null } ?: "recent",
+                    label = { word -> stringResource(when (word) { "none" -> R.string.settings_agent_mail_backfill_none; "all" -> R.string.settings_agent_mail_backfill_all; else -> R.string.settings_agent_mail_backfill_recent }) },
+                    onSelect = { word -> policy = policy.copy(triage = triage.copy(backfill = word)) },
+                )
             }
             if (allowed.summaries) {
                 val summaries = policy.summaries ?: MailboxSummaries()
                 SwitchRow(stringResource(R.string.settings_agent_summaries), summaries.enabled, { isOn -> policy = policy.copy(summaries = summaries.copy(enabled = isOn)) })
+                FormField(
+                    (summaries.minimumMessages ?: 0).takeIf { count -> count > 0 }?.toString().orEmpty(), { typed -> policy = policy.copy(summaries = summaries.copy(minimumMessages = AgentSettings.wholeNumber(typed))) },
+                    stringResource(R.string.settings_agent_mail_summary_from), placeholder = "3", keyboardType = KeyboardType.Number,
+                )
+                ChoiceRow(
+                    stringResource(R.string.settings_agent_mail_summary_style), listOf("brief", "detailed"), summaries.style?.ifEmpty { null } ?: "brief",
+                    label = { word -> stringResource(if (word == "detailed") R.string.settings_agent_mail_summary_detailed else R.string.settings_agent_mail_summary_brief) },
+                    onSelect = { word -> policy = policy.copy(summaries = summaries.copy(style = word)) },
+                )
             }
             SwitchRow(stringResource(R.string.settings_agent_draft_replies), policy.draftReplies, { isOn -> policy = policy.copy(draftReplies = isOn) }, isEnabled = allowed.draftReplies)
             SwitchRow(stringResource(R.string.settings_agent_search_by_meaning), policy.search, { isOn -> policy = policy.copy(search = isOn) }, isEnabled = allowed.search)

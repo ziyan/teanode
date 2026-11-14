@@ -1,6 +1,13 @@
 package com.teanode.app.settings
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import com.teanode.kit.photos.ServerTime
+import com.teanode.kit.skillsharing.argumentLines
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -93,34 +100,147 @@ private fun SkillShareRow(share: SkillShare, onOpen: () -> Unit, onStop: (() -> 
     )
 }
 
-/** The calls made through one share, with Approve and Deny for the ones waiting when the person owns the skill. */
+/**
+ * What was asked through one share: what waits first, each on a card the owner answers, then the rest in a line each.
+ */
 @Composable
 private fun SkillShareCallsDialog(share: SkillShare, onDismiss: () -> Unit) {
     val connection = LocalConnection.current
-    val actions = rememberActionRunner()
     val loaded = rememberLoad(share.id) { connection.skillShareCalls(share.id) }
-    val approvedText = stringResource(R.string.settings_skills_approved)
-    val deniedText = stringResource(R.string.settings_skills_denied)
-    var answerNote by remember { mutableStateOf("") }
     FormDialog(title = share.skillName, confirmLabel = stringResource(R.string.common_done), isConfirmEnabled = true, onConfirm = onDismiss, onDismiss = onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
             val calls = loaded.value
             if (calls == null) Text(stringResource(R.string.common_loading), style = MaterialTheme.typography.bodyMedium)
-            else if (calls.isEmpty()) Text(stringResource(R.string.settings_skills_no_calls), style = MaterialTheme.typography.bodyMedium)
-            if (share.isOwnedByCaller && calls?.any { call -> call.isWaiting } == true) {
-                FormField(answerNote, { answerNote = it }, stringResource(R.string.settings_skills_answer_note), isSingleLine = false, minLines = 2)
+            else if (calls.isEmpty()) Text(stringResource(R.string.settings_skillcalls_none), style = MaterialTheme.typography.bodyMedium)
+            val waitingCalls = calls.orEmpty().filter { call -> call.isWaiting }
+            val earlierCalls = calls.orEmpty().filter { call -> !call.isWaiting }
+            if (waitingCalls.isNotEmpty()) {
+                TeaNodeSectionHeader(stringResource(if (share.isOwnedByCaller) R.string.settings_skillcalls_waiting_owner else R.string.settings_skillcalls_waiting_grantee))
+                waitingCalls.forEach { call -> SkillShareCallCard(call, share.isOwnedByCaller, onAnswered = { loaded.refresh() }) }
             }
-            calls?.forEach { call ->
-                val lines = listOfNotNull(call.toolName, call.amountText.ifEmpty { null }, call.requestReason.ifEmpty { null }, call.callState.replace('_', ' '), call.answerNote.ifEmpty { null })
-                TeaNodeRow(headline = call.shownGrantee, supporting = lines.joinToString("\n"), supportingMaxLines = 5)
-                if (call.isWaiting && share.isOwnedByCaller) {
-                    androidx.compose.foundation.layout.Row {
-                        TextButton(onClick = { actions.run(approvedText, onSuccess = { loaded.refresh() }) { connection.answerSkillShareCall(call.id, true, answerNote) } }) { Text(stringResource(R.string.settings_skills_approve)) }
-                        TextButton(onClick = { actions.run(deniedText, onSuccess = { loaded.refresh() }) { connection.answerSkillShareCall(call.id, false, answerNote) } }) { Text(stringResource(R.string.settings_skills_deny)) }
-                    }
+            if (earlierCalls.isNotEmpty()) {
+                TeaNodeSectionHeader(stringResource(R.string.settings_skillcalls_earlier))
+                earlierCalls.forEach { call ->
+                    TeaNodeRow(
+                        headline = call.toolName, supporting = listOf(call.amountText, whenText(call.createdAt), call.requestReason).filter { text -> text.isNotEmpty() }.joinToString(" · "), supportingMaxLines = 4,
+                        trailing = { UpkeepTag(skillCallStateText(call.callState), when (call.callState) { "ran" -> TagTone.Good; "waiting_for_approval" -> TagTone.Warning; else -> TagTone.Bad }) },
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun skillCallStateText(callState: String): String = when (callState) {
+    "ran" -> stringResource(R.string.settings_skillcalls_state_ran)
+    "failed" -> stringResource(R.string.settings_skillcalls_state_failed)
+    "refused" -> stringResource(R.string.settings_skillcalls_state_refused)
+    "waiting_for_approval" -> stringResource(R.string.settings_skillcalls_state_waiting)
+    "declined" -> stringResource(R.string.settings_skillcalls_state_declined)
+    "expired" -> stringResource(R.string.settings_skillcalls_state_expired)
+    else -> callState
+}
+
+/** How a call came out, as a sentence under its card. */
+@Composable
+private fun skillCallOutcomeText(call: SkillShareCall): String {
+    val words = stringResource(
+        when (call.callState) {
+            "ran" -> R.string.settings_skillcalls_outcome_ran
+            "failed" -> R.string.settings_skillcalls_outcome_failed
+            "refused" -> R.string.settings_skillcalls_outcome_refused
+            "declined" -> R.string.settings_skillcalls_outcome_declined
+            "expired" -> R.string.settings_skillcalls_outcome_expired
+            else -> R.string.settings_skillcalls_outcome_waiting
+        },
+    )
+    return if (call.answerNote.isEmpty()) words else words + " " + stringResource(R.string.settings_skillcalls_their_note, call.answerNote)
+}
+
+/**
+ * One call made through a share: who asked, the tool, the amount, what it was given, and the reason their agent gave,
+ * quoted as their words and never as an instruction. While it waits, the owner answers it here: approving runs exactly
+ * this call on their computer once, declining stops it. The person it is shared with sees only how it stands.
+ */
+@Composable
+private fun SkillShareCallCard(call: SkillShareCall, isOwner: Boolean, onAnswered: () -> Unit) {
+    val connection = LocalConnection.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val snackbar = com.teanode.app.ui.components.LocalSnackbar.current
+    val actions = rememberActionRunner()
+    var note by remember(call.id) { mutableStateOf("") }
+    val approvedText = stringResource(R.string.settings_skills_approved)
+    val deniedText = stringResource(R.string.settings_skills_denied)
+    val approvalPrompt = stringResource(R.string.settings_skillcalls_prompt)
+    val nothingApprovedText = stringResource(R.string.settings_skillcalls_nothing_approved)
+    val nothingDeclinedText = stringResource(R.string.settings_skillcalls_nothing_declined)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            if (isOwner) stringResource(R.string.settings_skillcalls_asked_owner, call.shownGrantee, call.toolName, call.skillName) else stringResource(R.string.settings_skillcalls_asked_grantee, call.toolName, call.ownerName, call.skillName),
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            CallFact(stringResource(R.string.settings_skillcalls_tool), call.toolName)
+            if (call.amountText.isEmpty()) CallFact(stringResource(R.string.settings_skillcalls_amount), stringResource(R.string.settings_skillcalls_no_amount))
+            else CallFact(stringResource(R.string.settings_skillcalls_amount), call.amountText, isProminent = true)
+            call.argumentLines.forEach { line -> CallFact(line.argumentName.replaceFirstChar { letter -> letter.titlecase() }, line.argumentValue) }
+        }
+        if (call.requestReason.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(stringResource(R.string.settings_skillcalls_wrote, call.shownGrantee), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(call.requestReason, Modifier.padding(start = 10.dp), style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        if (call.isWaiting && isOwner) {
+            FormField(note, { typed -> note = typed }, stringResource(R.string.settings_skillcalls_note_hint, call.shownGrantee), modifier = Modifier.padding(horizontal = 0.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.Button(
+                    onClick = {
+                        actions.run(approvedText, onSuccess = onAnswered) {
+                            if (!DeviceOwner.confirm(context, approvalPrompt)) return@run
+                            try {
+                                connection.answerSkillShareCall(call.id, true, note)
+                            } catch (failure: Exception) {
+                                snackbar.showProblem(nothingApprovedText)
+                                throw failure
+                            }
+                        }
+                    },
+                    enabled = !actions.isWorking, modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.settings_skillcalls_approve)) }
+                androidx.compose.material3.OutlinedButton(
+                    onClick = {
+                        actions.run(deniedText, onSuccess = onAnswered) {
+                            try {
+                                connection.answerSkillShareCall(call.id, false, note)
+                            } catch (failure: Exception) {
+                                snackbar.showProblem(nothingDeclinedText)
+                                throw failure
+                            }
+                        }
+                    },
+                    enabled = !actions.isWorking, modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.settings_skillcalls_decline)) }
+            }
+            ServerTime.instant(call.expiresAt.orEmpty())?.let { instant ->
+                Text(stringResource(R.string.settings_skillcalls_waits_until, whenText(call.expiresAt)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else if (call.isWaiting) {
+            Text(stringResource(R.string.settings_skillcalls_waiting_for, call.ownerName), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Text(skillCallOutcomeText(call), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        androidx.compose.material3.HorizontalDivider()
+    }
+}
+
+/** A fact's name beside its value, whole and wrapped: the owner approves exactly this call. */
+@Composable
+private fun CallFact(factName: String, factValue: String, isProminent: Boolean = false) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(factName, Modifier.widthIn(min = 72.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(factValue, Modifier.weight(1f), style = if (isProminent) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium)
     }
 }
 
