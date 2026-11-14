@@ -105,6 +105,11 @@ fun ConversationsList(onChoose: (AgentConversation?) -> Unit) {
     var isShowingArchived by remember { mutableStateOf(false) }
     var isSearching by remember { mutableStateOf(false) }
     var words by remember { mutableStateOf("") }
+    // The words the Search screen's Show all carries.
+    com.teanode.app.search.TakePartSearch(com.teanode.kit.search.SearchArea.Chats) { search ->
+        isSearching = true
+        words = search.words
+    }
     var found by remember { mutableStateOf<List<AgentConversation>?>(null) }
     var isLoaded by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }

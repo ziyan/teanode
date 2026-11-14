@@ -6,7 +6,9 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.teanode.app.R
 import com.teanode.app.shell.AppNavigator
+import com.teanode.app.shell.AppPlace
 import com.teanode.app.shell.Area
 import com.teanode.app.shell.Routes
 import com.teanode.kit.AppSection
@@ -62,5 +64,8 @@ fun NavGraphBuilder.financeRoutes(navigator: AppNavigator) {
 val financeArea = Area(
     section = AppSection.Finance,
     routes = NavGraphBuilder::financeRoutes,
+    places = {
+        FinancePart.entries.map { part -> AppPlace("finance-${part.name}", part.titleResource, part.route, part.icon, listOf(R.string.section_finance)) }
+    },
     demoAnswerers = financeDemoAnswerers,
 )

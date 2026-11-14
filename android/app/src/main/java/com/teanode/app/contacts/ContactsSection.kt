@@ -98,6 +98,11 @@ fun ContactsScreen(
     var bookNameDraft by remember { mutableStateOf("") }
     var isConfirmingBookDeletion by remember { mutableStateOf(false) }
     var typedText by remember { mutableStateOf(model.searchText) }
+    // The words the Search screen's Show all carries.
+    com.teanode.app.search.TakePartSearch(com.teanode.kit.search.SearchArea.Contacts) { search ->
+        typedText = search.words
+        model.searchText = search.words
+    }
 
     LaunchedEffect(model.searchText) {
         if (model.searchText.isNotEmpty()) delay(250)

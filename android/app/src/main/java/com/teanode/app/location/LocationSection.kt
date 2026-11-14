@@ -170,6 +170,11 @@ fun LocationHome(
 ) {
     val recording = LocalLocationRecording.current
     var segment by rememberSaveable { mutableStateOf(initialSegment) }
+    // The words the Search screen's Show all in Places carries; the list is Places already.
+    com.teanode.app.search.TakePartSearch(com.teanode.kit.search.SearchArea.Places) { search ->
+        segment = LocationSegment.Places
+        model.placeSearchText = search.words
+    }
     var isCheckingIn by remember { mutableStateOf(false) }
     val sheetState = rememberStandardBottomSheetState(initialValue = initialSheetValue, skipHiddenState = true)
     val scaffoldState = rememberBottomSheetScaffoldState(bottomSheetState = sheetState)

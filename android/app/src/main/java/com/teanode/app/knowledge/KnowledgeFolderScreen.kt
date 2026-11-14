@@ -80,7 +80,7 @@ fun KnowledgeFolderScreen(folderPath: String, initialSearch: String = "") {
     var title by remember(folderPath) { mutableStateOf("") }
     var isLoaded by remember(folderPath) { mutableStateOf(false) }
     var problem by remember(folderPath) { mutableStateOf<Throwable?>(null) }
-    var searchText by remember(folderPath) { mutableStateOf(initialSearch) }
+    var searchText by remember(folderPath, initialSearch) { mutableStateOf(initialSearch) }
     var found by remember(folderPath) { mutableStateOf<KnowledgeSearch?>(null) }
     var foundNodes by remember(folderPath) { mutableStateOf<List<KnowledgeNode>>(emptyList()) }
     var foundFacts by remember(folderPath) { mutableStateOf<List<KnowledgeSearch.FoundFact>>(emptyList()) }

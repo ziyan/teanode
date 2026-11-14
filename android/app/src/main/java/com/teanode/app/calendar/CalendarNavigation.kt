@@ -7,7 +7,15 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ViewList
+import androidx.compose.material.icons.outlined.CalendarViewDay
+import androidx.compose.material.icons.outlined.CalendarViewMonth
+import androidx.compose.material.icons.outlined.CalendarViewWeek
+import androidx.compose.material.icons.outlined.Checklist
+import com.teanode.app.R
 import com.teanode.app.shell.AppNavigator
+import com.teanode.app.shell.AppPlace
 import com.teanode.app.shell.Area
 import com.teanode.app.shell.Routes
 import com.teanode.kit.AppSection
@@ -96,5 +104,17 @@ fun NavGraphBuilder.calendarRoutes(navigator: AppNavigator) {
 val calendarArea = Area(
     section = AppSection.Calendar,
     routes = NavGraphBuilder::calendarRoutes,
+    places = {
+        listOf(
+            CalendarViewMode.Month to (R.string.calendar_month to Icons.Outlined.CalendarViewMonth),
+            CalendarViewMode.Week to (R.string.calendar_week to Icons.Outlined.CalendarViewWeek),
+            CalendarViewMode.Workweek to (R.string.calendar_five_days to Icons.Outlined.CalendarViewWeek),
+            CalendarViewMode.Day to (R.string.calendar_day to Icons.Outlined.CalendarViewDay),
+            CalendarViewMode.Agenda to (R.string.calendar_agenda to Icons.AutoMirrored.Outlined.ViewList),
+            CalendarViewMode.Reminders to (R.string.calendar_reminders to Icons.Outlined.Checklist),
+        ).map { (mode, titleAndIcon) ->
+            AppPlace("calendar-view-${mode.name.lowercase()}", titleAndIcon.first, CalendarRoutes.view(mode), titleAndIcon.second, listOf(R.string.section_calendar))
+        }
+    },
     demoAnswerers = calendarDemoAnswerers,
 )

@@ -129,6 +129,13 @@ fun PhotosSection(
     var isTrashConfirming by remember { mutableStateOf(false) }
     var isAlbumChoosing by remember { mutableStateOf(false) }
     var isHiddenShown by remember { mutableStateOf(false) }
+    // The Search screen's photo: the library searched for the words that found it, with the photo opened.
+    com.teanode.app.search.TakePartSearch(com.teanode.kit.search.SearchArea.Photos) { search ->
+        section = PhotoSectionChoice.Library
+        isSearching = true
+        searchText = search.words
+        openedPhotoId = search.photoId
+    }
     val libraryLoad = com.teanode.app.ui.components.rememberLoad { runCatching { connection.photoLibrary() }.getOrNull() }
     val library = libraryLoad.value
 
