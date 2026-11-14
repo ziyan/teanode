@@ -33,6 +33,9 @@ data class KnowledgeSourceRow(
     /** Whether the last pass left work behind and wants another. */
     val more: Boolean = false,
     val specification: KnowledgeSourceSpecification = KnowledgeSourceSpecification(),
+    /** Checkouts holding too few of the person's commits to be their work, kept to their profile, and the files in them left unread. */
+    val checkoutsKeptToProfile: Int = 0,
+    val filesKeptToProfile: Int = 0,
 )
 
 /** What a source reads and how: a type with its settings, or a path on a computer. */

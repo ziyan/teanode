@@ -211,7 +211,11 @@ data class AgentRunPage(val total: Int = 0, val runs: List<AgentRunSummary> = em
 
 /** A fact the agent learned. */
 @Serializable
-data class LearnedFact(val id: String, val number: Int = 0, val kind: String = "", val text: String = "", val happenedAt: String? = null, val inferred: Boolean = false)
+data class LearnedFact(val id: String, val number: Int = 0, val kind: String = "", val text: String = "", val happenedAt: String? = null, val inferred: Boolean = false, val evidence: List<FactEvidence> = emptyList())
+
+/** Where a learned fact came from: a message or page, and what it said. */
+@Serializable
+data class FactEvidence(val kind: String = "", val id: String = "", val quote: String = "")
 
 /** A fact the agent learned lately, and the page it was filed on. */
 @Serializable
@@ -372,8 +376,16 @@ suspend fun Connection.stopBackgroundWork(workId: String) {
     execute<JsonObject>(AgentUpkeepDocuments.STOP_BACKGROUND_WORK, variablesOf("id" to workId))
 }
 
-suspend fun Connection.agentRuns(first: Int = 50, offset: Int = 0): AgentRunPage =
-    execute<ListAgentRunsAnswer>(AgentUpkeepDocuments.AGENT_RUNS, variablesOf("first" to first, "offset" to offset)).ListAgentRuns
+/** A page of the runs, newest first, narrowed to one dream's job, to some kinds, or to titles holding some words. */
+suspend fun Connection.agentRuns(first: Int = 50, offset: Int = 0, jobId: String? = null, jobKinds: List<String> = emptyList(), query: String = ""): AgentRunPage {
+    val variables = mutableMapOf<String, JsonElement>()
+    variables.putAll(variablesOf("first" to first, "offset" to offset))
+    if (!jobId.isNullOrEmpty()) variables.putAll(variablesOf("jobId" to jobId))
+    if (jobKinds.isNotEmpty()) variables.putAll(variablesOf("kinds" to jobKinds))
+    val words = query.trim()
+    if (words.isNotEmpty()) variables.putAll(variablesOf("query" to words))
+    return execute<ListAgentRunsAnswer>(AgentUpkeepDocuments.AGENT_RUNS, variables).ListAgentRuns
+}
 
 /** Turns the morning brief on or off, at a time on some days (1 is Monday, 7 is Sunday); no days is the schedule's own. */
 suspend fun Connection.setDailyBrief(isEnabled: Boolean, time: String, days: List<Int>) {

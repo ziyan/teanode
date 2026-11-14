@@ -94,7 +94,7 @@ fun NavGraphBuilder.settingsRoutes(navigator: AppNavigator) {
     settingsPage(SettingsRoutes.DREAMS) { DreamsScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.SCHEDULES) { SchedulesScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.ALERTS) { MutedAlertsScreen(onBack = { navigator.back() }) }
-    settingsPage(SettingsRoutes.CONNECTIONS) { ConnectionsScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.CONNECTIONS) { ConnectionsScreen(onBack = { navigator.back() }, onOpenSkillSharing = { navigator.navigate(SettingsRoutes.SKILLS) }) }
     settingsPage(SettingsRoutes.ACTIVITY) { AgentActivityScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.SKILLS) { SkillSharingScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.MANAGE_AGENTS) { AgentAdminScreen(onBack = { navigator.back() }) }
