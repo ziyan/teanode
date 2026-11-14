@@ -89,6 +89,8 @@ object PhotoBackupHeader {
     const val IS_FAVORITE = "X-Photo-Is-Favorite"
     const val IS_SCREENSHOT = "X-Photo-Is-Screenshot"
     const val SOURCE = "X-Photo-Source"
+    /** The server names a phone "iphone" and refuses any other value (it has none for Android), so every phone says that. */
+    const val PHONE_SOURCE = "iphone"
     const val DECLARED_SHA256 = "X-Photo-Declared-SHA256"
     const val CONTENT_TYPE = "Content-Type"
     const val UPLOAD_OFFSET = "Upload-Offset"
@@ -192,7 +194,7 @@ object PhotoBackupPlanner {
         val headers = mutableMapOf(
             PhotoBackupHeader.CLIENT_ID to clientPhotoId, PhotoBackupHeader.FILE_ROLE to resource.role.serverName,
             PhotoBackupHeader.KIND to item.mediaKind.serverName, PhotoBackupHeader.IS_FAVORITE to item.isFavorite.toString(),
-            PhotoBackupHeader.IS_SCREENSHOT to item.isScreenshot.toString(), PhotoBackupHeader.SOURCE to "android",
+            PhotoBackupHeader.IS_SCREENSHOT to item.isScreenshot.toString(), PhotoBackupHeader.SOURCE to PhotoBackupHeader.PHONE_SOURCE,
         )
         val filename = headerSafeFilename(resource.originalFilename)
         if (filename.isNotEmpty()) headers[PhotoBackupHeader.FILENAME] = filename

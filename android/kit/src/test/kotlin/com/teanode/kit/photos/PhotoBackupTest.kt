@@ -56,7 +56,7 @@ class PhotoBackupTest {
         assertEquals("2026-03-01T10:00:00Z", headers[PhotoBackupHeader.TAKEN_AT])
         assertEquals("12.345679", headers[PhotoBackupHeader.LATITUDE])
         assertEquals("true", headers[PhotoBackupHeader.IS_FAVORITE])
-        assertEquals("android", headers[PhotoBackupHeader.SOURCE])
+        assertEquals(PhotoBackupHeader.PHONE_SOURCE, headers[PhotoBackupHeader.SOURCE])
         val outOfRange = PhotoBackupPlanner.headers(item("a").copy(location = PhotoBackupLocation(91.0, 0.0)), resource, "local:a")
         assertNull(outOfRange[PhotoBackupHeader.LATITUDE])
     }
