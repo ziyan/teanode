@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -251,7 +252,7 @@ func (self *Delivery) voipNotification(now time.Time) (*Notification, error) {
 // waits for the phone to wake is late.
 func (self *Delivery) fcmMessage(pushType string, now time.Time) (*FCMMessage, error) {
 	if pushType == PushTypeLiveActivity {
-		return nil, fmt.Errorf("%w: Live Activities are the iPhone's", ErrRefused)
+		return self.turnFCMMessage(now)
 	}
 	lifetime, lifetimeMost, pushKind := deliveryLifetime, deliveryLifetimeMost, FCMPushKindNotification
 	if pushType == PushTypeVoIP {
@@ -276,6 +277,30 @@ func (self *Delivery) fcmMessage(pushType string, now time.Time) (*FCMMessage, e
 		return nil, ErrTooLarge
 	}
 	return message, nil
+}
+
+// turnFCMMessage is the delivery as Firebase takes it for an Android phone's
+// Live Activity registration: the one word of the turn's state, as a Live
+// Activity is told, and nothing else. Only the newest state matters, so a
+// state that has not been delivered yet is replaced by the next.
+func (self *Delivery) turnFCMMessage(now time.Time) (*FCMMessage, error) {
+	if self.Sealed != "" || self.ThreadID != "" || self.CollapseID != "" {
+		return nil, fmt.Errorf("%w: a turn is told a state and nothing else", ErrRefused)
+	}
+	if !activityStates[self.ActivityState] {
+		return nil, fmt.Errorf("%w: %q is not a state a turn shows", ErrRefused, self.ActivityState)
+	}
+	return &FCMMessage{
+		Data: map[string]string{
+			FCMDataPushKind:          FCMPushKindTurn,
+			FCMDataActivityState:     self.ActivityState,
+			FCMDataIsActivityEnded:   strconv.FormatBool(self.IsActivityEnded),
+			FCMDataActivityChangedAt: strconv.FormatInt(self.activityTimestamp(now), 10),
+		},
+		IsHighPriority: true,
+		CollapseKey:    "turn",
+		TimeToLive:     deliveryLifetime,
+	}, nil
 }
 
 // activityNotification is the delivery as Apple takes it for a Live
