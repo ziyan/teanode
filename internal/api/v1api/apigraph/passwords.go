@@ -584,7 +584,7 @@ var passwordWritesBurst int64 = 5000
 
 // passwordsOnATap is what a call is told when only a person's own tap may make
 // it. It begins with api.TapRequiredPhrase, which the command line recognizes.
-const passwordsOnATap = api.TapRequiredPhrase + ": setting up, erasing and changing the secrets of Passwords, sharing an item with someone new, letting the agent use an item, reading or putting back an earlier version of an item, and making a device stay unlocked for longer are done on the Passwords page of the dashboard or in the iPhone app, not from a command line or an API token"
+const passwordsOnATap = api.TapRequiredPhrase + ": setting up, erasing and changing the secrets of Passwords, sharing an item with someone new, letting the agent use an item, reading or putting back an earlier version of an item, and making a device stay unlocked for longer are done on the Passwords page of the dashboard or in the TeaNode phone app, not from a command line or an API token"
 
 // The sentences a person is told, which the clients show as they are.
 const (

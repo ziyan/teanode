@@ -40,11 +40,11 @@ it('shows the page address and warns when a phone cannot use it', () => {
       <PhotoBackupGuide />
     </TranslationProvider>,
   )
-  expect(screen.getByText('Back up an iPhone')).toBeTruthy()
+  expect(screen.getByText('Back up a phone')).toBeTruthy()
   expect(screen.getAllByText(window.location.origin).length).toBeGreaterThan(0)
   expect(screen.getByRole('note').textContent).toContain('needs this server on an https address')
   expect(screen.getByRole('link', { name: 'How to put the server on https' }).getAttribute('href')).toContain(
-    'deployment.md#photos-and-the-iphone-app',
+    'deployment.md#photos-and-the-phone-apps',
   )
 })
 

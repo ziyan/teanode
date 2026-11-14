@@ -20,12 +20,32 @@ import (
 // server a phone handed its registration to can reach that phone, and a
 // registration the relay did not make is refused.
 
+// Platforms a registration is for: the phone's operating system, which says
+// whether the relay reaches it through APNs or through Firebase Cloud
+// Messaging.
+const (
+	PlatformIOS     = "ios"
+	PlatformAndroid = "android"
+)
+
 // Registration is what a sealed registration holds.
 type Registration struct {
-	DeviceToken string    `json:"deviceToken"`
-	IsSandbox   bool      `json:"isSandbox"`
-	PushType    string    `json:"pushType"`
-	CreatedAt   time.Time `json:"createdAt"`
+	DeviceToken string `json:"deviceToken"`
+	IsSandbox   bool   `json:"isSandbox"`
+	PushType    string `json:"pushType"`
+
+	// Platform is PlatformIOS or PlatformAndroid. A registration sealed
+	// before Android was served has none, and is an iPhone's.
+	Platform  string    `json:"platform,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// ResolvedPlatform is Platform, or PlatformIOS when it is empty.
+func (self *Registration) ResolvedPlatform() string {
+	if self.Platform == "" {
+		return PlatformIOS
+	}
+	return self.Platform
 }
 
 // registrationLifetime is how long a registration is good for. The app
@@ -50,12 +70,21 @@ type Sealer struct {
 // registrations as gone, so servers clear them and the phones register
 // again.
 func NewSealer(keyID string, key *ecdsa.PrivateKey) (*Sealer, error) {
-	if keyID == "" || strings.Contains(keyID, ".") {
-		return nil, fmt.Errorf("push: %q is not an APNs key identifier", keyID)
-	}
 	secret, err := key.Bytes()
 	if err != nil {
 		return nil, err
+	}
+	return NewSealerFromSecret(keyID, secret)
+}
+
+// NewSealerFromSecret builds a sealer from a secret only the relay has and
+// the identifier written in front of every registration. A relay with an APNs
+// key seals with it (NewSealer), so that adding Android to it leaves the
+// iPhones' registrations valid; a relay for Android alone seals with its
+// Firebase service account's key.
+func NewSealerFromSecret(keyID string, secret []byte) (*Sealer, error) {
+	if keyID == "" || strings.Contains(keyID, ".") {
+		return nil, fmt.Errorf("push: %q is not a key identifier", keyID)
 	}
 	box, err := secretbox.New(secret, registrationLabel)
 	if err != nil {

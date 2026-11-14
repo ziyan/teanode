@@ -71,9 +71,9 @@ func (self *PhoneNotifier) Sender() (push.Sender, error) {
 		return nil, nil
 	}
 	relay := settings.Relay
-	isLocal := relay.Enabled && relay.HasKey()
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%t\x00%s\x00%s\x00%s\x00%s\x00%s", isLocal, settings.ResolvedRelayURL(),
-		relay.APNSKeyID, relay.APNSTeamID, relay.ResolvedTopic(), relay.APNSKey)))
+	isLocal := relay.Enabled && relay.CanRelay()
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%t\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s", isLocal, settings.ResolvedRelayURL(),
+		relay.APNSKeyID, relay.APNSTeamID, relay.ResolvedTopic(), relay.APNSKey, relay.FCMServiceAccount)))
 	fingerprint := hex.EncodeToString(sum[:])
 
 	self.mutex.Lock()
@@ -85,15 +85,25 @@ func (self *PhoneNotifier) Sender() (push.Sender, error) {
 		return self.sender, nil
 	}
 	if isLocal {
-		apns, err := push.NewAPNs(relay.APNSKeyID, relay.APNSTeamID, relay.ResolvedTopic(), relay.APNSKey)
+		var apns *push.APNs
+		if relay.HasAPNSKey() {
+			var err error
+			if apns, err = push.NewAPNs(relay.APNSKeyID, relay.APNSTeamID, relay.ResolvedTopic(), relay.APNSKey); err != nil {
+				return nil, err
+			}
+		}
+		var fcm *push.FCM
+		if relay.HasFCMServiceAccount() {
+			var err error
+			if fcm, err = push.NewFCM(relay.FCMServiceAccount); err != nil {
+				return nil, err
+			}
+		}
+		localRelay, err := push.NewRelay(apns, fcm)
 		if err != nil {
 			return nil, err
 		}
-		relay, err := push.NewRelay(apns)
-		if err != nil {
-			return nil, err
-		}
-		self.sender = relay
+		self.sender = localRelay
 	} else {
 		self.sender = push.NewRelayClient(settings.ResolvedRelayURL())
 	}

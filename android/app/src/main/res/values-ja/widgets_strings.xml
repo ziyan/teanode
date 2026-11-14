@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widgets_agent_name">あなたのエージェント</string>
+    <string name="widgets_agent_description">エージェントに質問したり、通話したり、録音を始めたりできます。</string>
+    <string name="widgets_ask_anything">何でも聞く</string>
+    <string name="widgets_ask_your_agent">エージェントに聞く</string>
+    <string name="widgets_call_your_agent">エージェントに電話</string>
+    <string name="widgets_start_recording">録音を開始</string>
+    <string name="widgets_waiting_name">あなたを待っています</string>
+    <string name="widgets_waiting_description">エージェントが返事を待っている質問と承認。</string>
+    <string name="widgets_nothing_waits">返事待ちはありません</string>
+    <string name="widgets_approve">承認しますか？</string>
+    <string name="widgets_asks_you">質問があります</string>
+    <string name="widgets_waiting_count">%1$d 件待ち</string>
+    <string name="widgets_next_name">次の予定</string>
+    <string name="widgets_next_description">次の予定と未読メール。</string>
+    <string name="widgets_nothing_coming_up">予定はありません</string>
+    <string name="widgets_no_title">（タイトルなし）</string>
+    <string name="widgets_today_all_day">今日、終日</string>
+    <string name="widgets_unread">未読 %1$d 件</string>
+    <string name="widgets_not_connected">先に TeaNode を開いてサーバーに接続してください。</string>
+</resources>

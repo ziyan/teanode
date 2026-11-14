@@ -92,6 +92,7 @@ type phoneTourFacts struct {
 	hasMailbox      bool
 	hasLocation     bool
 	hasHealth       bool
+	isAndroid       bool
 }
 
 func (self *Agent) phoneTourFacts(ctx context.Context, agent *models.Agent, owner *models.User, phone *models.AgentPhone, hasMailbox bool) phoneTourFacts {
@@ -99,6 +100,7 @@ func (self *Agent) phoneTourFacts(ctx context.Context, agent *models.Agent, owne
 	return phoneTourFacts{
 		hasLocation:     self.hasPermission(ctx, owner, models.PermissionLocationUse),
 		hasHealth:       self.hasPermission(ctx, owner, models.PermissionHealthUse),
+		isAndroid:       phone.PhonePlatform == models.PhonePlatformAndroid,
 		canBeNotified:   phone.CanBeNotified(),
 		isPushEnabled:   configuration.Agent.Push.IsEnabled(),
 		isVoiceOn:       configuration.Agent.Voice.Enabled && configuration.Agent.VoiceProvider() != nil,
@@ -132,11 +134,21 @@ func phoneTourInstructions(facts phoneTourFacts) string {
 		offers = append(offers, "Notifications do not reach this phone yet: tell them to allow them when the app asks, or in the app's Settings, then send a test with the account tool's test_phone.")
 	}
 	offers = append(offers,
-		"Sending you things from any app: the Share button, then TeaNode, with a note; a photo of a receipt, a link, a file.",
-		"Siri: \"Ask TeaNode\" asks you something and reads the answer; it works from the lock screen and in Shortcuts.",
-		"Widgets: Your agent (ask or call), Waiting for you (what you need from them) and Up next (events and unread mail), on the Home Screen and the Lock Screen.")
+		"Sending you things from any app: the Share button, then TeaNode, with a note; a photo of a receipt, a link, a file.")
+	if facts.isAndroid {
+		offers = append(offers,
+			"Widgets: Your agent (ask, call or record), Waiting for you (what you need from them) and Up next (events and unread mail), on the Home Screen.")
+	} else {
+		offers = append(offers,
+			"Siri: \"Ask TeaNode\" asks you something and reads the answer; it works from the lock screen and in Shortcuts.",
+			"Widgets: Your agent (ask or call), Waiting for you (what you need from them) and Up next (events and unread mail), on the Home Screen and the Lock Screen.")
+	}
 	if facts.isVoiceOn {
-		offers = append(offers, "Calling you: the waveform button beside the message box, \"Call TeaNode\" to Siri, or a Control Center button; it works with AirPods and the screen locked.")
+		if facts.isAndroid {
+			offers = append(offers, "Calling you: the waveform button beside the message box, or the call button of the widget; it works with the screen locked.")
+		} else {
+			offers = append(offers, "Calling you: the waveform button beside the message box, \"Call TeaNode\" to Siri, or a Control Center button; it works with AirPods and the screen locked.")
+		}
 	}
 	if facts.hasCodingAgents {
 		offers = append(offers, "Their coding sessions: a Claude Code or Codex question on their computer reaches the phone, and they answer it from the notification.")
@@ -145,9 +157,13 @@ func phoneTourInstructions(facts phoneTourFacts) string {
 		offers = append(offers, "Location: the app can record the places they go, so they can look back on where they were and share where they are with their family. It starts with three short rows they tap through: allow location, mark home, and share with family. If they want it, open it for them with the location tool's set_up action, or say it is Location in the app's menu.")
 	}
 	if facts.hasHealth {
-		offers = append(offers, "Health: the app can copy their Apple Health data (steps, sleep, heart rate, workouts and the rest, whatever they allow on Apple's Health permissions screen) to this server, so they see it as charts on the dashboard and in the app, and can share some of it with their family. You read it only if they turn on Let the agent read Health data. If they want it, open it for them with the health tool's set_up action, or say it is Health in the app's Settings.")
+		healthSource := "Apple Health data (steps, sleep, heart rate, workouts and the rest, whatever they allow on Apple's Health permissions screen)"
+		if facts.isAndroid {
+			healthSource = "Health Connect data (steps, sleep, heart rate, workouts and the rest, whatever they allow on the Health Connect permissions screen)"
+		}
+		offers = append(offers, "Health: the app can copy their "+healthSource+" to this server, so they see it as charts on the dashboard and in the app, and can share some of it with their family. You read it only if they turn on Let the agent read Health data. If they want it, open it for them with the health tool's set_up action, or say it is Health in the app's Settings.")
 	}
-	if facts.hasMailbox {
+	if facts.hasMailbox && !facts.isAndroid {
 		offers = append(offers, "Their mail, calendars and contacts in the iPhone's own apps: the account tool's set_up_phone_mail action takes them to where one tap sets it up.")
 	}
 	lines := []string{

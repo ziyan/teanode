@@ -1051,6 +1051,8 @@ export const en = {
   'phones.none': 'No phones yet. Connect one to talk to your agent from it and be told when something needs you.',
   'phones.unnamed': 'A phone with no name',
   'phones.notified': 'Notifications on',
+  'phones.platformIos': 'iPhone',
+  'phones.platformAndroid': 'Android',
   'phones.notRegistered': 'Notifications off on this phone',
   'phones.lastFailed': 'Last notification failed',
   'phones.test': 'Send a test notification',
@@ -2402,8 +2404,7 @@ export const en = {
     'An app on this device is asking to sign in to your whole account: your mail, your agent and your settings, as you.',
   'authorize.grantWholeAccount':
     'Allow it only if you just opened the TeaNode app on this device to sign in. It will be able to do everything you can do here. You can sign it out at any time under Devices or Apps in your settings.',
-  'authorize.approveOnlyIfJustStarted':
-    'Approve only if you just started signing in to the TeaNode app on your iPhone.',
+  'authorize.approveOnlyIfJustStarted': 'Approve only if you just started signing in to the TeaNode app on your phone.',
   'authorize.program': 'App',
   'authorize.claimedName': 'the name it gave when it registered',
   'authorize.unnamed': 'an app that gave no name',
@@ -2415,7 +2416,7 @@ export const en = {
     'It will be able to do what you can do, and nothing more. You can revoke it at any time under Apps in your settings.',
   'connect.title': 'Connect a phone',
   'connect.intro':
-    'Open the camera on your phone and point it at this code. The TeaNode app opens, or the App Store if it is not installed yet, and connects to this server as you.',
+    'Open the camera on your phone and point it at this code. The TeaNode app opens (on an iPhone, the App Store opens instead if the app is not installed yet), and connects to this server as you.',
   'connect.qrAlt': 'A code that connects the TeaNode app to this server',
   'connect.expires': 'Works once, until {time}.',
   'connect.warning': 'This code signs a phone in as you. Do not send it, or a picture of it, to anybody.',
@@ -2577,7 +2578,7 @@ export const en = {
   'access.permission.circle:use': 'Make circles of people on this server, and join them',
   'access.permission.location:use': 'Record where you go, and share it',
   'access.permission.photos:use': 'Keep a photo library, and back up a device to it',
-  'access.permission.health:use': 'Keep your Health data from the iPhone, and share some of it',
+  'access.permission.health:use': 'Keep your Health data from your phone, and share some of it',
   'access.permission.passwords:use':
     'Keep passwords, passkeys, cards and notes that only your devices can read, and share some of them',
   'access.permission.shopping:use': 'Keep shopping lists, share them, and check items off together',
@@ -5882,7 +5883,7 @@ export const en = {
   'deviceSetup.manualSync': 'Manual collection sync',
   'deviceSetup.manualMail': 'Create app password',
   'nav.photos': 'Photos',
-  'services.photos': 'Keep your photos and videos, and back up your iPhone.',
+  'services.photos': 'Keep your photos and videos, and back up your phone.',
   'welcome.servicesPrompt':
     'Here for your photos, mail, calendar or contacts instead? Choose what this server keeps. You can add the assistant later.',
   'welcome.servicesButton': 'Set up Photos and other services',
@@ -5895,7 +5896,7 @@ export const en = {
   'services.addAssistantNote': 'Connect a model provider and enable the assistant if you want one on this server.',
   'services.optional': 'Optional',
   'services.openPhotos': 'Open Photos',
-  'services.openPhotosReady': 'Photos is running. Upload photos, or back up an iPhone with the TeaNode app.',
+  'services.openPhotosReady': 'Photos is running. Upload photos, or back up a phone with the TeaNode app.',
   'services.openPhotosWaiting': 'Photos can be opened once the server has restarted.',
   'services.restartStarting': '{services} will be available after a restart.',
   'services.savedRestartBelow': '{note} Restart the server in the steps below.',
@@ -5903,15 +5904,16 @@ export const en = {
   'services.waitingDetail':
     'It is chosen in service setup, and the server starts it when it restarts. Restarting takes under a minute.',
   'services.openSetup': 'Service setup',
-  'photoBackup.title': 'Back up an iPhone',
-  'photoBackup.install': 'Install the TeaNode app on the iPhone.',
+  'photoBackup.title': 'Back up a phone',
+  'photoBackup.install':
+    'Install the TeaNode app on the phone: from the App Store on an iPhone. The Android app is coming to testers first.',
   'photoBackup.signIn': "Sign in with this server's address: {address}",
   'photoBackup.turnOn': 'In the app, open Settings, then Photo backup, and turn it on.',
   'photoBackup.needsHttps':
-    'The iPhone app needs this server on an https address, and {address} is not one a phone can use. Put the server behind https first, then sign in with that address. {guide}',
+    'The TeaNode app needs this server on an https address, and {address} is not one a phone can use. Put the server behind https first, then sign in with that address. {guide}',
   'photoBackup.httpsGuide': 'How to put the server on https',
   'photoBackup.connectHint':
-    'Quickest: scan a code with the iPhone camera. It opens the app, or the App Store if the app is not installed yet, and signs it in as you.',
+    'Quickest: scan a code with the phone camera. It opens the app (on an iPhone, the App Store if the app is not installed yet) and signs it in as you.',
   'deviceSetup.noServicesPhotos':
     'Mail, Calendar, Reminders and Contacts are not set up on this server. Photos is backed up with the TeaNode app, above.',
   'photos.search': 'Search photos',
@@ -5930,7 +5932,7 @@ export const en = {
   'photos.upload': 'Upload photos',
   'photos.dropToUpload': 'Drop photos and videos here to upload them',
   'photos.uploadIgnored': 'Some files were not pictures or videos and were left out.',
-  'photos.emptyLibrary': 'No photos yet. Upload some, or turn on photo backup in the iPhone app.',
+  'photos.emptyLibrary': 'No photos yet. Upload some, or turn on photo backup in the TeaNode app on your phone.',
   'photos.emptyLibraryWays': 'No photos yet. There are three ways to add some.',
   'photos.wayComputerTitle': 'Upload from this computer',
   'photos.wayComputer': 'Choose photos and videos, or drop them anywhere on this page.',
@@ -6770,8 +6772,8 @@ export const en = {
   'location.checkInHereNote': 'Uses where your browser places you now.',
   'location.checkedInHere': 'Checked in here',
   'location.checkInPrecision': 'Your browser places you within {accuracyMeters} m.',
-  'location.setupInstallButton': 'Set up the iPhone app',
-  'location.setupInstall': 'Install the TeaNode app on your iPhone',
+  'location.setupInstallButton': 'Set up the phone app',
+  'location.setupInstall': 'Install the TeaNode app on your phone',
   'location.setupInstallNote': 'Only the phone records where you go in the background.',
   'location.setupHome': 'This is home',
   'location.setupHomeNote': 'Saves the place you are at now as home.',
@@ -6813,9 +6815,9 @@ export const en = {
   'location.personNotSharing': 'That person does not share their location with you.',
   'location.personNotRead': 'The people who share with you could not be read, so this list cannot be shown.',
   'location.browserCoarse':
-    'Your browser can only place you within {accuracyMeters} m. A computer has no GPS; your iPhone is exact.',
+    'Your browser can only place you within {accuracyMeters} m. A computer has no GPS; your phone is exact.',
   'location.setupHomeNotFound':
-    'Not found on the map. Use where I am now on your iPhone, or make home and move its pin.',
+    'Not found on the map. Use where I am now on your phone, or make home and move its pin.',
   'location.keepAddressTyped': 'Keep this address as typed',
   'location.keepAddressTypedNote': 'Keeps "{address}" as the address, without moving the place.',
   'location.addressKept': 'Kept the address {address}',
@@ -6836,11 +6838,11 @@ export const en = {
   'location.limitNoneTitle': "You can't see anyone's location",
   'location.limitVisitsTitle': "You can't see anyone's visits",
   'location.limitPausedBody': 'Your location is paused. Resume to see where people are again.',
-  'location.limitRecordingOffBody': 'Recording is off in the TeaNode app on your iPhone.',
+  'location.limitRecordingOffBody': 'Recording is off in the TeaNode app on your phone.',
   'location.limitPhoneOffBody':
-    'Location is off for TeaNode on your iPhone. Set it to Always in the iPhone Settings to see where people are and their visits.',
+    'Location is off for TeaNode on your phone. Set it to Always (iPhone) or Allow all the time (Android) in the phone Settings to see where people are and their visits.',
   'location.limitWhileUsingBody':
-    "Location is set to While Using on your iPhone, so TeaNode can't record your visits. You see where people are now, but not where they've been. Set it to Always in the iPhone Settings to see visits again.",
+    "Location is set to While Using on your phone, so TeaNode can't record your visits. You see where people are now, but not where they've been. Set it to Always (iPhone) or Allow all the time (Android) in the phone Settings to see visits again.",
   'location.reducedTitle': 'You see less of some people',
   'location.reducedNoShare': "You don't share your location with {name}, so you can't see theirs.",
   'location.reducedCurrentOnly': "You share only where you are with {name}, so you can't see their visits.",
@@ -6996,7 +6998,7 @@ export const en = {
   'agentDrawer.note.shareLevel.transactions': 'balance, spending and transactions',
   'health.title': 'Health',
   'health.off':
-    'Your account is not allowed to copy or read Apple Health data. Whoever manages your TeaNode server can allow it.',
+    'Your account is not allowed to copy or read Apple Health or Health Connect data. Whoever manages your TeaNode server can allow it.',
   'health.tabData': 'Data',
   'health.tabSettings': 'Settings',
   'health.person': 'Showing',
@@ -7005,8 +7007,8 @@ export const en = {
   'health.personEmpty': '{name} shares no Health data with you yet.',
   'health.emptyTitle': 'No Health data yet',
   'health.emptyBody':
-    "Health copies your Apple Health data to your own server. It comes from the TeaNode app on your iPhone: turn on Health in the app's Settings, then allow the data you want on Apple's Health permissions screen.",
-  'health.emptyAction': 'Set up the iPhone app',
+    "Health copies your Apple Health (iPhone) or Health Connect (Android) data to your own server. It comes from the TeaNode app on your phone: turn on Health in the app's Settings, then allow the data you want on the Health permissions screen.",
+  'health.emptyAction': 'Set up the phone app',
   'health.typesTitle': 'Health data',
   'health.typesLabel': 'Kinds of Health data',
   'health.back': 'All Health data',
@@ -7071,7 +7073,7 @@ export const en = {
   'health.eraseType': 'Erase {name}',
   'health.eraseTypeTitle': 'Erase {name}?',
   'health.eraseTypeBody':
-    'Erases every reading, day summary and route of {name} that this server keeps. The iPhone app keeps sending new readings of it while Health is on. What your agent said about your Health in conversations stays in those conversations. This cannot be undone.',
+    'Erases every reading, day summary and route of {name} that this server keeps. The TeaNode app keeps sending new readings of it while Health is on. What your agent said about your Health in conversations stays in those conversations. This cannot be undone.',
   'health.settingsAgentTitle': 'The agent',
   'health.agentSwitch': 'Let the agent read Health data',
   'health.agentProvider': 'What the agent reads goes to {provider}.',
@@ -7084,7 +7086,7 @@ export const en = {
   'health.readingCount': '{count} readings kept',
   'health.readingCountNone': 'No readings kept',
   'health.settingsNoData':
-    "Nothing has arrived yet. In the TeaNode app on your iPhone, turn on Health in Settings, then allow the data on Apple's Health permissions screen.",
+    "Nothing has arrived yet. In the TeaNode app on your phone, turn on Health in Settings, then allow the data on the Health permissions screen (Apple's on an iPhone, Health Connect's on Android).",
   'health.lastReceived': 'Last received',
   'health.shareTitle': 'Sharing',
   'health.shareIntro':
@@ -7108,13 +7110,13 @@ export const en = {
   'health.eraseAll': 'Erase all Health data',
   'health.eraseAllTitle': 'Erase all Health data?',
   'health.eraseAllBody':
-    'Erases every reading, day summary and route this server keeps, and the iPhone app stops sending until you turn Health on again. What your agent said about your Health in conversations stays in those conversations. This cannot be undone.',
+    'Erases every reading, day summary and route this server keeps, and the TeaNode app stops sending until you turn Health on again. What your agent said about your Health in conversations stays in those conversations. This cannot be undone.',
   'health.eraseConfirm': 'Erase',
   'health.erasedOne': '1 reading erased.',
   'health.erased': '{count} readings erased.',
   'health.eraseFailed': 'Could not erase the Health data.',
   'health.aboutTitle': 'About you',
-  'health.aboutIntro': 'Set in the Health app on your iPhone. Change them there.',
+  'health.aboutIntro': 'Set in the Health app on your phone. Change them there.',
   'health.notSet': 'Not set',
   'health.sex.female': 'Female',
   'health.sex.male': 'Male',

@@ -4,7 +4,7 @@ import { CONNECT_PATH } from './dashboardPath'
 // Where the deployment guide explains how to put the server on an https
 // address; the section is written for the same people who see this card.
 const HTTPS_GUIDE_URL =
-  'https://github.com/ziyan/teanode/blob/main/docs/reference/deployment.md#photos-and-the-iphone-app'
+  'https://github.com/ziyan/teanode/blob/main/docs/reference/deployment.md#photos-and-the-phone-apps'
 
 // canPhoneUseAddress says whether an iPhone away from this computer could
 // sign in at the address, which the TeaNode app only does over https. A page

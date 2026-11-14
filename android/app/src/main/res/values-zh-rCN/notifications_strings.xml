@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notifications_account_gone">这条通知来自一个已不在这部手机上的账户。</string>
+    <string name="notifications_account_unknown">这条通知没有说明来自哪个账户。请在 TeaNode 中回复。</string>
+    <string name="notifications_button_do_it">去做</string>
+    <string name="notifications_button_dont">不要</string>
+    <string name="notifications_button_open">打开</string>
+    <string name="notifications_button_reply">回复</string>
+    <string name="notifications_channel_agent">你的助手</string>
+    <string name="notifications_channel_chats">对话</string>
+    <string name="notifications_channel_circles">圈子</string>
+    <string name="notifications_channel_coding">编程</string>
+    <string name="notifications_channel_journal">日记</string>
+    <string name="notifications_channel_other">其他</string>
+    <string name="notifications_channel_photos">照片</string>
+    <string name="notifications_channel_places">地点和购物</string>
+    <string name="notifications_channel_problems">问题</string>
+    <string name="notifications_channel_turns">助手正在处理</string>
+    <string name="notifications_did_not_reach_agent">没能送到助手：%1$s</string>
+    <string name="notifications_did_not_reach_chat">没能送到聊天：%1$s</string>
+    <string name="notifications_did_not_reach_journal">未能送达你的日记：%1$s</string>
+    <string name="notifications_mood_awful">糟糕</string>
+    <string name="notifications_mood_good">不错</string>
+    <string name="notifications_mood_great">很棒</string>
+    <string name="notifications_mood_low">低</string>
+    <string name="notifications_mood_okay">一般</string>
+    <string name="notifications_new_message">新消息</string>
+    <string name="notifications_reply_hint_agent">问问助手…</string>
+    <string name="notifications_reply_hint_message">发消息…</string>
+    <string name="notifications_update_available">有可用更新</string>
+    <string name="notifications_update_install">打开安装页面</string>
+    <string name="notifications_update_not_now">暂不</string>
+    <string name="notifications_update_ready">TeaNode %1$s 可以安装了。</string>
+    <string name="notifications_shortcut_record">开始录音</string>
+    <string name="notifications_shortcut_call_agent">给助手打电话</string>
+    <string name="notifications_shortcut_ask_agent">问你的助手</string>
+    <string name="notifications_turn_working">正在处理</string>
+    <string name="notifications_turn_waiting">等待你处理</string>
+    <string name="notifications_turn_done">完成</string>
+    <string name="notifications_turn_failed">出了问题，已停止</string>
+</resources>

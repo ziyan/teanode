@@ -596,7 +596,7 @@ describe('the changed key of the owner of shared logins', () => {
 
 describe('an item that needs a new key', () => {
   const id = '00000000-0000-4000-8000-000000000001'
-  const words = 'Open Passwords on the dashboard or in the iPhone app first: this item needs a new key.'
+  const words = 'Open Passwords on the dashboard or in the TeaNode phone app first: this item needs a new key.'
 
   async function needingRecord(needsNewKey: boolean | undefined): Promise<PasswordItemRecord> {
     const record = await ownRecord(id, login({ sites: ['example.com'] }), 2)

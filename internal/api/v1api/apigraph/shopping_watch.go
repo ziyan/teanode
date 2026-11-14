@@ -192,7 +192,7 @@ func (self *graph) ListWatchedStores(ctx context.Context, arguments ListWatchedS
 	}
 	if center == nil {
 		return nil, fmt.Errorf("%w: there is no position to watch around: give latitudeDegrees and longitudeDegrees, "+
-			"or report a location first (the TeaNode app on the iPhone does)", api.ErrInvalidArguments)
+			"or report a location first (the TeaNode app on the phone does)", api.ErrInvalidArguments)
 	}
 	if len(wanted) == 0 {
 		return []*WatchedStoreView{}, nil

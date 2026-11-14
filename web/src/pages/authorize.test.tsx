@@ -46,7 +46,7 @@ function show(isTeaNodeApp: boolean) {
 it('tells the reader to approve the TeaNode app only after starting the sign-in there', async () => {
   show(true)
   expect(
-    await screen.findByText('Approve only if you just started signing in to the TeaNode app on your iPhone.'),
+    await screen.findByText('Approve only if you just started signing in to the TeaNode app on your phone.'),
   ).toBeTruthy()
 })
 

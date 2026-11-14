@@ -125,6 +125,19 @@ readonly ALLOWED_HOSTS=(
   # sends to.
   .apple.com
 
+  # Google's public services, which the Android app's push relay and update
+  # channel name: the Firebase Cloud Messaging API and the OAuth endpoint its
+  # service account trades with, the type URL its error answers carry, and
+  # the two places an Android update is installed from (Firebase's tester
+  # distribution and Google Play).
+  fcm.googleapis.com
+  oauth2.googleapis.com
+  www.googleapis.com
+  type.googleapis.com
+  appdistribution.firebase.google.com
+  appdistribution.firebase.dev
+  play.google.com
+
   # The iPhone app's bundle and app group identifiers. They are written like
   # host names in reverse, from the project's own domain, and name no
   # machine. A leading dot also allows group.com.teanode.app.
@@ -300,6 +313,29 @@ readonly ALLOWED_HOSTS=(
   pressed.info
   selection.pin.in
   arrow.up.forward.app
+
+  # Not hostnames: Kotlin in the Android app that reads as one. The Java and
+  # Android packages it imports (`java.io`, `android.net`), and kotlinx's
+  # `.int` accessor on a JSON value. Listed exactly, as the Swift ones above.
+  java.io
+  java.net
+  javax.net
+  android.net
+  android.app
+  androidx.core.app
+  androidx.test.core.app
+  kotlinx.serialization.json.int
+  primitive.int
+
+  # The Android app's public neighbours: the XML namespace of every Android
+  # resource, where the Gradle wrapper downloads Gradle, the maps links a chat
+  # opens in the maps app, and the package names of browsers autofill trusts,
+  # which are written like host names in reverse.
+  schemas.android.com
+  services.gradle.org
+  maps.google.com
+  com.chrome.dev
+  com.sec.android.app
 )
 
 # Top-level domains worth looking for. Restricted rather than open-ended so a
