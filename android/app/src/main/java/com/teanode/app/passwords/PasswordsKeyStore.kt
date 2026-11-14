@@ -78,7 +78,7 @@ class AndroidPasswordsKeyStore(private val context: Context, private val signInA
     private val preferenceName get() = "kept." + alias
 
     override val isBiometryAvailable: Boolean
-        get() = context.getSystemService(BiometricManager::class.java)?.canAuthenticate() == BiometricManager.BIOMETRIC_SUCCESS
+        get() = runCatching { context.getSystemService(BiometricManager::class.java)?.canAuthenticate() == BiometricManager.BIOMETRIC_SUCCESS }.getOrDefault(false)
 
     private fun keyStore(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
