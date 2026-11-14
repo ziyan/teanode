@@ -3,6 +3,7 @@ package com.teanode.app.location
 import java.time.Instant
 import com.teanode.kit.location.PlaceVisit
 import com.teanode.kit.location.ServerTime
+import com.teanode.app.notifications.NotificationOpening
 import com.teanode.app.photos.PhotoFilterRequest
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Arrangement
@@ -127,6 +128,14 @@ fun LocationNoticeEffect(model: LocationModel) {
 fun LocationSection() {
     val model = rememberLocationModel()
     val navigator = LocalAppNavigator.current
+    // A notification about somebody arriving or leaving opens the map with them selected.
+    val openedUserId by NotificationOpening.locationUserId.collectAsState()
+    LaunchedEffect(openedUserId) {
+        openedUserId?.let { userId ->
+            model.select(userId)
+            NotificationOpening.consumeLocationUserId()
+        }
+    }
     LocationHome(
         model = model,
         onOpenDay = { day -> navigator.navigate(LocationRoutes.day(day)) },
