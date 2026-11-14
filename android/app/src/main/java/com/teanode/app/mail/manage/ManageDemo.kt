@@ -79,7 +79,7 @@ object ManageDemoData {
     val answerers: List<DemoAnswerer> = listOf(
         // Only the operator's question about the session: the foundation answers who is signed in.
         DemoAnswerer { request ->
-            if (request.document.contains("manages")) DemoResponse("""{"data":{"GetSession":{"manages":true,"permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage"],"byDomain":[]}}}}""") else null
+            if (request.document.contains("manages")) DemoResponse("""{"data":{"GetSession":{"manages":true,"permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act"],"byDomain":[]}}}}""") else null
         },
         graphQLField("ListMailOpens") { _ -> """[{"mailId":"mail-4","trackable":true,"opened":true,"openedAt":"${hoursAgo(10)}","lastOpenedAt":"${hoursAgo(9)}","openCount":2,"ip":null},{"mailId":"mail-2","trackable":true,"opened":false,"openedAt":null,"lastOpenedAt":null,"openCount":0,"ip":null}]""" },
         graphQLField("ListMails") { variables -> if (variables.containsKey("pagination")) mails else """[{"receivedAt":"${hoursAgo(1)}"}]""" },

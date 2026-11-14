@@ -37,6 +37,7 @@ import com.teanode.app.ui.components.LoadedContent
 import com.teanode.app.ui.components.rememberLoad
 import com.teanode.kit.AppSection
 import com.teanode.kit.account.pairedPhones
+import com.teanode.app.settings.manage.manageRoutes
 
 private fun NavGraphBuilder.settingsPage(route: String, content: @Composable (NavBackStackEntry) -> Unit) {
     composable(route, deepLinks = Routes.deepLinks(route)) { entry -> content(entry) }
@@ -82,7 +83,7 @@ fun NavGraphBuilder.settingsRoutes(navigator: AppNavigator) {
         if (part != null) AgentSettingsPartScreen(part, onBack = { navigator.back() })
     }
     settingsPage(SettingsRoutes.MANAGE) { ManageScreen(onBack = { navigator.back() }, onOpen = { route -> navigator.navigate(route) }) }
-    settingsPage(SettingsRoutes.MANAGE_PEOPLE) { PeopleScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.MANAGE_PEOPLE) { PeopleScreen(onBack = { navigator.back() }, onOpenPerson = { userId -> navigator.navigate(com.teanode.app.settings.manage.ManageRoutes.person(userId)) }) }
     settingsPage(SettingsRoutes.MANAGE_GROUPS) { GroupsScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.MANAGE_ROLES) { RolesScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.MANAGE_AUDIT) { AuditLogScreen(onBack = { navigator.back() }) }
@@ -97,7 +98,9 @@ fun NavGraphBuilder.settingsRoutes(navigator: AppNavigator) {
     settingsPage(SettingsRoutes.CONNECTIONS) { ConnectionsScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.ACTIVITY) { AgentActivityScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.SKILLS) { SkillSharingScreen(onBack = { navigator.back() }) }
-    settingsPage(SettingsRoutes.MANAGE_AGENTS) { AgentAdminScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.MANAGE_AGENTS) { com.teanode.app.settings.manage.AgentAdminHubScreen(onBack = { navigator.back() }, onOpen = { route -> navigator.navigate(route) }) }
+    settingsPage(com.teanode.app.settings.manage.ManageRoutes.AGENT_LIST) { AgentAdminScreen(onBack = { navigator.back() }) }
+    manageRoutes(navigator)
     settingsPage(SettingsRoutes.MANAGE_SERVER) { ServerSettingsScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.MANAGE_USAGE) { AgentUsageScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.APPS) { ConnectedAppsScreen(onBack = { navigator.back() }) }
@@ -139,7 +142,7 @@ fun settingsPlaces(): List<AppPlace> = listOf(
     managePlace("server", R.string.settings_server_title, SettingsRoutes.MANAGE_SERVER, Icons.Outlined.Dns),
     managePlace("usage", R.string.settings_usage_title, SettingsRoutes.MANAGE_USAGE, Icons.Outlined.History),
     managePlace("services", R.string.settings_services_title, SettingsRoutes.MANAGE_SERVICES, Icons.Outlined.ToggleOn),
-) + listOf(
+) + com.teanode.app.settings.manage.managePlaces() + listOf(
     AgentSettingsPart.About to R.string.settings_agent_about, AgentSettingsPart.Instructions to R.string.settings_agent_instructions, AgentSettingsPart.Language to R.string.settings_agent_language,
     AgentSettingsPart.WritingVoice to R.string.settings_agent_voice, AgentSettingsPart.SpeakingVoice to R.string.settings_agent_speaking_voice, AgentSettingsPart.Reach to R.string.settings_agent_reach,
     AgentSettingsPart.Categories to R.string.settings_agent_categories, AgentSettingsPart.Model to R.string.settings_agent_model, AgentSettingsPart.SpeakingFirst to R.string.settings_agent_speaking_first,

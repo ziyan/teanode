@@ -48,7 +48,7 @@ private const val AGENT_SETTINGS = """{
   "choices":["model-a","model-b"],"timezone":"Europe/Berlin","language":"en","knowledgeLanguage":"en",
   "categories":["personal","work","newsletter","notification","receipt","promotion","social","invitation","phishing","junk","other","club"]}"""
 
-val settingsDemoAnswerers: List<DemoAnswerer> = listOf(
+val settingsDemoAnswerers: List<DemoAnswerer> = com.teanode.app.settings.manage.manageDemoAnswerers + listOf(
     graphQLFields(
         "ListAgents" to """[
           {"agentId":"agent-1","userId":"demo-user","username":"robin","name":"Juniper","enabled":true,"dailyTokens":100000,"dailyCost":0,"dead":0,"queued":2,"today":{"used":1200,"limit":100000,"cost":0.25,"costLimit":0,"currency":"USD"}},
