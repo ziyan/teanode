@@ -311,7 +311,7 @@ built from the arguments and says what is granted: who, which tools (or "some
 of its tools" when none are named), and that every call waits, which is the
 only share the tool makes. A call that asks for limits, or for a share that
 does not ask every time, is refused before there is a card, saying the
-limits are set on the dashboard or in the iPhone app. A share made there with
+limits are set on the dashboard or in the TeaNode phone app. A share made there with
 no limits, and without asking every time, is worded the same on every surface
 (`models.SkillShareNoLimitsWords`): nothing that can be priced goes through
 unasked there, and only a tool that works on something an earlier call through
@@ -391,7 +391,7 @@ raising its limits or its tools, or turning off asking every time) are accepted
 only from the dashboard's session, which has passed the check against forms on
 other sites, or from the iPhone app's own sign-in. A command line token, an API
 token, the console and the agent's own operations are refused, with "approve it
-on the dashboard or in the iPhone app". For a share the refusal says what is
+on the dashboard or in the TeaNode phone app". For a share the refusal says what is
 accepted from there (`shareOnTheDashboard`): a share with every call asking, or
 one with no more than the share it replaces allowed (the same tools or fewer,
 the same currency, limits no higher), whether or not the tools pay. A share whose
@@ -516,7 +516,7 @@ of its tools.
     teanode agent skill unshare <share-id>
 
 Sharing with limits, which lets a call through unasked, and approving a call are
-done on the dashboard's agent page or in the iPhone app; from a terminal the
+done on the dashboard's agent page or in the TeaNode phone app; from a terminal the
 server accepts only asking every time, and lowering what a share allows.
 
 ## Caveats
