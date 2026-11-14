@@ -26,6 +26,8 @@ object PushHandler {
             TurnNotification.handlePush(context, data, isAppInFront = push.isInFront)
             return
         }
+        // What the widgets show (the agent's name, what waits, the next events, the unread mail) may be what this push is about.
+        com.teanode.app.widgets.WidgetRefresh.all(context)
         val sealed = data[DATA_SEALED]
         val opened = sealed?.let { text -> PayloadKey.open(text, push.keyring.keys(push.accountStore.accounts())) }
         if (data[DATA_PUSH_KIND] == PUSH_KIND_CALL) {
