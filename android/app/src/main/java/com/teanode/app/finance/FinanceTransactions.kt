@@ -402,6 +402,7 @@ fun FinanceTransactionDetailScreen(transactionId: String) {
                         if (isMoneyIn) Footnote(stringResource(R.string.finance_receipts_money_out))
                     }
                 }
+                item("in-memory") { com.teanode.app.knowledge.InMemoryCard("finance_transaction", transactionId) }
             }
         }
     }

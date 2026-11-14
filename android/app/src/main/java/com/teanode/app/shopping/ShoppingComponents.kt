@@ -3,6 +3,8 @@ package com.teanode.app.shopping
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -81,8 +83,11 @@ private fun Modifier.matchParentSizeCompat(): Modifier = this.fillMaxWidth().asp
 
 /** An item on a list as a row: its picture, its words, and what its count costs. */
 @Composable
-internal fun ShoppingListItemRow(item: ShoppingItem, words: ShoppingWords, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+@OptIn(ExperimentalFoundationApi::class)
+internal fun ShoppingListItemRow(item: ShoppingItem, words: ShoppingWords, onOpen: () -> Unit, modifier: Modifier = Modifier, actions: ShoppingItemActions? = null) {
     val price = ShoppingMoney.shownLineTotal(item)
+    var isMenuOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    Box(modifier) {
     ListItem(
         headlineContent = {
             Text(
@@ -94,16 +99,42 @@ internal fun ShoppingListItemRow(item: ShoppingItem, words: ShoppingWords, onOpe
         leadingContent = { ShoppingPictureView(item, isZoomable = true) },
         trailingContent = if (price.isEmpty()) null else ({ Text(price, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = modifier.clickable(onClick = onOpen),
+        modifier = Modifier.combinedClickable(onClick = onOpen, onLongClick = if (actions != null) ({ isMenuOpen = true }) else null),
     )
+    if (actions != null) ShoppingItemMenu(item, isMenuOpen, { isMenuOpen = false }, actions)
+    }
+}
+
+/** What touch and hold on an item of a list offers, as the iPhone's swipe and menu do: Need again for one not needed now, and Remove. */
+internal class ShoppingItemActions(val onNeedAgain: () -> Unit, val onRemove: () -> Unit)
+
+@Composable
+internal fun ShoppingItemMenu(item: ShoppingItem, isOpen: Boolean, onDismiss: () -> Unit, actions: ShoppingItemActions) {
+    androidx.compose.material3.DropdownMenu(isOpen, onDismiss) {
+        if (item.isNotNeeded) {
+            androidx.compose.material3.DropdownMenuItem(
+                text = { Text(androidx.compose.ui.res.stringResource(com.teanode.app.R.string.shopping_need_again)) },
+                leadingIcon = { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Outlined.Undo, null) },
+                onClick = { onDismiss(); actions.onNeedAgain() },
+            )
+        }
+        androidx.compose.material3.DropdownMenuItem(
+            text = { Text(androidx.compose.ui.res.stringResource(com.teanode.app.R.string.shopping_remove), color = MaterialTheme.colorScheme.error) },
+            leadingIcon = { Icon(androidx.compose.material.icons.Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error) },
+            onClick = { onDismiss(); actions.onRemove() },
+        )
+    }
 }
 
 /** An item in the pictures layout of a list: the picture across the tile, and under it what it is, what it needs and about what it costs. */
 @Composable
-internal fun ShoppingListItemTile(item: ShoppingItem, groupName: String, words: ShoppingWords, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+@OptIn(ExperimentalFoundationApi::class)
+internal fun ShoppingListItemTile(item: ShoppingItem, groupName: String, words: ShoppingWords, onOpen: () -> Unit, modifier: Modifier = Modifier, actions: ShoppingItemActions? = null) {
     val price = ShoppingMoney.shownLineTotal(item)
+    var isMenuOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    Box(modifier) {
     Card(
-        modifier = modifier.clickable(onClick = onOpen),
+        modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onOpen, onLongClick = if (actions != null) ({ isMenuOpen = true }) else null),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         shape = RoundedCornerShape(16.dp),
     ) {
@@ -122,6 +153,8 @@ internal fun ShoppingListItemTile(item: ShoppingItem, groupName: String, words: 
                 if (price.isNotEmpty()) Text(price, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+    }
+    if (actions != null) ShoppingItemMenu(item, isMenuOpen, { isMenuOpen = false }, actions)
     }
 }
 
@@ -159,6 +192,7 @@ internal fun ShoppingStoreItemRow(
 }
 
 /** An item at a store in the pictures layout: a tile whose check puts it in the cart. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun ShoppingStoreItemTile(
     item: ShoppingItem,
@@ -170,7 +204,7 @@ internal fun ShoppingStoreItemTile(
     modifier: Modifier = Modifier,
 ) {
     Card(
-        modifier = modifier.clickable(onClick = onToggle),
+        modifier = modifier.combinedClickable(onClick = onToggle, onLongClick = onOpen),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         shape = RoundedCornerShape(16.dp),
     ) {

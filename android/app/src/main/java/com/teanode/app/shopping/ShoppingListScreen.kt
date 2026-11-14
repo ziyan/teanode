@@ -99,6 +99,9 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
     var isLayoutMenuOpen by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ShoppingItem?>(null) }
     var needingAgain by remember { mutableStateOf<ShoppingItem?>(null) }
+    var removing by remember { mutableStateOf<ShoppingItem?>(null) }
+    // Touch and hold on an item offers what the iPhone's swipe and menu do: Need again (for one not needed now) and Remove.
+    fun itemActions(item: ShoppingItem) = ShoppingItemActions(onNeedAgain = { needingAgain = item }, onRemove = { removing = item })
     var isAdding by remember { mutableStateOf(false) }
     var addingStoreName by remember { mutableStateOf("") }
     var isImporting by remember { mutableStateOf(false) }
@@ -241,10 +244,10 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                         }
                         if (layout == ShoppingLayoutChoice.Pictures) {
                             val placed = groups.flatMap { group -> group.items.map { item -> ShoppingPlacedItem(item, groupTitle(group)) } }
-                            tileRows(placed, words) { item -> editing = item }
+                            tileRows(placed, words, actionsOf = ::itemActions) { item -> editing = item }
                             if (state.notNeeded.isNotEmpty()) {
                                 item("not-needed-header") { SectionTitle(stringResource(R.string.shopping_not_needed)) }
-                                tileRows(state.notNeeded.map { item -> ShoppingPlacedItem(item, words.listItemPlace(item)) }, words) { item -> editing = item }
+                                tileRows(state.notNeeded.map { item -> ShoppingPlacedItem(item, words.listItemPlace(item)) }, words, actionsOf = ::itemActions) { item -> editing = item }
                             }
                         } else {
                             for (group in groups) {
@@ -257,11 +260,11 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                                         }
                                     }
                                 }
-                                items(group.items, key = { item -> "item-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }) }
+                                items(group.items, key = { item -> "item-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }, actions = itemActions(item)) }
                             }
                             if (state.notNeeded.isNotEmpty()) {
                                 item("not-needed-header") { SectionTitle(stringResource(R.string.shopping_not_needed)) }
-                                items(state.notNeeded, key = { item -> "not-needed-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }) }
+                                items(state.notNeeded, key = { item -> "not-needed-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }, actions = itemActions(item)) }
                             }
                         }
                     }
@@ -321,6 +324,13 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
             onNeedAgain = if (item.isNotNeeded) ({ _ -> editing = null; needingAgain = item }) else null,
         )
     }
+    removing?.let { item ->
+        ConfirmationDialog(
+            title = stringResource(R.string.shopping_remove_from_the_list), text = stringResource(R.string.shopping_item_taken_off_for_everyone, item.itemDescription),
+            confirmLabel = stringResource(R.string.shopping_remove), isDestructive = true,
+            onConfirm = { removing = null; scope.launch { state.remove(item) { name -> context.getString(R.string.shopping_removed_item, name) } } }, onDismiss = { removing = null },
+        )
+    }
     needingAgain?.let { item ->
         ShoppingNeedAgainSheet(item, onDismiss = { needingAgain = null }) { quantity ->
             needingAgain = null
@@ -358,10 +368,10 @@ internal fun SectionTitle(text: String) {
 }
 
 /** Tiles two to a row, which fills a section's one row of the list. */
-internal fun androidx.compose.foundation.lazy.LazyListScope.tileRows(placed: List<ShoppingPlacedItem>, words: ShoppingWords, onOpen: (ShoppingItem) -> Unit) {
+internal fun androidx.compose.foundation.lazy.LazyListScope.tileRows(placed: List<ShoppingPlacedItem>, words: ShoppingWords, actionsOf: ((ShoppingItem) -> ShoppingItemActions)? = null, onOpen: (ShoppingItem) -> Unit) {
     items(placed.chunked(2), key = { row -> "tiles-" + row.first().item.id }) { row ->
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            for (cell in row) ShoppingListItemTile(cell.item, cell.groupName, words, onOpen = { onOpen(cell.item) }, modifier = Modifier.weight(1f))
+            for (cell in row) ShoppingListItemTile(cell.item, cell.groupName, words, onOpen = { onOpen(cell.item) }, modifier = Modifier.weight(1f), actions = actionsOf?.invoke(cell.item))
             if (row.size == 1) Box(Modifier.weight(1f))
         }
     }
