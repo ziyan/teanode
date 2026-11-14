@@ -82,7 +82,6 @@
     <string name="common_back">返回</string>
     <string name="common_loading">正在加载</string>
     <string name="common_open_menu">打开菜单</string>
-    <string name="placeholder_not_built">这部分功能还在开发中。</string>
     <string name="error_signed_out">这部手机已不再登录。请重新连接。</string>
     <string name="error_connect_code_spent">该连接码已被使用或已过期。请在控制台重新生成一个。</string>
     <string name="error_unreadable_answer">服务器返回了这个应用无法读取的内容。</string>
@@ -96,7 +95,7 @@
     <string name="signin_add_switch">添加并切换到它</string>
     <string name="signin_confirm_title">连接到 %1$s？</string>
     <string name="signin_confirm_body">这部手机将以 %1$s 的身份登录，可以做你在控制台能做的一切。</string>
-    <string name="signin_server_placeholder">mail.example.com</string>
+    <string name="signin_server_placeholder">example.com</string>
     <string name="shell_move_up">上移</string>
     <string name="shell_remove_from_tab_bar">从标签栏中移除</string>
     <string name="shell_put_in_tab_bar">放入标签栏</string>

@@ -82,7 +82,6 @@
     <string name="common_back">Back</string>
     <string name="common_loading">Loading</string>
     <string name="common_open_menu">Open the menu</string>
-    <string name="placeholder_not_built">This part of the app is not built yet.</string>
     <string name="error_signed_out">This phone is no longer signed in. Connect it again.</string>
     <string name="error_connect_code_spent">That code has been used or has expired. Show a new one on the dashboard.</string>
     <string name="error_unreadable_answer">The server answered something this app cannot read.</string>
@@ -96,7 +95,7 @@
     <string name="signin_add_switch">Add it and switch to it</string>
     <string name="signin_confirm_title">Connect to %1$s?</string>
     <string name="signin_confirm_body">This phone will be signed in as %1$s, and can do anything you can do on the dashboard.</string>
-    <string name="signin_server_placeholder">mail.example.com</string>
+    <string name="signin_server_placeholder">example.com</string>
     <string name="shell_move_up">Move up</string>
     <string name="shell_remove_from_tab_bar">Take out of the tab bar</string>
     <string name="shell_put_in_tab_bar">Put in the tab bar</string>

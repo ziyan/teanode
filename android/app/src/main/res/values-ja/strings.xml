@@ -82,7 +82,6 @@
     <string name="common_back">戻る</string>
     <string name="common_loading">読み込み中</string>
     <string name="common_open_menu">メニューを開く</string>
-    <string name="placeholder_not_built">この機能はまだ作成中です。</string>
     <string name="error_signed_out">このスマートフォンはサインインされていません。もう一度接続してください。</string>
     <string name="error_connect_code_spent">このコードは使用済みか、有効期限が切れています。ダッシュボードで新しいコードを表示してください。</string>
     <string name="error_unreadable_answer">サーバーからこのアプリが読み取れない応答が返りました。</string>
@@ -96,7 +95,7 @@
     <string name="signin_add_switch">追加して切り替える</string>
     <string name="signin_confirm_title">%1$s に接続しますか？</string>
     <string name="signin_confirm_body">このスマートフォンは %1$s としてサインインし、ダッシュボードでできることはすべて行えるようになります。</string>
-    <string name="signin_server_placeholder">mail.example.com</string>
+    <string name="signin_server_placeholder">example.com</string>
     <string name="shell_move_up">上へ移動</string>
     <string name="shell_remove_from_tab_bar">タブバーから外す</string>
     <string name="shell_put_in_tab_bar">タブバーに入れる</string>
