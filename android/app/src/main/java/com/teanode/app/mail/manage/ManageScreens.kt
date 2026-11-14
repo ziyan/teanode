@@ -67,6 +67,7 @@ import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadedContent
 import com.teanode.app.ui.components.LoadingState
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.app.ui.components.TeaNodeNavigationRow
 import com.teanode.app.ui.components.TeaNodeNavigationRow
@@ -251,11 +252,13 @@ private fun <Row> ManagedList(
     rows: List<Row>?,
     failure: Throwable?,
     onRetry: () -> Unit,
+    onRefresh: suspend () -> Unit,
     searchText: String,
     onSearch: (String) -> Unit,
     searchPrompt: String,
     filterMenu: @Composable () -> Unit,
     emptyTitle: String,
+    emptyDescription: String? = null,
     footer: @Composable (shown: Int) -> String,
     key: (Row) -> String,
     row: @Composable (Row) -> Unit,
@@ -267,14 +270,16 @@ private fun <Row> ManagedList(
                 searchText, onSearch, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), singleLine = true, leadingIcon = { Icon(Icons.Outlined.Search, null) },
                 placeholder = { Text(searchPrompt) }, shape = RoundedCornerShape(28.dp),
             )
-            when {
-                rows == null && failure != null -> ErrorState(failure.message.orEmpty(), onRetry = onRetry)
-                rows == null -> LoadingState()
-                rows.isEmpty() -> EmptyState(Icons.Outlined.Search, emptyTitle)
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(rows.take(shownCount), key = { item -> key(item) }) { item -> row(item) }
-                    if (rows.size > shownCount) item { LaunchedEffect(shownCount) { shownCount += ManagedWords.PAGE_SIZE }; Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp)) } }
-                    item { Text(footer(rows.size), Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            PullToRefresh(onRefresh = onRefresh, modifier = Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    rows == null && failure != null -> ErrorState(failure.message.orEmpty(), onRetry = onRetry)
+                    rows == null -> LoadingState()
+                    rows.isEmpty() -> EmptyState(Icons.Outlined.Search, emptyTitle, description = emptyDescription)
+                    else -> LazyColumn(Modifier.fillMaxSize()) {
+                        items(rows.take(shownCount), key = { item -> key(item) }) { item -> row(item) }
+                        if (rows.size > shownCount) item { LaunchedEffect(shownCount) { shownCount += ManagedWords.PAGE_SIZE }; Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp)) } }
+                        item { Text(footer(rows.size), Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
                 }
             }
         }
@@ -291,8 +296,9 @@ fun AllMailScreen(onBack: () -> Unit, onOpenMail: (String) -> Unit, startingFilt
     var mails by remember { mutableStateOf<List<AuditedMail>?>(null) }
     var opens by remember { mutableStateOf(emptyMap<String, com.teanode.kit.mail.AuditedMailOpens>()) }
     var failure by remember { mutableStateOf<Throwable?>(null) }
+    val snackbar = LocalSnackbar.current
     var attempt by remember { mutableIntStateOf(0) }
-    LaunchedEffect(attempt) {
+    suspend fun load() {
         try {
             domains = connection.managedDomainNames()
             val loaded = connection.allMail()
@@ -302,13 +308,14 @@ fun AllMailScreen(onBack: () -> Unit, onOpenMail: (String) -> Unit, startingFilt
         } catch (failed: kotlinx.coroutines.CancellationException) {
             throw failed
         } catch (failed: Throwable) {
-            failure = failed
+            if (mails != null) snackbar.showError(failed) else failure = failed
         }
     }
+    LaunchedEffect(attempt) { load() }
     val all = mails
     val shown = all?.let { loaded -> filter.applied(loaded) }
     ManagedList(
-        title = stringResource(R.string.mail_title), onBack = onBack, rows = shown, failure = failure, onRetry = { failure = null; attempt += 1 },
+        title = stringResource(R.string.mail_title), onBack = onBack, rows = shown, failure = failure, onRetry = { failure = null; attempt += 1 }, onRefresh = { load() },
         searchText = filter.searchText, onSearch = { typed -> filter = filter.copy(searchText = typed) }, searchPrompt = stringResource(R.string.mail_manage_sender_or_subject),
         filterMenu = {
             FilterMenu(
@@ -360,7 +367,7 @@ fun outcomeText(outcome: MailOutcome): String = when (outcome) {
     is MailOutcome.RejectedForViruses -> stringResource(R.string.mail_manage_outcome_viruses, outcome.viruses.joinToString(", "))
     is MailOutcome.RejectedAsSpam -> stringResource(R.string.mail_manage_outcome_spam, ManagedWords.score(outcome.score))
     is MailOutcome.RejectedByDMARC -> stringResource(R.string.mail_manage_outcome_dmarc, outcome.policy)
-    is MailOutcome.RejectedWithErrors -> stringResource(R.string.mail_manage_outcome_errors, outcome.errorMessages.joinToString(", "))
+    is MailOutcome.RejectedWithErrors -> stringResource(R.string.mail_manage_outcome_errors, outcome.errorMessages.joinToString("; "))
     MailOutcome.Rejected -> stringResource(R.string.mail_manage_outcome_rejected)
     MailOutcome.NoDeliveries -> stringResource(R.string.mail_manage_outcome_no_deliveries)
     is MailOutcome.PartlyDelivered -> stringResource(R.string.mail_manage_outcome_partly, outcome.deliveredCount, outcome.totalCount, outcome.failedCount)
@@ -377,6 +384,7 @@ fun AuditedMailScreen(mailId: String, onBack: () -> Unit, connection: Connection
     val detail = rememberLoad(mailId) { connection.auditedMail(mailId) }
     var trainingLabel by remember(mailId) { mutableStateOf<String?>(null) }
     var hasTrainingChanged by remember(mailId) { mutableStateOf(false) }
+    var learnedTotalCount by remember(mailId) { mutableStateOf<Int?>(null) }
     var isTeaching by remember { mutableStateOf(false) }
     var subPage by remember { mutableStateOf<AuditSubPage?>(null) }
     subPage?.let { opened ->
@@ -401,6 +409,10 @@ fun AuditedMailScreen(mailId: String, onBack: () -> Unit, connection: Connection
                             "spam" -> stringResource(R.string.mail_manage_taught_spam)
                             "ham" -> stringResource(R.string.mail_manage_taught_ham)
                             else -> stringResource(R.string.mail_manage_not_taught)
+                        } + " " + run {
+                            val learnedCount = learnedTotalCount ?: (classifier.bayesLearnedSpamCount + classifier.bayesLearnedHamCount)
+                            if (learnedCount >= classifier.bayesMinimumMessageCount) stringResource(R.string.mail_manage_classifier_contributing, learnedCount)
+                            else stringResource(R.string.mail_manage_classifier_silent, classifier.bayesMinimumMessageCount, learnedCount)
                         },
                         Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodyMedium,
                     )
@@ -412,6 +424,7 @@ fun AuditedMailScreen(mailId: String, onBack: () -> Unit, connection: Connection
                                     try {
                                         val taught = connection.teachSpamFilter(mailId, choice)
                                         trainingLabel = taught.trainingLabel.ifEmpty { null }
+                                        learnedTotalCount = taught.learnedSpamCount + taught.learnedHamCount
                                         hasTrainingChanged = true
                                         snackbar.show(context.getString(R.string.mail_manage_taught_done))
                                     } catch (failed: kotlinx.coroutines.CancellationException) {
@@ -428,8 +441,9 @@ fun AuditedMailScreen(mailId: String, onBack: () -> Unit, connection: Connection
                             isTeaching = true
                             scope.launch {
                                 try {
-                                    connection.teachSpamFilter(mailId, null)
+                                    val forgotten = connection.teachSpamFilter(mailId, null)
                                     trainingLabel = null
+                                    learnedTotalCount = forgotten.learnedSpamCount + forgotten.learnedHamCount
                                     hasTrainingChanged = true
                                 } catch (failed: kotlinx.coroutines.CancellationException) {
                                     throw failed
@@ -649,7 +663,7 @@ fun DeliveryQueueScreen(onBack: () -> Unit, onOpenMail: (String) -> Unit, connec
     var deliveries by remember { mutableStateOf<List<MailDelivery>?>(null) }
     var failure by remember { mutableStateOf<Throwable?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
-    LaunchedEffect(attempt) {
+    suspend fun load() {
         try {
             domains = connection.managedDomainNames()
             deliveries = connection.pendingDeliveries()
@@ -657,13 +671,14 @@ fun DeliveryQueueScreen(onBack: () -> Unit, onOpenMail: (String) -> Unit, connec
         } catch (failed: kotlinx.coroutines.CancellationException) {
             throw failed
         } catch (failed: Throwable) {
-            failure = failed
+            if (deliveries != null) snackbar.showError(failed) else failure = failed
         }
     }
+    LaunchedEffect(attempt) { load() }
     val all = deliveries
     val shown = all?.let { loaded -> filter.applied(loaded).sortedWith(compareByDescending<MailDelivery> { delivery -> delivery.isFailing }.thenBy { delivery -> delivery.retryAt ?: "" }) }
     ManagedList(
-        title = stringResource(R.string.mail_manage_queue), onBack = onBack, rows = shown, failure = failure, onRetry = { failure = null; attempt += 1 },
+        title = stringResource(R.string.mail_manage_queue), onBack = onBack, rows = shown, failure = failure, onRetry = { failure = null; attempt += 1 }, onRefresh = { load() },
         searchText = filter.searchText, onSearch = { typed -> filter = filter.copy(searchText = typed) }, searchPrompt = stringResource(R.string.mail_manage_recipient_or_error),
         filterMenu = {
             FilterMenu(
@@ -676,6 +691,7 @@ fun DeliveryQueueScreen(onBack: () -> Unit, onOpenMail: (String) -> Unit, connec
             )
         },
         emptyTitle = stringResource(if (all?.isEmpty() == true) R.string.mail_manage_queue_empty else R.string.mail_nothing_matches),
+        emptyDescription = if (all?.isEmpty() == true) stringResource(R.string.mail_manage_queue_empty_description) else null,
         footer = { count -> pluralStringResource(R.plurals.mail_manage_deliveries_count, count, count) },
         key = { delivery -> delivery.id },
     ) { delivery ->
@@ -703,8 +719,9 @@ fun ReportsScreen(onBack: () -> Unit, onOpenReport: (String) -> Unit, connection
     var domains by remember { mutableStateOf(emptyList<ManagedDomain>()) }
     var reports by remember { mutableStateOf<List<DMARCReport>?>(null) }
     var failure by remember { mutableStateOf<Throwable?>(null) }
+    val snackbar = LocalSnackbar.current
     var attempt by remember { mutableIntStateOf(0) }
-    LaunchedEffect(attempt) {
+    suspend fun load() {
         try {
             domains = connection.managedDomainNames()
             reports = connection.dmarcReports()
@@ -712,13 +729,14 @@ fun ReportsScreen(onBack: () -> Unit, onOpenReport: (String) -> Unit, connection
         } catch (failed: kotlinx.coroutines.CancellationException) {
             throw failed
         } catch (failed: Throwable) {
-            failure = failed
+            if (reports != null) snackbar.showError(failed) else failure = failed
         }
     }
+    LaunchedEffect(attempt) { load() }
     val all = reports
     val shown = all?.let { loaded -> filter.applied(loaded) }
     ManagedList(
-        title = stringResource(R.string.mail_manage_reports), onBack = onBack, rows = shown, failure = failure, onRetry = { failure = null; attempt += 1 },
+        title = stringResource(R.string.mail_manage_reports), onBack = onBack, rows = shown, failure = failure, onRetry = { failure = null; attempt += 1 }, onRefresh = { load() },
         searchText = filter.searchText, onSearch = { typed -> filter = filter.copy(searchText = typed) }, searchPrompt = stringResource(R.string.mail_manage_domain_or_sender),
         filterMenu = {
             FilterMenu(
@@ -731,6 +749,7 @@ fun ReportsScreen(onBack: () -> Unit, onOpenReport: (String) -> Unit, connection
             )
         },
         emptyTitle = stringResource(if (all?.isEmpty() == true) R.string.mail_manage_no_reports_yet else R.string.mail_nothing_matches),
+        emptyDescription = if (all?.isEmpty() == true) stringResource(R.string.mail_manage_no_reports_description) else null,
         footer = { count -> pluralStringResource(R.plurals.mail_manage_reports_count, count, count) },
         key = { report -> report.id },
     ) { report ->
@@ -769,6 +788,10 @@ fun ReportDetailScreen(reportId: String, onBack: () -> Unit, connection: Connect
                     ManageTag(ManageLabels.alignment(context, shown.alignment), if (shown.alignment.isPassed) ManagedTone.Good else ManagedTone.Bad)
                     shown.disposition?.takeIf { text -> text.isNotEmpty() }?.let { disposition -> ManageTag(disposition, ManagedTone.Plain) }
                 }
+                Text(
+                    pluralStringResource(R.plurals.mail_manage_report_summary, shown.messageCount ?: 0, shown.fromDomain.orEmpty(), shown.ip.orEmpty(), shown.messageCount ?: 0),
+                    Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodyMedium,
+                )
                 DetailRow(stringResource(R.string.mail_manage_claimed_domain), shown.fromDomain)
                 DetailRow(stringResource(R.string.mail_manage_sending_address), listOfNotNull(shown.ip, shown.reverseDnsName?.let { name -> "(${ManagedWords.hostName(name)})" }).joinToString(" "))
                 DetailRow(stringResource(R.string.mail_manage_place), shown.location?.placeText)
@@ -782,6 +805,7 @@ fun ReportDetailScreen(reportId: String, onBack: () -> Unit, connection: Connect
                     DetailRow(stringResource(R.string.mail_manage_policy_seen), feedback.policyText)
                     DetailRow(stringResource(R.string.mail_manage_alignment), listOfNotNull(feedback.dkimAlignment?.let { mode -> "DKIM " + ManageLabels.alignmentMode(context, mode) }, feedback.spfAlignment?.let { mode -> "SPF " + ManageLabels.alignmentMode(context, mode) }).joinToString(" · "))
                     TeaNodeSectionHeader(stringResource(R.string.mail_manage_what_they_did))
+                    if ((feedback.records ?: emptyList()).isEmpty()) Text(stringResource(R.string.mail_manage_no_source_rows), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     for (record in feedback.records ?: emptyList()) {
                         Column(Modifier.clickable { openedRecord = record }) { FeedbackRecordSummary(record) }
                         HorizontalDivider()

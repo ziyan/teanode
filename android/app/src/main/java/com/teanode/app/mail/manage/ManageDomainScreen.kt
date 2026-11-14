@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -113,6 +114,7 @@ fun DomainScreen(domainId: String, onBack: () -> Unit, connection: Connection = 
     var editing by remember { mutableStateOf<String?>(null) }
     var editedText by remember { mutableStateOf("") }
     var isConfirmingKey by remember { mutableStateOf(false) }
+    var movingSelector by remember { mutableStateOf<String?>(null) }
     var subPage by remember { mutableStateOf<DomainSubPage?>(null) }
     var removingTemplate by remember { mutableStateOf<DomainTemplate?>(null) }
     var removingLayout by remember { mutableStateOf<DomainLayout?>(null) }
@@ -178,12 +180,35 @@ fun DomainScreen(domainId: String, onBack: () -> Unit, connection: Connection = 
                 val records = domain.dnsCheck?.records ?: emptyList()
                 if (records.isEmpty()) Text(stringResource(R.string.mail_manage_dns_not_checked), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 for (record in records) DnsRecordRow(record, onOpen = { subPage = DomainSubPage.Record(record) })
-                domain.dnsCheck?.errorMessage?.takeIf { text -> text.isNotEmpty() }?.let { text -> Text(text, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                TeaNodeSectionHeader(stringResource(R.string.mail_manage_settings))
-                TeaNodeRow(headline = stringResource(R.string.mail_manage_mail_servers), supporting = (domain.mailServers ?: emptyList()).joinToString(", ").ifEmpty { stringResource(R.string.mail_manage_none_set) }, onClick = { editing = "servers"; editedText = (domain.mailServers ?: emptyList()).joinToString(", ") })
-                TeaNodeRow(headline = stringResource(R.string.mail_manage_link_host), supporting = (domain.linkHost ?: domain.linkHostname).orEmpty().ifEmpty { stringResource(R.string.mail_manage_none_set) }, onClick = { editing = "link"; editedText = domain.linkHost.orEmpty() })
-                TeaNodeRow(headline = stringResource(R.string.mail_manage_dkim_selector), supporting = domain.dkimSelector.orEmpty().ifEmpty { stringResource(R.string.mail_manage_none_set) }, onClick = { editing = "selector"; editedText = domain.dkimSelector.orEmpty() })
-                TeaNodeRow(headline = stringResource(R.string.mail_manage_regenerate_key), supporting = stringResource(if (domain.hasDkimKey == true) R.string.mail_manage_has_key else R.string.mail_manage_no_key), onClick = { isConfirmingKey = true })
+                ManageFooter(stringResource(R.string.mail_manage_dns_records_footer))
+                domain.dnsCheck?.errorMessage?.takeIf { text -> text.isNotEmpty() }?.let { text -> Text(text, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                val storedMailServers = (domain.mailServers ?: emptyList()).joinToString(", ")
+                val defaultMailServers = (domain.mailHosts ?: emptyList()).joinToString(", ")
+                TeaNodeSectionHeader(stringResource(R.string.mail_manage_mail_server_names))
+                TeaNodeRow(headline = storedMailServers.ifEmpty { defaultMailServers }.ifEmpty { stringResource(R.string.mail_manage_none_set) }, onClick = { editing = "servers"; editedText = storedMailServers })
+                ManageFooter(stringResource(R.string.mail_manage_mail_servers_footer))
+                ManageFooter(stringResource(R.string.mail_manage_mail_servers_current_footer, defaultMailServers))
+                TeaNodeSectionHeader(stringResource(R.string.mail_manage_pictures_in_mail))
+                TeaNodeRow(headline = (domain.linkHost ?: domain.linkHostname).orEmpty().ifEmpty { stringResource(R.string.mail_manage_none_set) }, onClick = { editing = "link"; editedText = domain.linkHost.orEmpty() })
+                ManageFooter(stringResource(R.string.mail_manage_link_host_footer))
+                ManageFooter(stringResource(R.string.mail_manage_link_host_default_footer, domain.linkHostname.orEmpty()))
+                val storedSelector = domain.dkimSelector.orEmpty()
+                TeaNodeSectionHeader(stringResource(R.string.mail_manage_signing_key))
+                if (domain.hasDkimKey == true) {
+                    ManageFooter(stringResource(R.string.mail_manage_signing_key_signed, storedSelector))
+                } else {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Outlined.WarningAmber, null, tint = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.mail_manage_signing_key_missing), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                TeaNodeRow(headline = stringResource(R.string.mail_manage_selector), supporting = storedSelector.ifEmpty { stringResource(R.string.mail_manage_none_set) }, onClick = { editing = "selector"; editedText = storedSelector })
+                if (domain.hasDkimKey == true) {
+                    TeaNodeRow(headline = stringResource(R.string.mail_manage_replace_key), onClick = { isConfirmingKey = true })
+                } else {
+                    TeaNodeRow(headline = stringResource(R.string.mail_manage_generate_key), onClick = { run(context.getString(R.string.mail_manage_key_generated)) { connection.regenerateDomainKey(domainId) } })
+                }
+                ManageFooter(stringResource(R.string.mail_manage_signing_key_footer, ManagedWords.dkimRecordName(storedSelector, domain.domainName)))
                 TeaNodeSectionHeader(stringResource(R.string.mail_manage_your_logo))
                 val logo = domain.logo
                 if (logo != null) {
@@ -197,7 +222,9 @@ fun DomainScreen(domainId: String, onBack: () -> Unit, connection: Connection = 
                     OutlinedButton(onClick = { logoPicker.launch(arrayOf("image/svg+xml")) }) { Text(stringResource(if (logo == null) R.string.mail_manage_upload_logo else R.string.mail_manage_replace_logo)) }
                     if (logo != null) OutlinedButton(onClick = { isRemovingLogo = true }) { Text(stringResource(R.string.mail_manage_remove_logo), color = MaterialTheme.colorScheme.error) }
                 }
-                Text(stringResource(R.string.mail_manage_logo_footer), Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ManageFooter(stringResource(R.string.mail_manage_logo_footer))
+                ManageFooter(stringResource(R.string.mail_manage_logo_requirements_footer))
+                ManageFooter(stringResource(R.string.mail_manage_logo_certificate_footer))
                 TeaNodeSectionHeader(stringResource(R.string.mail_manage_aliases))
                 val aliases = domain.aliases ?: emptyList()
                 if (aliases.isEmpty()) Text(stringResource(R.string.mail_manage_no_aliases), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -207,6 +234,7 @@ fun DomainScreen(domainId: String, onBack: () -> Unit, connection: Connection = 
                         onClick = { editedAlias = alias }, trailing = { IconButton(onClick = { removingAlias = alias }) { Icon(Icons.Outlined.Delete, stringResource(R.string.mail_remove), tint = MaterialTheme.colorScheme.error) } },
                     )
                 }
+                ManageFooter(stringResource(R.string.mail_manage_aliases_footer))
                 OutlinedButton(onClick = { isAddingAlias = true }, Modifier.padding(16.dp)) { Icon(Icons.Outlined.Add, null); Text(stringResource(R.string.mail_manage_add_alias), Modifier.padding(start = 8.dp)) }
                 TeaNodeSectionHeader(stringResource(R.string.mail_manage_credentials))
                 val credentials = domain.credentials ?: emptyList()
@@ -221,6 +249,7 @@ fun DomainScreen(domainId: String, onBack: () -> Unit, connection: Connection = 
                         trailing = { IconButton(onClick = { removingCredential = credential }) { Icon(Icons.Outlined.Delete, stringResource(R.string.mail_remove), tint = MaterialTheme.colorScheme.error) } },
                     )
                 }
+                ManageFooter(stringResource(R.string.mail_manage_credentials_footer, domain.domainName))
                 OutlinedButton(onClick = { newCredentialComment = ""; isAddingCredential = true }, Modifier.padding(16.dp)) { Icon(Icons.Outlined.Add, null); Text(stringResource(R.string.mail_manage_add_credential), Modifier.padding(start = 8.dp)) }
                 val templates = loaded.templates
                 if (templates != null) {
@@ -310,7 +339,7 @@ fun DomainScreen(domainId: String, onBack: () -> Unit, connection: Connection = 
     }
     removingAlias?.let { alias ->
         ConfirmationDialog(
-            title = stringResource(R.string.mail_manage_remove_alias_question, alias.pattern.orEmpty()), text = stringResource(R.string.mail_manage_remove_alias_message), confirmLabel = stringResource(R.string.mail_remove), isDestructive = true,
+            title = stringResource(R.string.mail_manage_remove_alias_question), text = stringResource(R.string.mail_manage_remove_alias_message, alias.pattern.orEmpty().ifEmpty { stringResource(R.string.mail_manage_alias_catch_all) }), confirmLabel = stringResource(R.string.mail_remove), isDestructive = true,
             onConfirm = { removingAlias = null; run(context.getString(R.string.mail_manage_alias_removed)) { connection.deleteDomainAlias(alias.id) } }, onDismiss = { removingAlias = null },
         )
     }
@@ -344,8 +373,9 @@ fun DomainScreen(domainId: String, onBack: () -> Unit, connection: Connection = 
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(stringResource(R.string.mail_user_name) + ": " + created.username, fontFamily = FontFamily.Monospace)
                         Text(stringResource(R.string.mail_password) + ": " + created.password, fontFamily = FontFamily.Monospace)
+                        Text(stringResource(R.string.mail_manage_save_password_now), style = MaterialTheme.typography.bodyMedium)
                         Text(stringResource(R.string.mail_manage_server) + ": " + created.host + ":" + created.port, fontFamily = FontFamily.Monospace)
-                        Text(stringResource(R.string.mail_shown_this_once), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.mail_manage_type_into_machine), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             },
@@ -353,27 +383,76 @@ fun DomainScreen(domainId: String, onBack: () -> Unit, connection: Connection = 
         )
     }
     editing?.let { which ->
-        NameDialog(
-            stringResource(when (which) { "servers" -> R.string.mail_manage_mail_servers; "link" -> R.string.mail_manage_link_host; else -> R.string.mail_manage_dkim_selector }),
-            stringResource(if (which == "servers") R.string.mail_manage_comma_separated else R.string.mail_name), editedText, { typed -> editedText = typed }, stringResource(R.string.mail_save), onDismiss = { editing = null },
-        ) {
+        val domain = page.value?.domain
+        val typedTitle = stringResource(when (which) { "servers" -> R.string.mail_manage_mail_server_names; "link" -> R.string.mail_manage_host_for_pictures; else -> R.string.mail_manage_selector })
+        DomainSettingDialog(
+            title = typedTitle,
+            label = stringResource(if (which == "servers") R.string.mail_manage_comma_separated else R.string.mail_name),
+            initial = editedText,
+            placeholder = when (which) { "servers" -> (domain?.mailHosts ?: emptyList()).joinToString(", "); "link" -> domain?.linkHostname.orEmpty(); else -> "" },
+            isEmptyAllowed = which != "selector",
+            confirmLabel = stringResource(when (which) { "servers" -> R.string.mail_manage_save_names; "selector" -> R.string.mail_manage_move_selector; else -> R.string.mail_save }),
+            onDismiss = { editing = null },
+        ) { typedText ->
             editing = null
-            val typed = editedText.trim()
-            run(context.getString(R.string.mail_saved)) {
-                when (which) {
-                    "servers" -> connection.updateDomainMailServers(domainId, ManagedWords.mailServerNames(typed))
-                    "link" -> connection.updateDomainLinkHost(domainId, typed)
-                    else -> connection.updateDomainDkimSelector(domainId, typed)
-                }
+            val typed = typedText.trim()
+            when (which) {
+                "servers" -> run(context.getString(R.string.mail_saved)) { connection.updateDomainMailServers(domainId, ManagedWords.mailServerNames(typed)) }
+                "link" -> run(context.getString(R.string.mail_saved)) { connection.updateDomainLinkHost(domainId, typed) }
+                else -> if (typed != domain?.dkimSelector.orEmpty()) movingSelector = typed
             }
         }
     }
-    if (isConfirmingKey) {
+    movingSelector?.let { selector ->
         ConfirmationDialog(
-            title = stringResource(R.string.mail_manage_regenerate_key_question), text = stringResource(R.string.mail_manage_regenerate_key_message), confirmLabel = stringResource(R.string.mail_manage_regenerate), isDestructive = true,
-            onConfirm = { isConfirmingKey = false; run(context.getString(R.string.mail_manage_key_regenerated)) { connection.regenerateDomainKey(domainId) } }, onDismiss = { isConfirmingKey = false },
+            title = stringResource(R.string.mail_manage_move_selector_question),
+            text = stringResource(R.string.mail_manage_move_selector_message, ManagedWords.dkimRecordName(selector, page.value?.domain?.domainName)),
+            confirmLabel = stringResource(R.string.mail_manage_move_selector), isDestructive = false,
+            onConfirm = { movingSelector = null; run(context.getString(R.string.mail_manage_selector_moved)) { connection.updateDomainDkimSelector(domainId, selector) } },
+            onDismiss = { movingSelector = null },
         )
     }
+    if (isConfirmingKey) {
+        ConfirmationDialog(
+            title = stringResource(R.string.mail_manage_replace_key_question), text = stringResource(R.string.mail_manage_replace_key_message), confirmLabel = stringResource(R.string.mail_manage_replace_key), isDestructive = true,
+            onConfirm = { isConfirmingKey = false; run(context.getString(R.string.mail_manage_key_replaced)) { connection.regenerateDomainKey(domainId) } }, onDismiss = { isConfirmingKey = false },
+        )
+    }
+}
+
+/** The explanation under a group of rows, as iOS puts it in a section's footer. */
+@Composable
+private fun ManageFooter(footerText: String) {
+    Text(footerText, Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/** A setting of the domain typed in a dialog; the mail server names and the picture host may be left empty for their default. */
+@Composable
+private fun DomainSettingDialog(
+    title: String,
+    label: String,
+    initial: String,
+    placeholder: String,
+    isEmptyAllowed: Boolean,
+    confirmLabel: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var typedText by remember { mutableStateOf(initial) }
+    val isSelector = !isEmptyAllowed
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                typedText, { typed -> typedText = if (isSelector) typed.take(63) else typed }, label = { Text(label) },
+                placeholder = if (placeholder.isEmpty()) null else ({ Text(placeholder, fontFamily = FontFamily.Monospace) }),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace), singleLine = true,
+            )
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(typedText) }, enabled = isEmptyAllowed || typedText.isNotBlank()) { Text(confirmLabel) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+    )
 }
 
 @Composable
@@ -415,12 +494,18 @@ private fun AliasDialog(
     var destination by remember(existing) { mutableStateOf(existing?.editableDestination(kind).orEmpty()) }
     var mailboxId by remember(existing) { mutableStateOf(existing?.mailboxId.orEmpty()) }
     var isDisabled by remember(existing) { mutableStateOf(existing?.isDisabled == true) }
+    // The server keeps the old pattern when sent an empty one, so an address that has a pattern cannot be saved with it blanked.
+    val isPatternMissing = existing != null && !existing.pattern.isNullOrEmpty() && pattern.isBlank()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(if (existing == null) R.string.mail_manage_add_alias else R.string.mail_manage_edit_alias)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(pattern, { typed -> pattern = typed }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.mail_manage_alias_pattern)) }, singleLine = true)
+                OutlinedTextField(
+                    pattern, { typed -> pattern = typed }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.mail_manage_alias_pattern)) },
+                    placeholder = { Text(stringResource(R.string.mail_manage_alias_pattern_prompt)) }, singleLine = true, isError = isPatternMissing,
+                    supportingText = if (isPatternMissing) ({ Text(stringResource(R.string.mail_manage_alias_pattern_missing)) }) else null,
+                )
                 OutlinedTextField(comment, { typed -> comment = typed }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.mail_manage_comment)) }, singleLine = true)
                 ChipRow {
                     for (choice in (existing?.selectableKinds ?: DomainAlias.creatableKinds)) {
@@ -433,11 +518,14 @@ private fun AliasDialog(
                         for (mailbox in mailboxes) FilterChip(mailboxId == mailbox.id, { mailboxId = mailbox.id }, { Text(mailbox.rowText) })
                     }
                 }
-                if (existing != null) Row(verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.mail_manage_disabled), Modifier.weight(1f)); Switch(isDisabled, { checked -> isDisabled = checked }) }
+                if (existing != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.mail_manage_disabled), Modifier.weight(1f)); Switch(isDisabled, { checked -> isDisabled = checked }) }
+                    Text(stringResource(R.string.mail_manage_alias_disabled_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         },
         confirmButton = {
-            TextButton(enabled = pattern.isNotBlank() && DomainAlias.isDestinationFilled(kind, destination, mailboxId), onClick = { onSave(pattern.trim(), comment.trim(), kind, destination.trim(), mailboxId, isDisabled) }) { Text(stringResource(R.string.mail_save)) }
+            TextButton(enabled = !isPatternMissing && DomainAlias.isDestinationFilled(kind, destination, mailboxId), onClick = { onSave(pattern.trim(), comment.trim(), kind, destination.trim(), mailboxId, isDisabled) }) { Text(stringResource(R.string.mail_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
