@@ -122,6 +122,45 @@ class PhotosScreenshotTest {
     @Test fun `backup files largest text`() = shoot("photos-backup-files-largest-text", fontScale = 2f) {
         PhotoBackupFilesScreen(onBack = {}, previewRecords = mapOf("a" to com.teanode.kit.photos.PhotoBackupRecord("local:a", mutableMapOf("original" to com.teanode.kit.photos.PhotoBackupRoleRecord(refusalCount = 3, refusalReason = "The file is larger than the server takes.", originalFilename = "IMG_0042.mov")))))
     }
+    @Test fun `library person and window chips light`() {
+        PhotoFilterRequest.openPerson("user-alex", "Alex Example")
+        shoot("photos-library-person-chip-light") { PhotosSection() }
+    }
+
+    @Test fun `library window chip dark`() {
+        PhotoFilterRequest.open(java.time.Instant.parse("2026-10-12T09:00:00Z"), java.time.Instant.parse("2026-10-12T17:00:00Z"))
+        shoot("photos-library-window-chip-dark", AppearanceChoice.Dark) { PhotosSection() }
+    }
+
+    @Test fun `library selecting dark largest text`() = shoot("photos-library-selecting-dark-largest-text", AppearanceChoice.Dark, fontScale = 2f) {
+        PhotosSection(initialIsSelecting = true, initialSelectedIds = setOf("p01", "p04"))
+    }
+
+    @Test fun `viewer strip dark`() = shoot("photos-viewer-strip-dark", AppearanceChoice.Dark) { PhotosSection(initialOpenedPhotoId = "p05") }
+
+    @Test fun `viewer info not described light`() = shoot("photos-viewer-info-not-described-light") {
+        Surface(Modifier.fillMaxSize()) { PhotoInfo(demoPhoto("p04"), onPhotoChanged = {}, albumIdOpenedFrom = null) }
+    }
+
+    @Test fun `viewer info video dark`() = shoot("photos-viewer-info-video-dark", AppearanceChoice.Dark) {
+        Surface(Modifier.fillMaxSize()) { PhotoInfo(demoPhoto("p02"), onPhotoChanged = {}, albumIdOpenedFrom = null) }
+    }
+
+    @Test fun `viewer info people light`() = shoot("photos-viewer-info-people-light") {
+        Surface(Modifier.fillMaxSize()) { PhotoInfo(demoPhoto("p03"), onPhotoChanged = {}, albumIdOpenedFrom = null) }
+    }
+
+    @Test fun `viewer info shared dark`() = shoot("photos-viewer-info-shared-dark", AppearanceChoice.Dark) {
+        Surface(Modifier.fillMaxSize()) { PhotoInfo(demoPhoto("s01"), onPhotoChanged = {}, albumIdOpenedFrom = "a3") }
+    }
+
+    @Test fun `album picker light`() = shoot("photos-album-picker-light") {
+        Surface(Modifier.fillMaxSize()) { PhotoPickerContent(com.teanode.kit.TeaNodeJson.decodeFromString(com.teanode.kit.photos.PhotoAlbum.serializer(), PhotosDemoData.albumsJson.first()), onAdded = {}, onDismiss = {}) }
+    }
+
+    @Test fun `album picker dark largest text`() = shoot("photos-album-picker-dark-largest-text", AppearanceChoice.Dark, fontScale = 2f) {
+        Surface(Modifier.fillMaxSize()) { PhotoPickerContent(com.teanode.kit.TeaNodeJson.decodeFromString(com.teanode.kit.photos.PhotoAlbum.serializer(), PhotosDemoData.albumsJson.first()), onAdded = {}, onDismiss = {}) }
+    }
 }
 
 private fun demoPhoto(id: String): com.teanode.kit.photos.Photo =

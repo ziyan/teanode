@@ -50,7 +50,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.LocalConnection
+import com.teanode.app.chats.ChatsHooks
 import com.teanode.app.shell.LocalAppNavigator
+import com.teanode.kit.chats.AgentReference
+import com.teanode.kit.recordings.RecordingAttemptCost
+import com.teanode.kit.recordings.RecordingOriginals
+import com.teanode.kit.recordings.RecordingTranscriptionAttempt
+import com.teanode.kit.agent.knowledgeSourceDetails
+import androidx.compose.runtime.produceState
+import com.teanode.kit.recordings.RecordingTemporarySpeakers
+import com.teanode.kit.recordings.nameRecordingTemporarySpeaker
+import com.teanode.kit.recordings.separateRecordingTemporarySpeaker
 import com.teanode.app.shell.Routes
 import com.teanode.app.ui.components.ConfirmationDialog
 import com.teanode.app.ui.components.ErrorState
@@ -126,6 +136,10 @@ fun RecordingDetailScreen(recordingId: String, onBack: () -> Unit, link: Recordi
     var isDeleting by remember { mutableStateOf(false) }
     var isReprocessing by remember { mutableStateOf(false) }
     var isDetailsOpen by remember { mutableStateOf(false) }
+    var isOriginalsMenuOpen by remember { mutableStateOf(false) }
+    val agentName = com.teanode.app.ui.components.rememberAgentName()
+    val agentTitle = agentName.ifEmpty { stringResource(R.string.chats_your_agent) }
+    val untitledText = stringResource(R.string.recordings_untitled)
     var namingBubble by remember { mutableStateOf<RecordingConversationBubble?>(null) }
     var memorySegment by remember { mutableStateOf<com.teanode.kit.recordings.RecordingTranscriptSegment?>(null) }
     var correcting by remember { mutableStateOf<com.teanode.kit.recordings.RecordingTranscriptSegment?>(null) }
@@ -193,10 +207,37 @@ fun RecordingDetailScreen(recordingId: String, onBack: () -> Unit, link: Recordi
                         DropdownMenuItem(text = { Text(stringResource(R.string.recordings_retry_transcription)) }, onClick = { isMenuOpen = false; act(R.string.recordings_transcribing_message) { connection.retryRecordingTranscription(run.id) } })
                     }
                     DropdownMenuItem(text = { Text(stringResource(R.string.recordings_share)) }, onClick = { isMenuOpen = false; navigator.navigate(Routes.child(AppSection.Recordings, "share/$recordingId")) })
+                    val originals = RecordingOriginals.completeFiles(current.view.mediaFiles)
+                    if (originals.isNotEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.recordings_share_original)) },
+                            onClick = {
+                                isMenuOpen = false
+                                if (originals.size == 1) act(null) { connection.shareRecordingOriginal(context, originals.first()) } else isOriginalsMenuOpen = true
+                            },
+                        )
+                    }
                     DropdownMenuItem(text = { Text(stringResource(R.string.recordings_speakers_title)) }, onClick = { isMenuOpen = false; navigator.navigate(Routes.child(AppSection.Recordings, "speakers/$recordingId")) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.recordings_edit_history)) }, onClick = { isMenuOpen = false; navigator.navigate(Routes.child(AppSection.Recordings, "edits/$recordingId")) })
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.recordings_ask_agent, agentTitle)) },
+                        onClick = {
+                            isMenuOpen = false
+                            ChatsHooks.askAbout(navigator, AgentReference.recording(recordingId, current.view.recording.recordingTitle.ifEmpty { untitledText }))
+                        },
+                    )
                     DropdownMenuItem(text = { Text(stringResource(R.string.recordings_details)) }, onClick = { isMenuOpen = false; isDetailsOpen = true })
                     DropdownMenuItem(text = { Text(stringResource(R.string.recordings_delete), color = MaterialTheme.colorScheme.error) }, onClick = { isMenuOpen = false; isDeleting = true })
+                }
+                // A recording made in pieces has an original for each piece: the person says which to share.
+                DropdownMenu(expanded = isOriginalsMenuOpen, onDismissRequest = { isOriginalsMenuOpen = false }) {
+                    val originals = RecordingOriginals.completeFiles(current.view.mediaFiles)
+                    for (media in originals) {
+                        DropdownMenuItem(
+                            text = { Text(RecordingOriginals.title(media, originals.size) { start, end -> context.getString(R.string.recordings_original_range, start, end) }) },
+                            onClick = { isOriginalsMenuOpen = false; act(null) { connection.shareRecordingOriginal(context, media) } },
+                        )
+                    }
                 }
             }
         },
@@ -208,6 +249,10 @@ fun RecordingDetailScreen(recordingId: String, onBack: () -> Unit, link: Recordi
                 else -> DetailBody(
                     current, loadedSegments, player, link,
                     onName = { bubble -> namingBubble = bubble }, onCorrect = { segment -> correcting = segment }, onMemory = { segment -> memorySegment = segment },
+                    onThisIsMe = { label ->
+                        act(R.string.recordings_marked_as_you) { connection.nameRecordingTemporarySpeaker(recordingId, label, "", true, null, null) }
+                    },
+                    onSeparate = { label -> act(R.string.recordings_speaker_separated) { connection.separateRecordingTemporarySpeaker(recordingId, label) } },
                     onLoadMore = {
                         scope.launch {
                             try {
@@ -258,6 +303,7 @@ fun RecordingDetailScreen(recordingId: String, onBack: () -> Unit, link: Recordi
             RecordingDetailsSheet(
                 current.view, current.learning, onResumeLearning = { act(null) { current.learning?.let { learning -> connection.resumeRecordingLearning(recordingId, learning.sourceGeneration) } } },
                 onOpenKnowledge = { isDetailsOpen = false; navigator.openSection(AppSection.Knowledge) },
+                onLearningSourceSaved = { reloadCount += 1 },
             )
         }
     }
@@ -289,6 +335,8 @@ private fun DetailBody(
     onName: (RecordingConversationBubble) -> Unit,
     onCorrect: (com.teanode.kit.recordings.RecordingTranscriptSegment) -> Unit,
     onMemory: (com.teanode.kit.recordings.RecordingTranscriptSegment) -> Unit,
+    onThisIsMe: (String) -> Unit,
+    onSeparate: (String) -> Unit,
     onLoadMore: () -> Unit,
 ) {
     val recording = read.view.recording
@@ -326,7 +374,7 @@ private fun DetailBody(
             }
         }
         items(bubbles, key = { bubble -> bubble.id }) { bubble ->
-            Bubble(bubble, onPlay = { player.playFrom(playableFiles, bubble.startMS) }, onName = { onName(bubble) }, onCorrect = { onCorrect(bubble.segments.first()) }, onMemory = { onMemory(bubble.segments.first()) }, isHighlighted = link?.includes(bubble.segments.first()) == true && link.passageStartMS != null)
+            Bubble(bubble, onPlay = { player.playFrom(playableFiles, bubble.startMS) }, onName = { onName(bubble) }, onCorrect = { onCorrect(bubble.segments.first()) }, onMemory = { onMemory(bubble.segments.first()) }, onThisIsMe = onThisIsMe, onSeparate = onSeparate, isHighlighted = link?.includes(bubble.segments.first()) == true && link.passageStartMS != null)
         }
         if (read.timeline?.hasMoreSegments == true) item {
             TextButton(onClick = onLoadMore, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.recordings_load_more)) }
@@ -373,6 +421,8 @@ private fun Bubble(
     onName: () -> Unit,
     onCorrect: () -> Unit,
     onMemory: () -> Unit,
+    onThisIsMe: (String) -> Unit,
+    onSeparate: (String) -> Unit,
     isHighlighted: Boolean,
 ) {
     var isMenuOpen by remember { mutableStateOf(false) }
@@ -398,6 +448,18 @@ private fun Bubble(
             if (!bubble.isLive) {
                 DropdownMenuItem(text = { Text(stringResource(R.string.recordings_play_from_here)) }, onClick = { isMenuOpen = false; onPlay() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.recordings_name_speaker)) }, onClick = { isMenuOpen = false; onName() })
+                // A speaker of a capture under way is the person's own voice or not by label, in every piece at once.
+                val temporaryLabel = RecordingTemporarySpeakers.labelToName(bubble)
+                if (temporaryLabel != null && bubble.confirmedSpeakerName == null) {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.recordings_this_is_me)) }, onClick = { isMenuOpen = false; onThisIsMe(temporaryLabel) })
+                }
+                // A label found to be another speaker's voice reads as that speaker: it can be given back.
+                RecordingTemporarySpeakers.labelToSeparate(bubble)?.let { mergedLabel ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.recordings_separate_from, speaker ?: mergedLabel)) },
+                        onClick = { isMenuOpen = false; onSeparate(mergedLabel) },
+                    )
+                }
                 DropdownMenuItem(text = { Text(stringResource(R.string.recordings_correct_text)) }, onClick = { isMenuOpen = false; onCorrect() })
                 DropdownMenuItem(text = { Text(stringResource(R.string.recordings_in_memory)) }, onClick = { isMenuOpen = false; onMemory() })
             }
@@ -461,15 +523,21 @@ private fun NameSpeakerSheet(bubble: RecordingConversationBubble, recordingId: S
         suggestions = runCatching { connection.suggestRecordingSpeakerNames(name.trim()) }.getOrDefault(emptyList())
     }
     val first = bubble.segments.first()
+    val temporaryLabel = RecordingTemporarySpeakers.labelToName(bubble)
+    val context = LocalContext.current
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.recordings_name_speaker), style = MaterialTheme.typography.titleLarge)
             OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text(stringResource(R.string.recordings_confirmed_name)) }, modifier = Modifier.fillMaxWidth())
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.recordings_apply_to_group), Modifier.weight(1f))
-                Switch(checked = isWholeGroup, onCheckedChange = { isWholeGroup = it })
+            if (temporaryLabel == null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.recordings_apply_to_group), Modifier.weight(1f))
+                    Switch(checked = isWholeGroup, onCheckedChange = { isWholeGroup = it })
+                }
+                Text(stringResource(R.string.recordings_apply_to_group_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Text(stringResource(R.string.recordings_temporary_speaker_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(stringResource(R.string.recordings_apply_to_group_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (suggestions.isNotEmpty()) {
                 Text(stringResource(R.string.recordings_suggestions), style = MaterialTheme.typography.titleSmall)
                 for (suggestion in suggestions.take(5)) Text(suggestion.confirmedName, Modifier.fillMaxWidth().clickable { name = suggestion.confirmedName }.padding(vertical = 8.dp))
@@ -478,6 +546,14 @@ private fun NameSpeakerSheet(bubble: RecordingConversationBubble, recordingId: S
                 onClick = {
                     scope.launch {
                         try {
+                            val chosen = suggestions.firstOrNull { suggestion -> suggestion.confirmedName == name.trim() }
+                            if (temporaryLabel != null) {
+                                // Named by its label: every piece shows the name at once, so there is no passage to choose.
+                                connection.nameRecordingTemporarySpeaker(recordingId, temporaryLabel, name.trim(), false, chosen?.addressBookId, chosen?.contactId)
+                                snackbar.show(context.getString(R.string.recordings_speaker_named))
+                                onNamed()
+                                return@launch
+                            }
                             connection.correctRecordingSpeaker(
                                 recordingId, expectedSourceGeneration, UUID.randomUUID().toString(), name.trim(), null, suggestions.firstOrNull { suggestion -> suggestion.confirmedName == name.trim() }?.addressBookId,
                                 suggestions.firstOrNull { suggestion -> suggestion.confirmedName == name.trim() }?.contactId, first.recordingTranscriptionAttemptId, first.localSpeakerId,
@@ -499,7 +575,16 @@ internal fun RecordingDetailsSheet(
     learning: com.teanode.kit.recordings.RecordingLearningView? = null,
     onResumeLearning: () -> Unit = {},
     onOpenKnowledge: () -> Unit = {},
+    onLearningSourceSaved: () -> Unit = {},
+    /** The attempts of the latest transcription, for a picture taken without a server; otherwise they are read when the sheet opens. */
+    previewAttempts: List<RecordingTranscriptionAttempt>? = null,
 ) {
+    val connection = LocalConnection.current
+    val latestRun = view.transcriptRuns.orEmpty().maxByOrNull { run -> run.versionNumber }
+    val attempts by produceState<List<RecordingTranscriptionAttempt>?>(previewAttempts, latestRun?.id) {
+        if (previewAttempts == null && latestRun != null) value = runCatching { connection.recordingTranscript(latestRun.id, pageSize = 1).attempts }.getOrNull()
+    }
+    var isEditingSource by remember { mutableStateOf(false) }
     Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(stringResource(R.string.recordings_details), style = MaterialTheme.typography.titleLarge)
         if (view.recording.captureGaps.isNotEmpty()) {
@@ -516,16 +601,60 @@ internal fun RecordingDetailsSheet(
             Text(stringResource(R.string.recordings_transcription_details), style = MaterialTheme.typography.titleSmall)
             for (run in runs) Text(stringResource(R.string.recordings_run_line, run.versionNumber, run.recordingProcessingState, run.providerModelName))
         }
+        attempts?.takeIf { read -> read.isNotEmpty() }?.let { read ->
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            Text(stringResource(R.string.recordings_transcription_usage), style = MaterialTheme.typography.titleSmall)
+            for (attempt in read) AttemptUsage(attempt)
+            Text(stringResource(R.string.recordings_usage_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (learning != null) {
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            LearningCard(learning, onResumeLearning, onOpenKnowledge)
+            LearningCard(learning, onResumeLearning, onOpenKnowledge, onEditSource = { isEditingSource = true })
         }
     }
+    val sourceId = learning?.knowledgeSource?.id
+    if (isEditingSource && sourceId != null) {
+        LearningSourceEditor(sourceId, onDismiss = { isEditingSource = false }, onSaved = { isEditingSource = false; onLearningSourceSaved() })
+    }
+}
+
+/** One transcription attempt: the model, what it cost (actual when billing says so, else the estimate), and whether usage was reported. */
+@Composable
+private fun AttemptUsage(attempt: RecordingTranscriptionAttempt) {
+    val cost = RecordingAttemptCost.of(attempt)
+    Column(Modifier.padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(attempt.providerModelName)
+        Text(
+            when (cost) {
+                is RecordingAttemptCost.Actual -> stringResource(R.string.recordings_cost_actual, cost.amountText, cost.currencyCode)
+                is RecordingAttemptCost.Estimated -> stringResource(R.string.recordings_cost_estimated, cost.amountText, cost.currencyCode)
+                RecordingAttemptCost.Unavailable -> stringResource(R.string.recordings_cost_unavailable)
+            },
+        )
+        if (!attempt.hasProviderUsage) Text(stringResource(R.string.recordings_usage_unavailable), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** The editor of the knowledge source a recording is learned through, as Settings has it; the source is read first. */
+@Composable
+internal fun LearningSourceEditor(sourceId: String, onDismiss: () -> Unit, onSaved: () -> Unit) {
+    val connection = LocalConnection.current
+    val snackbar = LocalSnackbar.current
+    val actions = com.teanode.app.settings.rememberActionRunner()
+    val outcome by produceState<Result<com.teanode.kit.agent.KnowledgeSourceRow?>?>(null, sourceId) {
+        value = runCatching { connection.knowledgeSourceDetails().sources.firstOrNull { source -> source.id == sourceId } }
+    }
+    LaunchedEffect(outcome) {
+        val read = outcome ?: return@LaunchedEffect
+        read.exceptionOrNull()?.let { failure -> snackbar.showError(failure) }
+        if (read.getOrNull() == null) onDismiss()
+    }
+    outcome?.getOrNull()?.let { source -> com.teanode.app.settings.KnowledgeSourceEditorDialog(source, actions, onDismiss = onDismiss, onSaved = onSaved) }
 }
 
 /** The Learning card: whether the agent reads this recording's transcript into its knowledge, and how far it has come. */
 @Composable
-internal fun LearningCard(learning: com.teanode.kit.recordings.RecordingLearningView, onResume: () -> Unit, onOpenKnowledge: () -> Unit) {
+internal fun LearningCard(learning: com.teanode.kit.recordings.RecordingLearningView, onResume: () -> Unit, onOpenKnowledge: () -> Unit, onEditSource: () -> Unit = {}) {
     val context = LocalContext.current
     Text(stringResource(R.string.recordings_learning), style = MaterialTheme.typography.titleSmall)
     when (learning.state) {
@@ -546,6 +675,7 @@ internal fun LearningCard(learning: com.teanode.kit.recordings.RecordingLearning
             else if (source.cron.isEmpty()) Text(stringResource(R.string.recordings_learning_only_when_asked), color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (source.lastError.isNotEmpty()) Text(source.lastError.asReasonSentence(), color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = onOpenKnowledge) { Text(stringResource(R.string.recordings_learning_knowledge_source)) }
+            OutlinedButton(onClick = onEditSource) { Text(stringResource(R.string.recordings_edit_source)) }
         }
     }
     if (learning.isCurationPending) Text(stringResource(R.string.recordings_learning_curation), color = MaterialTheme.colorScheme.onSurfaceVariant)

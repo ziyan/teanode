@@ -148,4 +148,28 @@ class RecordingsScreenshotTest {
     @Test fun `import attachment light`() = shoot("recordings-import-attachment-light") {
         RecordingAttachmentImportScreen(com.teanode.kit.recordings.RecordingAttachment("att1", "Team call.m4a", "audio/mp4", 4_200_000), onBack = {}, onOpenRecording = {})
     }
+
+    private val usageView = TeaNodeJson.decodeFromString(RecordingView.serializer(), """{"recording":{"id":"r1","createdAt":"2026-11-10T15:00:00Z","updatedAt":"2026-11-10T15:00:00Z","clientRecordingId":"c","recordingTitle":"Weekly planning","recordingOrigin":"capture","recordingCaptureState":"stopped","timelineDurationMS":1412000},
+        "mediaFiles":[{"id":"m1","recordingId":"r1","clientMediaId":"c1","originalFilename":"piece-1.m4a","originalContentType":"audio/mp4","originalSizeBytes":4200000,"originalSha256":"${"a".repeat(64)}","timelineStartMS":0,"mediaDurationMS":600000,"partCount":1,"recordingUploadState":"complete"}],
+        "transcriptRuns":[{"id":"run","recordingId":"r1","recordingMediaId":"m1","versionNumber":1,"recordingProcessingState":"complete","providerModelName":"example-transcribe"}]}""")
+
+    private val usageAttempts = listOf(
+        com.teanode.kit.recordings.RecordingTranscriptionAttempt("a1", "complete", "example-transcribe", true, 0.42, 0.38, "USD"),
+        com.teanode.kit.recordings.RecordingTranscriptionAttempt("a2", "complete", "example-transcribe", false, 0.21, null, "USD"),
+        com.teanode.kit.recordings.RecordingTranscriptionAttempt("a3", "failed", "example-transcribe", false, null, null, "USD"),
+    )
+
+    @Test fun `details sheet usage light`() = shoot("recordings-details-usage-light") {
+        val learning = TeaNodeJson.decodeFromString(
+            com.teanode.kit.recordings.RecordingLearningView.serializer(),
+            """{"sourceGeneration":4,"hasAgent":true,"knowledgeSource":{"id":"s","cron":"0 * * * *","nextRunAt":"2026-11-13T12:00:00Z","lastRunAt":"2026-11-13T11:00:00Z"},"pendingDocumentCount":2,"digestedDocumentCount":14,"isCurationPending":false}""",
+        )
+        Surface(Modifier.fillMaxSize()) { RecordingDetailsSheet(usageView, learning, previewAttempts = usageAttempts) }
+    }
+
+    @Test fun `details sheet usage dark largest text`() = shoot("recordings-details-usage-dark-largest-text", AppearanceChoice.Dark, fontScale = 2f) {
+        Surface(Modifier.fillMaxSize()) { RecordingDetailsSheet(usageView, previewAttempts = usageAttempts) }
+    }
+
+    @Test fun `detail speakers named by label dark`() = shoot("recordings-detail-labels-dark", AppearanceChoice.Dark) { RecordingDetailScreen("r2", onBack = {}) }
 }

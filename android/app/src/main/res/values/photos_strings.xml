@@ -271,4 +271,33 @@
         <item quantity="one">Moved %1$d photo to the Trash</item>
         <item quantity="other">Moved %1$d photos to the Trash</item>
     </plurals>
+    <string name="photos_of_person">Photos of %1$s</string>
+    <string name="photos_of_a_person">Photos of a person</string>
+    <string name="photos_share_original">Share original</string>
+    <string name="photos_share_edited">Share edited version</string>
+    <string name="photos_share_live_video">Share Live Photo video</string>
+    <string name="photos_describe_photo">Describe this photo</string>
+    <string name="photos_describe_video">Describe this video</string>
+    <string name="photos_describe_unavailable">Describing photos is not available.</string>
+    <string name="photos_describe_hint_agent_photo">%1$s looks at the picture and writes what it shows, so a search can find it.</string>
+    <string name="photos_describe_hint_assistant_photo">The assistant looks at the picture and writes what it shows, so a search can find it.</string>
+    <string name="photos_describe_hint_agent_video">%1$s looks at the video\'s poster and writes what it shows, so a search can find it.</string>
+    <string name="photos_describe_hint_assistant_video">The assistant looks at the video\'s poster and writes what it shows, so a search can find it.</string>
+    <string name="photos_ask_agent_photo">Ask %1$s about this photo</string>
+    <string name="photos_ask_assistant_photo">Ask the assistant about this photo</string>
+    <string name="photos_ask_agent_video">Ask %1$s about this video</string>
+    <string name="photos_ask_assistant_video">Ask the assistant about this video</string>
+    <string name="photos_position_map">Map of where the photo was taken</string>
+    <string name="photos_opens_in_maps">Opens in Maps</string>
+    <string name="photos_not_this_person">Not this person</string>
+    <string name="photos_not_named_person">Not %1$s</string>
+    <string name="photos_took_face_out">Took the face out of this person</string>
+    <string name="photos_contacts_off_text">Naming people means choosing a contact from your address book, and Contacts is not turned on for you. Ask whoever runs this server to turn on Contacts.</string>
+    <string name="photos_add_photos">Add photos</string>
+    <string name="photos_select_photos">Select photos</string>
+    <string name="photos_add">Add</string>
+    <string name="photos_already_in_album">Already in “%1$s”</string>
+    <string name="photos_picker_empty_text">Photos you add to your library can be added to the album.</string>
+    <string name="photos_thumbnail_strip">Photos around this one</string>
+    <string name="photos_ok">OK</string>
 </resources>

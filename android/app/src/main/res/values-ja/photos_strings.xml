@@ -261,4 +261,33 @@
     <plurals name="photos_trashed">
         <item quantity="other">%1$d枚の写真をゴミ箱に入れました</item>
     </plurals>
+    <string name="photos_of_person">%1$s の写真</string>
+    <string name="photos_of_a_person">人の写真</string>
+    <string name="photos_share_original">元のファイルを共有</string>
+    <string name="photos_share_edited">編集した版を共有</string>
+    <string name="photos_share_live_video">Live Photos のビデオを共有</string>
+    <string name="photos_describe_photo">この写真を説明</string>
+    <string name="photos_describe_video">このビデオの説明を作成</string>
+    <string name="photos_describe_unavailable">写真の説明は利用できません。</string>
+    <string name="photos_describe_hint_agent_photo">%1$s が写真を見て内容を書き出すので、検索で見つけられるようになります。</string>
+    <string name="photos_describe_hint_assistant_photo">アシスタントが写真を見て内容を書き出すので、検索で見つけられるようになります。</string>
+    <string name="photos_describe_hint_agent_video">%1$sがビデオのポスター画像を見て内容を書き出すので、検索で見つけられるようになります。</string>
+    <string name="photos_describe_hint_assistant_video">アシスタントがビデオのポスター画像を見て内容を書き出すので、検索で見つけられるようになります。</string>
+    <string name="photos_ask_agent_photo">この写真について%1$sに聞く</string>
+    <string name="photos_ask_assistant_photo">この写真についてアシスタントに聞く</string>
+    <string name="photos_ask_agent_video">このビデオについて%1$sに聞く</string>
+    <string name="photos_ask_assistant_video">このビデオについてアシスタントに聞く</string>
+    <string name="photos_position_map">写真を撮影した場所の地図</string>
+    <string name="photos_opens_in_maps">マップで開きます</string>
+    <string name="photos_not_this_person">この人物ではない</string>
+    <string name="photos_not_named_person">%1$sではない</string>
+    <string name="photos_took_face_out">この顔をこの人物から外しました</string>
+    <string name="photos_contacts_off_text">人物に名前を付けるには連絡先から選ぶ必要がありますが、連絡先が有効になっていません。このサーバーの管理者に連絡先を有効にしてもらってください。</string>
+    <string name="photos_add_photos">写真を追加</string>
+    <string name="photos_select_photos">写真を選択</string>
+    <string name="photos_add">追加</string>
+    <string name="photos_already_in_album">すでに「%1$s」に入っています</string>
+    <string name="photos_picker_empty_text">ライブラリに追加した写真をこのアルバムに追加できます。</string>
+    <string name="photos_thumbnail_strip">この写真の前後の写真</string>
+    <string name="photos_ok">OK</string>
 </resources>

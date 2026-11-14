@@ -2,7 +2,6 @@ package com.teanode.app.photos
 
 import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
@@ -56,14 +55,4 @@ fun saveToGallery(context: Context, download: DownloadedPhoto): Uri {
     val uri = context.contentResolver.insert(collection, values) ?: throw PhotoError.FileCouldNotBeRead
     context.contentResolver.openOutputStream(uri)?.use { output -> output.write(download.bytes) } ?: throw PhotoError.FileCouldNotBeRead
     return uri
-}
-
-/** Offers a saved photo to the apps that take one. */
-fun sharePhoto(context: Context, uri: Uri, contentType: String) {
-    val send = Intent(Intent.ACTION_SEND).apply {
-        type = contentType.ifEmpty { "image/*" }
-        putExtra(Intent.EXTRA_STREAM, uri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }

@@ -142,4 +142,20 @@
     <string name="recordings_open_recording">録音を開く</string>
     <string name="recordings_interrupted">通話や他のアプリがマイクを使ったため一時停止しました。準備ができたら再開してください。</string>
     <string name="recordings_live_heading">ここまでに聞き取った内容</string>
+    <string name="recordings_share_original">元のファイルを共有</string>
+    <string name="recordings_ask_agent">%1$s に聞く</string>
+    <string name="recordings_original_range">%1$s 〜 %2$s</string>
+    <string name="recordings_transcription_usage">文字起こしの使用量</string>
+    <string name="recordings_cost_actual">実際の費用：%1$s %2$s</string>
+    <string name="recordings_cost_estimated">推定費用：%1$s %2$s</string>
+    <string name="recordings_cost_unavailable">費用不明</string>
+    <string name="recordings_usage_unavailable">プロバイダーの使用量不明</string>
+    <string name="recordings_usage_footer">推定費用は設定された料金を使います。実際の費用は請求の根拠がある場合のみ表示します。</string>
+    <string name="recordings_edit_source">この読む場所を編集</string>
+    <string name="recordings_speaker_named">話者に名前を付けました。</string>
+    <string name="recordings_marked_as_you">あなたとして記録しました。</string>
+    <string name="recordings_speaker_separated">話者を分けました。</string>
+    <string name="recordings_this_is_me">これは自分</string>
+    <string name="recordings_separate_from">%1$sから分ける</string>
+    <string name="recordings_temporary_speaker_footer">この話者がこの録音で話すことすべてに、今も今後もこの名前が付きます。</string>
 </resources>

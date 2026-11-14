@@ -142,4 +142,20 @@
     <string name="recordings_open_recording">打开录音</string>
     <string name="recordings_interrupted">因通话或其他应用占用麦克风而暂停。准备好后请继续。</string>
     <string name="recordings_live_heading">目前听到的内容</string>
+    <string name="recordings_share_original">分享原文件</string>
+    <string name="recordings_ask_agent">问 %1$s</string>
+    <string name="recordings_original_range">%1$s 至 %2$s</string>
+    <string name="recordings_transcription_usage">转录用量</string>
+    <string name="recordings_cost_actual">实际费用：%1$s %2$s</string>
+    <string name="recordings_cost_estimated">估算费用：%1$s %2$s</string>
+    <string name="recordings_cost_unavailable">费用未知</string>
+    <string name="recordings_usage_unavailable">提供商用量未知</string>
+    <string name="recordings_usage_footer">估算使用配置的价格。只有取得计费凭据后才显示实际费用。</string>
+    <string name="recordings_edit_source">编辑这个来源</string>
+    <string name="recordings_speaker_named">已命名说话人。</string>
+    <string name="recordings_marked_as_you">已标记为你。</string>
+    <string name="recordings_speaker_separated">已分开说话人。</string>
+    <string name="recordings_this_is_me">这是我</string>
+    <string name="recordings_separate_from">与%1$s分开</string>
+    <string name="recordings_temporary_speaker_footer">此说话人在本次录音中现在和之后说的每一句话，都会使用这个名字。</string>
 </resources>

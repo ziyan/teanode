@@ -212,7 +212,7 @@ fun PersonScreen(photoFaceGroupId: String, onBack: () -> Unit) {
 /** Choose the contact who is in these photos, or make one; a contact that names another group merges the two. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NamePersonSheet(group: PhotoFaceGroup, onNamed: (NamedPhotoFaceGroup) -> Unit, onDismiss: () -> Unit) {
+internal fun NamePersonSheet(group: PhotoFaceGroup, onNamed: (NamedPhotoFaceGroup) -> Unit, onDismiss: () -> Unit) {
     val connection = LocalConnection.current
     val snackbar = LocalSnackbar.current
     val scope = rememberCoroutineScope()

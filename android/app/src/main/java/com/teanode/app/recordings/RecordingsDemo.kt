@@ -59,6 +59,13 @@ private val demoSegments = listOf(
     segmentJson("s6", 36_500, 43_000, "B", "Yes, I will send a draft on Thursday and we review it together on Friday."),
 ).joinToString(",", "[", "]")
 
+/** The first words of a recording still being transcribed: speakers named by label, one of them found to be another's voice. */
+private val demoTemporarySegments = """[
+    {"id":"t1","recordingTranscriptRunId":"run-r2","recordingTranscriptionAttemptId":"attempt-t","localSpeakerId":"A","segmentStartMS":2000,"segmentEndMS":8000,"transcriptText":"Let's begin with the supplier delivery dates.","temporarySpeakerLabel":"Speaker 1","isFiller":false},
+    {"id":"t2","recordingTranscriptRunId":"run-r2","recordingTranscriptionAttemptId":"attempt-t","localSpeakerId":"B","segmentStartMS":8500,"segmentEndMS":15000,"transcriptText":"The first batch ships on Monday, the rest follows a week later.","temporarySpeakerLabel":"Speaker 2","mergedTemporarySpeakerLabel":"Speaker 3","isFiller":false},
+    {"id":"t3","recordingTranscriptRunId":"run-r2","recordingTranscriptionAttemptId":"attempt-t","localSpeakerId":"A","segmentStartMS":15500,"segmentEndMS":21000,"transcriptText":"That works for us, please confirm in writing.","temporarySpeakerLabel":"Speaker 1","isFiller":false}
+]""".replace("\n", " ")
+
 /**
  * What demo mode answers for Recordings: five invented recordings (one with a transcript of three speakers and a pause,
  * one being transcribed, one still uploading, one that failed, one imported), shares and a recording shared by somebody else.
@@ -71,7 +78,9 @@ val recordingsDemoAnswerers: List<DemoAnswerer> = listOf(
     graphQLField("ReadRecordingLimits", """{"maximumMediaBytes":2147483648,"maximumAccountBytes":53687091200,"uploadPartBytes":8388608,"isTranscriptionAvailable":true,"transcriptionUnavailableMessage":"","transcriptionProviderModelName":"example-transcribe"}"""),
     graphQLField("ReadRecordingTranscriptTimeline") { variables ->
         val isTranscribed = variables.text("recordingId") == "r1"
-        """{"sourceGeneration":4,"segments":${if (isTranscribed) demoSegments else "[]"},"transcriptRuns":[],"segmentCount":${if (isTranscribed) 6 else 0},"hasMoreSegments":false,"temporarySpeakers":[],"liveUtterances":[]}"""
+        val isLabeled = variables.text("recordingId") == "r2"
+        val segments = if (isTranscribed) demoSegments else if (isLabeled) demoTemporarySegments else "[]"
+        """{"sourceGeneration":4,"segments":$segments,"transcriptRuns":[],"segmentCount":${if (isTranscribed) 6 else if (isLabeled) 3 else 0},"hasMoreSegments":false,"temporarySpeakers":[],"liveUtterances":[]}"""
     },
     graphQLField("ReadRecordingSpeakers", """{"sourceGeneration":4,"speakerIdentities":[{"id":"identity-A","confirmedName":"Robin","isAccountOwner":true},{"id":"identity-C","confirmedName":"Alex","contactAddressBookId":"b1","contactId":"k1","contactName":"Alex Example"}],"speakerCorrections":[{"id":"sc1","recordingMediaId":"m-r1-1","recordingTranscriptionAttemptId":"attempt-1","speakerIdentityId":"identity-C","localSpeakerId":"C","passageStartMS":28000,"passageEndMS":36000,"sourceGeneration":4,"isRemoved":false}],"voiceReferences":[{"id":"vr1","speakerIdentityId":"identity-A","recordingMediaId":"m-r1-1","recordingTranscriptRunId":"run-r1","passageStartMS":4000,"passageEndMS":11000,"sourceGeneration":4,"isRevoked":false}]}"""),
     graphQLField("SuggestRecordingSpeakerNames", """[{"confirmedName":"Sam Sample","speakerNameSource":"contact","addressBookId":"b1","contactId":"k2"},{"confirmedName":"Alex Example","speakerNameSource":"identity"}]"""),
@@ -97,5 +106,6 @@ val recordingsDemoAnswerers: List<DemoAnswerer> = listOf(
     graphQLField("ReadRecordMemoryLinks", """[{"id":"l1","nodePath":"people/alex-example","nodeName":"Alex Example","nodeKind":"person","linkStatus":"confirmed"},{"id":"l2","nodePath":"projects/launch","nodeName":"Launch plan","nodeKind":"project","linkStatus":"proposed"}]"""),
     graphQLField("ReadRecordingTranscriptTextCorrections", """[{"id":"c1","recordingId":"r1","recordingMediaId":"m-r1-1","recordingTranscriptRunId":"run-r1","recordingTranscriptSegmentId":"s2","clientCorrectionId":"cc1","passageStartMS":11500,"passageEndMS":19000,"originalTranscriptText":"Right. The pricing page is not ready, and the announcement still needs a second pass from legal.","correctedTranscriptText":"Right. The pricing page is not ready, and the announcement still needs a second pass from Legal Ops.","sourceGeneration":4,"createdAt":"2026-11-10T16:00:00Z","isRemoved":false}]"""),
     graphQLField("ReadRecordingTranscriptPassageOffset", "0"),
-    graphQLField("ReadRecordingTranscript") { _ -> """{"transcriptRun":{"id":"run-r1","recordingId":"r1","recordingMediaId":"m-r1-1","versionNumber":1,"recordingProcessingState":"complete","providerModelName":"example-transcribe","processingErrorMessage":"","createdAt":"2026-11-10T15:30:00Z"},"segments":$demoSegments,"attempts":[],"segmentCount":6,"hasMoreSegments":false}""" },
+    graphQLField("ReadRecordingTranscript") { _ -> """{"transcriptRun":{"id":"run-r1","recordingId":"r1","recordingMediaId":"m-r1-1","versionNumber":1,"recordingProcessingState":"complete","providerModelName":"example-transcribe","processingErrorMessage":"","createdAt":"2026-11-10T15:30:00Z"},"segments":$demoSegments,"attempts":[{"id":"attempt-1","recordingAttemptState":"complete","providerModelName":"example-transcribe","hasProviderUsage":true,"estimatedCostAmount":0.42,"actualCostAmount":0.38,"currencyCode":"USD","attemptErrorMessage":""},
+        {"id":"attempt-2","recordingAttemptState":"complete","providerModelName":"example-transcribe","hasProviderUsage":false,"estimatedCostAmount":0.21,"currencyCode":"USD","attemptErrorMessage":""}],"segmentCount":6,"hasMoreSegments":false}""" },
 )
