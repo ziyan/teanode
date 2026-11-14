@@ -59,6 +59,9 @@ class PushSystem(
         return UUID.randomUUID().toString().also { made -> preferences.edit().putString(DRAWER_ID_KEY, made).apply() }
     }
 
+    /** Whether an activity of the app is on screen. */
+    val isInFront: Boolean get() = isAppInFront()
+
     val registrar = PushRegistrar(context, transport, keyring, accountStore, ::connection, preferences)
 
     private val environment = object : CallEnvironment {

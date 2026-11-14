@@ -12,6 +12,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.material.icons.outlined.Phone
 import com.teanode.app.calls.AgentVoiceCall
 import com.teanode.app.calls.OpeningRequests
+import com.teanode.app.notifications.TurnFollowing
 import com.teanode.app.notifications.TurnNotification
 import com.teanode.kit.chats.SpokenText
 import com.teanode.kit.chats.ask
@@ -109,24 +110,52 @@ fun ConversationCallEffects(model: ConversationModel) {
     val isRequested by OpeningRequests.isCallRequested.collectAsState()
     val connection = com.teanode.app.session.LocalConnection.current
     val drawerId = ChatsEnvironment.of(context, connection, com.teanode.app.session.LocalAppSession.current).drawerId
-    androidx.compose.runtime.DisposableEffect(model, center) {
+    val push = (context.applicationContext as com.teanode.app.TeaNodeApplication).push
+    val turnFollowing = androidx.compose.runtime.remember(model, connection) {
+        TurnFollowing(
+            scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default),
+            followRun = { runId ->
+                TurnNotification.forgetPushOrder(context)
+                push.registrar.followTurn(connection, runId)
+            },
+            show = { activityState -> TurnNotification.show(context, TurnNotification.rememberedAgentTitle(context), activityState) },
+            end = { TurnNotification.end(context) },
+        )
+    }
+    androidx.compose.runtime.DisposableEffect(model, center, turnFollowing) {
         model.onEvent = { event ->
             center?.agentVoice?.value?.follow(event.runId, event.kind, event.text, event.note)
             if (!model.isChat) {
                 val isInFront = lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
-                val state = when (event.kind) {
+                val activityState = when (event.kind) {
                     "asked" -> "working"
                     "confirmation", "question" -> "waiting"
                     "done" -> "done"
                     "error" -> "failed"
                     else -> null
                 }
-                if (state != null) {
-                    if (isInFront) TurnNotification.end(context) else TurnNotification.show(context, "TeaNode", state)
+                val runId = event.runId
+                if (activityState != null && runId.isNotEmpty()) {
+                    TurnNotification.rememberAgentTitle(context, model.title.ifEmpty { context.getString(com.teanode.app.R.string.app_name) })
+                    turnFollowing.turnChanged(runId, activityState, isInFront)
                 }
             }
         }
-        onDispose { model.onEvent = null }
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, lifecycleEvent ->
+            when (lifecycleEvent) {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> if (!model.isChat) {
+                    TurnNotification.rememberAgentTitle(context, model.title.ifEmpty { context.getString(com.teanode.app.R.string.app_name) })
+                    turnFollowing.appLeft()
+                }
+                androidx.lifecycle.Lifecycle.Event.ON_START -> turnFollowing.appCame()
+                else -> {}
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose {
+            model.onEvent = null
+            lifecycle.removeObserver(observer)
+        }
     }
     androidx.compose.runtime.LaunchedEffect(isRequested, model.voiceSampleRate, model.conversationId) {
         val sampleRate = model.voiceSampleRate ?: return@LaunchedEffect

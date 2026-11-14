@@ -17,8 +17,15 @@ object PushHandler {
     const val PUSH_KIND_NOTIFICATION = "notification"
     const val PUSH_KIND_CALL = "call"
 
+    /** A turn left running has come to another state; it carries no sealed content (see [TurnNotification.handlePush]). */
+    const val PUSH_KIND_TURN = "turn"
+
     fun handle(context: Context, data: Map<String, String>) {
         val push = (context.applicationContext as TeaNodeApplication).push
+        if (data[DATA_PUSH_KIND] == PUSH_KIND_TURN) {
+            TurnNotification.handlePush(context, data, isAppInFront = push.isInFront)
+            return
+        }
         val sealed = data[DATA_SEALED]
         val opened = sealed?.let { text -> PayloadKey.open(text, push.keyring.keys(push.accountStore.accounts())) }
         if (data[DATA_PUSH_KIND] == PUSH_KIND_CALL) {
