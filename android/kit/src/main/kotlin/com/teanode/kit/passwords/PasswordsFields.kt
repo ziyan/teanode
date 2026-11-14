@@ -94,7 +94,7 @@ data class PasswordsItemAccess(
             if (!entries.keys.containsAll(required) || !allowed.containsAll(entries.keys)) {
                 throw PasswordsFieldsException("An access record is isUsableByAgent and grantees, and may have recordVersion and recordMac")
             }
-            val isUsableByAgent = (entries["isUsableByAgent"] as? JsonPrimitive)?.booleanOrNull
+            val isUsableByAgent = (entries["isUsableByAgent"] as? JsonPrimitive)?.takeIf { primitive -> !primitive.isString }?.booleanOrNull
                 ?: throw PasswordsFieldsException("isUsableByAgent is a boolean")
             val granteesArray = entries["grantees"] as? JsonArray ?: throw PasswordsFieldsException("grantees is a list")
             val grantees = granteesArray.map { grantee -> PasswordsGrantee.fromJson(grantee) }

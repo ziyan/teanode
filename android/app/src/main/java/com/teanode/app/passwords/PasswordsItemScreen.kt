@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Refresh
@@ -226,24 +227,63 @@ private fun OwnerSections(model: PasswordsModel, item: PasswordItem, isWorking: 
         }
         Footer(stringResource(if (item.itemKind == PasswordsItemKind.Note) R.string.passwords_agent_footer_note else R.string.passwords_agent_footer_login))
     }
-    if (model.itemIdsNeedingNewKey().contains(item.id)) {
-        Text(stringResource(R.string.passwords_new_key_failed_title), modifier = Modifier.padding(16.dp))
+    if (model.itemIdsNeedingYou.contains(item.id)) {
+        FinishSharingSection(model, item, isWorking, onRun)
+    } else if (model.itemIdsNeedingNewKey.contains(item.id)) {
+        Text(
+            stringResource(if (model.itemIdsNeedingAttention.contains(item.id)) R.string.passwords_finish_attention else R.string.passwords_new_key_failed_title),
+            modifier = Modifier.padding(16.dp),
+        )
         ActionRow(Icons.Outlined.Refresh, stringResource(R.string.passwords_try_again), enabled = !isWorking) { onRun(R.string.passwords_new_key_failed) { model.giveNewKey(item) } }
     }
-    if (item.sharingCheck == PasswordsSharingCheck.Unverified || item.sharingCheck == PasswordsSharingCheck.Replayed) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (item.sharingCheck == PasswordsSharingCheck.Unverified) {
-                Text(stringResource(R.string.passwords_sharing_unchecked), style = MaterialTheme.typography.titleSmall)
-                Text(stringResource(R.string.passwords_sharing_unchecked_text), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                Text(stringResource(R.string.passwords_sharing_replayed), style = MaterialTheme.typography.titleSmall)
-                Text(stringResource(R.string.passwords_sharing_replayed_text), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
+    SharingNotice(item)
+    com.teanode.app.ui.components.TeaNodeNavigationRow(
+        stringResource(R.string.passwords_share), onClick = { navigator.navigate(passwordsShareRoute(item.id)) },
+        supporting = PasswordsSharingWords.shareSummary(context, item), leadingIcon = Icons.Outlined.PersonAdd,
+    )
+    Footer(stringResource(R.string.passwords_share_row_footer))
     ActionRow(Icons.Outlined.History, stringResource(R.string.passwords_versions_row)) { navigator.navigate("passwords/versions/${Uri.encode(item.id)}") }
     Footer(stringResource(R.string.passwords_versions_footer))
     ActionRow(Icons.Outlined.Delete, stringResource(R.string.passwords_delete), isDestructive = true, enabled = !isWorking, onClick = onDelete)
+}
+
+/** Shown when this phone left the item for the person: it has no memory of the item from before, or somebody waiting is a person it never sealed the item for. One button does what it would have done by itself, for everybody the item's own record reaches. */
+@Composable
+private fun FinishSharingSection(model: PasswordsModel, item: PasswordItem, isWorking: Boolean, onRun: (Int, suspend () -> Unit) -> Unit) {
+    val context = LocalContext.current
+    var ask by remember { mutableStateOf<PasswordsFinishAsk?>(null) }
+    Text(stringResource(R.string.passwords_finish_text), modifier = Modifier.padding(16.dp))
+    ActionRow(Icons.Outlined.PersonAdd, stringResource(R.string.passwords_finish_button), enabled = !isWorking) {
+        onRun(R.string.passwords_finish_failed) {
+            val plan = model.finishPlan(listOf(item.id))
+            ask = PasswordsFinishAsk(listOf(item.id), plan, PasswordsSharingWords.finishConfirmationTitle(context, 1, item.name))
+        }
+    }
+    PasswordsFinishSharingDialog(ask, onDismiss = { ask = null }, onConfirm = { confirmed ->
+        ask = null
+        onRun(R.string.passwords_finish_failed) { model.finishSharing(item, confirmed.plan) }
+    })
+}
+
+/** Says when the item's sharing cannot be trusted, or when the server lists somebody the person never shared the item with. Setting sharing again writes a record that is checked again. */
+@Composable
+private fun SharingNotice(item: PasswordItem) {
+    val context = LocalContext.current
+    val navigator = LocalAppNavigator.current
+    val isUnchecked = item.sharingCheck == PasswordsSharingCheck.Unverified || item.sharingCheck == PasswordsSharingCheck.Replayed
+    val unrecordedText = PasswordsSharingWords.unrecordedSharesNotice(context, item)
+    if (!isUnchecked && unrecordedText == null) return
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (item.sharingCheck == PasswordsSharingCheck.Unverified) {
+            Text(stringResource(R.string.passwords_sharing_unchecked), style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.passwords_sharing_unchecked_text), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else if (item.sharingCheck == PasswordsSharingCheck.Replayed) {
+            Text(stringResource(R.string.passwords_sharing_replayed), style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.passwords_sharing_replayed_text), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (unrecordedText != null) Text(unrecordedText)
+    }
+    if (isUnchecked) ActionRow(Icons.Outlined.PersonAdd, stringResource(R.string.passwords_share_set_again)) { navigator.navigate(passwordsShareRoute(item.id)) }
 }
 
 // The fields

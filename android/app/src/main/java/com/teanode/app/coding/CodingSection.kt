@@ -221,9 +221,9 @@ internal fun CodingSessionRow(session: HerdrSession, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(session.rowTitle, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+            Text(session.rowTitle, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             if (session.rowDetail.isNotEmpty()) {
-                Text(session.rowDetail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                Text(session.rowDetail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
         CodingStateTag(session, Modifier.padding(start = 8.dp))

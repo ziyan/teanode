@@ -115,6 +115,7 @@ dependencies {
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.exifinterface)
+    implementation(libs.androidx.credentials)
     // CameraX and WorkManager both hand out ListenableFuture; this keeps the one real class on the classpath.
     implementation(libs.guava)
 

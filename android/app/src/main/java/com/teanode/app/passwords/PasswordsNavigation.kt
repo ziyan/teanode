@@ -10,6 +10,7 @@ import com.teanode.kit.passwords.PasswordsItemKind
 
 private const val ITEM_ROUTE = "passwords/item/{itemId}"
 private const val EDIT_ROUTE = "passwords/edit/{itemKind}/{itemId}"
+private const val SHARE_ROUTE = "passwords/share/{itemId}"
 private const val VERSIONS_ROUTE = "passwords/versions/{itemId}"
 private const val VERSION_ROUTE = "passwords/version/{itemId}/{versionId}"
 
@@ -24,6 +25,7 @@ fun NavGraphBuilder.passwordsRoutes(navigator: AppNavigator) {
         val itemId = entry.arguments?.getString("itemId")?.takeIf { id -> id != "new" }
         PasswordsEditorScreen(kind, itemId)
     }
+    composable(SHARE_ROUTE, deepLinks = Routes.deepLinks(SHARE_ROUTE)) { entry -> PasswordsShareScreen(entry.arguments?.getString("itemId").orEmpty()) }
     composable(VERSIONS_ROUTE, deepLinks = Routes.deepLinks(VERSIONS_ROUTE)) { entry -> PasswordsVersionsScreen(entry.arguments?.getString("itemId").orEmpty()) }
     composable(VERSION_ROUTE, deepLinks = Routes.deepLinks(VERSION_ROUTE)) { entry ->
         PasswordsVersionScreen(entry.arguments?.getString("itemId").orEmpty(), entry.arguments?.getString("versionId").orEmpty())

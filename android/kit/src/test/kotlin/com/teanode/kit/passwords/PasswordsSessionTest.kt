@@ -426,8 +426,10 @@ class PasswordsSessionTest {
         cache.recordSeenRecord("user-ada", "item-1", 2, "mac-2")
         assertEquals(3L, PasswordsCache(storage).loadPins("user-ada").itemMemories["item-1"]?.highestRecordVersion)
         assertEquals("mac-3", PasswordsCache(storage).loadPins("user-ada").itemMemories["item-1"]?.highestRecordMac)
-        // Another person's pins are not read as this one's.
-        assertEquals(PasswordsPins(userId = "user-grace"), PasswordsCache(storage).loadPins("user-grace"))
+        // Another person's keys are not read as this one's, but what is remembered about an item follows the item id.
+        val renamed = PasswordsCache(storage).loadPins("user-grace")
+        assertEquals(emptyMap<String, String>(), renamed.knownPublicKeys)
+        assertEquals(3L, renamed.itemMemories["item-1"]?.highestRecordVersion)
         val memory = PasswordsItemMemory(highestRecordVersion = 3, highestRecordMac = "mac-3")
         assertTrue(memory.isReplay(2, "mac-2"))
         assertTrue(memory.isReplay(3, "other-mac"))

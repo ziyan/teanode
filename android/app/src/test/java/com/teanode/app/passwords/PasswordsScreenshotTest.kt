@@ -1,7 +1,10 @@
 package com.teanode.app.passwords
 
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,8 +42,8 @@ class PasswordsScreenshotTest {
 
     /** Draws a screen once the invented Passwords has been opened, as a person's own unlock would. */
     @Composable
-    private fun Opened(content: @Composable () -> Unit) {
-        val model = rememberPasswordsModel()
+    private fun Opened(demoStart: PasswordsDemoStart = PasswordsDemoStart.Unlocked, content: @Composable () -> Unit) {
+        val model = rememberPasswordsModel(demoStart)
         var isReady by remember { mutableStateOf(false) }
         LaunchedEffect(model) {
             model.start()
@@ -161,4 +164,101 @@ class PasswordsScreenshotTest {
     @Test fun `settings open dark`() { draw(Look.Dark) { Opened { PasswordsSettingsScreen() } }; photograph("passwords-settings-dark") }
 
     @Test fun `settings while locked`() { draw(Look.Light) { PasswordsSettingsScreen() }; photograph("passwords-settings-locked-light") }
+
+    // Sharing
+
+    private val sharing = PasswordsDemoStart.Sharing
+
+    @Test fun `the list with sharing notices and somebody waiting`() { draw(Look.Light) { PasswordsSection(sharing) }; photograph("passwords-sharing-list-light") }
+
+    @Test fun `the list with sharing notices dark`() { draw(Look.Dark) { PasswordsSection(sharing) }; photograph("passwords-sharing-list-dark") }
+
+    @Test fun `the list with sharing notices at the largest text`() { draw(Look.Light, 2f) { PasswordsSection(sharing) }; photograph("passwords-sharing-list-largest-text-light") }
+
+    @Test fun `a login waiting for somebody to be finished`() {
+        draw(Look.Light) { Opened(sharing) { PasswordsItemScreen(PasswordsDemoStore.sharedLoginId) } }
+        photograph("passwords-sharing-item-finish-light")
+    }
+
+    @Test fun `a login waiting for somebody to be finished at the largest text`() {
+        draw(Look.Light, 2f) { Opened(sharing) { PasswordsItemScreen(PasswordsDemoStore.sharedLoginId) } }
+        photograph("passwords-sharing-item-finish-largest-text-light")
+    }
+
+    @Test fun `a login shared with one person dark`() {
+        draw(Look.Dark) { Opened(sharing) { PasswordsItemScreen(PasswordsDemoStore.wikiLoginId) } }
+        photograph("passwords-sharing-item-wiki-dark")
+    }
+
+    @Test fun `a login Sam shared with the person`() {
+        draw(Look.Light) { Opened(sharing) { PasswordsItemScreen(PasswordsDemoStore.receivedLoginId) } }
+        photograph("passwords-sharing-received-light")
+    }
+
+    @Test fun `a login whose sharing could not be checked`() {
+        draw(Look.Light) { Opened(sharing) { PasswordsItemScreen(PasswordsDemoStore.uncheckedLoginId) } }
+        photograph("passwords-sharing-unchecked-light")
+    }
+
+    @Test fun `the share screen for a login shared with a circle and a person`() {
+        draw(Look.Light) { Opened(sharing) { PasswordsShareScreen(PasswordsDemoStore.sharedLoginId) } }
+        photograph("passwords-share-light")
+    }
+
+    @Test fun `the share screen dark`() {
+        draw(Look.Dark) { Opened(sharing) { PasswordsShareScreen(PasswordsDemoStore.sharedLoginId) } }
+        photograph("passwords-share-dark")
+    }
+
+    @Test fun `the share screen at the largest text`() {
+        draw(Look.Light, 2f) { Opened(sharing) { PasswordsShareScreen(PasswordsDemoStore.sharedLoginId) } }
+        photograph("passwords-share-largest-text-light")
+    }
+
+    @Test fun `the share screen of a login with nobody`() {
+        draw(Look.Light) { Opened(sharing) { PasswordsShareScreen(PasswordsDemoStore.cardId) } }
+        photograph("passwords-share-nobody-light")
+    }
+
+    @Test fun `the share screen of a login whose sharing could not be checked`() {
+        draw(Look.Light) { Opened(sharing) { PasswordsShareScreen(PasswordsDemoStore.uncheckedLoginId) } }
+        photograph("passwords-share-unchecked-light")
+    }
+
+    @Test fun `the safety codes of a key that changed`() {
+        draw(Look.Light) {
+            Opened(sharing) {
+                val model = rememberPasswordsModel(sharing)
+                val change = model.keyChanges.firstOrNull()
+                if (change != null) {
+                    androidx.compose.runtime.CompositionLocalProvider(com.teanode.app.shopping.LocalShoppingSheetsInline provides true) {
+                        PasswordsCompareCodesSheet(model, PasswordsCompareTarget.of(androidx.compose.ui.platform.LocalContext.current, change), onDismiss = {})
+                    }
+                }
+            }
+        }
+        photograph("passwords-share-compare-codes-light")
+    }
+
+    @Test fun `the question before sharing is finished`() {
+        draw(Look.Light) {
+            Opened(sharing) {
+                val model = rememberPasswordsModel(sharing)
+                var ask by remember { mutableStateOf<PasswordsFinishAsk?>(null) }
+                LaunchedEffect(model) {
+                    val plan = model.finishPlan(listOf(PasswordsDemoStore.sharedLoginId))
+                    ask = PasswordsFinishAsk(listOf(PasswordsDemoStore.sharedLoginId), plan, "Finish sharing Tea Shop?")
+                }
+                ask?.let { shown ->
+                    androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) {
+                        androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(24.dp)) {
+                            androidx.compose.material3.Text(shown.title, style = androidx.compose.material3.MaterialTheme.typography.headlineSmall)
+                            PasswordsFinishSharingBody(shown)
+                        }
+                    }
+                }
+            }
+        }
+        photograph("passwords-share-finish-question-light")
+    }
 }
