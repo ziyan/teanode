@@ -127,6 +127,24 @@ class Connection(
         return retried
     }
 
+    /**
+     * Reads the answer to a request into [destination] as it arrives, with the account's token and the same second try after a
+     * 401 as [send]. For files that may be hundreds of megabytes, which must never be held whole in memory.
+     */
+    suspend fun download(request: HTTPRequest, destination: java.io.File): HTTPResponse {
+        val token = accessToken()
+        val prepared = request.with("X-Timezone", shownTimeZone())
+        val response = transport.download(prepared.with("Authorization", "Bearer $token"), destination)
+        if (response.statusCode != 401) return response
+        val freshToken = accessToken(replacing = token)
+        val retried = transport.download(prepared.with("Authorization", "Bearer $freshToken"), destination)
+        if (retried.statusCode == 401) {
+            isSignedOut = true
+            throw TeaNodeError.SignedOut
+        }
+        return retried
+    }
+
     /** A token to use in place of one the server refused: a newer one this connection or another process already has, or else a renewal. */
     private suspend fun accessToken(replacing: String): String {
         synchronized(lock) { renewal }?.let { running -> return outcome(running).accessToken }

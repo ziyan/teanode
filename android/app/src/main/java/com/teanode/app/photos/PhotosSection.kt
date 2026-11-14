@@ -14,7 +14,9 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteForever
@@ -78,6 +80,7 @@ import com.teanode.kit.photos.emptyPhotoTrash
 import com.teanode.kit.photos.deletePhotos
 import com.teanode.kit.photos.photoLibrary
 import com.teanode.kit.photos.restorePhotos
+import com.teanode.kit.photos.setPhotoFavorite
 import com.teanode.kit.photos.trashPhotos
 import kotlinx.coroutines.launch
 
@@ -200,6 +203,29 @@ fun PhotosSection(
         }
     }
 
+    val selectedPhotos = list?.photos?.filter { photo -> photo.id in selectedIds }.orEmpty()
+
+    fun favoriteSelected() {
+        val chosen = list?.photos?.filter { photo -> photo.id in selectedIds }.orEmpty()
+        val isFavorite = com.teanode.kit.photos.PhotoFavorites.isFavoriteTarget(chosen)
+        scope.launch {
+            try {
+                for (photo in com.teanode.kit.photos.PhotoFavorites.photosToChange(chosen, isFavorite)) {
+                    val updated = connection.setPhotoFavorite(photo.id, isFavorite)
+                    // The Favorites collection holds only hearts: a photo that lost its heart leaves it at once.
+                    if (section == PhotoSectionChoice.Favorites && !isFavorite) list?.remove(listOf(photo.id)) else list?.replace(updated)
+                }
+                isSelecting = false
+                selectedIds = emptySet()
+                libraryLoad.refresh()
+            } catch (failure: kotlinx.coroutines.CancellationException) {
+                throw failure
+            } catch (failure: Throwable) {
+                snackbar.showError(failure)
+            }
+        }
+    }
+
     fun shareSelected() {
         val chosen = list?.photos?.filter { photo -> photo.id in selectedIds }.orEmpty()
         scope.launch {
@@ -276,7 +302,7 @@ fun PhotosSection(
                     section = section, count = selectedIds.size,
                     onTrash = { isTrashConfirming = true }, onRestore = { act(isRestoring = true, successMessageId = R.plurals.photos_restored) },
                     onDelete = { isDeleteConfirming = true }, onAddToAlbum = { isAlbumChoosing = true },
-                    onChangeLocation = { isLocationChoosing = true }, onShare = ::shareSelected, isPreparingShare = isPreparingShare,
+                    onChangeLocation = { isLocationChoosing = true }, onShare = ::shareSelected, isEveryFavorite = selectedPhotos.isNotEmpty() && !com.teanode.kit.photos.PhotoFavorites.isFavoriteTarget(selectedPhotos), onFavorite = ::favoriteSelected, isPreparingShare = isPreparingShare,
                 )
             } else if (section == PhotoSectionChoice.Library && searchWords == null) {
                 ScaleBar(scale) { chosen -> scale = chosen }
@@ -406,6 +432,8 @@ private fun SelectionBar(
     onAddToAlbum: () -> Unit,
     onChangeLocation: () -> Unit,
     onShare: () -> Unit,
+    isEveryFavorite: Boolean,
+    onFavorite: () -> Unit,
     isPreparingShare: Boolean,
 ) {
     BottomAppBar {
@@ -421,6 +449,12 @@ private fun SelectionBar(
             } else {
                 // Icons alone: five words would not fit a phone's width.
                 IconButton(onClick = onAddToAlbum, enabled = count > 0) { Icon(Icons.Outlined.PlaylistAdd, contentDescription = stringResource(R.string.photos_add_to_album)) }
+                IconButton(onClick = onFavorite, enabled = count > 0) {
+                    Icon(
+                        if (isEveryFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                        contentDescription = stringResource(if (isEveryFavorite) R.string.photos_remove_favorite else R.string.photos_add_favorite),
+                    )
+                }
                 IconButton(onClick = onChangeLocation, enabled = count > 0) { Icon(Icons.Outlined.LocationOn, contentDescription = stringResource(R.string.photos_change_location)) }
                 if (isPreparingShare) {
                     androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)

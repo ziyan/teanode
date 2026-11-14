@@ -81,3 +81,21 @@ class PhotoInfoRulesTest {
         assertNull(PhotoPositionText.windowText(null, null, zone, Locale.US))
     }
 }
+
+class PhotoFavoritesTest {
+    private fun photo(id: String, isFavorite: Boolean) = Photo(id = id, createdAt = "2026-02-01T00:00:00Z", photoKind = "picture", isFavorite = isFavorite)
+
+    @Test
+    fun theHeartTakesTheHeartAwayOnlyWhenEveryPhotoHasOne() {
+        assertTrue(PhotoFavorites.isFavoriteTarget(listOf(photo("a", true), photo("b", false))))
+        assertFalse(PhotoFavorites.isFavoriteTarget(listOf(photo("a", true), photo("b", true))))
+        assertTrue(PhotoFavorites.isFavoriteTarget(listOf(photo("a", false))))
+    }
+
+    @Test
+    fun onlyPhotosNotAlreadyAsWantedAreChanged() {
+        val photos = listOf(photo("a", true), photo("b", false), photo("c", false))
+        assertEquals(listOf("b", "c"), PhotoFavorites.photosToChange(photos, true).map { each -> each.id })
+        assertEquals(listOf("a"), PhotoFavorites.photosToChange(photos, false).map { each -> each.id })
+    }
+}

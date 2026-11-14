@@ -136,6 +136,14 @@ class PhotosScreenshotTest {
         PhotosSection(initialIsSelecting = true, initialSelectedIds = setOf("p01", "p04"))
     }
 
+    @Test fun `library selecting mixed hearts light`() = shoot("photos-library-selecting-mixed-hearts-light") {
+        PhotosSection(initialIsSelecting = true, initialSelectedIds = setOf("p01", "p03"))
+    }
+
+    @Test fun `favorites selecting dark`() = shoot("photos-favorites-selecting-dark", AppearanceChoice.Dark) {
+        PhotosSection(PhotoSectionChoice.Favorites, initialIsSelecting = true, initialSelectedIds = setOf("p04"))
+    }
+
     @Test fun `viewer strip dark`() = shoot("photos-viewer-strip-dark", AppearanceChoice.Dark) { PhotosSection(initialOpenedPhotoId = "p05") }
 
     @Test fun `viewer info not described light`() = shoot("photos-viewer-info-not-described-light") {
