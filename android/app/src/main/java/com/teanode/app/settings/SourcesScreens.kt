@@ -126,17 +126,13 @@ fun KnowledgeSourcesScreen(onBack: () -> Unit) {
                 if ((attachments?.declined ?: 0) > 0) add(stringResource(R.string.settings_sources_declined_open) to { declinedSource = source })
                 add(stringResource(R.string.settings_sources_stop_reading) to { removing = source })
             }
+            val tags = listOfNotNull(
+                kindText, if (source.more) stringResource(R.string.settings_sources_tag_reading) else null, if (!source.enabled) stringResource(R.string.settings_sources_tag_paused) else null,
+            ).joinToString(" · ")
             TeaNodeRow(
                 onClick = { editingSource = source },
-                headline = source.name, supporting = lines.joinToString("\n"), supportingMaxLines = 12,
-                trailing = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        UpkeepTag(kindText)
-                        if (source.more) UpkeepTag(stringResource(R.string.settings_sources_tag_reading), TagTone.Good)
-                        if (!source.enabled) UpkeepTag(stringResource(R.string.settings_sources_tag_paused), TagTone.Warning)
-                        RowMenu(menu)
-                    }
-                },
+                headline = source.name, overline = tags, supporting = lines.joinToString("\n"), supportingMaxLines = 12,
+                trailing = { RowMenu(menu) },
             )
         }
         item { FooterText(stringResource(R.string.settings_sources_page_footer)) }

@@ -74,4 +74,6 @@ class SettingsAgentScreenshotTest {
     @Test fun `memory largest text`() = shoot("agent-memory-largest-text", fontScale = 2f) { AgentMemorySettingsScreen(onBack = {}) }
     @Test fun `sessions with toggle light`() = shoot("agent-sessions-light") { SessionsScreen(onBack = {}) }
     @Test fun `tokens with toggle light`() = shoot("agent-tokens-light") { TokensScreen(onBack = {}) }
+    @Test fun `skill calls card light`() = shoot("agent-skill-calls-light", before = { composeRule.onNodeWithText("Travel booking").performClick() }) { SkillSharingScreen(onBack = {}) }
+    @Test fun `skill calls card dark`() = shoot("agent-skill-calls-dark", AppearanceChoice.Dark, before = { composeRule.onNodeWithText("Travel booking").performClick() }) { SkillSharingScreen(onBack = {}) }
 }

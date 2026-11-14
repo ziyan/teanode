@@ -130,7 +130,7 @@ val settingsDemoAnswerers: List<DemoAnswerer> = listOf(
     ),
     graphQLField(
         "ListSkillShareCalls",
-        """[{"id":"call1","skillShareId":"ss1","skillName":"Travel booking","granteeUserId":"user-alex","granteeUsername":"alex","granteeName":"Alex Sample","ownerName":"Robin Example","toolName":"book_flight","toolArguments":"{}","requestReason":"A flight to the coast on Friday.","amountMinor":18900,"currencyCode":"usd","callState":"waiting_for_approval","toolOutput":"","answerNote":"","createdAt":"2030-01-05T09:00:00Z"}]""",
+        """[{"id":"call1","skillShareId":"ss1","skillName":"Travel booking","granteeUserId":"user-alex","granteeUsername":"alex","granteeName":"Alex Sample","ownerName":"Robin Example","toolName":"book_flight","toolArguments":"{\"destination\":\"Example Coast\",\"depart_on\":\"2030-01-11\",\"amount_minor\":18900}","amountArgumentName":"amount_minor","requestReason":"A flight to the coast on Friday.","amountMinor":18900,"currencyCode":"usd","callState":"waiting_for_approval","toolOutput":"","answerNote":"","createdAt":"2030-01-05T09:00:00Z"}]""",
     ),
     graphQLField("ListAgentSkills", """[{"name":"Travel booking","description":"Search and book flights","enabled":true,"readable":true,"tools":[{"name":"search_flights","description":"Search flights"},{"name":"book_flight","description":"Book a flight","isAmountDeclared":true}]}]"""),
     graphQLField(
