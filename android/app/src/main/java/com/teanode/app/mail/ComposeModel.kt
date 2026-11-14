@@ -64,6 +64,9 @@ class ComposeModel(val mail: MailModel, val start: ComposeStart) {
         private set
     var isSending by mutableStateOf(false)
         private set
+
+    /** Whether this message went out, after which nothing of it is kept as a draft. */
+    private var isSent = false
     var savedAt by mutableStateOf<Instant?>(null)
         private set
     var warningText by mutableStateOf<String?>(null)
@@ -255,7 +258,7 @@ class ComposeModel(val mail: MailModel, val start: ComposeStart) {
         )
 
     suspend fun save(isForced: Boolean = false) {
-        if (!isLoaded || isSaving || isSending || pending != null || !(isForced || isChanged || draftItemId == null)) return
+        if (!isLoaded || isSaving || isSending || isSent || pending != null || !(isForced || isChanged || draftItemId == null)) return
         isSaving = true
         try {
             val saved = mail.connection.saveMailDraft(mailboxId, outgoing)
@@ -278,6 +281,8 @@ class ComposeModel(val mail: MailModel, val start: ComposeStart) {
     }
 
     suspend fun send(): Boolean {
+        // A draft being saved at this moment would be made after the server dropped the draft this message replaces.
+        while (isSaving) kotlinx.coroutines.delay(50)
         val sending = pending ?: MailSending(mailboxId, outgoing)
         val isRetry = pending != null
         keep(sending)
@@ -285,6 +290,7 @@ class ComposeModel(val mail: MailModel, val start: ComposeStart) {
         return try {
             mail.connection.send(sending, isRetry)
             keep(null)
+            isSent = true
             mail.snackbar?.show(context.getString(R.string.mail_sent_done))
             mail.load()
             true
