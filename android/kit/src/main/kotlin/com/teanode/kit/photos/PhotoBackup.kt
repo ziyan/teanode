@@ -89,8 +89,8 @@ object PhotoBackupHeader {
     const val IS_FAVORITE = "X-Photo-Is-Favorite"
     const val IS_SCREENSHOT = "X-Photo-Is-Screenshot"
     const val SOURCE = "X-Photo-Source"
-    /** The server names a phone "iphone" and refuses any other value (it has none for Android), so every phone says that. */
-    const val PHONE_SOURCE = "iphone"
+    /** Where the photo came from, as the server names this app's phones. */
+    const val PHONE_SOURCE = "android"
     const val DECLARED_SHA256 = "X-Photo-Declared-SHA256"
     const val CONTENT_TYPE = "Content-Type"
     const val UPLOAD_OFFSET = "Upload-Offset"
