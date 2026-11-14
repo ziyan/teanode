@@ -326,6 +326,10 @@ readonly ALLOWED_HOSTS=(
   androidx.test.core.app
   kotlinx.serialization.json.int
   primitive.int
+  org.junit.jupiter.api.io
+  # An invented app package in the passkey tests, written like a host name in
+  # reverse.
+  org.example.app
 
   # The Android app's public neighbours: the XML namespace of every Android
   # resource, where the Gradle wrapper downloads Gradle, the maps links a chat
@@ -336,6 +340,10 @@ readonly ALLOWED_HOSTS=(
   maps.google.com
   com.chrome.dev
   com.sec.android.app
+  # Browsers in the published list of apps allowed to ask for a passkey on a
+  # website's behalf (android/app/src/main/assets), also package names.
+  com.microsoft.emmx.dev
+  io.island.island.dev
 )
 
 # Top-level domains worth looking for. Restricted rather than open-ended so a
