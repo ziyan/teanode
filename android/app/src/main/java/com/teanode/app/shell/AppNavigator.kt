@@ -20,6 +20,12 @@ class AppNavigator(private val controller: NavController) {
         openRoute(Routes.home(section))
     }
 
+    /** Opens a part, then a screen inside it, so back from that screen goes to the part. */
+    fun openInSection(section: AppSection, route: String) {
+        openSection(section)
+        navigate(route)
+    }
+
     /** Opens the search screen. */
     fun openSearch() = openRoute(Routes.SEARCH)
 

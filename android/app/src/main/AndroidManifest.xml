@@ -94,12 +94,12 @@
                 <data android:scheme="com.teanode.app" android:path="/oauth" />
             </intent-filter>
 
-            <!-- A connect code scanned with the camera or opened from a message: teanode.com/app/connect. -->
+            <!-- The app's links on the website: teanode.com/app/..., as the iPhone app's associated domain. A connect code scanned with the camera or opened from a message is teanode.com/app/connect. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="teanode.com" android:pathPrefix="/app/connect" />
+                <data android:scheme="https" android:host="teanode.com" android:pathPrefix="/app" />
             </intent-filter>
 
             <!-- The app's own places: teanode://app/<part>/... (see Routes). -->

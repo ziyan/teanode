@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shell_link_no_longer_shared">此页面已不再与你共享</string>
+    <string name="shell_link_already_connected">这部手机已经连接到 %1$s。</string>
+</resources>

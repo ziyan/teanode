@@ -1,9 +1,6 @@
 package com.teanode.app.chats
 
 import android.Manifest
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -72,6 +69,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.teanode.app.R
+import com.teanode.app.shell.rememberAppLinkOpener
 import com.teanode.app.session.LocalAppSession
 import com.teanode.app.session.LocalConnection
 import com.teanode.app.shell.LocalAppNavigator
@@ -81,12 +79,10 @@ import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
 import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.app.ui.components.TeaNodeScreen
-import com.teanode.app.ui.components.openWebPage
 import com.teanode.kit.AppSection
 import com.teanode.kit.chats.AgentFile
 import com.teanode.kit.chats.AgentReference
 import com.teanode.kit.chats.ChatNotificationLevel
-import com.teanode.kit.chats.LinkOpening
 import com.teanode.kit.chats.LinkPreview
 import com.teanode.kit.chats.ServerTime
 import com.teanode.kit.chats.TranscriptLine
@@ -132,18 +128,6 @@ sealed interface ConversationItem {
                 items.add(Line(line))
             }
             return items
-        }
-    }
-}
-
-/** Opens a link as LinkOpening says: a web page in the app's own browser, anything else in whatever the system chooses. */
-fun openLinkAsChosen(context: Context, address: String) {
-    when (LinkOpening.way(address)) {
-        LinkOpening.Way.InApp -> openWebPage(context, address)
-        LinkOpening.Way.System -> try {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } catch (_: Exception) {
-            // Nothing on the phone opens it.
         }
     }
 }
@@ -215,8 +199,9 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
     var isConfirmingLeave by remember { mutableStateOf(false) }
     var isShowingGoal by remember { mutableStateOf(false) }
     var isMenuOpen by remember { mutableStateOf(false) }
-    val openLink: (String) -> Unit = { address -> openLinkAsChosen(context, address) }
-    val uriHandler = remember(context) { object : UriHandler { override fun openUri(uri: String) = openLinkAsChosen(context, uri) } }
+    val linkOpener = rememberAppLinkOpener()
+    val openLink: (String) -> Unit = { address -> linkOpener.followLink(address) }
+    val uriHandler = remember(linkOpener) { object : UriHandler { override fun openUri(uri: String) = linkOpener.followLink(uri) } }
     DisposableEffect(reader) { onDispose { reader.stop() } }
 
     // The conversation is read and followed while the screen is in front, and let go when it is not.
