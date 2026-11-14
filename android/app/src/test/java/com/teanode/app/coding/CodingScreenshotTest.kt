@@ -1,6 +1,12 @@
 package com.teanode.app.coding
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import com.teanode.app.chats.Dictation
+import org.robolectric.RuntimeEnvironment
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -50,6 +56,26 @@ class CodingScreenshotTest {
     @Test fun `session asking dark`() { draw(Look.Dark) { CodingSessionScreen("laptop/p2", {}) }; composeRule.photograph("coding-session-asking-dark") }
 
     @Test fun `session asking at the largest text`() { draw(Look.Light, 2f) { CodingSessionScreen("laptop/p2", {}) }; composeRule.photograph("coding-session-asking-largest-text-light") }
+
+    @Test fun `composer dictating light`() {
+        val dictation = Dictation(RuntimeEnvironment.getApplication()).apply { showHearingForPreview("open the file parser dot go and rename the function read config") }
+        draw(Look.Light) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+                CodingComposer("Fix the failing test in", {}, emptyList(), {}, {}, isSending = false, isDisabled = false, onSend = {}, dictation = dictation)
+            }
+        }
+        composeRule.photograph("coding-composer-dictating-light")
+    }
+
+    @Test fun `composer dictating dark`() {
+        val dictation = Dictation(RuntimeEnvironment.getApplication()).apply { showHearingForPreview("open the file parser dot go and rename the function read config") }
+        draw(Look.Dark) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+                CodingComposer("Fix the failing test in", {}, emptyList(), {}, {}, isSending = false, isDisabled = false, onSend = {}, dictation = dictation)
+            }
+        }
+        composeRule.photograph("coding-composer-dictating-dark")
+    }
 
     @Test fun `session working light`() { draw(Look.Light) { CodingSessionScreen("laptop/p1", {}) }; composeRule.photograph("coding-session-working-light") }
 

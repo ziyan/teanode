@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.MoreVert
@@ -58,7 +59,14 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import android.Manifest
+import com.teanode.app.chats.Dictation
+import com.teanode.kit.chats.voiceAvailability
+import com.teanode.kit.coding.CodingDictation
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -684,8 +692,36 @@ internal fun CodingComposer(
     isSending: Boolean,
     isDisabled: Boolean,
     onSend: () -> Unit,
+    dictation: Dictation? = null,
 ) {
     val context = LocalContext.current
+    val connection = LocalConnection.current
+    val snackbar = LocalSnackbar.current
+    val dictationInUse = dictation ?: remember { Dictation(context) }
+    // The rate the server's voice takes; null while it is not known to offer voice, which hides the microphone.
+    var dictationSampleRate by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(connection) {
+        val voice = runCatching { connection.voiceAvailability() }.getOrNull()
+        if (voice != null && voice.isVoiceAvailable) dictationSampleRate = voice.sampleRate ?: 24_000
+    }
+    val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+        if (!isGranted) snackbar.showProblem(context.getString(R.string.chats_microphone_not_allowed))
+    }
+    // Sending, a question arriving, leaving the app or the screen all end dictating; the words already in the field stay.
+    LaunchedEffect(isSending, isDisabled) {
+        if (CodingDictation.shouldStop(isSending, isDisabled, isInFront = true)) dictationInUse.stop()
+    }
+    LifecycleResumeEffect(dictationInUse) {
+        onPauseOrDispose { dictationInUse.stop() }
+    }
+    DisposableEffect(dictationInUse) { onDispose { dictationInUse.stop() } }
+    LaunchedEffect(dictationInUse.problemText) {
+        dictationInUse.problemText?.let { text ->
+            snackbar.showProblem(text)
+            dictationInUse.problemText = null
+        }
+    }
+    val latestDraft by rememberUpdatedState(draft)
     val canSend = !isDisabled && !isSending && (draft.trim().isNotEmpty() || pendingFiles.isNotEmpty())
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { addresses ->
         onFilesAdded(addresses.mapNotNull { address -> readPendingFile(context, address, pendingFiles.size + addresses.indexOf(address)) })
@@ -711,6 +747,10 @@ internal fun CodingComposer(
                     )
                 }
             }
+        }
+        // The words being heard, until they are final and join the field.
+        if (dictationInUse.captionText.isNotEmpty()) {
+            Text(dictationInUse.captionText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, modifier = Modifier.padding(horizontal = 16.dp))
         }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Box {
@@ -743,6 +783,21 @@ internal fun CodingComposer(
                 placeholder = { Text(stringResource(if (isDisabled) R.string.coding_answer_first else R.string.coding_type_instruction)) },
                 minLines = 1, maxLines = 8, shape = RoundedCornerShape(24.dp),
             )
+            val sampleRate = dictationSampleRate
+            if (CodingDictation.isMicrophoneShown(sampleRate, isDisabled) && sampleRate != null) {
+                IconButton(onClick = {
+                    if (!dictationInUse.hasPermission()) {
+                        microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                    } else {
+                        dictationInUse.toggle({ latestDraft }, onDraftChange, Dictation.Place.Coding, connection, sampleRate)
+                    }
+                }) {
+                    Icon(
+                        Icons.Outlined.Mic, contentDescription = stringResource(if (dictationInUse.isDictating) R.string.chats_stop_dictating else R.string.chats_dictate),
+                        tint = if (dictationInUse.isDictating) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             FilledTonalIconButton(onClick = onSend, enabled = canSend) {
                 if (isSending) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = stringResource(R.string.coding_send))
             }

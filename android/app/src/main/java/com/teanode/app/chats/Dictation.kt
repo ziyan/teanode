@@ -16,6 +16,7 @@ import com.teanode.kit.Connection
 import com.teanode.kit.TeaNodeJson
 import com.teanode.kit.chats.VoiceEvent
 import com.teanode.kit.chats.appendingDictation
+import com.teanode.kit.coding.CodingDictation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,7 +42,7 @@ class Dictation(private val context: Context) {
     enum class State { Idle, Starting, Listening, Hearing }
 
     /** Where the words go, as the server words its transcription prompt. */
-    enum class Place(val wireName: String) { Agent("agent"), Chat("chat") }
+    enum class Place(val wireName: String) { Agent("agent"), Chat("chat"), Coding(CodingDictation.PLACE) }
 
     var state: State by mutableStateOf(State.Idle)
         private set
@@ -102,6 +103,12 @@ class Dictation(private val context: Context) {
                 finish(context.getString(R.string.chats_microphone_not_started, failure.message.orEmpty()))
             }
         }
+    }
+
+    /** Shows dictation hearing words, for the screenshot tests, which have no microphone. */
+    internal fun showHearingForPreview(heardText: String) {
+        state = State.Hearing
+        captionText = heardText
     }
 
     /** Stops listening. Words already put in the box stay. */
