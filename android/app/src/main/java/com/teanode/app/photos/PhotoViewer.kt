@@ -58,7 +58,28 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.runtime.collectAsState
+import com.teanode.app.session.LocalAppSession
+import com.teanode.app.ui.components.rememberAgentName
+import com.teanode.kit.asReasonSentence
+import com.teanode.kit.photos.PhotoDescriptionOffer
+import com.teanode.kit.photos.PhotoDescriptionOffers
+import com.teanode.kit.photos.PhotoFace
+import com.teanode.kit.photos.PhotoFaceGroup
+import com.teanode.kit.photos.PhotoFaces
+import com.teanode.kit.photos.PhotoPositionText
+import com.teanode.kit.photos.photoLibrary
+import com.teanode.kit.photos.removePhotoFaceFromGroup
+import com.teanode.app.chats.ChatsHooks
 import com.teanode.app.session.LocalConnection
+import com.teanode.app.shell.LocalAppNavigator
+import com.teanode.app.shell.Routes
+import com.teanode.kit.AppSection
+import com.teanode.kit.chats.AgentReference
+import com.teanode.kit.photos.PhotoTimeline
 import com.teanode.app.ui.components.ConfirmationDialog
 import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.app.ui.components.rememberServerPicture
@@ -104,6 +125,7 @@ fun PhotoViewer(
 ) {
     val connection = LocalConnection.current
     val snackbar = LocalSnackbar.current
+    val navigator = LocalAppNavigator.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val startIndex = photos.indexOfFirst { photo -> photo.id == initialPhotoId }.coerceAtLeast(0)
@@ -125,7 +147,8 @@ fun PhotoViewer(
         scope.launch { try { work(); message?.let { text -> snackbar.show(context.getString(text)) } } catch (failure: Throwable) { fail(failure) } }
     }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Column(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(Modifier.weight(1f).fillMaxWidth()) {
         HorizontalPager(pagerState, Modifier.fillMaxSize(), key = { index -> photos[index].id }) { page ->
             ViewerPage(photos[page], onToggleBar = { isBarShown = !isBarShown })
         }
@@ -155,9 +178,9 @@ fun PhotoViewer(
                     DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
                         ViewerMenu(
                             photo = photo, album = album,
-                            onShare = {
+                            onShare = { role ->
                                 isMenuOpen = false
-                                act(null) { val file = connection.downloadPhotoFile(photo); sharePhoto(context, saveToGallery(context, file), file.contentType) }
+                                act(null) { connection.sharePhotoFiles(context, listOf(photo), role) }
                             },
                             onSaveToGallery = { role ->
                                 isMenuOpen = false
@@ -182,13 +205,21 @@ fun PhotoViewer(
             }
         }
     }
+    if (isBarShown && photos.size > 1) {
+        PhotoThumbnailStrip(photos, pagerState.currentPage, onChoose = { index -> scope.launch { pagerState.animateScrollToPage(index) } })
+    }
+    }
     if (isDateChanging) ChangeDateDialog(photo, onChanged = onPhotoChanged, onDismiss = { isDateChanging = false })
     if (isLocationChanging) {
         ChangeLocationSheet(listOf(photo.id), photo.latitude != null, onDone = { isLocationChanging = false; scope.launch { runCatching { connection.photoDetail(photo.id) }.getOrNull()?.let { fresh -> onPhotoChanged(fresh.photo) } } }, onDismiss = { isLocationChanging = false })
     }
     if (isInfoOpen) {
         ModalBottomSheet(onDismissRequest = { isInfoOpen = false }) {
-            PhotoInfo(photo, onPhotoChanged = onPhotoChanged, albumIdOpenedFrom = album?.id)
+            PhotoInfo(
+                photo, onPhotoChanged = onPhotoChanged, albumIdOpenedFrom = album?.id, library = library,
+                onAskAgent = { asked -> isInfoOpen = false; onClose(); ChatsHooks.askAbout(navigator, AgentReference.photo(asked.id, PhotoTimeline.referenceTitle(asked))) },
+                onOpenPerson = { photoFaceGroupId -> isInfoOpen = false; navigator.navigate(Routes.child(AppSection.Photos, "person/$photoFaceGroupId")) },
+            )
         }
     }
     when (confirming) {
@@ -221,7 +252,7 @@ private enum class ViewerConfirmation { Trash, Delete, RemoveFromAlbum }
 private fun ViewerMenu(
     photo: Photo,
     album: com.teanode.kit.photos.PhotoAlbum?,
-    onShare: () -> Unit,
+    onShare: (String?) -> Unit,
     onSaveToGallery: (String?) -> Unit,
     onSaveToLibrary: () -> Unit,
     onRetryPreviews: () -> Unit,
@@ -234,7 +265,13 @@ private fun ViewerMenu(
     onRestore: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    DropdownMenuItem(text = { Text(stringResource(R.string.photos_share)) }, onClick = onShare)
+    if (photo.hasEditedFile || photo.hasLiveVideoFile) {
+        DropdownMenuItem(text = { Text(stringResource(R.string.photos_share_original)) }, onClick = { onShare(null) })
+        if (photo.hasEditedFile) DropdownMenuItem(text = { Text(stringResource(R.string.photos_share_edited)) }, onClick = { onShare("edited") })
+        if (photo.hasLiveVideoFile) DropdownMenuItem(text = { Text(stringResource(R.string.photos_share_live_video)) }, onClick = { onShare("liveVideo") })
+    } else {
+        DropdownMenuItem(text = { Text(stringResource(R.string.photos_share)) }, onClick = { onShare(null) })
+    }
     DropdownMenuItem(text = { Text(stringResource(R.string.photos_save_original)) }, onClick = { onSaveToGallery(null) })
     if (photo.hasEditedFile) DropdownMenuItem(text = { Text(stringResource(R.string.photos_save_edited)) }, onClick = { onSaveToGallery("edited") })
     if (photo.hasLiveVideoFile) DropdownMenuItem(text = { Text(stringResource(R.string.photos_save_live_video)) }, onClick = { onSaveToGallery("liveVideo") })
@@ -299,28 +336,51 @@ private fun ViewerPage(photo: Photo, onToggleBar: () -> Unit) {
     }
 }
 
-/** What the info sheet shows: the file, the date, the place, the albums, what a model read, and the people. */
+/** What the info sheet shows: the file, the date, the place and its map, the albums, the people, what a model read, and asking the agent. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun PhotoInfo(photo: Photo, onPhotoChanged: (Photo) -> Unit, albumIdOpenedFrom: String?) {
+internal fun PhotoInfo(
+    photo: Photo,
+    onPhotoChanged: (Photo) -> Unit,
+    albumIdOpenedFrom: String?,
+    library: PhotoLibrary? = null,
+    onAskAgent: (Photo) -> Unit = {},
+    onOpenPerson: (String) -> Unit = {},
+) {
     val connection = LocalConnection.current
     val snackbar = LocalSnackbar.current
     val scope = rememberCoroutineScope()
+    val session = LocalAppSession.current
+    val facts by session.facts.collectAsState()
+    val context = LocalContext.current
+    val agentName = rememberAgentName()
     var detail by remember(photo.id) { mutableStateOf<PhotoDetail?>(null) }
     var failure by remember(photo.id) { mutableStateOf<Throwable?>(null) }
     var place by remember(photo.id) { mutableStateOf<PhotoPositionPlace?>(null) }
     var description by remember(photo.id) { mutableStateOf(photo.description) }
+    var shownLibrary by remember { mutableStateOf(library) }
+    var isAskingToDescribe by remember(photo.id) { mutableStateOf(false) }
     var waitedSeconds by remember(photo.id) { mutableStateOf(0) }
-    LaunchedEffect(photo.id) {
+    var namingFace by remember(photo.id) { mutableStateOf<PhotoFace?>(null) }
+    var isContactsExplained by remember { mutableStateOf(false) }
+    var menuFaceId by remember(photo.id) { mutableStateOf<String?>(null) }
+    val shownPhoto = detail?.photo ?: photo
+
+    suspend fun loadDetail() {
         try {
-            detail = connection.photoDetail(photo.id)
-            description = detail!!.photoDescription
-            if (photo.latitude != null) place = runCatching { connection.photoPlace(photo.id) }.getOrNull()
+            val read = connection.photoDetail(photo.id)
+            detail = read
+            description = read.photoDescription
+            failure = null
+            place = if (read.photo.latitude != null) runCatching { connection.photoPlace(photo.id) }.getOrNull() else null
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
             failure = error
         }
     }
+    LaunchedEffect(photo.id) { loadDetail() }
+    LaunchedEffect(Unit) { if (shownLibrary == null) shownLibrary = runCatching { connection.photoLibrary() }.getOrNull() }
     // A description on its way is asked about every few seconds while the sheet stays open, slower after two minutes.
     LaunchedEffect(photo.id, description.isDescriptionRequested) {
         while (description.isDescriptionRequested && !description.isDescribed) {
@@ -329,16 +389,47 @@ internal fun PhotoInfo(photo: Photo, onPhotoChanged: (Photo) -> Unit, albumIdOpe
             runCatching { connection.photoDetail(photo.id) }.getOrNull()?.let { fresh -> detail = fresh; description = fresh.photoDescription }
         }
     }
+    fun describe(isRedescribed: Boolean) {
+        scope.launch {
+            isAskingToDescribe = true
+            waitedSeconds = 0
+            try {
+                description = connection.describePhoto(photo.id, isRedescribed)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                snackbar.showError(error)
+            } finally {
+                isAskingToDescribe = false
+            }
+        }
+    }
+    val positionName = place?.locationPlace?.placeName?.ifEmpty { null } ?: place?.addressText?.ifEmpty { null }
+    val placeText = positionName ?: shownPhoto.placeName.ifEmpty { null } ?: PhotoPositionText.coordinates(shownPhoto)
+    val people = PhotoFaces.people(detail?.faces.orEmpty())
+    val namesInSharedPhoto = PhotoFaces.namesInSharedPhoto(detail?.faces.orEmpty())
+    val offer = PhotoDescriptionOffers.offer(shownPhoto, description, shownLibrary, isAskingToDescribe)
+    val isVideo = shownPhoto.isVideo
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
         Text(stringResource(R.string.photos_info), style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(12.dp))
-        InfoLine(stringResource(R.string.photos_info_date), com.teanode.kit.photos.PhotoOverview.viewerDayText(photo)?.let { day -> day + (PhotoOverview.viewerTimeText(photo)?.let { time -> ", $time" } ?: "") })
-        InfoLine(stringResource(R.string.photos_info_file_name), photo.filename)
-        InfoLine(stringResource(R.string.photos_info_size), if (photo.widthPixels > 0) "${photo.widthPixels} x ${photo.heightPixels}" else null)
-        InfoLine(stringResource(R.string.photos_info_camera), listOf(photo.cameraMake, photo.cameraModel).filter { part -> part.isNotEmpty() }.joinToString(" ").ifEmpty { null })
-        InfoLine(stringResource(R.string.photos_info_place), place?.locationPlace?.placeName?.ifEmpty { null } ?: place?.addressText?.ifEmpty { null } ?: photo.placeName.ifEmpty { null })
-        if (!photo.isOwnedByCaller) InfoLine(stringResource(R.string.photos_info_shared_by), photo.ownerName.ifEmpty { null })
-        if (failure != null) Text(stringResource(R.string.photos_info_could_not_read), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp))
+        InfoLine(stringResource(R.string.photos_info_date), com.teanode.kit.photos.PhotoOverview.viewerDayText(shownPhoto)?.let { day -> day + (PhotoOverview.viewerTimeText(shownPhoto)?.let { time -> ", $time" } ?: "") })
+        InfoLine(stringResource(R.string.photos_info_file_name), shownPhoto.filename)
+        InfoLine(stringResource(R.string.photos_info_size), if (shownPhoto.widthPixels > 0) "${shownPhoto.widthPixels} x ${shownPhoto.heightPixels}" else null)
+        InfoLine(stringResource(R.string.photos_info_camera), listOf(shownPhoto.cameraMake, shownPhoto.cameraModel).filter { part -> part.isNotEmpty() }.joinToString(" ").ifEmpty { null })
+        InfoLine(stringResource(R.string.photos_info_place), placeText)
+        val latitude = shownPhoto.latitude
+        val longitude = shownPhoto.longitude
+        if (latitude != null && longitude != null) {
+            PhotoPositionMap(latitude, longitude, positionName ?: shownPhoto.placeName, Modifier.padding(vertical = 8.dp))
+        }
+        if (!shownPhoto.isOwnedByCaller) InfoLine(stringResource(R.string.photos_info_shared_by), shownPhoto.ownerName.ifEmpty { null })
+        if (failure != null) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.photos_info_could_not_read), color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                TextButton(onClick = { scope.launch { loadDetail() } }) { Text(stringResource(R.string.photos_try_again)) }
+            }
+        }
         detail?.albums?.takeIf { albums -> albums.isNotEmpty() }?.let { albums ->
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
             Text(stringResource(R.string.photos_info_albums), style = MaterialTheme.typography.titleSmall)
@@ -350,42 +441,139 @@ internal fun PhotoInfo(photo: Photo, onPhotoChanged: (Photo) -> Unit, albumIdOpe
             "taxDocument" -> stringResource(R.string.photos_read_as_tax_document)
             else -> null
         }
-        if (description.isDescribed || description.isDescriptionRequested) HorizontalDivider(Modifier.padding(vertical = 12.dp))
-        if (description.isDescribed) {
-            Text(stringResource(R.string.photos_info_description), style = MaterialTheme.typography.titleSmall)
-            Text(description.photoDescription, modifier = Modifier.padding(vertical = 4.dp))
-            kindText?.let { text -> Text(text, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 4.dp)) }
-            if (description.descriptionVisibleText.isNotEmpty()) {
-                Text(stringResource(R.string.photos_info_text_in_picture), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
-                Text(description.descriptionVisibleText, modifier = Modifier.padding(vertical = 4.dp))
-            }
-            com.teanode.kit.photos.ServerTime.instant(description.describedAt)?.let { instant ->
-                val day = java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.LONG).format(instant.atZone(java.time.ZoneId.systemDefault()))
-                Text(stringResource(R.string.photos_described_on, day), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            OutlinedButton(onClick = {
-                scope.launch {
-                    try { description = connection.describePhoto(photo.id, isRedescribed = true) } catch (error: CancellationException) { throw error } catch (error: Throwable) { snackbar.showError(error) }
-                }
-            }, modifier = Modifier.padding(top = 8.dp)) { Text(stringResource(R.string.photos_describe_again)) }
-        } else if (description.isDescriptionRequested) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                Text(stringResource(if (PhotoDescriptionPolling.isSlow(waitedSeconds)) R.string.photos_description_slow else R.string.photos_description_waiting))
-            }
-        }
-        detail?.faces?.takeIf { faces -> faces.isNotEmpty() }?.let { faces ->
+        if (shownPhoto.isOwnedByCaller && people.isNotEmpty()) {
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
             Text(stringResource(R.string.photos_section_people), style = MaterialTheme.typography.titleSmall)
             Text(stringResource(R.string.photos_faces_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            for (face in faces) {
-                Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FaceThumbnail(face.facePictureUrl, 40.dp)
-                    Text(face.contactName.ifEmpty { stringResource(R.string.photos_unnamed_person) })
+            for (face in people) {
+                val name = PhotoFaces.shownName(face)
+                Box {
+                    Row(
+                        Modifier.fillMaxWidth().combinedClickable(
+                            onClick = {
+                                when {
+                                    name != null -> onOpenPerson(face.photoFaceGroupId)
+                                    facts.isAvailable(AppSection.Contacts) -> namingFace = face
+                                    else -> isContactsExplained = true
+                                }
+                            },
+                            onLongClick = { menuFaceId = face.id },
+                            onClickLabel = if (name == null) stringResource(R.string.photos_name_person) else null,
+                        ).padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FaceThumbnail(face.facePictureUrl, 40.dp)
+                        Text(
+                            name ?: stringResource(R.string.photos_unnamed_person),
+                            color = if (name == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    DropdownMenu(expanded = menuFaceId == face.id, onDismissRequest = { menuFaceId = null }) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (name == null) stringResource(R.string.photos_not_this_person) else stringResource(R.string.photos_not_named_person, name),
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            },
+                            onClick = {
+                                menuFaceId = null
+                                scope.launch {
+                                    try {
+                                        connection.removePhotoFaceFromGroup(face.id)
+                                        snackbar.show(context.getString(R.string.photos_took_face_out))
+                                        loadDetail()
+                                    } catch (error: CancellationException) {
+                                        throw error
+                                    } catch (error: Throwable) {
+                                        snackbar.showError(error)
+                                    }
+                                }
+                            },
+                        )
+                    }
                 }
+            }
+        } else if (!shownPhoto.isOwnedByCaller && namesInSharedPhoto.isNotEmpty()) {
+            HorizontalDivider(Modifier.padding(vertical = 12.dp))
+            Text(stringResource(R.string.photos_section_people), style = MaterialTheme.typography.titleSmall)
+            for (name in namesInSharedPhoto) Text(name, modifier = Modifier.padding(vertical = 4.dp))
+        }
+        if (detail != null) {
+            HorizontalDivider(Modifier.padding(vertical = 12.dp))
+            Text(stringResource(R.string.photos_info_description), style = MaterialTheme.typography.titleSmall)
+            if (description.isDescribed) {
+                Text(description.photoDescription, modifier = Modifier.padding(vertical = 4.dp))
+                kindText?.let { text -> Text(text, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 4.dp)) }
+                if (description.descriptionVisibleText.isNotEmpty()) {
+                    Text(stringResource(R.string.photos_info_text_in_picture), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+                    Text(description.descriptionVisibleText, modifier = Modifier.padding(vertical = 4.dp))
+                }
+                com.teanode.kit.photos.ServerTime.instant(description.describedAt)?.let { instant ->
+                    val day = java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.LONG).format(instant.atZone(java.time.ZoneId.systemDefault()))
+                    Text(stringResource(R.string.photos_described_on, day), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            when (offer) {
+                PhotoDescriptionOffer.Waiting -> Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text(stringResource(if (PhotoDescriptionPolling.isSlow(waitedSeconds)) R.string.photos_description_slow else R.string.photos_description_waiting))
+                }
+                PhotoDescriptionOffer.Describe -> OutlinedButton(onClick = { describe(isRedescribed = false) }, modifier = Modifier.padding(top = 8.dp)) {
+                    Text(stringResource(if (isVideo) R.string.photos_describe_video else R.string.photos_describe_photo))
+                }
+                PhotoDescriptionOffer.DescribeAgain -> OutlinedButton(onClick = { describe(isRedescribed = true) }, modifier = Modifier.padding(top = 8.dp)) {
+                    Text(stringResource(R.string.photos_describe_again))
+                }
+                is PhotoDescriptionOffer.Unavailable -> Text(
+                    offer.reasonText.asReasonSentence().ifEmpty { stringResource(R.string.photos_describe_unavailable) },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp),
+                )
+                PhotoDescriptionOffer.Nothing -> Unit
+            }
+            OutlinedButton(onClick = { onAskAgent(shownPhoto) }, modifier = Modifier.padding(top = 8.dp)) {
+                Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(8.dp))
+                Text(askAgentText(agentName, isVideo))
+            }
+            if (PhotoDescriptionOffers.isHintShown(shownPhoto, description, shownLibrary)) {
+                Text(describeHintText(agentName, isVideo), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
             }
         }
     }
+    namingFace?.let { face ->
+        NamePersonSheet(
+            PhotoFaceGroup(id = face.photoFaceGroupId, facePictureUrl = face.facePictureUrl),
+            onNamed = { namingFace = null; scope.launch { loadDetail() } },
+            onDismiss = { namingFace = null },
+        )
+    }
+    if (isContactsExplained) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { isContactsExplained = false },
+            title = { Text(stringResource(R.string.photos_name_person)) },
+            text = { Text(stringResource(R.string.photos_contacts_off_text)) },
+            confirmButton = { TextButton(onClick = { isContactsExplained = false }) { Text(stringResource(R.string.photos_ok)) } },
+        )
+    }
+}
+
+// The assistant is named as the conversation names it, and a video is a video here, not a photo: what the assistant
+// looks at for one is its poster picture. These are the dashboard's words.
+@Composable
+private fun askAgentText(agentName: String, isVideo: Boolean): String = when {
+    isVideo && agentName.isEmpty() -> stringResource(R.string.photos_ask_assistant_video)
+    isVideo -> stringResource(R.string.photos_ask_agent_video, agentName)
+    agentName.isEmpty() -> stringResource(R.string.photos_ask_assistant_photo)
+    else -> stringResource(R.string.photos_ask_agent_photo, agentName)
+}
+
+@Composable
+private fun describeHintText(agentName: String, isVideo: Boolean): String = when {
+    isVideo && agentName.isEmpty() -> stringResource(R.string.photos_describe_hint_assistant_video)
+    isVideo -> stringResource(R.string.photos_describe_hint_agent_video, agentName)
+    agentName.isEmpty() -> stringResource(R.string.photos_describe_hint_assistant_photo)
+    else -> stringResource(R.string.photos_describe_hint_agent_photo, agentName)
 }
 
 @Composable
