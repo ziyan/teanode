@@ -43,7 +43,7 @@ struct ConnectView: View {
                     // The address first: it is all a password sign-in needs,
                     // and the server's own page asks for the rest.
                     VStack(alignment: .leading, spacing: 12) {
-                        TextField("mail.example.com", text: $serverText)
+                        TextField("example.com", text: $serverText)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .keyboardType(.URL)

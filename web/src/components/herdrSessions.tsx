@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { graphql } from '../api'
 import { Loading, Tag, formatBytes } from './common'
 import { isSendKey } from './composerKeys'
-import { ArrowUpIcon, CheckIcon, CloseIcon, PaperclipIcon } from './icons'
+import { ArrowUpIcon, CheckIcon, CloseIcon, MicrophoneIcon, PaperclipIcon } from './icons'
 import { ConfirmDialog, FormDialog } from './dialog'
 import { Markdown } from './markdown'
 import { SettingsEmpty, SettingsSection } from './settingsList'
@@ -13,6 +13,7 @@ import { useQuery } from './useQuery'
 import { useTranslation } from '../i18n/i18n'
 import { uploadFiles } from '../upload'
 import { Tooltip } from './tooltip'
+import { useDictation, useVoiceAvailability } from '../voice/useDictation'
 
 // The person's herdr sessions: the Claude Code and Codex sessions they keep
 // in herdr's panes, on each attached computer, which their agent works in
@@ -492,7 +493,8 @@ export interface HerdrDraft {
 // does. onSent is told the session as it stands after. The draft is kept here
 // unless the caller passes draft and onDraftChange, to keep it somewhere that
 // outlives this form. While a send is under way the box is read-only, not
-// disabled, so it keeps the cursor.
+// disabled, so it keeps the cursor. The microphone beside send dictates into
+// the box at the cursor, as the drawer's does, when the server offers voice.
 export function HerdrSendForm({
   session,
   onSent,
@@ -517,6 +519,21 @@ export function HerdrSendForm({
   // Anything but a session that asks, which is answered first.
   const isSendable = session.herdrSessionState !== 'asking'
   const isSendReady = text.trim() !== '' || pending.length > 0
+  const voice = useVoiceAvailability()
+  const dictation = useDictation({
+    place: 'coding',
+    input: box,
+    value: text,
+    sampleRate: voice.sampleRate,
+    onInsert: setText,
+  })
+  // A question arriving or another session opened in this form ends
+  // dictating: its words would go where they were not meant.
+  const { abort: abortDictation } = dictation
+  useEffect(() => {
+    if (!isSendable) abortDictation()
+  }, [isSendable, abortDictation])
+  useEffect(() => abortDictation, [session.computer, session.paneId, abortDictation])
 
   useLayoutEffect(() => {
     const element = box.current
@@ -532,6 +549,7 @@ export function HerdrSendForm({
   }, [text])
 
   const send = async () => {
+    dictation.abort()
     setSending(true)
     try {
       let attachmentIds: string[] = []
@@ -578,6 +596,12 @@ export function HerdrSendForm({
               </span>
             ))}
           </div>
+        </div>
+      )}
+      {dictation.state !== 'off' && (
+        <div className="agent-dictation-caption muted" role="status" aria-live="polite">
+          {dictation.captionText ||
+            (dictation.state === 'starting' ? t('dictation.starting') : t('dictation.listening'))}
         </div>
       )}
       <form
@@ -649,6 +673,22 @@ export function HerdrSendForm({
             }
           }}
         />
+        {voice.isDictationAvailable && (
+          <Tooltip label={dictation.state === 'off' ? t('dictation.start') : t('dictation.stop')}>
+            <button
+              type="button"
+              className={['icon-button', 'agent-dictate', dictation.state !== 'off' ? 'is-listening' : '']
+                .filter(Boolean)
+                .join(' ')}
+              aria-label={dictation.state === 'off' ? t('dictation.start') : t('dictation.stop')}
+              aria-pressed={dictation.state !== 'off'}
+              disabled={!isSendable || isSending}
+              onClick={dictation.toggle}
+            >
+              <MicrophoneIcon size={16} />
+            </button>
+          </Tooltip>
+        )}
         <Tooltip label={t('herdr.send')}>
           <button
             type="submit"

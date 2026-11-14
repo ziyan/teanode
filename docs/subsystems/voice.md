@@ -180,13 +180,15 @@ as before.
 ## Dictation
 
 Dictation puts the words a person says into a box and sends nothing: the agent
-conversation's box, a chat's box, or the journal's "Your words". It is the same
-socket as a call, `/api/v1/agent/voice`, opened with a hello that says
-`purpose: "dictation"` and `dictationPlace`: `agent`, `chat` or `journal`. A
+conversation's box, a chat's box, the journal's "Your words", or the box that
+sends an instruction to a coding session. It is the same socket as a call,
+`/api/v1/agent/voice`, opened with a hello that says `purpose: "dictation"` and
+`dictationPlace`: `agent`, `chat`, `journal` or `coding`. A
 hello with no purpose is a call, as before; any other purpose or place is
 refused. The socket already only transcribes and starts no turn, so dictation
 changes two things: the transcription is told what the words are for (a message
-to the agent, to people in a chat, or a page of the journal's own words, where
+to the agent, to people in a chat, a page of the journal's own words, or an
+instruction to a coding agent, which names files, functions and commands, where
 a call is told whom the person is talking to), and nothing is read aloud (a
 `speakAnswer` is answered with `answerAudioFailed`). The socket streams
 `transcriptDelta` and `transcriptFinal` for each utterance, and the client puts

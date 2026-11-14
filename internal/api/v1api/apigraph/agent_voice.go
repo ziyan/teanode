@@ -284,8 +284,8 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 
 		// Purpose is "dictation" for words that go into a box and are never
 		// sent as a turn, "call" or nothing for talking to the agent.
-		// DictationPlace says which box: the agent's conversation, a chat or
-		// the journal's own words.
+		// DictationPlace says which box: the agent's conversation, a chat,
+		// the journal's own words or a coding session's instruction.
 		Purpose        string `json:"purpose"`
 		DictationPlace string `json:"dictationPlace"`
 
@@ -310,7 +310,7 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 		refuse("the purpose is dictation or call")
 		return
 	case isDictation && hello.DictationPlace != "" && !slices.Contains(voiceDictationPlaces, hello.DictationPlace):
-		refuse("dictation is for the agent, a chat or the journal")
+		refuse("dictation is for the agent, a chat, the journal or a coding session")
 		return
 	}
 	username := ""
@@ -538,7 +538,7 @@ const (
 )
 
 // voiceDictationPlaces are the boxes dictation puts words into.
-var voiceDictationPlaces = []string{"agent", "chat", "journal"}
+var voiceDictationPlaces = []string{"agent", "chat", "journal", "coding"}
 
 // voicePromptFor tells the transcription what is being said and to whom,
 // which is what gets the names in it spelled right: a call is to the person's
@@ -551,6 +551,10 @@ func voicePromptFor(found *models.Agent, owner *models.User, isDictation bool, d
 			prompt = "A person dictating a message to people in a chat, in TeaNode, their mail and agent server."
 		case "journal":
 			prompt = "A person dictating their own words for a page of their journal, in TeaNode, their mail and agent server."
+		case "coding":
+			// Instructions to a coding agent name files, functions, commands
+			// and libraries, which a prompt about software spells better.
+			prompt = "A person dictating an instruction for a coding agent working in a software project, naming files, functions, commands and libraries, in TeaNode, their mail and agent server."
 		default:
 			prompt = "A person dictating a message to their personal agent, " + found.DisplayName() + ", in TeaNode, their mail and agent server."
 		}
