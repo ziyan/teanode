@@ -1,8 +1,8 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import { graphql } from '../api'
 import { uploadFiles } from '../upload'
+import type { DictationCallbacks } from '../voice/dictation'
 import {
   HERDR_DOCUMENTS,
   HerdrQuestionAnswer,
@@ -13,17 +13,51 @@ import {
 } from './herdrSessions'
 
 const notices = vi.hoisted(() => ({ done: vi.fn(), failed: vi.fn(), failure: vi.fn() }))
-vi.mock('../api', () => ({ graphql: vi.fn() }))
+// The server's voice is answered here, off by default, so that the calls a
+// test reads are the session's own.
+const voice = vi.hoisted(() => ({ isVoiceAvailable: false }))
+const execute = vi.hoisted(() => vi.fn())
+vi.mock('../api', () => ({
+  framedDrawer: false,
+  graphql: (document: string, variables?: unknown) =>
+    document.includes('ReadAgentVoice')
+      ? Promise.resolve({
+          ReadAgentVoice: {
+            isVoiceAvailable: voice.isVoiceAvailable,
+            isVoiceMessageAvailable: false,
+            sampleRate: voice.isVoiceAvailable ? 24000 : 0,
+          },
+        })
+      : execute(document, variables),
+}))
+// The socket is Dictation's own, tested apart: here it is told words.
+const dictations: { callbacks: DictationCallbacks; place: string; abort: ReturnType<typeof vi.fn> }[] = []
+vi.mock('../voice/dictation', () => ({
+  Dictation: class {
+    callbacks: DictationCallbacks
+    place = ''
+    start = vi.fn(async (_sampleRate: number, place: string) => {
+      this.place = place
+    })
+    stop = vi.fn()
+    abort = vi.fn()
+    constructor(callbacks: DictationCallbacks) {
+      this.callbacks = callbacks
+      dictations.push(this)
+    }
+  },
+}))
 vi.mock('../i18n/i18n', () => ({
   useTranslation: () => ({ t: (key: string) => key, language: 'en' }),
   Trans: ({ k }: { k: string }) => k,
 }))
 vi.mock('./toast', () => ({ useToast: () => notices }))
 vi.mock('../upload', () => ({ uploadFiles: vi.fn() }))
-const execute = vi.mocked(graphql)
 const upload = vi.mocked(uploadFiles)
 
 beforeEach(() => {
+  voice.isVoiceAvailable = false
+  dictations.length = 0
   execute.mockReset()
   upload.mockReset()
   notices.done.mockClear()
@@ -263,4 +297,43 @@ it('is read-only while a send is under way: a second Enter or a pasted picture d
   expect(execute).toHaveBeenCalledTimes(1)
   expect(screen.queryByText(/^pasted-/)).toBeNull()
   expect(box.disabled).toBe(false)
+})
+
+it('dictates an instruction into the box at the cursor, and sending stops it', async () => {
+  voice.isVoiceAvailable = true
+  const idle: HerdrSession = { ...session, herdrSessionState: 'idle' }
+  execute.mockResolvedValue({ SendAgentHerdrSession: idle })
+  render(<HerdrSendForm session={idle} onSent={vi.fn()} />)
+  const box = screen.getByLabelText('herdr.sendPlaceholder') as HTMLTextAreaElement
+  fireEvent.change(box, { target: { value: 'run the tests' } })
+  box.setSelectionRange(3, 3)
+  fireEvent.click(await screen.findByRole('button', { name: 'dictation.start' }))
+  await waitFor(() => expect(dictations[0]?.place).toBe('coding'))
+  act(() => dictations[0].callbacks.onWords('only the unit'))
+  // Inserted at the cursor, not sent.
+  expect(box.value).toBe('run only the unit the tests')
+  expect(execute).not.toHaveBeenCalled()
+
+  fireEvent.keyDown(box, { key: 'Enter' })
+  await waitFor(() => expect(execute).toHaveBeenCalled())
+  expect(dictations[0].abort).toHaveBeenCalled()
+  expect(execute.mock.calls[0][1]).toMatchObject({ text: 'run only the unit the tests' })
+})
+
+it('stops dictating when the session starts asking', async () => {
+  voice.isVoiceAvailable = true
+  const idle: HerdrSession = { ...session, herdrSessionState: 'idle' }
+  const { rerender } = render(<HerdrSendForm session={idle} onSent={vi.fn()} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'dictation.start' }))
+  await waitFor(() => expect(dictations).toHaveLength(1))
+  rerender(<HerdrSendForm session={session} onSent={vi.fn()} />)
+  expect(dictations[0].abort).toHaveBeenCalled()
+})
+
+it('shows no microphone when the server has no voice', async () => {
+  const idle: HerdrSession = { ...session, herdrSessionState: 'idle' }
+  render(<HerdrSendForm session={idle} onSent={vi.fn()} />)
+  await screen.findByLabelText('herdr.sendPlaceholder')
+  await act(async () => undefined)
+  expect(screen.queryByRole('button', { name: 'dictation.start' })).toBeNull()
 })
