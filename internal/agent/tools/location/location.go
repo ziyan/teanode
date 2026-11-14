@@ -3,7 +3,7 @@
 // were there, the places OpenStreetMap knows near them, keeping places and
 // check-ins, and sharing where they are with the people in their circles.
 //
-// The position comes from the iPhone app, which reports where the person goes,
+// The position comes from the TeaNode phone app, which reports where the person goes,
 // and from the browser or app the person is chatting in, which the agent can
 // ask once for a fresh one. Everything else is read through the same API the
 // dashboard and the command line use, as the person.
@@ -28,7 +28,7 @@ func init() {
 					"which it may ask them to allow first; anywhere else it answers the last position their phone reported, saying how old it is, and the place they are at. " +
 					"It gives coordinates and, when they are at one of their places, its name. " +
 					"With 'person', where somebody who shares their location with the person is, as far as they share it. " +
-					"When nothing is kept yet, tell them Location can be set up in the TeaNode app on their iPhone so that you always know (set_up opens it), or ask where they are.",
+					"When nothing is kept yet, tell them Location can be set up in the TeaNode app on their phone so that you always know (set_up opens it), or ask where they are.",
 				Parameters: tools.Object(map[string]any{
 					"reason": tools.StringProperty("a few words on why, for the line the drawer shows"),
 					"person": personProperty,
@@ -372,7 +372,7 @@ func init() {
 			{
 				Name: "location_set_up", Family: tools.FamilyGeneral, Risk: tools.RiskRead, Permissions: locationPermissions,
 				Description: "Take the person to the Location page of the dashboard, where they set Location up and see where they have been. " +
-					"Recording where they go happens in the TeaNode app on their iPhone, which they install and allow first. " + placeNamesWords,
+					"Recording where they go happens in the TeaNode app on their phone, which they install and allow first. " + placeNamesWords,
 				Run: runSetUp,
 			},
 		},

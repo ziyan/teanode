@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- The logo's leaf, one color, for the status bar. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M18,5 C18,13 14,19 8.5,19.5 C7.5,14 10.5,6.5 18,5 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M8,20 L13.5,12.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round" />
+</vector>

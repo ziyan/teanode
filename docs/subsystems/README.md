@@ -20,6 +20,7 @@ change with it.
 | `conversations.md` | Conversations, run transcripts, titles and summaries, retention |
 | `memory.md` | What an agent remembers, how it is recalled, and by what meaning |
 | `jobs-and-schedules.md` | The queue, claiming, retries, and work at a time somebody chose |
+| `phone-push.md` | How a notification reaches the TeaNode app on an iPhone or Android phone: the sealed registrations, the relay, APNs and Firebase, and the app update channels |
 | `devices.md` | A person's own computer and their own browser tab |
 | `coding-sessions.md` | Claude Code and Codex: their transcripts read, memory shown to them by hooks, and herdr |
 | `voice.md` | Talking to the agent: the microphone, the provider's transcription, spoken turns |

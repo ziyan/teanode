@@ -38,3 +38,20 @@ func TestPhoneTourOffersHealthOnlyWhenThePersonCanUseIt(t *testing.T) {
 		}
 	}
 }
+
+// An Android phone is not offered Siri, Control Center or the Apple Health
+// words, and is told of Health Connect instead.
+func TestPhoneTourOnAnAndroidPhoneOffersNothingOfApple(test *testing.T) {
+	text := phoneTourInstructions(phoneTourFacts{isPushEnabled: true, isVoiceOn: true, hasHealth: true, hasMailbox: true, isAndroid: true})
+	for _, unwanted := range []string{"Siri", "Control Center", "Apple", "Lock Screen", "iPhone"} {
+		if strings.Contains(text, unwanted) {
+			test.Errorf("the tour for an Android phone mentions %q: %s", unwanted, text)
+		}
+	}
+	if !strings.Contains(text, "Health Connect") || !strings.Contains(text, "Widgets") {
+		test.Errorf("the tour for an Android phone leaves out Health Connect or the widgets: %s", text)
+	}
+	if !strings.Contains(phoneTourInstructions(phoneTourFacts{isPushEnabled: true, hasHealth: true}), "Apple Health") {
+		test.Error("the tour for an iPhone no longer names Apple Health")
+	}
+}

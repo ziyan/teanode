@@ -76,7 +76,7 @@ waiting share completes by itself only on a device that sealed the item for that
 person before, or where the person chose them directly (named them in the share).
 Every other case waits for the person: a circle member who joins later, or a
 device that never saw the item. The person finishes it with "Finish sharing" on
-the dashboard and in the iPhone app (for one item, or for all of them at once
+the dashboard and in the TeaNode phone app (for one item, or for all of them at once
 from the list), or with `teanode passwords share --waiting` (all items) or
 `teanode passwords rekey <item>` on the command line. A recipient the server
 reports as having too much shared with them (see the server limits) is named and
@@ -599,7 +599,7 @@ would; it does not give it the password.
 
 The server cannot read an item, so what it can do is bound how much and how
 fast, and keep a history that a program with a token cannot erase. A **tap** is
-the person's own action on the dashboard or in the iPhone app
+the person's own action on the dashboard or in the TeaNode phone app
 (`Principal.IsPersonsTap`); a command line token, the extension and an OAuth
 grant are not taps. The one exception is the TeaNode iPhone app's own sign-in: a
 token has the app's kind (`ClientKindApp`, which `IsPersonsTap` accepts) only when
@@ -620,10 +620,10 @@ an earlier migration had marked).
   did not start, and the system hands the return address to that other app, it
   collects a token that is a tap. Code on the server cannot close this, so the
   consent page for the TeaNode app says "Approve only if you just started signing
-  in to the TeaNode app on your iPhone." (English, Chinese and Japanese). The real
+  in to the TeaNode app on your phone." (English, Chinese and Japanese). The real
   fix is a return address the system gives only to the app that owns it: an HTTPS
   callback tied to the app's associated domain (a universal link), or App Attest
-  on the sign-in. Both need work in the iPhone app and the server together; it is
+  on the sign-in. Both need work in the TeaNode phone app and the server together; it is
   a Follow-up in `docs/planning/passwords-execplan.md`.
 
 - **Size.** An item's sealed fields are at most 512 KB, and a sealed share key or
@@ -750,7 +750,7 @@ an earlier migration had marked).
   everything the person opens on that page. The iPhone app, the command line and
   the Chrome extension do not load their code from the server, so they do not
   have this weakness. A person who does not trust the operator of their server
-  with that should open Passwords only in the iPhone app, the command line or
+  with that should open Passwords only in the TeaNode phone app, the command line or
   the extension.
 
 - **Changing the passphrase or the recovery key does not change the account

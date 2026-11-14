@@ -142,7 +142,7 @@ answer names the area's own tool.
 
 The person's main conversation has no title of its own, so its result is titled
 `Main chat` (`search.MainChatTitle`) and carries `isMain`. The command line and
-the agent show the title; the dashboard and the iPhone app show their own
+the agent show the title; the dashboard and the TeaNode phone app show their own
 translation of it, as their lists of chats do.
 
 The dashboard and the iPhone app draw the photos of a search as a grid of

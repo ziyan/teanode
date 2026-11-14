@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="teanode_window_background">#131411</color>
+    <color name="teanode_leaf">#729D39</color>
+</resources>
