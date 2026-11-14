@@ -161,7 +161,11 @@ class AppSession(
             if (activeConnection.value !== asked) return@launch
             servicesOutcome.exceptionOrNull()?.let { error -> signOutIfEnded(asked, error) }
             currentFacts.update { facts ->
-                facts.copy(services = servicesOutcome.getOrNull() ?: facts.services, session = sessionOutcome.getOrNull() ?: facts.session)
+                facts.copy(
+                    services = servicesOutcome.getOrNull() ?: facts.services, session = sessionOutcome.getOrNull() ?: facts.session,
+                    // As the iPhone app does: recording is offered once the server has named the person the token is for.
+                    hasRecordingOwner = facts.hasRecordingOwner || !sessionOutcome.getOrNull()?.userId.isNullOrEmpty(),
+                )
             }
             hasReadFactsFlag.value = servicesOutcome.isSuccess
         }
