@@ -1,6 +1,28 @@
 package com.teanode.app.finance
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.mutableLongStateOf
+import com.teanode.app.shopping.ShoppingPendingFile
+import com.teanode.app.shopping.toPendingFile
+import com.teanode.kit.finance.TaxDocumentUpload
+import com.teanode.kit.finance.TaxDocumentUploadPhase
+import com.teanode.kit.finance.TaxDocumentUploads
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -116,29 +138,96 @@ fun FinanceTaxesScreen() {
     val read = rememberLoad(connection, year, filingStatus) {
         TaxesRead(connection.taxYear(year, filingStatus), connection.financePaystubs(year).financePaystubs.filterNotNull(), connection.financeTaxForms(year).taxForms.filterNotNull(), connection.taxDocumentAddress())
     }
-    val uploadPicker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetMultipleContents()) { uris ->
-        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+    var uploads by remember { mutableStateOf<List<TaxDocumentUpload>>(emptyList()) }
+    var nextUploadId by remember { mutableLongStateOf(1L) }
+    var isAddMenuOpen by remember { mutableStateOf(false) }
+
+    fun changeUpload(uploadId: Long, change: (TaxDocumentUpload) -> TaxDocumentUpload) {
+        uploads = uploads.map { each -> if (each.uploadId == uploadId) change(each) else each }
+    }
+
+    /** Uploads each file as a tax document and has the agent read it, then waits for them: every four seconds, two minutes at most, as a receipt is waited for. */
+    fun addFiles(pick: suspend () -> List<ShoppingPendingFile>) {
         scope.launch {
-            try {
-                for (uri in uris) {
-                    val file = context.readPendingFile(uri, "tax-document")
-                    val id = connection.upload(file.name, file.contentType, file.data, isTaxDocument = true)
-                    connection.readTaxDocumentOfAttachment(id)
+            val files = try { pick() } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure); return@launch }
+            if (files.isEmpty()) return@launch
+            val started = files.map { file -> TaxDocumentUpload(nextUploadId++, file.name) }
+            uploads = uploads + started
+            val readingIds = mutableSetOf<String>()
+            for ((file, upload) in files.zip(started)) {
+                try {
+                    val attachmentId = connection.upload(file.name, file.contentType, file.data, isTaxDocument = true)
+                    connection.readTaxDocumentOfAttachment(attachmentId)
+                    changeUpload(upload.uploadId) { each -> each.copy(agentAttachmentId = attachmentId, uploadPhase = TaxDocumentUploadPhase.Reading) }
+                    readingIds += attachmentId
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (failure: Throwable) {
+                    changeUpload(upload.uploadId) { each -> each.copy(uploadPhase = TaxDocumentUploadPhase.Failed, failureText = failure.message) }
                 }
-                snackbar.show(context.getString(R.string.finance_tax_being_read))
-            } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
-            read.refresh()
+            }
+            if (readingIds.isEmpty()) return@launch
+            snackbar.show(context.resources.getQuantityString(R.plurals.finance_tax_reading_documents, readingIds.size, readingIds.size))
+            var waitingIds: Set<String> = readingIds
+            repeat(TaxDocumentUploads.WAIT_PASS_COUNT) {
+                delay(TaxDocumentUploads.WAIT_PASS_MS)
+                try {
+                    val readIds = TaxDocumentUploads.readAttachmentIds(connection.financePaystubs(year).financePaystubs.filterNotNull(), connection.financeTaxForms(year).taxForms.filterNotNull())
+                    uploads = TaxDocumentUploads.withoutRead(uploads, readIds)
+                    waitingIds = waitingIds - readIds
+                    read.refresh()
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (_: Throwable) {
+                    // The next pass asks again.
+                }
+                if (waitingIds.isEmpty()) return@launch
+            }
+            uploads = TaxDocumentUploads.stillReading(uploads, waitingIds)
         }
+    }
+    val photoPicker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
+        if (uris.isNotEmpty()) addFiles { uris.mapIndexed { index, uri -> context.readPendingFile(uri, "tax-document-${index + 1}.jpg") } }
+    }
+    val cameraPicker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.TakePicturePreview()) { bitmap ->
+        if (bitmap != null) addFiles { listOf(bitmap.toPendingFile("tax-document.jpg")) }
+    }
+    val filePicker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) addFiles { uris.mapIndexed { index, uri -> context.readPendingFile(uri, "tax-document-${index + 1}") } }
     }
     fun act(saying: String, work: suspend () -> Unit) {
         scope.launch { try { work(); snackbar.show(saying) } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }; read.refresh() }
     }
-    TeaNodeScreen(title = stringResource(R.string.finance_part_taxes), onBack = { navigator.back() }) { padding ->
+    TeaNodeScreen(
+        title = stringResource(R.string.finance_part_taxes), onBack = { navigator.back() },
+        actions = {
+            Box {
+                IconButton(onClick = { isAddMenuOpen = true }) { Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.finance_tax_add_documents)) }
+                DropdownMenu(isAddMenuOpen, { isAddMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.finance_tax_add_photo_library)) }, leadingIcon = { Icon(Icons.Outlined.PhotoLibrary, null) },
+                        onClick = { isAddMenuOpen = false; photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    )
+                    DropdownMenuItem(text = { Text(stringResource(R.string.finance_tax_add_camera)) }, leadingIcon = { Icon(Icons.Outlined.PhotoCamera, null) }, onClick = { isAddMenuOpen = false; cameraPicker.launch(null) })
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.finance_tax_add_files)) }, leadingIcon = { Icon(Icons.Outlined.Folder, null) },
+                        onClick = { isAddMenuOpen = false; filePicker.launch(arrayOf("application/pdf", "image/*")) },
+                    )
+                }
+            }
+        },
+    ) { padding ->
         LoadedContent(read, modifier = Modifier.padding(padding)) { loaded ->
             val summary = loaded.summary
             val currency = "USD"
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
                 item("year") { YearStepper(year, LocalDate.now().year - 10, LocalDate.now().year) { year = it } }
+                if (uploads.isNotEmpty()) {
+                    item("adding-header") { TeaNodeSectionHeader(stringResource(R.string.finance_tax_adding)) }
+                    items(uploads, key = { upload -> "adding-" + upload.uploadId }) { upload ->
+                        TaxDocumentUploadRow(upload, onHide = { uploads = uploads.filter { each -> each.uploadId != upload.uploadId } })
+                    }
+                }
                 summary?.taxYearEstimate?.let { estimate ->
                     item("estimate-header") { TeaNodeSectionHeader(stringResource(R.string.finance_tax_estimate)) }
                     item("estimate-total") { LabeledValue(stringResource(R.string.finance_tax_total_tax), FinanceMoney.shown(estimate.totalTaxAmount, currency), supporting = estimate.shareOfPay(estimate.totalTaxAmount)?.let { share -> stringResource(R.string.finance_tax_of_income, FinanceMoney.percent(share)) }) }
@@ -177,6 +266,7 @@ fun FinanceTaxesScreen() {
                     }
                     item("settings") { TextButton(onClick = { isEditingSettings = true }, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.finance_tax_year_settings, year)) } }
                 }
+                summary?.taxYearInvestmentPreview?.let { preview -> taxInvestmentPreview(preview, currency) }
                 summary?.figures?.let { figures ->
                     item("figures-header") { TeaNodeSectionHeader(stringResource(R.string.finance_tax_this_year)) }
                     for (row in figures.rows(summary.projectedFigures)) {
@@ -194,6 +284,7 @@ fun FinanceTaxesScreen() {
                         item("comparison-" + employment.employerName + comparison.boxName) { LabeledValue(stringResource(R.string.finance_tax_box, comparison.boxName), FinanceMoney.shown(comparison.w2Amount, currency), supporting = stringResource(R.string.finance_tax_paystubs_say, FinanceMoney.shown(comparison.paystubAmount, currency))) }
                     }
                 }
+                summary?.taxYearInvestment?.let { investment -> taxInvestment(investment, currency) }
                 val findings = summary?.findings.orEmpty()
                 if (findings.isNotEmpty()) {
                     item("findings-header") { TeaNodeSectionHeader(stringResource(R.string.finance_tax_findings)) }
@@ -208,10 +299,7 @@ fun FinanceTaxesScreen() {
                     val taxForm = form.financeTaxForm ?: continue
                     item("form-" + form.id) { TeaNodeRow(taxForm.payerName.orEmpty(), supporting = "${taxForm.kindName} · ${taxForm.taxYear ?: ""}", trailing = { if (form.disagreeingCount > 0) Text(stringResource(R.string.finance_tax_disagrees, form.disagreeingCount), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium) }, onClick = { navigator.navigate(FinanceRoutes.taxForm(form.id)) }) }
                 }
-                item("upload") {
-                    OutlinedButton(onClick = { uploadPicker.launch("*/*") }, modifier = Modifier.padding(horizontal = 16.dp)) { Text(stringResource(R.string.finance_tax_upload_documents)) }
-                    Footnote(stringResource(R.string.finance_tax_upload_footer))
-                }
+                item("upload-footer") { Footnote(stringResource(R.string.finance_tax_upload_footer)) }
                 item("entry") {
                     Row(Modifier.padding(horizontal = 8.dp)) {
                         TextButton(onClick = { navigator.navigate(FinanceRoutes.paystubEntry) }) { Text(stringResource(R.string.finance_entry_paystub_title)) }
@@ -230,6 +318,94 @@ fun FinanceTaxesScreen() {
             }
             if (isEditingSettings) TaxSettingsDialog(year, summary?.taxYearSetting, onDismiss = { isEditingSettings = false }) { change -> isEditingSettings = false; act(context.getString(R.string.finance_saved)) { connection.setTaxYearSetting(year, change) } }
         }
+    }
+}
+
+/** A file being added: its name and how far it is. A finished one can be hidden. */
+@Composable
+internal fun TaxDocumentUploadRow(upload: TaxDocumentUpload, onHide: () -> Unit) {
+    TeaNodeRow(
+        headline = upload.fileName,
+        supporting = when (upload.uploadPhase) {
+            TaxDocumentUploadPhase.Uploading -> stringResource(R.string.finance_tax_uploading)
+            TaxDocumentUploadPhase.Reading -> stringResource(R.string.finance_tax_reading)
+            TaxDocumentUploadPhase.StillReading -> stringResource(R.string.finance_tax_still_reading)
+            TaxDocumentUploadPhase.Failed -> upload.failureText.orEmpty()
+        },
+        supportingMaxLines = 3,
+        leading = {
+            when (upload.uploadPhase) {
+                TaxDocumentUploadPhase.Uploading, TaxDocumentUploadPhase.Reading -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                TaxDocumentUploadPhase.StillReading -> Icon(Icons.Outlined.Schedule, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                TaxDocumentUploadPhase.Failed -> Icon(Icons.Outlined.Warning, null, tint = MaterialTheme.colorScheme.error)
+            }
+        },
+        trailing = { if (upload.isFinished) TextButton(onClick = onHide) { Text(stringResource(R.string.finance_tax_hide)) } },
+    )
+}
+
+/** The year's interest and dividends as the linked accounts were paid them, until the 1099s come. */
+private fun androidx.compose.foundation.lazy.LazyListScope.taxInvestmentPreview(preview: TaxYearSummary.InvestmentPreview, currency: String) {
+    item("preview-header") { TeaNodeSectionHeader(stringResource(R.string.finance_investment_preview_title)) }
+    for ((index, income) in preview.taxYearAccountIncomes.orEmpty().filterNotNull().withIndex()) {
+        item("preview-income-$index") {
+            LabeledValue(
+                income.accountName.orEmpty(), FinanceMoney.shown(income.amount, currency),
+                supporting = listOfNotNull(
+                    stringResource(if (income.incomeKind == "dividend") R.string.finance_dividends else R.string.finance_interest),
+                    if (income.isTaxAdvantaged == true) stringResource(R.string.finance_not_taxed) else null,
+                ).joinToString(" · "),
+            )
+        }
+    }
+    item("preview-footer") {
+        Footnote(
+            stringResource(
+                R.string.finance_investment_preview_footer, FinanceMoney.shown(preview.interestAmount, currency), FinanceMoney.shown(preview.projectedInterestAmount, currency),
+                FinanceMoney.shown(preview.dividendsAmount, currency), FinanceMoney.shown(preview.projectedDividendsAmount, currency),
+            ),
+        )
+    }
+}
+
+/** The year's investment income from its 1099s: interest and dividends always, every other figure when it is not nothing. */
+private fun androidx.compose.foundation.lazy.LazyListScope.taxInvestment(investment: TaxYearSummary.Investment, currency: String) {
+    val lines = listOf(
+        Triple(R.string.finance_interest, investment.interestAmount, true),
+        Triple(R.string.finance_tax_exempt_interest, investment.taxExemptInterestAmount, false),
+        Triple(R.string.finance_ordinary_dividends, investment.ordinaryDividendsAmount, true),
+        Triple(R.string.finance_qualified_dividends, investment.qualifiedDividendsAmount, false),
+        Triple(R.string.finance_capital_gain_distributions, investment.capitalGainDistributionsAmount, false),
+        Triple(R.string.finance_short_term_gain_or_loss, investment.shortTermGainAmount, false),
+        Triple(R.string.finance_long_term_gain_or_loss, investment.longTermGainAmount, false),
+        Triple(R.string.finance_federal_income_tax_withheld, investment.federalIncomeTaxWithheldAmount, false),
+        Triple(R.string.finance_foreign_tax_paid, investment.foreignTaxPaidAmount, false),
+    ).filter { (_, amount, isAlways) -> isAlways || (FinanceMoney.decimal(amount)?.signum() ?: 0) != 0 }
+    item("investment-header") { TeaNodeSectionHeader(stringResource(R.string.finance_investment_income)) }
+    for ((label, amount, _) in lines) item("investment-$label") { LabeledValue(stringResource(label), FinanceMoney.shown(amount, currency)) }
+    item("investment-footer") { Footnote(stringResource(R.string.finance_investment_footer)) }
+}
+
+/** The button that opens the file a paystub or a tax form was read from. */
+@Composable
+internal fun OpenOriginalButton(attachmentId: String) {
+    val connection = LocalConnection.current
+    val context = LocalContext.current
+    val snackbar = LocalSnackbar.current
+    val scope = rememberCoroutineScope()
+    var isOpening by remember { mutableStateOf(false) }
+    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedButton(
+            enabled = !isOpening,
+            onClick = {
+                scope.launch {
+                    isOpening = true
+                    try { com.teanode.app.chats.openServerFile(context, connection, attachmentId) } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
+                    isOpening = false
+                }
+            },
+        ) { Text(stringResource(R.string.finance_open_original)) }
+        if (isOpening) CircularProgressIndicator(Modifier.padding(start = 12.dp).size(20.dp), strokeWidth = 2.dp)
     }
 }
 
@@ -316,6 +492,7 @@ fun FinancePaystubDetailScreen(paystubId: String) {
                     item("kind-$kind") { TeaNodeSectionHeader(kind.replaceFirstChar { letter -> letter.uppercase() }) }
                     for (line in lines) item("line-" + line.id) { TeaNodeRow(line.description.orEmpty().ifEmpty { kind }, supporting = line.yearToDateAmount?.let { year -> stringResource(R.string.finance_tax_year_to_date, FinanceMoney.shown(year, currency)) }, trailing = { Text(FinanceMoney.shown(line.currentAmount, currency)) }) }
                 }
+                paystub.agentAttachmentId?.takeIf { attachmentId -> attachmentId.isNotEmpty() }?.let { attachmentId -> item("original") { OpenOriginalButton(attachmentId) } }
                 item("delete") { TextButton(onClick = { isConfirmingDelete = true }, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.finance_tax_delete_paystub), color = MaterialTheme.colorScheme.error) } }
             }
             if (isConfirmingDelete) {
@@ -355,6 +532,7 @@ fun FinanceTaxFormDetailScreen(taxFormId: String) {
                     item("findings-header") { TeaNodeSectionHeader(stringResource(R.string.finance_tax_checks)) }
                     for (finding in findings) item("finding-" + finding.taxFormFindingCode) { TeaNodeRow(finding.findingText.orEmpty().ifEmpty { finding.taxFormFindingCode.orEmpty() }, supporting = stringResource(if (finding.isAgreeing == false) R.string.finance_tax_disagrees_short else R.string.finance_tax_agrees)) }
                 }
+                form.agentAttachmentId?.takeIf { attachmentId -> attachmentId.isNotEmpty() }?.let { attachmentId -> item("original") { OpenOriginalButton(attachmentId) } }
                 item("delete") { TextButton(onClick = { isConfirmingDelete = true }, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.finance_tax_delete_form), color = MaterialTheme.colorScheme.error) } }
             }
             if (isConfirmingDelete) {

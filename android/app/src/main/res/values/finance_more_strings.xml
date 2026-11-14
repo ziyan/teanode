@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="finance_tap_photo_full_size">Tap the photo to see it full size.</string>
+    <string name="finance_has_its_photo">Has its photo</string>
+    <string name="finance_open_original">Open the original</string>
+    <string name="finance_investment_income">Investment income</string>
+    <string name="finance_investment_footer">What the year\'s 1099s report: interest, dividends and the gains or losses on sales.</string>
+    <string name="finance_investment_preview_title">Interest and dividends from your accounts</string>
+    <string name="finance_investment_preview_footer">Taxed interest %1$s so far, %2$s by December 31; taxed dividends %3$s so far, %4$s by December 31. Counted until the 1099s come; dividends count as ordinary until a 1099-DIV says which are qualified. Accounts whose income isn’t taxed, such as IRAs and HSAs, are left out.</string>
+    <string name="finance_interest">Interest</string>
+    <string name="finance_dividends">Dividends</string>
+    <string name="finance_not_taxed">Not taxed</string>
+    <string name="finance_tax_exempt_interest">Tax-exempt interest</string>
+    <string name="finance_ordinary_dividends">Ordinary dividends</string>
+    <string name="finance_qualified_dividends">Qualified dividends, part of ordinary</string>
+    <string name="finance_capital_gain_distributions">Capital gain distributions</string>
+    <string name="finance_short_term_gain_or_loss">Short-term gain or loss</string>
+    <string name="finance_long_term_gain_or_loss">Long-term gain or loss</string>
+    <string name="finance_federal_income_tax_withheld">Federal income tax withheld</string>
+    <string name="finance_foreign_tax_paid">Foreign tax paid</string>
+    <string name="finance_exchange_rate_note">1 %1$s = %2$s %3$s</string>
+    <string name="finance_tax_adding">Adding</string>
+    <string name="finance_tax_uploading">Uploading…</string>
+    <string name="finance_tax_reading">Reading…</string>
+    <string name="finance_tax_still_reading">Still reading. Pull to refresh, or look under another year.</string>
+    <string name="finance_tax_hide">Hide</string>
+    <string name="finance_tax_add_documents">Add tax documents</string>
+    <string name="finance_tax_add_photo_library">Photo library</string>
+    <string name="finance_tax_add_camera">Camera</string>
+    <string name="finance_tax_add_files">Files</string>
+    <plurals name="finance_tax_reading_documents">
+        <item quantity="one">Reading %d document</item>
+        <item quantity="other">Reading %d documents</item>
+    </plurals>
+</resources>

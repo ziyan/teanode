@@ -17,6 +17,13 @@ import com.teanode.kit.finance.FinanceTransactionFilter
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
+import com.teanode.kit.finance.TaxDocumentUpload
+import com.teanode.kit.finance.TaxDocumentUploadPhase
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
@@ -29,7 +36,7 @@ class FinanceScreenshotTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun shoot(name: String, look: Look = Look.Light, fontScale: Float? = null, isSheet: Boolean = false, content: @Composable () -> Unit) {
+    private fun shoot(name: String, look: Look = Look.Light, fontScale: Float? = null, isSheet: Boolean = false, scrollTo: String? = null, content: @Composable () -> Unit) {
         composeRule.setContent {
             DemoHost(appearance = look.appearance) {
                 CompositionLocalProvider(LocalShoppingSheetsInline provides isSheet) {
@@ -38,7 +45,30 @@ class FinanceScreenshotTest {
             }
         }
         composeRule.waitForIdle()
+        if (scrollTo != null) {
+            composeRule.onNode(hasScrollAction()).performScrollToNode(hasText(scrollTo))
+            composeRule.waitForIdle()
+        }
         composeRule.photograph("finance-$name-${look.fileName}")
+    }
+
+    @Test fun `receipt in memory`() = shoot("receipt-in-memory", scrollTo = "In memory") { FinanceReceiptDetailScreen(FinanceDemoData.RECEIPT_ID) }
+    @Test fun `transaction in memory dark`() = shoot("transaction-in-memory", Look.Dark, scrollTo = "In memory") { FinanceTransactionDetailScreen(FinanceDemoData.TRANSACTION_ID) }
+    @Test fun `taxes investment preview`() = shoot("taxes-investment-preview", scrollTo = "Interest and dividends from your accounts") { FinanceTaxesScreen() }
+    @Test fun `taxes investment`() = shoot("taxes-investment", scrollTo = "What the year's 1099s report: interest, dividends and the gains or losses on sales.") { FinanceTaxesScreen() }
+    @Test fun `taxes investment dark`() = shoot("taxes-investment", Look.Dark, scrollTo = "What the year's 1099s report: interest, dividends and the gains or losses on sales.") { FinanceTaxesScreen() }
+    @Test fun `paystub original`() = shoot("paystub-original", scrollTo = "Open the original") { FinancePaystubDetailScreen("demo-paystub-1") }
+    @Test fun `tax form original dark`() = shoot("tax-form-original", Look.Dark, scrollTo = "Open the original") { FinanceTaxFormDetailScreen("demo-form-1") }
+    @Test fun `exchange rate note`() = shoot("exchange-rate-note") {
+        androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(16.dp)) { ExchangeRateNote("EUR") }
+    }
+    @Test fun `tax document uploads`() = shoot("tax-uploads") {
+        androidx.compose.foundation.layout.Column {
+            TaxDocumentUploadRow(TaxDocumentUpload(1, "paystub-march.pdf"), {})
+            TaxDocumentUploadRow(TaxDocumentUpload(2, "w2.jpg", "a", TaxDocumentUploadPhase.Reading), {})
+            TaxDocumentUploadRow(TaxDocumentUpload(3, "statement.pdf", "b", TaxDocumentUploadPhase.StillReading), {})
+            TaxDocumentUploadRow(TaxDocumentUpload(4, "scan.pdf", null, TaxDocumentUploadPhase.Failed, "The file is too large."), {})
+        }
     }
 
     @Test fun `home`() = shoot("home") { FinanceSection() }

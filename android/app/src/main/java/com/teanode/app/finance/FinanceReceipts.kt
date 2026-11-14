@@ -11,7 +11,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.ReceiptLong
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
@@ -85,7 +87,12 @@ internal fun ReceiptRow(receipt: FinanceReceipt, onClick: () -> Unit) {
     TeaNodeRow(
         headline = receipt.merchantName.orEmpty().ifEmpty { stringResource(R.string.finance_receipt) },
         supporting = listOfNotNull(receipt.purchasedOn, androidx.compose.ui.platform.LocalContext.current.resources.getQuantityString(R.plurals.finance_line_count, lineCount, lineCount)).joinToString(" · "),
-        trailing = { Text(FinanceMoney.shown(receipt.totalAmount, receipt.currencyCode)) },
+        trailing = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (receipt.agentAttachmentId?.isNotEmpty() == true) Icon(Icons.Outlined.Image, contentDescription = stringResource(R.string.finance_has_its_photo), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(FinanceMoney.shown(receipt.totalAmount, receipt.currencyCode))
+            }
+        },
         onClick = onClick,
     )
 }
@@ -111,6 +118,15 @@ fun FinanceReceiptDetailScreen(receiptId: String) {
     TeaNodeScreen(title = read.value?.first?.merchantName.orEmpty().ifEmpty { stringResource(R.string.finance_receipt) }, onBack = { navigator.back() }) { padding ->
         LoadedContent(read, modifier = Modifier.padding(padding)) { (receipt, matched) ->
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+                // The picture the receipt was read from, opened full size with a tap.
+                receipt.agentAttachmentId?.takeIf { attachmentId -> attachmentId.isNotEmpty() }?.let { attachmentId ->
+                    item("photo") {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            com.teanode.app.chats.RemotePicture("/api/v1/agent/attachments/$attachmentId", "receipt.jpg", maxHeightDp = 360)
+                            Footnote(stringResource(R.string.finance_tap_photo_full_size))
+                        }
+                    }
+                }
                 item("merchant") { LabeledValue(stringResource(R.string.finance_merchant), receipt.merchantName.orEmpty()) }
                 receipt.purchasedOn?.takeIf { day -> day.isNotEmpty() }?.let { day -> item("day") { LabeledValue(stringResource(R.string.finance_bought_on), day) } }
                 receipt.merchantReceiptNumber?.takeIf { number -> number.isNotEmpty() }?.let { number -> item("number") { LabeledValue(stringResource(R.string.finance_receipt_number), number) } }
@@ -151,6 +167,7 @@ fun FinanceReceiptDetailScreen(receiptId: String) {
                         Footnote(stringResource(R.string.finance_matched_against_lists))
                     }
                 }
+                item("in-memory") { com.teanode.app.knowledge.InMemoryCard("finance_receipt", receiptId) }
                 item("delete") { TextButton(onClick = { isConfirmingDelete = true }, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.finance_delete_receipt), color = MaterialTheme.colorScheme.error) } }
             }
             if (isConfirmingDelete) {
