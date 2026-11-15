@@ -383,6 +383,7 @@ private fun SavingsTargetDialog(existing: SavingsTarget?, onDismiss: () -> Unit,
                 OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.finance_name)) }, singleLine = true)
                 OutlinedTextField(amount, { amount = it }, label = { Text(stringResource(R.string.finance_amount)) }, singleLine = true)
                 OutlinedTextField(day, { day = it }, label = { Text(stringResource(R.string.finance_by_day)) }, singleLine = true)
+                Text(stringResource(R.string.finance_measured_by), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(measure == "cash_flow", { measure = "cash_flow" }, label = { Text(stringResource(R.string.finance_measure_cash_flow)) })
                     FilterChip(measure == "net_worth", { measure = "net_worth" }, label = { Text(stringResource(R.string.finance_part_net_worth)) })

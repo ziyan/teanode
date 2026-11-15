@@ -40,4 +40,13 @@
     <string name="finance_budget_changes_past_months">这会更改已经过去的月份。</string>
     <string name="finance_end_this_budget">结束此预算</string>
     <string name="finance_budget_ended">预算已结束</string>
+    <string name="finance_choose_an_account">选择账户</string>
+    <string name="finance_measured_by">衡量方式</string>
+    <string name="finance_manage_left_out_over_limit">另外略去 %1$d 条：一次最多保存 %2$d 条支出规则</string>
+    <plurals name="finance_manage_left_out_too_generic">
+        <item quantity="other">略去 %d 条：太短或太笼统，不适合做规则</item>
+    </plurals>
+    <plurals name="finance_manage_left_out_changing_number">
+        <item quantity="other">略去 %d 条：其中的数字每次都不同</item>
+    </plurals>
 </resources>

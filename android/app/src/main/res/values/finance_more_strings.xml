@@ -41,4 +41,15 @@
     <string name="finance_budget_changes_past_months">This changes months already past.</string>
     <string name="finance_end_this_budget">End this budget</string>
     <string name="finance_budget_ended">Budget ended</string>
+    <string name="finance_choose_an_account">Choose an account</string>
+    <string name="finance_measured_by">Measured by</string>
+    <string name="finance_manage_left_out_over_limit">%1$d more left out: at most %2$d spending rules at a time</string>
+    <plurals name="finance_manage_left_out_too_generic">
+        <item quantity="one">1 left out: too short or too generic to be a rule</item>
+        <item quantity="other">%d left out: too short or too generic to be rules</item>
+    </plurals>
+    <plurals name="finance_manage_left_out_changing_number">
+        <item quantity="one">1 left out: it holds a number that changes each time</item>
+        <item quantity="other">%d left out: they hold a number that changes each time</item>
+    </plurals>
 </resources>
