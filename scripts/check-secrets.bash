@@ -324,6 +324,7 @@ readonly ALLOWED_HOSTS=(
   android.app
   androidx.core.app
   androidx.test.core.app
+  androidx.appcompat.app
   kotlinx.serialization.json.int
   primitive.int
   org.junit.jupiter.api.io
