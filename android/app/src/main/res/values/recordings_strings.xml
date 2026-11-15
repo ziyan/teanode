@@ -142,4 +142,20 @@
     <string name="recordings_open_recording">Open recording</string>
     <string name="recordings_interrupted">Paused by a call or another app using the microphone. Resume when you are ready.</string>
     <string name="recordings_live_heading">Heard so far</string>
+    <string name="recordings_share_original">Share original</string>
+    <string name="recordings_ask_agent">Ask %1$s</string>
+    <string name="recordings_original_range">%1$s to %2$s</string>
+    <string name="recordings_transcription_usage">Transcription usage</string>
+    <string name="recordings_cost_actual">Actual cost: %1$s %2$s</string>
+    <string name="recordings_cost_estimated">Estimated cost: %1$s %2$s</string>
+    <string name="recordings_cost_unavailable">Cost unavailable</string>
+    <string name="recordings_usage_unavailable">Provider usage unavailable</string>
+    <string name="recordings_usage_footer">Estimates use configured pricing. Actual cost is shown only when billing evidence exists.</string>
+    <string name="recordings_edit_source">Edit this source</string>
+    <string name="recordings_speaker_named">Speaker named.</string>
+    <string name="recordings_marked_as_you">Marked as you.</string>
+    <string name="recordings_speaker_separated">Speaker separated.</string>
+    <string name="recordings_this_is_me">This is me</string>
+    <string name="recordings_separate_from">Separate from %1$s</string>
+    <string name="recordings_temporary_speaker_footer">Everything this speaker says in this recording, now and later, gets the name.</string>
 </resources>

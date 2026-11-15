@@ -2,6 +2,7 @@ package com.teanode.app.health.sync
 
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.changes.DeletionChange
 import androidx.health.connect.client.changes.UpsertionChange
@@ -38,6 +39,7 @@ import com.teanode.kit.health.HealthWorkoutMetadata
 import com.teanode.kit.health.HealthSampleInput
 import com.teanode.kit.health.HealthSyncState
 import com.teanode.kit.health.HealthTypes
+import com.teanode.kit.health.HealthValueKind
 import com.teanode.kit.health.HealthWorkoutSample
 import com.teanode.kit.health.eraseHealthData
 import com.teanode.kit.health.healthSettings
@@ -79,8 +81,13 @@ class HealthSync private constructor(private val context: Context) : HealthSynci
     private fun isAvailable(): Boolean = HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
     private fun client(): HealthConnectClient = HealthConnectClient.getOrCreate(context)
 
-    override val requiredPermissions: Set<String> =
-        HealthConnectKinds.all.map { kind -> HealthPermission.getReadPermission(kind.recordClass) }.toSet() + HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
+    // Reading in the background, for the hourly pass, is a feature newer Health Connect versions offer; asking for it where it is not offered would fail the whole request.
+    override val requiredPermissions: Set<String> get() =
+        HealthConnectKinds.all.map { kind -> HealthPermission.getReadPermission(kind.recordClass) }.toSet() + HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY +
+            if (isBackgroundReadOffered()) setOf(HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND) else emptySet()
+
+    private fun isBackgroundReadOffered(): Boolean =
+        isAvailable() && client().features.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
 
     override suspend fun grantedPermissions(): Set<String> = if (isAvailable()) client().permissionController.getGrantedPermissions() else emptySet()
 
@@ -204,7 +211,7 @@ class HealthSync private constructor(private val context: Context) : HealthSynci
                 pageToken = page.pageToken
             } while (pageToken != null)
         }
-        for (sample in samples) state.markPending(kind.healthType, sample.startedAt, sample.endedAt, zone)
+        for (sample in samples) state.markPending(sample.healthType, sample.startedAt, sample.endedAt, zone)
         val requests = HealthBatch.requests(samples = samples, deletedHealthSampleIds = deletedIds, routes = routes)
         state.recordDropped(requests.rejectedEntryCount)
         for (batch in requests.requests) if (!send(asked, state, batch)) return false
@@ -247,12 +254,14 @@ class HealthSync private constructor(private val context: Context) : HealthSynci
 
     /** Works out again, from Health Connect, the summary of each day of a kind that a new or deleted reading touched, and sends them. */
     private suspend fun sendPendingDays(asked: Connection, state: HealthSyncState, kind: HealthConnectKind) {
-        val days = state.pendingDays(kind.healthType)
-        if (days.isEmpty()) return
+        // A record can give several types (a meal gives every nutrient it names), each with days of its own.
+        val daysByType = kind.healthTypes.associateWith { healthType -> state.pendingDays(healthType) }.filterValues { days -> days.isNotEmpty() }
+        if (daysByType.isEmpty()) return
         val healthConnect = client()
         val workedOutAt = Instant.now()
-        val first = HealthDays.startOfDay(days.first(), zone) ?: return
-        val last = HealthDays.interval(days.last(), zone)?.end ?: return
+        val allDays = daysByType.values.flatten().distinct().sorted()
+        val first = HealthDays.startOfDay(allDays.first(), zone) ?: return
+        val last = HealthDays.interval(allDays.last(), zone)?.end ?: return
         val samples = mutableListOf<HealthSampleInput>()
         var pageToken: String? = null
         do {
@@ -261,22 +270,23 @@ class HealthSync private constructor(private val context: Context) : HealthSynci
             for (record in page.records) samples += readings(healthConnect, kind, record, state, mutableListOf())
             pageToken = page.pageToken
         } while (pageToken != null)
-        val daySet = days.toSet()
-        val info = HealthTypes.info(kind.healthType)
-        val summaries = when {
-            kind.healthType == "sleepAnalysis" -> HealthDaySummaries.sleepSummaries(samples.mapNotNull { sample -> HealthCategorySample.of(sample) }, zone, daySet)
-            kind.healthType == "workout" -> HealthDaySummaries.workoutSummaries(samples.mapNotNull { sample -> HealthWorkoutSample.of(sample) }, zone, daySet)
-            else -> {
-                val readings = samples.mapNotNull { sample -> sample.quantityValue?.let { value -> HealthReading(sample.startedAt, value) } }
-                HealthDaySummaries.readingStatistics(readings, zone, daySet).map { (day, statistics) ->
-                    val sum = readings.filter { reading -> HealthDays.text(reading.startedAt, zone) == day }.sumOf { reading -> reading.value }
-                    HealthDaySummaries.quantitySummary(kind.healthType, day, statistics.copy(sumValue = sum), info?.quantityUnit)
-                }
-            }
-        }.map { summary -> summary.workedOut(workedOutAt) }
+        val summaries = daysByType.flatMap { (healthType, days) -> summariesOf(healthType, samples.filter { sample -> sample.healthType == healthType }, days.toSet()) }.map { summary -> summary.workedOut(workedOutAt) }
         // A day with nothing left is sent as no summary, so the server's stays until its readings go.
         for (batch in HealthBatch.requests(daySummaries = summaries).requests) if (!send(asked, state, batch)) return
-        state.clearPending(days.map { day -> HealthPendingDay(kind.healthType, day) })
+        state.clearPending(daysByType.flatMap { (healthType, days) -> days.map { day -> HealthPendingDay(healthType, day) } })
+    }
+
+    private fun summariesOf(healthType: String, samples: List<HealthSampleInput>, days: Set<String>) = when (healthType) {
+        "workout" -> HealthDaySummaries.workoutSummaries(samples.mapNotNull { sample -> HealthWorkoutSample.of(sample) }, zone, days)
+        else -> {
+            val info = HealthTypes.info(healthType)
+            val readings = samples.mapNotNull { sample -> sample.quantityValue?.let { value -> HealthReading(sample.startedAt, value) } }
+            if (info?.valueKind == HealthValueKind.Category) HealthDaySummaries.categorySummaries(healthType, samples.mapNotNull { sample -> HealthCategorySample.of(sample) }, zone, days)
+            else HealthDaySummaries.readingStatistics(readings, zone, days).map { (day, statistics) ->
+                val sum = readings.filter { reading -> HealthDays.text(reading.startedAt, zone) == day }.sumOf { reading -> reading.value }
+                HealthDaySummaries.quantitySummary(healthType, day, statistics.copy(sumValue = sum), info?.quantityUnit)
+            }
+        }
     }
 
     companion object {

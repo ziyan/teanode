@@ -1,6 +1,8 @@
 package com.teanode.app.finance
 
 import com.teanode.app.demo.DemoAnswerer
+import com.teanode.app.demo.DemoResponse
+import com.teanode.app.photos.PhotosDemoData
 import com.teanode.app.demo.graphQLField
 import com.teanode.app.demo.text
 
@@ -141,6 +143,8 @@ internal object FinanceDemoData {
         "taxYearEmployments":[{"employeeName":"Robin Example","employerName":"Example Payroll","employerTaxId":null,"taxYearFigureSource":"paystubs","taxFormId":null,"latestPayDate":"2030-11-10","paystubCount":22,"payCadenceDayCount":14,"isPaystubYearComplete":false,"remainingPayCount":2,"figures":$figures,"paystubFigures":$figures,"projectedFigures":$figures,
           "taxYearComparisons":[{"boxCode":"12","boxQualifier":"D","boxLabel":"Retirement","w2Amount":"4800.00","paystubAmount":"4600.00","differenceAmount":"200.00","isMatching":false}]}],
         "taxYearPeople":[],"taxYearFindings":[{"taxYearFindingCode":"pay_date_gap","employeeName":"Robin Example","employerName":"Example Payroll","findingText":"A paystub between two pay dates is missing.","paystubIds":["demo-paystub-1"]}],
+        "taxYearInvestmentPreview":{"interestAmount":"84.20","dividendsAmount":"212.00","projectedInterestAmount":"101.00","projectedDividendsAmount":"254.40","isInterestCounted":true,"isDividendsCounted":true,"taxAdvantagedAmount":"60.00","taxYearAccountIncomes":[{"financeAccountId":"demo-account-brokerage","accountName":"Index broker","incomeKind":"dividend","amount":"212.00","isTaxAdvantaged":false},{"financeAccountId":"demo-account-savings","accountName":"Savings","incomeKind":"interest","amount":"84.20","isTaxAdvantaged":false},{"financeAccountId":"demo-account-retirement","accountName":"Retirement","incomeKind":"dividend","amount":"60.00","isTaxAdvantaged":true}]},
+        "taxYearInvestment":{"interestAmount":"120.50","taxExemptInterestAmount":"0.00","ordinaryDividendsAmount":"640.00","qualifiedDividendsAmount":"410.00","capitalGainDistributionsAmount":"35.00","shortTermGainAmount":"-80.00","longTermGainAmount":"1250.00","federalIncomeTaxWithheldAmount":"0.00","foreignTaxPaidAmount":"4.10","isCostBasisMissing":false,"taxFormIds":["demo-form-1"]},
         "taxYearEstimate":{"taxFilingStatus":"single","isTaxFilingStatusAssumed":true,"isProjected":true,"payAmount":"96000.00","incomeAmount":"96000.00","totalTaxAmount":"21900.00","paidTaxAmount":"18900.00","upcomingWithheldTaxAmount":"2400.00","owingTaxAmount":"600.00","refundAmount":"0.00","remainingIncomeAmount":"74100.00"}}"""
 
     val paystub = """{"id":"demo-paystub-1","agentAttachmentId":"att-2","employerName":"Example Payroll","employerTaxId":"","employeeName":"Robin Example","employeeTaxIdMask":"1234","payDate":"2030-11-10","periodStartOn":"2030-10-27","periodEndOn":"2030-11-09","currencyCode":"USD","grossAmount":"4000.00","yearToDateGrossAmount":"88000.00","totalTaxAmount":"900.00","totalDeductionAmount":"500.00","netAmount":"2600.00","paystubCheckState":"balanced","checkDifferenceAmount":"0.00",
@@ -158,6 +162,9 @@ val financeDemoAnswerers: List<DemoAnswerer> = listOf(
     graphQLField("SpendingCategories", FinanceDemoData.categories),
     graphQLField("ReadAgent", """{"timezone":"America/Los_Angeles"}"""),
     graphQLField("ReportingCurrency", """{"reportingCurrencyCode":"USD","isChosen":false}"""),
+    graphQLField("ExchangeRate", """{"fromCurrencyCode":"EUR","toCurrencyCode":"USD","rate":"1.08340000","rateOn":"2030-11-13","rateSource":"central_bank"}"""),
+    // The picture a receipt was read from.
+    DemoAnswerer { request -> if (request.path.contains("/api/v1/agent/attachments/att-1")) DemoResponse(PhotosDemoData.pictureBytes(120f, 400)) else null },
     graphQLField("FinanceTransactions") { variables ->
         val ids = (variables["financeTransactionIds"] as? kotlinx.serialization.json.JsonArray)?.map { element -> (element as kotlinx.serialization.json.JsonPrimitive).content }
         val rows = when {

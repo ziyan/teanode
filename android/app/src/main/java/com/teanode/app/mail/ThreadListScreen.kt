@@ -95,6 +95,7 @@ import com.teanode.app.ui.components.ConfirmationDialog
 import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.kit.mail.MailFilter
 import com.teanode.kit.mail.MailFolders
@@ -308,24 +309,26 @@ fun ThreadListScreen(
                 }),
             )
             val failure = list.failure
-            when {
-                mail.loadFailure != null && !mail.isLoaded -> ErrorState(mail.loadFailure?.message.orEmpty(), onRetry = { mail.reload() })
-                failure != null && !list.isLoaded -> ErrorState(failure.message.orEmpty(), onRetry = { reload() })
-                !list.isLoaded -> LoadingState()
-                list.threads.isEmpty() -> ThreadListEmpty(mail, place, folder, list)
-                else -> ThreadRows(
-                    mail, list, folder, selection, isSelecting, words,
-                    onOpen = { thread -> onOpenThread(thread.item?.id ?: thread.threadId, if (list.isAcrossFolders) null else folder?.id) },
-                    onSelect = { thread ->
-                        isSelecting = true
-                        if (!selection.contains(thread.id)) selection.add(thread.id)
-                    },
-                    onToggle = { thread -> if (selection.contains(thread.id)) selection.remove(thread.id) else selection.add(thread.id) },
-                    onSeen = { thread, isSeen -> setSeen(listOf(thread), isSeen) },
-                    onArchive = { thread -> mail.folderOfKind("archive")?.let { archive -> move(listOf(thread), archive, words.archived) } },
-                    onDelete = { thread -> delete(listOf(thread)) },
-                    onMore = { scope.launch { list.load(mail, isMore = true) } },
-                )
+            PullToRefresh(onRefresh = { list.load(mail) }, modifier = Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    mail.loadFailure != null && !mail.isLoaded -> ErrorState(mail.loadFailure?.message.orEmpty(), onRetry = { mail.reload() })
+                    failure != null && !list.isLoaded -> ErrorState(failure.message.orEmpty(), onRetry = { reload() })
+                    !list.isLoaded -> LoadingState()
+                    list.threads.isEmpty() -> ThreadListEmpty(mail, place, folder, list)
+                    else -> ThreadRows(
+                        mail, list, folder, selection, isSelecting, words,
+                        onOpen = { thread -> onOpenThread(thread.item?.id ?: thread.threadId, if (list.isAcrossFolders) null else folder?.id) },
+                        onSelect = { thread ->
+                            isSelecting = true
+                            if (!selection.contains(thread.id)) selection.add(thread.id)
+                        },
+                        onToggle = { thread -> if (selection.contains(thread.id)) selection.remove(thread.id) else selection.add(thread.id) },
+                        onSeen = { thread, isSeen -> setSeen(listOf(thread), isSeen) },
+                        onArchive = { thread -> mail.folderOfKind("archive")?.let { archive -> move(listOf(thread), archive, words.archived) } },
+                        onDelete = { thread -> delete(listOf(thread)) },
+                        onMore = { scope.launch { list.load(mail, isMore = true) } },
+                    )
+                }
             }
         }
     }

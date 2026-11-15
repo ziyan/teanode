@@ -67,6 +67,12 @@ object ManageDemoData {
          "mailServers":["mail.example.com"],"mailHosts":["mail.example.com"],"linkHost":"links.example.com","linkHostname":"links.example.com","dkimSelector":"mail","hasDkimKey":true,"logo":{"filename":"example-mark.svg","title":"Example mark","url":"/api/v1/logo","publicUrl":"https://links.example.com/logo.svg","uploadedAt":"${hoursAgo(48)}"}}
     """.trimIndent()
 
+    /** A domain just added: no records read yet, no mail server names set, and no signing key. */
+    private val domainWithoutKey: String = """
+        {"id":"domain-2","domain":"example.net","subdomain":"","comment":"","spamFilterScoreThreshold":5.0,"aliases":[],"credentials":[],"records":null,
+         "mailServers":[],"mailHosts":["mail.example.net"],"linkHost":"","linkHostname":"links.example.net","dkimSelector":"","hasDkimKey":false,"logo":null}
+    """.trimIndent()
+
     private val template: String = """
         {"id":"template-1","domainId":"domain-1","layoutId":"layout-1","name":"Welcome","comment":"Sent when somebody joins","locale":"en","subject":"Welcome, {{name}}","htmlContent":"<p>Hello {{name}}, welcome.</p>","textContent":"Hello {{name}}, welcome.","variables":["name"],"modifiedAt":"${hoursAgo(72)}",
          "translations":[{"locale":"ja","subject":"Welcome ja","htmlContent":"<p>Hello ja</p>","textContent":"Hello ja"}]}
@@ -112,7 +118,7 @@ object ManageDemoData {
         graphQLField("ListReports") { _ -> reports },
         graphQLField("GetReport") { _ -> report },
         graphQLField("ListDomains") { _ -> domains },
-        graphQLField("GetDomain") { _ -> domainDetail },
+        graphQLField("GetDomain") { variables -> if (variables["domainId"]?.toString()?.trim('"') == "domain-2") domainWithoutKey else domainDetail },
         graphQLField("ListAllMailboxes") { _ -> """[{"id":"mailbox-1","name":"Alex Example","userId":"user-1","username":"alex","userName":"Alex Example"}]""" },
         graphQLField("RetryDelivery", "true"),
         graphQLField("MarkMail") { _ -> """{"label":"spam","learnedSpam":10,"learnedHam":20}""" },

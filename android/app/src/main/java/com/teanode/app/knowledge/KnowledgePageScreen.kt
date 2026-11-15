@@ -49,6 +49,7 @@ import com.teanode.app.ui.components.ConfirmationDialog
 import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.app.ui.components.TeaNodeRow
 import com.teanode.app.ui.components.TeaNodeScreen
@@ -182,33 +183,35 @@ fun KnowledgePageScreen(initialPath: String) {
             model.isMissing -> EmptyState(Icons.Outlined.Link, stringResource(R.string.knowledge_there_is_no_page_here), Modifier.padding(contentPadding))
             page == null && failure != null -> ErrorState(session.describeLoadProblem(failure), onRetry = { scope.launch { model.load() } }, modifier = Modifier.padding(contentPadding))
             page == null || node == null -> LoadingState(Modifier.padding(contentPadding))
-            else -> LazyColumn(Modifier.fillMaxSize().padding(contentPadding)) {
-                header(page, node, onLinkContact = { sheet = PageSheet.LinkContact }, onOpenContact = { id -> openRecord(navigator, "/contacts?contact=$id") })
-                linkedRecords(model, onOpen = { link -> openRecord(navigator, link.dashboardPath) }, onConfirm = { link ->
-                    scope.launch { model.act(saidLinkConfirmed) { model.connection.confirmKnowledgeRecord(model.pagePath, link) } }
-                }, onRemove = { link ->
-                    scope.launch { model.act(saidLinkRemoved) { model.connection.unlinkKnowledgeRecord(model.pagePath, link) } }
-                }, onShowMore = { scope.launch { model.loadMoreRecordLinks() } })
-                reflections(page, onOpenCited = { cited -> navigator.navigate(KnowledgeRoutes.page(cited)) })
-                facts(
-                    page, shownFactCount, onShowMore = { shownFactCount += 50 }, onEdit = { fact -> sheet = PageSheet.Fact(FactDraft.of(fact)) },
-                    onMove = { fact -> sheet = PageSheet.Choose(PageChoice.MoveFact(fact.number)) }, onForget = { fact -> forgettingFact = fact },
-                    onAdd = { sheet = PageSheet.Fact(FactDraft()) }, onOpenRecord = { path -> openRecord(navigator, path) },
-                )
-                connections(model, onOpenPage = { path -> navigator.navigate(KnowledgeRoutes.page(path)) }, onUnlink = { to, relation ->
-                    scope.launch { model.act(saidUnlinked) { model.connection.unlinkKnowledgeNodes(model.pagePath, to, relation) } }
-                }, onLink = { sheet = PageSheet.Link })
-                val children = page.children.filterNotNull()
-                if (children.isNotEmpty()) {
-                    item(key = "children-header") { TeaNodeSectionHeader(stringResource(R.string.knowledge_filed_under_this)) }
-                    items(children, key = { child -> "child-${child.path}" }) { child ->
-                        TeaNodeRow(
-                            headline = child.shownName, supporting = child.summary.ifEmpty { null },
-                            onClick = { navigator.navigate(if (child.isFolder) KnowledgeRoutes.folder(child.path) else KnowledgeRoutes.page(child.path)) },
-                        )
+            else -> PullToRefresh(onRefresh = { model.load() }, modifier = Modifier.fillMaxSize().padding(contentPadding)) {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    header(page, node, onLinkContact = { sheet = PageSheet.LinkContact }, onOpenContact = { id -> openRecord(navigator, "/contacts?contact=$id") })
+                    linkedRecords(model, onOpen = { link -> openRecord(navigator, link.dashboardPath) }, onConfirm = { link ->
+                        scope.launch { model.act(saidLinkConfirmed) { model.connection.confirmKnowledgeRecord(model.pagePath, link) } }
+                    }, onRemove = { link ->
+                        scope.launch { model.act(saidLinkRemoved) { model.connection.unlinkKnowledgeRecord(model.pagePath, link) } }
+                    }, onShowMore = { scope.launch { model.loadMoreRecordLinks() } })
+                    reflections(page, onOpenCited = { cited -> navigator.navigate(KnowledgeRoutes.page(cited)) })
+                    facts(
+                        page, shownFactCount, onShowMore = { shownFactCount += 50 }, onEdit = { fact -> sheet = PageSheet.Fact(FactDraft.of(fact)) },
+                        onMove = { fact -> sheet = PageSheet.Choose(PageChoice.MoveFact(fact.number)) }, onForget = { fact -> forgettingFact = fact },
+                        onAdd = { sheet = PageSheet.Fact(FactDraft()) }, onOpenRecord = { path -> openRecord(navigator, path) },
+                    )
+                    connections(model, onOpenPage = { path -> navigator.navigate(KnowledgeRoutes.page(path)) }, onUnlink = { to, relation ->
+                        scope.launch { model.act(saidUnlinked) { model.connection.unlinkKnowledgeNodes(model.pagePath, to, relation) } }
+                    }, onLink = { sheet = PageSheet.Link })
+                    val children = page.children.filterNotNull()
+                    if (children.isNotEmpty()) {
+                        item(key = "children-header") { TeaNodeSectionHeader(stringResource(R.string.knowledge_filed_under_this)) }
+                        items(children, key = { child -> "child-${child.path}" }) { child ->
+                            TeaNodeRow(
+                                headline = child.shownName, supporting = child.summary.ifEmpty { null },
+                                onClick = { navigator.navigate(if (child.isFolder) KnowledgeRoutes.folder(child.path) else KnowledgeRoutes.page(child.path)) },
+                            )
+                        }
                     }
+                    historySection(model)
                 }
-                historySection(model)
             }
         }
     }

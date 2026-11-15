@@ -59,6 +59,7 @@ import com.teanode.app.ui.components.ConfirmationDialog
 import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.kit.contacts.ContactLetterSection
 import com.teanode.kit.contacts.ContactSummary
@@ -160,33 +161,41 @@ fun ContactsScreen(
                 placeholder = { Text(stringResource(R.string.contacts_search_prompt)) }, shape = RoundedCornerShape(28.dp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { model.searchText = typedText }),
             )
-            when {
-                model.loadFailure != null && !model.isLoaded -> ErrorState(model.loadFailure?.message.orEmpty(), onRetry = { scope.launch { model.load() } })
-                !model.isLoaded -> LoadingState()
-                model.contacts.isEmpty() -> if (model.searchText.isEmpty()) {
-                    EmptyState(
-                        Icons.Outlined.AccountCircle, stringResource(R.string.contacts_no_contacts_yet),
-                        description = stringResource(if (model.isShowingCircleBook) R.string.contacts_no_contacts_circle_description else R.string.contacts_no_contacts_description),
-                    )
-                } else {
-                    EmptyState(Icons.Outlined.Search, stringResource(R.string.contacts_nothing_matches))
-                }
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    val circleName = model.addressBook?.circleName
-                    if (model.isShowingCircleBook && circleName != null) {
-                        item { Text(stringResource(R.string.contacts_everyone_can_change, circleName), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            PullToRefresh(
+                onRefresh = {
+                    model.load()
+                    model.loadSuggestions()
+                },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
+                when {
+                    model.loadFailure != null && !model.isLoaded -> ErrorState(model.loadFailure?.message.orEmpty(), onRetry = { scope.launch { model.load() } })
+                    !model.isLoaded -> LoadingState()
+                    model.contacts.isEmpty() -> if (model.searchText.isEmpty()) {
+                        EmptyState(
+                            Icons.Outlined.AccountCircle, stringResource(R.string.contacts_no_contacts_yet),
+                            description = stringResource(if (model.isShowingCircleBook) R.string.contacts_no_contacts_circle_description else R.string.contacts_no_contacts_description),
+                        )
+                    } else {
+                        EmptyState(Icons.Outlined.Search, stringResource(R.string.contacts_nothing_matches))
                     }
-                    if (model.searchText.isEmpty() && !model.isShowingCircleBook && model.shownSuggestions.isNotEmpty()) {
-                        item { LetterHeader(stringResource(R.string.contacts_may_be_people_in_circles)) }
-                        items(model.shownSuggestions, key = { suggestion -> "suggestion-" + suggestion.id }) { suggestion -> ContactSuggestionRows(model, suggestion) }
-                    }
-                    for (section in ContactLetterSection.sections(model.contacts)) {
-                        item(key = "letter-" + section.letter) { LetterHeader(section.letter) }
-                        items(section.contacts, key = { contact -> contact.id }) { contact ->
-                            if (model.isShowingCircleBook) {
-                                CircleContactRow(model, contact, onEdit = { onEditCircleContact(contact.id) }, onRemove = { removingCircleContact = contact })
-                            } else {
-                                ContactRow(contact, isMine = contact.id == model.myContactId, modifier = Modifier.clickable { onOpenContact(contact.id) })
+                    else -> LazyColumn(Modifier.fillMaxSize()) {
+                        val circleName = model.addressBook?.circleName
+                        if (model.isShowingCircleBook && circleName != null) {
+                            item { Text(stringResource(R.string.contacts_everyone_can_change, circleName), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        }
+                        if (model.searchText.isEmpty() && !model.isShowingCircleBook && model.shownSuggestions.isNotEmpty()) {
+                            item { LetterHeader(stringResource(R.string.contacts_may_be_people_in_circles)) }
+                            items(model.shownSuggestions, key = { suggestion -> "suggestion-" + suggestion.id }) { suggestion -> ContactSuggestionRows(model, suggestion) }
+                        }
+                        for (section in ContactLetterSection.sections(model.contacts)) {
+                            item(key = "letter-" + section.letter) { LetterHeader(section.letter) }
+                            items(section.contacts, key = { contact -> contact.id }) { contact ->
+                                if (model.isShowingCircleBook) {
+                                    CircleContactRow(model, contact, onEdit = { onEditCircleContact(contact.id) }, onRemove = { removingCircleContact = contact })
+                                } else {
+                                    ContactRow(contact, isMine = contact.id == model.myContactId, modifier = Modifier.clickable { onOpenContact(contact.id) })
+                                }
                             }
                         }
                     }

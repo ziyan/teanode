@@ -1,6 +1,14 @@
 package com.teanode.app
 
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.onRoot
+import com.teanode.app.ui.components.PullToRefresh
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -63,5 +71,20 @@ class LoadTest {
             }
         }
         composeRule.onNodeWithText("Nothing here").assertIsDisplayed()
+    }
+
+    @Test
+    fun pullingARefreshableScreenDownReadsAgain() {
+        var readCount = 0
+        composeRule.setContent {
+            DemoHost {
+                PullToRefresh(onRefresh = { readCount += 1 }, modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(Modifier.fillMaxSize()) { items(listOf("one", "two", "three")) { row -> Text(row) } }
+                }
+            }
+        }
+        composeRule.onRoot().performTouchInput { swipeDown(startY = top + 100f, endY = bottom - 100f) }
+        composeRule.waitForIdle()
+        assertEquals(1, readCount)
     }
 }

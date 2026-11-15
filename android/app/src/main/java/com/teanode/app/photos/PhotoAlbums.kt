@@ -239,6 +239,7 @@ fun AlbumScreen(photoAlbumId: String, onBack: () -> Unit) {
     var isDeleting by remember { mutableStateOf(false) }
     var isRemoving by remember { mutableStateOf(false) }
     var isTrashing by remember { mutableStateOf(false) }
+    var isAddingPhotos by remember { mutableStateOf(false) }
     val current = album
     val moreError = list.moreError
     LaunchedEffect(moreError) { if (moreError != null) { list.clearMoreError(); snackbar.showError(moreError) } }
@@ -254,6 +255,7 @@ fun AlbumScreen(photoAlbumId: String, onBack: () -> Unit) {
                 Box {
                     IconButton(onClick = { isMenuOpen = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.photos_more)) }
                     DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
+                        if (current.canCallerContribute) DropdownMenuItem(text = { Text(stringResource(R.string.photos_add_photos)) }, onClick = { isMenuOpen = false; isAddingPhotos = true })
                         if (list.photos.isNotEmpty()) DropdownMenuItem(text = { Text(stringResource(R.string.photos_select)) }, onClick = { isMenuOpen = false; isSelecting = true })
                         if (current.isOwnedByCaller && current.circleId == null) DropdownMenuItem(text = { Text(stringResource(R.string.photos_rename_album)) }, onClick = { isMenuOpen = false; isRenaming = true })
                         if (current.canCallerShare) DropdownMenuItem(text = { Text(stringResource(R.string.photos_share)) }, onClick = { isMenuOpen = false; navigator.navigate(Routes.child(AppSection.Photos, "album/$photoAlbumId/shares")) })
@@ -282,7 +284,12 @@ fun AlbumScreen(photoAlbumId: String, onBack: () -> Unit) {
             when {
                 list.error != null && !list.isLoaded -> ErrorState(stringResource(R.string.photos_cannot_load), onRetry = { list.retry() })
                 !list.isLoaded -> LoadingState()
-                list.photos.isEmpty() -> EmptyState(Icons.Outlined.PhotoLibrary, stringResource(R.string.photos_empty_album), description = stringResource(if (current?.canCallerContribute == true) R.string.photos_empty_album_text_own else R.string.photos_empty_album_text_shared))
+                list.photos.isEmpty() -> EmptyState(
+                    Icons.Outlined.PhotoLibrary, stringResource(R.string.photos_empty_album),
+                    description = stringResource(if (current?.canCallerContribute == true) R.string.photos_empty_album_text_own else R.string.photos_empty_album_text_shared),
+                    actionLabel = if (current?.canCallerContribute == true) stringResource(R.string.photos_add_photos) else null,
+                    onAction = { isAddingPhotos = true },
+                )
                 else -> PhotoGrid(
                     PhotoGridContent.Days(PhotoTimeline.days(list.photos)), selectedIds, isSelecting,
                     onOpen = { photo -> openedPhotoId = photo.id },
@@ -301,6 +308,9 @@ fun AlbumScreen(photoAlbumId: String, onBack: () -> Unit) {
                     album = current, onAlbumChanged = { updated -> album = updated },
                 )
             }
+    }
+    if (isAddingPhotos && current != null) {
+        PhotoPickerSheet(current, onAdded = { isAddingPhotos = false; list.refresh(); albumLoad.refresh() }, onDismiss = { isAddingPhotos = false })
     }
     if (isRenaming && current != null) {
         NewAlbumDialog(

@@ -3,6 +3,9 @@ package com.teanode.app.mail
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.teanode.app.demo.DemoHost
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
@@ -107,4 +110,31 @@ class ManageScreenshotTest {
     @Test fun `edit credential dark`() = show(Look.Dark, waitsFor = "Edit credential", name = "credential") { DomainSubPageScreen(DomainSubPage.Credential(DomainCredential("credential-1", "Printer", "scanner", false)), "example.com", {}, {}) }
     @Test fun `template`() = show(Look.Light, waitsFor = "Sent when somebody joins", name = "template") { DomainSubPageScreen(DomainSubPage.Template("template-1", "Plain layout"), "example.com", {}, {}) }
     @Test fun `layout`() = show(Look.Light, waitsFor = "What it is for", name = "layout") { DomainSubPageScreen(DomainSubPage.Layout("layout-1"), "example.com", {}, {}) }
+
+    /** The domain page scrolled to one of its settings, and the dialog that setting opens when [tapped] is given. */
+    private fun showDomainSetting(look: Look, domainId: String, scrolledTo: String, tapped: String?, name: String) {
+        composeRule.setContent { DemoHost(appearance = look.appearance) { DomainScreen(domainId, {}) } }
+        composeRule.waitUntil(10_000) { composeRule.onAllNodesWithText("Aliases", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithText(scrolledTo, substring = true).performScrollTo()
+        if (tapped != null) {
+            // A dialog with a text field keeps a cursor blinking, so the clock is stepped by hand instead of waited on.
+            composeRule.mainClock.autoAdvance = false
+            composeRule.onNodeWithText(tapped).performClick()
+            composeRule.mainClock.advanceTimeBy(600)
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            composeRule.mainClock.advanceTimeBy(600)
+        } else {
+            composeRule.waitForIdle()
+        }
+        composeRule.photograph("mail-manage-domain-$name-${if (look == Look.Light) "light" else "dark"}")
+    }
+
+    @Test fun `domain mail server names`() = showDomainSetting(Look.Light, "domain-1", "Comma separated", null, "servers")
+    @Test fun `domain signing key`() = showDomainSetting(Look.Light, "domain-1", "The label the key is published under", null, "signing-key")
+    @Test fun `domain signing key dark`() = showDomainSetting(Look.Dark, "domain-1", "The label the key is published under", null, "signing-key")
+    @Test fun `domain without a signing key`() = showDomainSetting(Look.Light, "domain-2", "The label the key is published under", null, "no-key")
+    @Test fun `domain replace key question`() = showDomainSetting(Look.Light, "domain-1", "The label the key is published under", "Replace the key", "replace-key")
+    // The existing text field dialog of this page, to tell a harness problem from one of the new dialog.
+    @Test fun `domain add credential`() = showDomainSetting(Look.Light, "domain-1", "For sending mail through this server", "Add a credential", "add-credential")
+    @Test fun `domain move selector`() = showDomainSetting(Look.Light, "domain-1", "The label the key is published under", "Selector", "selector")
 }

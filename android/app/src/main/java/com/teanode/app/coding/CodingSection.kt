@@ -56,6 +56,7 @@ import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.kit.coding.CodingComputer
@@ -123,7 +124,9 @@ fun CodingSection() {
                     Icons.Outlined.Terminal, stringResource(R.string.coding_empty_title),
                     description = stringResource(R.string.coding_empty_description),
                 )
-                list != null -> CodingList(model.computers, list.failedComputerNames, onOpen = { entry -> navigator.navigate(codingSessionRoute(entry.computer, entry.paneId)) })
+                list != null -> PullToRefresh(onRefresh = { model.load() }, modifier = Modifier.fillMaxSize()) {
+                    CodingList(model.computers, list.failedComputerNames, onOpen = { entry -> navigator.navigate(codingSessionRoute(entry.computer, entry.paneId)) })
+                }
                 failure != null -> ErrorState(session.describeLoadProblem(failure), onRetry = { scope.launch { model.load() } })
                 else -> LoadingState()
             }

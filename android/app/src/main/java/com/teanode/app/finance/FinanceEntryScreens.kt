@@ -56,6 +56,9 @@ import com.teanode.kit.finance.recordPaystub
 import com.teanode.kit.finance.recordReceipt
 import com.teanode.kit.finance.recordTaxForm
 import com.teanode.kit.finance.shownName
+import com.teanode.kit.finance.exchangeRate
+import com.teanode.kit.finance.reportingCurrency
+import com.teanode.kit.finance.shownRate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -84,6 +87,26 @@ private fun problemSentence(problem: FinanceEntryProblem?): String? {
 @Composable
 private fun Field(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
     OutlinedTextField(value, onChange, label = { Text(label) }, singleLine = true, modifier = modifier.fillMaxWidth())
+}
+
+/** "1 EUR = 1.0834 USD" under a currency field, read when the code changes; nothing for the person's own currency, a code not typed in full, or a day the server has no rate. */
+@Composable
+internal fun ExchangeRateNote(currencyCode: String) {
+    val connection = LocalConnection.current
+    var rate by remember { mutableStateOf<com.teanode.kit.finance.CurrencyRate?>(null) }
+    androidx.compose.runtime.LaunchedEffect(currencyCode.trim().uppercase()) {
+        rate = null
+        try {
+            val pair = com.teanode.kit.finance.ExchangeRateLookup.pair(currencyCode, connection.reportingCurrency().currencyCode) ?: return@LaunchedEffect
+            rate = connection.exchangeRate(pair.first, pair.second)
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (_: Throwable) {
+            // No rate is no note.
+        }
+    }
+    val shown = rate?.shownRate ?: return
+    Text(stringResource(R.string.finance_exchange_rate_note, rate!!.fromCurrencyCode, shown, rate!!.toCurrencyCode), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -182,6 +205,7 @@ fun FinanceReceiptEntryScreen() {
         Field(stringResource(R.string.finance_merchant), draft.merchantName, { draft = draft.copy(merchantName = it) })
         Field(stringResource(R.string.finance_bought_on), draft.purchasedOn, { draft = draft.copy(purchasedOn = it) })
         Field(stringResource(R.string.finance_currency), draft.currencyCode, { draft = draft.copy(currencyCode = it.uppercase()) })
+        ExchangeRateNote(draft.currencyCode)
         Field(stringResource(R.string.finance_receipt_number), draft.merchantReceiptNumber, { draft = draft.copy(merchantReceiptNumber = it) })
         Field(stringResource(R.string.finance_subtotal), draft.subtotalAmount, { draft = draft.copy(subtotalAmount = it) })
         Field(stringResource(R.string.finance_total), draft.totalAmount, { draft = draft.copy(totalAmount = it) })
@@ -239,6 +263,7 @@ fun FinancePaystubEntryScreen() {
         Field(stringResource(R.string.finance_entry_period_starts), draft.periodStartOn, { draft = draft.copy(periodStartOn = it) })
         Field(stringResource(R.string.finance_entry_period_ends), draft.periodEndOn, { draft = draft.copy(periodEndOn = it) })
         Field(stringResource(R.string.finance_currency), draft.currencyCode, { draft = draft.copy(currencyCode = it.uppercase()) })
+        ExchangeRateNote(draft.currencyCode)
         Field(stringResource(R.string.finance_tax_gross), draft.grossAmount, { draft = draft.copy(grossAmount = it) })
         Field(stringResource(R.string.finance_entry_gross_year), draft.yearToDateGrossAmount, { draft = draft.copy(yearToDateGrossAmount = it) })
         Field(stringResource(R.string.finance_tax_total_taxes), draft.totalTaxAmount, { draft = draft.copy(totalTaxAmount = it) })

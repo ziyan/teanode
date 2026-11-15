@@ -5,7 +5,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
 import com.teanode.app.demo.DemoHost
 import com.teanode.app.screenshots.Look
 import com.teanode.app.screenshots.PHONE_QUALIFIERS
@@ -64,6 +66,29 @@ class ShoppingScreenshotTest {
     @Test fun `list largest text`() = shoot("list-largest-text", Look.Light, 2f) { ShoppingListScreen(ShoppingDemoData.GROCERIES_LIST_ID) }
     @Test fun `list pictures`() = shoot("list-pictures", Look.Light) { ShoppingListScreen(ShoppingDemoData.GROCERIES_LIST_ID, ShoppingLayoutChoice.Pictures) }
     @Test fun `list pictures dark`() = shoot("list-pictures", Look.Dark) { ShoppingListScreen(ShoppingDemoData.GROCERIES_LIST_ID, ShoppingLayoutChoice.Pictures) }
+    @Test fun `not available to the account`() = shoot("not-available", Look.Light) { ShoppingNotAllowedView() }
+    @Test fun `not available to the account dark`() = shoot("not-available", Look.Dark) { ShoppingNotAllowedView() }
+
+    @Test fun `item menu after a long press`() {
+        composeRule.setContent { DemoHost(appearance = Look.Light.appearance) { ShoppingListScreen(ShoppingDemoData.GROCERIES_LIST_ID) } }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Apples").performTouchInput { longClick() }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Remove").assertExists()
+        composeRule.photograph("shopping-item-menu-light")
+    }
+
+    @Test fun `remove confirmation`() {
+        composeRule.setContent { DemoHost(appearance = Look.Light.appearance) { ShoppingListScreen(ShoppingDemoData.GROCERIES_LIST_ID) } }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Apples").performTouchInput { longClick() }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Remove").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Remove from the list").assertExists()
+        composeRule.photograph("shopping-remove-confirmation-light")
+    }
+
     @Test fun `list shared with the person`() = shoot("list-shared", Look.Light) { ShoppingListScreen(ShoppingDemoData.PROJECT_LIST_ID) }
 
     @Test fun `store light`() = shoot("store", Look.Light) { ShoppingStoreScreen(ShoppingDemoData.EXAMPLE_MARKET, emptyList()) }

@@ -76,6 +76,7 @@ import com.teanode.app.session.LocalConnection
 import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.app.ui.components.rememberServerPicture
 import com.teanode.kit.AppSection
@@ -151,7 +152,9 @@ fun JournalDayScreen(initialDay: String) {
         when {
             loadFailure != null -> ErrorState(session.describeLoadProblem(loadFailure), onRetry = { scope.launch { model.load() } }, modifier = Modifier.padding(contentPadding))
             journalDay == null -> LoadingState(Modifier.padding(contentPadding))
-            else -> DayContent(host, model, journalDay, state, Modifier.padding(contentPadding))
+            else -> PullToRefresh(onRefresh = { model.load() }, modifier = Modifier.fillMaxSize().padding(contentPadding)) {
+                DayContent(host, model, journalDay, state, Modifier)
+            }
         }
     }
     val openedPhoto = state.openedPhotoId

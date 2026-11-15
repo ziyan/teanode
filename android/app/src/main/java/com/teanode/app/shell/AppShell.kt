@@ -72,8 +72,9 @@ fun AppShell(
     val startSection = barSections.firstOrNull() ?: AppSection.Settings
 
     // Keeps the screen on a part that exists: when the server says the one open is off, the first in the bar opens.
+    // Shopping stays: it says itself that the account may not use it, as the iPhone's does.
     LaunchedEffect(facts, hasReadFacts, currentSection) {
-        if (hasReadFacts && currentSection != null && !facts.isAvailable(currentSection)) navigator.openSection(startSection)
+        if (hasReadFacts && currentSection != null && currentSection != AppSection.Shopping && !facts.isAvailable(currentSection)) navigator.openSection(startSection)
     }
     LaunchedEffect(startRoute) {
         // The graph is set once the host below has composed; the first entry says it has.

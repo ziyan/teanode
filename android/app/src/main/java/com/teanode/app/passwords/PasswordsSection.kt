@@ -76,6 +76,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.teanode.app.R
 import com.teanode.app.shell.LocalAppNavigator
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
@@ -301,18 +302,20 @@ private fun PasswordsListScreen(model: PasswordsModel) {
                     actionLabel = stringResource(R.string.passwords_add_a_login), onAction = { navigator.navigate("passwords/edit/login/new") },
                 )
                 shownItems.isEmpty() -> EmptyState(Icons.Outlined.Search, filterTitle, description = stringResource(R.string.passwords_nothing_here))
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    if (searchText.isEmpty()) {
-                        item("notices") { PasswordsListNotices(model) }
-                        item("needs-you") { PasswordsNeedsYouRows(model, onOpenItem = { waiting -> navigator.navigate("passwords/item/${android.net.Uri.encode(waiting.id)}") }) }
-                    }
-                    items(shownItems, key = { item -> item.id }) { item -> PasswordsItemRow(model, item, onClick = { navigator.navigate("passwords/item/${android.net.Uri.encode(item.id)}") }) }
-                    if (model.unreadableItemCount > 0) {
-                        item {
-                            Text(
-                                pluralStringResource(R.plurals.passwords_unreadable_items, model.unreadableItemCount, model.unreadableItemCount),
-                                modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                else -> PullToRefresh(onRefresh = { model.sync() }, modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        if (searchText.isEmpty()) {
+                            item("notices") { PasswordsListNotices(model) }
+                            item("needs-you") { PasswordsNeedsYouRows(model, onOpenItem = { waiting -> navigator.navigate("passwords/item/${android.net.Uri.encode(waiting.id)}") }) }
+                        }
+                        items(shownItems, key = { item -> item.id }) { item -> PasswordsItemRow(model, item, onClick = { navigator.navigate("passwords/item/${android.net.Uri.encode(item.id)}") }) }
+                        if (model.unreadableItemCount > 0) {
+                            item {
+                                Text(
+                                    pluralStringResource(R.plurals.passwords_unreadable_items, model.unreadableItemCount, model.unreadableItemCount),
+                                    modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }

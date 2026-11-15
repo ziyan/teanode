@@ -51,6 +51,7 @@ import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.shell.Routes
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.kit.AppSection
@@ -299,13 +300,15 @@ private fun LocationDrawerContent(
         )
         failure != null -> ErrorState(failure, onRetry = onRetry)
         !model.hasLoaded -> LoadingState()
-        else -> when (segment) {
-            LocationSegment.Visits -> LocationVisitsList(
-                model = model, onOpenDay = onOpenDay, onOpenPlace = onOpenPlace, onOpenPeople = onOpenPeople, onOpenTravel = onOpenTravel, onShowSharing = onShowSharing,
-                onOpenPhotos = onOpenPhotos,
-            )
-            LocationSegment.Places -> LocationPlacesList(model = model, onOpenPlace = onOpenPlace)
-            LocationSegment.Sharing -> LocationSharingList(model = model)
+        else -> PullToRefresh(onRefresh = { model.load() }, modifier = Modifier.fillMaxSize()) {
+            when (segment) {
+                LocationSegment.Visits -> LocationVisitsList(
+                    model = model, onOpenDay = onOpenDay, onOpenPlace = onOpenPlace, onOpenPeople = onOpenPeople, onOpenTravel = onOpenTravel, onShowSharing = onShowSharing,
+                    onOpenPhotos = onOpenPhotos,
+                )
+                LocationSegment.Places -> LocationPlacesList(model = model, onOpenPlace = onOpenPlace)
+                LocationSegment.Sharing -> LocationSharingList(model = model)
+            }
         }
     }
 }

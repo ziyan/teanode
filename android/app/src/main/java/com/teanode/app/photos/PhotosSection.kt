@@ -9,10 +9,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Favorite
@@ -21,7 +26,9 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PhotoAlbum
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.People
@@ -73,6 +80,7 @@ import com.teanode.kit.photos.emptyPhotoTrash
 import com.teanode.kit.photos.deletePhotos
 import com.teanode.kit.photos.photoLibrary
 import com.teanode.kit.photos.restorePhotos
+import com.teanode.kit.photos.setPhotoFavorite
 import com.teanode.kit.photos.trashPhotos
 import kotlinx.coroutines.launch
 
@@ -128,6 +136,8 @@ fun PhotosSection(
     var isDeleteConfirming by remember { mutableStateOf(false) }
     var isTrashConfirming by remember { mutableStateOf(false) }
     var isAlbumChoosing by remember { mutableStateOf(false) }
+    var isLocationChoosing by remember { mutableStateOf(false) }
+    var isPreparingShare by remember { mutableStateOf(false) }
     var isHiddenShown by remember { mutableStateOf(false) }
     // The Search screen's photo: the library searched for the words that found it, with the photo opened.
     com.teanode.app.search.TakePartSearch(com.teanode.kit.search.SearchArea.Photos) { search ->
@@ -200,6 +210,45 @@ fun PhotosSection(
         }
     }
 
+    val selectedPhotos = list?.photos?.filter { photo -> photo.id in selectedIds }.orEmpty()
+
+    fun favoriteSelected() {
+        val chosen = list?.photos?.filter { photo -> photo.id in selectedIds }.orEmpty()
+        val isFavorite = com.teanode.kit.photos.PhotoFavorites.isFavoriteTarget(chosen)
+        scope.launch {
+            try {
+                for (photo in com.teanode.kit.photos.PhotoFavorites.photosToChange(chosen, isFavorite)) {
+                    val updated = connection.setPhotoFavorite(photo.id, isFavorite)
+                    // The Favorites collection holds only hearts: a photo that lost its heart leaves it at once.
+                    if (section == PhotoSectionChoice.Favorites && !isFavorite) list?.remove(listOf(photo.id)) else list?.replace(updated)
+                }
+                isSelecting = false
+                selectedIds = emptySet()
+                libraryLoad.refresh()
+            } catch (failure: kotlinx.coroutines.CancellationException) {
+                throw failure
+            } catch (failure: Throwable) {
+                snackbar.showError(failure)
+            }
+        }
+    }
+
+    fun shareSelected() {
+        val chosen = list?.photos?.filter { photo -> photo.id in selectedIds }.orEmpty()
+        scope.launch {
+            isPreparingShare = true
+            try {
+                connection.sharePhotoFiles(context, chosen)
+            } catch (failure: kotlinx.coroutines.CancellationException) {
+                throw failure
+            } catch (failure: Throwable) {
+                if (failure is com.teanode.kit.photos.PhotoError) snackbar.showProblem(photoErrorWords(context, failure)) else snackbar.showError(failure)
+            } finally {
+                isPreparingShare = false
+            }
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
     val title = if (isSelecting) stringResource(R.string.photos_selected_count, selectedIds.size) else section.title()
     TeaNodeScreen(
@@ -260,6 +309,7 @@ fun PhotosSection(
                     section = section, count = selectedIds.size,
                     onTrash = { isTrashConfirming = true }, onRestore = { act(isRestoring = true, successMessageId = R.plurals.photos_restored) },
                     onDelete = { isDeleteConfirming = true }, onAddToAlbum = { isAlbumChoosing = true },
+                    onChangeLocation = { isLocationChoosing = true }, onShare = ::shareSelected, isEveryFavorite = selectedPhotos.isNotEmpty() && !com.teanode.kit.photos.PhotoFavorites.isFavoriteTarget(selectedPhotos), onFavorite = ::favoriteSelected, isPreparingShare = isPreparingShare,
                 )
             } else if (section == PhotoSectionChoice.Library && searchWords == null) {
                 ScaleBar(scale) { chosen -> scale = chosen }
@@ -332,6 +382,14 @@ fun PhotosSection(
             onDismiss = { isEmptyTrashConfirming = false },
         )
     }
+    if (isLocationChoosing) {
+        val chosen = list?.photos?.filter { photo -> photo.id in selectedIds }.orEmpty()
+        ChangeLocationSheet(
+            photoIds = chosen.map { photo -> photo.id }, hasLocation = chosen.any { photo -> photo.latitude != null },
+            onDone = { isLocationChoosing = false; isSelecting = false; selectedIds = emptySet(); list?.refresh() },
+            onDismiss = { isLocationChoosing = false },
+        )
+    }
     if (isAlbumChoosing) {
         AddToAlbumSheet(
             photoIds = selectedIds.toList(), onDone = { isAlbumChoosing = false; isSelecting = false; selectedIds = emptySet() }, onDismiss = { isAlbumChoosing = false },
@@ -379,9 +437,14 @@ private fun SelectionBar(
     onRestore: () -> Unit,
     onDelete: () -> Unit,
     onAddToAlbum: () -> Unit,
+    onChangeLocation: () -> Unit,
+    onShare: () -> Unit,
+    isEveryFavorite: Boolean,
+    onFavorite: () -> Unit,
+    isPreparingShare: Boolean,
 ) {
     BottomAppBar {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             if (section == PhotoSectionChoice.Trash) {
                 TextButton(onClick = onRestore, enabled = count > 0) {
                     Icon(Icons.Outlined.Restore, contentDescription = null); Text("  " + stringResource(R.string.photos_restore))
@@ -391,12 +454,22 @@ private fun SelectionBar(
                     Text("  " + stringResource(R.string.photos_delete_forever), color = MaterialTheme.colorScheme.error)
                 }
             } else {
-                TextButton(onClick = onAddToAlbum, enabled = count > 0) {
-                    Icon(Icons.Outlined.PlaylistAdd, contentDescription = null); Text("  " + stringResource(R.string.photos_add_to_album))
+                // Icons alone: five words would not fit a phone's width.
+                IconButton(onClick = onAddToAlbum, enabled = count > 0) { Icon(Icons.Outlined.PlaylistAdd, contentDescription = stringResource(R.string.photos_add_to_album)) }
+                IconButton(onClick = onFavorite, enabled = count > 0) {
+                    Icon(
+                        if (isEveryFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                        contentDescription = stringResource(if (isEveryFavorite) R.string.photos_remove_favorite else R.string.photos_add_favorite),
+                    )
                 }
-                TextButton(onClick = onTrash, enabled = count > 0) {
-                    Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                    Text("  " + stringResource(R.string.photos_move_to_trash), color = MaterialTheme.colorScheme.error)
+                IconButton(onClick = onChangeLocation, enabled = count > 0) { Icon(Icons.Outlined.LocationOn, contentDescription = stringResource(R.string.photos_change_location)) }
+                if (isPreparingShare) {
+                    androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                } else {
+                    IconButton(onClick = onShare, enabled = count > 0) { Icon(Icons.Outlined.Share, contentDescription = stringResource(R.string.photos_share)) }
+                }
+                IconButton(onClick = onTrash, enabled = count > 0) {
+                    Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.photos_move_to_trash), tint = MaterialTheme.colorScheme.error)
                 }
             }
         }
@@ -429,7 +502,23 @@ private fun FilterChips(filter: PhotoFilter, section: PhotoSectionChoice, search
             item { AssistChip(onClick = { onChange(filter.copy(firstDay = null, lastDay = null)) }, label = { Text(listOfNotNull(filter.firstDay, filter.lastDay).joinToString(" - ")) }, leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) }) }
         }
         if (!filter.accountUserId.isNullOrEmpty()) {
-            item { AssistChip(onClick = { onChange(filter.copy(accountUserId = null, accountName = "")) }, label = { Text(filter.accountName) }, leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) }) }
+            item {
+                AssistChip(
+                    onClick = { onChange(filter.copy(accountUserId = null, accountName = "")) },
+                    label = { Text(if (filter.accountName.isEmpty()) stringResource(R.string.photos_of_a_person) else stringResource(R.string.photos_of_person, filter.accountName)) },
+                    leadingIcon = { Icon(Icons.Outlined.AccountCircle, contentDescription = null) },
+                    trailingIcon = { Icon(Icons.Filled.Close, contentDescription = null) },
+                )
+            }
+        }
+        com.teanode.kit.photos.PhotoPositionText.windowText(filter.takenAfter, filter.takenBefore)?.let { windowText ->
+            item {
+                AssistChip(
+                    onClick = { onChange(filter.copy(takenAfter = null, takenBefore = null)) }, label = { Text(windowText) },
+                    leadingIcon = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
+                    trailingIcon = { Icon(Icons.Filled.Close, contentDescription = null) },
+                )
+            }
         }
     }
 }

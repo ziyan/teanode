@@ -161,6 +161,12 @@ val photosDemoAnswerers: List<DemoAnswerer> = listOf(
     graphQLField("ListAddressBooks", """[{"id":"b1","name":"Contacts","contacts":3}]"""),
     graphQLField("ListContacts", """[{"id":"k1","name":"Alex Example","emails":["alex@example.com"]},{"id":"k2","name":"Robin Reader","emails":["robin@example.com"]}]"""),
     graphQLField("FindPhotos", "[]"),
+    graphQLField("AddPhotosToAlbum") { variables -> (variables["photoIds"] as? kotlinx.serialization.json.JsonArray)?.size?.toString() ?: "0" },
+    graphQLField("DescribePhoto") { variables ->
+        val photo = PhotosDemoData.photos.firstOrNull { candidate -> candidate.id == variables.text("photoId") } ?: PhotosDemoData.photos.first()
+        PhotosDemoData.photoJson(photo, withDescription = true)
+    },
+    graphQLField("RemovePhotoFaceFromGroup") { _ -> PhotosDemoData.faceGroupsJson().first() },
 )
 
 private fun narrowCirclesAnswerer(valueJson: String): DemoAnswerer {

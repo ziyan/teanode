@@ -624,7 +624,7 @@ fun KnowledgeSourcesScreen(onBack: () -> Unit) {
 
 /** Makes or changes a source: its type, name, where it reads, the type's settings, and its secrets, which are sealed on the server and never shown again. */
 @Composable
-private fun KnowledgeSourceEditorDialog(edited: com.teanode.kit.agent.KnowledgeSourceRow?, actions: ActionRunner, onDismiss: () -> Unit, onSaved: () -> Unit) {
+internal fun KnowledgeSourceEditorDialog(edited: com.teanode.kit.agent.KnowledgeSourceRow?, actions: ActionRunner, onDismiss: () -> Unit, onSaved: () -> Unit) {
     val connection = LocalConnection.current
     val types = rememberLoad { connection.knowledgeSourceTypes() }
     val computers = rememberLoad { runCatching { connection.attachedComputers() }.getOrDefault(emptyList()) }

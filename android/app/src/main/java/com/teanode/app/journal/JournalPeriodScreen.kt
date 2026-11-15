@@ -47,6 +47,7 @@ import com.teanode.app.session.LocalConnection
 import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
+import com.teanode.app.ui.components.PullToRefresh
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.kit.journal.JournalDays
 import com.teanode.kit.journal.JournalDaySummary
@@ -104,58 +105,60 @@ fun JournalPeriodScreen(periodKind: JournalPeriodKind, anchorDay: String) {
         when {
             loadFailure != null -> ErrorState(session.describeLoadProblem(loadFailure), onRetry = { scope.launch { model.load() } }, modifier = Modifier.padding(contentPadding))
             period == null -> LoadingState(Modifier.padding(contentPadding))
-            else -> LazyColumn(Modifier.fillMaxSize().padding(contentPadding)) {
-                // The story.
-                item(key = "story-header") { Heading(stringResource(when (periodKind) { JournalPeriodKind.Week -> R.string.journal_the_week_as_teanode_saw_it; JournalPeriodKind.Month -> R.string.journal_the_month_as_teanode_saw_it; JournalPeriodKind.Year -> R.string.journal_the_year_as_teanode_saw_it })) }
-                journalNarrativeRows(
-                    period.narrative,
-                    emptyTextResource = when (periodKind) { JournalPeriodKind.Week -> R.string.journal_week_no_story; JournalPeriodKind.Month -> R.string.journal_month_no_story; JournalPeriodKind.Year -> R.string.journal_year_no_story },
-                    writeNowTitleResource = R.string.journal_write_now, isBusy = model.isBusy,
-                    onOpen = { record -> openJournalRecord(navigator, JournalRecordOpening.of(record)) },
-                    onCorrect = { navigator.navigate(JournalRoutes.correct(periodKind, model.anchorDay)) },
-                    onWriteAgain = { scope.launch { model.writeAgain() } },
-                    onRemoveStory = { scope.launch { model.removeNarrative() } },
-                    onRemoveCorrection = { index -> scope.launch { model.removeCorrection(index) } },
-                )
-                if (period.narrative?.hasNarrative == true) item(key = "story-footer") { Footnote(stringOf(R.string.journal_reads_your_journal)) }
-                // Looking back.
-                val words = period.lookingBack
-                item(key = "looking-back-header") { Heading(stringOf(R.string.journal_looking_back)) }
-                journalWordsRows(words, isShowingOriginal) { isOriginal -> isShowingOriginal = isOriginal }
-                item(key = "looking-back-write") {
-                    JournalAction(stringOf(if (words?.hasOriginal == true) R.string.journal_edit_looking_back else R.string.journal_write_looking_back), Icons.Outlined.EditNote, onClick = { navigator.navigate(JournalRoutes.write(periodKind, model.anchorDay)) })
-                }
-                item(key = "looking-back-footer") { Footnote(stringOf(R.string.journal_your_own_words_about_stretch)) }
-                // The days.
-                when (periodKind) {
-                    JournalPeriodKind.Week -> weekDays(period, text) { day -> navigator.navigate(JournalRoutes.day(day)) }
-                    JournalPeriodKind.Month -> monthGrid(period, weekStartsOn, today, text) { day -> navigator.navigate(JournalRoutes.day(day)) }
-                    JournalPeriodKind.Year -> yearMonths(period, text) { start -> navigator.navigate(JournalRoutes.period(JournalPeriodKind.Month, start)) }
-                }
-                // Mood and numbers.
-                if (period.moodCounts.any { count -> count > 0 }) {
-                    item(key = "mood-header") { Heading(stringOf(R.string.journal_how_the_days_were)) }
-                    item(key = "mood-bar") { JournalMoodBar(period.moodCounts, Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) }
-                }
-                totalsSection(period.totals, text)
-                // Chapters and what was chosen.
-                if (period.chapters.isNotEmpty()) {
-                    item(key = "chapters-header") { Heading(stringOf(R.string.journal_chapters)) }
-                    items(period.chapters.size, key = { index -> "chapter-$index" }) { index ->
-                        val chapter = period.chapters[index]
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(chapter.title, style = MaterialTheme.typography.titleMedium)
-                            Text(text.dayRangeText(chapter.fromDay, chapter.untilDay), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (chapter.detail.isNotEmpty()) Text(chapter.detail, style = MaterialTheme.typography.bodyLarge.copy(fontFamily = journalWritingFace))
+            else -> PullToRefresh(onRefresh = { model.load() }, modifier = Modifier.fillMaxSize().padding(contentPadding)) {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    // The story.
+                    item(key = "story-header") { Heading(stringResource(when (periodKind) { JournalPeriodKind.Week -> R.string.journal_the_week_as_teanode_saw_it; JournalPeriodKind.Month -> R.string.journal_the_month_as_teanode_saw_it; JournalPeriodKind.Year -> R.string.journal_the_year_as_teanode_saw_it })) }
+                    journalNarrativeRows(
+                        period.narrative,
+                        emptyTextResource = when (periodKind) { JournalPeriodKind.Week -> R.string.journal_week_no_story; JournalPeriodKind.Month -> R.string.journal_month_no_story; JournalPeriodKind.Year -> R.string.journal_year_no_story },
+                        writeNowTitleResource = R.string.journal_write_now, isBusy = model.isBusy,
+                        onOpen = { record -> openJournalRecord(navigator, JournalRecordOpening.of(record)) },
+                        onCorrect = { navigator.navigate(JournalRoutes.correct(periodKind, model.anchorDay)) },
+                        onWriteAgain = { scope.launch { model.writeAgain() } },
+                        onRemoveStory = { scope.launch { model.removeNarrative() } },
+                        onRemoveCorrection = { index -> scope.launch { model.removeCorrection(index) } },
+                    )
+                    if (period.narrative?.hasNarrative == true) item(key = "story-footer") { Footnote(stringOf(R.string.journal_reads_your_journal)) }
+                    // Looking back.
+                    val words = period.lookingBack
+                    item(key = "looking-back-header") { Heading(stringOf(R.string.journal_looking_back)) }
+                    journalWordsRows(words, isShowingOriginal) { isOriginal -> isShowingOriginal = isOriginal }
+                    item(key = "looking-back-write") {
+                        JournalAction(stringOf(if (words?.hasOriginal == true) R.string.journal_edit_looking_back else R.string.journal_write_looking_back), Icons.Outlined.EditNote, onClick = { navigator.navigate(JournalRoutes.write(periodKind, model.anchorDay)) })
+                    }
+                    item(key = "looking-back-footer") { Footnote(stringOf(R.string.journal_your_own_words_about_stretch)) }
+                    // The days.
+                    when (periodKind) {
+                        JournalPeriodKind.Week -> weekDays(period, text) { day -> navigator.navigate(JournalRoutes.day(day)) }
+                        JournalPeriodKind.Month -> monthGrid(period, weekStartsOn, today, text) { day -> navigator.navigate(JournalRoutes.day(day)) }
+                        JournalPeriodKind.Year -> yearMonths(period, text) { start -> navigator.navigate(JournalRoutes.period(JournalPeriodKind.Month, start)) }
+                    }
+                    // Mood and numbers.
+                    if (period.moodCounts.any { count -> count > 0 }) {
+                        item(key = "mood-header") { Heading(stringOf(R.string.journal_how_the_days_were)) }
+                        item(key = "mood-bar") { JournalMoodBar(period.moodCounts, Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) }
+                    }
+                    totalsSection(period.totals, text)
+                    // Chapters and what was chosen.
+                    if (period.chapters.isNotEmpty()) {
+                        item(key = "chapters-header") { Heading(stringOf(R.string.journal_chapters)) }
+                        items(period.chapters.size, key = { index -> "chapter-$index" }) { index ->
+                            val chapter = period.chapters[index]
+                            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(chapter.title, style = MaterialTheme.typography.titleMedium)
+                                Text(text.dayRangeText(chapter.fromDay, chapter.untilDay), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (chapter.detail.isNotEmpty()) Text(chapter.detail, style = MaterialTheme.typography.bodyLarge.copy(fontFamily = journalWritingFace))
+                            }
                         }
                     }
-                }
-                val links = period.choices.filter { link -> !link.isHidden && link.record?.isUnavailable == false }
-                if (links.isNotEmpty()) {
-                    item(key = "moments-header") { Heading(stringOf(R.string.journal_moments)) }
-                    items(links, key = { link -> "choice-${link.linkId}" }) { link ->
-                        val record = link.record ?: return@items
-                        JournalRecordRow(record.recordKind, record.title, detail = link.linkReason, opening = JournalRecordOpening.of(record), onOpen = { opening -> openJournalRecord(navigator, opening) })
+                    val links = period.choices.filter { link -> !link.isHidden && link.record?.isUnavailable == false }
+                    if (links.isNotEmpty()) {
+                        item(key = "moments-header") { Heading(stringOf(R.string.journal_moments)) }
+                        items(links, key = { link -> "choice-${link.linkId}" }) { link ->
+                            val record = link.record ?: return@items
+                            JournalRecordRow(record.recordKind, record.title, detail = link.linkReason, opening = JournalRecordOpening.of(record), onOpen = { opening -> openJournalRecord(navigator, opening) })
+                        }
                     }
                 }
             }

@@ -348,3 +348,17 @@ val CurrencyRate.shownRate: String?
     }
 
 val TransactionRowsPreview.Row.id: Int get() = rowNumber ?: 0
+
+/** What a currency field asks the server for: today's rate into the person's own currency (ios FinanceEntryViews.swift ExchangeRateLookup). */
+object ExchangeRateLookup {
+    /**
+     * The pair to look up, or null when there is nothing to ask: a typed code that is not one yet, or the person's own
+     * currency. An empty own currency is dollars, as on the iPhone.
+     */
+    fun pair(typedCurrencyCode: String, reportingCurrencyCode: String): Pair<String, String>? {
+        val typed = typedCurrencyCode.trim().uppercase()
+        val home = reportingCurrencyCode.ifEmpty { "USD" }.uppercase()
+        if (!FinanceEntryText.isCurrencyCode(typed) || typed == home) return null
+        return typed to home
+    }
+}
