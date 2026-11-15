@@ -199,9 +199,13 @@ class RecordingsScreenshotTest {
         TranscriptTextEditor(editedSegment, "r1", onSaved = {}, onDismiss = {})
     }
 
+    /** A dialog is shown only after the first frame, on a stopped clock, as the Finance editors are photographed. */
     private fun shootOnStoppedClock(name: String, appearance: AppearanceChoice = AppearanceChoice.Light, fontScale: Float = 1f, content: @Composable () -> Unit) {
+        var isShown by androidx.compose.runtime.mutableStateOf(false)
+        composeRule.setContent { DemoHost(appearance = appearance) { WithFontScale(fontScale) { if (isShown) content() } } }
+        composeRule.waitForIdle()
         composeRule.mainClock.autoAdvance = false
-        composeRule.setContent { DemoHost(appearance = appearance) { WithFontScale(fontScale) { content() } } }
+        isShown = true
         composeRule.mainClock.advanceTimeBy(600)
         org.robolectric.shadows.ShadowLooper.idleMainLooper()
         composeRule.mainClock.advanceTimeBy(600)
