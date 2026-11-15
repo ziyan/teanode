@@ -161,6 +161,28 @@
             </intent-filter>
         </service>
 
+        <!-- Quick settings tiles: they only open the app, which asks before a call and shows the recorder before it starts. -->
+        <service
+            android:name=".widgets.CallAgentTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_widget_call"
+            android:label="@string/widgets_call_your_agent"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".widgets.StartRecordingTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_widget_mic"
+            android:label="@string/widgets_start_recording"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- The buttons of a notification that do not open the app: approve, deny, a reply, a choice, a mood. -->
         <receiver
             android:name=".notifications.NotificationActionReceiver"
