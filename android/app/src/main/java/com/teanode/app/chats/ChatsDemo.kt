@@ -144,6 +144,7 @@ private fun cardsMessages(): List<AgentMessage> = listOf(
         """{"computer":"studio","paneId":"w1:p2","questionFingerprint":"f0","herdrSession":{"paneName":"docs","codingAgentKind":"codex","question":{"questionFingerprint":"f0","questionText":"Which file should I edit?","isMultipleChoice":false,"options":[{"optionNumber":1,"optionLabel":"README","herdrOptionKind":"choice"}]}}}""",
         3.6, name = "herdr_asked",
     ),
+    message("k9", "note", """{"skillShareId":"ss1","callId":"call1","granteeName":"Alex Sample","granteeUserId":"user-alex"}""", 3.45, name = "skill_share_call_waiting"),
     message("k5", "note", """{"computer":"studio","paneId":"w1:p2","questionFingerprint":"f0","answerText":"1. README"}""", 3.55, name = "herdr_answered"),
     message("k6", "user", "[goal done] goal-1 Invoices filed", 3.3),
     message("k7", "note", "you asked it to stop", 3.2, name = "stopped"),

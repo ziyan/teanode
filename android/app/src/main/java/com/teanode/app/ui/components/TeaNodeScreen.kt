@@ -18,6 +18,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import com.teanode.app.R
 
@@ -58,7 +59,7 @@ fun TeaNodeScreen(
                     // A title that opens something (the person's card in a chat with one person) is a button as a whole.
                     Text(
                         title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = if (onTitleClick != null) Modifier.clickable(onClickLabel = titleClickLabel, onClick = onTitleClick) else Modifier,
+                        modifier = if (onTitleClick != null) Modifier.clickable(role = Role.Button, onClickLabel = titleClickLabel, onClick = onTitleClick) else Modifier,
                     )
                 },
                 navigationIcon = {

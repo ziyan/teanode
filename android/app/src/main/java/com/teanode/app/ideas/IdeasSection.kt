@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
@@ -148,7 +149,7 @@ private fun OpenIdeaRow(idea: IdeaEntry, isBusy: Boolean, onTry: () -> Unit, onD
     var isMenuOpen by remember { mutableStateOf(false) }
     val tryLabel = stringResource(R.string.ideas_try_it)
     Row(
-        Modifier.fillMaxWidth().clickable(enabled = !isBusy, onClickLabel = tryLabel, onClick = onTry).padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = !isBusy, onClickLabel = tryLabel, onClick = onTry).padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,
     ) {

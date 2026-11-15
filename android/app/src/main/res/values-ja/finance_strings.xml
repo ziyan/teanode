@@ -251,7 +251,7 @@
     <string name="finance_shared_at">%2$s さんが「%1$s」で共有</string>
     <string name="finance_shared_with_you">あなたと共有されているページ</string>
     <string name="finance_share_everyone_in">%1$sの全員</string>
-    <string name="finance_share_everyone_in_circle">%1$s のみんな（%2$s）</string>
+    <string name="finance_share_everyone_in_circle">%1$sの全員（%2$s）</string>
     <string name="finance_shares_accounts">一部の口座を共有</string>
     <string name="finance_shares_all">財務をすべて共有</string>
     <string name="finance_share_with">共有する相手</string>
@@ -350,7 +350,7 @@
         <item quantity="other">%d 人</item>
     </plurals>
     <plurals name="finance_cards_left_out">
-        <item quantity="other">%d 枚のカードは限度額が不明のため除外しています。</item>
+        <item quantity="other">%d 枚のカードを除外：限度額が不明です。</item>
     </plurals>
     <plurals name="finance_duplicates_left_out">
         <item quantity="other">重複 %d 件は集計に含めていません。</item>

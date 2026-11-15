@@ -128,6 +128,8 @@ class CallCenter(
         scope.launch {
             call.callState.first { state -> state == com.teanode.kit.calls.VoiceCallState.Ended }
             if (voiceCall.value === call) voiceCall.value = null
+            // The bar is gone with the call, so what ended it is told as a problem.
+            call.problemText.value?.let { text -> problemEvents.tryEmit(text) }
         }
     }
 

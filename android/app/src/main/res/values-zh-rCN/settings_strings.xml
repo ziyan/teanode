@@ -374,7 +374,8 @@
     <string name="settings_kind_shopping">购物清单：到达商店，以及有人开始购买清单上的东西</string>
     <string name="settings_kind_skill_share_call">等待你批准的技能调用</string>
     <string name="settings_language">语言</string>
-    <string name="settings_language_detail">在 Android 的设置中选择应用的语言。</string>
+    <string name="settings_language_detail">TeaNode 显示所用的语言。“跟随系统”会使用手机的语言。</string>
+    <string name="settings_language_system">跟随系统</string>
     <string name="settings_last_used">上次使用：%1$s</string>
     <string name="settings_mailbox">邮箱</string>
     <string name="settings_manage">管理</string>
@@ -932,4 +933,6 @@
     </plurals>
     <string name="settings_unsent_mail">你写的一封邮件尚未发送。</string>
     <string name="settings_unsent_deleted">退出登录会将它们从这部手机上删除。</string>
+    <string name="settings_stepper_decrease">减少</string>
+    <string name="settings_stepper_increase">增加</string>
 </resources>

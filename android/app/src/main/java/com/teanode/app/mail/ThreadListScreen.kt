@@ -63,6 +63,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -509,7 +511,7 @@ private fun ThreadRows(
                         Modifier
                             .fillMaxWidth()
                             .background(if (isChosen) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
-                            .combinedClickable(onClick = { if (isSelecting) onToggle(thread) else onOpen(thread) }, onLongClick = { onSelect(thread) })
+                            .combinedClickable(role = Role.Button, onClick = { if (isSelecting) onToggle(thread) else onOpen(thread) }, onLongClick = { onSelect(thread) })
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.Top,
                     ) {
@@ -543,7 +545,7 @@ fun ListPeriodHeader(period: ListPeriod) {
         ListPeriod.ThisMonth -> stringResource(R.string.mail_period_this_month)
         is ListPeriod.Month -> MailTimes.monthTitle(period)
     }
-    Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp))
+    Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { heading() }.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp))
 }
 
 /** What a swipe does: its symbol, its word and the color behind. */

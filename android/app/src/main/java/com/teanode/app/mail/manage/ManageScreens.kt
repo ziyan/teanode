@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -338,7 +339,7 @@ fun AllMailScreen(onBack: () -> Unit, onOpenMail: (String) -> Unit, startingFilt
         },
         key = { mail -> mail.id },
     ) { mail ->
-        Column(Modifier.fillMaxWidth().clickable { onOpenMail(mail.id) }.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenMail(mail.id) }.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(mail.shownSender, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 ManageLabels.relativeTime(mail.receivedAt)?.let { received -> Text(received, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -476,7 +477,7 @@ fun AuditedMailScreen(mailId: String, onBack: () -> Unit, connection: Connection
                 }
                 TeaNodeSectionHeader(stringResource(R.string.mail_manage_deliveries))
                 if (shown.deliveries.isEmpty()) Text(stringResource(R.string.mail_manage_no_deliveries), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                for (delivery in shown.deliveries) DeliveryRow(delivery, Modifier.clickable { subPage = AuditSubPage.DeliveryDetail(delivery) })
+                for (delivery in shown.deliveries) DeliveryRow(delivery, Modifier.clickable(role = Role.Button) { subPage = AuditSubPage.DeliveryDetail(delivery) })
                 val content = shown.content
                 if (content != null) {
                     TeaNodeSectionHeader(stringResource(R.string.mail_manage_message))
@@ -695,7 +696,7 @@ fun DeliveryQueueScreen(onBack: () -> Unit, onOpenMail: (String) -> Unit, connec
         footer = { count -> pluralStringResource(R.plurals.mail_manage_deliveries_count, count, count) },
         key = { delivery -> delivery.id },
     ) { delivery ->
-        DeliveryRow(delivery, Modifier.clickable { delivery.mailId?.let { mailId -> onOpenMail(mailId) } }, onRetry = {
+        DeliveryRow(delivery, Modifier.clickable(role = Role.Button) { delivery.mailId?.let { mailId -> onOpenMail(mailId) } }, onRetry = {
             scope.launch {
                 try {
                     connection.retryDelivery(delivery.id)
@@ -753,7 +754,7 @@ fun ReportsScreen(onBack: () -> Unit, onOpenReport: (String) -> Unit, connection
         footer = { count -> pluralStringResource(R.plurals.mail_manage_reports_count, count, count) },
         key = { report -> report.id },
     ) { report ->
-        Column(Modifier.fillMaxWidth().clickable { onOpenReport(report.id) }.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenReport(report.id) }.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(report.fromDomain.orEmpty(), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 ManageLabels.relativeTime(report.endAt ?: report.beginAt)?.let { whenText -> Text(whenText, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -807,7 +808,7 @@ fun ReportDetailScreen(reportId: String, onBack: () -> Unit, connection: Connect
                     TeaNodeSectionHeader(stringResource(R.string.mail_manage_what_they_did))
                     if ((feedback.records ?: emptyList()).isEmpty()) Text(stringResource(R.string.mail_manage_no_source_rows), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     for (record in feedback.records ?: emptyList()) {
-                        Column(Modifier.clickable { openedRecord = record }) { FeedbackRecordSummary(record) }
+                        Column(Modifier.clickable(role = Role.Button) { openedRecord = record }) { FeedbackRecordSummary(record) }
                         HorizontalDivider()
                     }
                 }

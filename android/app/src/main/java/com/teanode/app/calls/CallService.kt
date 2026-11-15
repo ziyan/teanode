@@ -25,7 +25,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 /**
@@ -47,18 +50,22 @@ class CallService : Service() {
         createChannels(this)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val center = (application as TeaNodeApplication).push.calls
         when (intent?.action) {
             ACTION_DECLINE -> intent.getStringExtra(EXTRA_ENTRY_ID)?.let { entryId -> center.declineRing(entryId) }
             ACTION_HANG_UP -> center.hangUp()
-            ACTION_TOGGLE_MUTE -> center.session.value?.let { state -> center.setMuted(!state.isMuted) }
+            ACTION_TOGGLE_MUTE -> {
+                val voice = center.agentVoice.value
+                if (voice != null) voice.setMuted(!voice.isMuted.value) else center.session.value?.let { state -> center.setMuted(!state.isMuted) }
+            }
         }
         // The service has to be in the foreground at once after it is started this way, whatever the call is doing.
         render(forceForeground = true)
         if (observeJob == null) {
             observeJob = scope.launch {
-                combine(center.session, center.ringing, center.agentVoice) { _, _, _ -> }.collect { render(forceForeground = false) }
+                center.agentVoice.flatMapLatest { voice -> voice?.isMuted ?: flowOf(false) }.let { voiceMuted -> combine(center.session, center.ringing, center.agentVoice, voiceMuted) { _, _, _, _ -> } }.collect { render(forceForeground = false) }
             }
         }
         return START_NOT_STICKY
@@ -168,14 +175,19 @@ class CallService : Service() {
             this, 5, Intent(this, CallService::class.java).setAction(ACTION_HANG_UP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val person = Person.Builder().setName(voice.agentName).setImportant(true).build()
+        val toggleMute = PendingIntent.getService(
+            this, 6, Intent(this, CallService::class.java).setAction(ACTION_TOGGLE_MUTE), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val isMuted = voice.isMuted.value
         return NotificationCompat.Builder(this, ONGOING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(voice.agentName)
-            .setContentText(getString(R.string.calls_notification_call_in_progress))
+            .setContentText(getString(if (isMuted) R.string.calls_muted else R.string.calls_notification_call_in_progress))
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setOngoing(true)
             .setUsesChronometer(true)
             .setContentIntent(open)
+            .addAction(0, getString(if (isMuted) R.string.calls_unmute else R.string.calls_mute), toggleMute)
             .setStyle(NotificationCompat.CallStyle.forOngoingCall(person, hangUp))
             .build()
     }

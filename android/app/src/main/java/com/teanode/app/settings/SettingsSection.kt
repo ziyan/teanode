@@ -196,16 +196,15 @@ fun SettingsSection() {
                     onSelect = { choice -> session.setAppearance(choice) },
                 )
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                item {
-                    TeaNodeRow(
-                        headline = stringResource(R.string.settings_language), supporting = stringResource(R.string.settings_language_detail),
-                        onClick = {
-                            context.startActivity(Intent(Settings.ACTION_APP_LOCALE_SETTINGS, android.net.Uri.fromParts("package", context.packageName, null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        },
-                    )
-                }
+            item {
+                var language by remember { mutableStateOf(AppLanguage.current()) }
+                ChoiceRow(
+                    stringResource(R.string.settings_language), AppLanguage.entries, language,
+                    label = { choice -> appLanguageTitle(choice) },
+                    onSelect = { choice -> language = choice; choice.apply() },
+                )
             }
+            item { FooterText(stringResource(R.string.settings_language_detail)) }
             if (facts.services?.isMailboxEnabled != false) {
                 item { TeaNodeSectionHeader(stringResource(R.string.settings_mailbox)) }
                 item { TeaNodeNavigationRow(stringResource(R.string.settings_mailbox), { openPlace("mail/settings") }, leadingIcon = Icons.Outlined.Inbox) }
@@ -276,3 +275,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.notificationsSection(
         }
     }
 }
+
+@Composable
+private fun appLanguageTitle(language: AppLanguage): String = stringResource(
+    when (language) {
+        AppLanguage.System -> R.string.settings_language_system
+        AppLanguage.English -> R.string.settings_language_english
+        AppLanguage.Chinese -> R.string.settings_language_chinese
+        AppLanguage.Japanese -> R.string.settings_language_japanese
+    },
+)

@@ -21,6 +21,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -50,7 +53,7 @@ fun TeaNodeRow(
                 style = if (isHeadlineBold) MaterialTheme.typography.bodyLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold) else MaterialTheme.typography.bodyLarge,
             )
         },
-        modifier = if (onClick != null) modifier.clickable(onClick = onClick) else modifier,
+        modifier = if (onClick != null) modifier.clickable(role = Role.Button, onClick = onClick) else modifier,
         overlineContent = overline?.let { text -> { Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
         supportingContent = supporting?.let { text -> { Text(text, maxLines = supportingMaxLines, overflow = TextOverflow.Ellipsis) } },
         leadingContent = leading ?: leadingIcon?.let { icon -> { Icon(icon, contentDescription = null) } },
@@ -86,7 +89,7 @@ fun TeaNodeNavigationRow(
 fun TeaNodeSectionHeader(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
-        modifier = modifier.padding(PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)),
+        modifier = modifier.semantics { heading() }.padding(PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)),
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
     )

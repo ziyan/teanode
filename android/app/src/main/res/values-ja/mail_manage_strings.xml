@@ -281,7 +281,7 @@
     <string name="mail_manage_link_host_footer">テンプレートに入れた画像は、このドメインの名前から HTTPS で取得されます。これはメールの到着先とは別の問題です。メールサーバー名が指すホストの 443 番ポートが別のものであれば、メール自体は届いても画像だけが全部壊れます。</string>
     <string name="mail_manage_link_host_default_footer">空のままなら %1$s を使います。指定する名前は、メーラーが受け入れる証明書で HTTPS としてこのサーバーに届き、かつこのドメイン配下である必要があります。他のドメインのアドレスは、サーバーの運営者を読み手全員に告げてしまいます。</string>
     <string name="mail_manage_signing_key">署名鍵</string>
-    <string name="mail_manage_signing_key_signed">このドメインから送るメールはセレクタ %1$s で署名されます。公開鍵は上の TXT レコードで、秘密鍵はこのサーバーのデータベースに保管され、外には出ません。</string>
+    <string name="mail_manage_signing_key_signed">このドメインから送るメールはセレクタ %1$s で署名されます。公開鍵は上の TXT レコードで、秘密鍵はこのサーバーのデータベースに保存され、外に出ることはありません。</string>
     <string name="mail_manage_signing_key_missing">このドメインには署名鍵がないため、送信メールは署名されず、受信側に迷惑メールとみなされやすくなります。</string>
     <string name="mail_manage_selector">セレクタ</string>
     <string name="mail_manage_move_selector">セレクタを変更</string>

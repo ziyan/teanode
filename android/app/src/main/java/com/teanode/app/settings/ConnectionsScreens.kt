@@ -94,7 +94,7 @@ internal fun RowMenu(actions: List<Pair<String, () -> Unit>>) {
     if (actions.isEmpty()) return
     var isOpen by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { isOpen = true }) { Icon(Icons.Outlined.MoreVert, null) }
+        IconButton(onClick = { isOpen = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.common_more)) }
         DropdownMenu(expanded = isOpen, onDismissRequest = { isOpen = false }) {
             actions.forEach { (label, action) -> DropdownMenuItem(text = { Text(label) }, onClick = { isOpen = false; action() }) }
         }

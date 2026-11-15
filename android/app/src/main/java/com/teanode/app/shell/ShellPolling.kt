@@ -4,6 +4,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalContext
+import com.teanode.app.chats.ChatsEnvironment
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -43,7 +45,7 @@ const val SHELL_POLL_MS = 30_000L
 /**
  * What the shell does while the app is in front, whichever part is open (ios AppShell.refreshPresence and
  * refreshCodingPresence): every half minute it tells the server whether a chat is on screen, so a message in it is held
- * back from the phone only then, and it asks which coding sessions wait, so the badge on Coding is right while Coding is
+ * back from the phone only then, and it reads the chats for the badge on Chats, and it asks which coding sessions wait, so the badge on Coding is right while Coding is
  * not the part on screen.
  */
 @Composable
@@ -51,6 +53,7 @@ fun ShellPolling(currentSection: AppSection?) {
     val connection = LocalConnection.current
     val session = LocalAppSession.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current.applicationContext
     val facts by session.facts.collectAsState()
     val latestFacts by rememberUpdatedState(facts)
     val latestSection by rememberUpdatedState(currentSection)
@@ -63,6 +66,8 @@ fun ShellPolling(currentSection: AppSection?) {
                     val shownId = ShownConversation.conversationId.value
                     runCatching { connection.reportPresence(shownId != null, shownId.orEmpty()) }
                 }
+                // The Chats list reads for itself while it is on screen; the badge is kept right from here the rest of the time.
+                runCatching { ChatsEnvironment.of(context, connection, session).refreshChats() }
                 delay(SHELL_POLL_MS)
             }
         }

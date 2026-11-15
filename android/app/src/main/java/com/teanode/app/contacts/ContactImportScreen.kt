@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
@@ -228,7 +229,7 @@ fun ContactImportContent(importModel: ContactImportModel, onBack: () -> Unit, on
                             LazyColumn(Modifier.fillMaxSize()) {
                                 items(importModel.shownContacts, key = { contact -> contact.id }) { contact ->
                                     val isAlreadyPresent = importModel.alreadyPresentIds.contains(contact.id)
-                                    Row(Modifier.fillMaxWidth().clickable { importModel.toggle(contact.id) }.padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Row(Modifier.fillMaxWidth().clickable(role = Role.Checkbox) { importModel.toggle(contact.id) }.padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Checkbox(importModel.chosenIds.contains(contact.id), onCheckedChange = null)
                                         Column(Modifier.padding(start = 12.dp)) {
                                             Text(contact.name.ifEmpty { stringResource(R.string.contacts_no_name) })

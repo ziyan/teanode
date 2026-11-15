@@ -189,4 +189,5 @@
     <string name="journal_written_from">Written %1$s from %2$d sources</string>
     <string name="journal_you_said">You said: %1$s</string>
     <string name="journal_reading_text_provider">TeaNode reads your journal, your words included, to write the story of each day. What it reads goes to %1$s.</string>
+    <string name="journal_photo">Photo</string>
 </resources>

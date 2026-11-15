@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.LocalAppSession
@@ -251,7 +252,7 @@ fun ConversationsList(onChoose: (AgentConversation?) -> Unit) {
                             }
                             item(key = "archived") {
                                 HorizontalDivider(Modifier.padding(top = 8.dp))
-                                Row(Modifier.fillMaxWidth().clickable { isShowingArchived = !isShowingArchived }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { isShowingArchived = !isShowingArchived }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Text(stringResource(R.string.chats_archived_chats), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
                                     Icon(if (isShowingArchived) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, contentDescription = null)
                                 }

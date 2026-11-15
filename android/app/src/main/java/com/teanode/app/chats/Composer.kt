@@ -66,6 +66,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -403,7 +404,7 @@ fun MentionMenu(choices: List<MentionChoice>, words: ChatWords, onChoose: (Menti
         LazyColumn(Modifier.heightIn(max = 280.dp)) {
             items(choices, key = { choice -> choice.identity }) { choice ->
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { onChoose(choice) }.padding(horizontal = 16.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button) { onChoose(choice) }.padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Box(Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)), contentAlignment = Alignment.Center) {

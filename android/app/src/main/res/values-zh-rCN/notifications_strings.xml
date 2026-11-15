@@ -24,7 +24,7 @@
     <string name="notifications_mood_great">很棒</string>
     <string name="notifications_mood_low">低</string>
     <string name="notifications_mood_okay">一般</string>
-    <string name="notifications_new_message">新消息</string>
+    <string name="notifications_new_message">新邮件</string>
     <string name="notifications_reply_hint_agent">问问助手…</string>
     <string name="notifications_reply_hint_message">发消息…</string>
     <string name="notifications_update_available">有可用更新</string>

@@ -135,15 +135,33 @@ class AvatarPictureTest {
 class StringsTest {
     private val resources = File("src/main/res")
 
+    /** Every string, every plural (its "other" form) and every array item of a folder, from all of its files except the colors and themes. */
     private fun strings(folder: String): Map<String, String> {
         val result = HashMap<String, String>()
-        val files = File(resources, folder).listFiles { file -> Regex("(.*_)?strings\\.xml").matches(file.name) }.orEmpty().toList()
+        val files = File(resources, folder).listFiles { file -> file.extension == "xml" && !file.name.endsWith("colors.xml") && !file.name.endsWith("themes.xml") }.orEmpty().toList()
         for (file in files) {
             val document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file)
-            val nodes = document.getElementsByTagName("string")
+            val nodes = document.documentElement.childNodes
             for (position in 0 until nodes.length) {
                 val node = nodes.item(position)
-                result[node.attributes.getNamedItem("name").nodeValue] = node.textContent
+                if (node.nodeType != org.w3c.dom.Node.ELEMENT_NODE) continue
+                val element = node as org.w3c.dom.Element
+                if (element.getAttribute("translatable") == "false") continue
+                val name = element.getAttribute("name")
+                when (element.tagName) {
+                    "string" -> result[name] = element.textContent
+                    "plurals" -> {
+                        val items = element.getElementsByTagName("item")
+                        for (itemPosition in 0 until items.length) {
+                            val item = items.item(itemPosition) as org.w3c.dom.Element
+                            if (item.getAttribute("quantity") == "other") result["$name#other"] = item.textContent
+                        }
+                    }
+                    "string-array" -> {
+                        val items = element.getElementsByTagName("item")
+                        for (itemPosition in 0 until items.length) result["$name#$itemPosition"] = items.item(itemPosition).textContent
+                    }
+                }
             }
         }
         return result

@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -133,10 +134,10 @@ fun JournalSection() {
                         for (group in model.weekGroups) {
                             item(key = "week-header-${group.weekStart}") { Heading(text.weekTitle(group.weekStart)) }
                             item(key = "week-${group.weekStart}") {
-                                JournalWeekRow(model.weekHeadlines[group.weekStart].orEmpty(), Modifier.clickable { navigator.navigate(JournalRoutes.period(com.teanode.kit.journal.JournalPeriodKind.Week, group.weekStart)) })
+                                JournalWeekRow(model.weekHeadlines[group.weekStart].orEmpty(), Modifier.clickable(role = Role.Button) { navigator.navigate(JournalRoutes.period(com.teanode.kit.journal.JournalPeriodKind.Week, group.weekStart)) })
                             }
                             items(group.days, key = { summary -> "day-${summary.day}" }) { summary ->
-                                JournalDayRow(summary, text, Modifier.clickable { navigator.navigate(JournalRoutes.day(summary.day)) })
+                                JournalDayRow(summary, text, Modifier.clickable(role = Role.Button) { navigator.navigate(JournalRoutes.day(summary.day)) })
                                 LaunchedEffect(summary.id, model.days.size) { model.loadMore(summary) }
                             }
                         }
@@ -171,7 +172,7 @@ fun JournalSearchResults(model: JournalSearchModel, searchWords: String, text: J
         else -> LazyColumn(Modifier.fillMaxSize()) {
             item(key = "results-header") { Heading(stringResource(R.string.journal_results_for, model.searchedQuery)) }
             items(model.hits, key = { hit -> "hit-${hit.id}" }) { hit ->
-                Column(Modifier.fillMaxWidth().clickable { onOpen(hit) }.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(hit) }.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(text.searchHitTitle(hit), style = MaterialTheme.typography.titleMedium)
                     if (hit.headline.isNotEmpty()) Text(hit.headline, style = MaterialTheme.typography.bodyLarge.copy(fontFamily = journalWritingFace), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     if (hit.snippet.isNotEmpty()) Text(hit.snippet, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)

@@ -63,6 +63,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -418,7 +419,7 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
                     if (listState.firstVisibleItemIndex > 3) {
                         Box(
                             Modifier.align(Alignment.BottomEnd).padding(16.dp).size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                .clickable { scope.launch { listState.animateScrollToItem(0) } },
+                                .clickable(role = Role.Button) { scope.launch { listState.animateScrollToItem(0) } },
                             contentAlignment = Alignment.Center,
                         ) { Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = stringResource(R.string.chats_jump_to_end)) }
                     }
@@ -427,7 +428,9 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
                 for (reference in model.references) ReferenceBar(reference, model, environment.agentTitle)
                 if (model.mentionSuggestions.isNotEmpty()) MentionMenu(model.mentionSuggestions, environment.words) { choice -> model.choose(choice) }
                 if (model.todos.isNotEmpty() && (model.runningRunId != null || model.todos.any { todo -> !todo.isDone })) TodoPanel(model.todos)
-                Composer(model, environment, dictation)
+                val voiceCall = model.agentVoiceCall
+                val activeVoiceCall by (com.teanode.app.calls.LocalCallCenter.current?.agentVoice ?: kotlinx.coroutines.flow.MutableStateFlow(null)).collectAsState()
+                if (voiceCall != null && voiceCall === activeVoiceCall) com.teanode.app.calls.AgentVoiceCallBar(voiceCall) else Composer(model, environment, dictation)
             }
         }
 
@@ -563,6 +566,7 @@ private fun ConversationItemView(
                     ToolFiles(line.text, line.detail)
                 }
                 line.kind == TranscriptLine.Kind.CheckIn -> CheckInLine(line)
+                line.kind == TranscriptLine.Kind.Note && line.detail == "skill_share_call_waiting" -> SkillShareCallWaitingCard(line.text)
                 line.kind == TranscriptLine.Kind.Note -> NoteLine(line)
                 line.kind == TranscriptLine.Kind.Approval || line.kind == TranscriptLine.Kind.Question -> CardSurface { CardView(line, model, environment.agentTitle) }
                 line.kind == TranscriptLine.Kind.CodingQuestion -> CardSurface(paddingDp = if (line.isDone) 12 else 16) { CodingQuestionCard(line, model) }

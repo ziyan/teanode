@@ -199,7 +199,7 @@ fun PersonCardScreen(model: ContactsModel, target: PersonCardTarget, onBack: () 
                     PersonCardMemoryRows(shownCard)
                     PersonCardDetailsRows(shownCard, model)
                     PersonCardCirclesRows(shownCard)
-                    PersonCardRelationshipRows(shownCard)
+                    PersonCardRelationshipRows(shownCard, onChanged = { scope.launch { load() } })
                     if (isContactInLoadedBook && contact != null) {
                         PersonCardManageRows(
                             contact, model, onChooseAccount = { isEditingAccount = true }, onChanged = { scope.launch { load() } },
@@ -605,12 +605,17 @@ private fun PersonCardCirclesRows(card: PersonCard) {
 
 /** What they are to the person, as the Circles screen words it. */
 @Composable
-private fun PersonCardRelationshipRows(card: PersonCard) {
+private fun PersonCardRelationshipRows(card: PersonCard, onChanged: () -> Unit) {
     val person = card.person ?: return
-    val context = LocalContext.current
     val word = relationshipWordOf(person)
+    // The same editor as the Circles screen: the word, and the pronoun asked for when the person has not said how they are described.
+    val directory = com.teanode.app.settings.rememberCircleDirectory()
+    var isEditing by remember { mutableStateOf(false) }
+    if (isEditing) {
+        com.teanode.app.settings.CircleRelationshipDialog(directory, person, onDismiss = { isEditing = false; onChanged() })
+    }
     TeaNodeSectionHeader(stringResource(R.string.contacts_relationship))
-    TeaNodeRow(headline = stringResource(R.string.contacts_relationship), trailing = { Text(word?.let { shown -> shown.replaceFirstChar { first -> first.uppercase() } } ?: stringResource(R.string.contacts_none), color = MaterialTheme.colorScheme.onSurfaceVariant) })
+    TeaNodeRow(headline = stringResource(R.string.contacts_relationship), onClick = { if (directory.isLoaded) isEditing = true }, trailing = { Text(word?.let { shown -> shown.replaceFirstChar { first -> first.uppercase() } } ?: stringResource(R.string.contacts_none), color = MaterialTheme.colorScheme.onSurfaceVariant) })
 }
 
 /** What the person can do about their contact for them: say which account they are, mark them as the person, take their picture off, delete them. */

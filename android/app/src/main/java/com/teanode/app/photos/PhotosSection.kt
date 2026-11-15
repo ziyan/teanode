@@ -4,12 +4,14 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -57,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.LocalConnection
@@ -476,45 +479,48 @@ private fun SelectionBar(
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun FilterChips(filter: PhotoFilter, section: PhotoSectionChoice, searchWords: String?, onChange: (PhotoFilter) -> Unit) {
     if (section != PhotoSectionChoice.Library || searchWords != null || !filter.isActive) return
-    androidx.compose.foundation.lazy.LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        item {
-            AssistChip(
-                onClick = { onChange(PhotoFilter()) }, label = { Text(stringResource(R.string.photos_clear_filters)) },
+    // The chips wrap onto a second line, and one with a long text is cut with an ellipsis inside the screen.
+    val chipMaxWidth = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 32).dp
+    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        run {
+            AssistChip(modifier = Modifier.widthIn(max = chipMaxWidth),
+                onClick = { onChange(PhotoFilter()) }, label = { Text(stringResource(R.string.photos_clear_filters), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) },
             )
         }
         filter.photoNearFilter?.let { near ->
-            item {
-                AssistChip(
+            run {
+                AssistChip(modifier = Modifier.widthIn(max = chipMaxWidth),
                     onClick = { onChange(filter.copy(photoNearFilter = null)) },
-                    label = { Text(near.placeName.ifEmpty { stringResource(R.string.photos_near_here) }) },
+                    label = { Text(near.placeName.ifEmpty { stringResource(R.string.photos_near_here) }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) },
                 )
             }
         }
         if (filter.photoKindFilter != com.teanode.kit.photos.PhotoKindFilter.All) {
-            item { AssistChip(onClick = { onChange(filter.copy(photoKindFilter = com.teanode.kit.photos.PhotoKindFilter.All)) }, label = { Text(kindFilterName(filter.photoKindFilter)) }, leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) }) }
+            run { AssistChip(modifier = Modifier.widthIn(max = chipMaxWidth), onClick = { onChange(filter.copy(photoKindFilter = com.teanode.kit.photos.PhotoKindFilter.All)) }, label = { Text(kindFilterName(filter.photoKindFilter), maxLines = 1, overflow = TextOverflow.Ellipsis) }, leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) }) }
         }
         if (filter.firstDay != null || filter.lastDay != null) {
-            item { AssistChip(onClick = { onChange(filter.copy(firstDay = null, lastDay = null)) }, label = { Text(listOfNotNull(filter.firstDay, filter.lastDay).joinToString(" - ")) }, leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) }) }
+            run { AssistChip(modifier = Modifier.widthIn(max = chipMaxWidth), onClick = { onChange(filter.copy(firstDay = null, lastDay = null)) }, label = { Text(listOfNotNull(filter.firstDay, filter.lastDay).joinToString(" - "), maxLines = 1, overflow = TextOverflow.Ellipsis) }, leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) }) }
         }
         if (!filter.accountUserId.isNullOrEmpty()) {
-            item {
-                AssistChip(
+            run {
+                AssistChip(modifier = Modifier.widthIn(max = chipMaxWidth),
                     onClick = { onChange(filter.copy(accountUserId = null, accountName = "")) },
-                    label = { Text(if (filter.accountName.isEmpty()) stringResource(R.string.photos_of_a_person) else stringResource(R.string.photos_of_person, filter.accountName)) },
+                    label = { Text(if (filter.accountName.isEmpty()) stringResource(R.string.photos_of_a_person) else stringResource(R.string.photos_of_person, filter.accountName), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingIcon = { Icon(Icons.Outlined.AccountCircle, contentDescription = null) },
                     trailingIcon = { Icon(Icons.Filled.Close, contentDescription = null) },
                 )
             }
         }
         com.teanode.kit.photos.PhotoPositionText.windowText(filter.takenAfter, filter.takenBefore)?.let { windowText ->
-            item {
-                AssistChip(
-                    onClick = { onChange(filter.copy(takenAfter = null, takenBefore = null)) }, label = { Text(windowText) },
+            run {
+                AssistChip(modifier = Modifier.widthIn(max = chipMaxWidth),
+                    onClick = { onChange(filter.copy(takenAfter = null, takenBefore = null)) }, label = { Text(windowText, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingIcon = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
                     trailingIcon = { Icon(Icons.Filled.Close, contentDescription = null) },
                 )

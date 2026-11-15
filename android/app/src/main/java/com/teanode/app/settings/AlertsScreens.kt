@@ -140,9 +140,9 @@ private fun StepperRow(headline: String, number: Int, range: IntRange, onChange:
         headline = headline,
         trailing = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { onChange(number - 1) }, enabled = number > range.first) { Icon(Icons.Outlined.Remove, null) }
+                IconButton(onClick = { onChange(number - 1) }, enabled = number > range.first) { Icon(Icons.Outlined.Remove, stringResource(R.string.settings_stepper_decrease)) }
                 Text(number.toString(), style = MaterialTheme.typography.bodyLarge)
-                IconButton(onClick = { onChange(number + 1) }, enabled = number < range.last) { Icon(Icons.Outlined.Add, null) }
+                IconButton(onClick = { onChange(number + 1) }, enabled = number < range.last) { Icon(Icons.Outlined.Add, stringResource(R.string.settings_stepper_increase)) }
             }
         },
     )

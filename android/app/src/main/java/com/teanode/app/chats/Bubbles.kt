@@ -57,6 +57,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
@@ -316,7 +317,7 @@ fun VoiceMessageBubble(line: TranscriptLine, recording: AgentAttachment, isOther
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(
-                    Modifier.size(48.dp).clip(CircleShape).semantics { contentDescription = playLabel }.clickable { VoiceMessagePlayer.toggle(recording, connection) },
+                    Modifier.size(48.dp).clip(CircleShape).semantics { contentDescription = playLabel }.clickable(role = Role.Button) { VoiceMessagePlayer.toggle(recording, connection) },
                     contentAlignment = Alignment.Center,
                 ) {
                     Box(Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {

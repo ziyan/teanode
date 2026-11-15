@@ -65,7 +65,7 @@ private suspend fun readGlance(context: Context): GlanceEntry = withContext(Disp
     GlanceEntry(read, isConnected = true, accountKey = account.accountKey)
 }
 
-private fun openingIntent(context: Context, route: String, isCall: Boolean = false): Intent =
+internal fun openingIntent(context: Context, route: String, isCall: Boolean = false): Intent =
     Intent(context, MainActivity::class.java)
         .setAction(Intent.ACTION_VIEW)
         .setData(Uri.parse("teanode://app/$route"))

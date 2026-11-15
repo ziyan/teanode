@@ -114,6 +114,9 @@ class ConversationModel(
         private set
     var isLoaded: Boolean by mutableStateOf(false)
         private set
+
+    /** The call with the agent this conversation started, whose bar takes the composer's place while it lasts. */
+    var agentVoiceCall: com.teanode.app.calls.AgentVoiceCall? by mutableStateOf(null)
     var loadProblemText: String? by mutableStateOf(null)
         private set
 

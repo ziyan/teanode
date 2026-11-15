@@ -175,6 +175,7 @@ fun ConversationCallEffects(model: ConversationModel) {
                 sentencesOf = { text -> SpokenText.sentences(text).sentences },
                 spokenTextOf = { markdown -> SpokenText.of(markdown) },
             )
+            model.agentVoiceCall = call
             center.beginAgentVoice(call)
             call.start()
         }

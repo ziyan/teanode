@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -111,7 +112,7 @@ fun MessageActionsSheet(line: TranscriptLine, model: ConversationModel, reader: 
                             val label = if (current == emoji) stringResource(R.string.chats_take_away_reaction, emoji) else stringResource(R.string.chats_react_with, emoji)
                             Box(
                                 Modifier.size(48.dp).clip(CircleShape).background(if (current == emoji) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) else androidx.compose.ui.graphics.Color.Transparent)
-                                    .clickable {
+                                    .clickable(role = Role.Button) {
                                         onDismiss()
                                         model.react(line, emoji)
                                     }.semantics { contentDescription = label },
@@ -186,7 +187,7 @@ private fun Modifier.verticalScrollBox(): Modifier = this.verticalScroll(remembe
 private fun ActionRow(icon: ImageVector, title: String, isDestructive: Boolean = false, onClick: () -> Unit) {
     val color = if (isDestructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = onClick).padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically,
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(role = Role.Button, onClick = onClick).padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Icon(icon, contentDescription = null, tint = color)

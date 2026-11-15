@@ -65,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -292,7 +293,7 @@ private fun PasswordsListScreen(model: PasswordsModel) {
                     value = searchText, onValueChange = { searchText = it; model.noteUse() }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     placeholder = { Text(stringResource(R.string.passwords_search_items)) }, singleLine = true,
                     leadingIcon = { Icon(Icons.Outlined.Search, null) },
-                    trailingIcon = { if (searchText.isNotEmpty()) IconButton(onClick = { searchText = "" }) { Icon(Icons.Outlined.Close, null) } },
+                    trailingIcon = { if (searchText.isNotEmpty()) IconButton(onClick = { searchText = "" }) { Icon(Icons.Outlined.Close, stringResource(R.string.search_clear)) } },
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
                 )
             }
@@ -365,7 +366,7 @@ internal fun PasswordsItemRow(model: PasswordsModel, item: PasswordItem, onClick
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun Modifier.combinedClickableCompat(onClick: () -> Unit, onLongClick: () -> Unit): Modifier =
-    this.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    this.combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onLongClick)
 
 /** The long-press menu of an item in the list: copy what the item holds without opening it. */
 @Composable
@@ -492,7 +493,7 @@ internal fun PasswordsRecoveryKeySections(model: PasswordsModel, recoveryKeyText
             }
         }
         Text(stringResource(R.string.passwords_recovery_key_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onSavedChange(!isSaved) }) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(role = Role.Checkbox) { onSavedChange(!isSaved) }) {
             Checkbox(isSaved, onCheckedChange = null)
             Text(stringResource(R.string.passwords_recovery_key_saved), modifier = Modifier.padding(start = 12.dp))
         }

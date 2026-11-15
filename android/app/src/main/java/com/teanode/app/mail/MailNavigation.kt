@@ -4,6 +4,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Newspaper
+import androidx.compose.material.icons.outlined.PriorityHigh
+import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Settings
 import androidx.navigation.NamedNavArgument
 import androidx.navigation.NavGraphBuilder
@@ -15,6 +17,7 @@ import com.teanode.app.shell.AppNavigator
 import com.teanode.app.shell.AppPlace
 import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.shell.Routes
+import com.teanode.kit.mail.MailFolder
 import com.teanode.kit.AppSection
 
 private fun stringArgument(name: String, isOptional: Boolean = false): NamedNavArgument = navArgument(name) {
@@ -103,5 +106,34 @@ val mailArea = Area(
             AppPlace("mail-rules", com.teanode.app.R.string.mail_rules_title, MailRoutes.RULES, Icons.Outlined.FilterList, listOf(com.teanode.app.R.string.mail_title)),
         )
     },
+    dynamicPlaces = { context, connection -> mailAccountPlaces(context, connection) },
     demoAnswerers = mailDemoAnswerers,
 )
+
+/**
+ * The places Search offers inside Mail that the mailbox names (ios AppPlaces, the mail case): each folder with the Inbox
+ * first, then Starred, then Priority when the agent sorts the mailbox, then the other folders. Subscriptions is a fixed
+ * place of the area. The mailbox is read first when it has not been.
+ */
+private suspend fun mailAccountPlaces(context: android.content.Context, connection: com.teanode.kit.Connection): List<AppPlace> {
+    val mail = MailModel.of(connection, context)
+    if (!mail.isLoaded) mail.load()
+    if (mail.current == null) return emptyList()
+    val parents = listOf(com.teanode.app.R.string.mail_title)
+    val englishContext = context.createConfigurationContext(android.content.res.Configuration(context.resources.configuration).apply { setLocale(java.util.Locale.ENGLISH) })
+    fun folderPlace(folder: MailFolder) = AppPlace(
+        "mail-folder-${folder.id}", 0, MailRoutes.place(MailPlace.Folder(folder.id)), MailNames.icon(folder), parents,
+        titleText = MailNames.folder(folder, context), englishTitleText = MailNames.folder(folder, englishContext),
+    )
+    val folders = mail.folders
+    val places = mutableListOf<AppPlace>()
+    places += folders.filter { folder -> folder.kind == "inbox" }.map { folder -> folderPlace(folder) }
+    places += AppPlace(
+        "mail-starred", com.teanode.app.R.string.mail_starred, MailRoutes.place(MailPlace.Starred), Icons.Outlined.Star, parents,
+    )
+    if (mail.mailbox?.agent?.isSorting == true) {
+        places += AppPlace("mail-priority", com.teanode.app.R.string.mail_priority, MailRoutes.place(MailPlace.Priority), Icons.Outlined.PriorityHigh, parents)
+    }
+    places += folders.filter { folder -> folder.kind != "inbox" }.map { folder -> folderPlace(folder) }
+    return places
+}

@@ -11,6 +11,8 @@ import com.teanode.app.screenshots.PHONE_QUALIFIERS
 import com.teanode.app.screenshots.WithFontScale
 import com.teanode.app.screenshots.photograph
 import com.teanode.app.session.LocalConnection
+import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.performScrollTo
 import com.teanode.kit.contacts.PersonCardTarget
 import org.junit.Rule
 import org.junit.Test
@@ -59,6 +61,12 @@ class ContactsScreenshotTest {
     @Test fun `person card linked light`() { show(Look.Light, waitsFor = "Fixture Park") { model -> card(model, PersonCardTarget.Account("user-sam")) }; composeRule.photograph("contacts-person-card-light") }
     @Test fun `person card linked dark`() { show(Look.Dark, waitsFor = "Fixture Park") { model -> card(model, PersonCardTarget.Account("user-sam")) }; composeRule.photograph("contacts-person-card-dark") }
     @Test fun `person card largest text`() { show(Look.Light, 2f, "Sam Fixture") { model -> card(model, PersonCardTarget.Account("user-sam")) }; composeRule.photograph("contacts-person-card-largest-text-light") }
+    @Test fun `person card relationship editor`() {
+        show(Look.Light, waitsFor = "Fixture Park") { model -> card(model, PersonCardTarget.Account("user-sam")) }
+        composeRule.onAllNodesWithText("Relationship").onLast().performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.photograph("contacts-person-card-relationship-editor-light")
+    }
     @Test fun `person card without a contact`() { show(Look.Light, waitsFor = "Link a contact") { model -> card(model, PersonCardTarget.Account("user-alex")) }; composeRule.photograph("contacts-person-card-unlinked-light") }
     @Test fun `person card without a contact dark`() { show(Look.Dark, waitsFor = "Link a contact") { model -> card(model, PersonCardTarget.Account("user-alex")) }; composeRule.photograph("contacts-person-card-unlinked-dark") }
     @Test fun `person card contact only`() { show(Look.Light, waitsFor = "Your receipt for order 1042") { model -> card(model, PersonCardTarget.Contact("book-own", "contact-books")) }; composeRule.photograph("contacts-person-card-contact-only-light") }

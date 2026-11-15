@@ -69,6 +69,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -167,7 +168,7 @@ fun RemotePicture(
         when {
             picture != null -> Image(
                 picture, contentDescription = name, contentScale = ContentScale.Fit,
-                modifier = Modifier.heightIn(max = maxHeightDp.dp).clip(RoundedCornerShape(12.dp)).clickable { if (onOpen != null) onOpen() else isOpen = true },
+                modifier = Modifier.heightIn(max = maxHeightDp.dp).clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button) { if (onOpen != null) onOpen() else isOpen = true },
             )
             isMissing -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(Icons.Outlined.Image, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -242,12 +243,12 @@ fun AnswerPicture(alt: String, address: String, link: String?, conversationId: S
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             RemotePicture(picturePath(picturedConversationId, address), alt.ifEmpty { "picture" }, maxHeightDp = 240)
             if (link != null) {
-                Text(alt.ifEmpty { link }, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.clickable { openLink(link) })
+                Text(alt.ifEmpty { link }, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.clickable(role = Role.Button) { openLink(link) })
             }
         }
     } else {
         val target = link ?: address
-        Text(alt.ifEmpty { address }, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable { openLink(target) })
+        Text(alt.ifEmpty { address }, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable(role = Role.Button) { openLink(target) })
     }
 }
 
@@ -270,7 +271,7 @@ fun AttachmentView(attachment: AgentAttachment, modifier: Modifier = Modifier) {
         var isMenuOpen by remember { mutableStateOf(false) }
         val open = { if (connection != null) scope.launch { runCatching { openServerFile(context, connection, attachment.id) }.onFailure { failure -> snackbar.showError(failure) } } }
         Box {
-            Chip(Icons.Outlined.AttachFile, "${attachment.name} · ${byteCountText(attachment.size)}", modifier.clickable { if (canSave) isMenuOpen = true else open() })
+            Chip(Icons.Outlined.AttachFile, "${attachment.name} · ${byteCountText(attachment.size)}", modifier.clickable(role = Role.Button) { if (canSave) isMenuOpen = true else open() })
             DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
                 DropdownMenuItem(text = { Text(stringResource(R.string.chats_open)) }, leadingIcon = { Icon(Icons.Outlined.OpenInNew, null) }, onClick = { isMenuOpen = false; open() })
                 DropdownMenuItem(
@@ -320,7 +321,7 @@ fun FileCard(file: AgentFile, modifier: Modifier = Modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(
-                    Modifier.weight(1f).clickable(enabled = isCardOpenedByTap) { scope.launch { runCatching { openServerFile(context, connection, file.attachmentId) }.onFailure { failure -> snackbar.showError(failure) } } },
+                    Modifier.weight(1f).clickable(role = Role.Button, enabled = isCardOpenedByTap) { scope.launch { runCatching { openServerFile(context, connection, file.attachmentId) }.onFailure { failure -> snackbar.showError(failure) } } },
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Icon(Icons.Outlined.AttachFile, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)

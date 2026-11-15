@@ -76,6 +76,10 @@ class Dictation(private val context: Context) {
     fun start(read: () -> String, write: (String) -> Unit, place: Place, connection: Connection, sampleRate: Int) {
         if (state != State.Idle) return
         sampleRateInUse = sampleRate
+        if (com.teanode.app.recordings.RecordingCaptureService.state.value.isRecording) {
+            problemText = context.getString(R.string.chats_stop_recording_before_dictating)
+            return
+        }
         if (!hasPermission()) {
             problemText = context.getString(R.string.chats_microphone_not_allowed)
             return

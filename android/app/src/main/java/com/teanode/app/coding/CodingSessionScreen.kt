@@ -62,6 +62,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.semantics.Role
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import android.Manifest
 import com.teanode.app.chats.Dictation
@@ -533,7 +534,7 @@ private fun CodingToolTurnView(turn: HerdrTurn, onWantDetail: () -> Unit) {
     var isOpen by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
         Row(
-            Modifier.fillMaxWidth().then(if (turn.hasToolDetail) Modifier.clickable { isOpen = !isOpen; if (isOpen && !turn.isToolDetailLoaded) onWantDetail() } else Modifier),
+            Modifier.fillMaxWidth().then(if (turn.hasToolDetail) Modifier.clickable(role = Role.Button) { isOpen = !isOpen; if (isOpen && !turn.isToolDetailLoaded) onWantDetail() } else Modifier),
             verticalAlignment = Alignment.Top,
         ) {
             Text(
@@ -644,7 +645,7 @@ internal fun CodingAnswerCard(question: CodingQuestion, onAnswer: suspend (List<
             question.choices.forEachIndexed { index, option ->
                 if (index > 0) HorizontalDivider()
                 Row(
-                    Modifier.fillMaxWidth().clickable(enabled = !isAnswering) {
+                    Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = !isAnswering) {
                         if (question.isMultipleChoice) {
                             chosen = if (chosen.contains(option.optionNumber)) chosen - option.optionNumber else chosen + option.optionNumber
                         } else {

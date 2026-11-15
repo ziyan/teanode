@@ -208,6 +208,8 @@ class ChatsScreenshotTest {
     @Test fun `earlier cards`() = scrolledConversation("demo-cards", Look.Light, "cards-earlier", "Book the hotel near the station", "Which hotel should I book")
     @Test fun `earlier cards dark`() = scrolledConversation("demo-cards", Look.Dark, "cards-earlier", "Book the hotel near the station", "Which hotel should I book")
     @Test fun `earlier cards at the largest text`() = scrolledConversation("demo-cards", Look.Light, "cards-earlier-largest-text", "Which file should I edit", "Which hotel should I book", 2f)
+    @Test fun `skill share call waiting card`() = scrolledConversation("demo-cards", Look.Light, "skill-share-call-waiting", "Approve and run it", "Which hotel should I book")
+    @Test fun `skill share call waiting card dark`() = scrolledConversation("demo-cards", Look.Dark, "skill-share-call-waiting", "Approve and run it", "Which hotel should I book")
     @Test fun `the table answer`() = scrolledConversation(null, Look.Light, "main-answer", "What is on my calendar tomorrow", "Remind me to leave early")
     @Test fun `the table answer dark`() = scrolledConversation(null, Look.Dark, "main-answer", "What is on my calendar tomorrow", "Remind me to leave early")
 

@@ -44,6 +44,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -200,7 +203,7 @@ internal fun CodingComputerHeader(computer: CodingComputer) {
         if (computer.askingCount > 0) add(stringResource(R.string.coding_asking_count, computer.askingCount))
         if (computer.workingCount > 0) add(stringResource(R.string.coding_working_count, computer.workingCount))
     }
-    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.semantics { heading() }.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Outlined.Computer, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
         Text(computer.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 8.dp).weight(1f), maxLines = 1)
         if (parts.isNotEmpty()) Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -210,7 +213,7 @@ internal fun CodingComputerHeader(computer: CodingComputer) {
 /** A workspace's name above its tabs. */
 @Composable
 internal fun CodingWorkspaceHeader(workspace: CodingWorkspace) {
-    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.semantics { heading() }.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Outlined.Folder, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
         Text(workspace.title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp))
     }
@@ -233,7 +236,7 @@ internal fun CodingSessionRow(session: HerdrSession, onClick: () -> Unit) {
     }
 }
 
-private fun Modifier.androidClickable(onClick: () -> Unit): Modifier = this.then(Modifier.clickable(onClick = onClick))
+private fun Modifier.androidClickable(onClick: () -> Unit): Modifier = this.then(Modifier.clickable(role = Role.Button, onClick = onClick))
 
 /**
  * A session's state as a small tag: idle on a quiet ground, working in the accent, asking in orange with a question mark,

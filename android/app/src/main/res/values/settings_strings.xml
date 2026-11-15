@@ -374,7 +374,11 @@
     <string name="settings_kind_shopping">Shopping lists: arriving at a store, and someone starting to shop a list</string>
     <string name="settings_kind_skill_share_call">Skill calls waiting for your approval</string>
     <string name="settings_language">Language</string>
-    <string name="settings_language_detail">Choose the language of the app in Android\'s settings.</string>
+    <string name="settings_language_detail">The language TeaNode is shown in. System default follows the language of your phone.</string>
+    <string name="settings_language_system">System default</string>
+    <string name="settings_language_english" translatable="false">English</string>
+    <string name="settings_language_chinese" translatable="false">中文（简体）</string>
+    <string name="settings_language_japanese" translatable="false">日本語</string>
     <string name="settings_last_used">Last used %s</string>
     <string name="settings_mailbox">Mailbox</string>
     <string name="settings_manage">Manage</string>
@@ -934,4 +938,6 @@
     </plurals>
     <string name="settings_unsent_mail">A message you wrote has not been sent.</string>
     <string name="settings_unsent_deleted">Signing out deletes them from this phone.</string>
+    <string name="settings_stepper_decrease">Decrease</string>
+    <string name="settings_stepper_increase">Increase</string>
 </resources>

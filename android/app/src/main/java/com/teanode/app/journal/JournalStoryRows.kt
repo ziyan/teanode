@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.calendar.DateWords
@@ -195,7 +196,7 @@ fun JournalAction(title: String, icon: androidx.compose.ui.graphics.vector.Image
         else -> MaterialTheme.colorScheme.primary
     }
     Row(
-        Modifier.fillMaxWidth().clickable(enabled = isEnabled, onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = isEnabled, onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
@@ -226,7 +227,7 @@ fun JournalWorkProjectRow(project: JournalWorkProject, modifier: Modifier = Modi
         for (request in project.shipped) {
             val address = request.webAddress
             Row(
-                Modifier.fillMaxWidth().then(if (address != null) Modifier.clickable { uriHandler.openUri(address) } else Modifier).padding(vertical = 8.dp),
+                Modifier.fillMaxWidth().then(if (address != null) Modifier.clickable(role = Role.Button) { uriHandler.openUri(address) } else Modifier).padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(request.title, modifier = Modifier.weight(1f, fill = false), color = if (address != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
