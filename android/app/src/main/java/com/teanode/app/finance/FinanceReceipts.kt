@@ -84,9 +84,14 @@ fun FinanceReceiptsScreen() {
 @Composable
 internal fun ReceiptRow(receipt: FinanceReceipt, onClick: () -> Unit) {
     val lineCount = receipt.receiptLines.orEmpty().filterNotNull().size
+    val matchCount = receipt.receiptMatches.orEmpty().filterNotNull().size
     TeaNodeRow(
         headline = receipt.merchantName.orEmpty().ifEmpty { stringResource(R.string.finance_receipt) },
-        supporting = listOfNotNull(receipt.purchasedOn, androidx.compose.ui.platform.LocalContext.current.resources.getQuantityString(R.plurals.finance_line_count, lineCount, lineCount)).joinToString(" · "),
+        supporting = listOfNotNull(
+            receipt.purchasedOn?.takeIf { day -> day.isNotEmpty() } ?: stringResource(R.string.finance_no_day),
+            androidx.compose.ui.platform.LocalContext.current.resources.getQuantityString(R.plurals.finance_line_count, lineCount, lineCount),
+            if (matchCount == 0) stringResource(R.string.finance_not_matched) else stringResource(R.string.finance_matched_to_charges, matchCount),
+        ).joinToString(" · "),
         trailing = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (receipt.agentAttachmentId?.isNotEmpty() == true) Icon(Icons.Outlined.Image, contentDescription = stringResource(R.string.finance_has_its_photo), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -142,7 +147,7 @@ fun FinanceReceiptDetailScreen(receiptId: String) {
                     for (line in lines) {
                         item("line-" + line.id) {
                             TeaNodeRow(
-                                line.description.orEmpty().ifEmpty { line.receiptLineKind.orEmpty() },
+                                line.description.orEmpty().ifEmpty { stringResource(R.string.finance_no_description) },
                                 supporting = listOfNotNull(line.receiptLineKind?.takeIf { kind -> kind != "item" }, line.quantity?.takeIf { quantity -> quantity.isNotEmpty() }?.let { quantity -> "$quantity ${line.quantityUnit.orEmpty()}".trim() }).joinToString(" · ").ifEmpty { null },
                                 trailing = { Text(FinanceMoney.shown(line.lineAmount, receipt.currencyCode)) },
                             )
@@ -173,7 +178,7 @@ fun FinanceReceiptDetailScreen(receiptId: String) {
             if (isConfirmingDelete) {
                 ConfirmationDialog(
                     title = stringResource(R.string.finance_delete_receipt_question), text = stringResource(R.string.finance_delete_receipt_message), confirmLabel = stringResource(R.string.finance_delete_receipt), isDestructive = true,
-                    onConfirm = { isConfirmingDelete = false; scope.launch { try { connection.deleteReceipt(receiptId); navigator.back() } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) } } },
+                    onConfirm = { isConfirmingDelete = false; scope.launch { try { connection.deleteReceipt(receiptId); snackbar.show(context.getString(R.string.finance_receipt_deleted)); navigator.back() } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) } } },
                     onDismiss = { isConfirmingDelete = false },
                 )
             }

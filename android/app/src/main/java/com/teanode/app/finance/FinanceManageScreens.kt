@@ -11,6 +11,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import com.teanode.kit.finance.shownName
+import com.teanode.kit.finance.StatementAccountRenameWords
+import com.teanode.kit.finance.StatementAccountRename
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -67,7 +75,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 
-/** Gives an account of imported statements the person's own name and last digits. */
+/** Gives an account of imported statements the person's own name and last digits. Only what changed is sent, and the toast says each thing that changed. */
 @Composable
 internal fun RenameStatementAccountDialog(account: FinanceAccount, onDismiss: () -> Unit, onDone: () -> Unit) {
     val connection = LocalConnection.current
@@ -76,18 +84,42 @@ internal fun RenameStatementAccountDialog(account: FinanceAccount, onDismiss: ()
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf(account.accountName.orEmpty()) }
     var mask by remember { mutableStateOf(account.accountMask.orEmpty()) }
+    var isSaving by remember { mutableStateOf(false) }
+    val rename = StatementAccountRename(account, name, mask)
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text(stringResource(R.string.finance_manage_rename_account)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.finance_name)) }, singleLine = true)
-                OutlinedTextField(mask, { mask = it }, label = { Text(stringResource(R.string.finance_manage_last_digits)) }, singleLine = true, supportingText = { Text(stringResource(R.string.finance_manage_mask_footer)) })
+                OutlinedTextField(
+                    name, { text -> name = StatementAccountRename.limited(text, mask).first }, label = { Text(stringResource(R.string.finance_name)) }, singleLine = true,
+                    supportingText = { Text(stringResource(R.string.finance_manage_rename_footer)) },
+                )
+                OutlinedTextField(
+                    mask, { text -> mask = StatementAccountRename.limited(name, text).second }, label = { Text(stringResource(R.string.finance_manage_last_digits)) }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), supportingText = { Text(stringResource(R.string.finance_manage_mask_footer)) },
+                )
             }
         },
         confirmButton = {
-            TextButton(enabled = name.isNotBlank(), onClick = {
+            TextButton(enabled = rename.canSave && !isSaving, onClick = {
                 scope.launch {
-                    try { connection.renameStatementAccount(account.id, name.trim(), mask.trim()); snackbar.show(context.getString(R.string.finance_saved)); onDone() } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
+                    isSaving = true
+                    try {
+                        connection.renameStatementAccount(account.id, rename.sentName, rename.sentMask)
+                        val trimmedName = name.trim()
+                        val trimmedMask = mask.trim()
+                        snackbar.show(
+                            when (rename.words) {
+                                StatementAccountRenameWords.NameAndMaskCleared -> context.getString(R.string.finance_manage_renamed_mask_cleared, trimmedName)
+                                StatementAccountRenameWords.NameAndMask -> context.getString(R.string.finance_manage_renamed_mask, trimmedName, trimmedMask)
+                                StatementAccountRenameWords.NameOnly -> context.getString(R.string.finance_manage_renamed, trimmedName)
+                                StatementAccountRenameWords.MaskCleared -> context.getString(R.string.finance_manage_mask_cleared)
+                                StatementAccountRenameWords.MaskOnly -> context.getString(R.string.finance_manage_mask_now, trimmedMask)
+                            },
+                        )
+                        onDone()
+                    } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
+                    isSaving = false
                 }
             }) { Text(stringResource(R.string.finance_save)) }
         },
@@ -103,12 +135,14 @@ internal fun DeleteStatementAccountDialog(account: FinanceAccount, onDismiss: ()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     com.teanode.app.ui.components.ConfirmationDialog(
-        title = stringResource(R.string.finance_manage_delete_account_question), text = stringResource(R.string.finance_manage_delete_account_message), confirmLabel = stringResource(R.string.finance_delete), isDestructive = true,
+        title = stringResource(R.string.finance_manage_delete_account_question), text = stringResource(R.string.finance_manage_delete_account_message), confirmLabel = stringResource(R.string.finance_manage_delete_account), isDestructive = true,
         onConfirm = {
             scope.launch {
                 try {
                     val deleted = connection.deleteStatementAccount(account.id)
-                    snackbar.show(context.getString(R.string.finance_manage_account_deleted, deleted?.deletedTransactionCount ?: 0))
+                    val deletedCount = deleted?.deletedTransactionCount ?: 0
+                    val accountName = account.shownName
+                    snackbar.show(if (deletedCount == 1) context.getString(R.string.finance_manage_account_deleted_one, accountName) else context.getString(R.string.finance_manage_account_deleted_many, accountName, deletedCount))
                     onDone()
                 } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
             }
@@ -130,8 +164,10 @@ internal fun SuggestRulesSheet(base: FinanceBase, onDismiss: () -> Unit, onAdded
     var proposals by remember { mutableStateOf<SpendingRuleProposals?>(null) }
     var isEmpty by remember { mutableStateOf(false) }
     var isWorking by remember { mutableStateOf(false) }
+    var addedMatchTexts by remember { mutableStateOf(emptySet<String>()) }
     LaunchedEffect(categoryId) {
         if (categoryId.isEmpty()) return@LaunchedEffect
+        addedMatchTexts = emptySet()
         isWorking = true
         proposals = null
         try {
@@ -157,19 +193,27 @@ internal fun SuggestRulesSheet(base: FinanceBase, onDismiss: () -> Unit, onAdded
         if (isEmpty) Text(stringResource(R.string.finance_manage_none_filed), color = MaterialTheme.colorScheme.onSurfaceVariant)
         proposals?.let { read ->
             if (read.proposals.isEmpty()) Text(stringResource(R.string.finance_manage_no_rules_to_suggest), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else TeaNodeSectionHeader(stringResource(R.string.finance_manage_suggested_header))
             for (proposal in read.proposals) {
+                val changedCount = proposal.changedTransactionCount ?: 0
+                val detailParts = listOfNotNull(
+                    context.resources.getQuantityString(R.plurals.finance_transaction_count, proposal.financeTransactionCount ?: 0, proposal.financeTransactionCount ?: 0),
+                    if (changedCount == 1) context.getString(R.string.finance_manage_changes_one_other) else if (changedCount > 1) context.getString(R.string.finance_manage_changes_other, changedCount) else null,
+                )
                 TeaNodeRow(
                     "“${proposal.matchText}”",
-                    supporting = context.resources.getQuantityString(R.plurals.finance_transaction_count, proposal.financeTransactionCount ?: 0, proposal.financeTransactionCount ?: 0),
+                    supporting = detailParts.joinToString(" · "),
                     trailing = {
-                        TextButton(onClick = {
+                        if (proposal.matchText in addedMatchTexts) Icon(Icons.Outlined.Check, contentDescription = stringResource(R.string.finance_manage_added))
+                        else TextButton(onClick = {
                             scope.launch {
-                                try { connection.saveSpendingRule(null, proposal.matchText, categoryId, "", "", "", null); snackbar.show(context.getString(R.string.finance_rule_saved)); onAdded() } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
+                                try { connection.saveSpendingRule(null, proposal.matchText, categoryId, "", "", "", null); addedMatchTexts = addedMatchTexts + proposal.matchText; snackbar.show(context.getString(R.string.finance_rule_saved)); onAdded() } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
                             }
                         }) { Text(stringResource(R.string.finance_manage_add)) }
                     },
                 )
             }
+            if (read.proposals.isNotEmpty()) Footnote(stringResource(R.string.finance_manage_suggested_footer, base.categoryName(categoryId)))
             // What was left out and why, in the dashboard's words.
             val tooGeneric = read.tooGenericMatchTextCount ?: 0
             val changingNumber = read.changingNumberMatchTextCount ?: 0
@@ -183,6 +227,9 @@ internal fun SuggestRulesSheet(base: FinanceBase, onDismiss: () -> Unit, onAdded
         }
     }
 }
+
+/** The largest file of transaction rows that is read, as on the iPhone. */
+private const val MAXIMUM_ROWS_FILE_BYTES = 8 * 1024 * 1024
 
 /** The most spending rules the server saves from one suggestion. */
 private const val MAXIMUM_PROPOSAL_COUNT = 50
@@ -210,7 +257,7 @@ fun FinanceImportCredentialScreen() {
             Button(enabled = credential.isNotBlank() && !isWorking, onClick = {
                 scope.launch {
                     isWorking = true
-                    try { connection.importFinanceCredential(kind, credential.trim(), institution.trim().ifEmpty { null }); snackbar.show(context.getString(R.string.finance_bank_linked)); navigator.back() } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
+                    try { connection.importFinanceCredential(kind, credential.trim(), institution.trim().ifEmpty { null }); snackbar.show(context.getString(R.string.finance_connection_brought_in)); navigator.back() } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
                     isWorking = false
                 }
             }) { Text(stringResource(R.string.finance_manage_import)) }
@@ -235,6 +282,11 @@ fun FinanceImportRowsScreen() {
             isWorking = true
             try {
                 val bytes = context.contentResolver.openInputStream(uri)?.use { stream -> stream.readBytes() } ?: ByteArray(0)
+                if (bytes.size > MAXIMUM_ROWS_FILE_BYTES) {
+                    snackbar.showProblem(context.getString(R.string.finance_manage_rows_too_large))
+                    isWorking = false
+                    return@launch
+                }
                 val read = TransactionRowsFile.variables(bytes)
                 if (read == null) snackbar.showProblem(context.getString(R.string.finance_manage_not_rows_file)) else {
                     arguments = read
@@ -244,7 +296,7 @@ fun FinanceImportRowsScreen() {
             isWorking = false
         }
     }
-    TeaNodeScreen(title = stringResource(R.string.finance_manage_import_transactions), onBack = { navigator.back() }) { padding ->
+    TeaNodeScreen(title = stringResource(R.string.finance_manage_import_rows_title), onBack = { navigator.back() }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedButton(onClick = { picker.launch("*/*") }, enabled = !isWorking) { Text(stringResource(R.string.finance_manage_choose_file)) }
             Text(stringResource(R.string.finance_manage_rows_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
