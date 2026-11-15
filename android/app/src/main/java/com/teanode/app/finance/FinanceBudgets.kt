@@ -166,7 +166,7 @@ fun FinanceBudgetsScreen() {
             deletingCategory?.let { category ->
                 ConfirmationDialog(
                     title = stringResource(R.string.finance_delete_category_question, base.label(category)), text = stringResource(R.string.finance_delete_category_message),
-                    confirmLabel = stringResource(R.string.finance_delete), isDestructive = true,
+                    confirmLabel = stringResource(R.string.finance_delete_category), isDestructive = true,
                     onConfirm = { deletingCategory = null; act(context.getString(R.string.finance_category_deleted), read) { connection.deleteSpendingCategory(category.id) } },
                     onDismiss = { deletingCategory = null },
                 )
@@ -261,10 +261,10 @@ private fun CategoryEditorDialog(draft: CategoryDraft, base: FinanceBase, onDism
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.finance_name)) }, singleLine = true)
-                CategoryPicker(base, parentId, stringResource(R.string.finance_inside), stringResource(R.string.finance_none)) { parentId = it }
+                CategoryPicker(base, parentId, stringResource(R.string.finance_category_parent), stringResource(R.string.finance_category_parent_none)) { parentId = it }
                 Row(verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.finance_income), Modifier.weight(1f)); Switch(isIncome, { isIncome = it }) }
                 Row(verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.finance_hidden), Modifier.weight(1f)); Switch(isHidden, { isHidden = it }) }
-                if (draft.categoryId != null) TextButton(onClick = onDelete) { Text(stringResource(R.string.finance_delete), color = MaterialTheme.colorScheme.error) }
+                if (draft.categoryId != null) TextButton(onClick = onDelete) { Text(stringResource(R.string.finance_delete_category), color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = { TextButton(onClick = { onSave(CategoryDraft(draft.categoryId, name, parentId, isIncome, isHidden)) }, enabled = name.isNotBlank()) { Text(stringResource(R.string.finance_save)) } },

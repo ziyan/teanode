@@ -44,6 +44,14 @@ class RecordingPlayerController(private val context: Context, private val connec
     var isPreparing by mutableStateOf(false)
         private set
 
+    /** The server is making the compatible audio of an original this phone cannot play. */
+    var isPreparingCompatibleAudio by mutableStateOf(false)
+        private set
+
+    /** The piece being played is the compatible audio, not the original: the original is left as it was. */
+    var isCompatibleAudioPreview by mutableStateOf(false)
+        private set
+
     private var player: ExoPlayer? = null
     private var pieces: List<RecordingMedia> = emptyList()
     private var compatibleIndexes = mutableSetOf<Int>()
@@ -56,6 +64,8 @@ class RecordingPlayerController(private val context: Context, private val connec
         player?.release()
         pieces = RecordingTimelinePieces.playable(mediaFiles)
         compatibleIndexes = mutableSetOf()
+        isCompatibleAudioPreview = false
+        isPreparingCompatibleAudio = false
         val headers = connection.recordingPlaybackRequest(pieces.first().id).headers
         val factory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(headers)
         val created = ExoPlayer.Builder(context).setMediaSourceFactory(DefaultMediaSourceFactory(factory)).build()
@@ -70,6 +80,7 @@ class RecordingPlayerController(private val context: Context, private val connec
                 scope.launch {
                     try {
                         val piece = pieces[index]
+                        isPreparingCompatibleAudio = true
                         val playback = connection.recordingPlayback(piece) ?: connection.prepareRecordingPlayback(piece)
                         val request = connection.recordingCompatiblePlaybackRequest(playback, piece)
                         compatibleIndexes.add(index)
@@ -78,9 +89,12 @@ class RecordingPlayerController(private val context: Context, private val connec
                         created.seekTo(index, position)
                         created.prepare()
                         created.play()
+                        isCompatibleAudioPreview = true
+                        isPreparingCompatibleAudio = false
                     } catch (failure: kotlinx.coroutines.CancellationException) {
                         throw failure
                     } catch (failure: Throwable) {
+                        isPreparingCompatibleAudio = false
                         problem = failure
                     }
                 }

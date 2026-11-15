@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recordings_corrected_transcript">修正した文字起こし</string>
+    <string name="recordings_edit_unconfirmed">この編集の応答を確認できていません。テキストを変更する前に同じ編集を再試行してください。</string>
+    <string name="recordings_original_transcript">元の文字起こし</string>
+    <string name="recordings_retry_edit">編集を再試行</string>
+    <string name="recordings_passage_corrected">この箇所を修正しました。</string>
+    <string name="recordings_label_unconfirmed">このラベルの応答を確認できていません。変更する前に同じラベルを再試行してください。</string>
+    <string name="recordings_upload_deleted_on_server">この録音はサーバーで削除されました。端末の元のファイルは保持されています。</string>
+    <string name="recordings_upload_not_verified">アップロードが検証されていません。元のファイルを保持して再試行してください。</string>
+    <string name="recordings_local_original_changed">端末の元のファイルが変更されました。保存したまま、もう一度読み込みを試してください。</string>
+    <string name="recordings_compatible_audio_preview">互換性のある音声プレビュー</string>
+    <string name="recordings_audio_preview_note">音声プレビューはローカルで作成され、元のファイルは変更されません。</string>
+    <string name="recordings_preparing_compatible_audio">互換性のある音声プレビューを準備中</string>
+</resources>

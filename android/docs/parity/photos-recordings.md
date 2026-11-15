@@ -39,11 +39,11 @@ Kit tests are in `android/kit/src/test/kotlin/com/teanode/kit/{photos,recordings
 | --- | --- | --- |
 | RecordingsView.swift | `recordings/RecordingsSection.kt`: list joined with the phone's recordings, search, statuses (recording, paused, uploading %, waiting for network, transcribing, failed), rows polled while changing, new/import menu, long press menu (retry upload, play local original, remove from this phone, delete), shared with you | done |
 | RecordingDetailView.swift | `RecordingDetailScreen.kt`: heading, summary, status, player, transcript as a conversation, rename with title and date, transcribe again, retry and cancel a transcription, share, delete, details (capture gaps, originals, transcription runs) | done: Learning card (four states, resume reading, source passes, curation note; "Knowledge source" opens the Knowledge part, "Edit this source" is the Knowledge area's). No transcription cost lines |
-| RecordingTranscriptView.swift, RecordingConversationView.swift | `RecordingDetailScreen.kt` bubbles: speaker names, "Speaker A", play from here, name speaker with suggestions and the whole-voice switch, correct text, copy, load more passages | partly: speakers and voice references screen (rename, link a contact, remove a correction, remove a voice reference) and "In memory" are done; no unlink contact, no "Not me", no clear name |
-| RecordingTextEditor.swift | correct text dialog | done: correct text dialog and the edit history screen with remove correction |
+| RecordingTranscriptView.swift, RecordingConversationView.swift | `RecordingDetailScreen.kt` bubbles: speaker names, "Speaker A", play from here, name speaker with suggestions and the whole-voice switch, correct text, copy, load more passages | partly: speakers and voice references screen (rename, link a contact, remove a correction, remove a voice reference) and "In memory" are done; naming a speaker is kept as a draft (`RecordingSpeakerDrafts`) and sent again as the same label after an unconfirmed answer, with the notice "This label has an unconfirmed response. Retry the same label before changing it."; no unlink contact, no "Not me" |
+| RecordingTextEditor.swift, RecordingTextCorrections.swift (the draft) | `TranscriptTextEditor` (in `RecordingDetailScreen.kt`), `RecordingEditHistory` screen; kit `RecordingDrafts.kt` | done: the correction is kept as typed (`RecordingTextCorrectionDrafts`, preferences) and sent with one client correction ID. A request that got no answer locks the text, says "This edit has an unconfirmed response. Retry the same edit before changing its text." and the button reads "Retry edit"; opening the passage again first looks for the request in the correction history (saved: nothing to retry). A server refusal frees the text and reads the generation again. Original transcript is shown on a tap |
 | RecordingCaptureView.swift, RecordingEngineCapture.swift, MeetingRecorder.swift | `RecordingCaptureScreen.kt`, `RecordingCaptureService.kt`: foreground microphone service, pieces cut where the speaker pauses, pause/resume gaps, level meter, stop, notification actions | done: AudioRecord and MediaCodec capture, pieces cut at a sentence end from the live stream or where the level pauses, gaps, level meter, live words, a call or another app taking the microphone pauses it as an interruption. Not run on a device |
-| RecordingUploads.swift | `RecordingUploadWorker.kt`: create, publish capture state and gaps, manifest, 8 MB parts with digests, complete, remove the phone's copy once verified, retries with WorkManager | done, not run against a real server |
-| RecordingPlayer.swift, RecordingsView player | `RecordingPlayer.kt`: ExoPlayer over the timeline pieces, compatible audio when an original cannot be played | done, not run on a device |
+| RecordingUploads.swift | `RecordingUploadWorker.kt`: create, publish capture state and gaps, manifest, 8 MB parts with digests, complete, remove the phone's copy once verified, retries with WorkManager | done, not run against a real server. The words of a stopped upload are the iPhone's: "This recording was deleted on the server. Its local original was kept.", "The upload was not verified. Keep the original and retry." (an answer that is not the receipt asked for) and "The local original changed. Keep it and try importing again."; the row states (Recording, Paused, Uploading n%, Waiting for network, Transcribing, Ready, Failed) were already the same |
+| RecordingPlayer.swift, RecordingsView player (RecordingPlaybackScreen) | `RecordingPlayer.kt`: ExoPlayer over the timeline pieces, compatible audio when an original cannot be played | done, not run on a device. The compatible audio preview is Android-different, see below |
 | RecordingSharingViews.swift | `RecordingSharingScreens.kt`: shares, share with person or circle at a level, stop sharing, recordings shared with me, a shared recording with its turns | done |
 | RecordingAttachmentImportView.swift | `RecordingAttachmentImportScreen`, route `recordings/import/{attachmentId}?name=&type=&size=` (the chats part opens it from an audio or video attachment); the draft id is kept so a retry is the same import | done |
 | RecordingCitationScreen.swift, RecordingLink | route `recordings/cite/{recordingId}/{runId}/{startMS}/{endMS}` opens the recording with the passage highlighted | done: the page that holds the passage is read and the list scrolls to it |
@@ -65,6 +65,30 @@ Kit tests are in `android/kit/src/test/kotlin/com/teanode/kit/{photos,recordings
 | RecordingCaptureTransitions, RecordingClock, RecordingUploadScheduling, RecordingLink | `RecordingCapture.kt` | `RecordingCaptureTest` |
 | RecordingLearning, RecordingAttachmentImport, Voice.swift's event (live stream) | `RecordingKnowledge.kt` (Learning, memory links, attachment import, live words state) | `RecordingKnowledgeTest` |
 | RecordingKnowledgeTitle, RecordingOwner, RecordingCapabilities, RecordingReferenceInvalidations, RecordingSpeakerDraft, RecordingRequestIdentity | not needed: the Knowledge part owns titles of sources, the account owner is read from the session, drafts are kept in preferences where needed; the file storage is `RecordingJournal.kt` in the app | |
+
+## Compatible audio preview: why the iPhone has it, and what Android does
+
+The server keeps every original as it was uploaded: whatever FFmpeg can read (`internal/recording/decode.go`: the
+iPhone's m4a, the dashboard's webm with Opus, and imports such as mp3, wav, ogg, flac, mkv, mp4, mov, 3gp, wma, caf,
+aiff). `AVPlayer` cannot play several of those (webm with Opus, ogg, mkv, wma), so the iPhone asks
+the server for a WAV it makes on demand (`PrepareRecordingPlayback`, answer verified by size and SHA-256) when the
+asset is not playable, and its full-playback screen also offers "Use audio preview", "Use original" and "Share full
+audio preview" because the person can swap between the two.
+
+Android's Media3 ExoPlayer plays m4a/AAC/mp4/3gp, mp3, wav, flac, ogg (Vorbis and Opus), webm and mkv, MPEG-TS and AMR,
+so the iPhone's m4a, the dashboard's webm/Opus and almost every import play as the original. The formats it cannot play
+(wma/asf, caf, aiff, or a codec this phone lacks a decoder for) raise a player error. `RecordingPlayerController` takes
+that error as the cue the iPhone takes from `isPlayable`: it asks the server for the compatible WAV (`recordingPlayback`
+or else `prepareRecordingPlayback`), swaps that piece's media item for it at the same position and goes on. The answer's
+type and digest checks are the same kit calls the iPhone uses. While it is made the detail screen says "Preparing
+compatible audio preview", and once it plays it says "Compatible audio preview" and "Audio preview prepared locally;
+original unchanged." (the iPhone's words, in all three languages).
+
+Android-different, on purpose: there is no manual "Use audio preview" or "Use original" (an original that plays is
+never replaced, and one that does not has no original to go back to), no "Share full original" or "Share full audio
+preview" on this screen (sharing a recording goes through the sharing screens), and the WAV is streamed from the
+server with the person's token instead of being downloaded and checked in full before it plays. Not run on a device
+against real files of each format.
 
 ## Checklist counts
 

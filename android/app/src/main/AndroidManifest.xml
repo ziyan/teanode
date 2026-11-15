@@ -310,11 +310,11 @@
         <activity
             android:name=".passwords.PasswordsCredentialActivity"
             android:exported="false"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+            android:theme="@style/Theme.TeaNode.Translucent" />
         <activity
             android:name=".passwords.PasswordsAutofillActivity"
             android:exported="false"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+            android:theme="@style/Theme.TeaNode.Translucent" />
         <!-- Photo backup keeps a long upload going with a notification (WorkManager's foreground service). -->
         <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" tools:node="merge" />
     </application>

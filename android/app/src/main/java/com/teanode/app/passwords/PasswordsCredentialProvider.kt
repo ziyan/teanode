@@ -172,7 +172,7 @@ internal fun passkeyCaller(context: Context, info: CallingAppInfo, clientDataHas
  * the person picked ([ACTION_USE]), or makes a passkey and saves it to the server ([ACTION_CREATE]).
  */
 @RequiresApi(34)
-class PasswordsCredentialActivity : androidx.activity.ComponentActivity() {
+class PasswordsCredentialActivity : androidx.appcompat.app.AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lifecycleScope.launch {

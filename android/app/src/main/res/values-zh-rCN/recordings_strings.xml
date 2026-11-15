@@ -12,8 +12,8 @@
     <string name="recordings_close">关闭</string>
     <string name="recordings_confirmed_name">已确认姓名</string>
     <string name="recordings_copy">复制</string>
-    <string name="recordings_correct_text">更正文字</string>
-    <string name="recordings_correct_text_note">生成的转写会完整保留。学习内容会自动协调，无需付费重新处理。</string>
+    <string name="recordings_correct_text">编辑转写</string>
+    <string name="recordings_correct_text_note">文字编辑是免费的元数据修改。原始转写会保留，学习内容会自动协调，无需再次调用提供商。</string>
     <string name="recordings_date_known">已知会议时间</string>
     <string name="recordings_delete">删除录音</string>
     <string name="recordings_delete_text">派生音频、转录和参考样本将被移除。学习所得资料将相应更新。</string>

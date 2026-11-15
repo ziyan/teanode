@@ -260,7 +260,7 @@ fun FinanceAssetDetailScreen(assetId: String) {
                 item("currency") { LabeledValue(stringResource(R.string.finance_currency), asset.currencyCode.orEmpty()) }
                 asset.financeSecurity?.let { security -> item("security") { LabeledValue(stringResource(R.string.finance_security), listOfNotNull(security.tickerSymbol, security.securityName).joinToString(" · ")) } }
                 if (asset.valuationSource == "manual" || asset.valuationSource.isNullOrEmpty()) {
-                    item("add-header") { TeaNodeSectionHeader(stringResource(R.string.finance_add_value)) }
+                    item("add-header") { TeaNodeSectionHeader(stringResource(R.string.finance_add_a_value)) }
                     item("add") {
                         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(value, { value = it }, label = { Text(stringResource(R.string.finance_value)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -291,7 +291,7 @@ fun FinanceAssetDetailScreen(assetId: String) {
             if (isConfirmingDelete) {
                 ConfirmationDialog(
                     title = stringResource(R.string.finance_delete_asset), text = stringResource(R.string.finance_its_values_go_with_it, history.size), confirmLabel = stringResource(R.string.finance_delete), isDestructive = true,
-                    onConfirm = { isConfirmingDelete = false; scope.launch { try { connection.deleteAsset(assetId); navigator.back() } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) } } },
+                    onConfirm = { isConfirmingDelete = false; scope.launch { try { connection.deleteAsset(assetId); snackbar.show(context.getString(R.string.finance_asset_deleted)); navigator.back() } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) } } },
                     onDismiss = { isConfirmingDelete = false },
                 )
             }

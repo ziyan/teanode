@@ -12,8 +12,8 @@
     <string name="recordings_close">Close</string>
     <string name="recordings_confirmed_name">Confirmed name</string>
     <string name="recordings_copy">Copy</string>
-    <string name="recordings_correct_text">Correct text</string>
-    <string name="recordings_correct_text_note">The generated transcript remains intact. Learning is reconciled without a paid reprocessing pass.</string>
+    <string name="recordings_correct_text">Edit transcript</string>
+    <string name="recordings_correct_text_note">Text edits are free metadata. The original transcript is retained, and learning is reconciled without another provider call.</string>
     <string name="recordings_date_known">Meeting date is known</string>
     <string name="recordings_delete">Delete recording</string>
     <string name="recordings_delete_text">Derived audio, transcripts and reference samples will be removed. Learned material will be reconciled.</string>

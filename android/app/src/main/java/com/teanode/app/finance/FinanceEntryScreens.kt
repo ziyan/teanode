@@ -3,6 +3,14 @@ package com.teanode.app.finance
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import com.teanode.kit.finance.isMatched
+import com.teanode.kit.asReasonSentence
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material.icons.outlined.Verified
+import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -66,27 +74,83 @@ import java.time.LocalDate
 /** Which of the three things is typed in; a receipt is kept as any upload, a paystub and a tax form as a tax document. */
 internal enum class EntryKind { Receipt, Paystub, TaxForm }
 
+/** The label a field of a form is shown with, for the English name the kit's problems name it by. */
 @Composable
-private fun problemSentence(problem: FinanceEntryProblem?): String? {
-    if (problem == null) return null
-    val reason = when (problem.reason) {
-        FinanceEntryProblem.Reason.Missing -> R.string.finance_entry_missing
-        FinanceEntryProblem.Reason.NotAmount -> R.string.finance_entry_not_amount
-        FinanceEntryProblem.Reason.NotNumber -> R.string.finance_entry_not_number
-        FinanceEntryProblem.Reason.NotDay -> R.string.finance_entry_not_day
-        FinanceEntryProblem.Reason.NotCurrencyCode -> R.string.finance_entry_not_currency
-        FinanceEntryProblem.Reason.NotLastFourDigits -> R.string.finance_entry_not_last_four
-        FinanceEntryProblem.Reason.NotYear -> R.string.finance_entry_not_year
-        FinanceEntryProblem.Reason.NoLines -> R.string.finance_entry_no_lines
-        FinanceEntryProblem.Reason.NoBoxes -> R.string.finance_entry_no_boxes
+private fun fieldLabel(field: String): String {
+    val resource = when (field) {
+        "Amount" -> R.string.finance_amount
+        "Amount this period" -> R.string.finance_entry_amount_period
+        "Amount this year" -> R.string.finance_entry_amount_year
+        "Bought on" -> R.string.finance_bought_on
+        "Box" -> R.string.finance_entry_box
+        "Employee" -> R.string.finance_tax_employee
+        "Employer" -> R.string.finance_entry_employer
+        "Employer adds this period" -> R.string.finance_entry_employer_adds_period
+        "Employer adds this year" -> R.string.finance_entry_employer_adds_year
+        "Gross pay" -> R.string.finance_tax_gross
+        "Gross pay this year" -> R.string.finance_tax_gross_year
+        "Hours" -> R.string.finance_entry_hours
+        "Merchant" -> R.string.finance_merchant
+        "Pay date" -> R.string.finance_entry_pay_date
+        "Payer" -> R.string.finance_tax_payer
+        "Period ends" -> R.string.finance_entry_period_ends
+        "Period starts" -> R.string.finance_entry_period_starts
+        "Quantity" -> R.string.finance_entry_quantity
+        "Rate" -> R.string.finance_entry_rate
+        "Recipient" -> R.string.finance_tax_recipient
+        "Subtotal" -> R.string.finance_subtotal
+        "Take-home pay" -> R.string.finance_tax_take_home
+        "Taxpayer number, last 4" -> R.string.finance_entry_taxpayer_last_four
+        "Tax year" -> R.string.finance_entry_tax_year
+        "Total" -> R.string.finance_total
+        "Total deductions" -> R.string.finance_tax_total_deductions
+        "Total taxes" -> R.string.finance_tax_total_taxes
+        "Unit price" -> R.string.finance_entry_unit_price
+        "Wages this period" -> R.string.finance_entry_wages_period
+        "Wages this year" -> R.string.finance_entry_wages_year
+        else -> return field
     }
-    val where = problem.lineNumber?.let { number -> " (#$number)" }.orEmpty()
-    return "${problem.field}$where: ${stringResource(reason)}"
+    return stringResource(resource)
+}
+
+/** What is wrong with a field, in a sentence: "Total is not an amount", with the line or box it is on. */
+@Composable
+private fun problemSentence(problem: FinanceEntryProblem?, isBox: Boolean = false): String? {
+    if (problem == null) return null
+    val field = fieldLabel(problem.field)
+    val sentence = when (problem.reason) {
+        FinanceEntryProblem.Reason.Missing -> stringResource(R.string.finance_entry_problem_empty, field)
+        FinanceEntryProblem.Reason.NotAmount -> stringResource(R.string.finance_entry_problem_not_amount, field)
+        FinanceEntryProblem.Reason.NotNumber -> stringResource(R.string.finance_entry_problem_not_number, field)
+        FinanceEntryProblem.Reason.NotDay -> stringResource(R.string.finance_entry_problem_not_day, field)
+        FinanceEntryProblem.Reason.NotCurrencyCode -> stringResource(R.string.finance_entry_problem_not_currency, field)
+        FinanceEntryProblem.Reason.NotLastFourDigits -> stringResource(R.string.finance_entry_problem_not_four_digits, field)
+        FinanceEntryProblem.Reason.NotYear -> stringResource(R.string.finance_entry_problem_not_year, field)
+        FinanceEntryProblem.Reason.NoLines -> return stringResource(R.string.finance_entry_no_lines)
+        FinanceEntryProblem.Reason.NoBoxes -> return stringResource(R.string.finance_entry_no_boxes)
+    }
+    val number = problem.lineNumber ?: return sentence
+    return stringResource(if (isBox) R.string.finance_entry_box_problem else R.string.finance_entry_line_problem, number, sentence)
+}
+
+/** A kind of line or form in words: "Social Security", not the "social_security" the server names it by. */
+@Composable
+private fun entryKindWords(kind: String): String {
+    when (kind) {
+        "w2" -> return "W-2"
+        "1099_int" -> return "1099-INT"
+        "1099_div" -> return "1099-DIV"
+        "1099_b" -> return "1099-B"
+        "1098" -> return "1098"
+    }
+    val context = LocalContext.current
+    val identifier = context.resources.getIdentifier("finance_entry_kind_$kind", "string", context.packageName)
+    return if (identifier == 0) kind else stringResource(identifier)
 }
 
 @Composable
-private fun Field(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
-    OutlinedTextField(value, onChange, label = { Text(label) }, singleLine = true, modifier = modifier.fillMaxWidth())
+private fun Field(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, placeholder: String? = null) {
+    OutlinedTextField(value, onChange, label = { Text(label) }, placeholder = placeholder?.let { hint -> { Text(hint) } }, singleLine = true, modifier = modifier.fillMaxWidth())
 }
 
 /** "1 EUR = 1.0834 USD" under a currency field, read when the code changes; nothing for the person's own currency, a code not typed in full, or a day the server has no rate. */
@@ -114,8 +178,8 @@ internal fun ExchangeRateNote(currencyCode: String) {
 private fun KindPicker(label: String, value: String, options: List<String>, onChange: (String) -> Unit) {
     var isOpen by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(isOpen, { isOpen = it }) {
-        OutlinedTextField(value, {}, readOnly = true, label = { Text(label) }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isOpen) }, modifier = Modifier.menuAnchor().fillMaxWidth())
-        ExposedDropdownMenu(isOpen, { isOpen = false }) { for (option in options) DropdownMenuItem(text = { Text(option) }, onClick = { onChange(option); isOpen = false }) }
+        OutlinedTextField(entryKindWords(value), {}, readOnly = true, label = { Text(label) }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isOpen) }, modifier = Modifier.menuAnchor().fillMaxWidth())
+        ExposedDropdownMenu(isOpen, { isOpen = false }) { for (option in options) DropdownMenuItem(text = { Text(entryKindWords(option)) }, onClick = { onChange(option); isOpen = false }) }
     }
 }
 
@@ -128,7 +192,9 @@ private fun EntryShell(
     isWorking: Boolean,
     onRecord: (attachmentId: String) -> Unit,
     extraActions: @Composable (attachmentId: String?) -> Unit = {},
-    form: @Composable () -> Unit,
+    isRecordable: (attachmentId: String?) -> Boolean = { true },
+    isBox: Boolean = false,
+    form: @Composable (attachmentId: String?) -> Unit,
 ) {
     val connection = LocalConnection.current
     val navigator = LocalAppNavigator.current
@@ -145,21 +211,35 @@ private fun EntryShell(
             try {
                 val file = context.readPendingFile(uri, "entry")
                 attachmentId = connection.upload(file.name, file.contentType, file.data, isTaxDocument = kind != EntryKind.Receipt)
-                fileName = file.contentType
+                fileName = file.name
             } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
             isUploading = false
         }
     }
     TeaNodeScreen(title = title, onBack = { navigator.back() }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(stringResource(R.string.finance_entry_from_file), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-            Text(stringResource(if (kind == EntryKind.Receipt) R.string.finance_entry_file_receipt else R.string.finance_entry_file_tax), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = { picker.launch("*/*") }, enabled = !isUploading) { Text(if (attachmentId == null) stringResource(R.string.finance_entry_choose_file) else stringResource(R.string.finance_entry_file_chosen, fileName)) }
-            form()
-            problemSentence(problem)?.let { sentence -> Text(sentence, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+            Text(stringResource(R.string.finance_entry_file_header), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            if (attachmentId != null) Text(stringResource(R.string.finance_entry_file_chosen, fileName), style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = { picker.launch("*/*") }, enabled = !isUploading) { Text(stringResource(if (attachmentId == null) R.string.finance_entry_choose_file else R.string.finance_entry_change_file)) }
+                if (attachmentId != null) TextButton(onClick = { attachmentId = null; fileName = "" }) { Text(stringResource(R.string.finance_entry_remove_file)) }
+            }
+            Text(
+                stringResource(
+                    when (kind) {
+                        EntryKind.Receipt -> R.string.finance_entry_file_receipt
+                        EntryKind.Paystub -> R.string.finance_entry_file_paystub
+                        EntryKind.TaxForm -> R.string.finance_entry_file_form
+                    },
+                ),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            form(attachmentId)
+            val sentence = if (attachmentId == null) stringResource(R.string.finance_entry_add_file_first) else problemSentence(problem, isBox)
+            if (sentence != null) Text(sentence, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 extraActions(attachmentId)
-                Button(enabled = problem == null && attachmentId != null && !isWorking, onClick = { onRecord(attachmentId!!) }) { Text(stringResource(R.string.finance_entry_record)) }
+                Button(enabled = problem == null && attachmentId != null && !isWorking && isRecordable(attachmentId), onClick = { onRecord(attachmentId!!) }) { Text(stringResource(R.string.finance_entry_record)) }
             }
         }
     }
@@ -175,16 +255,21 @@ fun FinanceReceiptEntryScreen() {
     val scope = rememberCoroutineScope()
     var draft by remember { mutableStateOf(ReceiptDraft(currencyCode = "USD", purchasedOn = LocalDate.now().toString())) }
     var preview by remember { mutableStateOf<ReceiptEntryPreview?>(null) }
+    var previewedDraft by remember { mutableStateOf<ReceiptDraft?>(null) }
+    var previewedAttachmentId by remember { mutableStateOf<String?>(null) }
     var isWorking by remember { mutableStateOf(false) }
+    // Whether the preview on screen is of what is typed now and of the file chosen now.
+    fun isPreviewCurrent(attachmentId: String?): Boolean = preview != null && previewedDraft?.copy(isUnbalancedAccepted = false) == draft.copy(isUnbalancedAccepted = false) && previewedAttachmentId == attachmentId
     EntryShell(
         stringResource(R.string.finance_entry_receipt_title), EntryKind.Receipt, draft.firstProblem, isWorking,
+        isRecordable = { id -> isPreviewCurrent(id) && (preview?.isBalanced == true || draft.isUnbalancedAccepted) },
         extraActions = { id ->
             OutlinedButton(
                 enabled = draft.isReady && id != null && !isWorking,
                 onClick = {
                     scope.launch {
                         isWorking = true
-                        try { preview = connection.previewRecordReceipt(draft, id!!) } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
+                        try { val read = connection.previewRecordReceipt(draft, id!!); preview = read; draft = draft.copy(isUnbalancedAccepted = false); previewedDraft = draft; previewedAttachmentId = id } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
                         isWorking = false
                     }
                 },
@@ -194,14 +279,14 @@ fun FinanceReceiptEntryScreen() {
             scope.launch {
                 isWorking = true
                 try {
-                    connection.recordReceipt(draft, id)
-                    snackbar.show(context.getString(R.string.finance_entry_receipt_recorded))
+                    val recorded = connection.recordReceipt(draft, id)
+                    snackbar.show(context.getString(if (recorded?.isMatched == true) R.string.finance_entry_receipt_recorded_matched else R.string.finance_entry_receipt_recorded))
                     navigator.back()
                 } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
                 isWorking = false
             }
         },
-    ) {
+    ) { attachmentId ->
         Field(stringResource(R.string.finance_merchant), draft.merchantName, { draft = draft.copy(merchantName = it) })
         Field(stringResource(R.string.finance_bought_on), draft.purchasedOn, { draft = draft.copy(purchasedOn = it) })
         Field(stringResource(R.string.finance_currency), draft.currencyCode, { draft = draft.copy(currencyCode = it.uppercase()) })
@@ -210,9 +295,9 @@ fun FinanceReceiptEntryScreen() {
         Field(stringResource(R.string.finance_subtotal), draft.subtotalAmount, { draft = draft.copy(subtotalAmount = it) })
         Field(stringResource(R.string.finance_total), draft.totalAmount, { draft = draft.copy(totalAmount = it) })
         Field(stringResource(R.string.finance_entry_card_last_four), draft.paymentAccountMask, { draft = draft.copy(paymentAccountMask = it) })
-        TeaNodeSectionHeader(stringResource(R.string.finance_lines))
         draft.receiptLines.forEachIndexed { index, line ->
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TeaNodeSectionHeader(stringResource(R.string.finance_entry_line_header, index + 1))
                 KindPicker(stringResource(R.string.finance_kind), line.receiptLineKind, FinanceEntryKinds.receiptLineKinds) { kind -> draft = draft.copy(receiptLines = draft.receiptLines.replaced(index, line.copy(receiptLineKind = kind))) }
                 Field(stringResource(R.string.finance_entry_description), line.description, { text -> draft = draft.copy(receiptLines = draft.receiptLines.replaced(index, line.copy(description = text))) })
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -224,14 +309,51 @@ fun FinanceReceiptEntryScreen() {
             }
         }
         TextButton(onClick = { draft = draft.copy(receiptLines = draft.receiptLines + ReceiptLineDraft()) }) { Text(stringResource(R.string.finance_entry_add_line)) }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.finance_entry_accept_unbalanced), Modifier.weight(1f)); Switch(draft.isUnbalancedAccepted, { draft = draft.copy(isUnbalancedAccepted = it) })
+        Footnote(stringResource(R.string.finance_entry_discount_footer))
+        val read = preview
+        if (read != null && isPreviewCurrent(attachmentId)) ReceiptPreviewSections(read, draft.currencyCode.trim().uppercase(), draft.isUnbalancedAccepted) { isAccepted -> draft = draft.copy(isUnbalancedAccepted = isAccepted) }
+    }
+}
+
+/** What the server says recording the receipt would do: whether its lines add up, whether it replaces one read from the same file, and the charges it could explain. */
+@Composable
+private fun ReceiptPreviewSections(preview: ReceiptEntryPreview, currencyCode: String, isUnbalancedAccepted: Boolean, onAcceptedChange: (Boolean) -> Unit) {
+    TeaNodeSectionHeader(stringResource(R.string.finance_entry_effect_header))
+    if (preview.isBalanced) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Outlined.Verified, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.finance_tax_lines_add_up), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        preview?.let { read ->
-            Text(read.receiptCheckSummary.orEmpty().ifEmpty { stringResource(if (read.isBalanced) R.string.finance_lines_add_up else R.string.finance_entry_not_balanced) }, style = MaterialTheme.typography.bodyMedium)
-            for (candidate in read.candidates) Text("${candidate.financeTransaction?.shownName.orEmpty()} · ${FinanceMoney.shown(candidate.financeTransaction?.amount, candidate.financeTransaction?.currencyCode)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Outlined.Warning, null, tint = Color(0xFFEF6C00))
+            Text(stringResource(R.string.finance_tax_lines_off_by, FinanceMoney.shown(preview.checkDifferenceAmount, currencyCode)), color = Color(0xFFEF6C00))
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.finance_entry_accept_unbalanced), Modifier.weight(1f)); Switch(isUnbalancedAccepted, onAcceptedChange)
+        }
+        preview.receiptCheckSummary?.takeIf { summary -> summary.isNotEmpty() }?.let { summary -> Footnote(summary.asReasonSentence()) }
+    }
+    if (preview.isReplacing == true) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Outlined.Sync, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.finance_entry_replaces), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+    TeaNodeSectionHeader(stringResource(R.string.finance_entry_charges_header))
+    for (candidate in preview.candidates) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(candidate.financeTransaction?.shownName.orEmpty())
+                Text(
+                    listOfNotNull(taxDayText(candidate.financeTransaction?.postedOn), if (candidate.isAutomatic == true) stringResource(R.string.finance_entry_matched_when_recorded) else null).filter { text -> text.isNotEmpty() }.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(FinanceMoney.shown(candidate.matchedAmount, candidate.financeTransaction?.currencyCode ?: currencyCode))
+        }
+    }
+    if (preview.candidates.isEmpty()) Footnote(stringResource(R.string.finance_entry_no_charge_matches))
 }
 
 private fun <Item> List<Item>.replaced(index: Int, item: Item): List<Item> = toMutableList().also { copy -> copy[index] = item }
@@ -255,11 +377,13 @@ fun FinancePaystubEntryScreen() {
                 isWorking = false
             }
         },
-    ) {
+    ) { _ ->
         Field(stringResource(R.string.finance_entry_employer), draft.employerName, { draft = draft.copy(employerName = it) })
+        Field(stringResource(R.string.finance_entry_employer_id), draft.employerTaxId, { draft = draft.copy(employerTaxId = it) }, placeholder = stringResource(R.string.finance_entry_optional))
         Field(stringResource(R.string.finance_tax_employee), draft.employeeName, { draft = draft.copy(employeeName = it) })
-        Field(stringResource(R.string.finance_entry_taxpayer_last_four), draft.employeeTaxIdMask, { draft = draft.copy(employeeTaxIdMask = it) })
-        Field(stringResource(R.string.finance_tax_pay_date), draft.payDate, { draft = draft.copy(payDate = it) })
+        Field(stringResource(R.string.finance_entry_taxpayer_last_four), draft.employeeTaxIdMask, { draft = draft.copy(employeeTaxIdMask = it) }, placeholder = stringResource(R.string.finance_entry_taxpayer_hint))
+        Footnote(stringResource(R.string.finance_entry_taxpayer_footer))
+        Field(stringResource(R.string.finance_entry_pay_date), draft.payDate, { draft = draft.copy(payDate = it) })
         Field(stringResource(R.string.finance_entry_period_starts), draft.periodStartOn, { draft = draft.copy(periodStartOn = it) })
         Field(stringResource(R.string.finance_entry_period_ends), draft.periodEndOn, { draft = draft.copy(periodEndOn = it) })
         Field(stringResource(R.string.finance_currency), draft.currencyCode, { draft = draft.copy(currencyCode = it.uppercase()) })
@@ -269,10 +393,11 @@ fun FinancePaystubEntryScreen() {
         Field(stringResource(R.string.finance_tax_total_taxes), draft.totalTaxAmount, { draft = draft.copy(totalTaxAmount = it) })
         Field(stringResource(R.string.finance_tax_total_deductions), draft.totalDeductionAmount, { draft = draft.copy(totalDeductionAmount = it) })
         Field(stringResource(R.string.finance_tax_take_home), draft.netAmount, { draft = draft.copy(netAmount = it) })
-        TeaNodeSectionHeader(stringResource(R.string.finance_lines))
+        Footnote(stringResource(R.string.finance_entry_as_printed))
         draft.paystubLines.forEachIndexed { index, line ->
             fun change(next: PaystubLineDraft) { draft = draft.copy(paystubLines = draft.paystubLines.replaced(index, next)) }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TeaNodeSectionHeader(stringResource(R.string.finance_entry_line_header, index + 1))
                 KindPicker(stringResource(R.string.finance_kind), line.paystubLineKind, FinanceEntryKinds.paystubLineKinds) { change(line.copy(paystubLineKind = it)) }
                 Field(stringResource(R.string.finance_entry_description), line.description, { change(line.copy(description = it)) })
                 when (line.paystubLineKind) {
@@ -303,6 +428,7 @@ fun FinancePaystubEntryScreen() {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.finance_entry_accept_unbalanced), Modifier.weight(1f)); Switch(draft.isUnbalancedAccepted, { draft = draft.copy(isUnbalancedAccepted = it) })
         }
+        Footnote(stringResource(R.string.finance_entry_unbalanced_footer))
     }
 }
 
@@ -318,7 +444,7 @@ fun FinanceTaxFormEntryScreen() {
     var year by remember { mutableStateOf(draft.taxYear.toString()) }
     var isWorking by remember { mutableStateOf(false) }
     EntryShell(
-        stringResource(R.string.finance_entry_tax_form_title), EntryKind.TaxForm, draft.firstProblem, isWorking,
+        stringResource(R.string.finance_entry_tax_form_title), EntryKind.TaxForm, draft.firstProblem, isWorking, isBox = true,
         onRecord = { id ->
             scope.launch {
                 isWorking = true
@@ -326,28 +452,31 @@ fun FinanceTaxFormEntryScreen() {
                 isWorking = false
             }
         },
-    ) {
+    ) { _ ->
         KindPicker(stringResource(R.string.finance_kind), draft.taxFormKind, FinanceEntryKinds.taxFormKinds) { draft = draft.copy(taxFormKind = it) }
         Field(stringResource(R.string.finance_entry_tax_year), year, { text -> year = text; draft = draft.copy(taxYear = text.trim().toIntOrNull() ?: 0) })
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.finance_tax_corrected_form), Modifier.weight(1f)); Switch(draft.isCorrected, { draft = draft.copy(isCorrected = it) }) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.finance_entry_corrected_form), Modifier.weight(1f)); Switch(draft.isCorrected, { draft = draft.copy(isCorrected = it) }) }
         Field(stringResource(R.string.finance_tax_payer), draft.payerName, { draft = draft.copy(payerName = it) })
         Field(stringResource(R.string.finance_entry_payer_tax_id), draft.payerTaxId, { draft = draft.copy(payerTaxId = it) })
         Field(stringResource(R.string.finance_tax_recipient), draft.recipientName, { draft = draft.copy(recipientName = it) })
-        Field(stringResource(R.string.finance_entry_taxpayer_last_four), draft.recipientTaxIdMask, { draft = draft.copy(recipientTaxIdMask = it) })
-        TeaNodeSectionHeader(stringResource(R.string.finance_tax_boxes))
+        Field(stringResource(R.string.finance_entry_taxpayer_last_four), draft.recipientTaxIdMask, { draft = draft.copy(recipientTaxIdMask = it) }, placeholder = stringResource(R.string.finance_entry_taxpayer_hint))
+        Footnote(stringResource(R.string.finance_entry_taxpayer_footer))
         draft.taxFormEntries.forEachIndexed { index, entry ->
             fun change(next: TaxFormEntryDraft) { draft = draft.copy(taxFormEntries = draft.taxFormEntries.replaced(index, next)) }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TeaNodeSectionHeader(stringResource(R.string.finance_tax_box, (index + 1).toString()))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Field(stringResource(R.string.finance_entry_box), entry.boxCode, { change(entry.copy(boxCode = it)) }, Modifier.weight(1f))
                     Field(stringResource(R.string.finance_entry_qualifier), entry.boxQualifier, { change(entry.copy(boxQualifier = it)) }, Modifier.weight(1f))
                 }
                 Field(stringResource(R.string.finance_amount), entry.amount, { change(entry.copy(amount = it)) })
                 Field(stringResource(R.string.finance_entry_text), entry.textValue, { change(entry.copy(textValue = it)) })
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.finance_entry_marked), Modifier.weight(1f)); Switch(entry.isChecked, { change(entry.copy(isChecked = it)) }) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.finance_entry_checked), Modifier.weight(1f)); Switch(entry.isChecked, { change(entry.copy(isChecked = it)) }) }
+                taxBoxTitleWords(draft.taxFormKind, entry.boxCode)?.let { boxTitle -> Footnote(boxTitle) }
                 if (draft.taxFormEntries.size > 1) TextButton(onClick = { draft = draft.copy(taxFormEntries = draft.taxFormEntries.filterIndexed { each, _ -> each != index }) }) { Text(stringResource(R.string.finance_entry_remove_box)) }
             }
         }
         TextButton(onClick = { draft = draft.copy(taxFormEntries = draft.taxFormEntries + TaxFormEntryDraft()) }) { Text(stringResource(R.string.finance_entry_add_box)) }
+        Footnote(stringResource(R.string.finance_entry_only_boxes))
     }
 }

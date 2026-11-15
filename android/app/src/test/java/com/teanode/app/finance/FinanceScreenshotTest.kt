@@ -154,6 +154,15 @@ class FinanceScreenshotTest {
     @Test fun `receipt dark`() = shoot("receipt", Look.Dark) { FinanceReceiptDetailScreen(FinanceDemoData.RECEIPT_ID) }
 
     @Test fun `taxes`() = shoot("taxes") { FinanceTaxesScreen() }
+    @Test fun `taxes estimate`() = shoot("taxes-estimate", scrollTo = "Tax for ${java.time.LocalDate.now().year}, by December 31") { FinanceTaxesScreen() }
+    @Test fun `taxes estimate footer`() = shoot("taxes-estimate-footer", scrollTo = "The filing status is assumed from the number of people; pick yours above and it is kept.") { FinanceTaxesScreen() }
+    @Test fun `taxes comparison`() = shoot("taxes-comparison", scrollTo = "Each box of the W-2 beside the year to date on the last paystub.") { FinanceTaxesScreen() }
+    @Test fun `taxes documents`() = shoot("taxes-documents", Look.Dark, scrollTo = "Type in a paystub") { FinanceTaxesScreen() }
+    @Test fun `taxes year settings`() = shoot("taxes-year-settings", scrollTo = "Year settings", afterShown = { tap(composeRule.onNodeWithText("Year settings")) }) { FinanceTaxesScreen() }
+    @Test fun `taxes year settings largest text`() = shoot("taxes-year-settings-largest-text", fontScale = 2f, scrollTo = "Year settings", afterShown = { tap(composeRule.onNodeWithText("Year settings")) }) { FinanceTaxesScreen() }
+    @Test fun `taxes no documents`() = shoot("taxes-no-documents") { TaxDocumentsEmptyState(onAdd = {}) }
+    @Test fun `paystub detail`() = shoot("paystub-detail") { FinancePaystubDetailScreen("demo-paystub-1") }
+    @Test fun `paystub findings`() = shoot("paystub-findings", Look.Dark, scrollTo = "Findings") { FinancePaystubDetailScreen("demo-paystub-1") }
     @Test fun `taxes dark`() = shoot("taxes", Look.Dark) { FinanceTaxesScreen() }
     @Test fun `paystub`() = shoot("paystub") { FinancePaystubDetailScreen("demo-paystub-1") }
     @Test fun `tax form`() = shoot("tax-form") { FinanceTaxFormDetailScreen("demo-form-1") }

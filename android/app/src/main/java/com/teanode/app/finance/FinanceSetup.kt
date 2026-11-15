@@ -118,8 +118,8 @@ fun FinanceSetupScreen() {
             }
             deleting?.let { source ->
                 ConfirmationDialog(
-                    title = stringResource(R.string.finance_delete_bank_question), text = stringResource(R.string.finance_delete_bank_message), confirmLabel = stringResource(R.string.finance_delete), isDestructive = true,
-                    onConfirm = { deleting = null; act(context.getString(R.string.finance_deleted)) { connection.deleteFinanceSource(source.id) } }, onDismiss = { deleting = null },
+                    title = stringResource(R.string.finance_delete_bank_question), text = stringResource(R.string.finance_delete_bank_message), confirmLabel = stringResource(R.string.finance_source_removed_action), isDestructive = true,
+                    onConfirm = { deleting = null; act(context.getString(R.string.finance_source_removed)) { connection.deleteFinanceSource(source.id) } }, onDismiss = { deleting = null },
                 )
             }
             if (isLinking) {

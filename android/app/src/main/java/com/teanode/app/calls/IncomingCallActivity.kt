@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -23,7 +23,7 @@ import com.teanode.app.ui.theme.AppearanceChoice
  * IncomingCallActivity is what the full-screen notification opens over the lock screen: who is calling, with Answer
  * and Decline. Answering asks for the microphone first, then starts the call and brings the app forward.
  */
-class IncomingCallActivity : ComponentActivity() {
+class IncomingCallActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)

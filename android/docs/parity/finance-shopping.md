@@ -48,12 +48,12 @@ Logic is in `android/kit` (`com.teanode.kit.finance`, `com.teanode.kit.shopping`
 | FinanceMoreViews.swift: Savings targets | FinanceNetWorth | done |
 | FinanceMoreViews.swift: Receipts, receipt detail | FinanceReceipts | partly: no picture; typing in a receipt is FinanceEntryScreens |
 | FinanceMoreViews.swift: Banks and currency | FinanceSetup | done |
-| FinanceEntryViews.swift (type in a receipt, paystub, tax form) | kit only | done (FinanceEntryScreens) |
-| FinanceManageViews.swift: trades | FinanceTrades | done |
+| FinanceEntryViews.swift (type in a receipt, paystub, tax form) | FinanceEntryScreens | done: kinds in words, the problem sentences with their line or box, the file section, Preview before Record with what recording does and the charges it could explain. Dates are typed text, not date pickers |
+| FinanceManageViews.swift: trades | FinanceTrades | done: total, fifty at a time, kind words, fee, footer (no account name under the title) |
 | FinanceManageViews.swift: rename or delete a statement account, suggest rules, import credential, import rows | kit only | done (FinanceManageScreens, rename and delete on the accounts screen) |
 | FinanceSharingViews.swift, FinanceShareAllViews.swift | FinanceSharing | done (the "Showing" menu is the list on the first screen) |
 | SharedAllFinanceViews.swift | FinanceSharing (FinanceSharedAllScreen) | done |
-| FinanceTaxViews.swift | FinanceTaxes | done (ring, upload, every setting) |
+| FinanceTaxViews.swift | FinanceTaxes | done: the iPhone's order and words (Mail them in with copy and a new address, Adding, the empty state, the estimate ring with a tap on a slice, every estimate line and footer, year settings, findings that open the paystub, W-2 against paystubs with matches, household, 1099 sections, paystub and form details with their findings). Swipe to delete is Android-different: delete is on the paystub or form itself. Every text is listed in finance-wording.md |
 | FinanceCategoryNames.swift, StatementImportWords.swift | FinanceBase, FinanceAccounts | done |
 | FinanceManageDemo.swift, FinanceSharingDemo.swift | FinanceDemo | done |
 
