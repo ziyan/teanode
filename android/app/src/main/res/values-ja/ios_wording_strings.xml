@@ -20,7 +20,6 @@
     <string name="settings_server_about_not_checked">未確認</string>
     <string name="settings_server_about_never">しない</string>
     <string name="settings_server_about_downloading">ダウンロードし、バイナリを置き換えて再起動します。1 分ほどかかります。</string>
-    <string name="settings_server_about_unreadable">サーバーの状態を読み込めませんでした。</string>
     <string name="settings_server_credentials_file">認証情報ファイル</string>
     <string name="settings_server_credentials_file_footer">キーは空のままにしてください。認証情報はこのファイルから取得します。</string>
 </resources>

@@ -169,7 +169,7 @@
     <string name="mail_no_address_to_send_from_yet">This mailbox has no address to send from yet.</string>
     <string name="mail_no_address_yet">This mailbox has no address yet</string>
     <string name="mail_no_lists_yet">No mailing lists have written to this mailbox</string>
-    <string name="mail_no_longer_stored">This message is no longer stored.</string>
+    <string name="mail_no_longer_stored">The content of this message is no longer stored.</string>
     <string name="mail_no_mailbox_description">A mailbox is made when an address is given to you on your server.</string>
     <string name="mail_no_mailbox_yet">No mailbox yet</string>
     <string name="mail_no_program_has_password">No mail program has a password yet.</string>

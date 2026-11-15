@@ -10,7 +10,6 @@
     <string name="ideas_done">Done</string>
     <string name="ideas_restore">Restore</string>
     <string name="ideas_more_actions">More actions</string>
-    <string name="ideas_opens_conversation">Opens its conversation</string>
     <string name="ideas_said_dismissed">Dismissed. It is under History if you want it back.</string>
     <string name="ideas_said_done">Marked done.</string>
     <string name="ideas_said_restored">It is back among the open ideas.</string>

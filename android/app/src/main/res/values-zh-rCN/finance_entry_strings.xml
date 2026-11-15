@@ -2,8 +2,6 @@
 <resources>
     <string name="finance_add_receipt_camera">拍照</string>
     <string name="finance_add_receipt_photo">选择照片</string>
-    <string name="finance_ask_agent">问智能体</string>
-    <string name="finance_ask_agent_copied">交易信息已复制，可粘贴到聊天中</string>
     <string name="finance_callout_cash_flow">%1$s：收入 %2$s，支出 %3$s，净额 %4$s</string>
     <string name="finance_callout_less">更少</string>
     <string name="finance_callout_more">更多</string>
@@ -80,7 +78,6 @@
     <string name="finance_manage_institution">金融机构名称（可选）</string>
     <string name="finance_manage_institution_footer">留空时向提供方查询。</string>
     <string name="finance_manage_last_digits">后几位</string>
-    <string name="finance_manage_left_out">已略去 %1$d 条建议：过于笼统或经常变化。</string>
     <string name="finance_manage_mask_footer">留空则恢复账单自带的号码。</string>
     <string name="finance_manage_nearby">3 天内有金额相同的已存交易</string>
     <string name="finance_manage_new_account">它们将进入新账户 %1$s。</string>
@@ -96,7 +93,6 @@
     <string name="finance_manage_suggest_footer">查看归在这个类别下的交易，建议它们共有的文字。在您添加规则之前不会保存任何内容。</string>
     <string name="finance_manage_suggest_rules">建议规则</string>
     <string name="finance_manage_would_import">将导入的内容</string>
-    <string name="finance_tax_being_read">正在读取，完成后税务年度会更新。</string>
     <string name="finance_tax_corrected_form">这是更正表</string>
     <string name="finance_tax_dependent_care_expense">受抚养人护理费用</string>
     <string name="finance_tax_gain_note">预估收益备注</string>
@@ -105,6 +101,5 @@
     <string name="finance_tax_property_tax">房产税</string>
     <string name="finance_tax_short_gain">预估短期收益</string>
     <string name="finance_tax_state_tax_paid">已缴州所得税</string>
-    <string name="finance_tax_upload_documents">上传工资单或 W-2</string>
     <string name="finance_tax_upload_footer">会为你读取，并与其他文件分开保存。</string>
 </resources>

@@ -169,7 +169,7 @@
     <string name="mail_no_address_to_send_from_yet">このメールボックスにはまだ送信元アドレスがありません。</string>
     <string name="mail_no_address_yet">このメールボックスにはまだアドレスがありません</string>
     <string name="mail_no_lists_yet">このメールボックスに届いたメーリングリストはありません</string>
-    <string name="mail_no_longer_stored">このメッセージはもう保存されていません。</string>
+    <string name="mail_no_longer_stored">このメールの内容はもう保存されていません。</string>
     <string name="mail_no_mailbox_description">サーバーでアドレスが割り当てられるとメールボックスが作られます。</string>
     <string name="mail_no_mailbox_yet">メールボックスはまだありません</string>
     <string name="mail_no_program_has_password">パスワードを持つメールアプリはまだありません。</string>

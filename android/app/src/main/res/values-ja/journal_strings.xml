@@ -14,7 +14,6 @@
     <string name="journal_clear">クリア</string>
     <string name="journal_close">閉じる</string>
     <string name="journal_conversations">会話</string>
-    <string name="journal_correction_footer">この物語を今後書き直すときは必ずこれが伝えられ、今すぐ書き直されます。</string>
     <string name="journal_days">期間</string>
     <string name="journal_days_appear_here">過ごした日はここに並びます。</string>
     <string name="journal_delete">削除</string>
@@ -34,7 +33,6 @@
     <string name="journal_from_health">ヘルスケアから</string>
     <string name="journal_from_your_notes">あなたのノートから</string>
     <string name="journal_health">医療・健康</string>
-    <string name="journal_how_hint">どのように（任意）</string>
     <string name="journal_how_the_days_were">日々の気分</string>
     <string name="journal_how_was_the_day">この日はどうでしたか？</string>
     <string name="journal_in_numbers">数字で見る</string>
@@ -60,7 +58,6 @@
     <string name="journal_open">開く</string>
     <string name="journal_open_in_photos">写真で開く</string>
     <string name="journal_open_the_week">この週を開く</string>
-    <string name="journal_original_footer_day">ここに書いた内容はそのまま保存されます。TeaNode は読みやすく整えられますが、原文は変更しません。</string>
     <string name="journal_photos">写真</string>
     <string name="journal_pin_to_this_day">この日に固定</string>
     <string name="journal_places">場所</string>
@@ -107,7 +104,6 @@
     <string name="journal_touched_up_by_teanode">TeaNode が整えました</string>
     <string name="journal_touching_up_words">文章を整えています</string>
     <string name="journal_touch_up">整える</string>
-    <string name="journal_touch_up_footer">TeaNode はつづりを直し、読みやすく整えます。意味は書いたままです。希望があれば上に書いてください。</string>
     <string name="journal_walked_label">歩いた距離</string>
     <string name="journal_weather">天気</string>
     <string name="journal_weather_clear">クリア</string>
@@ -140,12 +136,10 @@
     <string name="journal_year_no_story">この年の物語はまだありません。</string>
     <string name="journal_years">年</string>
     <string name="journal_your_original">元の文章</string>
-    <string name="journal_your_own_words_about_stretch">この期間について、あなた自身の言葉で。</string>
     <string name="journal_your_words">あなたの言葉</string>
     <string name="journal_reading_text">TeaNodeは各日のストーリーを書くために、あなたの言葉を含むジャーナルを読みます。読んだ内容はモデルの提供元に送られます。</string>
     <string name="journal_and_n_more">ほか%1$d件</string>
     <string name="journal_bpm">%1$s bpm</string>
-    <string name="journal_could_not_ask_touch_up">整える依頼ができませんでした。</string>
     <string name="journal_could_not_ask_written_again">物語の書き直しを依頼できませんでした。</string>
     <string name="journal_could_not_ask_written_again_day">この日の書き直しを依頼できませんでした。</string>
     <string name="journal_could_not_change_evening_question">夜の質問を変更できませんでした。</string>
@@ -160,7 +154,6 @@
     <string name="journal_could_not_save_day">気分を保存できませんでした。</string>
     <string name="journal_could_not_save_today">今日の気分を保存できませんでした。</string>
     <string name="journal_could_not_save_words">あなたの言葉を保存できませんでした。</string>
-    <string name="journal_could_not_send_correction">訂正を送信できませんでした。</string>
     <string name="journal_could_not_stop_touch_up">整えるのをやめられませんでした。</string>
     <string name="journal_days_erased">%1$d 日分を消去しました。</string>
     <string name="journal_duration_hours">%1$d 時間</string>

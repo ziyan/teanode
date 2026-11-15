@@ -3,7 +3,6 @@
     <string name="coding_title">Coding</string>
     <string name="coding_empty_title">No coding sessions</string>
     <string name="coding_empty_description">Open one with the plus button, or start Claude Code or Codex in herdr on your computer.</string>
-    <string name="coding_read_failed">The coding sessions could not be read</string>
     <string name="coding_open_session">Open a session</string>
     <string name="coding_actions">Coding actions</string>
     <string name="coding_set_up_hooks">Set up hooks</string>
@@ -38,7 +37,6 @@
     <string name="coding_photo_library">Photo library</string>
     <string name="coding_files">Files</string>
     <string name="coding_send">Send</string>
-    <string name="coding_sending">Sending…</string>
     <string name="coding_files_too_big">The files come to more than 25 MB, more than the server takes in one message.</string>
     <string name="coding_shown_on">Shown on %1$s</string>
     <string name="coding_will_tell_you">Your agent will tell you when %1$s finishes</string>
@@ -58,7 +56,6 @@
     <string name="coding_name_in_herdr">Name in herdr</string>
     <string name="coding_skip_approvals_codex">Skip approvals and the sandbox (--yolo)</string>
     <string name="coding_skip_prompts_claude">Skip permission prompts (--dangerously-skip-permissions)</string>
-    <string name="coding_cancel">Cancel</string>
     <string name="coding_open">Open</string>
     <string name="coding_agents_none_title">No agents yet</string>
     <string name="coding_agents_none_description">This session has not started any agents for this request.</string>
@@ -86,7 +83,6 @@
     <string name="coding_hooks_script">Hook script</string>
     <string name="coding_hooks_backup">Backup of the settings</string>
     <string name="coding_hooks_events">Events</string>
-    <string name="coding_done">Done</string>
     <string name="coding_preview_title">What a session sees</string>
     <string name="coding_preview_computer_optional">Computer (optional)</string>
     <string name="coding_preview_any_computer">Any computer</string>
@@ -95,7 +91,6 @@
     <string name="coding_preview_show">Show</string>
     <string name="coding_preview_shown_heading">What the session is shown</string>
     <string name="coding_preview_nothing">Nothing: your agent knows no checkout holding that directory, or the question recalls nothing from its project.</string>
-    <string name="coding_close">Close</string>
     <string name="coding_paste_picture">Paste picture</string>
     <string name="coding_camera">Camera</string>
     <plurals name="coding_agents_count">

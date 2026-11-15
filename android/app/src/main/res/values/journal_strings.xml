@@ -14,7 +14,6 @@
     <string name="journal_clear">Clear</string>
     <string name="journal_close">Close</string>
     <string name="journal_conversations">Conversations</string>
-    <string name="journal_correction_footer">Every later writing of this story is told this, and the story is written again now.</string>
     <string name="journal_days">Days</string>
     <string name="journal_days_appear_here">Days appear here as they are lived.</string>
     <string name="journal_delete">Delete</string>
@@ -34,7 +33,6 @@
     <string name="journal_from_health">From Health</string>
     <string name="journal_from_your_notes">From your notes</string>
     <string name="journal_health">Health</string>
-    <string name="journal_how_hint">How (optional)</string>
     <string name="journal_how_the_days_were">How the days were</string>
     <string name="journal_how_was_the_day">How was the day?</string>
     <string name="journal_in_numbers">In numbers</string>
@@ -60,7 +58,6 @@
     <string name="journal_open">Open</string>
     <string name="journal_open_in_photos">Open in Photos</string>
     <string name="journal_open_the_week">Open the week</string>
-    <string name="journal_original_footer_day">What you write here is kept as it is. TeaNode can touch it up for reading, and never changes your original.</string>
     <string name="journal_photos">Photos</string>
     <string name="journal_pin_to_this_day">Pin to this day</string>
     <string name="journal_places">Places</string>
@@ -107,7 +104,6 @@
     <string name="journal_touched_up_by_teanode">Touched up by TeaNode</string>
     <string name="journal_touching_up_words">Touching up your words</string>
     <string name="journal_touch_up">Touch up</string>
-    <string name="journal_touch_up_footer">TeaNode fixes the spelling and makes it easier to read. What you mean stays as you wrote it. Say how, if you want it a certain way.</string>
     <string name="journal_walked_label">Walked</string>
     <string name="journal_weather">Weather</string>
     <string name="journal_weather_clear">Clear</string>
@@ -140,12 +136,10 @@
     <string name="journal_year_no_story">No story for this year yet.</string>
     <string name="journal_years">Years</string>
     <string name="journal_your_original">Your original</string>
-    <string name="journal_your_own_words_about_stretch">Your own words about this stretch of time.</string>
     <string name="journal_your_words">Your words</string>
     <string name="journal_reading_text">TeaNode reads your journal, your words included, to write the story of each day. What it reads goes to the provider of its model.</string>
     <string name="journal_and_n_more">and %1$d more</string>
     <string name="journal_bpm">%1$s bpm</string>
-    <string name="journal_could_not_ask_touch_up">Could not ask for the touch up.</string>
     <string name="journal_could_not_ask_written_again">Could not ask for the story to be written again.</string>
     <string name="journal_could_not_ask_written_again_day">Could not ask for this day to be written again.</string>
     <string name="journal_could_not_change_evening_question">Could not change the evening question.</string>
@@ -160,7 +154,6 @@
     <string name="journal_could_not_save_day">Could not save the mood.</string>
     <string name="journal_could_not_save_today">Could not save the mood for today.</string>
     <string name="journal_could_not_save_words">Could not save your words.</string>
-    <string name="journal_could_not_send_correction">Could not send the correction.</string>
     <string name="journal_could_not_stop_touch_up">Could not stop touching up.</string>
     <string name="journal_days_erased">Erased %1$d days.</string>
     <string name="journal_duration_hours">%1$d hr</string>

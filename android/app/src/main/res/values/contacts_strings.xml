@@ -11,7 +11,6 @@
     <string name="contacts_agent_knows_you">Your agent knows the contact marked as you is you.</string>
     <string name="contacts_albums">Albums</string>
     <string name="contacts_already_in_teanode">Already in TeaNode</string>
-    <string name="contacts_a_place">A place</string>
     <string name="contacts_map_of_their_day">Map of their day</string>
     <string name="contacts_book_deleted">Address book deleted</string>
     <string name="contacts_book_made">Address book made</string>
@@ -66,7 +65,6 @@
     <string name="contacts_link_a_contact_footer">Link a contact to see mail, photos, recordings and memory about %1$s.</string>
     <string name="contacts_link_a_contact_title">Link a contact</string>
     <string name="contacts_location_not_shared">%1$s does not share where they are with you.</string>
-    <string name="contacts_location_paused">Location paused</string>
     <string name="contacts_mail">Mail</string>
     <string name="contacts_make_family_book">Make a family address book for %1$s</string>
     <string name="contacts_make_shared_book">Make a shared address book for %1$s</string>
@@ -78,7 +76,6 @@
     <string name="contacts_name">Name</string>
     <string name="contacts_name_address_or_phone">Name, address or phone</string>
     <string name="contacts_new_contact">New contact</string>
-    <string name="contacts_next_day">Next day</string>
     <string name="contacts_no_contact_is_you">No contact is you now</string>
     <string name="contacts_no_contacts_circle_description">Anyone in the circle can add one with +.</string>
     <string name="contacts_no_contacts_description">Add one with +, or save a sender from a message.</string>
@@ -94,15 +91,11 @@
     <string name="contacts_nothing_matches">Nothing matches</string>
     <string name="contacts_nothing_yet">Nothing yet.</string>
     <string name="contacts_not_now">Not now</string>
-    <string name="contacts_no_visits_this_day">No visits this day</string>
     <string name="contacts_only_you_see_this">Only you see this. They are not told.</string>
     <string name="contacts_open_settings">Open Settings</string>
     <string name="contacts_organization">Organization</string>
     <string name="contacts_phone">Phone</string>
-    <string name="contacts_photo">Photo</string>
-    <string name="contacts_places">Places</string>
     <string name="contacts_postal_code">Postal code</string>
-    <string name="contacts_previous_day">Previous day</string>
     <string name="contacts_reading_contacts">Reading your contacts…</string>
     <string name="contacts_region">State or region</string>
     <string name="contacts_relationship">Relationship</string>
@@ -124,12 +117,10 @@
     <string name="contacts_select_none">Select none</string>
     <string name="contacts_shares_where_now">%1$s shares where they are now. Their visits and places are not shared with you.</string>
     <string name="contacts_show_all_in">Show all in %1$s</string>
-    <string name="contacts_since_time">Since %1$s</string>
     <string name="contacts_street">Street</string>
     <string name="contacts_this_is_me">This is me</string>
     <string name="contacts_this_is_not_me">This is not me</string>
     <string name="contacts_this_is_you">This is you</string>
-    <string name="contacts_today">Today</string>
     <string name="contacts_visits_and_places">Visits and places</string>
     <string name="contacts_you">You</string>
     <string name="contacts_your_contacts">Your contacts</string>
@@ -137,10 +128,6 @@
     <plurals name="contacts_imported_count">
         <item quantity="one">Imported %1$d contact.</item>
         <item quantity="other">Imported %1$d contacts.</item>
-    </plurals>
-    <plurals name="contacts_photos_count">
-        <item quantity="one">%1$d photo</item>
-        <item quantity="other">%1$d photos</item>
     </plurals>
     <plurals name="contacts_speaks_in_passages">
         <item quantity="one">Speaks in %1$d passage</item>

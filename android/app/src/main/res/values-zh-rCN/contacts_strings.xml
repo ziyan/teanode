@@ -11,7 +11,6 @@
     <string name="contacts_agent_knows_you">你的助手会知道标记为你的联系人就是你。</string>
     <string name="contacts_albums">相簿</string>
     <string name="contacts_already_in_teanode">已在 TeaNode 中</string>
-    <string name="contacts_a_place">某个地点</string>
     <string name="contacts_map_of_their_day">他们这一天的地图</string>
     <string name="contacts_book_deleted">通讯录已删除</string>
     <string name="contacts_book_made">通讯录已创建</string>
@@ -66,7 +65,6 @@
     <string name="contacts_link_a_contact_footer">关联联系人后，即可查看与%1$s有关的邮件、照片、录音和记忆。</string>
     <string name="contacts_link_a_contact_title">关联联系人</string>
     <string name="contacts_location_not_shared">%1$s没有向你共享位置。</string>
-    <string name="contacts_location_paused">位置已暂停</string>
     <string name="contacts_mail">邮件</string>
     <string name="contacts_make_family_book">为%1$s创建家庭通讯录</string>
     <string name="contacts_make_shared_book">为%1$s创建共享通讯录</string>
@@ -78,7 +76,6 @@
     <string name="contacts_name">姓名</string>
     <string name="contacts_name_address_or_phone">姓名、地址或电话</string>
     <string name="contacts_new_contact">新联系人</string>
-    <string name="contacts_next_day">后一天</string>
     <string name="contacts_no_contact_is_you">现在没有联系人是你</string>
     <string name="contacts_no_contacts_circle_description">圈子里的任何人都可以用 + 添加。</string>
     <string name="contacts_no_contacts_description">点 + 添加，或从邮件中保存发件人。</string>
@@ -94,15 +91,11 @@
     <string name="contacts_nothing_matches">没有匹配的内容</string>
     <string name="contacts_nothing_yet">还没有。</string>
     <string name="contacts_not_now">暂不</string>
-    <string name="contacts_no_visits_this_day">这一天没有到访记录</string>
     <string name="contacts_only_you_see_this">只有你能看到。对方不会收到通知。</string>
     <string name="contacts_open_settings">打开设置</string>
     <string name="contacts_organization">组织</string>
     <string name="contacts_phone">电话</string>
-    <string name="contacts_photo">照片</string>
-    <string name="contacts_places">地点</string>
     <string name="contacts_postal_code">邮编</string>
-    <string name="contacts_previous_day">前一天</string>
     <string name="contacts_reading_contacts">正在读取你的联系人…</string>
     <string name="contacts_region">州或地区</string>
     <string name="contacts_relationship">关系</string>
@@ -124,21 +117,16 @@
     <string name="contacts_select_none">全不选</string>
     <string name="contacts_shares_where_now">%1$s只与你共享现在的位置,没有共享去过的地方。</string>
     <string name="contacts_show_all_in">显示%1$s中的全部结果</string>
-    <string name="contacts_since_time">自 %1$s 起</string>
     <string name="contacts_street">街道</string>
     <string name="contacts_this_is_me">这是我</string>
     <string name="contacts_this_is_not_me">这不是我</string>
     <string name="contacts_this_is_you">这是你</string>
-    <string name="contacts_today">今天</string>
     <string name="contacts_visits_and_places">到访和地点</string>
     <string name="contacts_you">你</string>
     <string name="contacts_your_contacts">我的联系人</string>
     <string name="contacts_your_relationship">你的%1$s</string>
     <plurals name="contacts_imported_count">
         <item quantity="other">已导入 %1$d 位联系人。</item>
-    </plurals>
-    <plurals name="contacts_photos_count">
-        <item quantity="other">%1$d 张照片</item>
     </plurals>
     <plurals name="contacts_speaks_in_passages">
         <item quantity="other">在 %1$d 段内容中发言</item>

@@ -32,7 +32,6 @@
     <string name="goals_picker_title">让这个目标按计划运行</string>
     <string name="goals_picker_empty">没有其他可用的计划。</string>
     <string name="goals_picker_footer">计划的每次运行都会成为这个目标的一轮，目标自己不再另外行动。回答会出现在目标的对话里，而不是通过邮件发送。</string>
-    <string name="goals_cancel">取消</string>
     <string name="goals_starter_title_hint">要达成什么</string>
     <string name="goals_starter_details_hint">怎样算完成，以及它应知道的事</string>
     <string name="goals_start">开始</string>

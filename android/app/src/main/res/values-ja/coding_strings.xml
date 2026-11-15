@@ -3,7 +3,6 @@
     <string name="coding_title">コーディング</string>
     <string name="coding_empty_title">コーディングセッションはありません</string>
     <string name="coding_empty_description">＋ボタンで開くか、コンピューターの herdr で Claude Code や Codex を起動してください。</string>
-    <string name="coding_read_failed">コーディングセッションを読み込めませんでした</string>
     <string name="coding_open_session">セッションを開く</string>
     <string name="coding_actions">コーディング操作</string>
     <string name="coding_set_up_hooks">フックを設定</string>
@@ -38,7 +37,6 @@
     <string name="coding_photo_library">写真ライブラリ</string>
     <string name="coding_files">ファイル</string>
     <string name="coding_send">送信</string>
-    <string name="coding_sending">送信中…</string>
     <string name="coding_files_too_big">ファイルの合計が 25 MB を超えており、サーバーが 1 通で受け取れる量を超えています。</string>
     <string name="coding_shown_on">%1$s で表示しました</string>
     <string name="coding_will_tell_you">%1$s が終わったらエージェントが知らせます</string>
@@ -58,7 +56,6 @@
     <string name="coding_name_in_herdr">herdr での名前</string>
     <string name="coding_skip_approvals_codex">承認とサンドボックスを省く (--yolo)</string>
     <string name="coding_skip_prompts_claude">権限の確認を省く (--dangerously-skip-permissions)</string>
-    <string name="coding_cancel">キャンセル</string>
     <string name="coding_open">開く</string>
     <string name="coding_agents_none_title">エージェントはまだありません</string>
     <string name="coding_agents_none_description">このセッションは、今回のリクエストでまだエージェントを起動していません。</string>
@@ -86,7 +83,6 @@
     <string name="coding_hooks_script">フックのスクリプト</string>
     <string name="coding_hooks_backup">設定のバックアップ</string>
     <string name="coding_hooks_events">イベント</string>
-    <string name="coding_done">完了</string>
     <string name="coding_preview_title">セッションに見える内容</string>
     <string name="coding_preview_computer_optional">コンピューター（任意）</string>
     <string name="coding_preview_any_computer">どのコンピューターでも</string>
@@ -95,7 +91,6 @@
     <string name="coding_preview_show">表示</string>
     <string name="coding_preview_shown_heading">セッションに見せる内容</string>
     <string name="coding_preview_nothing">何もありません。エージェントはそのディレクトリを含むチェックアウトを知らないか、質問がそのプロジェクトから何も思い出しません。</string>
-    <string name="coding_close">閉じる</string>
     <string name="coding_paste_picture">画像をペースト</string>
     <string name="coding_camera">カメラ</string>
     <plurals name="coding_agents_count">

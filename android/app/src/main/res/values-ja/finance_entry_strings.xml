@@ -2,8 +2,6 @@
 <resources>
     <string name="finance_add_receipt_camera">写真を撮る</string>
     <string name="finance_add_receipt_photo">写真を選ぶ</string>
-    <string name="finance_ask_agent">エージェントに聞く</string>
-    <string name="finance_ask_agent_copied">取引の内容をコピーしました。チャットに貼り付けてください</string>
     <string name="finance_callout_cash_flow">%1$s: 収入 %2$s、支出 %3$s、差額 %4$s</string>
     <string name="finance_callout_less">少ない</string>
     <string name="finance_callout_more">多い</string>
@@ -80,7 +78,6 @@
     <string name="finance_manage_institution">金融機関名（任意）</string>
     <string name="finance_manage_institution_footer">空欄の場合はプロバイダに問い合わせます。</string>
     <string name="finance_manage_last_digits">下の桁</string>
-    <string name="finance_manage_left_out">%1$d 件の提案は一般的すぎる、または変わりやすいため除外しました。</string>
     <string name="finance_manage_mask_footer">空欄にすると明細の番号に戻ります。</string>
     <string name="finance_manage_nearby">3日以内に同額の取引があります</string>
     <string name="finance_manage_new_account">新しい口座 %1$s に取り込まれます。</string>
@@ -96,7 +93,6 @@
     <string name="finance_manage_suggest_footer">このカテゴリに分類された取引を調べ、共通する言葉を提案します。ルールを追加するまで何も保存されません。</string>
     <string name="finance_manage_suggest_rules">ルールを提案</string>
     <string name="finance_manage_would_import">取り込まれる内容</string>
-    <string name="finance_tax_being_read">読み取り中です。完了すると課税年度が更新されます。</string>
     <string name="finance_tax_corrected_form">訂正書類です</string>
     <string name="finance_tax_dependent_care_expense">扶養者のケア費用</string>
     <string name="finance_tax_gain_note">見積り利益のメモ</string>
@@ -105,6 +101,5 @@
     <string name="finance_tax_property_tax">固定資産税</string>
     <string name="finance_tax_short_gain">見積りの短期利益</string>
     <string name="finance_tax_state_tax_paid">納付済みの州所得税</string>
-    <string name="finance_tax_upload_documents">給与明細や W-2 をアップロード</string>
     <string name="finance_tax_upload_footer">読み取られ、他のファイルとは別に保管されます。</string>
 </resources>
