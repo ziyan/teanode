@@ -17,11 +17,20 @@ class PasswordsAutofillPickerTest {
         assertEquals("https://example.com", picked.webAddress)
     }
 
-    @Test fun `an app that is not a known browser gets nothing even when it claims a web domain`() {
+    @Test fun `an app that is not a known browser names no page even when it claims a web domain`() {
         val picked = AutofillFieldPicker.pick(listOf(field("secret", FieldKind.Password, "https://bank.example")), "com.example.game")
-        assertTrue(picked.passwordIds.isEmpty())
+        assertEquals(listOf("secret"), picked.passwordIds)
         assertNull(picked.webAddress)
         assertFalse(TrustedBrowsers.isTrusted(null))
+    }
+
+    @Test fun `an app with no password or code field is not offered`() {
+        assertTrue(AutofillFieldPicker.pick(listOf(field("user", FieldKind.UserName, null)), "com.example.game").userNameIds.isEmpty())
+    }
+
+    @Test fun `an app's invisible fields are left alone`() {
+        val picked = AutofillFieldPicker.pick(listOf(field("secret", FieldKind.Password, null), field("trap", FieldKind.Password, null, isVisible = false)), "com.example.game")
+        assertEquals(listOf("secret"), picked.passwordIds)
     }
 
     @Test fun `an invisible field is not filled`() {
