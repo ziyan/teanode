@@ -127,7 +127,7 @@ fun JournalPeriodScreen(periodKind: JournalPeriodKind, anchorDay: String) {
                     item(key = "looking-back-write") {
                         JournalAction(stringOf(if (words?.hasOriginal == true) R.string.journal_edit_looking_back else R.string.journal_write_looking_back), Icons.Outlined.EditNote, onClick = { navigator.navigate(JournalRoutes.write(periodKind, model.anchorDay)) })
                     }
-                    item(key = "looking-back-footer") { Footnote(stringOf(R.string.journal_your_own_words_about_stretch)) }
+                    item(key = "looking-back-footer") { Footnote(stringOf(R.string.journal_write_stretch_footer)) }
                     // The days.
                     when (periodKind) {
                         JournalPeriodKind.Week -> weekDays(period, text) { day -> navigator.navigate(JournalRoutes.day(day)) }

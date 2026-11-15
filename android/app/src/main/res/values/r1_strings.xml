@@ -8,4 +8,18 @@
     <string name="calls_voice_stop_answer">Stop the answer</string>
     <string name="chats_skill_share_call_gone">This call is gone. The share was taken back, or you no longer share a circle.</string>
     <string name="chats_skill_share_call_failed">This call could not be loaded. It will keep trying.</string>
+    <string name="chats_stop_recording_before_dictating">Stop the current recording before dictating.</string>
+    <string name="calls_voice_stop_recording_first">Stop the current recording before starting a live call.</string>
+    <string name="chats_details_hint_hide">Hides the details</string>
+    <string name="chats_details_hint_show">Shows the details</string>
+    <string name="journal_write_original_footer_day">What you want to remember, in your own voice. TeaNode never changes these words.</string>
+    <string name="journal_write_how_hint">How? For example: shorter, or fix the grammar</string>
+    <string name="journal_write_touch_up_footer">TeaNode makes a version of your original that reads better, and shows it first. Your original is kept, and it is the only text you edit.</string>
+    <string name="journal_write_correction_footer">For example: it was Sam at lunch, not a colleague. TeaNode writes the story again and keeps to what you say. Your own words are not changed.</string>
+    <string name="journal_write_could_not_ask_touch_up">Could not ask for your words to be touched up.</string>
+    <string name="journal_write_could_not_send_correction">Could not send your correction.</string>
+    <string name="journal_write_what_is_wrong_label">What is wrong</string>
+    <string name="journal_write_stretch_footer">Your own words about this stretch of days, if you want them.</string>
+    <string name="chats_share_save_audio_video_as_recordings">Save audio or video as recordings</string>
+    <string name="knowledge_ask_agent">Ask %1$s</string>
 </resources>

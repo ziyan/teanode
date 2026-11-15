@@ -144,7 +144,7 @@ internal fun ShareSheet(intent: Intent, session: AppSession, connection: Connect
                                             ShareDestination.Agent -> R.string.chats_share_to_agent
                                             ShareDestination.TaxDocuments -> R.string.chats_share_as_tax
                                             ShareDestination.Statements -> R.string.chats_share_as_statements
-                                            ShareDestination.Recording -> R.string.chats_share_as_recording
+                                            ShareDestination.Recording -> R.string.chats_share_save_audio_video_as_recordings
                                         },
                                     ),
                                 )

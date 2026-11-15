@@ -114,6 +114,10 @@ class AgentVoiceCall(
     /** Starts the call: the audio first, then the socket. The person has been asked for the microphone. */
     @SuppressLint("MissingPermission")
     fun start() {
+        if (com.teanode.app.recordings.RecordingCaptureService.state.value.isRecording) {
+            end(context.getString(com.teanode.app.R.string.calls_voice_stop_recording_first))
+            return
+        }
         audio.start()
         // The call is heard on the speaker, as a speakerphone, unless something private to the person is connected.
         if (!audio.route.value.isPrivate) audio.choose(ChatCallAudioRoute.Speaker)

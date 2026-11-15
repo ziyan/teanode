@@ -8,4 +8,18 @@
     <string name="calls_voice_stop_answer">停止回答</string>
     <string name="chats_skill_share_call_gone">这次调用已经不存在了。共享已被收回，或者你们不再同在一个圈子。</string>
     <string name="chats_skill_share_call_failed">无法加载这次调用，会继续尝试。</string>
+    <string name="chats_stop_recording_before_dictating">请先停止当前的录制，再开始听写。</string>
+    <string name="calls_voice_stop_recording_first">开始实时通话前，请先停止当前录音。</string>
+    <string name="chats_details_hint_hide">隐藏详情</string>
+    <string name="chats_details_hint_show">显示详情</string>
+    <string name="journal_write_original_footer_day">你想记住的事，用你自己的口吻写下。TeaNode 绝不会更改这些文字。</string>
+    <string name="journal_write_how_hint">怎么改？例如：更短，或修正语法</string>
+    <string name="journal_write_touch_up_footer">TeaNode 会把你的原文改写成更易读的版本，并优先显示。你的原文会保留，也是你唯一编辑的文字。</string>
+    <string name="journal_write_correction_footer">例如：午饭时是 Sam，不是同事。TeaNode 会重新撰写这个故事，并遵照你的说法。你自己的文字不会被更改。</string>
+    <string name="journal_write_could_not_ask_touch_up">无法请求润色你的文字。</string>
+    <string name="journal_write_could_not_send_correction">无法发送你的更正。</string>
+    <string name="journal_write_what_is_wrong_label">哪里不对</string>
+    <string name="journal_write_stretch_footer">如果你愿意，写下你对这段日子的看法。</string>
+    <string name="chats_share_save_audio_video_as_recordings">将音频或视频保存为录音</string>
+    <string name="knowledge_ask_agent">问 %1$s</string>
 </resources>

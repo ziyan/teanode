@@ -26,6 +26,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.LocalAppSession
@@ -101,7 +103,7 @@ fun JournalWriteEditor(target: JournalTarget, request: JournalWords?) {
     val hasChanges = original != savedOriginal
     val isForDay = target is JournalTarget.Day
     val couldNotSave = stringResource(R.string.journal_could_not_save_words)
-    val couldNotTouchUp = stringResource(R.string.journal_could_not_ask_touch_up)
+    val couldNotTouchUp = stringResource(R.string.journal_write_could_not_ask_touch_up)
     val couldNotStop = stringResource(R.string.journal_could_not_stop_touch_up)
 
     fun close() {
@@ -147,10 +149,10 @@ fun JournalWriteEditor(target: JournalTarget, request: JournalWords?) {
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = journalWritingFace),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp).padding(horizontal = 16.dp),
             )
-            Footnote(stringResource(if (isForDay) R.string.journal_original_footer_day else R.string.journal_your_own_words_about_stretch))
+            Footnote(stringResource(if (isForDay) R.string.journal_write_original_footer_day else R.string.journal_write_stretch_footer))
             Heading(stringResource(R.string.journal_touched_up))
             OutlinedTextField(
-                value = how, onValueChange = { text -> how = text }, enabled = !isWorking, label = { Text(stringResource(R.string.journal_how_hint)) },
+                value = how, onValueChange = { text -> how = text }, enabled = !isWorking, label = { Text(stringResource(R.string.journal_write_how_hint)) },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), singleLine = true,
             )
             JournalAction(stringResource(R.string.journal_touch_up), Icons.Outlined.AutoFixHigh, isEnabled = !isWorking && original.isNotBlank()) {
@@ -186,7 +188,7 @@ fun JournalWriteEditor(target: JournalTarget, request: JournalWords?) {
                     }
                 }
             }
-            Footnote(stringResource(R.string.journal_touch_up_footer))
+            Footnote(stringResource(R.string.journal_write_touch_up_footer))
         }
     }
     if (isConfirmingDiscard) {
@@ -216,7 +218,7 @@ fun JournalCorrectionScreen(periodKind: JournalPeriodKind?, day: String) {
     val target: JournalTarget = if (periodKind == null) JournalTarget.Day(day) else JournalTarget.Period(periodKind, day)
     var correctionText by remember { mutableStateOf("") }
     var isWorking by remember { mutableStateOf(false) }
-    val couldNotSend = stringResource(R.string.journal_could_not_send_correction)
+    val couldNotSend = stringResource(R.string.journal_write_could_not_send_correction)
     val trimmed = correctionText.trim()
     val isSendable = trimmed.isNotEmpty() && trimmed.length <= CORRECTION_LIMIT
     TeaNodeScreen(
@@ -242,12 +244,13 @@ fun JournalCorrectionScreen(periodKind: JournalPeriodKind?, day: String) {
     ) { contentPadding ->
         Column(Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState())) {
             Heading(stringResource(R.string.journal_what_is_wrong))
+            val whatIsWrongLabel = stringResource(R.string.journal_write_what_is_wrong_label)
             OutlinedTextField(
                 value = correctionText, onValueChange = { text -> correctionText = text }, enabled = !isWorking,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp).padding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp).padding(horizontal = 16.dp).semantics { contentDescription = whatIsWrongLabel },
                 supportingText = { Text("${trimmed.length}/$CORRECTION_LIMIT") }, isError = trimmed.length > CORRECTION_LIMIT,
             )
-            Footnote(stringResource(R.string.journal_correction_footer))
+            Footnote(stringResource(R.string.journal_write_correction_footer))
         }
     }
 }

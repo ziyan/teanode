@@ -162,7 +162,8 @@ fun CodingQuestionCard(line: TranscriptLine, model: ConversationModel) {
     val sessionTitle = listOf(question.codingAgentName, question.sessionName, question.computer).filter { part -> part.isNotEmpty() }.joinToString(" · ")
     if (line.isDone) {
         // An answered question is a record, so it takes two lines: the session, then what it asked with what was answered. A tap opens the rest.
-        Column(Modifier.clickable { isShowingDetails = !isShowingDetails }, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val detailsHint = stringResource(if (isShowingDetails) R.string.chats_details_hint_hide else R.string.chats_details_hint_show)
+        Column(Modifier.clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = detailsHint) { isShowingDetails = !isShowingDetails }, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(Icons.Outlined.Terminal, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(sessionTitle, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
