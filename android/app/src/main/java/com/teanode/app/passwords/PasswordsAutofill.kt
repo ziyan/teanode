@@ -187,7 +187,7 @@ class PasswordsAutofillService : AutofillService() {
  * Asks for the fingerprint (the account key's Keystore key opens only for it), opens the copy of the items without the
  * network, and answers the autofill request with the logins that fit the page.
  */
-class PasswordsAutofillActivity : androidx.activity.ComponentActivity() {
+class PasswordsAutofillActivity : androidx.appcompat.app.AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val webAddress = intent.getStringExtra(EXTRA_WEB_ADDRESS)
