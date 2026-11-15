@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="calls_voice_starting_microphone">マイクを起動しています…</string>
+    <string name="calls_voice_listening">聞いています…</string>
+    <string name="calls_voice_hearing_you">あなたの声を聞いています…</string>
+    <string name="calls_voice_working_on_it">対応しています…</string>
+    <string name="calls_voice_speaking_cut_in">話しています…話すかタップで割り込めます</string>
+    <string name="calls_voice_stop_answer">回答を止める</string>
+    <string name="chats_skill_share_call_gone">この呼び出しはもうありません。共有が取り消されたか、サークルを共有しなくなりました。</string>
+    <string name="chats_skill_share_call_failed">この呼び出しを読み込めませんでした。読み込みを続けます。</string>
+</resources>

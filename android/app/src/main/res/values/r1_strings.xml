@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="calls_voice_starting_microphone">Starting the microphone…</string>
+    <string name="calls_voice_listening">Listening…</string>
+    <string name="calls_voice_hearing_you">Hearing you…</string>
+    <string name="calls_voice_working_on_it">Working on it…</string>
+    <string name="calls_voice_speaking_cut_in">Speaking… talk or tap to cut in</string>
+    <string name="calls_voice_stop_answer">Stop the answer</string>
+    <string name="chats_skill_share_call_gone">This call is gone. The share was taken back, or you no longer share a circle.</string>
+    <string name="chats_skill_share_call_failed">This call could not be loaded. It will keep trying.</string>
+</resources>

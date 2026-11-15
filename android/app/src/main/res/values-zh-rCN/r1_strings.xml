@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="calls_voice_starting_microphone">正在启动麦克风…</string>
+    <string name="calls_voice_listening">正在听…</string>
+    <string name="calls_voice_hearing_you">听到你在说话…</string>
+    <string name="calls_voice_working_on_it">正在处理…</string>
+    <string name="calls_voice_speaking_cut_in">正在说话…说话或轻点即可打断</string>
+    <string name="calls_voice_stop_answer">停止回答</string>
+    <string name="chats_skill_share_call_gone">这次调用已经不存在了。共享已被收回，或者你们不再同在一个圈子。</string>
+    <string name="chats_skill_share_call_failed">无法加载这次调用，会继续尝试。</string>
+</resources>

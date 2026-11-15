@@ -19,6 +19,7 @@ import com.teanode.kit.calls.ChatCallAudioRoute
 import com.teanode.kit.calls.ChatCallDetailView
 import com.teanode.kit.calls.ChatCallLine
 import com.teanode.kit.calls.ChatCallTranscriptSegment
+import com.teanode.kit.calls.VoiceCallState
 import com.teanode.kit.notifications.AppUpdate
 import org.junit.Rule
 import org.junit.Test
@@ -267,4 +268,42 @@ class CallsScreenshotTest {
         }
         composeRule.photograph("notifications-update-card-largest-text-dark")
     }
+
+    private fun voiceBar(name: String, look: Look, callState: VoiceCallState, captionText: String = "", problemText: String? = null, level: Float = 0f, isMuted: Boolean = false, fontScale: Float = 1f) {
+        composeRule.setContent {
+            Shown(look, fontScale) {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    Column { VoiceCallBar(callState, captionText, problemText, level, isMuted, {}, {}, {}) }
+                }
+            }
+        }
+        composeRule.photograph("calls-voice-bar-$name-${look.fileName}")
+    }
+
+    @Test
+    fun `voice bar starting`() = voiceBar("starting", Look.Light, VoiceCallState.Starting)
+
+    @Test
+    fun `voice bar listening`() = voiceBar("listening", Look.Light, VoiceCallState.Listening, level = 0.2f)
+
+    @Test
+    fun `voice bar muted`() = voiceBar("muted", Look.Dark, VoiceCallState.Listening, isMuted = true)
+
+    @Test
+    fun `voice bar hearing with a caption`() = voiceBar("hearing", Look.Light, VoiceCallState.Hearing, captionText = "Move my meeting with Sam to Thursday afternoon", level = 0.7f)
+
+    @Test
+    fun `voice bar working`() = voiceBar("working", Look.Dark, VoiceCallState.Working)
+
+    @Test
+    fun `voice bar speaking`() = voiceBar("speaking", Look.Light, VoiceCallState.Speaking)
+
+    @Test
+    fun `voice bar speaking dark`() = voiceBar("speaking", Look.Dark, VoiceCallState.Speaking)
+
+    @Test
+    fun `voice bar with a problem at the largest text`() = voiceBar(
+        "problem-largest-text", Look.Light, VoiceCallState.Listening,
+        problemText = "The microphone gives no sound. Check that nothing else is using it, or try a headset or the speaker.", fontScale = 2f,
+    )
 }

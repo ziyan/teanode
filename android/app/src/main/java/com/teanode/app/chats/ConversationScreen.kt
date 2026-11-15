@@ -427,7 +427,9 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
                 for (reference in model.references) ReferenceBar(reference, model, environment.agentTitle)
                 if (model.mentionSuggestions.isNotEmpty()) MentionMenu(model.mentionSuggestions, environment.words) { choice -> model.choose(choice) }
                 if (model.todos.isNotEmpty() && (model.runningRunId != null || model.todos.any { todo -> !todo.isDone })) TodoPanel(model.todos)
-                Composer(model, environment, dictation)
+                val voiceCall = model.agentVoiceCall
+                val activeVoiceCall by (com.teanode.app.calls.LocalCallCenter.current?.agentVoice ?: kotlinx.coroutines.flow.MutableStateFlow(null)).collectAsState()
+                if (voiceCall != null && voiceCall === activeVoiceCall) com.teanode.app.calls.AgentVoiceCallBar(voiceCall) else Composer(model, environment, dictation)
             }
         }
 
