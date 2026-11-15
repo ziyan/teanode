@@ -64,7 +64,7 @@
     <string name="photos_delete_one_title">要永久删除这张照片吗？</string>
     <string name="photos_delete_selected_title">要永久删除这些照片吗？</string>
     <string name="photos_describe_again">重新生成描述</string>
-    <string name="photos_described_on">描述于%1$s</string>
+    <string name="photos_described_on">描述生成于 %1$s</string>
     <string name="photos_description_slow">这比平时花的时间长</string>
     <string name="photos_description_waiting">正在生成描述</string>
     <string name="photos_empty_album">这个相簿里没有照片</string>
@@ -115,7 +115,7 @@
     <string name="photos_info_shared_by">共享者</string>
     <string name="photos_info_size">大小</string>
     <string name="photos_info_text_in_picture">图片中的文字</string>
-    <string name="photos_in_your_circles_as">在你的圈子里是%1$s</string>
+    <string name="photos_in_your_circles_as">在你的圈子里是 %1$s</string>
     <string name="photos_kind_all">全部</string>
     <string name="photos_kind_live_photo">实况照片</string>
     <string name="photos_kind_photo">照片</string>
@@ -134,7 +134,7 @@
     <string name="photos_near_here">在这附近</string>
     <string name="photos_new_album">新建相簿</string>
     <string name="photos_new_album_ellipsis">新建相簿…</string>
-    <string name="photos_new_contact">新联系人“%1$s”</string>
+    <string name="photos_new_contact">新建联系人“%1$s”</string>
     <string name="photos_next">下一步</string>
     <string name="photos_no_albums">还没有相簿</string>
     <string name="photos_no_albums_text">在图库中选择照片并添加到新相簿，或者先建一个空相簿。</string>
@@ -202,7 +202,7 @@
     <string name="photos_stop_sharing_text">%1$s将无法再看到这个相簿，他们添加到其中的照片会留在他们的图库里。</string>
     <string name="photos_suggested">推荐</string>
     <string name="photos_taken_near_here">在这附近拍的照片</string>
-    <string name="photos_trash_day_heading">移到废纸篓于%1$s</string>
+    <string name="photos_trash_day_heading">%1$s移入废纸篓</string>
     <string name="photos_trash_one_title">要将这张照片移到废纸篓吗？</string>
     <string name="photos_trash_selected_text">废纸篓中的照片在 %1$d 天后会被永久删除。</string>
     <string name="photos_trash_selected_title">将这些照片移到废纸篓？</string>
@@ -219,12 +219,12 @@
     <string name="photos_backup_notification_text">%1$d / %2$d 个文件</string>
     <string name="photos_backup_files_title">未备份的文件</string>
     <string name="photos_backup_files_empty">没有需要重试的文件</string>
-    <string name="photos_backup_files_empty_text">所有可以备份的文件都已备份。</string>
+    <string name="photos_backup_files_empty_text">所有能备份的文件都已备份。</string>
     <string name="photos_backup_files_refused">无法备份</string>
-    <string name="photos_backup_files_refused_text">立即备份会再次尝试这些文件。你跳过的文件会一直被排除，直到你重试它。</string>
+    <string name="photos_backup_files_refused_text">“立即备份”会再次尝试这些文件。你跳过的文件不会再备份，除非你再次尝试。</string>
     <string name="photos_backup_files_skip">跳过</string>
     <string name="photos_backup_files_skipped">已跳过</string>
-    <string name="photos_backup_files_skipped_text">跳过的文件不会发送，也不算作问题。</string>
+    <string name="photos_backup_files_skipped_text">已跳过的文件不会上传，也不算作问题。</string>
     <string name="photos_backup_hidden">包含隐藏文件夹</string>
     <string name="photos_backup_hidden_text">名为“Hidden”或以点开头的文件夹默认不会备份，开启后才会包含。</string>
     <string name="photos_error_could_not_read">无法读取这张照片的文件。</string>

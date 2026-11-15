@@ -143,8 +143,8 @@
     <string name="journal_your_own_words_about_stretch">你自己对这段时间的描述。</string>
     <string name="journal_your_words">你的文字</string>
     <string name="journal_reading_text">TeaNode 会读取你的日记（包括你的文字）来撰写每一天的故事。读取的内容会发送给其模型的提供方。</string>
-    <string name="journal_and_n_more">还有 %1$d 个</string>
-    <string name="journal_bpm">%1$s 次/分</string>
+    <string name="journal_and_n_more">另有 %1$d 个</string>
+    <string name="journal_bpm">%1$s 次/分钟</string>
     <string name="journal_could_not_ask_touch_up">无法请求润色。</string>
     <string name="journal_could_not_ask_written_again">无法请求重写故事。</string>
     <string name="journal_could_not_ask_written_again_day">无法请求重写这一天。</string>
@@ -152,11 +152,11 @@
     <string name="journal_could_not_change_evening_time">无法更改晚间提问的时间。</string>
     <string name="journal_could_not_change_weather">无法更改天气设置。</string>
     <string name="journal_could_not_clear_day">无法清除心情。</string>
-    <string name="journal_could_not_erase">无法清除日志。</string>
+    <string name="journal_could_not_erase">无法清除日记。</string>
     <string name="journal_could_not_pin">无法固定到这一天。</string>
     <string name="journal_could_not_remove_correction">无法删除这条更正。</string>
     <string name="journal_could_not_remove_from_day">无法从这一天移除。</string>
-    <string name="journal_could_not_remove_story">无法删除故事。</string>
+    <string name="journal_could_not_remove_story">无法移除故事。</string>
     <string name="journal_could_not_save_day">无法保存心情。</string>
     <string name="journal_could_not_save_today">无法保存今天的心情。</string>
     <string name="journal_could_not_save_words">无法保存你的文字。</string>
@@ -168,7 +168,7 @@
     <string name="journal_duration_minutes">%1$d 分钟</string>
     <string name="journal_for_lists">用于 %1$s</string>
     <string name="journal_n_left_out_as_routine">%1$s 项属于日常，已略去</string>
-    <string name="journal_n_steps_so_far">目前 %1$s 步</string>
+    <string name="journal_n_steps_so_far">目前已走 %1$s 步</string>
     <string name="journal_nothing_has">日志里没有“%1$s”。</string>
     <string name="journal_pinned_to_day">已固定到这一天。</string>
     <string name="journal_removed_from_day">已从这一天移除。</string>
@@ -183,10 +183,11 @@
     <string name="journal_temperature_and">%1$s，%2$s</string>
     <string name="journal_time_range">%1$s 至 %2$s</string>
     <string name="journal_walked">步行 %1$s</string>
-    <string name="journal_week_of">%1$s 起的一周</string>
+    <string name="journal_week_of">%1$s开始的一周</string>
     <string name="journal_shopping">购物</string>
-    <string name="journal_shopping_at">在 %1$s 购物</string>
+    <string name="journal_shopping_at">在%1$s购物</string>
     <string name="journal_written_from">写于 %1$s，依据 %2$d 个来源</string>
-    <string name="journal_you_said">你说：%1$s</string>
-    <string name="journal_reading_text_provider">TeaNode 会阅读你的日志（包括你写的文字）来写每一天的故事。读取的内容会发送给 %1$s。</string>
+    <string name="journal_you_said">你说过：%1$s</string>
+    <string name="journal_reading_text_provider">TeaNode 会读取你的日记（包括你的文字）来撰写每一天的故事。读取的内容会发送给 %1$s。</string>
+    <string name="journal_photo">照片</string>
 </resources>

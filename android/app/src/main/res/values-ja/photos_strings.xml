@@ -7,7 +7,7 @@
     <string name="photos_album_title">タイトル</string>
     <string name="photos_apply">適用</string>
     <string name="photos_backup_allow_access">アクセスを許可</string>
-    <string name="photos_backup_count">%2$d件中%1$d件をバックアップ済み</string>
+    <string name="photos_backup_count">%2$d 件中 %1$d 件をバックアップ済み</string>
     <string name="photos_backup_explain">この端末の写真とビデオをTeaNodeサーバーにコピーします。端末で写真を削除しても、TeaNodeからは削除されません。</string>
     <string name="photos_backup_largest_file">最大ファイルサイズ</string>
     <string name="photos_backup_last_finished">前回の完了</string>
@@ -64,7 +64,7 @@
     <string name="photos_delete_one_title">この写真を完全に削除しますか？</string>
     <string name="photos_delete_selected_title">これらの写真を完全に削除しますか？</string>
     <string name="photos_describe_again">説明を作り直す</string>
-    <string name="photos_described_on">%1$sに説明を作成</string>
+    <string name="photos_described_on">%1$s に作成された説明</string>
     <string name="photos_description_slow">通常より時間がかかっています</string>
     <string name="photos_description_waiting">説明を作成中</string>
     <string name="photos_empty_album">このアルバムに写真はありません</string>
@@ -115,7 +115,7 @@
     <string name="photos_info_shared_by">共有元</string>
     <string name="photos_info_size">サイズ</string>
     <string name="photos_info_text_in_picture">写真に写っている文字</string>
-    <string name="photos_in_your_circles_as">サークルでは%1$s</string>
+    <string name="photos_in_your_circles_as">サークルでは %1$s</string>
     <string name="photos_kind_all">すべて</string>
     <string name="photos_kind_live_photo">Live Photos</string>
     <string name="photos_kind_photo">写真</string>
@@ -216,12 +216,12 @@
     <string name="photos_video_pause">一時停止</string>
     <string name="photos_backup_channel_name">写真のバックアップ</string>
     <string name="photos_backup_notification_title">写真をバックアップ中</string>
-    <string name="photos_backup_notification_text">%2$d件中%1$d件</string>
+    <string name="photos_backup_notification_text">%2$d 個中 %1$d 個のファイル</string>
     <string name="photos_backup_files_title">バックアップされていないファイル</string>
-    <string name="photos_backup_files_empty">やり直すものはありません</string>
-    <string name="photos_backup_files_empty_text">バックアップできるファイルはすべてバックアップ済みです。</string>
+    <string name="photos_backup_files_empty">再試行するものはありません</string>
+    <string name="photos_backup_files_empty_text">バックアップできるファイルはすべてバックアップされました。</string>
     <string name="photos_backup_files_refused">バックアップできませんでした</string>
-    <string name="photos_backup_files_refused_text">「今すぐバックアップ」でこれらを再試行します。スキップしたファイルは、再試行するまで対象外のままです。</string>
+    <string name="photos_backup_files_refused_text">「今すぐバックアップ」でこれらを再試行します。スキップしたファイルは、もう一度試すまで対象外になります。</string>
     <string name="photos_backup_files_skip">スキップ</string>
     <string name="photos_backup_files_skipped">スキップ済み</string>
     <string name="photos_backup_files_skipped_text">スキップしたファイルは送信されず、問題としても数えられません。</string>

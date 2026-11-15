@@ -54,7 +54,7 @@
     <string name="manage_edit">編集</string>
     <string name="manage_edit_provider">プロバイダーを編集</string>
     <string name="manage_edit_server">サーバーを編集</string>
-    <string name="manage_enabled">有効</string>
+    <string name="manage_enabled">有効にしました</string>
     <string name="manage_everyone">全員</string>
     <string name="manage_feature_ask">エージェントとの会話</string>
     <string name="manage_feature_auto_reply">本人に代わってメールに返信</string>
@@ -220,7 +220,7 @@
     <string name="manage_plan_daily">1日</string>
     <string name="manage_plan_days">%1$d日間</string>
     <string name="manage_plan_hours">%1$s時間</string>
-    <string name="manage_plan_left">%1$s: 残り %2$d%%</string>
+    <string name="manage_plan_left">%1$s：残り %2$d%%</string>
     <string name="manage_plan_name">%1$s プラン</string>
     <string name="manage_plan_observed">このサーバーへのプランの最後の応答時点：%1$s</string>
     <string name="manage_plan_reset_since">その後 %1$s にリセット済み</string>

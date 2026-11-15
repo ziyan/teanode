@@ -24,7 +24,7 @@
     <string name="notifications_mood_great">最高</string>
     <string name="notifications_mood_low">低</string>
     <string name="notifications_mood_okay">ふつう</string>
-    <string name="notifications_new_message">新しいメッセージ</string>
+    <string name="notifications_new_message">新規メッセージ</string>
     <string name="notifications_reply_hint_agent">エージェントに尋ねる…</string>
     <string name="notifications_reply_hint_message">メッセージ…</string>
     <string name="notifications_update_available">アップデートがあります</string>
