@@ -133,6 +133,19 @@ private fun ServerAboutTab() {
                     TeaNodeRow(headline = stringResource(R.string.settings_server_check), onClick = if (actions.isWorking) null else ({ actions.run(checkedText, onSuccess = { upgrade.refresh() }) { connection.serverUpgrade(isChecking = true) } }))
                     if (release.canUpgrade && !release.isUpgrading) TeaNodeRow(headline = stringResource(R.string.settings_server_upgrade_to, release.latest.orEmpty()), onClick = { upgradeToApply = release.latest })
                     if (release.isUpgrading) TeaNodeRow(headline = stringResource(R.string.settings_server_upgrading))
+                    if (release.isUpgrading) FooterText(stringResource(R.string.settings_server_about_downloading))
+                    TeaNodeRow(
+                        headline = stringResource(R.string.settings_server_about_available),
+                        supporting = if (release.isAvailable) release.latest.orEmpty() else release.latest?.takeIf { latest -> latest.isNotEmpty() }?.let { latest -> stringResource(R.string.settings_server_about_newest, latest) } ?: stringResource(R.string.settings_server_about_not_checked),
+                    )
+                    TeaNodeRow(
+                        headline = stringResource(R.string.settings_server_about_last_checked),
+                        supporting = ServerTime.instant(release.checkedAt)?.let { instant -> shortDateTime(instant) } ?: stringResource(R.string.settings_server_about_never),
+                    )
+                    release.url?.takeIf { address -> release.isAvailable && address.isNotEmpty() }?.let { address ->
+                        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                        TeaNodeRow(headline = stringResource(R.string.settings_server_about_release_page), leadingIcon = Icons.Outlined.Description, onClick = { runCatching { uriHandler.openUri(address) } })
+                    }
                     if (release.isEnabled == false) FooterText(stringResource(R.string.settings_server_about_checking_off))
                     if (release.isAutomatic == true) FooterText(release.upgradeWindow?.takeIf { window -> window.isNotEmpty() }?.let { window -> stringResource(R.string.settings_server_about_automatic_window, window) } ?: stringResource(R.string.settings_server_about_automatic))
                     if (release.canUpgrade) FooterText(stringResource(R.string.settings_server_about_upgrade_footer))
@@ -191,7 +204,8 @@ private fun ServerSectionForm(section: String, original: JsonObject, onSaved: ()
     serverSectionFooter(section)?.let { footer -> FooterText(stringResource(footer)) }
     fields.forEach { field ->
         val label = ServerFieldWords.label(section, field.name)?.let { words -> stringResource(words) } ?: com.teanode.kit.agent.KnowledgeSourceType.label(field.name)
-        val hint = ServerFieldWords.hint(section, field.name)?.let { words -> stringResource(words) }
+        val credentialsFile = (original["credentialsFile"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+        val hint = if (field.name == "accessKeyId" && credentialsFile.isNotEmpty()) stringResource(R.string.settings_server_credentials_file_footer) else ServerFieldWords.hint(section, field.name)?.let { words -> stringResource(words) }
         when (field) {
             is ServerSettingField.Choice -> {
                 ChoiceRow(
@@ -214,7 +228,7 @@ private fun ServerSectionForm(section: String, original: JsonObject, onSaved: ()
                 )
                 if (field.isKept && !cleared.contains(field.name)) TeaNodeRow(headline = stringResource(R.string.settings_server_secret_clear), onClick = { cleared = cleared + field.name; secrets = secrets - field.name })
             }
-            is ServerSettingField.Shown -> TeaNodeRow(headline = label, supporting = field.text, supportingMaxLines = 6)
+            is ServerSettingField.Shown -> TeaNodeRow(headline = if (field.name == "credentialsFile") stringResource(R.string.settings_server_credentials_file) else label, supporting = field.text, supportingMaxLines = 6)
         }
     }
     if (ServerSettingChoices.isReadAtStart(section)) {
