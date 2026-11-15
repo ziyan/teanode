@@ -508,6 +508,7 @@ private fun AliasDialog(
                     supportingText = if (isPatternMissing) ({ Text(stringResource(R.string.mail_manage_alias_pattern_missing)) }) else null,
                 )
                 OutlinedTextField(comment, { typed -> comment = typed }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.mail_manage_comment)) }, singleLine = true)
+                if (kind.isEmpty()) Text(stringResource(R.string.mail_manage_choose_kind), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 ChipRow {
                     for (choice in (existing?.selectableKinds ?: DomainAlias.creatableKinds)) {
                         FilterChip(kind == choice, { kind = choice }, { Text(stringResource(when (choice) { "mailbox" -> R.string.mail_manage_alias_mailbox; "email" -> R.string.mail_manage_alias_email; "webhook" -> R.string.mail_manage_alias_webhook; "null" -> R.string.mail_manage_alias_nowhere; else -> R.string.mail_manage_alias_mail_server })) })
@@ -515,6 +516,9 @@ private fun AliasDialog(
                 }
                 when (kind) {
                     "email", "webhook" -> OutlinedTextField(destination, { typed -> destination = typed }, Modifier.fillMaxWidth(), label = { Text(stringResource(if (kind == "email") R.string.mail_manage_alias_email else R.string.mail_manage_alias_webhook)) }, singleLine = true)
+                    "mailbox" -> if (mailboxId.isEmpty()) Text(stringResource(R.string.mail_manage_choose_mailbox), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                when (kind) {
                     "mailbox" -> ChipRow {
                         for (mailbox in mailboxes) FilterChip(mailboxId == mailbox.id, { mailboxId = mailbox.id }, { Text(mailbox.rowText) })
                     }

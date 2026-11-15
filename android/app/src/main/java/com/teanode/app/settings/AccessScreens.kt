@@ -44,6 +44,7 @@ import com.teanode.app.session.LocalConnection
 import com.teanode.app.ui.components.AvatarView
 import com.teanode.app.ui.components.ConfirmationDialog
 import com.teanode.app.ui.components.EmptyState
+import androidx.compose.material.icons.outlined.Lock
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
 import com.teanode.app.ui.components.LocalSnackbar
@@ -550,12 +551,17 @@ fun ManageScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             if (operator.canReadReports) item { TeaNodeNavigationRow(stringResource(R.string.settings_manage_reports), { openPlace("mail/manage/reports") }, leadingIcon = Icons.Outlined.Shield) }
             if (operator.canManageDomains) item { TeaNodeNavigationRow(stringResource(R.string.settings_manage_domains), { openPlace("mail/manage/domains") }, leadingIcon = Icons.Outlined.Group) }
         }
+        if (!operator.canOpenMailDelivery && !operator.isOperator && !operator.canOpenAgentAdmin && !operator.canManageServer) {
+            item { EmptyState(Icons.Outlined.Lock, stringResource(R.string.settings_manage_nothing), description = stringResource(R.string.settings_manage_not_allowed)) }
+        }
         if (operator.isOperator) {
+            item { TeaNodeSectionHeader(stringResource(R.string.settings_manage_people_access)) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_people_title), { onOpen(SettingsRoutes.MANAGE_PEOPLE) }, leadingIcon = Icons.Outlined.Person) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_groups_title), { onOpen(SettingsRoutes.MANAGE_GROUPS) }, leadingIcon = Icons.Outlined.Groups) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_roles_title), { onOpen(SettingsRoutes.MANAGE_ROLES) }, leadingIcon = Icons.Outlined.Shield) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_audit_title), { onOpen(SettingsRoutes.MANAGE_AUDIT) }, leadingIcon = Icons.Outlined.History) }
         }
+        if (operator.canOpenAgentAdmin || operator.canManageServer) item { TeaNodeSectionHeader(stringResource(R.string.settings_manage_server_agents)) }
         if (operator.canOpenAgentAdmin) item { TeaNodeNavigationRow(stringResource(R.string.settings_agents_title), { onOpen(SettingsRoutes.MANAGE_AGENTS) }, leadingIcon = Icons.Outlined.Person) }
         if (operator.canManageServer) item { TeaNodeNavigationRow(stringResource(R.string.settings_server_title), { onOpen(SettingsRoutes.MANAGE_SERVER) }, leadingIcon = Icons.Outlined.Dns) }
         if (operator.canOpenAgentAdmin) item { TeaNodeNavigationRow(stringResource(R.string.settings_usage_title), { onOpen(SettingsRoutes.MANAGE_USAGE) }, leadingIcon = Icons.Outlined.History) }

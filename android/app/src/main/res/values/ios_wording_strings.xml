@@ -20,7 +20,6 @@
     <string name="settings_server_about_not_checked">Not checked yet</string>
     <string name="settings_server_about_never">Never</string>
     <string name="settings_server_about_downloading">Downloading, replacing the binary and restarting. This takes a minute.</string>
-    <string name="settings_server_about_unreadable">The server status could not be read.</string>
     <string name="settings_server_credentials_file">Credentials file</string>
     <string name="settings_server_credentials_file_footer">Leave the keys empty: the credentials come from this file.</string>
 </resources>

@@ -32,7 +32,6 @@
     <string name="goals_picker_title">Run this goal on a schedule</string>
     <string name="goals_picker_empty">There are no other schedules to use.</string>
     <string name="goals_picker_footer">Each run of the schedule becomes a turn of this goal, and the goal takes none of its own. Answers appear in the goal\'s conversation instead of arriving by mail.</string>
-    <string name="goals_cancel">Cancel</string>
     <string name="goals_starter_title_hint">What to work toward</string>
     <string name="goals_starter_details_hint">What done looks like, and anything it should know</string>
     <string name="goals_start">Start</string>

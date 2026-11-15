@@ -14,7 +14,6 @@
     <string name="journal_clear">清除</string>
     <string name="journal_close">关闭</string>
     <string name="journal_conversations">对话</string>
-    <string name="journal_correction_footer">之后每次重写这篇故事都会参考这一条，并且现在就会重写。</string>
     <string name="journal_days">日期范围</string>
     <string name="journal_days_appear_here">日子会在过完后出现在这里。</string>
     <string name="journal_delete">删除</string>
@@ -34,7 +33,6 @@
     <string name="journal_from_health">来自“健康”</string>
     <string name="journal_from_your_notes">来自你的笔记</string>
     <string name="journal_health">医疗健康</string>
-    <string name="journal_how_hint">怎样修改（可选）</string>
     <string name="journal_how_the_days_were">这些日子的心情</string>
     <string name="journal_how_was_the_day">这一天怎么样？</string>
     <string name="journal_in_numbers">数字一览</string>
@@ -60,7 +58,6 @@
     <string name="journal_open">打开</string>
     <string name="journal_open_in_photos">在照片中打开</string>
     <string name="journal_open_the_week">打开这一周</string>
-    <string name="journal_original_footer_day">你写的内容会原样保存。TeaNode 可以润色以便阅读，但绝不会改动你的原文。</string>
     <string name="journal_photos">照片</string>
     <string name="journal_pin_to_this_day">固定到这一天</string>
     <string name="journal_places">地点</string>
@@ -107,7 +104,6 @@
     <string name="journal_touched_up_by_teanode">由 TeaNode 润色</string>
     <string name="journal_touching_up_words">正在润色你的文字</string>
     <string name="journal_touch_up">润色</string>
-    <string name="journal_touch_up_footer">TeaNode 会修正拼写并让文字更易读，你的原意不变。想要特定风格，可以在上面说明。</string>
     <string name="journal_walked_label">步行距离</string>
     <string name="journal_weather">天气</string>
     <string name="journal_weather_clear">清除</string>
@@ -140,12 +136,10 @@
     <string name="journal_year_no_story">这一年还没有故事。</string>
     <string name="journal_years">年</string>
     <string name="journal_your_original">你的原文</string>
-    <string name="journal_your_own_words_about_stretch">你自己对这段时间的描述。</string>
     <string name="journal_your_words">你的文字</string>
     <string name="journal_reading_text">TeaNode 会读取你的日记（包括你的文字）来撰写每一天的故事。读取的内容会发送给其模型的提供方。</string>
     <string name="journal_and_n_more">另有 %1$d 个</string>
     <string name="journal_bpm">%1$s 次/分钟</string>
-    <string name="journal_could_not_ask_touch_up">无法请求润色。</string>
     <string name="journal_could_not_ask_written_again">无法请求重写故事。</string>
     <string name="journal_could_not_ask_written_again_day">无法请求重写这一天。</string>
     <string name="journal_could_not_change_evening_question">无法更改晚间提问。</string>
@@ -160,7 +154,6 @@
     <string name="journal_could_not_save_day">无法保存心情。</string>
     <string name="journal_could_not_save_today">无法保存今天的心情。</string>
     <string name="journal_could_not_save_words">无法保存你的文字。</string>
-    <string name="journal_could_not_send_correction">无法发送更正。</string>
     <string name="journal_could_not_stop_touch_up">无法停止润色。</string>
     <string name="journal_days_erased">已清除 %1$d 天。</string>
     <string name="journal_duration_hours">%1$d 小时</string>

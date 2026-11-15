@@ -169,7 +169,7 @@
     <string name="mail_no_address_to_send_from_yet">这个邮箱还没有可用的发件地址。</string>
     <string name="mail_no_address_yet">这个邮箱还没有地址</string>
     <string name="mail_no_lists_yet">还没有邮件列表发信到这个邮箱</string>
-    <string name="mail_no_longer_stored">这封邮件已不再保存。</string>
+    <string name="mail_no_longer_stored">该邮件的内容已不再保存。</string>
     <string name="mail_no_mailbox_description">服务器为你分配地址后就会创建邮箱。</string>
     <string name="mail_no_mailbox_yet">还没有邮箱</string>
     <string name="mail_no_program_has_password">还没有邮件程序设置密码。</string>

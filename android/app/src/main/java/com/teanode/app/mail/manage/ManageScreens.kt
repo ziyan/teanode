@@ -469,10 +469,16 @@ fun AuditedMailScreen(mailId: String, onBack: () -> Unit, connection: Connection
                 val opens = shown.opens
                 if (opens != null && opens.isTrackable) {
                     TeaNodeSectionHeader(stringResource(R.string.mail_manage_pictures_fetched))
-                    Text(
-                        if (opens.isOpened) stringResource(R.string.mail_manage_opens_found, ManageLabels.fullTime(opens.openedAt).orEmpty()) else stringResource(R.string.mail_manage_opens_none),
-                        Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodyMedium,
-                    )
+                    Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) { ManageTag(stringResource(if (opens.isOpened) R.string.mail_manage_opened else R.string.mail_manage_not_fetched), if (opens.isOpened) ManagedTone.Good else ManagedTone.Plain) }
+                    if (opens.isOpened) {
+                        DetailRow(stringResource(R.string.mail_manage_first_fetched), ManageLabels.fullTime(opens.openedAt))
+                        opens.lastOpenedAt?.takeIf { last -> last != opens.openedAt }?.let { last -> DetailRow(stringResource(R.string.mail_manage_last_fetched), ManageLabels.fullTime(last)) }
+                        DetailRow(
+                            stringResource(R.string.mail_manage_fetched),
+                            if ((opens.openCount ?: 0) == 1) stringResource(R.string.mail_manage_fetched_once) else stringResource(R.string.mail_manage_fetched_times, opens.openCount ?: 0),
+                        )
+                        DetailRow(stringResource(R.string.mail_manage_fetched_by), opens.ip, isMonospaced = true)
+                    }
                     Text(stringResource(R.string.mail_manage_opens_footer), Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 TeaNodeSectionHeader(stringResource(R.string.mail_manage_deliveries))

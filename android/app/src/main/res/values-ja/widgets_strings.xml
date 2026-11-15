@@ -11,7 +11,6 @@
     <string name="widgets_nothing_waits">返事待ちはありません</string>
     <string name="widgets_approve">承認しますか？</string>
     <string name="widgets_asks_you">質問があります</string>
-    <string name="widgets_waiting_count">%1$d 件待ち</string>
     <string name="widgets_next_name">次の予定</string>
     <string name="widgets_next_description">次の予定と未読メール。</string>
     <string name="widgets_nothing_coming_up">予定はありません</string>

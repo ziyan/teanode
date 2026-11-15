@@ -27,9 +27,6 @@
     <string name="chats_background_command">后台命令</string>
     <string name="chats_background_commands">后台命令</string>
     <string name="chats_budget_of">%1$s / %2$s</string>
-    <string name="chats_call">呼叫</string>
-    <string name="chats_call_ended">通话已结束</string>
-    <string name="chats_call_going">正在通话：%1$d 人在线</string>
     <string name="chats_camera">相机</string>
     <string name="chats_cancel">取消</string>
     <string name="chats_card_already_answered">这张卡片已被回答，或已不再等待。</string>
@@ -271,7 +268,6 @@
     <string name="chats_share_to_agent">发给你的助手</string>
     <string name="chats_share_as_tax">作为税务文件读取</string>
     <string name="chats_share_as_statements">作为对账单导入</string>
-    <string name="chats_share_as_recording">存为录音</string>
     <string name="chats_share_read">阅读</string>
     <string name="chats_share_import">导入</string>
     <string name="chats_share_save_recording">保存录音</string>

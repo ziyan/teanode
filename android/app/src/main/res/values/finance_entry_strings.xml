@@ -2,8 +2,6 @@
 <resources>
     <string name="finance_add_receipt_camera">Take a photo</string>
     <string name="finance_add_receipt_photo">Choose a photo</string>
-    <string name="finance_ask_agent">Ask the agent</string>
-    <string name="finance_ask_agent_copied">The charge is copied: paste it in the chat</string>
     <string name="finance_callout_cash_flow">%1$s: income %2$s, spending %3$s, net %4$s</string>
     <string name="finance_callout_less">less</string>
     <string name="finance_callout_more">more</string>
@@ -80,7 +78,6 @@
     <string name="finance_manage_institution">Institution name (optional)</string>
     <string name="finance_manage_institution_footer">Asked of the provider when left empty.</string>
     <string name="finance_manage_last_digits">Last digits</string>
-    <string name="finance_manage_left_out">%1$d suggestions were left out: too generic or too changeable.</string>
     <string name="finance_manage_mask_footer">Empty takes the statements\' own number back.</string>
     <string name="finance_manage_nearby">A stored transaction of the same amount is within 3 days</string>
     <string name="finance_manage_new_account">They would go into a new account, %1$s.</string>
@@ -96,7 +93,6 @@
     <string name="finance_manage_suggest_footer">Looks at the transactions filed under the category and suggests the words they share. Nothing is saved until you add a rule.</string>
     <string name="finance_manage_suggest_rules">Suggest rules</string>
     <string name="finance_manage_would_import">What would be imported</string>
-    <string name="finance_tax_being_read">Being read. The tax year updates when they are done.</string>
     <string name="finance_tax_corrected_form">This form is a correction</string>
     <string name="finance_tax_dependent_care_expense">Dependent care expenses</string>
     <string name="finance_tax_gain_note">Note on the estimated gains</string>
@@ -105,6 +101,5 @@
     <string name="finance_tax_property_tax">Property tax</string>
     <string name="finance_tax_short_gain">Estimated short-term gain</string>
     <string name="finance_tax_state_tax_paid">State income tax paid</string>
-    <string name="finance_tax_upload_documents">Upload paystubs or W-2s</string>
     <string name="finance_tax_upload_footer">They are read for you and kept apart from your other files.</string>
 </resources>

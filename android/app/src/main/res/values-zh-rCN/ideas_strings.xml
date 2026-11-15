@@ -10,7 +10,6 @@
     <string name="ideas_done">完成</string>
     <string name="ideas_restore">恢复</string>
     <string name="ideas_more_actions">更多操作</string>
-    <string name="ideas_opens_conversation">打开它的对话</string>
     <string name="ideas_said_dismissed">已忽略。想找回时在历史中。</string>
     <string name="ideas_said_done">已标记为完成。</string>
     <string name="ideas_said_restored">已放回待选的想法中。</string>

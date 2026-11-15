@@ -228,7 +228,7 @@ private fun ScheduleEditorDialog(edited: AgentSchedule?, actions: ActionRunner, 
                 TeaNodeRow(headline = stringResource(R.string.settings_schedules_add_condition), leadingIcon = Icons.Outlined.Add, onClick = { conditions = conditions + com.teanode.kit.agent.ScheduleMailCondition("from") })
                 FooterText(stringResource(R.string.settings_schedules_mail_footer))
             } else if (usesRawCron) {
-                FormField(rawCron, { rawCron = it }, stringResource(R.string.settings_schedules_cron))
+                FormField(rawCron, { rawCron = it }, stringResource(R.string.settings_schedules_cron), supporting = stringResource(R.string.settings_schedules_cron_hint))
             } else {
                 ClockField(stringResource(R.string.settings_schedules_time), time) { time = it }
                 WeekdayChips(days) { days = it }
@@ -362,7 +362,7 @@ internal fun KnowledgeSourceEditorDialog(edited: com.teanode.kit.agent.Knowledge
                     )
                 }
                 FormField(rootPath, { rootPath = it }, stringResource(R.string.settings_sources_root_path))
-                FormField(cron, { cron = it }, stringResource(R.string.settings_schedules_cron))
+                FormField(cron, { cron = it }, stringResource(R.string.settings_sources_cron_label), supporting = stringResource(R.string.settings_sources_cron_hint))
                 chosenType?.problem?.takeIf { text -> text.isNotEmpty() }?.let { text -> Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) }
             }
         }

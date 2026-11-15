@@ -32,7 +32,6 @@
     <string name="goals_picker_title">このゴールをスケジュールで動かす</string>
     <string name="goals_picker_empty">使えるほかのスケジュールはありません。</string>
     <string name="goals_picker_footer">スケジュールの実行ごとにこのゴールの1回の動きになり、ゴール自身は動きません。回答はメールではなく、ゴールの会話に表示されます。</string>
-    <string name="goals_cancel">キャンセル</string>
     <string name="goals_starter_title_hint">目指すこと</string>
     <string name="goals_starter_details_hint">完了の条件と、知っておくべきこと</string>
     <string name="goals_start">開始</string>

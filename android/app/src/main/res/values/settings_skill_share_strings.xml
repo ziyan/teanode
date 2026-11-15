@@ -19,5 +19,4 @@
     <string name="settings_skills_footer_limits">Above these limits, or when the amount cannot be read, the call waits for you. The limits are in the currency you give. A call that fails still counts toward the month, in case the money moved.</string>
     <string name="settings_skills_amount_unreadable">Type the amount in %1$s, such as %2$s</string>
     <string name="settings_skills_currency_below">the currency below</string>
-    <string name="settings_skills_shared_with">Shared %1$s with %2$s.</string>
 </resources>

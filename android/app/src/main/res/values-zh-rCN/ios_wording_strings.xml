@@ -20,7 +20,6 @@
     <string name="settings_server_about_not_checked">尚未检查</string>
     <string name="settings_server_about_never">永不</string>
     <string name="settings_server_about_downloading">正在下载、替换二进制并重启，大约需要一分钟。</string>
-    <string name="settings_server_about_unreadable">无法读取服务器状态。</string>
     <string name="settings_server_credentials_file">凭据文件</string>
     <string name="settings_server_credentials_file_footer">密钥请留空：凭据来自这个文件。</string>
 </resources>

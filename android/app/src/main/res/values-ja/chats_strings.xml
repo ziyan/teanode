@@ -27,9 +27,6 @@
     <string name="chats_background_command">バックグラウンドのコマンド</string>
     <string name="chats_background_commands">バックグラウンドのコマンド</string>
     <string name="chats_budget_of">%1$s / %2$s</string>
-    <string name="chats_call">電話</string>
-    <string name="chats_call_ended">通話が終了しました</string>
-    <string name="chats_call_going">通話中：%1$d人が参加中</string>
     <string name="chats_camera">カメラ</string>
     <string name="chats_cancel">キャンセル</string>
     <string name="chats_card_already_answered">このカードはすでに回答済みか、もう待っていません。</string>
@@ -271,7 +268,6 @@
     <string name="chats_share_to_agent">エージェントへ</string>
     <string name="chats_share_as_tax">税務書類として読み取る</string>
     <string name="chats_share_as_statements">明細として取り込む</string>
-    <string name="chats_share_as_recording">録音として保存</string>
     <string name="chats_share_read">読む</string>
     <string name="chats_share_import">読み込む</string>
     <string name="chats_share_save_recording">録音を保存</string>

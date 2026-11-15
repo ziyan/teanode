@@ -27,9 +27,6 @@
     <string name="chats_background_command">Background command</string>
     <string name="chats_background_commands">Background commands</string>
     <string name="chats_budget_of">%1$s of %2$s</string>
-    <string name="chats_call">Call</string>
-    <string name="chats_call_ended">Call ended</string>
-    <string name="chats_call_going">A call is going: %1$d on it</string>
     <string name="chats_camera">Camera</string>
     <string name="chats_cancel">Cancel</string>
     <string name="chats_card_already_answered">That card was already answered, or is no longer waiting.</string>
@@ -271,7 +268,6 @@
     <string name="chats_share_to_agent">To your agent</string>
     <string name="chats_share_as_tax">Read as tax documents</string>
     <string name="chats_share_as_statements">Import as statements</string>
-    <string name="chats_share_as_recording">Save as a recording</string>
     <string name="chats_share_read">Read</string>
     <string name="chats_share_import">Import</string>
     <string name="chats_share_save_recording">Save recording</string>

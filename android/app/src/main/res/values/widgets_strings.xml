@@ -11,7 +11,6 @@
     <string name="widgets_nothing_waits">Nothing waits for you</string>
     <string name="widgets_approve">Approve?</string>
     <string name="widgets_asks_you">Asks you</string>
-    <string name="widgets_waiting_count">%1$d waiting</string>
     <string name="widgets_next_name">Up next</string>
     <string name="widgets_next_description">Your next events and unread mail.</string>
     <string name="widgets_nothing_coming_up">Nothing coming up</string>

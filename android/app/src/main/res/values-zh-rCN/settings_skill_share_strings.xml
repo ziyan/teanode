@@ -19,5 +19,4 @@
     <string name="settings_skills_footer_limits">超过上限，或无法读出金额时，这次调用会等待你的确认。上限以你填写的币种计算。失败的调用也计入当月，因为钱可能已经付出。</string>
     <string name="settings_skills_amount_unreadable">请用%1$s输入金额，例如 %2$s</string>
     <string name="settings_skills_currency_below">下面的币种</string>
-    <string name="settings_skills_shared_with">已把%1$s共享给%2$s。</string>
 </resources>
