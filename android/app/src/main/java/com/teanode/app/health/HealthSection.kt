@@ -36,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.teanode.app.R
+import com.teanode.kit.health.HealthConnectAvailability
 import com.teanode.app.session.LocalAppSession
 import com.teanode.app.session.LocalConnection
 import com.teanode.app.shell.LocalAppNavigator
@@ -197,14 +198,21 @@ fun HealthEmptyView(model: HealthModel, snapshot: HealthSyncSnapshot, onTurnOn: 
     val problem = if (snapshot.isOn) snapshot.problemText else if (snapshot.isStoppedByErase) text.erasedOnServerText else null
     val description = problem ?: stringResource(
         when {
-            !snapshot.isAvailable -> R.string.health_not_available_on_device
+            !snapshot.isAvailable -> if (snapshot.healthConnectAvailability == HealthConnectAvailability.NeedsUpdate) R.string.health_health_connect_needs_update else R.string.health_not_available_on_device
             snapshot.isOn -> R.string.health_being_copied
             else -> R.string.health_copies_description
         },
     )
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val canInstall = !snapshot.isAvailable && snapshot.healthConnectAvailability.canInstallOrUpdate
     EmptyState(
         Icons.Outlined.FavoriteBorder, stringResource(R.string.health_no_data_yet), modifier, description = description,
-        actionLabel = if (snapshot.isAvailable && !snapshot.isOn) stringResource(R.string.health_turn_on) else null, onAction = onTurnOn,
+        actionLabel = when {
+            canInstall -> healthConnectInstallLabel(snapshot.healthConnectAvailability)
+            snapshot.isAvailable && !snapshot.isOn -> stringResource(R.string.health_turn_on)
+            else -> null
+        },
+        onAction = if (canInstall) ({ openHealthConnectInPlayStore(context) }) else onTurnOn,
     )
 }
 

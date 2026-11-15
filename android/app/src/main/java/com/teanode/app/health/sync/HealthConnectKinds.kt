@@ -1,6 +1,10 @@
 package com.teanode.app.health.sync
 
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
+import androidx.health.connect.client.records.CyclingPedalingCadenceRecord
+import androidx.health.connect.client.records.PowerRecord
+import androidx.health.connect.client.records.SpeedRecord
+import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.BasalBodyTemperatureRecord
 import androidx.health.connect.client.records.CervicalMucusRecord
 import androidx.health.connect.client.records.IntermenstrualBleedingRecord
@@ -29,7 +33,10 @@ import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
+import com.teanode.kit.health.HealthRestingEnergy
 import com.teanode.kit.health.HealthSampleInput
+import com.teanode.kit.health.HealthSport
+import com.teanode.kit.health.HealthSportTypes
 import com.teanode.kit.health.HealthSleepStage
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
@@ -41,8 +48,18 @@ import kotlin.reflect.KClass
  * and Android phone add up on one server), and how a record becomes readings. A record that holds a series (heart rate,
  * sleep stages) becomes one reading for each point, named by the record's id and the point's place.
  */
-class HealthConnectKind(val healthTypes: List<String>, val recordClass: KClass<out Record>, val samples: (Record) -> List<HealthSampleInput>) {
-    constructor(healthType: String, recordClass: KClass<out Record>, samples: (Record) -> List<HealthSampleInput>) : this(listOf(healthType), recordClass, samples)
+class HealthConnectKind(
+    val healthTypes: List<String>,
+    val recordClass: KClass<out Record>,
+    /** The exercise sessions a record sits in decide which type it is (a distance on a bike is cycling distance); such a kind is given them. */
+    val samplesInSessions: ((Record, List<ExerciseSessionRecord>) -> List<HealthSampleInput>)? = null,
+    val samples: (Record) -> List<HealthSampleInput> = { record -> samplesInSessions?.invoke(record, emptyList()).orEmpty() },
+) {
+    constructor(healthType: String, recordClass: KClass<out Record>, samples: (Record) -> List<HealthSampleInput>) : this(listOf(healthType), recordClass, null, samples)
+
+    val needsSessions: Boolean get() = samplesInSessions != null
+
+    fun samples(record: Record, sessions: List<ExerciseSessionRecord>): List<HealthSampleInput> = samplesInSessions?.invoke(record, sessions) ?: samples(record)
 
     /** The name the changes token is kept under: the first type, so a token kept before a record gave several types still holds. */
     val healthType: String get() = healthTypes.first()
@@ -223,9 +240,73 @@ object HealthConnectKinds {
     // A session alone has neither its totals nor its route; HealthSync reads those and sends the sample again with them.
     private val workout = HealthConnectKind("workout", ExerciseSessionRecord::class) { record -> listOf(workoutSample(record as ExerciseSessionRecord)) }
 
+    /** The sport of the exercise session a record sits in, as HealthKit names the sports it has types for. */
+    fun sportOf(exerciseType: Int): HealthSport = when (exerciseType) {
+        ExerciseSessionRecord.EXERCISE_TYPE_RUNNING, ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL -> HealthSport.Running
+        ExerciseSessionRecord.EXERCISE_TYPE_WALKING, ExerciseSessionRecord.EXERCISE_TYPE_HIKING -> HealthSport.Walking
+        ExerciseSessionRecord.EXERCISE_TYPE_BIKING, ExerciseSessionRecord.EXERCISE_TYPE_BIKING_STATIONARY -> HealthSport.Cycling
+        ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_POOL, ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_OPEN_WATER -> HealthSport.Swimming
+        ExerciseSessionRecord.EXERCISE_TYPE_ROWING, ExerciseSessionRecord.EXERCISE_TYPE_ROWING_MACHINE -> HealthSport.Rowing
+        // Health Connect's "skiing" covers cross-country as well, which HealthKit counts apart, so only snowboarding is downhill for certain.
+        ExerciseSessionRecord.EXERCISE_TYPE_SNOWBOARDING -> HealthSport.DownhillSnowSports
+        ExerciseSessionRecord.EXERCISE_TYPE_PADDLING, ExerciseSessionRecord.EXERCISE_TYPE_SURFING -> HealthSport.PaddleSports
+        ExerciseSessionRecord.EXERCISE_TYPE_ICE_SKATING, ExerciseSessionRecord.EXERCISE_TYPE_SKATING -> HealthSport.SkatingSports
+        else -> HealthSport.Other
+    }
+
+    /** The sport of the session the interval overlaps most, or null when it sits in none. */
+    fun sportIn(sessions: List<ExerciseSessionRecord>, startedAt: Instant, endedAt: Instant): HealthSport? =
+        sessions.maxByOrNull { session -> overlapMilliseconds(session, startedAt, endedAt) }
+            ?.takeIf { session -> overlapMilliseconds(session, startedAt, endedAt) > 0 || (startedAt == endedAt && !session.startTime.isAfter(startedAt) && !session.endTime.isBefore(endedAt)) }
+            ?.let { session -> sportOf(session.exerciseType) }
+
+    private fun overlapMilliseconds(session: ExerciseSessionRecord, startedAt: Instant, endedAt: Instant): Long {
+        val overlapStart = maxOf(session.startTime, startedAt)
+        val overlapEnd = minOf(session.endTime, endedAt)
+        return maxOf(0L, overlapEnd.toEpochMilli() - overlapStart.toEpochMilli())
+    }
+
+    /** A distance is kept under its sport's type; with no session around it, as the walking and running a phone counts by itself. */
+    private val distance = HealthConnectKind(HealthSportTypes.distanceTypes, DistanceRecord::class, { record, sessions ->
+        record as DistanceRecord
+        val healthType = HealthSportTypes.distanceType(sportIn(sessions, record.startTime, record.endTime))
+        listOf(quantity(record, healthType, "m", record.startTime, record.endTime, record.distance.inMeters))
+    })
+
+    /** A speed is the sport's speed, and left out when no session says the sport. */
+    private val speed = HealthConnectKind(HealthSportTypes.speedTypes, SpeedRecord::class, { record, sessions ->
+        record as SpeedRecord
+        val healthType = HealthSportTypes.speedType(sportIn(sessions, record.startTime, record.endTime))
+        if (healthType == null) emptyList() else record.samples.mapIndexed { index, sample -> quantity(record, healthType, "m/s", sample.time, sample.time, sample.speed.inMetersPerSecond, "${record.metadata.id}:$index") }
+    })
+
+    private val power = HealthConnectKind(HealthSportTypes.powerTypes, PowerRecord::class, { record, sessions ->
+        record as PowerRecord
+        val healthType = HealthSportTypes.powerType(sportIn(sessions, record.startTime, record.endTime))
+        if (healthType == null) emptyList() else record.samples.mapIndexed { index, sample -> quantity(record, healthType, "W", sample.time, sample.time, sample.power.inWatts, "${record.metadata.id}:$index") }
+    })
+
+    private val cyclingCadence = HealthConnectKind(HealthSportTypes.CYCLING_CADENCE_TYPE, CyclingPedalingCadenceRecord::class) { record ->
+        record as CyclingPedalingCadenceRecord
+        record.samples.mapIndexed { index, sample -> quantity(record, HealthSportTypes.CYCLING_CADENCE_TYPE, "count/min", sample.time, sample.time, sample.revolutionsPerMinute, "${record.metadata.id}:$index") }
+    }
+
+    /** The resting energy of a total-energy record, given the active energy over the same time (which only Health Connect's aggregate adds up without counting a source twice); empty when nothing is left. */
+    fun restingEnergySample(record: TotalCaloriesBurnedRecord, activeKilocalories: Double): List<HealthSampleInput> {
+        val resting = HealthRestingEnergy.restingKilocalories(record.energy.inKilocalories, activeKilocalories) ?: return emptyList()
+        return listOf(quantity(record, "basalEnergyBurned", "kcal", record.startTime, record.endTime, resting, "${record.metadata.id}:basal"))
+    }
+
+    // The total alone is not resting energy; HealthSync reads the active energy of the same time and sends the difference.
+    private val restingEnergy = HealthConnectKind("basalEnergyBurned", TotalCaloriesBurnedRecord::class) { emptyList() }
+
     val all: List<HealthConnectKind> = listOf(
         single("stepCount", "count", StepsRecord::class) { record -> interval(record.startTime, record.endTime, record.count.toDouble()) },
-        single("distanceWalkingRunning", "m", DistanceRecord::class) { record -> interval(record.startTime, record.endTime, record.distance.inMeters) },
+        distance,
+        speed,
+        power,
+        cyclingCadence,
+        restingEnergy,
         single("activeEnergyBurned", "kcal", ActiveCaloriesBurnedRecord::class) { record -> interval(record.startTime, record.endTime, record.energy.inKilocalories) },
         single("flightsClimbed", "count", FloorsClimbedRecord::class) { record -> interval(record.startTime, record.endTime, record.floors) },
         heartRate,

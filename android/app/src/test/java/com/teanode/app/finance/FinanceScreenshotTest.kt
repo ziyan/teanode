@@ -5,6 +5,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import com.teanode.kit.finance.SpendingCategory
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.hasSetTextAction
@@ -39,7 +41,8 @@ class FinanceScreenshotTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun shoot(name: String, look: Look = Look.Light, fontScale: Float? = null, isSheet: Boolean = false, scrollTo: String? = null, afterShown: () -> Unit = {}, content: @Composable () -> Unit) {
+    private fun shoot(name: String, look: Look = Look.Light, fontScale: Float? = null, isSheet: Boolean = false, scrollTo: String? = null, isClockManual: Boolean = false, afterShown: () -> Unit = {}, content: @Composable () -> Unit) {
+        if (isClockManual) composeRule.mainClock.autoAdvance = false
         composeRule.setContent {
             DemoHost(appearance = look.appearance) {
                 CompositionLocalProvider(LocalShoppingSheetsInline provides isSheet) {
@@ -47,13 +50,12 @@ class FinanceScreenshotTest {
                 }
             }
         }
-        composeRule.waitForIdle()
+        if (!isClockManual) composeRule.waitForIdle()
         if (scrollTo != null) {
             composeRule.onNode(hasScrollAction()).performScrollToNode(hasText(scrollTo))
             composeRule.waitForIdle()
         }
         afterShown()
-        composeRule.waitForIdle()
         composeRule.photograph("finance-$name-${look.fileName}")
     }
 
@@ -99,25 +101,37 @@ class FinanceScreenshotTest {
 
     @Test fun `budgets`() = shoot("budgets") { FinanceBudgetsScreen() }
     @Test fun `budgets dark`() = shoot("budgets", Look.Dark) { FinanceBudgetsScreen() }
-    @Test fun `budget editor with a month already past`() = shoot("budget-editor-past-month", afterShown = {
-        composeRule.onNodeWithText("Groceries").performClick()
-        composeRule.waitForIdle()
-        composeRule.onNode(androidx.compose.ui.test.hasText("From month", substring = true) and androidx.compose.ui.test.hasSetTextAction()).performTextReplacement("2020-01")
-    }) { FinanceBudgetsScreen() }
+    /** A dialog with a text field keeps a cursor blinking, so the clock is stepped by hand instead of waited on. */
+    private fun settle() {
+        composeRule.mainClock.advanceTimeBy(600)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        composeRule.mainClock.advanceTimeBy(600)
+    }
 
-    @Test fun `budget editor dark`() = shoot("budget-editor", Look.Dark, afterShown = { composeRule.onNodeWithText("Groceries").performClick() }) { FinanceBudgetsScreen() }
+    private fun tap(node: androidx.compose.ui.test.SemanticsNodeInteraction) {
+        composeRule.mainClock.autoAdvance = false
+        node.performClick()
+        settle()
+    }
 
-    @Test fun `rule editor with an account`() = shoot("rule-editor", scrollTo = "New rule", afterShown = { composeRule.onNodeWithText("New rule").performClick() }) { FinanceBudgetsScreen() }
+    /** The editor shown on its own, as a month already past leaves it: the warning under the from month. */
+    @Test fun `budget editor with a month already past`() = shoot("budget-editor-past-month", isClockManual = true, afterShown = { settle() }) {
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val base = androidx.compose.runtime.remember {
+            FinanceBase(listOf(SpendingCategory("c-groceries", "groceries")), emptyList(), "USD", java.time.ZoneId.of("UTC"), context)
+        }
+        BudgetEditorDialog(BudgetDraft("c-groceries", "500.00", "USD", "2020-01", true), base, onDismiss = {}, onEnd = {}, onSave = {})
+    }
 
-    @Test fun `asset editor with an estimate`() = shoot("asset-editor-estimate", afterShown = {
-        composeRule.onNodeWithContentDescription("Add").performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("Valued by", substring = true).performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("The agent's estimate").performClick()
-    }) { FinanceNetWorthScreen() }
+    @Test fun `budget editor dark`() = shoot("budget-editor", Look.Dark, afterShown = { tap(composeRule.onAllNodesWithText("Groceries")[0]) }) { FinanceBudgetsScreen() }
 
-    @Test fun `asset editor dark`() = shoot("asset-editor", Look.Dark, afterShown = { composeRule.onNodeWithContentDescription("Add").performClick() }) { FinanceNetWorthScreen() }
+    @Test fun `rule editor with an account`() = shoot("rule-editor", scrollTo = "New rule", afterShown = { tap(composeRule.onNodeWithText("New rule")) }) { FinanceBudgetsScreen() }
+
+    @Test fun `asset editor with an estimate`() = shoot("asset-editor-estimate", isClockManual = true, afterShown = { settle() }) {
+        AssetEditorDialog("USD", onDismiss = {}, initialValuationSource = "agent_estimate", initialEstimateDescription = "Similar listings nearby") {}
+    }
+
+    @Test fun `asset editor dark`() = shoot("asset-editor", Look.Dark, afterShown = { tap(composeRule.onNodeWithContentDescription("Add")) }) { FinanceNetWorthScreen() }
 
     @Test fun `net worth`() = shoot("net-worth") { FinanceNetWorthScreen() }
     @Test fun `net worth dark`() = shoot("net-worth", Look.Dark) { FinanceNetWorthScreen() }

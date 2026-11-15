@@ -207,7 +207,8 @@ fun HealthSettingsScreen(onBack: () -> Unit, onOpenShare: (HealthShareView) -> U
                         if (!snapshot.isOn && snapshot.isStoppedByErase) Footer(text.erasedOnServerText)
                         Footer(stringResource(R.string.health_copying_footer))
                     } else {
-                        Footer(stringResource(R.string.health_not_available_on_device))
+                        Footer(healthConnectUnavailableDescription(snapshot.healthConnectAvailability))
+                        if (snapshot.healthConnectAvailability.canInstallOrUpdate) HealthConnectInstallButton(snapshot.healthConnectAvailability)
                     }
                     HorizontalDivider()
                 }

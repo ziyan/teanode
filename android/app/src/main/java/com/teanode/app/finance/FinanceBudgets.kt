@@ -224,7 +224,7 @@ private fun AccountPicker(base: FinanceBase, chosen: String, onChoose: (String) 
 }
 
 @Composable
-private fun BudgetEditorDialog(draft: BudgetDraft, base: FinanceBase, onDismiss: () -> Unit, onEnd: (BudgetDraft) -> Unit, onSave: (BudgetDraft) -> Unit) {
+internal fun BudgetEditorDialog(draft: BudgetDraft, base: FinanceBase, onDismiss: () -> Unit, onEnd: (BudgetDraft) -> Unit, onSave: (BudgetDraft) -> Unit) {
     var categoryId by remember { mutableStateOf(draft.categoryId) }
     var amount by remember { mutableStateOf(draft.amount) }
     var currency by remember { mutableStateOf(draft.currency) }

@@ -171,6 +171,51 @@ routes; without one it erases everything, characteristics included, and sets
 `health_erased_at`. The dashboard, the app (which also turns Health off on the
 phone) and `teanode health erase` all do it, each after asking.
 
+## What the Android app cannot provide
+
+The Android app reads Health Connect and sends what has the same meaning as a
+HealthKit type, under HealthKit's name. A record that only looks similar is left
+out, because one person's two phones add up on one server and a number that means
+something else would make that sum wrong. Resting energy is the total burned over
+an interval less the active energy of the same time (Health Connect aggregates
+the active energy without counting a source twice); nothing is sent when nothing
+is left. A distance, speed or power record takes the sport of the exercise session
+it sits in (a distance on a bike is cycling distance); a distance with no session
+is walking and running, and a speed or power with no session is left out, because
+it does not say which type it is. Health Connect's "skiing" covers cross-country
+as well as downhill, so only snowboarding counts as downhill.
+
+These kit types have no Health Connect source:
+
+- Apple's own measures: exercise, move and stand minutes and stand hours, NikeFuel,
+  physical effort, walking steadiness, the audio exposure types and events, and
+  the heart and mobility events and flags the watch raises (high, low and
+  irregular heart rhythm, low cardio fitness, walking steadiness, fall counts).
+- Types Health Connect has no record for: wheelchair distance, swimming strokes,
+  underwater depth, water temperature, cross-country skiing distance and speed,
+  running stride length, vertical oscillation and ground contact time, cycling
+  functional threshold power, walking speed, step length, asymmetry and double
+  support, stair speeds, the six-minute walk, forced vital capacity and related
+  lung measures, inhaler use, insulin delivery, peripheral perfusion index,
+  atrial fibrillation burden, heart rate recovery, walking heart rate average,
+  waist circumference, UV exposure, time in daylight, electrodermal activity,
+  blood alcohol, alcoholic beverages, handwashing, toothbrushing, mindful
+  sessions, state of mind, sleep apnea events, breathing disturbances.
+- Different quantities with a similar name: heart rate variability is RMSSD in
+  Health Connect and SDNN in HealthKit, the two cannot stand in for each other;
+  skin temperature in Health Connect is a change from the person's baseline,
+  not the sleeping wrist temperature; body mass index is not a record there
+  (it is worked out from weight and height, and the server can do that).
+- Symptoms, pregnancy and contraception, the cycle-pattern flags, the pregnancy and
+  progesterone tests, bleeding during or after pregnancy, and every symptom type:
+  Health Connect holds no such records.
+- Characteristics (date of birth, biological sex, blood type, skin type, wheelchair
+  use, move mode) and the audiogram, ECG and state of mind results: Health Connect
+  does not hold them.
+
+Health Connect's cadence of steps and its basal metabolic rate (a rate in kilocalories a day,
+not energy over a time) are not sent either, for the same reason.
+
 ## Operating it
 
 Health is on from the first start: `health:use` is granted to the

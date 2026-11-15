@@ -171,15 +171,18 @@ fun FinanceNetWorthScreen() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AssetEditorDialog(currency: String, onDismiss: () -> Unit, onSave: (Map<String, JsonElement>) -> Unit) {
+internal fun AssetEditorDialog(
+    currency: String, onDismiss: () -> Unit, initialValuationSource: String = FinanceValuationSources.MANUAL, initialEstimateDescription: String = "",
+    onSave: (Map<String, JsonElement>) -> Unit,
+) {
     val context = LocalContext.current
     var name by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf("cash") }
     var code by remember { mutableStateOf(currency.ifEmpty { "USD" }) }
     var value by remember { mutableStateOf("") }
     var isOpen by remember { mutableStateOf(false) }
-    var valuationSource by remember { mutableStateOf(FinanceValuationSources.MANUAL) }
-    var estimateDescription by remember { mutableStateOf("") }
+    var valuationSource by remember { mutableStateOf(initialValuationSource) }
+    var estimateDescription by remember { mutableStateOf(initialEstimateDescription) }
     var isValuedByOpen by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text(stringResource(R.string.finance_new_asset)) },
