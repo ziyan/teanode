@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -168,7 +169,7 @@ fun JournalPeriodScreen(periodKind: JournalPeriodKind, anchorDay: String) {
 
 private fun LazyListScope.weekDays(period: JournalPeriod, text: JournalText, onOpenDay: (String) -> Unit) {
     item(key = "days-header") { Heading(stringOf(R.string.journal_the_days)) }
-    items(period.days, key = { summary -> "week-day-${summary.day}" }) { summary -> JournalDayRow(summary, text, Modifier.clickable { onOpenDay(summary.day) }) }
+    items(period.days, key = { summary -> "week-day-${summary.day}" }) { summary -> JournalDayRow(summary, text, Modifier.clickable(role = Role.Button) { onOpenDay(summary.day) }) }
 }
 
 // MARK: A month
@@ -210,7 +211,7 @@ private fun DayCell(day: String?, summary: JournalDaySummary?, today: String, te
     val isFuture = day > today
     val description = text.longDayText(day) + (summary?.mood?.level?.let { level -> ", " + text.moodName(level) } ?: "")
     Box(
-        modifier.height(40.dp).clip(RoundedCornerShape(8.dp)).clickable(enabled = !isFuture) { onOpenDay(day) }.semantics { contentDescription = description },
+        modifier.height(40.dp).clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, enabled = !isFuture) { onOpenDay(day) }.semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         if (photoId != null) {
@@ -231,7 +232,7 @@ private fun DayCell(day: String?, summary: JournalDaySummary?, today: String, te
 private fun LazyListScope.yearMonths(period: JournalPeriod, text: JournalText, onOpenMonth: (String) -> Unit) {
     item(key = "months-header") { Heading(stringOf(R.string.journal_the_months)) }
     items(period.months, key = { month -> "month-${month.periodStart}" }) { month ->
-        Column(Modifier.fillMaxWidth().clickable { onOpenMonth(month.periodStart) }.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenMonth(month.periodStart) }.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(text.monthText(month.periodStart), style = MaterialTheme.typography.titleMedium)
             if (month.headline.isNotEmpty()) Text(month.headline, style = MaterialTheme.typography.bodyLarge.copy(fontFamily = journalWritingFace), maxLines = 2)
             JournalMoodStrip(month.dayMoods)

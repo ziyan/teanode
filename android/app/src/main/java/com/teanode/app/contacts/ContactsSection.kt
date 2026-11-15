@@ -48,6 +48,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -194,7 +197,7 @@ fun ContactsScreen(
                                 if (model.isShowingCircleBook) {
                                     CircleContactRow(model, contact, onEdit = { onEditCircleContact(contact.id) }, onRemove = { removingCircleContact = contact })
                                 } else {
-                                    ContactRow(contact, isMine = contact.id == model.myContactId, modifier = Modifier.clickable { onOpenContact(contact.id) })
+                                    ContactRow(contact, isMine = contact.id == model.myContactId, modifier = Modifier.clickable(role = Role.Button) { onOpenContact(contact.id) })
                                 }
                             }
                         }
@@ -228,14 +231,14 @@ fun ContactsScreen(
 
 @Composable
 private fun LetterHeader(title: String) {
-    Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 2.dp))
+    Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { heading() }.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 2.dp))
 }
 
 /** A contact in a circle's book: opened to edit, or removed for everyone in the circle. */
 @Composable
 private fun CircleContactRow(model: ContactsModel, contact: ContactSummary, onEdit: () -> Unit, onRemove: () -> Unit) {
     var isMenuOpen by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().clickable(onClick = onEdit), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onEdit), verticalAlignment = Alignment.CenterVertically) {
         ContactRow(contact, isMine = false, modifier = Modifier.weight(1f), addressBookId = model.addressBook?.id)
         Box {
             IconButton(onClick = { isMenuOpen = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.contacts_more)) }

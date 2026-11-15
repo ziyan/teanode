@@ -37,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.settings.SettingsRoutes
@@ -258,7 +259,7 @@ private fun NameDialog(title: String, name: String, onName: (String) -> Unit, on
 @Composable
 fun CalendarListRow(model: CalendarModel, calendar: AgentCalendar, isShown: Boolean, onShown: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable { onShown(!isShown) }.padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clickable(role = Role.Button) { onShown(!isShown) }.padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {

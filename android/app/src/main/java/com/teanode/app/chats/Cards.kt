@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -64,7 +65,7 @@ fun CardHeader(icon: ImageVector, title: String, modifier: Modifier = Modifier, 
 @Composable
 fun ChoiceRow(title: String, detail: String, isChosen: Boolean, isMultiple: Boolean, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onClick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onClick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Icon(
@@ -163,7 +164,7 @@ fun CodingQuestionCard(line: TranscriptLine, model: ConversationModel) {
     if (line.isDone) {
         // An answered question is a record, so it takes two lines: the session, then what it asked with what was answered. A tap opens the rest.
         val detailsHint = stringResource(if (isShowingDetails) R.string.chats_details_hint_hide else R.string.chats_details_hint_show)
-        Column(Modifier.clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = detailsHint) { isShowingDetails = !isShowingDetails }, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.clickable(role = Role.Button, onClickLabel = detailsHint) { isShowingDetails = !isShowingDetails }, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(Icons.Outlined.Terminal, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(sessionTitle, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))

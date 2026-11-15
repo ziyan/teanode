@@ -25,6 +25,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
@@ -261,7 +262,7 @@ private fun RepeatRows(draft: EventDraft, context: CalendarRepeat.Context, onRul
     }
     if (preset == CalendarRepeat.Preset.Custom) {
         val sentence = parts?.let { read -> CalendarRepeatWords.sentenceText(CalendarRepeat.sentence(read)) } ?: stringResource(R.string.calendar_set_in_another_program)
-        Text(sentence, modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenCustom).padding(horizontal = 16.dp, vertical = 14.dp), color = MaterialTheme.colorScheme.primary)
+        Text(sentence, modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onOpenCustom).padding(horizontal = 16.dp, vertical = 14.dp), color = MaterialTheme.colorScheme.primary)
     }
 }
 

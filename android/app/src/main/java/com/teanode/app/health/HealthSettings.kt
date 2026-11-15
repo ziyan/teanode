@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import com.teanode.app.R
@@ -261,7 +262,7 @@ fun HealthSettingsScreen(onBack: () -> Unit, onOpenShare: (HealthShareView) -> U
                 }
                 items(state.ownShares.size) { index ->
                     val ownShare = state.ownShares[index]
-                    Column(Modifier.fillMaxWidth().clickable { openedShare = ownShare }.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { openedShare = ownShare }.padding(horizontal = 16.dp, vertical = 10.dp)) {
                         Text(HealthSharing.name(ownShare, text), style = MaterialTheme.typography.bodyLarge)
                         Text(HealthSharing.categoriesText(ownShare, text), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

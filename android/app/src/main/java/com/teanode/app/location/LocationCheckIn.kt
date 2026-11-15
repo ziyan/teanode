@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
@@ -135,7 +136,7 @@ fun CheckInSheet(model: LocationModel, onDismiss: () -> Unit) {
                     if (reading != null) {
                         item {
                             Row(
-                                Modifier.fillMaxWidth().clickable(enabled = !isCheckingIn) {
+                                Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = !isCheckingIn) {
                                     val position = reading ?: return@clickable
                                     checkIn(CheckInTarget.Position(position.latitudeDegrees, position.longitudeDegrees, position.accuracyMeters), null)
                                 }.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -157,7 +158,7 @@ fun CheckInSheet(model: LocationModel, onDismiss: () -> Unit) {
                     }
                     items(places, key = { place -> place.id }) { place ->
                         Row(
-                            Modifier.fillMaxWidth().clickable(enabled = !isCheckingIn) {
+                            Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = !isCheckingIn) {
                                 checkIn(place.placeId?.let { id -> CheckInTarget.OwnPlace(id) } ?: CheckInTarget.Found(place), text.shownName(place))
                             }.padding(horizontal = 16.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -260,7 +261,7 @@ fun LocationAddressScreen(
                 if (keepAsTyped == null) item { Text(stringResource(R.string.location_not_found_on_the_map), Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             items(matches.orEmpty(), key = { match -> match.id }) { match ->
-                Column(Modifier.fillMaxWidth().clickable(enabled = !isChoosing) { scope.launch { finish { choose(match) } } }.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                Column(Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = !isChoosing) { scope.launch { finish { choose(match) } } }.padding(horizontal = 16.dp, vertical = 10.dp)) {
                     Text(text.chosenAddressText(match), style = MaterialTheme.typography.bodyLarge)
                     if (match.distanceMeters > 0) Text(text.distance(match.distanceMeters), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -268,7 +269,7 @@ fun LocationAddressScreen(
             if (matches?.isNotEmpty() == true) item { OpenStreetMapCredit() }
             if (isAnswered && keepAsTyped != null) {
                 item {
-                    Column(Modifier.fillMaxWidth().clickable(enabled = !isChoosing) { scope.launch { finish { keepAsTyped(searchedWords) } } }.padding(16.dp)) {
+                    Column(Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = !isChoosing) { scope.launch { finish { keepAsTyped(searchedWords) } } }.padding(16.dp)) {
                         Text(stringResource(R.string.location_keep_as_typed), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyLarge)
                         Text(searchedWords, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(stringResource(R.string.location_keep_as_typed_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -269,6 +269,6 @@
     <string name="health_setup_footer">ヘルスケアの設定で、ヘルスケアをオフにしたり、コピーしたデータをすべて消去したりできます。</string>
     <string name="health_could_not_turn_on">ヘルスケアをオンにできませんでした。もう一度お試しください。</string>
     <plurals name="health_readings_kept">
-        <item quantity="other">%s 件の測定値を保存</item>
+        <item quantity="other">%s件の記録を保存済み</item>
     </plurals>
 </resources>

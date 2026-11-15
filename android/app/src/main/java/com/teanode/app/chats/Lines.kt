@@ -59,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextDecoration
@@ -115,7 +116,7 @@ fun ToolLine(line: TranscriptLine) {
     var isExpanded by rememberSaveable(line.id) { mutableStateOf(false) }
     Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
-            Modifier.clickable { isExpanded = !isExpanded }.heightIn(min = 32.dp), verticalAlignment = Alignment.CenterVertically,
+            Modifier.clickable(role = Role.Button) { isExpanded = !isExpanded }.heightIn(min = 32.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (line.isDone) {
@@ -142,7 +143,7 @@ fun ToolLine(line: TranscriptLine) {
 fun CheckInLine(line: TranscriptLine) {
     var isExpanded by rememberSaveable(line.id) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(Modifier.clickable { isExpanded = !isExpanded }.heightIn(min = 32.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.clickable(role = Role.Button) { isExpanded = !isExpanded }.heightIn(min = 32.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(checkInIcon(line.detail), contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(checkInLabel(line.detail), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -207,7 +208,7 @@ fun NoteLine(line: TranscriptLine) {
     var isExpanded by rememberSaveable(line.id) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (line.detail == "compacted" && line.text.isNotEmpty()) {
-            Row(Modifier.clickable { isExpanded = !isExpanded }.heightIn(min = 32.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.clickable(role = Role.Button) { isExpanded = !isExpanded }.heightIn(min = 32.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Icon(if (isExpanded) Icons.Outlined.ExpandMore else Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(noteWords(line), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -289,7 +290,7 @@ fun goalFirstSentence(goal: String): String {
 @Composable
 fun Banner(icon: ImageVector, text: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
     Surface(
-        modifier = modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier), shape = RoundedCornerShape(14.dp),
+        modifier = modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier), shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
     ) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -304,7 +305,7 @@ fun Banner(icon: ImageVector, text: String, modifier: Modifier = Modifier, onCli
 fun GoalHeader(conversation: AgentConversation, goal: String, onOpen: () -> Unit) {
     val state = goalStateWords(conversation.goalState)
     Surface(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onOpen), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onOpen), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHighest,
     ) {
         Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(Icons.Outlined.Flag, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -401,7 +402,7 @@ fun ChatLineFrame(
     } else {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
             if (isRunStart) {
-                Box(Modifier.then(if (cardUserId != null) Modifier.clickable { onOpenPerson(cardUserId) } else Modifier)) {
+                Box(Modifier.then(if (cardUserId != null) Modifier.clickable(role = Role.Button) { onOpenPerson(cardUserId) } else Modifier)) {
                     AvatarView(name, author.authorAvatarUrl, author.authorAvatarColorIndex, size = 30.dp)
                 }
             } else {
@@ -410,7 +411,7 @@ fun ChatLineFrame(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 if (isRunStart) {
                     Row(
-                        Modifier.padding(start = 6.dp).then(if (cardUserId != null) Modifier.clickable { onOpenPerson(cardUserId) } else Modifier),
+                        Modifier.padding(start = 6.dp).then(if (cardUserId != null) Modifier.clickable(role = Role.Button) { onOpenPerson(cardUserId) } else Modifier),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -443,7 +444,7 @@ fun EmptyConversation(model: ConversationModel, onOpenConversation: (String) -> 
             Text(stringResource(R.string.chats_or_start_with), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(top = 6.dp))
             for (idea in model.ideas) {
                 Surface(
-                    Modifier.fillMaxWidth().clickable { model.start(idea, onOpenConversation) }, shape = RoundedCornerShape(18.dp),
+                    Modifier.fillMaxWidth().clickable(role = Role.Button) { model.start(idea, onOpenConversation) }, shape = RoundedCornerShape(18.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
                     Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {

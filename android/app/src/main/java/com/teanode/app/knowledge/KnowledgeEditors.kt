@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -159,7 +160,7 @@ internal fun FactEditor(model: KnowledgePageModel, initial: FactDraft, onClose: 
             for (audience in KnowledgeWords.audiences) {
                 val isOn = audience in draft.audiences
                 Row(
-                    Modifier.fillMaxWidth().clickable { draft = draft.copy(audiences = if (isOn) draft.audiences - audience else draft.audiences + audience) }.padding(horizontal = 16.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().clickable(role = Role.Button) { draft = draft.copy(audiences = if (isOn) draft.audiences - audience else draft.audiences + audience) }.padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(audience, Modifier.weight(1f))
@@ -198,7 +199,7 @@ internal fun PagePicker(title: String, excluding: String, initial: String, onClo
                 )
             }
             items(found.filter { node -> node.path != excluding }, key = { node -> node.path }) { node ->
-                Column(Modifier.fillMaxWidth().clickable { onChoose(node.path) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onChoose(node.path) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Text(node.shownName)
                     Text(node.path, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -232,7 +233,7 @@ internal fun LinkEditor(model: KnowledgePageModel, onClose: () -> Unit) {
         },
     ) { contentPadding ->
         Column(Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState())) {
-            Row(Modifier.fillMaxWidth().clickable { isPicking = true }.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { isPicking = true }.padding(horizontal = 16.dp, vertical = 14.dp)) {
                 Text(stringResource(R.string.knowledge_link_to), Modifier.weight(1f))
                 Text(to.ifEmpty { stringResource(R.string.knowledge_choose_a_page) }, color = MaterialTheme.colorScheme.primary)
             }
@@ -283,7 +284,7 @@ internal fun ContactPicker(model: KnowledgePageModel, currentContactId: String, 
                         }
                     }
                     items(contacts, key = { contact -> contact.id }) { contact ->
-                        Row(Modifier.fillMaxWidth().clickable { choose(contact.id) }.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { choose(contact.id) }.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(contact.shownName)
                                 contact.emails?.firstOrNull()?.takeIf { email -> email != contact.shownName }?.let { email ->

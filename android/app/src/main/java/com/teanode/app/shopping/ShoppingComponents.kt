@@ -54,7 +54,7 @@ internal fun ShoppingPictureView(item: ShoppingItem, modifier: Modifier = Modifi
     val shape = RoundedCornerShape(if (size == null) 12.dp else 8.dp)
     val sizing = if (size == null) modifier.fillMaxWidth().aspectRatio(1f) else modifier.size(size)
     Box(
-        (if (isZoomable && picture != null) sizing.clip(shape).clickable { isOpen = true } else sizing.clip(shape)).background(MaterialTheme.colorScheme.surfaceVariant),
+        (if (isZoomable && picture != null) sizing.clip(shape).clickable(role = Role.Button) { isOpen = true } else sizing.clip(shape)).background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
         if (picture != null) {
@@ -99,7 +99,7 @@ internal fun ShoppingListItemRow(item: ShoppingItem, words: ShoppingWords, onOpe
         leadingContent = { ShoppingPictureView(item, isZoomable = true) },
         trailingContent = if (price.isEmpty()) null else ({ Text(price, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.combinedClickable(onClick = onOpen, onLongClick = if (actions != null) ({ isMenuOpen = true }) else null),
+        modifier = Modifier.combinedClickable(role = Role.Button, onClick = onOpen, onLongClick = if (actions != null) ({ isMenuOpen = true }) else null),
     )
     if (actions != null) ShoppingItemMenu(item, isMenuOpen, { isMenuOpen = false }, actions)
     }
@@ -134,7 +134,7 @@ internal fun ShoppingListItemTile(item: ShoppingItem, groupName: String, words: 
     var isMenuOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     Box(modifier) {
     Card(
-        modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onOpen, onLongClick = if (actions != null) ({ isMenuOpen = true }) else null),
+        modifier = Modifier.fillMaxWidth().combinedClickable(role = Role.Button, onClick = onOpen, onLongClick = if (actions != null) ({ isMenuOpen = true }) else null),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         shape = RoundedCornerShape(16.dp),
     ) {
@@ -187,7 +187,7 @@ internal fun ShoppingStoreItemRow(
         },
         trailingContent = if (price.isEmpty()) null else ({ Text(price, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = modifier.combinedClickable(onClick = onToggle, onLongClick = onMenu),
+        modifier = modifier.combinedClickable(role = Role.Button, onClick = onToggle, onLongClick = onMenu),
     )
 }
 
@@ -204,7 +204,7 @@ internal fun ShoppingStoreItemTile(
     modifier: Modifier = Modifier,
 ) {
     Card(
-        modifier = modifier.combinedClickable(onClick = onToggle, onLongClick = onOpen),
+        modifier = modifier.combinedClickable(role = Role.Button, onClick = onToggle, onLongClick = onOpen),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         shape = RoundedCornerShape(16.dp),
     ) {

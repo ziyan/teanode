@@ -7,7 +7,7 @@
         <item quantity="other">%1$d 件のプロジェクト</item>
     </plurals>
     <plurals name="journal_stretches_of_work">
-        <item quantity="other">作業 %1$d 回</item>
+        <item quantity="other">%1$d 回の作業</item>
     </plurals>
     <plurals name="journal_n_meetings">
         <item quantity="other">会議 %1$d 件</item>

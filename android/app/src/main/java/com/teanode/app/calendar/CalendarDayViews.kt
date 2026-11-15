@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -116,7 +117,7 @@ fun LazyListScope.daySection(model: CalendarModel, day: LocalDate, isEmptyShown:
     }
     items(events.size, key = { index -> "event-$day-${events[index].occurrenceId}" }) { index ->
         val event = events[index]
-        EventRow(model, event, Modifier.clickable { onOpen(event) })
+        EventRow(model, event, Modifier.clickable(role = Role.Button) { onOpen(event) })
     }
 }
 
@@ -215,7 +216,7 @@ fun DayTimeline(model: CalendarModel, day: LocalDate, onOpen: (CalendarEvent) ->
             Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 PendingChangeBox(model)
                 for (event in allDay) {
-                    EventRow(model, event, Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).clickable { onOpen(event) })
+                    EventRow(model, event, Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).clickable(role = Role.Button) { onOpen(event) })
                 }
             }
         }
@@ -264,7 +265,7 @@ fun DayTimeline(model: CalendarModel, day: LocalDate, onOpen: (CalendarEvent) ->
                                 // The tint over the plain background, so the hour lines do not run through it.
                                 .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(6.dp))
                                 .background(color.copy(alpha = 0.2f), RoundedCornerShape(6.dp))
-                                .clickable { onOpen(item.event) }
+                                .clickable(role = Role.Button) { onOpen(item.event) }
                                 .padding(start = 7.dp, top = 4.dp, end = 4.dp, bottom = 4.dp),
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {

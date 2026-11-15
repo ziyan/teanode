@@ -281,7 +281,7 @@
     <string name="mail_manage_link_host_footer">你放在模板里的图片，由读信人的邮件客户端通过 HTTPS 从本域名下的一个主机名拉取。这与邮件从哪里收是两回事：邮件服务器名指向的主机，其 443 端口可能属于别的东西，那时邮件本身正常，里面的图片却全部加载不出来。</string>
     <string name="mail_manage_link_host_default_footer">留空则使用 %1$s。填写的名字必须能通过 HTTPS 到达本服务器，且证书能被邮件客户端接受，并且必须在本域名之下：其他域名的地址会告诉每个读信人服务器是谁在跑。</string>
     <string name="mail_manage_signing_key">签名密钥</string>
-    <string name="mail_manage_signing_key_signed">该域名发出的邮件使用选择器 %1$s 签名。公钥就是上面的 TXT 记录；私钥保存在本服务器的数据库中，不会离开。</string>
+    <string name="mail_manage_signing_key_signed">从该域名发出的邮件使用选择器 %1$s 签名。公钥就是上面的 TXT 记录；私钥保存在此服务器的数据库中，不会离开这台服务器。</string>
     <string name="mail_manage_signing_key_missing">该域名没有签名密钥，发出的邮件不会被签名，接收方很可能将其判定为垃圾邮件。</string>
     <string name="mail_manage_selector">选择器</string>
     <string name="mail_manage_move_selector">更换选择器</string>

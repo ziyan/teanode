@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.kit.location.LocationShareLevel
@@ -108,7 +109,7 @@ fun LocationSetupList(model: LocationModel, isShowingPeople: Boolean, onOpenPeop
 @Composable
 fun LocationSetupRow(title: String, detail: String, icon: ImageVector, isDone: Boolean, isEnabled: Boolean = true, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().then(if (!isDone && isEnabled) Modifier.clickable(onClick = onClick) else Modifier).padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().then(if (!isDone && isEnabled) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(

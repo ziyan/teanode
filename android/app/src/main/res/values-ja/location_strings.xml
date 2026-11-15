@@ -32,7 +32,7 @@
     <string name="location_recording_resumed">記録を再開しました</string>
     <string name="location_recording_paused">記録を一時停止しました</string>
     <string name="location_cant_see_anyones_location">誰の位置情報も見られません</string>
-    <string name="location_cant_see_anyones_visits">誰の訪問も見られません</string>
+    <string name="location_cant_see_anyones_visits">誰の訪問履歴も見られません</string>
     <string name="location_you_see_less_of_some">一部の人について見られる内容が少なくなっています</string>
     <string name="location_resume">再開</string>
     <string name="location_turn_on_recording">記録をオンにする</string>

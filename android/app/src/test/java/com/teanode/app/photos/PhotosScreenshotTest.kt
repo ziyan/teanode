@@ -132,6 +132,11 @@ class PhotosScreenshotTest {
         shoot("photos-library-window-chip-dark", AppearanceChoice.Dark) { PhotosSection() }
     }
 
+    @Test fun `library window chip largest text`() {
+        PhotoFilterRequest.open(java.time.Instant.parse("2026-10-12T09:00:00Z"), java.time.Instant.parse("2026-10-12T17:00:00Z"))
+        shoot("photos-library-window-chip-largest-text", fontScale = 2f) { PhotosSection() }
+    }
+
     @Test fun `library selecting dark largest text`() = shoot("photos-library-selecting-dark-largest-text", AppearanceChoice.Dark, fontScale = 2f) {
         PhotosSection(initialIsSelecting = true, initialSelectedIds = setOf("p01", "p04"))
     }

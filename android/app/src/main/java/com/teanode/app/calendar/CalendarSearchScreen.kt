@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.shell.LocalAppNavigator
@@ -92,7 +93,7 @@ fun CalendarSearchScreen(model: CalendarModel) {
                         }
                         items(group.events.size, key = { index -> "event-${group.day}-${group.events[index].occurrenceId}" }) { index ->
                             val event = group.events[index]
-                            EventRow(model, event, Modifier.clickable { navigator.navigate(CalendarRoutes.event(event.calendarId, event.id)) })
+                            EventRow(model, event, Modifier.clickable(role = Role.Button) { navigator.navigate(CalendarRoutes.event(event.calendarId, event.id)) })
                         }
                     }
                 }

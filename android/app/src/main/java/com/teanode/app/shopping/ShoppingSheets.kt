@@ -48,6 +48,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.finance.ShareTargetPicker
@@ -230,7 +233,7 @@ internal fun ShoppingAddItemSheet(
             for (item in alikeItems) {
                 val isNeededAgain = isNeededAgainHere(item)
                 Row(
-                    Modifier.fillMaxWidth().clickable(enabled = !isWorking) {
+                    Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = !isWorking) {
                         if (!isNeededAgain) {
                             onOpen(item)
                             onDismiss()
@@ -261,7 +264,7 @@ internal fun ShoppingAddItemSheet(
             Text(stringResource(R.string.shopping_already_on_your_lists), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             for (item in similarItems) {
                 Row(
-                    Modifier.fillMaxWidth().clickable { onOpen(item); onDismiss() },
+                    Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(item); onDismiss() },
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     ShoppingPictureView(item)
@@ -505,7 +508,7 @@ internal fun ShoppingImportSheet(connection: Connection, initialListId: String?,
             Text(stringResource(R.string.shopping_found), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             if (drafts.isEmpty()) Text(stringResource(R.string.shopping_import_nothing), color = MaterialTheme.colorScheme.onSurfaceVariant)
             for (draft in drafts) {
-                Row(Modifier.fillMaxWidth().clickable { drafts = drafts.map { each -> if (each.id == draft.id) each.copy(isIncluded = !each.isIncluded) else each } }, verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().clickable(role = Role.Checkbox) { drafts = drafts.map { each -> if (each.id == draft.id) each.copy(isIncluded = !each.isIncluded) else each } }, verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(draft.isIncluded, { isOn -> drafts = drafts.map { each -> if (each.id == draft.id) each.copy(isIncluded = isOn) else each } })
                     Column(Modifier.weight(1f)) {
                         Text(draft.item.shownTitle)
@@ -523,5 +526,5 @@ internal fun ShoppingImportSheet(connection: Connection, initialListId: String?,
 /** A heading inside a sheet. */
 @Composable
 internal fun SheetHeading(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+    Text(text, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() }, color = MaterialTheme.colorScheme.primary)
 }

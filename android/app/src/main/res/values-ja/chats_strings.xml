@@ -265,7 +265,7 @@
     <string name="chats_share_note">エージェントへのメモを添える</string>
     <string name="chats_share_send_to">%1$s に送る</string>
     <string name="chats_share_send_to_agent">エージェントに送る</string>
-    <string name="chats_share_sent">送信しました</string>
+    <string name="chats_share_sent">送信済み</string>
     <string name="chats_save_as_recording">録音として保存</string>
     <string name="chats_ask_about_this">エージェントに質問</string>
     <string name="chats_share_to_agent">エージェントへ</string>

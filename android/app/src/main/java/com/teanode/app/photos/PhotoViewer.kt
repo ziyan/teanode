@@ -56,6 +56,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -307,7 +308,7 @@ private fun ViewerPage(photo: Photo, onToggleBar: () -> Unit) {
     var offsetY by remember { mutableFloatStateOf(0f) }
     var isPlaying by remember { mutableStateOf(false) }
     Box(
-        Modifier.fillMaxSize().clickable(onClick = onToggleBar).pointerInput(Unit) {
+        Modifier.fillMaxSize().clickable(role = Role.Button, onClick = onToggleBar).pointerInput(Unit) {
             detectTransformGestures { _, pan, zoom, _ ->
                 scale = (scale * zoom).coerceIn(1f, 5f)
                 if (scale > 1f) { offsetX += pan.x; offsetY += pan.y } else { offsetX = 0f; offsetY = 0f }
@@ -452,7 +453,7 @@ internal fun PhotoInfo(
                 val name = PhotoFaces.shownName(face)
                 Box {
                     Row(
-                        Modifier.fillMaxWidth().combinedClickable(
+                        Modifier.fillMaxWidth().combinedClickable(role = Role.Button, 
                             onClick = {
                                 when {
                                     name != null -> onOpenPerson(face.photoFaceGroupId)

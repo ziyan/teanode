@@ -374,7 +374,8 @@
     <string name="settings_kind_shopping">買い物リスト: 店への到着と、誰かがリストの買い物を始めたとき</string>
     <string name="settings_kind_skill_share_call">あなたの承認待ちのスキル呼び出し</string>
     <string name="settings_language">言語</string>
-    <string name="settings_language_detail">アプリの言語は Android の設定で選びます。</string>
+    <string name="settings_language_detail">TeaNode の表示言語です。「システムの設定」では本体の言語に従います。</string>
+    <string name="settings_language_system">システムの設定</string>
     <string name="settings_last_used">最終使用：%1$s</string>
     <string name="settings_mailbox">メールボックス</string>
     <string name="settings_manage">管理</string>
@@ -932,4 +933,6 @@
     </plurals>
     <string name="settings_unsent_mail">書いたメッセージが未送信です。</string>
     <string name="settings_unsent_deleted">ログアウトすると、これらはこの端末から削除されます。</string>
+    <string name="settings_stepper_decrease">減らす</string>
+    <string name="settings_stepper_increase">増やす</string>
 </resources>

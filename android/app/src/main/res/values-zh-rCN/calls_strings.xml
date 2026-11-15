@@ -40,7 +40,7 @@
     <string name="calls_route_bluetooth">蓝牙</string>
     <string name="calls_route_headphones">耳机</string>
     <string name="calls_route_other">其他输出</string>
-    <string name="calls_route_phone">手机</string>
+    <string name="calls_route_phone">电话</string>
     <string name="calls_route_speaker">扬声器</string>
     <string name="calls_somebody">有人</string>
     <string name="calls_start_a_call">发起通话</string>

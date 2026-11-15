@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -68,7 +69,7 @@ fun PhotoThumbnailStrip(photos: List<Photo>, currentIndex: Int, onChoose: (Int) 
             Box(
                 Modifier.size(side).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.12f))
                     .semantics { contentDescription = label; selected = isCurrent }
-                    .clickable { onChoose(index) },
+                    .clickable(role = Role.Button) { onChoose(index) },
             ) {
                 if (picture != null) Image(picture, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(side))
             }
@@ -96,7 +97,7 @@ fun PhotoPositionMap(latitudeDegrees: Double, longitudeDegrees: Double, title: S
         )
         // The map underneath never takes touches, so a press anywhere opens the maps app.
         Box(
-            Modifier.fillMaxWidth().height(180.dp).clickable(onClickLabel = hint) {
+            Modifier.fillMaxWidth().height(180.dp).clickable(role = Role.Button, onClickLabel = hint) {
                 val address = Uri.parse("geo:$latitudeDegrees,$longitudeDegrees?q=$latitudeDegrees,$longitudeDegrees(${Uri.encode(title)})")
                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, address).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             },

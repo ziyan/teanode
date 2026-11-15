@@ -47,6 +47,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
@@ -191,7 +194,7 @@ internal fun Footer(text: String) {
 internal fun ActionRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, isDestructive: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val color = if (isDestructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
     Row(
-        Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = enabled, onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Icon(icon, null, tint = if (enabled) color else color.copy(alpha = 0.4f))
@@ -319,7 +322,7 @@ internal fun PasswordsFieldSections(model: PasswordsModel, fields: PasswordsItem
 
 @Composable
 private fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp))
+    Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.semantics { heading() }.padding(16.dp, 16.dp, 16.dp, 4.dp))
 }
 
 @Composable
@@ -335,7 +338,7 @@ private fun LoginSections(model: PasswordsModel, login: PasswordsLoginFields, re
         login.sites.forEach { site ->
             val address = PasswordsFormat.urlOfSite(site)
             Row(
-                Modifier.fillMaxWidth().then(if (address != null) Modifier.clickable { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } } else Modifier).padding(horizontal = 16.dp, vertical = 10.dp),
+                Modifier.fillMaxWidth().then(if (address != null) Modifier.clickable(role = Role.Button) { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } } else Modifier).padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 if (address != null) Icon(Icons.Outlined.Language, null, tint = MaterialTheme.colorScheme.primary)
@@ -394,7 +397,7 @@ internal fun FieldRow(
     maskedValue: String = "••••••••••",
     onToggleReveal: (() -> Unit)? = null,
 ) {
-    Row(Modifier.fillMaxWidth().clickable { model.copy(copiedValue ?: value, title) }.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { model.copy(copiedValue ?: value, title) }.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
@@ -427,7 +430,7 @@ private fun OneTimeCodeRow(model: PasswordsModel, settings: com.teanode.kit.pass
     val code = PasswordsOneTimeCode.code(settings, nowSeconds)
     val secondsLeft = PasswordsOneTimeCode.secondsLeft(settings, nowSeconds)
     val label = stringResource(R.string.passwords_one_time_code)
-    Column(Modifier.fillMaxWidth().clickable { model.copy(code, label) }.padding(16.dp, 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { model.copy(code, label) }.padding(16.dp, 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(PasswordsFormat.groupedOneTimeCode(code), style = MaterialTheme.typography.headlineSmall.copy(fontFamily = FontFamily.Monospace))
         LinearProgressIndicator(progress = { secondsLeft.toFloat() / settings.periodSeconds }, modifier = Modifier.fillMaxWidth())
@@ -474,7 +477,7 @@ fun PasswordsVersionsScreen(itemId: String) {
                 opened != null && opened.versions.isEmpty() && opened.unreadableVersionCount == 0 -> EmptyState(Icons.Outlined.History, stringResource(R.string.passwords_versions_none_title), description = stringResource(R.string.passwords_versions_none_description))
                 opened != null -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                     opened.versions.forEach { version ->
-                        Column(Modifier.fillMaxWidth().clickable { navigator.navigate("passwords/version/${Uri.encode(itemId)}/${Uri.encode(version.id)}") }.padding(16.dp, 12.dp)) {
+                        Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { navigator.navigate("passwords/version/${Uri.encode(itemId)}/${Uri.encode(version.id)}") }.padding(16.dp, 12.dp)) {
                             Text(versionDateText(version))
                             Text(versionSavedByText(version), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -569,7 +572,7 @@ fun PasswordsDeletedScreen() {
             } else {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                     model.deletedItems.forEach { item ->
-                        Row(Modifier.fillMaxWidth().clickable { navigator.navigate("passwords/item/${Uri.encode(item.id)}") }.padding(start = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { navigator.navigate("passwords/item/${Uri.encode(item.id)}") }.padding(start = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Icon(item.itemKind.icon(), null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             Column(Modifier.weight(1f)) {
                                 Text(item.name)

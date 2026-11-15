@@ -41,7 +41,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
@@ -83,7 +85,7 @@ fun PhotoCell(
     Box(
         modifier.aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant)
             .semantics { contentDescription = description }
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            .combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onLongClick),
         contentAlignment = Alignment.Center,
     ) {
         when {
@@ -186,7 +188,7 @@ private fun Cell(
 
 @Composable
 private fun DayHeader(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp))
+    Text(text, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() }.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp))
 }
 
 @Composable
@@ -194,7 +196,7 @@ private fun TrashDayHeader(day: PhotoTrashDay) {
     val trashedDay = day.trashedAt?.let { instant ->
         DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(Locale.getDefault()).format(instant.atZone(java.time.ZoneId.systemDefault()).toLocalDate())
     }
-    androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+    androidx.compose.foundation.layout.Column(Modifier.semantics { heading() }.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text(
             if (trashedDay != null) stringResource(R.string.photos_trash_day_heading, trashedDay) else stringResource(R.string.photos_unknown_date),
             style = MaterialTheme.typography.titleSmall,
@@ -235,7 +237,7 @@ fun PhotoOverviewGrid(
 @Composable
 private fun OverviewCard(cover: Photo?, title: String, photoCount: Int, modifier: Modifier, onClick: () -> Unit) {
     val picture = rememberServerPicture(cover?.gridPreviewPath)
-    Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant).combinedClickable(onClick = onClick)) {
+    Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant).combinedClickable(role = Role.Button, onClick = onClick)) {
         if (picture != null) Image(picture, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)))))
         androidx.compose.foundation.layout.Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {

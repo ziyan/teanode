@@ -38,6 +38,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -444,7 +445,7 @@ private fun SchematicMap(content: MapContent, focus: MapFocus, modifier: Modifie
             Row(
                 Modifier
                     .offset { androidx.compose.ui.unit.IntOffset((point.x - 20.dp.toPx()).toInt(), (point.y - 20.dp.toPx()).toInt()) }
-                    .clickable { if (group.size == 1) onPinTap(first.id) else chooserGroup = group },
+                    .clickable(role = Role.Button) { if (group.size == 1) onPinTap(first.id) else chooserGroup = group },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // The first picture is in front: they are drawn last to first, each overlapping the one before.

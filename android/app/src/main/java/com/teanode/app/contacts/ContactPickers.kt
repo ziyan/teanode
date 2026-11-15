@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.ui.components.AvatarView
@@ -77,7 +78,7 @@ fun ContactAccountPickerScreen(model: ContactsModel, contact: ContactDetail, onB
             }
             items(shown, key = { person -> person.userId }) { person ->
                 Row(
-                    Modifier.fillMaxWidth().clickable(enabled = !isLinking) {
+                    Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = !isLinking) {
                         isLinking = true
                         scope.launch {
                             if (model.link(contact.id, person, contact.name.orEmpty(), isQuiet = true)) onLinked() else failureText = noLinkText
@@ -162,7 +163,7 @@ fun PersonContactPickerScreen(model: ContactsModel, person: CircleMember, onBack
 
 @Composable
 private fun ContactChoice(contact: ContactSummary, isLinking: Boolean, onChoose: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(enabled = !isLinking, onClick = onChoose).padding(horizontal = 16.dp, vertical = 8.dp)) {
+    Column(Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = !isLinking, onClick = onChoose).padding(horizontal = 16.dp, vertical = 8.dp)) {
         Text(contact.shownName.ifEmpty { stringResource(R.string.contacts_no_name) })
         val detail = listOf(contact.organization, contact.emails?.firstOrNull(), contact.phones?.firstOrNull()).filterNotNull().firstOrNull { text -> text.isNotEmpty() && text != contact.shownName }
         if (detail != null) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -3,9 +3,9 @@ package com.teanode.app
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
 import com.teanode.app.calls.OpeningRequests
 import com.teanode.app.demo.DemoServer
 import com.teanode.app.notifications.NotificationBuilder
@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
  * page returning with a code (`com.teanode.app:/oauth`), a connect code (`https://teanode.com/app/connect#...`), and the
  * app's own places (`teanode://app/...`).
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     private val newIntents = MutableSharedFlow<Intent>(extraBufferCapacity = 8)
 
     override fun onCreate(savedInstanceState: Bundle?) {

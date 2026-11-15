@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
 import com.teanode.app.shell.Routes
 import com.teanode.kit.AppSection
 import com.teanode.kit.chats.ShareDestination
@@ -136,7 +137,7 @@ internal fun ShareSheet(intent: Intent, session: AppSession, connection: Connect
                 if (offered.size > 1 && resultText == null) {
                     Column {
                         for (choice in offered) {
-                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { chosen = choice }, verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.RadioButton) { chosen = choice }, verticalAlignment = Alignment.CenterVertically) {
                                 RadioButton(selected = destination == choice, onClick = { chosen = choice })
                                 Text(
                                     stringResource(

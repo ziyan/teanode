@@ -63,6 +63,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -418,7 +419,7 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
                     if (listState.firstVisibleItemIndex > 3) {
                         Box(
                             Modifier.align(Alignment.BottomEnd).padding(16.dp).size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                .clickable { scope.launch { listState.animateScrollToItem(0) } },
+                                .clickable(role = Role.Button) { scope.launch { listState.animateScrollToItem(0) } },
                             contentAlignment = Alignment.Center,
                         ) { Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = stringResource(R.string.chats_jump_to_end)) }
                     }

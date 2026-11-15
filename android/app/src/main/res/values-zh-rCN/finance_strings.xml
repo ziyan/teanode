@@ -251,7 +251,7 @@
     <string name="finance_shared_at">%2$s 以“%1$s”级别分享</string>
     <string name="finance_shared_with_you">与你共享的页面</string>
     <string name="finance_share_everyone_in">%1$s的所有人</string>
-    <string name="finance_share_everyone_in_circle">%1$s 中的所有人（%2$s）</string>
+    <string name="finance_share_everyone_in_circle">%1$s的所有人（%2$s）</string>
     <string name="finance_shares_accounts">分享了部分账户</string>
     <string name="finance_shares_all">分享了全部财务</string>
     <string name="finance_share_with">共享给</string>

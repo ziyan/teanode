@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.shell.LocalAppNavigator
@@ -108,7 +109,7 @@ fun FindATimeScreen(model: CalendarModel, ownUserId: String) {
                 } else {
                     item { TeaNodeSectionHeader(stringResource(R.string.calendar_with)) }
                     items(known.people, key = { person -> person.userId }) { person ->
-                        Row(Modifier.fillMaxWidth().clickable { chosen = if (person.userId in chosen) chosen - person.userId else chosen + person.userId }.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clickable(role = Role.Checkbox) { chosen = if (person.userId in chosen) chosen - person.userId else chosen + person.userId }.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = person.userId in chosen, onCheckedChange = { isOn -> chosen = if (isOn) chosen + person.userId else chosen - person.userId })
                             Text(person.pickerLabel, style = MaterialTheme.typography.bodyLarge)
                         }

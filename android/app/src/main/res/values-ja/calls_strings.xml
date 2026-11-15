@@ -40,7 +40,7 @@
     <string name="calls_route_bluetooth">Bluetooth</string>
     <string name="calls_route_headphones">ヘッドフォン</string>
     <string name="calls_route_other">その他の出力</string>
-    <string name="calls_route_phone">スマートフォン</string>
+    <string name="calls_route_phone">電話</string>
     <string name="calls_route_speaker">スピーカー</string>
     <string name="calls_somebody">誰か</string>
     <string name="calls_start_a_call">通話を始める</string>

@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -227,7 +228,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.searchResults(
     for (root in groups.keys.sorted()) {
         item(key = "root-$root") { TeaNodeSectionHeader(root) }
         items(groups.getValue(root), key = { node -> "node-${node.path}" }) { node ->
-            Column(Modifier.fillMaxWidth().clickable { onOpenPage(node.path) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenPage(node.path) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Text(node.shownName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(node.path, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
@@ -237,7 +238,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.searchResults(
         item(key = "facts-header") { TeaNodeSectionHeader(stringResource(R.string.knowledge_facts)) }
         items(facts.size, key = { index -> "fact-$index" }) { index ->
             val foundFact = facts[index]
-            Column(Modifier.fillMaxWidth().clickable { onOpenPage(foundFact.path) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenPage(foundFact.path) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Text(foundFact.name.ifEmpty { foundFact.path }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("#${foundFact.fact?.number ?: 0} ${foundFact.fact?.text.orEmpty()}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
@@ -247,7 +248,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.searchResults(
     if (sharedHits.isNotEmpty()) {
         item(key = "shared-header") { TeaNodeSectionHeader(stringResource(R.string.knowledge_shared_with_you)) }
         items(sharedHits, key = { hit -> "hit-${hit.id}" }) { hit ->
-            Column(Modifier.fillMaxWidth().clickable { onOpenShared(hit) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenShared(hit) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Text(if (hit.isFact) "${hit.shownName} #${hit.factNumber}" else hit.shownName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(stringResource(R.string.knowledge_shared_by, hit.shownOwner), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                 if (hit.shownText.isNotEmpty()) {
@@ -274,7 +275,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.searchResults(
 @Composable
 fun KnowledgeRowView(row: KnowledgeRow, node: KnowledgeNode, selfName: String?, onClick: () -> Unit) {
     val pinnedLabel = stringResource(R.string.knowledge_always_in_prompt)
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(KnowledgeSymbols.icon(node.kind), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
@@ -309,7 +310,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.sharedSection(groups:
             }
         }
         items(group.roots, key = { root -> "root-${root.id}" }) { root ->
-            Column(Modifier.fillMaxWidth().clickable { onOpen(root) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(root) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Text(root.shownName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (root.opening.isNotEmpty()) {
                     Text(root.opening, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)

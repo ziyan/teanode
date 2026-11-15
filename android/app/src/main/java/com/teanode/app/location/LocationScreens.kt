@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.LocalAppSession
@@ -271,7 +272,7 @@ private fun LocationPlaceContent(model: LocationModel, initial: LocationPlace, o
             }
             item {
                 Box {
-                    Row(Modifier.fillMaxWidth().clickable { isLabelMenuOpen = true }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { isLabelMenuOpen = true }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(stringResource(R.string.location_label), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
                         Icon(placeLabelIcon(place.label), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(place.label?.let { label -> text.labelTitle(label) } ?: stringResource(R.string.location_none), Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
