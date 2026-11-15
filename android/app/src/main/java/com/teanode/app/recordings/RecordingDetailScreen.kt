@@ -1,5 +1,6 @@
 package com.teanode.app.recordings
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -88,7 +90,17 @@ import com.teanode.kit.recordings.RecordingSpeakersView
 import com.teanode.kit.recordings.RecordingTranscriptTimeline
 import com.teanode.kit.recordings.RecordingView
 import com.teanode.kit.recordings.cancelRecordingTranscription
-import com.teanode.kit.recordings.correctRecordingTranscriptText
+import com.teanode.kit.recordings.RecordingDraftOutcome
+import com.teanode.kit.recordings.RecordingSpeakerDraft
+import com.teanode.kit.recordings.RecordingSpeakerDrafts
+import com.teanode.kit.recordings.RecordingDraftStorage
+import com.teanode.kit.recordings.RecordingTextCorrectionDraft
+import com.teanode.kit.recordings.RecordingTextCorrectionDrafts
+import com.teanode.kit.recordings.RecordingTextCorrectionStart
+import com.teanode.kit.recordings.startRecordingTextCorrection
+import com.teanode.kit.recordings.submitRecordingSpeakerNaming
+import com.teanode.kit.recordings.submitRecordingTextCorrection
+import com.teanode.kit.recordings.recordingSpeakers
 import com.teanode.kit.recordings.correctRecordingSpeaker
 import com.teanode.kit.recordings.deleteRecording
 import com.teanode.kit.recordings.recording
@@ -96,7 +108,6 @@ import com.teanode.kit.recordings.nextRunEpochMS
 import com.teanode.kit.recordings.recordingLearning
 import com.teanode.kit.recordings.state
 import com.teanode.kit.recordings.recordingLimits
-import com.teanode.kit.recordings.recordingSpeakers
 import com.teanode.kit.recordings.recordingTranscript
 import com.teanode.kit.recordings.recordingTranscriptPassageOffset
 import com.teanode.kit.recordings.recordingTranscriptTimeline
@@ -316,19 +327,12 @@ fun RecordingDetailScreen(recordingId: String, onBack: () -> Unit, link: Recordi
     memorySegment?.let { segment -> PassageMemorySheet(recordingId, segment, onDismiss = { memorySegment = null }, onOpen = { memorySegment = null; navigator.openSection(AppSection.Knowledge) }) }
     namingBubble?.let { bubble ->
         NameSpeakerSheet(
-            bubble, recordingId, current?.view?.recording?.sourceGeneration ?: 0,
+            bubble, recordingId,
             onNamed = { namingBubble = null; reloadCount += 1 }, onDismiss = { namingBubble = null },
         )
     }
     correcting?.let { segment ->
-        CorrectTextDialog(
-            segment,
-            onSave = { text ->
-                correcting = null
-                act(R.string.recordings_saved) { connection.correctRecordingTranscriptText(recordingId, segment.id, current?.view?.recording?.sourceGeneration ?: 0, UUID.randomUUID().toString(), text) }
-            },
-            onDismiss = { correcting = null },
-        )
+        TranscriptTextEditor(segment, recordingId, onSaved = { reloadCount += 1 }, onDismiss = { correcting = null })
     }
 }
 
@@ -417,6 +421,18 @@ private fun PlayerBar(files: List<com.teanode.kit.recordings.RecordingMedia>, pl
             modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
         )
         Text(com.teanode.kit.photos.VideoControls.timeText(durationMS / 1000.0), style = MaterialTheme.typography.labelMedium)
+    }
+    if (player.isPreparingCompatibleAudio) {
+        Text(stringResource(R.string.recordings_preparing_compatible_audio), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
+    }
+    if (player.isCompatibleAudioPreview) {
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Outlined.GraphicEq, null, Modifier.size(18.dp))
+                Text(stringResource(R.string.recordings_compatible_audio_preview), style = MaterialTheme.typography.bodyMedium)
+            }
+            Text(stringResource(R.string.recordings_audio_preview_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
     player.problem?.let { Text(stringResource(R.string.recordings_cannot_play), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) }
 }
@@ -507,66 +523,69 @@ private fun RenameDialog(title: String, recordedAt: String?, onSave: (String?, S
     )
 }
 
-@Composable
-private fun CorrectTextDialog(segment: com.teanode.kit.recordings.RecordingTranscriptSegment, onSave: (String) -> Unit, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf(segment.displayedTranscriptText) }
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.recordings_correct_text)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth())
-                Text(stringResource(R.string.recordings_correct_text_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        },
-        confirmButton = { TextButton(onClick = { onSave(text.trim()) }, enabled = text.isNotBlank() && text.trim() != segment.displayedTranscriptText) { Text(stringResource(R.string.recordings_save)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
-    )
-}
-
-/** Choose or type who is speaking; the name can apply to the whole voice of the recording. */
+/** Choose or type who is speaking; the name can apply to the whole voice of the recording. A naming sent without an answer is kept, and sent again as it was. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NameSpeakerSheet(bubble: RecordingConversationBubble, recordingId: String, expectedSourceGeneration: Long, onNamed: () -> Unit, onDismiss: () -> Unit) {
+private fun NameSpeakerSheet(bubble: RecordingConversationBubble, recordingId: String, onNamed: () -> Unit, onDismiss: () -> Unit) {
     val connection = LocalConnection.current
     val snackbar = LocalSnackbar.current
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val drafts = remember { RecordingSpeakerDrafts(PreferencesRecordingDraftStorage(context)) }
+    val first = bubble.segments.first()
+    val temporaryLabel = RecordingTemporarySpeakers.labelToName(bubble)
     var name by remember { mutableStateOf(bubble.confirmedSpeakerName.orEmpty()) }
     var isWholeGroup by remember { mutableStateOf(true) }
-    var startText by remember { mutableStateOf(bubble.segments.first().segmentStartMS.toString()) }
+    var startText by remember { mutableStateOf(first.segmentStartMS.toString()) }
     var endText by remember { mutableStateOf(bubble.segments.last().segmentEndMS.toString()) }
     var suggestions by remember { mutableStateOf(emptyList<com.teanode.kit.recordings.RecordingSpeakerNameSuggestion>()) }
+    var draft by remember { mutableStateOf<RecordingSpeakerDraft?>(null) }
+    var sourceGeneration by remember { mutableStateOf<Long?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
+    val isLocked = draft?.hasSubmittedRequest == true
+    LaunchedEffect(Unit) {
+        if (temporaryLabel != null) return@LaunchedEffect
+        val speakers = runCatching { connection.recordingSpeakers(recordingId) }.getOrNull()
+        sourceGeneration = speakers?.sourceGeneration
+        drafts.settled(connection.accountKey, first.id, speakers)?.let { retained ->
+            draft = retained
+            name = retained.confirmedName
+            isWholeGroup = retained.isWholeGroup
+            startText = retained.passageStartMS.toString()
+            endText = retained.passageEndMS.toString()
+        }
+    }
     LaunchedEffect(name) {
+        if (isLocked) return@LaunchedEffect
         delay(250)
         suggestions = runCatching { connection.suggestRecordingSpeakerNames(name.trim()) }.getOrDefault(emptyList())
     }
-    val first = bubble.segments.first()
-    val temporaryLabel = RecordingTemporarySpeakers.labelToName(bubble)
-    val context = LocalContext.current
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = { if (!isSaving) onDismiss() }) {
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.recordings_name_speaker), style = MaterialTheme.typography.titleLarge)
-            OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text(stringResource(R.string.recordings_confirmed_name)) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = name, onValueChange = { name = it }, enabled = !isLocked, singleLine = true, label = { Text(stringResource(R.string.recordings_confirmed_name)) }, modifier = Modifier.fillMaxWidth())
             if (temporaryLabel == null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.recordings_apply_to_group), Modifier.weight(1f))
-                    Switch(checked = isWholeGroup, onCheckedChange = { isWholeGroup = it })
+                    Switch(checked = isWholeGroup, onCheckedChange = { isWholeGroup = it }, enabled = !isLocked)
                 }
                 if (!isWholeGroup) {
-                    OutlinedTextField(startText, { startText = it }, singleLine = true, label = { Text(stringResource(R.string.recordings_passage_start_ms)) }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(endText, { endText = it }, singleLine = true, label = { Text(stringResource(R.string.recordings_passage_end_ms)) }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(startText, { startText = it }, enabled = !isLocked, singleLine = true, label = { Text(stringResource(R.string.recordings_passage_start_ms)) }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(endText, { endText = it }, enabled = !isLocked, singleLine = true, label = { Text(stringResource(R.string.recordings_passage_end_ms)) }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                 }
                 Text(stringResource(R.string.recordings_apply_to_group_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 Text(stringResource(R.string.recordings_temporary_speaker_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (suggestions.isNotEmpty()) {
+            if (suggestions.isNotEmpty() && !isLocked) {
                 Text(stringResource(R.string.recordings_suggestions), style = MaterialTheme.typography.titleSmall)
                 for (suggestion in suggestions.take(5)) Text(suggestion.confirmedName, Modifier.fillMaxWidth().clickable(role = Role.Button) { name = suggestion.confirmedName }.padding(vertical = 8.dp))
             }
+            if (isLocked) Text(stringResource(R.string.recordings_label_unconfirmed), color = MaterialTheme.colorScheme.onSurfaceVariant)
             Button(
                 onClick = {
                     scope.launch {
+                        isSaving = true
                         try {
                             val chosen = suggestions.firstOrNull { suggestion -> suggestion.confirmedName == name.trim() }
                             if (temporaryLabel != null) {
@@ -576,24 +595,106 @@ private fun NameSpeakerSheet(bubble: RecordingConversationBubble, recordingId: S
                                 onNamed()
                                 return@launch
                             }
-                            val interval = if (isWholeGroup) 0L..(Long.MAX_VALUE / 4) else RecordingPassageInterval.parse(startText, endText, first.segmentStartMS, bubble.segments.last().segmentEndMS)
-                            if (interval == null) {
-                                snackbar.show(context.getString(R.string.recordings_choose_a_positive_interval))
-                                return@launch
+                            var toSend = draft ?: RecordingSpeakerDraft.start(connection.accountKey, recordingId, first, sourceGeneration ?: connection.recordingSpeakers(recordingId).sourceGeneration)
+                            if (!toSend.hasSubmittedRequest) {
+                                val interval = if (isWholeGroup) first.segmentStartMS..bubble.segments.last().segmentEndMS else RecordingPassageInterval.parse(startText, endText, first.segmentStartMS, bubble.segments.last().segmentEndMS)
+                                if (interval == null) {
+                                    snackbar.show(context.getString(R.string.recordings_choose_a_positive_interval))
+                                    return@launch
+                                }
+                                toSend = toSend.copy(
+                                    confirmedName = name.trim(), isAccountOwner = null, contactAddressBookId = chosen?.addressBookId, contactId = chosen?.contactId,
+                                    isWholeGroup = isWholeGroup, passageStartMS = interval.first, passageEndMS = interval.last,
+                                    expectedSourceGeneration = sourceGeneration ?: toSend.expectedSourceGeneration,
+                                )
                             }
-                            connection.correctRecordingSpeaker(
-                                recordingId, expectedSourceGeneration, UUID.randomUUID().toString(), name.trim(), null, suggestions.firstOrNull { suggestion -> suggestion.confirmedName == name.trim() }?.addressBookId,
-                                suggestions.firstOrNull { suggestion -> suggestion.confirmedName == name.trim() }?.contactId, first.recordingTranscriptionAttemptId, first.localSpeakerId,
-                                interval.first, interval.last,
-                            )
-                            onNamed()
-                        } catch (error: CancellationException) { throw error } catch (error: Throwable) { snackbar.showError(error) }
+                            when (val outcome = connection.submitRecordingSpeakerNaming(drafts, toSend)) {
+                                is RecordingDraftOutcome.Saved -> {
+                                    snackbar.show(context.getString(R.string.recordings_speaker_named))
+                                    onNamed()
+                                }
+                                is RecordingDraftOutcome.Refused -> { draft = outcome.draft; sourceGeneration = outcome.draft.expectedSourceGeneration; snackbar.showError(outcome.error) }
+                                is RecordingDraftOutcome.Unconfirmed -> { draft = outcome.draft; snackbar.showError(outcome.error) }
+                            }
+                        } catch (error: CancellationException) { throw error } catch (error: Throwable) { snackbar.showError(error) } finally { isSaving = false }
                     }
                 },
-                enabled = name.isNotBlank(),
+                enabled = name.isNotBlank() && !isSaving,
             ) { Text(stringResource(R.string.recordings_save)) }
         }
     }
+}
+
+/** Where the drafts of a naming or a text correction are kept between attempts: the phone's preferences. */
+internal class PreferencesRecordingDraftStorage(context: Context) : RecordingDraftStorage {
+    private val preferences = context.getSharedPreferences("recording_drafts", Context.MODE_PRIVATE)
+    override fun read(storageKey: String): String? = preferences.getString(storageKey, null)
+    override fun write(storageKey: String, text: String) { preferences.edit().putString(storageKey, text).apply() }
+    override fun remove(storageKey: String) { preferences.edit().remove(storageKey).apply() }
+}
+
+/** The editor of a passage's text: the correction is kept as typed, and a request that had no answer is sent again as it was, never as a second correction. */
+@Composable
+internal fun TranscriptTextEditor(segment: com.teanode.kit.recordings.RecordingTranscriptSegment, recordingId: String, onSaved: () -> Unit, onDismiss: () -> Unit) {
+    val connection = LocalConnection.current
+    val snackbar = LocalSnackbar.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val drafts = remember { RecordingTextCorrectionDrafts(PreferencesRecordingDraftStorage(context)) }
+    var draft by remember { mutableStateOf<RecordingTextCorrectionDraft?>(null) }
+    var text by remember { mutableStateOf(segment.displayedTranscriptText) }
+    var isLoading by remember { mutableStateOf(true) }
+    var isSaving by remember { mutableStateOf(false) }
+    var isOriginalShown by remember { mutableStateOf(false) }
+    LaunchedEffect(segment.id) {
+        try {
+            when (val start = connection.startRecordingTextCorrection(drafts, recordingId, segment.id, segment.displayedTranscriptText)) {
+                is RecordingTextCorrectionStart.AlreadySaved -> { onSaved(); onDismiss() }
+                is RecordingTextCorrectionStart.Editing -> { draft = start.draft; text = start.draft.correctedTranscriptText }
+            }
+        } catch (error: CancellationException) { throw error } catch (error: Throwable) { snackbar.showError(error) }
+        isLoading = false
+    }
+    val isLocked = draft?.hasSubmittedRequest == true
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { if (!isSaving) onDismiss() },
+        title = { Text(stringResource(R.string.recordings_correct_text)) },
+        text = {
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { updated ->
+                        text = updated
+                        draft?.takeIf { current -> !current.hasSubmittedRequest }?.let { current -> draft = current.copy(correctedTranscriptText = updated).also { changed -> drafts.save(changed) } }
+                    },
+                    enabled = !isLoading && !isSaving && !isLocked, label = { Text(stringResource(R.string.recordings_corrected_transcript)) }, modifier = Modifier.fillMaxWidth(),
+                )
+                Text(stringResource(R.string.recordings_correct_text_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (isLocked) Text(stringResource(R.string.recordings_edit_unconfirmed), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = { isOriginalShown = !isOriginalShown }) { Text(stringResource(R.string.recordings_original_transcript)) }
+                if (isOriginalShown) androidx.compose.foundation.text.selection.SelectionContainer { Text(segment.transcriptText) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val current = draft ?: return@TextButton
+                    scope.launch {
+                        isSaving = true
+                        try {
+                            when (val outcome = connection.submitRecordingTextCorrection(drafts, current, text)) {
+                                is RecordingDraftOutcome.Saved -> { snackbar.show(context.getString(R.string.recordings_passage_corrected)); onSaved(); onDismiss() }
+                                is RecordingDraftOutcome.Refused -> { draft = outcome.draft; snackbar.showError(outcome.error) }
+                                is RecordingDraftOutcome.Unconfirmed -> { draft = outcome.draft; snackbar.showError(outcome.error) }
+                            }
+                        } catch (error: CancellationException) { throw error } catch (error: Throwable) { snackbar.showError(error) } finally { isSaving = false }
+                    }
+                },
+                enabled = !isLoading && !isSaving && draft != null && text.isNotBlank(),
+            ) { Text(stringResource(if (isLocked) R.string.recordings_retry_edit else R.string.recordings_save)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !isSaving) { Text(stringResource(R.string.recordings_close)) } },
+    )
 }
 
 @Composable

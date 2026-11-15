@@ -15,6 +15,9 @@ import com.teanode.app.ui.theme.AppearanceChoice
 import com.teanode.kit.TeaNodeJson
 import com.teanode.kit.recordings.LocalRecording
 import com.teanode.kit.recordings.LocalRecordingMedia
+import com.teanode.kit.recordings.RecordingTextCorrectionDraft
+import com.teanode.kit.recordings.RecordingTextCorrectionDrafts
+import com.teanode.kit.recordings.RecordingTranscriptSegment
 import com.teanode.kit.recordings.RecordingView
 import org.junit.Rule
 import org.junit.Test
@@ -181,4 +184,33 @@ class RecordingsScreenshotTest {
     }
 
     @Test fun `detail speakers named by label dark`() = shoot("recordings-detail-labels-dark", AppearanceChoice.Dark) { RecordingDetailScreen("r2", onBack = {}) }
+
+    private val editedSegment = RecordingTranscriptSegment(id = "seg-edit", segmentStartMS = 1000, segmentEndMS = 6000, transcriptText = "I can take the pricing page, and Sam can take the rest.")
+
+    @androidx.compose.runtime.Composable
+    private fun SeededTextEditor(isUnconfirmed: Boolean) {
+        val connection = com.teanode.app.session.LocalConnection.current
+        val context = androidx.compose.ui.platform.LocalContext.current
+        androidx.compose.runtime.remember {
+            val drafts = RecordingTextCorrectionDrafts(PreferencesRecordingDraftStorage(context))
+            drafts.save(RecordingTextCorrectionDraft(connection.accountKey, "r1", editedSegment.id, "client-edit", "I can take the pricing page, and Sam the rest.", 4, hasSubmittedRequest = isUnconfirmed))
+            0
+        }
+        TranscriptTextEditor(editedSegment, "r1", onSaved = {}, onDismiss = {})
+    }
+
+    private fun shootOnStoppedClock(name: String, appearance: AppearanceChoice = AppearanceChoice.Light, fontScale: Float = 1f, content: @Composable () -> Unit) {
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent { DemoHost(appearance = appearance) { WithFontScale(fontScale) { content() } } }
+        composeRule.mainClock.advanceTimeBy(600)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        composeRule.mainClock.advanceTimeBy(600)
+        composeRule.photograph(name)
+    }
+
+    @Test fun `text editor keeps what was typed`() = shootOnStoppedClock("recordings-text-editor-light") { SeededTextEditor(isUnconfirmed = false) }
+
+    @Test fun `text editor with an unconfirmed response offers Retry edit`() = shootOnStoppedClock("recordings-text-editor-unconfirmed-dark", AppearanceChoice.Dark) { SeededTextEditor(isUnconfirmed = true) }
+
+    @Test fun `text editor at the largest text`() = shootOnStoppedClock("recordings-text-editor-unconfirmed-largest-text", fontScale = 2f) { SeededTextEditor(isUnconfirmed = true) }
 }

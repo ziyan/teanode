@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recordings_corrected_transcript">已更正的转写</string>
+    <string name="recordings_edit_unconfirmed">此次编辑的响应尚未确认。修改文字前，请先重试同一次编辑。</string>
+    <string name="recordings_original_transcript">原始转写</string>
+    <string name="recordings_retry_edit">重试编辑</string>
+    <string name="recordings_passage_corrected">已更正这段文字。</string>
+    <string name="recordings_label_unconfirmed">此标签的响应尚未确认。修改标签前，请先重试同一个标签。</string>
+    <string name="recordings_upload_deleted_on_server">此录音已从服务器删除。本地原始文件已保留。</string>
+    <string name="recordings_upload_not_verified">上传尚未验证。请保留原始文件并重试。</string>
+    <string name="recordings_local_original_changed">本地原始文件已更改。请保留文件并重新尝试导入。</string>
+    <string name="recordings_compatible_audio_preview">兼容音频预览</string>
+    <string name="recordings_audio_preview_note">音频预览在本地生成；原文件保持不变。</string>
+    <string name="recordings_preparing_compatible_audio">正在准备兼容音频预览</string>
+</resources>

@@ -12,8 +12,8 @@
     <string name="recordings_close">閉じる</string>
     <string name="recordings_confirmed_name">確認済みの名前</string>
     <string name="recordings_copy">コピー</string>
-    <string name="recordings_correct_text">テキストを修正</string>
-    <string name="recordings_correct_text_note">生成された文字起こしはそのまま保持します。有料の再処理を行わずに学習内容を調整します。</string>
+    <string name="recordings_correct_text">文字起こしを編集</string>
+    <string name="recordings_correct_text_note">テキスト編集は無料のメタデータ変更です。元の文字起こしを保持し、プロバイダーを再度呼び出さずに学習内容を調整します。</string>
     <string name="recordings_date_known">会議の日時がわかっている</string>
     <string name="recordings_delete">録音を削除</string>
     <string name="recordings_delete_text">派生音声、文字起こし、参照サンプルが削除されます。学習した内容も見直されます。</string>

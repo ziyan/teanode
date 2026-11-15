@@ -11,6 +11,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.teanode.app.TeaNodeApplication
 import com.teanode.kit.Connection
+import com.teanode.app.R
 import com.teanode.kit.TeaNodeError
 import com.teanode.kit.recordings.RECORDING_PART_BYTES
 import com.teanode.kit.recordings.RecordingLibrary
@@ -60,7 +61,7 @@ class RecordingUploadWorker(private val context: Context, parameters: WorkerPara
                 val isConnectivity = RecordingLibrary.isConnectivityFailure(failure)
                 journal.update(recording.id) { current ->
                     current.copy(
-                        uploadErrorMessage = failure.message ?: failure.toString(), isUploadWaitingForNetwork = isConnectivity,
+                        uploadErrorMessage = uploadErrorText(failure), isUploadWaitingForNetwork = isConnectivity,
                         isDeletedRemotely = failure == TeaNodeError.RecordingDeleted || current.isDeletedRemotely,
                     )
                 }
@@ -68,6 +69,13 @@ class RecordingUploadWorker(private val context: Context, parameters: WorkerPara
             }
         }
         if (shouldRetry) Result.retry() else Result.success()
+    }
+
+    /** What the row says when an upload stops: a deleted recording keeps its local original, and an answer that is not the receipt asked for is not a verified upload. */
+    private fun uploadErrorText(failure: Throwable): String = when (failure) {
+        TeaNodeError.RecordingDeleted -> context.getString(R.string.recordings_upload_deleted_on_server)
+        TeaNodeError.UnreadableAnswer -> context.getString(R.string.recordings_upload_not_verified)
+        else -> failure.message ?: failure.toString()
     }
 
     private suspend fun advance(recordingId: String, connection: Connection, journal: RecordingJournal) {
@@ -107,7 +115,7 @@ class RecordingUploadWorker(private val context: Context, parameters: WorkerPara
             val digest = media.originalSha256 ?: continue
             if (media.originalSizeBytes <= 0) continue
             if (media.mediaManifest == null) {
-                if (RecordingJournal.sha256(original) != digest) throw TeaNodeError.Refused("The local original changed. Keep it and try importing again.")
+                if (RecordingJournal.sha256(original) != digest) throw TeaNodeError.Refused(context.getString(R.string.recordings_local_original_changed))
                 val manifest = connection.createRecordingMedia(
                     remoteId, media.id, media.originalFilename, media.originalContentType, media.originalSizeBytes, digest, media.timelineStartMS, media.mediaDurationMS,
                 )
