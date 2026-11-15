@@ -138,6 +138,7 @@ fun KnowledgePageScreen(initialPath: String) {
     }
 
     val titleText = node?.let { found -> if (found.isSelf) connection.account.username else found.shownName }.orEmpty()
+    val askedAgentTitle = com.teanode.app.chats.ChatsEnvironment.of(androidx.compose.ui.platform.LocalContext.current, connection, com.teanode.app.session.LocalAppSession.current).agentTitle
     val saidPinned = stringResource(R.string.knowledge_pinned)
     val saidUnpinned = stringResource(R.string.knowledge_unpinned)
     val saidForgotten = stringResource(R.string.knowledge_forgotten)
@@ -168,6 +169,10 @@ fun KnowledgePageScreen(initialPath: String) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.knowledge_merge_into)) }, onClick = { isMenuOpen = false; sheet = PageSheet.Choose(PageChoice.Merge) })
                         }
                         DropdownMenuItem(text = { Text(stringResource(R.string.knowledge_share_menu)) }, onClick = { isMenuOpen = false; sheet = PageSheet.Share })
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.knowledge_ask_agent, askedAgentTitle)) },
+                            onClick = { isMenuOpen = false; com.teanode.app.chats.ChatsHooks.askAbout(navigator, com.teanode.kit.chats.AgentReference.knowledgePage(node.path, node.shownName)) },
+                        )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.knowledge_forget_page), color = MaterialTheme.colorScheme.error) },
                             onClick = { isMenuOpen = false; isConfirmingForget = true },
