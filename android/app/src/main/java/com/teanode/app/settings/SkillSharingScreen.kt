@@ -164,12 +164,13 @@ private fun skillCallOutcomeText(call: SkillShareCall): String {
  * this call on their computer once, declining stops it. The person it is shared with sees only how it stands.
  */
 @Composable
-private fun SkillShareCallCard(call: SkillShareCall, isOwner: Boolean, onAnswered: () -> Unit) {
+internal fun SkillShareCallCard(call: SkillShareCall, isOwner: Boolean, onAnswered: (answered: SkillShareCall?) -> Unit, hasDivider: Boolean = true) {
     val connection = LocalConnection.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val snackbar = com.teanode.app.ui.components.LocalSnackbar.current
     val actions = rememberActionRunner()
     var note by remember(call.id) { mutableStateOf("") }
+    var answeredCall: SkillShareCall? = null
     val approvedText = stringResource(R.string.settings_skills_approved)
     val deniedText = stringResource(R.string.settings_skills_denied)
     val approvalPrompt = stringResource(R.string.settings_skillcalls_prompt)
@@ -197,10 +198,10 @@ private fun SkillShareCallCard(call: SkillShareCall, isOwner: Boolean, onAnswere
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 androidx.compose.material3.Button(
                     onClick = {
-                        actions.run(approvedText, onSuccess = onAnswered) {
+                        actions.run(approvedText, onSuccess = { onAnswered(answeredCall) }) {
                             if (!DeviceOwner.confirm(context, approvalPrompt)) return@run
                             try {
-                                connection.answerSkillShareCall(call.id, true, note)
+                                answeredCall = connection.answerSkillShareCall(call.id, true, note)
                             } catch (failure: Exception) {
                                 snackbar.showProblem(nothingApprovedText)
                                 throw failure
@@ -211,9 +212,9 @@ private fun SkillShareCallCard(call: SkillShareCall, isOwner: Boolean, onAnswere
                 ) { Text(stringResource(R.string.settings_skillcalls_approve)) }
                 androidx.compose.material3.OutlinedButton(
                     onClick = {
-                        actions.run(deniedText, onSuccess = onAnswered) {
+                        actions.run(deniedText, onSuccess = { onAnswered(answeredCall) }) {
                             try {
-                                connection.answerSkillShareCall(call.id, false, note)
+                                answeredCall = connection.answerSkillShareCall(call.id, false, note)
                             } catch (failure: Exception) {
                                 snackbar.showProblem(nothingDeclinedText)
                                 throw failure
@@ -231,7 +232,7 @@ private fun SkillShareCallCard(call: SkillShareCall, isOwner: Boolean, onAnswere
         } else {
             Text(skillCallOutcomeText(call), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        androidx.compose.material3.HorizontalDivider()
+        if (hasDivider) androidx.compose.material3.HorizontalDivider()
     }
 }
 

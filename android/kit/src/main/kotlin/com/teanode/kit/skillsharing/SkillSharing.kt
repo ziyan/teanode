@@ -1,6 +1,7 @@
 package com.teanode.kit.skillsharing
 
 import com.teanode.kit.Connection
+import com.teanode.kit.isNotFoundRefusal
 import com.teanode.kit.settings.variablesOf
 import kotlinx.serialization.Serializable
 
@@ -162,3 +163,37 @@ suspend fun Connection.answerSkillShareCall(callId: String, isApproved: Boolean,
     execute<AnswerSkillShareCallAnswer>(
         SkillSharingDocuments.ANSWER_SKILL_SHARE_CALL, variablesOf("callId" to callId, "isApproved" to isApproved, "answerNote" to answerNote?.trim()?.ifEmpty { null }),
     ).AnswerSkillShareCall
+
+/**
+ * SkillShareCallReading is what reading one call of a share came to. Only the server answering that it is not there says
+ * the call is gone (the share was taken back, or the two no longer share a circle); a read that did not get through says
+ * nothing about the call, and is tried again.
+ */
+sealed class SkillShareCallReading {
+    data class Found(val call: SkillShareCall) : SkillShareCallReading()
+    data object Gone : SkillShareCallReading()
+    data object Failed : SkillShareCallReading()
+
+    companion object {
+        /** What a read of the share's calls came to for the one call. */
+        fun reading(callId: String, result: Result<List<SkillShareCall>>): SkillShareCallReading {
+            val calls = result.getOrNull()
+            if (calls != null) {
+                val call = calls.firstOrNull { candidate -> candidate.id == callId }
+                return if (call != null) Found(call) else Gone
+            }
+            return if (result.exceptionOrNull()?.isNotFoundRefusal == true) Gone else Failed
+        }
+    }
+}
+
+suspend fun Connection.readSkillShareCall(shareId: String, callId: String): SkillShareCallReading {
+    val result = try {
+        Result.success(skillShareCalls(shareId))
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        Result.failure(failure)
+    }
+    return SkillShareCallReading.reading(callId, result)
+}

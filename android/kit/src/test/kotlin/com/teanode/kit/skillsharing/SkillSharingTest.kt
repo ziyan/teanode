@@ -42,4 +42,29 @@ class SkillSharingTest {
         assertEquals("5.00 USD", call.amountText)
         assertEquals("", call.copy(amountMinor = null).amountText)
     }
+
+    @Test
+    fun aReadOfACallIsFoundOnlyWhenTheShareListsIt() {
+        val waiting = SkillShareCall(id = "call-1", callState = "waiting_for_approval")
+        assertEquals(SkillShareCallReading.Found(waiting), SkillShareCallReading.reading("call-1", Result.success(listOf(waiting))))
+        assertEquals(SkillShareCallReading.Gone, SkillShareCallReading.reading("other", Result.success(listOf(waiting))))
+    }
+
+    @Test
+    fun aCallIsGoneOnlyWhenTheServerAnswersThatItIsNotThere() {
+        assertEquals(SkillShareCallReading.Gone, SkillShareCallReading.reading("call-1", Result.failure(com.teanode.kit.TeaNodeError.Refused("api: not found"))))
+        // A read that did not get through says nothing about the call.
+        assertEquals(SkillShareCallReading.Failed, SkillShareCallReading.reading("call-1", Result.failure(java.io.IOException("offline"))))
+        assertEquals(SkillShareCallReading.Failed, SkillShareCallReading.reading("call-1", Result.failure(com.teanode.kit.TeaNodeError.Refused("api: forbidden"))))
+        assertEquals(SkillShareCallReading.Failed, SkillShareCallReading.reading("call-1", Result.failure(com.teanode.kit.TeaNodeError.UnreadableAnswer)))
+    }
+
+    @Test
+    fun theNoteOfTheMainConversationNamesTheCall() {
+        val note = com.teanode.kit.chats.SkillShareNote.parsing("""{"skillShareId":"share-1","callId":"call-1","granteeName":"Sam Example","granteeUserId":"sam-id"}""")
+        assertEquals("call-1", note?.callId)
+        assertEquals("share-1", note?.skillShareId)
+        assertNull(com.teanode.kit.chats.SkillShareNote.parsing("not json"))
+        assertNull(com.teanode.kit.chats.SkillShareNote.parsing("""{"callId":"call-1"}"""))
+    }
 }

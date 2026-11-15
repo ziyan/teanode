@@ -565,6 +565,7 @@ private fun ConversationItemView(
                     ToolFiles(line.text, line.detail)
                 }
                 line.kind == TranscriptLine.Kind.CheckIn -> CheckInLine(line)
+                line.kind == TranscriptLine.Kind.Note && line.detail == "skill_share_call_waiting" -> SkillShareCallWaitingCard(line.text)
                 line.kind == TranscriptLine.Kind.Note -> NoteLine(line)
                 line.kind == TranscriptLine.Kind.Approval || line.kind == TranscriptLine.Kind.Question -> CardSurface { CardView(line, model, environment.agentTitle) }
                 line.kind == TranscriptLine.Kind.CodingQuestion -> CardSurface(paddingDp = if (line.isDone) 12 else 16) { CodingQuestionCard(line, model) }
