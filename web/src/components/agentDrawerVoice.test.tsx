@@ -267,7 +267,8 @@ it('switches a chat to a button held to talk in place of the box, and keeps the 
   renderDrawer()
   await screen.findByText('Transcribing…')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Record a voice message' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Voice message' }))
   expect(screen.getByRole('button', { name: 'Hold to talk' })).toBeTruthy()
   expect(screen.queryByRole('textbox', { name: /Message/ })).toBeNull()
   expect(localStorage.getItem(CHAT_COMPOSER_MODE_KEY)).toBe('voice')
@@ -275,7 +276,8 @@ it('switches a chat to a button held to talk in place of the box, and keeps the 
   fireEvent.click(screen.getByRole('button', { name: 'Use the keyboard' }))
   expect(screen.queryByRole('button', { name: 'Hold to talk' })).toBeNull()
   expect(localStorage.getItem(CHAT_COMPOSER_MODE_KEY)).toBe('keyboard')
-  expect(screen.getByRole('button', { name: 'Record a voice message' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+  expect(screen.getByRole('button', { name: 'Voice message' })).toBeTruthy()
 })
 
 it('opens a chat in voice mode when that is the mode kept', async () => {
@@ -294,7 +296,9 @@ it('offers no voice mode when the server cannot make voice messages, whatever mo
   await screen.findByText('Transcribing…')
   await waitFor(() => expect(screen.getByRole('button', { name: 'Dictate' })).toBeTruthy())
   expect(screen.queryByRole('button', { name: 'Hold to talk' })).toBeNull()
-  expect(screen.queryByRole('button', { name: 'Record a voice message' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+  expect(screen.getByRole('button', { name: 'Attach a file' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Voice message' })).toBeNull()
 })
 
 it('has no voice mode in a conversation with the agent, only the microphone for dictating', async () => {
@@ -304,7 +308,21 @@ it('has no voice mode in a conversation with the agent, only the microphone for 
   renderDrawer()
   expect(await screen.findByRole('button', { name: 'Dictate' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Hold to talk' })).toBeNull()
-  expect(screen.queryByRole('button', { name: 'Record a voice message' })).toBeNull()
+  // Talk is offered with the agent, Voice message only in a chat.
+  fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+  expect(screen.queryByRole('button', { name: 'Voice message' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Talk' })).toBeTruthy()
+})
+
+it('offers Talk in the add menu only where a call can be made, and Voice message only in a chat', async () => {
+  answerWith({ isVoiceAvailable: true, isVoiceMessageAvailable: true })
+  openOn('chat-conversation')
+  renderDrawer()
+  await screen.findByText('Transcribing…')
+  fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+  expect(screen.getByRole('button', { name: 'Attach a file' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Voice message' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Talk' })).toBeNull()
 })
 
 it('shows no microphone to dictate into when the server has no voice', async () => {

@@ -116,16 +116,23 @@ its pull request is opened.
   agent, or the phone's own when the server has none. While it reads, a banner
   at the top of the conversation says so and stops it on a tap, and leaving the
   conversation stops it.
-- The composer is one rounded field with its buttons inside it: the words on
-  top, adding files at the bottom left, dictating (a microphone), calling and
-  sending at the bottom right. In a chat the waveform button is not a call:
-  it turns the field into a wide "Hold to talk" button beside a keyboard
-  button, as Messages does, and the choice is kept on the device. Holding
-  records a voice message, letting go sends it, and sliding up before letting
-  go cancels. A glass strip above the composer shows the time and "Slide up
-  to cancel" while it records. A voice message in the transcript is a bubble
-  with a play button, its waveform, its time, and its words under it in
-  secondary footnote text once the server has made them.
+- The composer is one rounded box with its buttons inside it. At rest it is a
+  pill on one row: add, the words, dictating (a microphone) and sending. When
+  the words would wrap, or files wait to go, it becomes a card with the same
+  field: the words across the top, adding files at the bottom left, dictating
+  and sending at the bottom right. The add menu also holds "Talk" (a call,
+  where the screen offers one) and, in a chat, "Voice message". That turns the
+  box into a keyboard button, a thin separator and a "Hold to talk" area of
+  the same size, and the choice is kept on the device. Holding records, letting
+  go sends, and sliding up before letting go cancels. While it records the
+  area shows the time, the live level and "Slide up to cancel". A voice message
+  in the transcript is a bubble with a play button, its waveform, its time, and
+  its words under it in secondary footnote text once the server has made them.
+- Earlier messages are read only by pulling the transcript down past its top
+  and letting go. A row at the top says what is above: pull down, release,
+  loading, a failure with Try again, or the start of the conversation. While
+  reading further up, the list does not move for new messages; a "New
+  messages" button above the composer scrolls to the end.
 - A chat with people has a phone button in its bar that starts an audio call.
   A chat with a call going shows a banner at its top ("Call going, 2 on it")
   with one prominent Join, hidden while this phone is on that call. A call's

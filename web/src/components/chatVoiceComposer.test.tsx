@@ -149,11 +149,15 @@ it('throws the recording away when the pointer slides up before release', async 
   // A little way up is still a hold.
   fireEvent.pointerMove(holdButton(), { pointerId: 1, clientY: 380 })
   expect(screen.getByText('Slide up to cancel')).toBeTruthy()
+  // Seventy pixels up is not yet far enough; past eighty is.
   fireEvent.pointerMove(holdButton(), { pointerId: 1, clientY: 330 })
-  expect(screen.getByText('Release to cancel')).toBeTruthy()
+  expect(screen.getByText('Slide up to cancel')).toBeTruthy()
+  fireEvent.pointerMove(holdButton(), { pointerId: 1, clientY: 319 })
+  expect(screen.getByText('Let go to cancel')).toBeTruthy()
+  expect(holdButton().className).toContain('is-canceling')
   now += 2000
-  fireEvent.pointerUp(holdButton(), { pointerId: 1, clientY: 330 })
-  await waitFor(() => expect(screen.queryByText('Release to cancel')).toBeNull())
+  fireEvent.pointerUp(holdButton(), { pointerId: 1, clientY: 319 })
+  await waitFor(() => expect(screen.queryByText('Let go to cancel')).toBeNull())
   expect(uploadFiles).not.toHaveBeenCalled()
   expect(graphql).not.toHaveBeenCalled()
   expect(stopTrack).toHaveBeenCalled()
@@ -224,7 +228,7 @@ it('sends on its own at two minutes and counts down from 1:50', async () => {
   fireEvent.pointerDown(holdButton(), { pointerId: 1, clientY: 400, button: 0 })
   await recording()
   now += 112_000
-  expect(await screen.findByText('0:08')).toBeTruthy()
+  expect(await screen.findByText('8 s left')).toBeTruthy()
   now += 9_000
   await waitFor(() => expect(graphql).toHaveBeenCalledTimes(1), { timeout: 2000 })
   expect(uploadFiles).toHaveBeenCalledTimes(1)

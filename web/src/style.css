@@ -24679,30 +24679,8 @@ a.journal-year-month:hover {
   color: #fff;
 }
 
-/* The strip above the composer while recording: the time, the level and what
-   releasing will do. It takes no pointer, so the hold under it is not lost. */
-.chat-voice-strip {
-  position: absolute;
-  right: 10px;
-  bottom: 100%;
-  left: 10px;
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2);
-  background: var(--surface);
-  box-shadow: var(--shadow-floating);
-  pointer-events: none;
-}
-
-.chat-voice-strip.is-canceling {
-  border-color: var(--bad);
-}
-
+/* While recording the hold area shows the time, the level and what letting
+   go will do. */
 .chat-voice-time {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
@@ -24713,14 +24691,12 @@ a.journal-year-month:hover {
 }
 
 .chat-voice-hint {
-  margin-left: auto;
   min-width: 0;
   font-size: 13px;
   color: var(--muted);
-  text-align: right;
 }
 
-.chat-voice-strip.is-canceling .chat-voice-hint {
+.chat-hold-to-talk.is-canceling .chat-voice-hint {
   color: var(--bad);
 }
 
@@ -25270,4 +25246,263 @@ button.voice-bubble-transcribe {
   min-height: 28px;
   padding: 2px var(--space-3);
   font-size: var(--text-label);
+}
+
+/* --- the drawer's composer: a pill that becomes a card -------------------
+   One box, the only bordered shape. At rest it is a single row: the add
+   menu, the field, the microphone and send. When the draft would wrap, or
+   something is waiting to be sent, the same textarea takes the full width
+   on top and the buttons drop to a row under it: the add menu at the left,
+   the rest at the right. Layout alone changes, so the textarea stays the
+   same element and keeps its focus and caret.
+
+   The buttons are drawn 36px across inside a 44px square, which is the
+   target, so a thumb finds them. */
+.agent-drawer-input.agent-composer {
+  position: relative;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  width: calc(100% - 2 * var(--composer-side-margin, 12px));
+  max-width: 752px;
+  margin: 4px auto calc(8px + env(safe-area-inset-bottom));
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--field);
+}
+
+.agent-drawer-input.agent-composer .icon-button {
+  width: 44px;
+  height: 44px;
+  padding: 4px;
+  border-radius: 50%;
+  background-clip: content-box;
+  background-color: color-mix(in srgb, var(--muted) 16%, transparent);
+  color: var(--muted);
+}
+
+.agent-drawer-input.agent-composer .icon-button:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--muted) 26%, transparent);
+  color: var(--text);
+}
+
+.agent-composer .menu-button {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.agent-composer textarea {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 36px;
+  min-height: 36px;
+  max-height: 160px;
+  margin: 0;
+  padding: 7px 10px;
+  border: none;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  transition: height 0.15s ease-out;
+}
+
+/* The placeholder is one line that ends in an ellipsis; it never makes the
+   box taller. */
+.agent-composer textarea::placeholder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-composer:not(.is-card) textarea {
+  overflow-y: hidden;
+  white-space: nowrap;
+}
+
+.agent-composer.is-card textarea {
+  flex: 1 0 100%;
+  order: 0;
+}
+
+.agent-composer.is-card > .agent-drawer-pending {
+  order: -1;
+}
+
+.agent-composer.is-card > .menu-button,
+.agent-composer.is-card > .icon-button {
+  order: 1;
+}
+
+.agent-composer.is-card > .menu-button {
+  margin-right: auto;
+}
+
+/* What waits to be sent sits inside the box, above the words, with no rule
+   of its own. */
+.agent-drawer-input.agent-composer > .agent-drawer-pending {
+  flex: 1 0 100%;
+  padding: 0 4px;
+  border-top: 0;
+}
+
+.agent-composer-mirror {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: pre;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+@media (pointer: coarse) {
+  .agent-composer-mirror {
+    font-size: 16px;
+  }
+}
+
+/* Dictating tints the microphone with the accent; a send with nothing to
+   send is grey, and one in flight shows a spinner. */
+.agent-drawer-input.agent-composer .agent-dictate.is-listening {
+  background-color: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+
+.agent-drawer-input.agent-composer .agent-send {
+  background-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.agent-drawer-input.agent-composer .agent-send:disabled {
+  background-color: color-mix(in srgb, var(--muted) 16%, transparent);
+  color: var(--muted);
+  opacity: 1;
+}
+
+.agent-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: agent-spinner-turn 0.8s linear infinite;
+}
+
+@keyframes agent-spinner-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Voice message mode is the same box: the keyboard button, a thin rule, and
+   a hold area with no fill of its own at rest. */
+.chat-voice-composer.agent-composer {
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.chat-voice-separator {
+  flex: 0 0 1px;
+  align-self: center;
+  width: 1px;
+  height: 30px;
+  background: var(--border);
+}
+
+.chat-voice-composer .chat-hold-to-talk {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1 1 0;
+  height: 44px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+}
+
+.chat-voice-composer .chat-hold-to-talk.is-recording,
+.chat-voice-composer .chat-hold-to-talk.is-recording:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+}
+
+.chat-voice-composer .chat-hold-to-talk.is-canceling,
+.chat-voice-composer .chat-hold-to-talk.is-canceling:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 18%, transparent);
+  color: var(--text);
+}
+
+.chat-voice-recording {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.chat-voice-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bad);
+}
+
+/* Reading back through a conversation: the row at the top says what is
+   above, and is the way to ask for it. */
+.agent-earlier-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
+.agent-earlier-row > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.agent-earlier-arrow {
+  display: inline-flex;
+  transition: transform 0.15s ease-out;
+}
+
+.agent-earlier-arrow.is-armed {
+  transform: rotate(180deg);
+}
+
+/* New messages arrived while reading further up: one button above the box
+   takes the person to the end. */
+.agent-drawer-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  right: 50%;
+  bottom: 96px;
+  width: auto;
+  height: auto;
+  min-height: 36px;
+  padding: 0 14px;
+  transform: translateX(50%);
+  border-radius: 18px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
 }

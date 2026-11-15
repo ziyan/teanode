@@ -28,6 +28,9 @@ final class VoiceMessageRecorder {
     private(set) var elapsedSeconds: TimeInterval = 0
     /// How loud the microphone is, for the meter: 0 to 1.
     private(set) var level: Float = 0
+    /// The last few levels, oldest first, for the live bars while recording.
+    private(set) var recentLevels: [Float] = []
+    static let recentLevelCount = 16
     /// Counts the recordings begun, for the haptic.
     private(set) var startedCount = 0
     /// A word of guidance that shows for a moment in the strip.
@@ -105,6 +108,7 @@ final class VoiceMessageRecorder {
         isCancelArmed = false
         elapsedSeconds = 0
         level = 0
+        recentLevels = []
         hintText = nil
         startedCount += 1
         watchForInterruptions()
@@ -123,6 +127,8 @@ final class VoiceMessageRecorder {
         elapsedSeconds = audioRecorder.currentTime
         // Decibels from silence at -160 up to 0; speech is heard from about -50.
         level = max(0, min(1, (audioRecorder.averagePower(forChannel: 0) + 50) / 50))
+        recentLevels.append(level)
+        if recentLevels.count > Self.recentLevelCount { recentLevels.removeFirst(recentLevels.count - Self.recentLevelCount) }
         if elapsedSeconds >= Self.longestSeconds { onLongest?() }
     }
 
@@ -156,6 +162,7 @@ final class VoiceMessageRecorder {
         isRecording = false
         isCancelArmed = false
         level = 0
+        recentLevels = []
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
         observers = []
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -194,6 +201,7 @@ final class VoiceMessageRecorder {
             isRecording = true
             elapsedSeconds = 7.4
             level = 0.6
+            recentLevels = [0.2, 0.4, 0.3, 0.6, 0.8, 0.5, 0.3, 0.7, 0.9, 0.6, 0.4, 0.5, 0.7, 0.3, 0.2, 0.6]
         }
     #endif
 }
