@@ -58,6 +58,14 @@ object FinanceMoney {
     }
 
     /** A share as a whole percentage; "<1%" for one that rounds to nothing. */
+    /** A share with one decimal, as the tax estimate's rows show it ("23.4%"). */
+    fun percentWithOneDecimal(share: Double, locale: Locale = Locale.getDefault()): String {
+        val format = NumberFormat.getPercentInstance(locale)
+        format.minimumFractionDigits = 1
+        format.maximumFractionDigits = 1
+        return format.format(share)
+    }
+
     fun percent(share: Double, locale: Locale = Locale.getDefault()): String {
         if (share > 0 && share < 0.005) return "<1%"
         val format = NumberFormat.getPercentInstance(locale)
