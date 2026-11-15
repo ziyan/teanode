@@ -11,6 +11,10 @@ import com.teanode.app.session.AppSession
 import com.teanode.app.session.KeystoreSecretStore
 import com.teanode.kit.OkHttpSubscriptions
 import com.teanode.kit.OkHttpTransport
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /** TeaNodeApplication holds the one [AppSession] of the process. */
 class TeaNodeApplication : Application() {
@@ -46,6 +50,12 @@ class TeaNodeApplication : Application() {
         Thread { runCatching { com.teanode.app.chats.ChatFilesCache.clean(this) } }.start()
         NotificationChannels.create(this)
         CallService.createChannels(this)
+        // The widgets read the account in use: another account, or none, is drawn at once.
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main).launch {
+            session.connection.map { connection -> connection?.accountKey }.distinctUntilChanged().drop(1).collect {
+                com.teanode.app.widgets.WidgetRefresh.all(this@TeaNodeApplication, isForced = true)
+            }
+        }
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityStarted(activity: Activity) {
                 startedActivityCount += 1
@@ -53,6 +63,8 @@ class TeaNodeApplication : Application() {
 
             override fun onActivityStopped(activity: Activity) {
                 startedActivityCount -= 1
+                // The app was left: what the person did in it (an event, mail read, a question answered) is on the widgets.
+                if (startedActivityCount == 0) com.teanode.app.widgets.WidgetRefresh.all(this@TeaNodeApplication)
             }
 
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}

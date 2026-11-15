@@ -19,4 +19,7 @@
     <string name="widgets_today_all_day">Today, all day</string>
     <string name="widgets_unread">%1$d unread</string>
     <string name="widgets_not_connected">Open TeaNode and connect it to your server first.</string>
+    <string name="widgets_ask_label">Ask</string>
+    <string name="widgets_call_label">Call</string>
+    <string name="widgets_record_label">Record</string>
 </resources>

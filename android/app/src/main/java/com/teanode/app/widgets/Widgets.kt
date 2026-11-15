@@ -6,9 +6,12 @@ import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.Image
+import androidx.glance.ImageProvider
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
@@ -19,6 +22,7 @@ import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
+import androidx.glance.layout.RowScope
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
@@ -49,6 +53,9 @@ import java.util.Date
 
 /** GlanceEntry is one moment of a widget: what it shows, or that nobody is signed in. */
 class GlanceEntry(val glance: Glance?, val isConnected: Boolean, val accountKey: String)
+
+/** What a widget reads when it is drawn; the screenshot tests put an invented reading here, since they have no server. */
+internal var glanceReader: suspend (Context) -> GlanceEntry = { context -> readGlance(context) }
 
 private suspend fun readGlance(context: Context): GlanceEntry = withContext(Dispatchers.IO) {
     val push = (context.applicationContext as TeaNodeApplication).push
@@ -82,7 +89,7 @@ private fun Panel(content: @Composable () -> Unit) {
 /** AgentWidget opens the conversation with the agent, or a call with it. */
 class AgentWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val entry = readGlance(context)
+        val entry = glanceReader(context)
         val name = entry.glance?.agentName?.ifEmpty { null } ?: context.getString(R.string.widgets_agent_name)
         provideContent {
             Panel {
@@ -90,12 +97,19 @@ class AgentWidget : GlanceAppWidget() {
                     Text(name, style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = GlanceTheme.colors.onSurface), maxLines = 1)
                     Text(context.getString(R.string.widgets_ask_anything), style = TextStyle(fontSize = 12.sp, color = GlanceTheme.colors.onSurfaceVariant))
                     Spacer(GlanceModifier.defaultWeight())
-                    Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        WidgetButton(context.getString(R.string.widgets_ask_your_agent), "A", actionStartActivity(openingIntent(context, "agent/home")))
-                        Spacer(GlanceModifier.width(8.dp))
-                        WidgetButton(context.getString(R.string.widgets_call_your_agent), "C", actionStartActivity(openingIntent(context, "agent/home", isCall = true)))
-                        Spacer(GlanceModifier.width(8.dp))
-                        WidgetButton(context.getString(R.string.widgets_start_recording), "R", actionStartActivity(openingIntent(context, "recordings/capture")))
+                    Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                        WidgetButton(
+                            context, R.drawable.ic_widget_chat, R.string.widgets_ask_label, R.string.widgets_ask_your_agent,
+                            actionStartActivity(openingIntent(context, "agent/home")),
+                        )
+                        WidgetButton(
+                            context, R.drawable.ic_widget_call, R.string.widgets_call_label, R.string.widgets_call_your_agent,
+                            actionStartActivity(openingIntent(context, "agent/home", isCall = true)),
+                        )
+                        WidgetButton(
+                            context, R.drawable.ic_widget_mic, R.string.widgets_record_label, R.string.widgets_start_recording,
+                            actionStartActivity(openingIntent(context, "recordings/capture")),
+                        )
                     }
                 }
             }
@@ -103,13 +117,26 @@ class AgentWidget : GlanceAppWidget() {
     }
 }
 
+/** One button of the agent widget: an icon in a circle with its word under it, which the whole column presses. */
 @Composable
-private fun WidgetButton(description: String, letter: String, action: androidx.glance.action.Action) {
-    androidx.glance.layout.Box(
-        GlanceModifier.height(40.dp).width(40.dp).cornerRadius(20.dp).background(GlanceTheme.colors.primaryContainer).clickable(action),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(letter, style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GlanceTheme.colors.onPrimaryContainer))
+private fun RowScope.WidgetButton(context: Context, icon: Int, label: Int, description: Int, action: androidx.glance.action.Action) {
+    Column(GlanceModifier.defaultWeight().clickable(action), horizontalAlignment = Alignment.CenterHorizontally) {
+        androidx.glance.layout.Box(
+            GlanceModifier.height(40.dp).width(40.dp).cornerRadius(20.dp).background(GlanceTheme.colors.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                provider = ImageProvider(icon),
+                contentDescription = context.getString(description),
+                modifier = GlanceModifier.height(22.dp).width(22.dp),
+                colorFilter = ColorFilter.tint(GlanceTheme.colors.onPrimaryContainer),
+            )
+        }
+        Text(
+            context.getString(label),
+            style = TextStyle(fontSize = 11.sp, color = GlanceTheme.colors.onSurfaceVariant),
+            maxLines = 1,
+        )
     }
 }
 
@@ -122,7 +149,7 @@ class AgentWidgetReceiver : GlanceAppWidgetReceiver() {
 /** WaitingWidget is how many questions and approvals wait for the person, and the newest; a tap opens its conversation. */
 class WaitingWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val entry = readGlance(context)
+        val entry = glanceReader(context)
         val count = entry.glance?.waitingCount ?: 0
         val newest = entry.glance?.newestWaiting
         val open = NotificationInfo(accountKey = entry.accountKey, notificationKind = "message", conversationId = newest?.conversationId.orEmpty())
@@ -170,7 +197,7 @@ class WaitingWidgetReceiver : GlanceAppWidgetReceiver() {
 /** NextWidget is what is next: the coming events and the unread mail. */
 class NextWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val entry = readGlance(context)
+        val entry = glanceReader(context)
         provideContent {
             Panel {
                 if (!entry.isConnected) {

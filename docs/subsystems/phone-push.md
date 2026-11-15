@@ -44,7 +44,7 @@ registration sealed before Android was served has none and is an iPhone's.
 | Delivered by | APNs, HTTP/2, ES256 key | FCM HTTP v1, RS256 service account |
 | Ordinary notification | `alert` registration: an `aps` alert the notification service extension rewrites | `alert` registration: a data-only message `{sealed, pushKind: "notification", threadId}`, high priority, collapse key from the card |
 | Ring for a call | `voip` registration, a PushKit push | `voip` registration, the same FCM token: a data-only message `{sealed, pushKind: "call"}`, high priority, no collapse key |
-| Live Activities | `liveactivity` registrations | refused |
+| Turn left running | `liveactivity` registrations: a Live Activity updated through its push token | `liveactivity` registration, the same FCM token: a data-only message `{pushKind: "turn", activityState, isActivityEnded, activityChangedAt}`, high priority, collapse key `turn`; the app draws the ongoing notification |
 
 An Android message has no `notification` block. A message with one is drawn by
 the system with the relay's words, which would have to be readable; a data
@@ -53,6 +53,10 @@ itself, or for `pushKind: "call"` shows an incoming call with a full-screen
 intent. Lifetimes are the iPhone's: an hour for a notification (a server may
 ask for less, never more than a day), sixty seconds for a ring (never more than
 two minutes), as the FCM `ttl`.
+
+A turn's message carries no sealed content and no words, only the one word a Live
+Activity is told (`working`, `waiting`, `done`, `failed`); the app writes the
+notification from it and from the agent's name it kept when it registered.
 
 The phone's own registrations from one FCM token are two sealed registrations,
 `alert` and `voip`, sent as `pushRegistration` and `voipPushRegistration`. So

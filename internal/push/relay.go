@@ -62,7 +62,10 @@ var registrationTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_:-]{50,512}$`)
 // states (activityStates), and the app's widget says what each means. A VoIP
 // push is handed to the app, which decrypts it with its own key like any
 // other, so it carries the sealed content and nothing else. An Android
-// phone's messages are all that way: data only, sealed.
+// phone's messages are all that way: data only, sealed, except a turn's
+// state: an Android phone registers its token as a Live Activity too, and
+// is told the same one word, in a data message for the app to show as the
+// notification of a turn left running.
 func (self *Relay) Register(deviceToken string, isSandbox bool, pushType, platform string, now time.Time) (string, error) {
 	if platform == "" {
 		platform = PlatformIOS
@@ -88,9 +91,6 @@ func (self *Relay) Register(deviceToken string, isSandbox bool, pushType, platfo
 	case PlatformAndroid:
 		if self.fcm == nil {
 			return "", fmt.Errorf("%w: this relay does not serve Android phones", ErrRefused)
-		}
-		if pushType == PushTypeLiveActivity {
-			return "", fmt.Errorf("%w: Live Activities are the iPhone's", ErrRefused)
 		}
 		if !registrationTokenPattern.MatchString(deviceToken) {
 			return "", fmt.Errorf("%w: that is not a registration token", ErrRefused)

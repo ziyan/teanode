@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -300,6 +301,52 @@ func TestAnAndroidPhoneRegistersAndIsSentDataOnly(test *testing.T) {
 	}
 }
 
+func TestAnAndroidTurnIsToldAStateAndNothingElse(test *testing.T) {
+	google, relay := newAndroidRelay(test)
+	now := time.Now()
+	turn, err := relay.Register(testRegistrationToken, false, PushTypeLiveActivity, PlatformAndroid, now)
+	if err != nil {
+		test.Fatalf("Register: %s", err)
+	}
+	changedAt := now.Add(-time.Second)
+	if err := relay.Send(context.Background(), turn, &Delivery{ActivityState: "waiting", ActivityChangedAt: changedAt}); err != nil {
+		test.Fatalf("Send: %s", err)
+	}
+	if err := relay.Send(context.Background(), turn, &Delivery{ActivityState: "done", IsActivityEnded: true}); err != nil {
+		test.Fatalf("Send: %s", err)
+	}
+	message := google.messages[0]["message"].(map[string]any)
+	android := message["android"].(map[string]any)
+	data := message["data"].(map[string]any)
+	if android["priority"] != "HIGH" || android["collapse_key"] != "turn" || android["ttl"] != "3600s" {
+		test.Errorf("android %v", android)
+	}
+	if data["pushKind"] != "turn" || data["activityState"] != "waiting" || data["isActivityEnded"] != "false" ||
+		data["activityChangedAt"] != strconv.FormatInt(changedAt.Unix(), 10) || len(data) != 4 {
+		test.Errorf("data %v", data)
+	}
+	if ended := google.messages[1]["message"].(map[string]any)["data"].(map[string]any); ended["isActivityEnded"] != "true" || ended["activityState"] != "done" {
+		test.Errorf("the end was sent as %v", ended)
+	}
+	// Words of its own, or a state a turn does not have, are refused.
+	for _, forged := range []*Delivery{{Sealed: "Your account is locked."}, {ActivityState: "exploding"}, {ActivityState: "working", ThreadID: "ab"}, {}} {
+		if err := relay.Send(context.Background(), turn, forged); !errors.Is(err, ErrRefused) {
+			test.Errorf("%+v to an Android turn came back as %v", forged, err)
+		}
+	}
+	// A turn's registration is not the phone's: no state goes to an alert one.
+	alert, err := relay.Register(testRegistrationToken, false, "", PlatformAndroid, now)
+	if err != nil {
+		test.Fatalf("Register: %s", err)
+	}
+	if err := relay.Send(context.Background(), alert, &Delivery{ActivityState: "working"}); !errors.Is(err, ErrRefused) {
+		test.Errorf("a state to an Android alert came back as %v", err)
+	}
+	if len(google.messages) != 2 {
+		test.Errorf("%d messages reached Firebase, want the 2 states", len(google.messages))
+	}
+}
+
 func TestAnAndroidRingIsAHighPriorityCallThatIsNotCollapsed(test *testing.T) {
 	google, relay := newAndroidRelay(test)
 	now := time.Now()
@@ -348,8 +395,8 @@ func TestAnAndroidRingIsAHighPriorityCallThatIsNotCollapsed(test *testing.T) {
 func TestAnAndroidRegistrationIsCheckedAndKeptApartFromTheIPhones(test *testing.T) {
 	_, androidRelay := newAndroidRelay(test)
 	now := time.Now()
-	if _, err := androidRelay.Register(testRegistrationToken, false, PushTypeLiveActivity, PlatformAndroid, now); !errors.Is(err, ErrRefused) {
-		test.Errorf("a Live Activity on Android came back as %v", err)
+	if _, err := androidRelay.Register(testRegistrationToken, false, PushTypeLiveActivity, PlatformAndroid, now); err != nil {
+		test.Errorf("a turn on Android came back as %v", err)
 	}
 	for name, token := range map[string]string{"empty": "", "short": "abc", "spaces": strings.Repeat("a b ", 30), "a URL": "https://example.com/" + strings.Repeat("a", 60)} {
 		if _, err := androidRelay.Register(token, false, "", PlatformAndroid, now); !errors.Is(err, ErrRefused) {

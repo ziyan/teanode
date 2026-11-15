@@ -10,6 +10,7 @@ import com.teanode.kit.SecretAccountStore
 import com.teanode.kit.notifications.AgentPhone
 import com.teanode.kit.notifications.PayloadKeyring
 import com.teanode.kit.notifications.PushRelay
+import com.teanode.kit.notifications.registerLiveActivity
 import com.teanode.kit.notifications.registerPhone
 import com.teanode.kit.notifications.updatePhone
 import com.teanode.kit.calls.updatePhoneRinging
@@ -157,6 +158,26 @@ class PushRegistrar(
             phones.update { map -> map + (connection.accountKey to connection.updatePhoneRinging(known.id, registration)) }
         } catch (_: Exception) {
             // Next start.
+        }
+    }
+
+    /**
+     * Has the account's server tell this phone where a turn comes to while the app is out of front: a third
+     * registration from the same Firebase token, of push type liveactivity, given with the run. False when it could not
+     * be made (no push here, or a relay that does not follow turns yet): the notification then stays as the app's own
+     * feed keeps it, and the caller takes it away rather than leave one that may say "working" after the turn is over.
+     */
+    suspend fun followTurn(connection: Connection, runId: String): Boolean {
+        if (!PushAvailability.areNotificationsAllowed(context)) return false
+        val token = PushAvailability.token(context) ?: return false
+        return try {
+            val registration = PushRelay(transport).register(token, pushType = "liveactivity")
+            connection.registerLiveActivity(runId, registration)
+            true
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            false
         }
     }
 

@@ -80,6 +80,15 @@ const (
 
 	FCMPushKindNotification = "notification"
 	FCMPushKindCall         = "call"
+	// FCMPushKindTurn is a turn's state, for the notification of a turn left
+	// running: it carries no sealed content, only the word and when it came.
+	FCMPushKindTurn = "turn"
+
+	// The data of a turn message: the state (one of activityStates), whether
+	// it ends the turn, and when it came, in Unix seconds.
+	FCMDataActivityState     = "activityState"
+	FCMDataIsActivityEnded   = "isActivityEnded"
+	FCMDataActivityChangedAt = "activityChangedAt"
 )
 
 // serviceAccount is the part of a Google service account's JSON file the
