@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.SystemUpdate
@@ -29,6 +30,7 @@ import com.teanode.app.ui.components.ConfirmationDialog
 import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
+import com.teanode.app.ui.components.TeaNodeNavigationRow
 import com.teanode.app.ui.components.TeaNodeRow
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.app.ui.components.TeaNodeSectionHeader
@@ -91,6 +93,7 @@ private fun serverTabTitle(tab: ServerSettingsTab): String = stringResource(
 @Composable
 private fun ServerAboutTab() {
     val connection = LocalConnection.current
+    val navigator = com.teanode.app.shell.LocalAppNavigator.current
     val actions = rememberActionRunner()
     val status = rememberLoad { connection.serverStatus() }
     val upgrade = rememberLoad { connection.serverUpgrade() }
@@ -118,7 +121,10 @@ private fun ServerAboutTab() {
                         headline = stringResource(if (release.isAvailable) R.string.settings_server_upgrade_available else R.string.settings_server_up_to_date), leadingIcon = Icons.Outlined.SystemUpdate,
                         supporting = listOfNotNull(if (release.isAvailable && release.latest != null) "${release.current} \u2192 ${release.latest}" else release.current, release.refusalReason?.takeIf { reason -> release.isAvailable && !release.isApplicable }, release.errorMessage, release.checkError).joinToString("\n"), supportingMaxLines = 5,
                     )
-                    release.notes?.takeIf { notes -> notes.isNotEmpty() }?.let { notes -> FooterText(notes) }
+                    // Shown whenever there are notes, not only when behind: a development build is ahead of every release and still has a version worth reading about.
+                    release.notes?.takeIf { notes -> notes.isNotEmpty() }?.let {
+                        TeaNodeNavigationRow(stringResource(R.string.manage_release_notes_title, release.latest.orEmpty()), { navigator.navigate(com.teanode.app.settings.manage.ManageRoutes.RELEASE_NOTES) }, leadingIcon = Icons.Outlined.Description)
+                    }
                     TeaNodeRow(headline = stringResource(R.string.settings_server_check), onClick = if (actions.isWorking) null else ({ actions.run(checkedText, onSuccess = { upgrade.refresh() }) { connection.serverUpgrade(isChecking = true) } }))
                     if (release.canUpgrade && !release.isUpgrading) TeaNodeRow(headline = stringResource(R.string.settings_server_upgrade_to, release.latest.orEmpty()), onClick = { upgradeToApply = release.latest })
                     if (release.isUpgrading) TeaNodeRow(headline = stringResource(R.string.settings_server_upgrading))

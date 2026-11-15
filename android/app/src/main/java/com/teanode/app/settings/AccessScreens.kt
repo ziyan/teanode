@@ -237,7 +237,7 @@ private fun permissionKindTitle(kind: AccessPermissionKind): String = stringReso
 
 /** Everybody with an account on the server: search, make, edit, disable, set a password, remove. */
 @Composable
-fun PeopleScreen(onBack: () -> Unit) {
+fun PeopleScreen(onBack: () -> Unit, onOpenPerson: ((String) -> Unit)? = null) {
     val directory = rememberAccessDirectory()
     val connection = LocalConnection.current
     var searchText by remember { mutableStateOf("") }
@@ -267,7 +267,7 @@ fun PeopleScreen(onBack: () -> Unit) {
             TeaNodeRow(
                 headline = user.displayName, supporting = (listOf(user.username).filter { name -> name != user.displayName } + listOfNotNull(user.email?.ifEmpty { null }) + tags).joinToString(" · ").ifEmpty { null },
                 leading = { AvatarView(user.displayName, user.avatarUrl, user.avatarColorIndex, size = 40.dp) }, supportingMaxLines = 5,
-                onClick = if (canManage) ({ editing = user }) else null,
+                onClick = if (onOpenPerson != null) ({ onOpenPerson(user.id) }) else if (canManage) ({ editing = user }) else null,
             )
         }
         item { FooterText(stringResource(R.string.settings_people_footer)) }
@@ -505,6 +505,12 @@ fun AuditLogScreen(onBack: () -> Unit) {
     var resourceType by remember { mutableStateOf("") }
     var viewing by remember { mutableStateOf<AuditEvent?>(null) }
     val loaded = rememberLoad(resourceType) { connection.auditEvents(resourceType.ifEmpty { null }) }
+    val openedEvent = viewing
+    if (openedEvent != null) {
+        androidx.activity.compose.BackHandler { viewing = null }
+        com.teanode.app.settings.manage.AuditEventDetailScreen(openedEvent, onBack = { viewing = null })
+        return
+    }
     val everything = stringResource(R.string.settings_audit_everything)
     LoadedSettingsPage(
         stringResource(R.string.settings_audit_title), onBack, loaded, isEmpty = { page -> page.events.isEmpty() },
@@ -526,19 +532,6 @@ fun AuditLogScreen(onBack: () -> Unit) {
             )
         }
         item { FooterText(stringResource(R.string.settings_audit_footer, page.events.size, page.total)) }
-    }
-    viewing?.let { event ->
-        FormDialog(title = auditSummary(event), confirmLabel = stringResource(R.string.common_done), isConfirmEnabled = true, onConfirm = { viewing = null }, onDismiss = { viewing = null }) {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (event.isByAgent) Text(stringResource(R.string.settings_audit_agent_made), style = MaterialTheme.typography.bodySmall)
-                TeaNodeRow(headline = event.actorName, supporting = event.resourceId)
-                if (event.changedFields.isEmpty()) Text(stringResource(R.string.settings_audit_nothing_differs), style = MaterialTheme.typography.bodyMedium)
-                event.changedFields.forEach { field ->
-                    val unset = stringResource(R.string.settings_audit_unset)
-                    TeaNodeRow(headline = field, supporting = "${AuditEvent.describe(event.beforeValue(field)) ?: unset}  →  ${AuditEvent.describe(event.afterValue(field)) ?: unset}", supportingMaxLines = 6)
-                }
-            }
-        }
     }
 }
 
