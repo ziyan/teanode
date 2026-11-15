@@ -11,6 +11,8 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Devices
@@ -71,11 +73,19 @@ private fun copyToClipboard(context: Context, text: String) {
 fun SessionsScreen(onBack: () -> Unit) {
     val connection = LocalConnection.current
     val actions = rememberActionRunner()
-    val loaded = rememberLoad { AccountSession.listed(connection.accountSessions(includeRevoked = true)) }
+    var isShowingRevoked by remember { mutableStateOf(false) }
+    val loaded = rememberLoad(isShowingRevoked) { AccountSession.listed(connection.accountSessions(includeRevoked = isShowingRevoked)) }
     var revoking by remember { mutableStateOf<AccountSession?>(null) }
     var isConfirmingAll by remember { mutableStateOf(false) }
     val signedOutText = stringResource(R.string.settings_sessions_signed_out)
-    LoadedSettingsPage(stringResource(R.string.settings_sessions_title), onBack, loaded) { sessions ->
+    LoadedSettingsPage(
+        stringResource(R.string.settings_sessions_title), onBack, loaded,
+        actions = {
+            IconButton(onClick = { isShowingRevoked = !isShowingRevoked }) {
+                Icon(if (isShowingRevoked) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, stringResource(if (isShowingRevoked) R.string.settings_sessions_hide_signed_out else R.string.settings_sessions_show_signed_out))
+            }
+        },
+    ) { sessions ->
         item {
             if (sessions.size <= 1) FooterText(stringResource(R.string.settings_sessions_nothing_else))
             FooterText(stringResource(R.string.settings_sessions_footer))
@@ -144,7 +154,8 @@ fun TokensScreen(onBack: () -> Unit) {
     val connection = LocalConnection.current
     val actions = rememberActionRunner()
     val context = LocalContext.current
-    val loaded = rememberLoad { connection.apiTokens(includeRevoked = true) }
+    var isShowingRevoked by remember { mutableStateOf(false) }
+    val loaded = rememberLoad(isShowingRevoked) { connection.apiTokens(includeRevoked = isShowingRevoked) }
     var editing by remember { mutableStateOf<APIToken?>(null) }
     var revoking by remember { mutableStateOf<APIToken?>(null) }
     var isMaking by remember { mutableStateOf(false) }
@@ -153,6 +164,11 @@ fun TokensScreen(onBack: () -> Unit) {
     val revokedText = stringResource(R.string.settings_tokens_revoked)
     LoadedSettingsPage(
         stringResource(R.string.settings_tokens_title), onBack, loaded,
+        actions = {
+            IconButton(onClick = { isShowingRevoked = !isShowingRevoked }) {
+                Icon(if (isShowingRevoked) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, stringResource(if (isShowingRevoked) R.string.settings_tokens_hide_revoked else R.string.settings_tokens_show_revoked))
+            }
+        },
         floatingActionButton = { FloatingActionButton(onClick = { isMaking = true }) { Icon(Icons.Outlined.Add, stringResource(R.string.settings_tokens_new)) } },
         isEmpty = { tokens -> tokens.isEmpty() },
         empty = { EmptyState(Icons.Outlined.Terminal, stringResource(R.string.settings_tokens_none), description = stringResource(R.string.settings_tokens_none_detail)) },

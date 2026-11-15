@@ -130,7 +130,7 @@ val settingsDemoAnswerers: List<DemoAnswerer> = com.teanode.app.settings.manage.
     ),
     graphQLField(
         "ListSkillShareCalls",
-        """[{"id":"call1","skillShareId":"ss1","skillName":"Travel booking","granteeUserId":"user-alex","granteeUsername":"alex","granteeName":"Alex Sample","ownerName":"Robin Example","toolName":"book_flight","toolArguments":"{}","requestReason":"A flight to the coast on Friday.","amountMinor":18900,"currencyCode":"usd","callState":"waiting_for_approval","toolOutput":"","answerNote":"","createdAt":"2030-01-05T09:00:00Z"}]""",
+        """[{"id":"call1","skillShareId":"ss1","skillName":"Travel booking","granteeUserId":"user-alex","granteeUsername":"alex","granteeName":"Alex Sample","ownerName":"Robin Example","toolName":"book_flight","toolArguments":"{\"destination\":\"Example Coast\",\"depart_on\":\"2030-01-11\",\"amount_minor\":18900}","amountArgumentName":"amount_minor","requestReason":"A flight to the coast on Friday.","amountMinor":18900,"currencyCode":"usd","callState":"waiting_for_approval","toolOutput":"","answerNote":"","createdAt":"2030-01-05T09:00:00Z"}]""",
     ),
     graphQLField("ListAgentSkills", """[{"name":"Travel booking","description":"Search and book flights","enabled":true,"readable":true,"tools":[{"name":"search_flights","description":"Search flights"},{"name":"book_flight","description":"Book a flight","isAmountDeclared":true}]}]"""),
     graphQLField(
@@ -156,12 +156,38 @@ val settingsDemoAnswerers: List<DemoAnswerer> = com.teanode.app.settings.manage.
         ]""",
         "ListAgentAlertMutes" to """[{"id":"mute1","muteScope":"sender","muteTarget":"news@example.com","createdAt":"2030-01-02T00:00:00Z"}]""",
     ),
-    graphQLField("ListAgentLearned", """[{"fact":{"id":"f1","number":1,"kind":"preference","text":"Prefers tea in the afternoon.","inferred":false},"path":"people/robin","name":"Robin"},{"fact":{"id":"f2","number":2,"kind":"plan","text":"Plans a trip to the coast in spring.","inferred":true},"path":"plans/coast","name":"Coast trip"}]"""),
+    graphQLField("ListAgentLearned", """[{"fact":{"id":"f1","number":1,"kind":"preference","text":"Prefers tea in the afternoon.","inferred":false,"evidence":[{"kind":"message","id":"m1","quote":"I never drink coffee after lunch."}]},"path":"people/robin","name":"Robin"},{"fact":{"id":"f2","number":2,"kind":"plan","text":"Plans a trip to the coast in spring.","inferred":true},"path":"plans/coast","name":"Coast trip"}]"""),
     graphQLField("ListAgentCorrections", """[{"id":"c1","createdAt":"2030-01-03T00:00:00Z","kind":"fact","said":"The club meets on Thursdays, not Fridays."}]"""),
     graphQLField("ListAgentEvaluationQuestions", """[{"id":"q1","questionText":"Which day does the club meet?","expectedAnswer":"Thursday","questionState":"confirmed","questionKind":"direct"}]"""),
     graphQLField(
         "ListAgentServers",
-        """[{"name":"notes","transport":"http","auth":"user","oauthRedirect":"","headless":false,"enabled":true,"status":"connected","tools":6},{"name":"calendar-tools","transport":"http","auth":"oauth","oauthRedirect":"","headless":false,"enabled":true,"status":"failed","lastError":"The server did not answer.","tools":0}]""",
+        """[{"name":"notes","transport":"http","auth":"user","oauthRedirect":"","headless":false,"enabled":true,"status":"connected","tools":6},{"name":"calendar-tools","transport":"http","auth":"oauth","oauthRedirect":"","headless":false,"enabled":true,"status":"error","lastError":"The server did not answer.","tools":0},{"name":"team-wiki","transport":"http","auth":"none","oauthRedirect":"","headless":false,"enabled":true,"status":"connected","tools":4},{"name":"ticket-tracker","transport":"http","auth":"user","oauthRedirect":"","headless":true,"enabled":true,"status":"","tools":0}]""",
+    ),
+    graphQLField(
+        "ListAgentFollowUps",
+        """[
+          {"id":"fu1","followUpKind":"bill","followUpTitle":"Water bill","payee":"City Water","amount":"84.20","currencyCode":"USD","dueOn":"2030-01-12","followUpState":"overdue"},
+          {"id":"fu2","followUpKind":"parcel","followUpTitle":"Books from the shop","carrier":"Example Post","trackingNumber":"EX123456","followUpState":"stalled"},
+          {"id":"fu3","followUpKind":"event","followUpTitle":"Open day at the school","place":"Main hall","dueOn":"2030-02-03","sourceUrl":"https://www.example.com/school/open-day","followUpState":"open"}
+        ]""",
+    ),
+    graphQLField(
+        "ListAgentReplies",
+        """{"total":3,"replies":[
+          {"id":"rp1","createdAt":"2030-01-05T08:00:00Z","status":"held","subject":"Lunch on Friday","to":"sam@example.com","sendAfter":"2030-01-05T10:00:00Z"},
+          {"id":"rp2","createdAt":"2030-01-04T08:00:00Z","sentAt":"2030-01-04T08:05:00Z","status":"sent","subject":"Meeting notes","to":"alex@example.com"},
+          {"id":"rp3","createdAt":"2030-01-03T08:00:00Z","status":"refused","reason":"It asked for a decision only you can make.","subject":"Contract question","to":"robin@example.com"}
+        ]}""",
+    ),
+    graphQLField("GetAgentBackgroundWork", """{"id":"w2","workKind":"survey","workStatus":"done","title":"Trip ideas","errorMessage":"","resultText":"## Three options\n\n- A weekend by the coast\n- A train trip inland\n- A quiet cabin","runIds":["r1","r2"],"createdAt":"2030-01-04T09:00:00Z","finishedAt":"2030-01-04T09:05:00Z"}"""),
+    graphQLField("ListAgentSkillSecrets", """[{"skill":"weather","key":"WEATHER_API_KEY","description":"The key for the weather service","set":true},{"skill":"tracker","key":"TRACKER_TOKEN","description":"","set":false}]"""),
+    graphQLFields(
+        "ListAgentReaches" to """[{"kind":"skill","name":"weather","computerName":"","isOnComputer":false},{"kind":"server","name":"ticket-tracker","computerName":"","isOnComputer":true},{"kind":"server","name":"notes","computerName":"old-box","isOnComputer":true}]""",
+        "ReadAgentComputers" to """{"computers":[{"name":"studio","system":"Linux","description":"The desk computer"},{"name":"laptop","system":"Linux","description":""}]}""",
+    ),
+    graphQLField(
+        "ListAgentChannels",
+        """[{"kind":"telegram","hasToken":true,"botName":"example_helper_bot","linked":false,"linkCode":"4821","enabled":true,"running":true},{"kind":"discord","hasToken":true,"botName":"Helper","linked":true,"linkedName":"Alex","enabled":false,"running":false}]""",
     ),
     graphQLField(
         "ListAgentBackgroundWork",
