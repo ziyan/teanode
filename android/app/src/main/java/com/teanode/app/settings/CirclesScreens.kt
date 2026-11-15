@@ -538,7 +538,7 @@ private fun CircleAccountDialog(directory: CircleDirectory, circle: PeopleCircle
 }
 
 @Composable
-private fun CircleRelationshipDialog(directory: CircleDirectory, member: CircleMember, onDismiss: () -> Unit) {
+internal fun CircleRelationshipDialog(directory: CircleDirectory, member: CircleMember, onDismiss: () -> Unit) {
     val connection = LocalConnection.current
     val loaded = com.teanode.app.ui.components.rememberLoad { connection.relationshipTerms() }
     val terms = loaded.value
