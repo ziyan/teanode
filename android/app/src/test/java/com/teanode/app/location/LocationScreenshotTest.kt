@@ -9,6 +9,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.performTextInput
 import com.teanode.app.demo.DemoHost
 import com.teanode.app.screenshots.Look
 import com.teanode.app.screenshots.PHONE_QUALIFIERS
@@ -138,6 +139,26 @@ class LocationScreenshotTest {
         }
         waitFor("Corner")
         composeRule.photograph("location-check-in-light")
+    }
+
+    @Test fun `check in with nothing nearby`() {
+        draw(Look.Light, LocationDemo.Scenario.Empty) {
+            val model = rememberLocationModel()
+            CheckInSheet(model) {}
+        }
+        waitFor("Nothing with a name nearby")
+        composeRule.photograph("location-check-in-nothing-nearby-light")
+    }
+
+    @Test fun `check in with words typed and not searched`() {
+        draw(Look.Dark) {
+            val model = rememberLocationModel()
+            CheckInSheet(model) {}
+        }
+        waitFor("Corner")
+        composeRule.onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("harbor")
+        waitFor("Places near you stay listed")
+        composeRule.photograph("location-check-in-press-search-dark")
     }
 
     @Test fun `day light`() {

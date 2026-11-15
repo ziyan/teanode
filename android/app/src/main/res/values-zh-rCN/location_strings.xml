@@ -256,4 +256,6 @@
     <string name="location_recording_notification_title">正在记录你的位置</string>
     <string name="location_recording_notification_text">正在为你的地点和到访记录位置。</string>
     <string name="location_who_is_here">这里有谁</string>
+    <string name="location_places_near_you_stay_listed">搜索之前，会一直列出您附近的地点。</string>
+    <string name="location_try_again_from_a_place">请在地图上有商店、公园或建筑物的地方重试，或按名称查找地点。</string>
 </resources>
