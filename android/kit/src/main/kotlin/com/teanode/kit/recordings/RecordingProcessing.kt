@@ -329,6 +329,23 @@ suspend fun Connection.setRecordingSpeakerContact(
     ),
 ).SetRecordingSpeakerContact ?: throw TeaNodeError.UnreadableAnswer
 
+suspend fun Connection.undoRecordingSpeakerNaming(recordingId: String, expectedSourceGeneration: Long, recordingSpeakerCorrectionId: String): RecordingSpeakersView =
+    execute<SpeakersAnswer>(
+        RecordingDocuments.UNDO_RECORDING_SPEAKER_NAMING,
+        mapOf(
+            "recordingId" to text(recordingId), "expectedSourceGeneration" to JsonPrimitive(expectedSourceGeneration),
+            "recordingSpeakerCorrectionId" to text(recordingSpeakerCorrectionId),
+        ),
+    ).UndoRecordingSpeakerNaming ?: throw TeaNodeError.UnreadableAnswer
+
+/** Takes back every naming on a bubble, one at a time: each undo moves the recording's generation on, so the next one reads it again first. */
+suspend fun Connection.clearRecordingSpeakerNames(recordingId: String, segments: List<RecordingTranscriptSegment>) {
+    for (recordingSpeakerCorrectionId in RecordingSpeakerNaming.correctionIds(segments)) {
+        val current = recordingSpeakers(recordingId)
+        undoRecordingSpeakerNaming(recordingId, current.sourceGeneration, recordingSpeakerCorrectionId)
+    }
+}
+
 suspend fun Connection.removeRecordingSpeakerCorrection(recordingId: String, expectedSourceGeneration: Long, recordingSpeakerCorrectionId: String): RecordingSpeakersView =
     execute<SpeakersAnswer>(
         RecordingDocuments.REMOVE_RECORDING_SPEAKER_CORRECTION,

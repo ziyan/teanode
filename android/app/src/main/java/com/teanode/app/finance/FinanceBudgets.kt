@@ -45,6 +45,8 @@ import com.teanode.app.ui.components.TeaNodeRow
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.app.ui.components.TeaNodeSectionHeader
 import com.teanode.app.ui.components.rememberLoad
+import com.teanode.kit.finance.FinanceBudgetEntry
+import com.teanode.kit.finance.shownName
 import com.teanode.kit.finance.Budget
 import com.teanode.kit.finance.BudgetStatus
 import com.teanode.kit.finance.FinanceMoney
@@ -101,12 +103,15 @@ fun FinanceBudgetsScreen() {
                         item("budget-" + row.spendingCategoryId) {
                             val name = if (base.category(row.spendingCategoryId) != null) base.categoryName(row.spendingCategoryId) else FinanceCategoryNames.shown(context, row.spendingCategoryName ?: "")
                             androidx.compose.foundation.layout.Box(Modifier.clickable(role = Role.Button) {
-                                budgetEditing = BudgetDraft(row.spendingCategoryId, loaded.budgets.firstOrNull { budget -> budget.spendingCategoryId == row.spendingCategoryId }?.monthlyAmount.orEmpty(), row.currencyCode.orEmpty(), true)
+                                val ofCategory = loaded.budgets.filter { each -> each.spendingCategoryId == row.spendingCategoryId }
+                                // The budget in force this month, or the first one set for later when none is yet.
+                                val budget = ofCategory.filter { each -> FinanceBudgetEntry.isInForce(each.effectiveFrom, base.thisMonth.toString()) }.maxByOrNull { each -> each.effectiveFrom } ?: ofCategory.minByOrNull { each -> each.effectiveFrom }
+                                budgetEditing = BudgetDraft(row.spendingCategoryId, budget?.monthlyAmount.orEmpty(), row.currencyCode.orEmpty(), FinanceBudgetEntry.startingMonth(budget?.effectiveFrom.orEmpty(), base.thisMonth.toString()), true)
                             }) { BudgetRow(name, row.spendingAmount, row.budgetAmount, row.projectedAmount, row.budgetPace, row.currencyCode) }
                         }
                     }
                 }
-                item("set-budget") { TextButton(onClick = { budgetEditing = BudgetDraft("", "", base.reportingCurrency, false) }, modifier = Modifier.padding(horizontal = 8.dp)) { Icon(Icons.Outlined.Add, null); Text(stringResource(R.string.finance_set_budget)) } }
+                item("set-budget") { TextButton(onClick = { budgetEditing = BudgetDraft("", "", base.reportingCurrency, base.thisMonth.toString(), false) }, modifier = Modifier.padding(horizontal = 8.dp)) { Icon(Icons.Outlined.Add, null); Text(stringResource(R.string.finance_set_budget)) } }
                 item("categories-header") { TeaNodeSectionHeader(stringResource(R.string.finance_categories)) }
                 for (category in base.pickable(null)) {
                     item("category-" + category.id) {
@@ -132,9 +137,15 @@ fun FinanceBudgetsScreen() {
                 item("rules-footer") { Footnote(stringResource(R.string.finance_rules_footer)) }
             }
             budgetEditing?.let { draft ->
-                BudgetEditorDialog(draft, base, onDismiss = { budgetEditing = null }) { saved ->
+                BudgetEditorDialog(
+                    draft, base, onDismiss = { budgetEditing = null },
+                    onEnd = { ended ->
+                        budgetEditing = null
+                        act(context.getString(R.string.finance_budget_ended), read) { connection.setBudget(ended.categoryId, "0", ended.currency.trim().uppercase(), base.thisMonth.toString()) }
+                    },
+                ) { saved ->
                     budgetEditing = null
-                    act(context.getString(R.string.finance_budget_saved), read) { connection.setBudget(saved.categoryId, saved.amount.ifBlank { "0" }, saved.currency, base.thisMonth.atDay(1).toString()) }
+                    act(context.getString(R.string.finance_budget_saved), read) { connection.setBudget(saved.categoryId, saved.amount.trim(), saved.currency.trim().uppercase(), saved.effectiveFrom.trim()) }
                 }
             }
             categoryEditing?.let { draft ->
@@ -172,7 +183,7 @@ fun FinanceBudgetsScreen() {
 }
 
 /** A budget being set: for a category, an amount a month, from this month on; zero ends it. */
-internal class BudgetDraft(val categoryId: String, val amount: String, val currency: String, val isEditing: Boolean)
+internal class BudgetDraft(val categoryId: String, val amount: String, val currency: String, val effectiveFrom: String, val isEditing: Boolean)
 
 internal class CategoryDraft(val categoryId: String? = null, val name: String = "", val parentId: String = "", val isIncome: Boolean = false, val isHidden: Boolean = false)
 
@@ -196,19 +207,45 @@ private fun CategoryPicker(base: FinanceBase, chosen: String, label: String, non
     }
 }
 
+/** The account a rule applies to: every account, or one. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun BudgetEditorDialog(draft: BudgetDraft, base: FinanceBase, onDismiss: () -> Unit, onSave: (BudgetDraft) -> Unit) {
+private fun AccountPicker(base: FinanceBase, chosen: String, onChoose: (String) -> Unit) {
+    var isOpen by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(isOpen, { isOpen = it }) {
+        OutlinedTextField(
+            value = base.account(chosen)?.shownName ?: stringResource(R.string.finance_all_accounts), onValueChange = {}, readOnly = true, label = { Text(stringResource(R.string.finance_account)) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isOpen) }, modifier = Modifier.menuAnchor().fillMaxWidth(),
+        )
+        ExposedDropdownMenu(isOpen, { isOpen = false }) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.finance_all_accounts)) }, onClick = { onChoose(""); isOpen = false })
+            for (account in base.accounts) DropdownMenuItem(text = { Text(account.shownName) }, onClick = { onChoose(account.id); isOpen = false })
+        }
+    }
+}
+
+@Composable
+internal fun BudgetEditorDialog(draft: BudgetDraft, base: FinanceBase, onDismiss: () -> Unit, onEnd: (BudgetDraft) -> Unit, onSave: (BudgetDraft) -> Unit) {
     var categoryId by remember { mutableStateOf(draft.categoryId) }
     var amount by remember { mutableStateOf(draft.amount) }
+    var currency by remember { mutableStateOf(draft.currency) }
+    var effectiveFrom by remember { mutableStateOf(draft.effectiveFrom) }
+    fun current() = BudgetDraft(categoryId, amount, currency, effectiveFrom, draft.isEditing)
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text(stringResource(if (draft.isEditing) R.string.finance_change_budget else R.string.finance_set_budget)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (draft.isEditing) Text(base.categoryName(categoryId)) else CategoryPicker(base, categoryId, stringResource(R.string.finance_category), null) { categoryId = it }
                 OutlinedTextField(amount, { amount = it }, label = { Text(stringResource(R.string.finance_amount_a_month)) }, singleLine = true, supportingText = { Text(stringResource(R.string.finance_budget_zero_ends)) })
+                OutlinedTextField(currency, { currency = it.uppercase() }, label = { Text(stringResource(R.string.finance_currency)) }, singleLine = true)
+                OutlinedTextField(effectiveFrom, { effectiveFrom = it }, label = { Text(stringResource(R.string.finance_budget_from_month, base.thisMonth.toString())) }, singleLine = true)
+                if (FinanceBudgetEntry.changesMonthsAlreadyPast(effectiveFrom, base.thisMonth.toString())) {
+                    Text(stringResource(R.string.finance_budget_changes_past_months), style = MaterialTheme.typography.bodySmall, color = androidx.compose.ui.graphics.Color(0xFFEF6C00))
+                }
+                if (draft.isEditing) TextButton(onClick = { onEnd(current()) }) { Text(stringResource(R.string.finance_end_this_budget), color = MaterialTheme.colorScheme.error) }
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(BudgetDraft(categoryId, amount.trim(), draft.currency, draft.isEditing)) }, enabled = categoryId.isNotEmpty() && FinanceMoney.isDecimal(amount.trim().ifEmpty { "0" })) { Text(stringResource(R.string.finance_save)) } },
+        confirmButton = { TextButton(onClick = { onSave(current()) }, enabled = FinanceBudgetEntry.isSavable(categoryId, amount)) { Text(stringResource(R.string.finance_save)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.finance_cancel)) } },
     )
 }
@@ -241,6 +278,7 @@ private fun RuleEditorDialog(draft: RuleDraft, base: FinanceBase, onDismiss: () 
     var categoryId by remember { mutableStateOf(draft.categoryId) }
     var minimum by remember { mutableStateOf(draft.minimum) }
     var maximum by remember { mutableStateOf(draft.maximum) }
+    var accountId by remember { mutableStateOf(draft.accountId) }
     var priority by remember { mutableStateOf(draft.priority) }
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text(stringResource(if (draft.ruleId == null) R.string.finance_new_rule else R.string.finance_edit_rule)) },
@@ -248,12 +286,13 @@ private fun RuleEditorDialog(draft: RuleDraft, base: FinanceBase, onDismiss: () 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(matchText, { matchText = it }, label = { Text(stringResource(R.string.finance_rule_words)) }, singleLine = true)
                 CategoryPicker(base, categoryId, stringResource(R.string.finance_file_under), null) { categoryId = it }
+                AccountPicker(base, accountId) { accountId = it }
                 OutlinedTextField(minimum, { minimum = it }, label = { Text(stringResource(R.string.finance_rule_minimum)) }, singleLine = true)
                 OutlinedTextField(maximum, { maximum = it }, label = { Text(stringResource(R.string.finance_rule_maximum)) }, singleLine = true)
                 OutlinedTextField(priority, { priority = it }, label = { Text(stringResource(R.string.finance_rule_priority)) }, singleLine = true)
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(RuleDraft(draft.ruleId, matchText, categoryId, draft.accountId, minimum, maximum, priority)) }, enabled = matchText.isNotBlank() && categoryId.isNotEmpty()) { Text(stringResource(R.string.finance_save)) } },
+        confirmButton = { TextButton(onClick = { onSave(RuleDraft(draft.ruleId, matchText, categoryId, accountId, minimum, maximum, priority)) }, enabled = matchText.isNotBlank() && categoryId.isNotEmpty()) { Text(stringResource(R.string.finance_save)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.finance_cancel)) } },
     )
 }

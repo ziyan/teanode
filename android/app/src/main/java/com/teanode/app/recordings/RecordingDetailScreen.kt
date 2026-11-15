@@ -60,7 +60,10 @@ import com.teanode.kit.recordings.RecordingOriginals
 import com.teanode.kit.recordings.RecordingTranscriptionAttempt
 import com.teanode.kit.agent.knowledgeSourceDetails
 import androidx.compose.runtime.produceState
+import com.teanode.kit.recordings.RecordingPassageInterval
+import com.teanode.kit.recordings.RecordingSpeakerNaming
 import com.teanode.kit.recordings.RecordingTemporarySpeakers
+import com.teanode.kit.recordings.clearRecordingSpeakerNames
 import com.teanode.kit.recordings.nameRecordingTemporarySpeaker
 import com.teanode.kit.recordings.separateRecordingTemporarySpeaker
 import com.teanode.app.shell.Routes
@@ -255,6 +258,7 @@ fun RecordingDetailScreen(recordingId: String, onBack: () -> Unit, link: Recordi
                         act(R.string.recordings_marked_as_you) { connection.nameRecordingTemporarySpeaker(recordingId, label, "", true, null, null) }
                     },
                     onSeparate = { label -> act(R.string.recordings_speaker_separated) { connection.separateRecordingTemporarySpeaker(recordingId, label) } },
+                    onClearName = { bubble -> act(R.string.recordings_name_cleared) { connection.clearRecordingSpeakerNames(recordingId, bubble.segments) } },
                     onLoadMore = {
                         scope.launch {
                             try {
@@ -339,6 +343,7 @@ private fun DetailBody(
     onMemory: (com.teanode.kit.recordings.RecordingTranscriptSegment) -> Unit,
     onThisIsMe: (String) -> Unit,
     onSeparate: (String) -> Unit,
+    onClearName: (RecordingConversationBubble) -> Unit,
     onLoadMore: () -> Unit,
 ) {
     val recording = read.view.recording
@@ -376,7 +381,7 @@ private fun DetailBody(
             }
         }
         items(bubbles, key = { bubble -> bubble.id }) { bubble ->
-            Bubble(bubble, onPlay = { player.playFrom(playableFiles, bubble.startMS) }, onName = { onName(bubble) }, onCorrect = { onCorrect(bubble.segments.first()) }, onMemory = { onMemory(bubble.segments.first()) }, onThisIsMe = onThisIsMe, onSeparate = onSeparate, isHighlighted = link?.includes(bubble.segments.first()) == true && link.passageStartMS != null)
+            Bubble(bubble, onPlay = { player.playFrom(playableFiles, bubble.startMS) }, onName = { onName(bubble) }, onCorrect = { onCorrect(bubble.segments.first()) }, onMemory = { onMemory(bubble.segments.first()) }, onThisIsMe = onThisIsMe, onSeparate = onSeparate, onClearName = { onClearName(bubble) }, isHighlighted = link?.includes(bubble.segments.first()) == true && link.passageStartMS != null)
         }
         if (read.timeline?.hasMoreSegments == true) item {
             TextButton(onClick = onLoadMore, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.recordings_load_more)) }
@@ -425,6 +430,7 @@ private fun Bubble(
     onMemory: () -> Unit,
     onThisIsMe: (String) -> Unit,
     onSeparate: (String) -> Unit,
+    onClearName: () -> Unit,
     isHighlighted: Boolean,
 ) {
     var isMenuOpen by remember { mutableStateOf(false) }
@@ -449,7 +455,15 @@ private fun Bubble(
         DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
             if (!bubble.isLive) {
                 DropdownMenuItem(text = { Text(stringResource(R.string.recordings_play_from_here)) }, onClick = { isMenuOpen = false; onPlay() })
-                DropdownMenuItem(text = { Text(stringResource(R.string.recordings_name_speaker)) }, onClick = { isMenuOpen = false; onName() })
+                // A name someone gave can be taken back: "Not me" on the person's own bubble, "Clear name" on anyone else's.
+                // The person's voice recognized with no naming has nothing to take back, so "Not me" asks who it was instead.
+                val hasNaming = RecordingSpeakerNaming.hasNaming(bubble)
+                if (bubble.isAccountOwner) {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.recordings_not_me)) }, onClick = { isMenuOpen = false; if (hasNaming) onClearName() else onName() })
+                } else {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.recordings_name_speaker)) }, onClick = { isMenuOpen = false; onName() })
+                    if (hasNaming) DropdownMenuItem(text = { Text(stringResource(R.string.recordings_clear_name)) }, onClick = { isMenuOpen = false; onClearName() })
+                }
                 // A speaker of a capture under way is the person's own voice or not by label, in every piece at once.
                 val temporaryLabel = RecordingTemporarySpeakers.labelToName(bubble)
                 if (temporaryLabel != null && bubble.confirmedSpeakerName == null) {
@@ -519,6 +533,8 @@ private fun NameSpeakerSheet(bubble: RecordingConversationBubble, recordingId: S
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf(bubble.confirmedSpeakerName.orEmpty()) }
     var isWholeGroup by remember { mutableStateOf(true) }
+    var startText by remember { mutableStateOf(bubble.segments.first().segmentStartMS.toString()) }
+    var endText by remember { mutableStateOf(bubble.segments.last().segmentEndMS.toString()) }
     var suggestions by remember { mutableStateOf(emptyList<com.teanode.kit.recordings.RecordingSpeakerNameSuggestion>()) }
     LaunchedEffect(name) {
         delay(250)
@@ -535,6 +551,10 @@ private fun NameSpeakerSheet(bubble: RecordingConversationBubble, recordingId: S
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.recordings_apply_to_group), Modifier.weight(1f))
                     Switch(checked = isWholeGroup, onCheckedChange = { isWholeGroup = it })
+                }
+                if (!isWholeGroup) {
+                    OutlinedTextField(startText, { startText = it }, singleLine = true, label = { Text(stringResource(R.string.recordings_passage_start_ms)) }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(endText, { endText = it }, singleLine = true, label = { Text(stringResource(R.string.recordings_passage_end_ms)) }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                 }
                 Text(stringResource(R.string.recordings_apply_to_group_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
@@ -556,10 +576,15 @@ private fun NameSpeakerSheet(bubble: RecordingConversationBubble, recordingId: S
                                 onNamed()
                                 return@launch
                             }
+                            val interval = if (isWholeGroup) 0L..(Long.MAX_VALUE / 4) else RecordingPassageInterval.parse(startText, endText, first.segmentStartMS, bubble.segments.last().segmentEndMS)
+                            if (interval == null) {
+                                snackbar.show(context.getString(R.string.recordings_choose_a_positive_interval))
+                                return@launch
+                            }
                             connection.correctRecordingSpeaker(
                                 recordingId, expectedSourceGeneration, UUID.randomUUID().toString(), name.trim(), null, suggestions.firstOrNull { suggestion -> suggestion.confirmedName == name.trim() }?.addressBookId,
                                 suggestions.firstOrNull { suggestion -> suggestion.confirmedName == name.trim() }?.contactId, first.recordingTranscriptionAttemptId, first.localSpeakerId,
-                                if (isWholeGroup) 0 else first.segmentStartMS, if (isWholeGroup) Long.MAX_VALUE / 4 else bubble.segments.last().segmentEndMS,
+                                interval.first, interval.last,
                             )
                             onNamed()
                         } catch (error: CancellationException) { throw error } catch (error: Throwable) { snackbar.showError(error) }

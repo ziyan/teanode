@@ -19,6 +19,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import com.teanode.kit.health.HealthConnectAvailability
 import java.time.Instant
 
 /** Photographs of every Health screen and state, light and dark, with the dense ones at the largest text. */
@@ -72,6 +73,24 @@ class HealthScreenshotTest {
         draw(Look.Light, scenario = HealthDemo.Scenario.Empty, syncing = DemoHealthSyncing(HealthSyncSnapshot(isOn = false))) { Types() }
         waitFor("No Health data yet")
         composeRule.photograph("health-empty-off-light")
+    }
+
+    @Test fun `empty with Health Connect missing`() {
+        draw(Look.Light, scenario = HealthDemo.Scenario.Empty, syncing = DemoHealthSyncing(HealthSyncSnapshot(isOn = false, isAvailable = false, healthConnectAvailability = HealthConnectAvailability.Missing))) { Types() }
+        waitFor("Install Health Connect")
+        composeRule.photograph("health-empty-health-connect-missing-light")
+    }
+
+    @Test fun `empty with Health Connect needing an update`() {
+        draw(Look.Dark, scenario = HealthDemo.Scenario.Empty, syncing = DemoHealthSyncing(HealthSyncSnapshot(isOn = false, isAvailable = false, healthConnectAvailability = HealthConnectAvailability.NeedsUpdate))) { Types() }
+        waitFor("Update Health Connect")
+        composeRule.photograph("health-empty-health-connect-update-dark")
+    }
+
+    @Test fun `settings with Health Connect needing an update`() {
+        draw(Look.Light, syncing = DemoHealthSyncing(HealthSyncSnapshot(isOn = false, isAvailable = false, healthConnectAvailability = HealthConnectAvailability.NeedsUpdate))) { HealthSettingsScreen({}) }
+        waitFor("Update Health Connect")
+        composeRule.photograph("health-settings-health-connect-update-light")
     }
 
     @Test fun `empty while copying`() {

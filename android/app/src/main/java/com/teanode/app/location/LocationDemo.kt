@@ -259,7 +259,7 @@ object LocationDemo {
             """{"places":${filtered.joinToString(",", "[", "]") { place -> place.json(userId ?: "robin") }},"nextOffset":null}"""
         },
         graphQLField("ListNearbyPlaces") {
-            """[${foundPlace("Corner Café", "amenity=cafe", 40.5, id = 1)},${foundPlace("Home", "", 8.0, CAFE_PLACE_ID, "home", true, id = 2)},${foundPlace("Riverside Park", "leisure=park", 190.0, id = 3)},${foundPlace("Elm Street Bakery", "shop=bakery", 260.0, id = 4)}]"""
+            if (scenario == Scenario.Empty) "[]" else """[${foundPlace("Corner Café", "amenity=cafe", 40.5, id = 1)},${foundPlace("Home", "", 8.0, CAFE_PLACE_ID, "home", true, id = 2)},${foundPlace("Riverside Park", "leisure=park", 190.0, id = 3)},${foundPlace("Elm Street Bakery", "shop=bakery", 260.0, id = 4)}]"""
         },
         graphQLField("SearchPlaces") { """{"foundPlaces":[${foundPlace("Harbor Library", "amenity=library", 800.0, id = 11)},${foundPlace("Harbor Pharmacy", "amenity=pharmacy", 950.0, id = 12)}],"nextOffset":null}""" },
         graphQLField("SearchAddresses") { addressMatches() },

@@ -12,6 +12,7 @@ import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseRouteResult
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
@@ -26,6 +27,7 @@ import com.teanode.app.health.HealthSyncing
 import com.teanode.kit.Connection
 import com.teanode.kit.health.HealthBatch
 import com.teanode.kit.health.HealthBatchSender
+import com.teanode.kit.health.HealthConnectAvailability
 import com.teanode.kit.health.HealthCategorySample
 import com.teanode.kit.health.HealthDaySummaries
 import com.teanode.kit.health.HealthDays
@@ -78,7 +80,8 @@ class HealthSync private constructor(private val context: Context) : HealthSynci
     private val connection: Connection? get() = application.session.connection.value
     private val accountKey: String? get() = connection?.accountKey
 
-    private fun isAvailable(): Boolean = HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
+    private fun availability(): HealthConnectAvailability = HealthConnectAvailability.fromSdkStatus(HealthConnectClient.getSdkStatus(context))
+    private fun isAvailable(): Boolean = availability() == HealthConnectAvailability.Available
     private fun client(): HealthConnectClient = HealthConnectClient.getOrCreate(context)
 
     // Reading in the background, for the hourly pass, is a feature newer Health Connect versions offer; asking for it where it is not offered would fail the whole request.
@@ -98,7 +101,7 @@ class HealthSync private constructor(private val context: Context) : HealthSynci
 
     private fun publish(state: HealthSyncState?, isSyncing: Boolean = false, problemText: String? = null, progress: HealthPassProgress? = null) {
         snapshotFlow.value = HealthSyncSnapshot(
-            isOn = state?.isTurnedOn ?: false, isAvailable = isAvailable(), isSyncing = isSyncing, lastSentAt = state?.lastSentAt,
+            isOn = state?.isTurnedOn ?: false, isAvailable = isAvailable(), healthConnectAvailability = availability(), isSyncing = isSyncing, lastSentAt = state?.lastSentAt,
             sentSampleCount = state?.sentSampleCount ?: 0, pendingDayCount = state?.pendingDays?.size ?: 0, isHistoryDone = state?.isHistoryDone ?: false,
             problemText = problemText, passProgress = progress, isStoppedByErase = state?.isStoppedByErase ?: false, droppedEntryCount = state?.droppedEntryCount ?: 0,
         )
@@ -177,6 +180,7 @@ class HealthSync private constructor(private val context: Context) : HealthSynci
     /** Sends the readings of one kind that are new (all of them the first time), then keeps the new changes token. Returns false when the server said the person erased everything. */
     private suspend fun readKind(asked: Connection, state: HealthSyncState, kind: HealthConnectKind, since: Instant): Boolean {
         val healthConnect = client()
+        val sessions = if (kind.needsSessions) sessionsBetween(healthConnect, since, Instant.now()) else emptyList()
         val token = state.anchor(kind.healthType)
         val samples = mutableListOf<HealthSampleInput>()
         val deletedIds = mutableListOf<String>()
@@ -190,7 +194,7 @@ class HealthSync private constructor(private val context: Context) : HealthSynci
                 if (changes.changesTokenExpired) { isExpired = true; break }
                 for (change in changes.changes) {
                     when (change) {
-                        is UpsertionChange -> samples += readings(healthConnect, kind, change.record, state, routes)
+                        is UpsertionChange -> samples += readings(healthConnect, kind, change.record, state, routes, sessions)
                         is DeletionChange -> deletedIds += change.recordId
                     }
                 }
@@ -207,7 +211,7 @@ class HealthSync private constructor(private val context: Context) : HealthSynci
             var pageToken: String? = null
             do {
                 val page = healthConnect.readRecords(ReadRecordsRequest(kind.recordClass, TimeRangeFilter.between(since, Instant.now()), pageSize = PAGE_SIZE, pageToken = pageToken))
-                for (record in page.records) samples += readings(healthConnect, kind, record, state, routes)
+                for (record in page.records) samples += readings(healthConnect, kind, record, state, routes, sessions)
                 pageToken = page.pageToken
             } while (pageToken != null)
         }
@@ -223,8 +227,17 @@ class HealthSync private constructor(private val context: Context) : HealthSynci
      * The readings of one record. A workout is read with its totals (the energy and distance Health Connect adds up over its
      * time) and, when Health Connect hands its route over without asking the person, its route, which goes in [routes].
      */
-    private suspend fun readings(healthConnect: HealthConnectClient, kind: HealthConnectKind, record: Record, state: HealthSyncState, routes: MutableList<HealthRouteInput>): List<HealthSampleInput> {
-        if (record !is ExerciseSessionRecord) return kind.samples(record)
+    private suspend fun readings(
+        healthConnect: HealthConnectClient, kind: HealthConnectKind, record: Record, state: HealthSyncState, routes: MutableList<HealthRouteInput>,
+        sessions: List<ExerciseSessionRecord>,
+    ): List<HealthSampleInput> {
+        if (record is TotalCaloriesBurnedRecord) {
+            // Resting energy is the total less the active energy of the same time; with the active energy unreadable nothing is sent, not the whole total.
+            val active = runCatching { healthConnect.aggregate(AggregateRequest(setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL), TimeRangeFilter.between(record.startTime, record.endTime))) }.getOrNull()
+                ?.get(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL)?.inKilocalories ?: return emptyList()
+            return HealthConnectKinds.restingEnergySample(record, active)
+        }
+        if (record !is ExerciseSessionRecord) return kind.samples(record, sessions)
         val totals = mutableMapOf<String, JsonElement>()
         val aggregate = runCatching {
             healthConnect.aggregate(AggregateRequest(setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL, DistanceRecord.DISTANCE_TOTAL), TimeRangeFilter.between(record.startTime, record.endTime)))
@@ -239,6 +252,24 @@ class HealthSync private constructor(private val context: Context) : HealthSynci
             routes += HealthRouteInput.of(record.metadata.id, points)
         }
         return listOf(HealthConnectKinds.workoutSample(record, totals))
+    }
+
+    /** The exercise sessions in a time, which say what sport a distance, speed or power belongs to; none when Health Connect will not say. */
+    private suspend fun sessionsBetween(healthConnect: HealthConnectClient, from: Instant, to: Instant): List<ExerciseSessionRecord> {
+        val sessions = mutableListOf<ExerciseSessionRecord>()
+        try {
+            var pageToken: String? = null
+            do {
+                val page = healthConnect.readRecords(ReadRecordsRequest(ExerciseSessionRecord::class, TimeRangeFilter.between(from, to), pageSize = PAGE_SIZE, pageToken = pageToken))
+                sessions += page.records
+                pageToken = page.pageToken
+            } while (pageToken != null)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        return sessions
     }
 
     /** Sends a batch, noting the server's answer. False when it named an erase this phone had not heard of, which turned copying off. */
@@ -263,11 +294,12 @@ class HealthSync private constructor(private val context: Context) : HealthSynci
         val first = HealthDays.startOfDay(allDays.first(), zone) ?: return
         val last = HealthDays.interval(allDays.last(), zone)?.end ?: return
         val samples = mutableListOf<HealthSampleInput>()
+        val sessions = if (kind.needsSessions) sessionsBetween(healthConnect, first.minus(Duration.ofDays(1)), last) else emptyList()
         var pageToken: String? = null
         do {
             // A day before the first is read as well, for a sleep that began the evening before.
             val page = healthConnect.readRecords(ReadRecordsRequest(kind.recordClass, TimeRangeFilter.between(first.minus(Duration.ofDays(1)), last), pageSize = PAGE_SIZE, pageToken = pageToken))
-            for (record in page.records) samples += readings(healthConnect, kind, record, state, mutableListOf())
+            for (record in page.records) samples += readings(healthConnect, kind, record, state, mutableListOf(), sessions)
             pageToken = page.pageToken
         } while (pageToken != null)
         val summaries = daysByType.flatMap { (healthType, days) -> summariesOf(healthType, samples.filter { sample -> sample.healthType == healthType }, days.toSet()) }.map { summary -> summary.workedOut(workedOutAt) }

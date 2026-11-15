@@ -5,6 +5,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.teanode.app.demo.DemoHost
 import com.teanode.app.screenshots.PHONE_QUALIFIERS
 import com.teanode.app.screenshots.WithFontScale
@@ -56,6 +58,13 @@ class RecordingsScreenshotTest {
     @Test fun `detail transcript dark`() = shoot("recordings-detail-dark", AppearanceChoice.Dark) { RecordingDetailScreen("r1", onBack = {}) }
 
     @Test fun `detail largest text`() = shoot("recordings-detail-largest-text", fontScale = 2f) { RecordingDetailScreen("r1", onBack = {}) }
+
+    @Test fun `detail a named passage's menu offers Clear name`() {
+        shoot("recordings-detail-named-light") { RecordingDetailScreen("r1", onBack = {}) }
+        composeRule.onNodeWithText("I can take the pricing page", substring = true).performClick()
+        composeRule.waitForIdle()
+        composeRule.photograph("recordings-detail-clear-name-menu-light")
+    }
 
     @Test fun `detail transcribing light`() = shoot("recordings-detail-transcribing-light") { RecordingDetailScreen("r2", onBack = {}) }
 

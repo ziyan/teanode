@@ -31,4 +31,22 @@
     <plurals name="finance_tax_reading_documents">
         <item quantity="other">%d 件の書類を読み取っています</item>
     </plurals>
+    <string name="finance_valued_by">評価方法</string>
+    <string name="finance_valued_by_you">あなた</string>
+    <string name="finance_valued_by_agent_estimate">エージェントの見積もり</string>
+    <string name="finance_valued_by_agent_reading">エージェントが読み取る</string>
+    <string name="finance_what_to_estimate_from">見積もりの根拠</string>
+    <string name="finance_budget_from_month">開始月（%1$s）</string>
+    <string name="finance_budget_changes_past_months">過去の月が変わります。</string>
+    <string name="finance_end_this_budget">この予算を終了</string>
+    <string name="finance_budget_ended">予算を終了しました</string>
+    <string name="finance_choose_an_account">口座を選択</string>
+    <string name="finance_measured_by">測り方</string>
+    <string name="finance_manage_left_out_over_limit">さらに %1$d 件を除外：一度に保存できる支出ルールは %2$d 件までです</string>
+    <plurals name="finance_manage_left_out_too_generic">
+        <item quantity="other">%d 件を除外：短すぎるか一般的すぎてルールになりません</item>
+    </plurals>
+    <plurals name="finance_manage_left_out_changing_number">
+        <item quantity="other">%d 件を除外：毎回変わる番号を含んでいます</item>
+    </plurals>
 </resources>

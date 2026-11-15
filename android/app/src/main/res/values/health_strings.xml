@@ -272,4 +272,7 @@
         <item quantity="one">%s reading kept</item>
         <item quantity="other">%s readings kept</item>
     </plurals>
+    <string name="health_install_health_connect">Install Health Connect</string>
+    <string name="health_update_health_connect">Update Health Connect</string>
+    <string name="health_health_connect_needs_update">Health Connect on this device needs an update before TeaNode can read it.</string>
 </resources>
