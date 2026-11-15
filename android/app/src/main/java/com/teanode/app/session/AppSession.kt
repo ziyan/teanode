@@ -453,6 +453,13 @@ class AppSession(
         hasReadFactsFlag.value = true
     }
 
+    /** Adds a second account to the demo's list, for the screenshots of a list of accounts. */
+    fun addDemoAccount(account: Account) {
+        if (!isDemo) return
+        store.add(account)
+        accountRing.value = store.accounts()
+    }
+
     @Serializable
     private class PendingSignIn(val server: String, val clientId: String, val verifier: String, val state: String)
 
