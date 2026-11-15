@@ -296,7 +296,8 @@ struct ConversationView: View {
             }
             #if DEBUG
                 .task(id: model.isLoaded) {
-                    // `-TeaNodeScreen conversation-long-message`: scrolled back to the top, where the long message starts;
+                    // `-TeaNodeScreen conversation-long-message`: scrolled back to where the long message starts, its
+                    // first line at the top (the row that says what is above sits just out of sight);
                     // `conversation-long-message-read`: the whole of it open.
                     guard DemoServer.isRequested, let screen = DemoServer.screen, screen.hasPrefix("conversation-long-message"), model.isLoaded
                     else { return }
@@ -306,7 +307,11 @@ struct ConversationView: View {
                     // anchor for size changes pulls the view back down by the
                     // difference, which left its first line out of sight.
                     for _ in 0..<3 {
-                        scrollPosition.scrollTo(edge: .top)
+                        if let firstId = ConversationItem.items(of: shownLines).first?.id {
+                            scroller.scrollTo(firstId, anchor: .top)
+                        } else {
+                            scrollPosition.scrollTo(edge: .top)
+                        }
                         try? await Task.sleep(for: .milliseconds(500))
                     }
                     if screen == "conversation-long-message-read" {
