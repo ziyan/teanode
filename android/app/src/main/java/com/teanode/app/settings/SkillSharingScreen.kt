@@ -244,7 +244,7 @@ private fun CallFact(factName: String, factValue: String, isProminent: Boolean =
     }
 }
 
-/** Lend one of the person's skills: which, which tools, to whom, and the limits. */
+/** Share one of the person's skills, as the iPhone's sheet does: which, with whom, which tools, and the limits or Ask me every time. */
 @Composable
 private fun LendSkillDialog(onDismiss: () -> Unit, onLent: () -> Unit) {
     val connection = LocalConnection.current
@@ -256,20 +256,39 @@ private fun LendSkillDialog(onDismiss: () -> Unit, onLent: () -> Unit) {
     var granteeId by remember { mutableStateOf<String?>(null) }
     var paymentLimit by remember { mutableStateOf("") }
     var monthlyLimit by remember { mutableStateOf("") }
-    var currency by remember { mutableStateOf("usd") }
-    var isApprovalRequired by remember { mutableStateOf(false) }
-    val lentText = stringResource(R.string.settings_skills_lent)
-    val paymentMinor = SkillShareMoney.parse(paymentLimit, currency)
-    val monthlyMinor = SkillShareMoney.parse(monthlyLimit, currency)
-    val isLimitValid = (paymentLimit.isEmpty() || paymentMinor != null) && (monthlyLimit.isEmpty() || monthlyMinor != null)
+    var currency by remember { mutableStateOf("USD") }
+    var isAskedEveryTime by remember { mutableStateOf(false) }
+    val sharedText = stringResource(R.string.settings_skills_lent)
+    val currencyCode = currency.trim().lowercase()
+    val isCurrencyValid = currencyCode.length == 3 && currencyCode.all { character -> character in 'a'..'z' }
+    val isCurrencyBad = currency.isNotBlank() && !isCurrencyValid
+    val paymentMinor = if (paymentLimit.isBlank()) null else SkillShareMoney.parse(paymentLimit, currencyCode)
+    val monthlyMinor = if (monthlyLimit.isBlank()) null else SkillShareMoney.parse(monthlyLimit, currencyCode)
+    val isPaymentUnreadable = paymentLimit.isNotBlank() && paymentMinor == null
+    val isMonthlyUnreadable = monthlyLimit.isNotBlank() && monthlyMinor == null
+    val hasLimit = paymentLimit.isNotBlank() || monthlyLimit.isNotBlank()
+    val isPaymentAboveMonthly = paymentMinor != null && monthlyMinor != null && paymentMinor > monthlyMinor
+    val chosenSkill = skill
+    val doesPay = chosenSkill?.tools?.any { tool -> toolNames.contains(tool.name) && tool.isAmountDeclared } == true
+    val canShare = granteeId != null && toolNames.isNotEmpty() &&
+        (isAskedEveryTime || ((!doesPay || hasLimit) && (!hasLimit || isCurrencyValid) && !isPaymentUnreadable && !isMonthlyUnreadable && !isCurrencyBad && !isPaymentAboveMonthly))
+    val unreadableText = stringResource(
+        R.string.settings_skills_amount_unreadable,
+        if (isCurrencyValid) currencyCode.uppercase() else stringResource(R.string.settings_skills_currency_below), SkillShareMoney.typedExample(currencyCode),
+    )
     FormDialog(
-        title = stringResource(R.string.settings_skills_lend), confirmLabel = stringResource(R.string.settings_skills_lend_confirm),
-        isConfirmEnabled = skill != null && toolNames.isNotEmpty() && granteeId != null && isLimitValid && !(isApprovalRequired && false), isWorking = actions.isWorking,
+        title = stringResource(R.string.settings_skills_share_title), confirmLabel = stringResource(R.string.settings_skills_share_confirm),
+        isConfirmEnabled = chosenSkill != null && canShare, isWorking = actions.isWorking,
         onConfirm = {
-            val chosen = skill ?: return@FormDialog
-            val hasMoney = paymentMinor != null || monthlyMinor != null
-            actions.run(lentText, onSuccess = onLent) {
-                connection.shareSkill(SkillShareTerms(chosen.name, chosen.tools.map { tool -> tool.name }.filter { name -> toolNames.contains(name) }, granteeId!!, paymentMinor, monthlyMinor, if (hasMoney) currency.lowercase() else null, isApprovalRequired))
+            val chosen = chosenSkill ?: return@FormDialog
+            actions.run(sharedText, onSuccess = onLent) {
+                connection.shareSkill(
+                    SkillShareTerms(
+                        chosen.name, chosen.tools.map { tool -> tool.name }.filter { name -> toolNames.contains(name) }, granteeId!!,
+                        if (isAskedEveryTime) null else paymentMinor, if (isAskedEveryTime) null else monthlyMinor,
+                        if (hasLimit && !isAskedEveryTime) currencyCode else null, isAskedEveryTime,
+                    ),
+                )
             }
         },
         onDismiss = onDismiss,
@@ -278,20 +297,43 @@ private fun LendSkillDialog(onDismiss: () -> Unit, onLent: () -> Unit) {
             val availableSkills = skills.value.orEmpty()
             ChoiceRow(
                 stringResource(R.string.settings_skills_skill), listOf<LendableSkill?>(null) + availableSkills, skill,
-                label = { choice -> choice?.name ?: stringResource(R.string.settings_skills_choose) }, onSelect = { skill = it; toolNames = it?.tools?.map { tool -> tool.name }?.toSet() ?: emptySet() },
+                label = { choice -> choice?.name ?: stringResource(R.string.settings_skills_choose) },
+                // Only the tools that pay start chosen, as on the iPhone: the rest are the person's to add.
+                onSelect = { skill = it; toolNames = it?.tools?.filter { tool -> tool.isAmountDeclared }?.map { tool -> tool.name }?.toSet() ?: emptySet() },
             )
-            skill?.tools?.forEach { tool ->
-                SwitchRow(tool.name, toolNames.contains(tool.name), { isOn -> toolNames = if (isOn) toolNames + tool.name else toolNames - tool.name }, supporting = tool.description.ifEmpty { null })
-            }
             val members = people.value.orEmpty()
             ChoiceRow(
-                stringResource(R.string.settings_skills_lend_to), listOf<String?>(null) + members.map { member -> member.userId }, granteeId,
-                label = { id -> members.firstOrNull { member -> member.userId == id }?.displayName ?: stringResource(R.string.settings_skills_choose) }, onSelect = { granteeId = it },
+                stringResource(R.string.settings_skills_share_with), listOf<String?>(null) + members.map { member -> member.userId }, granteeId,
+                label = { id -> members.firstOrNull { member -> member.userId == id }?.displayName ?: stringResource(R.string.settings_skills_choose_person) }, onSelect = { granteeId = it },
             )
-            FormField(currency, { currency = it.take(3) }, stringResource(R.string.settings_skills_currency))
-            FormField(paymentLimit, { paymentLimit = it }, stringResource(R.string.settings_skills_payment_limit_field), placeholder = SkillShareMoney.typedExample(currency), keyboardType = KeyboardType.Decimal, isError = paymentLimit.isNotEmpty() && paymentMinor == null)
-            FormField(monthlyLimit, { monthlyLimit = it }, stringResource(R.string.settings_skills_monthly_limit_field), placeholder = SkillShareMoney.typedExample(currency), keyboardType = KeyboardType.Decimal, isError = monthlyLimit.isNotEmpty() && monthlyMinor == null)
-            SwitchRow(stringResource(R.string.settings_skills_approval_required), isApprovalRequired, { isApprovalRequired = it })
+            FooterText(stringResource(R.string.settings_skills_share_footer))
+            if (chosenSkill != null) {
+                TeaNodeSectionHeader(stringResource(R.string.settings_skills_tools_header))
+                chosenSkill.tools.forEach { tool ->
+                    SwitchRow(
+                        tool.name, toolNames.contains(tool.name), { isOn -> toolNames = if (isOn) toolNames + tool.name else toolNames - tool.name },
+                        supportingMaxLines = 6,
+                        supporting = stringResource(
+                            if (tool.isAmountDeclared) R.string.settings_skills_tool_pays else if (tool.isScoped) R.string.settings_skills_tool_scoped else R.string.settings_skills_tool_unknown_cost,
+                        ),
+                    )
+                }
+            }
+            SwitchRow(stringResource(R.string.settings_skills_ask_every_time), isAskedEveryTime, { isAskedEveryTime = it })
+            if (!isAskedEveryTime) {
+                FormField(paymentLimit, { paymentLimit = it }, stringResource(R.string.settings_skills_per_payment), placeholder = SkillShareMoney.typedExample(currencyCode), keyboardType = KeyboardType.Decimal, isError = isPaymentUnreadable || isPaymentAboveMonthly)
+                if (isPaymentUnreadable) FooterText(unreadableText)
+                if (isPaymentAboveMonthly) FooterText(stringResource(R.string.settings_skills_payment_above_monthly))
+                FormField(monthlyLimit, { monthlyLimit = it }, stringResource(R.string.settings_skills_per_month), placeholder = SkillShareMoney.typedExample(currencyCode), keyboardType = KeyboardType.Decimal, isError = isMonthlyUnreadable)
+                if (isMonthlyUnreadable) FooterText(unreadableText)
+                FormField(currency, { typed -> currency = typed.uppercase().take(3) }, stringResource(R.string.settings_skills_currency), isError = isCurrencyBad)
+                if (isCurrencyBad) FooterText(stringResource(R.string.settings_skills_currency_bad))
+            }
+            FooterText(
+                stringResource(
+                    if (isAskedEveryTime) R.string.settings_skills_footer_ask_every_time else if (doesPay && !hasLimit) R.string.settings_skills_footer_needs_limit else R.string.settings_skills_footer_limits,
+                ),
+            )
         }
     }
 }

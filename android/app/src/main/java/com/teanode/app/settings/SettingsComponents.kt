@@ -126,9 +126,9 @@ fun FooterText(text: String, modifier: Modifier = Modifier) {
 
 /** A row with a switch at its end. */
 @Composable
-fun SwitchRow(headline: String, isChecked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier, supporting: String? = null, isEnabled: Boolean = true) {
+fun SwitchRow(headline: String, isChecked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier, supporting: String? = null, isEnabled: Boolean = true, supportingMaxLines: Int = 2) {
     TeaNodeRow(
-        headline = headline, supporting = supporting, modifier = modifier,
+        headline = headline, supporting = supporting, modifier = modifier, supportingMaxLines = supportingMaxLines,
         trailing = { Switch(checked = isChecked, onCheckedChange = onChange, enabled = isEnabled) },
         onClick = if (isEnabled) ({ onChange(!isChecked) }) else null,
     )
