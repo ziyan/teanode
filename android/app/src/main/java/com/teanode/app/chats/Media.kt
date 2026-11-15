@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Check
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -91,6 +93,7 @@ import com.teanode.kit.chats.AgentFile
 import com.teanode.kit.chats.download
 import com.teanode.kit.chats.picturePath
 import com.teanode.kit.chats.shareAddress
+import com.teanode.kit.photos.savePhotoFromAttachment
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -304,28 +307,61 @@ fun FileCard(file: AgentFile, modifier: Modifier = Modifier) {
     val clipboard = LocalClipboardManager.current
     val navigator = LocalAppNavigator.current
     val canSaveAsRecording = canBeSavedAsRecording(file.contentType)
+    val facts by LocalAppSession.current.facts.collectAsState()
+    // The photo this file is: the one the photo tool showed, or the copy the person just kept in their library.
+    var savedPhotoId by remember(file.attachmentId) { mutableStateOf<String?>(null) }
+    var isSavingToLibrary by remember { mutableStateOf(false) }
+    var isPhotoOpen by remember { mutableStateOf(false) }
+    val photoId = file.photoId ?: savedPhotoId
+    val canBeKept = photoId == null && (file.isImage || file.isVideo) && !file.isArtifact && facts.isAvailable(AppSection.Photos)
+    // A tap anywhere on the card opens the file when there is no picture to tap and no player whose controls the tap would take.
+    val isCardOpenedByTap = !file.isImage && !file.isVideo && !file.isAudio
     CardSurface(modifier = modifier.widthIn(max = 420.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(
-                    Modifier.weight(1f).clickable(enabled = !file.isImage) { scope.launch { runCatching { openServerFile(context, connection, file.attachmentId) }.onFailure { failure -> snackbar.showError(failure) } } },
+                    Modifier.weight(1f).clickable(enabled = isCardOpenedByTap) { scope.launch { runCatching { openServerFile(context, connection, file.attachmentId) }.onFailure { failure -> snackbar.showError(failure) } } },
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Icon(Icons.Outlined.AttachFile, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(file.name, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (file.size > 0) Text("· ${byteCountText(file.size)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (!file.isImage) Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
+                    if (isCardOpenedByTap) Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
                 }
                 Box {
                     IconButton(onClick = { isMenuOpen = true }) { Icon(Icons.Outlined.OpenInNew, contentDescription = stringResource(R.string.chats_file_options)) }
                     DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.chats_open)) }, leadingIcon = { Icon(Icons.Outlined.OpenInNew, null) },
+                            text = { Text(stringResource(if (photoId != null) R.string.chats_open_in_photos else R.string.chats_open)) },
+                            leadingIcon = { Icon(if (photoId != null) Icons.Outlined.PhotoLibrary else Icons.Outlined.OpenInNew, null) },
                             onClick = {
                                 isMenuOpen = false
-                                scope.launch { runCatching { openServerFile(context, connection, file.attachmentId) }.onFailure { failure -> snackbar.showError(failure) } }
+                                // A photo the agent showed opens in the app's photo viewer, where it can be favorited, saved or shared.
+                                if (photoId != null) isPhotoOpen = true
+                                else scope.launch { runCatching { openServerFile(context, connection, file.attachmentId) }.onFailure { failure -> snackbar.showError(failure) } }
                             },
                         )
+                        if (canBeKept) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.chats_save_to_library)) }, leadingIcon = { Icon(Icons.Outlined.AddPhotoAlternate, null) }, enabled = !isSavingToLibrary,
+                                onClick = {
+                                    isMenuOpen = false
+                                    scope.launch {
+                                        isSavingToLibrary = true
+                                        try {
+                                            savedPhotoId = connection.savePhotoFromAttachment(file.attachmentId).id
+                                            snackbar.show(context.getString(R.string.chats_saved_to_library))
+                                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                            throw cancelled
+                                        } catch (failure: Throwable) {
+                                            snackbar.showError(failure)
+                                        } finally {
+                                            isSavingToLibrary = false
+                                        }
+                                    }
+                                },
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.chats_share)) }, leadingIcon = { Icon(Icons.Outlined.Share, null) },
                             onClick = {
@@ -355,10 +391,12 @@ fun FileCard(file: AgentFile, modifier: Modifier = Modifier) {
                     }
                 }
             }
-            if (file.isImage) RemotePicture(file.path, file.name, maxHeightDp = 320)
+            if (file.isImage) RemotePicture(file.path, file.name, maxHeightDp = 320, onOpen = if (photoId != null) ({ isPhotoOpen = true }) else null, originalFilePath = file.path)
+            else if (file.isVideo || file.isAudio) AttachmentMediaPlayer(file.attachmentId, isVideo = file.isVideo)
             if (file.caption.isNotEmpty()) Text(file.caption, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+    if (isPhotoOpen && photoId != null) AgentPhotoViewer(photoId, onClose = { isPhotoOpen = false })
 }
 
 /**

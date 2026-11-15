@@ -40,4 +40,7 @@ class SearchScreenshotTest {
     @Test fun `results dark`() = shoot("search-results-dark", "harbor", AppearanceChoice.Dark)
     @Test fun `results largest text`() = shoot("search-results-largest-text", "harbor", fontScale = 2f)
     @Test fun `places light`() = shoot("search-places-light", "pass")
+    @Test fun `photos places light`() = shoot("search-places-photos-light", "albums")
+    @Test fun `finance places light`() = shoot("search-places-finance-light", "net worth")
+    @Test fun `calendar places light`() = shoot("search-places-calendar-light", "agenda")
 }

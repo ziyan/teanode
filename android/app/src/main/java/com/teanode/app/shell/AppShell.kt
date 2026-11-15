@@ -83,14 +83,23 @@ fun AppShell(
             controller.navigate(startRoute)
         }
     }
-    // A notification pressed opens the part it is about; the part reads the detail from NotificationOpening.
+    // A notification pressed opens the item it is about, inside its part.
     val openedDestination by NotificationOpening.destination.collectAsState()
     LaunchedEffect(openedDestination) {
-        openedDestination?.let { destination -> navigator.openSection(NotificationOpening.sectionOf(destination)) }
+        openedDestination?.let { destination ->
+            // The graph is set once the host has composed; a press that starts the app arrives before that.
+            controller.currentBackStackEntryFlow.first()
+            val routes = NotificationOpening.routesOf(destination)
+            navigator.openSection(NotificationOpening.sectionOf(destination))
+            for (route in routes.drop(1)) navigator.navigate(route)
+            // Taken, so a second press of the same place is a new press and opens it again.
+            NotificationOpening.consume()
+        }
     }
     LaunchedEffect(newIntents) {
         newIntents?.collect { intent -> controller.handleDeepLink(intent) }
     }
+    ShellPolling(currentSection)
     BackHandler(enabled = drawerState.isOpen) { scope.launch { drawerState.close() } }
 
     val drawer = remember(drawerState) { DrawerController(open = { scope.launch { drawerState.open() } }) }

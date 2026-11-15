@@ -1,5 +1,6 @@
 package com.teanode.app.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.Icons
@@ -32,6 +33,7 @@ val LocalDrawer = staticCompositionLocalOf<DrawerController?> { null }
  *
  * @param onBack goes back; give it on every screen but a part's first, which shows the drawer button instead.
  * @param actions icon buttons and menus at the end of the bar.
+ * @param onTitleClick makes the title a button, for a screen whose title names something that has a page of its own.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,6 +44,8 @@ fun TeaNodeScreen(
     actions: @Composable RowScope.() -> Unit = {},
     floatingActionButton: @Composable () -> Unit = {},
     bottomBar: @Composable () -> Unit = {},
+    onTitleClick: (() -> Unit)? = null,
+    titleClickLabel: String? = null,
     content: @Composable (contentPadding: PaddingValues) -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
@@ -50,7 +54,13 @@ fun TeaNodeScreen(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    // A title that opens something (the person's card in a chat with one person) is a button as a whole.
+                    Text(
+                        title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = if (onTitleClick != null) Modifier.clickable(onClickLabel = titleClickLabel, onClick = onTitleClick) else Modifier,
+                    )
+                },
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {

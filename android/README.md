@@ -45,8 +45,8 @@ server may send more).
 
 The app signs in as the iPhone app does: the server's own page in a Custom Tab (OAuth with PKCE and the built-in client,
 the redirect `com.teanode.app:/oauth`), or a connect code scanned with the camera (CameraX and ZXing) or pasted as a
-link. The iPhone app registers one link for connect codes, `https://teanode.com/app/connect`, and the Android app
-claims the same one (an app link, verified by the site) and also `teanode://app/<route>` for the app's own places.
+link. The iPhone app's associated domain is `teanode.com`, whose app pages are `/app/...` (a connect code is
+`/app/connect`); the Android app claims the same pages (an app link, verified by the site) and also `teanode://app/<route>` for the app's own places.
 Tokens are kept in a file sealed with an AES-GCM key that lives in the Android Keystore (`KeystoreSecretStore`), never in
 plaintext. `Connection` renews a token a day before it runs out, once however many calls are waiting, and tries a call
 again with a fresh token after a 401, as the iPhone app does.

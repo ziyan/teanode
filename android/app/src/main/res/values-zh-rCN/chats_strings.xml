@@ -283,4 +283,10 @@
     <string name="chats_share_tax_detail">每个 PDF 或图片会单独作为工资单、W-2、1099 或 1098 读取，服务器不会保存其中的文字。备注不会一起发送。</string>
     <string name="chats_share_statements_detail">每个 OFX、QFX 或 QBO 文件都会导入你的账户；重复导入的交易只保留一笔。备注不会一起发送。</string>
     <string name="chats_share_recording_detail">文件会先发给你的助手，然后打开“录音”，用它制作录音。</string>
+    <string name="chats_opens_their_card">打开其名片</string>
+    <string name="chats_paste_picture">粘贴图片</string>
+    <string name="chats_open_in_photos">在照片中打开</string>
+    <string name="chats_save_to_library">保存到我的图库</string>
+    <string name="chats_saved_to_library">已保存到你的图库</string>
+    <string name="chats_cannot_show_photo">无法显示这张照片</string>
 </resources>

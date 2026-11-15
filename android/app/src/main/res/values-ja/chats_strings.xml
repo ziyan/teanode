@@ -283,4 +283,10 @@
     <string name="chats_share_tax_detail">PDF や画像は 1 つずつ給与明細、W-2、1099、1098 のいずれかとして読み取られ、サーバーはその文字を保存しません。メモは送られません。</string>
     <string name="chats_share_statements_detail">OFX、QFX、QBO ファイルは口座に取り込まれます。2 回取り込んだ取引は 1 件だけ残ります。メモは送られません。</string>
     <string name="chats_share_recording_detail">ファイルはまずエージェントに渡され、続いて録音が開き、そこから録音が作られます。</string>
+    <string name="chats_opens_their_card">カードを開きます</string>
+    <string name="chats_paste_picture">画像をペースト</string>
+    <string name="chats_open_in_photos">写真で開く</string>
+    <string name="chats_save_to_library">自分のライブラリに保存</string>
+    <string name="chats_saved_to_library">ライブラリに保存しました</string>
+    <string name="chats_cannot_show_photo">この写真を表示できません</string>
 </resources>

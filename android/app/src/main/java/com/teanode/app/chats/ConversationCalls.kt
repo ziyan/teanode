@@ -87,10 +87,10 @@ fun ConversationCallLine(line: TranscriptLine, model: ConversationModel) {
     )
 }
 
-/** The button that starts a call with the agent, in the main conversation, when the server offers voice. */
+/** The button that starts a call with the agent, in the main conversation and in the side chats (not in a chat of people), when the server offers voice. */
 @Composable
 fun ConversationAgentCallButton(model: ConversationModel) {
-    if (model.conversationId != null || model.voiceSampleRate == null) return
+    if (model.isChat || model.voiceSampleRate == null || model.conversation?.kind == "run") return
     androidx.compose.material3.IconButton(onClick = { OpeningRequests.requestCall() }) {
         androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Outlined.Phone, contentDescription = androidx.compose.ui.res.stringResource(com.teanode.app.R.string.calls_call_agent))
     }
@@ -159,7 +159,7 @@ fun ConversationCallEffects(model: ConversationModel) {
     }
     androidx.compose.runtime.LaunchedEffect(isRequested, model.voiceSampleRate, model.conversationId) {
         val sampleRate = model.voiceSampleRate ?: return@LaunchedEffect
-        if (!isRequested || center == null || model.conversationId != null || model.isChat) return@LaunchedEffect
+        if (!isRequested || center == null || model.isChat) return@LaunchedEffect
         OpeningRequests.consume()
         requestPermissions(false) {
             val call = AgentVoiceCall(

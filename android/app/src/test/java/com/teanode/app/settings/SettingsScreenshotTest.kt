@@ -58,6 +58,31 @@ class SettingsScreenshotTest {
     @Test fun `home dark`() = shoot("settings-home-dark", AppearanceChoice.Dark) { SettingsSection() }
     @Test fun `home largest text`() = shoot("settings-home-largest-text", fontScale = 2f) { SettingsSection() }
 
+    @Test fun `home with two accounts light`() = shoot("settings-home-two-accounts-light") {
+        val session = com.teanode.app.session.LocalAppSession.current
+        androidx.compose.runtime.remember(session) {
+            session.addDemoAccount(
+                com.teanode.kit.Account(
+                    server = com.teanode.kit.ServerAddress.parse("other.example.com"), clientId = "demo", accessToken = "demo", refreshToken = "",
+                    expiresAtEpochMS = Long.MAX_VALUE / 4, username = "sam",
+                ),
+            )
+        }
+        SettingsSection()
+    }
+    @Test fun `home with two accounts dark`() = shoot("settings-home-two-accounts-dark", AppearanceChoice.Dark) {
+        val session = com.teanode.app.session.LocalAppSession.current
+        androidx.compose.runtime.remember(session) {
+            session.addDemoAccount(
+                com.teanode.kit.Account(
+                    server = com.teanode.kit.ServerAddress.parse("other.example.com"), clientId = "demo", accessToken = "demo", refreshToken = "",
+                    expiresAtEpochMS = Long.MAX_VALUE / 4, username = "sam",
+                ),
+            )
+        }
+        SettingsSection()
+    }
+
     @Test fun `home notifications light`() = shoot("settings-home-notifications-light", before = { composeRule.onNode(androidx.compose.ui.test.hasScrollAction()).performScrollToNode(androidx.compose.ui.test.hasText("Notifications")) }) { SettingsSection() }
 
     @Test fun `profile light`() = shoot("settings-profile-light") { ProfileScreen(onBack = {}) }

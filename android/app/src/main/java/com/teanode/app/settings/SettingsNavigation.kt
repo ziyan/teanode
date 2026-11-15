@@ -1,7 +1,15 @@
 package com.teanode.app.settings
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Book
+import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.Draw
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.Laptop
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Group
@@ -27,6 +35,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.teanode.app.R
+import com.teanode.app.mail.MailRoutes
 import com.teanode.app.session.LocalConnection
 import com.teanode.app.shell.AppNavigator
 import com.teanode.app.shell.AppPlace
@@ -113,6 +122,9 @@ private fun place(id: String, titleResource: Int, route: String, icon: androidx.
 private fun managePlace(id: String, titleResource: Int, route: String, icon: androidx.compose.ui.graphics.vector.ImageVector) =
     AppPlace("settings-manage-$id", titleResource, route, icon, listOf(R.string.section_settings, R.string.settings_manage))
 
+private fun mailboxPlace(id: String, titleResource: Int, route: String, icon: androidx.compose.ui.graphics.vector.ImageVector) =
+    AppPlace("settings-mailbox-$id", titleResource, route, icon, listOf(R.string.section_settings, R.string.settings_mailbox))
+
 /** The places Search offers by name: the pages of Settings, as the iPhone app's Search offers them. */
 fun settingsPlaces(): List<AppPlace> = listOf(
     place("profile", R.string.settings_profile_title, SettingsRoutes.PROFILE, Icons.Outlined.AccountCircle),
@@ -142,6 +154,18 @@ fun settingsPlaces(): List<AppPlace> = listOf(
     managePlace("server", R.string.settings_server_title, SettingsRoutes.MANAGE_SERVER, Icons.Outlined.Dns),
     managePlace("usage", R.string.settings_usage_title, SettingsRoutes.MANAGE_USAGE, Icons.Outlined.History),
     managePlace("services", R.string.settings_services_title, SettingsRoutes.MANAGE_SERVICES, Icons.Outlined.ToggleOn),
+    managePlace("mail", R.string.settings_manage_mail, MailRoutes.MANAGE_ALL_MAIL, Icons.Outlined.Inbox),
+    managePlace("queue", R.string.settings_manage_queue, MailRoutes.MANAGE_QUEUE, Icons.Outlined.Schedule),
+    managePlace("reports", R.string.settings_manage_reports, MailRoutes.MANAGE_REPORTS, Icons.Outlined.Shield),
+    managePlace("domains", R.string.settings_manage_domains, MailRoutes.MANAGE_DOMAINS, Icons.Outlined.Dns),
+    place("photo-backup", R.string.settings_photo_backup, Routes.child(AppSection.Photos, "backup"), Icons.Outlined.CloudUpload),
+    place("photo-faces", R.string.settings_photo_people, SettingsRoutes.PHOTO_PEOPLE, Icons.Outlined.AccountCircle),
+    place("journal", R.string.settings_journal, Routes.child(AppSection.Journal, "settings"), Icons.Outlined.Book),
+    place("mailbox", R.string.settings_mailbox, MailRoutes.SETTINGS, Icons.Outlined.Inbox),
+    mailboxPlace("name", R.string.mail_name_and_signature, MailRoutes.SETTINGS_GENERAL, Icons.Outlined.Draw),
+    mailboxPlace("auto-reply", R.string.mail_auto_reply, MailRoutes.SETTINGS_AUTO_REPLY, Icons.AutoMirrored.Outlined.Reply),
+    mailboxPlace("folders", R.string.mail_folders, MailRoutes.SETTINGS_FOLDERS, Icons.Outlined.Folder),
+    mailboxPlace("programs", R.string.mail_programs, MailRoutes.SETTINGS_PROGRAMS, Icons.Outlined.Laptop),
 ) + com.teanode.app.settings.manage.managePlaces() + listOf(
     AgentSettingsPart.About to R.string.settings_agent_about, AgentSettingsPart.Instructions to R.string.settings_agent_instructions, AgentSettingsPart.Language to R.string.settings_agent_language,
     AgentSettingsPart.WritingVoice to R.string.settings_agent_voice, AgentSettingsPart.SpeakingVoice to R.string.settings_agent_speaking_voice, AgentSettingsPart.Reach to R.string.settings_agent_reach,

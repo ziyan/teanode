@@ -98,6 +98,11 @@ fun RecordingsSection(initialLocalRecordings: List<LocalRecording>? = null, init
     val journal = remember { RecordingJournal(context) }
     var isSearching by remember { mutableStateOf(initialSearchText != null) }
     var searchText by remember { mutableStateOf(initialSearchText.orEmpty()) }
+    // The words the Search screen's Show all carries.
+    com.teanode.app.search.TakePartSearch(com.teanode.kit.search.SearchArea.Recordings) { search ->
+        isSearching = true
+        searchText = search.words
+    }
     var read by remember { mutableStateOf<RecordingsRead?>(null) }
     var failure by remember { mutableStateOf<Throwable?>(null) }
     var localRecordings by remember { mutableStateOf(initialLocalRecordings ?: emptyList()) }

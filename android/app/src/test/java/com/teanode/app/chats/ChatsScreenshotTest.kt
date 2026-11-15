@@ -1,12 +1,15 @@
 package com.teanode.app.chats
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -207,4 +210,51 @@ class ChatsScreenshotTest {
     @Test fun `earlier cards at the largest text`() = scrolledConversation("demo-cards", Look.Light, "cards-earlier-largest-text", "Which file should I edit", "Which hotel should I book", 2f)
     @Test fun `the table answer`() = scrolledConversation(null, Look.Light, "main-answer", "What is on my calendar tomorrow", "Remind me to leave early")
     @Test fun `the table answer dark`() = scrolledConversation(null, Look.Dark, "main-answer", "What is on my calendar tomorrow", "Remind me to leave early")
+
+    /** The options button on the same line as a file's name: the card whose menu to open. */
+    private fun clickFileOptionsNextTo(fileName: String) {
+        val nameY = composeRule.onNodeWithText(fileName, substring = true).fetchSemanticsNode().positionInRoot.y
+        val buttons = composeRule.onAllNodesWithContentDescription("File options")
+        val nearest = buttons.fetchSemanticsNodes().withIndex().minByOrNull { (_, node) -> kotlin.math.abs(node.positionInRoot.y - nameY) }!!.index
+        buttons[nearest].performClick()
+    }
+
+    @Test fun `files light`() = conversation("demo-files", Look.Light, "files", "Here they are")
+    @Test fun `files dark`() = conversation("demo-files", Look.Dark, "files", "Here they are")
+    @Test fun `files at the largest text`() = conversation("demo-files", Look.Light, "files-largest-text", "Here they are", 2f)
+
+    @Test fun `a photo's file menu offers Open in Photos and a picture's offers Save to my library`() {
+        draw(Look.Light) { ConversationScreen(conversationId = "demo-files", onBack = {}, onOpenConversation = {}) }
+        waitFor("Here they are")
+        composeRule.onNodeWithTag("conversation-list").performScrollToNode(hasText("harbor.jpg", substring = true))
+        clickFileOptionsNextTo("harbor.jpg")
+        waitFor("Open in Photos")
+        composeRule.photograph("chats-file-menu-photo-light")
+        composeRule.onNodeWithText("Open in Photos").performClick()
+        composeRule.waitForIdle()
+        composeRule.photograph("chats-file-photo-viewer-light")
+    }
+
+    @Test fun `a picture that is not a photo can be saved to the library`() {
+        draw(Look.Light) { ConversationScreen(conversationId = "demo-files", onBack = {}, onOpenConversation = {}) }
+        waitFor("Here they are")
+        composeRule.onNodeWithTag("conversation-list").performScrollToNode(hasText("scan.png", substring = true))
+        clickFileOptionsNextTo("scan.png")
+        waitFor("Save to my library")
+        composeRule.photograph("chats-file-menu-picture-light")
+        composeRule.onNodeWithText("Save to my library").performClick()
+        waitFor("Saved to your library")
+        composeRule.photograph("chats-file-saved-light")
+    }
+
+    @Test fun `a video and a sound play in place`() {
+        draw(Look.Light) {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(16.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                InlineMediaPlayer("https://example.com/clip.mp4", isVideo = true)
+                InlineMediaPlayer("https://example.com/voice-note.m4a", isVideo = false)
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.photograph("chats-file-players-light")
+    }
 }

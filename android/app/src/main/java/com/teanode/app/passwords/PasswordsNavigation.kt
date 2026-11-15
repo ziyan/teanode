@@ -3,7 +3,12 @@ package com.teanode.app.passwords
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
 import com.teanode.app.shell.Area
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Settings
+import com.teanode.app.R
 import com.teanode.app.shell.AppNavigator
+import com.teanode.app.shell.AppPlace
 import com.teanode.app.shell.Routes
 import com.teanode.kit.AppSection
 import com.teanode.kit.passwords.PasswordsItemKind
@@ -38,5 +43,11 @@ fun NavGraphBuilder.passwordsRoutes(navigator: AppNavigator) {
 val passwordsArea = Area(
     section = AppSection.Passwords,
     routes = NavGraphBuilder::passwordsRoutes,
+    places = {
+        listOf(
+            AppPlace("passwords-settings", R.string.passwords_settings, "passwords/settings", Icons.Outlined.Settings, listOf(R.string.section_passwords)),
+            AppPlace("passwords-deleted", R.string.passwords_recently_deleted, "passwords/deleted", Icons.Outlined.Delete, listOf(R.string.section_passwords)),
+        )
+    },
     demoAnswerers = passwordsDemoAnswerers,
 )

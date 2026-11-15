@@ -128,30 +128,6 @@ private fun areaIcon(area: SearchArea): ImageVector = when (area) {
     SearchArea.Finance -> AppSection.Finance.icon
 }
 
-private fun areaSection(area: SearchArea): AppSection? = when (area) {
-    SearchArea.Chats -> AppSection.Agent
-    SearchArea.Mail -> AppSection.Mail
-    SearchArea.Contacts -> AppSection.Contacts
-    SearchArea.Photos -> AppSection.Photos
-    SearchArea.Memory -> AppSection.Knowledge
-    SearchArea.Recordings -> AppSection.Recordings
-    SearchArea.Finance -> AppSection.Finance
-    SearchArea.Places -> AppSection.Location
-    SearchArea.Documents -> null
-}
-
-/** The route a result opens: the item where another part has a screen for it, the part's first screen otherwise. */
-private fun routeOf(result: SearchResult): String? = when (val opening = result.opening) {
-    is SearchOpening.Conversation -> Routes.child(AppSection.Agent, "conversation/${opening.conversationId}")
-    is SearchOpening.MailItem -> "mail/thread/${android.net.Uri.encode(opening.mailItemId)}"
-    is SearchOpening.Contact -> Routes.home(AppSection.Contacts)
-    is SearchOpening.Photo -> Routes.home(AppSection.Photos)
-    is SearchOpening.KnowledgePage -> Routes.home(AppSection.Knowledge)
-    is SearchOpening.Recording -> Routes.child(AppSection.Recordings, "detail/${opening.recordingId}")
-    is SearchOpening.PartOnly -> areaSection(opening.area)?.let { section -> Routes.home(section) }
-    SearchOpening.Nowhere -> null
-}
-
 /** The search screen: a field, and under it the places of the app the typed words name, then what they find in every part, a few from each, grouped by part. */
 @Composable
 fun SearchSection() {
@@ -192,6 +168,16 @@ fun SearchSection() {
         PlaceSearch.matchingPlaceIds(offered.map { entry -> entry.placeName }, typedText).mapNotNull { id -> byId[id] }
     }
     val isPhotosOffered = facts.isAvailable(AppSection.Photos)
+    val open: (SearchDestination) -> Unit = { destination ->
+        when (destination) {
+            is SearchDestination.Item -> navigator.openInSection(destination.section, destination.route)
+            is SearchDestination.PartWithWords -> {
+                PartSearchRequest.ask(destination.search)
+                navigator.openSection(destination.section)
+            }
+            SearchDestination.Nowhere -> Unit
+        }
+    }
     TeaNodeScreen(title = stringResource(R.string.common_search)) { contentPadding ->
         LazyColumn(Modifier.padding(contentPadding), contentPadding = PaddingValues(bottom = 24.dp)) {
             item {
@@ -212,7 +198,18 @@ fun SearchSection() {
                 item { SectionTitle(stringResource(R.string.search_go_to), Icons.AutoMirrored.Outlined.ArrowForward) }
                 items(places.size) { index ->
                     val entry = places[index]
-                    TeaNodeRow(headline = entry.shownTitle, leadingIcon = entry.place.icon, onClick = { navigator.navigate(entry.place.route) })
+                    TeaNodeRow(
+                        headline = entry.shownTitle, leadingIcon = entry.place.icon,
+                        onClick = {
+                            // The part opens first, so back from the page goes to the part.
+                            val section = Routes.sectionOf(entry.place.route)
+                            when {
+                                section == null -> navigator.navigate(entry.place.route)
+                                Routes.isHome(entry.place.route) -> navigator.openSection(section)
+                                else -> navigator.openInSection(section, entry.place.route)
+                            }
+                        },
+                    )
                 }
             }
             val answer = found
@@ -228,7 +225,7 @@ fun SearchSection() {
                             )
                         }
                     } else {
-                        answer.areas.forEach { areaResults -> areaResults.area?.let { area -> searchAreaSection(area, areaResults, navigator::navigate) { section -> if (section == AppSection.Mail && words != null) navigator.navigate("mail/search?words=${android.net.Uri.encode(words)}") else navigator.openSection(section) } } }
+                        answer.areas.forEach { areaResults -> areaResults.area?.let { area -> searchAreaSection(area, areaResults, words, open) } }
                         if (isPhotosOffered && !answer.areas.any { areaResults -> areaResults.area == SearchArea.Photos && areaResults.hasMore && areaResults.results.isNotEmpty() }) {
                             item {
                                 TeaNodeRow(headline = stringResource(R.string.search_photos), leadingIcon = Icons.Outlined.PhotoLibrary, onClick = { navigator.openSection(AppSection.Photos) }, supporting = stringResource(R.string.search_photos_explanation))
@@ -274,14 +271,14 @@ private fun SectionTitle(text: String, icon: ImageVector) {
 
 @OptIn(ExperimentalLayoutApi::class)
 private fun androidx.compose.foundation.lazy.LazyListScope.searchAreaSection(
-    area: SearchArea, areaResults: SearchAreaResults, open: (String) -> Unit, openSection: (AppSection) -> Unit,
+    area: SearchArea, areaResults: SearchAreaResults, words: String, open: (SearchDestination) -> Unit,
 ) {
     item { SectionTitle(areaTitle(area), areaIcon(area)) }
     if (area == SearchArea.Photos) {
         item {
             FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 areaResults.results.filter { result -> result.targetId.isNotEmpty() }.forEach { result ->
-                    SearchPhotoThumbnail(result.targetId, onClick = { routeOf(result)?.let(open) })
+                    SearchPhotoThumbnail(result.targetId, onClick = { open(SearchDestinations.of(result, words)) })
                 }
             }
         }
@@ -290,16 +287,15 @@ private fun androidx.compose.foundation.lazy.LazyListScope.searchAreaSection(
             val result = areaResults.results[index]
             val title = if (result.isMain) stringResource(R.string.search_main_chat) else result.titleText.ifEmpty { result.detailText }
             val detail = if ((result.isMain || result.titleText.isNotEmpty()) && result.detailText.isNotEmpty()) result.detailText else null
-            val route = routeOf(result)
+            val destination = SearchDestinations.of(result, words)
             TeaNodeRow(
                 headline = title, supporting = detail, overline = result.happenedInstant?.let { instant -> relativeTimeText(instant.toEpochMilli()) },
-                onClick = route?.let { target -> { open(target) } },
+                onClick = if (destination == SearchDestination.Nowhere) null else ({ open(destination) }),
             )
         }
     }
-    val section = areaSection(area)
-    if (areaResults.hasMore && area.isShownInApp && section != null) {
-        item { TeaNodeRow(headline = stringResource(R.string.search_show_all, areaTitle(area)), leadingIcon = Icons.AutoMirrored.Outlined.ArrowForward, onClick = { openSection(section) }) }
+    if (areaResults.hasMore && area.isShownInApp && sectionOfSearchArea(area) != null) {
+        item { TeaNodeRow(headline = stringResource(R.string.search_show_all, areaTitle(area)), leadingIcon = Icons.AutoMirrored.Outlined.ArrowForward, onClick = { open(SearchDestinations.showAll(area, words)) }) }
     }
 }
 

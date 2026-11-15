@@ -1,5 +1,6 @@
 package com.teanode.app.chats
 
+import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -53,6 +54,16 @@ object PendingFiles {
             else -> return bitmap
         }
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(degrees) }, true)
+    }
+
+    /** The address of the picture on the clipboard, when what was copied is one (a screenshot just taken, a picture copied from a page). */
+    fun pastedPictureAddress(context: Context): Uri? {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
+        val clip = runCatching { clipboard.primaryClip }.getOrNull() ?: return null
+        if (clip.itemCount == 0) return null
+        val address = clip.getItemAt(0).uri ?: return null
+        val isPicture = (0 until clip.description.mimeTypeCount).any { index -> clip.description.getMimeType(index).startsWith("image/") }
+        return if (isPicture) address else null
     }
 
     /** A file from the document picker, sent as it is. */

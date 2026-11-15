@@ -104,12 +104,12 @@
                 <data android:scheme="com.teanode.app" android:path="/oauth" />
             </intent-filter>
 
-            <!-- A connect code scanned with the camera or opened from a message: teanode.com/app/connect. -->
+            <!-- The link on the website the app claims, the same one the iPhone app claims: a connect code scanned with the camera or opened from a message, teanode.com/app/connect. The site names this app and its signing key in .well-known/assetlinks.json. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="teanode.com" android:pathPrefix="/app/connect" />
+                <data android:scheme="https" android:host="teanode.com" android:path="/app/connect" />
             </intent-filter>
 
             <!-- The app's own places: teanode://app/<part>/... (see Routes). -->
@@ -221,12 +221,16 @@
                 <data android:mimeType="text/*" />
                 <data android:mimeType="image/*" />
                 <data android:mimeType="application/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="video/*" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
                 <data android:mimeType="application/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="video/*" />
             </intent-filter>
         </activity>
 

@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import android.os.Build
 import com.teanode.kit.Account
 import com.teanode.kit.AccountRing
+import com.teanode.kit.account.AccountProfile
+import com.teanode.kit.account.accountProfile
 import com.teanode.kit.AppSection
 import com.teanode.kit.ConnectLink
 import com.teanode.kit.Connection
@@ -356,12 +358,41 @@ class AppSession(
         signedOutMessage.value = endedBecause
     }
 
+    private val otherConnections = HashMap<String, Connection>()
+
+    /** The connection of an account in the list, kept for the ones not in use, so their own profiles and pictures can be read. */
+    fun connectionFor(account: Account): Connection =
+        activeConnection.value?.takeIf { active -> active.accountKey == account.accountKey }
+            ?: synchronized(otherConnections) { otherConnections.getOrPut(account.accountKey) { Connection(account, transport, store, null) } }
+
+    private val profiles = MutableStateFlow<Map<String, AccountProfile>>(emptyMap())
+
+    /** Each signed-in account's own profile, by account key, for the list of accounts: the name and picture it goes by on its server. */
+    val accountProfiles: StateFlow<Map<String, AccountProfile>> = profiles.asStateFlow()
+
+    /** Reads an account's profile from its own server, so an account not in use shows its name and picture too. */
+    suspend fun loadProfile(account: Account) {
+        if (isDemo) return
+        val profile = try {
+            connectionFor(account).accountProfile()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Throwable) {
+            return
+        } ?: return
+        // Signed out while the answer was on its way: nothing to show it on.
+        if (accountRing.value.accounts.none { kept -> kept.accountKey == account.accountKey }) return
+        profiles.update { known -> known + (account.accountKey to profile) }
+    }
+
     /** Signs out of an account that is not the one in use. */
     fun signOut(other: Account) {
         if (other.accountKey == activeConnection.value?.accountKey) {
             signOut()
             return
         }
+        synchronized(otherConnections) { otherConnections.remove(other.accountKey) }
+        profiles.update { known -> known - other.accountKey }
         scope.launch { SignIn(other.server, transport).revoke(other) }
         store.remove(other.accountKey)
         if (!isDemo) AccountEraser(context, secrets).erase(other, isLastAccount = false)
@@ -420,6 +451,13 @@ class AppSession(
         activeConnection.value = Connection(account, transport, store, subscriptions)
         currentFacts.value = facts
         hasReadFactsFlag.value = true
+    }
+
+    /** Adds a second account to the demo's list, for the screenshots of a list of accounts. */
+    fun addDemoAccount(account: Account) {
+        if (!isDemo) return
+        store.add(account)
+        accountRing.value = store.accounts()
     }
 
     @Serializable
