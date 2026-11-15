@@ -90,15 +90,59 @@ sealed interface ServerSettingField {
     /** A sealed value: whether one is kept, never what it is. */
     data class Secret(override val name: String, val isKept: Boolean) : ServerSettingField
 
+    /** A text that is one of a fixed list (the log level, the certificate challenge), chosen from [options] and not typed. */
+    data class Choice(override val name: String, val text: String, val options: List<String>) : ServerSettingField
+
     /** Something the form does not edit (the sign-in providers), shown as it came. */
     data class Shown(override val name: String, val text: String) : ServerSettingField
 }
 
-object ServerSettingsForm {
-    /** The fields of one section, in the order the server sent them. */
-    fun fields(section: JsonObject): List<ServerSettingField> = section.entries.mapNotNull { (name, value) -> field(name, value) }
+/**
+ * The fields of the server's settings that hold one of a fixed list, as the iPhone's forms show them with a picker: the
+ * values the server accepts, and what a field that is empty stands for. A choice is matched without regard to case (the
+ * server answers the log level in lower case and takes it in upper case, as the iPhone sends it).
+ */
+object ServerSettingChoices {
+    private val choices: Map<Pair<String, String>, List<String>> = mapOf(
+        ("identity" to "logLevel") to listOf("DEBUG", "INFO", "NOTICE", "WARNING", "ERROR", "CRITICAL"),
+        ("places" to "providerKind") to listOf("", "nominatim", "photon"),
+        ("relay" to "security") to listOf("starttls", "tls", "none"),
+        ("certificates" to "acmeChallenge") to listOf("http-01", "dns-01"),
+        ("antispam" to "engine") to listOf("builtin", "spamd"),
+    )
 
-    private fun field(name: String, value: JsonElement): ServerSettingField? {
+    /** The values a field may have; null when the field is free text. */
+    fun options(section: String, field: String): List<String>? = choices[section to field]
+
+    /** What an empty field means, as the iPhone fills it in: the relay starts on STARTTLS, a certificate on http-01, the spam filter on the engine in use. */
+    fun shownValue(section: String, field: String, stored: String, sectionJson: JsonObject): String {
+        val options = choices[section to field].orEmpty()
+        if (stored.isNotEmpty()) return options.firstOrNull { option -> option.equals(stored, ignoreCase = true) } ?: stored
+        if (field == "providerKind") return stored
+        return when (section to field) {
+            ("relay" to "security") -> "starttls"
+            ("certificates" to "acmeChallenge") -> "http-01"
+            ("antispam" to "engine") -> (sectionJson["effectiveEngine"] as? JsonPrimitive)?.content.orEmpty()
+            else -> stored
+        }
+    }
+
+    /** The sections whose settings the server reads once, when it starts: saving stores the change and a restart applies it. */
+    fun isReadAtStart(section: String): Boolean = section == "passkey" || section == "storage" || section == "geoip"
+}
+
+object ServerSettingsForm {
+    /** The fields of one section, in the order the server sent them. Pass the section's name to get its choices as pickers. */
+    fun fields(section: JsonObject, sectionName: String = ""): List<ServerSettingField> = section.entries.mapNotNull { (name, value) -> field(sectionName, section, name, value) }
+
+    private fun field(sectionName: String, section: JsonObject, name: String, value: JsonElement): ServerSettingField? {
+        // What the server worked out from the setting ("effectiveEngine") is shown, never edited or sent back.
+        if (name.length > 9 && name.startsWith("effective") && name[9].isUpperCase() && value is JsonPrimitive) return ServerSettingField.Shown(name, value.content)
+        val options = ServerSettingChoices.options(sectionName, name)
+        if (options != null && (value is JsonNull || (value as? JsonPrimitive)?.isString == true)) {
+            val stored = (value as? JsonPrimitive)?.takeIf { primitive -> primitive !is JsonNull }?.content.orEmpty()
+            return ServerSettingField.Choice(name, ServerSettingChoices.shownValue(sectionName, name, stored, section), options)
+        }
         if (name.length > 3 && name.startsWith("has") && name[3].isUpperCase() && (value as? JsonPrimitive)?.booleanOrNull != null) {
             return ServerSettingField.Secret(secretKey(name), (value as JsonPrimitive).booleanOrNull == true)
         }
@@ -125,13 +169,21 @@ object ServerSettingsForm {
      * What to send for a section: only the fields the person changed, typed as the server sent them; a secret only when
      * one was typed, or the empty text to clear it.
      */
-    fun changes(original: JsonObject, edited: Map<String, String>, switches: Map<String, Boolean>, secrets: Map<String, String>, clearedSecrets: Set<String>): JsonObject {
+    fun changes(
+        original: JsonObject,
+        edited: Map<String, String>,
+        switches: Map<String, Boolean>,
+        secrets: Map<String, String>,
+        clearedSecrets: Set<String>,
+        sectionName: String = "",
+    ): JsonObject {
         val sent = linkedMapOf<String, JsonElement>()
-        for (field in fields(original)) {
+        for (field in fields(original, sectionName)) {
             when (field) {
                 is ServerSettingField.Switch -> switches[field.name]?.takeIf { isOn -> isOn != field.isOn }?.let { isOn -> sent[field.name] = JsonPrimitive(isOn) }
                 is ServerSettingField.Number -> edited[field.name]?.trim()?.takeIf { text -> text != field.text && text.isNotEmpty() }?.let { text -> sent[field.name] = if (field.isWhole) JsonPrimitive(text.toLong()) else JsonPrimitive(text.toDouble()) }
                 is ServerSettingField.Text -> edited[field.name]?.takeIf { text -> text != field.text }?.let { text -> sent[field.name] = JsonPrimitive(text.trim()) }
+                is ServerSettingField.Choice -> edited[field.name]?.takeIf { text -> !text.equals(field.text, ignoreCase = true) }?.let { text -> sent[field.name] = JsonPrimitive(text) }
                 is ServerSettingField.TextList -> edited[field.name]?.let { text -> listOf(text) }?.firstOrNull()?.let { text ->
                     val items = text.split(',').map { item -> item.trim() }.filter { item -> item.isNotEmpty() }
                     if (items.joinToString(", ") != field.text) sent[field.name] = JsonArray(items.map { item -> JsonPrimitive(item) })

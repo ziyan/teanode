@@ -36,6 +36,7 @@ import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.app.ui.components.TeaNodeSectionHeader
 import com.teanode.app.ui.components.rememberLoad
 import com.teanode.kit.manage.AgentUsageGrouping
+import com.teanode.kit.manage.ServerSettingChoices
 import com.teanode.kit.manage.ServerSettingField
 import com.teanode.kit.manage.ServerSettingsForm
 import com.teanode.kit.manage.ServerSettingsTab
@@ -166,18 +167,26 @@ private fun ServerSectionsTab(tab: ServerSettingsTab) {
 private fun ServerSectionForm(section: String, original: JsonObject, onSaved: () -> Unit) {
     val connection = LocalConnection.current
     val actions = rememberActionRunner()
-    val fields = remember(original) { ServerSettingsForm.fields(original) }
-    var texts by remember(original) { mutableStateOf(fields.mapNotNull { field -> when (field) { is ServerSettingField.Text -> field.name to field.text; is ServerSettingField.Number -> field.name to field.text; is ServerSettingField.TextList -> field.name to field.text; else -> null } }.toMap()) }
+    val fields = remember(original) { ServerSettingsForm.fields(original, section) }
+    var texts by remember(original) { mutableStateOf(fields.mapNotNull { field -> when (field) { is ServerSettingField.Choice -> field.name to field.text; is ServerSettingField.Text -> field.name to field.text; is ServerSettingField.Number -> field.name to field.text; is ServerSettingField.TextList -> field.name to field.text; else -> null } }.toMap()) }
     var switches by remember(original) { mutableStateOf(fields.filterIsInstance<ServerSettingField.Switch>().associate { field -> field.name to field.isOn }) }
     var secrets by remember(original) { mutableStateOf(mapOf<String, String>()) }
     var cleared by remember(original) { mutableStateOf(setOf<String>()) }
     val savedText = stringResource(R.string.settings_saved)
-    val changes = ServerSettingsForm.changes(original, texts, switches, secrets, cleared)
+    val changes = ServerSettingsForm.changes(original, texts, switches, secrets, cleared, section)
     val isValid = fields.filterIsInstance<ServerSettingField.Number>().all { field -> ServerSettingsForm.isNumberValid(texts[field.name].orEmpty(), field.isWhole) }
     TeaNodeSectionHeader(com.teanode.kit.agent.KnowledgeSourceType.label(section).split(" ").joinToString(" ") { word -> if (word.lowercase() in setOf("smtp", "dns", "tls", "imap", "s3", "sso", "url", "api")) word.uppercase() else word })
+    serverSectionFooter(section)?.let { footer -> FooterText(stringResource(footer)) }
     fields.forEach { field ->
         val label = com.teanode.kit.agent.KnowledgeSourceType.label(field.name)
         when (field) {
+            is ServerSettingField.Choice -> {
+                ChoiceRow(
+                    stringResource(serverChoiceLabel(section, field.name)), field.options, texts[field.name].orEmpty(),
+                    label = { option -> serverChoiceOptionText(section, field.name, option) }, onSelect = { option -> texts = texts + (field.name to option) },
+                )
+                serverChoiceFooter(section, field.name)?.let { footer -> FooterText(stringResource(footer)) }
+            }
             is ServerSettingField.Switch -> SwitchRow(label, switches[field.name] == true, { isOn -> switches = switches + (field.name to isOn) })
             is ServerSettingField.Number -> FormField(texts[field.name].orEmpty(), { typed -> texts = texts + (field.name to typed) }, label, keyboardType = KeyboardType.Decimal, isError = !ServerSettingsForm.isNumberValid(texts[field.name].orEmpty(), field.isWhole))
             is ServerSettingField.Text -> FormField(texts[field.name].orEmpty(), { typed -> texts = texts + (field.name to typed) }, label)
@@ -192,10 +201,64 @@ private fun ServerSectionForm(section: String, original: JsonObject, onSaved: ()
             is ServerSettingField.Shown -> TeaNodeRow(headline = label, supporting = field.text, supportingMaxLines = 6)
         }
     }
+    if (ServerSettingChoices.isReadAtStart(section)) {
+        val navigator = com.teanode.app.shell.LocalAppNavigator.current
+        TeaNodeRow(
+            headline = stringResource(R.string.settings_server_restart_on_about), leadingIcon = Icons.Outlined.RestartAlt,
+            onClick = { navigator.navigate(SettingsRoutes.MANAGE_SERVER) },
+        )
+        FooterText(stringResource(R.string.settings_server_footer_restart))
+    }
     Button(
         onClick = { actions.run(savedText, onSuccess = onSaved) { connection.updateServerSettingsSection(section, changes) } }, enabled = changes.isNotEmpty() && isValid && !actions.isWorking,
         modifier = Modifier.padding(16.dp).fillMaxWidth(),
     ) { Text(stringResource(R.string.settings_save)) }
+}
+
+/** What a section of the server's settings is for, as the iPhone's form says under its fields; null for a section it has no words for. */
+private fun serverSectionFooter(section: String): Int? = when (section) {
+    "identity" -> R.string.settings_server_footer_identity
+    "smtp" -> R.string.settings_server_footer_smtp
+    "resolver" -> R.string.settings_server_footer_resolver
+    "session" -> R.string.settings_server_footer_session
+    "passkey" -> R.string.settings_server_footer_passkey
+    "listen" -> R.string.settings_server_footer_listen
+    "storage" -> R.string.settings_server_footer_storage
+    "geoip" -> R.string.settings_server_footer_geoip
+    "places" -> R.string.settings_server_footer_places
+    "relay" -> R.string.settings_server_footer_relay
+    "proxy" -> R.string.settings_server_footer_proxy
+    "s3" -> R.string.settings_server_footer_s3
+    "certificates" -> R.string.settings_server_footer_certificates
+    "route53" -> R.string.settings_server_footer_route53
+    "antivirus" -> R.string.settings_server_footer_antivirus
+    "antispam" -> R.string.settings_server_footer_antispam
+    "sso" -> R.string.settings_server_footer_sso
+    else -> null
+}
+
+/** The label of a field that is a choice. */
+private fun serverChoiceLabel(section: String, field: String): Int = when (section to field) {
+    ("identity" to "logLevel") -> R.string.settings_server_label_log_level
+    ("places" to "providerKind") -> R.string.settings_server_label_provider
+    ("relay" to "security") -> R.string.settings_server_label_encryption
+    ("certificates" to "acmeChallenge") -> R.string.settings_server_label_challenge
+    else -> R.string.settings_server_label_engine
+}
+
+/** What a choice is called: the log levels and the challenge types are shown as the server names them, the rest in words. */
+@Composable
+private fun serverChoiceOptionText(section: String, field: String, option: String): String = when (section to field) {
+    ("places" to "providerKind") -> stringResource(when (option) { "nominatim" -> R.string.settings_server_choice_places_nominatim; "photon" -> R.string.settings_server_choice_places_photon; else -> R.string.settings_server_choice_places_off })
+    ("relay" to "security") -> stringResource(when (option) { "tls" -> R.string.settings_server_choice_relay_tls; "none" -> R.string.settings_server_choice_relay_none; else -> R.string.settings_server_choice_relay_starttls })
+    ("antispam" to "engine") -> stringResource(if (option == "spamd") R.string.settings_server_choice_engine_spamd else R.string.settings_server_choice_engine_builtin)
+    else -> option
+}
+
+private fun serverChoiceFooter(section: String, field: String): Int? = when (section to field) {
+    ("identity" to "logLevel") -> R.string.settings_server_footer_log_level
+    ("certificates" to "acmeChallenge") -> R.string.settings_server_footer_challenge
+    else -> null
 }
 
 /** What the agents used over the last days, added up by day, kind, model or agent, and the jobs given up on. */

@@ -79,4 +79,36 @@ class ServerAdminTest {
         assertEquals(1_000_000L, AgentUsageTotals(promptTokens = 400_000, completionTokens = 300_000, cacheReadTokens = 200_000, cacheWriteTokens = 50_000, audioInputTokens = 50_000).totalTokenCount)
         assertTrue(JsonObject(emptyMap()).isEmpty())
     }
+
+    @Test
+    fun `a field that holds one of a fixed list is a choice, and an empty one stands for what the server uses`() {
+        val relay = JsonObject(mapOf("host" to JsonPrimitive("smtp.example.net"), "security" to JsonPrimitive("")))
+        val fields = ServerSettingsForm.fields(relay, "relay")
+        assertEquals(ServerSettingField.Choice("security", "starttls", listOf("starttls", "tls", "none")), fields[1])
+        assertEquals(ServerSettingField.Text("security", ""), ServerSettingsForm.fields(relay)[1])
+        val antispam = JsonObject(mapOf("engine" to JsonPrimitive(""), "effectiveEngine" to JsonPrimitive("builtin")))
+        assertEquals("builtin", (ServerSettingsForm.fields(antispam, "antispam")[0] as ServerSettingField.Choice).text)
+        assertEquals(ServerSettingField.Shown("effectiveEngine", "builtin"), ServerSettingsForm.fields(antispam, "antispam")[1])
+        val places = JsonObject(mapOf("providerKind" to JsonPrimitive("")))
+        assertEquals(listOf("", "nominatim", "photon"), (ServerSettingsForm.fields(places, "places")[0] as ServerSettingField.Choice).options)
+    }
+
+    @Test
+    fun `a choice is sent only when another one is picked, and the log level without regard to case`() {
+        val identity = JsonObject(mapOf("name" to JsonPrimitive("mail.example.net"), "logLevel" to JsonPrimitive("notice")))
+        assertEquals("NOTICE", (ServerSettingsForm.fields(identity, "identity")[1] as ServerSettingField.Choice).text)
+        val untouched = ServerSettingsForm.changes(identity, mapOf("logLevel" to "NOTICE"), emptyMap(), emptyMap(), emptySet(), "identity")
+        assertTrue(untouched.isEmpty())
+        val picked = ServerSettingsForm.changes(identity, mapOf("logLevel" to "DEBUG"), emptyMap(), emptyMap(), emptySet(), "identity")
+        assertEquals(JsonObject(mapOf("logLevel" to JsonPrimitive("DEBUG"))), picked)
+        val places = JsonObject(mapOf("providerKind" to JsonPrimitive("nominatim")))
+        val off = ServerSettingsForm.changes(places, mapOf("providerKind" to ""), emptyMap(), emptyMap(), emptySet(), "places")
+        assertEquals(JsonObject(mapOf("providerKind" to JsonPrimitive(""))), off)
+    }
+
+    @Test
+    fun `only the sections read at start ask for a restart`() {
+        assertTrue(ServerSettingChoices.isReadAtStart("geoip"))
+        assertFalse(ServerSettingChoices.isReadAtStart("relay"))
+    }
 }
