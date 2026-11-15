@@ -189,7 +189,7 @@ private fun ShareSheet(
     ) {
         if (!isAll) {
             ExposedDropdownMenuBox(isAccountOpen, { isAccountOpen = it }) {
-                OutlinedTextField(accounts.firstOrNull { account -> account.id == accountId }?.shownName.orEmpty(), {}, readOnly = true, label = { Text(stringResource(R.string.finance_account)) }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isAccountOpen) }, modifier = Modifier.menuAnchor().fillMaxWidth())
+                OutlinedTextField(accounts.firstOrNull { account -> account.id == accountId }?.shownName ?: stringResource(R.string.finance_choose_an_account), {}, readOnly = true, label = { Text(stringResource(R.string.finance_account)) }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isAccountOpen) }, modifier = Modifier.menuAnchor().fillMaxWidth())
                 ExposedDropdownMenu(isAccountOpen, { isAccountOpen = false }) { for (account in accounts) DropdownMenuItem(text = { Text(account.shownName) }, onClick = { accountId = account.id; isAccountOpen = false }) }
             }
         }

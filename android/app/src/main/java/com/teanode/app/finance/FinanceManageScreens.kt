@@ -31,6 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -169,11 +170,22 @@ internal fun SuggestRulesSheet(base: FinanceBase, onDismiss: () -> Unit, onAdded
                     },
                 )
             }
-            val skipped = (read.tooGenericMatchTextCount ?: 0) + (read.changingNumberMatchTextCount ?: 0) + (read.overLimitMatchTextCount ?: 0)
-            if (skipped > 0) Text(stringResource(R.string.finance_manage_left_out, skipped), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // What was left out and why, in the dashboard's words.
+            val tooGeneric = read.tooGenericMatchTextCount ?: 0
+            val changingNumber = read.changingNumberMatchTextCount ?: 0
+            val overLimit = read.overLimitMatchTextCount ?: 0
+            val leftOutLines = listOfNotNull(
+                if (tooGeneric > 0) pluralStringResource(R.plurals.finance_manage_left_out_too_generic, tooGeneric, tooGeneric) else null,
+                if (changingNumber > 0) pluralStringResource(R.plurals.finance_manage_left_out_changing_number, changingNumber, changingNumber) else null,
+                if (overLimit > 0) stringResource(R.string.finance_manage_left_out_over_limit, overLimit, MAXIMUM_PROPOSAL_COUNT) else null,
+            )
+            if (leftOutLines.isNotEmpty()) Text(leftOutLines.joinToString(". "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
+
+/** The most spending rules the server saves from one suggestion. */
+private const val MAXIMUM_PROPOSAL_COUNT = 50
 
 /** Brings in a provider connection made elsewhere: a Plaid access token or a SimpleFIN access URL already claimed. */
 @Composable

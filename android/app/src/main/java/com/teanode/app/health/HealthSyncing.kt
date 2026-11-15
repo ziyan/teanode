@@ -4,6 +4,7 @@ import androidx.compose.runtime.compositionLocalOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.teanode.kit.health.HealthConnectAvailability
 import java.time.Instant
 
 /** How far a pass over the person's Health data has got: how many of the kinds it reads are done. */
@@ -13,6 +14,8 @@ data class HealthPassProgress(val typesDone: Int, val typesTotal: Int)
 data class HealthSyncSnapshot(
     val isOn: Boolean = false,
     val isAvailable: Boolean = true,
+    /** Why it is not available, when it is not: Health Connect missing, or too old, both of which Google Play can fix. */
+    val healthConnectAvailability: HealthConnectAvailability = if (isAvailable) HealthConnectAvailability.Available else HealthConnectAvailability.Missing,
     val isSyncing: Boolean = false,
     val lastSentAt: Instant? = null,
     val sentSampleCount: Int = 0,

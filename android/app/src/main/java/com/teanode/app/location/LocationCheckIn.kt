@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.LocalAppSession
+import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.kit.location.CheckInTarget
@@ -130,7 +131,10 @@ fun CheckInSheet(model: LocationModel, onDismiss: () -> Unit) {
             when {
                 failure != null -> ErrorState(failure, onRetry = { scope.launch { load() } })
                 trimmed.isNotEmpty() && isSearching && searched == null -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                trimmed.isNotEmpty() && searched == null -> Text(stringResource(R.string.location_press_search), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                trimmed.isNotEmpty() && searched == null -> EmptyState(
+                    Icons.Outlined.Search, stringResource(R.string.location_press_search), Modifier.fillMaxWidth().height(280.dp),
+                    description = stringResource(R.string.location_places_near_you_stay_listed),
+                )
                 trimmed.isEmpty() && nearby == null -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 else -> LazyColumn(Modifier.fillMaxWidth()) {
                     if (reading != null) {
@@ -152,7 +156,12 @@ fun CheckInSheet(model: LocationModel, onDismiss: () -> Unit) {
                     }
                     val places = listed.orEmpty()
                     if (places.isEmpty() && trimmed.isEmpty() && nearby != null) {
-                        item { Text(stringResource(R.string.location_nothing_nearby), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        item {
+                            EmptyState(
+                                Icons.Outlined.LocationOff, stringResource(R.string.location_nothing_nearby), Modifier.fillMaxWidth().height(280.dp),
+                                description = stringResource(R.string.location_try_again_from_a_place),
+                            )
+                        }
                     } else if (places.isEmpty() && trimmed.isNotEmpty() && searchedWords == trimmed) {
                         item { Text(stringResource(R.string.location_no_results), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     }

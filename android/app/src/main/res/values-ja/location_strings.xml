@@ -256,4 +256,6 @@
     <string name="location_recording_notification_title">位置情報を記録中</string>
     <string name="location_recording_notification_text">場所と訪問のために位置情報を記録しています。</string>
     <string name="location_who_is_here">ここにいる人</string>
+    <string name="location_places_near_you_stay_listed">検索するまで、近くの場所が表示されます。</string>
+    <string name="location_try_again_from_a_place">地図上に店、公園、建物がある場所でもう一度お試しいただくか、名前で場所を探してください。</string>
 </resources>

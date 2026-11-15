@@ -271,4 +271,7 @@
     <plurals name="health_readings_kept">
         <item quantity="other">%s件の記録を保存済み</item>
     </plurals>
+    <string name="health_install_health_connect">ヘルスコネクトをインストール</string>
+    <string name="health_update_health_connect">ヘルスコネクトを更新</string>
+    <string name="health_health_connect_needs_update">TeaNode が読み取るには、この端末のヘルスコネクトを更新する必要があります。</string>
 </resources>

@@ -72,6 +72,7 @@ import com.teanode.kit.finance.TaxFilingStatus
 import com.teanode.kit.finance.TaxYearFigureKind
 import com.teanode.kit.finance.TaxYearSettingChange
 import com.teanode.kit.finance.TaxYearSummary
+import com.teanode.kit.finance.FinanceTaxBoxTitles
 import com.teanode.kit.finance.boxName
 import com.teanode.kit.finance.comparisons
 import com.teanode.kit.finance.deletePaystub
@@ -281,7 +282,12 @@ fun FinanceTaxesScreen() {
                         }
                     }
                     for (comparison in employment.comparisons.filter { each -> each.isMatching == false }) {
-                        item("comparison-" + employment.employerName + comparison.boxName) { LabeledValue(stringResource(R.string.finance_tax_box, comparison.boxName), FinanceMoney.shown(comparison.w2Amount, currency), supporting = stringResource(R.string.finance_tax_paystubs_say, FinanceMoney.shown(comparison.paystubAmount, currency))) }
+                        item("comparison-" + employment.employerName + comparison.boxName) {
+                            LabeledValue(
+                                listOfNotNull(stringResource(R.string.finance_tax_box, comparison.boxName), taxBoxWords(FinanceTaxBoxTitles.boxKey("w2", comparison.boxCode))).joinToString(" · "), FinanceMoney.shown(comparison.w2Amount, currency),
+                                supporting = stringResource(R.string.finance_tax_paystubs_say, FinanceMoney.shown(comparison.paystubAmount, currency)),
+                            )
+                        }
                     }
                 }
                 summary?.taxYearInvestment?.let { investment -> taxInvestment(investment, currency) }
@@ -525,7 +531,11 @@ fun FinanceTaxFormDetailScreen(taxFormId: String) {
                 if (form.isCorrected == true) item("corrected") { Footnote(stringResource(R.string.finance_tax_corrected)) }
                 item("boxes-header") { TeaNodeSectionHeader(stringResource(R.string.finance_tax_boxes)) }
                 for (entry in form.entries) {
-                    item("entry-" + entry.id) { TeaNodeRow(stringResource(R.string.finance_tax_box, entry.boxName), supporting = entry.textValue?.takeIf { text -> text.isNotEmpty() }, trailing = { if (!entry.amount.isNullOrEmpty()) Text(FinanceMoney.shown(entry.amount, "USD")) else if (entry.isChecked == true) Text("✓") }) }
+                    item("entry-" + entry.id) {
+                        val termKey = FinanceTaxBoxTitles.termKey(form.taxFormKind, entry.boxQualifier)
+                        // A 1099-B's boxes are told apart by their total, said in words under the box rather than as its qualifier.
+                        TeaNodeRow(stringResource(R.string.finance_tax_box, if (termKey == null) entry.boxName else entry.boxCode.orEmpty()), supporting = listOfNotNull(taxBoxWords(FinanceTaxBoxTitles.boxKey(form.taxFormKind, entry.boxCode)), taxBoxWords(termKey), entry.textValue?.takeIf { text -> text.isNotEmpty() }).joinToString("\n").ifEmpty { null }, trailing = { if (!entry.amount.isNullOrEmpty()) Text(FinanceMoney.shown(entry.amount, "USD")) else if (entry.isChecked == true) Text("✓") })
+                    }
                 }
                 val findings = view.findings
                 if (findings.isNotEmpty()) {
@@ -544,4 +554,13 @@ fun FinanceTaxFormDetailScreen(taxFormId: String) {
             }
         }
     }
+}
+
+/** The words for a box of a tax form from its key, or null for a box with none. */
+@Composable
+private fun taxBoxWords(key: String?): String? {
+    if (key == null) return null
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val identifier = context.resources.getIdentifier("finance_tax_box_$key", "string", context.packageName)
+    return if (identifier == 0) null else context.getString(identifier)
 }

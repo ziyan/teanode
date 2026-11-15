@@ -32,4 +32,24 @@
         <item quantity="one">Reading %d document</item>
         <item quantity="other">Reading %d documents</item>
     </plurals>
+    <string name="finance_valued_by">Valued by</string>
+    <string name="finance_valued_by_you">You</string>
+    <string name="finance_valued_by_agent_estimate">The agent\'s estimate</string>
+    <string name="finance_valued_by_agent_reading">The agent reading it</string>
+    <string name="finance_what_to_estimate_from">What to estimate from</string>
+    <string name="finance_budget_from_month">From month (%1$s)</string>
+    <string name="finance_budget_changes_past_months">This changes months already past.</string>
+    <string name="finance_end_this_budget">End this budget</string>
+    <string name="finance_budget_ended">Budget ended</string>
+    <string name="finance_choose_an_account">Choose an account</string>
+    <string name="finance_measured_by">Measured by</string>
+    <string name="finance_manage_left_out_over_limit">%1$d more left out: at most %2$d spending rules at a time</string>
+    <plurals name="finance_manage_left_out_too_generic">
+        <item quantity="one">1 left out: too short or too generic to be a rule</item>
+        <item quantity="other">%d left out: too short or too generic to be rules</item>
+    </plurals>
+    <plurals name="finance_manage_left_out_changing_number">
+        <item quantity="one">1 left out: it holds a number that changes each time</item>
+        <item quantity="other">%d left out: they hold a number that changes each time</item>
+    </plurals>
 </resources>
