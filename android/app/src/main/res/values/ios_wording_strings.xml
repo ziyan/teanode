@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mail_manage_who_reported">Who reported this</string>
+    <string name="mail_manage_reporter">Reporter</string>
+    <string name="mail_manage_covering">Covering</string>
+    <string name="mail_manage_covering_range">%1$s to %2$s</string>
+    <string name="mail_manage_sent_by">Sent by</string>
+    <string name="mail_manage_policy_they_saw">The policy they saw</string>
+    <string name="mail_manage_published_at">Published at</string>
+    <string name="mail_manage_policy">Policy</string>
+    <string name="mail_manage_teach_header">Teach the filter</string>
+    <string name="settings_brief_footer_on">What the day holds and what is waiting for you, sent to you as mail. It is the schedule called “Daily brief” below, where you can change what it asks for.</string>
+    <string name="settings_brief_days">On days</string>
+    <string name="settings_brief_choose_day">Choose at least one day.</string>
+    <string name="settings_brief_start">Send me a brief</string>
+    <string name="settings_server_about_available">Available</string>
+    <string name="settings_server_about_last_checked">Last checked</string>
+    <string name="settings_server_about_release_page">Release page</string>
+    <string name="settings_server_about_newest">%1$s is the newest release</string>
+    <string name="settings_server_about_not_checked">Not checked yet</string>
+    <string name="settings_server_about_never">Never</string>
+    <string name="settings_server_about_downloading">Downloading, replacing the binary and restarting. This takes a minute.</string>
+    <string name="settings_server_about_unreadable">The server status could not be read.</string>
+    <string name="settings_server_credentials_file">Credentials file</string>
+    <string name="settings_server_credentials_file_footer">Leave the keys empty: the credentials come from this file.</string>
+</resources>

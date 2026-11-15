@@ -19,14 +19,18 @@ import android.view.autofill.AutofillId
 import android.view.autofill.AutofillValue
 import android.view.View
 import android.widget.RemoteViews
+import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
 import com.teanode.app.MainActivity
 import com.teanode.app.R
-import com.teanode.kit.passwords.PasswordItem
+import com.teanode.app.ui.components.SecureWindow
+import com.teanode.app.ui.theme.TeaNodeTheme
+import com.teanode.kit.passwords.PasswordsAutofillIndex
 import com.teanode.kit.passwords.PasswordsCache
 import com.teanode.kit.passwords.PasswordsItemFields
+import com.teanode.kit.passwords.PasswordsLoginFields
+import com.teanode.kit.passwords.PasswordsOneTimeCode
 import com.teanode.kit.passwords.PasswordsOpener
-import com.teanode.kit.passwords.PasswordsSiteMatch
 import com.teanode.kit.passwords.FilePasswordsStorage
 import java.io.File
 import kotlinx.coroutines.launch
@@ -63,14 +67,28 @@ internal object TrustedBrowsers {
     fun isTrusted(packageName: String?): Boolean = packageName != null && packageName in packageNames
 }
 
-/** What the picker chose: the fields of one frame of a trusted browser, and that frame's address. */
+/** What the picker chose: the fields of one frame of a trusted browser and that frame's address, or the fields of an app and no address. */
 internal class PickedFields<IdType>(val userNameIds: List<IdType>, val passwordIds: List<IdType>, val oneTimeCodeIds: List<IdType>, val webAddress: String?)
 
-/** Chooses what to fill from the fields found: only visible ones, and only those in the same frame as the first password or code field. */
+/**
+ * Chooses what to fill from the fields found. In a known browser: only visible fields, and only those in the same frame as the
+ * first password or code field, and the frame's address is the page. In any other app the address a view claims is not
+ * believed (any app can claim any web domain), so no page is named: the visible fields are filled only with a login the person
+ * chooses from the whole list, never one suggested for a site.
+ */
 internal object AutofillFieldPicker {
     fun <IdType> pick(found: List<FoundField<IdType>>, packageName: String?): PickedFields<IdType> {
         val none = PickedFields<IdType>(emptyList(), emptyList(), emptyList(), null)
-        if (!TrustedBrowsers.isTrusted(packageName)) return none
+        if (!TrustedBrowsers.isTrusted(packageName)) {
+            val visibleInApp = found.filter { field -> field.isVisible }
+            if (visibleInApp.none { field -> field.kind == FieldKind.Password || field.kind == FieldKind.OneTimeCode }) return none
+            return PickedFields(
+                userNameIds = visibleInApp.filter { field -> field.kind == FieldKind.UserName }.map { field -> field.id },
+                passwordIds = visibleInApp.filter { field -> field.kind == FieldKind.Password }.map { field -> field.id },
+                oneTimeCodeIds = visibleInApp.filter { field -> field.kind == FieldKind.OneTimeCode }.map { field -> field.id },
+                webAddress = null,
+            )
+        }
         val visible = found.filter { field -> field.isVisible && field.webAddress != null }
         val anchor = visible.firstOrNull { field -> field.kind == FieldKind.Password } ?: visible.firstOrNull { field -> field.kind == FieldKind.OneTimeCode } ?: return none
         // A field in another frame, such as an embedded page of another site, is never filled with this page's logins.
@@ -121,20 +139,6 @@ internal object AutofillStructureParser {
     }
 }
 
-/**
- * The logins the person has for a page, most fitting first: the exact origin first, then related hosts, never a lookalike
- * (the rule of PasswordsSiteMatch, shared with the dashboard, the agent and the iPhone). A native app is not a web page, so
- * no login is offered for one.
- */
-internal fun loginsFor(items: List<PasswordItem>, requested: String?): List<PasswordItem> {
-    if (requested == null) return emptyList()
-    val logins = items.filter { item -> !item.isDeleted && item.fields is PasswordsItemFields.Login }
-        .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { item -> item.name })
-    return PasswordsSiteMatch.sorted(logins, requested, isPageAddress = true) { item -> item.sites() }
-}
-
-private fun PasswordItem.sites(): List<String> = (fields as PasswordsItemFields.Login).fields.sites
-
 /** Where the app writes which sign-in the autofill service reads the copy of. */
 internal object PasswordsAutofillPointer {
     private fun file(context: Context) = File(context.filesDir, "passwords/active")
@@ -156,13 +160,13 @@ class PasswordsAutofillService : AutofillService() {
     override fun onFillRequest(request: FillRequest, cancellationSignal: CancellationSignal, callback: FillCallback) {
         val structure = request.fillContexts.lastOrNull()?.structure
         val fields = structure?.let { assist -> AutofillStructureParser.parse(assist) }
-        // Only a page with a password field, and only a web page: a login is for a site.
-        if (fields == null || (fields.passwordIds.isEmpty() && fields.oneTimeCodeIds.isEmpty()) || fields.webAddress == null || PasswordsAutofillPointer.read(this) == null) {
+        // Only a form with a password or a code field. Nothing is read or offered here: the logins open only after the fingerprint.
+        if (fields == null || (fields.passwordIds.isEmpty() && fields.oneTimeCodeIds.isEmpty()) || PasswordsAutofillPointer.read(this) == null) {
             callback.onSuccess(null)
             return
         }
         val intent = Intent(this, PasswordsAutofillActivity::class.java)
-            .putExtra(PasswordsAutofillActivity.EXTRA_WEB_ADDRESS, fields.webAddress)
+            .apply { fields.webAddress?.let { address -> putExtra(PasswordsAutofillActivity.EXTRA_WEB_ADDRESS, address) } }
             .putParcelableArrayListExtra(PasswordsAutofillActivity.EXTRA_USER_NAME_IDS, ArrayList(fields.userNameIds))
             .putParcelableArrayListExtra(PasswordsAutofillActivity.EXTRA_PASSWORD_IDS, ArrayList(fields.passwordIds))
             .putParcelableArrayListExtra(PasswordsAutofillActivity.EXTRA_ONE_TIME_CODE_IDS, ArrayList(fields.oneTimeCodeIds))
@@ -195,7 +199,7 @@ class PasswordsAutofillActivity : androidx.appcompat.app.AppCompatActivity() {
         val passwordIds = intent.getParcelableArrayListExtra<AutofillId>(EXTRA_PASSWORD_IDS) ?: arrayListOf()
         val oneTimeCodeIds = intent.getParcelableArrayListExtra<AutofillId>(EXTRA_ONE_TIME_CODE_IDS) ?: arrayListOf()
         val signInAccountKey = PasswordsAutofillPointer.read(this)
-        if (signInAccountKey == null || webAddress == null) {
+        if (signInAccountKey == null) {
             finish()
             return
         }
@@ -218,31 +222,30 @@ class PasswordsAutofillActivity : androidx.appcompat.app.AppCompatActivity() {
                     return@launchWhenCreatedCompat
                 }
                 val opener = PasswordsOpener.fromPrivateKey(accountKey, contents.userId, contents.privateKeyByAccountKey, contents.publicKey, cache.loadPins(contents.userId))
-                val logins = loginsFor(opener.openAll(contents.items).items, webAddress)
-                val response = FillResponse.Builder()
-                for (login in logins.take(MOST_LOGINS_OFFERED)) {
-                    val fields = (login.fields as PasswordsItemFields.Login).fields
-                    val dataset = Dataset.Builder()
-                    val presentation = RemoteViews(packageName, R.layout.passwords_autofill_item).apply {
-                        setTextViewText(R.id.passwords_autofill_title, login.name)
-                        setTextViewText(R.id.passwords_autofill_detail, fields.userName)
+                val items = opener.openAll(contents.items).items
+                val logins = PasswordsAutofillIndex.logins(items)
+                val loginFieldsByItemId = items.mapNotNull { item -> (item.fields as? PasswordsItemFields.Login)?.let { login -> item.id to login.fields } }.toMap()
+                setContent {
+                    TeaNodeTheme {
+                        SecureWindow()
+                        PasswordsAutofillChooser(
+                            logins = logins,
+                            pageAddress = webAddress,
+                            isOneTimeCode = passwordIds.isEmpty() && oneTimeCodeIds.isNotEmpty(),
+                            onChoose = { chosen ->
+                                val response = loginFieldsByItemId[chosen.itemId]?.let { fields -> responseFor(fields, userNameIds, passwordIds, oneTimeCodeIds) }
+                                if (response == null) {
+                                    setResult(Activity.RESULT_CANCELED)
+                                } else {
+                                    setResult(Activity.RESULT_OK, Intent().putExtra(android.view.autofill.AutofillManager.EXTRA_AUTHENTICATION_RESULT, response))
+                                }
+                                finish()
+                            },
+                            onCancel = { setResult(Activity.RESULT_CANCELED); finish() },
+                        )
                     }
-                    for (id in userNameIds) dataset.setValue(id, AutofillValue.forText(fields.userName), presentation)
-                    for (id in passwordIds) dataset.setValue(id, AutofillValue.forText(fields.password), presentation)
-                    // The code of the moment, when the login has one and the page asks for it.
-                    val codeSettings = runCatching { com.teanode.kit.passwords.PasswordsOneTimeCode.parse(fields.oneTimeCodeUri) }.getOrNull()
-                    if (codeSettings != null) {
-                        val code = com.teanode.kit.passwords.PasswordsOneTimeCode.code(codeSettings, System.currentTimeMillis() / 1000)
-                        for (id in oneTimeCodeIds) dataset.setValue(id, AutofillValue.forText(code), presentation)
-                    }
-                    if (userNameIds.isEmpty() && passwordIds.isEmpty() && (codeSettings == null || oneTimeCodeIds.isEmpty())) continue
-                    response.addDataset(dataset.build())
                 }
-                if (logins.isEmpty()) {
-                    setResult(Activity.RESULT_CANCELED)
-                } else {
-                    setResult(Activity.RESULT_OK, Intent().putExtra(android.view.autofill.AutofillManager.EXTRA_AUTHENTICATION_RESULT, response.build()))
-                }
+                return@launchWhenCreatedCompat
             } catch (error: Throwable) {
                 setResult(Activity.RESULT_CANCELED)
             }
@@ -250,12 +253,38 @@ class PasswordsAutofillActivity : androidx.appcompat.app.AppCompatActivity() {
         }
     }
 
+    /** The answer for the login the person chose: one dataset holding the user name, the password and the code of the moment, for the fields that asked. */
+    private fun responseFor(
+        fields: PasswordsLoginFields,
+        userNameIds: List<AutofillId>,
+        passwordIds: List<AutofillId>,
+        oneTimeCodeIds: List<AutofillId>,
+    ): FillResponse? {
+        val dataset = Dataset.Builder()
+        val presentation = RemoteViews(packageName, R.layout.passwords_autofill_item).apply {
+            setTextViewText(R.id.passwords_autofill_title, fields.name)
+            setTextViewText(R.id.passwords_autofill_detail, fields.userName)
+        }
+        var valueCount = 0
+        if (passwordIds.isNotEmpty()) {
+            for (id in userNameIds) { dataset.setValue(id, AutofillValue.forText(fields.userName), presentation); valueCount++ }
+            for (id in passwordIds) { dataset.setValue(id, AutofillValue.forText(fields.password), presentation); valueCount++ }
+        }
+        // The code of the moment, when the login has one and the page asks for it.
+        val codeSettings = runCatching { PasswordsOneTimeCode.parse(fields.oneTimeCodeUri) }.getOrNull()
+        if (codeSettings != null) {
+            val code = PasswordsOneTimeCode.code(codeSettings, System.currentTimeMillis() / 1000)
+            for (id in oneTimeCodeIds) { dataset.setValue(id, AutofillValue.forText(code), presentation); valueCount++ }
+        }
+        if (valueCount == 0) return null
+        return FillResponse.Builder().addDataset(dataset.build()).build()
+    }
+
     companion object {
         const val EXTRA_WEB_ADDRESS = "com.teanode.app.extra.AUTOFILL_WEB_ADDRESS"
         const val EXTRA_USER_NAME_IDS = "com.teanode.app.extra.AUTOFILL_USER_NAME_IDS"
         const val EXTRA_PASSWORD_IDS = "com.teanode.app.extra.AUTOFILL_PASSWORD_IDS"
         const val EXTRA_ONE_TIME_CODE_IDS = "com.teanode.app.extra.AUTOFILL_ONE_TIME_CODE_IDS"
-        private const val MOST_LOGINS_OFFERED = 10
     }
 }
 

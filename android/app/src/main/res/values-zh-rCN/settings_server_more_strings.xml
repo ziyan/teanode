@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_server_listen_confirm_title">保存这些地址，控制台使用 %1$s？</string>
+    <string name="settings_server_listen_confirm_message">重启之前不会有任何变化。如果控制台的地址填错了，重启后你将无法再打开这个页面，唯一的退路是登上主机执行 “teanode-server config”。</string>
+    <string name="settings_server_listen_confirm_button">保存地址</string>
+    <string name="settings_server_about_restart_title">重启此实例？</string>
+    <string name="settings_server_about_restart_confirm">确定重启</string>
+    <string name="settings_server_about_restart_question">重启 %1$s？几秒内将无法接收邮件。</string>
+    <string name="settings_server_about_restart_footer">进程会退出，由启动它的程序负责再启动一个。已接收的邮件保存在磁盘上，之后会继续投递；这几秒内连接进来的发件方会自行重试。</string>
+    <string name="settings_server_about_nothing_pending">没有需要重启才能应用的更改。</string>
+    <string name="settings_server_about_pending">此实例启动后发生了更改，但尚未生效：%1$s。重启即可应用。</string>
+    <string name="settings_server_about_upgrade_footer">会下载该版本，根据随它一起发布的校验和核对，然后重启进入该版本。期间数秒不接收邮件，发件方会重试。被替换的二进制会保留，因此回退不需要联网。</string>
+    <string name="settings_server_about_upgrade_confirm">下载并重启</string>
+    <string name="settings_server_about_upgrade_title">确定将本服务器升级到 %1$s？</string>
+    <string name="settings_server_about_automatic">已开启自动升级：新版本会在不询问的情况下安装。</string>
+    <string name="settings_server_about_automatic_window">已开启自动升级（本地时间 %1$s）：新版本会在不询问的情况下安装。</string>
+    <string name="settings_server_about_checking_off">已关闭版本检查（upgrade.enabled），以下是开启时获取的信息。</string>
+    <string name="settings_server_about_header">此实例</string>
+    <string name="settings_server_relay_preset_footer">会填好主机、端口和加密方式。用户名和密码仍需自行填写。</string>
+    <string name="settings_server_relay_preset_button">按服务商填入</string>
+    <string name="settings_server_cert_manual_footer">关闭后，本服务器只使用下面指定的证书和私钥，续期由你自己负责。</string>
+    <string name="settings_server_antispam_sources_footer">四个来源，各自可开关。信号不耗资源且对每台服务器开启；分类器从你标记的邮件中学习。</string>
+    <string name="settings_server_credentials_footer">留空则使用环境提供的凭据，例如实例角色或常规的 AWS 环境变量。</string>
+    <string name="settings_server_data_directory_footer">邮件和状态写在哪里。这里只显示、不可修改：服务器改用另一个目录重启后，找不到原目录里的东西，那些邮件就等于不存在了。迁移要在服务器停止的状态下进行。</string>
+    <string name="settings_server_data_directory">数据目录</string>
+</resources>

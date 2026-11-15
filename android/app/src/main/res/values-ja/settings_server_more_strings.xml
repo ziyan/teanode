@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_server_listen_confirm_title">ダッシュボードを %1$s として、これらのアドレスを保存しますか？</string>
+    <string name="settings_server_listen_confirm_message">再起動するまで何も変わりません。ダッシュボードのアドレスが誤っていれば、再起動後このページには来られなくなり、戻る道はホスト上のシェルと「teanode-server config」だけです。</string>
+    <string name="settings_server_listen_confirm_button">アドレスを保存</string>
+    <string name="settings_server_about_restart_title">このインスタンスを再起動しますか？</string>
+    <string name="settings_server_about_restart_confirm">再起動する</string>
+    <string name="settings_server_about_restart_question">%1$s を再起動しますか。数秒間メールを受け取れなくなります。</string>
+    <string name="settings_server_about_restart_footer">プロセスは終了し、起動した仕組みが新しいプロセスを起動します。受信済みのメールはディスクにあり、そのあと配送されます。この数秒の間に接続してきた送信側は再試行します。</string>
+    <string name="settings_server_about_nothing_pending">再起動で反映される変更はありません。</string>
+    <string name="settings_server_about_pending">このインスタンスの起動後に変更され、まだ使われていない設定：%1$s。再起動すると反映されます。</string>
+    <string name="settings_server_about_upgrade_footer">リリースをダウンロードし、一緒に公開されたチェックサムと照合したうえで、そのバージョンとして再起動します。数秒間メールを受け付けませんが、送信側は再試行します。置き換えられるバイナリは残るので、戻すのにネットワークは要りません。</string>
+    <string name="settings_server_about_upgrade_confirm">ダウンロードして再起動</string>
+    <string name="settings_server_about_upgrade_title">このサーバーを %1$s に更新しますか？</string>
+    <string name="settings_server_about_automatic">自動更新が有効です。新しいリリースは確認なしに導入されます。</string>
+    <string name="settings_server_about_automatic_window">自動更新が有効です（現地時間で %1$s）。新しいリリースは確認なしに導入されます。</string>
+    <string name="settings_server_about_checking_off">リリースの確認は無効です（upgrade.enabled）。ここに出ているのは有効だった頃の情報です。</string>
+    <string name="settings_server_about_header">このインスタンス</string>
+    <string name="settings_server_relay_preset_footer">ホスト、ポート、暗号化を埋めます。ユーザー名とパスワードはご自分で入力してください。</string>
+    <string name="settings_server_relay_preset_button">プロバイダーから入力</string>
+    <string name="settings_server_cert_manual_footer">切ると、このサーバーは下に指定した証明書と鍵だけを使い、更新はあなたの仕事になります。</string>
+    <string name="settings_server_antispam_sources_footer">4つのソースを個別に切り替えられます。シグナルはコストがかからず常に有効、分類器はマークしたメールから学習します。</string>
+    <string name="settings_server_credentials_footer">空のままにすると、環境が提供する認証情報（インスタンスロールや通常の AWS 環境変数）を使います。</string>
+    <string name="settings_server_data_directory_footer">メールと状態を書く場所です。ここでは表示のみで変更できません。別のディレクトリで再起動したサーバーは元の中身を見つけられず、メールは無いのと同じになります。移動はサーバーを止めて行います。</string>
+    <string name="settings_server_data_directory">データディレクトリ</string>
+</resources>

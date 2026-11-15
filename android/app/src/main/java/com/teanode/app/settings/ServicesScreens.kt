@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +49,7 @@ import com.teanode.kit.services.updateServices
 fun ServerServicesScreen(onBack: () -> Unit) {
     val connection = LocalConnection.current
     val session = LocalAppSession.current
+    val navigator = com.teanode.app.shell.LocalAppNavigator.current
     val actions = rememberActionRunner()
     val loaded = rememberLoad { connection.serviceSelection() }
     var selection by remember(loaded.value) { mutableStateOf(loaded.value) }
@@ -65,6 +67,10 @@ fun ServerServicesScreen(onBack: () -> Unit) {
             SwitchRow(stringResource(R.string.section_photos), current.isPhotosEnabled, { isOn -> selection = current.copy(isPhotosEnabled = isOn) })
             TeaNodeRow(headline = stringResource(R.string.settings_services_review), onClick = if (actions.isWorking) null else ({ isReviewing = true }))
             FooterText(stringResource(R.string.settings_services_footer))
+            TeaNodeRow(
+                headline = stringResource(R.string.settings_server_restart_on_about), leadingIcon = Icons.Outlined.RestartAlt,
+                onClick = { navigator.navigate(SettingsRoutes.MANAGE_SERVER) },
+            )
         }
     }
     val reviewed = selection

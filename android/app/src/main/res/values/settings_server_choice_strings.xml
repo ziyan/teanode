@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_server_footer_identity">What this server calls itself, and how much it writes down.</string>
+    <string name="settings_server_footer_smtp">What this server accepts from whoever connects to it. Every one of these is read for each message or each connection, so a change applies to the next one.</string>
+    <string name="settings_server_footer_resolver">How this server asks DNS questions when it checks what a domain has published. Read for each check, so a change applies to the next one.</string>
+    <string name="settings_server_footer_session">How long a sign-in to this dashboard lasts.</string>
+    <string name="settings_server_footer_passkey">How this server introduces itself to an authenticator. A passkey is bound to the name below, so changing it makes every passkey already registered useless.</string>
+    <string name="settings_server_footer_listen">The addresses this server binds. Each is host:port, and an empty host means every address on the machine.</string>
+    <string name="settings_server_footer_storage">Where messages are written, and how long a delivery that keeps failing is kept.</string>
+    <string name="settings_server_footer_geoip">An optional MaxMind database, read from disk, that turns the address a message arrived from into a country. Nothing is sent anywhere to do it.</string>
+    <string name="settings_server_footer_places">Place names come from OpenStreetMap: your server sends the position of each new place to the place provider to look up its name. Switch it off and places keep the name of their city, and people can still name them.</string>
+    <string name="settings_server_footer_relay">Hand outgoing mail to one mail server instead of delivering it by MX lookup. Almost every domestic ISP blocks outbound port 25, and a relay is reached on a submission port instead. It is also how this server sends through a provider: SES, Postmark and Resend all offer an SMTP endpoint, and the message arrives carrying the signature this server already applied.</string>
+    <string name="settings_server_footer_proxy">Carries this server’s own SMTP conversation out through another address. The relay answers the same question differently: it hands the message to somebody else’s mail server, while this one still delivers by MX lookup, just from somewhere else. Either is an answer to a blocked or blocklisted port 25, and neither needs the other.</string>
+    <string name="settings_server_footer_s3">Where a copy of every stored message goes. Needed only when more than one instance shares this database, because it is how any of them can read a message another one received.</string>
+    <string name="settings_server_footer_certificates">A sender connecting to a domain is then handed a certificate for the name it asked for, rather than one naming a different domain. Each name must reach this server on port 80 for the certificate to be obtained. Turning this off stops renewals; certificates already issued stay in place until they expire.</string>
+    <string name="settings_server_footer_route53">Solves the dns-01 challenge using an AWS hosted zone. Needed only for a wildcard certificate, or when port 80 is not reachable.</string>
+    <string name="settings_server_footer_antivirus">Scans incoming mail with ClamAV.</string>
+    <string name="settings_server_footer_antispam">How incoming mail is scored for spam, and what does the scoring.</string>
+    <string name="settings_server_footer_sso">People sign in through an OpenID Connect provider, such as Entra ID, Okta, Google, Keycloak or Authentik, with a button on the sign-in page for each one listed here. Their groups at the provider put them in the groups here that name them.</string>
+    <string name="settings_server_footer_log_level">How much is written to the log. Notice is the working default; debug is a great deal and is for finding something specific, not for leaving on.</string>
+    <string name="settings_server_footer_challenge">How ownership is proved. http-01 needs the HTTP listener reachable from the internet on port 80; dns-01 needs the Route53 solver, and is the only one that can obtain a wildcard.</string>
+    <string name="settings_server_footer_restart">These are read once, when the server starts. Saving stores the change; the server goes on using what it read until it is restarted.</string>
+    <string name="settings_server_restart_on_about">Restart it on the About page</string>
+    <string name="settings_server_label_log_level">Log level</string>
+    <string name="settings_server_label_provider">Place name provider</string>
+    <string name="settings_server_label_encryption">Encryption</string>
+    <string name="settings_server_label_challenge">Challenge</string>
+    <string name="settings_server_label_engine">Filter</string>
+    <string name="settings_server_choice_places_nominatim">Nominatim (OpenStreetMap)</string>
+    <string name="settings_server_choice_places_photon">Photon (OpenStreetMap data)</string>
+    <string name="settings_server_choice_places_off">Off: name places after their city</string>
+    <string name="settings_server_choice_relay_starttls">STARTTLS (587, 2525)</string>
+    <string name="settings_server_choice_relay_tls">TLS (465)</string>
+    <string name="settings_server_choice_relay_none">Not required</string>
+    <string name="settings_server_choice_engine_builtin">Built in, scoring mail inside this server</string>
+    <string name="settings_server_choice_engine_spamd">External SpamAssassin daemon</string>
+</resources>

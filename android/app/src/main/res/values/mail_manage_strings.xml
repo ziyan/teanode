@@ -2,7 +2,7 @@
 <resources>
     <string name="mail_manage_accepted">Accepted</string>
     <string name="mail_manage_accepted_rejected">%1$d total, %2$d accepted, %3$d rejected</string>
-    <string name="mail_manage_add_alias">Add an alias</string>
+    <string name="mail_manage_add_alias">Add alias</string>
     <string name="mail_manage_add_credential">Add a credential</string>
     <string name="mail_manage_alias_email">Email address</string>
     <string name="mail_manage_aliases">Aliases</string>
@@ -72,15 +72,15 @@
     <string name="mail_manage_messages">Messages</string>
     <string name="mail_manage_most_recent_messages">The %1$d most recent messages</string>
     <string name="mail_manage_neither_aligned">Neither aligned</string>
-    <string name="mail_manage_new_credential">New credential</string>
-    <string name="mail_manage_new_domain">New domain</string>
+    <string name="mail_manage_new_credential">Create credential</string>
+    <string name="mail_manage_new_domain">Add a domain</string>
     <string name="mail_manage_newest_message">Newest message</string>
     <string name="mail_manage_next_attempt">Next attempt %1$s</string>
     <string name="mail_manage_no_aliases">No address on this domain goes anywhere yet.</string>
-    <string name="mail_manage_no_credentials">No credentials yet.</string>
+    <string name="mail_manage_no_credentials">No machine sends through this domain yet.</string>
     <string name="mail_manage_no_deliveries">No deliveries. The message was rejected or matched no alias.</string>
-    <string name="mail_manage_no_domains">No domains yet</string>
-    <string name="mail_manage_no_domains_description">Add the first one and this server will start accepting its mail.</string>
+    <string name="mail_manage_no_domains">No domains</string>
+    <string name="mail_manage_no_domains_description">No domains are configured yet. Add one under Domains.</string>
     <string name="mail_manage_n_of_total_messages">%1$d of %2$d messages</string>
     <string name="mail_manage_no_mail_yet">No mail received yet.</string>
     <string name="mail_manage_none_set">None set</string>
@@ -301,7 +301,7 @@
     <string name="mail_manage_classifier_silent">The classifier stays silent until %1$d are learned; it has %2$d.</string>
     <string name="mail_manage_no_source_rows">This report carried no per-source rows, which usually means the original XML could not be parsed.</string>
     <string name="mail_manage_aliases_footer">An alias with an empty pattern is a catch-all: it receives whatever no other alias matched.</string>
-    <string name="mail_manage_alias_catch_all">(everything else)</string>
+    <string name="mail_manage_alias_catch_all">(catch-all)</string>
     <string name="mail_manage_alias_pattern_prompt">^hello$, or leave blank to catch everything else</string>
     <string name="mail_manage_alias_pattern_missing">This address needs a pattern. To catch everything else, add an alias with an empty pattern.</string>
     <string name="mail_manage_alias_disabled_footer">A disabled alias is ignored, as if it were not there. It stays so it can be turned back on.</string>
