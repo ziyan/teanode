@@ -158,4 +158,7 @@
     <string name="recordings_this_is_me">これは自分</string>
     <string name="recordings_separate_from">%1$sから分ける</string>
     <string name="recordings_temporary_speaker_footer">この話者がこの録音で話すことすべてに、今も今後もこの名前が付きます。</string>
+    <string name="recordings_not_me">自分ではない</string>
+    <string name="recordings_clear_name">名前を消す</string>
+    <string name="recordings_name_cleared">名前を消しました。</string>
 </resources>

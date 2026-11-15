@@ -158,4 +158,7 @@
     <string name="recordings_this_is_me">这是我</string>
     <string name="recordings_separate_from">与%1$s分开</string>
     <string name="recordings_temporary_speaker_footer">此说话人在本次录音中现在和之后说的每一句话，都会使用这个名字。</string>
+    <string name="recordings_not_me">不是我</string>
+    <string name="recordings_clear_name">清除姓名</string>
+    <string name="recordings_name_cleared">已清除姓名。</string>
 </resources>

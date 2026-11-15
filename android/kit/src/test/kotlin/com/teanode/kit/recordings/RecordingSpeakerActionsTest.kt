@@ -26,6 +26,23 @@ class RecordingSpeakerActionsTest {
         assertNull(RecordingTemporarySpeakers.labelToSeparate(bubble(segment("a", label = "Speaker 2"))))
     }
 
+    private fun namedSegment(id: String, correctionId: String?) = RecordingTranscriptSegment(
+        id = id, recordingTranscriptRunId = "run1", segmentStartMS = 0, segmentEndMS = 1000, transcriptText = "Hello", appliedSpeakerCorrectionId = correctionId,
+    )
+
+    @Test
+    fun aNameGivenToSeveralPassagesIsClearedOnce() {
+        val segments = listOf(namedSegment("a", "c1"), namedSegment("b", "c1"), namedSegment("c", null), namedSegment("d", ""), namedSegment("e", "c2"))
+        assertEquals(listOf("c1", "c2"), RecordingSpeakerNaming.correctionIds(segments))
+        assertEquals(emptyList<String>(), RecordingSpeakerNaming.correctionIds(listOf(namedSegment("a", null))))
+    }
+
+    @Test
+    fun aBubbleHasNamingOnlyWhenAPassageCarriesACorrection() {
+        assertEquals(true, RecordingSpeakerNaming.hasNaming(bubble(namedSegment("a", "c1"))))
+        assertEquals(false, RecordingSpeakerNaming.hasNaming(bubble(namedSegment("a", null), namedSegment("b", ""))))
+    }
+
     private fun attempt(estimated: Double? = null, actual: Double? = null) = RecordingTranscriptionAttempt(
         id = "a1", providerModelName = "model-x", estimatedCostAmount = estimated, actualCostAmount = actual, currencyCode = "USD",
     )

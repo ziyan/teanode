@@ -158,4 +158,7 @@
     <string name="recordings_this_is_me">This is me</string>
     <string name="recordings_separate_from">Separate from %1$s</string>
     <string name="recordings_temporary_speaker_footer">Everything this speaker says in this recording, now and later, gets the name.</string>
+    <string name="recordings_not_me">Not me</string>
+    <string name="recordings_clear_name">Clear name</string>
+    <string name="recordings_name_cleared">Name cleared.</string>
 </resources>

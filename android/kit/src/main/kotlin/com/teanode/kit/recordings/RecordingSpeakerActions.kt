@@ -16,6 +16,16 @@ object RecordingTemporarySpeakers {
         bubble.segments.firstNotNullOfOrNull { segment -> segment.mergedTemporarySpeakerLabel?.takeIf { label -> label.isNotEmpty() } }
 }
 
+/** Taking a name back from a bubble (iOS RecordingConversationModel.clearName). */
+object RecordingSpeakerNaming {
+    /** Whether any passage of the bubble carries a name someone gave, so there is something to clear. */
+    fun hasNaming(bubble: RecordingConversationBubble): Boolean = bubble.segments.any { segment -> !segment.appliedSpeakerCorrectionId.isNullOrEmpty() }
+
+    /** Each naming applied to the bubble's passages once: a name given to several passages is one correction. */
+    fun correctionIds(segments: List<RecordingTranscriptSegment>): List<String> =
+        segments.mapNotNull { segment -> segment.appliedSpeakerCorrectionId?.takeIf { correctionId -> correctionId.isNotEmpty() } }.distinct()
+}
+
 /** What a transcription attempt cost, as the details say it. */
 sealed class RecordingAttemptCost {
     /** Billing evidence gave the amount. */

@@ -46,16 +46,16 @@ private fun runsJson(recording: DemoRecording): String = recording.runState?.let
     """[{"id":"run-${recording.id}","recordingId":"${recording.id}","recordingMediaId":"m-${recording.id}-1","versionNumber":1,"recordingProcessingState":"$state","providerModelName":"example-transcribe","processingErrorMessage":"${if (state == "failed") "The transcription service did not answer." else ""}","createdAt":"${recording.recordedAt}"}]"""
 } ?: "[]"
 
-private fun segmentJson(id: String, start: Long, end: Long, speaker: String, text: String, name: String? = null, owner: Boolean = false) =
+private fun segmentJson(id: String, start: Long, end: Long, speaker: String, text: String, name: String? = null, owner: Boolean = false, correctionId: String? = null) =
     """{"id":"$id","recordingTranscriptRunId":"run-r1","recordingTranscriptionAttemptId":"attempt-1","localSpeakerId":"$speaker","segmentStartMS":$start,"segmentEndMS":$end,"transcriptText":"$text",
-        "effectiveSpeakerIdentityId":${if (name != null) "\"identity-$speaker\"" else "null"},"effectiveSpeakerName":${if (name != null) "\"$name\"" else "null"},"hasUserConfirmedSpeaker":${name != null},"isAccountOwner":$owner,"isFiller":false}""".replace("\n", " ")
+        "effectiveSpeakerIdentityId":${if (name != null) "\"identity-$speaker\"" else "null"},"effectiveSpeakerName":${if (name != null) "\"$name\"" else "null"},"hasUserConfirmedSpeaker":${name != null},"isAccountOwner":$owner,"isFiller":false,"appliedSpeakerCorrectionId":${if (correctionId != null) "\"$correctionId\"" else "null"}}""".replace("\n", " ")
 
 private val demoSegments = listOf(
     segmentJson("s1", 4_000, 11_000, "A", "Thanks for joining. Let's start with the launch date, because the review turned up two blockers.", "Robin", owner = true),
     segmentJson("s2", 11_500, 19_000, "B", "Right. The pricing page is not ready, and the announcement still needs a second pass from legal."),
     segmentJson("s3", 19_000, 19_400, "A", "Mm-hm.", "Robin", owner = true),
     segmentJson("s4", 19_500, 27_000, "B", "So I would move the launch a week, and use the time to test the checkout with real customers."),
-    segmentJson("s5", 28_000, 36_000, "C", "I can take the pricing page this week. Sam, can you own the announcement?", "Alex"),
+    segmentJson("s5", 28_000, 36_000, "C", "I can take the pricing page this week. Sam, can you own the announcement?", "Alex", correctionId = "sc1"),
     segmentJson("s6", 36_500, 43_000, "B", "Yes, I will send a draft on Thursday and we review it together on Friday."),
 ).joinToString(",", "[", "]")
 

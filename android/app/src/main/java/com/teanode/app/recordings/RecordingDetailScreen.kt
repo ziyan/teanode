@@ -58,7 +58,9 @@ import com.teanode.kit.recordings.RecordingOriginals
 import com.teanode.kit.recordings.RecordingTranscriptionAttempt
 import com.teanode.kit.agent.knowledgeSourceDetails
 import androidx.compose.runtime.produceState
+import com.teanode.kit.recordings.RecordingSpeakerNaming
 import com.teanode.kit.recordings.RecordingTemporarySpeakers
+import com.teanode.kit.recordings.clearRecordingSpeakerNames
 import com.teanode.kit.recordings.nameRecordingTemporarySpeaker
 import com.teanode.kit.recordings.separateRecordingTemporarySpeaker
 import com.teanode.app.shell.Routes
@@ -253,6 +255,7 @@ fun RecordingDetailScreen(recordingId: String, onBack: () -> Unit, link: Recordi
                         act(R.string.recordings_marked_as_you) { connection.nameRecordingTemporarySpeaker(recordingId, label, "", true, null, null) }
                     },
                     onSeparate = { label -> act(R.string.recordings_speaker_separated) { connection.separateRecordingTemporarySpeaker(recordingId, label) } },
+                    onClearName = { bubble -> act(R.string.recordings_name_cleared) { connection.clearRecordingSpeakerNames(recordingId, bubble.segments) } },
                     onLoadMore = {
                         scope.launch {
                             try {
@@ -337,6 +340,7 @@ private fun DetailBody(
     onMemory: (com.teanode.kit.recordings.RecordingTranscriptSegment) -> Unit,
     onThisIsMe: (String) -> Unit,
     onSeparate: (String) -> Unit,
+    onClearName: (RecordingConversationBubble) -> Unit,
     onLoadMore: () -> Unit,
 ) {
     val recording = read.view.recording
@@ -374,7 +378,7 @@ private fun DetailBody(
             }
         }
         items(bubbles, key = { bubble -> bubble.id }) { bubble ->
-            Bubble(bubble, onPlay = { player.playFrom(playableFiles, bubble.startMS) }, onName = { onName(bubble) }, onCorrect = { onCorrect(bubble.segments.first()) }, onMemory = { onMemory(bubble.segments.first()) }, onThisIsMe = onThisIsMe, onSeparate = onSeparate, isHighlighted = link?.includes(bubble.segments.first()) == true && link.passageStartMS != null)
+            Bubble(bubble, onPlay = { player.playFrom(playableFiles, bubble.startMS) }, onName = { onName(bubble) }, onCorrect = { onCorrect(bubble.segments.first()) }, onMemory = { onMemory(bubble.segments.first()) }, onThisIsMe = onThisIsMe, onSeparate = onSeparate, onClearName = { onClearName(bubble) }, isHighlighted = link?.includes(bubble.segments.first()) == true && link.passageStartMS != null)
         }
         if (read.timeline?.hasMoreSegments == true) item {
             TextButton(onClick = onLoadMore, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.recordings_load_more)) }
@@ -423,6 +427,7 @@ private fun Bubble(
     onMemory: () -> Unit,
     onThisIsMe: (String) -> Unit,
     onSeparate: (String) -> Unit,
+    onClearName: () -> Unit,
     isHighlighted: Boolean,
 ) {
     var isMenuOpen by remember { mutableStateOf(false) }
@@ -447,7 +452,15 @@ private fun Bubble(
         DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
             if (!bubble.isLive) {
                 DropdownMenuItem(text = { Text(stringResource(R.string.recordings_play_from_here)) }, onClick = { isMenuOpen = false; onPlay() })
-                DropdownMenuItem(text = { Text(stringResource(R.string.recordings_name_speaker)) }, onClick = { isMenuOpen = false; onName() })
+                // A name someone gave can be taken back: "Not me" on the person's own bubble, "Clear name" on anyone else's.
+                // The person's voice recognized with no naming has nothing to take back, so "Not me" asks who it was instead.
+                val hasNaming = RecordingSpeakerNaming.hasNaming(bubble)
+                if (bubble.isAccountOwner) {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.recordings_not_me)) }, onClick = { isMenuOpen = false; if (hasNaming) onClearName() else onName() })
+                } else {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.recordings_name_speaker)) }, onClick = { isMenuOpen = false; onName() })
+                    if (hasNaming) DropdownMenuItem(text = { Text(stringResource(R.string.recordings_clear_name)) }, onClick = { isMenuOpen = false; onClearName() })
+                }
                 // A speaker of a capture under way is the person's own voice or not by label, in every piece at once.
                 val temporaryLabel = RecordingTemporarySpeakers.labelToName(bubble)
                 if (temporaryLabel != null && bubble.confirmedSpeakerName == null) {
