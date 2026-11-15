@@ -31,4 +31,13 @@
     <plurals name="finance_tax_reading_documents">
         <item quantity="other">正在读取 %d 份文件</item>
     </plurals>
+    <string name="finance_valued_by">估值方式</string>
+    <string name="finance_valued_by_you">你</string>
+    <string name="finance_valued_by_agent_estimate">助手估算</string>
+    <string name="finance_valued_by_agent_reading">助手读取</string>
+    <string name="finance_what_to_estimate_from">估算依据</string>
+    <string name="finance_budget_from_month">起始月份（%1$s）</string>
+    <string name="finance_budget_changes_past_months">这会更改已经过去的月份。</string>
+    <string name="finance_end_this_budget">结束此预算</string>
+    <string name="finance_budget_ended">预算已结束</string>
 </resources>

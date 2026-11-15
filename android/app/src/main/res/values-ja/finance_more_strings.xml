@@ -31,4 +31,13 @@
     <plurals name="finance_tax_reading_documents">
         <item quantity="other">%d 件の書類を読み取っています</item>
     </plurals>
+    <string name="finance_valued_by">評価方法</string>
+    <string name="finance_valued_by_you">あなた</string>
+    <string name="finance_valued_by_agent_estimate">エージェントの見積もり</string>
+    <string name="finance_valued_by_agent_reading">エージェントが読み取る</string>
+    <string name="finance_what_to_estimate_from">見積もりの根拠</string>
+    <string name="finance_budget_from_month">開始月（%1$s）</string>
+    <string name="finance_budget_changes_past_months">過去の月が変わります。</string>
+    <string name="finance_end_this_budget">この予算を終了</string>
+    <string name="finance_budget_ended">予算を終了しました</string>
 </resources>

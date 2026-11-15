@@ -50,6 +50,7 @@ import com.teanode.app.ui.components.TeaNodeRow
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.app.ui.components.TeaNodeSectionHeader
 import com.teanode.app.ui.components.rememberLoad
+import com.teanode.kit.finance.FinanceValuationSources
 import com.teanode.kit.finance.FinanceAsset
 import com.teanode.kit.finance.FinanceAssetKinds
 import com.teanode.kit.finance.FinanceMoney
@@ -177,6 +178,9 @@ private fun AssetEditorDialog(currency: String, onDismiss: () -> Unit, onSave: (
     var code by remember { mutableStateOf(currency.ifEmpty { "USD" }) }
     var value by remember { mutableStateOf("") }
     var isOpen by remember { mutableStateOf(false) }
+    var valuationSource by remember { mutableStateOf(FinanceValuationSources.MANUAL) }
+    var estimateDescription by remember { mutableStateOf("") }
+    var isValuedByOpen by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text(stringResource(R.string.finance_new_asset)) },
         text = {
@@ -189,14 +193,25 @@ private fun AssetEditorDialog(currency: String, onDismiss: () -> Unit, onSave: (
                     }
                 }
                 OutlinedTextField(code, { code = it.uppercase() }, label = { Text(stringResource(R.string.finance_currency)) }, singleLine = true)
+                ExposedDropdownMenuBox(isValuedByOpen, { isValuedByOpen = it }) {
+                    OutlinedTextField(valuedByWords(context, valuationSource), {}, readOnly = true, label = { Text(stringResource(R.string.finance_valued_by)) }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isValuedByOpen) }, modifier = Modifier.menuAnchor().fillMaxWidth())
+                    ExposedDropdownMenu(isValuedByOpen, { isValuedByOpen = false }) {
+                        for (each in FinanceValuationSources.all) DropdownMenuItem(text = { Text(valuedByWords(context, each)) }, onClick = { valuationSource = each; isValuedByOpen = false })
+                    }
+                }
+                if (FinanceValuationSources.isEstimateDescriptionNeeded(valuationSource)) {
+                    OutlinedTextField(estimateDescription, { estimateDescription = it }, label = { Text(stringResource(R.string.finance_what_to_estimate_from)) }, minLines = 2)
+                }
                 OutlinedTextField(value, { value = it }, label = { Text(stringResource(R.string.finance_value_now)) }, singleLine = true)
             }
         },
         confirmButton = {
             TextButton(
-                enabled = name.isNotBlank() && code.length == 3 && (value.isBlank() || FinanceMoney.isDecimal(value.trim())),
+                enabled = code.length == 3 && FinanceValuationSources.isAssetSavable(name, valuationSource, estimateDescription, value),
                 onClick = {
-                    val fields = mutableMapOf<String, JsonElement>("assetName" to JsonPrimitive(name.trim()), "assetKind" to JsonPrimitive(kind), "currencyCode" to JsonPrimitive(code))
+                    val fields = mutableMapOf<String, JsonElement>("assetName" to JsonPrimitive(name.trim()), "assetKind" to JsonPrimitive(kind), "currencyCode" to JsonPrimitive(code),
+                        "valuationSource" to JsonPrimitive(valuationSource), "estimateDescription" to JsonPrimitive(estimateDescription.trim()),
+                        "isEstimateAllowed" to JsonPrimitive(FinanceValuationSources.isEstimateDescriptionNeeded(valuationSource)))
                     if (value.isNotBlank()) { fields["value"] = JsonPrimitive(value.trim()); fields["valuedOn"] = JsonPrimitive(LocalDate.now().toString()) }
                     onSave(fields)
                 },
@@ -205,6 +220,14 @@ private fun AssetEditorDialog(currency: String, onDismiss: () -> Unit, onSave: (
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.finance_cancel)) } },
     )
 }
+
+private fun valuedByWords(context: android.content.Context, valuationSource: String): String = context.getString(
+    when (valuationSource) {
+        FinanceValuationSources.AGENT_ESTIMATE -> R.string.finance_valued_by_agent_estimate
+        FinanceValuationSources.AGENT_READING -> R.string.finance_valued_by_agent_reading
+        else -> R.string.finance_valued_by_you
+    },
+)
 
 /** An asset's values over time, adding a value, closing, reopening and deleting it. */
 @Composable

@@ -7,6 +7,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performTextReplacement
 import com.teanode.app.demo.DemoHost
 import com.teanode.app.screenshots.Look
 import com.teanode.app.screenshots.PHONE_QUALIFIERS
@@ -36,7 +39,7 @@ class FinanceScreenshotTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun shoot(name: String, look: Look = Look.Light, fontScale: Float? = null, isSheet: Boolean = false, scrollTo: String? = null, content: @Composable () -> Unit) {
+    private fun shoot(name: String, look: Look = Look.Light, fontScale: Float? = null, isSheet: Boolean = false, scrollTo: String? = null, afterShown: () -> Unit = {}, content: @Composable () -> Unit) {
         composeRule.setContent {
             DemoHost(appearance = look.appearance) {
                 CompositionLocalProvider(LocalShoppingSheetsInline provides isSheet) {
@@ -49,6 +52,8 @@ class FinanceScreenshotTest {
             composeRule.onNode(hasScrollAction()).performScrollToNode(hasText(scrollTo))
             composeRule.waitForIdle()
         }
+        afterShown()
+        composeRule.waitForIdle()
         composeRule.photograph("finance-$name-${look.fileName}")
     }
 
@@ -94,6 +99,26 @@ class FinanceScreenshotTest {
 
     @Test fun `budgets`() = shoot("budgets") { FinanceBudgetsScreen() }
     @Test fun `budgets dark`() = shoot("budgets", Look.Dark) { FinanceBudgetsScreen() }
+    @Test fun `budget editor with a month already past`() = shoot("budget-editor-past-month", afterShown = {
+        composeRule.onNodeWithText("Groceries").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNode(androidx.compose.ui.test.hasText("From month", substring = true) and androidx.compose.ui.test.hasSetTextAction()).performTextReplacement("2020-01")
+    }) { FinanceBudgetsScreen() }
+
+    @Test fun `budget editor dark`() = shoot("budget-editor", Look.Dark, afterShown = { composeRule.onNodeWithText("Groceries").performClick() }) { FinanceBudgetsScreen() }
+
+    @Test fun `rule editor with an account`() = shoot("rule-editor", scrollTo = "New rule", afterShown = { composeRule.onNodeWithText("New rule").performClick() }) { FinanceBudgetsScreen() }
+
+    @Test fun `asset editor with an estimate`() = shoot("asset-editor-estimate", afterShown = {
+        composeRule.onNodeWithContentDescription("Add").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Valued by", substring = true).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("The agent's estimate").performClick()
+    }) { FinanceNetWorthScreen() }
+
+    @Test fun `asset editor dark`() = shoot("asset-editor", Look.Dark, afterShown = { composeRule.onNodeWithContentDescription("Add").performClick() }) { FinanceNetWorthScreen() }
+
     @Test fun `net worth`() = shoot("net-worth") { FinanceNetWorthScreen() }
     @Test fun `net worth dark`() = shoot("net-worth", Look.Dark) { FinanceNetWorthScreen() }
     @Test fun `asset`() = shoot("asset") { FinanceAssetDetailScreen("asset-3") }
