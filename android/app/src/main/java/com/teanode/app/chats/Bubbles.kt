@@ -49,7 +49,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
@@ -256,10 +258,16 @@ fun TypingBubble(modifier: Modifier = Modifier) {
 
 /** The waveform of a voice message: its 48 levels as bars, the played part in the accent. */
 @Composable
-fun VoiceWaveform(levels: List<Int>, progress: Float, modifier: Modifier = Modifier) {
+fun VoiceWaveform(levels: List<Int>, progress: Float, modifier: Modifier = Modifier, onSeek: ((Float) -> Unit)? = null) {
     val played = MaterialTheme.colorScheme.primary
     val rest = MaterialTheme.colorScheme.outline
-    Canvas(modifier) {
+    val seekModifier = if (onSeek == null) Modifier else Modifier.pointerInput(onSeek) {
+        detectHorizontalDragGestures(
+            onDragStart = { start -> onSeek(start.x / size.width) },
+            onHorizontalDrag = { change, _ -> onSeek(change.position.x / size.width) },
+        )
+    }
+    Canvas(modifier.then(seekModifier)) {
         if (levels.isEmpty()) return@Canvas
         val step = size.width / levels.size
         val barWidth = maxOf(2.dp.toPx(), minOf(4.dp.toPx(), step * 0.6f))
@@ -328,7 +336,7 @@ fun VoiceMessageBubble(line: TranscriptLine, recording: AgentAttachment, isOther
                         }
                     }
                 }
-                VoiceWaveform(decodedWaveformLevels(recording.audioWaveform), progress, Modifier.width(150.dp).height(28.dp))
+                VoiceWaveform(decodedWaveformLevels(recording.audioWaveform), progress, Modifier.width(150.dp).height(28.dp), onSeek = if (isLoaded) { fraction -> VoiceMessagePlayer.seekTo(recording.id, fraction) } else null)
                 Text(timeText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (transcriptingWords != null) {

@@ -74,6 +74,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -323,12 +324,12 @@ fun Composer(model: ConversationModel, environment: ChatsEnvironment, dictation:
                                     model.send()
                                 },
                                 label = stringResource(R.string.chats_send), buttonDp = buttonDp, targetDp = targetDp, isEnabled = model.canSend,
-                                fill = if (model.canSend || model.isSending) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                fill = if (model.canSend || model.isSending) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                             ) {
                                 if (model.isSending) {
                                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                                 } else {
-                                    Icon(Icons.Outlined.ArrowUpward, contentDescription = null, tint = MaterialTheme.colorScheme.surface, modifier = Modifier.size(20.dp))
+                                    Icon(Icons.Outlined.ArrowUpward, contentDescription = null, tint = if (model.canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f), modifier = Modifier.size(20.dp))
                                 }
                             }
                         }
@@ -358,7 +359,10 @@ fun ComposerRoundButton(
         Modifier.size(targetDp.dp).clip(CircleShape).semantics { contentDescription = label }.clickable(enabled = isEnabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(buttonDp.dp).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) { content() }
+        Box(Modifier.size(buttonDp.dp).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) {
+            // The symbol grows with the circle.
+            Box(Modifier.graphicsLayer { scaleX = buttonDp / ComposerLayout.BUTTON_DP; scaleY = buttonDp / ComposerLayout.BUTTON_DP }, contentAlignment = Alignment.Center) { content() }
+        }
     }
 }
 

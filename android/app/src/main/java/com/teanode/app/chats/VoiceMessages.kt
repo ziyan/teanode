@@ -287,6 +287,18 @@ object VoiceMessagePlayer {
         }
     }
 
+    /** Moves the playing or paused recording to [fraction] of its length, from a drag on the bars. */
+    fun seekTo(attachmentId: String, fraction: Float) {
+        val active = player ?: return
+        if (loadedAttachmentId != attachmentId) return
+        val duration = runCatching { active.duration }.getOrDefault(0)
+        if (duration <= 0) return
+        val target = (fraction.coerceIn(0f, 1f) * duration).toInt()
+        runCatching { active.seekTo(target) }
+        playedSeconds = target / 1000.0
+        progress = target.toFloat() / duration
+    }
+
     fun pause() {
         runCatching { player?.pause() }
         isPlaying = false

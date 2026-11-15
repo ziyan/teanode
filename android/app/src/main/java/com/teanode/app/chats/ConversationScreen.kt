@@ -488,7 +488,7 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
                     }
                     // New messages wait here while the list is not following them; the jump to the end is offered only when the end is well out of sight.
                     when (FollowRule.endButtonFor(hasArrivedWhileAway, isShowingEnd)) {
-                        FollowRule.EndButton.NewMessages -> Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) {
+                        FollowRule.EndButton.NewMessages -> Box(Modifier.align(Alignment.BottomCenter).padding(16.dp)) {
                             NewMessagesButton {
                                 hasArrivedWhileAway = false
                                 scope.launch { listState.animateScrollToItem(0) }
