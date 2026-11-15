@@ -8,6 +8,7 @@ import com.teanode.kit.TeaNodeError
 import com.teanode.kit.asReasonSentence
 import com.teanode.kit.chats.AddressableAgent
 import com.teanode.kit.chats.AgentConversation
+import com.teanode.kit.chats.EarlierRow
 import com.teanode.kit.chats.AgentAttachment
 import com.teanode.kit.chats.AgentEvent
 import com.teanode.kit.chats.AgentIdea
@@ -128,6 +129,14 @@ class ConversationModel(
     var storedMessageCount: Int by mutableStateOf(0)
         private set
     var isLoadingEarlier: Boolean by mutableStateOf(false)
+        private set
+
+    /** Why the last pull for earlier messages failed, shown with Try again in the top row; null until one fails. */
+    var earlierFailureText: String? by mutableStateOf(null)
+        private set
+
+    /** Counts the pages of earlier messages laid in, so the screen knows when to put the reading place back. */
+    var earlierPageCount: Int by mutableStateOf(0)
         private set
     val earlierCount: Int get() = maxOf(0, total - storedMessageCount)
 
@@ -334,9 +343,10 @@ class ConversationModel(
     fun loadEarlier() {
         if (earlierCount <= 0 || isLoadingEarlier) return
         isLoadingEarlier = true
+        earlierFailureText = null
         scope.launch {
             try {
-                val page = connection.conversation(conversationId, first = 100, offset = messages.size)
+                val page = connection.conversation(conversationId, first = EarlierRow.PAGE_SIZE, offset = messages.size)
                 val known = messages.map { message -> message.id }.toSet()
                 val earlierMessages = page.messages.filter { message -> message.id !in known }
                 messages = earlierMessages + messages
@@ -344,10 +354,11 @@ class ConversationModel(
                 total = page.total
                 current.prepend(messages, earlierMessages.size, isChat)
                 publish()
+                earlierPageCount += 1
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                problemText = describe(error)
+                earlierFailureText = describe(error)
             } finally {
                 isLoadingEarlier = false
             }

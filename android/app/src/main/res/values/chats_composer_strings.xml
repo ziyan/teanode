@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chats_talk">Talk</string>
+    <string name="chats_let_go_to_cancel">Let go to cancel</string>
+    <string name="chats_pull_for_earlier">Pull down for earlier messages</string>
+    <string name="chats_release_for_earlier">Release to load earlier messages</string>
+    <string name="chats_loading_earlier">Loading earlier messages…</string>
+    <string name="chats_could_not_load_earlier">Could not load earlier messages</string>
+    <string name="chats_start_of_conversation">Start of the conversation</string>
+    <string name="chats_load_earlier_action">Load earlier messages</string>
+    <string name="chats_new_messages">New messages</string>
+</resources>

@@ -25,6 +25,15 @@ class ComposerRulesTest {
         assertEquals(0f, ComposerLayout.estimatedPillFieldWidthDp(100f))
     }
 
+    @Test fun `the round buttons grow with the text up to 60 dp`() {
+        assertEquals(36f, ComposerLayout.buttonDp(1f))
+        assertEquals(36f, ComposerLayout.buttonDp(0.8f))
+        assertEquals(54f, ComposerLayout.buttonDp(1.5f), 0.001f)
+        assertEquals(60f, ComposerLayout.buttonDp(3f), 0.001f)
+        assertEquals(48f, ComposerLayout.targetDp(1f))
+        assertEquals(68f, ComposerLayout.targetDp(3f), 0.001f)
+    }
+
     @Test fun `the pull arms at 72 and disarms under 56`() {
         val pull = EarlierPull()
         assertFalse(pull.pulled(71f, true))
@@ -94,5 +103,12 @@ class ComposerRulesTest {
         assertTrue(FollowRule.shouldOfferNewMessages(hasArrivedWhileAway = true, isShowingEnd = false))
         assertFalse(FollowRule.shouldOfferNewMessages(hasArrivedWhileAway = true, isShowingEnd = true))
         assertFalse(FollowRule.shouldOfferNewMessages(hasArrivedWhileAway = false, isShowingEnd = false))
+    }
+
+    @Test fun `the end button is New messages only when lines arrived while away`() {
+        assertEquals(FollowRule.EndButton.None, FollowRule.endButtonFor(hasArrivedWhileAway = true, isShowingEnd = true))
+        assertEquals(FollowRule.EndButton.None, FollowRule.endButtonFor(hasArrivedWhileAway = false, isShowingEnd = true))
+        assertEquals(FollowRule.EndButton.NewMessages, FollowRule.endButtonFor(hasArrivedWhileAway = true, isShowingEnd = false))
+        assertEquals(FollowRule.EndButton.JumpToEnd, FollowRule.endButtonFor(hasArrivedWhileAway = false, isShowingEnd = false))
     }
 }

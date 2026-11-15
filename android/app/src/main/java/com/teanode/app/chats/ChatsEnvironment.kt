@@ -169,6 +169,15 @@ class ChatsEnvironment(val context: Context, val connection: Connection, val ses
         preferences.edit().putString(COMPOSER_MODE_KEY, mode).apply()
     }
 
+    /** Whether the first-use hint on holding to talk has been shown; it explains hold, let go and slide up once. */
+    var hasSeenVoiceHint: Boolean by mutableStateOf(preferences.getBoolean(VOICE_HINT_KEY, false))
+        private set
+
+    fun markVoiceHintSeen() {
+        hasSeenVoiceHint = true
+        preferences.edit().putBoolean(VOICE_HINT_KEY, true).apply()
+    }
+
     /** The currency the agent's budget is kept in, as the head last read it. */
     var currencyCode: String = "USD"
 
@@ -195,6 +204,7 @@ class ChatsEnvironment(val context: Context, val connection: Connection, val ses
         private const val SHOW_USAGE_KEY = "showUsage"
         private const val SHOW_WORKING_NOTES_KEY = "showWorkingNotes"
         private const val COMPOSER_MODE_KEY = "chatComposerMode"
+        private const val VOICE_HINT_KEY = "chatVoiceHintSeen"
 
         private val environments = mutableMapOf<String, ChatsEnvironment>()
 

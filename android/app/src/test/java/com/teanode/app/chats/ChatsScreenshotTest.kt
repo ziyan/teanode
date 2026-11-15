@@ -161,7 +161,8 @@ class ChatsScreenshotTest {
     @Test fun `voice mode composer`() {
         draw(Look.Light) { ConversationScreen(conversationId = "demo-sam", onBack = {}, onOpenConversation = {}) }
         waitFor("Sounds good, thank you")
-        composeRule.onNodeWithContentDescription("Record voice messages").performClick()
+        composeRule.onNodeWithContentDescription("Add files").performClick()
+        composeRule.onNodeWithText("Voice message").performClick()
         composeRule.waitForIdle()
         composeRule.photograph("chats-voice-mode-light")
     }

@@ -10,12 +10,14 @@ import android.os.Build
 import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.teanode.app.R
 import com.teanode.kit.Connection
 import com.teanode.kit.chats.AgentAttachment
+import com.teanode.kit.chats.VoiceMessageRules
 import com.teanode.kit.chats.download
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -50,6 +52,9 @@ class VoiceMessageRecorder(private val context: Context) {
     var level: Float by mutableFloatStateOf(0f)
         private set
 
+    /** The last levels heard, newest last, for the live bars. */
+    val recentLevels = mutableStateListOf<Float>()
+
     /** Counts the recordings begun, for the haptic. */
     var startedCount: Int by mutableStateOf(0)
         private set
@@ -75,8 +80,8 @@ class VoiceMessageRecorder(private val context: Context) {
     fun hasPermission(): Boolean = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
     /** Whether the time left is counted down. */
-    val isCountingDown: Boolean get() = isRecording && elapsedSeconds >= COUNTDOWN_FROM_SECONDS
-    val secondsLeft: Double get() = maxOf(0.0, LONGEST_SECONDS - elapsedSeconds)
+    val isCountingDown: Boolean get() = isRecording && VoiceMessageRules.isCountingDown(elapsedSeconds)
+    val secondsLeft: Double get() = VoiceMessageRules.secondsLeft(elapsedSeconds)
 
     /** Starts recording. Without the microphone's permission nothing starts; the screen asks for it, and the person holds again. */
     fun start() {
@@ -113,6 +118,7 @@ class VoiceMessageRecorder(private val context: Context) {
         isCancelArmed = false
         elapsedSeconds = 0.0
         level = 0f
+        recentLevels.clear()
         hintText = null
         startedCount += 1
         tickJob = scope.launch {
@@ -130,17 +136,19 @@ class VoiceMessageRecorder(private val context: Context) {
         // Decibels from silence up to 0; speech is heard from about -50.
         val decibels = if (amplitude <= 0) -100.0 else 20 * log10(amplitude / 32767.0)
         level = ((decibels + 50) / 50).coerceIn(0.0, 1.0).toFloat()
-        if (elapsedSeconds >= LONGEST_SECONDS) onLongest?.invoke()
+        recentLevels.add(level)
+        while (recentLevels.size > LEVEL_BAR_COUNT) recentLevels.removeAt(0)
+        if (VoiceMessageRules.hasReachedLongest(elapsedSeconds)) onLongest?.invoke()
     }
 
     /** Ends the recording and hands it over to be sent. One shorter than half a second is thrown away, with a word on how to record. */
     fun finish(): VoiceRecording? {
         if (!isRecording) return null
-        val seconds = minOf((SystemClock.elapsedRealtime() - startedAtMS) / 1000.0, LONGEST_SECONDS)
+        val seconds = minOf((SystemClock.elapsedRealtime() - startedAtMS) / 1000.0, VoiceMessageRules.LONGEST_SECONDS)
         val kept = file
         stopRecording()
         if (kept == null) return null
-        if (seconds < SHORTEST_SECONDS) {
+        if (VoiceMessageRules.outcome(seconds, isCancelArmed = false) == VoiceMessageRules.Outcome.TooShort) {
             kept.delete()
             showHint(context.getString(R.string.chats_hold_to_record_hint))
             return null
@@ -182,12 +190,18 @@ class VoiceMessageRecorder(private val context: Context) {
         isRecording = true
         elapsedSeconds = 7.4
         level = 0.6f
+        recentLevels.clear()
+        recentLevels.addAll(List(LEVEL_BAR_COUNT) { index -> 0.15f + 0.8f * kotlin.math.abs(kotlin.math.sin(index * 0.7f)) })
+    }
+
+    /** A recording near the end, where the countdown shows. */
+    fun showDemoCountdown() {
+        showDemoHold()
+        elapsedSeconds = 113.0
     }
 
     companion object {
-        const val SHORTEST_SECONDS = 0.5
-        const val LONGEST_SECONDS = 120.0
-        const val COUNTDOWN_FROM_SECONDS = 110.0
+        const val LEVEL_BAR_COUNT = 24
 
         /** The time as minutes and seconds: 0:07, 1:50. */
         fun clockText(seconds: Double): String {

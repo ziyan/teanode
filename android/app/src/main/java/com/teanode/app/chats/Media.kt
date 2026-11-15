@@ -60,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -142,6 +143,16 @@ suspend fun openServerFile(context: Context, connection: Connection, attachmentI
     openWebPage(context, connection.shareAddress(attachmentId))
 }
 
+/** The heights pictures were drawn at, so a row that is drawn again reserves its place before the picture is read. */
+object PictureHeights {
+    private val heightsDp = HashMap<String, Float>()
+    fun heightDp(path: String): Float = heightsDp[path] ?: DEFAULT_DP
+    fun remember(path: String, heightDp: Float) {
+        if (heightDp > 0f) heightsDp[path] = heightDp
+    }
+    const val DEFAULT_DP = 160f
+}
+
 /**
  * RemotePicture is a picture the server keeps, read with the app's sign-in; tapping it opens it full screen, to zoom
  * and share, unless the card around it says what a tap does instead.
@@ -156,6 +167,7 @@ fun RemotePicture(
     originalFilePath: String? = null,
 ) {
     val picture = rememberServerPicture(path)
+    val density = androidx.compose.ui.platform.LocalDensity.current
     var isMissing by remember(path) { mutableStateOf(false) }
     var isOpen by remember { mutableStateOf(false) }
     LaunchedEffect(path, picture) {
@@ -168,13 +180,15 @@ fun RemotePicture(
         when {
             picture != null -> Image(
                 picture, contentDescription = name, contentScale = ContentScale.Fit,
-                modifier = Modifier.heightIn(max = maxHeightDp.dp).clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button) { if (onOpen != null) onOpen() else isOpen = true },
+                modifier = Modifier.heightIn(max = maxHeightDp.dp).clip(RoundedCornerShape(12.dp))
+                    .onSizeChanged { size -> PictureHeights.remember(path, size.height / density.density) }
+                    .clickable(role = Role.Button) { if (onOpen != null) onOpen() else isOpen = true },
             )
             isMissing -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(Icons.Outlined.Image, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(name, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
-            else -> Box(Modifier.size(width = 120.dp, height = 90.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) }
+            else -> Box(Modifier.size(width = 120.dp, height = minOf(PictureHeights.heightDp(path), maxHeightDp.toFloat()).dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) }
         }
     }
     if (isOpen && picture != null) PictureLightbox(path, name, originalFilePath ?: path, onClose = { isOpen = false })

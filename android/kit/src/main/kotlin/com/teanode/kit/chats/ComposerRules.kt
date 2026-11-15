@@ -17,6 +17,15 @@ object ComposerLayout {
     const val BUTTON_DP = 36f
     const val TARGET_DP = 48f
 
+    /** The round buttons grow with the text size up to this much larger, and no further. */
+    private const val LARGEST_BUTTON_GROWTH = 60f / BUTTON_DP
+
+    /** The circle's diameter at [fontScale]: 36 dp, growing with the text up to 60 dp. */
+    fun buttonDp(fontScale: Float): Float = BUTTON_DP * min(max(fontScale, 1f), LARGEST_BUTTON_GROWTH)
+
+    /** The touch target around a button: 48 dp at least. */
+    fun targetDp(fontScale: Float): Float = max(TARGET_DP, buttonDp(fontScale) + 8f)
+
     /** A width that moves less than this is the same width; it would flip the shape back and forth. */
     const val MINIMUM_WIDTH_CHANGE_DP = 1f
 
@@ -127,6 +136,15 @@ object VoiceMessageRules {
 object FollowRule {
     /** The list follows new messages only while it shows the end and no finger is on it. */
     fun shouldFollow(isShowingEnd: Boolean, isFingerDown: Boolean): Boolean = isShowingEnd && !isFingerDown
+
+    /** What the button at the foot of a conversation is: nothing at the end, "New messages" when lines arrived since the list left the end, else a round jump to the end. */
+    enum class EndButton { None, NewMessages, JumpToEnd }
+
+    fun endButtonFor(hasArrivedWhileAway: Boolean, isShowingEnd: Boolean): EndButton = when {
+        isShowingEnd -> EndButton.None
+        hasArrivedWhileAway -> EndButton.NewMessages
+        else -> EndButton.JumpToEnd
+    }
 
     /** The "New messages" button waits for what arrived while the list was not following, until the end is shown. */
     fun shouldOfferNewMessages(hasArrivedWhileAway: Boolean, isShowingEnd: Boolean): Boolean = hasArrivedWhileAway && !isShowingEnd

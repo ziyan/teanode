@@ -18,6 +18,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalDensity
+import com.teanode.kit.chats.EarlierRow
+import com.teanode.kit.chats.FollowRule
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ExitToApp
@@ -196,6 +210,25 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
     val dictation = remember { Dictation(context) }
     val status = remember { StatusModel() }
     val listState = rememberLazyListState()
+    val density = LocalDensity.current
+    // The first message shown, remembered when earlier ones are asked for so the reading place can be put back.
+    var readingAnchorKey by remember { mutableStateOf<String?>(null) }
+    var isShowingEnd by remember { mutableStateOf(true) }
+    var hasArrivedWhileAway by remember { mutableStateOf(false) }
+    // The oldest message in view, as the list shows it from the bottom up.
+    fun oldestShownKey(): String? = listState.layoutInfo.visibleItemsInfo.lastOrNull { info -> (info.key as? String)?.let { key -> model.lines.any { line -> line.id == key } } == true }?.key as? String
+    val pullTracker = remember(model, density) {
+        EarlierPullTracker(
+            density,
+            onArmed = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
+            onLetGoArmed = {
+                if (model.earlierCount > 0 && !model.isLoadingEarlier) {
+                    readingAnchorKey = oldestShownKey()
+                    model.loadEarlier()
+                }
+            },
+        )
+    }
     var actionLine by remember { mutableStateOf<TranscriptLine?>(null) }
     var isShowingStatus by remember { mutableStateOf(false) }
     var isShowingMembers by remember { mutableStateOf(false) }
@@ -306,12 +339,51 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
         for (link in LinkPreview.linksAhead(model.lines)) launch { environment.linkPreview(link, id) }
     }
 
-    // New words at the end keep the end in view when it was in view.
+    // Whether the end is in view, read when a scroll ends: new messages put in below move the list's own position,
+    // so reading it when they arrive would say the end was not shown.
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.collect { isScrolling ->
+            if (!isScrolling) {
+                isShowingEnd = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset <= 24
+                if (isShowingEnd) hasArrivedWhileAway = false
+            }
+        }
+    }
+    // New words at the end are followed only while the end is shown and no finger is on the list; otherwise they wait
+    // behind the New messages button.
     val lastLine = model.lines.lastOrNull()
-    LaunchedEffect(lastLine?.id, lastLine?.text?.length, model.runningRunIds.size) {
-        if (listState.firstVisibleItemIndex <= 2) listState.scrollToItem(0)
+    var hasShownFirstArrival by remember { mutableStateOf(false) }
+    LaunchedEffect(lastLine?.id, lastLine?.text?.length, model.runningRunIds.size, model.typingVersion) {
+        if (!hasShownFirstArrival) {
+            hasShownFirstArrival = true
+            return@LaunchedEffect
+        }
+        if (FollowRule.shouldFollow(isShowingEnd, pullTracker.isFingerDown)) {
+            listState.scrollToItem(0)
+        } else {
+            hasArrivedWhileAway = true
+        }
     }
     LaunchedEffect(model.isLoaded) { if (model.isLoaded) listState.scrollToItem(0) }
+
+    // After a page of earlier messages is laid in, the message that was first shown goes back near the top, with the end of
+    // the new page above it; once more after pictures and cards have settled.
+    LaunchedEffect(model.earlierPageCount) {
+        val anchorKey = readingAnchorKey ?: return@LaunchedEffect
+        suspend fun putBack() {
+            val position = items.indexOfFirst { item -> item.key == anchorKey }
+            if (position < 0) return
+            val leadingCount = listState.layoutInfo.totalItemsCount - items.size - (if (model.isLoaded && model.lines.isNotEmpty()) 1 else 0)
+            val index = leadingCount + (items.size - 1 - position)
+            listState.scrollToItem(index)
+            val info = listState.layoutInfo.visibleItemsInfo.firstOrNull { visible -> visible.key == anchorKey } ?: return
+            val spare = (listState.layoutInfo.viewportSize.height - info.size).coerceAtLeast(0)
+            listState.scrollToItem(index, -(spare * 0.85f).toInt())
+        }
+        putBack()
+        delay(400)
+        putBack()
+    }
 
     CompositionLocalProvider(
         LocalUriHandler provides uriHandler, LocalLinkOpener provides openLink, LocalPictureConversationId provides model.conversationId, LocalChatsEnvironment provides environment,
@@ -355,7 +427,6 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
                         }
                     }
                 } else {
-                    ConversationAgentCallButton(model)
                     IconButton(onClick = { isShowingStatus = true }) { Icon(Icons.Outlined.Tune, contentDescription = stringResource(R.string.chats_usage_and_devices)) }
                 }
             },
@@ -369,7 +440,7 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
                         if (problem != null) ErrorState(problem, onRetry = { model.startFollowing() }) else LoadingState()
                     }
                     // The list is drawn from its bottom up, so the newest line is at the foot and the keyboard lifts it.
-                    LazyColumn(Modifier.fillMaxSize().testTag("conversation-list"), state = listState, reverseLayout = true, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LazyColumn(Modifier.fillMaxSize().testTag("conversation-list").then(pullTracker.fingerWatcher).nestedScroll(pullTracker.nestedScrollConnection).graphicsLayer { translationY = pullTracker.pullDp * density.density * 0.4f }, state = listState, reverseLayout = true, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (model.isLoaded && model.lines.isEmpty()) {
                             item(key = "empty") {
                                 if (model.isChat) {
@@ -402,26 +473,31 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
                                 },
                             )
                         }
-                        if (model.earlierCount > 0) {
-                            item(key = "earlier") {
-                                // Reaching the top reads the page before it.
-                                LaunchedEffect(Unit) { if (listState.firstVisibleItemIndex > 0) model.loadEarlier() }
-                                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                    OutlinedButton(onClick = { model.loadEarlier() }) {
-                                        if (model.isLoadingEarlier) androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                                        else Text(stringResource(R.string.chats_earlier_messages, model.earlierCount))
-                                    }
-                                }
+                        if (model.isLoaded && model.lines.isNotEmpty()) {
+                            item(key = "earlier-row") {
+                                EarlierMessagesRow(
+                                    state = EarlierRow.stateOf(model.earlierCount > 0, model.isLoadingEarlier, model.earlierFailureText != null, pullTracker.isArmed),
+                                    pullDp = pullTracker.pullDp, failureText = model.earlierFailureText,
+                                    onLoad = {
+                                        readingAnchorKey = oldestShownKey()
+                                        model.loadEarlier()
+                                    },
+                                )
                             }
                         }
                     }
-                    // The jump to the end is offered only when the end is well out of sight.
-                    if (listState.firstVisibleItemIndex > 3) {
-                        Box(
-                            Modifier.align(Alignment.BottomEnd).padding(16.dp).size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                .clickable(role = Role.Button) { scope.launch { listState.animateScrollToItem(0) } },
-                            contentAlignment = Alignment.Center,
-                        ) { Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = stringResource(R.string.chats_jump_to_end)) }
+                    // New messages wait here while the list is not following them; the jump to the end is offered only when the end is well out of sight.
+                    when (FollowRule.endButtonFor(hasArrivedWhileAway, isShowingEnd)) {
+                        FollowRule.EndButton.NewMessages -> Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) {
+                            NewMessagesButton {
+                                hasArrivedWhileAway = false
+                                scope.launch { listState.animateScrollToItem(0) }
+                            }
+                        }
+                        FollowRule.EndButton.JumpToEnd -> Box(Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
+                            JumpToEndButton { scope.launch { listState.animateScrollToItem(0) } }
+                        }
+                        FollowRule.EndButton.None -> {}
                     }
                 }
                 // The message replied to, and whatever else the next message refers to.
