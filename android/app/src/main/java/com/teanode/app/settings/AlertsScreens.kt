@@ -216,7 +216,7 @@ fun MutedAlertsScreen(onBack: () -> Unit, focusesFollowing: Boolean = false) {
                     else -> null
                 },
                 supporting = listOfNotNull(followUpLine(followUp), if (pageUrl != null) followUp.sourcePageHost else null).joinToString("\n"), supportingMaxLines = 4,
-                onClick = if (pageUrl != null) ({ com.teanode.app.chats.openLinkAsChosen(context, pageUrl) }) else null,
+                onClick = if (pageUrl != null) ({ com.teanode.app.ui.components.openWebPage(context, pageUrl) }) else null,
                 trailing = { TextButton(onClick = { actions.run(stoppedText, onSuccess = { loaded.refresh() }) { connection.stopAgentFollowUp(followUp.id) } }) { Text(stringResource(R.string.settings_alerts_stop)) } },
             )
         }
