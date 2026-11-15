@@ -43,4 +43,6 @@ class SearchScreenshotTest {
     @Test fun `photos places light`() = shoot("search-places-photos-light", "albums")
     @Test fun `finance places light`() = shoot("search-places-finance-light", "net worth")
     @Test fun `calendar places light`() = shoot("search-places-calendar-light", "agenda")
+    @Test fun `mail folder places light`() = shoot("search-places-mail-folders-light", "receipts")
+    @Test fun `mail starred place dark`() = shoot("search-places-mail-starred-dark", "starred", AppearanceChoice.Dark)
 }

@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavGraphBuilder
 import com.teanode.app.demo.DemoAnswerer
 import com.teanode.kit.AppSection
+import com.teanode.kit.Connection
 
 /**
  * Area is everything one part of the app plugs into the shell: its routes, the places Search can offer by name, and
@@ -18,6 +19,8 @@ class Area(
     val routes: NavGraphBuilder.(navigator: AppNavigator) -> Unit,
     /** The places inside the part that Search offers by name (a mail folder, a Settings page). */
     val places: () -> List<AppPlace> = { emptyList() },
+    /** The places that only the account's own data names (a mail folder), read when Search opens; it reads what it needs first. */
+    val dynamicPlaces: suspend (context: android.content.Context, connection: Connection) -> List<AppPlace> = { _, _ -> emptyList() },
     /** What demo mode answers for this part's GraphQL documents, most specific first. */
     val demoAnswerers: List<DemoAnswerer> = emptyList(),
 )
@@ -31,4 +34,7 @@ class AppPlace(
     val icon: ImageVector,
     /** The places it is inside, outermost first, by string resource. */
     @param:StringRes val parentTitleResources: List<Int> = emptyList(),
+    /** A name that is not a string resource (a mail folder's, set by the account): [titleResource] is then 0, and Search finds it by this and [englishTitleText]. */
+    val titleText: String? = null,
+    val englishTitleText: String? = null,
 )

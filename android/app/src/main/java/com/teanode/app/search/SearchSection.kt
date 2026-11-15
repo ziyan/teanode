@@ -89,16 +89,16 @@ private class OfferedPlace(val place: AppPlace, val title: String, val englishTi
 }
 
 /** Every place of the app the search can jump to: the parts that are offered, then the places inside each, as the parts' areas list them. */
-private fun offeredPlaces(context: Context, offeredSections: List<AppSection>): List<OfferedPlace> {
+private fun offeredPlaces(context: Context, offeredSections: List<AppSection>, accountPlaces: List<AppPlace>): List<OfferedPlace> {
     fun named(place: AppPlace) = OfferedPlace(
-        place, context.getString(place.titleResource), englishString(context, place.titleResource),
+        place, place.titleText ?: context.getString(place.titleResource), place.englishTitleText ?: englishString(context, place.titleResource),
         place.parentTitleResources.map { resource -> context.getString(resource) }, place.parentTitleResources.map { resource -> englishString(context, resource) },
     )
     val sectionPlaces = offeredSections.map { section ->
         named(AppPlace("section-${section.routeName}", section.titleResource, Routes.home(section), section.icon))
     }
     val insidePlaces = Areas.all.filter { area -> area.section == null || area.section in offeredSections }.flatMap { area -> area.places() }.map { place -> named(place) }
-    return sectionPlaces + insidePlaces
+    return sectionPlaces + insidePlaces + accountPlaces.map { place -> named(place) }
 }
 
 @Composable
@@ -162,7 +162,12 @@ fun SearchSection() {
             failure = error
         }
     }
-    val offered = remember(offeredSections, access) { offeredPlaces(context, offeredSections) }
+    var accountPlaces by remember { mutableStateOf<List<AppPlace>>(emptyList()) }
+    LaunchedEffect(connection, offeredSections) {
+        accountPlaces = Areas.all.filter { area -> area.section == null || area.section in offeredSections }
+            .flatMap { area -> runCatching { area.dynamicPlaces(context, connection) }.getOrDefault(emptyList()) }
+    }
+    val offered = remember(offeredSections, access, accountPlaces) { offeredPlaces(context, offeredSections, accountPlaces) }
     val places = remember(offered, typedText) {
         val byId = offered.associateBy { entry -> entry.place.id }
         PlaceSearch.matchingPlaceIds(offered.map { entry -> entry.placeName }, typedText).mapNotNull { id -> byId[id] }
