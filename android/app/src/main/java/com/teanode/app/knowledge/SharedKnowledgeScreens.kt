@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
@@ -100,7 +101,7 @@ internal fun LazyListScope.sharedKnowledgeSections(page: SharedKnowledgePage, op
             val edge = page.presentEdges[index]
             val far = if (edge.fromPath == page.path) edge.toPath else edge.fromPath
             Column(
-                Modifier.fillMaxWidth().then(if (openingOwnerUserId != null) Modifier.clickable { onOpen(openingOwnerUserId, far) } else Modifier).padding(horizontal = 16.dp, vertical = 10.dp),
+                Modifier.fillMaxWidth().then(if (openingOwnerUserId != null) Modifier.clickable(role = Role.Button) { onOpen(openingOwnerUserId, far) } else Modifier).padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text("${edge.relation.replace('_', ' ')} $far")
@@ -112,7 +113,7 @@ internal fun LazyListScope.sharedKnowledgeSections(page: SharedKnowledgePage, op
         item(key = "shared-children-header") { TeaNodeSectionHeader(stringResource(R.string.knowledge_pages_under_it)) }
         items(page.presentChildren, key = { child -> "shared-child-${child.path}" }) { child ->
             Column(
-                Modifier.fillMaxWidth().then(if (openingOwnerUserId != null) Modifier.clickable { onOpen(openingOwnerUserId, child.path) } else Modifier).padding(horizontal = 16.dp, vertical = 10.dp),
+                Modifier.fillMaxWidth().then(if (openingOwnerUserId != null) Modifier.clickable(role = Role.Button) { onOpen(openingOwnerUserId, child.path) } else Modifier).padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(child.name.ifEmpty { child.path })
@@ -251,7 +252,7 @@ fun KnowledgeShareScreen(pagePath: String, onClose: () -> Unit) {
                     item { ShareTargetPicker(loaded.people, loaded.circles, chosen) { target -> chosen = target } }
                     item { Text(stringResource(R.string.knowledge_choose_person_or_circle_footer), modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     item {
-                        Row(Modifier.fillMaxWidth().clickable { isQuoteShared = !isQuoteShared }.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { isQuoteShared = !isQuoteShared }.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(stringResource(R.string.knowledge_also_show_words), Modifier.weight(1f))
                             Switch(checked = isQuoteShared, onCheckedChange = { on -> isQuoteShared = on })
                         }

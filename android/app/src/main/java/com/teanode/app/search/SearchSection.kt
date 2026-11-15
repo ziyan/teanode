@@ -44,6 +44,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
@@ -263,7 +266,7 @@ private fun areaTitleText(context: Context, area: SearchArea): String = context.
 
 @Composable
 private fun SectionTitle(text: String, icon: ImageVector) {
-    androidx.compose.foundation.layout.Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    androidx.compose.foundation.layout.Row(Modifier.semantics { heading() }.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
         Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
     }
@@ -303,7 +306,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.searchAreaSection(
 @Composable
 private fun SearchPhotoThumbnail(photoId: String, onClick: () -> Unit) {
     val picture = rememberServerPicture("/api/v1/photos/$photoId/previews/small")
-    Box(Modifier.size(76.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable(onClick = onClick)) {
+    Box(Modifier.size(76.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable(role = Role.Button, onClick = onClick)) {
         if (picture != null) Image(picture, contentDescription = stringResource(R.string.search_photo), contentScale = ContentScale.Crop, modifier = Modifier.size(76.dp))
     }
 }

@@ -37,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
@@ -344,7 +345,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.linkedRecords(
 @Composable
 fun LinkedRecordRow(link: KnowledgeRecordLink, onOpen: (KnowledgeRecordLink) -> Unit, onConfirm: (KnowledgeRecordLink) -> Unit, onRemove: (KnowledgeRecordLink) -> Unit) {
     var isMenuOpen by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().clickable(enabled = link.canOpen) { onOpen(link) }.padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = link.canOpen) { onOpen(link) }.padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             if (link.isUnavailable) {
                 Text(stringResource(R.string.knowledge_no_longer_available), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -383,7 +384,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.reflections(page: Kno
             for (citation in fact.citations) {
                 Text(
                     citation, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable { onOpenCited(citation.split("#").first()) },
+                    modifier = Modifier.clickable(role = Role.Button) { onOpenCited(citation.split("#").first()) },
                 )
             }
         }
@@ -440,7 +441,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.facts(
 @Composable
 fun FactRow(fact: KnowledgeFact, attachments: List<KnowledgeAttachment>, onEdit: () -> Unit, onMove: () -> Unit, onForget: () -> Unit) {
     var isMenuOpen by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().clickable(onClick = onEdit).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.Top) {
+    Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onEdit).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.Top) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("#${fact.number} ${fact.text}")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -502,7 +503,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.connections(
     if (neighbours != null) {
         neighbours.parent?.let { parent ->
             item(key = "connection-parent") {
-                Row(Modifier.fillMaxWidth().clickable { onOpenPage(parent.path) }.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenPage(parent.path) }.padding(horizontal = 16.dp, vertical = 12.dp)) {
                     Text(stringResource(R.string.knowledge_filed_under), modifier = Modifier.weight(1f))
                     Text(parent.shownName, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -513,7 +514,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.connections(
             val neighbour = present[index]
             val node = neighbour.node ?: return@items
             var isMenuOpen by remember { mutableStateOf(false) }
-            Row(Modifier.fillMaxWidth().clickable { onOpenPage(node.path) }.padding(start = 16.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenPage(node.path) }.padding(start = 16.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         val relation = neighbour.relation.replace('_', ' ')

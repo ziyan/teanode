@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
@@ -171,7 +172,7 @@ fun FinanceSpendingScreen() {
                     for (row in budgetRows) {
                         item("budget-" + row.spendingCategoryId) {
                             val name = if (base.category(row.spendingCategoryId) != null) base.categoryName(row.spendingCategoryId) else FinanceCategoryNames.shown(context, row.spendingCategoryName ?: "")
-                            Box(Modifier.clickable { navigator.navigate(FinanceRoutes.transactions(FinanceTransactionFilter(from = range.first.toString(), to = range.second.toString(), spendingCategoryId = row.spendingCategoryId))) }) {
+                            Box(Modifier.clickable(role = Role.Button) { navigator.navigate(FinanceRoutes.transactions(FinanceTransactionFilter(from = range.first.toString(), to = range.second.toString(), spendingCategoryId = row.spendingCategoryId))) }) {
                                 BudgetRow(name, row.spendingAmount, row.budgetAmount, row.projectedAmount, row.budgetPace, row.currencyCode)
                             }
                         }
@@ -233,7 +234,7 @@ private fun shareText(amount: BigDecimal, total: BigDecimal): String =
 
 @Composable
 private fun SpendingLineRow(line: SpendingLine, color: Color?, currency: String, shareText: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.size(12.dp).background(color ?: Color.Transparent, CircleShape))
         Column(Modifier.weight(1f)) {
             Text(line.label, style = MaterialTheme.typography.bodyLarge)

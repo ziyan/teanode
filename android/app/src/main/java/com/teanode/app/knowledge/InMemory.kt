@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.LocalConnection
@@ -58,7 +59,7 @@ fun InMemoryCard(recordKind: String, recordId: String, modifier: Modifier = Modi
 fun InMemoryRow(link: KnowledgeRecordLink) {
     val navigator = LocalAppNavigator.current
     Row(
-        Modifier.fillMaxWidth().clickable { navigator.navigate(KnowledgeRoutes.page(link.nodePath)) }.padding(vertical = 6.dp),
+        Modifier.fillMaxWidth().clickable(role = Role.Button) { navigator.navigate(KnowledgeRoutes.page(link.nodePath)) }.padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

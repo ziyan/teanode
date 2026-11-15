@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -153,7 +154,7 @@ fun ChatCallPeopleContent(people: List<ChatCallPerson>, chosenUserIds: List<Stri
         people.forEach { person ->
             val isChosen = person.userId in chosenUserIds
             Row(
-                Modifier.fillMaxWidth().clickable { onToggle(person.userId) }.semantics { selected = isChosen }.padding(horizontal = 24.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().clickable(role = Role.Button) { onToggle(person.userId) }.semantics { selected = isChosen }.padding(horizontal = 24.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {

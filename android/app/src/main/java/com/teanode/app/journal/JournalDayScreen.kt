@@ -58,6 +58,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -251,7 +252,7 @@ private fun <Element> LazyListScope.showAllRow(state: DayScreenState, rows: List
 private fun LazyListScope.foldedPart(state: DayScreenState, part: String, label: @Composable () -> Unit, content: LazyListScope.() -> Unit) {
     item(key = "fold-$part") {
         val isOpen = part in state.expandedParts
-        Row(Modifier.fillMaxWidth().clickable { state.togglePart(part) }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { state.togglePart(part) }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { label() }
             Icon(if (isOpen) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -327,7 +328,8 @@ private fun LazyListScope.photosSection(journalDay: JournalDay, state: DayScreen
     item(key = "photos-strip") {
         LazyRow(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             items(journalDay.photos.take(STRIP_PHOTO_COUNT), key = { photo -> photo.photoId }) { photo ->
-                JournalPhotoImage(photo.photoId, Modifier.size(104.dp).clip10().clickable { state.openedPhotoId = photo.photoId }.semantics { contentDescription = "Photo" })
+                val photoDescription = stringOf(R.string.journal_photo)
+                JournalPhotoImage(photo.photoId, Modifier.size(104.dp).clip10().clickable(role = Role.Button) { state.openedPhotoId = photo.photoId }.semantics { contentDescription = photoDescription })
             }
         }
     }

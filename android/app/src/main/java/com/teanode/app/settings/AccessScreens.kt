@@ -36,6 +36,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.LocalAppSession
@@ -398,7 +399,7 @@ fun GroupsScreen(onBack: () -> Unit) {
                 if (options.isEmpty()) Text(stringResource(R.string.settings_groups_nothing_to_choose), style = MaterialTheme.typography.bodyMedium)
                 options.forEach { (id, title, subtitle) ->
                     TeaNodeRow(
-                        headline = title, supporting = subtitle, modifier = Modifier.clickable { chosen = if (chosen.contains(id)) chosen - id else chosen + id },
+                        headline = title, supporting = subtitle, modifier = Modifier.clickable(role = Role.Checkbox) { chosen = if (chosen.contains(id)) chosen - id else chosen + id },
                         trailing = { Checkbox(checked = chosen.contains(id), onCheckedChange = null) },
                     )
                 }
@@ -467,7 +468,7 @@ fun RolesScreen(onBack: () -> Unit) {
                         inKind.forEach { permission ->
                             TeaNodeRow(
                                 headline = permissionLabel(permission.key), supporting = permission.key,
-                                modifier = if (canManage) Modifier.clickable {
+                                modifier = if (canManage) Modifier.clickable(role = Role.Button) {
                                     val isHeld = !current.permissions.contains(permission.key)
                                     directory.act(savedText) { connection.setAccessRolePermissions(current.id, current.permissionsSetting(permission.key, isHeld, directory.permissions)) }
                                 } else Modifier,

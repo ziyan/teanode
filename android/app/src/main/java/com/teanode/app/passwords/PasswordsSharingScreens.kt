@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
@@ -491,7 +492,7 @@ internal fun PasswordsNeedsYouRows(model: PasswordsModel, onOpenItem: (PasswordI
             }
         }
         for (item in waitingItems) {
-            Column(Modifier.fillMaxWidth().clickable { onOpenItem(item) }.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenItem(item) }.padding(horizontal = 16.dp, vertical = 10.dp)) {
                 Text(item.name, style = MaterialTheme.typography.bodyLarge)
                 Text(stringResource(R.string.passwords_finish_waiting_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

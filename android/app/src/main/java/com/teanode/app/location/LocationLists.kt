@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
@@ -148,7 +149,7 @@ fun LocationVisitsList(
         days.forEach { day ->
             item(key = "day-" + day.id) {
                 Row(
-                    Modifier.fillMaxWidth().clickable { onOpenDay(day.day) }.padding(horizontal = 16.dp, vertical = 12.dp),
+                    Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenDay(day.day) }.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(text.dayTitle(day.day), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
@@ -202,7 +203,7 @@ fun LocationTimelineRow(
 fun LocationVisitRow(visit: PlaceVisit, onOpenPlace: ((LocationPlace) -> Unit)?, onOpenPhotos: ((PlaceVisit) -> Unit)?, askToForget: ((PlaceVisit) -> Unit)?) {
     val text = rememberLocationText()
     var isMenuOpen by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().then(if (onOpenPlace != null) Modifier.clickable { onOpenPlace(visit.place) } else Modifier).padding(horizontal = 16.dp, vertical = 8.dp)) {
+    Column(Modifier.fillMaxWidth().then(if (onOpenPlace != null) Modifier.clickable(role = Role.Button) { onOpenPlace(visit.place) } else Modifier).padding(horizontal = 16.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(placeIcon(visit.place), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(28.dp))
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
@@ -234,7 +235,7 @@ fun VisitPhotoStrip(visit: PlaceVisit, photos: List<VisitPhoto>, onOpenPhotos: (
     val totalCount = maxOf(visit.photoCount ?: photos.size, photos.size)
     val remainingCount = totalCount - photos.size
     Row(
-        Modifier.padding(start = 40.dp, top = 8.dp).then(if (onOpenPhotos != null) Modifier.clickable { onOpenPhotos(visit) } else Modifier),
+        Modifier.padding(start = 40.dp, top = 8.dp).then(if (onOpenPhotos != null) Modifier.clickable(role = Role.Button) { onOpenPhotos(visit) } else Modifier),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         photos.forEach { photo ->
@@ -293,7 +294,7 @@ fun LocationTripLegMenu(leg: TripLeg, correctLeg: (TripLeg, TravelMode?) -> Unit
     val text = rememberLocationText()
     var isOpen by remember { mutableStateOf(false) }
     Box {
-        Box(Modifier.clickable { isOpen = true }) { LocationTripLegLine(leg, isMenu = true) }
+        Box(Modifier.clickable(role = Role.Button) { isOpen = true }) { LocationTripLegLine(leg, isMenu = true) }
         DropdownMenu(expanded = isOpen, onDismissRequest = { isOpen = false }) {
             TravelMode.entries.forEach { mode ->
                 DropdownMenuItem(
@@ -400,7 +401,7 @@ fun LocationPeopleCard(model: LocationModel, onOpenPeople: () -> Unit) {
             LocationOwnRow(model, isHighlightedWhenChosen = true)
             if (model.people.size > MOST_ROWS) {
                 HorizontalDivider()
-                Row(Modifier.fillMaxWidth().clickable(onClick = onOpenPeople).padding(horizontal = 16.dp).heightIn(min = 60.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onOpenPeople).padding(horizontal = 16.dp).heightIn(min = 60.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.People, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.width(44.dp))
                     Text(pluralStringResource(R.plurals.location_people_count, model.people.size, model.people.size), modifier = Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.bodyLarge)
                     Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -444,7 +445,7 @@ fun LocationPeopleRowLabel(
     Row(
         Modifier.fillMaxWidth().heightIn(min = 60.dp)
             .background(if (isSelected && isHighlightedWhenChosen) MaterialTheme.colorScheme.surfaceContainerHighest else androidx.compose.ui.graphics.Color.Transparent)
-            .clickable(onClick = onClick).padding(horizontal = 16.dp),
+            .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AvatarView(person.displayName, person.avatarUrl, person.avatarColorIndex, size = 44.dp)
@@ -532,7 +533,7 @@ fun LocationPlacesList(model: LocationModel, onOpenPlace: (LocationPlace) -> Uni
 fun LocationPlaceRow(place: LocationPlace, onClick: (() -> Unit)? = null) {
     val text = rememberLocationText()
     Row(
-        Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(placeIcon(place), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(28.dp))
@@ -583,7 +584,7 @@ fun LocationSharingList(model: LocationModel) {
 private fun LocationShareRow(share: LocationShare, text: LocationText, onChange: (LocationShareLevel) -> Unit, onStop: () -> Unit) {
     var isOpen by remember { mutableStateOf(false) }
     Box {
-        Row(Modifier.fillMaxWidth().clickable { isOpen = true }.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { isOpen = true }.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(text.shareName(share), style = MaterialTheme.typography.bodyLarge)
                 Text(share.level?.let { level -> text.levelTitle(level) } ?: share.shareLevel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

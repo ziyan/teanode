@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -149,7 +150,7 @@ fun StatusSheet(status: StatusModel, environment: ChatsEnvironment, connection: 
                 for (running in status.runningCommands) {
                     Text(
                         running.command, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { openCommand = running }.padding(vertical = 14.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { openCommand = running }.padding(vertical = 14.dp),
                     )
                 }
             }

@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -46,7 +47,7 @@ fun CallBar(state: CallSessionState, actions: CallActions, modifier: Modifier = 
     ) {
         Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(
-                Modifier.weight(1f).heightIn(min = 56.dp).clickable { actions.onMinimize() }.semantics(mergeDescendants = true) { contentDescription = returnDescription + ": " + state.title },
+                Modifier.weight(1f).heightIn(min = 56.dp).clickable(role = Role.Button) { actions.onMinimize() }.semantics(mergeDescendants = true) { contentDescription = returnDescription + ": " + state.title },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {

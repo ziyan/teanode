@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.LocalConnection
@@ -71,7 +72,7 @@ fun NotificationLevelRows(level: ChatNotificationLevel, onChoose: (ChatNotificat
     Column {
         for (choice in ChatNotificationLevel.entries) {
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onChoose(choice) }.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically,
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.RadioButton) { onChoose(choice) }.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically,
             ) {
                 RadioButton(selected = level == choice, onClick = { onChoose(choice) })
                 Text(notificationLevelName(choice), style = MaterialTheme.typography.bodyLarge)
@@ -109,7 +110,7 @@ fun ChatMembersSheet(model: ConversationModel, environment: ChatsEnvironment, on
                 if (canChange) {
                     item {
                         Row(
-                            Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable { isAdding = true }.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically,
+                            Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(role = Role.Button) { isAdding = true }.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                         ) {
                             Icon(Icons.Outlined.PersonAdd, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -185,7 +186,7 @@ private fun SwitchRow(title: String, isOn: Boolean, onChange: (Boolean) -> Unit)
 @Composable
 private fun MemberRow(member: ChatMember, chat: ChatSummary, ownUserId: String?, canRemove: Boolean, environment: ChatsEnvironment, onOpen: () -> Unit, onRemove: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(enabled = member.userId.isNotEmpty() && member.userId != ownUserId, onClick = onOpen).padding(horizontal = 20.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, enabled = member.userId.isNotEmpty() && member.userId != ownUserId, onClick = onOpen).padding(horizontal = 20.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         AvatarView(member.displayName, member.avatarUrl, member.avatarColorIndex, size = 36.dp)
@@ -294,7 +295,7 @@ fun ChatPeopleSheet(
                     else -> LazyColumn(Modifier.fillMaxSize()) {
                         items(choices, key = { person -> person.userId }) { person ->
                             Row(
-                                Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(enabled = !isBusy) {
+                                Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, enabled = !isBusy) {
                                     if (purpose == ChatPeoplePurpose.Direct) {
                                         chosen = setOf(person.userId)
                                         submit(chosen)

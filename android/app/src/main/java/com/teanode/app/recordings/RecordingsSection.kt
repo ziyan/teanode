@@ -48,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.teanode.app.R
@@ -261,7 +262,7 @@ fun RecordingRow(row: RecordingLibraryRow, onClick: () -> Unit, onLongClick: () 
         overline = relativeTimeText(row.recordedAtEpochMS, nowEpochMS) + if (row.timelineDurationMS > 0) " · " + PhotoTimeline.durationText(row.timelineDurationMS.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()) else "",
         leading = { StatusIcon(row.status) },
         trailing = { StatusText(row.status) },
-        modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        modifier = Modifier.combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onLongClick),
     )
 }
 

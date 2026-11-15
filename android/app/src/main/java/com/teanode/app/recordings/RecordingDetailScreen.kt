@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
@@ -434,7 +436,7 @@ private fun Bubble(
     }
     Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
         Column(
-            Modifier.fillMaxWidth().background(container, RoundedCornerShape(16.dp)).clickable { isMenuOpen = true }.padding(12.dp),
+            Modifier.fillMaxWidth().background(container, RoundedCornerShape(16.dp)).clickable(role = Role.Button) { isMenuOpen = true }.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -540,7 +542,7 @@ private fun NameSpeakerSheet(bubble: RecordingConversationBubble, recordingId: S
             }
             if (suggestions.isNotEmpty()) {
                 Text(stringResource(R.string.recordings_suggestions), style = MaterialTheme.typography.titleSmall)
-                for (suggestion in suggestions.take(5)) Text(suggestion.confirmedName, Modifier.fillMaxWidth().clickable { name = suggestion.confirmedName }.padding(vertical = 8.dp))
+                for (suggestion in suggestions.take(5)) Text(suggestion.confirmedName, Modifier.fillMaxWidth().clickable(role = Role.Button) { name = suggestion.confirmedName }.padding(vertical = 8.dp))
             }
             Button(
                 onClick = {
@@ -585,7 +587,7 @@ internal fun RecordingDetailsSheet(
         if (previewAttempts == null && latestRun != null) value = runCatching { connection.recordingTranscript(latestRun.id, pageSize = 1).attempts }.getOrNull()
     }
     var isEditingSource by remember { mutableStateOf(false) }
-    Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.navigationBarsPadding().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(stringResource(R.string.recordings_details), style = MaterialTheme.typography.titleLarge)
         if (view.recording.captureGaps.isNotEmpty()) {
             Text(stringResource(R.string.recordings_capture_gaps), style = MaterialTheme.typography.titleSmall)

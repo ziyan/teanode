@@ -40,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
@@ -167,7 +168,7 @@ fun ReminderRow(reminder: AgentReminder, onToggle: () -> Unit, onOpen: () -> Uni
                 tint = if (reminder.isDone) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Column(Modifier.weight(1f).clickable(onClick = onOpen).padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.weight(1f).clickable(role = Role.Button, onClick = onOpen).padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 val priority = reminder.priority
                 if (priority != null && priority > 0 && priority <= 4) {

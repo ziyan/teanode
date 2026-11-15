@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import java.time.Instant
@@ -38,7 +39,7 @@ import java.time.format.FormatStyle
 @Composable
 fun DateField(label: String, date: LocalDate, onChange: (LocalDate) -> Unit, modifier: Modifier = Modifier, minimum: LocalDate? = null) {
     var isOpen by remember { mutableStateOf(false) }
-    Row(modifier.fillMaxWidth().clickable { isOpen = true }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().clickable(role = Role.Button) { isOpen = true }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         Text(DateWords.abbreviatedDate(date), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
     }
@@ -68,7 +69,7 @@ fun DateField(label: String, date: LocalDate, onChange: (LocalDate) -> Unit, mod
 @Composable
 fun TimeField(label: String, time: LocalTime, onChange: (LocalTime) -> Unit, modifier: Modifier = Modifier) {
     var isOpen by remember { mutableStateOf(false) }
-    Row(modifier.fillMaxWidth().clickable { isOpen = true }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().clickable(role = Role.Button) { isOpen = true }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         Text(
             DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(java.util.Locale.getDefault()).format(time),
@@ -95,7 +96,7 @@ fun TimeField(label: String, time: LocalTime, onChange: (LocalTime) -> Unit, mod
 /** A row with a switch, labelled. */
 @Composable
 fun SwitchRow(label: String, isOn: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().clickable { onChange(!isOn) }.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+    Row(modifier.fillMaxWidth().clickable(role = Role.Button) { onChange(!isOn) }.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         androidx.compose.material3.Switch(checked = isOn, onCheckedChange = onChange)
     }

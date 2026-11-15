@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.shell.LocalAppNavigator
@@ -68,7 +69,7 @@ fun ShareTargetPicker(people: List<CalendarSharePerson>, circles: List<CalendarS
     var isOpen by remember { mutableStateOf(false) }
     val chosenName = shareTargetName(chosen, people, circles).ifEmpty { stringResource(R.string.calendar_choose_person_or_circle) }
     androidx.compose.foundation.layout.Box {
-        Row(Modifier.fillMaxWidth().clickable { isOpen = true }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { isOpen = true }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.calendar_share_with), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
             Text(chosenName, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyLarge)
         }
@@ -172,7 +173,7 @@ fun CalendarShareScreen(model: CalendarModel, calendar: AgentCalendar) {
                     item { Text(stringResource(R.string.calendar_choose_person_or_whole_circle), modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     item { TeaNodeSectionHeader(stringResource(R.string.calendar_how_much)) }
                     items(CalendarShareLevel.grantable, key = { each -> "level-${each.wireName}" }) { each ->
-                        Row(Modifier.fillMaxWidth().clickable { level = each }.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clickable(role = Role.RadioButton) { level = each }.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = level == each, onClick = { level = each })
                             Text(each.title(), style = MaterialTheme.typography.bodyLarge)
                         }
@@ -251,7 +252,7 @@ fun CircleCalendarOfferDialog(circleName: String, onShare: (CalendarShareLevel) 
             Column {
                 Text(stringResource(R.string.calendar_offer_message, circleName))
                 for (each in CalendarShareLevel.grantable.filter { each -> each != CalendarShareLevel.Edit }) {
-                    Row(Modifier.fillMaxWidth().clickable { level = each }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clickable(role = Role.RadioButton) { level = each }, verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = level == each, onClick = { level = each })
                         Text(each.title())
                     }

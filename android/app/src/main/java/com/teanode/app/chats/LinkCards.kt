@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -64,7 +65,7 @@ fun LinkPreviewCard(preview: LinkPreview) {
     val openLink = LocalLinkOpener.current
     val clipboard = LocalClipboardManager.current
     Surface(
-        Modifier.widthIn(max = 320.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).combinedClickable(
+        Modifier.widthIn(max = 320.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).combinedClickable(role = Role.Button, 
             onClick = { openLink(preview.cleanedUrl) }, onLongClick = { clipboard.setText(AnnotatedString(preview.cleanedUrl)) },
         ),
         shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),

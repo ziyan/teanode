@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -124,7 +125,7 @@ private fun MemberTile(state: CallSessionState, member: ChatCallMemberView, onFe
         member = member, isOwn = isOwn, isVideoOn = if (isOwn) state.isCameraOn else member.isVideoOn,
         isMuted = if (isOwn) state.isMuted else member.isMuted,
         track = if (isOwn) state.localVideoTrack else state.remoteVideoTracks[member.userId],
-        modifier = if (isOwn) modifier else modifier.semantics { selected = isChosen }.clickable { onFeature(if (isChosen) null else member.userId) },
+        modifier = if (isOwn) modifier else modifier.semantics { selected = isChosen }.clickable(role = Role.Button) { onFeature(if (isChosen) null else member.userId) },
         isChosen = isChosen, avatarSize = avatarSize,
     )
 }

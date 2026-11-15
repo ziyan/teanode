@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.ui.components.TeaNodeScreen
@@ -163,7 +164,7 @@ internal fun ChoiceRow(label: String, chosen: String, choices: List<String>, onC
     var isOpen by remember { mutableStateOf(false) }
     androidx.compose.foundation.layout.Box {
         Row(
-            Modifier.fillMaxWidth().clickable { isOpen = true }.padding(horizontal = 16.dp, vertical = 14.dp),
+            Modifier.fillMaxWidth().clickable(role = Role.Button) { isOpen = true }.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))

@@ -54,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.semantics.Role
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -152,7 +153,7 @@ fun SubscriptionsScreen(mail: MailModel, onBack: () -> Unit, onOpen: (MailSubscr
                     }
                     else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                         items(subscriptions, key = { subscription -> subscription.id }) { subscription ->
-                            SubscriptionRow(subscription, Modifier.clickable { onOpen(subscription) })
+                            SubscriptionRow(subscription, Modifier.clickable(role = Role.Button) { onOpen(subscription) })
                         }
                     }
                 }

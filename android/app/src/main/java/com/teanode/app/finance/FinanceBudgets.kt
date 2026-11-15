@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
 import com.teanode.app.session.LocalConnection
@@ -99,7 +100,7 @@ fun FinanceBudgetsScreen() {
                     for (row in rows) {
                         item("budget-" + row.spendingCategoryId) {
                             val name = if (base.category(row.spendingCategoryId) != null) base.categoryName(row.spendingCategoryId) else FinanceCategoryNames.shown(context, row.spendingCategoryName ?: "")
-                            androidx.compose.foundation.layout.Box(Modifier.clickable {
+                            androidx.compose.foundation.layout.Box(Modifier.clickable(role = Role.Button) {
                                 budgetEditing = BudgetDraft(row.spendingCategoryId, loaded.budgets.firstOrNull { budget -> budget.spendingCategoryId == row.spendingCategoryId }?.monthlyAmount.orEmpty(), row.currencyCode.orEmpty(), true)
                             }) { BudgetRow(name, row.spendingAmount, row.budgetAmount, row.projectedAmount, row.budgetPace, row.currencyCode) }
                         }

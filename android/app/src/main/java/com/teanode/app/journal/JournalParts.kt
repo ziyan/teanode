@@ -31,8 +31,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -96,7 +98,7 @@ fun openJournalPath(navigator: AppNavigator, path: String) {
 @Composable
 fun JournalOpenRow(isOpenable: Boolean, onOpen: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     if (isOpenable) {
-        Row(modifier.fillMaxWidth().clickable(onClick = onOpen).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onOpen).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) { content() }
             Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
         }
@@ -214,7 +216,7 @@ fun JournalMoodPicker(chosenLevel: JournalMoodLevel?, onChoose: (JournalMoodLeve
         Column(modifier) {
             for (level in JournalMoodLevel.entries) {
                 Row(
-                    Modifier.fillMaxWidth().clickable { onChoose(level) }.height(48.dp).semantics { selected = chosenLevel == level },
+                    Modifier.fillMaxWidth().clickable(role = Role.Button) { onChoose(level) }.height(48.dp).semantics { selected = chosenLevel == level },
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     JournalMoodFace(level, Modifier.size(36.dp), isColored = chosenLevel == null || chosenLevel == level)
@@ -226,7 +228,7 @@ fun JournalMoodPicker(chosenLevel: JournalMoodLevel?, onChoose: (JournalMoodLeve
         Row(modifier.fillMaxWidth()) {
             for (level in JournalMoodLevel.entries) {
                 Column(
-                    Modifier.weight(1f).clickable { onChoose(level) }.padding(vertical = 4.dp).semantics { selected = chosenLevel == level; contentDescription = text.moodName(level) },
+                    Modifier.weight(1f).clickable(role = Role.Button) { onChoose(level) }.padding(vertical = 4.dp).semantics { selected = chosenLevel == level; contentDescription = text.moodName(level) },
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     JournalMoodFace(level, Modifier.size(36.dp), isColored = chosenLevel == null || chosenLevel == level)
@@ -299,7 +301,7 @@ fun JournalMoodStrip(dayMoods: List<Int>, modifier: Modifier = Modifier) {
 
 @Composable
 internal fun Heading(title: String) {
-    Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp))
+    Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.semantics { heading() }.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp))
 }
 
 @Composable

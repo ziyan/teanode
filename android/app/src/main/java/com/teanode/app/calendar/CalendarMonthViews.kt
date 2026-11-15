@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -218,7 +219,7 @@ fun MonthDayCell(
     val countColor = events.firstOrNull()?.let { first -> model.color(first) } ?: Color.Transparent
     Column(
         modifier
-            .clickable(onClick = onOpen)
+            .clickable(role = Role.Button, onClick = onOpen)
             .padding(horizontal = 1.dp)
             .clearAndSetSemantics { contentDescription = (if (isToday) todayText else dateText) + ", " + eventCountText },
         horizontalAlignment = Alignment.CenterHorizontally,

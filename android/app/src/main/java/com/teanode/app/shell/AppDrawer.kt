@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
@@ -107,7 +108,7 @@ private fun AccountHeader() {
         com.teanode.app.session.SignOutConfirmation(account, onConfirm = { isConfirmingSignOut = false; session.signOut() }, onDismiss = { isConfirmingSignOut = false })
     }
     Row(
-        Modifier.fillMaxWidth().clickable { isMenuOpen = true }.padding(horizontal = 28.dp, vertical = 20.dp),
+        Modifier.fillMaxWidth().clickable(role = Role.Button) { isMenuOpen = true }.padding(horizontal = 28.dp, vertical = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {

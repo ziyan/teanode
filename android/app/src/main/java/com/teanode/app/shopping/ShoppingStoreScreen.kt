@@ -170,10 +170,13 @@ fun ShoppingStoreScreen(storeName: String, listIds: List<String>, initialLayout:
                             items(placed.chunked(2), key = { row -> "tiles-" + row.first().item.id }) { row ->
                                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     for (cell in row) {
-                                        ShoppingStoreItemTile(
-                                            cell.item, state.isChecked(cell.item), cell.groupName, words.storeItemDetail(cell.item, state.isChecked(cell.item), state.includedCount > 1),
-                                            onToggle = { state.toggle(cell.item) }, onOpen = { menuItem = cell.item }, modifier = Modifier.weight(1f),
-                                        )
+                                        Box(Modifier.weight(1f)) {
+                                            ShoppingStoreItemTile(
+                                                cell.item, state.isChecked(cell.item), cell.groupName, words.storeItemDetail(cell.item, state.isChecked(cell.item), state.includedCount > 1),
+                                                onToggle = { state.toggle(cell.item) }, onOpen = { menuItem = cell.item }, modifier = Modifier.fillMaxWidth(),
+                                            )
+                                            StoreItemMenu(cell.item, menuItem?.id == cell.item.id, { menuItem = null }, state, onOpenItem = { opened = cell.item })
+                                        }
                                     }
                                     if (row.size == 1) Box(Modifier.weight(1f))
                                 }
@@ -181,23 +184,14 @@ fun ShoppingStoreScreen(storeName: String, listIds: List<String>, initialLayout:
                         } else {
                             for (group in sections.aisleGroups) {
                                 item("header-" + group.id) { SectionTitle(words.aisleTitle(group)) }
-                                items(group.items, key = { item -> "item-" + item.id }) { item -> storeRow(item, state, words, onMenu = { menuItem = item }) }
+                                items(group.items, key = { item -> "item-" + item.id }) { item -> storeRow(item, state, words, menuItem?.id == item.id, onMenu = { menuItem = item }, onDismiss = { menuItem = null }, onOpenItem = { opened = item }) }
                             }
                             if (sections.anyStoreItems.isNotEmpty()) {
                                 item("any-store-header") { SectionTitle(stringResource(R.string.shopping_also_on_the_list_any_store)) }
-                                items(sections.anyStoreItems, key = { item -> "any-" + item.id }) { item -> storeRow(item, state, words, onMenu = { menuItem = item }) }
+                                items(sections.anyStoreItems, key = { item -> "any-" + item.id }) { item -> storeRow(item, state, words, menuItem?.id == item.id, onMenu = { menuItem = item }, onDismiss = { menuItem = null }, onOpenItem = { opened = item }) }
                             }
                         }
                     }
-                }
-            }
-            DropdownMenu(menuItem != null, { menuItem = null }, modifier = Modifier.padding(16.dp)) {
-                menuItem?.let { item ->
-                    DropdownMenuItem(
-                        text = { Text(stringResource(if (item.isOutOfStock) R.string.shopping_in_stock_again else R.string.shopping_out_of_stock_action)) },
-                        onClick = { menuItem = null; state.setOutOfStock(item, !item.isOutOfStock) },
-                    )
-                    DropdownMenuItem(text = { Text(stringResource(R.string.shopping_item)) }, onClick = { menuItem = null; opened = item })
                 }
             }
         }
@@ -234,7 +228,22 @@ fun ShoppingStoreScreen(storeName: String, listIds: List<String>, initialLayout:
 }
 
 @Composable
-private fun storeRow(item: ShoppingItem, state: ShoppingStoreState, words: ShoppingWords, onMenu: () -> Unit) {
+private fun storeRow(item: ShoppingItem, state: ShoppingStoreState, words: ShoppingWords, isMenuOpen: Boolean, onMenu: () -> Unit, onDismiss: () -> Unit, onOpenItem: () -> Unit) {
     val isChecked = state.isChecked(item)
-    ShoppingStoreItemRow(item, isChecked, words.storeItemDetail(item, isChecked, state.includedCount > 1), onToggle = { state.toggle(item) }, onMenu = onMenu)
+    Box {
+        ShoppingStoreItemRow(item, isChecked, words.storeItemDetail(item, isChecked, state.includedCount > 1), onToggle = { state.toggle(item) }, onMenu = onMenu)
+        StoreItemMenu(item, isMenuOpen, onDismiss, state, onOpenItem)
+    }
+}
+
+/** What touch and hold on an item at a store offers, drawn as a child of the item's own row so it opens at the row. */
+@Composable
+private fun StoreItemMenu(item: ShoppingItem, isOpen: Boolean, onDismiss: () -> Unit, state: ShoppingStoreState, onOpenItem: () -> Unit) {
+    DropdownMenu(isOpen, onDismiss) {
+        DropdownMenuItem(
+            text = { Text(stringResource(if (item.isOutOfStock) R.string.shopping_in_stock_again else R.string.shopping_out_of_stock_action)) },
+            onClick = { onDismiss(); state.setOutOfStock(item, !item.isOutOfStock) },
+        )
+        DropdownMenuItem(text = { Text(stringResource(R.string.shopping_item)) }, onClick = { onDismiss(); onOpenItem() })
+    }
 }

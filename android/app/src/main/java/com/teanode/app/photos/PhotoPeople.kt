@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
@@ -127,7 +128,7 @@ fun PeopleContent(isHiddenShown: Boolean, library: PhotoLibrary?, onOpenPerson: 
 
 @Composable
 private fun PersonCell(group: PhotoFaceGroup, onClick: () -> Unit) {
-    Column(Modifier.clickable(onClick = onClick).padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.clickable(role = Role.Button, onClick = onClick).padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         FaceThumbnail(group.facePictureUrl, 88.dp)
         Text(
             PhotoNaming.shownName(group) ?: stringResource(R.string.photos_unnamed_person), style = MaterialTheme.typography.bodyMedium, maxLines = 1,

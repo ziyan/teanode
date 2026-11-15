@@ -43,6 +43,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -75,7 +78,7 @@ fun PasswordsSettingsScreen() {
             if (isOpen) {
                 Header(stringResource(R.string.passwords_lock_header))
                 Box {
-                    Row(Modifier.fillMaxWidth().clickable { isLockMenuOpen = true }.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { isLockMenuOpen = true }.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(stringResource(R.string.passwords_lock_after))
                         Text(lockAfterText(model.lockAfterMinutes), color = MaterialTheme.colorScheme.primary)
                     }
@@ -125,7 +128,7 @@ fun PasswordsSettingsScreen() {
                 runCatching { context.startActivity(Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE).setData(android.net.Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
             HorizontalDivider()
-            Row(Modifier.fillMaxWidth().clickable(enabled = !isErasing) { isConfirmingErase = true }.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = !isErasing) { isConfirmingErase = true }.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Icon(Icons.Outlined.DeleteForever, null, tint = MaterialTheme.colorScheme.error)
                 Text(stringResource(R.string.passwords_erase), color = MaterialTheme.colorScheme.error)
             }
@@ -158,12 +161,12 @@ fun PasswordsSettingsScreen() {
 
 @Composable
 private fun Header(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp))
+    Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.semantics { heading() }.padding(16.dp, 16.dp, 16.dp, 4.dp))
 }
 
 @Composable
 private fun Action(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Icon(icon, null, tint = MaterialTheme.colorScheme.primary); Text(title, color = MaterialTheme.colorScheme.primary)
     }
 }

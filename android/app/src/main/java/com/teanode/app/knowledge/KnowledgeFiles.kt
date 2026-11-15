@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -106,7 +107,7 @@ fun KnowledgeFilePreview(path: String, name: String, contentType: String, modifi
 
 @Composable
 private fun FileRow(name: String, icon: androidx.compose.ui.graphics.vector.ImageVector, isBusy: Boolean, modifier: Modifier, onOpen: () -> Unit) {
-    Row(modifier.fillMaxWidth().clickable(enabled = !isBusy, onClick = onOpen).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(modifier.fillMaxWidth().clickable(role = Role.Button, enabled = !isBusy, onClick = onOpen).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Text(name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
         Icon(Icons.Outlined.OpenInNew, contentDescription = stringResource(R.string.knowledge_open_in_another_app), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -116,7 +117,7 @@ private fun FileRow(name: String, icon: androidx.compose.ui.graphics.vector.Imag
 /** The first page of a PDF, with its name and how many pages it has. */
 @Composable
 fun PdfPreviewCard(name: String, pages: List<Bitmap>, modifier: Modifier = Modifier, onOpen: () -> Unit) {
-    Column(modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onOpen).padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Image(
             pages.first().asImageBitmap(), contentDescription = name, contentScale = ContentScale.Fit, alignment = Alignment.CenterStart,
             modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp).background(androidx.compose.ui.graphics.Color.White),

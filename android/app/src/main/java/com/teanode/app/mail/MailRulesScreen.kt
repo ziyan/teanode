@@ -53,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -122,7 +123,7 @@ fun MailRulesScreen(mail: MailModel, onBack: () -> Unit, startsEditing: Boolean 
         LazyColumn(Modifier.padding(contentPadding).fillMaxSize()) {
             if (rules.isEmpty()) item { Text(stringResource(R.string.mail_no_rules_yet), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             itemsIndexed(rules) { index, rule ->
-                Row(Modifier.fillMaxWidth().clickable {
+                Row(Modifier.fillMaxWidth().clickable(role = Role.Button) {
                     editingIndex = index
                     editedRule = rule
                     isEditing = true

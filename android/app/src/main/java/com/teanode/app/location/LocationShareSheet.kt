@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -139,7 +140,7 @@ fun LocationShareSheet(model: LocationModel, onDismiss: () -> Unit) {
                     HorizontalDivider()
                     Text(stringResource(R.string.location_how_much), style = MaterialTheme.typography.titleSmall)
                     LocationShareLevel.grantable.forEach { each ->
-                        Row(Modifier.fillMaxWidth().selectable(selected = each == level, onClick = { level = each }), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().selectable(selected = each == level, role = Role.RadioButton, onClick = { level = each }), verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = each == level, onClick = { level = each })
                             Text(text.levelTitle(each))
                         }

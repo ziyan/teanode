@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
@@ -64,7 +65,7 @@ internal fun CodingAgentsList(session: HerdrSession, read: HerdrSubagents?, isRe
             }
             item {
                 Row(
-                    Modifier.fillMaxWidth().then(if (roots.isNotEmpty()) Modifier.clickable { isSessionExpanded = !isSessionExpanded } else Modifier).padding(16.dp, 8.dp),
+                    Modifier.fillMaxWidth().then(if (roots.isNotEmpty()) Modifier.clickable(role = Role.Button) { isSessionExpanded = !isSessionExpanded } else Modifier).padding(16.dp, 8.dp),
                     verticalAlignment = Alignment.Top,
                 ) {
                     Box(Modifier.weight(1f)) { CodingSessionAgentRow(session, read?.sessionModelName ?: "") }
@@ -97,7 +98,7 @@ private fun CodingAgentNodeView(node: HerdrSubagentNode, depth: Int) {
     var isExpanded by remember { mutableStateOf(true) }
     Column {
         Row(
-            Modifier.fillMaxWidth().then(if (node.children.isNotEmpty()) Modifier.clickable { isExpanded = !isExpanded } else Modifier).padding(start = (16 + depth * 20).dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+            Modifier.fillMaxWidth().then(if (node.children.isNotEmpty()) Modifier.clickable(role = Role.Button) { isExpanded = !isExpanded } else Modifier).padding(start = (16 + depth * 20).dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.Top,
         ) {
             Box(Modifier.weight(1f)) { CodingAgentRow(node.subagent) }
