@@ -1330,6 +1330,7 @@ export const ja: Catalog = {
   'agentDrawer.earlierStart': '会話の最初',
   'agentDrawer.earlierLoad': '以前のメッセージを読み込む',
   'agentDrawer.newMessages': '新着メッセージ',
+  'agentDrawer.jumpToEnd': '末尾へ',
   'agentDrawer.add': '追加',
   'agentDrawer.talk': '通話',
   'chat.secondsLeft': '残り {count} 秒',

@@ -212,7 +212,9 @@ it('is a card while files wait to be sent, and a pill again when they are remove
 
 it('says what is above, and loads nothing when the top is reached', async () => {
   const { container } = renderDrawer()
-  expect(await screen.findByText('Pull down for earlier messages')).toBeTruthy()
+  // With a mouse the row is clicked, so it does not say to pull.
+  expect(await screen.findByText('Load earlier messages')).toBeTruthy()
+  expect(screen.queryByText('Pull down for earlier messages')).toBeNull()
   const transcript = container.querySelector('.agent-drawer-transcript') as HTMLElement
   transcript.scrollTop = 0
   fireEvent.scroll(transcript)
@@ -222,9 +224,10 @@ it('says what is above, and loads nothing when the top is reached', async () => 
 
 it('arms a pull at 72 pixels, disarms below 56, and loads a page of 30 on release', async () => {
   const { container } = renderDrawer()
-  await screen.findByText('Pull down for earlier messages')
+  await screen.findByRole('button', { name: 'Load earlier messages' })
   const transcript = container.querySelector('.agent-drawer-transcript') as HTMLElement
 
+  // Once it is moved by touch, the row says to pull.
   fireEvent.touchStart(transcript, { touches: [{ clientY: 100 }] })
   fireEvent.touchMove(transcript, { touches: [{ clientY: 150 }] })
   expect(screen.getByText('Pull down for earlier messages')).toBeTruthy()

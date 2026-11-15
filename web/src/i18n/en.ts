@@ -1334,6 +1334,7 @@ export const en = {
   'agentDrawer.earlierStart': 'Start of the conversation',
   'agentDrawer.earlierLoad': 'Load earlier messages',
   'agentDrawer.newMessages': 'New messages',
+  'agentDrawer.jumpToEnd': 'Jump to the end',
   'agentDrawer.add': 'Add',
   'agentDrawer.talk': 'Talk',
   'chat.secondsLeft': '{count} s left',

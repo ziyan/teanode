@@ -1280,6 +1280,7 @@ export const zh: Catalog = {
   'agentDrawer.earlierStart': '对话的开头',
   'agentDrawer.earlierLoad': '加载更早的消息',
   'agentDrawer.newMessages': '新消息',
+  'agentDrawer.jumpToEnd': '跳到末尾',
   'agentDrawer.add': '添加',
   'agentDrawer.talk': '通话',
   'chat.secondsLeft': '还剩 {count} 秒',

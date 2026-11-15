@@ -25506,3 +25506,10 @@ button.voice-bubble-transcribe {
   font-size: 13px;
   cursor: pointer;
 }
+
+/* Only an arrow while nothing new has come in: a round button. */
+.agent-drawer-jump:not(.has-new-messages) {
+  width: 36px;
+  padding: 0;
+  justify-content: center;
+}

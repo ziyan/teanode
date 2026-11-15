@@ -3144,6 +3144,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // Whether the transcript is scrolled to its end. New words keep it
   // there; a person who scrolled up to read is left where they are.
   const [atBottom, setAtBottom] = useState(true)
+  // The newest line when the list was last at its end: anything newer
+  // came in while the person read further up, and the button to the end
+  // says so rather than being only an arrow.
+  const [newestKeyAtBottom, setNewestKeyAtBottom] = useState<string | undefined>(undefined)
+  // Whether the list is moved by touch, where pulling past the top loads
+  // earlier messages; with a mouse the row at the top is clicked instead,
+  // so it does not say to pull.
+  const [isTouchInput, setIsTouchInput] = useState(
+    () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: coarse)').matches),
+  )
   const [initialConversationId] = useState(() => remembered(CONVERSATION_KEY))
   // The conversation as loaded, which the list does not always hold: a
   // run's transcript is opened from the agent page and is not in it.
@@ -3157,6 +3167,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // must be told so every time the drawer is open on it.
   const [actingAs, setActingAs] = useState<string | null>(null)
   const [lines, setLines] = useState<Line[]>([])
+  const newestLineKey = lines.length > 0 ? lines[lines.length - 1].key : undefined
+  useEffect(() => {
+    if (atBottom) setNewestKeyAtBottom(newestLineKey)
+  }, [atBottom, newestLineKey])
+  const hasNewMessages = !atBottom && newestLineKey !== newestKeyAtBottom
   // The files behind the citations the agent's answers have made, by
   // citation, and which citations have already been asked about. Asked
   // once each: a transcript is read many times over and the answer does
@@ -6496,6 +6511,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               setTranscriptElement(node)
             }}
             onTouchStart={(event) => {
+              setIsTouchInput(true)
               pullStartY.current = null
               if (transcript.current && transcript.current.scrollTop <= 0) pullStartY.current = event.touches[0].clientY
             }}
@@ -6590,7 +6606,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                       >
                         <ArrowDownIcon size={14} />
                       </span>
-                      {isPullArmed ? t('agentDrawer.earlierRelease') : t('agentDrawer.earlierPull')}
+                      {isPullArmed
+                        ? t('agentDrawer.earlierRelease')
+                        : isTouchInput
+                          ? t('agentDrawer.earlierPull')
+                          : t('agentDrawer.earlierLoad')}
                     </button>
                   </div>
                 )
@@ -6724,7 +6744,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           {!atBottom && lines.length > 0 && (
             <button
               type="button"
-              className="agent-drawer-jump"
+              className={['agent-drawer-jump', hasNewMessages ? 'has-new-messages' : ''].filter(Boolean).join(' ')}
+              aria-label={hasNewMessages ? t('agentDrawer.newMessages') : t('agentDrawer.jumpToEnd')}
               onClick={() => {
                 const element = transcript.current
                 if (element) element.scrollTop = element.scrollHeight
@@ -6733,7 +6754,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               }}
             >
               <ArrowDownIcon size={14} />
-              {t('agentDrawer.newMessages')}
+              {hasNewMessages && t('agentDrawer.newMessages')}
             </button>
           )}
           {/* The agent's task list, above what the person is about to
