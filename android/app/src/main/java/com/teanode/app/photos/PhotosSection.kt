@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -478,20 +479,21 @@ private fun SelectionBar(
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun FilterChips(filter: PhotoFilter, section: PhotoSectionChoice, searchWords: String?, onChange: (PhotoFilter) -> Unit) {
     if (section != PhotoSectionChoice.Library || searchWords != null || !filter.isActive) return
-    // A chip with a long text stays inside the screen: the text is cut with an ellipsis.
+    // The chips wrap onto a second line, and one with a long text is cut with an ellipsis inside the screen.
     val chipMaxWidth = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 32).dp
-    androidx.compose.foundation.lazy.LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        item {
+    FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        run {
             AssistChip(modifier = Modifier.widthIn(max = chipMaxWidth),
                 onClick = { onChange(PhotoFilter()) }, label = { Text(stringResource(R.string.photos_clear_filters), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) },
             )
         }
         filter.photoNearFilter?.let { near ->
-            item {
+            run {
                 AssistChip(modifier = Modifier.widthIn(max = chipMaxWidth),
                     onClick = { onChange(filter.copy(photoNearFilter = null)) },
                     label = { Text(near.placeName.ifEmpty { stringResource(R.string.photos_near_here) }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -500,13 +502,13 @@ private fun FilterChips(filter: PhotoFilter, section: PhotoSectionChoice, search
             }
         }
         if (filter.photoKindFilter != com.teanode.kit.photos.PhotoKindFilter.All) {
-            item { AssistChip(modifier = Modifier.widthIn(max = chipMaxWidth), onClick = { onChange(filter.copy(photoKindFilter = com.teanode.kit.photos.PhotoKindFilter.All)) }, label = { Text(kindFilterName(filter.photoKindFilter), maxLines = 1, overflow = TextOverflow.Ellipsis) }, leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) }) }
+            run { AssistChip(modifier = Modifier.widthIn(max = chipMaxWidth), onClick = { onChange(filter.copy(photoKindFilter = com.teanode.kit.photos.PhotoKindFilter.All)) }, label = { Text(kindFilterName(filter.photoKindFilter), maxLines = 1, overflow = TextOverflow.Ellipsis) }, leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) }) }
         }
         if (filter.firstDay != null || filter.lastDay != null) {
-            item { AssistChip(modifier = Modifier.widthIn(max = chipMaxWidth), onClick = { onChange(filter.copy(firstDay = null, lastDay = null)) }, label = { Text(listOfNotNull(filter.firstDay, filter.lastDay).joinToString(" - "), maxLines = 1, overflow = TextOverflow.Ellipsis) }, leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) }) }
+            run { AssistChip(modifier = Modifier.widthIn(max = chipMaxWidth), onClick = { onChange(filter.copy(firstDay = null, lastDay = null)) }, label = { Text(listOfNotNull(filter.firstDay, filter.lastDay).joinToString(" - "), maxLines = 1, overflow = TextOverflow.Ellipsis) }, leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) }) }
         }
         if (!filter.accountUserId.isNullOrEmpty()) {
-            item {
+            run {
                 AssistChip(modifier = Modifier.widthIn(max = chipMaxWidth),
                     onClick = { onChange(filter.copy(accountUserId = null, accountName = "")) },
                     label = { Text(if (filter.accountName.isEmpty()) stringResource(R.string.photos_of_a_person) else stringResource(R.string.photos_of_person, filter.accountName), maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -516,7 +518,7 @@ private fun FilterChips(filter: PhotoFilter, section: PhotoSectionChoice, search
             }
         }
         com.teanode.kit.photos.PhotoPositionText.windowText(filter.takenAfter, filter.takenBefore)?.let { windowText ->
-            item {
+            run {
                 AssistChip(modifier = Modifier.widthIn(max = chipMaxWidth),
                     onClick = { onChange(filter.copy(takenAfter = null, takenBefore = null)) }, label = { Text(windowText, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingIcon = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
