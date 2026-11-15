@@ -161,4 +161,7 @@
     <string name="recordings_not_me">不是我</string>
     <string name="recordings_clear_name">清除姓名</string>
     <string name="recordings_name_cleared">已清除姓名。</string>
+    <string name="recordings_passage_start_ms">片段开始（毫秒）</string>
+    <string name="recordings_passage_end_ms">片段结束（毫秒）</string>
+    <string name="recordings_choose_a_positive_interval">请选择此片段内长度为正的区间。</string>
 </resources>

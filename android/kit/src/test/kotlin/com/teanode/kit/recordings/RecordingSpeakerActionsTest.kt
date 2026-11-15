@@ -43,6 +43,16 @@ class RecordingSpeakerActionsTest {
         assertEquals(false, RecordingSpeakerNaming.hasNaming(bubble(namedSegment("a", null), namedSegment("b", ""))))
     }
 
+    @Test
+    fun aTypedIntervalMustBeAPositiveOneInsideThePassage() {
+        assertEquals(4_000L..9_000L, RecordingPassageInterval.parse("4000", " 9000 ", 4_000, 11_000))
+        assertNull(RecordingPassageInterval.parse("3999", "9000", 4_000, 11_000))
+        assertNull(RecordingPassageInterval.parse("4000", "11001", 4_000, 11_000))
+        assertNull(RecordingPassageInterval.parse("9000", "9000", 4_000, 11_000))
+        assertNull(RecordingPassageInterval.parse("", "9000", 4_000, 11_000))
+        assertNull(RecordingPassageInterval.parse("4000", "soon", 4_000, 11_000))
+    }
+
     private fun attempt(estimated: Double? = null, actual: Double? = null) = RecordingTranscriptionAttempt(
         id = "a1", providerModelName = "model-x", estimatedCostAmount = estimated, actualCostAmount = actual, currencyCode = "USD",
     )

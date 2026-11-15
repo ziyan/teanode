@@ -58,6 +58,7 @@ import com.teanode.kit.recordings.RecordingOriginals
 import com.teanode.kit.recordings.RecordingTranscriptionAttempt
 import com.teanode.kit.agent.knowledgeSourceDetails
 import androidx.compose.runtime.produceState
+import com.teanode.kit.recordings.RecordingPassageInterval
 import com.teanode.kit.recordings.RecordingSpeakerNaming
 import com.teanode.kit.recordings.RecordingTemporarySpeakers
 import com.teanode.kit.recordings.clearRecordingSpeakerNames
@@ -530,6 +531,8 @@ private fun NameSpeakerSheet(bubble: RecordingConversationBubble, recordingId: S
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf(bubble.confirmedSpeakerName.orEmpty()) }
     var isWholeGroup by remember { mutableStateOf(true) }
+    var startText by remember { mutableStateOf(bubble.segments.first().segmentStartMS.toString()) }
+    var endText by remember { mutableStateOf(bubble.segments.last().segmentEndMS.toString()) }
     var suggestions by remember { mutableStateOf(emptyList<com.teanode.kit.recordings.RecordingSpeakerNameSuggestion>()) }
     LaunchedEffect(name) {
         delay(250)
@@ -546,6 +549,10 @@ private fun NameSpeakerSheet(bubble: RecordingConversationBubble, recordingId: S
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.recordings_apply_to_group), Modifier.weight(1f))
                     Switch(checked = isWholeGroup, onCheckedChange = { isWholeGroup = it })
+                }
+                if (!isWholeGroup) {
+                    OutlinedTextField(startText, { startText = it }, singleLine = true, label = { Text(stringResource(R.string.recordings_passage_start_ms)) }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(endText, { endText = it }, singleLine = true, label = { Text(stringResource(R.string.recordings_passage_end_ms)) }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                 }
                 Text(stringResource(R.string.recordings_apply_to_group_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
@@ -567,10 +574,15 @@ private fun NameSpeakerSheet(bubble: RecordingConversationBubble, recordingId: S
                                 onNamed()
                                 return@launch
                             }
+                            val interval = if (isWholeGroup) 0L..(Long.MAX_VALUE / 4) else RecordingPassageInterval.parse(startText, endText, first.segmentStartMS, bubble.segments.last().segmentEndMS)
+                            if (interval == null) {
+                                snackbar.show(context.getString(R.string.recordings_choose_a_positive_interval))
+                                return@launch
+                            }
                             connection.correctRecordingSpeaker(
                                 recordingId, expectedSourceGeneration, UUID.randomUUID().toString(), name.trim(), null, suggestions.firstOrNull { suggestion -> suggestion.confirmedName == name.trim() }?.addressBookId,
                                 suggestions.firstOrNull { suggestion -> suggestion.confirmedName == name.trim() }?.contactId, first.recordingTranscriptionAttemptId, first.localSpeakerId,
-                                if (isWholeGroup) 0 else first.segmentStartMS, if (isWholeGroup) Long.MAX_VALUE / 4 else bubble.segments.last().segmentEndMS,
+                                interval.first, interval.last,
                             )
                             onNamed()
                         } catch (error: CancellationException) { throw error } catch (error: Throwable) { snackbar.showError(error) }

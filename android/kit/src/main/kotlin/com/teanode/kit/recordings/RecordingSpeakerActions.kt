@@ -16,6 +16,17 @@ object RecordingTemporarySpeakers {
         bubble.segments.firstNotNullOfOrNull { segment -> segment.mergedTemporarySpeakerLabel?.takeIf { label -> label.isNotEmpty() } }
 }
 
+/** The interval a name is given to when it is not given to the whole speaker group (iOS saveSpeaker). */
+object RecordingPassageInterval {
+    /** The typed start and end in milliseconds, when both are whole numbers inside the passage and the start is before the end; null otherwise. */
+    fun parse(startText: String, endText: String, passageStartMS: Long, passageEndMS: Long): LongRange? {
+        val startMS = startText.trim().toLongOrNull() ?: return null
+        val endMS = endText.trim().toLongOrNull() ?: return null
+        if (startMS < passageStartMS || endMS > passageEndMS || startMS >= endMS) return null
+        return startMS..endMS
+    }
+}
+
 /** Taking a name back from a bubble (iOS RecordingConversationModel.clearName). */
 object RecordingSpeakerNaming {
     /** Whether any passage of the bubble carries a name someone gave, so there is something to clear. */

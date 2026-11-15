@@ -161,4 +161,7 @@
     <string name="recordings_not_me">自分ではない</string>
     <string name="recordings_clear_name">名前を消す</string>
     <string name="recordings_name_cleared">名前を消しました。</string>
+    <string name="recordings_passage_start_ms">区間の開始（ミリ秒）</string>
+    <string name="recordings_passage_end_ms">区間の終了（ミリ秒）</string>
+    <string name="recordings_choose_a_positive_interval">この区間内で開始より後の終了時刻を指定してください。</string>
 </resources>

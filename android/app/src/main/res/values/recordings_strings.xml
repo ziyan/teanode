@@ -161,4 +161,7 @@
     <string name="recordings_not_me">Not me</string>
     <string name="recordings_clear_name">Clear name</string>
     <string name="recordings_name_cleared">Name cleared.</string>
+    <string name="recordings_passage_start_ms">Passage start (milliseconds)</string>
+    <string name="recordings_passage_end_ms">Passage end (milliseconds)</string>
+    <string name="recordings_choose_a_positive_interval">Choose a positive interval within this passage.</string>
 </resources>
