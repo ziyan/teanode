@@ -13,6 +13,7 @@ import com.teanode.app.screenshots.WithFontScale
 import com.teanode.app.screenshots.photograph
 import com.teanode.app.ui.theme.AppearanceChoice
 import com.teanode.kit.manage.ServerSettingsTab
+import androidx.compose.ui.test.performScrollTo
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -59,4 +60,15 @@ class ServerChoicesScreenshotTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Restart it on the About page").assertExists()
     }
+
+    @Test fun `listeners explain themselves`() = shoot("settings-server-listeners-light") { ServerSettingsScreen(onBack = {}, initialTab = ServerSettingsTab.Listeners) }
+
+    @Test fun `the certificates tab carries the iphone's hints`() = shoot("settings-server-certificates-hints-light") { ServerSettingsScreen(onBack = {}, initialTab = ServerSettingsTab.Certificates) }
+
+    @Test fun `the about tab explains restart and upgrade`() = shoot("settings-server-about-words-light") { ServerSettingsScreen(onBack = {}) }
+
+    @Test fun `sending offers the provider list`() = shoot(
+        "settings-server-relay-presets-dark", AppearanceChoice.Dark,
+        before = { composeRule.onNodeWithText("Fill in from a provider").performScrollTo().performClick(); composeRule.waitForIdle(); composeRule.onNodeWithText("Resend").assertExists() },
+    ) { ServerSettingsScreen(onBack = {}, initialTab = ServerSettingsTab.Sending) }
 }

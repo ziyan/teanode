@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_server_listen_confirm_title">Save these addresses, with the dashboard on %1$s?</string>
+    <string name="settings_server_listen_confirm_message">Nothing changes until the server restarts. If the dashboard’s address is wrong you will not be able to reach this page after that, and the way back is a shell on the host and \"teanode-server config\".</string>
+    <string name="settings_server_listen_confirm_button">Save the addresses</string>
+    <string name="settings_server_about_restart_title">Restart this instance?</string>
+    <string name="settings_server_about_restart_confirm">Yes, restart it</string>
+    <string name="settings_server_about_restart_question">Restart %1$s? Mail will not be accepted for a few seconds.</string>
+    <string name="settings_server_about_restart_footer">The process exits and whatever started it is expected to start a new one. Mail already accepted is on disk and is delivered afterwards; a sender connecting during those few seconds will try again.</string>
+    <string name="settings_server_about_nothing_pending">Nothing has changed that a restart would pick up.</string>
+    <string name="settings_server_about_pending">Changed since this instance started, and not in use yet: %1$s. Restarting picks them up.</string>
+    <string name="settings_server_about_upgrade_footer">The release is downloaded and checked against the checksums published with it, and this server then restarts into it. That takes a few seconds during which mail is not accepted; senders retry. The binary it replaces is kept, so going back does not need the network.</string>
+    <string name="settings_server_about_upgrade_confirm">Download and restart</string>
+    <string name="settings_server_about_upgrade_title">Upgrade this server to %1$s?</string>
+    <string name="settings_server_about_automatic">Automatic upgrades are on: a new release is installed without being asked.</string>
+    <string name="settings_server_about_automatic_window">Automatic upgrades are on, between %1$s local time: a new release is installed without being asked.</string>
+    <string name="settings_server_about_checking_off">Checking for releases is turned off (upgrade.enabled), so this says what was known when it was last on.</string>
+    <string name="settings_server_about_header">This instance</string>
+    <string name="settings_server_relay_preset_footer">Sets the host, port and encryption. The username and password are still yours to enter.</string>
+    <string name="settings_server_relay_preset_button">Fill in from a provider</string>
+    <string name="settings_server_cert_manual_footer">Off means this server uses only the certificate and key named below, and renewing them is your job.</string>
+    <string name="settings_server_antispam_sources_footer">Four sources, each switchable. The signals cost nothing and are on for every server; the classifier learns from the messages you mark.</string>
+    <string name="settings_server_credentials_footer">Leave these empty to use whatever credentials the environment supplies, such as an instance role or the usual AWS variables.</string>
+    <string name="settings_server_data_directory_footer">Where mail and state are written. Shown and not editable here: a server restarted against a different directory does not find what is in the old one, and the mail simply is not there any more. Moving it is done with the server stopped.</string>
+    <string name="settings_server_data_directory">Data directory</string>
+</resources>

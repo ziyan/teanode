@@ -111,4 +111,10 @@ class ServerAdminTest {
         assertTrue(ServerSettingChoices.isReadAtStart("geoip"))
         assertFalse(ServerSettingChoices.isReadAtStart("relay"))
     }
+
+    @Test
+    fun `the data directory is shown and never sent back`() {
+        val identity = JsonObject(mapOf("dataDirectory" to JsonPrimitive("/var/lib/example")))
+        assertEquals(ServerSettingField.Shown("dataDirectory", "/var/lib/example"), ServerSettingsForm.fields(identity, "identity")[0])
+    }
 }

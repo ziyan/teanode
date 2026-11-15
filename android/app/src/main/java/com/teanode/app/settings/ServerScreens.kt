@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.RestartAlt
@@ -106,15 +107,18 @@ private fun ServerAboutTab() {
     com.teanode.app.ui.components.LoadedContent(status) { found ->
         androidx.compose.foundation.lazy.LazyColumn {
             item {
+                TeaNodeSectionHeader(stringResource(R.string.settings_server_about_header))
                 TeaNodeRow(headline = stringResource(R.string.settings_server_instance), supporting = found.instance)
                 TeaNodeRow(headline = stringResource(R.string.settings_version), supporting = listOf(found.version, found.shortCommit).filter { text -> text.isNotEmpty() }.joinToString(" · "))
                 ServerTime.instant(found.startedAt)?.let { instant -> TeaNodeRow(headline = stringResource(R.string.settings_server_started), supporting = shortDateTime(instant)) }
-                found.pendingRestart?.takeIf { list -> list.isNotEmpty() }?.let { list -> TeaNodeRow(headline = stringResource(R.string.settings_server_pending_restart), supporting = list.joinToString(", "), supportingMaxLines = 4) }
+                found.pendingRestart?.takeIf { list -> list.isNotEmpty() }?.let { list -> TeaNodeRow(headline = stringResource(R.string.settings_server_pending_restart), supporting = stringResource(R.string.settings_server_about_pending, list.joinToString(", ")), supportingMaxLines = 6) }
+                    ?: FooterText(stringResource(R.string.settings_server_about_nothing_pending))
                 if (found.isUnsupervised) FooterText(stringResource(R.string.settings_server_unsupervised))
                 TeaNodeRow(
                     headline = stringResource(if (found.isRestarting) R.string.settings_server_restarting_now else R.string.settings_server_restart), leadingIcon = Icons.Outlined.RestartAlt,
                     onClick = if (found.isRestarting || actions.isWorking) null else ({ isConfirmingRestart = true }),
                 )
+                FooterText(stringResource(R.string.settings_server_about_restart_footer))
                 TeaNodeSectionHeader(stringResource(R.string.settings_server_upgrade))
                 val release = upgrade.value
                 if (release != null) {
@@ -129,19 +133,23 @@ private fun ServerAboutTab() {
                     TeaNodeRow(headline = stringResource(R.string.settings_server_check), onClick = if (actions.isWorking) null else ({ actions.run(checkedText, onSuccess = { upgrade.refresh() }) { connection.serverUpgrade(isChecking = true) } }))
                     if (release.canUpgrade && !release.isUpgrading) TeaNodeRow(headline = stringResource(R.string.settings_server_upgrade_to, release.latest.orEmpty()), onClick = { upgradeToApply = release.latest })
                     if (release.isUpgrading) TeaNodeRow(headline = stringResource(R.string.settings_server_upgrading))
+                    if (release.isEnabled == false) FooterText(stringResource(R.string.settings_server_about_checking_off))
+                    if (release.isAutomatic == true) FooterText(release.upgradeWindow?.takeIf { window -> window.isNotEmpty() }?.let { window -> stringResource(R.string.settings_server_about_automatic_window, window) } ?: stringResource(R.string.settings_server_about_automatic))
+                    if (release.canUpgrade) FooterText(stringResource(R.string.settings_server_about_upgrade_footer))
                 }
             }
         }
     }
     if (isConfirmingRestart) {
         ConfirmationDialog(
-            title = stringResource(R.string.settings_server_restart), confirmLabel = stringResource(R.string.settings_server_restart), isDestructive = true, text = stringResource(R.string.settings_server_restart_detail),
+            title = stringResource(R.string.settings_server_about_restart_title), confirmLabel = stringResource(R.string.settings_server_about_restart_confirm), isDestructive = true,
+            text = stringResource(R.string.settings_server_about_restart_question, status.value?.instance.orEmpty()),
             onConfirm = { isConfirmingRestart = false; actions.run(restartText, onSuccess = { status.refresh() }) { connection.restartServer() } }, onDismiss = { isConfirmingRestart = false },
         )
     }
     upgradeToApply?.let { version ->
         ConfirmationDialog(
-            title = stringResource(R.string.settings_server_upgrade_to, version), confirmLabel = stringResource(R.string.settings_server_upgrade_confirm), text = stringResource(R.string.settings_server_upgrade_detail),
+            title = stringResource(R.string.settings_server_about_upgrade_title, version), confirmLabel = stringResource(R.string.settings_server_about_upgrade_confirm), text = stringResource(R.string.settings_server_about_upgrade_footer),
             onConfirm = { upgradeToApply = null; actions.run(upgradeText, onSuccess = { upgrade.refresh() }) { connection.applyServerUpgrade(version) } }, onDismiss = { upgradeToApply = null },
         )
     }
@@ -173,12 +181,17 @@ private fun ServerSectionForm(section: String, original: JsonObject, onSaved: ()
     var secrets by remember(original) { mutableStateOf(mapOf<String, String>()) }
     var cleared by remember(original) { mutableStateOf(setOf<String>()) }
     val savedText = stringResource(R.string.settings_saved)
+    var isConfirmingSave by remember { mutableStateOf(false) }
     val changes = ServerSettingsForm.changes(original, texts, switches, secrets, cleared, section)
     val isValid = fields.filterIsInstance<ServerSettingField.Number>().all { field -> ServerSettingsForm.isNumberValid(texts[field.name].orEmpty(), field.isWhole) }
-    TeaNodeSectionHeader(com.teanode.kit.agent.KnowledgeSourceType.label(section).split(" ").joinToString(" ") { word -> if (word.lowercase() in setOf("smtp", "dns", "tls", "imap", "s3", "sso", "url", "api")) word.uppercase() else word })
+    TeaNodeSectionHeader(
+        ServerFieldWords.section(section)?.let { words -> stringResource(words) }
+            ?: com.teanode.kit.agent.KnowledgeSourceType.label(section).split(" ").joinToString(" ") { word -> if (word.lowercase() in setOf("smtp", "dns", "tls", "imap", "s3", "sso", "url", "api")) word.uppercase() else word },
+    )
     serverSectionFooter(section)?.let { footer -> FooterText(stringResource(footer)) }
     fields.forEach { field ->
-        val label = com.teanode.kit.agent.KnowledgeSourceType.label(field.name)
+        val label = ServerFieldWords.label(section, field.name)?.let { words -> stringResource(words) } ?: com.teanode.kit.agent.KnowledgeSourceType.label(field.name)
+        val hint = ServerFieldWords.hint(section, field.name)?.let { words -> stringResource(words) }
         when (field) {
             is ServerSettingField.Choice -> {
                 ChoiceRow(
@@ -187,10 +200,13 @@ private fun ServerSectionForm(section: String, original: JsonObject, onSaved: ()
                 )
                 serverChoiceFooter(section, field.name)?.let { footer -> FooterText(stringResource(footer)) }
             }
-            is ServerSettingField.Switch -> SwitchRow(label, switches[field.name] == true, { isOn -> switches = switches + (field.name to isOn) })
-            is ServerSettingField.Number -> FormField(texts[field.name].orEmpty(), { typed -> texts = texts + (field.name to typed) }, label, keyboardType = KeyboardType.Decimal, isError = !ServerSettingsForm.isNumberValid(texts[field.name].orEmpty(), field.isWhole))
-            is ServerSettingField.Text -> FormField(texts[field.name].orEmpty(), { typed -> texts = texts + (field.name to typed) }, label)
-            is ServerSettingField.TextList -> FormField(texts[field.name].orEmpty(), { typed -> texts = texts + (field.name to typed) }, label, supporting = stringResource(R.string.settings_server_list_hint))
+            is ServerSettingField.Switch -> {
+                SwitchRow(label, switches[field.name] == true, { isOn -> switches = switches + (field.name to isOn) })
+                hint?.let { text -> FooterText(text) }
+            }
+            is ServerSettingField.Number -> FormField(texts[field.name].orEmpty(), { typed -> texts = texts + (field.name to typed) }, label, keyboardType = KeyboardType.Decimal, isError = !ServerSettingsForm.isNumberValid(texts[field.name].orEmpty(), field.isWhole), supporting = hint)
+            is ServerSettingField.Text -> FormField(texts[field.name].orEmpty(), { typed -> texts = texts + (field.name to typed) }, label, supporting = hint)
+            is ServerSettingField.TextList -> FormField(texts[field.name].orEmpty(), { typed -> texts = texts + (field.name to typed) }, label, supporting = hint ?: stringResource(R.string.settings_server_list_hint))
             is ServerSettingField.Secret -> {
                 FormField(
                     secrets[field.name].orEmpty(), { typed -> secrets = secrets + (field.name to typed); cleared = cleared - field.name }, label, isPassword = true,
@@ -209,10 +225,46 @@ private fun ServerSectionForm(section: String, original: JsonObject, onSaved: ()
         )
         FooterText(stringResource(R.string.settings_server_footer_restart))
     }
+    if (section == "relay") {
+        var isPickingPreset by remember { mutableStateOf(false) }
+        TeaNodeRow(headline = stringResource(R.string.settings_server_relay_preset_button), leadingIcon = Icons.Outlined.AutoFixHigh, onClick = { isPickingPreset = true })
+        if (isPickingPreset) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { isPickingPreset = false }, title = { Text(stringResource(R.string.settings_server_relay_preset_button)) },
+                text = {
+                    Column {
+                        RelayPreset.entries.forEach { preset ->
+                            TeaNodeRow(
+                                headline = preset.label,
+                                onClick = { isPickingPreset = false; texts = texts + ("host" to preset.host) + ("port" to preset.port.toString()) + ("security" to preset.security) },
+                            )
+                        }
+                    }
+                },
+                confirmButton = {}, dismissButton = { androidx.compose.material3.TextButton(onClick = { isPickingPreset = false }) { Text(stringResource(R.string.common_cancel)) } },
+            )
+        }
+        FooterText(stringResource(R.string.settings_server_relay_preset_footer))
+    }
     Button(
-        onClick = { actions.run(savedText, onSuccess = onSaved) { connection.updateServerSettingsSection(section, changes) } }, enabled = changes.isNotEmpty() && isValid && !actions.isWorking,
+        onClick = { if (section == "listen") isConfirmingSave = true else actions.run(savedText, onSuccess = onSaved) { connection.updateServerSettingsSection(section, changes) } }, enabled = changes.isNotEmpty() && isValid && !actions.isWorking,
         modifier = Modifier.padding(16.dp).fillMaxWidth(),
     ) { Text(stringResource(R.string.settings_save)) }
+    if (isConfirmingSave) {
+        ConfirmationDialog(
+            title = stringResource(R.string.settings_server_listen_confirm_title, texts["https"].orEmpty()), text = stringResource(R.string.settings_server_listen_confirm_message),
+            confirmLabel = stringResource(R.string.settings_server_listen_confirm_button),
+            onConfirm = { isConfirmingSave = false; actions.run(savedText, onSuccess = onSaved) { connection.updateServerSettingsSection(section, changes) } }, onDismiss = { isConfirmingSave = false },
+        )
+    }
+}
+
+/** A provider's host, port and encryption, to fill in the relay form with, as the iPhone's list does. */
+private enum class RelayPreset(val label: String, val host: String, val port: Int, val security: String) {
+    Gmail("Gmail", "smtp.gmail.com", 587, "starttls"),
+    AmazonSes("Amazon SES", "email-smtp.us-east-1.amazonaws.com", 587, "starttls"),
+    Postmark("Postmark", "smtp.postmarkapp.com", 587, "starttls"),
+    Resend("Resend", "smtp.resend.com", 465, "tls"),
 }
 
 /** What a section of the server's settings is for, as the iPhone's form says under its fields; null for a section it has no words for. */
@@ -229,7 +281,6 @@ private fun serverSectionFooter(section: String): Int? = when (section) {
     "relay" -> R.string.settings_server_footer_relay
     "proxy" -> R.string.settings_server_footer_proxy
     "s3" -> R.string.settings_server_footer_s3
-    "certificates" -> R.string.settings_server_footer_certificates
     "route53" -> R.string.settings_server_footer_route53
     "antivirus" -> R.string.settings_server_footer_antivirus
     "antispam" -> R.string.settings_server_footer_antispam
