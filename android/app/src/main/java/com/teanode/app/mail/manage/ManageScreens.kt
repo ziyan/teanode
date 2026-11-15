@@ -404,7 +404,7 @@ fun AuditedMailScreen(mailId: String, onBack: () -> Unit, connection: Connection
                 Text(outcomeText(MailOutcome.of(mail, shown.deliveries)), Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodyLarge)
                 val classifier = shown.classifier
                 if (classifier != null && classifier.canBeTaught) {
-                    TeaNodeSectionHeader(stringResource(R.string.mail_manage_spam_filter))
+                    TeaNodeSectionHeader(stringResource(R.string.mail_manage_teach_header))
                     Text(
                         when (label) {
                             "spam" -> stringResource(R.string.mail_manage_taught_spam)
@@ -793,18 +793,24 @@ fun ReportDetailScreen(reportId: String, onBack: () -> Unit, connection: Connect
                     pluralStringResource(R.plurals.mail_manage_report_summary, shown.messageCount ?: 0, shown.fromDomain.orEmpty(), shown.ip.orEmpty(), shown.messageCount ?: 0),
                     Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodyMedium,
                 )
-                DetailRow(stringResource(R.string.mail_manage_claimed_domain), shown.fromDomain)
-                DetailRow(stringResource(R.string.mail_manage_sending_address), listOfNotNull(shown.ip, shown.reverseDnsName?.let { name -> "(${ManagedWords.hostName(name)})" }).joinToString(" "))
-                DetailRow(stringResource(R.string.mail_manage_place), shown.location?.placeText)
-                DetailRow(stringResource(R.string.mail_manage_period), listOfNotNull(ManageLabels.fullTime(shown.beginAt), ManageLabels.fullTime(shown.endAt)).joinToString(" - "))
                 val feedback = shown.feedback
+                TeaNodeSectionHeader(stringResource(R.string.mail_manage_who_reported))
+                DetailRow(stringResource(R.string.mail_manage_reporter), listOfNotNull(feedback?.organizationName, feedback?.email, feedback?.extraContactInfo).filter { text -> text.isNotEmpty() }.joinToString("\n"))
+                DetailRow(stringResource(R.string.mail_manage_report_id), feedback?.reportId, isMonospaced = true)
+                DetailRow(stringResource(R.string.mail_manage_covering), stringResource(R.string.mail_manage_covering_range, ManageLabels.fullTime(shown.beginAt).orEmpty(), ManageLabels.fullTime(shown.endAt).orEmpty()))
+                DetailRow(
+                    stringResource(R.string.mail_manage_sent_by),
+                    listOfNotNull(shown.ip, shown.reverseDnsName?.let { name -> ManagedWords.hostName(name) }, shown.location?.placeText).filter { text -> text.isNotEmpty() }.joinToString("\n"), isMonospaced = true,
+                )
                 if (feedback != null) {
-                    TeaNodeSectionHeader(stringResource(R.string.mail_manage_report_from))
-                    DetailRow(stringResource(R.string.mail_manage_organization), feedback.organizationName)
-                    DetailRow(stringResource(R.string.mail_manage_contact), feedback.email)
-                    DetailRow(stringResource(R.string.mail_manage_report_id), feedback.reportId, isMonospaced = true)
-                    DetailRow(stringResource(R.string.mail_manage_policy_seen), feedback.policyText)
-                    DetailRow(stringResource(R.string.mail_manage_alignment), listOfNotNull(feedback.dkimAlignment?.let { mode -> "DKIM " + ManageLabels.alignmentMode(context, mode) }, feedback.spfAlignment?.let { mode -> "SPF " + ManageLabels.alignmentMode(context, mode) }).joinToString(" · "))
+                    TeaNodeSectionHeader(stringResource(R.string.mail_manage_policy_they_saw))
+                    DetailRow(stringResource(R.string.mail_manage_published_at), feedback.domain, isMonospaced = true)
+                    DetailRow(stringResource(R.string.mail_manage_policy), feedback.policyText)
+                    DetailRow(
+                        stringResource(R.string.mail_manage_alignment),
+                        stringResource(R.string.mail_manage_dkim_alignment, ManageLabels.alignmentMode(context, feedback.dkimAlignment)) + ", " + stringResource(R.string.mail_manage_spf_alignment, ManageLabels.alignmentMode(context, feedback.spfAlignment)),
+                    )
+                    feedback.errorMessages?.takeIf { messages -> messages.isNotEmpty() }?.let { messages -> Text(messages.joinToString("; "), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error) }
                     TeaNodeSectionHeader(stringResource(R.string.mail_manage_what_they_did))
                     if ((feedback.records ?: emptyList()).isEmpty()) Text(stringResource(R.string.mail_manage_no_source_rows), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     for (record in feedback.records ?: emptyList()) {

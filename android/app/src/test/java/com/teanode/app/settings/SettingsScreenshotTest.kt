@@ -192,8 +192,8 @@ class SettingsScreenshotTest {
 
     @Test fun `token dialog light`() = shoot("settings-dialog-token-new-light", before = tap("New token")) { TokensScreen(onBack = {}) }
     @Test fun `source editor light`() = shoot("settings-dialog-source-new-light", before = tap("Add a source")) { KnowledgeSourcesScreen(onBack = {}) }
-    @Test fun `schedule editor light`() = shoot("settings-dialog-schedule-new-light", before = tap("New schedule")) { SchedulesScreen(onBack = {}) }
-    @Test fun `schedule editor dark`() = shoot("settings-dialog-schedule-new-dark", AppearanceChoice.Dark, before = tap("New schedule")) { SchedulesScreen(onBack = {}) }
+    @Test fun `schedule editor light`() = shoot("settings-dialog-schedule-new-light", before = tap("Add a schedule")) { SchedulesScreen(onBack = {}) }
+    @Test fun `schedule editor dark`() = shoot("settings-dialog-schedule-new-dark", AppearanceChoice.Dark, before = tap("Add a schedule")) { SchedulesScreen(onBack = {}) }
     @Test fun `source editor typed light`() = shoot("settings-dialog-source-typed-light", before = { tap("Add a source")(); composeRule.onNodeWithText("Kind of source").performClick(); composeRule.waitForIdle(); composeRule.onNodeWithText("webfeed").performClick() }) { KnowledgeSourcesScreen(onBack = {}) }
     @Test fun `circle new dialog light`() = shoot("settings-dialog-circle-new-light", before = tap("New circle")) { CirclesScreen(onBack = {}, onOpenCircle = {}, onOpenSharing = {}) }
     @Test fun `skill lend dialog light`() = shoot("settings-dialog-skill-lend-light", before = tap("Lend a skill")) { SkillSharingScreen(onBack = {}) }
@@ -222,7 +222,7 @@ class SettingsScreenshotTest {
     @Test fun `people edit dialog dark`() = shoot("settings-dialog-person-new-dark", AppearanceChoice.Dark, before = tap("New user")) { PeopleScreen(onBack = {}) }
     @Test fun `submission dialog light`() = shoot("settings-dialog-submission-light", before = { composeRule.onNodeWithText("Setup").performClick(); composeRule.waitForIdle(); composeRule.onAllNodes(androidx.compose.ui.test.hasScrollAction())[1].performScrollToNode(androidx.compose.ui.test.hasText("What to tell a mail client")); composeRule.onNodeWithText("What to tell a mail client").performClick() }) { ServerSettingsScreen(onBack = {}) }
     @Test fun `mail program dialog dark`() = shoot("settings-dialog-mail-program-dark", AppearanceChoice.Dark, before = { composeRule.onNodeWithText("Setup").performClick(); composeRule.waitForIdle(); composeRule.onAllNodes(androidx.compose.ui.test.hasScrollAction())[1].performScrollToNode(androidx.compose.ui.test.hasText("Reading mail in a mail program")); composeRule.onNodeWithText("Reading mail in a mail program").performClick() }) { ServerSettingsScreen(onBack = {}) }
-    @Test fun `schedule editor largest text`() = shoot("settings-dialog-schedule-new-largest-text", fontScale = 2f, before = tap("New schedule")) { SchedulesScreen(onBack = {}) }
+    @Test fun `schedule editor largest text`() = shoot("settings-dialog-schedule-new-largest-text", fontScale = 2f, before = tap("Add a schedule")) { SchedulesScreen(onBack = {}) }
     @Test fun `source editor typed dark`() = shoot("settings-dialog-source-typed-dark", AppearanceChoice.Dark, before = { tap("Add a source")(); composeRule.onNodeWithText("Kind of source").performClick(); composeRule.waitForIdle(); composeRule.onNodeWithText("webfeed").performClick() }) { KnowledgeSourcesScreen(onBack = {}) }
     @Test fun `token dialog dark`() = shoot("settings-dialog-token-new-dark", AppearanceChoice.Dark, before = tap("New token")) { TokensScreen(onBack = {}) }
 }

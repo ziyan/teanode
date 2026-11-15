@@ -265,14 +265,16 @@ private fun DailyBriefCard(schedules: List<AgentSchedule>, actions: ActionRunner
     val offText = stringResource(R.string.settings_brief_off)
     val sentText = stringResource(R.string.settings_brief_sent)
     TeaNodeSectionHeader(stringResource(R.string.settings_brief_title))
-    SwitchRow(stringResource(R.string.settings_brief_title), brief?.enabled == true, { isOn -> actions.run(if (isOn) onText else offText, onSuccess = onChanged) { connection.setDailyBrief(isOn, time, days) } })
+    SwitchRow(stringResource(R.string.settings_brief_start), brief?.enabled == true, { isOn -> actions.run(if (isOn) onText else offText, onSuccess = onChanged) { connection.setDailyBrief(isOn, time, days) } })
     ClockField(stringResource(R.string.settings_schedules_time), time) { time = it }
+    TeaNodeRow(headline = stringResource(R.string.settings_brief_days))
     WeekdayChips(days) { days = it }
+    if (days.isEmpty()) FooterText(stringResource(R.string.settings_brief_choose_day))
     if (UpkeepClock.hourAndMinute(time) != null && days.isNotEmpty() && (time != com.teanode.kit.agent.DailyBrief.time(brief?.cron) || days != com.teanode.kit.agent.DailyBrief.dayNumbers(brief?.cron))) {
         TeaNodeRow(headline = stringResource(R.string.settings_save), onClick = { actions.run(onText, onSuccess = onChanged) { connection.setDailyBrief(brief?.enabled ?: true, time, days) } })
     }
     TeaNodeRow(headline = stringResource(R.string.settings_brief_send_now), leadingIcon = Icons.Outlined.PlayArrow, onClick = { actions.run(sentText) { connection.runDailyBrief() } })
-    FooterText(stringResource(R.string.settings_brief_footer))
+    FooterText(stringResource(if (brief == null) R.string.settings_brief_footer else R.string.settings_brief_footer_on))
     TeaNodeSectionHeader(stringResource(R.string.settings_schedules_title))
 }
 

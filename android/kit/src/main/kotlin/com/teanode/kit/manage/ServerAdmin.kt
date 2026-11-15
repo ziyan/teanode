@@ -138,6 +138,7 @@ object ServerSettingsForm {
     private fun field(sectionName: String, section: JsonObject, name: String, value: JsonElement): ServerSettingField? {
         // What the server worked out from the setting ("effectiveEngine") is shown, never edited or sent back.
         if (name.length > 9 && name.startsWith("effective") && name[9].isUpperCase() && value is JsonPrimitive) return ServerSettingField.Shown(name, value.content)
+        if (name == "credentialsFile" && value is JsonPrimitive && value.content.isNotEmpty()) return ServerSettingField.Shown(name, value.content)
         // The data directory is shown and not edited: a server restarted against another one does not find its mail.
         if (sectionName == "identity" && name == "dataDirectory" && value is JsonPrimitive) return ServerSettingField.Shown(name, value.content)
         val options = ServerSettingChoices.options(sectionName, name)
