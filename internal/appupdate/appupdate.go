@@ -1,5 +1,6 @@
-// Package appupdate says what the newest iPhone app is on each of the two
-// channels it reaches people by.
+// Package appupdate says what the newest TeaNode app is on each of the
+// channels it reaches people by: TestFlight and the App Store for the iPhone
+// app, and the Android channel for the Android app.
 //
 // The app asks its own server rather than Apple or GitHub, so that the only
 // machine it talks to is the one its person chose. The server asks a public
@@ -27,10 +28,19 @@ const (
 	// ChannelAppStore is a version installed from the App Store.
 	ChannelAppStore = "appstore"
 
+	// ChannelAndroid is a build of the Android app installed from the
+	// tester distribution link.
+	ChannelAndroid = "android"
+
 	// testFlightEndpoint is what the workflow ios-update-channel.yml keeps
 	// up to date: the newest build testers can install now, which is not
 	// the newest uploaded, since Apple has to process and review each one.
 	testFlightEndpoint = "https://github.com/ziyan/teanode/releases/download/ios-update-channel/testflight.json"
+
+	// androidEndpoint is a file the Android distribution script publishes
+	// as a release asset on the same release tag scheme: the newest build
+	// testers can install now.
+	androidEndpoint = "https://github.com/ziyan/teanode/releases/download/android-update-channel/android.json"
 
 	// appStoreEndpoint is Apple's public lookup. It answers no results until
 	// the app is on the store.
@@ -54,22 +64,23 @@ const (
 	fieldCharactersMost = 32
 )
 
-// ErrUnknownChannel is a channel other than the two.
-var ErrUnknownChannel = errors.New("appupdate: the channel is testflight or appstore")
+// ErrUnknownChannel is a channel other than the three.
+var ErrUnknownChannel = errors.New("appupdate: the channel is testflight, appstore or android")
 
 // Update is the newest app on a channel.
 type Update struct {
 	UpdateChannel string `json:"updateChannel"`
 
-	// Version is what the App Store shows, such as 1.2.0.
+	// Version is what the App Store shows, such as 1.2.0, or the Android
+	// app's version name.
 	Version string `json:"version"`
 
-	// BuildNumber tells builds of one version apart. TestFlight only: the
-	// App Store shows people a version and nothing else.
+	// BuildNumber tells builds of one version apart. TestFlight and Android
+	// only: the App Store shows people a version and nothing else.
 	BuildNumber string `json:"buildNumber"`
 
-	// InstallURL opens where the update is installed: TestFlight, or the
-	// app's page on the App Store.
+	// InstallURL opens where the update is installed: TestFlight, the app's
+	// page on the App Store, or the Android testers' invitation page.
 	InstallURL string `json:"installUrl"`
 }
 
@@ -83,6 +94,7 @@ type Checker struct {
 	client             *http.Client
 	testFlightEndpoint string
 	appStoreEndpoint   string
+	androidEndpoint    string
 	now                func() time.Time
 
 	mutex sync.Mutex
@@ -95,6 +107,7 @@ func New() *Checker {
 		client:             &http.Client{},
 		testFlightEndpoint: testFlightEndpoint,
 		appStoreEndpoint:   appStoreEndpoint,
+		androidEndpoint:    androidEndpoint,
 		now:                time.Now,
 		kept:               map[string]kept{},
 	}
@@ -104,7 +117,7 @@ func New() *Checker {
 // A channel that cannot be asked answers what it said last, since an old
 // answer does no harm and an error here reaches nobody who can act on it.
 func (self *Checker) Latest(ctx context.Context, updateChannel string) (*Update, error) {
-	if updateChannel != ChannelTestFlight && updateChannel != ChannelAppStore {
+	if updateChannel != ChannelTestFlight && updateChannel != ChannelAppStore && updateChannel != ChannelAndroid {
 		return nil, ErrUnknownChannel
 	}
 	self.mutex.Lock()
@@ -117,9 +130,12 @@ func (self *Checker) Latest(ctx context.Context, updateChannel string) (*Update,
 	defer cancel()
 	var update *Update
 	var err error
-	if updateChannel == ChannelTestFlight {
+	switch updateChannel {
+	case ChannelTestFlight:
 		update, err = self.askTestFlight(ctx)
-	} else {
+	case ChannelAndroid:
+		update, err = self.askAndroid(ctx)
+	default:
 		update, err = self.askAppStore(ctx)
 	}
 	if err != nil {
@@ -171,6 +187,36 @@ func (self *Checker) askTestFlight(ctx context.Context) (*Update, error) {
 	return checked(&Update{UpdateChannel: ChannelTestFlight, Version: answer.Version, BuildNumber: answer.BuildNumber, InstallURL: answer.InstallURL})
 }
 
+// buildNumberText is a build number as the file writes it: text, or a bare
+// number, which is how a version code is naturally written.
+type buildNumberText string
+
+func (self *buildNumberText) UnmarshalJSON(raw []byte) error {
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		*self = buildNumberText(text)
+		return nil
+	}
+	var number json.Number
+	if err := json.Unmarshal(raw, &number); err != nil {
+		return err
+	}
+	*self = buildNumberText(number.String())
+	return nil
+}
+
+func (self *Checker) askAndroid(ctx context.Context) (*Update, error) {
+	var answer struct {
+		Version    string          `json:"version"`
+		Build      buildNumberText `json:"build"`
+		InstallURL string          `json:"installUrl"`
+	}
+	if isFound, err := self.read(ctx, self.androidEndpoint, &answer); err != nil || !isFound {
+		return nil, err
+	}
+	return checked(&Update{UpdateChannel: ChannelAndroid, Version: answer.Version, BuildNumber: string(answer.Build), InstallURL: answer.InstallURL})
+}
+
 func (self *Checker) askAppStore(ctx context.Context) (*Update, error) {
 	var answer struct {
 		Results []struct {
@@ -185,12 +231,13 @@ func (self *Checker) askAppStore(ctx context.Context) (*Update, error) {
 }
 
 // checked refuses an answer the app should not act on. The phone opens
-// InstallURL, so it has to lead to Apple whatever the file said.
+// InstallURL, so it has to lead to Apple, or on Android to Firebase's tester
+// distribution or Google Play, whatever the file said.
 func checked(update *Update) (*Update, error) {
 	if !isVersionShaped(update.Version) || len(update.BuildNumber) > fieldCharactersMost {
 		return nil, fmt.Errorf("appupdate: %q is not a version", update.Version)
 	}
-	if !isInstallURL(update.InstallURL) {
+	if !isInstallURL(update.InstallURL, update.UpdateChannel) {
 		return nil, fmt.Errorf("appupdate: %q is not where an update is installed", update.InstallURL)
 	}
 	return update, nil
@@ -204,15 +251,18 @@ func isVersionShaped(version string) bool {
 	return strings.Trim(version, "0123456789.") == ""
 }
 
-func isInstallURL(text string) bool {
+func isInstallURL(text, updateChannel string) bool {
 	parsed, err := url.Parse(text)
 	if err != nil {
 		return false
 	}
 	switch parsed.Scheme {
 	case "itms-beta":
-		return parsed.Host == "beta.itunes.apple.com"
+		return updateChannel != ChannelAndroid && parsed.Host == "beta.itunes.apple.com"
 	case "https":
+		if updateChannel == ChannelAndroid {
+			return parsed.Host == "appdistribution.firebase.google.com" || parsed.Host == "appdistribution.firebase.dev" || parsed.Host == "play.google.com"
+		}
 		return parsed.Host == "apps.apple.com" || parsed.Host == "beta.itunes.apple.com" || parsed.Host == "testflight.apple.com"
 	}
 	return false

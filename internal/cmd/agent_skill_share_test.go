@@ -274,7 +274,7 @@ func TestSharingWithLimitsFromTheCommandLineSaysWhereToDoIt(test *testing.T) {
 	if err == nil {
 		test.Fatal("the refusal was not reported")
 	}
-	for _, expected := range []string{"dashboard", "iPhone app", server.URL + "/settings/agent/connections", "--ask-every-time"} {
+	for _, expected := range []string{"dashboard", "TeaNode phone app", server.URL + "/settings/agent/connections", "--ask-every-time"} {
 		if !strings.Contains(err.Error(), expected) {
 			test.Errorf("the refusal does not say %q: %s", expected, err)
 		}

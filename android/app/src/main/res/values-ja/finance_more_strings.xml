@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="finance_tap_photo_full_size">写真をタップすると原寸で表示します。</string>
+    <string name="finance_has_its_photo">写真あり</string>
+    <string name="finance_open_original">元のファイルを開く</string>
+    <string name="finance_investment_income">投資所得</string>
+    <string name="finance_investment_footer">その年の 1099 が報告するもの：利子、配当、売却の損益。</string>
+    <string name="finance_investment_preview_title">口座の利子と配当</string>
+    <string name="finance_investment_preview_footer">課税される利子は今まで %1$s、12 月 31 日までに %2$s。課税される配当は今まで %3$s、12 月 31 日までに %4$s。1099 が届くまで計上し、1099-DIV が適格配当を示すまで配当は普通配当として数えます。IRA や HSA など非課税の口座は除きます。</string>
+    <string name="finance_interest">利子</string>
+    <string name="finance_dividends">配当</string>
+    <string name="finance_not_taxed">非課税</string>
+    <string name="finance_tax_exempt_interest">非課税利子</string>
+    <string name="finance_ordinary_dividends">普通配当</string>
+    <string name="finance_qualified_dividends">適格配当（普通配当の一部）</string>
+    <string name="finance_capital_gain_distributions">キャピタルゲイン分配</string>
+    <string name="finance_short_term_gain_or_loss">短期の損益</string>
+    <string name="finance_long_term_gain_or_loss">長期の損益</string>
+    <string name="finance_federal_income_tax_withheld">源泉徴収された連邦所得税</string>
+    <string name="finance_foreign_tax_paid">外国税額</string>
+    <string name="finance_exchange_rate_note">1 %1$s = %2$s %3$s</string>
+    <string name="finance_tax_adding">追加中</string>
+    <string name="finance_tax_uploading">アップロード中…</string>
+    <string name="finance_tax_reading">読み込み中…</string>
+    <string name="finance_tax_still_reading">まだ読み取り中です。引っ張って更新するか、別の年を確認してください。</string>
+    <string name="finance_tax_hide">隠す</string>
+    <string name="finance_tax_add_documents">税務書類を追加</string>
+    <string name="finance_tax_add_photo_library">写真ライブラリ</string>
+    <string name="finance_tax_add_camera">カメラ</string>
+    <string name="finance_tax_add_files">ファイル</string>
+    <plurals name="finance_tax_reading_documents">
+        <item quantity="other">%d 件の書類を読み取っています</item>
+    </plurals>
+    <string name="finance_valued_by">評価方法</string>
+    <string name="finance_valued_by_you">あなた</string>
+    <string name="finance_valued_by_agent_estimate">エージェントの見積もり</string>
+    <string name="finance_valued_by_agent_reading">エージェントが読み取る</string>
+    <string name="finance_what_to_estimate_from">見積もりの根拠</string>
+    <string name="finance_budget_from_month">開始月（%1$s）</string>
+    <string name="finance_budget_changes_past_months">過去の月が変わります。</string>
+    <string name="finance_end_this_budget">この予算を終了</string>
+    <string name="finance_budget_ended">予算を終了しました</string>
+    <string name="finance_choose_an_account">口座を選択</string>
+    <string name="finance_measured_by">測り方</string>
+    <string name="finance_manage_left_out_over_limit">さらに %1$d 件を除外：一度に保存できる支出ルールは %2$d 件までです</string>
+    <plurals name="finance_manage_left_out_too_generic">
+        <item quantity="other">%d 件を除外：短すぎるか一般的すぎてルールになりません</item>
+    </plurals>
+    <plurals name="finance_manage_left_out_changing_number">
+        <item quantity="other">%d 件を除外：毎回変わる番号を含んでいます</item>
+    </plurals>
+</resources>

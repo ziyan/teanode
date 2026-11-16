@@ -19,7 +19,7 @@ import (
 // when no range is given, counting today.
 const healthDefaultDayCount = 30
 
-// NewHealthCommand is `teanode health`: the Apple Health data your iPhone
+// NewHealthCommand is `teanode health`: the Health data your phone
 // copied to this server, by day, week or month, and the readings and routes
 // under it. Only the iPhone app reads HealthKit, so there is no command to
 // report, and there is no command to set Health up: that is the app's Settings
@@ -35,8 +35,8 @@ func NewHealthCommand() *cli.Command {
 	personFlag := &cli.StringFlag{Name: "person", Usage: "the username of somebody who shares their Health with you; yours by default"}
 	return &cli.Command{
 		Name:  "health",
-		Usage: "your Apple Health data: steps, heart rate, sleep, workouts and the rest",
-		Description: "The TeaNode app on your iPhone copies the Health data you allow to this server.\n" +
+		Usage: "your Health data (Apple Health, or Health Connect on Android): steps, heart rate, sleep, workouts and the rest",
+		Description: "The TeaNode app on your phone copies the Health data you allow to this server.\n" +
 			"A type is one kind of data, named as HealthKit names it without its prefix\n" +
 			"(stepCount, heartRate, sleepAnalysis, workout); 'teanode health types' lists the\n" +
 			"ones you have. Days are your phone's calendar days; with no range, a summary\n" +
@@ -59,7 +59,7 @@ func NewHealthCommand() *cli.Command {
 					"sleep and workouts show the time covered, with sleep split into its stages\n" +
 					"(Deep, Core, REM, Awake). A week or a month also shows the average per day (per\n" +
 					"night for sleep) over the days that have data, next to the total, as the\n" +
-					"dashboard does. The days of an iPhone and a Watch counting the same walk are\n" +
+					"dashboard does. The days of a phone and a Watch counting the same walk are\n" +
 					"counted once.",
 				Flags: append(append([]cli.Flag{JSONFlag(), personFlag}, rangeFlags()...),
 					&cli.StringFlag{Name: "period", Usage: "day, week or month", Value: "day"}),
@@ -93,7 +93,7 @@ func NewHealthCommand() *cli.Command {
 					"reads goes to your agent's model provider, which this command names. Off by\n" +
 					"default, and independent of whether your phone sends Health to this server.\n" +
 					"Turning it on is done on the Settings tab of the Health page on the dashboard or\n" +
-					"in Health in the iPhone app's Settings, because commands run on your computer, by\n" +
+					"in Health in the TeaNode phone app's Settings, because commands run on your computer, by\n" +
 					"you or by an agent there, act with your own login. --agent-can-read off works here.",
 				Flags: []cli.Flag{
 					JSONFlag(),
@@ -124,7 +124,7 @@ func NewHealthCommand() *cli.Command {
 					"never your individual readings or routes. Sharing again replaces the categories,\n" +
 					"and giving none stops sharing. Sharing a category the person or circle does not\n" +
 					"already have is done on the Settings tab of the Health page on the dashboard or in\n" +
-					"the iPhone app, not from a command line; fewer categories, or none, works here:\n\n" +
+					"the TeaNode phone app, not from a command line; fewer categories, or none, works here:\n\n" +
 					"  teanode health share family activity sleep\n" +
 					"  teanode health share family",
 				Flags:  []cli.Flag{JSONFlag()},
@@ -256,7 +256,7 @@ func runHealthTypes(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(found)
 	}
 	if len(found) == 0 {
-		fmt.Println("no Health data yet; turn on Health in the TeaNode app on your iPhone (Settings, then Health) and allow the data you want on Apple's Health permissions screen")
+		fmt.Println("no Health data yet; turn on Health in the TeaNode app on your phone (Settings, then Health) and allow the data you want on Apple's Health permissions screen (iPhone) or the Health Connect permissions screen (Android)")
 		return nil
 	}
 	rows := make([][]string, 0, len(found))
@@ -575,7 +575,7 @@ func runHealthSettings(ctx context.Context, command *cli.Command) error {
 	if canAgentReadHealth != nil {
 		settings, err = client.UpdateHealthSettings(ctx, connection, *canAgentReadHealth)
 		if client.IsTapRequired(err) {
-			return &describedError{errors.New("the agent's access to Health is turned on on the Settings tab of the Health page on the dashboard, or in Health in the iPhone app's Settings, not from a command line; turning it off works here")}
+			return &describedError{errors.New("the agent's access to Health is turned on on the Settings tab of the Health page on the dashboard, or in Health in the TeaNode phone app's Settings, not from a command line; turning it off works here")}
 		}
 	} else {
 		settings, err = client.ReadHealthSettings(ctx, connection)
@@ -614,7 +614,7 @@ func runHealthErase(ctx context.Context, command *cli.Command) error {
 	healthType := strings.TrimSpace(command.Args().First())
 	what := "all of your Health data, and tells your phone to stop sending it until you turn Health on again"
 	if healthType != "" {
-		what = "every reading, day summary and route of " + healthType + " that this server keeps. The iPhone app keeps sending new readings of it while Health is on"
+		what = "every reading, day summary and route of " + healthType + " that this server keeps. The TeaNode phone app keeps sending new readings of it while Health is on"
 	}
 	if err := confirm(command, "This erases "+what+". What your agent said about your Health in conversations stays in those conversations. This cannot be undone."); err != nil {
 		return err
@@ -680,7 +680,7 @@ func runHealthShare(ctx context.Context, command *cli.Command) error {
 	}
 	share, err := client.SetHealthShare(ctx, connection, granteeUserId, granteeCircleId, healthCategories)
 	if client.IsTapRequired(err) {
-		return &describedError{errors.New("sharing more Health is done on the Settings tab of the Health page on the dashboard, or in Health in the iPhone app's Settings, not from a command line; sharing fewer categories, or none, works here")}
+		return &describedError{errors.New("sharing more Health is done on the Settings tab of the Health page on the dashboard, or in Health in the TeaNode phone app's Settings, not from a command line; sharing fewer categories, or none, works here")}
 	}
 	if err != nil {
 		return describeNotFound(command, err, typed)

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chats_talk">通话</string>
+    <string name="chats_let_go_to_cancel">松开取消</string>
+    <string name="chats_pull_for_earlier">下拉查看更早的消息</string>
+    <string name="chats_release_for_earlier">松开加载更早的消息</string>
+    <string name="chats_loading_earlier">正在加载更早的消息…</string>
+    <string name="chats_could_not_load_earlier">无法加载更早的消息</string>
+    <string name="chats_start_of_conversation">对话开始</string>
+    <string name="chats_load_earlier_action">加载更早的消息</string>
+    <string name="chats_new_messages">新消息</string>
+</resources>

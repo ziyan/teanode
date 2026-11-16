@@ -14,7 +14,7 @@
 
 It reads your mail, keeps your calendar, files your receipts and tax forms,
 writes up your meetings, keeps an eye on your coding sessions, and remembers
-what it learns about you. Talk to it from the iPhone app, from a browser, or
+what it learns about you. Talk to it from the phone app (iPhone or Android), from a browser, or
 by calling it. It is one program and one PostgreSQL database on your own
 hardware; point it at your own Ollama or vLLM and nothing leaves the machine.
 
@@ -31,11 +31,11 @@ relays outbound mail from your own devices signed with your domain's key. That
 part is optional: the assistant runs without a domain, MX records or mail
 ports.
 
-## The iPhone app
+## The phone apps
 
 ![Four screens of the iPhone app: the conversation, the inbox, spending and a recorded meeting](docs/images/iphone.jpg)
 
-One app for every TeaNode server. Scan the code the dashboard shows and it
+One app for every TeaNode server, on an iPhone and on an Android phone. Scan the code the dashboard shows and it
 connects as you, with nothing to type. It carries what the dashboard does,
 from mail and the calendar to finance and memory, in the system's own controls
 and at your text size.
@@ -43,19 +43,22 @@ and at your text size.
 - **The conversation, everywhere.** Every card the dashboard's drawer shows,
   including a coding session's question with its answers as buttons.
 - **Answer from the notification.** What needs you arrives as a notification
-  you can reply to; a running turn stays on the lock screen as a Live
-  Activity, and widgets show what is waiting and what is next.
-- **Call it, or ask Siri.** A real call you can cut into. Ask TeaNode and Call
-  TeaNode work from Siri, Shortcuts and Control Center.
+  you can reply to; a running turn stays on the lock screen (a Live Activity on
+  an iPhone, an ongoing notification on Android), and widgets show what is
+  waiting and what is next.
+- **Call it, or ask Siri.** A real call you can cut into. On an iPhone, Ask
+  TeaNode and Call TeaNode work from Siri, Shortcuts and Control Center; on
+  Android the widgets and the icon menu start a call.
 - **Share anything to it.** A picture, a file, a link or some words go to your
   agent with a note. Paystubs and W-2s go straight to Taxes.
 - **Record a meeting.** The phone records, the server transcribes as it goes,
   and an upload the network cut off carries on where it stopped.
-- **Mail, calendars and contacts too.** One profile adds them to the iPhone's
-  own apps.
+- **Mail, calendars and contacts too.** On an iPhone, one profile adds them to
+  its own apps.
 
-It is in TestFlight now, on its way to the App Store. Until then you can build
-it yourself from [`ios/`](ios/README.md). Notifications reach it through a
+The iPhone app is in TestFlight now, on its way to the App Store. Until then
+you can build it yourself from [`ios/`](ios/README.md). The Android app goes to
+testers first; build it from [`android/`](android/README.md). Notifications reach it through a
 relay that sees the address of the server calling it and a payload it cannot
 read.
 
@@ -185,7 +188,7 @@ run the same steps by hand:
 Open the dashboard, claim the first account, then paste a key from OpenAI,
 Anthropic or Gemini (or give the address of your own Ollama or vLLM) and
 press **Start my assistant**. Put an HTTPS reverse proxy in
-front of it before the iPhone app or anything outside the machine reaches it.
+front of it before the phone apps or anything outside the machine reaches it.
 Calendar, reminders and contacts are separate choices, and mail can be added
 later without losing anything. [Assistant without hosted
 mail](docs/reference/deployment.md#assistant-without-hosted-mail) has the
@@ -247,7 +250,7 @@ translated.
   binaries
 - A model to think with: an API key, a ChatGPT plan you already pay for, or
   your own Ollama or vLLM
-- An HTTPS address in front of it, for the iPhone app and for when you are out;
+- An HTTPS address in front of it, for the phone apps and for when you are out;
   any reverse proxy will do
 - For your own mail, also a domain whose DNS you can edit, and a host with a
   stable address reachable on ports 25, 80, 443 and 587, and on 993 if mail
@@ -291,7 +294,7 @@ screenshots, and receipts are kept line by line against their charges. The
 agent reads the same rows, so you can ask it how the month is going.
 
 **Taxes.** Paystubs, W-2s, 1099-INT, 1099-DIV, 1099-B and 1098s are read out
-of a PDF or a photo, handed in from the dashboard, the iPhone's share sheet, a
+of a PDF or a photo, handed in from the dashboard, the phone's share sheet, a
 tax document address of your own, or `teanode finance read-tax-document`. Each
 is checked as it arrives: Social Security and Medicare against the wages, each
 paystub against the one before, each W-2 against the year's last paystub, and
@@ -304,7 +307,7 @@ long-term gains, the child tax credit and the dependent care credit) is set
 against what was withheld. It is a starting point for a return, not the
 return.
 
-**Meetings.** Record one on the iPhone, in the dashboard or with `teanode
+**Meetings.** Record one on a phone, in the dashboard or with `teanode
 recording record`. It is transcribed in pieces while it goes on, so a long
 meeting does not mean a long wait; name a speaker once and every passage
 follows; correct a line and later passes never put it back. The summary is

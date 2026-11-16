@@ -731,18 +731,20 @@ it('erases one type from its own view', async () => {
   await waitFor(() => expect(screen.getByTestId('address').textContent).toBe(''))
 })
 
-it('says what Health is when there is nothing yet, and points to the iPhone app', async () => {
+it('says what Health is when there is nothing yet, and points to the phone app', async () => {
   answerWith({ types: [] })
   renderAt('/health')
 
   expect(await screen.findByText('No Health data yet')).toBeTruthy()
-  expect(screen.getByText(/copies your Apple Health data to your own server/)).toBeTruthy()
+  expect(
+    screen.getByText(/copies your Apple Health \(iPhone\) or Health Connect \(Android\) data to your own server/),
+  ).toBeTruthy()
   expect(
     screen.getByText(
-      /turn on Health in the app's Settings, then allow the data you want on Apple's Health permissions screen/,
+      /turn on Health in the app's Settings, then allow the data you want on the Health permissions screen/,
     ),
   ).toBeTruthy()
-  fireEvent.click(screen.getByRole('link', { name: 'Set up the iPhone app' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Set up the phone app' }))
   expect(await screen.findByText('Devices page')).toBeTruthy()
   expect(calls('ListHealthSamples')).toHaveLength(0)
 })
@@ -751,7 +753,9 @@ it('is not offered without the permission', async () => {
   answerWith({})
   renderAt('/health', ['circle:use'])
 
-  expect(await screen.findByText(/Your account is not allowed to copy or read Apple Health data/)).toBeTruthy()
+  expect(
+    await screen.findByText(/Your account is not allowed to copy or read Apple Health or Health Connect data/),
+  ).toBeTruthy()
   expect(calls('ListHealthTypes')).toHaveLength(0)
 })
 
@@ -1220,7 +1224,7 @@ it('says on Settings, when nothing has arrived, where Health comes from', async 
   renderAt('/health?tab=settings')
 
   expect(
-    await screen.findByText(/turn on Health in Settings, then allow the data on Apple's Health permissions screen/),
+    await screen.findByText(/turn on Health in Settings, then allow the data on the Health permissions screen/),
   ).toBeTruthy()
 })
 

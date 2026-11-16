@@ -155,7 +155,7 @@ func TestEveryActionRefusesInOneSentenceWhileTheSwitchIsOff(t *testing.T) {
 			t.Fatalf("%s should answer, not fail: %s", action, err)
 		}
 		if !strings.Contains(content, "has not let you read their Health data") ||
-			!strings.Contains(content, "the Settings tab of the Health page on the dashboard, or in Health in the iPhone app's Settings") || !strings.Contains(content, "set_up") {
+			!strings.Contains(content, "the Settings tab of the Health page on the dashboard, or in Health in the TeaNode phone app's Settings") || !strings.Contains(content, "set_up") {
 			t.Errorf("%s: %q", action, content)
 		}
 		if strings.Contains(content, "\n") || strings.HasPrefix(strings.TrimSpace(content), "{") {
@@ -182,7 +182,7 @@ func TestSetUpWorksWhileTheSwitchIsOff(t *testing.T) {
 	run.canShow = true
 	answer, _ := actJSON(t, run, "set_up", `{}`)
 	if run.shownPath != "/health?tab=settings" || answer["is_shown"] != true || answer["page_path"] != "/health?tab=settings" ||
-		!strings.Contains(answer["setup_instructions"].(string), "iPhone") {
+		!strings.Contains(answer["setup_instructions"].(string), "phone") {
 		t.Errorf("the dashboard was taken to where the switch is: %v %q", answer, run.shownPath)
 	}
 	operations = &routing{answers: map[string]string{"ReadHealthSettings": switchOn}}
@@ -196,7 +196,7 @@ func TestSetUpWorksWhileTheSwitchIsOff(t *testing.T) {
 	answer, _ = actJSON(t, runOf(operations), "set_up", `{}`)
 	words, _ := answer["setup_instructions"].(string)
 	if answer["is_shown"] != false || !strings.Contains(words, "side menu") || !strings.Contains(words, "Apple's Health permissions screen") ||
-		!strings.Contains(words, "the Settings tab of the Health page on the dashboard, or in Health in the iPhone app's Settings") ||
+		!strings.Contains(words, "the Settings tab of the Health page on the dashboard, or in Health in the TeaNode phone app's Settings") ||
 		strings.Contains(words, "Settings > Health") || strings.Contains(words, "Apple's sheet") {
 		t.Errorf("where Health is: %v", answer)
 	}
@@ -261,7 +261,7 @@ func mustMarshal(t *testing.T, value any) []byte {
 func TestTypesWithNothingKeptSaysHowToStart(t *testing.T) {
 	operations := &routing{answers: map[string]string{"ReadHealthSettings": switchOn, "ListHealthTypes": `[]`}}
 	answer, _ := actJSON(t, runOf(operations), "types", `{}`)
-	if note, _ := answer["note"].(string); !strings.Contains(note, "iPhone") {
+	if note, _ := answer["note"].(string); !strings.Contains(note, "phone") {
 		t.Errorf("the note: %v", answer)
 	}
 }
@@ -602,9 +602,9 @@ func TestTheToolIsReadOnlyAndSaysWhatToPrefer(t *testing.T) {
 	}
 	for _, words := range []string{"Prefer summary", "samples only for particular readings", "workout", "sleepAnalysis", "Deep, Core, REM, Awake", "unit",
 		"never what other people share with them", "not with their agents' model providers",
-		"What others share with the person is on the Health page under Showing, on the dashboard and in the iPhone app; you cannot read it",
+		"What others share with the person is on the Health page under Showing, on the dashboard and in the TeaNode phone app; you cannot read it",
 		"never in a dream, a subagent, a background task or any other run nobody is watching",
-		"the Settings tab of the Health page on the dashboard, or Health in the iPhone app's Settings"} {
+		"the Settings tab of the Health page on the dashboard, or Health in the TeaNode phone app's Settings"} {
 		if !strings.Contains(tool.Description, words) {
 			t.Errorf("the description should say %q", words)
 		}

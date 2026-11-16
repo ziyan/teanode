@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_server_footer_identity">このサーバーが自分をどう名乗り、どれだけ記録するかです。</string>
+    <string name="settings_server_footer_smtp">このサーバーが接続してきた相手から受け入れる範囲です。以下はいずれもメールごと、接続ごとに読まれるため、変更は次の一通から効きます。</string>
+    <string name="settings_server_footer_resolver">ドメインが公開しているレコードを確認するときの DNS の引き方です。確認のたびに読まれるので、変更は次回から効きます。</string>
+    <string name="settings_server_footer_session">このダッシュボードへのサインインが続く長さです。</string>
+    <string name="settings_server_footer_passkey">このサーバーが認証器に自分をどう名乗るかです。パスキーは下の名前に結び付くので、変えると登録済みのパスキーはすべて使えなくなります。</string>
+    <string name="settings_server_footer_listen">このサーバーが結び付けるアドレスです。いずれも host:port で、ホストが空ならこの機械のすべてのアドレスを意味します。</string>
+    <string name="settings_server_footer_storage">メールをどこに書くか、そして失敗し続ける配送をどれだけ保つかです。</string>
+    <string name="settings_server_footer_geoip">ディスクから読む任意の MaxMind データベースで、メールが届いたアドレスを国に変えます。そのために外へ何かを送ることはありません。</string>
+    <string name="settings_server_footer_places">場所の名前は OpenStreetMap から取得します：サーバーが新しい場所の位置を場所の提供元に送り、名前を調べます。オフにすると場所は市の名前のままになり、名前は各自で付けられます。</string>
+    <string name="settings_server_footer_relay">送信メールを MX を引いて直接配送するのではなく、一台のメールサーバーに預けます。家庭向け回線はほぼすべて外向き 25 番を塞いでおり、リレーは代わりにサブミッションポートを使います。プロバイダー経由で送るのもこれです。SES も Postmark も Resend も SMTP の接続先を用意していて、このサーバーが付けた署名を保ったまま届きます。</string>
+    <string name="settings_server_footer_proxy">このサーバー自身の SMTP 通信を別のアドレス経由で送出します。中継は同じ問題を別の方法で解決します。中継はメッセージを他のメールサーバーに渡しますが、こちらは MX 検索による配送のまま、経路だけを変えます。ポート 25 が遮断されている場合やブロックリストに載っている場合、どちらでも対処でき、併用は不要です。</string>
+    <string name="settings_server_footer_s3">保存された各メッセージの複製を置く場所です。複数のインスタンスがこのデータベースを共有する場合にのみ必要で、どのインスタンスからでも他が受け取ったメッセージを読めるようにするためのものです。</string>
+    <string name="settings_server_footer_certificates">接続してきた送信側には、要求した名前の証明書が渡されるようになります（別のドメイン名ではなく）。取得には各名前がポート 80 でこのサーバーに到達できる必要があります。オフにすると更新は止まりますが、取得済みの証明書は有効期限まで使われます。</string>
+    <string name="settings_server_footer_route53">AWS ホストゾーンで dns-01 チャレンジに応答します。ワイルドカード証明書が必要な場合や、ポート 80 に到達できない場合にのみ必要です。</string>
+    <string name="settings_server_footer_antivirus">受信メールを ClamAV でスキャンします。</string>
+    <string name="settings_server_footer_antispam">受信メールを SpamAssassin で採点します。</string>
+    <string name="settings_server_footer_sso">OpenID Connect プロバイダー（Entra ID、Okta、Google、Keycloak、Authentik など）でサインインします。ここに登録したプロバイダーごとにサインインページにボタンが表示されます。プロバイダー側のグループに応じて、それを名前に持つこちらのグループに所属します。</string>
+    <string name="settings_server_footer_log_level">ログに書く量です。notice が普段の既定値。debug は量が非常に多く、特定の問題を追うためのもので、付けっぱなしにするものではありません。</string>
+    <string name="settings_server_footer_challenge">所有をどう証明するか。http-01 は HTTP の待ち受けがインターネットからポート 80 で届く必要があり、dns-01 は Route53 のソルバーが要ります。ワイルドカードを取れるのは後者だけです。</string>
+    <string name="settings_server_footer_restart">これらはサーバーの起動時に一度だけ読み込まれます。保存すれば変更は記録されますが、再起動するまでサーバーは起動時に読んだ値を使い続けます。</string>
+    <string name="settings_server_restart_on_about">「概要」ページで再起動できます</string>
+    <string name="settings_server_label_log_level">ログレベル</string>
+    <string name="settings_server_label_provider">場所の名前の提供元</string>
+    <string name="settings_server_label_encryption">暗号化</string>
+    <string name="settings_server_label_challenge">チャレンジ</string>
+    <string name="settings_server_label_engine">フィルタ</string>
+    <string name="settings_server_choice_places_nominatim">Nominatim（OpenStreetMap）</string>
+    <string name="settings_server_choice_places_photon">Photon（OpenStreetMap のデータ）</string>
+    <string name="settings_server_choice_places_off">オフ：場所を市の名前で呼ぶ</string>
+    <string name="settings_server_choice_relay_starttls">STARTTLS（587、2525）</string>
+    <string name="settings_server_choice_relay_tls">TLS（465）</string>
+    <string name="settings_server_choice_relay_none">必須にしない</string>
+    <string name="settings_server_choice_engine_builtin">内蔵、このサーバー内でスコアリング</string>
+    <string name="settings_server_choice_engine_spamd">外部の SpamAssassin デーモン</string>
+</resources>

@@ -553,7 +553,7 @@ func runNow(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if userId != nil {
 			who = arguments.Person
 		}
-		return nil, fmt.Errorf("no position of %s is kept, and this turn cannot ask a browser or phone for one. Location can be set up in the TeaNode app on their iPhone (set_up opens the page), or ask them where they are", who)
+		return nil, fmt.Errorf("no position of %s is kept, and this turn cannot ask a browser or phone for one. Location can be set up in the TeaNode app on their phone (set_up opens the page), or ask them where they are", who)
 	}
 	answer := map[string]any{"timezone": here.where.String(), "asked_just_now": false}
 	if userId != nil {
@@ -1625,7 +1625,7 @@ func runSetUp(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if !ok || !showing.CanShowPages() {
 		return tools.JSONResult(map[string]any{
 			"is_shown": false,
-			"setup_instructions": "Location is in the side menu of the dashboard, and in the TeaNode app on their iPhone, which is what records where they go. " +
+			"setup_instructions": "Location is in the side menu of the dashboard, and in the TeaNode app on their phone, which is what records where they go. " +
 				placeNamesWords,
 		})
 	}
@@ -1633,7 +1633,7 @@ func runSetUp(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	result, err := tools.JSONResult(map[string]any{
 		"is_shown":  true,
 		"page_path": pagePath,
-		"setup_instructions": "Location is open. Recording where they go happens in the TeaNode app on their iPhone: install it, then allow Location when it asks. " +
+		"setup_instructions": "Location is open. Recording where they go happens in the TeaNode app on their phone: install it, then allow Location when it asks. " +
 			placeNamesWords,
 	})
 	if err != nil {

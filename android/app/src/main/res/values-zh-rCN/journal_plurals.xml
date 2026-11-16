@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="journal_photos_count">
+        <item quantity="other">%1$d 张照片</item>
+    </plurals>
+    <plurals name="journal_projects">
+        <item quantity="other">%1$d 个项目</item>
+    </plurals>
+    <plurals name="journal_stretches_of_work">
+        <item quantity="other">%1$d 段工作</item>
+    </plurals>
+    <plurals name="journal_n_meetings">
+        <item quantity="other">%1$d 场会议</item>
+    </plurals>
+    <plurals name="journal_n_messages">
+        <item quantity="other">%1$d 条消息</item>
+    </plurals>
+</resources>

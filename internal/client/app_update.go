@@ -2,7 +2,7 @@ package client
 
 import "context"
 
-// AppUpdate is the newest iPhone app on a channel.
+// AppUpdate is the newest TeaNode app on a channel.
 type AppUpdate struct {
 	UpdateChannel string `json:"updateChannel"`
 	Version       string `json:"version"`
@@ -10,7 +10,7 @@ type AppUpdate struct {
 	InstallURL    string `json:"installUrl"`
 }
 
-// GetAppUpdate is the newest iPhone app on a channel, testflight or appstore,
+// GetAppUpdate is the newest TeaNode app on a channel, testflight, appstore or android,
 // nil when there is none to offer.
 func GetAppUpdate(ctx context.Context, connection *Client, updateChannel string) (*AppUpdate, error) {
 	var result struct {

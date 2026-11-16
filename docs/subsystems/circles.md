@@ -121,7 +121,7 @@ sharing that with them, and is the person's own tap, as sharing it is.
 operator signed in as the person and the agent's own operations while
 `CircleHasSensitiveShare` says a health share, a finance account share or a
 share of all finance names the circle (`requireTapForSensitiveSharedCircle`, in
-`apigraph/circle.go`); the dashboard and the iPhone app are taps. Answering an
+`apigraph/circle.go`); the dashboard and the TeaNode phone app are taps. Answering an
 invitation is the invited person's own, and is not refused.
 
 An operator with `user:manage` can put an account in a circle without an
@@ -187,7 +187,7 @@ circle: they share again if they want to. What other people shared with a circle
 is not deleted, since it is theirs; it stops reaching the person by the join on
 `circle_member` and reaches them again if they rejoin. Deleting a circle also
 deletes its own calendar, its albums, its address book and its chat, which belong
-to it by foreign keys. The dialogs on the dashboard and in the iPhone app, the
+to it by foreign keys. The dialogs on the dashboard and in the TeaNode phone app, the
 command line's questions and the agent's cards say this before it is done.
 
 A map that is open does not keep the last position of somebody it no longer
@@ -241,7 +241,7 @@ with somebody since disabled can still be taken away.
 
 A pronoun is profile information, shown to the people who share a circle with
 the person as their name is: anybody who says a gendered word for them sees the
-word their pronoun gives. The dashboard, the iPhone app and the command line say
+word their pronoun gives. The dashboard, the TeaNode phone app and the command line say
 so where it is set.
 
 Each change is told to the other person the way an invitation is: a note in
@@ -270,7 +270,7 @@ nobody is present for cannot do either.
 `ReadPersonCard` (`internal/api/v1api/apigraph/person_card.go`) answers
 everything the caller can see about one person in a single read: who they are
 to the caller, the circles the two share, and a few items from each part of
-the app that concerns them. The dashboard, the iPhone app, `teanode circle
+the app that concerns them. The dashboard, the TeaNode phone app, `teanode circle
 person` and the agent's `circle` tool (action `person`) all ask it.
 
 It is asked for one of two people. A `userId` is an account that shares a
@@ -451,14 +451,14 @@ so a new kind of share cannot ship without one.
 
 | Kind | To whom | Levels | Where it is managed | Ended by |
 | --- | --- | --- | --- | --- |
-| Calendar (`calendar_share`) | one person, or a circle | `busy`, `titles`, `details`, `edit` | Share on the Calendar page; Share my calendar in the iPhone app's calendars sheet; `teanode calendar share`; the calendar tool's `share` | `endCalendarSharesOutsideCircles` |
-| Where a person is (`location_share`) | one person, or a circle | `current`, `history` (the visits and paths, including those from before the share) | Sharing on the Location page and in the iPhone app; `teanode location share`; the location tool | `endLocationSharesOutsideCircles` |
-| Health (`health_share`) | one person, or a circle | chosen categories, as day summaries; more categories only on a person's tap | Settings tab of the Health page; Health in the iPhone app's Settings; `teanode health share` | `endHealthSharesOutsideCircles` |
+| Calendar (`calendar_share`) | one person, or a circle | `busy`, `titles`, `details`, `edit` | Share on the Calendar page; Share my calendar in the TeaNode phone app's calendars sheet; `teanode calendar share`; the calendar tool's `share` | `endCalendarSharesOutsideCircles` |
+| Where a person is (`location_share`) | one person, or a circle | `current`, `history` (the visits and paths, including those from before the share) | Sharing on the Location page and in the TeaNode phone app; `teanode location share`; the location tool | `endLocationSharesOutsideCircles` |
+| Health (`health_share`) | one person, or a circle | chosen categories, as day summaries; more categories only on a person's tap | Settings tab of the Health page; Health in the TeaNode phone app's Settings; `teanode health share` | `endHealthSharesOutsideCircles` |
 | Passwords (`password_share`) | one person, or a circle, item by item | the item, sealed for each person it reaches | Share on an item in Passwords, on the dashboard and in the app; `teanode passwords share` | `endPasswordSharesOutsideCircles` |
 | Pages of the agent's memory (`agent_page_share`) | one person, or a circle | read only, a page and everything under it, with or without the quotes | Share on a page in Knowledge; `teanode agent memory share` | `endPageSharesOutsideCircles` |
 | Photo albums (`photo_album_share`) | one person, or a circle | `view`, `contribute`; whether the location of the photos and the names of the faces in them are included | Share on an album in Photos; `teanode photo album share` | `endPhotoAlbumSharesOutsideCircles` |
 | Recordings (`recording_share`) | one person, or a circle, a recording at a time | `summary` (title, date, length, summary, the speaker names the owner confirmed), `transcript` (and the words, with the owner's corrections); never the audio | Share on a recording in Recordings; `teanode recording share`; the recording tool | `endRecordingSharesOutsideCircles` |
-| Finance accounts (`finance_account_share`) | one person, or a circle, an account at a time | `balance`, `spending`, `transactions`; starting or widening a share only on a person's tap | Sharing panel of the Finance tab of the agent page; Finance in the iPhone app; `teanode finance share`; not the agent | `endFinanceSharesOutsideCircles` |
+| Finance accounts (`finance_account_share`) | one person, or a circle, an account at a time | `balance`, `spending`, `transactions`; starting or widening a share only on a person's tap | Sharing panel of the Finance tab of the agent page; Finance in the TeaNode phone app; `teanode finance share`; not the agent | `endFinanceSharesOutsideCircles` |
 | All of a person's finance (`finance_share`) | one person, or a circle, every account now and later, as one combined view with no account | `spending`, `transactions`; starting or widening a share only on a person's tap | the same panel and screens; `teanode finance share all`; not the agent | `endAllFinanceSharesOutsideCircles` |
 | Lent skills (`skill_share`) | one person | named tools of a skill, approved call by call | Skills on the agent page; `teanode agent skill share` | `endSkillSharesOutsideCircles` |
 

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mail_manage_who_reported">报告方</string>
+    <string name="mail_manage_reporter">报告者</string>
+    <string name="mail_manage_covering">覆盖时间</string>
+    <string name="mail_manage_covering_range">%1$s 至 %2$s</string>
+    <string name="mail_manage_sent_by">发送方</string>
+    <string name="mail_manage_policy_they_saw">对方看到的策略</string>
+    <string name="mail_manage_published_at">发布于</string>
+    <string name="mail_manage_policy">策略</string>
+    <string name="mail_manage_teach_header">教过滤器</string>
+    <string name="settings_brief_footer_on">今天有什么安排、有什么在等你，以邮件发送。它就是下面名为“Daily brief”的日程，可以在那里修改它要做的事。</string>
+    <string name="settings_brief_days">星期</string>
+    <string name="settings_brief_choose_day">请至少选择一天。</string>
+    <string name="settings_brief_start">给我发简报</string>
+    <string name="settings_server_about_available">可用版本</string>
+    <string name="settings_server_about_last_checked">上次检查</string>
+    <string name="settings_server_about_release_page">发布页面</string>
+    <string name="settings_server_about_newest">%1$s 已是最新版</string>
+    <string name="settings_server_about_not_checked">尚未检查</string>
+    <string name="settings_server_about_never">永不</string>
+    <string name="settings_server_about_downloading">正在下载、替换二进制并重启，大约需要一分钟。</string>
+    <string name="settings_server_credentials_file">凭据文件</string>
+    <string name="settings_server_credentials_file_footer">密钥请留空：凭据来自这个文件。</string>
+</resources>

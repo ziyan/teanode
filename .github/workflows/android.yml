@@ -1,0 +1,43 @@
+name: Android
+
+# The Android app's tests and screenshots, on every pull request that touches
+# it. Builds for testers are sent from a person's machine by
+# android/scripts/distribute-integration.sh, which holds the release key.
+on:
+  pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Android tests and screenshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Tests, screenshots and a debug build
+        run: ./gradlew --no-daemon :kit:test :app:testDebugUnitTest :app:assembleDebug
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-screenshots
+          path: android/app/build/outputs/roborazzi/
+          if-no-files-found: ignore

@@ -171,7 +171,7 @@ func TestTheAgentSharesOnlySoThatEveryCallAsks(t *testing.T) {
 	} {
 		operations := &sharingOperations{answers: map[string]string{"ListCirclePeople": `[{"userId":"ben-id","username":"ben"}]`, "ShareSkill": `{"id":"share-1"}`}}
 		_, err := callSkill(t, operations, arguments)
-		if err == nil || !strings.Contains(err.Error(), "dashboard") || !strings.Contains(err.Error(), "iPhone app") {
+		if err == nil || !strings.Contains(err.Error(), "dashboard") || !strings.Contains(err.Error(), "TeaNode phone app") {
 			t.Errorf("%s: %v", name, err)
 		}
 		if operations.sent["ShareSkill"] != nil {
@@ -233,7 +233,7 @@ func TestAShareTheToolWillRefuseIsNotAskedAbout(t *testing.T) {
 		if err == nil {
 			t.Errorf("%s: was accepted", name)
 		}
-		if name != "no tools" && (err == nil || !strings.Contains(err.Error(), "dashboard") || !strings.Contains(err.Error(), "iPhone app")) {
+		if name != "no tools" && (err == nil || !strings.Contains(err.Error(), "dashboard") || !strings.Contains(err.Error(), "TeaNode phone app")) {
 			t.Errorf("%s: the refusal says where limits are set: %v", name, err)
 		}
 	}

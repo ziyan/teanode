@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chats_talk">話す</string>
+    <string name="chats_let_go_to_cancel">指を離すとキャンセル</string>
+    <string name="chats_pull_for_earlier">下に引いて以前のメッセージを表示</string>
+    <string name="chats_release_for_earlier">離すと以前のメッセージを読み込む</string>
+    <string name="chats_loading_earlier">以前のメッセージを読み込み中…</string>
+    <string name="chats_could_not_load_earlier">以前のメッセージを読み込めませんでした</string>
+    <string name="chats_start_of_conversation">会話の始まり</string>
+    <string name="chats_load_earlier_action">以前のメッセージを読み込む</string>
+    <string name="chats_new_messages">新着メッセージ</string>
+</resources>

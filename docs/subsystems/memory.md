@@ -1093,7 +1093,7 @@ path is not shared.
 
 **What a reader sees** is made in one place, `internal/agent/shared_memory.go`,
 and it is the only code that reads another agent's graph. The memory tool,
-the GraphQL operations, the command line, the dashboard, the iPhone app and
+the GraphQL operations, the command line, the dashboard, the TeaNode phone app and
 the prompt all go through it, so what is left out is left out once:
 
 * A fact's quote, unless the owner shared the quotes, and never the quote of a

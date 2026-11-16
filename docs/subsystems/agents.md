@@ -286,7 +286,7 @@ the week's events and deadlines on Sunday evening; those pass through the
 same bounds and mutes as every other candidate. The person sees and changes
 the list through `ListAgentFollowUps`, `AddAgentFollowUp` and
 `StopAgentFollowUp` (the same permission as the alert mutations): the
-Following list on the Alerts card and in the iPhone app's alert settings,
+Following list on the Alerts card and in the TeaNode phone app's alert settings,
 `teanode agent follow list|add|stop`, and `agent_profile`'s `list_follow_ups`,
 `add_follow_up` and `stop_follow_up`. Stopping one keeps its row, in the state
 `stopped`, and nothing more is said about it. A kind of them is muted with the

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mail_manage_who_reported">報告元</string>
+    <string name="mail_manage_reporter">報告者</string>
+    <string name="mail_manage_covering">対象期間</string>
+    <string name="mail_manage_covering_range">%1$s 〜 %2$s</string>
+    <string name="mail_manage_sent_by">送信元</string>
+    <string name="mail_manage_policy_they_saw">報告者が見たポリシー</string>
+    <string name="mail_manage_published_at">公開先</string>
+    <string name="mail_manage_policy">ポリシー</string>
+    <string name="mail_manage_teach_header">フィルタに教える</string>
+    <string name="settings_brief_footer_on">今日の予定と待っていることを、メールで送ります。下の「Daily brief」というスケジュールがそれで、そこで内容を変えられます。</string>
+    <string name="settings_brief_days">曜日</string>
+    <string name="settings_brief_choose_day">曜日を 1 つ以上選んでください。</string>
+    <string name="settings_brief_start">ブリーフを送る</string>
+    <string name="settings_server_about_available">入手可能</string>
+    <string name="settings_server_about_last_checked">最終確認</string>
+    <string name="settings_server_about_release_page">リリースページ</string>
+    <string name="settings_server_about_newest">%1$s が最新です</string>
+    <string name="settings_server_about_not_checked">未確認</string>
+    <string name="settings_server_about_never">しない</string>
+    <string name="settings_server_about_downloading">ダウンロードし、バイナリを置き換えて再起動します。1 分ほどかかります。</string>
+    <string name="settings_server_credentials_file">認証情報ファイル</string>
+    <string name="settings_server_credentials_file_footer">キーは空のままにしてください。認証情報はこのファイルから取得します。</string>
+</resources>

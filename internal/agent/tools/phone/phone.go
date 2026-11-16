@@ -35,7 +35,7 @@ func Tools() []*tools.Tool {
 	return []*tools.Tool{
 		{
 			Name: "phone_list", Family: tools.FamilyAccount, Risk: tools.RiskRead,
-			Description: "The person's phones running the TeaNode app: each one, whether notifications reach it and why not, the kinds it is told, and when it was last seen. Use it to answer \"why does my phone not buzz?\".",
+			Description: "The person's phones running the TeaNode app: each one, its phonePlatform (ios or android), whether notifications reach it and why not, the kinds it is told, and when it was last seen. Use it to answer \"why does my phone not buzz?\".",
 			Parameters:  tools.Object(map[string]any{}),
 			Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 				return operate(ctx, client.DocumentListAgentPhones, map[string]any{}, "ListAgentPhones", "")

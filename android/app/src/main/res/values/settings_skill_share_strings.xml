@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_skills_share_title">Share a skill</string>
+    <string name="settings_skills_share_with">Share with</string>
+    <string name="settings_skills_choose_person">Choose a person</string>
+    <string name="settings_skills_share_confirm">Share</string>
+    <string name="settings_skills_share_footer">Their agent is offered the tools you choose. Your computer must be connected for a tool to run, and you can stop sharing at any time.</string>
+    <string name="settings_skills_tools_header">Tools to share</string>
+    <string name="settings_skills_tool_pays">Spends money. Calls within your limits go ahead; bigger ones wait for you.</string>
+    <string name="settings_skills_tool_scoped">Costs nothing itself. It only works on something an earlier call through this share made, such as checking or cancelling it.</string>
+    <string name="settings_skills_tool_unknown_cost">This tool does not say what it costs, so you are asked every time</string>
+    <string name="settings_skills_ask_every_time">Ask me every time</string>
+    <string name="settings_skills_per_payment">Per payment</string>
+    <string name="settings_skills_per_month">Per month</string>
+    <string name="settings_skills_payment_above_monthly">The limit for one payment cannot be above the monthly limit.</string>
+    <string name="settings_skills_currency_bad">Use the three-letter code, such as USD.</string>
+    <string name="settings_skills_footer_ask_every_time">Everything waits for your approval, whatever it costs.</string>
+    <string name="settings_skills_footer_needs_limit">A tool that pays is shared with a limit, or with Ask me every time.</string>
+    <string name="settings_skills_footer_limits">Above these limits, or when the amount cannot be read, the call waits for you. The limits are in the currency you give. A call that fails still counts toward the month, in case the money moved.</string>
+    <string name="settings_skills_amount_unreadable">Type the amount in %1$s, such as %2$s</string>
+    <string name="settings_skills_currency_below">the currency below</string>
+</resources>

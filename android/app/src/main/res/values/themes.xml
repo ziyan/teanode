@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.TeaNode" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">@color/teanode_window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+    <!-- An AppCompat theme, which AppCompatActivity needs, that draws nothing: the sign-in activities only ask for the fingerprint. -->
+    <style name="Theme.TeaNode.Translucent" parent="Theme.TeaNode">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+</resources>

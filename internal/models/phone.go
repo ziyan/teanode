@@ -18,6 +18,10 @@ type AgentPhone struct {
 	PhoneName  string `json:"phoneName"`
 	PhoneModel string `json:"phoneModel"`
 
+	// PhonePlatform is PhonePlatformIOS or PhonePlatformAndroid: which app
+	// the phone runs, and so which push service the relay reaches it by.
+	PhonePlatform string `json:"phonePlatform"`
+
 	// PushRegistration is the relay's sealed registration, empty once Apple
 	// said the phone is gone. Never shown to anybody.
 	PushRegistration string `json:"-"`
@@ -45,6 +49,15 @@ type AgentPhone struct {
 	// after it connected.
 	TouredAt *time.Time `json:"touredAt,omitempty"`
 }
+
+// Platforms a phone may run the TeaNode app on.
+const (
+	PhonePlatformIOS     = "ios"
+	PhonePlatformAndroid = "android"
+)
+
+// PhonePlatforms is every platform, the iPhone first.
+var PhonePlatforms = []string{PhonePlatformIOS, PhonePlatformAndroid}
 
 // Kinds of notification a phone may receive.
 const (

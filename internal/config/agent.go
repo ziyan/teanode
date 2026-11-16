@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"net"
@@ -815,9 +816,10 @@ func (self *AgentPush) ResolvedRelayURL() string {
 // Apple calls the topic a notification is for.
 const DefaultPushTopic = "com.teanode.app"
 
-// AgentPushRelay is the relay, off unless the operator holds the app's Apple
-// push key: an APNs authentication key (.p8) from the Apple developer
-// account that signs the app.
+// AgentPushRelay is the relay, off unless the operator holds the app's push
+// credentials: an APNs authentication key (.p8) from the Apple developer
+// account that signs the iPhone app, a Firebase service account for the
+// Android app, or both.
 type AgentPushRelay struct {
 	// Enabled serves the relay's endpoints. Off by default.
 	Enabled bool `yaml:"enabled,omitempty"`
@@ -833,11 +835,28 @@ type AgentPushRelay struct {
 
 	// APNSTopic is the app's bundle identifier. Empty is DefaultPushTopic.
 	APNSTopic string `yaml:"apnsTopic,omitempty"`
+
+	// FCMServiceAccount is the Firebase project's service account, the whole
+	// JSON file the Firebase console hands out, which lets the relay send to
+	// the Android app through Firebase Cloud Messaging. Empty serves no
+	// Android phones.
+	FCMServiceAccount string `yaml:"fcmServiceAccount,omitempty" secret:"true"`
 }
 
-// HasKey reports whether the relay has what it needs to reach Apple.
-func (self *AgentPushRelay) HasKey() bool {
+// HasAPNSKey reports whether the relay has what it needs to reach Apple.
+func (self *AgentPushRelay) HasAPNSKey() bool {
 	return self.APNSKeyID != "" && self.APNSTeamID != "" && self.APNSKey != ""
+}
+
+// HasFCMServiceAccount reports whether the relay has what it needs to reach
+// Firebase Cloud Messaging.
+func (self *AgentPushRelay) HasFCMServiceAccount() bool {
+	return strings.TrimSpace(self.FCMServiceAccount) != ""
+}
+
+// CanRelay reports whether the relay can reach any phone at all.
+func (self *AgentPushRelay) CanRelay() bool {
+	return self.HasAPNSKey() || self.HasFCMServiceAccount()
 }
 
 // ResolvedTopic is APNSTopic, or DefaultPushTopic when it is empty.
@@ -1775,8 +1794,19 @@ func validateAgentPush(settings *AgentPush, validator *validator) {
 		}
 	}
 	relay := &settings.Relay
-	if relay.Enabled && !relay.HasKey() {
-		validator.add("agent.push.relay", "a relay needs apnsKeyId, apnsTeamId and apnsKey: the TeaNode app's Apple push key")
+	if relay.Enabled && !relay.CanRelay() {
+		validator.add("agent.push.relay", "a relay needs apnsKeyId, apnsTeamId and apnsKey (the TeaNode app's Apple push key), fcmServiceAccount (the Firebase project's service account), or both")
+	}
+	if !relay.HasAPNSKey() && (relay.APNSKeyID != "" || relay.APNSTeamID != "" || relay.APNSKey != "") {
+		validator.add("agent.push.relay", "apnsKeyId, apnsTeamId and apnsKey go together: set all three or none")
+	}
+	if relay.HasFCMServiceAccount() {
+		var account struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(relay.FCMServiceAccount), &account); err != nil || account.Type != "service_account" {
+			validator.add("agent.push.relay.fcmServiceAccount", "must be the service account's JSON file from the Firebase console")
+		}
 	}
 }
 

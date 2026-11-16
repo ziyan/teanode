@@ -151,7 +151,7 @@ func TestOnlyAConnectedAppRegistersAPhoneAndRemovingItSignsItOut(test *testing.T
 	if _, errors := world.askWithToken(test, appToken, register); len(errors) > 0 {
 		test.Fatalf("registering again: %v", errors)
 	}
-	data, _ = world.ask(test, `{ ListAgentPhones { phones { id phoneModel phoneModelName } isPushEnabled } }`)
+	data, _ = world.ask(test, `{ ListAgentPhones { phones { id phoneModel phonePlatform phoneModelName } isPushEnabled } }`)
 	list, _ := data["ListAgentPhones"].(map[string]any)
 	phones, _ := list["phones"].([]any)
 	if len(phones) != 1 {
@@ -163,6 +163,11 @@ func TestOnlyAConnectedAppRegistersAPhoneAndRemovingItSignsItOut(test *testing.T
 	if listed["phoneModel"] != "iPhone17,1" || listed["phoneModelName"] != "iPhone 16 Pro" {
 		test.Errorf("the phone's model reads %v", listed)
 	}
+	// An app that does not say what it runs on is the iPhone app, the only
+	// one there was.
+	if listed["phonePlatform"] != "ios" {
+		test.Errorf("a phone that said nothing of its platform is %v", listed["phonePlatform"])
+	}
 
 	if _, errors := world.ask(test, `mutation { UpdateAgentPhone(phoneId: "`+phone["id"].(string)+`", notificationKinds: ["approval", "nonsense"]) { id } }`); len(errors) == 0 {
 		test.Error("a kind of notification that does not exist was accepted")
@@ -172,5 +177,48 @@ func TestOnlyAConnectedAppRegistersAPhoneAndRemovingItSignsItOut(test *testing.T
 	}
 	if world.worksOnTheAPI(appToken) {
 		test.Error("a removed phone's renewed token still works")
+	}
+}
+
+// The Android app says what it runs on when it registers, and the platform is
+// listed beside the phone; a platform that does not exist is refused, and the
+// app registering again keeps it.
+func TestAnAndroidPhoneRegistersWithItsPlatform(test *testing.T) {
+	world := newSignInWorld(test)
+	world.giveAnAgent(test)
+	appClient := world.register(test, "com.example.app:/oauth")
+	_, answer := world.post(test, api.PathOAuthToken, url.Values{
+		"grant_type": {"urn:teanode:params:oauth:grant-type:connect-code"}, "client_id": {appClient},
+		"connect_code": {world.connectCode(test)}, "device_name": {"A test phone"},
+	})
+	appToken, _ := answer["access_token"].(string)
+	if appToken == "" {
+		test.Fatalf("the app could not connect: %v", answer)
+	}
+	key := make([]byte, 32)
+	_, _ = rand.Read(key)
+	register := func(platform string) string {
+		return `mutation { RegisterAgentPhone(phoneName: "Pixel", phoneModel: "Pixel 9", phonePlatform: "` + platform + `", pushRegistration: "sealed:a-registration", payloadKey: "` +
+			base64.StdEncoding.EncodeToString(key) + `") { id phonePlatform phoneModelName } }`
+	}
+	if _, errors := world.askWithToken(test, appToken, register("windows")); len(errors) == 0 {
+		test.Error("a platform that does not exist was accepted")
+	}
+	for range 2 {
+		data, errors := world.askWithToken(test, appToken, register("android"))
+		if len(errors) > 0 {
+			test.Fatalf("RegisterAgentPhone: %v", errors)
+		}
+		if phone, _ := data["RegisterAgentPhone"].(map[string]any); phone["phonePlatform"] != "android" || phone["phoneModelName"] != "Pixel 9" {
+			test.Errorf("the phone registered as %v", phone)
+		}
+	}
+	data, errors := world.ask(test, `{ ListAgentPhones { phones { phonePlatform } } }`)
+	if len(errors) > 0 {
+		test.Fatalf("ListAgentPhones: %v", errors)
+	}
+	phones, _ := data["ListAgentPhones"].(map[string]any)["phones"].([]any)
+	if len(phones) != 1 || phones[0].(map[string]any)["phonePlatform"] != "android" {
+		test.Errorf("the phones are %v", phones)
 	}
 }

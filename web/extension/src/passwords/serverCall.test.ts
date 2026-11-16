@@ -38,7 +38,7 @@ describe('friendlyServerWords', () => {
       [['item not found'], 200, 'The server did not know that item.'],
       [[], 502, 'The server had a problem. Try again in a moment.'],
       [
-        ['approve it on the dashboard or in the iPhone app: setting up, erasing ...'],
+        ['approve it on the dashboard or in the TeaNode phone app: setting up, erasing ...'],
         200,
         'That is done on the Passwords page of the dashboard, not from the extension.',
       ],
