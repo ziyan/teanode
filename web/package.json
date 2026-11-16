@@ -50,6 +50,6 @@
   "dependencies": {
     "echarts": "6.1.0",
     "maplibre-gl": "6.16.0",
-    "tldts": "7.4.19"
+    "tldts": "7.5.1"
   }
 }
