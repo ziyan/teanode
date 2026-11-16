@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.228.1] - 2026-11-16
+
+### Changed
+
+- The message box on the dashboard and the iPhone is one line until the words wrap, with calling and voice messages in the add menu, and a quieter hold-to-talk bar. (#758)
+- Earlier messages load when you pull down past the top and let go, and the message you were reading stays in place. (#758)
+
 ## [0.228.0] - 2026-11-14
 
 ### Added
