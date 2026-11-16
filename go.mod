@@ -25,7 +25,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/graphql-go/graphql v0.8.1
 	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
-	github.com/jackc/pgx/v5 v5.11.0
+	github.com/jackc/pgx/v5 v5.12.0
 	github.com/kaptinlin/jsonrepair v0.4.10
 	github.com/lib/pq v1.12.3
 	github.com/miekg/dns v1.1.73
@@ -81,7 +81,7 @@ require (
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/jackc/puddle/v2 v2.2.3 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
@@ -91,7 +91,7 @@ require (
 	github.com/pion/interceptor v0.1.49
 	github.com/pion/mdns/v2 v2.2.2 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
-	github.com/pion/rtp v1.10.5 // indirect
+	github.com/pion/rtp v1.10.5
 	github.com/pion/sctp v1.12.0 // indirect
 	github.com/pion/sdp/v3 v3.0.20
 	github.com/pion/srtp/v3 v3.1.3 // indirect
