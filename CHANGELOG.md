@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.229.0] - 2026-11-16
+
+### Added
+
+- An Android app for testers, through a Firebase App Distribution invite link. (#756)
+- Android notifications through the push relay. (#756)
+- The server takes Android phones, photos and turns. (#756)
+
 ## [0.228.1] - 2026-11-16
 
 ### Changed
